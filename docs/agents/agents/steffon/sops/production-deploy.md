@@ -33,6 +33,12 @@ export GH_TOKEN=$(printf 'protocol=https\nhost=github.com\n\n' | \
 Order matters: the helper reads `GH_APP_ITEM`, so the first export is what makes
 the second one mint the **deployer** token rather than the default agent one.
 
+If a credential goes stale mid-ship, it is **yours to fix**:
+`eval "$(bin/gh-auth-refresh --export)"` re-mints on **this** lane (deployer, per
+the export above) — never `gh auth login`, and never an escalation to Mr.
+McRitchie. Architecture and symptom→fix:
+[`source-control.md`](../../../modules/source-control.md).
+
 The two exports cover the two auth legs — they are NOT interchangeable:
 
 - **`GH_APP_ITEM`** declares **the lane**. The global git credential helper

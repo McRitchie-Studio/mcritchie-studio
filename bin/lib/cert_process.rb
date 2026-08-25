@@ -75,14 +75,16 @@ module CertProcess
   # RECORD the identity. They used to hardcode the default `ps`, which meant the identity
   # half of the lock could not be driven from a fixture, which is precisely why `with_traps`
   # had NO test: you cannot test a reap you cannot make fail.
-  def self.run(env, cmd, chdir:, root: nil, lane: nil, db: nil, ps: CertOrphanGuard.ps_bin, timeout: nil)
-    run_bounded(env, cmd, chdir: chdir, root: root, lane: lane, db: db, ps: ps, timeout: timeout).ok
+  def self.run(env, cmd, chdir:, root: nil, lane: nil, db: nil, ps: CertOrphanGuard.ps_bin, timeout: nil,
+               on_signal: nil)
+    run_bounded(env, cmd, chdir: chdir, root: root, lane: lane, db: db, ps: ps, timeout: timeout,
+                on_signal: on_signal).ok
   end
 
   # The same run, reporting the OUTCOME as well as the verdict. `timeout` is in seconds;
   # nil (or non-positive) means no ceiling and an ordinary blocking wait, exactly as before.
   def self.run_bounded(env, cmd, chdir:, root: nil, lane: nil, db: nil, ps: CertOrphanGuard.ps_bin,
-                       timeout: nil)
+                       timeout: nil, on_signal: nil)
     pid = Process.spawn(env, cmd, chdir: chdir, pgroup: true)
     pgid = begin
       Process.getpgid(pid)
@@ -97,7 +99,7 @@ module CertProcess
                                  pgid_started_at: started_at, lane: lane, db: db)
     end
 
-    with_traps(pgid, started_at, root, ps: ps) do
+    with_traps(pgid, started_at, root, ps: ps, on_signal: on_signal) do
       wait_bounded(pid, pgid, timeout: timeout, ps: ps)
     end
   ensure
@@ -260,17 +262,51 @@ module CertProcess
   # previous ones. The handler does its own cleanup and exit!s: an `exit` inside a
   # trap would unwind through ensure blocks while signals are still in flight, and
   # we want the reap to be the last thing that happens, deterministically.
-  def self.with_traps(pgid, started_at, root, ps: "ps")
+  #
+  # THE INTERRUPT CONTRACT, and why `on_signal` exists. `exit!` skips every ensure
+  # block and at_exit hook in the cert — which is the point for the REAP (it must
+  # be last and deterministic), but it also skipped the cert's own G1 closure. A
+  # cert killed by Ctrl-C therefore left its g1_cert attempt open forever, and the
+  # board's local-check indicator (Cert::LocalCheck) reads an open attempt with a
+  # `running` lane as a cert that is still going: the killed run showed as STALLED
+  # on the card for the rest of the task's life, and every re-run opened another
+  # attempt beside it.
+  #
+  # A catchable signal is not an unknowable death. We are still executing; we can
+  # still say what happened. So the caller passes a closure that stops its
+  # heartbeat and closes the gate, and it runs AFTER the reap (the suite dies
+  # first, always) and BEFORE `exit!`. STALLED is thereby reserved for the deaths
+  # where no code of ours could run — SIGKILL, a lost machine — which is the only
+  # honest reading of it.
+  #
+  # The closure is best-effort BY CONSTRUCTION: it runs inside a trap handler, so
+  # it must not raise and must not take a lock (Mutex#synchronize raises in trap
+  # context — see CertEmission::Heartbeat#stop_now). A failure here is reported
+  # and then abandoned; nothing may keep the reap from reaching its exit.
+  def self.with_traps(pgid, started_at, root, ps: "ps", on_signal: nil)
     previous = SIGNALS.to_h do |sig|
       [sig, Signal.trap(sig) do
         outcome = settle(pgid, started_at, root, ps: ps)
         warn "cert: signal SIG#{sig} — #{reap_report(pgid, outcome, root)}"
+        close_on_signal(on_signal, sig)
         exit!(128 + Signal.list.fetch(sig, 15))
       end]
     end
     yield
   ensure
     previous&.each { |sig, handler| Signal.trap(sig, handler || "DEFAULT") }
+  end
+
+  # Run the caller's interrupt closure, swallowing anything it throws. A cert
+  # dying under an operator has ONE remaining duty — reap the suite and go — and
+  # a raise in the bookkeeping must not cost them that.
+  def self.close_on_signal(on_signal, sig)
+    return unless on_signal
+
+    on_signal.call(sig)
+  rescue StandardError, ScriptError => e
+    warn "cert: could not close the gate on SIG#{sig} (#{e.class}: #{e.message}) — " \
+         "the board may still show this cert running until the next attempt supersedes it."
   end
 
   # Report what ACTUALLY happened. A cert that announces a kill it did not perform is back

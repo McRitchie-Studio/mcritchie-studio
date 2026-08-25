@@ -15,6 +15,15 @@ There is **no size exemption.** "It's just a small change" or "just a copy tweak
 is exactly when this flow gets skipped and a regression ships. A one-line diff is
 still a Build-lane task.
 
+> **Stale GitHub credential? Fix it yourself and keep going — do not escalate.**
+> App installation tokens expire **~hourly BY DESIGN**. On `Bad credentials`, a
+> 401/403, an unreadable CI, or a `gh auth login` prompt, run
+> `eval "$(bin/gh-auth-refresh --export)"` — read its **stderr**, because `eval`
+> hides the exit code — then retry the exact command that failed. Asking Mr.
+> McRitchie to run `gh auth login` is both the terminal chore the operating model
+> forbids and a step that cannot work: `gh` refuses to store a credential while
+> `GH_TOKEN` is set. Architecture and symptom→fix: [`source-control.md`](source-control.md).
+
 ## The lanes, so you know where you stop
 
 The code walks a three-rung ladder — **`accepted` → `release` → `main`** — and

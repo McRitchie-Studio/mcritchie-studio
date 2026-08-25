@@ -16,6 +16,15 @@ A blocker is not a scolding; it is a **claim of misalignment** — "the task ask
 for X, the PR delivers Y." Your job is to find that gap and close it, not to
 guess at a bigger rewrite.
 
+> **Stale GitHub credential? Fix it yourself and keep going — do not escalate.**
+> App installation tokens expire **~hourly BY DESIGN**. On `Bad credentials`, a
+> 401/403, an unreadable CI, or a `gh auth login` prompt, run
+> `eval "$(bin/gh-auth-refresh --export)"` — read its **stderr**, because `eval`
+> hides the exit code — then retry the exact command that failed. Asking Mr.
+> McRitchie to run `gh auth login` is both the terminal chore the operating model
+> forbids and a step that cannot work: `gh` refuses to store a credential while
+> `GH_TOKEN` is set. Architecture and symptom→fix: [`source-control.md`](source-control.md).
+
 ## What a blocker is made of — the two-part record
 
 A blocker is raised with `bin/task block` and stores **two** things:

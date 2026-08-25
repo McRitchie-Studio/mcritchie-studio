@@ -29,10 +29,15 @@
               </summary>
               <ul class="mt-1 space-y-0.5">
                 <% run.sops.each do |entry| %>
-                  <li class="text-[11px] text-muted flex items-baseline gap-1">
-                    <span class="<%= entry["result"] == "fail" ? "text-rose-400" : "text-emerald-400" %>">
-                      <%= entry["result"] == "fail" ? "✗" : "✓" %>
-                    </span>
+                  <%# `running` is a THIRD result, not a pass. Painting everything that is
+                      not "fail" green reported an in-flight — or ABANDONED — lane as PASSED. %>
+                  <% result = entry["result"].to_s %>
+                  <% glyph, tone = if result == "fail" then ["✗", "text-rose-400"]
+                                   elsif result == GateRun::RUNNING_RESULT then ["◌", "text-amber-400"]
+                                   else ["✓", "text-emerald-400"]
+                                   end %>
+                  <li class="text-[11px] text-muted flex items-baseline gap-1" data-result="<%= result %>">
+                    <span class="<%= tone %>" data-test="gate-sop-glyph"><%= glyph %></span>
                     <span class="text-body"><%= entry["sop"] %></span>
                     <% if (sop_duration = gate_sop_duration_label(entry["duration_ms"])) %>
                       <span><%= sop_duration %></span>

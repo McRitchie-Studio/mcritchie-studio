@@ -139,6 +139,111 @@ class CertEmissionTest < Minitest::Test
     end
   end
 
+  # ── [unit] Heartbeat — ORDERED SHUTDOWN ─────────────────────────────────────
+  #
+  # A beat is not a thread doing arithmetic; it is a thread that SPAWNS
+  # `bin/gate`. `Thread#kill` unwinds the thread and leaves that child running, so
+  # the lane's `running` row could land AFTER its pass/fail row — repainting a
+  # settled lane as live, or (once the gate had closed) opening a phantom attempt
+  # the board renders as a cert that never ends. Stopping must therefore WAIT for
+  # the child, not kill the thread that is waiting on it.
+
+  def test_unit_stop_waits_for_a_beat_already_in_flight
+    events = []
+    in_flight = Queue.new
+    beat = CertEmission::Heartbeat.new(interval: 0.02) do
+      events << :emit_started
+      in_flight << :now
+      sleep 0.3
+      events << :emit_finished
+    end
+
+    in_flight.pop # the emit is spawned and mid-flight
+    beat.stop
+    events << :stop_returned
+
+    assert_equal %i[emit_started emit_finished stop_returned], events,
+                 "stop must not return while a `running` row is still in flight — that is the race"
+  end
+
+  def test_unit_no_beat_starts_after_stop
+    beats = 0
+    beat = CertEmission::Heartbeat.new(interval: 0.02) { beats += 1 }
+    sleep 0.12
+    beat.stop
+    settled = beats
+    sleep 0.15
+
+    assert_operator settled, :>, 0, "the beat must actually have been beating for this to prove anything"
+    assert_equal settled, beats, "no `running` row may be emitted after the terminal row"
+  end
+
+  # The signal path cannot use #stop: `Mutex#synchronize` RAISES in a trap
+  # context, and a raise there costs the cert its reap. So #stop_now takes no
+  # lock — and this test fails the moment somebody "tidies" it into one.
+  def test_unit_stop_now_is_safe_inside_a_trap_handler
+    beat = CertEmission::Heartbeat.new(interval: 5) { nil }
+    raised = nil
+    previous = Signal.trap("USR2") do
+      begin
+        beat.stop_now
+      rescue StandardError, ThreadError => e
+        raised = e
+      end
+    end
+
+    Process.kill("USR2", Process.pid)
+    sleep 0.1
+    Signal.trap("USR2", previous || "DEFAULT")
+
+    assert_nil raised, "the interrupt path must not take a lock (#{raised&.class})"
+  end
+
+  def test_unit_stop_heartbeat_tolerates_a_nil_beat
+    assert_nil CertEmission.stop_heartbeat(nil), "a --print run has no beat to stop"
+  end
+
+  def test_unit_heartbeat_thread_beats_the_running_row
+    with_logging_stub do |stub, log|
+      beat = CertEmission.heartbeat_thread(stub, "my-task", "spine", "bin/rails test", interval: 0.02)
+      sleep 0.1
+      CertEmission.stop_heartbeat(beat)
+
+      argv = logged_argv(log)
+      assert_includes argv, "running"
+      assert_equal ["sop", "task", "my-task", "g1_cert"], argv.first(4)
+    end
+  end
+
+  def test_unit_heartbeat_thread_noops_without_a_slug
+    assert_nil CertEmission.heartbeat_thread("/bin/true", "  ", "spine", "cmd"),
+               "--print runs emit nothing durable, so there is nothing to beat"
+  end
+
+  # ── [unit] emit_interrupt_close ─────────────────────────────────────────────
+
+  def test_unit_emit_interrupt_close_settles_the_lane_then_closes_the_gate
+    with_logging_stub do |stub, log|
+      CertEmission.emit_interrupt_close(stub, "my-task", "spine", "bin/rails test", "INT", 4321)
+      argv = logged_argv(log)
+
+      assert_includes argv, "fail", "an interrupted lane produced NO verdict — record it failed, not absent"
+      assert_includes argv, "close"
+      assert_includes argv, "--failed"
+      assert_includes argv, "cause=interrupted"
+      assert_includes argv, "signal=SIGINT"
+      assert_operator argv.index("--duration-ms"), :<, argv.index("close"),
+                      "the lane must settle BEFORE the gate closes, or the close carries no lane verdict"
+    end
+  end
+
+  def test_unit_emit_interrupt_close_noops_without_a_slug
+    with_logging_stub do |stub, log|
+      CertEmission.emit_interrupt_close(stub, nil, "spine", "cmd", "TERM", 1)
+      refute File.exist?(log), "--print runs have no gate to close"
+    end
+  end
+
   private
 
   # A stub executable that appends its argv (one per line) to a log file.

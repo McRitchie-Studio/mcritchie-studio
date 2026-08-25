@@ -60,6 +60,9 @@ while ship waits, and the board card shows that PR's CI meter there — `PR: <n>
 one mark per check inside the bar, and a clock that ticks while checks run and
 freezes to the run's duration when they settle. So "is it still going?" is a
 glance at the board, not a question for the session.
+Before a PR exists, the same card shows the current local-cert lane and clock;
+if its heartbeat stops, the open board flips that lane to `STALLED` and freezes
+the clock at the last proof of life.
 
 Their limits, stated plainly: they change **no gate semantics**; `bin/ship`
 stops at `submitted` and never merges or deploys; `bin/ship` has no `--steal`
@@ -145,6 +148,25 @@ If you skipped any of the above and already edited files: stop, create the task
 now, move the work into a worktree/branch, and proceed from step 3.
 
 Full SOP: `mcritchie-studio/docs/agents/system/devops-cycle-design.md`.
+
+## 🔑 GitHub auth is SELF-SERVICE — never stop to ask for it
+
+`bin/ship`, `pr-review`, and every CI read reach GitHub with a **GitHub App
+installation token that expires about hourly BY DESIGN**. When one goes stale you
+will see `Bad credentials`, a 401/403, or a `gh auth login` prompt. That is
+**yours to fix**, in one command, and then you continue:
+
+```bash
+eval "$(bin/gh-auth-refresh --export)"
+```
+
+Do **not** ask Mr. McRitchie to run `gh auth login`. It is the terminal chore the
+operating model forbids, and it would not work anyway — `gh` refuses to store a
+credential while `GH_TOKEN` is set, and `GH_TOKEN` outranks the keyring it would
+write to. Escalate only AFTER running the command above and reading its stderr,
+and report what it said. Architecture, the two lane identities (`agent` builds
+and merges, `deployer` cannot touch PRs), and a symptom→fix table:
+`mcritchie-studio/docs/agents/modules/source-control.md`.
 
 ---
 

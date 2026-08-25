@@ -335,7 +335,29 @@ LANE_TIMEOUT = Integer(ENV.fetch("FULL_SUITE_LANE_TIMEOUT", "2700"), exception: 
 def run_lane(label, cmd, root, env: {}, gate_slug: nil, timeout: LANE_TIMEOUT)
   warn "== #{label}: #{cmd} =="
   started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-  result = CertProcess.run_bounded(env, cmd, chdir: root, root: root, lane: label, timeout: timeout)
+  # Same lane announce + heartbeat as bin/fast-check — this cert's lanes are the
+  # LONGEST in the system, so it is the one an operator is most likely to be
+  # staring at wondering whether anything is still happening. The beat is stopped
+  # ORDERED against the terminal row (see bin/fast-check).
+  CertEmission.emit_gate_sop_running(GATE_BIN, gate_slug, label, cmd) if gate_slug
+  beat = (CertEmission.heartbeat_thread(GATE_BIN, gate_slug, label, cmd) if gate_slug)
+  # What a CATCHABLE death owes the board. CertProcess reaps the suite and then
+  # `exit!`s — which skips every ensure below, this cert's gate close included —
+  # so the closure IS the close on that path. It runs inside a trap handler:
+  # stop_now, never stop, because Mutex#synchronize raises in trap context.
+  on_signal = (lambda do |sig|
+    beat&.stop_now
+    CertEmission.emit_interrupt_close(
+      GATE_BIN, gate_slug, label, cmd, sig,
+      ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
+    )
+  end if gate_slug)
+  begin
+    result = CertProcess.run_bounded(env, cmd, chdir: root, root: root, lane: label,
+                                     timeout: timeout, on_signal: on_signal)
+  ensure
+    CertEmission.stop_heartbeat(beat)
+  end
   duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
   if result.timeout?
     warn "   #{label}: TIMED OUT after #{format('%.1fs', duration_ms / 1000.0)} — the RUNNER never " \
