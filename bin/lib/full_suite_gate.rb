@@ -309,6 +309,48 @@ module FullSuiteGate
     repo_registry.dig(slug, "lint_lane").to_s == "none"
   end
 
+  # THE TEST LANE, RESOLVED THE SAME WAY THE LINT LANE IS. A gem repo has no
+  # ci.yml for CiTestCommand to read (studio-engine ships engine-ci.yml) and no
+  # `bin/rails` to reset a test DB with — so an unaided cert crashed on ENOENT
+  # long before it reached the lint waiver. The registry already answers this:
+  # the row carries `release_check`, the repo's own pre-publish gate.
+  #
+  # DECLARED, NEVER INFERRED, exactly like the waiver. Nothing here probes for a
+  # binary or sniffs for a Gemfile; a repo gets a registry test command because
+  # its row names one. An unrecognised slug or unreadable registry returns nil
+  # and the caller falls back to CiTestCommand — the behaviour every app has
+  # today, unchanged.
+  def release_check_cmd(repo)
+    slug = repo.to_s.strip
+    return nil if slug.empty?
+
+    cmd = repo_registry.dig(slug, "release_check").to_s.strip
+    cmd.empty? ? nil : cmd
+  end
+
+  # TRUE for a repo the registry files under `gems`. Used only to decide that a
+  # Rails test-DB reset is meaningless here — a gem has no test database and no
+  # bin/rails to purge one with. Same DECLARED rule: the section in the registry
+  # is the statement, not a guess from the tree's shape.
+  def gem_repo?(repo)
+    slug = repo.to_s.strip
+    return false if slug.empty?
+
+    repo_sections[slug] == "gems"
+  end
+
+  def repo_sections
+    @repo_sections ||= begin
+      path = File.expand_path("../../config/release_repos.yml", __dir__)
+      cfg = YAML.safe_load_file(path) || {}
+      %w[apps gems].each_with_object({}) do |section, out|
+        (cfg[section] || {}).each { |slug, row| out[slug] = section if row.is_a?(Hash) }
+      end
+    rescue StandardError
+      {}
+    end
+  end
+
   # repo slug => its registry row, flattened across the apps/gems sections. Read
   # once. A registry that cannot be read waives NOTHING — same fail-closed rule.
   def repo_registry

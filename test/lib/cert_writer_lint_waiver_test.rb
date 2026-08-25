@@ -21,9 +21,13 @@ class CertWriterLintWaiverTest < ActiveSupport::TestCase
   test "the writer consults the DECLARATION, not the environment" do
     assert_match(/FullSuiteGate\.lint_waived\?\(cert_repo\)/, SCRIPT,
                  "the waiver must come from the registry via the shared reader")
-    assert_no_match(/which\s+rubocop|rubocop\s+--version|File\.exist\?\(.*rubocop/, SCRIPT,
-                    "the writer must NOT probe for a rubocop binary — a waiver inferred from a " \
-                    "missing install turns every broken rubocop into a silently skipped lane")
+    # The "never inferred" half is NOT asserted here any more. It used to be an
+    # assert_no_match listing the spellings a probe might use, which is a spelling
+    # list rather than a property: `command -v rubocop` was mutated in during
+    # review and walked straight past it. The real question — does an UNWAIVED
+    # repo with no usable rubocop fail closed, or silently skip the lane? — is
+    # answered by EXECUTING it, in full_suite_check_test.rb:
+    # test_an_unwaived_repo_whose_rubocop_is_missing_fails_closed.
   end
 
   test "a waived run never records a rubocop evidence line" do

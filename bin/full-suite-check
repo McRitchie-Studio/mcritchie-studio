@@ -130,6 +130,13 @@ slug = ARGV.shift
 # cwd isn't in a git tree. For a mcritchie-studio worktree this is the same dir.
 root = RepoRoot.code_root(ENV["FULL_SUITE_ROOT"], ROOT)
 
+# WHICH REPO IS THIS CHECKOUT. Resolved from `root` — the tree itself — never from
+# the task's repositories list. Hoisted all the way up here because BOTH lane
+# decisions below now depend on it: which test command to run, and whether a lint
+# lane is owed at all. It was resolved just above the lanes until a gem repo
+# proved that was already too late.
+cert_repo = CertRootGuard.repo_of_checkout(root)
+
 # --- opt-in pre-push hook installer -------------------------------------------
 # "Pre-commit hooks always run" (git-protocol.md) — but a FULL suite on every
 # commit is untenable, so the gate ships as an OPT-IN pre-push hook (the house
@@ -231,15 +238,36 @@ end
 # This resolution MUST stay above the system-tier browser guard below — that guard
 # consumes test_cmd (SystemTestBrowser.system_tier?(test_cmd)), so reordering it
 # below the guard raises NameError.
-test_cmd = ENV.fetch("FULL_SUITE_TEST_CMD") do
-  ci_refusal = CiTestCommand.refusal(root)
-  abort "full-suite-check: #{ci_refusal}" if ci_refusal
+# A GEM REPO'S TEST LANE COMES FROM THE REGISTRY, symmetrically to its lint lane.
+# CiTestCommand reads the repo's ci.yml so the cert runs the SAME command CI runs;
+# a gem has no ci.yml for it to read (studio-engine ships engine-ci.yml), so the
+# resolution aborted and, before that, `bin/rails` crashed on ENOENT. The registry
+# row already names the repo's own gate — `release_check: bin/release-check` — and
+# that is what `bin/release --build` runs before publishing, so the cert and the
+# publish gate agree by construction.
+#
+# An explicit FULL_SUITE_TEST_CMD still wins over both: it is the operator saying
+# "run THIS". The registry answer is a DEFAULT, not an override, which is why it
+# sits inside the same fetch block rather than in front of it.
+registry_test_cmd = FullSuiteGate.release_check_cmd(cert_repo)
 
-  CiTestCommand.resolve(root)
+test_cmd = ENV.fetch("FULL_SUITE_TEST_CMD") do
+  if registry_test_cmd
+    registry_test_cmd
+  else
+    ci_refusal = CiTestCommand.refusal(root)
+    abort "full-suite-check: #{ci_refusal}" if ci_refusal
+
+    CiTestCommand.resolve(root)
+  end
 end
 rubocop_cmd = ENV.fetch("FULL_SUITE_RUBOCOP_CMD", "bin/rubocop")
 test_db_reset_cmd = ENV.fetch("FULL_SUITE_TEST_DB_RESET_CMD", "bin/rails db:test:purge db:test:prepare")
-skip_test_db_reset = ENV.fetch("FULL_SUITE_SKIP_TEST_DB_RESET", "") == "1"
+# A gem has no test database and no bin/rails to purge one with, so the reset lane
+# is not "skipped" for it in the opt-out sense — it does not APPLY. Declared from
+# the registry section, never inferred from whether bin/rails happens to exist.
+skip_test_db_reset = ENV.fetch("FULL_SUITE_SKIP_TEST_DB_RESET", "") == "1" ||
+                     FullSuiteGate.gem_repo?(cert_repo)
 
 # --- system-tier browser guard -------------------------------------------------
 # The test lane now carries the SYSTEM tier, and system tests drive a real headless
@@ -363,6 +391,12 @@ def run_lane(label, cmd, root, env: {}, gate_slug: nil, timeout: LANE_TIMEOUT)
   if result.timeout?
     warn "   #{label}: TIMED OUT after #{format('%.1fs', duration_ms / 1000.0)} — the RUNNER never " \
          "produced a verdict"
+  elsif result.unlaunchable?
+    # NOT a verdict on the diff: nothing ran. Say so in the words that name the
+    # repair, because "FAIL" here would send a builder hunting a bug in code this
+    # lane never executed.
+    warn "   #{label}: COULD NOT RUN — #{result.detail}"
+    warn "   Nothing was certified by this lane. The command is the problem, not your diff."
   else
     warn(result.ok ? "   #{label}: PASS" : "   #{label}: FAIL")
   end
@@ -411,11 +445,7 @@ unless skip_test_db_reset
 end
 
 # The evidence is SCOPED to the repo whose tree is being hashed and run — derived
-# from `root`, the tree itself, never from the task's repositories list. Resolved
-# HERE, before the lanes, because whether this repo owes a lint lane at all is a
-# property of the repo (see the waiver below), and the answer has to be known
-# before we decide what to run.
-cert_repo = CertRootGuard.repo_of_checkout(root)
+# (`cert_repo` is resolved at the top of this script — both lane decisions need it.)
 
 # A REPO MAY DECLARE THAT IT HAS NO LINT LANE (`lint_lane: none` in
 # config/release_repos.yml). studio-engine is the case: no rubocop in the
