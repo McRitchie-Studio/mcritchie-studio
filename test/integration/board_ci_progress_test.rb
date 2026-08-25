@@ -14,6 +14,8 @@ class BoardCiProgressTest < ActionDispatch::IntegrationTest
   # A SHA the fixtures do NOT cover — so a meter for it can only come from ingested
   # CiCheckJob rows (the live path), never the fixture seam or the network.
   LIVE_SHA = "task-live-head-sha".freeze
+  GEM_SHA = "gem-head-sha".freeze
+  GEM_RED_SHA = "gem-red-head-sha".freeze
   RERUN_SHA = "task-rerun-head-sha".freeze
 
   setup do
@@ -169,6 +171,51 @@ class BoardCiProgressTest < ActionDispatch::IntegrationTest
     assert_select "#ci-progress-#{task.slug}", 0, "the whole stable slot is gone once past submitted"
   end
 
+  # THE GEM TASK CARD, end to end. A gem repo's suite is its own workflow
+  # ("Engine CI"); the task path used to resolve its sha with the app literal "CI",
+  # so a studio-engine card rendered NO meter at all. Live on 2026-08-25:
+  # `polish-style-guide-modals` (studio-engine PR #195) drew nothing while
+  # turf-monster PR #413 — same stage, same fields — drew its marks, and the blank
+  # was diagnosed as an unwired webhook. The repo had 892 ingested runs.
+
+  test "[integration] a GEM task card draws its Engine CI meter" do
+    task = gem_task(branch: "feat/gem-board-meter", pr: 195)
+    seed_gem_run(branch: "feat/gem-board-meter", sha: GEM_SHA, workflow: "Engine CI")
+    seed_gem_jobs(sha: GEM_SHA, branch: "feat/gem-board-meter", workflow: "Engine CI",
+                  passed: 3, failed: 0)
+
+    get deployments_path
+    assert_response :success
+
+    within = "#card-#{task.slug} [data-test='task-card-ci-progress']"
+    assert_select within, 1, "a gem task card must draw a meter, not a blank space"
+    assert_select "#card-#{task.slug} [data-test='task-ci-progress-label']", text: "PR: 195"
+    assert_select "#{within} [data-test='ci-check-symbol']", 3
+  end
+
+  test "[integration] a red sibling lane colours the GEM card's meter" do
+    # The card must agree with Ci::ReviewGate, which folds EVERY run on the head.
+    # Scoped to Engine CI alone this card would draw a green 3/3 on a task the gate
+    # holds :red — the exact green-on-red lie the sibling fold exists to prevent.
+    task = gem_task(branch: "feat/gem-board-red", pr: 196)
+    seed_gem_run(branch: "feat/gem-board-red", sha: GEM_RED_SHA, workflow: "Engine CI")
+    seed_gem_jobs(sha: GEM_RED_SHA, branch: "feat/gem-board-red", workflow: "Engine CI",
+                  passed: 3, failed: 0)
+    GithubWorkflowRun.create!(
+      repo: ENGINE_NWO, workflow_name: "Consumer CI",
+      run_id: SecureRandom.random_number(10**12), status: "completed", conclusion: "failure",
+      head_branch: "feat/gem-board-red", head_sha: GEM_RED_SHA, run_started_at: Time.current
+    )
+
+    get deployments_path
+    assert_response :success
+
+    within = "#card-#{task.slug} [data-test='task-card-ci-progress']"
+    assert_select "#{within} .ci-progress-meter[data-ci-state='red']", 1,
+                  "a failing Consumer CI must show as red on the card, not hide behind a green Engine CI"
+    assert_select "#{within} [data-test='ci-check-symbol'][data-ci-check-state='failed']", 1
+  end
+
   private
 
   def submitted_task(branch:, pr:)
@@ -194,6 +241,34 @@ class BoardCiProgressTest < ActionDispatch::IntegrationTest
       run_id: SecureRandom.random_number(10**12), status: "in_progress",
       head_branch: branch, head_sha: sha, run_started_at: Time.current
     )
+  end
+
+  ENGINE_NWO = "McRitchie-Studio/studio-engine".freeze
+
+  def gem_task(branch:, pr:)
+    Task.create!(
+      title: "gem ci meter #{SecureRandom.hex(2)}",
+      stage: "submitted",
+      metadata: { "devops" => {
+        "branch" => branch,
+        "repositories" => ["studio-engine"],
+        "pr_url" => "https://github.com/McRitchie-Studio/studio-engine/pull/#{pr}"
+      } }
+    )
+  end
+
+  def seed_gem_run(branch:, sha:, workflow:)
+    GithubWorkflowRun.create!(
+      repo: ENGINE_NWO, workflow_name: workflow,
+      run_id: SecureRandom.random_number(10**12), status: "in_progress",
+      head_branch: branch, head_sha: sha, run_started_at: Time.current
+    )
+  end
+
+  def seed_gem_jobs(sha:, branch:, workflow:, passed:, failed:)
+    id = SecureRandom.random_number(10**12)
+    passed.times { |i| CiCheckJob.create!(repo: ENGINE_NWO, job_id: (id += 1), head_sha: sha, head_branch: branch, workflow_name: workflow, name: "engine-pass-#{i}", status: "completed", conclusion: "success") }
+    failed.times { |i| CiCheckJob.create!(repo: ENGINE_NWO, job_id: (id += 1), head_sha: sha, head_branch: branch, workflow_name: workflow, name: "engine-fail-#{i}", status: "completed", conclusion: "failure") }
   end
 
   def seed_jobs(sha:, branch:, passed:, pending:)
