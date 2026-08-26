@@ -96,6 +96,30 @@ cleanup guards.
 10. Retires frozen docs + rolls the ledger (`bin/archive-docs`), then commits
     that and the ledger to `release` in ONE artifact commit.
 
+> ### ⛔ Step 7 BLOCKS step 8 — the run under-reclaims by design
+> Archiving a task **lands a durable artifact on it**, and the reclaim's idle gate
+> reads exactly that signal. So a desk whose task step 7 archived seconds earlier
+> is withheld as active:
+>
+> ```
+> withheld turf-monster/adopt-birthday-age-gate-flow: the bound task landed a
+>   durable artifact 2m ago, inside the 1.5h idle window
+> ```
+>
+> Measured 2026-08-26: the preview offered **7** desks and the run took **4**. Two
+> were withheld by the run's own step-7 stamp. (The seventh was removed by a
+> concurrent session mid-run, its task bouncing `building → designed` — a reminder
+> that the preview is a snapshot, not a reservation.)
+>
+> **Do not force past this.** The gate cannot tell the archive's own stamp from a
+> live agent's write, and it is right to refuse. The desks come back after the
+> idle window: re-run the act — it is idempotent — or take a specific desk now
+> with `bin/agent-worktree remove <app> <slug> --yes`.
+>
+> **Report the previewed count and the taken count separately.** Reporting the
+> preview as the result overstates every archive run by whatever step 7 just
+> stamped.
+
 ### The artifact sweep (step 3 / step 8)
 
 `bin/clean-artifacts` reclaims regenerable disk across **every managed Rails repo
