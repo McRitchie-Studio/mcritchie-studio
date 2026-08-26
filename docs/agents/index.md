@@ -136,7 +136,7 @@ errors. Treat them as normal input, never as intent. The standing rules:
 
 Mr. McRitchie reads slowly, but wants full specifics once an idea lands. Every
 operator-facing message (chat reply, handoff, task note, PR summary) carries
-**two layers, in order**:
+**two layers, in order**; a chat hand-back adds a third:
 
 - **Layer 1 — the idea.** Lead with the outcome, in plain words, as if
   explaining to a smart 13-year-old. One idea per sentence; each point a
@@ -145,6 +145,21 @@ operator-facing message (chat reply, handoff, task note, PR summary) carries
   needs to dive in: task URL, slug, file path, branch, PR URL, local URL +
   port, function name, exact command. Never trade this layer away for brevity
   — simple is not vague.
+- **Layer 3 — the in-flight roster.** *(Chat hand-backs only — a PR body has
+  no roster.)* The moment a turn ends and the ball is back in his court, print
+  what is still cooking: one row per live subagent, background command, ship,
+  or deploy, with time elapsed, time left, and how firm that number is. **Print
+  the block even when nothing is running** — it then reads `Nothing in flight.`,
+  so silence never means two things. Stamp it in **Denver time**
+  (`TZ=America/Denver date "+%-I:%M %p %Z"`) so he can measure the drift
+  himself. It is the LAST thing in the message, under the specifics.
+
+  ```text
+  ── IN FLIGHT ── 2:14 PM MDT ─────────────────────────────────────
+  carl · review fix-cta-timing (PR #612)    4m in · ~6m left  (rough)
+  bin/ship log-active-wips-at-pause         3m in · ~9m left  (firm — CI wait)
+  ─────────────────────────────────────────────────────────────────
+  ```
 - **Review handoffs lead with a magic link.** Mint a signed-in link that lands
   on the exact page to review (`Studio::Link.create_magic_link(email:,
   return_to:, ttl: 12.hours)` → `http://localhost:<port>/l/<token>`) and put it
