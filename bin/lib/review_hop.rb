@@ -35,8 +35,12 @@ module ReviewHop
   # own /login redirects on to /signin.
   SIGN_IN_PATHS = %w[/login /signin].freeze
 
-  # The consumable magic-link path the mint hands back (`/l/<token>`).
-  # BOTH magic-link entry points in this ecosystem, not just the engine's.
+  # The consumable magic-link paths the mint may hand back — BOTH entry points
+  # in this ecosystem, not just the engine's `/l/<token>`. The set is CLOSED AT
+  # TWO by construction: studio-engine picks between them with a binary switch
+  # (`Studio.magic_link_via_l_route?`, app/controllers/concerns/studio/
+  # magic_link_issuing.rb), and turf-monster's override mints the other shape.
+  # Same short Studio::Link token either way; only the prefix differs.
   #
   # This used to be /l/ alone, and it reported a WORKING hop as BROKEN for
   # turf-monster: that app overrides the engine's Studio::LinksController with
@@ -121,9 +125,10 @@ module ReviewHop
       end
     end
 
-    # LEG 3 — the confirm page (GET /l/<token>), which carries the CSRF token
-    # the consume POST needs. No token means the previous leg handed us a page
-    # that is not the confirm page, whatever its status was.
+    # LEG 3 — the confirm page (GET the path the mint returned: /l/<token> or
+    # /magic_link/<token>), which carries the CSRF token the consume POST needs.
+    # No token means the previous leg handed us a page that is not the confirm
+    # page, whatever its status was.
     def confirm(status:, body:)
       return fail(:confirm_not_ok, "confirm page answered #{status}, expected 200") unless status.to_i == 200
 
@@ -133,7 +138,7 @@ module ReviewHop
       pass(:confirm_ok, "confirm page carries a CSRF token")
     end
 
-    # LEG 4 — the consume (POST /l/<token>).
+    # LEG 4 — the consume (POST that same minted path: /l/<token> or /magic_link/<token>).
     #
     # POST and then follow the Location BY HAND. `curl -L -X POST` replays the
     # forced method across the redirect and 404s on the review path, which reads

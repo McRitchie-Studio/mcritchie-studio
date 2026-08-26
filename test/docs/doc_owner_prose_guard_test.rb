@@ -67,6 +67,7 @@ class DocOwnerProseGuardTest < ActiveSupport::TestCase
     "qa-release" => "Avi",
     "qa-deploy" => "Avi",           # legacy alias — the spelling bin/release.rb and bin/conductor actually use
     "deploy-with-task" => "Avi",
+    "live-score-watch" => "Avi",
     "pre-QA gate" => "Avi",
     "production-deploy" => "Steffon",
     "archive-shipped" => "Steffon",

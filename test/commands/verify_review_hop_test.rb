@@ -83,9 +83,9 @@ class VerifyReviewHopTest < Minitest::Test
         cta_response
       when path == "/_studio/local_review"
         mint_response(target)
-      when path == "/l/tok-1" && method == "GET"
+      when (path == "/l/tok-1" || path == "/magic_link/tok-1") && method == "GET"
         ok(%(<form><input name="authenticity_token" value="csrf-1" /></form>), cookie: true)
-      when path == "/l/tok-1" && method == "POST"
+      when (path == "/l/tok-1" || path == "/magic_link/tok-1") && method == "POST"
         redirect(@scenario == :not_admin ? "#{base}/" : "#{base}#{REVIEW_PATH}")
       when path == REVIEW_PATH
         ok("<h1>Design System</h1>")
@@ -117,6 +117,8 @@ class VerifyReviewHopTest < Minitest::Test
       # At/above the floor the live CTA sends NO email. If one ever appears here
       # the recipe has regressed to verifying a path the button does not take.
       return "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n" if has_email
+
+      return redirect("#{base}/magic_link/tok-1") if @scenario == :magic_link_shape
 
       @scenario == :no_reviewer ? redirect("#{base}/login") : redirect("#{base}/l/tok-1")
     end
@@ -161,6 +163,21 @@ class VerifyReviewHopTest < Minitest::Test
     refute report["ok"]
     assert_equal "cta_dead_end", leg(report, "cta")["code"]
     assert_nil leg(report, "mint"), "the run must STOP at the broken leg, not carry on"
+  end
+
+  # [integration] THE COVERAGE GAP this task closes. The verifier learned to accept
+  # BOTH magic-link shapes, but every stub here minted `/l/<token>` — so the second
+  # shape had unit coverage and NO command-tier coverage, and because nothing pinned
+  # the old shape the suite stayed green either way. turf-monster overrides the
+  # engine's Studio::LinksController and mints `/magic_link/<token>`; that is the
+  # hop a turf reviewer actually walks.
+  def test_magic_link_shape_completes_the_whole_hop
+    report, status = run_hop(scenario: :magic_link_shape)
+
+    assert status.success?, "expected exit 0, got #{status.exitstatus}: #{report}"
+    assert report["ok"], "the /magic_link/<token> shape must complete the hop: #{report.inspect}"
+    assert_equal %w[cta mint confirm consume landing], report["legs"].map { |l| l["leg"] }
+    assert(report["legs"].all? { |l| l["ok"] }, report.inspect)
   end
 
   # [integration] the hyphen spelling (/tasks/:slug/local-review) 404s

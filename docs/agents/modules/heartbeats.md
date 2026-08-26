@@ -14,6 +14,9 @@ four ordered release actions, a themed glyph on the rest):
   number icons read across the souls: review → assemble → ship → archive):
   - **Carl** → `1️⃣ pr-review` · `🐢 pr-review-slow`
   - **Avi** → `2️⃣ qa-release` · `⚡ deploy-with-task`
+    (Avi also owns `live-score-watch`, direct-invoke only — deliberately NOT on
+    this list, which mirrors the launcher card in
+    `ApplicationHelper#heartbeat_launchers`.)
   - **Steffon** → `3️⃣ production-deploy` · `4️⃣ archive-shipped`
   - **Alex** → `🧑🏻‍🏫 grade-events` · `📡 share-insights` · `🌎 full-cycle`
 
