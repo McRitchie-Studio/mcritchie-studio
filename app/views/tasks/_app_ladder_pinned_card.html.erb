@@ -1,0 +1,67 @@
+<%# ONE APPLICATION IN THE PINNED STRIP — the full card with its middle removed.
+
+    THREE ROWS AND NO FOURTH, which is the operator's own spec for this form: the
+    NAME, the CI PROGRESS meter, and the ladder STAGE bar (accepted · release · main).
+    Everything the full card carries below those — the position word, the at-rest
+    line, the sibling lanes, the review roll — is board history rather than live news,
+    and a strip that has to stay under ~64px tall while the operator reads the tasks
+    beneath it cannot afford history.
+
+    IT DRAWS THE SAME PARTS, not lookalikes: components/_ci_progress_meter and
+    tasks/_app_ladder_track are the card's own, so a check here means what a check
+    means six inches up the page and neither can drift from the other.
+
+    THE METER IS NOT COLLAPSED FOR A RESTING APP, unlike the full card. The at-rest
+    collapse exists to quiet a card the operator is scrolling PAST; this strip is what
+    they kept, and a tile with a hole where the meter goes reads as broken rather than
+    as calm. The tile still dims, so the eye keeps its sort order.
+
+    Locals: card - Ci::AppLadder::Card %>
+<% card = local_assigns.fetch(:card) %>
+<% at_rest = card.at_rest? %>
+<% progress = card.progress %>
+<% run_url = card.run_url %>
+<% linked = run_url.present? %>
+
+<% tile_classes = ["w-52 shrink-0 rounded-lg border bg-surface px-2.5 py-1.5 block min-w-0 transition-colors",
+                   card.needs_attention? ? "border-amber-500/40" : "border-subtle",
+                   at_rest ? "opacity-60 hover:opacity-100 focus-within:opacity-100" : nil].compact.join(" ") %>
+<% tile_classes += " hover:border-primary/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" if linked %>
+<% tile_options = {
+     class: tile_classes,
+     data: { test: "app-ladder-pinned-card", repo: card.repo, position: card.position,
+             at_rest: at_rest, attention: card.needs_attention? },
+     title: "#{card.repo} — #{app_ladder_position_sentence(card)}"
+   } %>
+<% tile_options.merge!(href: run_url, target: "_blank", rel: "noopener") if linked %>
+
+<%= content_tag(linked ? :a : :div, **tile_options) do %>
+  <%# ROW 1 — THE NAME. It carries the position TONE but not the position word: the
+      colour is free (it rides text already on screen) where a second line is not. %>
+  <div class="flex items-baseline justify-between gap-1.5 min-w-0">
+    <h4 class="truncate text-xs font-semibold <%= app_ladder_position_tone(card) %>"
+        data-test="app-ladder-pinned-name"><%= card.repo %></h4>
+    <span class="shrink-0 text-[9px] uppercase tracking-wider text-muted"><%= card.gem? ? "gem" : "app" %></span>
+  </div>
+
+  <%# ROW 2 — CI PROGRESS. An app with nothing ingested gets a WORD, never an empty
+      rail: the row must hold its height so the three tiles' bars stay on one line,
+      and a blank there would read as "0 of 0 passed". %>
+  <div class="mt-1" data-test="app-ladder-pinned-ci">
+    <% if progress.present? %>
+      <%= render "components/ci_progress_meter",
+            progress: progress,
+            label: [card.active_rung&.branch, card.active_rung&.counted_lane].compact.join(" · "),
+            test_id: "app-ladder-pinned-ci-bar",
+            clock: true %>
+    <% else %>
+      <div class="rounded border border-dashed border-subtle px-1.5 py-[3px] text-[9px] leading-none text-muted"
+           data-test="app-ladder-pinned-ci-empty">no CI ingested</div>
+    <% end %>
+  </div>
+
+  <%# ROW 3 — THE STAGE BAR, compact: the same three segments, minus the parked counts. %>
+  <div class="mt-1">
+    <%= render "tasks/app_ladder_track", card: card, compact: true %>
+  </div>
+<% end %>

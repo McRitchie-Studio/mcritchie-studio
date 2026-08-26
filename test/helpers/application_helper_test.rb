@@ -1044,4 +1044,55 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_nil heartbeat_launcher_for(nil)
   end
 
+  # --- the app ladder's last-main-merge stamp --------------------------------
+  #
+  # `release → main` IS the merge on this ladder (`bin/release ship` fast-forwards it),
+  # so the card's stamp is the release's own shipped_at. The three helpers split one
+  # line between them — the AGE in the label, the MOMENT in the value, the whole rule in
+  # the hover — and the case that matters most is the one with NO ship in the scanned
+  # window, where every one of them must admit the gap rather than invent a time.
+
+  test "[unit] the main-merge line carries the age in its label and the moment in its value" do
+    at = Time.utc(2026, 8, 21, 15, 12, 0)
+    card = ladder_card(last_shipped_at: at)
+
+    travel_to Time.utc(2026, 8, 23, 15, 12, 0) do
+      assert_equal "main merged · 2d ago", app_ladder_main_merge_label(card)
+    end
+    assert_equal "Aug 21 3:12p", app_ladder_main_merge_stamp(card),
+                 "the value is the board's own date+time stamp, to the minute"
+  end
+
+  test "[unit] a repo with no ship in the scanned window admits the gap everywhere" do
+    card = ladder_card(last_shipped_at: nil)
+
+    assert_equal "main merged", app_ladder_main_merge_label(card), "no ship, no age to print"
+    assert_equal "—", app_ladder_main_merge_stamp(card), "an em dash, never a guessed time"
+    assert_match(/no production ship inside the scanned release window/,
+                 app_ladder_main_merge_title(card))
+  end
+
+  test "[unit] the main-merge hover carries the full timestamp and the age together" do
+    at = Time.utc(2026, 8, 21, 15, 12, 0)
+
+    travel_to Time.utc(2026, 8, 21, 18, 12, 0) do
+      title = app_ladder_main_merge_title(ladder_card(last_shipped_at: at))
+
+      assert_match(/\Aturf-monster — release → main last merged/, title)
+      assert_match(/Aug 21, 2026 at 3:12 PM/, title)
+      assert_match(/\(3h ago\)/, title)
+    end
+  end
+
+  private
+
+  # A level, quiet card — the ladder state is irrelevant to these three, and building it
+  # from the real Card/LadderRung keeps the helpers bound to the object the view hands
+  # them rather than to a stub that cannot go stale.
+  def ladder_card(repo: "turf-monster", last_shipped_at: nil)
+    rungs = Ci::AppLadder::RUNGS.map do |branch|
+      Ci::LadderRung.new(repo: repo, branch: branch, state: :green, sha: "abc1234def")
+    end
+    Ci::AppLadder::Card.new(repo: repo, rungs: rungs, last_shipped_at: last_shipped_at)
+  end
 end

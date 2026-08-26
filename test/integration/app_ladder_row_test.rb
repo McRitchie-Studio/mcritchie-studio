@@ -21,6 +21,20 @@ class AppLadderRowTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='app-ladder-suite']", minimum: 1
   end
 
+  # THE PINNED STRIP SHIPS WITH THE ROW, inside #app-ladder-row — the slot
+  # DeploymentsBroadcaster replaces. Rendered anywhere else it would keep showing a
+  # verdict the row beneath it had already moved past, which on a board that takes live
+  # updates is the one failure mode a pinned copy can have.
+  test "the row carries a pinned strip with the same applications" do
+    get deployments_path
+
+    assert_select "[data-test='app-ladder-row'] [data-test='app-ladder-pinned']", 1
+
+    repos = css_select("[data-test='app-ladder-card']").map { |el| el["data-repo"] }
+    pinned = css_select("[data-test='app-ladder-pinned-card']").map { |el| el["data-repo"] }
+    assert_equal repos, pinned, "the strip is the row's own applications, in the row's order"
+  end
+
   test "every reportable repo gets exactly one card" do
     get deployments_path
 
