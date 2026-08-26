@@ -8,20 +8,41 @@
     meter is the point: the operator learns this vocabulary once, and a check here
     means what a check means everywhere else on the page.
 
-    IT REPORTS ON ONE RUNG — Card#active_rung: a running suite if there is one, else
-    the newest verdict. Three check-lists on one card is the two-rows-saying-the-same-
-    thing shape the CI meter already collapsed once.
+    IT REPORTS ON ONE RUNG — Card#active_rung: the RELEASE rung when this repo is in
+    the open candidate (so the card agrees with the tracker panel above it), otherwise
+    a running suite if there is one, else the newest verdict. Three check-lists on one
+    card is the two-rows-saying-the-same-thing shape the CI meter already collapsed.
 
-    THE BADGES say where each rung stands, and read left to right as the ladder:
-      faded   — NOT BUILT. Nothing ingested for this branch, so there is no verdict
-                to report. An absence must never read as a pass.
-      amber   — running.
-      emerald — green.
-      rose    — failed or conflicted.
+    THE LADDER, beneath the meter, is ONE PROGRESS BAR in three segments reading
+    `accepted → release → main`. Two facts share each segment, and they do NOT share a
+    channel:
 
-    A badge reports CI's verdict and adds nothing to it. It used to also carry a
+      COLOUR — WHERE THE WORK IS.
+        emerald  it moved through this rung (at `main`, it arrived)
+        amber    it is sitting on this rung right now, and the count says how much
+        faded    it has not got this far
+        rose     CI FAILED here — the one thing loud enough to take the colour back
+                 off progress, because a red rung must be actionable before anything
+                 else moves rather than legible only as a small glyph.
+
+      GLYPH  — WHAT CI SAID: ✓ green, spinner running, ✗ failed, and NOTHING when
+               nothing was ingested. An absence must never wear the pass glyph.
+
+    WHY THEY ARE SPLIT. This row's badges once spent their only colour on the CI
+    verdict, so a card could say "release is green" but never "release is empty" — and
+    green-and-empty is simply what `release` looks like between sweeps. One channel
+    cannot carry both, which is why the row could not answer "where is this app in the
+    devops process", the question it exists for.
+
+    A segment reports CI's verdict and adds nothing to it. It used to also carry a
     `stale` state, inferred from stamp timestamps; that inference was wrong by
     construction and is gone — see Ci::LadderRung.
+
+    AT REST — level, not in the open release, nothing failing — the card DIMS, drops
+    its meter to a single line, and sorts last. It keeps the bar (three greens is the
+    "everything arrived" picture) and the one fact that makes the silence legible: when
+    this app last shipped. A dimmed card saying nothing at all is indistinguishable
+    from a broken one.
 
     THE WHOLE CARD IS A LINK to the Actions run behind the active rung, so a click
     lands on the run in progress. When there is no run to open it degrades to a plain
@@ -32,17 +53,24 @@
       card_class - extra classes for the grid cell %>
 <% card = local_assigns.fetch(:card) %>
 <% attention = card.needs_attention? %>
-<% progress = card.progress %>
+<%# AT REST collapses the card: the CI meter and the sibling-lane row go, replaced by
+    one quiet line. The header, the track and the review roll stay — two muted lines of
+    board history are not what makes a card loud. Hover restores full opacity, so the
+    dimming never costs the operator the ability to read a resting card. %>
+<% at_rest = card.at_rest? %>
+<% progress = at_rest ? nil : card.progress %>
 <% run_url = card.run_url %>
 <% linked = run_url.present? %>
 
 <% card_classes = ["rounded-xl border bg-surface p-4 block min-w-0 transition-colors",
                    attention ? "border-amber-500/40" : "border-subtle",
+                   at_rest ? "opacity-60 hover:opacity-100 focus-within:opacity-100" : nil,
                    local_assigns[:card_class]].compact.join(" ") %>
 <% card_classes += " group hover:border-primary/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" if linked %>
 <% card_options = {
      class: card_classes,
-     data: { test: "app-ladder-card", repo: card.repo, attention: attention, linked: linked },
+     data: { test: "app-ladder-card", repo: card.repo, attention: attention, linked: linked,
+             position: card.position, at_rest: at_rest, furthest: card.furthest_rung },
      title: linked ? "#{card.repo} — open the GitHub Actions run for #{card.active_rung&.branch}" : card.repo
    } %>
 <% if linked %>
@@ -50,7 +78,7 @@
 <% end %>
 
 <%= content_tag(linked ? :a : :div, **card_options) do %>
-  <div class="flex items-baseline justify-between gap-2 mb-2 min-w-0">
+  <div class="flex items-baseline justify-between gap-2 mb-0.5 min-w-0">
     <h3 class="text-sm font-semibold truncate"><%= card.repo %></h3>
     <span class="flex items-center gap-1 shrink-0 text-[10px] uppercase tracking-wider text-muted">
       <%= card.gem? ? "gem" : "app" %>
@@ -62,9 +90,26 @@
     </span>
   </div>
 
+  <%# WHERE THIS APP IS IN THE DEVOPS PROCESS, in one word, under the name. The track
+      below draws the same fact; this states it, so a glance down the row reads as a
+      list of positions rather than five diagrams to decode. %>
+  <div class="mb-2 text-[10px] font-medium <%= app_ladder_position_tone(card) %>"
+       data-test="app-ladder-position"
+       data-position="<%= card.position %>"
+       title="<%= app_ladder_position_sentence(card) %>"><%= app_ladder_position_label(card) %></div>
+
+  <%# THE QUIET LINE — the whole of a resting card's middle. One statement of when this
+      app last reached production, standing where the meter would be. It is the reason
+      the dimming is safe to do: "at rest" alone could mean "nothing is reporting", and
+      "shipped 3h ago" cannot. %>
+  <% if at_rest %>
+    <div class="mb-2.5 rounded border border-subtle bg-inset px-2 py-1.5 text-[10px] text-muted"
+         data-test="app-ladder-at-rest">
+      nothing waiting · <span data-test="app-ladder-shipped"><%= app_ladder_shipped_note(card) %></span>
+    </div>
   <%# The CI meter. Rendered only when checks were actually ingested — an absent
       suite must not draw an empty rail that reads as "0 of 0 passed". %>
-  <% if progress.present? %>
+  <% elsif progress.present? %>
     <div class="mb-2.5" data-test="app-ladder-ci">
       <%# The label NAMES the lane, not a generic "CI". On a multi-lane repo the meter
           counts one workflow by design, so saying which one is what stops a reader
@@ -90,7 +135,7 @@
       what the meter leaves out. A red sibling lane is then visible here instead of
       hiding behind a green meter, which is the contradiction this row shipped with.
       Empty for every single-lane repo, so an app card gains nothing to read. %>
-  <% others = card.active_rung&.uncounted_lanes || [] %>
+  <% others = at_rest ? [] : (card.active_rung&.uncounted_lanes || []) %>
   <% if others.any? %>
     <div class="mb-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px]"
          data-test="app-ladder-other-lanes">
@@ -108,40 +153,56 @@
     </div>
   <% end %>
 
-  <%# The ladder badges, under the meter. %>
+  <%# THE LADDER, drawn as ONE PROGRESS BAR in three segments. Same shape the badge row
+      had — three equal pills reading up the ladder — with the colour doing a different
+      job: it now says WHERE THE WORK IS, and the glyph inside says what CI thought.
+      Everything is precomputed by Ci::AppLadder::Card#track; the view draws, it does
+      not derive. %>
   <div class="flex items-stretch gap-1"
        data-test="app-ladder-suite"
+       data-furthest="<%= card.furthest_rung %>"
        role="group"
        aria-label="<%= app_ladder_suite_summary(card) %>">
-    <% Ci::AppLadder::RUNGS.each do |branch| %>
-      <% rung = card.rung(branch) %>
-      <% next if rung.blank? %>
-      <% tone = app_ladder_rung_tone(rung.state) %>
+    <% card.track.each do |node| %>
+      <% tone = app_ladder_segment_tone(node) %>
+      <% glyph = app_ladder_rung_glyph(node[:state]) %>
+      <% count = app_ladder_rung_count(node) %>
       <div class="relative flex-1 min-w-0 overflow-hidden rounded border <%= tone[:border] %> bg-inset"
            data-test="app-ladder-rung"
-           data-branch="<%= branch %>"
-           data-state="<%= rung.state %>"
-           title="<%= app_ladder_rung_title(rung) %>">
-        <%# A TINT, never a solid block — the label rides on top of it. Same 15/30
-            split the release meter measured at 5.3:1 or better in both themes. %>
+           data-branch="<%= node[:branch] %>"
+           data-state="<%= node[:state] %>"
+           data-progress="<%= node[:progress] %>"
+           data-filled="<%= node[:filled] %>"
+           data-parked="<%= node[:parked] %>"
+           title="<%= app_ladder_segment_title(node) %>">
+        <%# A TINT, never a solid block — the label rides on top of it. Same 15/30 split
+            the release meter measured at 5.3:1 or better in both themes. %>
         <div class="absolute inset-0 <%= tone[:fill] %> opacity-15 dark:opacity-30"
              data-test="app-ladder-rung-fill"></div>
         <div class="relative flex items-center justify-center gap-1 px-1.5 py-1 <%= tone[:text] %>">
-          <% if rung.state == :pending %>
+          <% if glyph == :spinner %>
             <svg class="h-2 w-2 shrink-0 animate-spin motion-reduce:animate-none" fill="none" viewBox="0 0 24 24" aria-hidden="true">
               <circle class="opacity-25" cx="12" cy="12" r="9" stroke="currentColor" stroke-width="3"/>
               <path class="opacity-90" d="M12 3a9 9 0 0 1 9 9" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
             </svg>
-          <% elsif rung.state == :green %>
+          <% elsif glyph == :check %>
             <svg class="h-2 w-2 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="4" d="M4.5 12.75l6 6 9-13.5"/>
             </svg>
-          <% elsif %i[red conflicted].include?(rung.state) %>
+          <% elsif glyph == :cross %>
             <svg class="h-2 w-2 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="4" d="M6 18 18 6M6 6l12 12"/>
             </svg>
           <% end %>
-          <span class="truncate text-[10px] font-medium leading-none"><%= branch %></span>
+          <span class="truncate text-[10px] font-medium leading-none"><%= node[:branch] %></span>
+          <%# The count rides the segment it describes. The old footnote said "2 on
+              release" in the smallest text on the card, under a badge that could not
+              show it. %>
+          <% if count %>
+            <span class="shrink-0 rounded-sm bg-current/15 px-1 text-[10px] font-semibold leading-none tabular-nums"
+                  data-test="app-ladder-parked"
+                  data-branch="<%= node[:branch] %>"><%= count %></span>
+          <% end %>
         </div>
       </div>
     <% end %>
@@ -165,6 +226,9 @@
       THE EXCLUDED COUNT IS NOT OPTIONAL. The 60-minute cut is what keeps interrupted
       reviews out of the average, so the card must say how many it dropped or the
       average is a claim with its evidence hidden. %>
+  <%# KEPT ON A RESTING CARD, unlike the meter above. Two muted lines of board-derived
+      flow history are not what makes a card loud, and a quiet board is precisely when
+      "how long does review take on this app" is worth reading. %>
   <% roll = card.review %>
   <div class="mt-2.5 border-t border-subtle pt-2"
        data-test="app-ladder-review"
@@ -182,17 +246,9 @@
          data-test="app-ladder-review-note"><%= app_ladder_review_note(roll) %></div>
   </div>
 
-  <%# Parked work — how many tasks sit at each rung right now. Derived from the
-      board's `merged` column, so it drains on its own as a sweep and then a ship
-      advance the stamps. %>
-  <% parked = Ci::AppLadder::RUNGS.filter_map { |b| [b, card.rung(b)&.parked_count.to_i] if card.rung(b)&.parked_count.to_i&.positive? } %>
-  <% if parked.any? %>
-    <div class="mt-2 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-muted" data-test="app-ladder-parked-row">
-      <% parked.each do |branch, count| %>
-        <span data-test="app-ladder-parked" data-branch="<%= branch %>">
-          <span class="tabular-nums font-medium"><%= count %></span> on <%= branch %>
-        </span>
-      <% end %>
-    </div>
-  <% end %>
+  <%# THE PARKED FOOTNOTE IS GONE — folded into the track's node labels above.
+      It said the same thing twice ("2 on release" under a `release` badge that could
+      not show it), and as a footnote it was the smallest text on the card carrying the
+      one fact the operator actually scans for. It now rides on the node it describes.
+  %>
 <% end %>

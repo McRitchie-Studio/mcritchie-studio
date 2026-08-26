@@ -74,23 +74,142 @@ test("the board beneath the ladder row still renders", async ({ page }) => {
 // appear ONLY on a rung whose state is green. This is the honesty contract at the
 // pixel layer — a stale or never-built rung wearing the verified tint would read as a
 // pass the suite never performed, and no server-side tier can see the class landed.
-test("only a green rung wears the verified fill", async ({ page }) => {
+test("the fill colours mean what progress says, never what CI says", async ({ page }) => {
   await page.goto("/deployments");
 
-  const rungs = page.locator("[data-test='app-ladder-row'] [data-test='app-ladder-rung']");
-  const count = await rungs.count();
+  const nodes = page.locator("[data-test='app-ladder-row'] [data-test='app-ladder-rung']");
+  const count = await nodes.count();
   expect(count).toBeGreaterThan(0);
 
-  for (let i = 0; i < count; i += 1) {
-    const rung = rungs.nth(i);
-    const state = await rung.getAttribute("data-state");
-    const fillClass =
-      (await rung.locator("[data-test='app-ladder-rung-fill']").getAttribute("class")) || "";
+  // READ VIA evaluateAll, NOT getAttribute. An UNFILLED node draws no fill element at
+  // all, and `locator.getAttribute()` on an empty locator AUTO-WAITS for the element
+  // to appear rather than resolving to null — so the obvious spelling hangs for the
+  // full 30s timeout on the first unfilled rung. evaluateAll returns [] instead, which
+  // is the correct reading: no work reached that rung, so there is no tint to check.
+  const pairs = await nodes.evaluateAll((els) =>
+    els.map((el) => ({
+      state: el.getAttribute("data-state"),
+      progress: el.getAttribute("data-progress"),
+      fill: el.querySelector("[data-test='app-ladder-rung-fill']")?.getAttribute("class") || "",
+    }))
+  );
 
-    if (fillClass.includes("bg-emerald-500")) {
-      expect(state, "the verified fill may only appear on a green rung").toBe("green");
+  for (const { state, progress, fill } of pairs) {
+    if (fill.includes("bg-emerald-500")) {
+      // Emerald is now a PROGRESS claim ("the work moved through here"), so it may
+      // only sit on a rung the work reached — and never on a failing one, because a
+      // red rung takes the colour back off progress.
+      expect(progress, "emerald claims the work moved through this rung").toBe("passed");
+      expect(["red", "conflicted"], "a failing rung must never wear emerald").not.toContain(state);
+    }
+    if (fill.includes("bg-amber-500")) {
+      expect(progress, "amber claims work is sitting on this rung").toBe("here");
     }
   }
+});
+
+// THE BAR'S OWN CONTRACT, at the pixel layer: colour says WHERE THE WORK IS and the
+// glyph says what CI thought of that rung. This is the assertion that keeps the two
+// from collapsing back into one channel — a reached rung behind an unreached one would
+// mean the bar drew a gap, which the frontier rule makes impossible.
+test("the coloured run is contiguous from the first rung to the frontier", async ({ page }) => {
+  await page.goto("/deployments");
+
+  const cards = page.locator("[data-test='app-ladder-row'] [data-test='app-ladder-card']");
+  const cardCount = await cards.count();
+  expect(cardCount).toBeGreaterThan(0);
+
+  for (let i = 0; i < cardCount; i += 1) {
+    const card = cards.nth(i);
+    const repo = await card.getAttribute("data-repo");
+    const furthest = await card.getAttribute("data-furthest");
+    expect(["accepted", "release", "main"], `${repo} must name its frontier`).toContain(furthest);
+
+    const progress = await card
+      .locator("[data-test='app-ladder-rung']")
+      .evaluateAll((els) => els.map((el) => el.getAttribute("data-progress")));
+
+    const known = ["passed", "here", "unreached"];
+    expect(progress.filter((p) => !known.includes(p)), `${repo} drew an unknown progress`).toEqual([]);
+
+    // Contiguous from the left: once a rung is unreached, none after it is reached.
+    const reached = progress.map((p) => p !== "unreached");
+    const firstGap = reached.indexOf(false);
+    if (firstGap !== -1) {
+      expect(
+        reached.slice(firstGap).some(Boolean),
+        `${repo} drew a gap in the bar — the frontier rule makes that impossible`
+      ).toBe(false);
+    }
+
+    expect(
+      reached.filter(Boolean).length,
+      `${repo} colours up to its frontier`
+    ).toBe(["accepted", "release", "main"].indexOf(furthest) + 1);
+
+    // `main` IS ARRIVAL, NEVER WAITING — nothing parks there, so it must not read
+    // amber; a drained app would otherwise end on "still going" over shipped work.
+    expect(progress[2], `${repo} must not draw main as work waiting`).not.toBe("here");
+  }
+});
+
+// THE BLUE-BOX ASK, in a browser. A resting card dims, drops its meter, and still
+// says one thing — a dimmed card saying nothing is indistinguishable from a broken
+// one. Skipped when the live board happens to have no resting repo; the component
+// and integration tiers own that case unconditionally.
+test("a resting card dims, drops its meter, and still names its last ship", async ({ page }) => {
+  await page.goto("/deployments");
+
+  const resting = page.locator(
+    "[data-test='app-ladder-row'] [data-test='app-ladder-card'][data-at-rest='true']"
+  );
+  const count = await resting.count();
+  test.skip(count === 0, "no repo is at rest on this board right now");
+
+  const card = resting.first();
+  await expect(card).toHaveClass(/opacity-60/);
+  await expect(card.locator("[data-test='app-ladder-ci']")).toHaveCount(0);
+  await expect(card.locator("[data-test='app-ladder-at-rest']")).toHaveCount(1);
+
+  const shipped = ((await card.locator("[data-test='app-ladder-shipped']").textContent()) || "").trim();
+  expect(shipped, "a resting card must state when it last shipped").toMatch(/^shipped/);
+
+  // A resting card is drained by definition, so its track is fully solid.
+  const filled = await card
+    .locator("[data-test='app-ladder-rung']")
+    .evaluateAll((els) => els.map((el) => el.getAttribute("data-filled")));
+  expect(filled).toEqual(["true", "true", "true"]);
+});
+
+// Resting cards sink. The row is sorted worst-first, and rest is the far end of that
+// order — so no resting card may appear before a card still holding work.
+test("resting cards sort behind every card that still holds work", async ({ page }) => {
+  await page.goto("/deployments");
+
+  const flags = await page
+    .locator("[data-test='app-ladder-row'] [data-test='app-ladder-card']")
+    .evaluateAll((els) => els.map((el) => el.getAttribute("data-at-rest") === "true"));
+
+  const firstResting = flags.indexOf(true);
+  if (firstResting !== -1) {
+    expect(
+      flags.slice(firstResting).every(Boolean),
+      "an active card sorted behind a resting one"
+    ).toBe(true);
+  }
+});
+
+// Every card states its position in words, not only as a diagram.
+test("every card names where it sits in the devops process", async ({ page }) => {
+  await page.goto("/deployments");
+
+  const positions = await page
+    .locator("[data-test='app-ladder-row'] [data-test='app-ladder-position']")
+    .evaluateAll((els) => els.map((el) => el.getAttribute("data-position")));
+
+  expect(positions.length).toBeGreaterThan(0);
+  const known = ["attention", "in_release", "queued", "at_rest"];
+  expect(positions.filter((p) => !known.includes(p))).toEqual([]);
 });
 
 // A rung being verified right now is the one moving part on the card.
