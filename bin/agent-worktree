@@ -2690,8 +2690,20 @@ def run_reclaim(app = nil, yes: false)
   # judged on stale evidence. A .git directory is required either way, which is
   # also what keeps a bare directory out of the loop.
   (app ? [app] : apps.values + discovered_worktree_configs).each do |config|
-    next unless Dir.exist?(File.join(config.fetch("repo"), ".git"))
-    sh("git", "-C", config.fetch("repo"), "fetch", "origin", "--quiet", allow_fail: true)
+    repo = config.fetch("repo")
+    next unless Dir.exist?(File.join(repo, ".git"))
+
+    status = origin_fetch_status(repo)
+    next if status == :ok
+
+    ORIGIN_UNREACHABLE[repo] = status
+    puts(if status == :gone
+           "note: #{File.basename(repo)} — origin no longer exists on the remote (retired repo); " \
+             "skipped, and its desks are withheld rather than reclaimed"
+         else
+           "note: #{File.basename(repo)} — origin could not be reached; " \
+             "skipped, and its desks are withheld rather than reclaimed"
+         end)
   end
 
   candidates, withheld = cleanup_partition(app)
@@ -3645,8 +3657,67 @@ end
 # priority — a desk held by any one of them is held, and each reason is true on its own.
 # claim_hold runs first because it is the one that spends the board read the next three
 # reuse; pr_hold runs last because it is the only one that may reach the network.
+# Repos whose origin this run could not consult: { repo_path => :gone | :error }.
+# Written by the reclaim sweep's fetch pass, read by origin_hold below.
+ORIGIN_UNREACHABLE = {}
+
+# A remote that answers "this repository does not exist" — deleted or renamed.
+# Kept NARROW on purpose: an auth failure or a dead network is :error, not :gone,
+# because the two deserve different words to the operator. Both withhold.
+ORIGIN_GONE_MARKERS = ["repository not found"].freeze
+
+# Pure, so the classification is provable without a network. The fixture in its
+# test is the VERBATIM stderr this repo produced for acquisition-studio.
+def origin_gone?(output)
+  text = output.to_s.downcase
+  ORIGIN_GONE_MARKERS.any? { |marker| text.include?(marker) }
+end
+
+# Fetch a repo's origin, classifying the failure instead of leaking git's stderr.
+#
+# WHY. The reclaim sweep fetched with allow_fail and let stderr through, so on any
+# machine holding a RETIRED checkout every run opened with
+#   remote: Repository not found.
+#   fatal: repository 'https://github.com/…/acquisition-studio.git/' not found
+# The run was fine — it skipped the repo — but the first thing a cleanup tool
+# prints should not look like a crash, and an operator reading the head of the
+# output cannot tell noise from failure.
+def origin_fetch_status(repo_path)
+  ok, out, err, = capture_status("git", "-C", repo_path, "fetch", "origin", "--quiet")
+  return :ok if ok
+
+  # BOTH STREAMS. capture_status returns stdout and stderr SEPARATELY, and git
+  # writes "remote: Repository not found." to STDERR — so classifying on stdout
+  # alone read every deleted remote as a generic error. The pure classifier's
+  # unit test could not catch that (it is handed a string); the live dry run did.
+  origin_gone?("#{out}\n#{err}") ? :gone : :error
+end
+
+# WITHHOLD anything whose origin could not be consulted this run.
+#
+# This is the same doctrine the rest of the file runs on — an uncertain answer
+# resolves toward ALIVE. Every other reclaim signal (merged? landed on base?) is
+# read against remote-tracking refs, and if the fetch did not happen those refs
+# are STALE. Stale evidence is not permission to delete: a desk would be judged
+# "merged and safe" on refs that stopped moving whenever the remote went away.
+def origin_hold(record)
+  app = record[:app]
+  repo = app.is_a?(Hash) ? app["repo"] : nil
+  status = repo && ORIGIN_UNREACHABLE[repo]
+  return nil unless status
+
+  if status == :gone
+    "origin repository no longer exists on the remote — merge evidence cannot be refreshed, " \
+      "so nothing in this checkout is provably reclaimable"
+  else
+    "origin could not be reached this run — merge evidence is stale, and stale evidence is " \
+      "not permission to delete"
+  end
+end
+
 def reclaim_hold(record, fresh: false, announce: false)
-  claim_hold(record, fresh: fresh, announce: announce) ||
+  origin_hold(record) ||
+    claim_hold(record, fresh: fresh, announce: announce) ||
     review_hold(record) ||
     desk_hold(record, announce: announce) ||
     pr_hold(record, announce: announce)
