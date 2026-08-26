@@ -703,11 +703,13 @@ module ApplicationHelper
   end
 
   # Member repos, producer-first (gems before apps), one lane each.
+  #
+  # Delegates to Release#member_repos rather than re-deriving the set here. The app
+  # ladder asks the SAME question ("is this repo in the active release") to decide
+  # at-rest, and two copies of that derivation is exactly how the tracker panel and
+  # the card below it come to disagree about the same repo.
   def release_lane_repos(release)
-    # EVERY repo each member names — a two-repo member earns a lane per repo. It
-    # read the singular #release_repo, so the /deployments tracker under-reported a
-    # multi-repo release exactly as the pipeline under-promoted it (2026-08-13).
-    release.ordered_members.flat_map(&:release_repos).uniq
+    release.member_repos
   end
 
   def release_lane_phases(release, repo, ci, gem)
@@ -1284,12 +1286,139 @@ module ApplicationHelper
 
   # One sentence naming the whole strip, so assistive tech gets the summary rather
   # than three branch names and three state words in sequence.
+  #
+  # It LEADS WITH POSITION now, because that is what the track draws and a reader who
+  # cannot see the fill would otherwise get three CI verdicts and no idea where the
+  # work actually is — the exact gap the old badge row had on screen.
   def app_ladder_suite_summary(card)
     parts = Ci::AppLadder::RUNGS.filter_map do |branch|
       rung = card.rung(branch)
       "#{branch} #{rung.label}" if rung
     end
-    "#{card.repo} test suite — #{parts.join(", ")}"
+    "#{card.repo} — #{app_ladder_position_sentence(card)}. Test suite: #{parts.join(", ")}"
+  end
+
+  # --- The ladder TRACK -----------------------------------------------------
+  #
+  # The three rungs drawn as one connected path instead of three separate badges.
+  # Each node carries TWO facts that the old badge collapsed into one colour:
+  #
+  #   FILL      — has work reached this rung? (Ci::AppLadder::Card#track)
+  #   RING/ICON — what did CI say about this rung? (the rung's own state)
+  #
+  # Keeping them apart is the point. A green ring on an unfilled node reads "passing
+  # and empty", which is what `release` looks like between sweeps; one colour could
+  # never say both, so the row could not answer "where is this app in the process".
+
+  # The card's position, as the one word printed beside the repo name.
+  APP_LADDER_POSITION_LABELS = {
+    attention: "needs attention",
+    in_release: "in release",
+    queued: "queued",
+    verifying: "verifying",
+    at_rest: "at rest"
+  }.freeze
+
+  APP_LADDER_POSITION_TONES = {
+    attention: "text-rose-700 dark:text-rose-300",
+    in_release: "text-primary",
+    queued: "text-amber-700 dark:text-amber-300",
+    verifying: "text-amber-700 dark:text-amber-300",
+    at_rest: "text-muted"
+  }.freeze
+
+  def app_ladder_position_label(card) = APP_LADDER_POSITION_LABELS.fetch(card.position, "on the ladder")
+
+  def app_ladder_position_tone(card) = APP_LADDER_POSITION_TONES.fetch(card.position, "text-muted")
+
+  # The long form, for the hover title and the accessible summary — where the
+  # precision the one-word label deliberately drops lives.
+  def app_ladder_position_sentence(card)
+    case card.position
+    # "failing or conflicted", not "failing" — #needs_attention? covers both, and
+    # naming only one would put a wrong word on a conflicted rung.
+    when :attention  then "a rung needs attention — its suite is failing or conflicted"
+    when :in_release then "in the open release candidate"
+    # READS THE FRONTIER, not the accepted count. `:queued` means "holds work outside
+    # the open release", and that work can sit on EITHER counted rung — a repo carrying
+    # `release` stamps with no active candidate behind them is queued with nothing at
+    # `accepted` at all, and quoting the accepted count there would print "0 tasks".
+    when :queued     then "#{pluralize(card.parked_at(card.furthest_rung), 'task')} waiting on #{card.furthest_rung}"
+    when :verifying  then "nothing waiting — a suite is still running on this repo"
+    when :at_rest    then "at rest — nothing waiting, not in the next release"
+    else "on the ladder"
+    end
+  end
+
+  # THE COUNT INSIDE THE SEGMENT — how many tasks are sitting on this rung.
+  #
+  # Only where there ARE some. An amber segment already says work is here; the number is
+  # the remaining fact, and printing "0" on the rungs that hold nothing would put three
+  # numbers on a bar whose whole job is to be read at a glance.
+  #
+  # `main` never carries one: nothing parks there (PARKED_STAMP omits it on purpose —
+  # shipped work has LEFT the ladder). The one thing `main` has to report is WHEN the
+  # app last arrived, and that rides the at-rest line and the hover title instead.
+  def app_ladder_rung_count(node)
+    node[:parked].positive? ? node[:parked] : nil
+  end
+
+  # "shipped 3h ago", or just "shipped" when the last ship predates the scanned
+  # window. Never a blank and never a guessed time — see Ci::AppLadder.shipped_index.
+  def app_ladder_shipped_note(card)
+    at = card.last_shipped_at
+    return "shipped" if at.blank?
+
+    "shipped #{compact_time_ago(at)}"
+  end
+
+
+  # THE SEGMENT'S COLOUR — PROGRESS, not the CI verdict.
+  #
+  #   emerald   :passed     — the work moved through this rung (or arrived, at `main`)
+  #   amber     :here       — the work is sitting on this rung right now
+  #   faded     :unreached  — it has not got this far
+  #   rose                  — CI FAILED here, and that is the one thing loud enough to
+  #                           take the colour back off progress. A red rung is the only
+  #                           state the operator has to act on before anything else
+  #                           moves, so it must not be legible only as a small glyph.
+  #
+  # Everything else CI has to say — passing, running, never built — rides the glyph
+  # inside the segment (app_ladder_rung_glyph), and the check-by-check detail rides the
+  # meter above. Three layers, each answering a different question about the same rung.
+  def app_ladder_segment_tone(node)
+    return APP_LADDER_TONES[:red] if %i[red conflicted].include?(node[:state])
+
+    case node[:progress]
+    when :passed then APP_LADDER_TONES[:green]
+    when :here   then APP_LADDER_TONES[:pending]
+    else APP_LADDER_FADED
+    end
+  end
+
+  # THE GLYPH — the CI verdict the colour no longer carries.
+  #
+  # :none is not an oversight and must not become a tick. Nothing was ingested for that
+  # branch, and an absence wearing the pass glyph would assert a verification nobody
+  # performed — the same rule Ci::LadderRung states for :not_built.
+  def app_ladder_rung_glyph(state)
+    case state.to_sym
+    when :green then :check
+    when :pending then :spinner
+    when :red, :conflicted then :cross
+    else :none
+    end
+  end
+
+  # The segment's hover text: where the work is, then what CI said. Both, because the
+  # segment now draws both and either alone is half the story.
+  def app_ladder_segment_title(node)
+    where = case node[:progress]
+            when :passed then "work has moved through #{node[:branch]}"
+            when :here   then "#{pluralize(node[:parked], 'task')} sitting on #{node[:branch]}"
+            else "work has not reached #{node[:branch]} yet"
+            end
+    "#{where} · #{app_ladder_rung_title(node[:rung])}"
   end
 
   # The review roll's VALUE — "12m avg", or the words that must stand where an

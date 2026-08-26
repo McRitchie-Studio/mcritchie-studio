@@ -106,6 +106,141 @@ class FullSuiteCheckTest < Minitest::Test
     [out, $?.exitstatus]
   end
 
+  # A repo fixture that IDENTIFIES as a given slug. cert_repo is resolved from the
+  # checkout's origin remote (CertRootGuard.repo_of_checkout), so a waiver test
+  # cannot be written without one — the temp repo would otherwise answer with its
+  # random tmpdir name and no registry row would ever match.
+  def with_repo_named(slug)
+    with_repo do |dir|
+      assert system("git -C #{dir} remote add origin " \
+                    "https://github.com/McRitchie-Studio/#{slug}.git >/dev/null 2>&1"),
+             "could not name the fixture repo #{slug}"
+      yield dir
+    end
+  end
+
+  # --- the declared lint waiver, EXECUTED ----------------------------------------
+  #
+  # These replace a guard that only grepped this script's source text. That guard
+  # passed unchanged while the exit decision was mutated to ignore the rubocop lane
+  # entirely — a cert that cannot fail, which is the one outcome the waiver must
+  # never produce. Source-text assertions cannot see that; running the thing can.
+
+  def test_a_waived_repo_omits_the_rubocop_lane_instead_of_running_it
+    with_repo_named("studio-engine") do |dir|
+      # rubocop_cmd is FALSE on purpose: if the waiver merely recorded a green
+      # stamp without honouring it, or ran the lane anyway, this run goes red.
+      out, code = run_check(dir, test_cmd: "true", rubocop_cmd: "false")
+
+      assert_equal 0, code, "a waived repo with a green suite must certify:\n#{out}"
+      assert_equal 1, out.scan(/\[full-suite@\h+:studio-engine\]/).length,
+        "exactly one full-suite evidence line is owed:\n#{out}"
+      refute_match(/\[rubocop@/, out,
+        "a waived lane must be OMITTED, never stamped — a faked green is the defect " \
+        "this whole task exists to avoid:\n#{out}")
+    end
+  end
+
+  def test_a_waived_repo_with_a_red_suite_still_fails_and_records_nothing
+    with_repo_named("studio-engine") do |dir|
+      out, code = run_check(dir, test_cmd: "false", rubocop_cmd: "true")
+
+      refute_equal 0, code, "waiving the LINT lane must not waive the SUITE:\n#{out}"
+      refute_match(/\[full-suite@/, out, "a red suite records no evidence:\n#{out}")
+      refute_match(/\[rubocop@/, out, "and certainly not a rubocop line:\n#{out}")
+    end
+  end
+
+  # THE WAIVER IS DECLARED, NEVER INFERRED — asserted as a PROPERTY, not a spelling.
+  # An earlier version of this guard grepped for the words a probe might be written
+  # with, which any rephrasing defeats (`command -v rubocop` slipped straight past
+  # it). This asks the only question that matters: a repo with NO waiver whose
+  # rubocop cannot even be executed must FAIL CLOSED, not quietly skip the lane.
+  def test_an_unwaived_repo_whose_rubocop_is_missing_fails_closed
+    with_repo_named("turf-monster") do |dir|
+      out, code = run_check(dir, test_cmd: "true",
+                                 rubocop_cmd: File.join(dir, "definitely-not-installed"))
+
+      refute_equal 0, code,
+        "a missing rubocop must be a RED lane, never an inferred waiver — inferring one " \
+        "turns every broken rubocop install into a silently skipped gate:\n#{out}"
+      refute_match(/\[rubocop@/, out, "and it records no rubocop evidence:\n#{out}")
+    end
+  end
+
+  # --- the registry-resolved TEST lane ------------------------------------------
+  #
+  # The lint waiver was only the THIRD of three ENOENT crash points. On a default
+  # run a gem repo died earlier — at the test-db-reset lane and then the suite lane,
+  # both `bin/rails`, which a gem does not have — so the waiver code was never even
+  # reached. Acceptance said "a waived repo can produce a full cert"; until this
+  # resolved, it could only do so with two hand-passed env overrides.
+
+  def test_a_gem_repo_takes_its_test_command_from_the_registry
+    with_repo_named("studio-engine") do |dir|
+      log = File.join(dir, "order.log")
+      # No FULL_SUITE_TEST_CMD: this is the UNAIDED path, which is the whole point.
+      # reset_cmd would append "reset" if the lane ran; a gem has no test DB, so it
+      # must not.
+      # The registry names bin/release-check; the fixture must actually carry one.
+      File.write(File.join(dir, "release-check-stub"), "#!/bin/sh\nexit 0\n")
+      File.chmod(0o755, File.join(dir, "release-check-stub"))
+      Dir.mkdir(File.join(dir, "bin")) unless Dir.exist?(File.join(dir, "bin"))
+      File.write(File.join(dir, "bin/release-check"), "#!/bin/sh\nexit 0\n")
+      File.chmod(0o755, File.join(dir, "bin/release-check"))
+
+      out, code = run_check_unaided(dir, reset_cmd: append_command(log, "reset"))
+
+      assert_equal 0, code, "an unaided cert must complete for a gem repo:\n#{out}"
+      refute File.exist?(log),
+        "the Rails test-DB reset lane must not run for a gem — it has no test database " \
+        "and no bin/rails to purge one with"
+      assert_match(/\[full-suite@\h+:studio-engine\]/, out,
+        "the suite lane still owes its evidence line:\n#{out}")
+    end
+  end
+
+  def test_an_app_repo_still_resolves_its_test_command_from_ci
+    with_repo_named("turf-monster") do |dir|
+      out, code = run_check_unaided(dir)
+
+      # turf-monster has no ci.yml in this fixture, so CiTestCommand must REFUSE.
+      # What matters is that it is still ASKED — the registry path must not have
+      # quietly become the answer for every repo.
+      refute_equal 0, code, "an app repo with no ci.yml must still be refused:\n#{out}"
+    end
+  end
+
+  # A lane command that does not exist used to raise an unrescued Errno::ENOENT
+  # out of Process.spawn — mid-run, AFTER the g1_cert attempt had opened, which
+  # nothing then closed. The builder got a backtrace instead of a verdict and the
+  # board got a lane stuck open. It must be an ordinary red lane instead.
+  def test_a_lane_command_that_cannot_launch_is_a_red_lane_not_a_crash
+    with_repo_named("turf-monster") do |dir|
+      missing = File.join(dir, "no-such-command")
+      out, code = run_check(dir, test_cmd: missing, rubocop_cmd: "true", merge_stderr: true)
+
+      refute_equal 0, code, "an unlaunchable lane must fail the cert:\n#{out}"
+      refute_match(/Errno::ENOENT|cert_process\.rb:\d+:in/, out,
+        "it must not surface as a Ruby backtrace — that is the crash this replaced:\n#{out}")
+      assert_match(/COULD NOT RUN/, out,
+        "and it must say the COMMAND is the problem, not the diff:\n#{out}")
+      refute_match(/\[full-suite@/, out, "nothing may be certified:\n#{out}")
+    end
+  end
+
+  # Like run_check, but WITHOUT FULL_SUITE_TEST_CMD — the path a builder actually
+  # runs, and the one the acceptance criterion is written about.
+  def run_check_unaided(dir, reset_cmd: "true")
+    env = child_env(
+      "FULL_SUITE_ROOT" => dir,
+      "FULL_SUITE_TEST_DB_RESET_CMD" => reset_cmd,
+      "FULL_SUITE_RUBOCOP_CMD" => "true"
+    )
+    out = IO.popen(env, "#{BIN} --print 2>&1", &:read)
+    [out, $?.exitstatus]
+  end
+
   def append_command(path, line)
     script = "File.open(ARGV.fetch(0), 'a') { |file| file.puts(ARGV.fetch(1)) }"
     "#{RbConfig.ruby.shellescape} -e #{script.shellescape} #{path.shellescape} #{line.shellescape}"

@@ -53,6 +53,14 @@ module CertProcess
     def timeout?
       outcome == :timeout
     end
+
+    # The lane never STARTED — the command does not exist, or is not executable.
+    # A third verdict alongside green/red/hung, because it is a different repair:
+    # nothing ran, so the diff was never judged, and the fix is the COMMAND, not
+    # the code.
+    def unlaunchable?
+      outcome == :unlaunchable
+    end
   end
 
   # Run `cmd` in its own process group; return true when it exits 0.
@@ -85,7 +93,22 @@ module CertProcess
   # nil (or non-positive) means no ceiling and an ordinary blocking wait, exactly as before.
   def self.run_bounded(env, cmd, chdir:, root: nil, lane: nil, db: nil, ps: CertOrphanGuard.ps_bin,
                        timeout: nil, on_signal: nil)
-    pid = Process.spawn(env, cmd, chdir: chdir, pgroup: true)
+    # A COMMAND THAT DOES NOT EXIST IS A RED LANE, NOT A CRASH. Process.spawn
+    # raises Errno::ENOENT, and unrescued it took the whole cert down with a
+    # stack trace — mid-run, AFTER the g1_cert attempt had opened, which no
+    # `emit_gate --failed` then closed. The board reads that as a STALLED lane
+    # and the builder gets a backtrace instead of a verdict.
+    #
+    # It is reachable for real: a gem repo whose registry row names a
+    # `release_check` the checkout does not carry, a lane command renamed in one
+    # repo and not another, a bin/ script that lost its +x bit. Reporting it as a
+    # lane result keeps the ordinary failure path — evidence withheld, gate
+    # closed failed, exit non-zero — and names the actual repair.
+    pid = begin
+      Process.spawn(env, cmd, chdir: chdir, pgroup: true)
+    rescue Errno::ENOENT, Errno::EACCES, Errno::ENOEXEC => e
+      return Result.new(ok: false, outcome: :unlaunchable, detail: "#{cmd}: #{e.message}")
+    end
     pgid = begin
       Process.getpgid(pid)
     rescue Errno::ESRCH

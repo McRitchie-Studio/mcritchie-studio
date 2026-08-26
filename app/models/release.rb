@@ -459,6 +459,19 @@ class Release < ApplicationRecord
     Release::Ordering.producer_first(tasks.to_a)
   end
 
+  # EVERY repo this release's members name, producer-first and deduped — the set of
+  # repos this candidate actually moves.
+  #
+  # Reads #release_repos (plural) rather than #release_repo, because a two-repo member
+  # is "in" BOTH of them; the singular under-reported a multi-repo release exactly as
+  # the pipeline under-promoted it (2026-08-13, see Task#release_repos). Two callers
+  # share it so they can never disagree about membership: the /deployments per-repo
+  # tracker lanes (ApplicationHelper#release_lane_repos) and the app-ladder card, which
+  # uses it to decide that a repo is IN FLIGHT rather than at rest.
+  def member_repos
+    ordered_members.flat_map(&:release_repos).uniq
+  end
+
   # True when EVERY member of this release ships as a published gem — a gem-only
   # release, its own candidate (published to RubyGems, no app deploy). Guards an
   # empty member set to FALSE so a just-created release with no members yet is
