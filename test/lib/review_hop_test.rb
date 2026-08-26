@@ -60,6 +60,35 @@ class ReviewHopTest < Minitest::Test
 
   # [unit] MISSING_EMAIL: no reviewer resolves, engine redirects to the sign-in page.
   # This is the case the old chained-curl recipe degraded into a `/signin 200` pass.
+  # [unit] the OTHER magic-link shape is consumable too.
+  #
+  # turf-monster overrides the engine's Studio::LinksController with its own
+  # (inheriting ::MagicLinksController) so account creation stays on its single
+  # audited, GATED path. Both /l/:token and /magic_link/:token route there, and
+  # its local-review mint answers the latter. Verified against a live stack
+  # 2026-08-26: both return 200 and render the same confirm interstitial.
+  #
+  # Before this, the checker reported that WORKING hop as BROKEN — a false
+  # negative on the very gate building-sop Step 4 requires green before a task
+  # may be marked waiting-for-approval.
+  def test_mint_passes_on_the_app_local_magic_link_path
+    v = ReviewHop.mint(status: 302, location: "http://localhost:3115/magic_link/abc123")
+
+    assert v.ok?, "a /magic_link/<token> mint is a working hop, not a broken one: #{v.detail}"
+    assert_equal :mint_ok, v.code
+  end
+
+  # [unit] widening the shape must not widen it to ANYTHING. A mint that lands
+  # somewhere else entirely is still the failure this leg exists to catch.
+  def test_mint_still_fails_on_an_unrelated_path
+    v = ReviewHop.mint(status: 302, location: "http://localhost:3115/contests/world-cup")
+
+    refute v.ok?, "an unrelated path must still fail — accepting two shapes is not accepting all"
+    assert_equal :mint_unexpected, v.code
+    assert_includes v.detail, "/magic_link/<token>",
+                    "the failure should name BOTH accepted shapes so the reader knows the set"
+  end
+
   def test_mint_fails_when_no_reviewer_resolves
     ReviewHop::SIGN_IN_PATHS.each do |path|
       v = ReviewHop.mint(status: 302, location: "http://localhost:3016#{path}")

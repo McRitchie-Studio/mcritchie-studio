@@ -36,7 +36,26 @@ module ReviewHop
   SIGN_IN_PATHS = %w[/login /signin].freeze
 
   # The consumable magic-link path the mint hands back (`/l/<token>`).
-  TOKEN_PATH = %r{\A/l/[^/]+\z}.freeze
+  # BOTH magic-link entry points in this ecosystem, not just the engine's.
+  #
+  # This used to be /l/ alone, and it reported a WORKING hop as BROKEN for
+  # turf-monster: that app overrides the engine's Studio::LinksController with
+  # its own (inheriting ::MagicLinksController) so account creation stays on its
+  # single audited, GATED path — the engine's generic sign_up_new must never run
+  # there. Both routes exist and both funnel through that same gated controller,
+  # so its local-review mint answers /magic_link/<token>. Verified against a live
+  # stack 2026-08-26: /l/<token> and /magic_link/<token> BOTH return 200 and both
+  # render the same confirm interstitial.
+  #
+  # WHY THIS MATTERED MORE THAN THE SPELLING: building-sop Step 4 says "do not
+  # mark a task waiting-for-approval without a green run". A false negative on a
+  # gate does not just annoy — it blocks the honest builder and teaches everyone
+  # else to ignore the gate, which is the disease the gate was built to cure.
+  #
+  # Legs 3 and 4 follow whatever path the mint returned (verify-review-hop builds
+  # token_url from the mint's own Location), so widening this does not hardcode a
+  # second assumption anywhere downstream.
+  TOKEN_PATH = %r{\A/(?:l|magic_link)/[^/]+\z}.freeze
 
   Verdict = Struct.new(:ok, :code, :detail, keyword_init: true) do
     def ok? = ok
@@ -98,7 +117,7 @@ module ReviewHop
              "which has no reviewer fallback and REQUIRES an address (re-run with " \
              "--email <an admin in THIS app>), or set Studio.local_review_email / seed an admin")
       else
-        fail(:mint_unexpected, "mint redirected to #{uri.path}, expected /l/<token>")
+        fail(:mint_unexpected, "mint redirected to #{uri.path}, expected /l/<token> or /magic_link/<token>")
       end
     end
 
