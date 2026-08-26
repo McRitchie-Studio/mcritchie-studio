@@ -92,6 +92,22 @@ done
 > **zero** — the six were `building`. Triaging from the UI would have hunted for
 > blockers that did not exist.
 
+> ### ⛔ `bin/task list` TRUNCATES AT 20 — and says nothing
+> The loop above prints the **first 20 rows of each stage only**: no total, no
+> "truncated" line, and **`--limit` is not a valid flag**. On 2026-08-26
+> `--stage shipped` showed **20** while `bin/release archive --dry-run` planned
+> **32** from the same board — a third of the column invisible.
+>
+> A stage under 20 is exact, so the lie appears only once a column grows — which
+> is precisely when you are running this SOP. Treat any stage returning exactly
+> 20 rows as truncated until proven otherwise.
+>
+> **Count from `--json`, never from the rows:**
+> ```bash
+> bin/task list --stage shipped --json |
+>   python3 -c "import json,sys; print(len(json.load(sys.stdin)))"
+> ```
+
 Now join the board to reality. **The single highest-value query in this SOP:**
 
 ```bash
@@ -186,6 +202,26 @@ below). Each returns exactly one disposition:
   > **An archived task that live code cites as live is a lie the code tells.** If
   > anything references it, either keep the task alive (park it) or repoint every
   > reference — never just archive and walk away.
+  >
+  > **But the grep only tells you there IS a hit — not what it means.** Reading
+  > every hit as blocking is the opposite error, and it freezes a `shipped`
+  > column that should drain. Open each one and ask: *does this code depend on
+  > the task being OPEN?*
+  >
+  > | Kind | Looks like | Blocks? |
+  > |---|---|---|
+  > | **Provenance** | "fixed in task `X`", "MEASURED HERE (/tasks/X)", "12 → 10 on 2026-08-21 (/tasks/X)" | **No** — records work already done |
+  > | **Live ticket** | a ceiling or threshold `X` is the open ticket to drive down | **Yes** — the case above |
+  > | **False hit** | the slug is also a feature name (`the hold-for-free-entry CTA` in `user.rb`) | **No** — not a task reference |
+  >
+  > Measured 2026-08-26: **nine of 32** shipped slugs were cited in live code;
+  > **every one was provenance or a feature name.** `clear-the-quarantine-backlog`
+  > sat in the very same `e2e_lane.yml` ceiling comment as the case above — but as
+  > a completed step ("12 → 10"), not as the driver.
+  >
+  > Provenance is safe because **archived tasks stay readable**: `bin/task show
+  > <archived-slug>` resolves, and there is no delete verb — only `move <slug>
+  > archived`. The links survive.
 - **It is persistent and will recur.** If the bug resurfaces on its own, you get
   another, better-informed chance at it. Archive; let it come back.
 - **The premise moved** and it no longer makes sense.
