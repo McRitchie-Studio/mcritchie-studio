@@ -71,7 +71,8 @@ module Api
           # from a red build: these repos deliver no Actions runs to the board at
           # all, so their PRs can never read green here no matter what GitHub says.
           render_data({ "claimed" => nil, "reason" => result.reason.to_s,
-                        "blind_repos" => result.blind_repo_list })
+                        "blind_repos" => result.blind_repo_list,
+                        "skipped_ci" => result.skipped_ci_list })
         end
       end
 

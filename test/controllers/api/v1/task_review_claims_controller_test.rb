@@ -114,6 +114,31 @@ module Api
         get api_v1_tasks_path, params: { reviewable: "1" }, headers: @headers
         assert_response :ok, "reviewable must be in INDEX_PARAMS or the index 400s it"
       end
+      # THE API BOUNDARY. The model builds `skipped_ci` and the CLI renders it, but
+      # nothing between them proved the controller actually SENDS it — and a field
+      # that stops at the boundary is a diagnostic nobody ever sees. Same wiring
+      # question as blind_repos, which is serialized two lines above it.
+      test "[integration] an empty pop carries what the board held for skipped tasks" do
+        Task.create!(title: "Ungreen Skipped Candidate", stage: "submitted",
+                     metadata: { "devops" => {
+                       "branch" => "feat/ungreen-skipped-candidate",
+                       "repositories" => ["mcritchie-studio"],
+                       "pr_url" => "https://github.com/McRitchie-Studio/mcritchie-studio/pull/9001"
+                     } })
+
+        post claim_next_review_api_v1_tasks_path,
+             params: { session: "A", nonce: "a" }, headers: @headers, as: :json
+
+        assert_response :ok
+        body = response.parsed_body.fetch("data")
+        assert_equal "no_green_ci", body["reason"], "the ungreen candidate must not be claimed"
+        entries = body["skipped_ci"]
+        refute_nil entries, "skipped_ci never crossed the API — the CLI can render nothing"
+        entry = entries.find { |e| e["slug"].to_s.include?("ungreen-skipped-candidate") }
+        refute_nil entry, "the skipped candidate is not described in the payload"
+        assert entry.key?("state"), "the state is the whole diagnostic"
+        assert entry.key?("sha"), "the head is what distinguishes a stale tip from a red build"
+      end
     end
   end
 end
