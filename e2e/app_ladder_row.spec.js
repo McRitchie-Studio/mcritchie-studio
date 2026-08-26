@@ -233,7 +233,12 @@ test("every card names where it sits in the devops process", async ({ page }) =>
     .evaluateAll((els) => els.map((el) => el.getAttribute("data-position")));
 
   expect(positions.length).toBeGreaterThan(0);
-  const known = ["attention", "in_release", "queued", "at_rest"];
+  // Every key of ApplicationHelper::APP_LADDER_POSITION_LABELS. `verifying` is in the
+  // list because Card#position RETURNS it — drained, unclaimed, suite still running is
+  // the state a repo sits in for the minutes after every merge. Omitting it did not
+  // make the sweep stricter, it made it RED on a live board that happened to be
+  // verifying, on whatever PR the lane ran against.
+  const known = ["attention", "in_release", "queued", "verifying", "at_rest"];
   expect(positions.filter((p) => !known.includes(p))).toEqual([]);
 });
 
