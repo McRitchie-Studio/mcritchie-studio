@@ -125,9 +125,10 @@ module ReviewHop
       end
     end
 
-    # LEG 3 — the confirm page (GET /l/<token>), which carries the CSRF token
-    # the consume POST needs. No token means the previous leg handed us a page
-    # that is not the confirm page, whatever its status was.
+    # LEG 3 — the confirm page (GET the path the mint returned: /l/<token> or
+    # /magic_link/<token>), which carries the CSRF token the consume POST needs.
+    # No token means the previous leg handed us a page that is not the confirm
+    # page, whatever its status was.
     def confirm(status:, body:)
       return fail(:confirm_not_ok, "confirm page answered #{status}, expected 200") unless status.to_i == 200
 
@@ -137,7 +138,7 @@ module ReviewHop
       pass(:confirm_ok, "confirm page carries a CSRF token")
     end
 
-    # LEG 4 — the consume (POST /l/<token>).
+    # LEG 4 — the consume (POST that same minted path: /l/<token> or /magic_link/<token>).
     #
     # POST and then follow the Location BY HAND. `curl -L -X POST` replays the
     # forced method across the redirect and 404s on the review path, which reads
