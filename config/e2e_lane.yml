@@ -106,7 +106,22 @@
 # pinning "12m avg" would be red everywhere but one machine.
 # MEASURED with the lister, not added by hand: `npx playwright test --list` => 126.
 # Coverage ADDED; `quarantined` is untouched.
-total_specs: 126
+#
+# 126 -> 130 on 2026-08-25: four specs ADDED to e2e/app_ladder_row.spec.js for the ladder
+# PROGRESS BAR (/tasks/draw-ladder-position-track) — the coloured run is contiguous from the
+# first rung to the frontier and `main` never draws as work waiting; the fill colours mean
+# what progress says rather than what CI says; every card dims and collapses IF AND ONLY IF
+# it is at rest; and every card names its position in the devops process.
+#
+# The at-rest spec is a BICONDITIONAL SWEEP over every card rather than a hunt for one
+# resting card, and that shape was forced by this lane rather than chosen: the first draft
+# skipped when the live board had no resting repo, and the ratchet refused the modifier —
+# correctly, since a runtime skip is invisible to a source reader. Sweeping every card is
+# strictly stronger anyway (it also catches an ACTIVE card that dims) and can never go
+# vacuous, because the board always has cards.
+# MEASURED with the lister, not added by hand: `npx playwright test --list` => 130.
+# Coverage ADDED; `quarantined` is untouched.
+total_specs: 130
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
@@ -176,7 +191,12 @@ quarantined: 10
 # Re-derived after the review-roll coverage landed:
 #   npx playwright test --list                           => 126
 #   npx playwright test --list --grep-invert @quarantine => 116
-executed: 116
+#
+# Re-derived after the ladder progress-bar coverage landed. Both halves measured, and the
+# invariant checked against them rather than assumed: 130 - 10 = 120.
+#   npx playwright test --list                           => 130
+#   npx playwright test --list --grep-invert @quarantine => 120
+executed: 120
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to

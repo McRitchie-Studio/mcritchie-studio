@@ -154,31 +154,56 @@ test("the coloured run is contiguous from the first rung to the frontier", async
 });
 
 // THE BLUE-BOX ASK, in a browser. A resting card dims, drops its meter, and still
-// says one thing — a dimmed card saying nothing is indistinguishable from a broken
-// one. Skipped when the live board happens to have no resting repo; the component
-// and integration tiers own that case unconditionally.
-test("a resting card dims, drops its meter, and still names its last ship", async ({ page }) => {
+// says one thing — a dimmed card saying nothing is indistinguishable from a broken one.
+//
+// ASSERTED AS A BICONDITIONAL OVER EVERY CARD, not by finding one resting card and
+// checking it. The first draft did the latter and skipped when the live board had none,
+// which the e2e ratchet rightly refuses: a selection modifier silently changes which
+// specs the lane runs while the shard matrix stays byte-identical. Sweeping every card
+// and asserting rest ⟺ dimmed ⟺ collapsed is strictly STRONGER anyway — it also catches
+// the opposite defect, an ACTIVE card that dims or loses its meter — and it can never go
+// vacuous, because the board always has cards.
+test("every card dims and collapses if and only if it is at rest", async ({ page }) => {
   await page.goto("/deployments");
 
-  const resting = page.locator(
-    "[data-test='app-ladder-row'] [data-test='app-ladder-card'][data-at-rest='true']"
+  const cards = page.locator("[data-test='app-ladder-row'] [data-test='app-ladder-card']");
+  const count = await cards.count();
+  expect(count, "the row must have cards for this sweep to mean anything").toBeGreaterThan(0);
+
+  const seen = await cards.evaluateAll((els) =>
+    els.map((el) => ({
+      repo: el.getAttribute("data-repo"),
+      resting: el.getAttribute("data-at-rest") === "true",
+      position: el.getAttribute("data-position"),
+      dimmed: el.className.includes("opacity-60"),
+      meters: el.querySelectorAll("[data-test='app-ladder-ci']").length,
+      restLines: el.querySelectorAll("[data-test='app-ladder-at-rest']").length,
+      shipped: (el.querySelector("[data-test='app-ladder-shipped']")?.textContent || "").trim(),
+      progress: Array.from(el.querySelectorAll("[data-test='app-ladder-rung']")).map((r) =>
+        r.getAttribute("data-progress")
+      ),
+    }))
   );
-  const count = await resting.count();
-  test.skip(count === 0, "no repo is at rest on this board right now");
 
-  const card = resting.first();
-  await expect(card).toHaveClass(/opacity-60/);
-  await expect(card.locator("[data-test='app-ladder-ci']")).toHaveCount(0);
-  await expect(card.locator("[data-test='app-ladder-at-rest']")).toHaveCount(1);
-
-  const shipped = ((await card.locator("[data-test='app-ladder-shipped']").textContent()) || "").trim();
-  expect(shipped, "a resting card must state when it last shipped").toMatch(/^shipped/);
-
-  // A resting card is drained by definition, so its track is fully solid.
-  const filled = await card
-    .locator("[data-test='app-ladder-rung']")
-    .evaluateAll((els) => els.map((el) => el.getAttribute("data-filled")));
-  expect(filled).toEqual(["true", "true", "true"]);
+  for (const card of seen) {
+    if (card.resting) {
+      expect(card.position, `${card.repo} rests, so it must say so`).toBe("at_rest");
+      expect(card.dimmed, `${card.repo} rests but is not dimmed`).toBe(true);
+      expect(card.meters, `${card.repo} rests but kept its meter`).toBe(0);
+      expect(card.restLines, `${card.repo} rests but says nothing`).toBe(1);
+      expect(card.shipped, `${card.repo} rests but never names its ship`).toMatch(/^shipped/);
+      // Resting means drained, so every rung has been passed through.
+      expect(card.progress, `${card.repo} rests with work still on a rung`).toEqual([
+        "passed",
+        "passed",
+        "passed",
+      ]);
+    } else {
+      expect(card.position, `${card.repo} is active but labelled at rest`).not.toBe("at_rest");
+      expect(card.dimmed, `${card.repo} is active but dimmed`).toBe(false);
+      expect(card.restLines, `${card.repo} is active but carries the resting line`).toBe(0);
+    }
+  }
 });
 
 // Resting cards sink. The row is sorted worst-first, and rest is the far end of that
