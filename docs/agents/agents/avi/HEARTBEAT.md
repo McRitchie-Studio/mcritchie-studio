@@ -3,13 +3,16 @@
 ## Status: Active
 
 This is Avi's heartbeat launcher. It sets Avi's session attribution and routes to
-two independent act SOPs:
+three independent act SOPs:
 
 - [`qa-release`](sops/qa-release.md) - the self-healing sweep: merge the reviewed
   queue onto `release`, pre-QA gate, deploy QA, flip members `assembled` on
   QA-green.
 - [`deploy-with-task`](sops/deploy-with-task.md) - expedite ONE named task to
   production behind the clean-ladder guard (interactive: it asks "What task?").
+- [`live-score-watch`](sops/live-score-watch.md) - watch a live NFL slot: poll
+  ESPN on a cadence, record scoring plays, propagate contest scores, report each
+  change as it lands.
 
 Use this file when Mr. McRitchie invokes `Avi Heartbeat`. When he invokes a
 single Avi act directly, read that act's SOP file.
@@ -61,6 +64,11 @@ only that act.
 [`deploy-with-task`](sops/deploy-with-task.md) runs only when invoked directly —
 it is a single-task production expedite, never part of the heartbeat
 composition.
+
+[`live-score-watch`](sops/live-score-watch.md) is likewise direct-invocation
+only, and for a blunter reason: it occupies the session for the length of a game
+window. A heartbeat that opened a twelve-hour watch would never reach its next
+act. Invoke it when there are games to watch, and not otherwise.
 
 ## Legacy Aliases
 
