@@ -46,12 +46,149 @@ module Ci
       "release" => Task::MERGED_RELEASE
     }.freeze
 
-    Card = Struct.new(:repo, :rungs, :review_roll, keyword_init: true) do
+    Card = Struct.new(:repo, :rungs, :review_roll, :release_member, :release_in_qa, :last_shipped_at,
+                      keyword_init: true) do
       def rung(branch) = rungs.find { |r| r.branch == branch }
 
       def needs_attention? = rungs.any?(&:needs_attention?)
 
       def parked_total = rungs.sum(&:parked_count)
+
+      def parked_at(branch) = rung(branch)&.parked_count.to_i
+
+      # IN THE ACTIVE RELEASE — this repo is one the open candidate actually moves.
+      #
+      # Read from Release#member_repos, the SAME set the per-repo tracker panel above
+      # this row draws its lanes from. Sharing that one derivation is the point: two
+      # copies of "is this repo in the release" is exactly how the tracker and the card
+      # beneath it come to say different things about the same repo.
+      def release_member? = !!release_member
+
+      # The candidate has reached QA. Only used to WORD the `release` node: work
+      # stamped merged:"release" sits on the candidate either way, but calling it
+      # "in QA" before QA was deployed would claim a step nobody has run yet.
+      def release_in_qa? = !!release_in_qa
+
+      # HOW FAR THIS APP'S UNSHIPPED WORK HAS ADVANCED — the single derivation the
+      # whole track is drawn from.
+      #
+      # Read the parked stamps FROM THE FAR END BACKWARD, because the question is how
+      # far the frontier got, not where the newest work sits. An app routinely holds
+      # work at `accepted` (merged, awaiting the sweep) AND at `release` (promoted, in
+      # QA) in the same moment; the track must fill to `release` while the `accepted`
+      # node still says "2 waiting" beside it. Reading forward would report the
+      # frontier as `accepted` and draw the candidate as though it were never promoted.
+      #
+      # Nothing parked anywhere => `main`. That is the ARRIVED state, not an unknown
+      # one: `main` is deliberately absent from PARKED_STAMP because shipped work has
+      # LEFT the ladder (see the note there), so an empty board means every rung
+      # drained. This is what makes "full track" and #at_rest? the same fact twice.
+      def furthest_rung
+        return "release" if parked_at("release").positive?
+        return "accepted" if parked_at("accepted").positive?
+
+        "main"
+      end
+
+      # Everything has arrived: nothing waits at either counted rung.
+      def level? = furthest_rung == "main"
+
+      # Nothing is HAPPENING on this app: no rung failing, no suite in flight.
+      #
+      # `:pending` counts as activity even though it is not a problem. A running suite
+      # is live news — it is the one state the meter exists to show moving — and a card
+      # that dimmed itself while its own CI was mid-run would hide exactly the thing the
+      # operator opened the page for.
+      def quiet? = !needs_attention? && rungs.none? { |r| r.state == :pending }
+
+      # AT REST — the state after a ship, when this app holds nothing, has nothing
+      # running, and is not in the next release, so it is not worth the operator's eye
+      # until it is included again.
+      #
+      # #quiet? IS A SAFETY RULE, not a nicety. Dimming a card and sorting it last is a
+      # CLAIM that nothing here needs attention, and a red rung or a suite mid-run
+      # contradicts it. So either one keeps the full card and its place in the sort —
+      # which is the property the existing worst-first sort guarantees, and the one
+      # thing this must not take away.
+      def at_rest? = level? && !release_member? && quiet?
+
+      # The card's one-word position in the Deploy workflow. Drives the label, the
+      # dimming, and the `data-position` attribute the view tests and e2e spec read.
+      # Ordered by urgency, so the first true branch wins.
+      #
+      # THE LAST TWO BRANCHES ARE #at_rest?'s OWN TERMS, and that is load-bearing rather
+      # than tidy. This method used to end `return :queued unless level?` / `:at_rest`,
+      # deriving rest from level-and-not-a-member while #at_rest? ALSO demanded #quiet?.
+      # The two then disagreed on a real board: studio-engine, drained and outside the
+      # candidate but with its `release` suite mid-run, rendered the words "at rest" over
+      # a live ticking CI meter — the card contradicting itself in the same glance, which
+      # is the exact failure this row was rebuilt to stop. By the time control reaches
+      # here the card is level, unclaimed and not failing, so `quiet?` is all that
+      # separates the two, and reading it makes `:at_rest` ⟺ #at_rest? BY CONSTRUCTION.
+      #
+      # :verifying is the state that disagreement was hiding — drained, unclaimed, and
+      # still being checked. It is not rest (a suite in flight is live news) and it is
+      # not queued (nothing is waiting on a rung).
+      def position
+        return :attention if needs_attention?
+        return :in_release if release_member?
+        return :queued unless level?
+        return :verifying unless quiet?
+
+        :at_rest
+      end
+
+      # THE TRACK, as the view draws it: three segments, left to right, reading as ONE
+      # progress bar across `accepted → release → main`.
+      #
+      #   progress — where the work is. :passed (it moved through here) / :here (it is
+      #              sitting here now) / :unreached (it has not got this far).
+      #   state    — the rung's OWN CI verdict, drawn as the glyph INSIDE the segment.
+      #   filled   — reached at all, i.e. progress is not :unreached.
+      #
+      # COLOUR CARRIES PROGRESS, THE GLYPH CARRIES CI. That division is the whole design:
+      # the badge row this replaced spent its only colour on the CI verdict, so it could
+      # say "release is green" but never "release is empty", and the row could not answer
+      # "where is this app in the devops process". Now the bar answers that at a glance
+      # and the glyph keeps the verdict that used to own the colour.
+      def track
+        frontier = RUNGS.index(furthest_rung)
+
+        RUNGS.each_with_index.filter_map do |branch, index|
+          rung = rung(branch)
+          next if rung.blank?
+
+          progress = progress_for(rung, index, frontier)
+          { branch: branch, rung: rung, state: rung.state, progress: progress,
+            filled: progress != :unreached, parked: rung.parked_count }
+        end
+      end
+
+      # ONE RUNG'S PLACE IN THE BAR.
+      #
+      # PARKED WORK WINS, and that is the rule the simple "fill up to the frontier"
+      # reading gets wrong. An app routinely holds work at `accepted` (awaiting the
+      # sweep) AND at `release` (promoted, in QA) at once. Colouring `accepted` green
+      # there — because the frontier moved past it — would say "this rung is clear" over
+      # two tasks that are still sitting on it. A rung holding work reads :here whether
+      # or not the frontier went further.
+      #
+      # `main` IS ARRIVAL, NOT WAITING — and it needs no special case to be, which is
+      # worth stating because the obvious defensive version has one. Nothing ever parks
+      # at `main` (PARKED_STAMP omits it: shipped work has LEFT the ladder), so the
+      # guard above can never fire there, and `index <= frontier` reads the drained
+      # board's frontier (`main` itself) as :passed. That is what makes a fully drained
+      # app three greens rather than two greens and an amber.
+      #
+      # `<=` rather than `<` for the same reason: the ONLY rung that can be at the
+      # frontier without parked work is `main`, because the frontier is derived from the
+      # parked counts. Mutation-tested — `index < frontier || RUNGS[frontier] == "main"`
+      # is exactly equivalent and no test could tell them apart, so the shorter one wins.
+      def progress_for(rung, index, frontier)
+        return :here if rung.parked_count.positive?
+
+        index <= frontier ? :passed : :unreached
+      end
 
       # THE RUNG THE METER REPORTS ON — "what is this app's suite doing right now".
       #
@@ -64,7 +201,30 @@ module Ci
       # Deliberately ONE rung, not a meter per rung: three check-lists on one card is
       # the two-rows-saying-the-same-thing shape the CI meter already learned to
       # collapse, and the badges below carry the per-rung verdict anyway.
+      # THE RELEASE RUNG WINS FOR A MEMBER, and that override is the whole of it.
+      #
+      # MEASURED 2026-08-25, mid-sweep: the tracker panel read studio-engine
+      # "ASSEMBLING ✓✓✓" (the release rung, green) while the card six inches below it
+      # read "ACCEPTED · ENGINE CI ○○✓" (amber). Both were true and the page still
+      # contradicted itself, because a task merging onto `accepted` during the sweep
+      # started a run there, and "a running rung always wins" handed the meter to a
+      # rung the operator was not watching.
+      #
+      # So when this repo is IN the active release, the meter reports the rung the
+      # release is about. Only when that rung HAS A VERDICT (`verdict_at`) — a member
+      # whose `release` suite has not been ingested yet must fall through to the rule
+      # below rather than blank the meter to "no CI checks ingested", which would trade
+      # one wrong reading for a worse one.
+      #
+      # A NON-MEMBER KEEPS THE ORIGINAL RULE, unchanged and for its original reasons: a
+      # suite in flight is the live news and the only state the operator can act on
+      # while it happens; failing that the newest verdict, since that is the most recent
+      # thing CI actually said; `accepted` last so a card with no verdicts anywhere
+      # still names the rung its work would reach first.
       def active_rung
+        release_rung = rung("release") if release_member?
+        return release_rung if release_rung&.verdict_at
+
         rungs.find { |r| r.state == :pending } ||
           rungs.select(&:verdict_at).max_by(&:verdict_at) ||
           rung("accepted")
@@ -88,9 +248,17 @@ module Ci
       # card lands on the run in progress rather than a repo home page.
       def run_url = active_rung&.run_url
 
-      # Worst rung first, then "has work waiting" ahead of idle. Mirrors the board's
-      # own instinct of floating what needs a human to the top.
-      def sort_key = rungs.map(&:sort_key).min || [Ci::LadderRung::STATE_RANK[:green], 1]
+      # AT REST SINKS; everything else keeps the original ordering — worst rung first,
+      # then "has work waiting" ahead of idle, mirroring the board's own instinct of
+      # floating what needs a human to the top.
+      #
+      # The at-rest flag leads the key rather than replacing it, so the two rules
+      # compose instead of competing. It cannot bury a red card, because #at_rest? is
+      # false whenever a rung needs attention — the sink and the safety rule are the
+      # same condition read once.
+      def sort_key
+        [at_rest? ? 1 : 0, *(rungs.map(&:sort_key).min || [Ci::LadderRung::STATE_RANK[:green], 1])]
+      end
 
       def gem? = Release::Repos.gem?(repo)
 
@@ -119,19 +287,85 @@ module Ci
 
       # Build every card. One board query for the parked counts (not one per
       # rung per repo), then each rung folds its own branch's suite runs.
-      def build(repos: reportable_repos)
+      #
+      # `release:` is READ ONCE here and handed down, never fetched per card — the same
+      # N+1 discipline parked_index and the review rolls already follow. It defaults to
+      # Release.current so every existing caller (the controller, DeploymentsBroadcaster,
+      # the dev board) keeps working untouched, and a test can pin a candidate by
+      # passing one — or pass `nil` for "no release open", which is a real board state
+      # and must not become an implicit Release.current lookup deeper down.
+      def build(repos: reportable_repos, release: Release.current)
         parked = parked_index
         # The review rolls for EVERY card in one read, exactly like parked_index above
         # — see Review::DurationRoll for why this must not become a per-card lookup.
         rolls = Review::DurationRoll.by_repo(repos: repos)
-        repos.map { |repo| card_for(repo, parked, rolls[repo]) }.sort_by(&:sort_key)
+        members = release ? release.member_repos : []
+        in_qa = release ? release.stage_reached?("qa_deployed") : false
+        shipped = shipped_index
+
+        repos.map do |repo|
+          card_for(repo, parked, rolls[repo],
+                   release_member: members.include?(repo), release_in_qa: in_qa,
+                   last_shipped_at: shipped[repo])
+        end.sort_by(&:sort_key)
       end
 
-      def card_for(repo, parked = parked_index, review_roll = nil)
+      def card_for(repo, parked = parked_index, review_roll = nil,
+                   release_member: false, release_in_qa: false, last_shipped_at: nil)
         rungs = RUNGS.map do |branch|
           Ci::LadderRung.for(repo: repo, branch: branch, parked_count: parked.dig(repo, branch).to_i)
         end
-        Card.new(repo: repo, rungs: rungs, review_roll: review_roll)
+        Card.new(repo: repo, rungs: rungs, review_roll: review_roll,
+                 release_member: release_member, release_in_qa: release_in_qa,
+                 last_shipped_at: last_shipped_at)
+      end
+
+      # WHEN EACH REPO LAST REACHED PRODUCTION => { "turf-monster" => Time }.
+      #
+      # The at-rest card drops its meter, so this is the one fact it keeps: a quiet card
+      # that says nothing at all is indistinguishable from a broken one, and "shipped 3h
+      # ago" is what turns the silence into a statement.
+      #
+      # THE RELEASE'S OWN `shipped_at` IS THE HONEST STAMP — the moment production
+      # actually took the code — not the task's `updated_at`, which moves again on every
+      # later edit to an archived record. Falls back to the release's `created_at` for
+      # an old row shipped before the column was populated, matching
+      # Release.last_shipped's own COALESCE so the two can never disagree.
+      #
+      # BOUNDED to the newest SHIPPED_SCAN releases. Unbounded, this walks every task
+      # the ecosystem has ever shipped to answer a question about the last one; the
+      # newest few releases hold the answer for every live repo, and a repo whose last
+      # ship predates the window renders "shipped" with no time rather than a wrong one.
+      SHIPPED_SCAN = 25
+
+      def shipped_index
+        releases = Release.where(state: "shipped")
+                          .order(Arel.sql("COALESCE(shipped_at, created_at) DESC"))
+                          .limit(SHIPPED_SCAN)
+                          .pluck(:slug, Arel.sql("COALESCE(shipped_at, created_at)"))
+        return {} if releases.empty?
+
+        at_by_slug = releases.to_h
+        index = {}
+
+        # ORDERED, and not for the result — #shipped_index is order-independent by
+        # construction (it keeps the MAX per repo). It is ordered so the max rule is
+        # TESTABLE: unordered, the rows happened to arrive newest-last, so a mutation
+        # replacing the comparison with plain assignment produced the right answer by
+        # luck and no test could bite it.
+        Task.where(release_slug: at_by_slug.keys)
+            .order(:id)
+            .pluck(:release_slug, :metadata)
+            .each do |slug, metadata|
+              at = at_by_slug[slug]
+              next if at.blank?
+
+              repos_for(metadata).each do |repo|
+                index[repo] = at if index[repo].nil? || index[repo] < at
+              end
+            end
+
+        index
       end
 
       # => { "turf-monster" => { "accepted" => 2 } }

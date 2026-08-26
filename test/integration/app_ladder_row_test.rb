@@ -90,8 +90,10 @@ class AppLadderRowTest < ActionDispatch::IntegrationTest
     get deployments_path
 
     assert_response :success
-    assert_select "[data-test='app-ladder-card'][data-repo='turf-monster']" do
-      assert_select "[data-test='app-ladder-parked'][data-branch='accepted']", text: /2 on accepted/
+    assert_select "[data-test='app-ladder-card'][data-repo='turf-monster'][data-furthest='accepted']" do
+      assert_select "[data-test='app-ladder-parked'][data-branch='accepted']", text: "2"
+      assert_select "[data-test='app-ladder-rung'][data-branch='accepted'][data-progress='here']", 1
+      assert_select "[data-test='app-ladder-rung'][data-branch='release'][data-progress='unreached']", 1
     end
   end
 
@@ -102,21 +104,51 @@ class AppLadderRowTest < ActionDispatch::IntegrationTest
     task = make_task(slug: "advances-to-production", merged: Task::MERGED_ACCEPTED, repos: %w[turf-monster])
 
     get deployments_path
-    assert_select "[data-test='app-ladder-card'][data-repo='turf-monster']" do
+    assert_select "[data-test='app-ladder-card'][data-repo='turf-monster'][data-position='queued']" do
       assert_select "[data-test='app-ladder-parked'][data-branch='accepted']", 1
     end
 
     task.update!(merged: Task::MERGED_MAIN)
 
     get deployments_path
-    assert_select "[data-test='app-ladder-card'][data-repo='turf-monster']" do
-      assert_select "[data-test='app-ladder-parked'][data-branch='accepted']", 0,
-                    "the accepted rung must drain when the stamp advances"
-      assert_select "[data-test='app-ladder-parked'][data-branch='main']", 0,
-                    "and shipped work must not re-park on main"
-      assert_select "[data-test='app-ladder-parked-row']", 0,
-                    "with nothing waiting anywhere, the card is quiet"
+    assert_select "[data-test='app-ladder-card'][data-repo='turf-monster'][data-furthest='main']" do
+      assert_select "[data-test='app-ladder-parked']", 0,
+                    "the accepted rung must drain when the stamp advances, and shipped " \
+                    "work must not re-park on main"
+      assert_select "[data-test='app-ladder-at-rest']", 1,
+                    "the drained card goes to rest and states its ship there"
+      assert_select "[data-test='app-ladder-rung'][data-progress='passed']", 3,
+                    "with nothing waiting anywhere the whole bar reads green"
     end
+  end
+
+  # THE BLUE-BOX ASK, END TO END. A drained repo outside the open candidate recedes:
+  # it dims, drops its meter and sorts behind the cards that still hold work.
+  test "a drained repo outside the release goes to rest and sinks in the row" do
+    make_task(slug: "still-waiting-on-accepted", merged: Task::MERGED_ACCEPTED, repos: %w[turf-monster])
+
+    get deployments_path
+
+    assert_select "[data-test='app-ladder-card'][data-repo='turf-monster'][data-at-rest='false']", 1
+    assert_select "[data-test='app-ladder-card'][data-repo='solana-studio'][data-at-rest='true']", 1
+    assert_select "[data-test='app-ladder-card'][data-repo='solana-studio'] [data-test='app-ladder-at-rest']", 1
+
+    repos = css_select("[data-test='app-ladder-card']").map { |el| el["data-repo"] }
+    assert repos.index("turf-monster") < repos.index("solana-studio"),
+           "a card still holding work must sort ahead of a resting one"
+  end
+
+  # A repo the OPEN CANDIDATE moves is live work however empty its rungs, so it keeps
+  # the full card — the tracker panel above the row is drawing lanes for it.
+  test "a repo in the open release does not rest" do
+    task = make_task(slug: "member-of-open-release", merged: Task::MERGED_ACCEPTED, repos: %w[solana-studio])
+    release = Release.open!
+    task.update!(release_slug: release.slug, merged: Task::MERGED_RELEASE)
+
+    get deployments_path
+
+    assert_select "[data-test='app-ladder-card'][data-repo='solana-studio'][data-position='in_release']", 1
+    assert_select "[data-test='app-ladder-card'][data-repo='solana-studio'] [data-test='app-ladder-at-rest']", 0
   end
 
   test "a card needing attention is marked for the operator" do
