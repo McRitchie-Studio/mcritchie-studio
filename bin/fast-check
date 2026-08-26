@@ -199,7 +199,40 @@ end
 
 # --- lane plumbing (mirrors bin/full-suite-check) ------------------------------
 
-test_cmd = ENV.fetch("FAST_CHECK_TEST_CMD", "bin/rails test")
+# WHICH REPO THIS CHECKOUT IS. Resolved from `root` — the tree itself — and hoisted
+# here because every lane decision below depends on it: which test command to run,
+# whether a test DB exists to prepare, and whether a lint lane is owed at all. It was
+# already resolved at the bottom of this script for the evidence line; a gem repo
+# proved that was far too late.
+cert_repo = CertRootGuard.repo_of_checkout(root)
+
+# A GEM REPO HAS NO bin/rails AND NO bin/rubocop. studio-engine is the case: the
+# defaults below are Rails-app assumptions, and against a gem all three lanes died on
+# an unrescued Errno::ENOENT before this script reached a single test. That is why
+# `bin/full-suite-check` learned to read the registry (release_check + the gems
+# section); this is the same fix on the path builders ACTUALLY run.
+#
+# THERE IS NO DIFF-MAPPED SHORTCUT FOR A GEM, and pretending otherwise would be the
+# dishonest version of this fix. fast-check's speed comes from mapping a diff onto a
+# subset of a Rails suite; a gem's registry command is its whole gate. So a gem repo
+# runs that gate, and the narration SAYS it is running the full thing rather than
+# implying a subset was chosen. It is fast enough to be the builder default:
+# studio-engine's bin/release-check covers 100 files / 1456 runs.
+registry_test_cmd = FullSuiteGate.release_check_cmd(cert_repo)
+gem_repo = FullSuiteGate.gem_repo?(cert_repo)
+
+# NO LINT-WAIVER BRANCH HERE, deliberately. bin/full-suite-check needs one because it
+# runs a rubocop lane for every repo; this script does not reach that question for the
+# only repo that declares `lint_lane: none`. studio-engine is a GEM, and the gem branch
+# below omits the rubocop lane before a waiver could be consulted — so a waiver check
+# on this path would be code no repo can currently execute.
+#
+# It was written, and removed after a mutation proved the point: flipping
+# FullSuiteGate.lint_waived? to false changed nothing observable, because the gem
+# branch had already decided. If a NON-gem repo ever declares lint_lane: none, add the
+# branch then, with a test that can actually redden.
+
+test_cmd = ENV.fetch("FAST_CHECK_TEST_CMD") { registry_test_cmd || "bin/rails test" }
 rubocop_cmd = ENV.fetch("FAST_CHECK_RUBOCOP_CMD", "bin/rubocop")
 # The prepare lane is db:test:prepare AND test:prepare, in one boot. test:prepare is
 # Rails' standard pre-test hook, which tailwindcss-rails enhances with tailwindcss:build
@@ -216,7 +249,10 @@ rubocop_cmd = ENV.fetch("FAST_CHECK_RUBOCOP_CMD", "bin/rubocop")
 # in the asset pipeline`: a RED G1 cert on a docs-only or ci.yml-only diff. A cert that
 # reports an ENV GAP as a test regression is lying — so the cert closes the gap itself.
 test_prepare_cmd = ENV.fetch("FAST_CHECK_TEST_PREPARE_CMD", "bin/rails db:test:prepare test:prepare")
-skip_test_prepare = ENV.fetch("FAST_CHECK_SKIP_TEST_PREPARE", "") == "1"
+# A gem has no test database and no bin/rails to prepare one with, so this lane does
+# not APPLY to it — it is not "skipped" in the opt-out sense. Declared from the
+# registry's gems section, never inferred from whether bin/rails happens to exist.
+skip_test_prepare = ENV.fetch("FAST_CHECK_SKIP_TEST_PREPARE", "") == "1" || gem_repo
 
 # --- the lane ceiling -----------------------------------------------------------
 # NO LANE MAY RUN FOREVER. Measured 2026-08-21: a turf-monster mapped-tests lane sat
@@ -286,6 +322,14 @@ def run_lane(label, cmd, root, env: {}, gate_slug: nil, timeout: LANE_TIMEOUT)
   elapsed = format("%.1fs", duration_ms / 1000.0)
   if result.timeout?
     warn "   #{label}: TIMED OUT after #{elapsed} — the RUNNER never produced a verdict"
+  elsif result.unlaunchable?
+    # NOT a verdict on the diff: nothing ran. bin/full-suite-check already words this
+    # correctly and this script did not — so the path builders ACTUALLY run reported a
+    # missing command as "FAIL", sending them to hunt a bug in code that never
+    # executed. Reachable for real now that a registry row can name a gate command a
+    # given checkout does not carry.
+    warn "   #{label}: COULD NOT RUN — #{result.detail}"
+    warn "   Nothing was certified by this lane. The command is the problem, not your diff."
   else
     warn(result.ok ? "   #{label}: PASS (#{elapsed})" : "   #{label}: FAIL")
   end
@@ -325,6 +369,42 @@ gate_slug = options[:print] ? nil : slug
 emit_cert_checkpoint(slug, "started") unless options[:print]
 emit_gate(gate_slug, "open", "task", gate_slug.to_s, "g1_cert") if gate_slug
 
+# THE ATTEMPT MUST NOT SURVIVE THIS PROCESS. Every deliberate exit below closes the
+# g1_cert attempt; an UNRESCUED exception closed nothing and left it OPEN.
+#
+# WHAT THAT ACTUALLY COSTS — the first version of this comment overstated it, claiming
+# no later run cleans the attempt up. GateRun.open! (app/models/gate_run.rb:96-105)
+# RETURNS an existing in-flight attempt rather than creating a second, so the next
+# cert adopts and closes it. The real damage is subtler: stamp_g1_testing_window fires
+# on CREATE only, so the adopted attempt keeps its original started_at and reports an
+# inflated duration — and until that next cert runs, the card reads STALLED.
+#
+# THE FLAG IS SET BEFORE EACH CLOSE, NOT AFTER, and the ordering is load-bearing.
+# emit_gate shells out to bin/gate, and the tail of a cert is exactly when an operator
+# reaches for Ctrl-C. With the flag set afterwards, a SIGINT arriving while that
+# subprocess ran raised Interrupt with the flag still false, so this block fired a
+# SECOND close — and that close is NOT idempotent: GateRun.close! finds no in-flight
+# attempt, calls open!, creates attempt n+1, and latest_by_key takes the last. A
+# spurious --failed row then becomes the G1 verdict over a cert that PASSED. The
+# window is the whole duration of the closing subprocess, and it sits outside every
+# lane, so CertProcess installs no trap across it.
+#
+# Nothing is lost by setting the flag first: emit_gate is already fire-and-forget and
+# rescues StandardError, so if the gate CLI were down, the at_exit retry would only
+# reach the same down CLI.
+#
+# KNOWN LIMIT, stated rather than papered over: CertProcess reaps a runaway suite with
+# `exit!`, which skips at_exit entirely. That path is covered by run_lane's on_signal
+# handler instead, and this backstop cannot help there.
+g1_settled = false
+at_exit do
+  next if g1_settled || gate_slug.nil?
+
+  emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed")
+  warn "fast-check: closed an unsettled g1_cert attempt on the way out " \
+       "(the run died before reaching a verdict)"
+end
+
 unless skip_test_prepare
   prepare_res = run_lane("test-prepare", test_prepare_cmd, root, env: { "RAILS_ENV" => "test" },
                          gate_slug: gate_slug)
@@ -333,7 +413,8 @@ unless skip_test_prepare
     # message below would misfile it as "an ENV gap you can fix" — it is a hung runner.
     CertProcess.timeout_report({ "test-prepare" => prepare_res }, ceiling: LANE_TIMEOUT,
                                tool: "fast-check", env_var: "FAST_CHECK_LANE_TIMEOUT").each { |l| warn l }
-    emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
+      g1_settled = true
+  emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
     exit 1
   end
   unless prepare_res.ok
@@ -341,11 +422,22 @@ unless skip_test_prepare
          "DB, or the bundled-asset build), NOT a regression in your diff; but a broken stylesheet " \
          "IN your diff (a bad @apply, an unknown utility, a malformed @theme) fails this lane too. " \
          "Nothing certified; fix it and re-run."
-    emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
+      g1_settled = true
+  emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
     exit 1
   end
 end
 
+# A GEM RUNS ITS WHOLE GATE AS THE "MAPPED" LANE. There is no diff-mapped subset to
+# choose — the registry command IS the suite — so the lane label stays honest by
+# naming the command, and the spine lane below is left to skip itself (a gem has no
+# spine entries). Anything else would report a subset that was never selected.
+if gem_repo
+  mapped_res = run_lane("gem-gate", test_cmd, root, gate_slug: gate_slug)
+  spine_res  = skip_lane("spine", "gem repo — its registry gate above is the whole suite",
+                         gate_slug: gate_slug)
+  rubocop_res = nil
+else
 mapped_res =
   if mapped_only.empty?
     skip_lane("mapped-tests", mapped.empty? ? "no tests map from the diff" : "all mapped tests covered by the spine",
@@ -389,12 +481,14 @@ rubocop_res =
   else
     run_lane("rubocop-changed", "#{rubocop_cmd} #{lintable.map(&:shellescape).join(' ')}", root, gate_slug: gate_slug)
   end
+end
 
 emit_cert_checkpoint(slug, "completed") unless options[:print]
 
 total = Process.clock_gettime(Process::CLOCK_MONOTONIC) - overall_started
 
-lanes = { "mapped-tests" => mapped_res, "spine" => spine_res, "rubocop-changed" => rubocop_res }
+lanes = { (gem_repo ? "gem-gate" : "mapped-tests") => mapped_res, "spine" => spine_res }
+lanes["rubocop-changed"] = rubocop_res if rubocop_res
 unless lanes.each_value.all?(&:ok)
   # A HUNG lane and a RED lane are DIFFERENT VERDICTS and must never share a sentence.
   # "lane(s) RED" tells the reader their tests failed; when the runner deadlocked, no
@@ -412,6 +506,7 @@ unless lanes.each_value.all?(&:ok)
     warn "fast-check: lane(s) RED: #{red.join(', ')}. Fix, then re-run — nothing certified. " \
          "(#{format('%.1fs', total)})"
   end
+    g1_settled = true
   emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
   exit 1
 end
@@ -425,6 +520,7 @@ end
 fingerprint = FullSuiteGate.fingerprint(root)
 if fingerprint.nil?
   warn "fast-check: could not fingerprint the code at #{root} (no git repo / identity?) — nothing certified."
+    g1_settled = true
   emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
   exit 1
 end
@@ -439,10 +535,23 @@ mapped_detail =
     "#{mapped_only.size} mapped"
   end
 
-detail = "fast cert green: #{mapped_detail} + #{spine.size} spine test path(s), " \
-         "rubocop on #{lintable.size} changed file(s) (#{format('%.1fs', total)}; full suite runs on CI)"
+# THE EVIDENCE MUST DESCRIBE WHAT ACTUALLY RAN. The app wording counts diff-mapped
+# paths, which for a gem are all zero — so the first draft of this fix emitted
+# "0 mapped + 0 spine test path(s), rubocop on 0 changed file(s)" after running the
+# repo's ENTIRE gate. Every number was true and the sentence was false: it reads as a
+# cert that tested nothing. A reader deciding whether to trust this line is exactly
+# who that would mislead.
+detail =
+  if gem_repo
+    "fast cert green: #{test_cmd} — the repo's whole registry gate, no diff-mapped " \
+      "subset exists for a gem (#{format('%.1fs', total)}; the same command runs on CI)"
+  else
+    "fast cert green: #{mapped_detail} + #{spine.size} spine test path(s), " \
+      "rubocop on #{lintable.size} changed file(s) " \
+      "(#{format('%.1fs', total)}; full suite runs on CI)"
+  end
 line = FullSuiteGate.evidence_line(FullSuiteGate::FAST_LANE, fingerprint, detail,
-                                   repo: CertRootGuard.repo_of_checkout(root))
+                                   repo: cert_repo)
 
 # Print the evidence line on stdout (parseable; the narration is on stderr).
 puts line
@@ -461,6 +570,7 @@ if existing.nil?
   warn "fast-check: ran green but couldn't read #{slug.inspect}'s checks_run (bin/task show), so the write " \
        "cannot be verified. Not writing. Re-run, or record by hand: bin/task update #{slug} " \
        "--checks #{Shellwords.escape(line)}"
+    g1_settled = true
   emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
   exit 1
 end
@@ -477,6 +587,7 @@ end
 record_args = ["--checks", line]
 unless system(TASK_BIN, "update", slug, *record_args)
   warn "fast-check: ran green but FAILED to record evidence on #{slug.inspect} (bin/task update). Re-run."
+    g1_settled = true
   emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
   exit 1
 end
@@ -511,6 +622,7 @@ if missing.nil?
   warn "#{summary}, but the read-back FAILED — UNVERIFIED that the recorded evidence" \
        "#{kept.empty? ? '' : " and the #{kept.size} pre-existing checks line(s)"} landed. " \
        "Verify: bin/task show #{slug} -v. #{followup}"
+    g1_settled = true
   emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--success") if gate_slug
   exit 0
 end
@@ -535,12 +647,14 @@ if lost_evidence.any? || lost_kept.any?
          "lines would drop the survivors): bin/task update #{slug} " \
          "#{kept.map { |line_kept| "--checks #{Shellwords.escape(line_kept)}" }.join(' ')}"
   end
+    g1_settled = true
   emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
   exit 1
 end
 
-# Write CONFIRMED on the board — only NOW self-close the G1 attempt success.
-emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--success") if gate_slug
+  # Write CONFIRMED on the board — only NOW self-close the G1 attempt success.
+  g1_settled = true
+  emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--success") if gate_slug
 warn "#{summary} (read-back confirms the evidence line landed" \
      "#{kept.empty? ? '; no pre-existing checks lines to preserve' : " and all #{kept.size} pre-existing checks line(s) kept"}). " \
      "#{followup}"
