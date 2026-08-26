@@ -17,7 +17,13 @@ require "test_helper"
 # What this tier proves is that the strip is RENDERED, carries every app, and carries
 # only the three rows it promises — a strip that quietly grew a fourth row would push
 # the board down on every scroll, and no server-side assertion elsewhere would notice.
-class AppLadderRowTest < ActionView::TestCase
+# NAMED FOR ITS TIER, and that is not cosmetic: test/integration/app_ladder_row_test.rb
+# already defines AppLadderRowTest under ActionDispatch::IntegrationTest. Each file passes
+# alone, so the collision is invisible until something loads BOTH into one process —
+# `bin/fast-check`, which maps a diff to its tests, does — and Ruby then raises
+# `superclass mismatch for class AppLadderRowTest` from the second file to load.
+# Same convention test/system/board_app_filter_test.rb follows (BoardAppFilterSystemTest).
+class AppLadderRowViewTest < ActionView::TestCase
   include ApplicationHelper
 
   test "every card sits in one horizontal scroller rather than a wrapping grid" do
