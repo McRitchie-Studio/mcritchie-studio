@@ -212,24 +212,28 @@ class AppLadderCardTest < ActionView::TestCase
 
   # THE BLUE-BOX ASK: after a release, an app that is not in the next one recedes.
   # It dims, drops its meter, and keeps ONE fact — when it last reached production.
-  test "an at-rest card dims and collapses to a single shipped line" do
+  #
+  # THAT FACT MOVED ONE LINE DOWN. The quiet line used to read "nothing waiting ·
+  # shipped 3h ago"; the ship now rides the MAIN MERGED line every card carries, at a
+  # sharper precision, so keeping it here too would put one fact on one card twice.
+  test "an at-rest card dims and collapses to a single quiet line" do
     render partial: "tasks/app_ladder_card",
            locals: { card: card(%i[green green green], last_shipped_at: 3.hours.ago) }
 
     assert_select "[data-test='app-ladder-card'][data-at-rest='true'][data-position='at_rest']", 1
     assert_select "[data-test='app-ladder-card'].opacity-60", 1
     assert_select "[data-test='app-ladder-ci']", 0, "a resting card drops its meter"
-    assert_select "[data-test='app-ladder-at-rest']", 1
-    assert_select "[data-test='app-ladder-shipped']", text: "shipped 3h ago"
+    assert_select "[data-test='app-ladder-at-rest']", text: "nothing waiting"
   end
 
-  # A DIMMED CARD SAYING NOTHING AT ALL is indistinguishable from a broken one, so the
-  # collapsed line always carries a statement — even when the last ship predates the
-  # scanned window and there is no timestamp to show.
-  test "a resting card with no recorded ship still says shipped rather than nothing" do
-    render partial: "tasks/app_ladder_card", locals: { card: card(%i[green green green]) }
+  # A DIMMED CARD SAYING NOTHING AT ALL is indistinguishable from a broken one — so the
+  # ship fact must still be ON the resting card, just not twice.
+  test "a resting card still names its ship on the stamp line" do
+    render partial: "tasks/app_ladder_card",
+           locals: { card: card(%i[green green green], last_shipped_at: 3.hours.ago) }
 
-    assert_select "[data-test='app-ladder-shipped']", text: "shipped"
+    assert_select "[data-test='app-ladder-main-merge-label']", text: "main merged · 3h ago"
+    assert_select "[data-test='app-ladder-main-merge-value']", text: /\A[A-Z][a-z]{2} \d/
   end
 
   # THE SAFETY RULE, both halves. Dimming a card is a CLAIM that nothing here needs
@@ -502,6 +506,76 @@ class AppLadderCardTest < ActionView::TestCase
     render partial: "tasks/app_ladder_card", locals: { card: card(%i[green green green]) }
 
     assert_select "[data-test='app-ladder-review-value']", text: "not enough data"
+  end
+
+  # --- when main last took this app's code -----------------------------------
+  #
+  # The operator asked for the date and time of the last merge into `main` on the card.
+  # `release → main` IS that merge here (`bin/release ship` fast-forwards it), so the
+  # stamp is the release's own `shipped_at` — the same field the at-rest line reads, at
+  # a different precision.
+
+  test "every card stamps when main last took its code" do
+    at = Time.zone.local(2026, 8, 21, 15, 12)
+
+    render partial: "tasks/app_ladder_card",
+           locals: { card: card(%i[green green green], parked: [1, 0, 0], last_shipped_at: at) }
+
+    assert_select "[data-test='app-ladder-main-merge-value']", text: "Aug 21 3:12p"
+  end
+
+  # NOT ONLY THE RESTING ONES. The relative note lives on the at-rest line, which a busy
+  # card never renders — so before this the four cards actually doing something carried
+  # no ship stamp at all.
+  test "a card in the middle of a release still carries the stamp" do
+    render partial: "tasks/app_ladder_card",
+           locals: { card: card(%i[green pending green], release_member: true,
+                                last_shipped_at: Time.zone.local(2026, 8, 25, 9, 5)) }
+
+    assert_select "[data-test='app-ladder-card'][data-at-rest='false']", 1
+    assert_select "[data-test='app-ladder-main-merge-value']", text: "Aug 25 9:05a"
+  end
+
+  # AN EM DASH, NEVER A GUESS. A repo whose last ship predates Ci::AppLadder's scanned
+  # window has no stamp to print, and a plausible-looking wrong time on a deploy board
+  # is worse than an admitted gap.
+  test "a card with no recorded ship prints a dash and says why on hover" do
+    render partial: "tasks/app_ladder_card", locals: { card: card(%i[green green green]) }
+
+    assert_select "[data-test='app-ladder-main-merge-value']", text: "—"
+
+    title = css_select("[data-test='app-ladder-main-merge']").first["title"]
+    assert_match(/no production ship inside the scanned release window/, title)
+  end
+
+  # ONE LINE, BOTH PRECISIONS — the age in the label, the moment in the value. If the
+  # age ever moves back onto the at-rest line, the card says one thing twice again.
+  test "the stamp line carries the age beside the moment" do
+    render partial: "tasks/app_ladder_card",
+           locals: { card: card(%i[green pending green], release_member: true,
+                                last_shipped_at: 2.days.ago) }
+
+    assert_select "[data-test='app-ladder-main-merge-label']", text: "main merged · 2d ago"
+    assert_select "[data-test='app-ladder-at-rest']", 0
+  end
+
+  # With no ship in the scanned window there is no age to print either — and the label
+  # must not invent one.
+  test "a card with no recorded ship carries a bare label" do
+    render partial: "tasks/app_ladder_card", locals: { card: card(%i[green green green]) }
+
+    assert_select "[data-test='app-ladder-main-merge-label']", text: "main merged"
+  end
+
+  # The card prints the MINUTE; the hover carries the age, so neither has to be two
+  # things at once.
+  test "the hover carries the full timestamp and how long ago it was" do
+    render partial: "tasks/app_ladder_card",
+           locals: { card: card(%i[green green green], last_shipped_at: 3.hours.ago) }
+
+    title = css_select("[data-test='app-ladder-main-merge']").first["title"]
+    assert_match(/release → main last merged/, title)
+    assert_match(/3h ago/, title)
   end
 
   private

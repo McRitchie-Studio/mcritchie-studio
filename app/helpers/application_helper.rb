@@ -216,8 +216,11 @@ module ApplicationHelper
     time.strftime("%-l:%M%P").sub(/m\z/, "")
   end
 
-  # "Jul 7 3:32p" — a task's created-at stamp (the footer's left side, paired
-  # with a 🌱 in the view). Rendered in the app's zone. nil-safe.
+  # "Jul 7 3:32p" — THE BOARD'S DATE+TIME STAMP. Named for its first caller (a task's
+  # created-at, the footer's left side paired with a 🌱), and since shared by the app
+  # ladder's last-main-merge line: one format for "the exact moment", so two stamps on
+  # the same page can never read as two different kinds of clock. Rendered in the app's
+  # zone. nil-safe.
   def compact_created_stamp(time)
     return nil if time.blank?
 
@@ -1266,6 +1269,21 @@ module ApplicationHelper
 
   APP_LADDER_FADED = { fill: "bg-transparent", text: "text-muted opacity-60", border: "border-subtle" }.freeze
 
+  # THE ROW'S RIGHT-EDGE FADE — a MASK, so the content itself falls away.
+  #
+  # Not a gradient overlay: an overlay has to be painted in the page's background
+  # colour, which is a claim about what sits behind the cards and has to be kept in
+  # step with both themes. A mask is right over any surface. Same vocabulary as
+  # components/_overflow_fade and the CI meter's overflowed mark row, which is the
+  # point — "there is more this way" already means one thing on this page.
+  #
+  # It lives HERE, as one string, because it is written twice per render: once as the
+  # server-side first-paint seed and once into the row's Alpine state, and two copies
+  # of a gradient are two things to keep identical.
+  APP_LADDER_FADE_MASK =
+    "mask-image: linear-gradient(to right, #000 calc(100% - 64px), transparent); " \
+    "-webkit-mask-image: linear-gradient(to right, #000 calc(100% - 64px), transparent)"
+
   def app_ladder_rung_tone(state)
     APP_LADDER_TONES.fetch(state.to_sym, APP_LADDER_FADED)
   end
@@ -1363,13 +1381,48 @@ module ApplicationHelper
     node[:parked].positive? ? node[:parked] : nil
   end
 
-  # "shipped 3h ago", or just "shipped" when the last ship predates the scanned
-  # window. Never a blank and never a guessed time — see Ci::AppLadder.shipped_index.
-  def app_ladder_shipped_note(card)
+  # THE LABEL BESIDE THE STAMP — "main merged · 2d ago", or plain "main merged" when
+  # there is no ship in the scanned window to age.
+  #
+  # The AGE lives in the label and the MOMENT in the value, one line, because the two
+  # answer different questions: the age says whether this app is going stale (read at a
+  # glance), the moment says which ship it was (taken to the release log). This is what
+  # let the resting card's quiet line stop carrying "shipped 4d ago" of its own.
+  def app_ladder_main_merge_label(card)
     at = card.last_shipped_at
-    return "shipped" if at.blank?
+    return "main merged" if at.blank?
 
-    "shipped #{compact_time_ago(at)}"
+    "main merged · #{compact_time_ago(at)}"
+  end
+
+  # WHEN MAIN LAST TOOK THIS APP'S CODE — "Aug 21 3:12p", the stamp the card prints
+  # under its ladder.
+  #
+  # `release → main` IS the merge on this ladder: `bin/release ship` fast-forwards it,
+  # so the release's own `shipped_at` (Ci::AppLadder.shipped_index) is the moment
+  # production took the code. Same field the at-rest line reads — one derivation, two
+  # precisions, never two answers.
+  #
+  # AN EM DASH, NEVER A GUESS. A repo whose last ship predates the scanned window has
+  # no stamp to print, and a plausible-looking wrong time on a deploy board is worse
+  # than an admitted gap; the hover says which case this is.
+  def app_ladder_main_merge_stamp(card, empty: "—")
+    compact_created_stamp(card.last_shipped_at) || empty
+  end
+
+  # The hover: the full timestamp AND its age, so the card's minute-precision stamp
+  # never has to carry "how long ago" as well — the two questions the operator asks of
+  # this line, answered in one sentence.
+  def app_ladder_main_merge_title(card)
+    at = card.last_shipped_at
+    # SHIPPED_SCAN lives on Ci::AppLadder's singleton, so the window's size is not
+    # quotable from here — and naming it would be the wrong precision anyway. What the
+    # operator needs is that the gap is a SCAN LIMIT, not a repo that never shipped.
+    return "#{card.repo} — no production ship inside the scanned release window" if at.blank?
+
+    local = at.in_time_zone
+    "#{card.repo} — release → main last merged #{local.strftime('%b %-d, %Y at %-l:%M %p')} " \
+      "(#{compact_time_ago(at)})"
   end
 
 
