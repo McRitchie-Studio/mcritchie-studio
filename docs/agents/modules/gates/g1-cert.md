@@ -186,11 +186,20 @@ impossible by construction rather than by every repo remembering to ignore `tmp/
    `[rubocop@<fp>]`.
 
    The `rubocop` lane is SKIPPED-BY-DECLARATION for a repo carrying
-   `lint_lane: none` — the READER (`FullSuiteGate.required_lanes`) stops
-   asking for it. NOTE the WRITER does not yet honour the declaration: it
-   still shells out to `bin/rubocop` unconditionally and raises
-   `Errno::ENOENT` where that command is absent, so such a repo cannot yet
-   be certified by this route.
+   `lint_lane: none`, and BOTH halves now honour it. The READER
+   (`FullSuiteGate.required_lanes`) stops asking for the evidence, and the
+   WRITER skips the lane rather than shelling out: `bin/full-suite-check`
+   resolves `lint_waived = FullSuiteGate.lint_waived?(cert_repo)`, warns that
+   the lane is skipped by declaration, and records `rubocop_res = lint_waived
+   ? nil : run_lane(...)` — so no `bin/rubocop` is invoked and no rubocop
+   evidence is stamped. Such a repo therefore CERTIFIES BY THIS ROUTE, owing
+   only `[full-suite@<fp>]`.
+
+   (This paragraph previously said the writer did not yet honour the
+   declaration and that such a repo "cannot yet be certified by this route".
+   That was true for fifteen minutes: the prose landed `f99639be` at 13:18:33
+   and the code that honoured the flag landed `b677fb91` at 13:33:19 the same
+   day, and the file contradicted itself from then until this correction.)
 
    The lane runs CI's command because this route's whole claim is
    CI-INDEPENDENCE — **it may never run less of CI's Ruby suite than CI does**.

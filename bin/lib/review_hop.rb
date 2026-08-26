@@ -35,8 +35,12 @@ module ReviewHop
   # own /login redirects on to /signin.
   SIGN_IN_PATHS = %w[/login /signin].freeze
 
-  # The consumable magic-link path the mint hands back (`/l/<token>`).
-  # BOTH magic-link entry points in this ecosystem, not just the engine's.
+  # The consumable magic-link paths the mint may hand back — BOTH entry points
+  # in this ecosystem, not just the engine's `/l/<token>`. The set is CLOSED AT
+  # TWO by construction: studio-engine picks between them with a binary switch
+  # (`Studio.magic_link_via_l_route?`, app/controllers/concerns/studio/
+  # magic_link_issuing.rb), and turf-monster's override mints the other shape.
+  # Same short Studio::Link token either way; only the prefix differs.
   #
   # This used to be /l/ alone, and it reported a WORKING hop as BROKEN for
   # turf-monster: that app overrides the engine's Studio::LinksController with

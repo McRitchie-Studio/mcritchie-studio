@@ -12,9 +12,13 @@
 # The five legs, each asserted before the next runs:
 #
 #   1. CTA      GET  <board>/tasks/<slug>/local_review  -> 302 to a LOOPBACK /_studio/local_review
-#   2. mint     GET  that URL, NO ?email=               -> 302 to /l/<token>
-#   3. confirm  GET  /l/<token>                         -> 200 carrying a CSRF token
-#   4. consume  POST /l/<token>                         -> 302 to the review path
+#   2. mint     GET  that URL, NO ?email=               -> 302 to a magic-link path
+#                                                          (`/l/<token>` OR `/magic_link/<token>`
+#                                                          — see MAGIC_LINK_PATHS in lib/review_hop.rb)
+#   3. confirm  GET  that same path                     -> 200 carrying a CSRF token
+#   4. consume  POST that same path                     -> 302 to the review path
+#              (legs 3 and 4 follow the mint's own Location header, so they are
+#               shape-agnostic and were never `/l/`-only in behaviour)
 #   5. landing  GET  that path                          -> 200 ON the review path
 #
 # This exists because the hand-written curl version of it drifted from the code
