@@ -70,7 +70,8 @@
 #   FULL_SUITE_AGENT_ACTIVITY  override the narration CLI path (default: bin/agent-activity);
 #                              tests point it at a stub that logs the emit argv
 #
-# Exit code: 0 = both lanes green (evidence recorded), 1 = a lane failed or no
+# Exit code: 0 = every lane this repo OWES is green (evidence recorded), 1 = a lane
+# failed or no
 # fingerprint (nothing certified).
 
 require "optparse"
@@ -128,6 +129,13 @@ slug = ARGV.shift
 # lives in. FULL_SUITE_ROOT overrides (the CI/test seam); falls back to ROOT when
 # cwd isn't in a git tree. For a mcritchie-studio worktree this is the same dir.
 root = RepoRoot.code_root(ENV["FULL_SUITE_ROOT"], ROOT)
+
+# WHICH REPO IS THIS CHECKOUT. Resolved from `root` — the tree itself — never from
+# the task's repositories list. Hoisted all the way up here because BOTH lane
+# decisions below now depend on it: which test command to run, and whether a lint
+# lane is owed at all. It was resolved just above the lanes until a gem repo
+# proved that was already too late.
+cert_repo = CertRootGuard.repo_of_checkout(root)
 
 # --- opt-in pre-push hook installer -------------------------------------------
 # "Pre-commit hooks always run" (git-protocol.md) — but a FULL suite on every
@@ -230,15 +238,36 @@ end
 # This resolution MUST stay above the system-tier browser guard below — that guard
 # consumes test_cmd (SystemTestBrowser.system_tier?(test_cmd)), so reordering it
 # below the guard raises NameError.
-test_cmd = ENV.fetch("FULL_SUITE_TEST_CMD") do
-  ci_refusal = CiTestCommand.refusal(root)
-  abort "full-suite-check: #{ci_refusal}" if ci_refusal
+# A GEM REPO'S TEST LANE COMES FROM THE REGISTRY, symmetrically to its lint lane.
+# CiTestCommand reads the repo's ci.yml so the cert runs the SAME command CI runs;
+# a gem has no ci.yml for it to read (studio-engine ships engine-ci.yml), so the
+# resolution aborted and, before that, `bin/rails` crashed on ENOENT. The registry
+# row already names the repo's own gate — `release_check: bin/release-check` — and
+# that is what `bin/release --build` runs before publishing, so the cert and the
+# publish gate agree by construction.
+#
+# An explicit FULL_SUITE_TEST_CMD still wins over both: it is the operator saying
+# "run THIS". The registry answer is a DEFAULT, not an override, which is why it
+# sits inside the same fetch block rather than in front of it.
+registry_test_cmd = FullSuiteGate.release_check_cmd(cert_repo)
 
-  CiTestCommand.resolve(root)
+test_cmd = ENV.fetch("FULL_SUITE_TEST_CMD") do
+  if registry_test_cmd
+    registry_test_cmd
+  else
+    ci_refusal = CiTestCommand.refusal(root)
+    abort "full-suite-check: #{ci_refusal}" if ci_refusal
+
+    CiTestCommand.resolve(root)
+  end
 end
 rubocop_cmd = ENV.fetch("FULL_SUITE_RUBOCOP_CMD", "bin/rubocop")
 test_db_reset_cmd = ENV.fetch("FULL_SUITE_TEST_DB_RESET_CMD", "bin/rails db:test:purge db:test:prepare")
-skip_test_db_reset = ENV.fetch("FULL_SUITE_SKIP_TEST_DB_RESET", "") == "1"
+# A gem has no test database and no bin/rails to purge one with, so the reset lane
+# is not "skipped" for it in the opt-out sense — it does not APPLY. Declared from
+# the registry section, never inferred from whether bin/rails happens to exist.
+skip_test_db_reset = ENV.fetch("FULL_SUITE_SKIP_TEST_DB_RESET", "") == "1" ||
+                     FullSuiteGate.gem_repo?(cert_repo)
 
 # --- system-tier browser guard -------------------------------------------------
 # The test lane now carries the SYSTEM tier, and system tests drive a real headless
@@ -362,6 +391,12 @@ def run_lane(label, cmd, root, env: {}, gate_slug: nil, timeout: LANE_TIMEOUT)
   if result.timeout?
     warn "   #{label}: TIMED OUT after #{format('%.1fs', duration_ms / 1000.0)} — the RUNNER never " \
          "produced a verdict"
+  elsif result.unlaunchable?
+    # NOT a verdict on the diff: nothing ran. Say so in the words that name the
+    # repair, because "FAIL" here would send a builder hunting a bug in code this
+    # lane never executed.
+    warn "   #{label}: COULD NOT RUN — #{result.detail}"
+    warn "   Nothing was certified by this lane. The command is the problem, not your diff."
   else
     warn(result.ok ? "   #{label}: PASS" : "   #{label}: FAIL")
   end
@@ -409,8 +444,35 @@ unless skip_test_db_reset
   end
 end
 
+# The evidence is SCOPED to the repo whose tree is being hashed and run — derived
+# (`cert_repo` is resolved at the top of this script — both lane decisions need it.)
+
+# A REPO MAY DECLARE THAT IT HAS NO LINT LANE (`lint_lane: none` in
+# config/release_repos.yml). studio-engine is the case: no rubocop in the
+# Gemfile, none in the gemspec, no .rubocop.yml, and `bundle exec rubocop` fails
+# outright — its static gate is `ruby -c` inside bin/release-check.
+#
+# Before this, running the lane anyway meant the cert could never go green for
+# such a repo, so a task naming it could not be certified at all. bin/dor-check
+# already stopped DEMANDING that lane (FullSuiteGate#required_lanes); this is the
+# other half — the writer must also stop trying to PRODUCE it.
+#
+# THE LANE IS OMITTED, NOT FAKED. It never enters `lanes`, so no
+# "[rubocop@<fp>]" evidence line is written. Recording a stamp for a lint that
+# never ran is precisely the dishonest fix this whole change exists to avoid, and
+# the reader accepts a suite-only cert for a declared repo on purpose.
+#
+# DECLARED, NEVER INFERRED: this asks the registry, it does not probe for a
+# rubocop binary. A waiver inferred from a missing install would turn every
+# broken rubocop into a silently skipped lane.
+lint_waived = FullSuiteGate.lint_waived?(cert_repo)
+if lint_waived
+  warn "== rubocop: SKIPPED — #{cert_repo} declares lint_lane: none in config/release_repos.yml =="
+  warn "   (no rubocop evidence will be recorded; its static gate is its own release-check)"
+end
+
 test_res = run_lane("full-suite", test_cmd, root, gate_slug: gate_slug)
-rubocop_res = run_lane("rubocop", rubocop_cmd, root, gate_slug: gate_slug)
+rubocop_res = lint_waived ? nil : run_lane("rubocop", rubocop_cmd, root, gate_slug: gate_slug)
 
 # Close the Local Certification testing phase (fires whether the cert passed or
 # failed — the pass/fail lives in checks_run; this only bounds the phase window).
@@ -423,17 +485,16 @@ if fingerprint.nil?
   exit 1
 end
 
-lanes = { FullSuiteGate::TEST_LANE => test_res, FullSuiteGate::RUBOCOP_LANE => rubocop_res }
-details = {
-  FullSuiteGate::TEST_LANE => "#{test_cmd} green",
-  FullSuiteGate::RUBOCOP_LANE => "#{rubocop_cmd} clean"
-}
+lanes = { FullSuiteGate::TEST_LANE => test_res }
+details = { FullSuiteGate::TEST_LANE => "#{test_cmd} green" }
+unless lint_waived
+  lanes[FullSuiteGate::RUBOCOP_LANE] = rubocop_res
+  details[FullSuiteGate::RUBOCOP_LANE] = "#{rubocop_cmd} clean"
+end
 
-# The evidence is SCOPED to the repo whose tree was just hashed and run — derived
-# from `root`, the tree itself, never from the task's repositories list. A task
-# naming two repos then holds a cert per repo instead of one slot the second cert
-# silently overwrote (lib/cert_evidence.rb, THE REPO DIMENSION).
-cert_repo = CertRootGuard.repo_of_checkout(root)
+# cert_repo was resolved before the lanes ran (see the waiver above). A task naming
+# two repos holds a cert per repo instead of one slot the second cert silently
+# overwrote (lib/cert_evidence.rb, THE REPO DIMENSION).
 passed_lines = lanes.select { |_, result| result.ok }.map do |lane, _|
   FullSuiteGate.evidence_line(lane, fingerprint, details[lane], repo: cert_repo)
 end
@@ -469,7 +530,7 @@ end
 # at the very end, after the read-back confirms; every failure path below closes
 # --failed on its way out.
 if options[:print] || slug.nil?
-  warn "full-suite-check: both lanes green at #{fingerprint[0, 12]}." \
+  warn "full-suite-check: #{lanes.keys.length} lane(s) green at #{fingerprint[0, 12]}." \
        "#{slug.nil? ? " (no task slug — evidence printed, not recorded)" : " (--print: not recorded)"}"
   exit 0
 end
@@ -513,7 +574,7 @@ end
 # whose fresh evidence supersedes the old by design.
 kept = existing.reject { |prior| prior.match?(FullSuiteGate.evidence_re(FullSuiteGate::LANES)) }
 recorded = passed_lines
-summary = "full-suite-check: both lanes green at #{fingerprint[0, 12]} — evidence recorded on #{slug}"
+summary = "full-suite-check: #{lanes.keys.length} lane(s) green at #{fingerprint[0, 12]} — evidence recorded on #{slug}"
 
 missing = CertEmission.missing_after_write(TASK_BIN, slug, recorded + kept)
 if missing.nil?
