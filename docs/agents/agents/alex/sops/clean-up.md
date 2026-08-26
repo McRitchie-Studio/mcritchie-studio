@@ -105,7 +105,7 @@ done
 > **Count from `--json`, never from the rows:**
 > ```bash
 > bin/task list --stage shipped --json |
->   python3 -c "import json,sys; d=json.load(sys.stdin); print(len(d.get('tasks',d)))"
+>   python3 -c "import json,sys; print(len(json.load(sys.stdin)))"
 > ```
 
 Now join the board to reality. **The single highest-value query in this SOP:**
