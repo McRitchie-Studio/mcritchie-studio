@@ -101,17 +101,19 @@ A local watch **must** be labelled REHEARSAL in every report it produces. Its
 
 ## Preconditions
 
-**1. The command exists.** It shipped with turf-monster PR #426, which reached
-`main` on 2026-08-26, so a healthy production app answers `present`. Check it
-anyway — a rollback, a rebuilt app, or a release still in flight would leave you
-with a raw shell error rather than a stated stop:
+**1. The command is DEPLOYED — merged is not deployed.** As of 2026-08-26,
+`bin/nfl-live-poll` and `Nfl::LiveScores::PollCycle` are on turf-monster
+`accepted` (PR #426) and on NEITHER `release` NOR `main` — and
+`turf-monster-mainnet` deploys from `main`. So this gate is live today and it is
+what correctly STOPS this act. Knowing #426 merged is not grounds to skip it:
 
 ```bash
 heroku run -a turf-monster-mainnet 'test -x bin/nfl-live-poll && echo present || echo MISSING'
 ```
 
-`MISSING` means THIS app is not running that code. Report "the live-score poller
-is not deployed" and stop — there is no watch to run and nothing to fix here.
+`MISSING` means THIS app is not running that code — today's expected answer.
+Report "the live-score poller is not deployed" and stop; there is no watch to
+run and nothing to fix here.
 
 **2. You are pointed where you think you are.** Prove it, and read it back
 before committing twelve hours:
@@ -143,9 +145,16 @@ of that report looks right. It is exactly the failure this SOP exists to prevent
 **3. There is a slot worth watching.**
 
 ```bash
-heroku run -a turf-monster-mainnet bin/nfl-live-poll --json | \
-  ruby -rjson -e 'd=JSON.parse(STDIN.read); puts "slot=#{d["slot"]} games=#{d["games_seen"]}"'
+heroku run -a turf-monster-mainnet -- bin/nfl-live-poll --json | \
+  ruby -rjson -e 'd=JSON.parse(STDIN.read); puts "games=#{d["games_seen"]}"'
 ```
+
+**The `--` is load-bearing, in this command and in every command below that
+passes a flag.** `heroku run` parses the whole line for its OWN flags first, so
+`heroku run -a <app> bin/nfl-live-poll --json` dies at `Error: Nonexistent flag:
+--json` before it ever reaches the dyno — and `--quiet` the same way. `--` ends
+heroku's flag list and hands the rest to the command. (Precondition 1 escapes it
+only because it quotes its command string, which works too.)
 
 If `games_seen` is 0, there is nothing to watch. Report that and stop.
 
@@ -163,7 +172,7 @@ whether to continue — but a quiet ten minutes costs one line instead of twenty
 **One batch — ten minutes, twenty cycles:**
 
 ```bash
-for i in $(seq 1 20); do heroku run -a turf-monster-mainnet bin/nfl-live-poll --quiet; sleep 30; done
+for i in $(seq 1 20); do heroku run -a turf-monster-mainnet -- bin/nfl-live-poll --quiet; sleep 30; done
 ```
 
 Note the `-a turf-monster-mainnet` again. Every command in this act names its
@@ -182,7 +191,7 @@ the background and read its log each turn instead:
 
 ```bash
 mkdir -p log
-nohup sh -c 'while true; do heroku run -a turf-monster-mainnet bin/nfl-live-poll --quiet; sleep 30; done' \
+nohup sh -c 'while true; do heroku run -a turf-monster-mainnet -- bin/nfl-live-poll --quiet; sleep 30; done' \
   > log/nfl-live-watch.log 2>&1 &
 echo $! > log/nfl-live-watch.pid
 ```
@@ -229,7 +238,7 @@ contests re-scored, anomalies by kind.
 
 ## Anomalies — the part that needs judgment
 
-The cycle reports three kinds and never stops for any of them. Deciding which
+The cycle reports seven kinds and never stops for any of them. Deciding which
 deserves a human is your job.
 
 | Kind | What it means | What to do |
@@ -253,15 +262,16 @@ now evidence, not merely an absence.
 
 **On a REHEARSAL, drift is usually yours.** Scores injected by the `/live` dev
 toolbar carry no ESPN play id, so the cycle leaves them alone and correctly
-reports the resulting disagreement. Clear the game, then re-poll, and only treat
-what survives as a real defect:
+reports the resulting disagreement. Press **Clear** on the `/live` dev toolbar,
+re-poll, and treat only what survives as a real defect:
 
 ```bash
-curl -sX POST http://localhost:<port>/dev/live_scores/clear_game \
-  -H 'Content-Type: application/json' -H "X-CSRF-Token: $CSRF" \
-  -d '{"game_slug":"<slug>"}'
 bin/nfl-live-poll --slot <year>:<type>:<week>
 ```
+
+Use the button, not `curl`. The toolbar reads the page's `csrf-token` meta tag
+and sends it; a hand-rolled POST carrying no session cookie and no token gets a
+422, because the dev injectors skip authentication and nothing else.
 
 On production this does not apply: those injectors are not reachable there, so
 drift on a real watch is always the feed disagreeing with our events.
