@@ -166,9 +166,9 @@ whether to continue — but a quiet ten minutes costs one line instead of twenty
 for i in $(seq 1 20); do heroku run -a turf-monster-mainnet bin/nfl-live-poll --quiet; sleep 30; done
 ```
 
-Note the `-a turf-monster` again. Every command in this act names its target,
-including the loop — a batch that silently drops it is a batch watching a
-different stack from the one you checked.
+Note the `-a turf-monster-mainnet` again. Every command in this act names its
+target, including the loop — a batch that silently drops it is a batch watching
+a different stack from the one you checked.
 
 `--quiet` is what makes this readable: it prints nothing when nothing changed,
 so a batch over a quiet stretch returns empty and a batch containing a
