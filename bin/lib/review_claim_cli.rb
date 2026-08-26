@@ -201,6 +201,7 @@ class ReviewClaimCli
       reason = data["reason"].to_s
       @err.puts("claim-next-review: nothing eligible to review#{reason.empty? ? '' : " (#{reason})"}.")
       report_blind_repos(data["blind_repos"])
+      report_skipped_ci(data["skipped_ci"]) if reason == "no_green_ci"
       @out.puts("none")
       NONE
     end
@@ -370,6 +371,39 @@ class ReviewClaimCli
               "GitHub Actions deliveries for #{repos.length == 1 ? 'it' : 'them'}, so its PRs can never read " \
               "green here however green GitHub is. This is a WIRING gap, not a red build: wire the repo's " \
               "Actions webhook to POST /api/v1/github/webhook (docs/agents/modules/deployment.md).")
+  end
+
+  # NAME THE SOURCE THE REFUSAL TRUSTED.
+  #
+  # This pop and `bin/dor-check --gate-role review` read DIFFERENT places, on
+  # purpose: the pop folds the board's own ingested GitHub Actions rows (fast, one
+  # query, no API budget), while dor-check reads `gh pr checks` LIVE for the one PR
+  # in front of it. Both are right about what they read. When the board has not
+  # ingested the PR's current tip they disagree about the SAME PR — the entry gate
+  # refuses and gate-zero approves — and the task cannot be reviewed by the SOP at
+  # all: the orchestrator cannot claim it, and forcing the lease by hand would make
+  # the pop advisory whenever it is inconvenient.
+  #
+  # report_blind_repos does not cover it. That fires only when a repo has NO ingested
+  # runs AT ALL; a wired repo missing just this HEAD prints nothing, which is how
+  # auto-mint-level-up-tokens (turf PR 407) sat in `submitted` from 2026-08-23 and had
+  # to be diagnosed by bisecting two CLIs. So state, plainly, what the board holds and
+  # for WHICH commit — and hand over the one command that shows the other view.
+  def report_skipped_ci(entries)
+    entries = Array(entries).select { |e| e.is_a?(Hash) }
+    return if entries.empty?
+
+    @err.puts("claim-next-review: the board's OWN ingested CI is what this refusal read " \
+              "(not a live GitHub call):")
+    entries.each do |entry|
+      slug = entry["slug"].to_s
+      sha = entry["sha"].to_s
+      @err.puts("  #{slug}: board holds #{entry['state']}" \
+                "#{sha.empty? ? ' and NO run for this branch tip' : " for head #{sha}"}" \
+                "#{entry['repo'].to_s.empty? ? '' : " (#{entry['repo']})"}")
+    end
+    @err.puts("  If GitHub shows this PR green, the board simply has not ingested that head — " \
+              "an INGESTION gap, not a red build. Compare with: gh pr checks <pr> --repo <nwo>")
   end
 
   # The skip message: name the live reviewer so this session knows WHO has the task

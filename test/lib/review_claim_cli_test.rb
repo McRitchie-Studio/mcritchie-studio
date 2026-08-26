@@ -559,4 +559,87 @@ class ReviewClaimCliTest < Minitest::Test
       assert_match(/usage: bin\/task review-claim/, @err.string)
     end
   end
+
+  # ---- naming the source a refusal trusted --------------------------------
+  #
+  # The pop and `bin/dor-check --gate-role review` read DIFFERENT places by design:
+  # the pop folds the board's own ingested Actions rows, dor-check reads gh LIVE.
+  # When the board has not ingested the PR's current tip they disagree about the
+  # SAME PR — entry gate no, gate-zero yes — and the task cannot be reviewed by the
+  # SOP at all. auto-mint-level-up-tokens (turf PR 407) sat in `submitted` from
+  # 2026-08-23 on exactly that, and printed NO warning: blind_repos fires only for a
+  # repo with no ingested runs AT ALL, and that repo was wired.
+
+  def test_unit_claim_next_names_the_source_and_head_when_the_board_has_no_green
+    Dir.mktmpdir do |proj|
+      c = cli(projects_dir: proj,
+              data: { "claimed" => nil, "reason" => "no_green_ci", "blind_repos" => [],
+                      "skipped_ci" => [{ "slug" => "auto-mint-level-up-tokens", "state" => "none",
+                                         "sha" => "1bd7db53aa01", "repo" => "turf-monster" }] })
+      code = c.run(["claim-next"])
+
+      assert_equal ReviewClaimCli::NONE, code
+      assert_match(/board's OWN ingested CI/i, @err.string,
+                   "the refusal must NAME the source it trusted; that is the whole point")
+      assert_match(/auto-mint-level-up-tokens/, @err.string, "the skipped task is named")
+      assert_match(/1bd7db53aa01/, @err.string,
+                   "the HEAD matters — 'no green' about a stale tip is a different problem to a red build")
+      assert_match(/INGESTION gap, not a red build/i, @err.string)
+      assert_match(/gh pr checks/, @err.string, "hand over the command that shows the other view")
+    end
+  end
+
+  # The distinction that made this hard to see: a repo that IS wired but holds
+  # nothing for this branch tip. "no run for this tip" and "state red" are different
+  # diagnoses and must not render alike.
+  def test_unit_claim_next_says_no_run_for_the_tip_when_no_sha_is_held
+    Dir.mktmpdir do |proj|
+      c = cli(projects_dir: proj,
+              data: { "claimed" => nil, "reason" => "no_green_ci", "blind_repos" => [],
+                      "skipped_ci" => [{ "slug" => "some-task", "state" => "none", "sha" => "",
+                                         "repo" => "turf-monster" }] })
+      c.run(["claim-next"])
+
+      assert_match(/NO run for this branch tip/i, @err.string)
+    end
+  end
+
+  # A genuinely red queue must not be relabelled. The report explains WHERE the
+  # verdict came from; it never claims the build was fine.
+  def test_unit_claim_next_reports_a_red_board_state_as_red
+    Dir.mktmpdir do |proj|
+      c = cli(projects_dir: proj,
+              data: { "claimed" => nil, "reason" => "no_green_ci", "blind_repos" => [],
+                      "skipped_ci" => [{ "slug" => "red-one", "state" => "red", "sha" => "deadbeef1234",
+                                         "repo" => "turf-monster" }] })
+      c.run(["claim-next"])
+
+      assert_match(/board holds red/i, @err.string, "a red board state must be reported as red")
+    end
+  end
+
+  # Scoped to the reason it explains. An empty queue is not a disagreement, and
+  # printing an ingestion lecture there would train reviewers to ignore it.
+  def test_unit_claim_next_stays_quiet_about_ci_when_nothing_is_reviewable
+    Dir.mktmpdir do |proj|
+      c = cli(projects_dir: proj,
+              data: { "claimed" => nil, "reason" => "none_reviewable",
+                      "skipped_ci" => [{ "slug" => "x", "state" => "none", "sha" => "", "repo" => "r" }] })
+      c.run(["claim-next"])
+
+      refute_match(/board's OWN ingested CI/i, @err.string,
+                   "an empty queue is not a source disagreement")
+    end
+  end
+
+  # Older boards return no such key at all. The CLI must not crash or invent a line.
+  def test_unit_claim_next_tolerates_a_board_that_sends_no_skipped_ci
+    Dir.mktmpdir do |proj|
+      c = cli(projects_dir: proj, data: { "claimed" => nil, "reason" => "no_green_ci" })
+      code = c.run(["claim-next"])
+
+      assert_equal ReviewClaimCli::NONE, code
+      refute_match(/board's OWN ingested CI/i, @err.string)
+    end
+  end
 end
