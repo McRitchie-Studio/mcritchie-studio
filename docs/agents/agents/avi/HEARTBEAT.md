@@ -3,7 +3,13 @@
 ## Status: Active
 
 This is Avi's heartbeat launcher. It sets Avi's session attribution and routes to
-three independent act SOPs:
+Avi's three independent act SOPs.
+
+**The heartbeat itself composes only `qa-release`.** The other two are
+direct-invocation only, which is why the launcher card on the agent profile
+lists TWO acts and this file lists three — the card mirrors
+`ApplicationHelper#heartbeat_launchers`, and an act nobody launches from the
+heartbeat does not belong on it. The difference is deliberate, not drift.
 
 - [`qa-release`](sops/qa-release.md) - the self-healing sweep: merge the reviewed
   queue onto `release`, pre-QA gate, deploy QA, flip members `assembled` on
