@@ -182,7 +182,196 @@ class FastCheckTest < Minitest::Test
   # WITH `dir` as its cwd instead — the root resolves from the cwd git toplevel,
   # exercising the task-root guard (which an explicit override bypasses). stderr
   # is merged into stdout there so the refusal message is assertable.
-  def run_check(dir, args: ["--print"], fail_token: "", extra_env: {}, implicit_root: false, merge_stderr: false)
+  # A repo fixture that IDENTIFIES as a given slug. cert_repo comes from the
+  # checkout's origin remote (CertRootGuard.repo_of_checkout), so a registry-driven
+  # test cannot be written without one — a temp repo otherwise answers with its
+  # random tmpdir name and matches no registry row.
+  def with_repo_named(slug, release_check: nil)
+    with_repo do |dir|
+      assert system("git -C #{dir} remote add origin " \
+                    "https://github.com/McRitchie-Studio/#{slug}.git >/dev/null 2>&1"),
+             "could not name the fixture repo #{slug}"
+      if release_check
+        # The registry names bin/release-check for a gem; the fixture must carry one
+        # or the lane is legitimately unlaunchable and the test proves nothing.
+        FileUtils.mkdir_p(File.join(dir, "bin"))
+        File.write(File.join(dir, "bin/release-check"), release_check)
+        File.chmod(0o755, File.join(dir, "bin/release-check"))
+      end
+      yield dir
+    end
+  end
+
+  GEM_GATE_OK = "#!/bin/sh\nexit 0\n"
+
+  # --- gem repos on the BUILDER DEFAULT path -----------------------------------
+  #
+  # bin/full-suite-check learned to certify a gem repo; this script — the one
+  # builders actually run — did not, and every lane died on an unrescued
+  # Errno::ENOENT for `bin/rails` before a single test ran. These execute that path.
+
+  def test_a_gem_repo_runs_its_registry_gate_and_no_rails_lane
+    with_repo_named("studio-engine", release_check: GEM_GATE_OK) do |dir|
+      log = File.join(dir, "stub.log")
+      # NO FAST_CHECK_TEST_CMD: the unaided path is the whole point. The prepare
+      # command is a tripwire — a gem has no test DB, so it must never run.
+      # `nil` UNSETS the variable for the child. Omitting the key instead would leave
+      # run_check's own stub command in place and the registry path would never run —
+      # the first version of this test did exactly that and passed for no reason.
+      out, code = run_check(dir, extra_env: {
+        "FAST_CHECK_TEST_CMD" => nil,
+        "FAST_CHECK_TEST_PREPARE_CMD" => "sh -c 'echo PREPARE >> #{log.shellescape}'"
+      })
+
+      assert_equal 0, code, "an unaided gem cert must complete:\n#{out}"
+      refute_match(/PREPARE/, File.exist?(log) ? File.read(log) : "",
+        "a gem has no test database and no bin/rails to prepare one with — the " \
+        "prepare lane must not APPLY, not merely be skippable")
+      refute_match(/Errno::ENOENT|cert_process\.rb:\d+:in/, out,
+        "the crash this fixes must not resurface as a backtrace:\n#{out}")
+    end
+  end
+
+  def test_a_gem_cert_line_names_the_command_it_actually_ran
+    with_repo_named("studio-engine", release_check: GEM_GATE_OK) do |dir|
+      out, = run_check(dir, extra_env: { "FAST_CHECK_TEST_CMD" => nil })
+
+      # THE EVIDENCE MUST DESCRIBE WHAT RAN. The app wording counts diff-mapped
+      # paths, all zero for a gem — so the first working version of this fix emitted
+      # "0 mapped + 0 spine test path(s), rubocop on 0 changed file(s)" after running
+      # the repo's ENTIRE gate. Every number true, the sentence false.
+      refute_match(/0 mapped \+ 0 spine/, out,
+        "a cert that ran the whole gate must not read as one that tested nothing:\n#{out}")
+      assert_match(/whole registry gate/, out,
+        "the line must name what was actually executed:\n#{out}")
+    end
+  end
+
+  # A GEM RUNS NO RUBOCOP LANE — asserted by whether the lane's stub was INVOKED,
+  # not by scanning output for a string fast-check never emits.
+  #
+  # The first version of this test checked `refute_match(/\[rubocop@/)`, which is
+  # vacuous: fast-check emits ONE [fast-cert@...] line and no per-lane evidence at
+  # all, so that assertion was true no matter what ran. A mutation proved it — and
+  # then proved something better, that the lint-waiver branch it was written for was
+  # unreachable code, since the only lint_lane:none repo is also a gem.
+  def test_a_gem_repo_invokes_no_rubocop_lane_at_all
+    with_repo_named("studio-engine", release_check: GEM_GATE_OK) do |dir|
+      # fail_token makes the rubocop stub FAIL if it is ever invoked, so a lane that
+      # sneaks through reddens the cert rather than passing quietly.
+      _, code, lines = run_check(dir, fail_token: "RUBOCOP",
+                                      extra_env: { "FAST_CHECK_TEST_CMD" => nil })
+
+      assert_equal 0, code
+      assert_empty lane_calls(lines, "RUBOCOP"),
+        "a gem ships no rubocop; the lane must never be invoked for one"
+    end
+  end
+
+  def test_an_app_repo_is_unchanged_by_the_gem_path
+    with_repo_named("turf-monster") do |dir|
+      out, code = run_check(dir)
+
+      assert_equal 0, code, "no app repo may regress:\n#{out}"
+      assert_match(/mapped/, out,
+        "an app still reports its diff-mapped selection — the registry path must not " \
+        "quietly become the answer for every repo:\n#{out}")
+    end
+  end
+
+  GEM_GATE_RED = "#!/bin/sh\nexit 1\n"
+
+  # --- the gem lane must be able to FAIL ---------------------------------------
+  #
+  # This script is the cert WRITER for the whole pipeline, so a cert that cannot
+  # fail is worse than a missing one. Every other gem test here asserts a GREEN
+  # gem or the app control; nothing guarded the gem lane's place in the verdict
+  # hash, and dropping mapped_res from it would certify a gem GREEN over a RED
+  # gate with all of them still passing.
+
+  def test_a_gem_whose_gate_FAILS_certifies_nothing
+    with_repo_named("studio-engine", release_check: GEM_GATE_RED) do |dir|
+      out, code, lines = run_check(dir, args: ["task-x"], merge_stderr: true,
+                                        extra_env: { "FAST_CHECK_TEST_CMD" => nil,
+                                                     "TASK_SHOW_JSON" => SHOW_JSON })
+
+      refute_equal 0, code, "a red gem gate must fail the cert:\n#{out}"
+      refute_match(/\[fast-cert@/, out, "and must record NO evidence:\n#{out}")
+
+      closes = lines.select { |l| l[0] == "GATE" && l.include?("close") }
+      assert_equal 1, closes.length, "exactly one gate close, not zero and not two"
+      assert_includes closes.flatten, "--failed", "and the verdict must be failed"
+    end
+  end
+
+  # A gem whose registry row names bin/release-check but whose checkout does not
+  # carry it must stay RED. A silent skip here would be the worst outcome of all:
+  # a repo that certifies green having run nothing.
+  def test_a_gem_missing_its_declared_gate_stays_red
+    with_repo_named("studio-engine") do |dir|
+      out, code = run_check(dir, args: ["task-x"], merge_stderr: true,
+                                 extra_env: { "FAST_CHECK_TEST_CMD" => nil,
+                                              "TASK_SHOW_JSON" => SHOW_JSON })
+
+      refute_equal 0, code, "a declared gate that is absent is RED, never skipped:\n#{out}"
+      refute_match(/\[fast-cert@/, out)
+      assert_match(/COULD NOT RUN/, out,
+        "and it must name the COMMAND as the problem, not the diff:\n#{out}")
+    end
+  end
+
+  # --- acceptance 3: the attempt closes on a crash path ------------------------
+  #
+  # Every other test here runs --print, where gate_slug is nil and the at_exit
+  # block never executes — so this criterion shipped untested the first time.
+  # This copies the script, injects a raise where a lane crash would land, and
+  # reads the gate ledger.
+
+  def test_an_unrescued_crash_closes_the_g1_attempt_failed
+    with_repo do |dir, _|
+      # BESIDE the real script, not in the fixture dir: bin/fast-check does
+      # `require_relative "lib/..."`, so a copy anywhere else dies on a LoadError
+      # before it ever opens the attempt — which is a different failure than the
+      # one under test, and reads exactly like "the attempt never opened".
+      crashing = File.join(File.dirname(BIN), "fast-check-crash-fixture")
+      src = File.read(BIN).sub("unless skip_test_prepare", "raise \"boom\"\nunless skip_test_prepare")
+      File.write(crashing, src)
+      File.chmod(0o755, crashing)
+
+      _, code, lines = run_check(dir, args: ["task-x"], merge_stderr: true, bin: crashing,
+                                      extra_env: { "TASK_SHOW_JSON" => SHOW_JSON })
+
+      refute_equal 0, code
+      gate = lines.select { |l| l[0] == "GATE" }
+      assert gate.any? { |l| l.include?("open") }, "the attempt must have opened"
+      closes = gate.select { |l| l.include?("close") }
+      assert_equal 1, closes.length,
+        "a crash must close the attempt exactly once — leaving it open reads as " \
+        "STALLED on the board, and closing twice creates a spurious extra attempt " \
+        "whose --failed row becomes the verdict"
+      assert_includes closes.flatten, "--failed"
+    ensure
+      FileUtils.rm_f(crashing) if crashing
+    end
+  end
+
+  # THE GUARD THAT WOULD HAVE CAUGHT THE DOUBLE-CLOSE. A happy path must emit
+  # exactly ONE close, and it must be --success.
+  def test_a_passing_cert_closes_exactly_once_and_succeeds
+    with_repo do |dir, _|
+      _, code, lines = run_check(dir, args: ["task-x"],
+                                      extra_env: { "TASK_SHOW_JSON" => SHOW_JSON })
+
+      assert_equal 0, code
+      closes = lines.select { |l| l[0] == "GATE" && l.include?("close") }
+      assert_equal 1, closes.length, "a second close would create attempt n+1, and " \
+                                     "latest_by_key takes the LAST — so a spurious " \
+                                     "--failed row becomes the verdict over a PASSING cert"
+      assert_includes closes.flatten, "--success"
+    end
+  end
+
+  def run_check(dir, args: ["--print"], fail_token: "", extra_env: {}, implicit_root: false, merge_stderr: false, bin: BIN)
     log = File.join(dir, "stub.log")
     lane = write_stub(dir, "lane-stub", "LANE")
     gate = write_stub(dir, "gate-stub", "GATE")
@@ -202,7 +391,7 @@ class FastCheckTest < Minitest::Test
       "STUB_LOG" => log,
       "FAIL_TOKEN" => fail_token
     }.merge(extra_env))
-    cmd = "#{BIN.shellescape} #{args.map(&:shellescape).join(' ')}"
+    cmd = "#{bin.shellescape} #{args.map(&:shellescape).join(' ')}"
     out =
       if implicit_root
         env.delete("FAST_CHECK_ROOT")
