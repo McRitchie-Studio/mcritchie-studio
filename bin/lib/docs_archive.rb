@@ -3,6 +3,7 @@
 require "json"
 require "open3"
 require "fileutils"
+require "set"
 
 # DocsArchive — retire frozen snapshots out of the LIVE doc tree, on the archive
 # beat, and roll over the delete-later ledger.
@@ -127,9 +128,14 @@ module DocsArchive
   # cutoff. Everything else stays, and that deliberately includes every row with
   # NO date — "pending approval" and "reference only" are UNRESOLVED items, not
   # history, and rolling those into an archive would hide live work.
-  def split_ledger(content, cutoff)
+  # `landed` is the set of rows already rotated on `accepted` (nil when that rung
+  # could not be read). Such a row is left KEPT, untouched: rotating it here would
+  # redo work that has already landed, and the working tree will inherit the real
+  # rotation when it catches up to `accepted`.
+  def split_ledger(content, cutoff, landed: nil)
     kept = []
     rolled = []
+    already = []
     content.lines.each do |line|
       unless data_row?(line)
         kept << line
@@ -138,12 +144,17 @@ module DocsArchive
 
       date = row_date(line)
       if date && cutoff && date < cutoff
-        rolled << line
+        if landed&.include?(line.strip)
+          already << line
+          kept << line
+        else
+          rolled << line
+        end
       else
         kept << line
       end
     end
-    { kept: kept.join, rolled: rolled }
+    { kept: kept.join, rolled: rolled, already: already }
   end
 
   # A table data row (not the header, not the |---|---| separator).
@@ -180,14 +191,53 @@ module DocsArchive
     |------|------|-----------------------|-----------------------|--------|
   MD
 
+  # THE LADDER RUNG THE WORK ACTUALLY LANDS ON.
+  #
+  # bin/archive-docs runs in the PRIMARY checkout, which is pinned to `main` —
+  # and `main` LAGS `accepted` between releases. Reading only the working tree
+  # therefore recomputed rotations that had ALREADY landed on `accepted`: three
+  # occurrences (PR #856, #1011, #1015), each costing a human or agent a full
+  # re-verification pass to prove the recomputed rotation was a duplicate, and
+  # each leaving the primary dirty with it. That dirt has a second bite:
+  # `bin/release archive` refuses to commit when other changes are present, so it
+  # also blocks UNRELATED ledger commits.
+  #
+  # Prefer the remote rung; fall back to a local `accepted` when there is no
+  # remote. A ref that cannot be resolved yields nil, and the caller then behaves
+  # exactly as it always did — the check can only ever SUPPRESS a duplicate
+  # rotation, never invent one.
+  ACCEPTED_RUNGS = ["origin/accepted", "accepted"].freeze
+
+  def ledger_archive_at_accepted(repo)
+    ACCEPTED_RUNGS.each do |ref|
+      out, status = Open3.capture2e("git", "-C", repo, "show", "#{ref}:#{LEDGER_ARCHIVE}")
+      return [ref, out] if status.success?
+    end
+    [nil, nil]
+  end
+
+  # Data rows already present in the ledger archive on `accepted`, compared
+  # VERBATIM. Verbatim on purpose: a full-row match is precisely the `grep -Fqx`
+  # proof a reviewer ran by hand to establish the duplication on PR #1015, so the
+  # tool now performs that proof itself instead of leaving it to the reader.
+  def landed_ledger_rows(repo)
+    ref, content = ledger_archive_at_accepted(repo)
+    return [nil, nil] unless content
+
+    [ref, content.lines.select { |l| data_row?(l) }.map(&:strip).to_set]
+  end
+
   def roll_ledger!(repo, cutoff: nil, apply:)
     path = File.join(repo, LEDGER)
-    return { rolled: 0, cutoff: cutoff } unless File.file?(path)
+    return { rolled: 0, cutoff: cutoff, already_landed: 0, rung: nil } unless File.file?(path)
 
     content = File.read(path)
     cutoff ||= newest_ledger_date(content)
-    split = split_ledger(content, cutoff)
-    return { rolled: 0, cutoff: cutoff } if split[:rolled].empty?
+    rung, landed = landed_ledger_rows(repo)
+    split = split_ledger(content, cutoff, landed: landed)
+    result = { rolled: split[:rolled].size, cutoff: cutoff,
+               already_landed: split[:already].size, rung: rung }
+    return result if split[:rolled].empty?
 
     if apply
       archive = File.join(repo, LEDGER_ARCHIVE)
@@ -205,7 +255,7 @@ module DocsArchive
       git(repo, "add", "--", LEDGER, LEDGER_ARCHIVE)
     end
 
-    { rolled: split[:rolled].size, cutoff: cutoff }
+    result
   end
 
   # ---- plumbing -----------------------------------------------------------
