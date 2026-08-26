@@ -36,10 +36,20 @@ That is the code's job and the code already knows. Your judgment is spent on the
 anomalies, on the target, and on when to escalate.
 
 **Why the cycle is safe to call repeatedly.** Every scoring event is keyed on
-ESPN's own play id under a unique index, so a second identical cycle writes
-nothing. A cycle that dies halfway leaves no torn state. That is what makes an
-in-session watch viable: if the session drops, you resume by starting again, and
-nothing is double-counted or lost.
+ESPN's own play id under a unique partial index, so a second identical cycle
+writes nothing, and a cycle that dies halfway leaves no torn state. That is what
+makes an in-session watch viable: if the session drops, you resume by starting
+again.
+
+**What "safe" does and does not cover.** Re-running reconciles against the feed's
+CURRENT answer, so it recovers a play we missed — and it used to mean the
+opposite too. A degraded response (HTTP 200, valid JSON, no `scoringPlays` key)
+once reconciled a game down to nothing: goals 3 to 0, score 10-7 to 0-0, with no
+anomaly, because a blank scoreboard score also read as 0 and the drift check
+compared two zeros and agreed. The cycle now refuses to sweep to nothing,
+refuses to settle a game it cannot reconcile, and reports `degraded_feed`
+instead. So re-running is safe — but "safe" now means it declines to act on an
+answer it does not trust, not that every re-run makes progress.
 
 ## Scope
 
@@ -63,11 +73,18 @@ McRitchie says otherwise:
 
 ```bash
 cd /Users/alex/projects/turf-monster
-heroku run -a turf-monster bin/nfl-live-poll
+heroku run -a turf-monster-mainnet bin/nfl-live-poll
 ```
 
-The `-a turf-monster` is the whole safeguard: the target is IN the command, so
-it cannot drift from what you believe you are watching. Mirrors
+`turf-monster-mainnet` is the APP; `turf-monster` is the repo and the directory,
+and there is no Heroku app by that name — an earlier draft of this SOP used it
+in all six commands and every one of them would have failed. Confirm against
+`bin/deploy:80` (`HEROKU_APP="turf-monster-mainnet"`) rather than against
+memory, and note that `turf-monster-qa` DOES exist, so a wrong guess lands
+somewhere real.
+
+Naming the app in the command is the safeguard: the target cannot drift from
+what you believe you are watching. Mirrors
 [`deploy-with-task`](deploy-with-task.md)'s standing rule — use production by
 default, and make any other target explicit.
 
@@ -90,7 +107,7 @@ and on no other. Check first, because the failure is otherwise a raw shell
 error rather than a stated stop:
 
 ```bash
-heroku run -a turf-monster 'test -x bin/nfl-live-poll && echo present || echo MISSING'
+heroku run -a turf-monster-mainnet 'test -x bin/nfl-live-poll && echo present || echo MISSING'
 ```
 
 `MISSING` means the pipeline has not shipped yet. Report "the live-score poller
@@ -100,12 +117,19 @@ is not deployed" and stop — there is no watch to run and nothing to fix here.
 before committing twelve hours:
 
 ```bash
-heroku run -a turf-monster bin/rails runner \
-  'puts "env=#{Rails.env} db=#{ActiveRecord::Base.connection_db_config.database}"'
+heroku config:get SOLANA_NETWORK -a turf-monster-mainnet
 ```
 
-Expect `env=production`. Anything else means you are about to watch a stack
-nobody is playing on.
+Expect **`mainnet-beta`**.
+
+**`RAILS_ENV` cannot answer this question and an earlier draft of this SOP asked
+it anyway.** Every Heroku app runs `RAILS_ENV=production`, so `turf-monster-qa`
+prints `env=production` identically — the check passed on exactly the stack it
+was added to rule out. `SOLANA_NETWORK` is the half that discriminates: the
+production app runs `mainnet-beta` (`bin/deploy:130`), QA does not.
+
+Anything other than `mainnet-beta` means you are about to watch a stack nobody
+is playing on, and report its numbers as production's.
 
 **This check is not ceremony, and the obvious cheaper one does not work.**
 Asking the poller whether it can see games proves nothing about the target:
@@ -119,7 +143,7 @@ of that report looks right. It is exactly the failure this SOP exists to prevent
 **3. There is a slot worth watching.**
 
 ```bash
-heroku run -a turf-monster bin/nfl-live-poll --json | \
+heroku run -a turf-monster-mainnet bin/nfl-live-poll --json | \
   ruby -rjson -e 'd=JSON.parse(STDIN.read); puts "slot=#{d["slot"]} games=#{d["games_seen"]}"'
 ```
 
@@ -139,7 +163,7 @@ whether to continue — but a quiet ten minutes costs one line instead of twenty
 **One batch — ten minutes, twenty cycles:**
 
 ```bash
-for i in $(seq 1 20); do heroku run -a turf-monster bin/nfl-live-poll --quiet; sleep 30; done
+for i in $(seq 1 20); do heroku run -a turf-monster-mainnet bin/nfl-live-poll --quiet; sleep 30; done
 ```
 
 Note the `-a turf-monster` again. Every command in this act names its target,
@@ -158,7 +182,7 @@ the background and read its log each turn instead:
 
 ```bash
 mkdir -p log
-nohup sh -c 'while true; do heroku run -a turf-monster bin/nfl-live-poll --quiet; sleep 30; done' \
+nohup sh -c 'while true; do heroku run -a turf-monster-mainnet bin/nfl-live-poll --quiet; sleep 30; done' \
   > log/nfl-live-watch.log 2>&1 &
 echo $! > log/nfl-live-watch.pid
 ```
@@ -213,9 +237,19 @@ deserves a human is your job.
 | `fetch_failed` | One game's detail did not arrive | Ignore once. Twice on the same game in consecutive batches: report it. |
 | `unknown_team` | An abbreviation resolved to no team | **Escalate immediately.** A team that cannot be matched is a team that silently never scores. |
 | `score_drift` | Our summed events disagree with ESPN's total | Ignore a single drifting cycle mid-play — the feed updates a total before its play list. Persisting across three batches means a play was missed: escalate with the game slug and both scores. |
+| `degraded_feed` | The feed declined to answer — an absent play list, zero plays against goals we hold, or a blank score on a live game | The cycle REFUSED to act, which is the correct outcome. One is noise. Persisting across several batches means the feed is unwell: report it, and expect the board to stop advancing until it clears. |
+| `status_regression` | A stale row reported an earlier state for a game already final | Informational. The game keeps `completed`; nothing is re-broadcast. |
+| `unsettled_final` | The feed says FINAL but our events disagree with its total | **The game is NOT settled** — no matchup flipped, no contest scored. It settles on the next reconciling cycle. Escalate if it survives the slot. |
+| `cycle_error` | An unexpected exception, captured to `ErrorLog` | A bug, not a feed problem. Report it with the game slug. |
 
 `unknown_team` is the one that never waits. Every other anomaly degrades the
-board; that one silently under-scores a contest.
+board or stops it advancing; that one silently under-scores a contest while
+everything on screen looks correct.
+
+Note what a QUIET anomaly table no longer means. It used to be possible for the
+board to be corrupted with none of these raised at all — that is the specific
+hole `degraded_feed` and `unsettled_final` were added to close. A clean table is
+now evidence, not merely an absence.
 
 **On a REHEARSAL, drift is usually yours.** Scores injected by the `/live` dev
 toolbar carry no ESPN play id, so the cycle leaves them alone and correctly
