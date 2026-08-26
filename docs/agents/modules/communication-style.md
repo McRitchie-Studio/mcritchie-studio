@@ -7,9 +7,10 @@ how to phrase what you hand to Mr. McRitchie.
 
 The core fact: **Mr. McRitchie reads slowly.** Dense prose costs him real time.
 But slow uptake is not low appetite — once the idea lands, he wants the exact
-specifics so he can dive in. So every report carries two layers, in order.
+specifics so he can dive in. So every report carries two layers, in order; a
+chat hand-back adds a third.
 
-## The two-layer rule
+## The layer rule
 
 | Layer | What it is | Form |
 |-------|------------|------|
@@ -200,5 +201,5 @@ The mechanics that matter (`studio-engine/app/models/studio/link.rb:37`):
 - This style is for **operator-facing** writing. Agent-to-agent context
   (`devops["agent_context"]`, SOP internals) may stay dense.
 - Depth on request: when Mr. McRitchie asks a follow-up, go as deep and
-  technical as the question demands — the two-layer rule governs the opening
+  technical as the question demands — the layer rule governs the opening
   report, not the dive.
