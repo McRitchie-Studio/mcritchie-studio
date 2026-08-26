@@ -15,6 +15,7 @@ specifics so he can dive in. So every report carries two layers, in order.
 |-------|------------|------|
 | 1. The idea | The outcome in plain words, as if explaining to a smart 13-year-old | 1-3 short sentences |
 | 2. The specifics | Every handle he needs to dive in — URL, slug, path, branch, command | Table or bulleted list |
+| 3. The in-flight roster | What is still cooking, and for how long — **chat hand-backs only** | Fenced block, last in the message |
 
 Never trade layer 2 away for brevity. Simple is not vague: the summary gets
 simpler, the specifics stay exact.
@@ -65,7 +66,76 @@ PR:   <pr-url>  (base `accepted`)
 | Regression test | test/services/geo_gate_test.rb |
 
 Checks: [unit] geo_gate_test.rb · [integration] funding flow spec
+
+── IN FLIGHT ── 2:14 PM MDT ─────────────────────────────────────
+Nothing in flight.
+─────────────────────────────────────────────────────────────────
 ```
+
+## Layer 3 — the in-flight roster
+
+A session that fans out subagents or backgrounds a long command goes quiet, and
+from the outside Mr. McRitchie cannot tell working from wedged. The roster is
+the fix: **every time a turn ends and the ball returns to him, the message ends
+with a block naming what is still running and how long it has left.**
+
+The trigger is the hand-back itself — the seam Claude Code renders as
+`Sautéed for 2m 30s`. Not "when something is running", not "when it seems worth
+mentioning". Every hand-back.
+
+### The block
+
+```text
+── IN FLIGHT ── 2:14 PM MDT ─────────────────────────────────────
+carl · review fix-cta-timing (PR #612)    4m in · ~6m left  (rough)
+bin/ship log-active-wips-at-pause         3m in · ~9m left  (firm — CI wait)
+avi · qa-release sweep                    1m in · ~14m left (firm — QA deploy)
+─────────────────────────────────────────────────────────────────
+```
+
+Idle turns print the same block, one line long:
+
+```text
+── IN FLIGHT ── 2:14 PM MDT ─────────────────────────────────────
+Nothing in flight.
+─────────────────────────────────────────────────────────────────
+```
+
+### The rules
+
+- **Stamp Denver time on the header.** `TZ=America/Denver date "+%-I:%M %p %Z"`.
+  He reads reports well after they land; the clock time lets him subtract and
+  know how stale the numbers are without asking.
+- **One row per live thing** — each subagent, each backgrounded command, each
+  `bin/ship`, each deploy or QA sweep, each cron or watch you started.
+- **Name the row by its slug or agent name**, per the slug rule above:
+  `carl · review fix-cta-timing (PR #612)`, never `subagent 2`.
+- **Two numbers, always: elapsed and remaining.** Elapsed is fact; remaining is
+  the forecast he actually wants.
+- **Mark the forecast's confidence** — `firm` when the duration is machinery
+  with a known runtime, `rough` when it is model work whose length varies. Name
+  the reason in the firm case (`firm — CI wait`) so the number is auditable.
+- **Print `Nothing in flight.` when idle.** An absent block and a quiet session
+  look identical; this makes silence mean exactly one thing.
+- **Never pad the roster.** Work that finished during the turn is reported in
+  layers 1-2 as done, not parked on the roster as though still running.
+- **If you truly cannot estimate, say so** — `~? (unknown — first run of this
+  sweep)`. An honest unknown beats an invented number.
+
+### Firm durations — the measured ones
+
+Use these for the `firm` rows rather than guessing:
+
+| Work | Typical | Note |
+|------|---------|------|
+| `bin/fast-check <task>` | ~1 min | the builder default cert |
+| `bin/ship <task>` (cold) | ~12 min | includes the CI wait; ~3 min with `SHIP_CI_WAIT=off` |
+| CI full suite on a PR | ~9 min | the authoritative lane |
+| `bin/full-suite-check <task>` | ~31 min | local, CI-independent — measured against CI's ~9 |
+
+Everything else — a review agent, an exploration sweep, a research fan-out — is
+`rough`. Estimate from the work's shape, and let the elapsed column carry the
+truth.
 
 ## Review handoffs — hand a magic link
 
