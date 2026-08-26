@@ -57,6 +57,15 @@ class BoardLanePinTest < ActionDispatch::IntegrationTest
                     "the scroller switches itself on from a measurement, not a breakpoint"
   end
 
+  # THE BROADCAST REGRESSION. app-ladder-row is replaced wholesale and the strip rides inside
+  # it, so an init-bound observation watches a detached node from the first broadcast on.
+  test "the lane observer follows the strip across a broadcast" do
+    assert_includes response.body, "if (!this._laneRo || strip === this._laneStrip) return;"
+    assert_includes response.body, "this._laneRo.unobserve(this._laneStrip);"
+    assert_equal 2, response.body.scan("this.watchStrip(strip);").size,
+                 "init AND every measure route through the one place that observes"
+  end
+
   # The header still carries what it always did — the stage label and its count badge —
   # because pinning it is a placement change and nothing more.
   test "a pinned header keeps its label and its count" do

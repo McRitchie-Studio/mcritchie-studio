@@ -84,6 +84,10 @@ function kanbanBoard(live) {
     // own comment for why that question decides whether the headers can pin at all.
     laneScroll: false,
     _laneRo: null,
+    // WHICH strip node _laneRo watches. The app-ladder broadcast replaces `app-ladder-row`
+    // and the strip WITH it, and a detached node never resizes — so a node captured once
+    // at init stops waking measureLanes(), and the headers pin behind the strip.
+    _laneStrip: null,
 
     stageLabels: <%= raw Task::STAGE_LABELS.to_json %>,
 
@@ -134,6 +138,7 @@ function kanbanBoard(live) {
       // The app-ladder strip is POSITION: FIXED, so offsetParent is null even while it
       // is on screen — its display is the only honest read of whether it is showing.
       const strip = document.querySelector('[data-test="app-ladder-pinned"]');
+      this.watchStrip(strip);
       const stack = strip && getComputedStyle(strip).display !== 'none'
         ? strip.getBoundingClientRect().height
         : 0;
@@ -157,8 +162,17 @@ function kanbanBoard(live) {
       const header = document.querySelector('.vt-pinned-header');
       if (header) this._laneRo.observe(header);
       const strip = document.querySelector('[data-test="app-ladder-pinned"]');
-      if (strip) this._laneRo.observe(strip);
+      this.watchStrip(strip);
       if (this.$refs.lanes) this._laneRo.observe(this.$refs.lanes);
+    },
+
+    // The ONE place the strip is observed — from init and from every measure, so the
+    // observation follows the strip across a broadcast. Same node in, nothing happens.
+    watchStrip(strip) {
+      if (!this._laneRo || strip === this._laneStrip) return;
+      if (this._laneStrip) this._laneRo.unobserve(this._laneStrip);
+      if (strip) this._laneRo.observe(strip);
+      this._laneStrip = strip;
     },
 
     destroy() {
