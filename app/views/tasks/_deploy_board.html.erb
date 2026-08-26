@@ -69,6 +69,22 @@ function kanbanBoard(live) {
     showAllCols: false,
     toasts: [],
 
+    // --- Sticky swim-lane headers ---------------------------------------------
+    // WHERE A LANE HEADER PINS — the bottom of whatever is already pinned above it:
+    // the site header, plus the app-ladder strip when that is showing. Measured, never
+    // hard-coded, for the same reason the strip measures: the site header TRANSITIONS
+    // its height as it shrinks on scroll, and the strip comes and goes.
+    //
+    // The headers themselves are `position: sticky` INSIDE their own column, so each one
+    // is aligned with the lane it names by construction. A fixed clone would have to
+    // re-derive six column x-positions and keep them in step through the collapse, the
+    // app filter and a Turbo patch — three chances to drift that this shape does not have.
+    laneTop: 0,
+    // Whether the lane row NEEDS its horizontal scroller right now — see the wrapper's
+    // own comment for why that question decides whether the headers can pin at all.
+    laneScroll: false,
+    _laneRo: null,
+
     stageLabels: <%= raw Task::STAGE_LABELS.to_json %>,
 
     matchesFilter(agent) {
@@ -102,12 +118,51 @@ function kanbanBoard(live) {
         // First, and independent of initSortables succeeding: the flag means "directives
         // bound / chips clickable," not "drag-drop wired."
         this.$el.dataset.alpineReady = 'true';
+        this.measureLanes();
+        this.watchLanes();
         this.initSortables();
         if (this.live) {
           this.observeLive();
           if (!window.LiveBoardFx) this.installExitStreamFallback();
         }
       });
+    },
+
+    measureLanes() {
+      const header = document.querySelector('.vt-pinned-header');
+      const base = header ? header.getBoundingClientRect().bottom : 0;
+      // The app-ladder strip is POSITION: FIXED, so offsetParent is null even while it
+      // is on screen — its display is the only honest read of whether it is showing.
+      const strip = document.querySelector('[data-test="app-ladder-pinned"]');
+      const stack = strip && getComputedStyle(strip).display !== 'none'
+        ? strip.getBoundingClientRect().height
+        : 0;
+      this.laneTop = Math.round(base + stack);
+
+      // DOES THE LANE ROW ACTUALLY OVERFLOW? `scrollWidth` reports the content's true
+      // width whether or not the box scrolls, so this reads the same either way and
+      // cannot oscillate: turning the scroller on does not make the content narrower.
+      const lanes = this.$refs.lanes;
+      if (lanes) this.laneScroll = lanes.scrollWidth > lanes.clientWidth + 1;
+    },
+
+    // A ResizeObserver for the reason components/_overflow_fade records: a scroll is one
+    // CAUSE of the boxes above changing, this watches the EFFECT. It covers the site
+    // header's 300ms shrink transition (which fires no scroll event of its own) AND the
+    // strip appearing, whose display flip Alpine applies on a later tick than the scroll
+    // handler that triggered it — so a scroll-only reading lags by a frame every time.
+    watchLanes() {
+      if (!window.ResizeObserver) return;
+      this._laneRo = new ResizeObserver(() => this.measureLanes());
+      const header = document.querySelector('.vt-pinned-header');
+      if (header) this._laneRo.observe(header);
+      const strip = document.querySelector('[data-test="app-ladder-pinned"]');
+      if (strip) this._laneRo.observe(strip);
+      if (this.$refs.lanes) this._laneRo.observe(this.$refs.lanes);
+    },
+
+    destroy() {
+      if (this._laneRo) { this._laneRo.disconnect(); this._laneRo = null; }
     },
 
     // --- Board live updates (Turbo Streams) -----------------------------------
@@ -400,6 +455,8 @@ document.addEventListener('turbo:before-cache', function() {
     ONE place instead of restating it. A spec that restated it went stale the day the
     beat changed, and its failure looked like a broken animation rather than a stale test. %>
 <section x-data="kanbanBoard(<%= live_updates.to_json %>)" data-test="kanban-board"
+         @scroll.window="measureLanes()"
+         @resize.window="measureLanes()"
          data-beat-ms="<%= (Release::BOARD_FLIP_CADENCE * 1000).round %>" class="min-h-screen">
   <!-- Header — Dashboard/Stages as small links above the title; the title says
        where you are, and the Tasks/Deployments toggle (right) switches boards. -->
@@ -484,7 +541,29 @@ document.addEventListener('turbo:before-cache', function() {
   <% end %>
 
   <!-- Kanban Board -->
-  <div class="flex flex-col gap-4 overflow-x-visible pb-4 sm:flex-row sm:overflow-x-auto">
+  <%# THE SCROLLER IS MEASURED ON, AND THAT IS WHAT LETS THE LANE HEADERS PIN.
+
+      A `position: sticky` child sticks to its nearest SCROLL CONTAINER, and an
+      `overflow-x: auto` wrapper is one — on both axes, because a box with one axis
+      scrollable computes the other from `visible` to `auto`. Inside such a wrapper a
+      sticky header sticks to a scrollport with no vertical scroll of its own and simply
+      rides the page up out of view. It does nothing, and nothing anywhere says why.
+
+      So the scroller is applied only while the lanes ACTUALLY overflow (measureLanes
+      reads scrollWidth vs clientWidth, which reports the same either way). On the wide
+      board that is never — six lanes at their 13.5rem floor plus gaps measure 1376px,
+      and below 1400px the board collapses to three — so the headers pin. It switches
+      itself on for the one case that needs it, All Stages forcing six lanes into a
+      viewport that cannot hold them, and there the headers stop pinning. That is the
+      honest trade, and it is measured rather than guessed at a breakpoint: a fixed
+      `min-[1440px]` override was tried first and LOST to `sm:overflow-x-auto`, because
+      Tailwind v4 emits arbitrary `min-[…]` media queries BEFORE its named ones, so the
+      later `sm` rule won at every width and the headers silently never pinned. %>
+  <div class="flex flex-col gap-4 overflow-x-visible pb-4 sm:flex-row"
+       data-test="kanban-lanes"
+       x-ref="lanes"
+       :class="laneScroll ? 'sm:overflow-x-auto' : ''"
+       :data-lane-scroll="laneScroll">
     <% columns.each_with_index do |stage, idx| %>
       <%# Blocked tasks ride Building, but active building work stays first so a
           re-claimed blocked task becomes topical again. %>
@@ -497,7 +576,25 @@ document.addEventListener('turbo:before-cache', function() {
       <div class="w-full flex-none sm:flex-1 <%= columns.size > 4 ? "sm:min-w-[13.5rem]" : "sm:min-w-[190px]" %>"
            <% if collapsible %>:class="showAllCols ? '' : 'max-[1399px]:hidden'"<% end %>>
         <!-- Column Header -->
-        <div class="mb-3 px-1">
+        <%# PINNED, so the lane you are reading keeps its name while you scroll its cards.
+            It sticks to `laneTop` — the bottom of the site header plus the app-ladder
+            strip when that is showing — so the three pinned things stack rather than
+            overlap. z-30 keeps it under the strip (z-40) and the nav (z-50) and over the
+            cards, which slide beneath it.
+
+            IT NEEDS ITS OWN BACKGROUND. A sticky header with a transparent one shows the
+            cards passing underneath through the text, which is worse than not pinning at
+            all — and OPAQUE, not the strip's 95%: a card sliding under a translucent
+            header reads as a smear behind the lane name. The div already spans the lane,
+            so `px-1` (unchanged) insets the label while the background covers the full
+            width — a negative margin to "reach the
+            edges" was tried and is exactly wrong: it made every header 8px wider than its
+            lane, which overflowed the row by 4px, which turned the measured scroller back
+            on, which un-stuck all six headers. %>
+        <div class="sticky z-30 mb-3 rounded-t-lg bg-page px-1 py-2"
+             data-test="stage-header"
+             data-stage="<%= stage %>"
+             :style="{ top: laneTop + 'px' }">
           <div class="flex items-center gap-2">
             <h3 class="text-sm font-bold text-heading uppercase tracking-wider">
               <%= Task::STAGE_LABELS.fetch(stage) %>
@@ -533,7 +630,20 @@ document.addEventListener('turbo:before-cache', function() {
         <!-- Drop Zone -->
         <div id="dropzone-<%= stage %>"
              data-stage="<%= stage %>"
-             class="kanban-dropzone rounded-xl border-2 border-dashed min-h-40 p-2 space-y-2 transition-colors duration-150 border-subtle sm:min-h-[calc(100vh-220px)]">
+             <%# `isolate` (isolation: isolate) CONTAINS the cards' own z-indexes, and it is
+                 what stops a crew avatar painting over the pinned lane header above it.
+
+                 The crew stack in components/_stage_agent_avatars is layered z-10/20/30/40
+                 — deliberately, and correctly: those numbers order the faces WITHIN a card
+                 (lead face on top, its badge above that). But nothing between them and the
+                 root created a stacking context, so they were competing with the PAGE, and
+                 a z-40 badge beat the z-30 header it should slide under.
+                 Raising the header instead would only move the collision: the ladder strip
+                 is z-40 and the site nav z-50, so the board would be bidding against its own
+                 chrome for numbers. One stacking context per lane ends the auction — the
+                 crew keeps its internal order and the whole zone paints below the header,
+                 which is positioned and therefore above it. %>
+             class="kanban-dropzone isolate rounded-xl border-2 border-dashed min-h-40 p-2 space-y-2 transition-colors duration-150 border-subtle sm:min-h-[calc(100vh-220px)]">
 
           <%# Every per-card local here is a BATCH load_board already computed, handed
               in explicitly so a column of cards costs one query instead of one each.

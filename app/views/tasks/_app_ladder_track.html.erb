@@ -1,0 +1,71 @@
+<%# THE LADDER, drawn as ONE PROGRESS BAR in three segments reading
+    `accepted → release → main`. Extracted from tasks/_app_ladder_card so the PINNED
+    strip can draw the same bar rather than a second one that would drift from it —
+    the strip's whole promise is that it is the row's own cards with the middle
+    removed, and a hand-copied track is how that promise quietly stops being true.
+
+    Two facts share each segment, and they do NOT share a channel:
+
+      COLOUR — WHERE THE WORK IS: emerald moved through, amber sitting here now
+               (the count says how much), faded not this far, rose CI FAILED here.
+      GLYPH  — WHAT CI SAID: ✓ green, spinner running, ✗ failed, and NOTHING when
+               nothing was ingested. An absence must never wear the pass glyph.
+
+    Everything is precomputed by Ci::AppLadder::Card#track; this partial draws, it
+    does not derive.
+
+    Locals:
+      card    - Ci::AppLadder::Card
+      compact - drop the parked counts and tighten the padding (the pinned strip) %>
+<% card = local_assigns.fetch(:card) %>
+<% compact = local_assigns.fetch(:compact, false) %>
+<div class="flex items-stretch gap-1"
+     data-test="app-ladder-suite"
+     data-furthest="<%= card.furthest_rung %>"
+     role="group"
+     aria-label="<%= app_ladder_suite_summary(card) %>">
+  <% card.track.each do |node| %>
+    <% tone = app_ladder_segment_tone(node) %>
+    <% glyph = app_ladder_rung_glyph(node[:state]) %>
+    <% count = compact ? nil : app_ladder_rung_count(node) %>
+    <div class="relative flex-1 min-w-0 overflow-hidden rounded border <%= tone[:border] %> bg-inset"
+         data-test="app-ladder-rung"
+         data-branch="<%= node[:branch] %>"
+         data-state="<%= node[:state] %>"
+         data-progress="<%= node[:progress] %>"
+         data-filled="<%= node[:filled] %>"
+         data-parked="<%= node[:parked] %>"
+         title="<%= app_ladder_segment_title(node) %>">
+      <%# A TINT, never a solid block — the label rides on top of it. Same 15/30 split
+          the release meter measured at 5.3:1 or better in both themes. %>
+      <div class="absolute inset-0 <%= tone[:fill] %> opacity-15 dark:opacity-30"
+           data-test="app-ladder-rung-fill"></div>
+      <div class="relative flex items-center justify-center gap-1 <%= compact ? "px-1 py-0.5" : "px-1.5 py-1" %> <%= tone[:text] %>">
+        <% if glyph == :spinner %>
+          <svg class="h-2 w-2 shrink-0 animate-spin motion-reduce:animate-none" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+            <circle class="opacity-25" cx="12" cy="12" r="9" stroke="currentColor" stroke-width="3"/>
+            <path class="opacity-90" d="M12 3a9 9 0 0 1 9 9" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+          </svg>
+        <% elsif glyph == :check %>
+          <svg class="h-2 w-2 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="4" d="M4.5 12.75l6 6 9-13.5"/>
+          </svg>
+        <% elsif glyph == :cross %>
+          <svg class="h-2 w-2 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="4" d="M6 18 18 6M6 6l12 12"/>
+          </svg>
+        <% end %>
+        <span class="truncate text-[10px] font-medium leading-none"><%= node[:branch] %></span>
+        <%# The count rides the segment it describes. The old footnote said "2 on
+            release" in the smallest text on the card, under a badge that could not
+            show it. The pinned strip drops it (compact:) — it keeps three rows and
+            nothing else, and a number there would be the first thing to overflow. %>
+        <% if count %>
+          <span class="shrink-0 rounded-sm bg-current/15 px-1 text-[10px] font-semibold leading-none tabular-nums"
+                data-test="app-ladder-parked"
+                data-branch="<%= node[:branch] %>"><%= count %></span>
+        <% end %>
+      </div>
+    </div>
+  <% end %>
+</div>

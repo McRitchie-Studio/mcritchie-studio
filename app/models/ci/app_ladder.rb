@@ -30,6 +30,19 @@ module Ci
   class AppLadder
     RUNGS = %w[accepted release main].freeze
 
+    # HOW MANY CARDS MEAN THE ROW OVERFLOWS — the first-paint seed for the row's
+    # right-edge fade (tasks/_app_ladder_row).
+    #
+    # The row is ONE horizontally scrolling line of 20rem cards, so five of them
+    # (5 × 320px + gaps = 1664px) cannot fit the board's widest container (1472px)
+    # at any viewport. That makes five the count at which the fade is known to be
+    # right BEFORE anything has measured — which is the whole of this constant's
+    # job. The browser then measures for real on init and on every scroll or resize,
+    # so a narrower window overflowing at four cards is corrected within a frame and
+    # the fade disappears at the end of the scroll. The seed only has to be right at
+    # first paint; it is not the rule.
+    ROW_FADE_AT = 5
+
     # Which `merged` stamp parks a task at which rung.
     #
     # `main` is deliberately ABSENT. Work stamped `merged: "main"` has ARRIVED — it

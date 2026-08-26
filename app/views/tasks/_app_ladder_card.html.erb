@@ -14,8 +14,8 @@
     card is the two-rows-saying-the-same-thing shape the CI meter already collapsed.
 
     THE LADDER, beneath the meter, is ONE PROGRESS BAR in three segments reading
-    `accepted → release → main`. Two facts share each segment, and they do NOT share a
-    channel:
+    `accepted → release → main` (drawn by tasks/_app_ladder_track, which the pinned
+    strip shares). Two facts share each segment, and they do NOT share a channel:
 
       COLOUR — WHERE THE WORK IS.
         emerald  it moved through this rung (at `main`, it arrived)
@@ -98,14 +98,20 @@
        data-position="<%= card.position %>"
        title="<%= app_ladder_position_sentence(card) %>"><%= app_ladder_position_label(card) %></div>
 
-  <%# THE QUIET LINE — the whole of a resting card's middle. One statement of when this
-      app last reached production, standing where the meter would be. It is the reason
-      the dimming is safe to do: "at rest" alone could mean "nothing is reporting", and
-      "shipped 3h ago" cannot. %>
+  <%# THE QUIET LINE — the whole of a resting card's middle, standing where the meter
+      would be.
+
+      IT USED TO CARRY THE SHIP TOO ("nothing waiting · shipped 4d ago"), because the
+      dimming needs a fact to be safe: "at rest" alone could mean "nothing is
+      reporting". The ship now rides the MAIN MERGED line below, which EVERY card
+      carries and which states the moment rather than the age — so keeping it here as
+      well would put the same fact on one card twice, one line apart, at two
+      precisions. The dimming is still safe: the fact simply moved one line down and
+      got sharper. %>
   <% if at_rest %>
     <div class="mb-2.5 rounded border border-subtle bg-inset px-2 py-1.5 text-[10px] text-muted"
          data-test="app-ladder-at-rest">
-      nothing waiting · <span data-test="app-ladder-shipped"><%= app_ladder_shipped_note(card) %></span>
+      nothing waiting
     </div>
   <%# The CI meter. Rendered only when checks were actually ingested — an absent
       suite must not draw an empty rail that reads as "0 of 0 passed". %>
@@ -153,59 +159,39 @@
     </div>
   <% end %>
 
-  <%# THE LADDER, drawn as ONE PROGRESS BAR in three segments. Same shape the badge row
-      had — three equal pills reading up the ladder — with the colour doing a different
-      job: it now says WHERE THE WORK IS, and the glyph inside says what CI thought.
-      Everything is precomputed by Ci::AppLadder::Card#track; the view draws, it does
-      not derive. %>
-  <div class="flex items-stretch gap-1"
-       data-test="app-ladder-suite"
-       data-furthest="<%= card.furthest_rung %>"
-       role="group"
-       aria-label="<%= app_ladder_suite_summary(card) %>">
-    <% card.track.each do |node| %>
-      <% tone = app_ladder_segment_tone(node) %>
-      <% glyph = app_ladder_rung_glyph(node[:state]) %>
-      <% count = app_ladder_rung_count(node) %>
-      <div class="relative flex-1 min-w-0 overflow-hidden rounded border <%= tone[:border] %> bg-inset"
-           data-test="app-ladder-rung"
-           data-branch="<%= node[:branch] %>"
-           data-state="<%= node[:state] %>"
-           data-progress="<%= node[:progress] %>"
-           data-filled="<%= node[:filled] %>"
-           data-parked="<%= node[:parked] %>"
-           title="<%= app_ladder_segment_title(node) %>">
-        <%# A TINT, never a solid block — the label rides on top of it. Same 15/30 split
-            the release meter measured at 5.3:1 or better in both themes. %>
-        <div class="absolute inset-0 <%= tone[:fill] %> opacity-15 dark:opacity-30"
-             data-test="app-ladder-rung-fill"></div>
-        <div class="relative flex items-center justify-center gap-1 px-1.5 py-1 <%= tone[:text] %>">
-          <% if glyph == :spinner %>
-            <svg class="h-2 w-2 shrink-0 animate-spin motion-reduce:animate-none" fill="none" viewBox="0 0 24 24" aria-hidden="true">
-              <circle class="opacity-25" cx="12" cy="12" r="9" stroke="currentColor" stroke-width="3"/>
-              <path class="opacity-90" d="M12 3a9 9 0 0 1 9 9" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
-            </svg>
-          <% elsif glyph == :check %>
-            <svg class="h-2 w-2 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="4" d="M4.5 12.75l6 6 9-13.5"/>
-            </svg>
-          <% elsif glyph == :cross %>
-            <svg class="h-2 w-2 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="4" d="M6 18 18 6M6 6l12 12"/>
-            </svg>
-          <% end %>
-          <span class="truncate text-[10px] font-medium leading-none"><%= node[:branch] %></span>
-          <%# The count rides the segment it describes. The old footnote said "2 on
-              release" in the smallest text on the card, under a badge that could not
-              show it. %>
-          <% if count %>
-            <span class="shrink-0 rounded-sm bg-current/15 px-1 text-[10px] font-semibold leading-none tabular-nums"
-                  data-test="app-ladder-parked"
-                  data-branch="<%= node[:branch] %>"><%= count %></span>
-          <% end %>
-        </div>
-      </div>
-    <% end %>
+  <%# THE LADDER, drawn as ONE PROGRESS BAR in three segments — extracted to
+      tasks/_app_ladder_track so the pinned strip at the top of the page draws the
+      card's own bar rather than a lookalike that could drift from it. Same shape the
+      badge row had — three equal pills reading up the ladder — with the colour doing
+      a different job: it now says WHERE THE WORK IS, and the glyph inside says what
+      CI thought. %>
+  <%= render "tasks/app_ladder_track", card: card %>
+
+  <%# WHEN MAIN LAST TOOK CODE, under the rung that says it — the stamp, to the
+      minute, for every card rather than only the resting ones.
+
+      IT IS THE SHIP'S OWN CLOCK (Ci::AppLadder.shipped_index → the release's
+      `shipped_at`), because on this ladder `release → main` IS the merge: `bin/release
+      ship` fast-forwards it, and the release row records the moment production took
+      the code. Nothing is derived twice — the at-rest line above reads the same field.
+
+      ONE LINE, BOTH PRECISIONS. The label carries the AGE ("2d ago") and the value
+      carries the MOMENT ("Aug 24 4:43a"), because the two answer different questions —
+      "is this app going stale?" is read at a glance from the age, while "which ship was
+      that?" is what an operator takes to the release log. Putting them on one line is
+      what let the at-rest note above stop repeating the first of them.
+
+      NEVER A GUESSED TIME. A repo whose last ship predates the scanned window renders
+      an em dash and says so on hover; an invented stamp on a deploy board is worse
+      than an admitted gap. %>
+  <div class="mt-1.5 flex items-baseline justify-between gap-2 text-[10px] leading-none"
+       data-test="app-ladder-main-merge"
+       data-at="<%= card.last_shipped_at&.iso8601 %>"
+       title="<%= app_ladder_main_merge_title(card) %>">
+    <span class="truncate uppercase tracking-wide text-muted"
+          data-test="app-ladder-main-merge-label"><%= app_ladder_main_merge_label(card) %></span>
+    <span class="shrink-0 tabular-nums <%= card.last_shipped_at ? "text-secondary" : "text-muted" %>"
+          data-test="app-ladder-main-merge-value"><%= app_ladder_main_merge_stamp(card) %></span>
   </div>
 
   <%# HOW LONG REVIEW TAKES on this app lately — the rolling ten (Review::DurationRoll).

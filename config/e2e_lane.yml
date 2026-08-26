@@ -121,7 +121,36 @@
 # vacuous, because the board always has cards.
 # MEASURED with the lister, not added by hand: `npx playwright test --list` => 130.
 # Coverage ADDED; `quarantined` is untouched.
-total_specs: 130
+#
+# 130 -> 134 on 2026-08-25: e2e/app_ladder_row.spec.js gains the four specs for the
+# Applications section's new shape (/tasks/pin-applications-ladder-row) — the cards on ONE
+# painted line, the right-edge fade appearing only while there is something off-screen and
+# clearing at the end of the scroll, the pinned strip fixing itself to the header's MEASURED
+# bottom edge with three rows per tile, and every card's last-main-merge stamp. Three of the
+# four can only be settled in a browser: one line, a cleared fade, and a measured offset are
+# geometry, not markup.
+# MEASURED with the lister, not added by hand: `npx playwright test --list` => 134.
+# Coverage ADDED; `quarantined` is untouched.
+#
+# 134 -> 137 on 2026-08-25: e2e/deployments_lane_pin.spec.js pins the SWIM-LANE headers
+# (same task) — all six settling on the applications strip's bottom edge and staying
+# aligned with the lane each one names, the lane row NOT being a scroll container while
+# the lanes fit, and the headers returning to the flow at the top of the page. The
+# middle one is the load-bearing spec: a sticky child inside an `overflow-x: auto`
+# ancestor keeps `position: sticky` and quietly leaves the viewport (measured at
+# top: -552px), which no server-side tier can see.
+# MEASURED with the lister, not added by hand: `npx playwright test --list` => 137.
+# Coverage ADDED; `quarantined` is untouched.
+#
+# 137 -> 139 on 2026-08-25: two more in e2e/deployments_lane_pin.spec.js for the crew
+# OVERLAP the operator caught — a mascot portrait painting on top of "BUILDING 2".
+# Asserted by HIT-TESTING a grid over each pinned header at four scroll positions (the
+# offender is whatever is passing under the band at that moment), plus the mechanism that
+# fixes it: `isolate` on every dropzone. The property, not a number — a z-index contest
+# between a card and the page chrome is what produced the bug.
+# MEASURED with the lister, not added by hand: `npx playwright test --list` => 139.
+# Coverage ADDED; `quarantined` is untouched.
+total_specs: 139
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
@@ -196,7 +225,19 @@ quarantined: 10
 # invariant checked against them rather than assumed: 130 - 10 = 120.
 #   npx playwright test --list                           => 130
 #   npx playwright test --list --grep-invert @quarantine => 120
-executed: 120
+#
+# Re-derived after the applications-row coverage landed:
+#   npx playwright test --list                           => 134
+#   npx playwright test --list --grep-invert @quarantine => 124
+#
+# Re-derived after the lane-pin coverage landed:
+#   npx playwright test --list                           => 137
+#   npx playwright test --list --grep-invert @quarantine => 127
+#
+# Re-derived after the overlap coverage landed:
+#   npx playwright test --list                           => 139
+#   npx playwright test --list --grep-invert @quarantine => 129
+executed: 129
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to

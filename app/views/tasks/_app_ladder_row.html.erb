@@ -6,6 +6,31 @@
     promotes it, and between releases Next Release reads "none active" while several
     repos quietly hold unshipped work. That in-between state had no surface at all.
 
+    ONE ROW THAT SCROLLS, not a wrapping grid. The grid put the fifth repo on a second
+    line under three empty columns, so the row's height grew with the ecosystem and
+    the board it sits above was pushed down for every app onboarded. A single row
+    keeps that cost flat: past the fourth card the row scrolls sideways, and the FADE
+    at its right edge is what says there is more — a hard clipped edge reads as the
+    end of the list, which is the one thing it must not say.
+
+    THE FADE IS A MASK ON THE ROW ITSELF, not a gradient laid over it — the same
+    vocabulary components/_overflow_fade and the CI meter's mark row already use here.
+    An overlay must be painted in the page's own background colour, which is a claim
+    about what sits behind the cards; a mask makes the content itself fall away, so it
+    is right in both themes over any surface, with no second colour to keep in step.
+
+    AND IT IS MEASURED, NOT ASSUMED. It shows while the scroller actually has content
+    to the right, and clears the moment you reach the end — seeded server-side from the
+    card count so the first paint is right before Alpine measures anything. A fade over
+    a row with nothing behind it is a promise of content that does not exist.
+
+    THE PINNED STRIP is the second half of the ask: scroll past this row and the same
+    applications re-appear fixed under the site header, condensed to three rows —
+    name, CI meter, ladder (tasks/_app_ladder_pinned_card). It is rendered HERE, inside
+    #app-ladder-row, on purpose: the broadcast below replaces this slot, so the strip
+    refreshes with the row and can never sit pinned to the top of the page showing a
+    verdict the row beneath it has already moved past.
+
     #app-ladder-row IS A STABLE SLOT, and that is load-bearing rather than cosmetic.
     The board takes live updates over Turbo Streams (`turbo_stream_from "deployments"`),
     and a stream can only replace a target it can name. Without this id the row was
@@ -17,6 +42,10 @@
 
     Locals: cards - Array<Ci::AppLadder::Card>, already sorted worst-first. %>
 <% cards = local_assigns.fetch(:cards, []) %>
+<%# The fade's FIRST-PAINT seed. Ci::AppLadder::ROW_FADE_AT is the count that cannot
+    fit the board's widest container, so it is the one thing knowable about overflow
+    before a browser has measured; from init on, the browser's own measurement rules. %>
+<% seed_fade = cards.size >= Ci::AppLadder::ROW_FADE_AT %>
 <%# data-rendered-at is the row's own render stamp, and it is diagnostic rather than
     decorative: it answers "when was this row last refreshed" for anyone looking at a
     board they suspect is stale — the precise question the missing broadcast made
@@ -29,21 +58,145 @@
 <div id="app-ladder-row" class="mb-6" data-test="app-ladder-row"
      data-rendered-at="<%= (Time.current.to_f * 1000).to_i %>">
   <% if cards.any? %>
-    <div class="flex items-baseline gap-2 mb-2">
-      <h2 class="text-xs font-semibold uppercase tracking-wider text-muted">Applications</h2>
-      <span class="text-[10px] text-muted"><%= pluralize(cards.count, "repo") %> on the ladder</span>
-    </div>
-    <div class="grid min-w-0 grid-cols-1 gap-4 items-stretch sm:grid-cols-2 xl:grid-cols-4">
-      <% cards.each do |card| %>
-        <%# FULLY QUALIFIED on purpose. This partial is rendered two ways: inline from
-            TasksController (where a bare "app_ladder_card" resolves against tasks/)
-            AND standalone by DeploymentsBroadcaster via ApplicationController.render,
-            where the same bare name resolves against application/ and raises Missing
-            partial. Studio::Cable.safe_broadcast SWALLOWS that — so the broadcast
-            failed silently and the row simply never moved, with nothing in the log to
-            say why. tasks/_current_release carries the same fully-qualified habit. %>
-        <%= render "tasks/app_ladder_card", card: card, card_class: "h-full min-w-0" %>
-      <% end %>
+    <%# THE CONTROLLER, inline. No <script> tag: this fragment is replaced by a Turbo
+        Stream broadcast, and Alpine re-initialises replaced DOM on its own while a
+        script inside a replaced fragment is a re-execution question nobody should have
+        to answer on a live board.
+
+        `offset` is MEASURED off the site header rather than hard-coded, because that
+        header shrinks on scroll (py-6 → py-2 in layouts/application) and a fixed strip
+        pinned to a stale number would either float in a gap or slide under the nav.
+        Measuring also means a banner in studio/banners/stack — which pushes the header
+        down — costs nothing here.
+
+        AND IT IS A ResizeObserver, NOT ONLY A SCROLL HANDLER, for the reason
+        components/_overflow_fade learned the hard way: a scroll is one CAUSE of the
+        header's box changing, the observer watches the EFFECT. Measured here at 8px —
+        the header's height TRANSITIONS over 300ms (`transition-all duration-300`), so
+        the last scroll event fires while it is still mid-animation and every reading
+        after that is stale. The strip then sits in a visible gap under a nav that
+        finished shrinking without telling anybody. The same observer covers the fade's
+        two scrollers, so a card widening or a font swap re-measures too.
+
+        The observer belongs to the instance and is released in destroy(): this row is
+        REPLACED wholesale by a Turbo Stream broadcast, so one left behind would
+        accumulate per broadcast on a board that broadcasts all day. %>
+    <div x-data="{
+           fadeRight: '<%= ApplicationHelper::APP_LADDER_FADE_MASK %>',
+           pinned: false,
+           offset: 0,
+           overflowing: <%= seed_fade %>,
+           atEnd: false,
+           pinnedOverflowing: <%= seed_fade %>,
+           pinnedAtEnd: false,
+           _ro: null,
+           _dead: false,
+           init() {
+             this.$nextTick(() => {
+               if (this._dead) return;
+               this.measure();
+               if (!window.ResizeObserver) return;
+               this._ro = new ResizeObserver(() => this.measure());
+               const header = document.querySelector('.vt-pinned-header');
+               if (header) this._ro.observe(header);
+               if (this.$refs.scroller) this._ro.observe(this.$refs.scroller);
+               if (this.$refs.pinnedScroller) this._ro.observe(this.$refs.pinnedScroller);
+             });
+           },
+           destroy() {
+             this._dead = true;
+             if (this._ro) { this._ro.disconnect(); this._ro = null; }
+           },
+           measure() {
+             const header = document.querySelector('.vt-pinned-header');
+             this.offset = header ? Math.round(header.getBoundingClientRect().bottom) : 0;
+             const row = this.$refs.row;
+             this.pinned = !!row && row.getBoundingClientRect().bottom <= this.offset;
+             this.gauge();
+           },
+           gauge() {
+             const el = this.$refs.scroller;
+             if (el) {
+               this.overflowing = el.scrollWidth - el.clientWidth > 8;
+               this.atEnd = el.scrollLeft + el.clientWidth >= el.scrollWidth - 8;
+             }
+             const strip = this.$refs.pinnedScroller;
+             if (strip) {
+               this.pinnedOverflowing = strip.scrollWidth - strip.clientWidth > 8;
+               this.pinnedAtEnd = strip.scrollLeft + strip.clientWidth >= strip.scrollWidth - 8;
+             }
+           }
+         }"
+         @scroll.window="measure()"
+         @resize.window="measure()">
+      <div class="flex items-baseline gap-2 mb-2">
+        <h2 class="text-xs font-semibold uppercase tracking-wider text-muted">Applications</h2>
+        <span class="text-[10px] text-muted"><%= pluralize(cards.count, "repo") %> on the ladder</span>
+      </div>
+
+      <%# x-ref="row" is what "have we scrolled past the applications" is measured
+          against — the wrapper rather than the scroller, so the reading survives any
+          padding the scroller grows for its scrollbar. %>
+      <div class="min-w-0" x-ref="row">
+        <%# scrollbar-thin/-none is not in play here — the row keeps its native
+            scrollbar so a trackpad-less operator can still drag it. %>
+        <div class="flex min-w-0 items-stretch gap-4 overflow-x-auto pb-1"
+             data-test="app-ladder-scroller"
+             x-ref="scroller"
+             <%# Seeded server-side so the first paint is already right; Alpine's own
+                 binding takes the attribute over on init and clears it at the end of
+                 the scroll. %>
+             <%= tag.attributes(data: { faded: true }, style: ApplicationHelper::APP_LADDER_FADE_MASK) if seed_fade %>
+             :data-faded="overflowing && !atEnd"
+             :style="(overflowing && !atEnd) ? fadeRight : ''"
+             @scroll="gauge()">
+          <% cards.each do |card| %>
+            <%# FULLY QUALIFIED on purpose. This partial is rendered two ways: inline from
+                TasksController (where a bare "app_ladder_card" resolves against tasks/)
+                AND standalone by DeploymentsBroadcaster via ApplicationController.render,
+                where the same bare name resolves against application/ and raises Missing
+                partial. Studio::Cable.safe_broadcast SWALLOWS that — so the broadcast
+                failed silently and the row simply never moved, with nothing in the log to
+                say why. tasks/_current_release carries the same fully-qualified habit. %>
+            <%= render "tasks/app_ladder_card", card: card, card_class: "w-80 shrink-0" %>
+          <% end %>
+        </div>
+      </div>
+
+      <%# THE PINNED STRIP. Fixed under the site header (z-40 — the header is z-50 and
+          must always win), full-bleed so it reads as page chrome, and carrying the same
+          container gutters as the board so the tiles line up with the cards they came
+          from. `style="display: none"` is the no-JS/pre-init state: nothing is pinned
+          until something has measured that the row has actually left the screen. %>
+      <%# `:style` BINDS AN OBJECT, and that is a correctness rule rather than a taste
+          one. Alpine's STRING form of :style calls setAttribute("style", …), which
+          replaces the whole attribute — including the `display: none` that x-show wrote
+          — and `offset` changes on every scroll while the header shrinks. So the string
+          form would unhide this strip over the top of the board the moment the operator
+          scrolled with the row still on screen. The object form sets one property and
+          leaves x-show's alone. %>
+      <div class="fixed inset-x-0 z-40 border-b border-subtle bg-page/95 shadow-lg supports-[backdrop-filter]:backdrop-blur"
+           data-test="app-ladder-pinned"
+           role="region"
+           aria-label="Applications, pinned to the top of the page"
+           x-show="pinned"
+           :style="{ top: offset + 'px' }"
+           style="display: none"
+           x-transition.opacity.duration.150ms>
+        <div class="mx-auto w-full max-w-screen-2xl px-3 py-1.5 sm:px-4 lg:px-6 xl:px-8">
+            <div class="flex min-w-0 items-stretch gap-2 overflow-x-auto"
+                 data-test="app-ladder-pinned-scroller"
+                 x-ref="pinnedScroller"
+                 <%= tag.attributes(data: { faded: true }, style: ApplicationHelper::APP_LADDER_FADE_MASK) if seed_fade %>
+                 :data-faded="pinnedOverflowing && !pinnedAtEnd"
+                 :style="(pinnedOverflowing && !pinnedAtEnd) ? fadeRight : ''"
+                 @scroll="gauge()">
+              <% cards.each do |card| %>
+                <%= render "tasks/app_ladder_pinned_card", card: card %>
+              <% end %>
+            </div>
+        </div>
+      </div>
     </div>
   <% end %>
 </div>
