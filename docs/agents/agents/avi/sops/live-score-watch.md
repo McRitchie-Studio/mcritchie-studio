@@ -101,16 +101,16 @@ A local watch **must** be labelled REHEARSAL in every report it produces. Its
 
 ## Preconditions
 
-**1. The command exists.** Until turf-monster PR #426 lands, it does not —
-`bin/nfl-live-poll` and `Nfl::LiveScores::PollCycle` are on that unmerged branch
-and on no other. Check first, because the failure is otherwise a raw shell
-error rather than a stated stop:
+**1. The command exists.** It shipped with turf-monster PR #426, which reached
+`main` on 2026-08-26, so a healthy production app answers `present`. Check it
+anyway — a rollback, a rebuilt app, or a release still in flight would leave you
+with a raw shell error rather than a stated stop:
 
 ```bash
 heroku run -a turf-monster-mainnet 'test -x bin/nfl-live-poll && echo present || echo MISSING'
 ```
 
-`MISSING` means the pipeline has not shipped yet. Report "the live-score poller
+`MISSING` means THIS app is not running that code. Report "the live-score poller
 is not deployed" and stop — there is no watch to run and nothing to fix here.
 
 **2. You are pointed where you think you are.** Prove it, and read it back
