@@ -279,7 +279,99 @@ class FastCheckTest < Minitest::Test
     end
   end
 
-  def run_check(dir, args: ["--print"], fail_token: "", extra_env: {}, implicit_root: false, merge_stderr: false)
+  GEM_GATE_RED = "#!/bin/sh\nexit 1\n"
+
+  # --- the gem lane must be able to FAIL ---------------------------------------
+  #
+  # This script is the cert WRITER for the whole pipeline, so a cert that cannot
+  # fail is worse than a missing one. Every other gem test here asserts a GREEN
+  # gem or the app control; nothing guarded the gem lane's place in the verdict
+  # hash, and dropping mapped_res from it would certify a gem GREEN over a RED
+  # gate with all of them still passing.
+
+  def test_a_gem_whose_gate_FAILS_certifies_nothing
+    with_repo_named("studio-engine", release_check: GEM_GATE_RED) do |dir|
+      out, code, lines = run_check(dir, args: ["task-x"], merge_stderr: true,
+                                        extra_env: { "FAST_CHECK_TEST_CMD" => nil,
+                                                     "TASK_SHOW_JSON" => SHOW_JSON })
+
+      refute_equal 0, code, "a red gem gate must fail the cert:\n#{out}"
+      refute_match(/\[fast-cert@/, out, "and must record NO evidence:\n#{out}")
+
+      closes = lines.select { |l| l[0] == "GATE" && l.include?("close") }
+      assert_equal 1, closes.length, "exactly one gate close, not zero and not two"
+      assert_includes closes.flatten, "--failed", "and the verdict must be failed"
+    end
+  end
+
+  # A gem whose registry row names bin/release-check but whose checkout does not
+  # carry it must stay RED. A silent skip here would be the worst outcome of all:
+  # a repo that certifies green having run nothing.
+  def test_a_gem_missing_its_declared_gate_stays_red
+    with_repo_named("studio-engine") do |dir|
+      out, code = run_check(dir, args: ["task-x"], merge_stderr: true,
+                                 extra_env: { "FAST_CHECK_TEST_CMD" => nil,
+                                              "TASK_SHOW_JSON" => SHOW_JSON })
+
+      refute_equal 0, code, "a declared gate that is absent is RED, never skipped:\n#{out}"
+      refute_match(/\[fast-cert@/, out)
+      assert_match(/COULD NOT RUN/, out,
+        "and it must name the COMMAND as the problem, not the diff:\n#{out}")
+    end
+  end
+
+  # --- acceptance 3: the attempt closes on a crash path ------------------------
+  #
+  # Every other test here runs --print, where gate_slug is nil and the at_exit
+  # block never executes — so this criterion shipped untested the first time.
+  # This copies the script, injects a raise where a lane crash would land, and
+  # reads the gate ledger.
+
+  def test_an_unrescued_crash_closes_the_g1_attempt_failed
+    with_repo do |dir, _|
+      # BESIDE the real script, not in the fixture dir: bin/fast-check does
+      # `require_relative "lib/..."`, so a copy anywhere else dies on a LoadError
+      # before it ever opens the attempt — which is a different failure than the
+      # one under test, and reads exactly like "the attempt never opened".
+      crashing = File.join(File.dirname(BIN), "fast-check-crash-fixture")
+      src = File.read(BIN).sub("unless skip_test_prepare", "raise \"boom\"\nunless skip_test_prepare")
+      File.write(crashing, src)
+      File.chmod(0o755, crashing)
+
+      _, code, lines = run_check(dir, args: ["task-x"], merge_stderr: true, bin: crashing,
+                                      extra_env: { "TASK_SHOW_JSON" => SHOW_JSON })
+
+      refute_equal 0, code
+      gate = lines.select { |l| l[0] == "GATE" }
+      assert gate.any? { |l| l.include?("open") }, "the attempt must have opened"
+      closes = gate.select { |l| l.include?("close") }
+      assert_equal 1, closes.length,
+        "a crash must close the attempt exactly once — leaving it open reads as " \
+        "STALLED on the board, and closing twice creates a spurious extra attempt " \
+        "whose --failed row becomes the verdict"
+      assert_includes closes.flatten, "--failed"
+    ensure
+      FileUtils.rm_f(crashing) if crashing
+    end
+  end
+
+  # THE GUARD THAT WOULD HAVE CAUGHT THE DOUBLE-CLOSE. A happy path must emit
+  # exactly ONE close, and it must be --success.
+  def test_a_passing_cert_closes_exactly_once_and_succeeds
+    with_repo do |dir, _|
+      _, code, lines = run_check(dir, args: ["task-x"],
+                                      extra_env: { "TASK_SHOW_JSON" => SHOW_JSON })
+
+      assert_equal 0, code
+      closes = lines.select { |l| l[0] == "GATE" && l.include?("close") }
+      assert_equal 1, closes.length, "a second close would create attempt n+1, and " \
+                                     "latest_by_key takes the LAST — so a spurious " \
+                                     "--failed row becomes the verdict over a PASSING cert"
+      assert_includes closes.flatten, "--success"
+    end
+  end
+
+  def run_check(dir, args: ["--print"], fail_token: "", extra_env: {}, implicit_root: false, merge_stderr: false, bin: BIN)
     log = File.join(dir, "stub.log")
     lane = write_stub(dir, "lane-stub", "LANE")
     gate = write_stub(dir, "gate-stub", "GATE")
@@ -299,7 +391,7 @@ class FastCheckTest < Minitest::Test
       "STUB_LOG" => log,
       "FAIL_TOKEN" => fail_token
     }.merge(extra_env))
-    cmd = "#{BIN.shellescape} #{args.map(&:shellescape).join(' ')}"
+    cmd = "#{bin.shellescape} #{args.map(&:shellescape).join(' ')}"
     out =
       if implicit_root
         env.delete("FAST_CHECK_ROOT")

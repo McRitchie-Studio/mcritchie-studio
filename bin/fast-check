@@ -322,6 +322,14 @@ def run_lane(label, cmd, root, env: {}, gate_slug: nil, timeout: LANE_TIMEOUT)
   elapsed = format("%.1fs", duration_ms / 1000.0)
   if result.timeout?
     warn "   #{label}: TIMED OUT after #{elapsed} — the RUNNER never produced a verdict"
+  elsif result.unlaunchable?
+    # NOT a verdict on the diff: nothing ran. bin/full-suite-check already words this
+    # correctly and this script did not — so the path builders ACTUALLY run reported a
+    # missing command as "FAIL", sending them to hunt a bug in code that never
+    # executed. Reachable for real now that a registry row can name a gate command a
+    # given checkout does not carry.
+    warn "   #{label}: COULD NOT RUN — #{result.detail}"
+    warn "   Nothing was certified by this lane. The command is the problem, not your diff."
   else
     warn(result.ok ? "   #{label}: PASS (#{elapsed})" : "   #{label}: FAIL")
   end
@@ -362,13 +370,28 @@ emit_cert_checkpoint(slug, "started") unless options[:print]
 emit_gate(gate_slug, "open", "task", gate_slug.to_s, "g1_cert") if gate_slug
 
 # THE ATTEMPT MUST NOT SURVIVE THIS PROCESS. Every deliberate exit below closes the
-# g1_cert attempt, but an UNRESCUED exception closed nothing: the attempt stayed OPEN
-# forever, which the board renders as a STALLED lane and which no later run cleans up.
-# That is not hypothetical — an Errno::ENOENT out of Process.spawn did exactly this to
-# every gem-repo cert until the lane runner learned to rescue it.
+# g1_cert attempt; an UNRESCUED exception closed nothing and left it OPEN.
 #
-# The flag is what makes this a BACKSTOP rather than a double-close: each real close
-# sets it, so this only fires when the process is leaving with the attempt still open.
+# WHAT THAT ACTUALLY COSTS — the first version of this comment overstated it, claiming
+# no later run cleans the attempt up. GateRun.open! (app/models/gate_run.rb:96-105)
+# RETURNS an existing in-flight attempt rather than creating a second, so the next
+# cert adopts and closes it. The real damage is subtler: stamp_g1_testing_window fires
+# on CREATE only, so the adopted attempt keeps its original started_at and reports an
+# inflated duration — and until that next cert runs, the card reads STALLED.
+#
+# THE FLAG IS SET BEFORE EACH CLOSE, NOT AFTER, and the ordering is load-bearing.
+# emit_gate shells out to bin/gate, and the tail of a cert is exactly when an operator
+# reaches for Ctrl-C. With the flag set afterwards, a SIGINT arriving while that
+# subprocess ran raised Interrupt with the flag still false, so this block fired a
+# SECOND close — and that close is NOT idempotent: GateRun.close! finds no in-flight
+# attempt, calls open!, creates attempt n+1, and latest_by_key takes the last. A
+# spurious --failed row then becomes the G1 verdict over a cert that PASSED. The
+# window is the whole duration of the closing subprocess, and it sits outside every
+# lane, so CertProcess installs no trap across it.
+#
+# Nothing is lost by setting the flag first: emit_gate is already fire-and-forget and
+# rescues StandardError, so if the gate CLI were down, the at_exit retry would only
+# reach the same down CLI.
 #
 # KNOWN LIMIT, stated rather than papered over: CertProcess reaps a runaway suite with
 # `exit!`, which skips at_exit entirely. That path is covered by run_lane's on_signal
@@ -390,8 +413,8 @@ unless skip_test_prepare
     # message below would misfile it as "an ENV gap you can fix" — it is a hung runner.
     CertProcess.timeout_report({ "test-prepare" => prepare_res }, ceiling: LANE_TIMEOUT,
                                tool: "fast-check", env_var: "FAST_CHECK_LANE_TIMEOUT").each { |l| warn l }
-    emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
-  g1_settled = true
+      g1_settled = true
+  emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
     exit 1
   end
   unless prepare_res.ok
@@ -399,8 +422,8 @@ unless skip_test_prepare
          "DB, or the bundled-asset build), NOT a regression in your diff; but a broken stylesheet " \
          "IN your diff (a bad @apply, an unknown utility, a malformed @theme) fails this lane too. " \
          "Nothing certified; fix it and re-run."
-    emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
-  g1_settled = true
+      g1_settled = true
+  emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
     exit 1
   end
 end
@@ -483,8 +506,8 @@ unless lanes.each_value.all?(&:ok)
     warn "fast-check: lane(s) RED: #{red.join(', ')}. Fix, then re-run — nothing certified. " \
          "(#{format('%.1fs', total)})"
   end
+    g1_settled = true
   emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
-  g1_settled = true
   exit 1
 end
 
@@ -497,8 +520,8 @@ end
 fingerprint = FullSuiteGate.fingerprint(root)
 if fingerprint.nil?
   warn "fast-check: could not fingerprint the code at #{root} (no git repo / identity?) — nothing certified."
+    g1_settled = true
   emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
-  g1_settled = true
   exit 1
 end
 
@@ -547,8 +570,8 @@ if existing.nil?
   warn "fast-check: ran green but couldn't read #{slug.inspect}'s checks_run (bin/task show), so the write " \
        "cannot be verified. Not writing. Re-run, or record by hand: bin/task update #{slug} " \
        "--checks #{Shellwords.escape(line)}"
+    g1_settled = true
   emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
-  g1_settled = true
   exit 1
 end
 
@@ -564,8 +587,8 @@ end
 record_args = ["--checks", line]
 unless system(TASK_BIN, "update", slug, *record_args)
   warn "fast-check: ran green but FAILED to record evidence on #{slug.inspect} (bin/task update). Re-run."
+    g1_settled = true
   emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
-  g1_settled = true
   exit 1
 end
 
@@ -599,8 +622,8 @@ if missing.nil?
   warn "#{summary}, but the read-back FAILED — UNVERIFIED that the recorded evidence" \
        "#{kept.empty? ? '' : " and the #{kept.size} pre-existing checks line(s)"} landed. " \
        "Verify: bin/task show #{slug} -v. #{followup}"
+    g1_settled = true
   emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--success") if gate_slug
-  g1_settled = true
   exit 0
 end
 
@@ -624,14 +647,14 @@ if lost_evidence.any? || lost_kept.any?
          "lines would drop the survivors): bin/task update #{slug} " \
          "#{kept.map { |line_kept| "--checks #{Shellwords.escape(line_kept)}" }.join(' ')}"
   end
+    g1_settled = true
   emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
-  g1_settled = true
   exit 1
 end
 
-# Write CONFIRMED on the board — only NOW self-close the G1 attempt success.
-emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--success") if gate_slug
+  # Write CONFIRMED on the board — only NOW self-close the G1 attempt success.
   g1_settled = true
+  emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--success") if gate_slug
 warn "#{summary} (read-back confirms the evidence line landed" \
      "#{kept.empty? ? '; no pre-existing checks lines to preserve' : " and all #{kept.size} pre-existing checks line(s) kept"}). " \
      "#{followup}"
