@@ -20,8 +20,27 @@ require "securerandom"
 # shape before acting — that last guard is what keeps `<app>_development` (the shared
 # database an earlier cut at a related sweep once bricked a release with) out of reach.
 class DeskDatabaseTeardownTest < ActiveSupport::TestCase
+  PG_VARS = %w[PGHOST PGPORT PGUSER PGPASSWORD].freeze
+
+  # NO SKIP, DELIBERATELY. The first cut of this file opened with
+  # `skip "postgres not running" unless system("pg_isready", "-q")`. That probe
+  # defaults to a LOCAL UNIX SOCKET, and CI runners publish Postgres over TCP —
+  # so it fired on every run and all five tests reported GREEN while asserting
+  # nothing. A guard against dropping the shared development database is exactly
+  # the test that must never pass vacuously. The lane's skip ceiling caught it
+  # (16 skips against a ceiling of 11 — these five).
+  #
+  # So instead of skipping, point libpq at the SAME cluster Rails is already
+  # connected to. `psql` and `pg_isready` both read these vars, which means the
+  # code under test reaches it too, unmodified and unaware.
   def setup
-    skip "postgres not running" unless system("pg_isready", "-q", out: File::NULL, err: File::NULL)
+    @pg_env = ENV.to_hash.slice(*PG_VARS)
+    cfg = ActiveRecord::Base.connection_db_config.configuration_hash
+    ENV["PGHOST"]     = cfg[:host].to_s     if cfg[:host].present?
+    ENV["PGPORT"]     = cfg[:port].to_s     if cfg[:port].present?
+    ENV["PGUSER"]     = cfg[:username].to_s if cfg[:username].present?
+    ENV["PGPASSWORD"] = cfg[:password].to_s if cfg[:password].present?
+
     @suffix = SecureRandom.hex(4)
     @dev = "awtteardown_development_probe#{@suffix}"
     @shard = "#{@dev}-0"
@@ -36,6 +55,9 @@ class DeskDatabaseTeardownTest < ActiveSupport::TestCase
              "postgres", out: File::NULL, err: File::NULL)
       system("psql", "-Atqc", %(DROP DATABASE IF EXISTS "#{db}"), "postgres", out: File::NULL, err: File::NULL)
     end
+    # Restore LAST — the cleanup above still needs to reach the cluster.
+    PG_VARS.each { |k| ENV.delete(k) }
+    @pg_env.each { |k, v| ENV[k] = v }
   end
 
   def create_db(name)
@@ -97,6 +119,24 @@ class DeskDatabaseTeardownTest < ActiveSupport::TestCase
       Process.kill("TERM", holder.pid)
       holder.close
     end
+  end
+
+  # PURE — no cluster, no fixtures, no environment. This is the one assertion in
+  # the file that holds even on a machine where Postgres is unreachable, which is
+  # why the shape check lives in its own predicate: routed through
+  # desk_database_names it would be indistinguishable from an unreachable cluster,
+  # since both answer [].
+  test "the shape predicate refuses everything that is not a per-desk database" do
+    assert script.desk_db_shape?("mcritchie_studio_development_myslug"),
+           "a well-formed per-desk name was refused"
+    refute script.desk_db_shape?("mcritchie_studio_development"),
+           "the SHARED development database matched the per-desk shape"
+    refute script.desk_db_shape?("mcritchie_studio_development_"),
+           "a name with an empty slug matched"
+    refute script.desk_db_shape?(""), "an empty name matched"
+    refute script.desk_db_shape?(nil), "nil matched"
+    refute script.desk_db_shape?("mcritchie_studio_production_myslug"),
+           "a non-development database matched the per-desk shape"
   end
 
   # THE GUARD THAT MATTERS MOST. A malformed or empty record must never reach the

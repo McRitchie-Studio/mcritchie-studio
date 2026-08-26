@@ -1770,23 +1770,38 @@ end
 # connection makes DROP DATABASE fail — and when one is open we REFUSE rather
 # than terminate it. A desk someone is still using must never lose its data to
 # a sweep; leaving an orphan is recoverable, dropping a live database is not.
+# A desk database is `<app>_development_<slug>` with a NON-EMPTY slug.
+#
+# STRUCTURAL GUARD, borrowed from test/support/cert_database_reaper.rb's doctrine:
+# prove the name is a PER-DESK database before touching it, as a positive
+# invariant rather than a blacklist of forbidden spellings. A malformed or empty
+# record would otherwise let `<app>_development` — the SHARED development
+# database — through, and an earlier cut at a related sweep in this repo "once
+# bricked every release" exactly that way. Refuse instead of dropping.
+#
+# PURE, and separate from desk_database_names on purpose: folded in there it
+# could only ever be observed through that method's `[]`, which is also what an
+# unreachable cluster returns. As a predicate it is provable on any machine.
+def desk_db_shape?(name)
+  name.to_s.match?(/\A[a-z0-9_]+_development_[a-z0-9_]+\z/)
+end
+
 def desk_database_names(record)
   dev = record[:db_name].to_s
   return [] if dev.empty?
+
+  # SHAPE FIRST, REACHABILITY SECOND. Both refusals return [], so ordering these
+  # the other way left "refused because malformed" indistinguishable from
+  # "refused because the cluster was unreachable" — and on a runner with no local
+  # socket that made the structural guard's own test pass VACUOUSLY. The pure
+  # check is the cheap one anyway.
+  return [] unless desk_db_shape?(dev)
   return [] unless system("pg_isready", "-q", out: File::NULL, err: File::NULL)
 
   # The dev DB, its `_test_` sibling (test_database_url mints it by rewriting the
   # marker), and the Rails parallel-test shards each of those spawns
   # (`<db>-0` … `<db>-N`). The shards were 84 of the orphans measured, so
   # dropping only the two base names would leave most of the leak in place.
-  # STRUCTURAL GUARD, borrowed from test/support/cert_database_reaper.rb's doctrine:
-  # prove the name is a PER-DESK database before touching it, as a positive
-  # invariant rather than a blacklist of forbidden spellings. A desk DB is
-  # `<app>_development_<slug>` with a NON-EMPTY slug. A malformed or empty record
-  # would otherwise let `<app>_development` — the shared development database —
-  # through, and an earlier cut at a related sweep in this repo "once bricked every
-  # release" exactly that way. Refuse instead of dropping.
-  return [] unless dev =~ /\A[a-z0-9_]+_development_[a-z0-9_]+\z/
 
   bases = [dev, dev.sub("_development_", "_test_")].uniq.reject(&:empty?)
   likes = bases.map { |b| "datname = '#{sql_quote(b)}' OR datname LIKE '#{sql_quote(b)}-%'" }
