@@ -38,6 +38,13 @@ deliberate decision, never a default.
   Read the hub's `.ruby-version` / `Gemfile` and pin the same majors.
 - Keep the clone under `/Users/alex/projects/<slug>` so worktrees and the agent
   tooling resolve it as a sibling.
+- **Add `.worktrees/` to the repo's `.gitignore`.** `bin/agent-worktree` creates
+  `<repo>/.worktrees/` in every repo it manages *or discovers*, and discovery is
+  automatic — so a repo nobody registered still gets desks. Untracked, that
+  directory leaves the primary checkout permanently dirty from the moment the
+  first desk exists, which violates this ecosystem's "every primary checkout
+  must end clean" rule and blocks any ship that requires one. Measured
+  2026-08-25: three repos had already drifted this way.
 
 ### 2. Registry decision
 - **Managed satellite** → run `bin/register-satellite` (dry-run first), land it in
