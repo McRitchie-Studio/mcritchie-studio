@@ -55,9 +55,18 @@ module Ci
 
     ATTENTION_STATES = %i[red conflicted].freeze
 
-    attr_reader :repo, :branch, :state, :sha, :verdict_at, :parked_count, :run_url
+    attr_reader :repo, :branch, :state, :sha, :verdict_at, :parked_count, :run_url, :suite_started_at
 
-    def initialize(repo:, branch:, state:, sha: nil, verdict_at: nil, parked_count: 0, run_url: nil)
+    # `verdict_at` is the NEWEST run's start (when this rung's verdict was last
+    # spoken); `suite_started_at` is the EARLIEST across every lane on the sha (when
+    # the commit began being tested). They were the same number while the meter
+    # counted one lane, and they stop being the same the moment it counts two —
+    # a clock reading from the newest lane's start under-reports the window the
+    # operator is actually waiting on. The meter uses the earliest; every existing
+    # reader of `verdict_at` (active_rung selection, the merge stamp) keeps the
+    # newest, which is still the right answer to its own question.
+    def initialize(repo:, branch:, state:, sha: nil, verdict_at: nil, parked_count: 0, run_url: nil,
+                   suite_started_at: nil)
       @repo = repo.to_s
       @branch = branch.to_s
       @state = state.to_sym
@@ -65,6 +74,7 @@ module Ci
       @verdict_at = verdict_at
       @parked_count = parked_count.to_i
       @run_url = run_url.presence
+      @suite_started_at = suite_started_at || verdict_at
       freeze
     end
 
@@ -121,6 +131,7 @@ module Ci
       new(repo: repo, branch: branch,
           state: fold(runs),
           sha: newest&.head_sha, verdict_at: newest&.run_started_at,
+          suite_started_at: runs.filter_map(&:run_started_at).min,
           parked_count: parked_count, run_url: newest&.html_url)
     end
 
@@ -199,18 +210,28 @@ module Ci
       nwo = Ci::ReviewGate.nwo_for(repo)
       return nil if nwo.empty?
 
-      # SCOPED to the repo's declared suite workflow, and that is a KNOWN LIMIT rather
-      # than an oversight — the card names what this leaves out (see #uncounted_lanes).
+      # EVERY SUITE LANE ON THIS RUNG — the same set #state folds, which is the whole
+      # point of the change that widened it (2026-08-26).
       #
-      # CiCheckJob ingests only GithubWorkflowRun::CI_PROGRESS_WORKFLOWS, so a sibling
-      # lane like studio-engine's Consumer CI has no rows here at all — widening the
-      # filter finds nothing, which is why an earlier attempt to "align" the two halves
-      # was inert. And the scope is load-bearing anyway: ci_check_job.rb:53-58 records
-      # that folding a gem's sibling would drag its own track red on a failing consumer.
-      rows = CiCheckJob.progress_rows(nwo, sha, GithubWorkflowRun.ci_workflow_for(repo))
+      # It was scoped to the repo's ONE declared suite workflow, and the card carried a
+      # prose row naming what that left out. The two halves then disagreed by
+      # construction on the only repo with two lanes: studio-engine `release` 9248a9c
+      # drew a green 3/3 "Engine CI" meter beside an AMBER `release` pill, because
+      # .fold already counted the still-running "Consumer CI" and the meter did not.
+      # The stated defence — "folding a gem's sibling would drag its own track red on a
+      # failing consumer" (CiCheckJob.progress_rows) — does not apply HERE: the pill
+      # beside this meter has always gone red on that same failing consumer, so the
+      # scope protected nothing a reader could see. What the rule IS right about
+      # survives untouched one layer down: CERTIFICATION still names exactly one
+      # workflow per repo (Release::AcceptedCertification.workflow_for), so a failing
+      # consumer can redden a display without ever speaking for the gem's verdict.
+      #
+      # An app repo declares exactly one suite, so this is byte-identical for every
+      # card except the gem's.
+      rows = CiCheckJob.progress_rows(nwo, sha, GithubWorkflowRun.suite_workflows_for(repo))
       return nil if rows.blank?
 
-      Ci::CheckProgress.from_check_runs(rows, sha: sha, run_started_at: verdict_at)
+      Ci::CheckProgress.from_check_runs(rows, sha: sha, run_started_at: suite_started_at)
     end
 
     # The run row behind this verdict — its start time AND its html_url, in one read
@@ -229,10 +250,32 @@ module Ci
                        .first
     end
 
-    # THE LANE THE METER COUNTS. `progress` folds CiCheckJob scoped to this workflow,
-    # and that scope is deliberate (ci_check_job.rb:53-58: folding a gem's sibling
-    # Consumer CI would drag the gem's own track red on a failing consumer).
-    def counted_lane = GithubWorkflowRun.ci_workflow_for(repo).presence
+    # THE VERDICT-CARRYING LANE — this repo's own suite, the one whose result IS the
+    # repo's verdict. The meter no longer scopes to it (see #progress), but readers
+    # still need to know which of several lanes speaks for the repo.
+    def primary_lane = GithubWorkflowRun.ci_workflow_for(repo).presence
+
+    # WHAT THE METER'S LABEL NAMES. The meter counts every lane now, so the label's
+    # job changed: it used to disclose WHICH ONE of them was counted, and it now
+    # points at whichever lane is the NEWS.
+    #
+    #   one lane          -> its name. Every app repo, unchanged.
+    #   exactly one out    -> that lane, red before running — "release · Consumer CI"
+    #                        while the consumer suites are what everyone is waiting on.
+    #   otherwise         -> "N suites", because naming one of several settled lanes
+    #                        would imply the others are not in the bar. They are.
+    #
+    # Deliberately NOT "Engine CI + Consumer CI": the label span truncates at this
+    # card's width, and a truncated join hides exactly the half that mattered.
+    def meter_lane_label(known_lanes = nil)
+      shown = known_lanes || lanes
+      return shown.first&.dig(:name) if shown.size <= 1
+
+      news = shown.select { |lane| lane[:state] == :red }.presence ||
+             shown.select { |lane| lane[:state] == :pending }.presence ||
+             []
+      news.size == 1 ? news.first[:name] : "#{shown.size} suites"
+    end
 
     # EVERY suite lane on this rung's own branch and sha — the same set the badge
     # folds, so the two halves of the card can never disagree about what exists. The
@@ -247,11 +290,17 @@ module Ci
           .sort_by { |lane| [LANE_RANK.fetch(lane[:state], 9), lane[:name]] }
     end
 
-    # The lanes the meter is NOT counting. Empty for a single-lane repo, which is every
-    # app — this only has content for a gem running its own suite plus a downstream
-    # consumer suite, which is exactly where the green-meter-over-red-badge card came
-    # from. Naming them is what stops the meter's scope reading as the whole story.
-    def uncounted_lanes = lanes.reject { |lane| lane[:name] == counted_lane }
+    # The card's lane LEGEND. Empty for a single-lane repo (every app), where the
+    # meter label already names the only lane and a legend would restate it.
+    #
+    # This row used to list what the meter LEFT OUT — an apology for the scope,
+    # written because a green meter beside a red pill needed explaining. The meter now
+    # counts these, so the row changed jobs: it is the key to a bar whose marks carry
+    # no lane identity, and the only place a reader learns WHICH suite is the red one.
+    def legend_lanes
+      all = lanes
+      all.size > 1 ? all : []
+    end
 
     LANE_RANK = { red: 0, pending: 1, green: 2 }.freeze
 

@@ -51,11 +51,20 @@ class CiCheckJob < ApplicationRecord
   # Ci::CheckProgress.from_check_runs folds — one row per CHECK. Empty when no job
   # event has landed for this repo+SHA (the reader then falls back to the API).
   #
-  # `workflow_name` SCOPES the fold to a single workflow — load-bearing for a gem
-  # repo, whose `main` SHA carries BOTH its own suite (studio-engine's "Engine CI")
-  # and the downstream "Consumer CI": folding both would drag the gem's track red on
-  # a failing sibling. Nil (the app default) folds every recorded row, correct
-  # because an app's release branch runs only `CI`.
+  # `workflow_name` SCOPES the fold — ONE name, a LIST of them, or nil for every row.
+  # The scope is the caller's choice because the two readers ask different questions
+  # of the same rows, and both answers are right:
+  #
+  #   ONE NAME  — a gem's own release-candidate verdict (Ci::ProgressReader, the
+  #               narrow path). studio-engine's `main`/`release` SHA carries BOTH its
+  #               own suite ("Engine CI") and the downstream "Consumer CI", and a
+  #               failing consumer must not drag the GEM's verdict red.
+  #   A LIST    — the app-ladder meter (Ci::LadderRung#progress), which asks "is this
+  #               COMMIT done being tested" and must fold every lane the rung's own
+  #               pill already folds. Scoping it to one is what let a green 3/3 meter
+  #               sit beside an amber pill for six minutes on 2026-08-26.
+  #   NIL       — every recorded row; the app default, correct because an app's
+  #               release branch runs only `CI`.
   #
   # De-duplicated to the LATEST ATTEMPT per check (see latest_attempt_per_check):
   # a re-run mints new job_ids for the same names on the same SHA, and folding

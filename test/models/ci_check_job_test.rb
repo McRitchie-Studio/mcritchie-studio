@@ -68,6 +68,30 @@ class CiCheckJobTest < ActiveSupport::TestCase
     assert_nil progress.finished_at, "one check still running — the run is not over"
   end
 
+  # THE LIST FORM. The ladder meter asks for every lane on the rung at once, so the
+  # scope has to take an array — and still has to EXCLUDE, or the narrow readers that
+  # protect a gem's own verdict would silently widen with it.
+  test "[integration] progress_rows scopes to a LIST of workflows, and still excludes" do
+    nwo = "McRitchie-Studio/studio-engine"
+    CiCheckJob.create!(repo: nwo, head_sha: "s9", run_id: 1, job_id: 91, workflow_name: "Engine CI",
+                       name: "engine suite", status: "completed", conclusion: "success")
+    CiCheckJob.create!(repo: nwo, head_sha: "s9", run_id: 2, job_id: 92, workflow_name: "Consumer CI",
+                       name: "studio suite", status: "in_progress", conclusion: nil)
+    CiCheckJob.create!(repo: nwo, head_sha: "s9", run_id: 3, job_id: 93, workflow_name: "Nightly",
+                       name: "devnet", status: "completed", conclusion: "failure")
+
+    both = CiCheckJob.progress_rows(nwo, "s9", ["Engine CI", "Consumer CI"])
+    assert_equal 2, both.size, "the list folds both declared lanes"
+    assert_equal ["engine suite", "studio suite"], both.map { |r| r["name"] }.sort
+
+    one = CiCheckJob.progress_rows(nwo, "s9", "Engine CI")
+    assert_equal ["engine suite"], one.map { |r| r["name"] },
+                 "a single name still narrows — a gem's own verdict must stay foldable alone"
+
+    refute_includes CiCheckJob.progress_rows(nwo, "s9", ["Engine CI", "Consumer CI"]).map { |r| r["name"] },
+                    "devnet", "an undeclared workflow is not admitted by the list form"
+  end
+
   test "[unit] progress_rows is empty when no job has landed (reader then falls back)" do
     assert_empty CiCheckJob.progress_rows("McRitchie-Studio/mcritchie-studio", "never-seen")
   end

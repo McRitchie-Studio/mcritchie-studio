@@ -377,6 +377,57 @@ test("the review average is never confusable with the CI run clock", async ({ pa
   }
 });
 
+// --- the meter counts every lane its legend names -----------------------------
+//
+// THE CONTRADICTION THIS PAGE SHIPPED WITH, pinned in a browser. The rung PILL folds
+// every suite lane on the branch; the meter used to fold ONE, and named the rest in a
+// row beneath it. On the only two-lane repo that produced a card disagreeing with
+// itself — a green 3/3 "Engine CI" meter beside an AMBER `release` pill, for the six
+// minutes Consumer CI spent running the consumer suites (studio-engine, 2026-08-26).
+//
+// ENV-AGNOSTIC BY CONSTRUCTION, like the review block above: it asserts a RELATION
+// between two elements of the same card, never a lane name, a count, or a colour that
+// only one environment has. A board where nothing is mid-flight passes it vacuously
+// and still proves the page renders; a board mid-release proves the real thing.
+test("no card shows a green meter over a lane that is red or running", async ({ page }) => {
+  await page.goto("/deployments");
+
+  const cards = page.locator("[data-test='app-ladder-row'] [data-test='app-ladder-card']");
+  const count = await cards.count();
+  expect(count).toBeGreaterThan(0);
+
+  for (let i = 0; i < count; i += 1) {
+    const card = cards.nth(i);
+    const repo = await card.getAttribute("data-repo");
+    const legend = card.locator("[data-test='app-ladder-other-lane']");
+    const lanes = await legend.count();
+    if (lanes === 0) continue; // single-lane repo: the meter label already names it
+
+    const meter = card.locator("[data-test='app-ladder-ci-bar']");
+    await expect(meter, `${repo} lists lanes, so it must draw the meter they are the key to`).toHaveCount(1);
+
+    const states = await legend.evaluateAll((els) => els.map((el) => el.getAttribute("data-state")));
+    const unsettled = states.filter((s) => s === "red" || s === "pending");
+    if (unsettled.length > 0) {
+      expect(
+        await meter.getAttribute("data-ci-state"),
+        `${repo} has an unsettled lane (${unsettled.join(", ")}), so its meter cannot read green`
+      ).not.toBe("green");
+    }
+
+    // THE LEGEND IS A KEY, NOT A LIST OF EXCLUSIONS. Every lane in it is inside the
+    // bar, so the label either names one of them or counts all of them.
+    const label = ((await card.locator("[data-test='app-ladder-ci-bar-label']").textContent()) || "").trim();
+    const named = label.split("·").pop().trim();
+    const names = await legend.evaluateAll((els) => els.map((el) => el.getAttribute("data-lane")));
+    const countsThemAll = named === `${lanes} suites`;
+    expect(
+      countsThemAll || names.includes(named),
+      `${repo} labels its meter "${named}", which is neither one of its lanes [${names.join(", ")}] nor a count of them`
+    ).toBe(true);
+  }
+});
+
 // --- one scrolling row, a measured fade, and the pinned strip -----------------
 //
 // The operator's three asks for this section, and the two of them that ONLY a browser
