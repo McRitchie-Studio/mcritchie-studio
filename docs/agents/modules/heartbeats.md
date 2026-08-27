@@ -14,11 +14,20 @@ four ordered release actions, a themed glyph on the rest):
   number icons read across the souls: review → assemble → ship → archive):
   - **Carl** → `1️⃣ pr-review` · `🐢 pr-review-slow`
   - **Avi** → `2️⃣ qa-release` · `⚡ deploy-with-task`
-    (Avi also owns `live-score-watch`, direct-invoke only — deliberately NOT on
-    this list, which mirrors the launcher card in
-    `ApplicationHelper#heartbeat_launchers`.)
   - **Steffon** → `3️⃣ production-deploy` · `4️⃣ archive-shipped`
   - **Alex** → `🧑🏻‍🏫 grade-events` · `📡 share-insights` · `🌎 full-cycle`
+
+> **The card has not caught up yet — this is a known, bounded gap.** The registry
+> now carries two launchers the card does not render: **`Turf Monster Heartbeat`**
+> / **`live-score-watch`** (a fifth soul — re-homed from Avi, whose failure mode is
+> a sports-domain one) and **`clean-infra`** (Steffon's infra sweep). Both are
+> fully invocable by name today; only the `/deployments` card is behind. The card
+> change — rename to **Workflows**, a fifth column, and `archive-shipped` swapped
+> out for `clean-infra` — is its own `ui-only` task, because this list mirrors
+> `ApplicationHelper#heartbeat_launchers` and a doc that describes an unbuilt card
+> is worse than one that admits the lag. `archive-shipped` leaves the card because
+> `production-deploy` now runs it as its final step: the cleaning rides the release
+> rather than waiting to be remembered.
 
 **Every row is independently copyable** (the row-1 heartbeat prompt and each act),
 and **any of them**, pasted into a fresh agent session run from

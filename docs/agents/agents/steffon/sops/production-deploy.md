@@ -428,6 +428,40 @@ Steffon owns the step and its mechanism) so the installed agent docs
 match what shipped. If it warns, run the installer from the hub primary by
 hand.
 
+## Close out the cycle — run `archive-shipped`
+
+**A completed ship ends by running [`archive-shipped`](archive-shipped.md).** The
+release that just went to production is the cycle that is now finished, and this
+is the beat that closes it: shipped tasks archived, completed releases closed,
+finished desks reclaimed, regenerable disk swept, frozen docs retired.
+
+Running it here is what makes the cleaning **natural** rather than remembered.
+Left to a separate invocation, the archive is the step that gets skipped, and the
+cost compounds quietly — a board carrying shipped rows nobody closed, and a
+machine carrying desks for work that went out days ago.
+
+```bash
+bin/release archive --dry-run     # preview — read it
+bin/release archive --yes         # apply
+```
+
+Three conditions on this step, and none of them is optional:
+
+- **Only after the ship is green.** A ship that ABORTED has nothing to archive —
+  the release is still `assembled`. Fix the blocker, re-run the ship, then
+  archive. Never archive past a failed ship to "tidy up".
+- **It is a separate verdict, and it can refuse.** `bin/archive-docs` stops the
+  beat when the ledger has lost rows, and `bin/release archive` honours that exit
+  code. **A refusal here does NOT unship anything** — production is already live
+  and correct. Recover the row per [`archive-shipped`](archive-shipped.md) and
+  re-run the archive; do not touch the release.
+- **Report both halves separately.** The ship's result and the archive's result
+  are different facts about different state. A reader must be able to see a green
+  ship next to an archive that refused.
+
+**Nothing to archive is a clean answer.** The archive is idempotent — if the prior
+cycle was already closed out, it reports "nothing to archive" and stops.
+
 **An ABORT and an INTERRUPTION need OPPOSITE responses — do not confuse them.**
 
 - **The ship gate ABORTED** — a red suite, a failed preflight, a failed deploy or
@@ -446,8 +480,12 @@ act reports a clean no-op because nothing was ready. Report:
 - production SHA
 - production URL
 - smoke result
+- **the archive result, separately** — tasks archived and releases closed, or
+  "nothing to archive", or the refusal and what it named
 
-On a clean no-op, report "nothing to ship."
+On a clean no-op, report "nothing to ship." A no-op ship archives nothing either;
+run [`archive-shipped`](archive-shipped.md) directly when a prior cycle still
+needs closing out.
 
 ## Related
 
