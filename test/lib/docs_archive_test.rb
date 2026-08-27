@@ -215,4 +215,102 @@ class DocsArchiveTest < Minitest::Test
     assert_empty twice[:rolled], "a second pass must find nothing left to roll"
     assert_equal once[:kept], twice[:kept]
   end
+
+  # ---- the accepted rung ---------------------------------------------------
+  #
+  # bin/archive-docs runs in the PRIMARY checkout, pinned to `main`, and `main`
+  # LAGS `accepted` between releases. Three times (PR #856, #1011, #1015) that
+  # made it recompute a rotation which had ALREADY landed on `accepted`, costing
+  # a re-verification pass each time and leaving the primary dirty — which in
+  # turn blocks `bin/release archive`, since that refuses to commit while other
+  # changes are present.
+
+  def test_a_row_already_rotated_on_accepted_is_kept_not_rolled_a_second_time
+    landed = Set["| `/old/one` | worktree | old | done | removed 2026-06-13 |"]
+    split = DocsArchive.split_ledger(LEDGER, "2026-07-14", landed: landed)
+
+    assert_equal 1, split[:already].size, "the landed row was not recognised as already rotated"
+    assert_includes split[:kept], "/old/one",
+                    "a row already rotated on accepted was ALSO deleted from this checkout's ledger"
+    refute split[:rolled].any? { |r| r.include?("/old/one") },
+           "the row was rotated a second time — the duplicate work this guard exists to stop"
+    assert split[:rolled].any? { |r| r.include?("/old/two") },
+           "an un-landed row must still roll; the guard must not suppress real work"
+  end
+
+  # [integration] Across the real git boundary: `accepted` has rotated and the
+  # checkout has not. That is the primary's exact state between releases, and it
+  # cannot be reproduced without two real commits, so this builds them.
+  def test_rotation_is_a_no_op_against_accepted_and_leaves_the_checkout_clean
+    Dir.mktmpdir do |repo|
+      git = lambda do |*args|
+        out, status = Open3.capture2e("git", "-C", repo, *args)
+        raise "git #{args.join(' ')}: #{out}" unless status.success?
+      end
+      git.call("init", "-q", "-b", "main")
+      git.call("config", "user.email", "t@example.com")
+      git.call("config", "user.name", "Ledger Test")
+
+      ledger  = File.join(repo, DocsArchive::LEDGER)
+      archive = File.join(repo, DocsArchive::LEDGER_ARCHIVE)
+      FileUtils.mkdir_p(File.dirname(ledger))
+      FileUtils.mkdir_p(File.dirname(archive))
+      File.write(ledger, LEDGER)
+      File.write(archive, DocsArchive::LEDGER_ARCHIVE_HEADER)
+      git.call("add", "-A")
+      git.call("commit", "-qm", "base")
+
+      # `accepted` performs the rotation; then step BACK to the lagging rung.
+      git.call("checkout", "-q", "-b", "accepted")
+      done = DocsArchive.split_ledger(LEDGER, "2026-07-14")
+      File.write(ledger, done[:kept])
+      File.write(archive, DocsArchive::LEDGER_ARCHIVE_HEADER + done[:rolled].join)
+      git.call("add", "-A")
+      git.call("commit", "-qm", "rotate on accepted")
+      git.call("checkout", "-q", "main")
+
+      assert_includes File.read(ledger), "/old/one",
+                      "fixture is wrong: the lagging rung must still carry the un-rotated rows"
+
+      result = DocsArchive.roll_ledger!(repo, apply: true)
+
+      assert_equal 0, result[:rolled], "recomputed a rotation that had already landed on accepted"
+      assert_equal 2, result[:already_landed], "the landed rows were not detected on the rung"
+      assert_equal "accepted", result[:rung], "the accepted rung was not the one consulted"
+
+      status, = Open3.capture2e("git", "-C", repo, "status", "--porcelain")
+      assert_equal "", status.strip,
+                   "the checkout was left DIRTY by a rotation that had already landed; " \
+                   "that dirt is what blocks bin/release archive from committing anything else"
+    end
+  end
+
+  # THE FALLBACK, which must never make things worse. With no `accepted` rung to
+  # read, the check cannot run — and the tool must then behave exactly as it did
+  # before this guard existed, rather than refusing or silently rotating nothing.
+  # An unreadable rung can only ever SUPPRESS a duplicate, never invent one.
+  def test_a_repo_with_no_accepted_rung_still_rotates_normally
+    Dir.mktmpdir do |repo|
+      git = lambda do |*args|
+        out, status = Open3.capture2e("git", "-C", repo, *args)
+        raise "git #{args.join(' ')}: #{out}" unless status.success?
+      end
+      git.call("init", "-q", "-b", "main")
+      git.call("config", "user.email", "t@example.com")
+      git.call("config", "user.name", "Ledger Test")
+
+      ledger = File.join(repo, DocsArchive::LEDGER)
+      FileUtils.mkdir_p(File.dirname(ledger))
+      File.write(ledger, LEDGER)
+      git.call("add", "-A")
+      git.call("commit", "-qm", "base")
+
+      result = DocsArchive.roll_ledger!(repo, apply: false)
+
+      assert_nil result[:rung], "there is no accepted rung in this repo; one must not be reported"
+      assert_equal 0, result[:already_landed]
+      assert_operator result[:rolled], :>, 0,
+                      "an unreadable rung suppressed real rotation work — the guard must fail OPEN"
+    end
+  end
 end

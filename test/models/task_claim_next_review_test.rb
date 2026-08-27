@@ -293,4 +293,62 @@ class TaskClaimNextReviewTest < ActiveSupport::TestCase
       )
     end
   end
+
+  # ---- what the board held, for the tasks it skipped ----------------------
+  #
+  # The pop reads the board's OWN ingested Actions rows; `bin/dor-check --gate-role
+  # review` reads gh LIVE. When the board has not ingested the PR's current tip the
+  # two disagree about the SAME PR and the task is unreviewable by the SOP. The pop
+  # was right and unreadable at the same time, so it now reports what it held.
+
+  test "[unit] a skipped candidate reports the state the board held" do
+    red = submitted("Red Skipped One", position: 1)
+
+    result = Task.claim_next_review(session: "A", nonce: "a", ci_status: { red.slug => "red" })
+
+    assert_equal "no_green_ci", result.reason
+    entry = result.skipped_ci_list.find { |e| e["slug"] == red.slug }
+    refute_nil entry, "the skipped candidate must be reported, or the refusal stays undiagnosable"
+    assert_equal "red", entry["state"],
+                 "the report must describe the SAME verdict the gate skipped on"
+  end
+
+  # The report must not contradict the decision. Re-reading the gate WITHOUT the
+  # token the skip was judged on would describe a different verdict entirely.
+  test "[unit] the reported state matches the verdict that caused the skip" do
+    pending = submitted("Pending Skipped One", position: 1)
+
+    result = Task.claim_next_review(session: "A", nonce: "a", ci_status: { pending.slug => "pending" })
+
+    assert_equal "pending", result.skipped_ci_list.first["state"],
+                 "a pending skip reported as anything else makes the diagnostic a liar"
+  end
+
+  test "[unit] a successful claim reports no skipped CI" do
+    task = submitted("Green Claimed One", position: 1)
+
+    result = Task.claim_next_review(session: "A", nonce: "a", ci_status: all_green(task))
+
+    assert result.claimed?
+    assert_empty result.skipped_ci_list, "nothing was skipped, so nothing may be reported as skipped"
+  end
+
+  # REPORTING ONLY, and it must never become a way for the pop to fail. This runs on
+  # the refusal path to explain a decision ALREADY made; if it raises, a pop that was
+  # working stops working.
+  #
+  # Driven with a nil task, which makes the gate raise on its own — no stubbing. An
+  # earlier version of this test stubbed Ci::ReviewGate.verdict to raise, and mutation
+  # exposed it as VACUOUS: deleting the rescue it was written to protect left it GREEN.
+  test "[unit] an unreadable report degrades instead of raising" do
+    report = Task.ci_report_for(nil, "some-slug")
+
+    assert_equal "unreadable", report["state"],
+                 "a diagnostic that cannot read must SAY so, not raise into the pop"
+    assert_equal "some-slug", report["slug"], "the slug must survive so the line still names a task"
+  end
+
+  test "[unit] skipped_ci_list is always an Array" do
+    assert_equal [], Task::ClaimNextResult.new(task: nil, outcome: nil, reason: "x").skipped_ci_list
+  end
 end

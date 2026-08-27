@@ -1762,6 +1762,99 @@ def database_exists?(db_name)
   ok ? out.strip == "1" : nil
 end
 
+# Every desk teardown returned its Redis capacity and NONE of its Postgres. The
+# leak is old and it compounds: 516 per-worktree databases were on the local
+# cluster on 2026-08-26 (~11.7 GB), one for every desk ever removed.
+#
+# ORDER MATTERS. This runs AFTER stop_stack_for_removal, because a live
+# connection makes DROP DATABASE fail — and when one is open we REFUSE rather
+# than terminate it. A desk someone is still using must never lose its data to
+# a sweep; leaving an orphan is recoverable, dropping a live database is not.
+# A desk database is `<app>_development_<slug>` with a NON-EMPTY slug.
+#
+# STRUCTURAL GUARD, borrowed from test/support/cert_database_reaper.rb's doctrine:
+# prove the name is a PER-DESK database before touching it, as a positive
+# invariant rather than a blacklist of forbidden spellings. A malformed or empty
+# record would otherwise let `<app>_development` — the SHARED development
+# database — through, and an earlier cut at a related sweep in this repo "once
+# bricked every release" exactly that way. Refuse instead of dropping.
+#
+# PURE, and separate from desk_database_names on purpose: folded in there it
+# could only ever be observed through that method's `[]`, which is also what an
+# unreachable cluster returns. As a predicate it is provable on any machine.
+def desk_db_shape?(name)
+  name.to_s.match?(/\A[a-z0-9_]+_development_[a-z0-9_]+\z/)
+end
+
+def desk_database_names(record)
+  dev = record[:db_name].to_s
+  return [] if dev.empty?
+
+  # SHAPE FIRST, REACHABILITY SECOND. Both refusals return [], so ordering these
+  # the other way left "refused because malformed" indistinguishable from
+  # "refused because the cluster was unreachable" — and on a runner with no local
+  # socket that made the structural guard's own test pass VACUOUSLY. The pure
+  # check is the cheap one anyway.
+  return [] unless desk_db_shape?(dev)
+  return [] unless system("pg_isready", "-q", out: File::NULL, err: File::NULL)
+
+  # The dev DB, its `_test_` sibling (test_database_url mints it by rewriting the
+  # marker), and the Rails parallel-test shards each of those spawns
+  # (`<db>-0` … `<db>-N`). The shards were 84 of the orphans measured, so
+  # dropping only the two base names would leave most of the leak in place.
+
+  bases = [dev, dev.sub("_development_", "_test_")].uniq.reject(&:empty?)
+  likes = bases.map { |b| "datname = '#{sql_quote(b)}' OR datname LIKE '#{sql_quote(b)}-%'" }
+  ok, out, = capture_status(
+    "psql", "-Atqc",
+    "SELECT datname FROM pg_database WHERE #{likes.join(" OR ")} ORDER BY datname",
+    "postgres"
+  )
+  ok ? out.split("\n").map(&:strip).reject(&:empty?) : []
+end
+
+def sql_quote(value)
+  value.to_s.gsub("'", "''")
+end
+
+# Open backends on a database, or nil when the question cannot be answered.
+# nil is treated as "do not drop": an unreadable cluster is not permission.
+def database_connection_count(db_name)
+  ok, out, = capture_status(
+    "psql", "-Atqc",
+    "SELECT count(*) FROM pg_stat_activity WHERE datname = '#{sql_quote(db_name)}'",
+    "postgres"
+  )
+  return nil unless ok
+
+  Integer(out.strip)
+rescue ArgumentError, TypeError
+  nil
+end
+
+def drop_desk_databases(record)
+  names = desk_database_names(record)
+  return if names.empty?
+
+  names.each do |db|
+    live = database_connection_count(db)
+    if live.nil?
+      log_fail("could not read connections for #{db}; left it in place")
+      next
+    end
+    if live.positive?
+      log_fail("#{db} has #{live} open connection(s); left it in place")
+      next
+    end
+
+    if sh("psql", "-Atqc", %(DROP DATABASE IF EXISTS "#{db}"), "postgres", allow_fail: true)
+      log_ok("dropped database #{db}")
+    else
+      log_fail("could not drop database #{db}")
+    end
+  end
+end
+
 def stack_dirs(app)
   # Discovered repos carry their resolved tree (the sibling-tree convention puts it
   # beside the repo, not inside it); registered apps use the managed layout.
@@ -2671,6 +2764,7 @@ end
 def teardown_worktree(app, dir, record)
   stop_stack_for_removal(app, dir, record)
   flush_redis_db(record)
+  drop_desk_databases(record)
   write_cleanup_ledger_record(record, status: "removed #{Time.now.strftime("%Y-%m-%d")}")
   sh("git", "-C", app.fetch("repo"), "worktree", "remove", dir)
   delete_local_branch_if_safe(app, record[:branch])
