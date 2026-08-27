@@ -67,17 +67,24 @@ class DocOwnerProseGuardTest < ActiveSupport::TestCase
     "qa-release" => "Avi",
     "qa-deploy" => "Avi",           # legacy alias — the spelling bin/release.rb and bin/conductor actually use
     "deploy-with-task" => "Avi",
-    "live-score-watch" => "Avi",
+    "live-score-watch" => "Turf Monster",  # re-homed 2026-08-26: the judgment it asks for is sports-domain
     "pre-QA gate" => "Avi",
     "production-deploy" => "Steffon",
     "archive-shipped" => "Steffon",
+    "clean-infra" => "Steffon",
     "ship gate" => "Steffon",
     "pr-review" => "Carl"           # Carl reowned review at the 2026-07-22 reslot
   }.freeze
 
   # Carl joins the alternation because `pr-review` is his. A guard that only knows
   # two souls cannot police a three-soul pipeline.
-  SOULS = /(Avi|Steffon|Carl)/
+  #
+  # Turf Monster joins it for `live-score-watch`. Note the SPACED form is the soul;
+  # the repo/app spellings (`turf-monster`, `turf-monster-mainnet`) are hyphenated
+  # and do NOT match this alternation, which is what keeps the hundreds of
+  # repo-name mentions in these docs out of the guard's way. Longest-first in the
+  # alternation so `Turf Monster` is preferred over any shorter partial.
+  SOULS = /(Turf Monster|Steffon|Carl|Avi)/
 
   ACTS = Regexp.union(ACT_OWNER.keys.map { |act| /#{Regexp.escape(act)}/i })
 

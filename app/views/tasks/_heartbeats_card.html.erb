@@ -1,7 +1,8 @@
-<%# Heartbeats card for /deployments — the four soul heartbeat launchers (Carl /
-    Avi / Steffon / Alex), each an avatar over its copyable heartbeat prompt +
-    actions, in an even 4-up grid. The release progress tracker stays in the
-    Current Release card. Locals:
+<%# Workflows card for /deployments — the five soul heartbeat launchers (Carl /
+    Avi / Steffon / Alex / Turf Monster), each an avatar over its copyable
+    heartbeat prompt + actions, in an even 5-up grid. The release progress tracker
+    stays in the Current Release card. Titled "Workflows" because every row is a
+    flow the operator launches, not a liveness signal. Locals:
       card_class  extra card classes for grid placement (optional) %>
 <% card_class = ["rounded-xl border border-subtle bg-surface p-4", local_assigns[:card_class]].compact.join(" ") %>
 <% launchers = heartbeat_launchers %>
@@ -16,16 +17,33 @@
      x-data="{ heartbeatsExpanded: false }">
   <div class="flex items-start justify-between gap-3">
     <div class="min-w-0">
-      <h3 class="text-sm font-semibold text-heading">Heartbeats</h3>
-      <p class="text-[11px] text-muted">Copy any phrase to launch that soul's heartbeat.</p>
+      <h3 class="text-sm font-semibold text-heading">Workflows</h3>
+      <p class="text-[11px] text-muted">Copy any phrase to launch that soul's workflow.</p>
     </div>
   </div>
-  <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-4 sm:gap-4">
+  <%# Five souls, five columns from lg up, inside a HALF-width dashboard card. That is
+    a genuinely tight box and every horizontal pixel here was measured, not guessed:
+    the card maxes out at 728px, so five columns get ~126px each and a chip's text
+    area is what is left after its padding and icon. The gap is `gap-2` rather than
+    the `gap-4` a roomier card would use because those 8px x 4 gutters are ~6px of
+    text room per column.
+    The ladder dips to 3 at xl and returns to 5 at 2xl because the CARD's width, not
+    the viewport's, is what matters: the dashboard goes 2-col at xl, so between 1280
+    and 1535 the card is half of a smallish screen (~620px, ~111px columns) and the
+    acts measurably do not fit. From 2xl the card reaches its 728px cap and they do.
+    test/system/workflows_card_chip_fit_test.rb sweeps 700/1100/1300/1536/1728px and
+    fails naming any ACT phrase that stops fitting on one line. Named breakpoints
+    only — an arbitrary variant like min-[1800px]: is emitted BEFORE sm: and would
+    lose to it at every width. %>
+  <div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-3 2xl:grid-cols-5">
     <% launchers.each do |launcher| %>
+      <%# Card-specific visual order. archive-shipped is deliberately NOT here:
+          production-deploy runs it as its final step, so the cleaning rides the
+          release rather than waiting to be remembered. It stays invocable by name. %>
       <% card_actions = case launcher[:agent_slug]
                         when "carl" then ["pr-review", "pr-review-slow"]
                         when "avi" then ["qa-release", "deploy-with-task"]
-                        when "steffon" then ["production-deploy", "archive-shipped"]
+                        when "steffon" then ["production-deploy", "clean-infra"]
                         else launcher[:actions]
                         end %>
       <%= render "tasks/heartbeat_launcher",

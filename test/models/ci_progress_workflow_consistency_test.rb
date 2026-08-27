@@ -55,6 +55,38 @@ class CiProgressWorkflowConsistencyTest < ActiveSupport::TestCase
     end
   end
 
+  # THE SIBLING PROPERTY. A lane declared in SIBLING_SUITE_WORKFLOWS is one a reader
+  # may treat as "this ran tests" (Release::AcceptedCertification.suite_workflows_for),
+  # and the app-ladder meter now FOLDS it. If the ingest does not record it, that fold
+  # finds nothing and the card silently under-counts the commit — which is the exact
+  # failure this suite exists to catch, pointed at the newer of the two lists.
+  test "[unit] every declared SIBLING suite lane is one the ingest records" do
+    siblings = Release::AcceptedCertification::SIBLING_SUITE_WORKFLOWS.values.flatten
+    refute_empty siblings, "no declared sibling lanes — this guard would be vacuous"
+
+    siblings.each do |lane|
+      assert_includes GithubWorkflowRun::CI_PROGRESS_WORKFLOWS, lane,
+                      "#{lane.inspect} is declared as a suite lane but the ingest records no rows for it — " \
+                      "the ladder meter folds it and would come up short"
+    end
+  end
+
+  # Stronger than the two lists agreeing: the SET the meter folds must be a subset of
+  # the set the ingest records, for every repo on the ladder. A new repo, or a new
+  # lane on an existing one, fails here rather than drawing a quietly short bar.
+  test "[unit] every lane the ladder meter folds is one the ingest records" do
+    repos = Release::Repos.three_rung_repos
+    refute_empty repos, "no ladder repos — this guard would be vacuous"
+
+    repos.each do |repo|
+      GithubWorkflowRun.suite_workflows_for(repo).each do |lane|
+        assert_includes GithubWorkflowRun::CI_PROGRESS_WORKFLOWS, lane,
+                        "#{repo} folds #{lane.inspect} into its ladder meter, but the ingest records no " \
+                        "rows for it — that repo's bar would under-count every commit"
+      end
+    end
+  end
+
   test "[unit] every declared workflow is one the ingest records" do
     declared = GithubWorkflowRun::GEM_CI_WORKFLOWS.values.compact
     refute_empty declared, "no declared gem workflows — this guard would be vacuous"

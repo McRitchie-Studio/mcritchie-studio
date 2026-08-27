@@ -1,9 +1,9 @@
 <%# ONE soul heartbeat launcher — the avatar (LINKING to /agents/<slug>) stacked
     over a column of copy chips: row 1 is the prompt-like soul heartbeat phrase (the
     rollup), then one row per ACTION the heartbeat groups. Rendered once per soul by
-    the Heartbeats card (`tasks/_heartbeats_card`) in its 3-up grid. Each row is its
+    the Workflows card (`tasks/_heartbeats_card`) in its responsive grid. Each row is its
     OWN button with its OWN data-clip + Alpine copied flash; rows after
-    +compact_limit+ are visually tucked behind the parent Heartbeats card toggle.
+    +compact_limit+ are visually tucked behind the parent Workflows card toggle.
     The phrase is server-rendered into data-clip AND the visible <code>
     so tests + the no-clipboard fallback read it. Locals:
       launcher  a heartbeat_launchers entry ({agent_slug, heartbeat, actions, label, title})
@@ -25,7 +25,10 @@
               data: { test: "heartbeat-avatar-link" } do %>
     <%= render "components/agent_avatar", agent: soul, size: "sm" %>
   <% end %>
-  <div class="flex w-full max-w-[9rem] min-w-0 flex-col items-stretch gap-1">
+  <%# The cap, not the grid column, is what bounds a chip: at lg the 5-up columns are
+      ~190px+, so 11rem still leaves gutters while giving the longest phrase
+      ("Turf Monster Heartbeat", 22 chars) room to sit on ONE line. %>
+  <div class="flex w-full max-w-[11rem] min-w-0 flex-col items-stretch gap-1">
     <% rows = [["heartbeat", launcher[:heartbeat]]] + actions.map { |a| ["action", a] } %>
     <% rows.each_with_index do |(row_kind, text), row_index| %>
       <% leading = row_kind == "heartbeat" ? "❤️" : action_icon(text) %>
@@ -36,7 +39,7 @@
            <% if compacted %>x-show="heartbeatsExpanded" x-cloak<% end %>>
         <button type="button"
                 x-data="{ copied: false }"
-                class="group relative flex w-full min-w-0 items-center justify-start gap-2 rounded-md border border-subtle bg-inset px-2 py-1 transition hover:border-primary/40 focus:outline-none focus-visible:ring-1 focus-visible:ring-primary/50"
+                class="group relative flex w-full min-w-0 items-center justify-start gap-1.5 rounded-md border border-subtle bg-inset px-1.5 py-1 transition hover:border-primary/40 focus:outline-none focus-visible:ring-1 focus-visible:ring-primary/50"
                 :class="copied ? 'border-mint-400/60' : ''"
                 data-clip="<%= text %>"
                 data-row="<%= row_kind %>"
@@ -50,7 +53,21 @@
             <span class="shrink-0 text-[10px] leading-none" aria-hidden="true"
                   data-test="<%= row_kind == "heartbeat" ? "heartbeat-heart" : "action-icon" %>"><%= leading %></span>
           <% end %>
-          <code class="min-w-0 break-words text-left text-[10px] font-normal normal-case leading-tight tracking-normal text-body"><%= text %></code>
+          <%# The two row kinds wrap DIFFERENTLY, and the difference is the whole point.
+              An ACT is a single hyphenated token — `production-deploy` — and CSS treats a
+              hyphen as a break opportunity, so ordinary wrapping splits it into
+              "production-" / "deploy", which reads as two commands. Acts therefore get
+              `truncate` (nowrap + ellipsis); at 9px every act registered today fits on one
+              line in a half-width card, so the ellipsis is a safety net for a longer future
+              act, never the normal case.
+              ROW 1 is a PHRASE — "Turf Monster Heartbeat" — and at 22 characters it cannot
+              fit 126px of column at any readable size (measured: it needs 119px of a
+              ~95px text area, and closing that means ~7.5px type). So it is allowed to
+              wrap, but only at its SPACES: `break-words` is deliberately absent, so a word
+              is never split mid-token. Two tidy lines beat an unreadable one.
+              Either way nothing is lost — the full phrase is in data-clip (what actually
+              gets copied), in the title tooltip, and in the DOM text the tests read. %>
+          <code class="min-w-0 text-left text-[9px] font-normal normal-case leading-tight tracking-normal text-body <%= "truncate" if row_kind == "action" %>"><%= text %></code>
           <span class="pointer-events-none absolute right-1 top-1 text-[9px] text-mint-300"
                 x-show="copied" x-cloak x-transition.opacity>&check;</span>
         </button>

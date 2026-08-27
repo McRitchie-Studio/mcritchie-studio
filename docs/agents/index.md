@@ -51,11 +51,13 @@ required execution path. Do not follow a Background reference to run an SOP.
 | `qa-release` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/qa-release.md` |
 | `qa-deploy` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/qa-release.md` |
 | `deploy-with-task` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/deploy-with-task.md` |
-| `live-score-watch` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/live-score-watch.md` |
 | `Avi Heartbeat` | Avi | `mcritchie-studio/docs/agents/agents/avi/HEARTBEAT.md` |
+| `live-score-watch` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/live-score-watch.md` |
+| `Turf Monster Heartbeat` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/HEARTBEAT.md` |
 | `production-deploy` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/production-deploy.md` |
 | `archive-shipped` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
 | `archive-completed` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
+| `clean-infra` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/clean-infra.md` |
 | `Steffon Heartbeat` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/HEARTBEAT.md` |
 | `full-cycle` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/full-cycle.md` |
 | `clean-up` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/clean-up.md` |
@@ -149,17 +151,22 @@ operator-facing message (chat reply, handoff, task note, PR summary) carries
 - **Layer 3 — the in-flight roster.** *(Chat hand-backs only — a PR body has
   no roster.)* The moment a turn ends and the ball is back in his court, print
   what is still cooking: one row per live subagent, background command, ship,
-  or deploy, with time elapsed, time left, and how firm that number is. **Print
-  the block even when nothing is running** — it then reads `Nothing in flight.`,
-  so silence never means two things. Stamp it in **Denver time**
+  or deploy, with a ten-cell `▰▱` meter, time elapsed, time left, and how firm
+  that number is — or, when it forecasts nothing, its condition. **Print it
+  even when nothing is running** — it then collapses to one line under a
+  swapped header, `🥱 Nothing In Flight: <time>`, so silence never means two
+  things. Stamp it in **Denver time**
   (`TZ=America/Denver date "+%-I:%M %p %Z"`) so he can measure the drift
-  himself. It is the LAST thing in the message, under the specifics.
+  himself, and cap the block at 68 columns so the confidence mark never
+  truncates. It is the LAST thing in the message.
 
   ```text
-  ── IN FLIGHT ── 2:14 PM MDT ─────────────────────────────────────
-  carl · review fix-cta-timing (PR #612)    4m in · ~6m left  (rough)
-  bin/ship log-active-wips-at-pause         3m in · ~9m left  (firm — CI wait)
-  ─────────────────────────────────────────────────────────────────
+  🚀 In Flight: 2:14 PM MDT
+  ──────────────────────────────────────────────────────────────────
+  carl · review fix-cta-timing  ▰▰▰▰▱▱▱▱▱▱  4m in · ~6m left   rough
+  bin/ship restyle-in-flight…   ▰▰▰▱▱▱▱▱▱▱  3m in · ~9m left   firm
+  avi · qa-release sweep        ▱▱▱▱▱▱▱▱▱▱  queued on green CI
+  ──────────────────────────────────────────────────────────────────
   ```
 - **Review handoffs lead with a magic link.** Mint a signed-in link that lands
   on the exact page to review (`Studio::Link.create_magic_link(email:,
@@ -522,7 +529,7 @@ Do not merge or deploy unless I explicitly assigned that lane.
 | Modular PR review SOP | `mcritchie-studio/docs/agents/modules/pr-review-sop.md` |
 | Zap protocol (small mid-cycle fixes, no new task) | `mcritchie-studio/docs/agents/modules/zap-protocol.md` |
 | Building SOP (feature-agent build flow + local-review decision) | `mcritchie-studio/docs/agents/modules/building-sop.md` |
-| Heartbeats (three soul launchers) | `mcritchie-studio/docs/agents/modules/heartbeats.md` |
+| Workflows (five soul launchers) | `mcritchie-studio/docs/agents/modules/heartbeats.md` |
 | Carl heartbeat launcher | `mcritchie-studio/docs/agents/agents/carl/HEARTBEAT.md` |
 | Carl PR review SOP (orchestrator) | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review.md` |
 | Carl slow PR review SOP | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review-slow.md` |
@@ -531,10 +538,12 @@ Do not merge or deploy unless I explicitly assigned that lane.
 | Avi heartbeat launcher | `mcritchie-studio/docs/agents/agents/avi/HEARTBEAT.md` |
 | Avi QA release SOP | `mcritchie-studio/docs/agents/agents/avi/sops/qa-release.md` |
 | Avi deploy with task SOP | `mcritchie-studio/docs/agents/agents/avi/sops/deploy-with-task.md` |
-| Avi live score watch SOP | `mcritchie-studio/docs/agents/agents/avi/sops/live-score-watch.md` |
 | Steffon heartbeat launcher | `mcritchie-studio/docs/agents/agents/steffon/HEARTBEAT.md` |
 | Steffon production deploy SOP | `mcritchie-studio/docs/agents/agents/steffon/sops/production-deploy.md` |
 | Steffon archive shipped SOP | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
+| Steffon clean infra SOP (worktrees, disk, "no space") | `mcritchie-studio/docs/agents/agents/steffon/sops/clean-infra.md` |
+| Turf Monster heartbeat launcher | `mcritchie-studio/docs/agents/agents/turf_monster/HEARTBEAT.md` |
+| Turf Monster live score watch SOP | `mcritchie-studio/docs/agents/agents/turf_monster/sops/live-score-watch.md` |
 | Address a blocker (shared primitive) | `mcritchie-studio/docs/agents/modules/address-blocker.md` |
 | Alex heartbeat launcher | `mcritchie-studio/docs/agents/agents/alex/HEARTBEAT.md` |
 | Alex grade events SOP | `mcritchie-studio/docs/agents/agents/alex/sops/grade-events.md` |
@@ -591,11 +600,13 @@ depend on the heartbeat.
 | `qa-release` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/qa-release.md` |
 | `qa-deploy` (legacy alias) | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/qa-release.md` |
 | `deploy-with-task` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/deploy-with-task.md` |
-| `live-score-watch` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/live-score-watch.md` |
+| `live-score-watch` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/live-score-watch.md` |
+| `Turf Monster Heartbeat` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/HEARTBEAT.md` |
 | `Steffon Heartbeat` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/HEARTBEAT.md` |
 | `production-deploy` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/production-deploy.md` |
 | `archive-shipped` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
 | `archive-completed` (legacy alias) | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
+| `clean-infra` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/clean-infra.md` |
 | `Alex Heartbeat` | Alex | `mcritchie-studio/docs/agents/agents/alex/HEARTBEAT.md` |
 | `grade-events` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/grade-events.md` |
 | `share-insights` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/share-insights.md` |

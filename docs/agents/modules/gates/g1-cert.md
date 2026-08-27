@@ -62,6 +62,22 @@ wrong checkout (e.g. the hub primary on `main`) exits 1 naming the worktree to
 `cd` into instead of green-certifying an unrelated tree
 (`bin/lib/cert_root_guard.rb`).
 
+**A cert can refuse for an ENV/CONFIG reason — that is not a red suite.** Before
+any lane runs, both cert runners boot the app in the desk and prove its test
+database is not the repo's **shared** one (`bin/lib/desk_guard.rb`). A cert
+against a shared DB certifies nothing, and `full-suite-check`'s first lane
+(`db:test:purge`) would destroy that database under every concurrent suite. The
+refusal says which of two things it is — bringup did not complete
+(re-provision: `bin/agent-worktree new <app> <slug>`), or the repo's
+`config/database.yml` does not honour the desk's `TEST_DATABASE_URL` pin (fix
+the repo, or rebase). It also refuses a **Rails** desk when it cannot prove
+isolation **either way** (the app will not boot). A repo that is **not a Rails
+app** — a gem or Anchor desk (`studio-engine`, `solana-studio`, `turf-vault`)
+with no `bin/rails` and no `config/database.yml` — has no test DB to protect, so
+the guard is inapplicable and **admits without booting**; it never refuses one
+for lacking an app to boot. **None of these is a regression in your diff** — do
+not go hunting one, and do not record the refusal as a failed cert attempt.
+
 The **committed tree** is enforced the same way: given a task slug, both cert
 runners **refuse a dirty working tree**, naming the uncommitted files and
 telling you to commit first (`bin/lib/cert_tree_guard.rb`). The fingerprint is a

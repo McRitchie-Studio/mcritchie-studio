@@ -128,12 +128,28 @@ class Ci::ProgressReaderTest < ActiveSupport::TestCase
                  "the gem track must read Engine CI, not the Consumer CI on the same branch"
   end
 
-  test "[unit] a gem track folds ONLY its own workflow, not a failing sibling on the same SHA" do
-    # THE REVIEWERS' LIVE CASE: studio-engine main carries Engine CI = success AND
-    # Consumer CI = failure on the SAME SHA, and the commit check-runs endpoint returns
-    # BOTH. The gem track must reflect Engine CI ONLY — a failing Consumer CI must not
-    # drag it red — and must read that from the workflow-scoped LIVE rows, never the
-    # workflow-blind API.
+  # REVERSED 2026-08-26, and the reversal is the point of this task — so both sides
+  # are recorded here rather than only the surviving one.
+  #
+  # This asserted the OPPOSITE: a gem's G3 track folded Engine CI alone, so a failing
+  # Consumer CI on the same SHA could not drag it red. The reasoning was about BLAME —
+  # a consumer app's suite failing is not the gem's fault, and reddening the gem's row
+  # points at the wrong repo.
+  #
+  # What it missed is which QUESTION this track answers. It is the G3 CANDIDATE track:
+  # a preview of the pre-QA gate. That gate is `CiStatus.for_sha`, which reads
+  # `repos/<nwo>/commits/<sha>/check-runs` — the workflow-BLIND endpoint — and fails
+  # closed on any red check on the SHA, Consumer CI included. So the narrow fold drew
+  # "✓✓✓ ready" for a candidate the very next gate would refuse, which is a worse
+  # error than naming the wrong repo: the operator cannot act on blame, and can act on
+  # readiness. Measured 2026-08-26 on studio-engine `release` 9248a9c.
+  #
+  # BLAME IS NOT LOST, it moved to where it can be read: the app-ladder card's lane
+  # legend names WHICH suite is the red one (Ci::LadderRung#legend_lanes), and
+  # certification still names exactly one workflow per repo
+  # (Release::AcceptedCertification.workflow_for) — so nothing that SPEAKS for the gem
+  # changed, only what is DISPLAYED about the commit.
+  test "[unit] a gem track folds every declared lane on the SHA — it previews a blind gate" do
     calls = 0
     reader = build_reader do |_uri, _req|
       calls += 1
@@ -146,10 +162,75 @@ class Ci::ProgressReaderTest < ActiveSupport::TestCase
     seed_check_job(repo: "McRitchie-Studio/studio-engine", sha: "engine-mix-sha", workflow: "Consumer CI", conclusion: "failure")
 
     progress = reader.for_release(rel)["studio-engine"]
-    assert_equal :green, progress.state,
-                 "a failing Consumer CI on the same SHA must NOT drag the Engine CI track red"
-    assert_equal "2 / 2", progress.fraction_label, "only the 2 Engine CI checks are folded"
-    assert_equal 0, calls, "the gem fold reads live per-workflow rows only; the blind API is never consulted"
+    assert_equal :red, progress.state,
+                 "the pre-QA gate will refuse this candidate, so its track must not read ready"
+    assert_equal "2 / 3", progress.fraction_label, "all three checks on the SHA are folded"
+    assert_equal 0, calls,
+                 "still live rows only — widening the SCOPE must not readmit the blind API, which " \
+                 "would fold undeclared workflows (a nightly, a CodeQL scan) the registry never allowed"
+  end
+
+  # THE REGRESSION THE WIDENING COULD EASILY HAVE SHIPPED, pinned so it cannot come
+  # back. An APP now resolves the single-element list ["CI"] instead of the bare
+  # string "CI". The blind-API refusal compares the requested scope against CI, and an
+  # array is not equal to a string — so an app SHA with no ingested jobs would have
+  # lost its fallback and gone BLANK. That is the MAJORITY case on a quiet board (the
+  # webhook records nothing until a run starts), so the widening would have emptied
+  # more meters than it filled.
+  test "[integration] an app track still falls back to the blind API when nothing is ingested" do
+    calls = 0
+    reader = build_reader do |_uri, _req|
+      calls += 1
+      FakeResponse.new("200", check_runs_body([{ "status" => "completed", "conclusion" => "success", "name" => "test" },
+                                               { "status" => "in_progress", "conclusion" => nil, "name" => "lint" }]),
+                       { "x-ratelimit-remaining" => "50" })
+    end
+    rel = release_with_members("turf-monster")
+    # A run row exists (so a SHA resolves) but NO CiCheckJob rows for it.
+    seed_run(repo: "McRitchie-Studio/turf-monster", branch: "release", sha: "app-no-jobs-sha", workflow: "CI")
+
+    progress = reader.for_release(rel)["turf-monster"]
+
+    assert_equal 1, calls, "the app fallback must survive the list form of the scope"
+    assert_equal "1 / 2", progress.fraction_label
+  end
+
+  # A TASK CARD's sibling lane at JOB grain. It drew ONE mark for the whole lane
+  # because the ingest recorded no per-job rows for a sibling; now that it does, six
+  # consumer suites draw six marks and the operator watches them land. The run-grain
+  # fallback still covers the window where a lane is queued and has no jobs yet.
+  test "[integration] a task card folds a sibling lane per JOB, falling back to one mark" do
+    reader = build_reader { |_uri, _req| FakeResponse.new("500", "no API", {}) }
+    task = gem_task(branch: "feat/x")
+    seed_run(repo: ENGINE_NWO, branch: "feat/x", sha: "task-sha", workflow: "Engine CI")
+    seed_run(repo: ENGINE_NWO, branch: "feat/x", sha: "task-sha", workflow: "Consumer CI",
+             started_at: 1.minute.ago)
+    seed_check_job(repo: ENGINE_NWO, sha: "task-sha", workflow: "Engine CI", conclusion: "success", branch: "feat/x")
+    3.times do
+      seed_check_job(repo: ENGINE_NWO, sha: "task-sha", workflow: "Consumer CI", conclusion: "success", branch: "feat/x")
+    end
+
+    assert_equal "4 / 4", reader.for_task(task).fraction_label,
+                 "1 engine check + 3 consumer JOBS — not 1 engine check + 1 lane mark"
+
+    # A sibling with a run row but NO jobs yet keeps its single pending mark, so a
+    # queued lane stays visible rather than vanishing.
+    CiCheckJob.where(workflow_name: "Consumer CI").delete_all
+    reader2 = build_reader { |_uri, _req| FakeResponse.new("500", "no API", {}) }
+    progress = reader2.for_task(task)
+    assert_equal 2, progress.total, "the queued lane still contributes exactly one mark"
+    assert_equal :pending, progress.state
+  end
+
+  # The narrow fold did not disappear — it moved to the reader that still needs it.
+  test "[unit] a single workflow name still folds that lane alone" do
+    reader = build_reader { |_uri, _req| FakeResponse.new("500", "no API", {}) }
+    seed_check_job(repo: "McRitchie-Studio/studio-engine", sha: "narrow-sha", workflow: "Engine CI", conclusion: "success")
+    seed_check_job(repo: "McRitchie-Studio/studio-engine", sha: "narrow-sha", workflow: "Consumer CI", conclusion: "failure")
+
+    progress = reader.send(:for_sha, "McRitchie-Studio/studio-engine", "narrow-sha", "Engine CI")
+    assert_equal :green, progress.state, "a caller asking for one lane still gets exactly one lane"
+    assert_equal "1 / 1", progress.fraction_label
   end
 
   test "[unit] a member repo with no ingested run yields a blank (invisible) track" do

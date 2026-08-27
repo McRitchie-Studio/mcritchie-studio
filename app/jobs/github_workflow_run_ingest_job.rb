@@ -147,10 +147,17 @@ class GithubWorkflowRunIngestJob < ApplicationJob
       return
     end
     # Record per-job progress for every CI-SUITE workflow we surface — the app
-    # repos' `CI` and each gem's own suite (e.g. studio-engine's "Engine CI") — so a
-    # gem's release track has LIVE, per-workflow rows (and live-updates on ingest)
-    # instead of falling through to the workflow-blind check-runs API, which blends
-    # sibling workflows on the same SHA.
+    # repos' `CI`, each gem's own suite (e.g. studio-engine's "Engine CI"), and each
+    # declared SIBLING lane (studio-engine's "Consumer CI") — so every track has
+    # LIVE, per-workflow rows (and live-updates on ingest) instead of falling
+    # through to the workflow-blind check-runs API, which blends sibling workflows
+    # on the same SHA.
+    #
+    # The rows stay TAGGED with their workflow_name, which is what lets a reader
+    # choose: a gem's own release track folds its suite alone, while the app-ladder
+    # card folds every lane on the rung. Recording a lane commits nobody to blending
+    # it — but NOT recording one left the card unable to draw a lane it was already
+    # naming in prose.
     return unless GithubWorkflowRun::CI_PROGRESS_WORKFLOWS.include?(job["workflow_name"].to_s)
 
     head_sha = job["head_sha"].to_s.presence

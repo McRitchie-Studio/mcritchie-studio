@@ -382,48 +382,78 @@ class AppLadderCardTest < ActionView::TestCase
   end
 
 
-  # --- naming what each half counts ----------------------------------------
+  # --- the lane legend ------------------------------------------------------
 
-  # The fix for the meter/badge contradiction: rather than force two deliberately
-  # different scopes to agree, the card SAYS what each one counts. A red sibling lane
-  # is named here instead of hiding behind a green meter.
+  # This row used to name what the meter LEFT OUT, because the meter counted one lane
+  # and the pill counted all of them. The meter now counts all of them too, so the row
+  # became the KEY to a bar whose marks carry no lane identity — the only place a
+  # reader learns which suite is the red one.
   #
   # Ci::LadderRung is a FROZEN value object, so these use a double rather than a stub.
-  FakeRung = Struct.new(:branch, :state, :short_sha, :parked_count, :counted_lane,
-                        :uncounted_lanes, :progress, :run_url, :verdict_at, keyword_init: true) do
+  FakeRung = Struct.new(:branch, :state, :short_sha, :parked_count, :lanes,
+                        :progress, :run_url, :verdict_at, keyword_init: true) do
     def label = state.to_s
     def needs_attention? = false
+
+    # Resolve through a REAL rung rather than restating the rule — a double that
+    # reimplements the logic it stands for is free to drift from it. Given lanes, the
+    # real method reads nothing else, so any repo/branch will do.
+    def meter_lane_label(known = nil)
+      Ci::LadderRung.new(repo: "studio-engine", branch: branch, state: state)
+                    .meter_lane_label(known || lanes)
+    end
   end
 
   # `release_member: true` is not incidental. A card that is level, quiet and outside
-  # the release is AT REST, and a resting card drops its meter — so the sibling-lane
-  # row, which exists to name what that meter leaves out, would have nothing to sit
-  # under. A repo whose lanes you are inspecting is by definition one in flight.
-  def fake_card(repo:, counted:, uncounted:)
+  # the release is AT REST, and a resting card drops its meter — so the legend row,
+  # which is the key to that meter, would have nothing to sit under. A repo whose
+  # lanes you are inspecting is by definition one in flight.
+  def fake_card(repo:, lanes:)
     rungs = Ci::AppLadder::RUNGS.map do |b|
       FakeRung.new(branch: b, state: :green, short_sha: "abc1234", parked_count: 0,
-                   counted_lane: counted, uncounted_lanes: uncounted, progress: nil,
-                   run_url: nil, verdict_at: Time.current)
+                   lanes: lanes, progress: nil, run_url: nil, verdict_at: Time.current)
     end
     card = Ci::AppLadder::Card.new(repo: repo, rungs: rungs, release_member: true)
     card.define_singleton_method(:progress) { nil }
     card
   end
 
-  test "a lane the meter does not count is named on the card with its state" do
-    card = fake_card(repo: "studio-engine", counted: "Engine CI",
-                     uncounted: [{ name: "Consumer CI", state: :red, url: nil }])
+  test "[component] every lane in the meter is named in the legend with its state" do
+    card = fake_card(repo: "studio-engine",
+                     lanes: [{ name: "Consumer CI", state: :red, url: nil },
+                             { name: "Engine CI", state: :green, url: nil }])
 
     render partial: "tasks/app_ladder_card", locals: { card: card }
 
     assert_select "[data-test='app-ladder-other-lanes']", 1
     assert_select "[data-test='app-ladder-other-lane'][data-lane='Consumer CI'][data-state='red']", 1
+    assert_select "[data-test='app-ladder-other-lane'][data-lane='Engine CI'][data-state='green']", 1,
+                  "the lane the meter counts is in the key too — the row is no longer a list of exclusions"
     assert_select "[data-test='app-ladder-other-lane']", text: /Consumer CI/
   end
 
+  # THE LABEL POINTS AT THE CURRENT STEP — the operator-visible half of this change.
+  # A gem mid-release reads "release · Consumer CI" while the consumer suites run,
+  # not "release · Engine CI" for a lane that finished six minutes ago.
+  test "[component] the meter label names the lane still running" do
+    lanes = [{ name: "Consumer CI", state: :pending, url: nil },
+             { name: "Engine CI", state: :green, url: nil }]
+    card = fake_card(repo: "studio-engine", lanes: lanes)
+    checks = Array.new(3) { Ci::CheckProgress::Check.new(:passed, "engine", nil, nil) } +
+             Array.new(4) { Ci::CheckProgress::Check.new(:pending, "consumer", nil, nil) }
+    card.define_singleton_method(:progress) { Ci::CheckProgress.new(checks: checks, sha: "abc1234") }
+
+    render partial: "tasks/app_ladder_card", locals: { card: card }
+
+    assert_select "[data-test='app-ladder-ci-bar-label']", { text: /Consumer CI/ },
+                  "the label names the lane the operator is waiting on"
+    assert_select "[data-test='app-ladder-ci-bar'][data-ci-state='pending']", 1,
+                  "and the bar itself is pending, matching the pill — the contradiction is gone"
+  end
+
   # An app runs one lane, so its card gains no extra line to read.
-  test "a single lane repo shows no other-lanes row" do
-    card = fake_card(repo: "turf-monster", counted: "CI", uncounted: [])
+  test "[component] a single lane repo shows no legend row" do
+    card = fake_card(repo: "turf-monster", lanes: [{ name: "CI", state: :green, url: nil }])
 
     render partial: "tasks/app_ladder_card", locals: { card: card }
 

@@ -655,9 +655,9 @@ into an agent session run from `/Users/alex/projects`, each kicks off that
 stage's workflow. The feature-agent lane (`designed → building → blocked →
 submitted`) has none — the operator drives those hands-on. The DevOps lane maps
 each command to a deterministic runbook. The release-wide launchers are the
-**soul heartbeat acts** on the /deployments **Heartbeats card**
+**soul heartbeat acts** on the /deployments **Workflows card**
 (`ApplicationHelper#heartbeat_launchers`; every row is a recognized launcher —
-see "The three soul heartbeat launchers" below):
+see "The five soul heartbeat launchers" below):
 
 - **`pr-review`** / **`pr-review-slow`** (`Carl Heartbeat` acts) — review ALL
   `submitted` PRs, in waves of ≤5 or serialized one PR at a time. On a
@@ -695,7 +695,9 @@ or the `review-one` SOP; none is a new command to build):
 | **`pr-review`** | `review-one` fanned across **all** `submitted` PRs, in **waves of ≤5** (review merges to `accepted`; Avi's sweep promotes `accepted → release`) | [`agents/carl/sops/pr-review.md`](../agents/carl/sops/pr-review.md) |
 | **`pr-review-slow`** | the same, **serialized** — one PR at a time | [`agents/carl/sops/pr-review-slow.md`](../agents/carl/sops/pr-review-slow.md) |
 | **`qa-release`** | the SELF-HEALING sweep: detect `reviewed` + stragglers → merge PRs into `release` (skip `merged:` ones) → pre-QA gate → deploy QA → members `assembled` on QA-green | [`agents/avi/sops/qa-release.md`](../agents/avi/sops/qa-release.md) / `bin/release prepare --yes` |
-| **`archive-shipped`** | archive shipped work and reclaim completed worktrees from prior cycles | [`agents/steffon/sops/archive-shipped.md`](../agents/steffon/sops/archive-shipped.md) / `bin/release archive --yes` |
+| **`archive-shipped`** | archive shipped work and reclaim completed worktrees from prior cycles — **run by `production-deploy` as its final step**, so it is not a card chip; still invocable by name | [`agents/steffon/sops/archive-shipped.md`](../agents/steffon/sops/archive-shipped.md) / `bin/release archive --yes` |
+| **`clean-infra`** | reclaim this machine's local infra: finished desks, the Redis band, regenerable disk, orphaned per-desk DBs. Off-sequence — the catch-all when an agent reports there is no space | [`agents/steffon/sops/clean-infra.md`](../agents/steffon/sops/clean-infra.md) |
+| **`live-score-watch`** | watch a live NFL slot: poll ESPN on a cadence, record scoring plays, propagate contest scores. Holds no release lane | [`agents/turf_monster/sops/live-score-watch.md`](../agents/turf_monster/sops/live-score-watch.md) |
 | **`production-deploy`** | ff each repo `release → main` (members stamp `merged: "main"`), deploy prod, smoke, release notes (members → `shipped`), post-ship agent-docs sync — **ship-authority gated** | [`agents/steffon/sops/production-deploy.md`](../agents/steffon/sops/production-deploy.md) / `bin/release ship` |
 
 **Compositions** (the operator-facing launcher phrases = a sequence of atoms):
@@ -722,22 +724,30 @@ guard covers BOTH rungs the expedite walks — work parked on `accepted` (which
 the sweep promotes) as well as work riding `release` (which the ff ships) — and
 reads a board signal and a git signal on each, refusing when they disagree.
 
-#### The three soul heartbeat launchers — the Heartbeats card
+#### The five soul heartbeat launchers — the Workflows card
 
-The standalone **Heartbeats card** (`tasks/_heartbeats_card` on `/deployments`,
-sized to match the Next Release card) renders the three soul heartbeat launchers
+The standalone **Workflows card** (`tasks/_heartbeats_card` on `/deployments`,
+sized to match the Next Release card) renders the five soul heartbeat launchers
 (`ApplicationHelper#heartbeat_launchers`, one `tasks/_heartbeat_launcher` per soul)
-in a 3-up grid. Each launcher is a soul face (**linking to `/agents/<slug>`**) over
-a **prompt-like row 1** (`Avi Heartbeat` / `Steffon Heartbeat` / `Alex Heartbeat`)
-plus one or more **copyable action rows**, each with a leading icon (❤️ on the
-heartbeat row; `1️⃣`–`4️⃣` on the four ordered release actions, a themed glyph on the
-rest). **Any row**, pasted into a fresh session, is a **recognized launcher**. The
-5-stage release tracker stays in the **Next Release** card. Cross-soul launcher
-map: [`heartbeats.md`](../modules/heartbeats.md). Per-soul heartbeat launchers
-live with the souls:
+in a 5-up grid. Each launcher is a soul face (**linking to `/agents/<slug>`**) over
+a **prompt-like row 1** (`Carl Heartbeat` / `Avi Heartbeat` / `Steffon Heartbeat` /
+`Alex Heartbeat` / `Turf Monster Heartbeat`) plus one or more **copyable action
+rows**, each with a leading icon (❤️ on the heartbeat row; `1️⃣`–`3️⃣` on the three
+ordered release actions, a themed glyph on the rest). **Any row**, pasted into a
+fresh session, is a **recognized launcher**. The 5-stage release tracker stays in
+the **Next Release** card. Cross-soul launcher map:
+[`heartbeats.md`](../modules/heartbeats.md). Per-soul heartbeat launchers live
+with the souls:
+[`Carl`](../agents/carl/HEARTBEAT.md),
 [`Avi`](../agents/avi/HEARTBEAT.md),
-[`Steffon`](../agents/steffon/HEARTBEAT.md), and
-[`Alex`](../agents/alex/HEARTBEAT.md).
+[`Steffon`](../agents/steffon/HEARTBEAT.md),
+[`Alex`](../agents/alex/HEARTBEAT.md), and
+[`Turf Monster`](../agents/turf_monster/HEARTBEAT.md).
+
+It is titled **Workflows**, not Heartbeats, because every row is a flow the
+operator launches — not a liveness signal. The per-soul entry command is still
+`bin/agent-activity heartbeat <soul>`, and the files are still `HEARTBEAT.md`;
+only the card's name changed.
 
 > **Sticky attribution.** The FIRST action of a `<Soul> Heartbeat` is
 > `bin/agent-activity heartbeat <soul>` — it sets a session-sticky acting-agent so

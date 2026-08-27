@@ -185,6 +185,34 @@ bin/agent-worktree finish turf-monster docs-stack
 
 The launcher creates `/Users/alex/projects/<repo>/.worktrees/<task-slug>`, branches from the current **base ref** — `origin/accepted` when the repo has one (the persistent feature-PR target), else `origin/release`, else `origin/main` — copies the primary `.env`, writes `.env.agent-stack`, prepares the isolated database, and prints the local URL.
 
+### `new` is atomic: a complete desk, or nothing
+
+`bin/agent-worktree new` either produces a **whole desk** or leaves **nothing behind**. It **preflights the Redis band** and refuses before creating anything at all; then every step that lands registers its own inverse, and any non-local exit unwinds them in reverse — the checkout, its git registration, the branch, the stack env (which *is* the port + Redis reservation), and a Redis band it grew.
+
+This matters because the desk's whole job is **isolation**. A desk that does not own its test database does not fail loudly — it silently joins the database the primary checkout and the release gate workspaces use, giving cross-suite pollution, `PG::ObjectInUse` on purge, and phantom order-dependent failures. A full Redis band once left exactly that desk on disk (worktree + branch, no stack env, no test DB) and said nothing.
+
+Four properties are worth knowing by name, because each one closes a way the rollback used to lie or miss:
+
+- **A SIGTERM unwinds exactly like a Ctrl-C.** SIGINT raises `Interrupt` on its own; SIGTERM and SIGHUP do not — their default disposition kills the process outright (rc=143) with no rollback. SIGTERM is the *common agent path*: an agent runs `new` under a harness Bash timeout and the harness TERMs the process group. `new` traps both into the same unwind, and restores the prior handlers on the way out.
+- **The undo is registered the instant the checkout exists**, from inside `ensure_git_worktree`, not where it returns. The network `git fetch` — the slowest and most interrupt-likely step — stays *outside* the guarded region, where an interrupt costs nothing because nothing has been created yet.
+- **A rollback that could not finish says so.** Every undo returns its own verdict and the printer honours it: `unwound: <label>` when the thing is really gone, `unwind INCOMPLETE for <label> — it is still on disk; remove it by hand` when it is not. The undos work through `sh(..., allow_fail: true)` and `FileUtils`, neither of which raises, so an unconditional "unwound" reported a clean rollback for a locked worktree while the desk sat on disk — and an operator who reads "unwound" stops looking.
+- **A grown Redis band is unwound too.** Allocation grows the band restart-free when the current one is full; a bringup that then failed left it permanently inflated. (It self-heals on the next `remove`'s auto-shrink — which is exactly the kind of "eventually" that hides a leak.)
+
+Bringup is **idempotent**: re-running `new` over an existing or half-built desk completes the missing pieces and never deletes what it did not create — only what *this* run created is registered for rollback. So the repair for any partial desk is simply:
+
+```bash
+bin/agent-worktree new <app> <task-slug>
+```
+
+**When the band is full**, `new` refuses *before* cutting anything, with the remedies cheapest first:
+
+```bash
+bin/agent-worktree cleanup --reclaim         # dry run: merged + clean desks, safe to release
+bin/agent-worktree cleanup --reclaim --yes   # release them, shrinking the band
+bin/agent-worktree scale --provision         # INFRA LANE: raises the Redis ceiling, restarts Redis,
+                                             # bounces every running stack
+```
+
 Use `bin/agent-worktree status <app> <task-slug>` to recover the URL later, and `bin/agent-worktree down <app> <task-slug>` to stop a running stack.
 Use `bin/agent-worktree finish <app> <task-slug>` when the work is committed
 and ready for PR/QA handoff.
@@ -482,9 +510,9 @@ bin/agent-worktree scale status
   `_gate` while a release conductor holds a claim; the candidate set is sourced from
   `.worktrees/*` only, so the primary checkout is never a candidate.
 - `cleanup --reclaim --yes` runs the **same full teardown as `remove`** for each
-  safe candidate (stop the stack, flush the stack's Redis DB, update the cleanup
-  ledger, remove the Git worktree, delete the stale local branch), re-verifying
-  each candidate under the worktree lock — **including a fresh re-read of the build
+  safe candidate (stop the stack, flush the stack's Redis DB, drop the desk's
+  Postgres databases, update the cleanup ledger, remove the Git worktree, delete
+  the stale local branch), re-verifying each candidate under the worktree lock — **including a fresh re-read of the build
   claim**. That re-read matters: the candidate list is computed once, but teardowns
   run serially inside the lock, so a builder who sits down and claims a task
   mid-sweep would otherwise have their clean `HEAD == base` desk destroyed on
@@ -502,8 +530,11 @@ bin/agent-worktree scale status
 - `remove <app> <task-slug> --yes` is the approved deletion path after Mr.
   McRitchie or the conductor authorizes cleanup. It refuses dirty or
   non-equivalent worktrees, stops the stack, flushes the stack's Redis DB (so a
-  reused DB number cannot inherit stale keys), updates the cleanup ledger, removes
-  the Git worktree, deletes the stale local branch, shrinks the Redis band toward
+  reused DB number cannot inherit stale keys), **drops the desk's per-worktree
+  Postgres databases** — the dev DB, its `_test_` sibling, and their parallel-test
+  shards, named from the desk's own stack env rather than swept by pattern, and any
+  that still has an open connection is left in place — updates the cleanup ledger,
+  removes the Git worktree, deletes the stale local branch, shrinks the Redis band toward
   the floor when slots free up, and refreshes the registry.
 - `scale status` prints the Redis band: floor, step, current band + DB range,
   used, free, and the physical ceiling (`databases` from Redis). `scale out` /
@@ -756,6 +787,20 @@ bin/agent-worktree test mcritchie-studio <slug>   # same, single-process + herme
 ```
 
 Do **not** `source .env.agent-stack` before running tests. You do not need the dev `DATABASE_URL` to test (the test DB resolves on its own), and sourcing it sets `AGENT_WORKTREE=1`/`LOCAL_EMAIL_CAPTURE=1`, which routes mail into the local capture store and diverges email-delivery tests from CI. Source `.env.agent-stack` only for dev-DB chores like `bin/rails runner` seeding. `bin/agent-worktree test` sidesteps this with a hermetic env (correct Ruby PATH, `RAILS_ENV=test`, single-process to avoid the parallel worker-DB clone deadlock on a cold test DB).
+
+### The desk guard
+
+`bin/fast-check` and `bin/full-suite-check` **refuse to run in a desk whose test database is the repo's shared one** (`bin/lib/desk_guard.rb`). The cert would otherwise run against the same database the primary checkout and the release gate workspaces use, and `full-suite-check`'s first lane (`db:test:purge`) would *destroy* it mid-suite.
+
+It **resolves** the property rather than trusting a declaration: it boots the app in the desk at `RAILS_ENV=test`, reads back the database it actually connects to, and compares that against the repo's shared test database (read from `config/database.yml` with the **ERB stripped**, so no env var can rewrite the comparison). Postgres desks qualify by having a different database *name*; SQLite desks (rolio) qualify by their test-DB *file* being inside the desk. It **fails closed** for a Rails desk — an app that will not boot, or a config it cannot read, is a refusal, not a pass — while a repo that is not a Rails app at all has no test DB to protect and is admitted without booting.
+
+A `TEST_DATABASE_URL` being *present* proves nothing: it only takes effect if the app's `config/database.yml` reads it (`url: <%= ENV["TEST_DATABASE_URL"] %>` in the `test:` block). turf-monster lacked that line for a period, so its desks pinned an isolated-looking URL, ran on the **shared** `turf_monster_test`, and a presence-checking guard waved them through.
+
+The refusal names it as an **env/config issue, not a regression in your diff**, and distinguishes the two causes: re-provision (`bin/agent-worktree new <app> <slug>`) when bringup did not complete, or fix the repo's `config/database.yml` when the pin is inert.
+
+The reserved release workspaces (`.worktrees/_gate`, `.worktrees/_ship`) are **not** agent desks and are not guarded here — they are covered by the stricter `assert_private_gate_db!` in `bin/release.rb`, which proves their DB is private before `db:test:purge` destroys it.
+
+Bringup is atomic now and cannot leave such a desk behind, so this is the second lock on the same door. It still earns its keep: desks half-built by the old tool are on disk, `.env.test.local` can be deleted by hand, and a rollback that missed a case must never yield a silently-shared suite. The guard asserts the **positive** property — this tree has a test DB of its own — rather than blacklisting the ways bringup can break.
 
 ## Scale Note
 

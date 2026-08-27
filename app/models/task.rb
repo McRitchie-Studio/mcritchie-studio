@@ -474,7 +474,22 @@ class Task < ApplicationRecord
   # other non-green PR. It exists because `no_green_ci` alone reads as "the
   # queue is red or still running", which is how an unwired repo's task sat in
   # `submitted` for days — the pop was right and unreadable at the same time.
-  ClaimNextResult = Struct.new(:task, :outcome, :reason, :blind_repos, keyword_init: true) do
+  # `skipped_ci` is what THE BOARD HOLDS for each skipped candidate — its state and
+  # the head SHA that state belongs to. Also reporting-only.
+  #
+  # It exists because the two mechanisms in the review SOP read DIFFERENT SOURCES,
+  # by design: this pop folds our own ingested GithubWorkflowRun rows (never a live
+  # call — see Ci::ReviewGate), while `bin/dor-check --gate-role review` reads
+  # `gh pr checks` LIVE. When the board has not ingested the PR's current tip, the
+  # entry gate says no and gate-zero says yes about the SAME PR, and the task is
+  # unreviewable by the SOP. That happened to auto-mint-level-up-tokens (turf PR
+  # 407), which sat in `submitted` from 2026-08-23 and missed releases on it.
+  #
+  # blind_repos could not describe it: that field fires only when a repo has NO
+  # ingested runs AT ALL, and this repo was wired — it simply had nothing for THIS
+  # head. So the refusal printed no warning and cost a bisect of two CLIs. Naming
+  # the state and the SHA makes the same situation readable in one line.
+  ClaimNextResult = Struct.new(:task, :outcome, :reason, :blind_repos, :skipped_ci, keyword_init: true) do
     def claimed?
       task.present?
     end
@@ -482,6 +497,10 @@ class Task < ApplicationRecord
     # Always an Array — callers built before this field passed no value at all.
     def blind_repo_list
       Array(blind_repos)
+    end
+
+    def skipped_ci_list
+      Array(skipped_ci)
     end
   end
 
@@ -515,18 +534,24 @@ class Task < ApplicationRecord
 
     skipped_ungreen = false
     skipped_repos = []
+    skipped_ci = []
     ordered_slugs.each do |slug|
       claimed = transaction do
         task = reviewable(now: now).where(slug: slug).lock("FOR UPDATE SKIP LOCKED").first
         next nil unless task # locked by a concurrent caller, or claimed since the pluck
 
-        unless Ci::ReviewGate.green?(task, injected: ci_status_token(ci_status, slug))
+        token = ci_status_token(ci_status, slug)
+        unless Ci::ReviewGate.green?(task, injected: token)
           skipped_ungreen = true
           # EVERY repo the skipped task has a PR in, for the blind-repo report below.
           # The singular read here named repo #1 only, so an unwired SECOND repo —
           # the repo actually holding the task in `submitted` — was the one thing the
           # report could not say.
           skipped_repos.concat(Ci::ReviewGate.repos_for(task))
+          # THE SAME token the gate just judged on. Re-reading without it would let the
+          # report describe a DIFFERENT verdict than the one that caused this skip —
+          # a diagnostic that contradicts the decision it explains is worse than none.
+          skipped_ci << ci_report_for(task, slug, token)
           next nil # red / pending / ci-less / none — never claim a non-green PR
         end
 
@@ -540,7 +565,7 @@ class Task < ApplicationRecord
     end
 
     ClaimNextResult.new(task: nil, outcome: nil, reason: skipped_ungreen ? "no_green_ci" : "none_reviewable",
-                        blind_repos: blind_repos_among(skipped_repos))
+                        blind_repos: blind_repos_among(skipped_repos), skipped_ci: skipped_ci)
   end
 
   # Which of the just-skipped candidates' repos deliver NO CI to the board at all
@@ -548,6 +573,23 @@ class Task < ApplicationRecord
   # only: the pop's decision is already made, so this can never change what gets
   # claimed, and a failure here degrades to "no blind repos" rather than taking
   # the review pop down with it.
+  # What the BOARD holds for one skipped candidate, for reporting only.
+  #
+  # Deliberately tolerant: this runs inside the pop's short transaction, on the
+  # refusal path, purely to explain a decision that has ALREADY been made. It must
+  # never be the reason a pop fails, so any error here degrades to :unreadable
+  # rather than propagating — a diagnostic that can break the thing it describes is
+  # worse than no diagnostic.
+  def self.ci_report_for(task, slug, injected = nil)
+    verdict = Ci::ReviewGate.verdict(task, injected: injected)
+    { "slug" => slug,
+      "state" => verdict[:state].to_s,
+      "sha" => verdict[:sha].to_s[0, 12],
+      "repo" => verdict[:repo].to_s }
+  rescue StandardError => e
+    { "slug" => slug, "state" => "unreadable", "sha" => "", "repo" => e.class.name }
+  end
+
   def self.blind_repos_among(repos)
     return [] if repos.blank?
 

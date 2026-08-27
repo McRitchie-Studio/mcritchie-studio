@@ -1,24 +1,29 @@
-# Heartbeats — the four soul launchers
+# Workflows — the five soul launchers
 
-The standalone **Heartbeats card** on `/deployments` (`tasks/_heartbeats_card`,
-sized to match the Next Release card) renders four **soul-avatar heartbeat
+The standalone **Workflows card** on `/deployments` (`tasks/_heartbeats_card`,
+sized to match the Next Release card) renders five **soul-avatar heartbeat
 launchers** (`ApplicationHelper#heartbeat_launchers`, one `tasks/_heartbeat_launcher`
 per soul). Each launcher is a soul face — **a link to that soul's `/agents/<slug>`
 page** — over a **prompt-like row 1** plus one or more **copyable action rows**,
-each carrying a leading icon (a ❤️ on the heartbeat row; a `1️⃣`–`4️⃣` keycap on the
-four ordered release actions, a themed glyph on the rest):
+each carrying a leading icon (a ❤️ on the heartbeat row; a `1️⃣`–`3️⃣` keycap on the
+three ordered release actions, a themed glyph on the rest):
 
 - **Row 1 — the prompt-like soul heartbeat** (❤️): `Carl Heartbeat` · `Avi
-  Heartbeat` · `Steffon Heartbeat` · `Alex Heartbeat`. One per soul.
+  Heartbeat` · `Steffon Heartbeat` · `Alex Heartbeat` · `Turf Monster Heartbeat`.
+  One per soul.
 - **The action rows** — one copyable row each, ordered along the pipeline (the
-  number icons read across the souls: review → assemble → ship → archive):
+  number icons read across the souls: review → assemble → ship):
   - **Carl** → `1️⃣ pr-review` · `🐢 pr-review-slow`
   - **Avi** → `2️⃣ qa-release` · `⚡ deploy-with-task`
-    (Avi also owns `live-score-watch`, direct-invoke only — deliberately NOT on
-    this list, which mirrors the launcher card in
-    `ApplicationHelper#heartbeat_launchers`.)
-  - **Steffon** → `3️⃣ production-deploy` · `4️⃣ archive-shipped`
+  - **Steffon** → `3️⃣ production-deploy` · `🧹 clean-infra`
   - **Alex** → `🧑🏻‍🏫 grade-events` · `📡 share-insights` · `🌎 full-cycle`
+  - **Turf Monster** → `🏈 live-score-watch`
+
+  `archive-shipped` is deliberately NOT a chip: `production-deploy` runs it as its
+  final step, so the cleaning rides every release instead of waiting to be
+  remembered. It stays a registered invocation by name. The keycap sequence
+  therefore ends at `3️⃣`, and `clean-infra` took the slot but not the number — it
+  is off-sequence on purpose, invoked when the machine is in the way.
 
 **Every row is independently copyable** (the row-1 heartbeat prompt and each act),
 and **any of them**, pasted into a fresh agent session run from
@@ -40,8 +45,9 @@ Each soul's action-level procedure lives with that soul:
 |---|---|---|---|---|
 | **Carl** (`carl`) | `Carl Heartbeat` | `pr-review`, `pr-review-slow` | submitted PRs waiting for review | each PR `reviewed` (merged into `accepted`) or `blocked` |
 | **Avi** (`avi`) | `Avi Heartbeat` | `qa-release`, `deploy-with-task` (direct-invoke only) | `reviewed` work + `assembled` stragglers to sweep | the RC swept, **live on QA, members `assembled` on QA-green** |
-| **Steffon** (`steffon`) | `Steffon Heartbeat` | `production-deploy`, `archive-shipped` | a QA-green (`assembled`) release ready to ship / shipped work to archive | the ready release `shipped` (or no-op); then prior cycle `archived` |
+| **Steffon** (`steffon`) | `Steffon Heartbeat` | `production-deploy`, `clean-infra` | a QA-green (`assembled`) release ready to ship / a machine carrying finished work | the ready release `shipped` (archived on the way out, or no-op); the machine swept |
 | **Alex** (`alex`) | `Alex Heartbeat` | `grade-events`, `share-insights`, `full-cycle` | activities to grade / confirmed insights to share / a full pipeline to run | 10 graded + banked; confirmed insights shared out; or the whole release `shipped` |
+| **Turf Monster** (`turf-monster`) | `Turf Monster Heartbeat` | `live-score-watch` | a live NFL slot with the poller deployed | the slot final or the window elapsed; scores recorded, anomalies judged |
 
 > **Direct-drive the mutating acts.** `qa-release`, `production-deploy`, and
 > `archive-shipped` MUTATE shared state across many minutes, so the heartbeat
@@ -67,7 +73,7 @@ Each soul's action-level procedure lives with that soul:
 > standing primary + owner, no Avi supervisor), and the release lanes flipped: **Avi**
 > now owns the `qa-release` sweep + QA (stages 1–3), **Steffon** now owns
 > `production-deploy` (stages 4–5) + `archive-shipped`. They surface on the
-> standalone /deployments **Heartbeats** card (four souls, sized to the Next Release
+> standalone /deployments **Workflows** card (five souls, sized to the Next Release
 > card); the 5-stage release tracker stays in the **Next Release** card.
 
 ## Launching a heartbeat in a fresh session — the quick start
@@ -78,7 +84,7 @@ session needs nothing else:
 
 1. **Say a launcher row.** Paste the row-1 prompt (`Carl Heartbeat` · `Avi
    Heartbeat` · `Steffon Heartbeat` · `Alex Heartbeat`) or any single act row from
-   the /deployments Heartbeats card. The generated root `AGENTS.md` maps those
+   the /deployments Workflows card. The generated root `AGENTS.md` maps those
    launcher phrases directly to this module, the owning soul's `HEARTBEAT.md`, and
    the relevant SOP file. No installed skill is required.
 2. **Stamp attribution FIRST** — before any other tool call:

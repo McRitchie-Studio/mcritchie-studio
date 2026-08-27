@@ -118,6 +118,16 @@ else
   say("==> Ledger rollover: nothing older than #{ledger[:cutoff] || 'n/a'} to roll.")
 end
 
+# Say WHY nothing rolled when the reason is "it already did". Silence here is what
+# cost the previous three runs a re-verification pass apiece.
+if ledger[:already_landed].to_i.positive?
+  say("    #{ledger[:already_landed]} row(s) SKIPPED — already rotated on #{ledger[:rung]}.")
+  say("    This checkout lags that rung; rotating them again would duplicate landed work.")
+elsif ledger[:rung].nil?
+  say("    NOTE: #{DocsArchive::ACCEPTED_RUNGS.join(' / ')} unreadable — " \
+      "the already-landed check did NOT run, so a duplicate rotation is possible.")
+end
+
 say
 say("==> #{DRY ? 'Would retire' : 'Retired'} #{moved} doc(s); " \
     "#{plan[:skipped].size} left in place as still-referenced")

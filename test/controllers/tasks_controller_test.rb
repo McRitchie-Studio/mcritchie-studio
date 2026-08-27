@@ -160,19 +160,20 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_includes card["style"], "0 0 118px color-mix(in srgb, var(--task-card-glow-color) 12%, transparent)"
   end
 
-  test "[integration] deployments renders the three heartbeat launchers in the Heartbeats card" do
+  test "[integration] deployments renders the five heartbeat launchers in the Workflows card" do
     Agent.find_or_create_by!(slug: "avi") { |a| a.name = "Avi" }
     Agent.find_or_create_by!(slug: "steffon") { |a| a.name = "Steffon" }
     Agent.find_or_create_by!(slug: "alex") { |a| a.name = "Alex" }
+    Agent.find_or_create_by!(slug: "turf-monster") { |a| a.name = "Turf Monster" }
 
     get deployments_path
 
     assert_response :success
-    # The launchers live in the Heartbeats card, NOT the current-release or DevOps cards.
+    # The launchers live in the Workflows card, NOT the current-release or DevOps cards.
     assert_select "#current-release [data-test='heartbeat-launcher']", count: 0
     assert_select "#release-duration-card [data-test='heartbeat-launcher']", count: 0
-    assert_select "[data-test='heartbeats-card'] [data-test='heartbeat-launcher']", count: 4
-    # The card is launchers-only — a plain 4-up grid of the soul launchers, no release
+    assert_select "[data-test='heartbeats-card'] [data-test='heartbeat-launcher']", count: 5
+    # The card is launchers-only — a plain grid of the soul launchers, no release
     # tracker and no stage-ownership layout (that pairing was the rejected design; the
     # tracker stays in the Next Release card).
     # Each avatar links to the soul's /agents/<slug> page.
@@ -180,17 +181,23 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] a[data-test='heartbeat-avatar-link'][href='/agents/avi']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] a[data-test='heartbeat-avatar-link'][href='/agents/steffon']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='alex'] a[data-test='heartbeat-avatar-link'][href='/agents/alex']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='turf-monster'] a[data-test='heartbeat-avatar-link'][href='/agents/turf-monster']"
     # Each launcher exposes a prompt-like heartbeat row (row 1) plus its atom action rows —
     # Carl owns pr-review + pr-review-slow, Avi owns qa-release, Steffon owns
-    # production-deploy, Alex carries full-cycle.
+    # production-deploy + clean-infra, Alex carries full-cycle, Turf Monster watches scores.
     assert_select "[data-test='heartbeat-launcher'][data-agent='carl'] button[data-row='heartbeat'][data-clip='Carl Heartbeat']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='carl'] button[data-row='action'][data-clip='pr-review']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='carl'] button[data-row='action'][data-clip='pr-review-slow']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] button[data-row='heartbeat'][data-clip='Avi Heartbeat']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] button[data-row='action'][data-clip='qa-release']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] button[data-row='action'][data-clip='production-deploy']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] button[data-row='action'][data-clip='clean-infra']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='alex'] button[data-row='action'][data-clip='grade-events']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='alex'] button[data-row='action'][data-clip='full-cycle']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='turf-monster'] button[data-row='heartbeat'][data-clip='Turf Monster Heartbeat']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='turf-monster'] button[data-row='action'][data-clip='live-score-watch']"
+    # archive-shipped left the card when production-deploy took over running it.
+    assert_select "[data-test='heartbeats-card'] button[data-clip='archive-shipped']", count: 0
   end
 
   test "[integration] deployments shows the conductor mascot + in-progress timing on the Next Release card" do
@@ -277,9 +284,9 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     end
     assert_select "#current-release code", { text: /Avi Heartbeat Slow/, count: 0 }
     assert_select "#current-release code", { text: /Merge, Assemble, Deploy/, count: 0 }
-    # The launchers now live in the Heartbeats card — one per soul, including
+    # The launchers now live in the Workflows card — one per soul, including
     # Carl's pr-review-slow and Alex's full-cycle acts.
-    assert_select "[data-test='heartbeats-card'] [data-test='heartbeat-launcher']", count: 4
+    assert_select "[data-test='heartbeats-card'] [data-test='heartbeat-launcher']", count: 5
     assert_select "[data-test='heartbeat-launcher'][data-agent='carl'] code", text: "pr-review-slow"
     assert_select "[data-test='heartbeat-launcher'][data-agent='alex'] code", text: "full-cycle"
   end
@@ -495,8 +502,8 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "#current-release", text: /none active/
     # The four legacy chips were retired from the current-release card.
     assert_select "#current-release code", { text: /Avi Heartbeat Slow/, count: 0 }
-    # The Heartbeats card still offers the launchers even with no active release.
-    assert_select "[data-test='heartbeats-card'] [data-test='heartbeat-launcher']", count: 4
+    # The Workflows card still offers the launchers even with no active release.
+    assert_select "[data-test='heartbeats-card'] [data-test='heartbeat-launcher']", count: 5
     # With nothing shipped, Last Release shows its muted empty state (keeps the 2×2 cell).
     assert_select "#last-release", text: /none yet/
   end
@@ -792,7 +799,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     # A 2×2 card grid once the viewport has enough room: Next Release + Last
-    # Release on top, Heartbeats + DevOps below.
+    # Release on top, Workflows + DevOps below.
     assert_select "[data-test='release-dashboard-grid'].grid.grid-cols-1.xl\\:grid-cols-2" do
       assert_select "#current-release", count: 1
       assert_select "#last-release", count: 1
