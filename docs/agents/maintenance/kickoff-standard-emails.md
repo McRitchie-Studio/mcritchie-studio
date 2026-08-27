@@ -107,7 +107,6 @@ first boot.
 | turf-monster | `"turf-monster"` ✅ |
 | **mcritchie-industries** | **not set** |
 | **moms-app** | **not set** |
-| **acquisition-studio** | **not set** |
 
 Setting the prefix is a one-line initializer change, but the `<prefix>-dev` and
 `<prefix>-production` buckets must also exist. Confirm with Mr. McRitchie whether

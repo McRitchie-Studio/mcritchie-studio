@@ -27,8 +27,12 @@ class OriginUnreachableReclaimTest < ActiveSupport::TestCase
     end
   end
 
+  # Both memos, not just the failures one. ORIGIN_CHECKED records "did we already ask
+  # about this repo", so a leftover entry would make refresh_origin_reachability! skip
+  # the fetch and silently weaken any test that drives it.
   def setup
     script.singleton_class.const_get(:ORIGIN_UNREACHABLE).clear
+    script.singleton_class.const_get(:ORIGIN_CHECKED).clear
   rescue NameError
     nil
   end

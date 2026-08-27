@@ -2166,7 +2166,7 @@ STACKLESS_STACK = "none"
 # The reclaim HOLD keys on this. The teardown keys on app["stack"] == STACKLESS_STACK, which
 # is a different question — "has this desk a stack to stop?" — and the two coincide only
 # because discovered_worktree_configs sets both. Do not read one as implying the other: a
-# discovered Rails desk (moms-app, acquisition-studio) is stackless by config yet still has a
+# discovered Rails desk (moms-app, mcritchie-industries) is stackless by config yet still has a
 # live server, which is why stop_stack_for_removal demands BOTH halves.
 def discovered_app?(app_config)
   return false unless app_config
@@ -2400,7 +2400,7 @@ end
 # snapshot --write runs at the END of run_reclaim — so the sweep tore desks down and then died
 # before refreshing the registry: the same sweep-aborts-registry-never-refreshes class as the
 # KeyError, one step later. Discovered desks that DO carry a port are not hypothetical —
-# moms-app and acquisition-studio are discovered Rails apps with live servers.
+# moms-app and mcritchie-industries are discovered Rails apps with live servers.
 def port_range_issue(app_config, port)
   range_start = app_config.fetch("range_start")
   range_end = app_config.fetch("range_end")
@@ -2411,6 +2411,10 @@ def port_range_issue(app_config, port)
 end
 
 def doctor_issues(app = nil)
+  # Read-only, so announce: false — but it still routes through reclaim_hold, and a
+  # doctor that reported a retired repo's desk as reclaimable would contradict the
+  # sweep that refuses it.
+  refresh_origin_reachability!(app, announce: false)
   records = stack_records(app)
   issues = []
   port_dupes = duplicate_values(records, :port)
@@ -2620,6 +2624,10 @@ def capacity_snapshot
 end
 
 def snapshot_payload(app = nil)
+  # The registry's `cleanup_candidate` is the conductor's front door (bin/qa-intake
+  # reads it). Refresh before deriving it, or the snapshot advertises desks the
+  # sweep would refuse — the exact invariant the comment on reclaim_verdict claims.
+  refresh_origin_reachability!(app, announce: false)
   selected_apps = app ? [app] : apps.values
   records = stack_records(app)
   issues_by_label = doctor_issues_by_label(app)
@@ -2887,6 +2895,11 @@ def write_cleanup_ledger_record(record, status:)
 end
 
 def run_cleanup(app = nil, write: false)
+  # Same refresh the reclaim sweep runs. `cleanup --write` FILES desks into
+  # docs/agents/maintenance/delete-later.md and qa-intake prints `remove --yes` for
+  # them, so it must not nominate a desk whose origin could not be consulted.
+  refresh_origin_reachability!(app)
+
   candidates, withheld = cleanup_partition(app)
   report_withheld(withheld)
   if candidates.empty?
@@ -2956,7 +2969,7 @@ def stop_stack_for_removal(app, dir, record)
   # lived only in a comment while the code did the opposite.
   #
   # The desk half: discovery is per-REPO but a stack is per-DESK. moms-app and
-  # acquisition-studio are discovered too, and they are ordinary Rails apps — a
+  # mcritchie-industries are discovered too, and they are ordinary Rails apps — a
   # desk of theirs with a stack env has a real server to stop, and skipping it
   # would orphan the process and its Redis DB. So the repo classification alone
   # must never authorise a skip; the desk has to be quiet as well.
@@ -3016,22 +3029,7 @@ def run_reclaim(app = nil, yes: false)
   # coverage claim read stronger than it was — the repo was enumerated and then
   # judged on stale evidence. A .git directory is required either way, which is
   # also what keeps a bare directory out of the loop.
-  (app ? [app] : apps.values + discovered_worktree_configs).each do |config|
-    repo = config.fetch("repo")
-    next unless Dir.exist?(File.join(repo, ".git"))
-
-    status = origin_fetch_status(repo)
-    next if status == :ok
-
-    ORIGIN_UNREACHABLE[repo] = status
-    puts(if status == :gone
-           "note: #{File.basename(repo)} — origin no longer exists on the remote (retired repo); " \
-             "skipped, and its desks are withheld rather than reclaimed"
-         else
-           "note: #{File.basename(repo)} — origin could not be reached; " \
-             "skipped, and its desks are withheld rather than reclaimed"
-         end)
-  end
+  refresh_origin_reachability!(app)
 
   candidates, withheld = cleanup_partition(app)
   report_withheld(withheld)
@@ -4009,8 +4007,42 @@ end
 # The run was fine — it skipped the repo — but the first thing a cleanup tool
 # prints should not look like a crash, and an operator reading the head of the
 # output cannot tell noise from failure.
+#
+# TEST SEAM + BOUND. Two things this needs that the first cut lacked.
+#
+# The SEAM. This file pins every other network channel behind an AGENT_WORKTREE_*
+# override — _OPEN_PR, _MERGED_PR, _RELEASE_CLAIM — and this fetch was the one new
+# channel added without one. It is not optional plumbing: the suite seals the
+# network by pinning GIT_SSH_COMMAND to a stub that always exits non-zero, and the
+# fixture origin is an ssh URL, so WITHOUT this seam `git fetch origin` can never
+# succeed in a fixture on any machine. Every reclaim test then takes the withhold
+# branch instead of the channel it was written to exercise — which is exactly how
+# 13 sibling tests in agent_worktree_test.rb went red.
+#
+# The BOUND. capture_status takes a `timeout:` that actually KILLS the child, and
+# without one a blackholed remote stalls the entire sweep. The old `sh(...)` call
+# had no bound either, so this is not a regression — but this diff rewrites the
+# call, and the bound is one keyword away.
+ORIGIN_FETCH_TIMEOUT =
+  begin
+    [Integer(ENV.fetch("AGENT_WORKTREE_ORIGIN_FETCH_TIMEOUT", "20")), 1].max
+  rescue ArgumentError, TypeError
+    20
+  end
+
 def origin_fetch_status(repo_path)
-  ok, out, err, = capture_status("git", "-C", repo_path, "fetch", "origin", "--quiet")
+  override = ENV["AGENT_WORKTREE_ORIGIN_FETCH"].to_s.strip
+  unless override.empty?
+    return :ok if override == "ok"
+    return :gone if override == "gone"
+
+    # Anything else is :error on purpose — a seam that silently accepted a typo as
+    # "reachable" would disarm the guard it exists to test.
+    return :error
+  end
+
+  ok, out, err, = capture_status("git", "-C", repo_path, "fetch", "origin", "--quiet",
+                                 timeout: ORIGIN_FETCH_TIMEOUT)
   return :ok if ok
 
   # BOTH STREAMS. capture_status returns stdout and stderr SEPARATELY, and git
@@ -4018,6 +4050,55 @@ def origin_fetch_status(repo_path)
   # alone read every deleted remote as a generic error. The pure classifier's
   # unit test could not catch that (it is handed a string); the live dry run did.
   origin_gone?("#{out}\n#{err}") ? :gone : :error
+end
+
+# Repos this process has already asked about, reachable or not. ORIGIN_UNREACHABLE
+# holds only the FAILURES (origin_hold reads it, and a :ok in there would render as
+# a hold), so "did we check?" needs its own memo. One fetch per repo per process.
+ORIGIN_CHECKED = {}
+
+# Refresh origin reachability for the repos a sweep is about to judge.
+#
+# WHY THIS IS A HELPER AND NOT run_reclaim's PRIVATE LOOP. ORIGIN_UNREACHABLE is
+# read by origin_hold, which sits at the head of the reclaim_hold chain — and that
+# chain has FOUR entry points, not one: run_reclaim, run_cleanup (plain `cleanup`
+# and `cleanup --write`), doctor, and the registry snapshot. Populating the map in
+# run_reclaim alone meant the other three evaluated origin_hold against an EMPTY
+# map, got nil, and wrote `cleanup_candidate: true` for a desk the sweep would
+# refuse — with run_cleanup --write additionally FILING that desk into
+# docs/agents/maintenance/delete-later.md, and bin/qa-intake then printing
+# `remove ... --yes` for it.
+#
+# The usual "stale refs are conservative anyway" defence does NOT cover this case.
+# It holds for a repo that is merely offline: stale refs make a merged branch look
+# unmerged, so a desk is withheld. It INVERTS for a RETIRED repo, whose
+# remote-tracking refs are frozen in a merged-looking state and therefore read as
+# ELIGIBLE forever. That is precisely the case this guard exists for, so it is
+# precisely the case the other three entry points must not miss.
+#
+# `announce:` is false on the read-only paths (doctor, snapshot) so they stay quiet;
+# the sweeps that act on the verdict say what they found.
+def refresh_origin_reachability!(app = nil, announce: true)
+  (app ? [app] : apps.values + discovered_worktree_configs).each do |config|
+    repo = config.fetch("repo")
+    next unless Dir.exist?(File.join(repo, ".git"))
+    next if ORIGIN_CHECKED[repo]
+
+    ORIGIN_CHECKED[repo] = true
+    status = origin_fetch_status(repo)
+    next if status == :ok
+
+    ORIGIN_UNREACHABLE[repo] = status
+    next unless announce
+
+    puts(if status == :gone
+           "note: #{File.basename(repo)} — origin no longer exists on the remote (retired repo); " \
+             "skipped, and its desks are withheld rather than reclaimed"
+         else
+           "note: #{File.basename(repo)} — origin could not be reached; " \
+             "skipped, and its desks are withheld rather than reclaimed"
+         end)
+  end
 end
 
 # WITHHOLD anything whose origin could not be consulted this run.
@@ -4067,9 +4148,12 @@ end
 #   [false, "held …"] withheld — git-eligible, but a builder is live-claiming it
 #   [false, nil]      not git-eligible (dirty / not landed on base) — never a candidate
 #
-# cleanup_partition, the under-lock re-verify, doctor AND the registry snapshot all route
-# through here, so the conductor's front door (bin/qa-intake reads `cleanup_candidate`)
-# cannot nominate a desk the sweep would refuse. Costs at most one board read, only for a
+# cleanup_partition (BOTH sweeps — `cleanup` and `cleanup --reclaim`), the under-lock
+# re-verify, doctor AND the registry snapshot all route through here, so the conductor's
+# front door (bin/qa-intake reads `cleanup_candidate`) cannot nominate a desk the sweep
+# would refuse. That promise holds only because every one of those entry points calls
+# refresh_origin_reachability! first — populating the map in the reclaim sweep alone left
+# the other three reading it EMPTY and nominating desks the sweep refuses. Costs at most one board read, only for a
 # git-eligible worktree, and memoized per slug across the command.
 # There is no "advisory" lane. EVERY caller here answers one question — "is this desk a
 # cleanup candidate?" — and that answer is consumed to DESTROY: the registry feeds
