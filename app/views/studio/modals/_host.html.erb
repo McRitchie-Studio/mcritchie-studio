@@ -55,9 +55,17 @@
           if (!this.stack.length) this.releaseFocus();
         },
         closeAll: function() {
+          // TURBO/BFCACHE TEARDOWN: drop the return target rather than restore into a
+          // document about to be replaced. Aligned with the engine (_host.html.erb:500).
+          //
+          // This fork used to CALL releaseFocus() here and justify it with "no-ops safely
+          // if that node left the document". That misreads the timing:
+          // `turbo:before-cache` fires while the node is STILL in the document, so the
+          // call does not no-op — it moves focus onto a page the browser is one tick from
+          // snapshotting and replacing.
+          _returnFocusTo = null;
           this.stack = [];
           this._sync();
-          this.releaseFocus();
         },
         closeAllDismissible: function() {
           this.stack = this.stack.filter(function(modal) {
@@ -175,7 +183,15 @@
        x-transition:leave="transition ease-in duration-150"
        x-transition:leave-start="opacity-100"
        x-transition:leave-end="opacity-0">
-    <div class="bg-surface rounded-xl border border-subtle shadow-2xl p-6 max-w-sm w-full"
+    <%# max-h-[85dvh] + overflow-y-auto: the fourth engine focus fix, and the one
+        this fork missed. The backdrop centres the card with `flex items-center`, so a
+        card taller than the viewport is clipped past BOTH edges with nothing
+        scrollable — its actions unreachable. On a dismissible: false card, escape and
+        click-outside are deliberately gated off, so there is no way out at all.
+        Trigger: a multi-field card on a landscape phone. It arrived in the engine in
+        the SAME commit as captureFocus (4cb1720), which is why it belongs here rather
+        than in a separate concern. dvh, not vh, so mobile browser chrome counts. %>
+    <div class="bg-surface rounded-xl border border-subtle shadow-2xl p-6 max-w-sm w-full max-h-[85dvh] overflow-y-auto"
          x-transition:enter="transition ease-out duration-200"
          x-transition:enter-start="opacity-0 scale-95"
          x-transition:enter-end="opacity-100 scale-100">
