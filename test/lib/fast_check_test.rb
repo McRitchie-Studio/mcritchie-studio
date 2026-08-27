@@ -86,8 +86,12 @@ class FastCheckTest < Minitest::Test
 
   # A temp git repo shaped like an app: a changed model + its convention test, a
   # spine test + spine config, and one committed baseline. Yields the dir.
-  def with_repo
-    Dir.mktmpdir do |dir|
+  # `subpath:` puts the repo somewhere specific under the temp dir — e.g.
+  # ".worktrees/<slug>", which is what makes it read as an agent DESK (DeskGuard).
+  def with_repo(subpath: nil)
+    Dir.mktmpdir do |tmp|
+      dir = subpath ? File.join(tmp, subpath) : tmp
+      FileUtils.mkdir_p(dir)
       git = ->(args) { assert(system("git -C #{dir} #{args} >/dev/null 2>&1"), "git #{args}") }
       write = lambda do |rel, body|
         full = File.join(dir, rel)
@@ -98,6 +102,7 @@ class FastCheckTest < Minitest::Test
       write.call("test/models/widget_test.rb", "widget test\n")
       write.call("test/models/spine_core_test.rb", "spine test\n")
       write.call("spine.yml", "spine:\n  - test/models/spine_core_test.rb\n")
+      write_repo_shape(dir, subpath) if subpath
       # The harness writes its stub CLIs and their log INTO the repo dir, so without
       # this they read as untracked dirt to the dirty-tree guard (cert_tree_guard.rb)
       # — test tooling, not uncommitted work. Ignoring them keeps the fixture's dirt
@@ -113,6 +118,39 @@ class FastCheckTest < Minitest::Test
       write.call("app/models/widget.rb", "class Widget; end\n")
       yield dir, write
     end
+  end
+
+  # Make the fixture REPO-SHAPED, because the desk guard does not read a file — it BOOTS THE
+  # APP and reads back the database it actually connects to (bin/lib/desk_guard.rb). A desk
+  # fixture therefore needs the two things a real desk has:
+  #
+  #   * the REPO's config/database.yml — one level up from <repo>/.worktrees/<slug> — which
+  #     is where the SHARED test database name is read from (ERB-stripped, so no env var can
+  #     rewrite the value the resolution is compared against); and
+  #   * a `bin/rails` to boot. The shim answers with DESK_DB_STUB, so each test STATES what
+  #     the booted app would resolve to, and defaults to the SHARED name — the hazard.
+  #
+  # DESK FIXTURES ONLY. A plain `with_repo` (no subpath) is not under .worktrees/, so the
+  # guard returns before it would boot anything and the shape buys nothing — while a
+  # `bin/rails` it does not need would quietly rewrite two OTHER fixtures: the turf-monster
+  # one asserts CiTestCommand still REFUSES a repo with no ci.yml, and the studio-engine one
+  # asserts a gem has "no bin/rails to purge one with". Both would keep passing for the
+  # wrong reason, or stop passing at all.
+  def write_repo_shape(dir, subpath)
+    repo_root = File.expand_path("../..", dir)
+    FileUtils.mkdir_p(File.join(repo_root, "config"))
+    File.write(File.join(repo_root, "config", "database.yml"), <<~YAML)
+      default: &default
+        adapter: postgresql
+      test:
+        <<: *default
+        database: studio_test
+    YAML
+
+    FileUtils.mkdir_p(File.join(dir, "bin"))
+    shim = File.join(dir, "bin", "rails")
+    File.write(shim, "#!/bin/sh\necho \"DESKDB=${DESK_DB_STUB:-studio_test}\"\n")
+    File.chmod(0o755, shim)
   end
 
   # A stub CLI: appends "<MARKER>\t<argv...>" to STUB_LOG_<MARKER>; exits 1 when
@@ -1075,6 +1113,74 @@ class FastCheckTest < Minitest::Test
       "branch" => "feat/task-x", "worktree_slug" => "task-x", "checks_run" => []
     } }
   )
+
+  # --- [integration] desk guard: a desk that does not own its test DB may not certify ---
+  # Right root, but is it a WHOLE desk? A desk whose test env resolves to the SHARED base
+  # <app>_test certifies against the database the primary checkout and the release gate
+  # workspaces are using — silently. bin/agent-worktree's bringup is atomic now and cannot
+  # leave such a desk behind; this is the second lock, because desks half-built by the OLD
+  # tool are still on disk and .env.test.local can be deleted by hand. bin/lib/desk_guard.rb.
+  #
+  # These drive the guard END TO END, through the shelled runner and a real `bin/rails`
+  # boot (the fixture's shim — see write_repo_shape): DESK_DB_STUB is what the booted app
+  # answers, and the verdict must follow THAT, never a declared string.
+
+  def test_a_desk_with_no_isolated_test_db_is_refused_before_any_lane_runs
+    with_repo(subpath: ".worktrees/half-built") do |dir, _|
+      # The shim defaults to the SHARED name: bringup never gave this desk a DB of its own.
+      out, code, lines = run_check(dir, implicit_root: true)
+
+      assert_equal 1, code, "a desk with no isolated test DB must refuse, not certify: #{out}"
+      assert_match(/no isolated test DB/, out)
+      assert_match(/SHARED base test database/, out, "the refusal says WHY it matters")
+      assert_match(/ENV issue/, out, "and names it as an env issue, not a regression in the diff")
+      assert_empty lane_calls(lines, "TEST"), "the refusal fires BEFORE any lane runs"
+      refute_match(/\[fast-cert@/, out, "nothing certified against a shared database")
+    end
+  end
+
+  # THE INERT-PIN VECTOR, end to end. The desk PINS an isolated test DB and the app IGNORES
+  # the pin (turf-monster, whose database.yml had no `url:` key) — so it resolves to the
+  # SHARED database anyway. A presence-checking guard certifies this. It must refuse, and it
+  # must say the pin is inert rather than send the operator back to bringup, which would
+  # faithfully rewrite the very same inert pin.
+  def test_a_desk_whose_pin_is_ignored_by_the_app_is_refused
+    with_repo(subpath: ".worktrees/inert-pin") do |dir, write|
+      write.call(".env.test.local", "TEST_DATABASE_URL=postgresql://localhost/studio_test_inert_pin\n")
+      out, code, lines = run_check(dir, implicit_root: true) # shim still answers SHARED
+
+      assert_equal 1, code, "a pin the app ignores is not isolation: #{out}"
+      assert_match(/SHARED test database/, out)
+      assert_match(/IGNORES it/, out, "the refusal must name the app's config, not the desk")
+      assert_empty lane_calls(lines, "TEST"), "the refusal fires BEFORE any lane runs"
+    end
+  end
+
+  # The control. Same desk layout, and the booted app really does land on its own DB. The
+  # guard must not refuse a properly-provisioned worktree — that is where every cert
+  # legitimately runs, so a guard that fails this one is worse than no guard.
+  def test_a_desk_that_resolves_to_its_own_test_db_certifies_normally
+    with_repo(subpath: ".worktrees/whole-desk") do |dir, write|
+      write.call(".env.test.local", "TEST_DATABASE_URL=postgresql://localhost/studio_test_whole_desk\n")
+      out, code, lines = run_check(dir, implicit_root: true,
+                                   extra_env: { "DESK_DB_STUB" => "studio_test_whole_desk" })
+
+      assert_equal 0, code, out
+      refute_empty lane_calls(lines, "TEST"), "the lanes must run in a whole desk"
+    end
+  end
+
+  # A SQLite desk (rolio) has NO TEST_DATABASE_URL by design — its test DB is a FILE inside
+  # the desk, private by construction. Demanding the pin refused a perfectly isolated tree.
+  def test_a_sqlite_desk_certifies_with_no_pin_at_all
+    with_repo(subpath: ".worktrees/rolio-desk") do |dir, _|
+      out, code, lines = run_check(dir, implicit_root: true,
+                                   extra_env: { "DESK_DB_STUB" => "storage/test.sqlite3" })
+
+      assert_equal 0, code, "a SQLite desk's test DB is a file inside it — allow: #{out}"
+      refute_empty lane_calls(lines, "TEST")
+    end
+  end
 
   def test_wrong_root_cert_is_refused_before_any_lane_runs
     with_repo do |dir, _|
