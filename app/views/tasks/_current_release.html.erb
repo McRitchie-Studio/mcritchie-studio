@@ -3,7 +3,7 @@
     Local: release (the Release, or nil for the empty state). The shipped
     release is NOT shown here; it renders read-only in _last_release.
     Layout: the status badge owns the top-right corner (in _release_summary). The
-    release-wide launcher chips moved to the standalone Heartbeats card
+    release-wide launcher chips moved to the standalone Workflows card
     (tasks/_heartbeats_card); this card is now the release summary alone. %>
 <% rel = local_assigns.fetch(:release, nil) %>
 <% card_class = ["rounded-xl border border-subtle bg-surface p-4", local_assigns[:card_class]].compact.join(" ") %>

@@ -1,8 +1,8 @@
 require "test_helper"
 
 # [component][integration] The HEARTBEAT section on the agent profile page
-# (agents/show). Souls that own a heartbeat (Carl / Avi / Steffon / Alex — the
-# entries in ApplicationHelper#heartbeat_launchers) get a section listing their
+# (agents/show). Souls that own a heartbeat (Carl / Avi / Steffon / Alex / Turf
+# Monster — the entries in ApplicationHelper#heartbeat_launchers) get a section listing their
 # heartbeat name plus each launcher act as a copyable phrase + a one-line
 # description. Agents that do NOT own a heartbeat (Shannon / Jasper) render no
 # section at all.
@@ -19,6 +19,9 @@ class AgentHeartbeatSectionTest < ActionDispatch::IntegrationTest
     Agent.find_or_create_by!(slug: "alex") { |a| a.name = "Alex" }
     Agent.find_or_create_by!(slug: "steffon") { |a| a.name = "Steffon" }
     Agent.find_or_create_by!(slug: "shannon") { |a| a.name = "Shannon" }
+    # The name must parameterize BACK to the slug — Agent includes Sluggable, which
+    # re-derives the slug on save, so "Turf Monster" -> "turf-monster" round-trips.
+    Agent.find_or_create_by!(slug: "turf-monster") { |a| a.name = "Turf Monster" }
   end
 
   test "Carl's heartbeat soul renders the review acts + descriptions" do
@@ -70,7 +73,7 @@ class AgentHeartbeatSectionTest < ActionDispatch::IntegrationTest
     assert_match "Share confirmed insights into the docs", response.body
   end
 
-  test "Steffon's heartbeat soul renders the ship + archive acts" do
+  test "Steffon's heartbeat soul renders the ship + sweep acts" do
     get agent_path("steffon")
     assert_response :success
 
@@ -78,9 +81,26 @@ class AgentHeartbeatSectionTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='heartbeat-name'][data-clip='Steffon Heartbeat']"
     assert_select "[data-test='action']", count: 2
     assert_select "[data-test='action'][data-action='production-deploy'][data-clip='production-deploy']"
-    assert_select "[data-test='action'][data-action='archive-shipped'][data-clip='archive-shipped']"
+    assert_select "[data-test='action'][data-action='clean-infra'][data-clip='clean-infra']"
     assert_match "Ship a QA-ready release to production", response.body
-    assert_match "Archive shipped tasks", response.body
+    assert_match "Sweep this machine", response.body
+    # archive-shipped left the launcher when production-deploy took over running it.
+    # It is still a registered SOP — this asserts the LAUNCHER contract only.
+    assert_select "[data-test='action'][data-action='archive-shipped']", count: 0
+  end
+
+  test "Turf Monster is a heartbeat soul and renders the live score watch act" do
+    get agent_path("turf-monster")
+    assert_response :success
+
+    assert_select "[data-test='agent-heartbeat-section'][data-agent='turf-monster']", count: 1
+    assert_select "[data-test='heartbeat-name'][data-clip='Turf Monster Heartbeat']"
+    assert_select "[data-test='heartbeat-name'] code", text: "Turf Monster Heartbeat"
+    # One act — the watch occupies the session for a whole game window, so there is
+    # deliberately nothing behind it to starve.
+    assert_select "[data-test='action']", count: 1
+    assert_select "[data-test='action'][data-action='live-score-watch'][data-clip='live-score-watch']"
+    assert_match "Watch a live NFL slot", response.body
   end
 
   test "a non-heartbeat agent's page renders no heartbeat section" do
