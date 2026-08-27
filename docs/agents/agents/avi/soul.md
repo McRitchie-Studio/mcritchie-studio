@@ -77,9 +77,6 @@ My accuracy is *my* number — I own it. PM and Dev sizes are calibration data, 
   on QA-green
 - [`sops/deploy-with-task.md`](sops/deploy-with-task.md) — expedite ONE task to
   production behind the clean-ladder guard
-- [`sops/live-score-watch.md`](sops/live-score-watch.md) — watch a live NFL slot:
-  poll ESPN on a cadence, record scoring plays, propagate contest scores.
-  Direct-invocation only; takes no assembler claim
 - [`git-protocol.md`](../../system/git-protocol.md) — branch naming, PR table, send-back template, ethics
 - [`sizing-rubric.md`](../../system/sizing-rubric.md) — sealed-bid sizing, accuracy as my primary KPI
 - [`exclusive-lanes.md`](../../system/exclusive-lanes.md) — when to confer with Carl about the migration lane

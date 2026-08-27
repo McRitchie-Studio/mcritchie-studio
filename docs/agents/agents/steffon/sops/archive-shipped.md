@@ -120,33 +120,32 @@ cleanup guards.
 > preview as the result overstates every archive run by whatever step 7 just
 > stamped.
 
-### The artifact sweep (step 3 / step 8)
+### The infra sweep (steps 2-3 / steps 8-9)
 
-`bin/clean-artifacts` reclaims regenerable disk across **every managed Rails repo
-and every worktree under them** — live logs truncated in place (a running server
-keeps its handle), rotated logs, `tmp/cache`, `tmp/brakeman.json`, `coverage/`.
-It never touches `tmp/pids`, `tmp/sockets`, `tmp/storage`, `db/`, `storage/`,
-`.env`, or any tracked file. Repos are **discovered** (anything with
-`config/environments`), so a new satellite is swept the day it lands.
+**The worktree reclaim and the artifact sweep are
+[`clean-infra`](clean-infra.md)'s, and it is the single source for their
+mechanics.** `bin/release archive` drives both inline — that is why they are
+steps of this run rather than a separate command you invoke — but the safety
+gates, the withholding rules, the logger-audit verdict table, and the hand-path
+for a stale unmerged desk are all documented there, once.
 
-It also **boots each app and reads its live logger**, so the run reports any app
-whose local logs are not capped. That check is behavioral on purpose: a cap set
-at the wrong point in the boot reads correct in the config file and does nothing
-at runtime. Verdicts:
+Read [`clean-infra`](clean-infra.md) before approving the confirm at step 6 if
+the preview offers up a desk you do not recognise. Two rules from it decide most
+of those calls:
 
-| Verdict | Meaning | What to do |
-|---|---|---|
-| `OK` | bounded at a sane cap | nothing |
-| `LOOSE` | rotating at Rails' own 100 MB default — the studio-engine cap is **not** installed | the app needs the `studio-engine` bump adopted |
-| `NONE` | not rotating at all | same, and more urgent |
-| `?` | the app could not be booted (reason given) | inconclusive — never read it as either pass or fail |
+- **Clean + merged is NOT sufficient.** A fresh desk is git-identical to a merged
+  one, so the reclaim also withholds a desk younger than 1h29m, one written to
+  inside that window, and one whose holder has a gate in flight.
+- **Read the `rationale:` line, not just `safe:`.** It names what every channel
+  asked and answered; a channel that could not be asked says so.
 
-Two things rotation can never reach, because they are not Rails logs, are
-**reported and never deleted**: scratch validator ledgers (`*/test-ledger`) and
-stray files at the projects root. Removing a whole data directory is a different
-risk class from truncating a log, so that call stays with Mr. McRitchie.
+The sweep's numbers are **machine-local** and belong in this act's report as
+such. Its **improvement suggestion is not optional** — `clean-infra` requires a
+run to end with one concrete proposal for making the next sweep smaller, and an
+archive run that drives the sweep owes that proposal too.
 
-Run it on its own any time:
+Run the sweep on its own any time — but note that `bin/clean-artifacts` has **no
+`--help`** and a bare invocation **applies**:
 
 ```bash
 bin/clean-artifacts --dry-run     # report only
@@ -240,4 +239,8 @@ plenty — the two halves are independent.
 
 ## Related
 
+- [`clean-infra.md`](clean-infra.md) - Steffon's infra sweep, which owns the
+  worktree reclaim and artifact sweep this run drives at steps 2-3 and 8-9.
+- [`production-deploy.md`](production-deploy.md) - the ship this act closes out;
+  it runs `archive-shipped` as its final step.
 - [`../../avi/sops/qa-release.md`](../../avi/sops/qa-release.md) - Avi's release prepare (assembler) SOP.
