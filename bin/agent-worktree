@@ -3978,10 +3978,6 @@ def desk_clearance(record)
   "desk idle (#{born}, no writes in the last #{ClaimLease.humanize_age(ClaimLease::DESK_IDLE_SECONDS)})"
 end
 
-# Every hold channel, in cost order, first reason wins. The ORDER is about spend, not
-# priority — a desk held by any one of them is held, and each reason is true on its own.
-# claim_hold runs first because it is the one that spends the board read the next three
-# reuse; pr_hold runs last because it is the only one that may reach the network.
 # Repos whose origin this run could not consult: { repo_path => :gone | :error }.
 # Written by the reclaim sweep's fetch pass, read by origin_hold below.
 ORIGIN_UNREACHABLE = {}
@@ -4123,6 +4119,13 @@ def origin_hold(record)
   end
 end
 
+# Every hold channel, in cost order, first reason wins. The ORDER is about spend, not
+# priority — a desk held by any one of them is held, and each reason is true on its own.
+# origin_hold runs first on BOTH counts: it is a free hash lookup, and every hold below it
+# reads remote-tracking refs that a failed fetch left STALE, so it has to have the first
+# word. claim_hold runs next because it is the one that spends the board read the next
+# three reuse; pr_hold runs last because it is the only one that reaches the network from
+# HERE — the origin fetch happens once per repo, up front, in refresh_origin_reachability!.
 def reclaim_hold(record, fresh: false, announce: false)
   origin_hold(record) ||
     claim_hold(record, fresh: fresh, announce: announce) ||
