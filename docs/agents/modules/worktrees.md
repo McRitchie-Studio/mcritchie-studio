@@ -482,9 +482,9 @@ bin/agent-worktree scale status
   `_gate` while a release conductor holds a claim; the candidate set is sourced from
   `.worktrees/*` only, so the primary checkout is never a candidate.
 - `cleanup --reclaim --yes` runs the **same full teardown as `remove`** for each
-  safe candidate (stop the stack, flush the stack's Redis DB, update the cleanup
-  ledger, remove the Git worktree, delete the stale local branch), re-verifying
-  each candidate under the worktree lock — **including a fresh re-read of the build
+  safe candidate (stop the stack, flush the stack's Redis DB, drop the desk's
+  Postgres databases, update the cleanup ledger, remove the Git worktree, delete
+  the stale local branch), re-verifying each candidate under the worktree lock — **including a fresh re-read of the build
   claim**. That re-read matters: the candidate list is computed once, but teardowns
   run serially inside the lock, so a builder who sits down and claims a task
   mid-sweep would otherwise have their clean `HEAD == base` desk destroyed on
@@ -502,8 +502,11 @@ bin/agent-worktree scale status
 - `remove <app> <task-slug> --yes` is the approved deletion path after Mr.
   McRitchie or the conductor authorizes cleanup. It refuses dirty or
   non-equivalent worktrees, stops the stack, flushes the stack's Redis DB (so a
-  reused DB number cannot inherit stale keys), updates the cleanup ledger, removes
-  the Git worktree, deletes the stale local branch, shrinks the Redis band toward
+  reused DB number cannot inherit stale keys), **drops the desk's per-worktree
+  Postgres databases** — the dev DB, its `_test_` sibling, and their parallel-test
+  shards, named from the desk's own stack env rather than swept by pattern, and any
+  that still has an open connection is left in place — updates the cleanup ledger,
+  removes the Git worktree, deletes the stale local branch, shrinks the Redis band toward
   the floor when slots free up, and refreshes the registry.
 - `scale status` prints the Redis band: floor, step, current band + DB range,
   used, free, and the physical ceiling (`databases` from Redis). `scale out` /
