@@ -329,7 +329,7 @@ bin/agent-worktree scale status
   brand-new worktree off `release` and one whose work was **fast-forward merged**
   are **git-identical** — both clean, both `HEAD == base`, both 0-ahead — so
   `cleanup_ready?` provably cannot tell a desk someone just sat down at from
-  finished work. **Four** independent channels answer that question (and for a
+  finished work. **Five** independent channels answer that question (and for a
   **discovered repo** three of them are structurally dead, which is why such a desk is
   withheld outright — see **unbound on a DISCOVERED repo** below), and every
   destructive path, `doctor`, and the registry route through ONE decision
@@ -340,6 +340,17 @@ bin/agent-worktree scale status
   the dry run prints a `rationale:` line and the ledger row carries the same
   `Cleared: …` sentence, naming which questions were asked and what came back — see
   **Every nomination explains itself** below.
+  - **The ORIGIN channel** (`origin_hold`) asks the repo's remote whether merge evidence
+    can still be refreshed at all, and it runs **first** because every hold after it reads
+    remote-tracking refs. A failed fetch leaves those refs STALE, and stale is not
+    conservative for a RETIRED repo: a deleted remote's tracking refs are frozen in a
+    merged-looking state, so they read as ELIGIBLE forever. `:gone` (the remote answers
+    "repository not found") and `:error` (auth, or no network) both withhold, but earn
+    different words so nobody is sent looking for a repo that is fine. The fetch is bounded
+    at 20s (`AGENT_WORKTREE_ORIGIN_FETCH_TIMEOUT`), runs once per repo per command, and
+    runs at EVERY entry point that reads the verdict — `cleanup`, `cleanup --reclaim`,
+    `doctor` and the registry snapshot — because populating it in the reclaim sweep alone
+    left the other three nominating desks the sweep refuses.
   - **The CLAIM channel** asks the board who holds the task: the **live build-claim
     lease** (`ClaimLease`, renewed by the builder's status line under a 120s TTL). A
     confirmed hold names the builder's heartbeat age, so the hold is checkable. The
@@ -427,7 +438,7 @@ bin/agent-worktree scale status
       never carry a bound task at all: `TASK_RECORD_SLUG` is written by `bind-task`, which
       routes through `app_for`, and `app_for` stays registry-only because `new`/`up`/`plan`
       need a port range a discovered repo has no answer for. So the fail-open above would be
-      a *standing licence to destroy* rather than a best-effort, and **three of the four
+      a *standing licence to destroy* rather than a best-effort, and **three of the five
       channels are structurally dead** for such a desk: review and PR both read the task
       record there is none of, and the desk channel's progress / gate-in-flight /
       awaiting-approval reads come from that same absent record. What is left is desk age

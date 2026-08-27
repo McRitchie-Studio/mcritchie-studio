@@ -1347,7 +1347,7 @@ class AgentWorktreeTest < Minitest::Test
   end
 
   # The skip needs BOTH halves. Discovery is per-repo but a stack is per-desk, and
-  # moms-app / acquisition-studio are discovered too — they are ordinary Rails apps
+  # moms-app / mcritchie-industries are discovered too — they are ordinary Rails apps
   # whose desks DO have servers to stop. Classifying the repo stackless must never
   # be enough on its own to skip a live stack.
   def test_stackless_skip_requires_a_quiet_desk_not_just_a_stackless_repo
@@ -1428,7 +1428,7 @@ class AgentWorktreeTest < Minitest::Test
   # of run_reclaim. `port < range_start` with a nil range_start raised `comparison of Integer
   # with nil failed`, so the sweep tore desks down and THEN died before refreshing the
   # registry. Discovered desks with a real port are not hypothetical: moms-app and
-  # acquisition-studio are discovered Rails apps with live servers.
+  # mcritchie-industries are discovered Rails apps with live servers.
   def test_doctor_survives_a_discovered_desk_that_carries_a_port
     out = run_in_script(<<~RUBY)
       discovered = { "range_start" => nil, "range_end" => nil }   # a discovered Rails desk with a live port
