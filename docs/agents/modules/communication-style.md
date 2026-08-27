@@ -68,7 +68,7 @@ PR:   <pr-url>  (base `accepted`)
 
 Checks: [unit] geo_gate_test.rb · [integration] funding flow spec
 
-🚀 In Flight: 2:14 PM MDT — nothing in flight.
+🥱 Nothing In Flight: 2:14 PM MDT
 ```
 
 ## Layer 3 — the in-flight roster
@@ -94,10 +94,11 @@ avi · qa-release sweep        ▱▱▱▱▱▱▱▱▱▱  queued on green C
 ──────────────────────────────────────────────────────────────────
 ```
 
-Idle turns collapse to the header alone — one line:
+Idle turns swap the header and collapse to one line — the yawn is the tell,
+readable without parsing a word:
 
 ```text
-🚀 In Flight: 2:14 PM MDT — nothing in flight.
+🥱 Nothing In Flight: 2:14 PM MDT
 ```
 
 ### The meter
@@ -117,10 +118,12 @@ progress against, even when the row can still quote a tick or an interval.
 
 ### The rules
 
-- **Header is the stamp**: `🚀 In Flight: <Denver time>`, from
-  `TZ=America/Denver date "+%-I:%M %p %Z"`. He reads reports well after they
-  land; the clock time lets him subtract and know how stale the numbers are
-  without asking.
+- **Header is the stamp, and it names the state.** Live work:
+  `🚀 In Flight: <Denver time>`. Nothing running:
+  `🥱 Nothing In Flight: <Denver time>` — a different emoji and a different
+  word, so the two cases never blur at a glance. Time from
+  `TZ=America/Denver date "+%-I:%M %p %Z"`; he reads reports well after they
+  land, and the clock lets him subtract without asking.
 - **Cap the block at 68 columns.** v1 had no cap, and on a real terminal the
   right-hand confidence mark truncated to `(roug` / `(firm` — the one field he
   cannot infer. Hold the name column to 28 and elide longer names with `…`.
@@ -139,7 +142,8 @@ progress against, even when the row can still quote a tick or an interval.
   label, and the roster does not bleed into the line the harness prints under
   it. Idle needs neither: it is one line.
 - **Idle still prints.** An absent block and a quiet session look identical;
-  the one-line header makes silence mean exactly one thing.
+  the one-line `🥱 Nothing In Flight` header makes silence mean exactly one
+  thing.
 - **Never pad the roster.** Work that finished during the turn is reported in
   layers 1-2 as done, not parked on the roster as though still running.
 - **If you truly cannot estimate, say so** — an alternating meter and a reason
