@@ -1,7 +1,7 @@
 <div x-cloak
      x-show="selectedBuilder !== null"
      x-transition.opacity
-     class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 px-4 py-8"
+     class="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-black/60 px-4 py-8"
      role="dialog"
      aria-modal="true"
      @keydown.escape.window="selectedBuilder = null"

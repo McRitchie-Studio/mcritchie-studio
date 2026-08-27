@@ -18,7 +18,7 @@
         published height to offset by. %>
     <%= render "studio/banners/stack" %>
     <header x-data="{ scrolled: false }" @scroll.window="scrolled = scrolled ? (window.scrollY > 5) : (window.scrollY > 60)"
-            class="vt-pinned-header sticky top-0 z-50 border-b bg-page/95 transition-shadow duration-300 supports-[backdrop-filter]:backdrop-blur"
+            class="vt-pinned-header sticky top-0 z-[var(--z-nav)] border-b bg-page/95 transition-shadow duration-300 supports-[backdrop-filter]:backdrop-blur"
             :class="scrolled ? 'shadow-lg border-subtle' : 'border-transparent'">
       <div class="max-w-7xl mx-auto px-4 transition-all duration-300"
            :class="scrolled ? 'py-2' : 'py-6'">
