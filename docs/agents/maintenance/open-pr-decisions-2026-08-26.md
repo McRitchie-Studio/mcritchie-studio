@@ -18,11 +18,15 @@ also discard genuine security bumps, so each row is decided on its own terms.
 
 ## The release-safety problem, stated once
 
-Every dependabot PR targets **`accepted`**. That is the rung Avi's `qa-release`
-sweep promotes **wholesale** — `bin/release prepare` merges ALL of `accepted`
-onto `release` in one batch PR per repo. So merging any one of them puts a
-dependency bump into the very next production release with **no task, no shape,
-no test plan and no reviewer of record**.
+Every dependabot PR in the three laddered repos targets **`accepted`**. That is
+the rung Avi's `qa-release` sweep promotes **wholesale** — `bin/release prepare`
+merges ALL of `accepted` onto `release` in one batch PR per repo. So merging any
+one of them puts a dependency bump into the very next production release with
+**no task, no shape, no test plan and no reviewer of record**.
+
+**rolio is worse, not exempt.** It has no `accepted` branch at all, so its one
+dependabot PR (#26) targets **`main`** directly — merging it skips both remaining
+rungs and reaches production without so much as a QA deploy.
 
 They are safe only while nobody merges them, and "nobody has yet" is not a
 control. That is the finding; acting on it is an operator decision, not a
@@ -103,7 +107,7 @@ unreviewed if merged onto `accepted`. Several are load-bearing:
 | tm #254 | jbuilder |
 | ms #704, tm #259 | web-console |
 | ms #911 | astral-sh/setup-uv |
-| rolio #26 | selenium-webdriver |
+| rolio #26 | selenium-webdriver — **based on `main`**, see above |
 
 These are the ones where sitting still has a real cost — `sentry-*` and
 `aws-sdk-s3` in particular accrue fixes. They still should not be merged
