@@ -67,4 +67,16 @@ frozen_size:
   test/lib/dor_check_test.rb: 2745
   test/lib/task_cli_test.rb: 2728
   test/models/task_test.rb: 2266
-  test/commands/agent_worktree_test.rb: 2260
+  # +77 (2026-08-27, retire-acquisition-studio-checkout): three CLI-level tests for
+  # the origin-unreachable withhold — the error case, the retired-repo (:gone) case,
+  # and `cleanup --write` not filing a withheld desk into the delete-later ledger.
+  # They stay in THIS file deliberately, against this ceiling's usual advice. The
+  # behaviour is only observable through the real CLI against the staged git worktree,
+  # and it needs this file's private harness wholesale — agent_worktree, command_env,
+  # removal_env, mark_worktree_merged_to_origin_main, plant_task_bin_with_lapsed_claim,
+  # abandon_desk!. A new file could only get them by duplicating the fixture, and the
+  # tests are exact NEGATIVES of the positive control that already lives here (same
+  # desk, same lapsed claim, one variable flipped), which is most of their value.
+  # The PURE decisions stay split out in test/commands/origin_unreachable_reclaim_test.rb,
+  # which is what this ceiling actually asks for.
+  test/commands/agent_worktree_test.rb: 2340
