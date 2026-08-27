@@ -1820,6 +1820,109 @@ end
 # PURE, and separate from desk_database_names on purpose: folded in there it
 # could only ever be observed through that method's `[]`, which is also what an
 # unreachable cluster returns. As a predicate it is provable on any machine.
+# === ORPHAN DESK DATABASE SWEEP =============================================
+#
+# THE ONE-TIME COUNTERPART to the teardown drop. `remove` now returns a desk's
+# Postgres when it closes, so the leak is stopped going forward — this clears the
+# databases stranded by every teardown BEFORE that landed (measured 2026-08-25:
+# 512 per-worktree databases, only 14 owned by a live desk).
+#
+# THE DESIGN TRAP, and it is the whole job. A stranded database is
+# INDISTINGUISHABLE BY SHAPE from a live desk's: bounded_db_slug truncates any
+# over-long slug and suffixes it with a hash, so a real, live, long-named desk
+# owns a database of exactly the "orphan" shape. Dropping everything that matches
+# the per-desk pattern WILL eventually drop a live desk — test/support/
+# cert_database_reaper.rb records that an earlier cut at a related purge "once
+# bricked every release", and its doctrine is the rule here: A PATTERN IS NOT AN
+# IDENTITY.
+#
+# SO THIS IS AN INVERTED CLOSED SET, never a pattern match. Enumerate every LIVE
+# desk from disk, compute the names each one OWNS, and treat that as the KEEP
+# set. A database is a candidate only if it has the desk shape AND is absent from
+# the keep set. Anything we could not enumerate makes the whole run REFUSE:
+# an unreadable repo makes its live desks look orphaned, and absence of signal
+# must never read as permission to delete.
+
+# Every database name a live desk owns: its dev DB, the `_test_` sibling
+# test_database_url mints from the same slug, and the Rails parallel-test shards
+# each of those spawns (`<db>-0` … `<db>-N`). Shards were 84 of the 498 measured,
+# so a keep set without them would nominate a live desk's shards as orphans.
+def desk_owned_db_names(record)
+  app = record[:app]
+  slug = app.is_a?(Hash) ? app["slug"] : nil
+  task = record[:task]
+  names = []
+  if slug && task && !task.to_s.empty?
+    dev = worktree_db_name(slug, task)
+    names << dev << dev.sub("_development_", "_test_")
+  end
+  # The env is authoritative when present — a desk whose DB was renamed by hand
+  # still owns whatever its own env records.
+  recorded = record[:db_name].to_s
+  names << recorded << recorded.sub("_development_", "_test_") unless recorded.empty?
+  names.reject(&:empty?).uniq
+end
+
+# The KEEP set: every name owned by every live desk, plus their shard prefixes.
+# Returns [names, unreadable_repos] — a non-empty second value must abort the run.
+def orphan_sweep_keep_set
+  keep = []
+  unreadable = []
+  (apps.values + discovered_worktree_configs).each do |config|
+    repo = config.fetch("repo")
+    # A repo that was never CLONED is not "unreadable" — it is absent, and an
+    # absent repo owns no desks, so it can contribute nothing to the keep set and
+    # endangers nothing. tax-studio is registered-but-planned and sits in exactly
+    # this state; treating it as unreadable made the sweep refuse forever.
+    #
+    # A repo whose DIRECTORY EXISTS but carries no .git is a different animal: it
+    # may hold desks this sweep cannot see, and those desks' databases would look
+    # orphaned. That one still refuses.
+    next unless Dir.exist?(repo)
+
+    unless Dir.exist?(File.join(repo, ".git"))
+      unreadable << repo
+      next
+    end
+    begin
+      stack_dirs(config).each do |dir|
+        keep.concat(desk_owned_db_names(stack_record(config, dir)))
+      end
+    rescue StandardError => e
+      unreadable << "#{repo} (#{e.class})"
+    end
+  end
+  [keep.uniq, unreadable]
+end
+
+# Every database on the cluster that has the per-desk SHAPE. nil (not []) when the
+# cluster cannot be read, so the caller can tell "no orphans" from "no answer".
+def all_desk_shaped_databases
+  ok, out, err, = capture_status("psql", "-Atqc",
+                                 "SELECT datname FROM pg_database WHERE NOT datistemplate ORDER BY datname",
+                                 "postgres")
+  return nil unless ok
+
+  out.to_s.split("\n").map(&:strip).reject(&:empty?).select do |name|
+    base = name.sub(/-\d+\z/, "") # a parallel shard belongs to its base
+    desk_db_shape?(base) || desk_db_shape?(base.sub("_test_", "_development_"))
+  end
+end
+
+def orphan_desk_databases
+  keep, unreadable = orphan_sweep_keep_set
+  return [nil, unreadable, keep] unless unreadable.empty?
+
+  found = all_desk_shaped_databases
+  return [nil, ["postgres (could not enumerate databases)"], keep] if found.nil?
+
+  orphans = found.reject do |name|
+    base = name.sub(/-\d+\z/, "")
+    keep.include?(name) || keep.include?(base)
+  end
+  [orphans, [], keep]
+end
+
 def desk_db_shape?(name)
   name.to_s.match?(/\A[a-z0-9_]+_development_[a-z0-9_]+\z/)
 end
@@ -4272,6 +4375,65 @@ if $PROGRAM_NAME == __FILE__
     task = clean_slug(raw_task)
     values = with_worktree_lock { stack_values(app, task) }
     print_plan(app, task, values)
+  when "sweep-orphan-dbs"
+    # DRY RUN BY DEFAULT, exactly like `cleanup --reclaim`. --yes is the only way
+    # to delete anything, and the run REFUSES outright if any repo or the cluster
+    # could not be enumerated.
+    act = ARGV.include?("--yes")
+    orphans, unreadable, keep = orphan_desk_databases
+
+    unless unreadable.empty?
+      warn "sweep-orphan-dbs: REFUSING — could not enumerate:"
+      unreadable.each { |r| warn "  #{r}" }
+      warn ""
+      warn "  An unreadable repo makes its LIVE desks look orphaned, and this sweep"
+      warn "  deletes by absence from the keep set. Absence of signal is not permission."
+      exit 2
+    end
+
+    puts "keep set: #{keep.length} database name(s) owned by live desks"
+    if orphans.empty?
+      puts "sweep-orphan-dbs: no orphans — every desk-shaped database belongs to a live desk."
+      exit 0
+    end
+
+    puts "orphans: #{orphans.length} database(s) with the desk shape and NO live desk"
+    orphans.each do |name|
+      live = database_connection_count(name)
+      note = if live.nil? then "connections UNREADABLE — would be skipped"
+             elsif live.positive? then "#{live} open connection(s) — would be skipped"
+             else "0 connections"
+             end
+      puts "  #{name}  (#{note})"
+    end
+
+    unless act
+      puts ""
+      puts "DRY RUN — nothing was dropped. Re-run with --yes to drop the list above."
+      puts "Each drop still refuses individually on a live or unreadable connection count."
+      exit 0
+    end
+
+    dropped = 0
+    orphans.each do |name|
+      live = database_connection_count(name)
+      if live.nil?
+        log_fail("could not read connections for #{name}; left it in place")
+        next
+      end
+      if live.positive?
+        log_fail("#{name} has #{live} open connection(s); left it in place")
+        next
+      end
+      if sh("psql", "-Atqc", %(DROP DATABASE IF EXISTS "#{name}"), "postgres", allow_fail: true)
+        log_ok("dropped #{name}")
+        dropped += 1
+      else
+        log_fail("could not drop #{name}")
+      end
+    end
+    puts "sweep-orphan-dbs: dropped #{dropped} of #{orphans.length}"
+
   when "new"
     app_name, raw_task, maybe_type, *rest = ARGV
     usage unless app_name && raw_task
