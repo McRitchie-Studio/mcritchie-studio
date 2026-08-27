@@ -1,5 +1,32 @@
 <style>
-  body.modal-open { overflow: hidden; }
+  /* THE SCROLL LOCK GOES ON THE ELEMENT THAT ACTUALLY SCROLLS.
+     Measured on this app, 2026-08-27, before this change: with a modal open a
+     real wheel gesture still scrolled the page (600px → 1000px) and the sticky
+     header unpinned and slid away with it. The lock had been inert for as long
+     as the link sidebar has shipped.
+
+     `body { overflow: hidden }` only locks the viewport when it PROPAGATES to
+     it, and body's overflow propagates only while `html` is `overflow: visible`.
+     studio-engine's link-sidebar partial sets `html { overflow-x: clip }` (so
+     the off-canvas panel never flashes a scrollbar) — correct on its own terms,
+     `clip` makes no scroll container. But it ends the propagation, so this rule
+     stopped locking the viewport and started making BODY a scroll container
+     instead: one that holds scrollTop 0 forever while the viewport scrolls
+     past it. Every `position: sticky` child of body then has a scrollport that
+     never moves, which is why the header unpinned.
+
+     So: lock `html`, and put body back to `visible` so it is not a second
+     scroll container. This block renders at the END of the document, after
+     engine-motion.css, which is what lets the second line win. Both survive an
+     app that does NOT set overflow-x on html — locking html is correct there
+     too, it was simply never the only thing that worked.
+
+     :has() is the trigger because the class lands on body, not html; it is
+     Baseline-supported in every browser this app targets. Verified after: the
+     same wheel gesture holds at 600, and the header and bar stack both pin at
+     top 0. */
+  html:has(body.modal-open) { overflow: hidden; }
+  body.modal-open { overflow: visible; }
 </style>
 
 <script>
@@ -163,7 +190,7 @@
 </script>
 
 <template x-if="$store.modals.current()">
-  <div class="fixed inset-0 z-[120] flex items-center justify-center p-4"
+  <div class="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center p-4"
        style="background:rgba(0,0,0,0.6)"
        role="dialog"
        aria-modal="true"
