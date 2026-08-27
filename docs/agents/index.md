@@ -149,17 +149,20 @@ operator-facing message (chat reply, handoff, task note, PR summary) carries
 - **Layer 3 — the in-flight roster.** *(Chat hand-backs only — a PR body has
   no roster.)* The moment a turn ends and the ball is back in his court, print
   what is still cooking: one row per live subagent, background command, ship,
-  or deploy, with time elapsed, time left, and how firm that number is. **Print
-  the block even when nothing is running** — it then reads `Nothing in flight.`,
-  so silence never means two things. Stamp it in **Denver time**
-  (`TZ=America/Denver date "+%-I:%M %p %Z"`) so he can measure the drift
-  himself. It is the LAST thing in the message, under the specifics.
+  or deploy, with a ten-cell `▰▱` meter, time elapsed, time left, and how firm
+  that number is. **Print it even when nothing is running** — it then collapses
+  to the header alone, `— nothing in flight.`, so silence never means two
+  things. Stamp it in **Denver time** (`TZ=America/Denver date "+%-I:%M %p %Z"`)
+  so he can measure the drift himself, and cap the block at 68 columns so the
+  confidence mark never truncates. It is the LAST thing in the message.
 
   ```text
-  ── IN FLIGHT ── 2:14 PM MDT ─────────────────────────────────────
-  carl · review fix-cta-timing (PR #612)    4m in · ~6m left  (rough)
-  bin/ship log-active-wips-at-pause         3m in · ~9m left  (firm — CI wait)
-  ─────────────────────────────────────────────────────────────────
+  🚀 In Flight: 2:14 PM MDT
+  ──────────────────────────────────────────────────────────────────
+  carl · review fix-cta-timing  ▰▰▰▰▱▱▱▱▱▱  4m in · ~6m left   rough
+  bin/ship restyle-in-flight…   ▰▰▰▱▱▱▱▱▱▱  3m in · ~9m left   firm
+  avi · qa-release sweep        ▱▱▱▱▱▱▱▱▱▱  queued on green CI
+  ──────────────────────────────────────────────────────────────────
   ```
 - **Review handoffs lead with a magic link.** Mint a signed-in link that lands
   on the exact page to review (`Studio::Link.create_magic_link(email:,
