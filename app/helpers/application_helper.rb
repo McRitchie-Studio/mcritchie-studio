@@ -1105,17 +1105,22 @@ module ApplicationHelper
     }
   end
 
-  # The four soul-avatar heartbeat launchers shown on the standalone Heartbeats
+  # The five soul-avatar heartbeat launchers shown on the standalone Workflows
   # card (tasks/_heartbeats_card on /deployments, one tasks/_heartbeat_launcher
   # per soul): a soul face (linking to /agents/<slug>) over a
   # PROMPT-LIKE row 1 plus one or more copyable atom acts. Every row is an
   # INDEPENDENTLY-copyable valid launch
   # prompt. +heartbeat+ (row 1) is the prompt-like soul heartbeat phrase — one per
   # soul ("Carl Heartbeat" / "Avi Heartbeat" / "Steffon Heartbeat" / "Alex
-  # Heartbeat"); +actions+ are the launcher acts that scope that heartbeat's work
-  # (Carl: pr-review + pr-review-slow; Avi: qa-release + deploy-with-task; Steffon:
-  # production-deploy + archive-shipped; Alex: grade-events + share-insights +
-  # full-cycle). +agent_slug+
+  # Heartbeat" / "Turf Monster Heartbeat"); +actions+ are the launcher acts that
+  # scope that heartbeat's work (Carl: pr-review + pr-review-slow; Avi: qa-release +
+  # deploy-with-task; Steffon: production-deploy + clean-infra; Alex: grade-events +
+  # share-insights + full-cycle; Turf Monster: live-score-watch).
+  #
+  # +archive-shipped+ is deliberately ABSENT: production-deploy runs it as its final
+  # step, so the cleaning rides every release instead of waiting to be remembered.
+  # It stays a registered invocation — see agents/steffon/sops/archive-shipped.md.
+  # +agent_slug+
   # resolves the soul avatar (reused from the heartbeat Agent column + stage
   # timeline) AND its /agents/<slug> link; +label+ is the small purpose caption;
   # +title+ is the hover tooltip. Every row (the heartbeat prompt and each act) is
@@ -1125,8 +1130,9 @@ module ApplicationHelper
     [
       { agent_slug: "carl",    heartbeat: "Carl Heartbeat",    actions: ["pr-review", "pr-review-slow"],                   label: "Review",        title: "Carl — review submitted PRs, one Carl per PR (review-only)" },
       { agent_slug: "avi",     heartbeat: "Avi Heartbeat",     actions: ["qa-release", "deploy-with-task"],                label: "Assemble + QA", title: "Avi — sweep reviewed work onto release, then QA the candidate" },
-      { agent_slug: "steffon", heartbeat: "Steffon Heartbeat", actions: ["production-deploy", "archive-shipped"],          label: "Ship + archive", title: "Steffon — ship a QA-green release, then archive shipped work" },
-      { agent_slug: "alex",    heartbeat: "Alex Heartbeat",    actions: ["grade-events", "share-insights", "full-cycle"], label: "Learn + ship",  title: "Alex — grade, share insights, + full DevOps cycle heartbeat" }
+      { agent_slug: "steffon", heartbeat: "Steffon Heartbeat", actions: ["production-deploy", "clean-infra"],              label: "Ship + sweep",  title: "Steffon — ship a QA-green release (it archives on the way out), then sweep the machine" },
+      { agent_slug: "alex",    heartbeat: "Alex Heartbeat",    actions: ["grade-events", "share-insights", "full-cycle"], label: "Learn + ship",  title: "Alex — grade, share insights, + full DevOps cycle heartbeat" },
+      { agent_slug: "turf-monster", heartbeat: "Turf Monster Heartbeat", actions: ["live-score-watch"],                   label: "Watch scores",  title: "Turf Monster — watch a live NFL slot and record every scoring play" }
     ]
   end
 
@@ -1140,7 +1146,8 @@ module ApplicationHelper
     "pr-review-slow"    => "Review submitted PRs one at a time",
     "production-deploy" => "Ship a QA-ready release to production",
     "qa-release"        => "Prepare + deploy the QA release",
-    "archive-shipped"   => "Archive shipped tasks + releases",
+    "clean-infra"       => "Sweep this machine: desks, disk, Redis band",
+    "live-score-watch"  => "Watch a live NFL slot and record every score",
     "grade-events"      => "Grade 10 recent events for quality",
     "share-insights"    => "Share confirmed insights into the docs",
     "full-cycle"        => "Full cycle — review, assemble, QA, ship to prod",
@@ -1151,17 +1158,24 @@ module ApplicationHelper
     ACTION_DESCRIPTIONS[act.to_s]
   end
 
-  # Leading icon for each heartbeat launcher act. The four ORDERED release-pipeline
-  # acts get a 1→4 keycap so the buttons read as a sequence across the souls (Carl
-  # pr-review 1 → Avi qa-release 2 → Steffon production-deploy 3 → Steffon
-  # archive-shipped 4); the off-sequence acts get a themed glyph (🐢 slow review,
-  # 🧑🏻‍🏫 grading, 🌎 the whole cycle, ⚡ the single-task expedite). The heartbeat row
-  # itself gets a ❤️ in the view.
+  # Leading icon for each heartbeat launcher act. The three ORDERED release-pipeline
+  # acts get a 1→3 keycap so the buttons read as a sequence across the souls (Carl
+  # pr-review 1 → Avi qa-release 2 → Steffon production-deploy 3); the off-sequence
+  # acts get a themed glyph (🐢 slow review, 🧑🏻‍🏫 grading, 🌎 the whole cycle,
+  # ⚡ the single-task expedite, 🧹 the infra sweep, 🏈 the live score watch). The
+  # heartbeat row itself gets a ❤️ in the view.
+  #
+  # The sequence lost its 4️⃣ (archive-shipped) when production-deploy took over
+  # running that act itself — the archive is no longer a step the operator has to
+  # remember, so it is no longer a card chip. clean-infra took the slot but NOT the
+  # keycap: it is off-sequence on purpose, invoked when the machine is in the way
+  # rather than at a fixed point in the pipeline.
   ACTION_ICONS = {
     "pr-review"         => "1️⃣",
     "qa-release"        => "2️⃣",
     "production-deploy" => "3️⃣",
-    "archive-shipped"   => "4️⃣",
+    "clean-infra"       => "🧹",
+    "live-score-watch"  => "🏈",
     "pr-review-slow"    => "🐢",
     "grade-events"      => "🧑🏻‍🏫",
     "share-insights"    => "📡",

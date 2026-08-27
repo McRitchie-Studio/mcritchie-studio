@@ -511,7 +511,15 @@ document.addEventListener('turbo:before-cache', function() {
   </div>
 
   <% if show_release_modules %>
-    <!-- Deployment dashboard: a 2×2 card grid — Next Release + Last Release on the top row, Heartbeats + DevOps (WIP + release durations) on the bottom row. -->
+    <!-- Deployment dashboard: Next Release + Last Release share the top row; Workflows
+         and DevOps (WIP + release durations) each take a FULL-WIDTH row below them.
+
+         Workflows spans both columns because its content is five side-by-side soul
+         columns of copyable command chips, and half a screen cannot hold five of them
+         — measured: at a 1600px viewport a half-width card leaves the longest phrase
+         32px short, and no readable font size closes that. Given the full row it
+         holds five at every width from lg up. DevOps spans too, so the last row has
+         no orphaned empty cell. -->
     <div class="grid min-w-0 grid-cols-1 gap-4 mb-6 items-stretch xl:grid-cols-2" data-test="release-dashboard-grid">
       <%= render "current_release", release: current_release, card_class: "h-full min-w-0" %>
       <%= render "last_release", release: last_release, card_class: "h-full min-w-0" %>
