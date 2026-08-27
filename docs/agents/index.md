@@ -151,11 +151,12 @@ operator-facing message (chat reply, handoff, task note, PR summary) carries
   what is still cooking: one row per live subagent, background command, ship,
   or deploy, with a ten-cell `▰▱` meter, time elapsed, time left, and how firm
   that number is — or, when it forecasts nothing, its condition. **Print it
-  even when nothing is running** — it then collapses to the header alone,
-  `— nothing in flight.`, so silence never means two things. Stamp it in
-  **Denver time** (`TZ=America/Denver date "+%-I:%M %p %Z"`) so he can measure
-  the drift himself, and cap the block at 68 columns so the confidence mark
-  never truncates. It is the LAST thing in the message.
+  even when nothing is running** — it then collapses to one line under a
+  swapped header, `🥱 Nothing In Flight: <time>`, so silence never means two
+  things. Stamp it in **Denver time**
+  (`TZ=America/Denver date "+%-I:%M %p %Z"`) so he can measure the drift
+  himself, and cap the block at 68 columns so the confidence mark never
+  truncates. It is the LAST thing in the message.
 
   ```text
   🚀 In Flight: 2:14 PM MDT
