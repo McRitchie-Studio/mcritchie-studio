@@ -12,7 +12,7 @@ three ordered release actions, a themed glyph on the rest):
   Heartbeat` · `Steffon Heartbeat` · `Alex Heartbeat` · `Turf Monster Heartbeat`.
   One per soul.
 - **The action rows** — one copyable row each, ordered along the pipeline (the
-  number icons read across the souls: review → assemble → ship → archive):
+  number icons read across the souls: review → assemble → ship):
   - **Carl** → `1️⃣ pr-review` · `🐢 pr-review-slow`
   - **Avi** → `2️⃣ qa-release` · `⚡ deploy-with-task`
   - **Steffon** → `3️⃣ production-deploy` · `🧹 clean-infra`
