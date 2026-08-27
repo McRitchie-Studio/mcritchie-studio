@@ -61,6 +61,56 @@ class Release::GateWorkspaceTest < ActiveSupport::TestCase
     Dir.mktmpdir { |dir| assert_nil W.database_url_for("ghost", dir) }
   end
 
+  # --- the SHARED test DB name: computed EXTERNALLY, or it proves nothing ------
+
+  test "[unit] declared_test_database reads the app's OWN test database name" do
+    assert_equal "mcritchie_studio_test", W.declared_test_database(Rails.root.to_s)
+  end
+
+  test "[unit] declared_test_database is ERB-STRIPPED, so no env var can rewrite it" do
+    # THE ANTI-PLACEBO PROPERTY. This name is what a resolved database is compared
+    # AGAINST (bin/lib/desk_guard.rb, assert_private_gate_db!). Render the ERB and
+    # `url: <%= ENV["TEST_DATABASE_URL"] %>` would resolve to whatever the caller's own
+    # env just set — the comparison becomes `x == x` and waves through exactly the case
+    # it exists to catch. The env must not be able to reach this value.
+    Dir.mktmpdir do |dir|
+      FileUtils.mkdir_p(File.join(dir, "config"))
+      File.write(File.join(dir, "config", "database.yml"), <<~YAML)
+        default: &default
+          adapter: postgresql
+        test:
+          <<: *default
+          database: studio_test
+          url: <%= ENV["TEST_DATABASE_URL"] %>
+      YAML
+
+      with_env("TEST_DATABASE_URL" => "postgresql://localhost/attacker_test") do
+        assert_equal "studio_test", W.declared_test_database(dir),
+                     "an env var must NOT be able to rewrite the shared name we compare against"
+      end
+    end
+  end
+
+  test "[unit] declared_test_database returns the FILE for a SQLite app" do
+    Dir.mktmpdir do |dir|
+      write_database_yml(dir, "sqlite3", "storage/test.sqlite3")
+
+      assert_equal "storage/test.sqlite3", W.declared_test_database(dir)
+    end
+  end
+
+  test "[unit] declared_test_database degrades to nil rather than guessing" do
+    Dir.mktmpdir { |dir| assert_nil W.declared_test_database(dir) }
+  end
+
+  def with_env(overlay)
+    saved = overlay.keys.to_h { |k| [k, ENV[k]] }
+    overlay.each { |k, v| ENV[k] = v }
+    yield
+  ensure
+    saved.each { |k, v| ENV[k] = v }
+  end
+
   # --- private_db?: the INVARIANT the gate refuses to run without --------------
   #
   # The DB name STRING proves nothing — it is what the gate INTENDS. private_db?

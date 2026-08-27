@@ -878,9 +878,33 @@ end
 # did, and a rollback that misses a case is itself a leak. Each step registers its
 # own undo the moment it succeeds.
 #
+# THE SIGTERM IN THAT LIST IS NOT FREE — it is bought by an explicit trap in the
+# `new` dispatch. SIGINT (Ctrl-C) raises Interrupt on its own and the rescue catches
+# it; SIGTERM and SIGHUP do not, and their default disposition kills the process
+# outright (rc=143) with no rescue and no unwind. For a while this comment listed
+# SIGTERM among the failures handled while nothing handled it, which is the worse
+# half of the bug: an operator reads the claim and stops looking. SIGTERM is also the
+# COMMON agent path — a harness Bash timeout TERMs the process group — so it is the
+# case that mattered most and was covered least.
+#
 # EVERY UNDO IS BEST-EFFORT AND NEVER RAISES. A rollback that blows up half way
 # leaves exactly the mess it was called to prevent, and it would also mask the
 # ORIGINAL failure — which is the thing the operator actually needs to read.
+#
+# AN UNDO REPORTS ITS OWN VERDICT, and the printer honours it. This is not a
+# refinement — it closes a defect that made the rollback LIE. Every undo here does
+# its work through `sh(..., allow_fail: true)` or FileUtils, neither of which raises
+# on failure: `sh` returns false and `rm_f` returns its argument. So the rescue below
+# never fires for the ordinary failure, and the old code printed "unwound: <label>"
+# unconditionally afterwards — a locked worktree, an open file handle, a branch git
+# refused to delete, all reported as a clean rollback while the desk sat on disk.
+# A rollback that overstates itself is worse than one that fails loudly: the operator
+# reads "unwound" and never looks.
+#
+# THE CONTRACT: an undo block returns TRUTHY when the thing is actually gone, FALSY
+# when it is not. Blocks assert the OUTCOME (`!Dir.exist?`) rather than an exit code
+# wherever they can — `git worktree remove` can fail while the directory still ends up
+# removed by the rm_rf behind it, and it is the directory that matters.
 class DeskUnwinder
   def initialize = @undos = []
 
@@ -890,8 +914,11 @@ class DeskUnwinder
   # by the ensure that owns it — never swallowed here.
   def unwind!
     @undos.reverse_each do |label, undo|
-      undo.call
-      warn "  unwound: #{label}"
+      if undo.call
+        warn "  unwound: #{label}"
+      else
+        warn "  unwind INCOMPLETE for #{label} — it is still on disk; remove it by hand"
+      end
     rescue StandardError, SystemExit => e
       warn "  unwind FAILED for #{label} (#{e.class}: #{e.message}) — continuing"
     end
@@ -901,7 +928,71 @@ class DeskUnwinder
   def commit! = @undos.clear
 end
 
-def ensure_git_worktree(app, task, type)
+# Undo of the git worktree step: drop the checkout, its git registration, and the
+# branch it cut. Harvested from PR #550.
+#
+#   * `--force` because a half-built desk can carry the copied .env, which `git
+#     worktree remove` counts as untracked work and refuses over.
+#   * `rm_rf` + `prune` because a worktree git never finished REGISTERING is, to git,
+#     not a worktree at all — `remove` errors on it and the plain directory stays.
+#     That is precisely the state an interrupted bringup leaves behind.
+#
+# Returns whether the desk is actually gone. `git branch -D` failing is reported by
+# the same verdict: a leftover branch makes the next `new` for this slug fail on an
+# existing branch name, so it is not cosmetic.
+def remove_worktree_and_branch(repo, dir, branch)
+  sh("git", "-C", repo, "worktree", "remove", "--force", dir, allow_fail: true)
+  FileUtils.rm_rf(dir)
+  sh("git", "-C", repo, "worktree", "prune", allow_fail: true)
+  branch_gone = branch.to_s.empty? || sh("git", "-C", repo, "branch", "-D", branch, allow_fail: true)
+  !Dir.exist?(dir) && branch_gone
+end
+
+# Refuse BEFORE the first side effect. Harvested from PR #550.
+#
+# The unwinder can roll back what bringup created, but "created nothing" beats "created
+# and rolled back" every time: an unwind is best-effort by construction, and the one
+# failure mode we KNOW is coming — a full Redis band, live 2026-07-13 — should never get
+# to create anything at all.
+#
+# A desk that is ALREADY provisioned holds its slot: a repeat `new` on it is a resume,
+# not an allocation, so it skips the check rather than refusing a repair.
+def preflight_capacity!(app, task)
+  return unless parse_env(stack_env_path(app, task)).empty?
+
+  with_worktree_lock do
+    physical = redis_physical_count
+    ceiling = [redis_db_min + load_current_capacity - 1, physical - 1].min
+    used = allocated_redis_dbs
+    return if (redis_db_min..ceiling).any? { |db| !used.include?(db) }
+    # No free slot in the band as it stands — but the band GROWS restart-free while
+    # physical room remains, and allocate_redis_db will do exactly that. Only a band
+    # that cannot grow either is actually full.
+    return if load_current_capacity < physical_band_capacity(physical)
+
+    abort <<~MSG.strip
+      no free Redis DB in band #{redis_db_min}-#{ceiling}; physical Redis ceiling reached (databases=#{physical}).
+
+      Refusing BEFORE creating anything: a desk cut now would be rolled back seconds later,
+      and a rollback is best-effort. Free a slot instead.
+
+      Free a slot:   bin/agent-worktree cleanup   (then remove merged worktrees)
+      Raise ceiling: bin/agent-worktree scale --provision   (raises Redis databases to #{redis_physical_target}, restarts Redis once)
+    MSG
+  end
+end
+
+# Cut the desk's checkout. `on_cut` fires THE INSTANT the worktree exists and before
+# anything else, so the caller can register its undo with nothing in between.
+#
+# WHY THE CALLBACK. The registration used to happen where this method RETURNS — after
+# the `.env` copy below. Everything between `git worktree add` and that return was an
+# unguarded window: an interrupt landing there left a checkout and a branch on disk with
+# no undo registered for them, which is the exact half-desk the unwinder exists to
+# prevent. The network `git fetch` above is the slowest and most interrupt-likely step
+# of all, and it now stays firmly OUTSIDE the guarded region, where an interrupt costs
+# nothing because nothing has been created yet.
+def ensure_git_worktree(app, task, type, &on_cut)
   primary = app.fetch("repo")
   dir = worktree_dir(app, task)
   return dir if Dir.exist?(dir)
@@ -919,6 +1010,7 @@ def ensure_git_worktree(app, task, type)
 
   branch = "#{type}/#{task}"
   sh("git", "-C", primary, "worktree", "add", dir, "-b", branch, base_ref)
+  on_cut&.call(dir, branch)
 
   env_source = File.join(primary, ".env")
   env_target = File.join(dir, ".env")
@@ -4442,39 +4534,74 @@ if $PROGRAM_NAME == __FILE__
     type = maybe_type&.start_with?("--") ? "feat" : (maybe_type || "feat")
     start = ARGV.include?("--start")
 
+    # Refuse before the FIRST side effect, so the failure we know is coming never
+    # creates anything to unwind. Skipped for an already-provisioned desk (a resume).
+    preflight_capacity!(app, task)
+
+    # SIGINT (Ctrl-C) already raises Interrupt, which the rescue below unwinds — but
+    # SIGTERM and SIGHUP do NOT. Their default disposition kills the process outright
+    # (rc=143); the rescue never runs and the half-built desk survives, which is the
+    # very outcome this block exists to prevent. And SIGTERM is the COMMON agent path,
+    # not Ctrl-C: an agent runs `new` under a harness Bash timeout, and the harness TERMs
+    # the process group. Raising turns it into the same unwind every other failure takes.
+    # Restored in the ensure below so nothing downstream inherits the handler.
+    prior_traps = %w[TERM HUP].to_h { |sig| [sig, Signal.trap(sig) { raise Interrupt, "SIG#{sig}" }] }
+
     # ATOMIC FROM HERE. Each step registers its undo the moment it succeeds; any
     # failure below unwinds them in reverse and leaves no half-built desk. A desk
     # that ALREADY existed is not ours to destroy — ensure_git_worktree returns
     # early for that case, so only a worktree WE cut registers an undo.
     unwinder = DeskUnwinder.new
     begin
-      pre_existing = Dir.exist?(worktree_dir(app, task))
-      dir = ensure_git_worktree(app, task, type)
-      unless pre_existing
-        unwinder.on_success("git worktree #{dir}") do
-          sh("git", "-C", app.fetch("repo"), "worktree", "remove", "--force", dir, allow_fail: true)
-          sh("git", "-C", app.fetch("repo"), "branch", "-D", "#{type}/#{task}", allow_fail: true)
+      # Registered from INSIDE ensure_git_worktree, the instant the checkout exists —
+      # see its on_cut callback for why the return value was too late.
+      dir = ensure_git_worktree(app, task, type) do |cut_dir, cut_branch|
+        unwinder.on_success("git worktree #{cut_dir}") do
+          remove_worktree_and_branch(app.fetch("repo"), cut_dir, cut_branch)
         end
       end
 
       env_pre_existing = File.exist?(stack_env_path(app, task))
+      capacity_before = load_current_capacity
       values, path = with_worktree_lock do
         existing = parse_env(stack_env_path(app, task))
         resolved = existing.empty? ? stack_values(app, task) : local_email_values.merge(existing)
         [resolved, write_stack_env(app, task, resolved)]
       end
+      # allocate_redis_db GROWS the persisted band (restart-free) when the current one
+      # is full. Unwind that too, or a bringup that fails after the growth permanently
+      # inflates a band it never used a slot of. It self-heals on the next remove's
+      # auto-shrink, which is exactly the kind of "eventually" that hides a leak.
+      if load_current_capacity != capacity_before
+        unwinder.on_success("redis band growth") do
+          maybe_scale_in
+          load_current_capacity <= capacity_before
+        end
+      end
       # Deleting the env is what RELEASES the port and the Redis DB it recorded —
       # they are allocated by reading the env files, so an orphaned env holds both
       # forever. Only remove one we created.
-      unwinder.on_success("stack env #{path}") { FileUtils.rm_f(path) } unless env_pre_existing
+      unless env_pre_existing
+        unwinder.on_success("stack env #{path}") do
+          FileUtils.rm_f(path)
+          !File.exist?(path)
+        end
+      end
 
       marker_pre_existing = File.exist?(context_path(dir))
+      unless marker_pre_existing
+        unwinder.on_success("context marker") do
+          FileUtils.rm_f(context_path(dir))
+          !File.exist?(context_path(dir))
+        end
+      end
       write_context_marker(app, task, values, dir)
-      unwinder.on_success("context marker") { FileUtils.rm_f(context_path(dir)) } unless marker_pre_existing
     rescue StandardError, SystemExit, Interrupt => e
       warn "new: bringup failed (#{e.class}: #{e.message}) — unwinding"
       unwinder.unwind!
       raise
+    ensure
+      prior_traps.each { |sig, handler| Signal.trap(sig, handler) }
     end
     # Past the point of no return: the desk is whole, so the undos are discarded.
     unwinder.commit!

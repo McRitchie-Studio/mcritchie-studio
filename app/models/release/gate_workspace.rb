@@ -144,18 +144,41 @@ class Release
     # than a registry column, so a new app can't drift out of sync with a
     # convention nobody updated.
     def adapter(repo_path)
+      test_config(repo_path)["adapter"]
+    end
+
+    # IO. The app's DECLARED test database — `test.database` from its OWN
+    # config/database.yml, ERB STRIPPED. This is the SHARED one: the database the
+    # primary checkout, CI, and every un-overlaid boot land on.
+    #
+    # ERB-stripped is the WHOLE POINT, and it is the difference between a guard and a
+    # placebo. The question a caller asks is "did the overlay actually move me OFF the
+    # shared DB?" — so the shared DB must be computed EXTERNALLY, from a source the
+    # overlay cannot reach. Render the ERB and `url: <%= ENV["TEST_DATABASE_URL"] %>`
+    # resolves to whatever the env just set, the comparison becomes `x == x`, and it
+    # waves through exactly the case it exists to catch. Compare a RESOLVED database
+    # against a config the env has already rewritten and you have proven nothing.
+    def declared_test_database(repo_path)
+      test_config(repo_path)["database"]
+    end
+
+    # IO. The app's `test:` block, ERB stripped and merged over `default:`, with blank
+    # values dropped (`url:` renders EMPTY when its env var is unset). Values are
+    # strings or absent — never nil-but-present, so callers can `.to_s.empty?` on a
+    # miss without distinguishing "declared blank" from "not declared".
+    def test_config(repo_path)
       file = File.join(repo_path.to_s, "config", "database.yml")
-      return nil unless File.exist?(file)
+      return {} unless File.exist?(file)
 
       raw = File.read(file).gsub(/<%.*?%>/m, "")
       cfg = YAML.safe_load(raw, aliases: true)
-      return nil unless cfg.is_a?(Hash)
+      return {} unless cfg.is_a?(Hash)
 
+      default = cfg["default"].is_a?(Hash) ? cfg["default"] : {}
       test = cfg["test"].is_a?(Hash) ? cfg["test"] : {}
-      value = test["adapter"] || cfg.dig("default", "adapter")
-      value.to_s.strip.empty? ? nil : value.to_s.strip
+      default.merge(test).transform_values { |v| v.to_s.strip }.reject { |_, v| v.empty? }
     rescue StandardError
-      nil
+      {}
     end
 
     # IO. The workspace DB URL to overlay for THIS app, or nil when it needs none.
