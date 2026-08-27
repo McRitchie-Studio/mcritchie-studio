@@ -32,6 +32,20 @@ Browsers without view-transition support get an instant swap; under
 `reducedMotion: "reduce"` (playwright.config.js) so clicks never land
 mid-animation.
 
+## Modal host — this app FORKS the engine's
+
+This app SHADOWS the engine's partial. studio-engine is **non-isolated**, so an app view
+at the same path wins the lookup — and this app ships its own
+`app/views/studio/modals/_host.html.erb`. **A gem bump therefore delivers no host fix at
+all.** Every focus-trap, accessible-name and scroll change made in the engine's host has to
+be PORTED here by hand, and `test/integration/modal_host_focus_contract_test.rb` is what
+holds the port honest — it parses the RENDERED backdrop with `Nokogiri::HTML5` (libxml2
+silently drops Alpine's `@keydown.*` attributes) and asserts the element's own attributes,
+because a substring assertion against the file is satisfied by the host's own JS comments.
+
+`studio/modals/_scoped_host` is NOT forked anywhere and DOES propagate from the engine.
+That asymmetry is the whole trap: the same fix reaches one host and not the other.
+
 ## JS Modules (importmap)
 
 - `kanban_board` — drag-and-drop task board with optimistic DOM moves, API transitions, toast notifications. Race-condition guard (`_pendingMoves`) prevents concurrent API calls for same task. Attached to `window.kanbanBoard` for Alpine `x-data` access.

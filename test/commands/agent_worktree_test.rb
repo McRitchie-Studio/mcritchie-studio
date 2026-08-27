@@ -795,6 +795,76 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     refute_includes out, "skipping"
   end
 
+  # ── THE ORIGIN-UNREACHABLE WITHHOLD, end to end through the CLI ────────────────────────
+  #
+  # The in-process control in origin_unreachable_reclaim_test.rb is
+  # `assert_nil origin_hold(record_for("/projects/healthy"))`, which only proves an
+  # EMPTY-HASH lookup returns nil — it cannot fail unless the guard defaults to
+  # withholding. So NEITHER half of this behaviour had an end-to-end proof: the
+  # reclaiming half lived in the suite this change turned red, and the withholding half
+  # was never exercised through the CLI at all.
+  #
+  # These are that proof, and they are exact negatives of the positive control above —
+  # same desk, same lapsed claim, same teardown path, ONE variable flipped.
+  test "[integration] reclaim --yes WITHHOLDS a desk whose origin could not be reached" do
+    mark_worktree_merged_to_origin_main
+    plant_task_bin_with_lapsed_claim("origin-error-task")
+    abandon_desk!
+    assert Dir.exist?(@worktree_dir), "precondition: the desk is on disk"
+
+    out, err, status = agent_worktree("cleanup", "mcritchie-studio", "--reclaim", "--yes",
+                                      env: removal_env("AGENT_WORKTREE_ORIGIN_FETCH" => "error"))
+
+    assert status.success?, "#{out}\n#{err}"
+    assert_includes out, "origin could not be reached",
+                    "the sweep must SAY it could not consult the origin — an operator reading " \
+                    "the head of the output is how this surfaces at all"
+    assert_includes out, "withheld mcritchie-studio/terminal-context"
+    assert_includes out, "no free candidates"
+    assert Dir.exist?(@worktree_dir),
+           "a desk whose origin could not be consulted must survive --yes: its merge evidence " \
+           "is stale, and stale evidence is not permission to delete"
+  end
+
+  # The RETIRED-repo wording, which is the case the guard was actually built for. A
+  # deleted remote's tracking refs are frozen in a merged-looking state, so they read
+  # as ELIGIBLE forever — the one case where "stale refs are conservative anyway" is
+  # false.
+  test "[integration] reclaim --yes WITHHOLDS a desk whose origin no longer exists" do
+    mark_worktree_merged_to_origin_main
+    plant_task_bin_with_lapsed_claim("origin-gone-task")
+    abandon_desk!
+
+    out, err, status = agent_worktree("cleanup", "mcritchie-studio", "--reclaim", "--yes",
+                                      env: removal_env("AGENT_WORKTREE_ORIGIN_FETCH" => "gone"))
+
+    assert status.success?, "#{out}\n#{err}"
+    assert_includes out, "origin no longer exists on the remote (retired repo)"
+    assert_includes out, "no free candidates"
+    assert Dir.exist?(@worktree_dir), "a retired repo's desk is never provably reclaimable"
+  end
+
+  # THE INVARIANT, which is the half that actually reached the operator. ORIGIN_UNREACHABLE
+  # used to be populated ONLY by the reclaim sweep, so `cleanup --write` evaluated
+  # origin_hold against an EMPTY map, got nil, and FILED the desk into
+  # docs/agents/maintenance/delete-later.md — where bin/qa-intake then printed
+  # `remove ... --yes` for it. Over-nominate-then-refuse fails safe, but it misleads the
+  # conductor, and it broke the promise reclaim_verdict's own comment makes.
+  test "[integration] cleanup --write does NOT nominate a desk whose origin is unreachable" do
+    mark_worktree_merged_to_origin_main
+    plant_task_bin_with_lapsed_claim("origin-ledger-task")
+    abandon_desk!
+
+    out, err, status = agent_worktree("cleanup", "mcritchie-studio", "--write",
+                                      env: removal_env("AGENT_WORKTREE_ORIGIN_FETCH" => "error"))
+
+    assert status.success?, "#{out}\n#{err}"
+    refute_includes out, "cleanup candidates:",
+                    "the ledger-filing path must route through the SAME hold as the sweep; " \
+                    "nominating here is what put a withheld desk in front of the conductor"
+    assert_includes out, "withheld mcritchie-studio/terminal-context"
+  end
+
   # ── THE FRESH DESK, end to end through the real filesystem ────────────────────────────
   #
   # 2026-08-13: a builder created and bound an industries desk, and a `cleanup --reclaim`
@@ -2168,6 +2238,13 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
       "PROJECTS_DIR" => @projects_dir,
       "AGENT_REDIS_CAPACITY_FILE" => File.join(@projects_dir, ".agents", "redis-capacity.json"),
       "AGENT_WORKTREE_LOCK" => File.join(@projects_dir, ".agents", "agent-worktree.lock"),
+      # The fixture origin is an ssh URL and OutboundSeams pins GIT_SSH_COMMAND to a
+      # stub that always exits non-zero, so a REAL `git fetch origin` can never
+      # succeed here on any machine. Without this default every sweep in this file
+      # takes the origin-unreachable WITHHOLD branch instead of the channel the test
+      # was written to exercise. Override it per-test (`"error"`/`"gone"`) to drive
+      # the withhold path deliberately.
+      "AGENT_WORKTREE_ORIGIN_FETCH" => "ok",
       "AGENT_WORKTREE_TASK_BIN" => OutboundSeams.stub("task-cli")
     }.merge(extra))
   end
