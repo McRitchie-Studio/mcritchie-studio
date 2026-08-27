@@ -1,9 +1,9 @@
 <%# ONE soul heartbeat launcher — the avatar (LINKING to /agents/<slug>) stacked
     over a column of copy chips: row 1 is the prompt-like soul heartbeat phrase (the
     rollup), then one row per ACTION the heartbeat groups. Rendered once per soul by
-    the Heartbeats card (`tasks/_heartbeats_card`) in its 3-up grid. Each row is its
+    the Workflows card (`tasks/_heartbeats_card`) in its responsive grid. Each row is its
     OWN button with its OWN data-clip + Alpine copied flash; rows after
-    +compact_limit+ are visually tucked behind the parent Heartbeats card toggle.
+    +compact_limit+ are visually tucked behind the parent Workflows card toggle.
     The phrase is server-rendered into data-clip AND the visible <code>
     so tests + the no-clipboard fallback read it. Locals:
       launcher  a heartbeat_launchers entry ({agent_slug, heartbeat, actions, label, title})
