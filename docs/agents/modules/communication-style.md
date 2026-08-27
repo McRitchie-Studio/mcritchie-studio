@@ -68,9 +68,7 @@ PR:   <pr-url>  (base `accepted`)
 
 Checks: [unit] geo_gate_test.rb · [integration] funding flow spec
 
-── IN FLIGHT ── 2:14 PM MDT ─────────────────────────────────────
-Nothing in flight.
-─────────────────────────────────────────────────────────────────
+🚀 In Flight: 2:14 PM MDT — nothing in flight.
 ```
 
 ## Layer 3 — the in-flight roster
@@ -87,41 +85,66 @@ mentioning". Every hand-back.
 ### The block
 
 ```text
-── IN FLIGHT ── 2:14 PM MDT ─────────────────────────────────────
-carl · review fix-cta-timing (PR #612)    4m in · ~6m left  (rough)
-bin/ship log-active-wips-at-pause         3m in · ~9m left  (firm — CI wait)
-avi · qa-release sweep                    1m in · ~14m left (firm — QA deploy)
-─────────────────────────────────────────────────────────────────
+🚀 In Flight: 2:14 PM MDT
+──────────────────────────────────────────────────────────────────
+carl · review fix-cta-timing  ▰▰▰▰▱▱▱▱▱▱  4m in · ~6m left   rough
+bin/ship restyle-in-flight…   ▰▰▰▱▱▱▱▱▱▱  3m in · ~9m left   firm
+sweep progress poller         ▰▱▰▱▰▱▰▱▰▱  armed · 5.5m tick  firm
+avi · qa-release sweep        ▱▱▱▱▱▱▱▱▱▱  queued on green CI
+──────────────────────────────────────────────────────────────────
 ```
 
-Idle turns print the same block, one line long:
+Idle turns collapse to the header alone — one line:
 
 ```text
-── IN FLIGHT ── 2:14 PM MDT ─────────────────────────────────────
-Nothing in flight.
-─────────────────────────────────────────────────────────────────
+🚀 In Flight: 2:14 PM MDT — nothing in flight.
 ```
+
+### The meter
+
+Every row carries a ten-cell meter built from `▰` and `▱`. It reads at a glance
+what the text column spells out, and it has exactly three states:
+
+| Meter | State | When |
+|-------|-------|------|
+| `▰▰▰▰▱▱▱▱▱▱` | **Filling** | You have an estimate. Fill `round(10 × elapsed ÷ (elapsed + remaining))` cells. |
+| `▰▱▰▱▰▱▰▱▰▱` | **Alternating** | Running, but no meaningful progress to show — an armed watcher, a poller between ticks, a job whose total is genuinely unknown. |
+| `▱▱▱▱▱▱▱▱▱▱` | **Empty** | Queued. Not started, waiting on something upstream. |
+
+A `rough` estimate still fills — rough describes the *confidence* in the number,
+not the absence of one. Alternating is reserved for having no total to measure
+progress against, even when the row can still quote a tick or an interval.
 
 ### The rules
 
-- **Stamp Denver time on the header.** `TZ=America/Denver date "+%-I:%M %p %Z"`.
-  He reads reports well after they land; the clock time lets him subtract and
-  know how stale the numbers are without asking.
+- **Header is the stamp**: `🚀 In Flight: <Denver time>`, from
+  `TZ=America/Denver date "+%-I:%M %p %Z"`. He reads reports well after they
+  land; the clock time lets him subtract and know how stale the numbers are
+  without asking.
+- **Cap the block at 68 columns.** v1 had no cap, and on a real terminal the
+  right-hand confidence mark truncated to `(roug` / `(firm` — the one field he
+  cannot infer. Hold the name column to 28 and elide longer names with `…`.
 - **One row per live thing** — each subagent, each backgrounded command, each
   `bin/ship`, each deploy or QA sweep, each cron or watch you started.
 - **Name the row by its slug or agent name**, per the slug rule above:
-  `carl · review fix-cta-timing (PR #612)`, never `subagent 2`.
-- **Two numbers, always: elapsed and remaining.** Elapsed is fact; remaining is
-  the forecast he actually wants.
+  `carl · review fix-cta-timing`, never `subagent 2`.
+- **Two numbers on every forecasting row: elapsed and remaining.** Elapsed is
+  fact; remaining is the forecast he actually wants. A row that forecasts
+  nothing states its condition in that column instead — `armed · 5.5m tick`,
+  `queued on green CI` — and a queued row drops the confidence mark with it.
 - **Mark the forecast's confidence** — `firm` when the duration is machinery
-  with a known runtime, `rough` when it is model work whose length varies. Name
-  the reason in the firm case (`firm — CI wait`) so the number is auditable.
-- **Print `Nothing in flight.` when idle.** An absent block and a quiet session
-  look identical; this makes silence mean exactly one thing.
+  with a known runtime, `rough` when it is model work whose length varies.
+- **Bracket the rows with rules.** One `─` rule under the header and one below
+  the last row, both at the block's width — the header stays readable as a
+  label, and the roster does not bleed into the line the harness prints under
+  it. Idle needs neither: it is one line.
+- **Idle still prints.** An absent block and a quiet session look identical;
+  the one-line header makes silence mean exactly one thing.
 - **Never pad the roster.** Work that finished during the turn is reported in
   layers 1-2 as done, not parked on the roster as though still running.
-- **If you truly cannot estimate, say so** — `~? (unknown — first run of this
-  sweep)`. An honest unknown beats an invented number.
+- **If you truly cannot estimate, say so** — an alternating meter and a reason
+  short enough for the column, `unknown — first run`. An honest unknown beats
+  an invented number.
 
 ### Firm durations — the measured ones
 
