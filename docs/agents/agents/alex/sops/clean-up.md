@@ -445,180 +445,37 @@ So:
 Run the worktree reclaim **before** any build (the band gates it); finish the rest
 after the ship.
 
-### Worktrees
-```bash
-bin/agent-worktree cleanup                   # dry run — read it
-bin/agent-worktree cleanup --reclaim         # dry run: what is SAFE (clean + merged + unoccupied)
-bin/agent-worktree cleanup --reclaim --yes   # full teardown + Redis band shrink
-```
-- Reclaim only takes **clean + merged (or base-equivalent, e.g. squash-merged)**
-  desks that are also **unoccupied**; live PR worktrees are never candidates. Check
-  the list against your carve-out anyway.
+### The infra sweep — run `clean-infra`
+
+The desks, the Redis band, the regenerable disk, the orphaned per-desk databases
+and the stale stack pids are all
+**[`clean-infra`](../../steffon/sops/clean-infra.md)**'s, and it is the single
+source for their mechanics. Run it, in full, here.
+
+Three things this phase owes it, which no other caller can supply:
+
+- **The Phase 0 carve-out is the carve-out.** `clean-infra` asks its caller to
+  name what is off-limits before it starts. Hand it this run's list — everything
+  this session touched, plus any desk you deliberately left alone in Phase 3.
+- **Run the worktree reclaim BEFORE any build in this run** — the band gates
+  allocation — and leave the rest until after the ship.
+- **Its improvement suggestion is required**, and it belongs in this SOP's Phase 5
+  report. `clean-infra` ends every run with one concrete proposal for making the
+  next sweep smaller; carry it up rather than dropping it.
+
+Two rules from it decide most of the judgment calls a board sweep runs into.
+They are restated here only because getting them wrong destroys work:
+
 - **Clean + merged is NOT sufficient, and never was.** A brand-new worktree is
-  git-identical to a merged one — clean, nothing ahead of base — so it passes the git
-  test vacuously. On 2026-08-13 that destroyed a live builder's desk mid-task. Reclaim
-  now also withholds a desk that is younger than 1h29m, has been written to inside
-  that window, or whose holder has a gate in flight (a cert writes nothing into its
-  desk for up to 94 minutes). Expect **finished desks to linger up to 1h29m** before
-  the sweep will take them; that is the trade, and it is deliberate. Use
-  `remove <app> <task-slug> --yes` when you need a specific one gone now.
-- **An OPEN, unmerged PR withholds the desk, and a live REVIEWER does too.** A branch
-  whose diff against the base is empty is git-eligible while its PR is still open —
-  litter to git, live work to the pipeline — and a reviewer works the builder's desk
-  without ever taking the build claim, mostly READING, so the desk stays quiet. Both
-  are now channels of the same gate (`gh pr list --state open`, and the board's
-  `review_in_progress`).
-- **READ THE `rationale:` LINE, not just `safe:`.** `safe: merged on origin/accepted
-  (clean)` is a git fact, and on 2026-08-14 it was true of all three load-bearing desks
-  a 29-candidate dry run offered up. Each candidate now prints what every channel asked
-  and answered; a channel that could not be asked says so (`GitHub unreachable`). That
-  line is the approval packet — if it shows a blind channel, fix that before approving
-  the batch.
+  git-identical to a merged one, so it passes the git test vacuously; on
+  2026-08-13 that destroyed a live builder's desk mid-task. Expect finished desks
+  to linger up to 1h29m before the sweep will take them.
 - **Trust the safety gate over the description.** If Mr. McRitchie says "three
-  worktrees" and the dry run finds seventeen, surface the discrepancy — and believe
-  the gate.
-- **`_gate` and `_ship` are infrastructure, not desks** — fixed-path workspaces for
-  the cert, the prepare and the ship. They are safe to reclaim BETWEEN releases:
-  `bin/release.rb` re-creates them on demand with `git worktree add --detach`.
-  Reclaiming them **mid-release** is now BLOCKED automatically — `bin/agent-worktree`
-  withholds `_ship`/`_gate` whenever a live `ReleaseConductorClaim` exists in **either**
-  role: `assembler` (a `bin/release prepare` / `qa-release` sweep) or `deployer` (a
-  `bin/release ship`). This is the exclusion the retired shared `avi` shift used to
-  provide (a `bin/release` run held `avi`, so `clean-up` — also `avi` — could not run
-  against it); the conductors hold per-release claims instead, and the reclaim gate
-  reads both. **`_ship` is not the ship's alone**: `prepare` merges release branches
-  forward and runs `bundle lock` for every consumer inside it, and on 2026-08-14 a
-  deployer-only check answered "no ship is live" and offered up both repos' `_ship`
-  desks mid-prepare. So the gate stands you down (`withheld … a release is live (an
-  assembler/deployer conductor claim is held)`) rather than relying on you to
-  remember — re-run once the release completes.
+  worktrees" and the dry run finds seventeen, surface the discrepancy — and
+  believe the gate.
 
-### Stale unmerged desks — the reclaim can NEVER take these; triage them yourself
-
-The reclaim's safety gate only takes **clean + merged (or base-equivalent, e.g.
-squash-merged) + unoccupied** desks. A clean desk on a genuinely **unmerged** branch is
-invisible to it — and these accumulate until they pin the Redis band wide
-(2026-08-08: **14 of 27** surviving slots were exactly this). `remove --force`
-does not help either: it clears the content guard **only for the merged-PR
-case**, by design. So unmerged desks are a hand-triage:
-
-0. **Enumerate SUBTRACTIVELY — "unmerged" is necessary, not sufficient.**
-   `bin/agent-worktree list` prints `clean unmerged` per desk, plus two numbers
-   you will need later: `redis=<n>` (the band slot) and `+N/-M` (ahead/behind
-   **the BASE branch** — this is NOT the unpushed count; step 1 measures that
-   against the desk's own remote branch, and the two routinely disagree).
-   Throughout this section, `<wt>` = `/Users/alex/projects/<app>/.worktrees/<slug>`.
-
-   The stale population is what **survives these exclusions** — each names a
-   desk this protocol must never reach:
-   - **task in any OPEN stage** (designed/building/submitted/reviewed/assembled)
-     — that is a live lane, not a stale desk, however clean and pushed it looks
-     (an in-flight PR's desk is clean + zero-unpushed the moment it pushes);
-   - **stack `up`, or a live builder claim** — someone is working there;
-   - **`_ship` / `_gate`** — deployer infrastructure, never desks. They are
-     detached by design, so they even LOOK like step-1's detached case — they
-     are not; they are excluded before step 1 sees them;
-   - **anything in this run's Phase 0 carve-out.**
-
-1. **Inventory** — four facts decide everything, and the first is a gate:
-
-   ```bash
-   git -C <wt> status --porcelain                        # MUST be empty. A dirty desk EXITS this
-                                                         # protocol — it is Phase 3b's patient
-                                                         # (possible unlanded finished work), never
-                                                         # a teardown candidate.
-   git -C <wt> branch --show-current                     # EMPTY = detached HEAD → NOT this protocol;
-                                                         # route to the "commits live nowhere else"
-                                                         # block below. (_ship/_gate are detached by
-                                                         # design and were excluded at step 0.)
-   git -C <wt> rev-list --count origin/<branch>..HEAD    # UNPUSHED commits, measured against the
-                                                         # desk's OWN remote branch (error = branch
-                                                         # absent from origin)
-   bin/task show <slug>                                  # board stage
-   ```
-
-2. **Preserve before removing** — route on the measured count, then on the push
-   outcome (no case falls through to deletion):
-   - **Task in an open stage — STOP.** Not stale; it belongs to its lane. Step 0
-     should have excluded it; this bullet is the belt to that suspender.
-   - **Zero unpushed + task archived (or no task)** — nothing owed; origin holds
-     the code.
-   - **Unpushed commits (count > 0, or branch absent from origin)** — push it:
-     `git -C <wt> push -u origin feat/<slug>`. A pushed feature branch preserves
-     code; `main` is not backup. This handles fresh branches and fast-forwards
-     alike.
-   - **Push refused as non-fast-forward (truly diverged)** — **never force-push
-     an archived task's branch**; preserve the local HEAD as a tag instead:
-     `git -C <wt> tag archive/<slug>-local $(git -C <wt> rev-parse HEAD) &&
-     git -C <wt> push origin refs/tags/archive/<slug>-local`.
-
-3. **The orphaned-fix check applies to BRANCHES, not just PRs.** A desk with
-   unlanded commits — any, not just "substantial" ones — is where fixes go to
-   die. Before writing it off, diff its ideas against the desk's **base branch**
-   (step 0's `+N/-M` names it; not every repo has a `release`) and
-   ask: did this land, or did we re-suffer it? A branch is superseded only if you
-   can **point at the code that supersedes it**. Record the verdict (or the debt)
-   in [`../../../maintenance/parking-lot.md`](../../../maintenance/parking-lot.md)
-   — that file holds unlanded-WORK debt; the removal batch itself is recorded in
-   `delete-later.md` at step 4.
-
-4. **Tear down manually, in the launcher's own order.** This hand-path drives
-   raw git, so it bypasses the launcher's builder-claim check and the
-   `_ship`/`_gate` deployer-claim withholding described above — **re-assert the
-   Phase 0 carve-out and every step-0 exclusion immediately before this block**;
-   nothing downstream re-checks them for you. The launcher's refusal is correct
-   — you are overriding a guard whose concern steps 1-2 satisfied, so record the
-   override by hand: **hand-edit `docs/agents/maintenance/delete-later.md`** —
-   no CLI path writes an unmerged desk there.
-
-   ```bash
-   bin/agent-worktree down <app> <slug>       # STOP THE STACK FIRST — a live stack repopulates
-                                              # a flushed DB and then loses its cwd. SKIP when
-                                              # step 0's list row says missing-env: `down`
-                                              # aborts on a desk with no stack env.
-   [ -z "$(git -C <wt> status --porcelain)" ] || { echo "DIRTY — STOP"; exit 1; }   # re-assert;
-                                              # a pasted block must actually stop here
-   redis-cli -n <db> flushdb                  # <db> from step 0's list row; SKIP when blank
-   git -C /Users/alex/projects/<app> worktree remove .worktrees/<slug>   # UN-forced — its refusal
-                                              # on a dirty desk is the last guard, keep it
-   git -C /Users/alex/projects/<app> branch -D feat/<slug>   # only AFTER step 2 proved the tip
-                                              # lives on origin (branch or archive tag)
-   git -C /Users/alex/projects/<app> worktree prune
-   ```
-
-5. **Refresh the registry and contract the band:**
-
-   ```bash
-   bin/agent-worktree snapshot --write        # registry only — it does NOT touch the band
-   bin/agent-worktree scale in                # contracts ONE 10-slot step per call — repeat
-                                              # until `scale status` stops moving
-   bin/agent-worktree scale status            # read the result
-   ```
-
-   `scale in` **refuses the whole step if ANY allocated DB sits above the
-   target** — a single high desk (a live session near the top of the band)
-   blocks the entire contraction, so free the highest desks first and expect
-   the band to stay wide until they close. A full 55→20 contraction is four
-   calls, not one.
-
-> ### ⛔ The reclaim gate refuses a desk whose commits live nowhere else — LISTEN to it
-> `bin/agent-worktree remove` will refuse with *"branch content is not represented on
-> origin/release"*. That is not a nuisance; it is the gate catching **a detached-HEAD
-> worktree whose commits are reachable from nothing but that directory.** Delete it
-> and the work is garbage-collected.
->
-> This run found one: no branch, no task, no PR, and 940 lines of commits. Do the
-> work — establish whether it is genuinely superseded (**point at the code that
-> supersedes it**), then make the commits safe before you remove:
-> ```bash
-> SHA=$(git -C .worktrees/<name> rev-parse HEAD)
-> git tag archive/<name> "$SHA" && git push origin refs/tags/archive/<name>
-> git worktree remove --force .worktrees/<name> && git worktree prune
-> ```
-> The gate cannot see a tag, so it will keep refusing — but the tag satisfies its
-> actual concern, and now nothing is lost. **Record why you overrode it in the
-> ledger.** Never force past this gate without doing that work first.
-
+The orphaned-PR triage below is NOT part of `clean-infra`. It is board and
+GitHub state, and it stays here.
 ### Orphaned PRs — a PR with no task is a hanging chad
 ```bash
 gh pr list --limit 50 --json number,title,mergeable --jq '.[] | "#\(.number) \(.mergeable) \(.title)"'
@@ -664,13 +521,15 @@ For every PR with no board task, **read the diff before you close it.**
 > third state between *on the board* and *gone*.
 
 ### Everything else
+
 ```bash
 git status --short                          # every primary checkout must be clean
-bin/agent-worktree doctor                   # stale pids, missing DBs, orphaned Redis
-bin/agent-worktree snapshot --write         # refresh the local registry
 ```
-Kill stale stack pids, drop orphaned per-worktree databases, clear tmp residue.
-Append anything you are unsure about to `../../../maintenance/delete-later.md`
+
+The stale pids, orphaned per-desk databases, tmp residue and registry refresh are
+[`clean-infra`](../../steffon/sops/clean-infra.md)'s step 5 — run there, reported
+here. Append anything you are unsure about to
+[`../../../maintenance/delete-later.md`](../../../maintenance/delete-later.md)
 rather than deleting it.
 
 > **The reclaim dirties the primary.** It appends its audit rows to

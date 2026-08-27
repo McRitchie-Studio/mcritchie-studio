@@ -2,19 +2,24 @@
 
 ## Status: Active
 
-This is Avi's `live-score-watch` SOP. It runs a semi-live NFL scoring watch: for
-the length of a game window, it polls ESPN on a fixed cadence, records each
-scoring play, propagates the new score into Turf Monster contest standings, and
-reports every change in the terminal as it happens.
+This is Turf Monster's `live-score-watch` SOP. It runs a semi-live NFL scoring
+watch: for the length of a game window, it polls ESPN on a fixed cadence, records
+each scoring play, propagates the new score into Turf Monster contest standings,
+and reports every change in the terminal as it happens.
 
-It is Avi's because its failure modes are product-integrity failures. A missed
-touchdown or a mis-attributed team does not read as an outage — it reads as a
-contest that settled on the wrong number.
+It is Turf Monster's because every judgment it asks for is a sports-domain
+judgment. Which slot is worth watching, whether an abbreviation resolved to the
+right franchise, whether a drifting total means a missed play or a feed updating
+out of order — those are read against knowing the sport, not against knowing the
+pipeline. And its failure mode is a domain failure: a missed touchdown or a
+mis-attributed team does not read as an outage, it reads as a contest that
+settled on the wrong number.
 
-**The watch takes no assembler claim.** It reads a feed and writes `Goal` rows;
-it never touches `release`, never promotes, and never deploys. A parallel Avi
-`qa-release` session is therefore fine while a watch is running — the twelve
-hours cost you the session, not the lane.
+**The watch holds no release lane.** It reads a feed and writes `Goal` rows; it
+never touches `release`, never promotes, and never deploys. It takes no assembler
+claim and no deployer claim, so a `qa-release` sweep or a `production-deploy` can
+run alongside a watch in flight — the twelve hours cost you a session, not a
+lane.
 
 ## The split — read this before running anything
 
@@ -85,7 +90,7 @@ somewhere real.
 
 Naming the app in the command is the safeguard: the target cannot drift from
 what you believe you are watching. Mirrors
-[`deploy-with-task`](deploy-with-task.md)'s standing rule — use production by
+[`deploy-with-task`](../../avi/sops/deploy-with-task.md)'s standing rule — use production by
 default, and make any other target explicit.
 
 **Rehearsing locally** is legitimate — before a real slate, or against preseason.

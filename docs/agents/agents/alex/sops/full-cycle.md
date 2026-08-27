@@ -92,6 +92,15 @@ serial*.
    session. Do NOT wrap the ship in a subagent: it is the one irreversible gate,
    and a wrapper agent that dies mid-ship would orphan the `release → main` state
    with no terminal to recover it.
+4. **Close out** — MUTATION, so DIRECT-DRIVE `bin/release archive --yes` (preview
+   with `--dry-run` first). This is
+   [`archive-shipped`](../../steffon/sops/archive-shipped.md), the beat
+   `production-deploy` ends on: the cycle this run just shipped gets archived,
+   its desks reclaimed and its regenerable disk swept. **Only after a GREEN
+   ship** — an aborted ship has nothing to archive. The archive is a separate
+   verdict and may refuse (a ledger that lost rows); a refusal does NOT unship
+   anything, so recover the row and re-run the archive rather than touching the
+   release.
 
 - **Visibility is not a reason to delegate.** The sub-agent tree is ephemeral (it
   dies with the session) and the autonomous heartbeat has no terminal, so it
@@ -104,6 +113,7 @@ Keep the same guards each atom owns:
 - Use Avi's `qa-release` sweep for merge plus QA.
 - Ship only after QA-green.
 - Do not deploy production unless ship authority is explicit.
+- Archive only after a green ship, and report its result separately.
 
 Review and preparation take time; new PRs may land in `submitted` meanwhile.
 After the sweep, re-check `bin/task list --stage submitted` and run one
@@ -122,13 +132,16 @@ one task past pending release work.
 
 ## Exit Seam
 
-The release is shipped, or the run cleanly reports no work. Report:
+The release is shipped and the cycle is closed out, or the run cleanly reports no
+work. Report:
 
 - reviewed and blocked tasks
 - QA URL
 - production SHA
 - release slug
 - smoke result when a ship happens
+- **the archive result, separately** — tasks archived and releases closed, or
+  "nothing to archive", or the refusal and what it named
 
 ## Related
 
@@ -138,3 +151,5 @@ The release is shipped, or the run cleanly reports no work. Report:
   - QA release sweep.
 - [`../../../agents/steffon/sops/production-deploy.md`](../../../agents/steffon/sops/production-deploy.md)
   - production deploy.
+- [`../../../agents/steffon/sops/archive-shipped.md`](../../../agents/steffon/sops/archive-shipped.md)
+  - the closeout this cycle ends on.
