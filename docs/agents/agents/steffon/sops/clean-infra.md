@@ -190,12 +190,13 @@ bin/clean-artifacts --skip-audit  # sweep without booting any app (fast)
 ```
 
 > ### ⛔ `bin/clean-artifacts` has NO `--help`, and a bare run APPLIES
-> Only `--dry-run` previews. Every other argument — including `--help` — is
-> ignored, and the script sweeps for real. Probing it to "see the options"
-> truncates live logs and clears every `tmp/cache` across all managed repos and
-> worktrees. Nothing tracked is lost, so this is recoverable; it is still a
-> mutation you did not intend. **Preview with `--dry-run`, never with a flag you
-> are guessing at.**
+> Only `--dry-run` previews. It reads the flags shown above (`--skip-audit`,
+> plus `--json`, `--verbose`, `--root=`, `--audit-envs=`) and silently IGNORES
+> every UNRECOGNIZED argument — `--help` included — then sweeps for real.
+> Probing it to "see the options" truncates live logs and clears every
+> `tmp/cache` across all managed repos and worktrees. Nothing tracked is lost,
+> so this is recoverable; it is still a mutation you did not intend. **Preview
+> with `--dry-run`, never with a flag you are guessing at.**
 
 It reclaims live logs (truncated in place, so a running server keeps its handle),
 rotated logs, `tmp/cache`, `tmp/brakeman.json`, and `coverage/` across every
