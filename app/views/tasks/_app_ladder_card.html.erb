@@ -117,13 +117,14 @@
       suite must not draw an empty rail that reads as "0 of 0 passed". %>
   <% elsif progress.present? %>
     <div class="mb-2.5" data-test="app-ladder-ci">
-      <%# The label NAMES the lane, not a generic "CI". On a multi-lane repo the meter
-          counts one workflow by design, so saying which one is what stops a reader
-          assuming it covers everything — the assumption that let a green meter sit
-          beside a red badge. %>
+      <%# The label NAMES A LANE, not a generic "CI" — and on a multi-lane repo it names
+          the one that is the NEWS (red, else running), because the meter now counts
+          every lane rather than one. It used to disclose which single workflow was
+          counted; that disclosure was what a green meter beside an amber pill needed,
+          and widening the fold retired the need. %>
       <%= render "components/ci_progress_meter",
             progress: progress,
-            label: [card.active_rung&.branch, card.active_rung&.counted_lane].compact.join(" · "),
+            label: [card.active_rung&.branch, card.meter_lane_label].compact.join(" · "),
             test_id: "app-ladder-ci-bar",
             clock: true %>
     </div>
@@ -134,24 +135,23 @@
     </div>
   <% end %>
 
-  <%# THE OTHER LANES. The badge folds every SUITE lane on this branch; the meter folds
-      one of them.
-      Rather than force those to agree — they answer different questions, and the
-      meter's scope protects a gem's track from a failing consumer — the card NAMES
-      what the meter leaves out. A red sibling lane is then visible here instead of
-      hiding behind a green meter, which is the contradiction this row shipped with.
-      Empty for every single-lane repo, so an app card gains nothing to read. %>
-  <% others = at_rest ? [] : (card.active_rung&.uncounted_lanes || []) %>
+  <%# THE LANE LEGEND. The pill and the meter now fold the SAME set — every suite lane
+      on this branch and sha — so this row stopped being the apology it shipped as
+      ("also on this commit", naming what the meter could not show) and became the key
+      to a bar whose marks carry no lane identity. It is where a reader learns WHICH
+      suite is the red one, and it is the only place that says so.
+      Empty for every single-lane repo, where the meter's label already names it. %>
+  <% others = at_rest ? [] : card.legend_lanes %>
   <% if others.any? %>
     <div class="mb-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px]"
          data-test="app-ladder-other-lanes">
-      <span class="text-muted">also on this commit:</span>
+      <span class="text-muted">lanes in this meter:</span>
       <% others.each do |lane| %>
         <span class="inline-flex items-center gap-1 <%= app_ladder_rung_tone(lane[:state])[:text] %>"
               data-test="app-ladder-other-lane"
               data-lane="<%= lane[:name] %>"
               data-state="<%= lane[:state] %>"
-              title="<%= lane[:name] %> — <%= lane[:state] == :green ? "passed" : lane[:state] == :red ? "failed" : "running" %>; not counted by the meter above">
+              title="<%= lane[:name] %> — <%= lane[:state] == :green ? "passed" : lane[:state] == :red ? "failed" : "running" %>; counted by the meter above">
           <span aria-hidden="true"><%= lane[:state] == :green ? "✓" : lane[:state] == :red ? "✗" : "○" %></span>
           <span><%= lane[:name] %></span>
         </span>

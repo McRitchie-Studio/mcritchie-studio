@@ -257,6 +257,23 @@ module Ci
         @progress = active_rung&.progress
       end
 
+      # EVERY suite lane on the active rung, read ONCE per card. Same memo discipline
+      # as #progress, and for the same reason: the card asks twice — the meter's label
+      # and the legend row beneath it — and a rung is a frozen value object that cannot
+      # hold the cache itself. `defined?` so an empty result caches too.
+      def lanes
+        return @lanes if defined?(@lanes)
+
+        @lanes = active_rung&.lanes || []
+      end
+
+      # The meter's label, resolved against the lanes already in hand (never a second
+      # query), and the legend row under it. Both live here rather than in the view so
+      # the pinned strip and the card cannot draw different labels from the same rung.
+      def meter_lane_label = active_rung&.meter_lane_label(lanes)
+
+      def legend_lanes = lanes.size > 1 ? lanes : []
+
       # Where the card points. The Actions run behind the active rung, so clicking the
       # card lands on the run in progress rather than a repo home page.
       def run_url = active_rung&.run_url

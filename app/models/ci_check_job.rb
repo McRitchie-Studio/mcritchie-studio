@@ -22,7 +22,13 @@ class CiCheckJob < ApplicationRecord
   # `completed_at` are the CLOCK the card meter shows — the run's elapsed time while
   # checks are pending, and its measured duration once they settle. Ordered as pluck
   # returns them.
-  PROGRESS_COLUMNS = %i[name status conclusion run_id job_id started_at completed_at].freeze
+  # `workflow_name` rides along for the DE-DUPLICATION KEY only — PROGRESS_ROW_KEYS
+  # strips it back out, so the folded rows keep their shape. Without it a multi-lane
+  # scope groups attempts by check NAME alone, and two lanes that happen to ship a
+  # job of the same name would collapse into one check: the newer run_id wins and the
+  # other lane's check silently disappears from the count. No two lanes collide today
+  # (checked against both workflow files); the key is what keeps that true.
+  PROGRESS_COLUMNS = %i[workflow_name name status conclusion run_id job_id started_at completed_at].freeze
 
   # The subset of a folded row CheckProgress consumes — the newest-attempt key
   # (run_id/job_id) is scaffolding for the fold itself, not part of its output.
@@ -51,11 +57,21 @@ class CiCheckJob < ApplicationRecord
   # Ci::CheckProgress.from_check_runs folds — one row per CHECK. Empty when no job
   # event has landed for this repo+SHA (the reader then falls back to the API).
   #
-  # `workflow_name` SCOPES the fold to a single workflow — load-bearing for a gem
-  # repo, whose `main` SHA carries BOTH its own suite (studio-engine's "Engine CI")
-  # and the downstream "Consumer CI": folding both would drag the gem's track red on
-  # a failing sibling. Nil (the app default) folds every recorded row, correct
-  # because an app's release branch runs only `CI`.
+  # `workflow_name` SCOPES the fold — ONE name, a LIST of them, or nil for every row.
+  # The scope is the caller's choice because the two readers ask different questions
+  # of the same rows, and both answers are right:
+  #
+  #   ONE NAME  — ONE LANE at a time, which is how both meters now fold a multi-lane
+  #               commit: Ci::LadderRung#lane_checks and
+  #               Ci::ProgressReader#sibling_lane_checks_for each ask per lane, so a
+  #               lane with no rows can fall back to its run-grain mark instead of
+  #               silently vanishing from a whole-list fold.
+  #   A LIST     — a whole-commit fold in one query (Ci::ProgressReader#live_progress,
+  #               reached from the release track). Correct ONLY where a lane missing
+  #               its rows may be treated as absent; where the card NAMES its lanes,
+  #               ask per lane instead.
+  #   NIL       — every recorded row; the app default, correct because an app's
+  #               release branch runs only `CI`.
   #
   # De-duplicated to the LATEST ATTEMPT per check (see latest_attempt_per_check):
   # a re-run mints new job_ids for the same names on the same SHA, and folding
@@ -79,7 +95,7 @@ class CiCheckJob < ApplicationRecord
   def self.latest_attempt_per_check(rows)
     rows
       .map { |values| PROGRESS_COLUMNS.map(&:to_s).zip(values).to_h }
-      .group_by { |row| row["name"].presence || "job:#{row["job_id"]}" }
+      .group_by { |row| [row["workflow_name"].to_s, row["name"].presence || "job:#{row["job_id"]}"] }
       .map { |_key, attempts| attempts.max_by { |row| [row["run_id"].to_i, row["job_id"].to_i] } }
       .map { |row| row.slice(*PROGRESS_ROW_KEYS) }
   end

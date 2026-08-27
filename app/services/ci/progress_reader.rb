@@ -109,7 +109,9 @@ module Ci
     # { repo_slug => Ci::CheckProgress } (producer-first, mirroring ordered_members),
     # or {} when the release is not active.
     #
-    # Each repo reads its OWN release-candidate CI run, resolved by ci_target_for:
+    # Each repo reads its OWN release-candidate COMMIT, resolved by ci_target_for, and
+    # folds EVERY suite lane on it (see the fold below for why readiness is not the
+    # primary lane's alone):
     #   * an APP repo — the `name: "CI"` run on the swept `release` branch tip
     #     (already per-repo: each app is its own GitHub repo and each runs CI on
     #     push:release, ingested into GithubWorkflowRun/CiCheckJob keyed on repo+sha);
@@ -125,9 +127,20 @@ module Ci
       member_repos(release).index_with do |repo|
         nwo, branch, workflow = ci_target_for(repo)
         sha = branch.present? ? latest_ci_sha(nwo, branch, workflow) : nil
-        # Scope the fold to the target workflow — a gem's `main` SHA carries a sibling
-        # "Consumer CI" the gem track must not blend in.
-        sha ? for_sha(nwo, sha, workflow) : CheckProgress.blank
+        # THE SHA IS RESOLVED BY THE PRIMARY LANE, THE FOLD COUNTS EVERY LANE — and the
+        # split is the point. `workflow` picks WHICH COMMIT this track is about (the
+        # repo's own suite defines the candidate); the fold then answers "is that
+        # commit ready for QA", and readiness is not the primary lane's alone.
+        #
+        # This fold was scoped to `workflow` too, on the rule that a gem's track must
+        # not blend a sibling "Consumer CI". That rule is right about a CERTIFICATION —
+        # which workflow speaks for the repo (Release::AcceptedCertification.workflow_for)
+        # — and wrong about THIS meter, because the G3 pre-QA gate this track previews
+        # fails closed on ANY lane that is not green, siblings included. So a scoped
+        # meter drew ✓✓✓ "ready" for a candidate the very next gate would hold: measured
+        # 2026-08-26, studio-engine read a green three-check Assembling track while
+        # Consumer CI was still running the consumer suites on that same commit.
+        sha ? for_sha(nwo, sha, GithubWorkflowRun.suite_workflows_for(repo)) : CheckProgress.blank
       end
     end
 
@@ -146,8 +159,11 @@ module Ci
       target_nwo, target_branch, workflow = ci_target_for(repo)
       return nil unless branch.to_s == target_branch
 
+      # Same split as #for_release, and it must STAY the same: this is the live path
+      # that morphs the very slot #for_release renders, so a scope that differed by
+      # one lane would make a page load and its next live tick disagree.
       sha = latest_ci_sha(target_nwo, target_branch, workflow)
-      [repo, sha ? for_sha(target_nwo, sha, workflow) : CheckProgress.blank]
+      [repo, sha ? for_sha(target_nwo, sha, GithubWorkflowRun.suite_workflows_for(repo)) : CheckProgress.blank]
     end
 
     # The GitHub Actions run URL for a repo's release-candidate CI track, or nil — the
@@ -222,14 +238,20 @@ module Ci
     # webhook has recorded folds straight from CiCheckJob rows (no network); only a
     # SHA with no ingested jobs falls back to the cached, budgeted GitHub API read.
     #
-    # `workflow_name` SCOPES the fold to one workflow (the gem path — see for_release).
-    # It is load-bearing in TWO places: the live fold filters CiCheckJob to that
-    # workflow, AND the API fallback is REFUSED for any scoped workflow other than
-    # `CI`. The check-runs API is workflow-BLIND — it returns every workflow's checks
-    # on the SHA — so falling back to it for a gem would re-introduce the exact
-    # blending the scope exists to prevent (a failing "Consumer CI" dragging the gem's
-    # "Engine CI" track red). `CI` is the one safe fallback: it is the only workflow on
-    # the branches an app track reads, so the blind API cannot blend anything there.
+    # `workflow_name` SCOPES the fold — ONE name or a LIST of them. It is load-bearing
+    # in TWO places: the live fold filters CiCheckJob to that scope, AND the API
+    # fallback is REFUSED for any scope that is not exactly `CI`. The check-runs API is
+    # workflow-BLIND — it returns every workflow's checks on the SHA — so falling back
+    # to it under a narrower scope would silently widen the read past what the caller
+    # asked for. `CI` is the one safe fallback: it is the only workflow on the branches
+    # an app track reads, so the blind API cannot blend anything there.
+    #
+    # THE LIST FORM MATTERS FOR THE COMPARISON, not just the query. A caller now hands
+    # in `suite_workflows_for(repo)`, which for an APP is the single-element `["CI"]`.
+    # Compared naively against the bare string that array is "not CI", and every app
+    # SHA whose jobs had not been ingested would have lost its API fallback and gone
+    # BLANK — a scope widening quietly turning into a data loss for the majority case.
+    # Normalising both sides is what keeps `["CI"]` and `"CI"` the same request.
     def for_sha(nwo, sha, workflow_name = nil)
       nwo = nwo.to_s
       sha = sha.to_s
@@ -239,8 +261,9 @@ module Ci
       live = live_progress(nwo, sha, workflow_name)
       return live if live&.present?
 
-      # A workflow-scoped read for anything but CI must not fall back to the blind API.
-      return CheckProgress.blank(sha: sha) if workflow_name.present? && workflow_name != GithubWorkflowRun::CI_WORKFLOW
+      # A scoped read for anything but plain CI must not fall back to the blind API.
+      scoped = Array(workflow_name).compact.map(&:to_s).uniq
+      return CheckProgress.blank(sha: sha) if scoped.present? && scoped != [GithubWorkflowRun::CI_WORKFLOW]
 
       cache_key = "ci:progress:#{nwo}:#{sha}"
       cached = @cache.read(cache_key)
@@ -285,15 +308,27 @@ module Ci
     end
 
     # When the CI run for this SHA BEGAN — `github_workflow_runs.run_started_at`, the
-    # stamp the `workflow_run` webhook already ingests, newest run first. It is the
-    # meter clock's ORIGIN: the run start beats the earliest job start, because a job
-    # that queued behind a runner still belongs to a run that began earlier. nil when
-    # no run row exists (the checks' own stamps then answer, and failing that the
-    # meter simply shows no clock). Rescued, like every read on this path.
+    # stamp the `workflow_run` webhook already ingests. It is the meter clock's ORIGIN:
+    # the run start beats the earliest job start, because a job that queued behind a
+    # runner still belongs to a run that began earlier. nil when no run row exists (the
+    # checks' own stamps then answer, and failing that the meter simply shows no
+    # clock). Rescued, like every read on this path.
+    #
+    # NEWEST WITHIN A LANE, EARLIEST ACROSS THEM. Within one workflow the newest run
+    # wins, because a re-run RESETS the clock and #progress_rows has already discarded
+    # the superseded attempt's checks. Across several lanes the EARLIEST wins, because
+    # the bar now spans all of them and its clock has to measure the window the
+    # operator is waiting on — a two-lane fold clocked from the later lane's start
+    # under-reports by however long the first lane had already been running. Single
+    # lane in, and the two rules collapse to the old one-row read.
     def run_started_at_for(nwo, sha, workflow_name = nil)
       scope = GithubWorkflowRun.for_repo(nwo).where(head_sha: sha)
       scope = scope.where(workflow_name: workflow_name) if workflow_name.present?
-      scope.order(Arel.sql(LATEST_RUN_ORDER)).limit(1).pick(:run_started_at)
+      scope.order(Arel.sql(LATEST_RUN_ORDER))
+           .pluck(:workflow_name, :run_started_at)
+           .group_by { |name, _started| name.to_s }
+           .filter_map { |_name, rows| rows.first&.last }
+           .min
     rescue StandardError => e
       ErrorLog.capture!(e)
       nil
@@ -386,11 +421,19 @@ module Ci
     # a green 3/3 meter on a task the gate holds red, which is worse than the blank
     # bar this change removes: blank reads as "no data", green reads as a lie.
     #
-    # TWO GRAINS because the ingest records CiCheckJob rows only for
-    # GithubWorkflowRun::CI_PROGRESS_WORKFLOWS (each repo's own suite), so a sibling
-    # lane has no per-job rows to fold — only its workflow_run row. One mark for the
-    # whole lane is the honest resolution available, and it is enough: the mark's
-    # state is what turns the meter red.
+    # JOB GRAIN WHERE THE ROWS EXIST, RUN GRAIN WHERE THEY DO NOT. This read used to be
+    # run-grain ONLY, and said so for a good reason: the ingest recorded CiCheckJob
+    # rows for each repo's own suite alone, so a sibling lane had no per-job rows and
+    # one mark for the whole lane was the best resolution available. That premise died
+    # on 2026-08-26, when declared sibling lanes joined
+    # GithubWorkflowRun::CI_PROGRESS_WORKFLOWS — so a Consumer CI running 6 consumer
+    # suites can now draw 6 marks instead of 1, and the operator sees it move.
+    #
+    # The run-grain path STAYS, and is not a leftover: `workflow_run` is delivered at
+    # QUEUE time and `workflow_job` only once a job exists, so there is a real window
+    # where a lane is known to be running and has no jobs yet. Falling back to one mark
+    # there keeps a queued sibling VISIBLE and pending instead of invisible — which is
+    # the same failure, one lane over, that this whole change is about.
     # AN UNFOLDED PRIMARY KEEPS ITS BLANK BAR — siblings decorate a suite fold, they
     # never stand in for one. GitHub delivers `workflow_run` at QUEUE time, so an
     # "Engine CI" RUN row (and therefore a resolved sha) exists before any of its
@@ -418,11 +461,10 @@ module Ci
       names = GithubWorkflowRun.suite_workflows_for(repo).map(&:to_s).uniq - [workflow.to_s]
       return [] if names.empty?
 
-      rows = GithubWorkflowRun.for_repo(nwo).for_sha(sha).where(workflow_name: names)
-                              .order(Arel.sql(LATEST_RUN_ORDER)).to_a
-                              .group_by { |run| run.workflow_name.to_s }
-                              .map { |name, runs| sibling_lane_row(name, runs.first) }
-      CheckProgress.from_check_runs(rows).checks
+      GithubWorkflowRun.for_repo(nwo).for_sha(sha).where(workflow_name: names)
+                       .order(Arel.sql(LATEST_RUN_ORDER)).to_a
+                       .group_by { |run| run.workflow_name.to_s }
+                       .flat_map { |name, runs| sibling_lane_checks_for(nwo, sha, name, runs.first) }
     rescue StandardError => e
       ErrorLog.capture!(e)
       []
@@ -431,6 +473,16 @@ module Ci
     # A workflow_run row shaped as the check row CheckProgress.from_check_runs folds.
     # `completed_at` only once the run is terminal, so an in-flight lane contributes
     # no false end-stamp to the meter's clock.
+    # ONE sibling lane -> its checks. Per-job rows when the webhook has landed them,
+    # else the single run-grain mark. Keyed on the LANE name, never blended with the
+    # primary's fold, so a caller can still tell the two apart.
+    def sibling_lane_checks_for(nwo, sha, name, run)
+      rows = CiCheckJob.progress_rows(nwo, sha, name)
+      return CheckProgress.from_check_runs(rows).checks if rows.present?
+
+      CheckProgress.from_check_runs([sibling_lane_row(name, run)]).checks
+    end
+
     def sibling_lane_row(name, run)
       { "name" => name, "status" => run.status.to_s, "conclusion" => run.conclusion.to_s,
         "started_at" => run.run_started_at, "completed_at" => (run.updated_at if run.terminal?) }

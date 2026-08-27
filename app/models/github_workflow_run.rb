@@ -30,16 +30,38 @@ class GithubWorkflowRun < ApplicationRecord
   # match, and every studio-engine PR resolved to :none. One literal, two readers.
   CI_WORKFLOW = Release::AcceptedCertification::DEFAULT_SUITE_WORKFLOW
 
-  # The CI-SUITE workflows whose per-job progress feeds the board's release CI
-  # meters: the app repos' `CI` PLUS each gem repo's own suite workflow
-  # (studio-engine's "Engine CI"). The ingest records CiCheckJob rows ONLY for
-  # these — a gem's downstream "Consumer CI" runs on the same `main` SHA but is NOT
-  # a surfaced track, so it is never recorded. Ci::ProgressReader additionally
-  # SCOPES each track's fold to its own workflow, so even a sibling workflow that
-  # slips in never blends into a gem's track. DERIVED from GEM_CI_WORKFLOWS below,
-  # which Ci::ProgressReader now aliases rather than duplicates — so the two can no
-  # longer drift apart. test/models/ci_progress_workflow_consistency_test.rb asserts
-  # the property rather than comparing two hand-written lists.
+  # The CI-SUITE workflows whose per-job progress feeds the board's CI meters: the
+  # app repos' `CI`, each gem repo's own suite workflow (studio-engine's "Engine
+  # CI"), AND each declared SIBLING suite lane (studio-engine's "Consumer CI"). The
+  # ingest records CiCheckJob rows for exactly this set.
+  #
+  # THE SIBLINGS WERE ABSENT UNTIL 2026-08-26, and the absence was self-justifying:
+  # a sibling lane had no per-job rows, so any reader that tried to fold one found
+  # nothing, so the scope stayed narrow because widening it was "inert". Measured on
+  # studio-engine `release` 9248a9c: the card drew a green 3/3 "Engine CI" meter for
+  # SIX MINUTES while "Consumer CI" was 2/6 through the consumer suites on the same
+  # commit, named only in the card's "also on this commit" row — beside a rung PILL
+  # that ALREADY folds every suite lane (Ci::LadderRung.fold) and was therefore
+  # amber. One card, two halves, disagreeing by construction.
+  #
+  # RECORDING A LANE IS NOT BLENDING IT — but be exact about what protects the gem,
+  # because the obvious answer is the wrong one. It is NOT that the release track
+  # stays narrow: Ci::ProgressReader#for_release now passes the full lane list too,
+  # since that track previews a gate reading the workflow-BLIND check-runs endpoint.
+  # Every DISPLAY of this repo may go red on a failing consumer.
+  #
+  # What holds is one layer down, and it never moved: CERTIFICATION still names
+  # exactly ONE workflow per repo (Release::AcceptedCertification.workflow_for), and
+  # that is the answer every gate and promote decision reads. So a failing consumer
+  # can redden a bar without ever carrying the gem's verdict — a display and a
+  # verdict are different claims, and only the first one widened here.
+  #
+  # DERIVED, never hand-listed: the gem map below plus
+  # Release::AcceptedCertification::SIBLING_SUITE_WORKFLOWS, so declaring a lane in
+  # the registry is what ingests it. Hand-adding the literal here instead would
+  # leave the NEXT sibling lane recorded nowhere — the same shape of bug as the
+  # hard-coded "CI" that blinded Ci::ReviewGate to every studio-engine PR.
+  # test/models/ci_progress_workflow_consistency_test.rb asserts the property.
   #
   # Which workflow carries a GEM repo's OWN suite verdict. A gem does not run a
   # workflow called "CI": studio-engine runs "Engine CI" (its own suite) and
@@ -77,7 +99,13 @@ class GithubWorkflowRun < ApplicationRecord
   # the UNMAPPED distinction. There is still exactly ONE literal, in lib/.
   GEM_CI_WORKFLOWS = Release::AcceptedCertification::GEM_SUITE_WORKFLOWS
 
-  CI_PROGRESS_WORKFLOWS = ([CI_WORKFLOW] + GEM_CI_WORKFLOWS.values.compact).freeze
+  # Every SUITE lane a repo runs BESIDES its verdict-carrying one, flattened. The
+  # registry is keyed by repo; the ingest filter only asks "is this a lane we
+  # record", so the names are what it needs.
+  SIBLING_CI_WORKFLOWS = Release::AcceptedCertification::SIBLING_SUITE_WORKFLOWS.values.flatten.freeze
+
+  CI_PROGRESS_WORKFLOWS = ([CI_WORKFLOW] + GEM_CI_WORKFLOWS.values.compact + SIBLING_CI_WORKFLOWS)
+                          .compact.uniq.freeze
 
   # The workflow name whose runs carry `repo`'s suite verdict. Accepts a bare slug
   # ("studio-engine") or an owner-qualified name ("McRitchie-Studio/studio-engine").
@@ -94,7 +122,12 @@ class GithubWorkflowRun < ApplicationRecord
   def self.suite_workflows_for(repo)
     Release::AcceptedCertification.suite_workflows_for(repo, Release::Repos.config)
   rescue StandardError => e
-    Rails.logger&.warn("[github_workflow_run] suite_workflows_for(#{repo}) failed: #{e.class}")
+    # ErrorLog, not a bare logger warn — .ci_workflow_for three lines below already
+    # captures, and this became the HOTTER of the two when the ladder meter started
+    # folding by lane. An unreadable registry degrades to the primary lane alone,
+    # which is a QUIETER card, not a broken one; without a captured error that
+    # silent narrowing is invisible.
+    ErrorLog.capture!(e)
     [ci_workflow_for(repo)].compact
   end
 

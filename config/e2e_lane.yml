@@ -150,7 +150,16 @@
 # between a card and the page chrome is what produced the bug.
 # MEASURED with the lister, not added by hand: `npx playwright test --list` => 139.
 # Coverage ADDED; `quarantined` is untouched.
-total_specs: 139
+#
+# 139 -> 140 on 2026-08-26: one more in e2e/app_ladder_row.spec.js for the CARD THAT
+# DISAGREED WITH ITSELF — a green CI meter drawn over a lane that was red or still
+# running, because the meter folded one suite lane while the rung pill beside it folded
+# them all (/tasks/fold-sibling-ci-lanes). Asserted as a RELATION between two elements
+# of the same card, never a lane name or a count, so it reads the same on a seeded
+# board, a dev database and production.
+# MEASURED with the lister: `npx playwright test --list` => 140.
+# Coverage ADDED; `quarantined` is untouched.
+total_specs: 140
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
@@ -237,7 +246,11 @@ quarantined: 10
 # Re-derived after the overlap coverage landed:
 #   npx playwright test --list                           => 139
 #   npx playwright test --list --grep-invert @quarantine => 129
-executed: 129
+#
+# Re-derived after the folded-CI-meter coverage landed:
+#   npx playwright test --list                           => 140
+#   npx playwright test --list --grep-invert @quarantine => 130
+executed: 130
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to
