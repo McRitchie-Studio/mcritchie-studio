@@ -20,12 +20,9 @@ single Steffon act directly, read that act's SOP file.
 **Two kinds of cleaning, on purpose.** `archive-shipped` is the NATURAL beat — it
 rides the end of every production release and closes out what that release
 shipped. `clean-infra` is the DELIBERATE one — invoked when the machine is in
-the way, whatever the symptom looked like.
-
-The `/deployments` launcher card still shows `production-deploy` + `archive-shipped`
-and has not caught up: it mirrors `ApplicationHelper#heartbeat_launchers`, and
-swapping `archive-shipped` out for `clean-infra` there is its own `ui-only` task.
-Both acts are invocable by name today regardless of what the card renders.
+the way, whatever the symptom looked like. The `/deployments` Workflows card
+carries `production-deploy` + `clean-infra`; `archive-shipped` is off it because
+the release already runs it, and it stays invocable by name.
 
 ## Scope
 

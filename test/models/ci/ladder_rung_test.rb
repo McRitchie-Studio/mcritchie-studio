@@ -114,7 +114,9 @@ module Ci
       assert_equal "Consumer CI", rung.lanes.first[:name]
     end
 
-    test "uncounted_lanes names exactly what the meter cannot show" do
+    # THE LEGEND is every lane the meter counts — it used to be every lane it COULD
+    # NOT count, which is the change this row records.
+    test "[unit] legend_lanes lists every lane the meter folds, red first" do
       GithubWorkflowRun.delete_all
       sha = "135e4e6ccccccccccccccccccccccccccccccccc"
       [["Engine CI", "success", 7_200_001], ["Consumer CI", "failure", 7_200_002]].each do |wf, concl, id|
@@ -125,14 +127,33 @@ module Ci
       end
       rung = Ci::LadderRung.new(repo: "studio-engine", branch: "accepted", state: :red, sha: sha)
 
-      assert_equal "Engine CI", rung.counted_lane, "the meter counts the declared suite"
-      assert_equal ["Consumer CI"], rung.uncounted_lanes.map { |l| l[:name] },
-                   "the red sibling must be named on the card, not hidden"
-      assert_equal :red, rung.uncounted_lanes.first[:state]
+      assert_equal ["Consumer CI", "Engine CI"], rung.legend_lanes.map { |l| l[:name] },
+                   "both lanes are in the meter, so both are in its legend"
+      assert_equal :red, rung.legend_lanes.first[:state]
+      assert_equal "Engine CI", rung.primary_lane, "the gem's own suite still carries its verdict"
+    end
+
+    # The label points at the NEWS. A red lane outranks a running one, and neither
+    # outranks the other when several are out — then it counts.
+    test "[unit] meter_lane_label names the lane that is the news" do
+      red     = { name: "Consumer CI", state: :red, url: nil }
+      pending = { name: "Consumer CI", state: :pending, url: nil }
+      green   = { name: "Engine CI", state: :green, url: nil }
+      rung    = Ci::LadderRung.new(repo: "studio-engine", branch: "release", state: :pending)
+
+      assert_equal "Engine CI", rung.meter_lane_label([green]),
+                   "one lane: name it, exactly as every app card always has"
+      assert_equal "Consumer CI", rung.meter_lane_label([green, pending]),
+                   "the still-running lane is the current step the operator is waiting on"
+      assert_equal "Consumer CI", rung.meter_lane_label([green, red]),
+                   "a failure outranks a pass"
+      assert_equal "2 suites", rung.meter_lane_label([green, { name: "Extra CI", state: :green, url: nil }]),
+                   "naming one of two settled lanes would imply the other is not in the bar"
+      assert_nil rung.meter_lane_label([]), "no lanes, no label"
     end
 
     # An app runs one lane, so its card gains no extra line to read.
-    test "a single lane repo reports nothing uncounted" do
+    test "[unit] a single lane repo shows no legend" do
       GithubWorkflowRun.delete_all
       sha = "abc1234ddddddddddddddddddddddddddddddddd"
       GithubWorkflowRun.create!(repo: "McRitchie-Studio/turf-monster", head_sha: sha,
@@ -141,8 +162,115 @@ module Ci
                                 run_started_at: 5.minutes.ago, html_url: "https://x/1")
       rung = Ci::LadderRung.new(repo: "turf-monster", branch: "release", state: :green, sha: sha)
 
-      assert_equal "CI", rung.counted_lane
-      assert_empty rung.uncounted_lanes
+      assert_equal "CI", rung.primary_lane
+      assert_empty rung.legend_lanes, "one lane needs no key — the meter label already names it"
+      assert_equal "CI", rung.meter_lane_label
+    end
+
+    # THE ANTI-CONTRADICTION TEST — the whole reason this change exists.
+    #
+    # The pill (#state, via .fold) has always counted every suite lane; the meter
+    # (#progress) counted one. On the only two-lane repo that produced a card which
+    # disagreed with itself: a green 3/3 "Engine CI" meter beside an AMBER `release`
+    # pill, six minutes' worth, while Consumer CI ran the consumer suites. Assert the
+    # two fold the SAME set, not merely that today's numbers happen to line up.
+    test "[integration] the meter and the rung pill fold the same lanes" do
+      GithubWorkflowRun.delete_all
+      CiCheckJob.delete_all
+      sha = "9248a9cfffffffffffffffffffffffffffffffff"
+      nwo = "McRitchie-Studio/studio-engine"
+
+      GithubWorkflowRun.create!(repo: nwo, head_sha: sha, head_branch: "release", run_id: 7_400_001,
+                                workflow_name: "Engine CI", status: "completed", conclusion: "success",
+                                run_started_at: 6.minutes.ago, html_url: "https://x/1")
+      GithubWorkflowRun.create!(repo: nwo, head_sha: sha, head_branch: "release", run_id: 7_400_002,
+                                workflow_name: "Consumer CI", status: "in_progress", conclusion: nil,
+                                run_started_at: 5.minutes.ago, html_url: "https://x/2")
+
+      3.times do |i|
+        CiCheckJob.create!(repo: nwo, head_sha: sha, head_branch: "release", run_id: 7_400_001,
+                           job_id: 7_410_000 + i, workflow_name: "Engine CI", name: "engine #{i}",
+                           status: "completed", conclusion: "success")
+      end
+      2.times do |i|
+        CiCheckJob.create!(repo: nwo, head_sha: sha, head_branch: "release", run_id: 7_400_002,
+                           job_id: 7_420_000 + i, workflow_name: "Consumer CI", name: "consumer #{i}",
+                           status: "in_progress", conclusion: nil)
+      end
+
+      rung = Ci::LadderRung.for(repo: "studio-engine", branch: "release")
+
+      assert_equal :pending, rung.state, "the pill counts the running consumer lane"
+      assert_equal 5, rung.progress.total, "and so does the meter — 3 engine checks + 2 consumer"
+      assert_equal 3, rung.progress.passed
+      assert_equal 2, rung.progress.pending
+      assert_equal :pending, rung.progress.state,
+                   "the meter's colour and the pill's state can no longer disagree"
+      assert_equal "Consumer CI", rung.meter_lane_label, "the label names what is still running"
+
+      # THE CASE THAT WAS MISSING, and the one that ships first. Seeding job rows for
+      # BOTH lanes only ever exercised a fully-ingested SHA. There is NO BACKFILL — the
+      # old allowlist dropped every sibling `workflow_job`, so on every historical SHA
+      # the sibling has a RUN row and zero JOB rows, and the same window reopens on
+      # every new run between `workflow_run` (queue time) and the first `workflow_job`.
+      #
+      # Folded by job rows alone, that lane vanishes from the meter while the label and
+      # legend — which read RUN rows — keep naming it: a green 3/3 bar labelled
+      # "Consumer CI" over a chip claiming it is counted, beside an amber pill.
+      CiCheckJob.where(repo: nwo, workflow_name: "Consumer CI").delete_all
+      rung = Ci::LadderRung.for(repo: "studio-engine", branch: "release")
+
+      assert_equal 4, rung.progress.total,
+                   "the un-ingested lane still contributes ONE run-grain mark — 3 engine jobs + 1"
+      assert_equal :pending, rung.progress.state,
+                   "so the meter cannot read green while the pill reads pending"
+      assert_equal rung.state, rung.progress.state,
+                   "pill and meter agree on a partially-ingested SHA, not just a complete one"
+      assert_equal "Consumer CI", rung.meter_lane_label
+      assert_equal ["Consumer CI", "Engine CI"], rung.legend_lanes.map { |l| l[:name] },
+                   "every lane the card NAMES is a lane the meter COUNTS — the chip's title says so"
+    end
+
+    # A lane with neither job rows nor a run row is not a lane. The meter must stay
+    # ABSENT rather than draw a hopeful zero — the guard the run-grain fallback must
+    # not trample on its way past `rows.blank?`.
+    test "[unit] a sha with no ingested runs at all still renders no meter" do
+      GithubWorkflowRun.delete_all
+      CiCheckJob.delete_all
+
+      rung = Ci::LadderRung.new(repo: "studio-engine", branch: "release", state: :not_built,
+                                sha: "deadbeef" + "0" * 32)
+
+      assert_nil rung.progress, "no runs, no bar — an absence must never render as 0 of 0"
+    end
+
+    # The clock spans the COMMIT, not the lane that started last.
+    test "[unit] the meter clock starts at the earliest lane on the sha" do
+      GithubWorkflowRun.delete_all
+      CiCheckJob.delete_all
+      sha = "77e1a2bfffffffffffffffffffffffffffffffff"
+      nwo = "McRitchie-Studio/studio-engine"
+      first = 9.minutes.ago
+      later = 4.minutes.ago
+
+      GithubWorkflowRun.create!(repo: nwo, head_sha: sha, head_branch: "release", run_id: 7_500_001,
+                                workflow_name: "Engine CI", status: "completed", conclusion: "success",
+                                run_started_at: first, html_url: "https://x/1")
+      GithubWorkflowRun.create!(repo: nwo, head_sha: sha, head_branch: "release", run_id: 7_500_002,
+                                workflow_name: "Consumer CI", status: "in_progress", conclusion: nil,
+                                run_started_at: later, html_url: "https://x/2")
+      CiCheckJob.create!(repo: nwo, head_sha: sha, head_branch: "release", run_id: 7_500_001,
+                         job_id: 7_510_001, workflow_name: "Engine CI", name: "engine suite",
+                         status: "completed", conclusion: "success")
+
+      rung = Ci::LadderRung.for(repo: "studio-engine", branch: "release")
+
+      assert_in_delta first.to_i, rung.suite_started_at.to_i, 1,
+                      "the earliest lane start is when this commit began being tested"
+      assert_in_delta later.to_i, rung.verdict_at.to_i, 1,
+                      "verdict_at keeps meaning the newest run — other readers depend on it"
+      assert_in_delta first.to_i, rung.progress.started_at.to_i, 1,
+                      "so the bar's clock measures the whole window, not the last lane to start"
     end
 
     test "a rung with no sha reports no lanes at all" do

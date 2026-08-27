@@ -511,7 +511,21 @@ document.addEventListener('turbo:before-cache', function() {
   </div>
 
   <% if show_release_modules %>
-    <!-- Deployment dashboard: a 2×2 card grid — Next Release + Last Release on the top row, Heartbeats + DevOps (WIP + release durations) on the bottom row. -->
+    <!-- Deployment dashboard: a 2×2 card grid — Next Release + Last Release on the top
+         row, Workflows + DevOps (WIP + release durations) on the bottom row.
+
+         Workflows deliberately does NOT span both columns. It stays one half-width
+         cell like every other card (measured: 728px at 2xl, giving its five soul
+         columns ~132px each, where the longest act `production-deploy` renders 92px
+         into 99px of text area — 7px of slack, nothing clipped). The squeeze is
+         absorbed by the CARD's own column ladder rather than by this grid:
+         tasks/_heartbeats_card goes 5-up at lg, dips to 3-up at xl where this
+         dashboard halves it, and returns to 5-up at 2xl.
+
+         That makes the two files a contract with nothing in the code linking them.
+         Give this card a col-span here and you MUST drop `xl:grid-cols-3` there in
+         the same pass — application_helper_test.rb's "column ladder" test fails and
+         names the other file if they drift apart. -->
     <div class="grid min-w-0 grid-cols-1 gap-4 mb-6 items-stretch xl:grid-cols-2" data-test="release-dashboard-grid">
       <%= render "current_release", release: current_release, card_class: "h-full min-w-0" %>
       <%= render "last_release", release: last_release, card_class: "h-full min-w-0" %>

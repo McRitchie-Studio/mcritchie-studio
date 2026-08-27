@@ -626,40 +626,73 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_not_includes plain, "<span"
   end
 
-  test "[unit] heartbeat_launchers maps the four souls to prompt + atom-act launchers" do
+  test "[unit] heartbeat_launchers maps the five souls to prompt + atom-act launchers" do
     launchers = heartbeat_launchers
 
-    assert_equal 4, launchers.size
-    assert_equal %w[carl avi steffon alex], launchers.map { |l| l[:agent_slug] }
+    assert_equal 5, launchers.size
+    assert_equal %w[carl avi steffon alex turf-monster], launchers.map { |l| l[:agent_slug] }
     # Row 1 is the prompt-like soul heartbeat phrase; acts are the launcher atoms.
-    assert_equal ["Carl Heartbeat", "Avi Heartbeat", "Steffon Heartbeat", "Alex Heartbeat"],
+    assert_equal ["Carl Heartbeat", "Avi Heartbeat", "Steffon Heartbeat", "Alex Heartbeat",
+                  "Turf Monster Heartbeat"],
                  launchers.map { |l| l[:heartbeat] }
-    # Acts read across the souls in pipeline order: review → assemble → ship → archive.
+    # Acts read across the souls in pipeline order: review → assemble → ship.
     # deploy-with-task trails Avi's list — direct-invoke only, never composed.
     assert_equal ["pr-review", "pr-review-slow"], launchers[0][:actions]
     assert_equal ["qa-release", "deploy-with-task"], launchers[1][:actions]
-    assert_equal ["production-deploy", "archive-shipped"], launchers[2][:actions]
+    assert_equal ["production-deploy", "clean-infra"], launchers[2][:actions]
     assert_equal ["grade-events", "share-insights", "full-cycle"], launchers[3][:actions]
+    assert_equal ["live-score-watch"], launchers[4][:actions]
+
+    # archive-shipped is NOT a launcher act any more: production-deploy runs it as
+    # its final step. It stays a registered SOP invocable by name — this asserts the
+    # CARD contract, not the registry.
+    assert_not_includes launchers.flat_map { |l| l[:actions] }, "archive-shipped"
+
+    # Every act on the card carries a caption + an icon, or the row renders bare.
+    launchers.flat_map { |l| l[:actions] }.each do |act|
+      assert action_description(act).present?, "#{act} has no ACTION_DESCRIPTIONS caption"
+      assert action_icon(act).present?, "#{act} has no ACTION_ICONS glyph"
+    end
     assert(launchers.all? { |l| l[:label].present? && l[:title].present? }, "each launcher carries a label + tooltip")
     # review-only contract: Carl's tooltip frames review, not the merge — pr-review
     # stops at reviewed (merged to accepted); Avi's sweep promotes accepted→release.
     refute_match(/merge/i, launchers[0][:title], "Carl's tooltip stays review-framed, not merge-framed")
   end
 
-  test "[component] _heartbeats_card renders the four soul heartbeat launchers in a responsive grid" do
+  test "[component] _heartbeats_card renders the five soul heartbeat launchers in a responsive grid" do
     Agent.find_or_create_by!(slug: "carl") { |a| a.name = "Carl" }
     Agent.find_or_create_by!(slug: "avi") { |a| a.name = "Avi" }
     Agent.find_or_create_by!(slug: "steffon") { |a| a.name = "Steffon" }
     Agent.find_or_create_by!(slug: "alex") { |a| a.name = "Alex" }
+    Agent.find_or_create_by!(slug: "turf-monster") { |a| a.name = "Turf Monster" }
 
     render partial: "tasks/heartbeats_card"
 
-    # The heartbeats live in their own card, one launcher per soul, stacked on
-    # narrow screens and 4-up once there is room.
+    # The launchers live in their own card, one per soul, stacked on narrow
+    # screens, 3-up at sm and 5-up once there is room.
     assert_select "[data-test='heartbeats-card']", count: 1
     assert_select "[data-test='heartbeats-card'][data-compact-limit='3']", count: 1
     assert_select "[data-test='heartbeats-card'][x-data*='heartbeatsExpanded']", count: 1
-    assert_select "[data-test='heartbeats-card'] div.grid.grid-cols-1.sm\\:grid-cols-4 [data-test='heartbeat-launcher']", count: 4
+    # The ladder tracks the CARD's width, not the viewport's: 5 at lg (the card owns
+    # the whole row there), 3 at xl (the dashboard halves it), 5 again at 2xl (half a
+    # big screen is wide enough). Pinned against the dashboard by its own test below;
+    # chip FIT at each width is measured in workflows_card_chip_fit_test.
+    assert_select "[data-test='heartbeats-card'] div.grid.grid-cols-1.sm\\:grid-cols-3.lg\\:grid-cols-5.xl\\:grid-cols-3 [data-test='heartbeat-launcher']", count: 5
+    # `2xl:grid-cols-5` is asserted as a substring, not in the selector: Nokogiri's CSS
+    # parser rejects a class whose name starts with a digit unless it is unicode-escaped
+    # (`.\32 xl\:grid-cols-5`), and that spelling is far more likely to rot than to catch
+    # anything. The rung still has to be here — it is what returns the card to five
+    # columns once half a screen is wide enough.
+    assert_includes rendered, "2xl:grid-cols-5"
+    # The card is titled for the FLOWS it launches, not for liveness.
+    assert_select "[data-test='heartbeats-card'] h3", text: "Workflows"
+    # Steffon's column swapped archive-shipped for clean-infra; the archive now
+    # rides production-deploy, so it must not render as a copyable chip.
+    assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] button[data-clip='clean-infra']", count: 1
+    assert_select "[data-test='heartbeats-card'] button[data-clip='archive-shipped']", count: 0
+    # The fifth soul carries her own heartbeat phrase + the watch act.
+    assert_select "[data-test='heartbeat-launcher'][data-agent='turf-monster'] button[data-clip='Turf Monster Heartbeat']", count: 1
+    assert_select "[data-test='heartbeat-launcher'][data-agent='turf-monster'] button[data-clip='live-score-watch']", count: 1
     assert_select "[data-test='heartbeat-compact-toggle']", text: /Show All/
     assert_select "[data-test='heartbeat-compact-toggle'] span[x-show='heartbeatsExpanded']", text: "Compact"
     # The tracker does NOT live here — it stays in the Current Release card.
@@ -681,16 +714,19 @@ class ApplicationHelperTest < ActionView::TestCase
       assert_select "#{scope} button[data-clip]", count: 1 + launcher[:actions].size
     end
     # Carl (pr-review + slow), Avi (qa-release + deploy-with-task), Steffon
-    # (production-deploy + archive-shipped), Alex (grade + share + full-cycle).
+    # (production-deploy + clean-infra), Alex (grade + share + full-cycle),
+    # Turf Monster (live-score-watch).
     assert_select "[data-test='heartbeat-launcher'][data-agent='carl'] button[data-row='action'] code", text: "pr-review-slow"
     assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] button[data-row='action'] code", text: "deploy-with-task"
     assert_select "[data-test='heartbeat-launcher'][data-agent='alex'] button[data-row='action'] code", text: "full-cycle"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='turf-monster'] button[data-row='action'] code", text: "live-score-watch"
     assert_select "[data-test='heartbeat-launcher'][data-agent='carl'] [data-copy-row-index='2'] button[data-clip='pr-review']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='carl'] [data-copy-row-index='3'] button[data-clip='pr-review-slow']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] [data-copy-row-index='2'] button[data-clip='qa-release']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] [data-copy-row-index='3'] button[data-clip='deploy-with-task']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] [data-copy-row-index='2'] button[data-clip='production-deploy']"
-    assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] [data-copy-row-index='3'] button[data-clip='archive-shipped']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] [data-copy-row-index='3'] button[data-clip='clean-infra']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='turf-monster'] [data-copy-row-index='2'] button[data-clip='live-score-watch']"
     assert_select "[data-test='heartbeat-launcher'] > span.text-muted", count: 0
     # Only Alex's list exceeds the compact limit (4 rows) → its row 4 (full-cycle)
     # is tucked behind the card toggle; Carl/Avi/Steffon (3 rows) have none hidden.
@@ -698,24 +734,55 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_select "[data-test='heartbeat-launcher'][data-agent='carl'] [data-test='heartbeat-copy-row'][x-show='heartbeatsExpanded']", count: 0
     assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] [data-test='heartbeat-copy-row'][x-show='heartbeatsExpanded']", count: 0
     assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] [data-test='heartbeat-copy-row'][x-show='heartbeatsExpanded']", count: 0
-    # Each soul heartbeat row (row 1) carries a leading ❤️; there are exactly four.
-    assert_select "[data-test='heartbeat-heart']", count: 4
-    assert_select "[data-test='heartbeat-launcher'] button[data-row='heartbeat'] [data-test='heartbeat-heart']", text: "❤️", count: 4
-    # Every act carries a leading icon — a 1️⃣–4️⃣ keycap for the four ordered release
+    assert_select "[data-test='heartbeat-launcher'][data-agent='turf-monster'] [data-test='heartbeat-copy-row'][x-show='heartbeatsExpanded']", count: 0
+    # Each soul heartbeat row (row 1) carries a leading ❤️; there are exactly five.
+    assert_select "[data-test='heartbeat-heart']", count: 5
+    assert_select "[data-test='heartbeat-launcher'] button[data-row='heartbeat'] [data-test='heartbeat-heart']", text: "❤️", count: 5
+    # Every act carries a leading icon — a 1️⃣–3️⃣ keycap for the three ordered release
     # acts, a themed glyph for the rest.
     assert_select "button[data-row='action'][data-clip='pr-review'] [data-test='action-icon']", text: "1️⃣"
     assert_select "button[data-row='action'][data-clip='qa-release'] [data-test='action-icon']", text: "2️⃣"
     assert_select "button[data-row='action'][data-clip='production-deploy'] [data-test='action-icon']", text: "3️⃣"
-    assert_select "button[data-row='action'][data-clip='archive-shipped'] [data-test='action-icon']", text: "4️⃣"
+    assert_select "button[data-row='action'][data-clip='clean-infra'] [data-test='action-icon']", text: "🧹"
+    assert_select "button[data-row='action'][data-clip='live-score-watch'] [data-test='action-icon']", text: "🏈"
     assert_select "button[data-row='action'][data-clip='pr-review-slow'] [data-test='action-icon']", text: "🐢"
     assert_select "button[data-row='action'][data-clip='grade-events'] [data-test='action-icon']", text: "🧑🏻‍🏫"
     assert_select "button[data-row='action'][data-clip='share-insights'] [data-test='action-icon']", text: "📡"
     assert_select "button[data-row='action'][data-clip='full-cycle'] [data-test='action-icon']", text: "🌎"
     assert_select "button[data-row='action'][data-clip='deploy-with-task'] [data-test='action-icon']", text: "⚡"
-    # One icon per act row: Carl 2 + Avi 2 + Steffon 2 + Alex 3 = 9.
-    assert_select "[data-test='action-icon']", count: 9
+    # One icon per act row: Carl 2 + Avi 2 + Steffon 2 + Alex 3 + Turf Monster 1 = 10.
+    assert_select "[data-test='action-icon']", count: 10
     # The copy helper (with its execCommand fallback) is present on the page.
     assert_includes rendered, "window.copyText"
+  end
+
+  # The column ladder is a CONTRACT BETWEEN TWO FILES, and nothing in the code links
+  # them: the dashboard decides how WIDE the card is, and the card decides how many
+  # columns to put in it. The Workflows card is deliberately HALF width (no col-span),
+  # which is why its ladder has to dip to 3 at xl — between 1280 and 1535 half a
+  # screen is ~620px and the act chips measurably do not fit five across.
+  #
+  # Give the card a col-span later and the dip becomes wrong (wasted width); drop the
+  # dip while it stays half width and the chips break again. Either way this fails and
+  # names the other file, so the two cannot drift apart silently. Chip FIT itself is
+  # measured in test/system/workflows_card_chip_fit_test.rb.
+  test "[component] the card's column ladder matches the width the dashboard gives it" do
+    board = Rails.root.join("app/views/tasks/_deploy_board.html.erb").read
+    card = Rails.root.join("app/views/tasks/_heartbeats_card.html.erb").read
+    render_line = board.lines.find { |l| l.include?('render "heartbeats_card"') }
+
+    refute_nil render_line, "the deploy board no longer renders the Workflows card"
+    spans_full_row = render_line.include?("col-span-2")
+    dips_at_xl = card.include?("xl:grid-cols-3")
+
+    refute spans_full_row,
+           "The Workflows card is meant to sit HALF width in the 2x2 dashboard. If you gave it a " \
+           "col-span on purpose, drop `xl:grid-cols-3` from the card in the same pass — the dip " \
+           "only exists because half a screen cannot hold five chips between 1280 and 1535px."
+    assert dips_at_xl,
+           "The card is half width (no col-span in _deploy_board), so its ladder MUST dip to " \
+           "`xl:grid-cols-3`. Without it, five columns are asked to fit a ~620px card at 1300px " \
+           "and the act chips are clipped — measured, see workflows_card_chip_fit_test."
   end
 
   test "[component] the DevOps card keeps its stage tiles but no longer carries the heartbeats" do
@@ -1013,21 +1080,35 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_equal "Review submitted PRs one at a time", action_description("pr-review-slow")
     assert_equal "Ship a QA-ready release to production", action_description("production-deploy")
     assert_equal "Prepare + deploy the QA release", action_description("qa-release")
-    assert_equal "Archive shipped tasks + releases", action_description("archive-shipped")
+    assert_equal "Sweep this machine: desks, disk, Redis band", action_description("clean-infra")
+    assert_equal "Watch a live NFL slot and record every score", action_description("live-score-watch")
     assert_equal "Grade 10 recent events for quality", action_description("grade-events")
     assert_equal "Full cycle — review, assemble, QA, ship to prod", action_description("full-cycle")
     assert_nil action_description("not-an-act")
   end
 
-  test "[unit] action_icon numbers the four ordered release actions (1→4), nil otherwise" do
+  test "[unit] action_icon numbers the three ordered release actions (1→3), nil otherwise" do
     assert_equal "1️⃣", action_icon("pr-review")
     assert_equal "2️⃣", action_icon("qa-release")
     assert_equal "3️⃣", action_icon("production-deploy")
-    assert_equal "4️⃣", action_icon("archive-shipped")
+    # The sequence ENDS at 3. archive-shipped held 4️⃣ until production-deploy took
+    # over running it, at which point it stopped being a card chip — so it must not
+    # carry a keycap that implies an operator step.
+    assert_nil action_icon("archive-shipped")
+    # Off-sequence acts get a themed glyph, never a number: they are invoked when
+    # the situation calls for them, not at a fixed point in the pipeline.
+    assert_equal "🧹", action_icon("clean-infra")
+    assert_equal "🏈", action_icon("live-score-watch")
     assert_equal "🐢", action_icon("pr-review-slow")
     assert_equal "🧑🏻‍🏫", action_icon("grade-events")
     assert_equal "🌎", action_icon("full-cycle")
     assert_nil action_icon("not-an-act")
+
+    # The keycaps are a SEQUENCE — each used once, and contiguous from 1. A gap or a
+    # duplicate means the pipeline story the card tells has drifted from the acts.
+    keycaps = heartbeat_launchers.flat_map { |l| l[:actions] }.filter_map { |a| action_icon(a) }
+                                 .grep(/\A[1-9]\u{FE0F}?\u{20E3}\z/)
+    assert_equal ["1️⃣", "2️⃣", "3️⃣"], keycaps.sort
   end
 
   test "[unit] heartbeat_launcher_for resolves the soul launcher and skips non-souls" do

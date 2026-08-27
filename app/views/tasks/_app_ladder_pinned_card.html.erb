@@ -51,7 +51,7 @@
     <% if progress.present? %>
       <%= render "components/ci_progress_meter",
             progress: progress,
-            label: [card.active_rung&.branch, card.active_rung&.counted_lane].compact.join(" · "),
+            label: [card.active_rung&.branch, card.meter_lane_label].compact.join(" · "),
             test_id: "app-ladder-pinned-ci-bar",
             clock: true %>
     <% else %>

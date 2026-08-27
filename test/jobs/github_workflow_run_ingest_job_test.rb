@@ -301,11 +301,31 @@ class GithubWorkflowRunIngestJobTest < ActiveJob::TestCase
     assert_equal "Engine CI", CiCheckJob.find_by(head_sha: "engine-main-sha").workflow_name
   end
 
-  test "[unit] a gem's downstream Consumer CI workflow_job is NOT recorded" do
-    # "Consumer CI" runs the DOWNSTREAM apps' suites on the same gem SHA — not the
-    # gem's own verdict, so it is deliberately outside the allowlist and never rows.
-    assert_no_difference "CiCheckJob.count" do
-      ingest_job(status: "in_progress", workflow_name: "Consumer CI")
+  test "[unit] a gem's declared SIBLING lane IS recorded, tagged apart from its own suite" do
+    # "Consumer CI" runs the DOWNSTREAM apps' suites on the same gem SHA. It is not the
+    # gem's own verdict — and it was outside the allowlist for exactly that reason,
+    # which left the board unable to draw a lane it was already naming in prose: a
+    # green 3/3 "Engine CI" meter beside an amber pill for six minutes while these
+    # jobs ran. Recording it does NOT blend it: the row carries its workflow_name, and
+    # every fold that must stay narrow still asks for one.
+    assert_difference "CiCheckJob.count", 1 do
+      ingest_job(status: "in_progress", job_id: JOB_ID + 11,
+                 workflow_name: "Consumer CI", head_sha: "engine-release-sha")
+    end
+    assert_equal "Consumer CI", CiCheckJob.find_by(head_sha: "engine-release-sha").workflow_name,
+                 "tagged, so a narrow reader can still exclude it"
+  end
+
+  test "[unit] the allowlist is DERIVED from the registry, not hand-listed" do
+    # The bug this guards is the one that produced the narrow allowlist in the first
+    # place: a lane declared in one place and forgotten in the other. Declaring a
+    # sibling suite is what ingests it — nobody has to remember a second list.
+    Release::AcceptedCertification::SIBLING_SUITE_WORKFLOWS.each_value do |lanes|
+      lanes.each do |lane|
+        assert_includes GithubWorkflowRun::CI_PROGRESS_WORKFLOWS, lane,
+                        "#{lane.inspect} is a declared suite lane the ingest would drop — its per-job " \
+                        "progress could never reach a meter"
+      end
     end
   end
 
