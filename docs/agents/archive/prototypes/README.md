@@ -26,13 +26,16 @@ Retired prototype, superseded by `mcritchie-industries`
 `amcritchie/acquisition-studio` was deleted; the local checkout at
 `/Users/alex/projects/acquisition-studio` outlived it.
 
-Bundled 2026-08-26 from that checkout, `--all`. **12 commits, 11 refs**, 172K.
+Bundled 2026-08-26 from that checkout, `--all`. **12 commits, 9 refs**, 172K.
+(`git bundle list-heads` prints ELEVEN entries: those 9 refs plus `HEAD` and a worktree
+`HEAD`, neither of which is a `refs/` entry and neither of which a clone recreates.)
 
 Verified before it was committed, rather than assumed:
 
 - `git bundle verify` reports a complete history.
-- A `--mirror` clone from the bundle keeps **all 12** commit objects and all 11
-  refs, and survives `git gc --prune=now`. (A plain clone does not — see above.)
+- A `--mirror` clone from the bundle keeps **all 12** commit objects and **all 9**
+  refs, and survives `git gc --prune=now` — restored and counted, not assumed.
+  (A plain clone does not — see above.)
 - The refs include work that is **not reachable from `main`** and exists nowhere
   else — `origin/release` (`c9e1f17`), `origin/accepted` (`b53a3be`), the CI
   workflow branch (`ee37b16`), and the smooth-load adoption (`f7d5f2c`).
