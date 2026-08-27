@@ -112,7 +112,8 @@ what the text column spells out, and it has exactly three states:
 | `▱▱▱▱▱▱▱▱▱▱` | **Empty** | Queued. Not started, waiting on something upstream. |
 
 A `rough` estimate still fills — rough describes the *confidence* in the number,
-not the absence of one. Alternating is reserved for having no number at all.
+not the absence of one. Alternating is reserved for having no total to measure
+progress against, even when the row can still quote a tick or an interval.
 
 ### The rules
 
@@ -127,8 +128,10 @@ not the absence of one. Alternating is reserved for having no number at all.
   `bin/ship`, each deploy or QA sweep, each cron or watch you started.
 - **Name the row by its slug or agent name**, per the slug rule above:
   `carl · review fix-cta-timing`, never `subagent 2`.
-- **Two numbers, always: elapsed and remaining.** Elapsed is fact; remaining is
-  the forecast he actually wants.
+- **Two numbers on every forecasting row: elapsed and remaining.** Elapsed is
+  fact; remaining is the forecast he actually wants. A row that forecasts
+  nothing states its condition in that column instead — `armed · 5.5m tick`,
+  `queued on green CI` — and a queued row drops the confidence mark with it.
 - **Mark the forecast's confidence** — `firm` when the duration is machinery
   with a known runtime, `rough` when it is model work whose length varies.
 - **Bracket the rows with rules.** One `─` rule under the header and one below
@@ -139,9 +142,9 @@ not the absence of one. Alternating is reserved for having no number at all.
   the one-line header makes silence mean exactly one thing.
 - **Never pad the roster.** Work that finished during the turn is reported in
   layers 1-2 as done, not parked on the roster as though still running.
-- **If you truly cannot estimate, say so** — an alternating meter and
-  `unknown — first run of this sweep`. An honest unknown beats an invented
-  number.
+- **If you truly cannot estimate, say so** — an alternating meter and a reason
+  short enough for the column, `unknown — first run`. An honest unknown beats
+  an invented number.
 
 ### Firm durations — the measured ones
 
