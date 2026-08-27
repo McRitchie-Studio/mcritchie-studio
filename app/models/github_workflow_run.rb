@@ -44,11 +44,17 @@ class GithubWorkflowRun < ApplicationRecord
   # that ALREADY folds every suite lane (Ci::LadderRung.fold) and was therefore
   # amber. One card, two halves, disagreeing by construction.
   #
-  # RECORDING A LANE IS NOT BLENDING IT. Every fold that must stay narrow still
-  # names its workflow — CiCheckJob.progress_rows scopes on request, and a GEM's
-  # own release track (Ci::ProgressReader#for_release) still passes its own suite
-  # name alone, so a failing consumer cannot drag the gem's verdict red. What
-  # changes is that a reader which WANTS the whole commit can now have it.
+  # RECORDING A LANE IS NOT BLENDING IT — but be exact about what protects the gem,
+  # because the obvious answer is the wrong one. It is NOT that the release track
+  # stays narrow: Ci::ProgressReader#for_release now passes the full lane list too,
+  # since that track previews a gate reading the workflow-BLIND check-runs endpoint.
+  # Every DISPLAY of this repo may go red on a failing consumer.
+  #
+  # What holds is one layer down, and it never moved: CERTIFICATION still names
+  # exactly ONE workflow per repo (Release::AcceptedCertification.workflow_for), and
+  # that is the answer every gate and promote decision reads. So a failing consumer
+  # can redden a bar without ever carrying the gem's verdict — a display and a
+  # verdict are different claims, and only the first one widened here.
   #
   # DERIVED, never hand-listed: the gem map below plus
   # Release::AcceptedCertification::SIBLING_SUITE_WORKFLOWS, so declaring a lane in
@@ -116,7 +122,12 @@ class GithubWorkflowRun < ApplicationRecord
   def self.suite_workflows_for(repo)
     Release::AcceptedCertification.suite_workflows_for(repo, Release::Repos.config)
   rescue StandardError => e
-    Rails.logger&.warn("[github_workflow_run] suite_workflows_for(#{repo}) failed: #{e.class}")
+    # ErrorLog, not a bare logger warn — .ci_workflow_for three lines below already
+    # captures, and this became the HOTTER of the two when the ladder meter started
+    # folding by lane. An unreadable registry degrades to the primary lane alone,
+    # which is a QUIETER card, not a broken one; without a captured error that
+    # silent narrowing is invisible.
+    ErrorLog.capture!(e)
     [ci_workflow_for(repo)].compact
   end
 

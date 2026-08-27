@@ -207,6 +207,41 @@ module Ci
       assert_equal :pending, rung.progress.state,
                    "the meter's colour and the pill's state can no longer disagree"
       assert_equal "Consumer CI", rung.meter_lane_label, "the label names what is still running"
+
+      # THE CASE THAT WAS MISSING, and the one that ships first. Seeding job rows for
+      # BOTH lanes only ever exercised a fully-ingested SHA. There is NO BACKFILL — the
+      # old allowlist dropped every sibling `workflow_job`, so on every historical SHA
+      # the sibling has a RUN row and zero JOB rows, and the same window reopens on
+      # every new run between `workflow_run` (queue time) and the first `workflow_job`.
+      #
+      # Folded by job rows alone, that lane vanishes from the meter while the label and
+      # legend — which read RUN rows — keep naming it: a green 3/3 bar labelled
+      # "Consumer CI" over a chip claiming it is counted, beside an amber pill.
+      CiCheckJob.where(repo: nwo, workflow_name: "Consumer CI").delete_all
+      rung = Ci::LadderRung.for(repo: "studio-engine", branch: "release")
+
+      assert_equal 4, rung.progress.total,
+                   "the un-ingested lane still contributes ONE run-grain mark — 3 engine jobs + 1"
+      assert_equal :pending, rung.progress.state,
+                   "so the meter cannot read green while the pill reads pending"
+      assert_equal rung.state, rung.progress.state,
+                   "pill and meter agree on a partially-ingested SHA, not just a complete one"
+      assert_equal "Consumer CI", rung.meter_lane_label
+      assert_equal ["Consumer CI", "Engine CI"], rung.legend_lanes.map { |l| l[:name] },
+                   "every lane the card NAMES is a lane the meter COUNTS — the chip's title says so"
+    end
+
+    # A lane with neither job rows nor a run row is not a lane. The meter must stay
+    # ABSENT rather than draw a hopeful zero — the guard the run-grain fallback must
+    # not trample on its way past `rows.blank?`.
+    test "[unit] a sha with no ingested runs at all still renders no meter" do
+      GithubWorkflowRun.delete_all
+      CiCheckJob.delete_all
+
+      rung = Ci::LadderRung.new(repo: "studio-engine", branch: "release", state: :not_built,
+                                sha: "deadbeef" + "0" * 32)
+
+      assert_nil rung.progress, "no runs, no bar — an absence must never render as 0 of 0"
     end
 
     # The clock spans the COMMIT, not the lane that started last.

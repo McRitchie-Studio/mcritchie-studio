@@ -228,10 +228,53 @@ module Ci
       #
       # An app repo declares exactly one suite, so this is byte-identical for every
       # card except the gem's.
-      rows = CiCheckJob.progress_rows(nwo, sha, GithubWorkflowRun.suite_workflows_for(repo))
-      return nil if rows.blank?
+      #
+      # BUILT FROM THE RUNS, NOT FROM THE JOB ROWS — and that is the fix for the
+      # regression the first version of this shipped with (review, 2026-08-26).
+      #
+      # Folding `progress_rows` over the whole lane list looks equivalent and is not: a
+      # lane with NO CiCheckJob rows contributes nothing and vanishes from the fold,
+      # while #lanes / #meter_lane_label / #legend_lanes keep reading the RUN rows — a
+      # different event family — and go on naming it. The card then made three claims
+      # and one was true: a green 3/3 meter, labelled with the lane still running, over
+      # a legend chip titled "counted by the meter above". That is worse than the
+      # narrow scope it replaced, where the label named the counted lane and the chip
+      # said "NOT counted".
+      #
+      # It is not an edge case, for two reasons. There is NO BACKFILL — the old
+      # allowlist dropped every sibling `workflow_job` event, so zero job rows exist for
+      # a sibling on every historical SHA, which is every tip on the day this ships. And
+      # every new run reopens the window regardless: `workflow_run` is delivered at
+      # QUEUE time, `workflow_job` only once a job exists.
+      #
+      # So each lane contributes at its best available grain — its jobs when they are
+      # there, one mark for the whole run when they are not — exactly as
+      # Ci::ProgressReader#sibling_lane_checks_for already does for a task card. Every
+      # lane the card NAMES is a lane the meter COUNTS, whatever the ingest holds.
+      checks = self.class.branch_runs(repo, branch).flat_map { |run| lane_checks(nwo, run) }
+      return nil if checks.blank?
 
-      Ci::CheckProgress.from_check_runs(rows, sha: sha, run_started_at: suite_started_at)
+      Ci::CheckProgress.new(checks: checks, sha: sha, run_started_at: suite_started_at)
+    end
+
+    # ONE lane's contribution to the fold: its per-job checks when the `workflow_job`
+    # webhook has recorded them, else a single mark standing for the whole run. The
+    # run-grain mark is not a placeholder to be tidied away later — it is the only
+    # honest reading of a lane that is known to be running and has no jobs yet.
+    def lane_checks(nwo, run)
+      rows = CiCheckJob.progress_rows(nwo, sha, run.workflow_name.to_s)
+      return Ci::CheckProgress.from_check_runs(rows).checks if rows.present?
+
+      Ci::CheckProgress.from_check_runs([self.class.lane_run_row(run)]).checks
+    end
+    private :lane_checks
+
+    # A run row shaped as ONE check. Mirrors Ci::ProgressReader#sibling_lane_row so a
+    # queued lane reads identically on a task card and a ladder card.
+    def self.lane_run_row(run)
+      { "name" => run.workflow_name.to_s, "status" => run.status.to_s,
+        "conclusion" => run.conclusion.to_s, "started_at" => run.run_started_at,
+        "completed_at" => (run.updated_at if run.respond_to?(:terminal?) && run.terminal?) }
     end
 
     # The run row behind this verdict — its start time AND its html_url, in one read
@@ -278,8 +321,10 @@ module Ci
     end
 
     # EVERY suite lane on this rung's own branch and sha — the same set the badge
-    # folds, so the two halves of the card can never disagree about what exists. The
-    # meter counts one of these (`counted_lane`); the rest are named on the card.
+    # folds AND, since 2026-08-26, the same set the meter folds (#progress). The card's
+    # two halves can no longer disagree about what exists OR about what is counted;
+    # #primary_lane names the one that carries the repo's verdict, which is a different
+    # question from what the bar draws.
     #
     # => [{ name:, state: :green/:red/:pending, url: }]
     def lanes

@@ -92,6 +92,25 @@ class CiCheckJobTest < ActiveSupport::TestCase
                     "devnet", "an undeclared workflow is not admitted by the list form"
   end
 
+  # THE ATTEMPT KEY SPANS LANES. Latest-attempt-per-check keyed on the NAME alone was
+  # safe while every fold was single-workflow; a list scope makes two lanes share the
+  # key space, and a same-named job in each would collapse to one check — the higher
+  # run_id winning and the other lane's check vanishing from the count. No two lanes
+  # collide today; this is what keeps that from becoming a silent under-count.
+  test "[unit] two lanes sharing a job name each keep their own check" do
+    nwo = "McRitchie-Studio/studio-engine"
+    CiCheckJob.create!(repo: nwo, head_sha: "s7", run_id: 10, job_id: 71, workflow_name: "Engine CI",
+                       name: "rubocop", status: "completed", conclusion: "success")
+    CiCheckJob.create!(repo: nwo, head_sha: "s7", run_id: 20, job_id: 72, workflow_name: "Consumer CI",
+                       name: "rubocop", status: "completed", conclusion: "failure")
+
+    rows = CiCheckJob.progress_rows(nwo, "s7", ["Engine CI", "Consumer CI"])
+
+    assert_equal 2, rows.size, "same NAME, different LANE — two checks, not one"
+    assert_equal %w[failure success], rows.map { |r| r["conclusion"] }.sort
+    refute rows.first.key?("workflow_name"), "the key rides along for grouping only, never into the fold"
+  end
+
   test "[unit] progress_rows is empty when no job has landed (reader then falls back)" do
     assert_empty CiCheckJob.progress_rows("McRitchie-Studio/mcritchie-studio", "never-seen")
   end
