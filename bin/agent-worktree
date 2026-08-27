@@ -863,6 +863,44 @@ def print_plan(app, task, values, dir = worktree_dir(app, task))
   puts "callback-heavy flows stay on primary http://localhost:#{app.fetch("primary_port")} unless providers are configured for this port."
 end
 
+# ATOMIC BRINGUP — `new` either produces a whole desk or leaves nothing behind.
+#
+# THE DEFECT. `new` is a SEQUENCE: cut the git worktree, allocate a port and a
+# Redis DB into a stack env, write the context marker, provision the test DB. Any
+# step can fail — a taken port, a full Redis band, an abort inside sh, a raise, a
+# Ctrl-C or a SIGTERM between two of them — and until now every earlier step
+# stayed on disk. What was left was a HALF-BUILT DESK: a checkout with a branch
+# and no env, or an env holding a port and a Redis DB that nothing would ever
+# release. Those leak silently, because a desk that looks real is never swept.
+#
+# WHY A REGISTRY AND NOT AN ensure BLOCK. The undos must run in REVERSE and only
+# for the steps that actually ran; an ensure would have to re-derive which of them
+# did, and a rollback that misses a case is itself a leak. Each step registers its
+# own undo the moment it succeeds.
+#
+# EVERY UNDO IS BEST-EFFORT AND NEVER RAISES. A rollback that blows up half way
+# leaves exactly the mess it was called to prevent, and it would also mask the
+# ORIGINAL failure — which is the thing the operator actually needs to read.
+class DeskUnwinder
+  def initialize = @undos = []
+
+  def on_success(label, &undo) = @undos << [label, undo]
+
+  # Reverse order, best-effort, and the caller's original exception is re-raised
+  # by the ensure that owns it — never swallowed here.
+  def unwind!
+    @undos.reverse_each do |label, undo|
+      undo.call
+      warn "  unwound: #{label}"
+    rescue StandardError, SystemExit => e
+      warn "  unwind FAILED for #{label} (#{e.class}: #{e.message}) — continuing"
+    end
+    @undos.clear
+  end
+
+  def commit! = @undos.clear
+end
+
 def ensure_git_worktree(app, task, type)
   primary = app.fetch("repo")
   dir = worktree_dir(app, task)
@@ -4241,13 +4279,43 @@ if $PROGRAM_NAME == __FILE__
     task = clean_slug(raw_task)
     type = maybe_type&.start_with?("--") ? "feat" : (maybe_type || "feat")
     start = ARGV.include?("--start")
-    dir = ensure_git_worktree(app, task, type)
-    values, path = with_worktree_lock do
-      existing = parse_env(stack_env_path(app, task))
-      resolved = existing.empty? ? stack_values(app, task) : local_email_values.merge(existing)
-      [resolved, write_stack_env(app, task, resolved)]
+
+    # ATOMIC FROM HERE. Each step registers its undo the moment it succeeds; any
+    # failure below unwinds them in reverse and leaves no half-built desk. A desk
+    # that ALREADY existed is not ours to destroy — ensure_git_worktree returns
+    # early for that case, so only a worktree WE cut registers an undo.
+    unwinder = DeskUnwinder.new
+    begin
+      pre_existing = Dir.exist?(worktree_dir(app, task))
+      dir = ensure_git_worktree(app, task, type)
+      unless pre_existing
+        unwinder.on_success("git worktree #{dir}") do
+          sh("git", "-C", app.fetch("repo"), "worktree", "remove", "--force", dir, allow_fail: true)
+          sh("git", "-C", app.fetch("repo"), "branch", "-D", "#{type}/#{task}", allow_fail: true)
+        end
+      end
+
+      env_pre_existing = File.exist?(stack_env_path(app, task))
+      values, path = with_worktree_lock do
+        existing = parse_env(stack_env_path(app, task))
+        resolved = existing.empty? ? stack_values(app, task) : local_email_values.merge(existing)
+        [resolved, write_stack_env(app, task, resolved)]
+      end
+      # Deleting the env is what RELEASES the port and the Redis DB it recorded —
+      # they are allocated by reading the env files, so an orphaned env holds both
+      # forever. Only remove one we created.
+      unwinder.on_success("stack env #{path}") { FileUtils.rm_f(path) } unless env_pre_existing
+
+      marker_pre_existing = File.exist?(context_path(dir))
+      write_context_marker(app, task, values, dir)
+      unwinder.on_success("context marker") { FileUtils.rm_f(context_path(dir)) } unless marker_pre_existing
+    rescue StandardError, SystemExit, Interrupt => e
+      warn "new: bringup failed (#{e.class}: #{e.message}) — unwinding"
+      unwinder.unwind!
+      raise
     end
-    write_context_marker(app, task, values, dir)
+    # Past the point of no return: the desk is whole, so the undos are discarded.
+    unwinder.commit!
     puts "worktree ready: #{dir}"
     puts "stack env:      #{path}"
     puts "context:        #{context_path(dir)}"
