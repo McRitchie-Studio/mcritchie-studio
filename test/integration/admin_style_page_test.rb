@@ -70,11 +70,28 @@ class AdminStylePageTest < ActionDispatch::IntegrationTest
   # flagged even with :web3 / :age_gate off), and the walked on-chain entry flow
   # specimen is openable.
   #
-  # THE WALLET SECTION'S HEADING IS NOT PINNED TO ONE STRING, and that is the
-  # point of this comment. It has now been renamed twice — "Web3" -> "Web3
-  # Contest" in engine 0.27.0, and back to "Web3" on 2026-08-25 once Setup Wallet
-  # and the Sign Wallet pair moved into it and the longer name was describing a
-  # subset of its own cards. Pinning either spelling makes this test a DEADLOCK:
+  # THIS SECTION IS NOW SELECTED BY ITS **ID**, not by its heading text.
+  #
+  # studio-engine >= 0.62.x publishes a stable id on every modal-guide subsection
+  # (/tasks/anchor-style-guide-sections): modals-auth, modals-profile,
+  # modals-profile-leveling, modals-web3, modals-contest-entry,
+  # modals-system-status, modals-templates, modals-rewards. They are deliberately
+  # NOT slugs of the headings — they name the SUBJECT and do not move when the
+  # copy does, which is the whole point.
+  #
+  # THE HEADING FALLBACK BELOW IS KEPT ON PURPOSE, and here is when to delete it.
+  # This suite runs in TWO worlds: this repo's CI resolves the PUBLISHED gem,
+  # while consumer-ci pairs an engine PR with the consumer branch matching that
+  # PR's BASE and runs this suite against the engine BRANCH. An id-only assertion
+  # is red in any world resolving an engine older than 0.62.x — the same DEADLOCK
+  # shape the heading pinning had, one level over. So: prefer the id, accept the
+  # heading when the id is absent, and drop the fallback once no supported engine
+  # predates the ids.
+  #
+  # The original reason the heading was not pinned to one string follows, because
+  # it explains why the fallback accepts TWO spellings rather than one. It was
+  # renamed twice — "Web3" -> "Web3 Contest" in engine 0.27.0, and back to "Web3"
+  # on 2026-08-25. Pinning either spelling made this test a DEADLOCK:
   #
   #   · consumer-ci pairs an engine PR with the consumer branch matching the PR's
   #     BASE (.github/workflows/consumer-ci.yml, "THE RULE IS THE RUNG"), so an
@@ -97,11 +114,26 @@ class AdminStylePageTest < ActionDispatch::IntegrationTest
     get admin_style_path
     assert_response :success
 
-    headings = css_select("h3").map { |n| n.text.strip }
+    # PREFER THE ID. It survives a heading rename untouched, which is the defect
+    # this replaces — the wallet section's copy has changed twice and reddened
+    # this lane both times.
+    by_id = css_select("section#modals-web3")
 
-    assert_includes WALLET_SECTION_HEADINGS, (headings & WALLET_SECTION_HEADINGS).first,
-      "expected the wallet/on-chain section heading (one of " \
-      "#{WALLET_SECTION_HEADINGS.inspect}); found: #{headings.inspect}"
+    if by_id.any?
+      assert_equal 1, by_id.length,
+        "modals-web3 must be unique; a duplicated id makes this selector return whichever " \
+        "came first, which looks like it worked"
+      refute_empty by_id.first.text.strip,
+        "the modals-web3 section rendered empty — the id is on the wrong element, or the " \
+        "subsection did not render"
+    else
+      # FALLBACK for an engine older than 0.62.x. See the note above for when
+      # this branch can be deleted.
+      headings = css_select("h3").map { |n| n.text.strip }
+      assert_includes WALLET_SECTION_HEADINGS, (headings & WALLET_SECTION_HEADINGS).first,
+        "no section#modals-web3 (engine < 0.62.x?) AND no known wallet heading (one of " \
+        "#{WALLET_SECTION_HEADINGS.inspect}); found: #{headings.inspect}"
+    end
 
     # This one has NOT been renamed since 0.27.0, so it stays pinned.
     assert_select "h3", { text: "Contest entry & eligibility" },
