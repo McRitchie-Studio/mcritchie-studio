@@ -88,7 +88,13 @@ class EnginePinContractTest < ActiveSupport::TestCase
   test "no local shim redefines a layer tier the resolved engine already ships" do
     engine_css = Pathname(Gem.loaded_specs.fetch("studio-engine").gem_dir)
                  .join("app/assets/tailwind/studio_engine/engine.css")
-    skip "the resolved engine does not ship the layer scale yet" unless engine_css.read.include?("--z-modal:")
+    # ASSERTED, not skipped. A `skip` here would opt this guard out silently and
+    # cost a slot on the test-health ratchet — a test switched off keeps its name
+    # and loses its coverage. The precondition is worth failing on anyway: this
+    # app is pinned to an engine that ships the scale, so an engine that does NOT
+    # means the pin walked backwards, and that is a defect in its own right.
+    assert_includes engine_css.read, "--z-modal:",
+                    "the resolved engine no longer ships the layer scale — the pin went backwards"
 
     app_css = Rails.root.join("app/assets/tailwind/application.css").read
                    .gsub(%r{/\*.*?\*/}m, " ") # comments EXPLAIN the tiers; scanning them would ban documenting this
