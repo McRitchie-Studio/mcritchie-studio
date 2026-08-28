@@ -4546,6 +4546,48 @@ class ReleaseCliTest < Minitest::Test
 
   # A real archive: read the plan, WRITE the archive on the board, reclaim with
   # --yes, then print the summary line.
+  ARCHIVE_ISOLATION_STUB = <<~RUBY.freeze
+    def sweep_artifacts(apply:)
+      payload = { dry_run: !apply, reclaimed_bytes: 1024, reclaimed_human: "1 KB",
+                  repos: 2, worktrees: 3, rotation_missing: [], rotation_unknown: [],
+                  audited_envs: [] }
+      ["==> \#{apply ? 'Reclaimed' : 'Would reclaim'} 1 KB\n" \
+       "clean-artifacts-summary: \#{JSON.generate(payload)}\n", true]
+    end
+    def sweep_docs(apply:)
+      payload = { dry_run: !apply, moved: 1, moved_paths: ["docs/agents/audits/stub.md"],
+                  skipped: [], ledger_rolled: 2, ledger_cutoff: nil }
+      ["==> \#{apply ? 'Retired' : 'Would retire'} 1 doc(s)\n" \
+       "archive-docs-summary: \#{JSON.generate(payload)}\n", true]
+    end
+    def commit_artifact_to_release(repo, paths, message)
+      nil
+    end
+  RUBY
+
+  # EVERY method `archive` uses to reach outside its own process must be stubbed
+  # here. The conductor and reclaim_worktrees always were; sweep_artifacts,
+  # sweep_docs and commit_artifact_to_release were NOT, and `archive` calls all
+  # three with apply: true — so running this test executed bin/clean-artifacts
+  # and bin/archive-docs FOR REAL against the developer's own machine. Observed
+  # 2026-08-28: one `bin/rails test` reclaimed 32.9 MB across 9 repos and 32
+  # worktrees (other agents' live desks among them) and `git mv`d a doc in the
+  # PRIMARY checkout. It is also not idempotent — the second run fails with
+  # "fatal: destination exists" on the move the first run already made, which is
+  # why the suite's failure count moved 6 -> 8 on an unchanged tree.
+  #
+  # commit_artifact_to_release is the sharp one. It is gated on `return if DRY`,
+  # and this test runs with --yes and NO --dry-run, so DRY is false. Its only
+  # other gate is ArtifactCommit.safe_to_commit?, which permits the commit when
+  # the expected docs are the ONLY dirty paths — exactly the state sweep_docs
+  # creates on a CLEAN primary. It then checks out `release` and pushes. What
+  # stopped that on 2026-08-28 was an unrelated dirty working tree; nothing in
+  # the test.
+  #
+  # THE STUBS STAY FAITHFUL. Each returns the real [output, ok] pair carrying the
+  # genuine tagged JSON line, so sweep_summary/docs_summary still parse real
+  # input and the summary assertions still mean something. A stub that emitted
+  # more than the tool does would certify broken parsing as green.
   ARCHIVE_RUN_STUB = <<~RUBY
     def conductor(ruby, read_only: false)
       if read_only
@@ -4558,6 +4600,7 @@ class ReleaseCliTest < Minitest::Test
       apply ? ["reclaimed 3 worktree(s); freed redis DBs: 11, 12, 13", true]
             : ["reclaim candidates:", true]
     end
+    #{ARCHIVE_ISOLATION_STUB}
   RUBY
 
   def test_archive_run_archives_then_reclaims_and_summarizes
@@ -4566,6 +4609,13 @@ class ReleaseCliTest < Minitest::Test
     assert_includes out, "Archived 2 tasks"
     assert_includes out, "reclaimed 3 worktrees"
     assert_includes out, "SHIPPED → 1"
+
+    # The stubs emit the tools' REAL tagged JSON, so these two lines prove
+    # sweep_summary/docs_summary actually parsed it. Without them the fidelity is
+    # decorative and a stub could drift to anything. Previously unasserted.
+    assert_includes out, "Swept 1 KB of regenerable artifacts across 2 repo(s) / 3 worktree(s)"
+    assert_includes out, "Retired 1 frozen doc(s)"
+    assert_includes out, "rolled 2 ledger row(s)"
   end
 
   def test_reclaimed_count_parses_the_agent_worktree_summary
@@ -4941,11 +4991,43 @@ class ReleaseCliTest < Minitest::Test
     def reclaim_worktrees(apply:)
       apply ? ["reclaimed 1 worktree(s); freed redis DBs: 11", true] : ["reclaim candidates:", true]
     end
+    #{ARCHIVE_ISOLATION_STUB}
   RUBY
 
   def test_archive_is_non_blocking_and_never_invokes_retro
     out = run_cli(["--yes"], call: "archive", setup: ARCHIVE_NO_RETRO_STUB)
     assert_includes out, "Archived 1 tasks", "archive completes independently of retro"
+  end
+
+  # THE GUARD THAT KEEPS THE TWO ABOVE HONEST. Stubbing the three escapes fixes
+  # today's leak; it does nothing about the fourth one somebody adds next year.
+  # So poison every shell primitive `bin/release.rb` owns — Open3.capture2e,
+  # Open3.capture3 and its own sh() — and run the same archive. If any un-stubbed
+  # path tries to reach the machine, this RAISES with the command in the message
+  # instead of quietly running it.
+  #
+  # It fails BEFORE the damage rather than detecting it after, which is the whole
+  # point: the obvious guard — diff `git status` around the run — can only report
+  # a mutation that has already happened, and the mutation is the thing we are
+  # preventing. Nothing here writes to disk.
+  SHELL_POISON = <<~RUBY.freeze
+    module Open3
+      def self.capture2e(*cmd, **) = raise("SHELL ESCAPE: Open3.capture2e \#{cmd.inspect}")
+      def self.capture3(*cmd, **)  = raise("SHELL ESCAPE: Open3.capture3 \#{cmd.inspect}")
+    end
+    def sh(*cmd, **) = raise("SHELL ESCAPE: sh \#{cmd.inspect}")
+  RUBY
+
+  def test_archive_reaches_the_machine_only_through_stubbed_seams
+    out = run_cli(["--yes"], call: "archive",
+                  setup: "#{ARCHIVE_RUN_STUB}; #{SHELL_POISON}")
+
+    refute_includes out, "SHELL ESCAPE",
+                    "archive shelled out to the real machine through a seam this " \
+                    "test does not stub. Whatever the message names, add it to " \
+                    "ARCHIVE_ISOLATION_STUB — do not delete this assertion. A " \
+                    "`bin/rails test` run must never mutate the developer's repos."
+    assert_includes out, "Archived 2 tasks", "archive must still complete under the poison"
   end
 
   # --- post-deploy command hook: prepare → QA app, ship → prod app ---------
