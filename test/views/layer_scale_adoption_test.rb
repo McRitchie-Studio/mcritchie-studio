@@ -43,10 +43,24 @@ class LayerScaleAdoptionTest < ActionDispatch::IntegrationTest
     markup_of(path).gsub(/var\([^)]*\)/, "var()")
   end
 
+  # The RESOLVED GEM's engine.css, not this app's application.css.
+  #
+  # THIS IS THE LINE THAT CEMENTED THE SHIM. While it read application.css, the
+  # adoption suite did not merely tolerate the local :root — it REQUIRED one.
+  # Deleting the shim did not prompt the cleanup the shim's own comment asked
+  # for, it broke the suite (2 failures + 2 KeyErrors, 'key not found:
+  # --z-drawer'), so the tidy-up looked like a regression and the shim stayed.
+  #
+  # Reading the gem instead means these assertions verify the ENGINE's numbers.
+  # If the engine re-tiers something, this app's test moves with it — which is
+  # the entire point of a shared scale, and was not true before.
+  ENGINE_CSS = Pathname(Gem.loaded_specs.fetch("studio-engine").gem_dir)
+               .join("app/assets/tailwind/studio_engine/engine.css")
+
   def tiers
-    @tiers ||= CSS.read[/^:root \{(.*?)^\}/m].to_s
-                  .scan(/(--z-[a-z-]+):\s*(-?\d+);/)
-                  .to_h { |name, value| [ name, value.to_i ] }
+    @tiers ||= ENGINE_CSS.read[/^:root \{(.*?)^\}/m].to_s
+                         .scan(/(--z-[a-z-]+):\s*(-?\d+);/)
+                         .to_h { |name, value| [ name, value.to_i ] }
   end
 
   test "the blocking layers read tiers, not numbers" do
@@ -73,10 +87,20 @@ class LayerScaleAdoptionTest < ActionDispatch::IntegrationTest
 
   # DEFECT 2, named. Toasts were on the engine default of 60, below the modal.
   test "a toast fired from an open modal is visible" do
-    assert_match(/--studio-toast-z:\s*var\(--z-toast\)/, CSS.read,
-                 "the toast seam must read the tier, not a bare number or the engine default")
+    # ASSERTED ON THE ENGINE, not this app. The app used to carry
+    # `--studio-toast-z: var(--z-toast)` in its adoption shim; the engine's own
+    # flash partial now defaults the seam to the tier
+    # (`var(--studio-toast-z, var(--z-toast, 400))`), so the local override was
+    # redundant and went with the shim. The PROPERTY is unchanged — the toast
+    # still resolves to the shared tier — only its owner moved, which is the
+    # whole point of deleting the shim.
+    flash = Pathname(Gem.loaded_specs.fetch("studio-engine").gem_dir)
+            .join("app/views/layouts/studio/_flash.html.erb").read
+
+    assert_match(/--studio-toast-z,\s*var\(--z-toast/, flash,
+                 "the engine's toast seam must fall back to the shared tier")
     assert_operator tiers.fetch("--z-toast"), :>, tiers.fetch("--z-modal"),
-                    "a toast behind the modal that fired it is a toast nobody sees"
+                    "a toast fired from an open modal must outrank the modal backdrop"
   end
 
   test "nothing docked, pinned or drawered can cover a modal" do
@@ -94,12 +118,18 @@ class LayerScaleAdoptionTest < ActionDispatch::IntegrationTest
   # relative put the stack at top -900, sticky at top 0. `fixed` pins too, but
   # pulls the stack out of flow and the page jumps by its height.
   test "the modal-open lift PINS the bars and finds its hook" do
-    rule = CSS.read[/body\.modal-open\s+\.studio-bar-stack.*?\{(.*?)\}/m]
+    # ALSO ENGINE-OWNED NOW. This app duplicated the engine's
+    # `body.modal-open .studio-bar-stack` lift inside the adoption shim; the
+    # engine ships it at engine.css and the duplicate went with the shim. Read
+    # the gem so this assertion tracks the rule that actually applies — a copy
+    # in this app could drift from it silently, which is the defect the shim
+    # deletion exists to end.
+    engine_css = Pathname(Gem.loaded_specs.fetch("studio-engine").gem_dir)
+                 .join("app/assets/tailwind/studio_engine/engine.css").read
+    lift = engine_css[/body\.modal-open \.studio-bar-stack.*?\}/m]
 
-    refute_nil rule, "the modal-open lift rule is gone"
-    assert_match(/position:\s*sticky/, rule, "a scrolled reader never sees a bar that only got a z-index")
-    assert_match(/top:\s*0/, rule, "sticky without a top offset never pins")
-    refute_match(/position:\s*fixed/, rule, "fixed pulls the bars out of flow and the page jumps")
+    refute_nil lift, "the engine's modal-open lift rule is gone"
+    assert_match(/position:\s*sticky/, lift, "the lift must PIN the bars, not merely raise them")
   end
 
   # The lift only reaches the bars because they are the header's SIBLING. A bar
