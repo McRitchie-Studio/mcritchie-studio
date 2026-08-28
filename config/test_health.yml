@@ -77,7 +77,23 @@ frozen_size:
   # one `require_relative` and two interpolations of the shared stub, one in each
   # of the two existing stub constants. Those three cannot move: they are the
   # call sites.
-  test/lib/release_cli_test.rb: 7428
+  #
+  # +37 (2026-08-28, poison-release-suite-shell): run_ruby's child env moves from
+  # SessionEnv.neutralized to OutboundSeams.env — the documented NETWORK FLOOR,
+  # which this harness never applied. Proved reachable, not theoretical: with the
+  # old env a child resolves the developer's REAL `gh`. The change itself is one
+  # word; the lines are the WHY (a comment saying what this is NOT — it is
+  # defence in depth behind the per-case `sh` stubs, not a replacement for them,
+  # and PATH sealing cannot catch a script invoked by relative path) plus one
+  # guard test that drives a child through the real runner and asserts on the
+  # outbound RECEIPT rather than the env hash.
+  #
+  # It belongs in THIS file because run_ruby lives here; a separate file would
+  # have to re-implement the runner and would then be testing its own copy.
+  # Measured alternative rejected: making the shell poison the default in run_cli
+  # fails 167 of 299 runs — 134 of the escapes are sandboxed tmpdir `git` and 60
+  # are `ruby`, and the per-case `sh` stubs it clobbers are correct as they are.
+  test/lib/release_cli_test.rb: 7465
   test/lib/dor_check_test.rb: 2745
   test/lib/task_cli_test.rb: 2728
   test/models/task_test.rb: 2266
