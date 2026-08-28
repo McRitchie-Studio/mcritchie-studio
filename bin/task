@@ -1159,6 +1159,23 @@ def session_marker_persona
   persona unless persona.to_s.empty?
 end
 
+# The session's sticky acting-agent SOUL, or "" — the same `.acting-agent`
+# marker `bin/atomic-event heartbeat` writes and `bin/task review-claim` reads to
+# fill the crew seat. Shared here so a build claim and a review claim resolve the
+# same identity from the same place rather than drifting apart.
+def session_acting_agent
+  sid = session_identity.first
+  return "" if sid.nil?
+
+  require_relative "lib/session_markers"
+  SessionMarkers.read(sid, AgentApi.new.projects_dir, ".acting-agent").to_s.strip
+rescue StandardError
+  # Never let identity resolution break a move. A missing marker, an unreadable
+  # store, or a sandbox refusal all mean the same thing here: no soul to name,
+  # so the claim attributes to the session as it did before.
+  ""
+end
+
 def default_block_actor(task, kind)
   return "avi" if kind.to_s == "rework" && task.is_a?(Hash) && task["stage"].to_s == "submitted"
 
@@ -1769,6 +1786,29 @@ when "move"
   # a plain shell / CI run (no session) stamps no actor.
   mover_session = session_identity.first
   event["actor"] = mover_session unless mover_session.nil?
+  # A BUILD CLAIM attributes to the SOUL, not the session hash — because that is
+  # the only actor Task#builder_to_stamp can use. It requires a soul slug
+  # (SOUL_SLUG); a session id never matches one, so every build claim was landing
+  # rule 1 on an unusable value and falling through to rule 3, where `persona`
+  # and `agent_slug` are also unset on a fast-lane build. The result: built_by
+  # blank on every task, and `bin/reviewer-select` refusing on all of them —
+  # measured 2026-08-28, six for six across a full review sitting, with two
+  # separate reviewers reporting the refusal and picking their light by hand.
+  #
+  # The soul comes from the session's sticky `.acting-agent` marker, which
+  # `bin/atomic-event heartbeat <soul>` already writes and which
+  # `bin/task review-claim` ALREADY reads for exactly this purpose. Nothing new
+  # is invented here; the build side simply never consulted what the review side
+  # had. An explicit --actor still wins (parsed below, after this).
+  #
+  # WHAT THIS DOES NOT FIX, deliberately: a session running no soul heartbeat has
+  # no soul to name, so built_by stays blank and reviewer-select still refuses.
+  # That refusal is CORRECT there — no-self-review cannot be proven for an
+  # unidentified builder — and it is why this defaults rather than fabricates.
+  if stage == "building"
+    soul = session_acting_agent.to_s.strip
+    event["actor"] = soul unless soul.empty?
+  end
   steal = false
   # The builder Pokémon's own size estimate, stamped as it CLAIMS the task at
   # `building` (optional — absent is fine). Set as a top-level Task column.
