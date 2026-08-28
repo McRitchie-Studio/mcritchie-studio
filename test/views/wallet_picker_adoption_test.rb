@@ -1,12 +1,19 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require_relative "../support/resolved_view"
 
 # [component] This app renders the ENGINE's Connect Wallet picker, not a copy.
 #
 # It carried its own 107-line fork frozen at turf-monster's pre-0.20 shape: no
 # engine partials, three app-served wallet PNGs, and the mobile double-Phantom
 # defect turf fixed separately. Adopting deletes all of it.
+#
+# The "is this a local shadow?" predicate lives in test/support/resolved_view.rb,
+# with the reasoning for its exact shape. This file used to carry a private copy.
+# Two copies is how one of them drifts back to `identifier.include?("/gems/")` —
+# the assertion that red-sealed a gem publish — so there is now one, and the
+# modal-host adoption reads the same one.
 class WalletPickerAdoptionTest < ActionDispatch::IntegrationTest
   LAYOUT = Rails.root.join("app/views/layouts/application.html.erb")
 
@@ -34,13 +41,12 @@ class WalletPickerAdoptionTest < ActionDispatch::IntegrationTest
     # release tip a gem publish would push, which is a consumer assertion
     # red-sealing the PRODUCER. Both install modes are legitimate; a local fork
     # is not, so that is what the assertion names.
-    template = ApplicationController.new.lookup_context
-                                    .find("wallet_connect", ["studio/modals"], true)
+    identifier = ResolvedView.resolve("wallet_connect", "studio/modals")
 
-    assert shadow_free?(template.identifier),
+    assert ResolvedView.shadow_free?(identifier),
            "the picker must resolve to the engine, not to a local file under " \
            "#{Rails.root.join('app/views')} — a shadowing fork is exactly what " \
-           "this test exists to catch (resolved: #{template.identifier})"
+           "this test exists to catch (resolved: #{identifier})"
   end
 
   # Both install modes are legitimate, and the predicate above must accept BOTH.
@@ -55,14 +61,14 @@ class WalletPickerAdoptionTest < ActionDispatch::IntegrationTest
     path_checkout = "/home/runner/work/studio-engine/studio-engine/studio" \
                     "/app/views/studio/modals/_wallet_connect.html.erb"
 
-    assert shadow_free?(gem_install), "a gem install must pass"
-    assert shadow_free?(path_checkout),
+    assert ResolvedView.shadow_free?(gem_install), "a gem install must pass"
+    assert ResolvedView.shadow_free?(path_checkout),
            "a path checkout must pass — asserting on /gems/ is what broke the " \
            "engine's own release"
 
     # ...and the predicate must still reject the thing it exists to reject.
     local_fork = Rails.root.join("app/views/studio/modals/_wallet_connect.html.erb").to_s
-    refute shadow_free?(local_fork), "a local fork must still fail"
+    refute ResolvedView.shadow_free?(local_fork), "a local fork must still fail"
   end
 
   test "the wallet PNGs the engine sprite replaced are deleted" do
@@ -88,13 +94,4 @@ class WalletPickerAdoptionTest < ActionDispatch::IntegrationTest
     refute_includes LAYOUT.read, %(render "studio/solana/phantom_deeplink"),
                     "rendering the deep link without a declared cluster signs against devnet"
   end
-
-  private
-
-  # The picker must not resolve to a file this app owns. Deliberately NOT
-  # "is it under /gems/": that names an install mode rather than the defect.
-  def shadow_free?(identifier)
-    !identifier.start_with?(Rails.root.join("app/views").to_s)
-  end
-
 end
