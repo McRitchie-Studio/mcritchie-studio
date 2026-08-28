@@ -46,7 +46,7 @@ allocated port, claims the task (`move building`), and preflights:
 
 ```bash
 cd /Users/alex/projects/mcritchie-studio
-bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> \
+bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> --agent <soul> \
   --shape <shape> --risk <tags> --accept "criterion" --test "[unit] ..."
 ```
 
