@@ -7,12 +7,21 @@
     Two facts share each segment, and they do NOT share a channel:
 
       COLOUR — WHERE THE WORK IS: emerald moved through, amber sitting here now
-               (the count says how much), faded not this far, rose CI FAILED here.
+               (the count says how much), faded not this far, rose CI FAILED here —
+               plus an amber OUTLINE where nothing sits but the suite is running.
       GLYPH  — WHAT CI SAID: ✓ green, spinner running, ✗ failed, and NOTHING when
                nothing was ingested. An absence must never wear the pass glyph.
 
-    Everything is precomputed by Ci::AppLadder::Card#track; this partial draws, it
-    does not derive.
+    THE AMBER WASH AND THE AMBER OUTLINE ARE NOT THE SAME CLAIM, and the difference is
+    only the fill: a wash says work is PARKED on this rung, an outline says a suite is
+    merely RUNNING about it. Nothing ever parks at `main`, so a wash there would draw a
+    state the board cannot hold — and e2e/app_ladder_row.spec.js enforces exactly that,
+    asserting `bg-amber-500` only ever appears on `data-progress='here'`.
+
+    Everything is precomputed by Ci::AppLadder::Card#track and resolved to ONE tone name
+    by app_ladder_segment_tone; this partial draws, it does not derive. `data-tone` is
+    that name, stamped from the same call the classes come from, so the attribute a test
+    reads and the colour a viewer sees can never drift.
 
     Locals:
       card    - Ci::AppLadder::Card
@@ -26,21 +35,23 @@
      aria-label="<%= app_ladder_suite_summary(card) %>">
   <% card.track.each do |node| %>
     <% tone = app_ladder_segment_tone(node) %>
+    <% classes = app_ladder_tone_classes(tone) %>
     <% glyph = app_ladder_rung_glyph(node[:state]) %>
     <% count = compact ? nil : app_ladder_rung_count(node) %>
-    <div class="relative flex-1 min-w-0 overflow-hidden rounded border <%= tone[:border] %> bg-inset"
+    <div class="relative flex-1 min-w-0 overflow-hidden rounded border <%= classes[:border] %> bg-inset"
          data-test="app-ladder-rung"
          data-branch="<%= node[:branch] %>"
          data-state="<%= node[:state] %>"
+         data-tone="<%= tone %>"
          data-progress="<%= node[:progress] %>"
          data-filled="<%= node[:filled] %>"
          data-parked="<%= node[:parked] %>"
          title="<%= app_ladder_segment_title(node) %>">
       <%# A TINT, never a solid block — the label rides on top of it. Same 15/30 split
           the release meter measured at 5.3:1 or better in both themes. %>
-      <div class="absolute inset-0 <%= tone[:fill] %> opacity-15 dark:opacity-30"
+      <div class="absolute inset-0 <%= classes[:fill] %> opacity-15 dark:opacity-30"
            data-test="app-ladder-rung-fill"></div>
-      <div class="relative flex items-center justify-center gap-1 <%= compact ? "px-1 py-0.5" : "px-1.5 py-1" %> <%= tone[:text] %>">
+      <div class="relative flex items-center justify-center gap-1 <%= compact ? "px-1 py-0.5" : "px-1.5 py-1" %> <%= classes[:text] %>">
         <% if glyph == :spinner %>
           <svg class="h-2 w-2 shrink-0 animate-spin motion-reduce:animate-none" fill="none" viewBox="0 0 24 24" aria-hidden="true">
             <circle class="opacity-25" cx="12" cy="12" r="9" stroke="currentColor" stroke-width="3"/>

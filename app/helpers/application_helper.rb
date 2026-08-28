@@ -1283,6 +1283,42 @@ module ApplicationHelper
 
   APP_LADDER_FADED = { fill: "bg-transparent", text: "text-muted opacity-60", border: "border-subtle" }.freeze
 
+  # A SUITE RUNNING ON A RUNG THE WORK HAS NOT REACHED — amber like every other live
+  # thing on this card, but an OUTLINE rather than a wash.
+  #
+  # The transparent fill is the entire difference from `:here`, and it is carrying the
+  # one fact the two states do not share: parked work is ON this rung, a running suite
+  # is merely ABOUT it. Nothing ever parks at `main` (Ci::AppLadder::PARKED_STAMP omits
+  # it), so an amber wash there would draw a state the board cannot hold — which is why
+  # this could not simply reuse the parked tone.
+  APP_LADDER_RUNNING = { fill: "bg-transparent", text: "text-amber-700 dark:text-amber-300",
+                         border: "border-amber-500/40" }.freeze
+
+  # THE SEGMENT'S FIVE TONES, under their OWN names — and the separate vocabulary is
+  # the point, not tidiness.
+  #
+  # The segment used to reach straight into APP_LADDER_TONES, borrowing its `:pending`
+  # key to mean "work is parked here". One hash then answered to two vocabularies: a CI
+  # verdict for the lane legend, a progress position for the track. That is how the two
+  # halves of ONE CARD came to disagree about one word — a lane chip painting `:pending`
+  # AMBER a few lines above a segment painting the identical state FADED (measured
+  # 2026-08-28, mcritchie-studio `main` mid-ship). Naming the segment's tones for what
+  # they mean on the track makes the borrow impossible to write again.
+  APP_LADDER_SEGMENT_TONES = {
+    red: APP_LADDER_TONES[:red],
+    passed: APP_LADDER_TONES[:green],
+    here: APP_LADDER_TONES[:pending],
+    running: APP_LADDER_RUNNING,
+    faded: APP_LADDER_FADED
+  }.freeze
+
+  # The classes for one resolved tone name. Split from the resolution (below) so the
+  # view can stamp the NAME as `data-tone` and paint from the SAME answer — an
+  # attribute a test reads and classes a viewer sees that cannot drift apart.
+  def app_ladder_tone_classes(name)
+    APP_LADDER_SEGMENT_TONES.fetch(name.to_sym, APP_LADDER_FADED)
+  end
+
   # THE ROW'S RIGHT-EDGE FADE — a MASK, so the content itself falls away.
   #
   # Not a gradient overlay: an overlay has to be painted in the page's background
@@ -1335,12 +1371,20 @@ module ApplicationHelper
   # The three rungs drawn as one connected path instead of three separate badges.
   # Each node carries TWO facts that the old badge collapsed into one colour:
   #
-  #   FILL      — has work reached this rung? (Ci::AppLadder::Card#track)
-  #   RING/ICON — what did CI say about this rung? (the rung's own state)
+  #   COLOUR — has work reached this rung? (Ci::AppLadder::Card#track)
+  #   GLYPH  — what did CI say about this rung? (the rung's own state)
   #
-  # Keeping them apart is the point. A green ring on an unfilled node reads "passing
+  # Keeping them apart is the point. A green GLYPH on an uncoloured node reads "passing
   # and empty", which is what `release` looks like between sweeps; one colour could
   # never say both, so the row could not answer "where is this app in the process".
+  #
+  # (This said FILL / RING-ICON until 2026-08-28. There has never been a ring in the
+  # markup — the CI verdict has always been the glyph — and the wrong word is worth
+  # correcting rather than leaving for the next reader to reconcile against the view.)
+  #
+  # The two channels are not perfectly separate, and the exceptions are deliberate:
+  # a RED rung takes the colour (nothing else on the card is that urgent) and a RUNNING
+  # one takes it from `faded` only. Both are argued at #app_ladder_segment_tone.
 
   # The card's position, as the one word printed beside the repo name.
   APP_LADDER_POSITION_LABELS = {
@@ -1440,27 +1484,40 @@ module ApplicationHelper
   end
 
 
-  # THE SEGMENT'S COLOUR — PROGRESS, not the CI verdict.
+  # THE SEGMENT'S TONE — mostly PROGRESS, resolved to one word. Returns the NAME; the
+  # classes come from #app_ladder_tone_classes, and the view stamps both.
   #
-  #   emerald   :passed     — the work moved through this rung (or arrived, at `main`)
-  #   amber     :here       — the work is sitting on this rung right now
-  #   faded     :unreached  — it has not got this far
-  #   rose                  — CI FAILED here, and that is the one thing loud enough to
-  #                           take the colour back off progress. A red rung is the only
-  #                           state the operator has to act on before anything else
-  #                           moves, so it must not be legible only as a small glyph.
+  # In precedence order, which is the whole of the method:
   #
-  # Everything else CI has to say — passing, running, never built — rides the glyph
-  # inside the segment (app_ladder_rung_glyph), and the check-by-check detail rides the
-  # meter above. Three layers, each answering a different question about the same rung.
+  #   :red      — CI FAILED here. Loud enough to take the colour back off progress,
+  #               because a red rung is the one state the operator has to act on before
+  #               anything else moves; it must not be legible only as a small glyph.
+  #   :passed   — the work moved through this rung (or arrived, at `main`). Emerald.
+  #   :here     — the work is sitting on this rung right now. Amber wash.
+  #   :running  — nothing here, but this branch's suite is IN FLIGHT. Amber outline.
+  #   :faded    — it has not got this far, and nothing is happening about it.
+  #
+  # WHY `:running` LIFTS ONLY THE FADED CASE, and not `:passed` too. Faded is the one
+  # tone that CLAIMS SOMETHING FALSE about a running suite: it says "nothing to see
+  # here". Emerald and amber already carry colour and already carry a true fact, and
+  # repainting an emerald rung would trade "the work got past this" for news the spinner
+  # is already delivering. So the rule is narrow on purpose — lift the claim that is
+  # wrong, leave the ones that are right.
+  #
+  # Found on the deployments page 2026-08-28: `main` mid-ship drew a 60%-opacity spinner
+  # on a faded segment. The only live thing on the card was the dimmest thing on it, and
+  # the lane legend a few lines above was painting that same `:pending` amber.
+  #
+  # Everything else CI has to say — passing, never built — still rides the glyph inside
+  # the segment (app_ladder_rung_glyph), and the check-by-check detail rides the meter
+  # above. Three layers, each answering a different question about the same rung.
   def app_ladder_segment_tone(node)
-    return APP_LADDER_TONES[:red] if %i[red conflicted].include?(node[:state])
+    return :red if %i[red conflicted].include?(node[:state].to_sym)
+    return :passed if node[:progress] == :passed
+    return :here if node[:progress] == :here
+    return :running if node[:state].to_sym == :pending
 
-    case node[:progress]
-    when :passed then APP_LADDER_TONES[:green]
-    when :here   then APP_LADDER_TONES[:pending]
-    else APP_LADDER_FADED
-    end
+    :faded
   end
 
   # THE GLYPH — the CI verdict the colour no longer carries.
