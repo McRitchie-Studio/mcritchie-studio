@@ -18,16 +18,51 @@ class WalletPickerAdoptionTest < ActionDispatch::IntegrationTest
            "the forked picker file must be gone, not merely unregistered"
   end
 
-  test "the registered picker RESOLVES to the gem" do
+  test "the registered picker RESOLVES outside this app" do
     # The assertion that actually matters. This engine is non-isolated, so an app
     # view at the same path shadows it — which is how the host fork went
     # unnoticed for months. Registering the engine PATH proves nothing on its
     # own; resolving it does.
+    #
+    # ASSERT THE SHADOW IS ABSENT, NOT THE INSTALL MODE. This assertion used to
+    # read `assert_includes template.identifier, "/gems/"`, which encoded HOW the
+    # engine happens to be installed rather than WHAT must be true. That passes
+    # here, where studio-engine resolves from RubyGems — and can NEVER pass in
+    # studio-engine's own consumer-CI lane, which bundles the engine as a PATH
+    # checkout and resolves the same correct partial from
+    # /home/runner/work/studio-engine/studio-engine/studio/. It went red on the
+    # release tip a gem publish would push, which is a consumer assertion
+    # red-sealing the PRODUCER. Both install modes are legitimate; a local fork
+    # is not, so that is what the assertion names.
     template = ApplicationController.new.lookup_context
                                     .find("wallet_connect", ["studio/modals"], true)
 
-    assert_includes template.identifier, "/gems/",
-                    "the picker must come from the gem, not a local file"
+    assert shadow_free?(template.identifier),
+           "the picker must resolve to the engine, not to a local file under " \
+           "#{Rails.root.join('app/views')} — a shadowing fork is exactly what " \
+           "this test exists to catch (resolved: #{template.identifier})"
+  end
+
+  # Both install modes are legitimate, and the predicate above must accept BOTH.
+  # These two identifiers are not invented: the first is what this app's own CI
+  # resolves (studio-engine from RubyGems), the second is the literal path from
+  # the studio-engine consumer-CI run that red-sealed the 0.65.1 gem publish
+  # (the engine bundled as a path checkout). The previous assertion accepted the
+  # first and rejected the second, which is the whole defect — so pin both.
+  test "the resolution check accepts a gem install AND a path checkout" do
+    gem_install = "/opt/homebrew/lib/ruby/gems/3.3.0/gems/studio-engine-0.65.0" \
+                  "/app/views/studio/modals/_wallet_connect.html.erb"
+    path_checkout = "/home/runner/work/studio-engine/studio-engine/studio" \
+                    "/app/views/studio/modals/_wallet_connect.html.erb"
+
+    assert shadow_free?(gem_install), "a gem install must pass"
+    assert shadow_free?(path_checkout),
+           "a path checkout must pass — asserting on /gems/ is what broke the " \
+           "engine's own release"
+
+    # ...and the predicate must still reject the thing it exists to reject.
+    local_fork = Rails.root.join("app/views/studio/modals/_wallet_connect.html.erb").to_s
+    refute shadow_free?(local_fork), "a local fork must still fail"
   end
 
   test "the wallet PNGs the engine sprite replaced are deleted" do
@@ -53,4 +88,13 @@ class WalletPickerAdoptionTest < ActionDispatch::IntegrationTest
     refute_includes LAYOUT.read, %(render "studio/solana/phantom_deeplink"),
                     "rendering the deep link without a declared cluster signs against devnet"
   end
+
+  private
+
+  # The picker must not resolve to a file this app owns. Deliberately NOT
+  # "is it under /gems/": that names an install mode rather than the defect.
+  def shadow_free?(identifier)
+    !identifier.start_with?(Rails.root.join("app/views").to_s)
+  end
+
 end
