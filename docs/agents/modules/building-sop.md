@@ -46,7 +46,7 @@ allocated port, claims the task (`move building`), and preflights:
 
 ```bash
 cd /Users/alex/projects/mcritchie-studio
-bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> \
+bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> --agent <soul> \
   --shape <shape> --risk <tags> --accept "criterion" --test "[unit] ..."
 ```
 
@@ -55,20 +55,21 @@ bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> \
   `feat/<slug>`. Pass `--slug` only to override.
 - **Each `--accept` bullet = 5-12 words.** Verbose detail/reasoning goes in
   `--agent-context "…"` (free-form, agent-to-agent).
-- **If you are a SOUL (Carl, Shannon, Jasper, Steffon, Alex), stamp yourself as
-  the builder** right after `begin`:
+- **Forgot `--agent` on `begin`? Stamp yourself after the fact:**
 
   ```bash
   bin/task move <slug> building --actor <your-soul>
   ```
 
-  It writes `devops.built_by`, which is what keeps you off the review of your own
-  PR. It is safe to run on a task **already** at `building` — the stamp rides the
-  build CLAIM, not the transition — and re-running it is idempotent. Skip it and
+  This is the RETROFIT path, not the primary one: `--agent <soul>` on `begin`
+  above already records the builder, and it is the flag the recipe carries. Both
+  write `devops.built_by`, which is what keeps you off the review of your own PR.
+  Safe on a task **already** at `building` — the stamp rides the build CLAIM, not
+  the transition — and re-running it is idempotent. With neither flag,
   `bin/reviewer-select` has no builder to exclude, so it **refuses to pick
   reviewers at all** and the review stalls until someone states the fact by hand.
-  A delegated subagent runs under the PARENT session id, so this flag is the only
-  thing that records the soul who actually built the change.
+  A delegated subagent runs under the PARENT session id, so a soul building under
+  another session's id must name itself through one of these two flags.
 - **Classify the shape** — it selects the tests you must write
   (`config/feature_shapes.yml`): `ui-only` · `ui+db` · `backend` · `library` ·
   `onchain` · `onchain-vertical` · `docs` · `test-only`.

@@ -64,9 +64,28 @@
 
     <%# Modal host (engine) + the app's modal partials. Powers the Connect-Wallet
         picker and the "check your inbox" magic-link confirmation. %>
+    <%# NOT rendering studio/solana/phantom_deeplink yet, and this is deliberate.
+        The engine now ships the Phantom mobile round trip, but it signs against
+        the cluster declared on <body data-solana-cluster>, and this app declares
+        none. A missing value defaults to devnet: a user on a mainnet wallet
+        would get what reads as a rejected signature, with nothing in the log.
+        turf-monster resolves it from Solana::Config — which is NOT in the shared
+        gem, it is turf's own app/services/solana/config.rb, so there is no
+        expression to copy here.
+        The picker is safe without it: canDeepLink gates the mobile branch on
+        startPhantomDeepLink EXISTING, so with no deep link this app keeps the
+        install row it has today rather than painting a dead button.
+        Rendering these two lines is all that is needed once the cluster question
+        is answered — see /tasks/declare-hub-solana-cluster. %>
     <%= render "studio/modals/host" do %>
+      <%# The ENGINE's picker, not a local copy. This app carried its own 107-line
+          fork frozen at turf-monster's pre-0.20 shape: it rendered no engine
+          partials, pointed at three app-served wallet PNGs, and had the mobile
+          double-Phantom defect turf fixed in single-mobile-phantom-row.
+          No locals: this app needs no pre-connect consent slot, and its back
+          button just closes — both engine defaults. %>
       <template x-if="$store.modals.current().id === 'wallet-connect'">
-        <%= render "modals/wallet_connect" %>
+        <%= render "studio/modals/wallet_connect" %>
       </template>
       <template x-if="$store.modals.current().id === 'check-inbox'">
         <%= render "modals/check_inbox" %>
