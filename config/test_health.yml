@@ -63,7 +63,21 @@ frozen_size:
   # The new PURE decisions went to other files, as this ceiling asks:
   # deploy_target? and missing_deploy_commands are tested in
   # test/models/release/ship_sequence_test.rb.
-  test/lib/release_cli_test.rb: 7425
+  #
+  # +3 (2026-08-28, suite-must-not-mutate-repos): a NET STRUCTURAL WIN that costs
+  # three lines here. The two archive tests stubbed the conductor and the worktree
+  # reclaim but not sweep_artifacts, sweep_docs or commit_artifact_to_release, and
+  # `archive` calls all three with apply: true — so `bin/rails test` ran
+  # bin/clean-artifacts and bin/archive-docs FOR REAL against the developer's
+  # machine (32.9 MB reclaimed across 9 repos / 32 worktrees, and a git mv in the
+  # PRIMARY checkout the next run then died on). The fix went where this ceiling
+  # asks: the shared stub moved OUT to test/support/release_archive_seams.rb and
+  # the new guard to test/lib/release_archive_isolation_test.rb — 69 lines
+  # relocated, two new files, nothing appended at the bottom. What remains here is
+  # one `require_relative` and two interpolations of the shared stub, one in each
+  # of the two existing stub constants. Those three cannot move: they are the
+  # call sites.
+  test/lib/release_cli_test.rb: 7428
   test/lib/dor_check_test.rb: 2745
   test/lib/task_cli_test.rb: 2728
   test/models/task_test.rb: 2266
