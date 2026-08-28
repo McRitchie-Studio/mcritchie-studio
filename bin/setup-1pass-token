@@ -1,5 +1,15 @@
 #!/bin/zsh
-# bin/setup-1pass-token — install a 1Password service account token into ~/.zprofile
+# bin/setup-1pass-token — install a 1Password service account token
+#
+#   bin/setup-1pass-token           # AGENT token  -> ~/.zprofile (every shell)
+#   bin/setup-1pass-token --admin   # ADMIN token  -> ~/.zprofile.admin (opt-in)
+#
+# TWO TOKENS, AND THE SECOND ONE IS DELIBERATELY NOT AUTO-LOADED. The admin
+# token reads the vault holding github.mcritchie-deployer and other admin
+# credentials. Putting it in ~/.zprofile would hand it to every background agent
+# shell, which is exactly the isolation this design exists to create: a build
+# lane must be STRUCTURALLY unable to read an admin credential, not merely
+# discouraged from it. Admin lanes source ~/.zprofile.admin explicitly.
 #
 # Usage:
 #   1. Copy your service account token to the clipboard (Cmd+C from 1Password)
@@ -23,7 +33,14 @@
 
 set -e
 
+LANE="agent"
+VAR="OP_SERVICE_ACCOUNT_TOKEN"
 PROFILE="$HOME/.zprofile"
+if [[ "${1:-}" == "--admin" ]]; then
+  LANE="admin"
+  VAR="OP_ADMIN_SERVICE_ACCOUNT_TOKEN"
+  PROFILE="$HOME/.zprofile.admin"
+fi
 
 if ! command -v op >/dev/null 2>&1; then
   echo "ERROR: 1Password CLI (op) is not installed."
@@ -52,12 +69,24 @@ if [[ "$TOKEN" != ops_* ]]; then
 fi
 
 touch "$PROFILE"
-# Remove any prior OP_SERVICE_ACCOUNT_TOKEN line so re-runs replace cleanly.
-/usr/bin/sed -i '' '/OP_SERVICE_ACCOUNT_TOKEN/d' "$PROFILE"
-echo "export OP_SERVICE_ACCOUNT_TOKEN=$TOKEN" >> "$PROFILE"
+# Remove any prior line for THIS variable so re-runs replace cleanly.
+#
+# ANCHORED ON PURPOSE. The old pattern was an unanchored /OP_SERVICE_ACCOUNT_TOKEN/,
+# which also matches OP_ADMIN_SERVICE_ACCOUNT_TOKEN as a SUBSTRING — so reinstalling
+# the agent token would have silently deleted the admin one, and the failure would
+# have surfaced later, in the deploy lane, far from its cause.
+[[ -f "$PROFILE" ]] || : > "$PROFILE"
+/usr/bin/sed -i '' "/^export ${VAR}=/d" "$PROFILE"
+echo "export ${VAR}=$TOKEN" >> "$PROFILE"
+/bin/chmod 600 "$PROFILE"
 chmod 600 "$PROFILE"
 
-echo "Token installed in $PROFILE (length: ${#TOKEN} chars)"
+echo "${LANE} token installed in $PROFILE (length: ${#TOKEN} chars)"
+if [[ "$LANE" == "admin" ]]; then
+  echo ""
+  echo "NOT auto-loaded, by design. Admin lanes opt in with:"
+  echo "  source ~/.zprofile.admin"
+fi
 echo ""
 echo "Verifying with 'op vault list'..."
 export OP_SERVICE_ACCOUNT_TOKEN="$TOKEN"

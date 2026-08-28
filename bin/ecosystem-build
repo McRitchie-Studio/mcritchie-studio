@@ -249,7 +249,8 @@ phase_secrets() {
     echo "  ${BOLD}The 1Password service token is the key to everything else.${RESET}"
     echo "  To set it up:"
     echo "    1. Sign in to https://start.1password.com as alex@mcritchie.studio"
-    echo "    2. Developer Tools → Service Accounts → New (grant read on 'agents' vault)"
+    echo "    2. Developer Tools → Service Accounts → New (grant read on the agent vault,"
+    echo "       default 'agents-studio' — see bin/lib/op_vaults.rb)"
     echo "    3. Copy the token (ops_...) to your clipboard"
     echo "    4. Run: ${BOLD}bin/setup-1pass-token${RESET}"
     echo "    5. Re-run: ${BOLD}bin/ecosystem-build${RESET}"
@@ -257,7 +258,7 @@ phase_secrets() {
   fi
 
   if op vault list 2>/dev/null | grep -qw agents; then
-    log_ok "OP_SERVICE_ACCOUNT_TOKEN" "set, 'agents' vault visible"
+    log_ok "OP_SERVICE_ACCOUNT_TOKEN" "set, agent vault visible"
   else
     log_fail "OP token set but can't read 'agents' vault" "check the token's vault grants"
     return 1
@@ -266,7 +267,7 @@ phase_secrets() {
   # Heroku API key (auto-pull from 1P if not set)
   if [ -z "${HEROKU_API_KEY:-}" ]; then
     log_act "fetching agent.heroku from 1Password"
-    HEROKU_API_KEY=$(op item get "agent.heroku" --vault agents --format json 2>/dev/null \
+    HEROKU_API_KEY=$(op item get "agent.heroku" --vault "${MCR_OP_VAULT_AGENT:-agents-studio}" --format json 2>/dev/null \
       | jq -r '.urls[]? | select(.label == "api key") | .href')
     if [ -z "$HEROKU_API_KEY" ]; then
       log_fail "agent.heroku item missing or 'api key' URL field empty"

@@ -3,6 +3,7 @@
 require "json"
 require "net/http"
 require "uri"
+require_relative "op_vaults"
 
 # TaskBoard — the shared TRANSPORT under the task-board CLI stack (bin/task,
 # bin/dor-check, bin/reviewer-select, bin/session-preflight, bin/devops-cycle).
@@ -38,7 +39,10 @@ require "uri"
 # had to bypass `api` entirely to get it. `rows!` is that guarantee, shared.
 module TaskBoard
   OP = "/opt/homebrew/bin/op"
-  SECRET_REF = "op://agents/Agent API Secret/AGENT_API_SECRET"
+  # The board secret is a SHARED agent credential, not an admin one — it
+  # resolves in the agent vault. See bin/lib/op_vaults.rb for why the vault
+  # name is no longer written down in eleven places.
+  SECRET_REF = OpVaults.ref("Agent API Secret", "AGENT_API_SECRET")
 
   # Raised by the STRICT readers (`parse_body!`, `rows!`) for every answer a
   # caller cannot trust: an empty body, a body that is not JSON, a payload that
