@@ -186,6 +186,84 @@ class AppLadderCardTest < ActionView::TestCase
     end
   end
 
+  # --- the tone: A RUNNING SUITE IS NOT NOTHING -----------------------------
+  #
+  # `data-tone` is the segment's resolved colour as ONE word, stamped by the view from
+  # the same call that picks the classes — so a test reads what a viewer sees rather
+  # than a Tailwind class that could be swapped underneath it.
+  #
+  # FADED IS A CLAIM, and that is the whole of this section. It says "nothing to see
+  # here", and a suite mid-run contradicts it. Measured on the deployments page
+  # 2026-08-28: mcritchie-studio `main` drew a 60%-opacity spinner on a faded segment
+  # while a production ship was in flight — the only live thing on the card rendered as
+  # the dimmest thing on it.
+
+  test "a running suite on an unreached rung is amber, not faded" do
+    render partial: "tasks/app_ladder_card",
+           locals: { card: card(%i[green green pending], parked: [1, 0, 0]) }
+
+    assert_select "[data-test='app-ladder-rung'][data-branch='main'][data-progress='unreached'][data-tone='running']", 1
+    assert_select "[data-test='app-ladder-rung'][data-branch='main'][data-tone='faded']", 0
+  end
+
+  # AND IT MUST NOT READ AS PARKED WORK. Both are amber — every live thing on this card
+  # is — so the FILL is what separates them: parked work washes the segment, a running
+  # suite only outlines it. Nothing ever parks at `main` (PARKED_STAMP omits it), so an
+  # amber wash there would draw a state the board cannot hold.
+  test "a running rung outlines where a parked rung washes" do
+    render partial: "tasks/app_ladder_card",
+           locals: { card: card(%i[pending green pending], parked: [2, 0, 0]) }
+
+    assert_select "[data-test='app-ladder-rung'][data-branch='accepted'][data-tone='here']" do
+      assert_select "[data-test='app-ladder-rung-fill'].bg-amber-500", 1
+    end
+    assert_select "[data-test='app-ladder-rung'][data-branch='main'][data-tone='running']" do
+      assert_select "[data-test='app-ladder-rung-fill'].bg-amber-500", 0,
+                    "a running rung holds no work — it must not wear the parked wash"
+    end
+  end
+
+  # THE CARD MUST NOT CONTRADICT ITSELF. app_ladder_rung_tone(:pending) — the lane
+  # legend a few lines above the track — has always painted this exact state amber. The
+  # segment answering "faded" for it was the card's two halves disagreeing about one
+  # word, in one glance.
+  test "a running segment wears the amber the lane legend gives that same state" do
+    assert_equal app_ladder_rung_tone(:pending)[:text],
+                 app_ladder_tone_classes(:running)[:text],
+                 "the legend chip and the segment must speak one amber"
+  end
+
+  # PROGRESS STILL OUTRANKS A RUNNING SUITE. A rung the work has MOVED THROUGH stays
+  # emerald while its suite re-runs: the spinner already carries that news, and
+  # repainting the segment would drop the fact that the work got past it. Only the
+  # faded case is lifted, because faded is the only tone that claims nothing.
+  test "a rung the work passed stays emerald while its suite re-runs" do
+    render partial: "tasks/app_ladder_card",
+           locals: { card: card(%i[pending green green]) }
+
+    assert_select "[data-test='app-ladder-rung'][data-branch='accepted'][data-state='pending'][data-tone='passed']", 1
+    assert_select "[data-test='app-ladder-rung'][data-branch='accepted'] [data-test='app-ladder-rung-fill'].bg-emerald-500", 1
+  end
+
+  # RED OUTRANKS THE LOT, unchanged — including on a rung that is both parked and
+  # running. A failing rung must be actionable before anything else moves.
+  test "a failing rung stays rose even when it is parked and running elsewhere" do
+    render partial: "tasks/app_ladder_card",
+           locals: { card: card(%i[red pending pending], parked: [1, 0, 0]) }
+
+    assert_select "[data-test='app-ladder-rung'][data-branch='accepted'][data-tone='red']", 1
+    assert_select "[data-test='app-ladder-rung'][data-branch='release'][data-tone='running']", 1
+  end
+
+  # A rung with NOTHING ingested keeps the faded tone it earned: an absence is not a
+  # suite in flight, and lifting it would put the live colour on a rung nobody built.
+  test "a not_built rung stays faded" do
+    render partial: "tasks/app_ladder_card",
+           locals: { card: card(%i[green not_built not_built], parked: [1, 0, 0]) }
+
+    assert_select "[data-test='app-ladder-rung'][data-branch='main'][data-tone='faded']", 1
+  end
+
   # --- position and the at-rest collapse ------------------------------------
 
   test "a card names its position in the devops process" do
