@@ -26,6 +26,7 @@ require "fileutils" # lock_dir cleanup (Minitest.after_run remove_entry)
 require "English"   # $CHILD_STATUS — the gate-lock queue test reaps its own child
 require_relative "release_cli_stubs"
 require_relative "../support/session_env"
+require_relative "../support/release_archive_seams"
 
 class ReleaseCliTest < Minitest::Test
   WRAPPER = File.expand_path("../../bin/release", __dir__)
@@ -4558,6 +4559,7 @@ class ReleaseCliTest < Minitest::Test
       apply ? ["reclaimed 3 worktree(s); freed redis DBs: 11, 12, 13", true]
             : ["reclaim candidates:", true]
     end
+    #{ReleaseArchiveSeams::ISOLATION_STUB}
   RUBY
 
   def test_archive_run_archives_then_reclaims_and_summarizes
@@ -4941,6 +4943,7 @@ class ReleaseCliTest < Minitest::Test
     def reclaim_worktrees(apply:)
       apply ? ["reclaimed 1 worktree(s); freed redis DBs: 11", true] : ["reclaim candidates:", true]
     end
+    #{ReleaseArchiveSeams::ISOLATION_STUB}
   RUBY
 
   def test_archive_is_non_blocking_and_never_invokes_retro
