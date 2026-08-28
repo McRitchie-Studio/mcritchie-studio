@@ -15,76 +15,20 @@
 
 @config '../../../config/tailwind.config.js';
 
-/* === ADOPTION SHIM — the shared layer scale ==============================
-   studio-engine owns this scale (its engine.css `-- Layer scale` block). The
-   definitions are MIRRORED here only because the installed gem predates them.
-   DELETE this whole block at the pin bump: every call site already reads the
-   tiers, so the engine's copy takes over with no other edit.
+/* The layer scale now comes from the ENGINE — see engine.css `-- Layer scale`,
+   imported above. The ADOPTION SHIM that used to sit here (a local :root
+   mirroring those tiers until the pin caught up) is deleted: the pin reached
+   0.63.0, which ships them.
 
-   Read the ORDER, not the number. Below 100 the tiers coincide with Tailwind's
-   own z-10..z-50, so this app's existing sub-100 classes are already ON the
-   scale and none of them move. At 100 and up every tier is chrome that can
-   cover other chrome, and that is the half where bare numbers stopped being
-   readable. What they cost, measured across this ecosystem on 2026-08-27: 21
-   distinct levels, three layers tied at 130, two tied at 10000, and a docked
-   bottom bar at inline z-index:9999 painting straight over a modal backdrop.
-   This app had two ties of its own — see the drawers below. */
-:root {
-  --z-behind:       -1;  /* decoration painted behind its own box */
-  --z-base:          0;  /* fixed page backgrounds and their scrims */
-  --z-content:      10;  /* raised content inside a card */
-  --z-raised:       20;  /* hover lifts, in-page click catchers */
-  --z-sticky:       30;  /* in-page sticky headers */
-  --z-panel:        40;  /* in-page side panels */
-  --z-dropdown:     50;  /* menus and anchored popovers */
+   IT HAD TO GO RATHER THAN LINGER HARMLESSLY. The engine build is imported at
+   the top of this file and the shim's :root came AFTER it — equal specificity,
+   later wins — so the shim OUTRANKED the engine. Leaving it meant this app
+   silently kept a frozen private copy of the scale while believing it shared
+   one, and the next engine layer change would not have reached us. Nothing
+   would have failed.
 
-  --z-docked:      100;  /* docked bottom bar — must never cover a modal */
-  --z-nav:         110;  /* the pinned navbar */
-  --z-drawer:      150;  /* full-cover drawers */
-  --z-modal:       200;  /* modal backdrop + card — THE app blocker */
-  --z-lightbox:    210;  /* a lightbox opened from inside a modal */
-  --z-alert:       300;  /* transient overlays that must not be missed */
-  --z-toast-blur:  399;  /* the frosted halo behind the toasts */
-  --z-toast:       400;  /* toasts */
-  --z-banner:      500;  /* environment / DEV MODE — reachable mid-modal */
-  --z-tooltip:     600;  /* tooltips on the banner, so they clear it */
-
-  /* This app never overrode the toast layer, so it has been sitting on the
-     engine's old default of 60: above the header, and BELOW the modal host at
-     120 — meaning a toast fired from an open modal was invisible behind it.
-     Naming the tier fixes that. The per-component names remain the published
-     override seam; they now READ the tier rather than pinning a number beside
-     it, and the whole pair disappears at the pin bump. */
-  --studio-toast-z: var(--z-toast);
-  --studio-toast-blur-z: var(--z-toast-blur);
-}
-
-/* The environment / impersonation bars sit in NORMAL FLOW at rest (engine
-   banners/_stack records why: pinning them in the RESTING state needs one pinned
-   sibling to measure the other, and the measured version jumped). Flow costs
-   them a stacking level, so the modal backdrop dims the DEV MODE and email
-   buttons exactly when a QA session needs them.
-
-   Both the level AND the pin are scoped to body.modal-open, the one state where
-   each is free: that class also locks body scroll, so the bars can never scroll
-   up behind the pinned header while they outrank it, and a frozen page cannot
-   jump. sticky, NOT fixed — sticky keeps their space reserved in flow, so
-   applying it on open shifts no content; fixed pulls them out and the page jumps
-   by their height. And a LEVEL ALONE IS NOT ENOUGH: `relative` reads correctly
-   at the top of a page and leaves the bars off screen for anyone who scrolled.
-
-   This app already renders the stack as a SIBLING of <header> (layouts/
-   application.html.erb, engine 0.33 convention), which is what makes the lift
-   reachable at all — a bar nested inside a header carrying a z-index composites
-   at the HEADER's level, clamped, no matter what it asks for. Ships in the
-   engine at the pin bump. */
-body.modal-open .studio-bar-stack,
-body.modal-open .studio-app-banner {
-  position: sticky;
-  top: 0;
-  z-index: var(--z-banner);
-}
-/* === end ADOPTION SHIM ================================================== */
+   test/lib/engine_pin_contract_test.rb now refuses a re-introduced shim once the
+   resolved gem defines the tiers, so this cannot come back quietly. */
 
 /*
   The default border color has changed to `currentcolor` in Tailwind CSS v4,

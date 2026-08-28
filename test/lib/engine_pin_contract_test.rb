@@ -72,6 +72,41 @@ class EnginePinContractTest < ActiveSupport::TestCase
                     "(/admin/emails needs >= 0.42; the mailer's body and CTA copy needs >= 0.43)"
   end
 
+  # SELF-FIRING, and that is the whole design. The adoption shim (a local :root
+  # mirroring the engine's layer scale) was correct while the pin predated the
+  # gem that ships those tiers, and became a LIABILITY the moment it did not:
+  # application.css imports the engine build first and the shim's :root came
+  # after it, so equal specificity and later source order meant THE SHIM WON.
+  # This app would have kept a frozen private copy of the scale while believing
+  # it shared one, and nothing would have failed.
+  #
+  # A ledger entry or a code comment saying "delete at the bump" is a reminder,
+  # not a gate — the previous one was tracked in a task's agent_context, which
+  # archives away with the task. This asks the question the bump answers: once
+  # the RESOLVED engine defines the tiers, a local redefinition is drift. Silent
+  # while the pin is old; red the instant it is not.
+  test "no local shim redefines a layer tier the resolved engine already ships" do
+    engine_css = Pathname(Gem.loaded_specs.fetch("studio-engine").gem_dir)
+                 .join("app/assets/tailwind/studio_engine/engine.css")
+    # ASSERTED, not skipped. A `skip` here would opt this guard out silently and
+    # cost a slot on the test-health ratchet — a test switched off keeps its name
+    # and loses its coverage. The precondition is worth failing on anyway: this
+    # app is pinned to an engine that ships the scale, so an engine that does NOT
+    # means the pin walked backwards, and that is a defect in its own right.
+    assert_includes engine_css.read, "--z-modal:",
+                    "the resolved engine no longer ships the layer scale — the pin went backwards"
+
+    app_css = Rails.root.join("app/assets/tailwind/application.css").read
+                   .gsub(%r{/\*.*?\*/}m, " ") # comments EXPLAIN the tiers; scanning them would ban documenting this
+
+    redefined = app_css.scan(/(--z-[a-z-]+):\s*-?\d+;/).flatten.uniq
+
+    assert_empty redefined,
+                 "the resolved engine ships the layer scale, so these local redefinitions now " \
+                 "OUTRANK it (application.css imports the engine build ABOVE its own :root): " \
+                 "#{redefined.join(', ')}. Delete them and read the engine's tiers."
+  end
+
   test "the catalog answers the copy API this app's mailer calls" do
     missing = MAILER_COPY_API.reject { |method| Studio::EmailCatalog.respond_to?(method) }
 
