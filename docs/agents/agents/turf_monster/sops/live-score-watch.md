@@ -220,13 +220,25 @@ machine you started it on.
 ## What a cycle prints
 
 ```
-21:04:32  PIT  touchdown   +7   PIT 7-0 BUF   Q1 8:42   (3 contests)
+21:04:32  PIT  touchdown   +6   PIT 6-0 BUF   Q1 8:42   (3 contests)
+21:04:58  PIT  pat         +1   PIT 7-0 BUF   Q1 8:42   (3 contests)
 21:11:07  BUF  field_goal  +3   PIT 7-3 BUF   Q1 2:20   (3 contests)
 21:44:19  PIT  touchdown   REVERSED  PIT 7-3 BUF
 22:58:40                        PIT 24-17 BUF   FINAL
 ```
 
 Read `(3 contests)` literally: that many open contests re-scored off that play.
+
+**A touchdown can arrive in two lines, and that is not a duplicate.** ESPN does
+not report the extra point as its own play — it folds the try into the touchdown
+that earned it and RESTATES that same play once the kick is good. So a touchdown
+caught mid-try prints `+6` and is followed, seconds later, by the `+1 pat` that
+completes it (or `+2 two_point`, or nothing at all when the kick misses). Both
+lines describe ONE play and ONE `Goal` row, which ends worth the whole
+sequence: 7 when the kick is good, 8 on a conversion, 6 when it misses.
+
+A try ruled out on review runs the same way in reverse: `-1`, against the play
+it was folded into. Only a whole play withdrawn prints `REVERSED`.
 
 ## Reporting
 
