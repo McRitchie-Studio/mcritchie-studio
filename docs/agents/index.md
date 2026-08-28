@@ -254,11 +254,20 @@ them first; the long form below is the fallback.
 
 ```bash
 cd /Users/alex/projects/mcritchie-studio
-bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> \
+bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> --agent <soul> \
   --shape <shape> --risk <tags> --accept "criterion" --test "[unit] ..."
 #   ... build in the worktree it prints ...
 bin/ship <task-slug> -m "Commit message"
 ```
+
+**Pass `--agent <soul>` — it is what makes review able to exclude you.** It sets
+`agent_slug`, which stamps `devops.built_by`, which is the ONLY thing
+`bin/reviewer-select` can use to keep a soul off its own PR. Omit it and the
+selector fails CLOSED: it refuses to pick, the reviewer chooses a light by hand,
+and the no-self-review property goes unverified for that review. Measured
+2026-08-28 — `built_by` blank on six consecutive tasks across one review sitting,
+two reviewers reporting the refusal and hand-picking. The flag always worked; no
+documented path passed it.
 
 `bin/task begin` runs steps 1-3 (create → `agent-worktree new` → `bind-task` →
 `move building` → `session-preflight`) and prints the worktree path, port, and
@@ -490,7 +499,7 @@ and the feature. A good prompt is:
 
 ```text
 Work from /Users/alex/projects. Build this feature in <app>: <feature>.
-Use the fast lane: bin/task begin --title "Three To Five Words" --repo <app>
+Use the fast lane: bin/task begin --title "Three To Five Words" --repo <app> --agent <soul>
 --kind feature --shape (ui-only|ui+db|backend|library|onchain|onchain-vertical|docs|test-only)
 --risk <tags> --accept "<criterion>" --test "<tier>". It creates the task,
 allocates the isolated worktree on an allocated port, claims the task, and
@@ -656,7 +665,7 @@ worktree:
 
 ```bash
 cd /Users/alex/projects/mcritchie-studio
-bin/task begin --title "Three To Five Words" --repo turf-monster --shape <shape>
+bin/task begin --title "Three To Five Words" --repo turf-monster --agent <soul> --shape <shape>
 bin/agent-worktree up turf-monster task-slug     # only when you need a live stack
 bin/ship task-slug -m "Commit message"           # from the worktree, at handoff
 ```

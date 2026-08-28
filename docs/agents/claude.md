@@ -28,11 +28,20 @@ bookends below into one command each:
 
 ```bash
 cd /Users/alex/projects/mcritchie-studio
-bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> \
+bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> --agent <soul> \
   --shape <shape> --risk <tags> --accept "criterion" --test "[unit] ..."
 #   ... build in the worktree it prints ...
 bin/ship <task-slug> -m "Commit message"
 ```
+
+**Pass `--agent <soul>` — it is what makes review able to exclude you.** It sets
+`agent_slug`, which stamps `devops.built_by`, which is the ONLY thing
+`bin/reviewer-select` can use to keep a soul off its own PR. Omit it and the
+selector fails CLOSED: it refuses to pick, the reviewer chooses a light by hand,
+and the no-self-review property goes unverified for that review. Measured
+2026-08-28 — `built_by` blank on six consecutive tasks across one review sitting,
+two reviewers reporting the refusal and hand-picking. The flag always worked; no
+documented path passed it.
 
 `bin/task begin` runs steps 1-2 (create → worktree → bind → `move building` →
 preflight) and prints the worktree path, port, and task URL. `bin/ship`, run
