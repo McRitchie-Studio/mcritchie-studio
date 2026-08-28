@@ -65,8 +65,16 @@ class ReleaseArchiveIsolationTest < Minitest::Test
   # make that fidelity load-bearing: they prove sweep_summary and docs_summary
   # actually PARSED it. Without them a stub could drift to any shape and the
   # parsers would be uncovered — they were, before this file existed.
+  # POISONED TOO, though it asserts nothing about the poison. Under the very
+  # regression the guard above exists to catch — a new seam in `archive` that
+  # ISOLATION_STUB does not yet cover — an UNPOISONED run of this test would
+  # shell out to the real bin/clean-artifacts with apply: true and sweep the
+  # machine, which is the exact harm this file was written to prevent. Minitest
+  # runs both tests whichever way the guard lands, so the guard alone does not
+  # protect this one. Costs nothing when the stubs are complete.
   def test_the_stubbed_seams_still_feed_the_real_summary_parsers
-    out = run_archive("#{BOARD_STUB}; #{ReleaseArchiveSeams::ISOLATION_STUB}")
+    out = run_archive("#{BOARD_STUB}; #{ReleaseArchiveSeams::ISOLATION_STUB}; " \
+                      "#{ReleaseArchiveSeams::SHELL_POISON}")
 
     assert_includes out, "Swept 1 KB of regenerable artifacts across 2 repo(s) / 3 worktree(s)",
                     "clean-artifacts-summary: JSON did not reach ArtifactSweep.parse_summary\n\n#{out}"
