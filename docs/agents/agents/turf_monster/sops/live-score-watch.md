@@ -234,7 +234,8 @@ not report the extra point as its own play — it folds the try into the touchdo
 that earned it and RESTATES that same play once the kick is good. So a touchdown
 caught mid-try prints `+6` and is followed, seconds later, by the `+1 pat` that
 completes it (or `+2 two_point`, or nothing at all when the kick misses). Both
-lines describe ONE play and ONE `Goal` row, which ends the sequence worth 7.
+lines describe ONE play and ONE `Goal` row, which ends worth the whole
+sequence: 7 when the kick is good, 8 on a conversion, 6 when it misses.
 
 A try ruled out on review runs the same way in reverse: `-1`, against the play
 it was folded into. Only a whole play withdrawn prints `REVERSED`.
