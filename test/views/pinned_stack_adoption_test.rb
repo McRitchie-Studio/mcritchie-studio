@@ -57,6 +57,14 @@ class PinnedStackAdoptionTest < ActiveSupport::TestCase
                  "size swaps on a boolean put the collapse back on a clock")
   end
 
+  # The engine's mobile band stacks the title into a column under 768px; this
+  # navbar never stacked (measured: collapsed title 24px -> 44px when it did).
+  test "the title stays one line under 768px, as the threshold build was" do
+    css = Rails.root.join("app/assets/tailwind/application.css").read
+    assert_match(/@media \(max-width: 767px\)\s*\{\s*\.nav-shell \.nav-title\s*\{[^}]*flex-direction:\s*row/m, css,
+                 "the hub's mobile title must stay in row direction")
+  end
+
   # THE POINT OF THE WHOLE TASK: the dependents no longer measure the header.
   test "the strip and the stage headers position from the pinned stack alone" do
     strip = STRIP.read
