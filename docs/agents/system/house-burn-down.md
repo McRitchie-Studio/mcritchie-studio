@@ -286,9 +286,24 @@ eval "$(bin/gh-auth-refresh --export)" && gh api rate_limit --jq .rate.remaining
 bin/gh-token --identity deployer >/dev/null && echo "deployer OK"                  # admin
 ```
 
-Run the deployer check in a shell that has sourced `~/.zprofile.admin`. Without it
-the command fails **on purpose**, naming the missing variable — that refusal is the
-isolation working, not a fault to route around.
+Run the deployer check in a shell that has sourced `~/.zprofile.admin`.
+
+**THE CACHE WILL LIE TO YOU HERE, so read this before trusting a green.**
+`bin/gh-token` caches a minted token for **50 minutes**
+(`REFRESH_AFTER_SECONDS = 3000`) in `<projects>/.agents/github-tokens.json`, and
+the main flow reads that cache BEFORE it mints. So within 50 minutes of ANY
+successful admin mint, the check above prints `deployer OK` **in a shell that
+never sourced `~/.zprofile.admin`** — certifying an admin token you have not
+installed, with the truth surfacing at the next production deploy. That is
+exactly the cause-far-behind-symptom failure this section exists to prevent.
+There is no --no-cache flag today. Verify by clearing the deployer slot first:
+`ruby -rjson -e 'p=File.join(ENV["HOME"],"projects/.agents/github-tokens.json"); j=JSON.parse(File.read(p)); j.delete("deployer"); File.write(p, JSON.pretty_generate(j))'` — or on a machine that has never minted one.
+
+What IS genuinely blocked without the admin token is the **1Password read** — the
+mint. A build lane cannot MINT admin credentials. It is not true that it can
+never OBTAIN a deployer token, and nothing here should say otherwise;
+`/tasks/never-cache-deployer-token` closes the window by not caching that token
+at all.
 
 Both scripts read from `pbpaste`, validate the prefix and strip whitespace, so the
 token never touches shell parsing — bypassing the smart-quote / line-wrap /
