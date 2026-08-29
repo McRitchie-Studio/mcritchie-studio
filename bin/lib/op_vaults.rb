@@ -21,12 +21,23 @@
 # The two identities are separated on purpose: agent builds and merges,
 # deployer cannot touch PRs. Do not collapse them.
 #
-# ISOLATION IS THE POINT, not a side effect. The admin token is NOT exported
-# into ordinary agent shells, so a build lane that reaches for an admin
-# credential FAILS. That failure is the feature. `op` takes its credential from
-# OP_SERVICE_ACCOUNT_TOKEN, so a caller reading an admin secret must run `op`
-# with that variable set to the ADMIN token's value — which it can only do if
-# the admin token is present in its environment at all.
+# ISOLATION IS THE POINT, not a side effect — and what is isolated is the
+# 1PASSWORD READ, which is narrower than it sounds. The admin token is NOT
+# exported into ordinary agent shells, so a build lane cannot MINT an admin
+# credential: `op` takes its credential from OP_SERVICE_ACCOUNT_TOKEN, so a
+# caller minting an admin secret must run `op` with that variable set to the
+# ADMIN token's value, which it can only do if the admin token is present in
+# its environment at all. That refusal is the feature.
+#
+# SAY ONLY THAT MUCH. This comment claimed the stronger property until
+# 2026-08-29, and the stronger property is false: a build lane CAN come to hold
+# a deployer token. bin/gh-token serves an ALREADY-MINTED one from a 50-minute
+# cache (REFRESH_AFTER_SECONDS = 3000) before it mints, so inside that window
+# `bin/gh-token --identity deployer` exits 0 in a shell that never sourced
+# ~/.zprofile.admin. The distance between "cannot mint" and "cannot obtain" is
+# exactly the window /tasks/never-cache-deployer-token closes — and a boundary
+# described as wider than it is gets trusted for things it does not cover.
+# Guarded by test/lib/credential_isolation_claims_test.rb.
 module OpVaults
   # identity/purpose => { vault:, token_env: }
   #

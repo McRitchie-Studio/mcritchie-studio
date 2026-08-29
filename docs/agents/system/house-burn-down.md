@@ -233,9 +233,11 @@ The build lanes and the ship lane authenticate as different GitHub App identitie
 (`github.mcritchie-agent` builds and merges; `github.mcritchie-deployer` pushes
 `main` and deploys but cannot touch PRs). Their credentials live in **different
 vaults**, read by **different service-account tokens**, so an ordinary agent shell
-is *structurally* unable to read an admin credential — not merely discouraged from
-it. `bin/lib/op_vaults.rb` is the one place that maps lane → vault → token; nothing
-else should ever name a vault.
+cannot MINT an admin credential — the 1Password read is the step that is
+*structurally* blocked, not merely discouraged. That is the whole claim: it is not
+the wider one that such a shell can never come to HOLD a deployer token, which is
+false and is what the cache warning in 5a-ii is about. `bin/lib/op_vaults.rb` is the
+one place that maps lane → vault → token; nothing else should ever name a vault.
 
 | Lane | Vault (default) | Token variable | Loaded where |
 |------|-----------------|----------------|--------------|
@@ -313,10 +315,15 @@ newline-in-paste failures that broke direct `! echo ops_… >> ~/.zprofile` atte
 See Gotcha 12.
 
 **To rotate either token**, re-copy and re-run the same command — each replaces only
-its own line. (The removal is anchored on `^export VAR=` for exactly this reason:
-an unanchored match on `OP_SERVICE_ACCOUNT_TOKEN` also matches
-`OP_ADMIN_SERVICE_ACCOUNT_TOKEN` as a substring, and once silently deleted the admin
-token while reinstalling the agent one.)
+its own line. (The removal is anchored on `^export VAR=`, so it takes that variable's
+own export line and nothing else — not a comment that mentions the name, not a longer
+variable that contains it. It is **not** protecting the admin line from the agent
+install: an earlier version of this paragraph said an unanchored match on
+`OP_SERVICE_ACCOUNT_TOKEN` also matched `OP_ADMIN_SERVICE_ACCOUNT_TOKEN` as a
+substring and had once silently deleted the admin token. That never happened and
+could not — `OP_ADMIN_` sits between `OP_` and `SERVICE_`, so neither name contains
+the other, and the two variables live in different files. Verified 2026-08-29 by
+replaying the old `sed` against a profile holding both lines in both orders.)
 
 ### 5b. Per-app .env files
 

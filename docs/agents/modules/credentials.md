@@ -33,9 +33,12 @@ that maps a lane to its vault and token; no other file should name a vault.
 
 Install the admin one with `bin/setup-1pass-token --admin`; ship lanes then
 `source ~/.zprofile.admin`. It is deliberately NOT auto-loaded, so an ordinary
-agent shell is structurally unable to read an admin credential. A machine whose
-vaults are named differently sets `MCR_OP_VAULT_AGENT` / `MCR_OP_VAULT_ADMIN`
-rather than editing any script.
+agent shell cannot MINT an admin credential: the 1Password read is the step that
+is structurally blocked. It is **not** the wider claim that such a shell can never
+come to hold a deployer token — `bin/gh-token` serves an already-minted one from a
+50-minute cache, and `/tasks/never-cache-deployer-token` closes that window. A
+machine whose vaults are named differently sets `MCR_OP_VAULT_AGENT` /
+`MCR_OP_VAULT_ADMIN` rather than editing any script.
 
 A `bin/gh-token --identity deployer` that fails naming
 `OP_ADMIN_SERVICE_ACCOUNT_TOKEN` is the isolation WORKING — do not route around
@@ -49,7 +52,7 @@ Verify:
 
 Expected user type: `SERVICE_ACCOUNT`.
 
-Default access is the AGENT vault (`agents-studio`). The ADMIN vault (`agents-admin`) is granted to a SEPARATE service account, never added to this one — that separation is what makes admin credentials unreadable from a build lane. Additional vaults should be granted deliberately for a role or task, such as a DevOps-specific vault for AWS credentials.
+Default access is the AGENT vault (`agents-studio`). The ADMIN vault (`agents-admin`) is granted to a SEPARATE service account, never added to this one — that separation is what stops a build lane MINTING an admin credential; the 1Password read is the step it blocks, which is narrower than the claim that a build lane can never hold one (see above). Additional vaults should be granted deliberately for a role or task, such as a DevOps-specific vault for AWS credentials.
 
 ## GitHub (`gh` / `git`)
 

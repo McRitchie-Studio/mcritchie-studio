@@ -8,8 +8,13 @@
 # token reads the vault holding github.mcritchie-deployer and other admin
 # credentials. Putting it in ~/.zprofile would hand it to every background agent
 # shell, which is exactly the isolation this design exists to create: a build
-# lane must be STRUCTURALLY unable to read an admin credential, not merely
-# discouraged from it. Admin lanes source ~/.zprofile.admin explicitly.
+# lane must be STRUCTURALLY unable to MINT an admin credential — the 1Password
+# read is the step that is blocked — not merely discouraged from it. Admin lanes
+# source ~/.zprofile.admin explicitly.
+#
+# That is the whole claim, deliberately. A build lane can still END UP HOLDING a
+# deployer token: bin/gh-token serves one from a 50-minute cache before it mints.
+# See docs/agents/modules/credentials.md and /tasks/never-cache-deployer-token.
 #
 # Usage:
 #   1. Copy your service account token to the clipboard (Cmd+C from 1Password)
@@ -71,10 +76,20 @@ fi
 touch "$PROFILE"
 # Remove any prior line for THIS variable so re-runs replace cleanly.
 #
-# ANCHORED ON PURPOSE. The old pattern was an unanchored /OP_SERVICE_ACCOUNT_TOKEN/,
-# which also matches OP_ADMIN_SERVICE_ACCOUNT_TOKEN as a SUBSTRING — so reinstalling
-# the agent token would have silently deleted the admin one, and the failure would
-# have surfaced later, in the deploy lane, far from its cause.
+# ANCHORED ON PURPOSE. `^export ${VAR}=` takes this variable's own export line and
+# nothing else — not a comment that mentions the name, not a longer variable that
+# contains it, not a line where the name appears as a value. Re-running is a clean
+# replace rather than an append.
+#
+# IT IS NOT PROTECTING THE ADMIN LINE FROM THIS ONE, and an earlier version of this
+# comment said it was: that the old unanchored /OP_SERVICE_ACCOUNT_TOKEN/ matched
+# OP_ADMIN_SERVICE_ACCOUNT_TOKEN as a SUBSTRING and had once silently deleted the
+# admin token. That never happened and could not. OP_ADMIN_ sits between OP_ and
+# SERVICE_, so OP_SERVICE_ACCOUNT_TOKEN is not a substring of
+# OP_ADMIN_SERVICE_ACCOUNT_TOKEN, and the two variables live in different files
+# anyway. Verified 2026-08-29 by replaying the old sed against a profile holding
+# both lines in both orders; the admin line survived every time. The anchor stays
+# on its own merits, above. Guarded by test/lib/credential_isolation_claims_test.rb.
 [[ -f "$PROFILE" ]] || : > "$PROFILE"
 /usr/bin/sed -i '' "/^export ${VAR}=/d" "$PROFILE"
 echo "export ${VAR}=$TOKEN" >> "$PROFILE"
