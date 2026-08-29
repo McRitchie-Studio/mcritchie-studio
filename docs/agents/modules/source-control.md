@@ -38,6 +38,7 @@ GitHub auth."
 | Situation | Yours or his? |
 |-----------|---------------|
 | Token expired, 401, 403, `gh auth login` prompt, CI unreadable | **Yours.** Run the command above |
+| Deployer mint says `OP_ADMIN_SERVICE_ACCOUNT_TOKEN` is not set | **Yours, if you hold the ship lane:** `source ~/.zprofile.admin`, then retry. In any other lane that refusal is the isolation working — stop there |
 | `op whoami` fails — 1Password itself is signed out | **His.** Name the command he must run |
 | App installation lacks a grant the work genuinely needs | **His.** Name the repo, endpoint, and grant |
 | Merging, deploying, or pushing `main` without an assigned lane | **His.** Authority, not credentials |
@@ -76,7 +77,7 @@ all, which the CI gates read.
 |---|---|
 | **Org** | `McRitchie-Studio` (was the `amcritchie` personal account until 2026-07-29) |
 | **Credential** | GitHub **App installation token**, ~**1 hour** lifetime |
-| **Where it comes from** | 1Password → `bin/gh-app-mint-token`, brokered by `bin/gh-token` |
+| **Where it comes from** | 1Password (`agents-studio` for the agent lane, `agents-admin` for the deployer — `bin/lib/op_vaults.rb` is the map) → `bin/gh-app-mint-token`, brokered by `bin/gh-token` |
 | **Refresh** | `eval "$(bin/gh-auth-refresh --export)"` |
 | **Liveness probe** | `gh api rate_limit` — **never** `gh api user` |
 | **PR base** | `accepted` — never `release`, never `main` |
@@ -90,6 +91,12 @@ The lane picks the identity through **`GH_APP_ITEM`**; precedence is
 |---------------------------|------|-------------------|
 | `github.mcritchie-agent` (**default**) | build / review | **Yes** — Contents + **Pull requests** + Checks read + Actions + Workflows + Administration |
 | `github.mcritchie-deployer` (`export GH_APP_ITEM=github.mcritchie-deployer`) | ship | **No `pull_requests` grant at all** — the deployer cannot open or merge PRs, by design. Contents + Actions + Checks read + Secrets + Administration |
+
+The two items live in different vaults, read by different tokens: the agent's in
+`agents-studio` (`OP_SERVICE_ACCOUNT_TOKEN`, every shell), the deployer's in
+`agents-admin` (`OP_ADMIN_SERVICE_ACCOUNT_TOKEN`, loaded only by `source
+~/.zprofile.admin`). A ship session sources that profile **before** exporting
+`GH_APP_ITEM`; an ordinary agent shell cannot read the deployer at all.
 
 This is a **privilege boundary, not a preference.** A ship session that recovers
 its credential carelessly and installs the *agent* App has handed itself the
@@ -237,6 +244,7 @@ Two rules that are about source control, not process:
 ### The commands, in one place
 
 ```bash
+source ~/.zprofile.admin                    # ship lane only: load the admin 1Password token
 eval "$(bin/gh-auth-refresh --export)"      # fix this session's credential
 bin/gh-auth-refresh --identity deployer     # force the ship identity
 bin/gh-auth-refresh --force                 # bypass the broker cache (revoked token)

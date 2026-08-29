@@ -62,7 +62,7 @@ The Rails apps consume `studio-engine` and `solana-studio` from RubyGems. Local 
 
 ## Secret + service surface
 
-- **1Password account**: `alex@mcritchie.studio` (`MWOV5OT5BRHATI4EGMN26C5DPA`), vault `agents`. Service-account token bootstraps everything else via `bin/setup-1pass-token`.
+- **1Password account**: `alex@mcritchie.studio` (`MWOV5OT5BRHATI4EGMN26C5DPA`). Two vaults, two tokens: `agents-studio` (agent lane, `OP_SERVICE_ACCOUNT_TOKEN`) and `agents-admin` (ship lane, a separate `OP_ADMIN_SERVICE_ACCOUNT_TOKEN` — `bin/setup-1pass-token --admin`). The agent token bootstraps everything else via `bin/setup-1pass-token`; `bin/lib/op_vaults.rb` is the map.
 - **Heroku apps**: `mcritchie-studio` → https://mcritchie.studio; `turf-monster-mainnet` → https://turfmonster.media; `rolio-prod` → https://rolio-prod-82e96784b462.herokuapp.com. `app.mcritchie.studio` and `app.turfmonster.media` remain legacy Rails aliases, `v1.mcritchie.studio` is the previous McRitchie Studio Squarespace site, `v1.turfmonster.media` is the previous Turf Monster landing site, and QA runs at `qa.mcritchie.studio` / `qa.turfmonster.media` / https://rolio-qa-58beede9dc0b.herokuapp.com. `RAILS_MASTER_KEY` shared across Studio/Turf apps via Heroku config; Rolio uses its own `SECRET_KEY_BASE`.
 - **Solana**: devnet via Anza CLI (`release.anza.xyz/stable/install`). Local dev keypair at `~/.config/solana/id.json` — NOT one of the agent vault wallets. Agent wallets (Alex Bot / Mason / Mack / Turf Monster) stay in 1Password.
 - **AWS S3**: per-app buckets (`mcritchie-studio-{dev,production}`, `turf-monster-{dev,production}`) for ImageCache.

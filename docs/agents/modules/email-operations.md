@@ -99,7 +99,7 @@ Do not print secret values in docs, logs, or handoffs.
 
 | Credential | Location | Used for |
 |------------|----------|----------|
-| `agent.aws.mcritchie-ses` | `agents` 1Password vault | Shared SES-scoped AWS credentials, region `us-east-2` |
+| `agent.aws.mcritchie-ses` | `agents-studio` 1Password vault | Shared SES-scoped AWS credentials, region `us-east-2` |
 | `RESEND_API_KEY` | app env / Heroku config | Rollback provider only |
 
 Runtime mail env:

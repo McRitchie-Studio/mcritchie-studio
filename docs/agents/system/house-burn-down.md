@@ -326,7 +326,7 @@ The Rails apps read `.env` via Rails' default dotenv (or the `dotenv-rails` gem)
 RAILS_MASTER_KEY=$(heroku config:get RAILS_MASTER_KEY --app mcritchie-studio)
 GOOGLE_CLIENT_ID=...                  # Google Cloud Console
 GOOGLE_CLIENT_SECRET=...
-ANTHROPIC_API_KEY=...                 # 1Password: "anthropic" in agents vault
+ANTHROPIC_API_KEY=...                 # heroku config:get — agents-studio held no "anthropic" item on 2026-08-29
 X_BEARER_TOKEN=...                    # 1Password: "x.api" (read)
 X_API_KEY=...                         # 1Password: "x.api" (write — Read+Write app)
 X_API_SECRET=...
@@ -351,7 +351,7 @@ SES_REGION=us-east-2
 RAILS_MASTER_KEY=$(heroku config:get RAILS_MASTER_KEY --app turf-monster-mainnet)
 GOOGLE_CLIENT_ID=...                  # may differ from mcritchie-studio
 GOOGLE_CLIENT_SECRET=...
-SOLANA_ADMIN_KEY=$(op item get "agent.alex.solana" --vault agents --fields "private key")
+SOLANA_ADMIN_KEY=$(op item get "agent.alex.solana" --vault agents-studio --fields "private key")
 SOLANA_RPC_URL=https://api.devnet.solana.com   # or paid provider if rate-limited
 AWS_ACCESS_KEY_ID=...
 AWS_SECRET_ACCESS_KEY=...

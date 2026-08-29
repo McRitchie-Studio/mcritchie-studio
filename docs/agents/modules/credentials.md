@@ -67,7 +67,7 @@ rather than a personal token.
 
 ### The items
 
-Both live in the AGENT vault. The two GitHub App identities are the exception and split across vaults — see the two-lane table above.
+The two GitHub App items are split across the two vaults — `github.mcritchie-agent` in `agents-studio`, `github.mcritchie-deployer` in `agents-admin` — see the two-lane table above. A ship session therefore runs `source ~/.zprofile.admin` BEFORE `export GH_APP_ITEM=github.mcritchie-deployer`; without the admin token the deployer read refuses, by design.
 
 | Identity (1Password item) | Lane | Grants |
 |---------------------------|------|--------|
