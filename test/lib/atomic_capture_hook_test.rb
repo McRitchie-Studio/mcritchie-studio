@@ -778,7 +778,7 @@ class AtomicCaptureHookTest < Minitest::Test
   def test_unit_redact_suppresses_output_of_secret_reading_commands
     [
       "bin/secret agents 'Agent API Secret' AGENT_API_SECRET",
-      "op read op://agents/Agent API Secret/AGENT_API_SECRET",
+      "op read op://agents-studio/Agent API Secret/AGENT_API_SECRET",
       "printenv AGENT_API_SECRET",
       "gh auth token",
       "heroku config:get SECRET_KEY_BASE -a mcritchie-studio",

@@ -2,21 +2,32 @@
 
 require "test_helper"
 require "nokogiri"
+require_relative "../support/resolved_view"
 
-# [integration] This app's FORK of the modal host must carry the engine's focus
-# contract.
+# [integration] The modal host this app RENDERS must carry the engine's focus
+# contract — whichever file that turns out to be.
 #
-# WHY A TEST HERE, when the engine already has one. studio-engine is
-# NON-ISOLATED, so an app view SHADOWS the engine view of the same path. This app
-# ships its own app/views/studio/modals/_host.html.erb, so the engine's file is
-# NEVER RENDERED here — a gem bump delivers none of these fixes. Verified before
-# porting: the fork carried no captureFocus, no tabindex=-1, no tab trap, no
-# cycleFocus and no dialogLabel. Only _scoped_host, which is unforked,
-# propagates from the engine.
+# WHAT CHANGED, AND WHY THIS TEST SURVIVED IT. This app used to ship its own
+# app/views/studio/modals/_host.html.erb. studio-engine is NON-ISOLATED, so that
+# file SHADOWED the engine's and the engine's host was never rendered here; a gem
+# bump delivered none of these fixes and each one had to be ported by hand. This
+# test held that port honest. The fork is now deleted and the engine's host is
+# what renders (test/views/modal_host_adoption_test.rb owns that proof).
+#
+# So the premise inverts but the test does not retire, because the failure mode
+# does not: re-forking is a one-file mistake that nothing warns about, and the
+# cheapest re-fork is a stripped copy missing exactly these bindings. Every
+# assertion below therefore reads the RESOLVED host (ResolvedView) rather than a
+# path under Rails.root — it describes the file on the page, so it keeps biting
+# through a re-fork instead of dying with a missing-file error and being deleted
+# as obsolete.
 class ModalHostFocusContractTest < ActionDispatch::IntegrationTest
-  HOST = "app/views/studio/modals/_host.html.erb"
-
-  def host_source = File.read(Rails.root.join(HOST))
+  # The host that ACTUALLY RENDERS, not a path that may or may not be it. Reading
+  # Rails.root.join("app/views/studio/modals/_host.html.erb") would assert the
+  # fork is CORRECT rather than notice it is THERE — and after the adoption that
+  # file does not exist, so a path-based read fails on Errno::ENOENT and looks
+  # like the test is obsolete rather than like the wrong question.
+  def host_source = ResolvedView.source("host", "studio/modals")
 
   # THE BACKDROP ELEMENT, parsed out of the RENDERED page.
   #
@@ -121,27 +132,35 @@ class ModalHostFocusContractTest < ActionDispatch::IntegrationTest
 
   # THE SWAP DEFECT the engine's review sent back: a replace keeps current()
   # truthy, so the outer template never re-mounts and x-init never re-runs.
-  test "the forked host re-focuses after a replace" do
+  test "the host re-focuses after a replace" do
     src = host_source
 
     assert_includes src, "refocus: function",
-                    "the fork has no refocus() — the trap releases on the first swap"
-    # Anchored on the RECEIVER: this file documents refocus() in prose, so a bare
+                    "the host has no refocus() — the trap releases on the first swap"
+    # Anchored on a RECEIVER: this file documents refocus() in prose, so a bare
     # /refocus\(\)/ matches the comment and stays green with every call deleted.
     # That exact trap was caught by mutation in the engine.
-    assert_match(/this\.refocus\(\)/, src,
+    #
+    # EITHER receiver, because which one is correct is a closure detail, not the
+    # contract: the engine calls this.refocus() from a synchronous branch and
+    # self.refocus() from inside close()'s setTimeout, where `this` is not the
+    # store. Pinning "this." would fail a correct host for writing `var self =
+    # this` — and prose still never carries a receiver, so the mutation guard
+    # this anchor exists for is untouched.
+    assert_match(/\b(?:this|self)\.refocus\(\)/, src,
                  "refocus() is defined but never CALLED, which is the same as not having it")
   end
 
-  test "the forked host returns focus to the opener when the last dialog closes" do
+  test "the host returns focus to the opener when the last dialog closes" do
     src = host_source
 
     assert_includes src, "releaseFocus",
-                    "the fork never restores focus, so closing strands the keyboard user"
-    assert_match(/this\.releaseFocus\(\)/, src, "releaseFocus is defined but never called")
+                    "the host never restores focus, so closing strands the keyboard user"
+    assert_match(/\b(?:this|self)\.releaseFocus\(\)/, src,
+                 "releaseFocus is defined but never called")
   end
 
-  test "the forked host names the dialog" do
+  test "the host names the dialog" do
     src = host_source
 
     assert_includes src, "dialogLabel",
@@ -149,31 +168,71 @@ class ModalHostFocusContractTest < ActionDispatch::IntegrationTest
     assert_match(/:aria-label=/, src, "the name is computed but never bound to the element")
   end
 
-  # CLOSE() MUST RELEASE UNCONDITIONALLY.
+  # WHERE THE RELEASE MAY SIT, AND WHAT MAY GATE IT.
   #
-  # This host pops and releases at the top of close(), which is correct. turf's fork
-  # of the SAME file nested its release inside an `if (idx >= 0)` guard, so the
-  # release was skipped whenever the entry had ALREADY been removed — press Escape on
-  # a dismissible modal, then let clearStaleModals() -> closeAllDismissible() fire
-  # from turbo:before-cache inside the exit window, and focus is stranded on a
-  # detached backdrop with _returnFocusTo / _backdropEl leaking into the next dialog.
+  # turf's fork of this same file nested its release inside the `if (idx >= 0)`
+  # REMOVAL guard, so the release was skipped whenever the entry had ALREADY been
+  # spliced — press Escape on a dismissible modal, then let clearStaleModals() ->
+  # closeAllDismissible() fire from turbo:before-cache inside the exit window, and
+  # focus is stranded on a detached backdrop with _returnFocusTo / _backdropEl
+  # leaking into the next dialog.
   #
-  # Asserted here so this fork cannot drift INTO that shape: the release must sit at
-  # the top level of close(), not nested in any block.
-  test "close() releases focus unconditionally, not behind a removal guard" do
+  # REPOINTED, AND THE FIRST REPOINT WAS WRONG — recorded because the wrong one
+  # looked better. The old form asserted the call sat at ABSOLUTE brace depth 1:
+  # true of the deleted fork, which released synchronously at the top of close(),
+  # and false of the engine, which splices after the exit animation and therefore
+  # releases from inside a setTimeout callback. Replacing depth with "read the
+  # condition attached to the call" passed the engine — and passed a mutant
+  # carrying turf's exact defect, because moving the release INTO the removal
+  # guard carries its `stack.length === 0` condition in with it. The condition was
+  # never where the bug lived; the NESTING was.
+  #
+  # So measure depth again, but RELATIVE to the innermost enclosing function
+  # rather than absolutely. "Top level of the work that close() does" is the
+  # property the original meant, and it survives the work moving into a callback.
+  # Zero on the engine (release is a sibling of the guard), zero on the deleted
+  # fork (no callback at all), one on turf's defect and on the mutant above.
+  test "close() releases outside the removal guard, gated only on the stack" do
     body = host_source[/close: function\(\).*?\n        \},/m]
 
     refute_nil body, "close() moved — re-point this test rather than deleting it"
 
-    call_at = body.index(/this\.releaseFocus\(\)/)
+    release_at = body.index(/\b(?:this|self)\.releaseFocus\(\)/)
 
-    assert call_at, "close() never releases focus, so closing strands the keyboard user"
+    assert release_at, "close() never releases focus, so closing strands the keyboard user"
 
-    depth = body[0...call_at].count("{") - body[0...call_at].count("}")
+    # Every brace still open where the release sits, innermost last.
+    open_braces = []
+    body[0...release_at].each_char.with_index do |ch, i|
+      open_braces << i if ch == "{"
+      open_braces.pop  if ch == "}"
+    end
+    fn = open_braces.rindex { |i| body[0...i].match?(/function\s*\([^)]*\)\s*\z/) }
 
-    assert_equal 1, depth,
-                 "this.releaseFocus() sits #{depth - 1} brace level(s) inside a block within " \
-                 "close(), so some condition can skip it. The stack length is the only condition " \
-                 "that belongs here; whether THIS call did the removal is not."
+    refute_nil fn, "could not find the function body containing the release — re-point this test"
+
+    nesting = open_braces.length - 1 - fn
+
+    assert_equal 0, nesting,
+                 "the release sits #{nesting} block(s) deep inside the nearest function body, " \
+                 "so some branch can skip it. The removal is CONDITIONAL — the entry may already " \
+                 "have been spliced by a concurrent close — and a release inside that branch is " \
+                 "turf's measured defect: focus stranded on a detached backdrop, with " \
+                 "_returnFocusTo and _backdropEl leaking into the next dialog."
+
+    # ...and the condition it IS allowed to carry. Both halves are load-bearing:
+    # the depth check above catches the release moving INTO the guard, this one
+    # catches the guard's test moving ONTO the release where it sits.
+    gate = body[/if\s*\(([^)]*)\)\s*\{?\s*(?:this|self)\.releaseFocus\(\)/, 1]
+
+    assert gate,
+           "no condition governs the releaseFocus() call — it must not be unconditional, " \
+           "or a stacked flow would yank focus out of the dialog still on screen"
+    assert_includes gate, "stack.length",
+                    "the release is gated on `#{gate.strip}` — the stack being empty is the " \
+                    "only condition that belongs here"
+    refute_includes gate, "idx",
+                    "the release is gated on the REMOVAL outcome (`#{gate.strip}`), so it is " \
+                    "skipped whenever the entry was already spliced"
   end
 end

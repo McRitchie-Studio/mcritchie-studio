@@ -78,7 +78,7 @@ Claude/agent sessions are already authenticated: a 1Password **service account**
 
 Worked example (CDP key → turf-monster `.env`):
 ```bash
-cd ~/projects/turf-monster && bin/setup-cdp-key   # no args → reads the key from 1Password (op://agents/Coinbase Developer Platform) → writes .env, never echoes the secret
+cd ~/projects/turf-monster && bin/setup-cdp-key   # no args → reads the key from 1Password (op://<agent-vault>/Coinbase Developer Platform) → writes .env, never echoes the secret
 ```
 `bin/setup-cdp-key` defaults to a 1Password pull (PR #144); `--clipboard` (full JSON blob) and `bin/setup-cdp-key <key-id>` (secret in clipboard) remain as first-time/fallback modes.
 
@@ -137,5 +137,5 @@ DNS verification, and runtime SMTP credentials move.
 - API is currently open (no auth) — suitable for local/trusted networks only
 - Google OAuth credentials must be configured per environment
 - Password hashing uses bcrypt via `has_secure_password`
-- 1Password CLI: human/desktop mode requires biometric or password auth on each use; agent sessions use the scoped service-account token (sees the `agents` vault only) — credentials are never cached in plaintext either way
+- 1Password CLI: human/desktop mode requires biometric or password auth on each use; agent sessions use scoped service-account tokens — the agent lane sees the agent vault, the ship lane's separate token sees the admin vault (see `bin/lib/op_vaults.rb`) — credentials are never cached in plaintext either way
 - Private keys should only be stored in 1Password and `.env` files (gitignored), never in code or commits

@@ -5,6 +5,7 @@ require "net/http"
 require "uri"
 require "time"
 require "fileutils"
+require_relative "op_vaults"
 require_relative "projects_root"
 require_relative "../../lib/task_usage_sandbox"
 
@@ -58,7 +59,10 @@ class AgentApi
   public :present?
 
   OP = "/opt/homebrew/bin/op"
-  SECRET_REF = "op://agents/Agent API Secret/AGENT_API_SECRET"
+  # The board secret is a SHARED agent credential, not an admin one — it
+  # resolves in the agent vault. See bin/lib/op_vaults.rb for why the vault
+  # name is no longer written down in eleven places.
+  SECRET_REF = OpVaults.ref("Agent API Secret", "AGENT_API_SECRET")
   # Reuse a cached token until this margin (seconds) before its 24h expiry.
   TOKEN_REFRESH_MARGIN = 300
 

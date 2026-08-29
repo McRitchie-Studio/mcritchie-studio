@@ -89,7 +89,7 @@ bin/rails news:intake    # Fetch latest Schefter tweet
 
 ### X (Twitter) API — Bearer Token
 
-1. **1Password**: Stored in `agent.turf.x` in the `agents` vault
+1. **1Password**: Stored in `agent.turf.x` in the agent vault
    ```bash
    op item get zz3uigmkrwjlnnksst33butc4e --vault txqp6ijdo3ujsfhsfzdj5h5dzq --field "Bearer Token" --reveal
    ```

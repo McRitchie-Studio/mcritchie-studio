@@ -73,7 +73,8 @@ You need these *already installed* before this protocol can start:
 - Homebrew (`brew --version`)
 - `git` (ships with Xcode CLT)
 - The GitHub repos accessible to your account (HTTPS clone works)
-- A 1Password service account token with read access to the `agents` vault (account `alex@mcritchie.studio` / `MWOV5OT5BRHATI4EGMN26C5DPA`)
+- TWO 1Password service account tokens: one with read on the AGENT vault
+  (`agents-studio`), one with read on the ADMIN vault (`agents-admin`) — see 5a (account `alex@mcritchie.studio` / `MWOV5OT5BRHATI4EGMN26C5DPA`)
 
 `bin/ecosystem-build` handles everything else.
 
@@ -227,21 +228,93 @@ Two layers:
 Use a **service account token** rather than the desktop app integration — it avoids Touch ID prompts per call and works headlessly. One-time setup:
 
 1. Sign into https://start.1password.com as `alex@mcritchie.studio` (account `MWOV5OT5BRHATI4EGMN26C5DPA`)
+**TWO TOKENS, TWO VAULTS — and the split is a security boundary, not bookkeeping.**
+The build lanes and the ship lane authenticate as different GitHub App identities
+(`github.mcritchie-agent` builds and merges; `github.mcritchie-deployer` pushes
+`main` and deploys but cannot touch PRs). Their credentials live in **different
+vaults**, read by **different service-account tokens**, so an ordinary agent shell
+is *structurally* unable to read an admin credential — not merely discouraged from
+it. `bin/lib/op_vaults.rb` is the one place that maps lane → vault → token; nothing
+else should ever name a vault.
+
+| Lane | Vault (default) | Token variable | Loaded where |
+|------|-----------------|----------------|--------------|
+| `agent` — build, review, merge | `agents-studio` | `OP_SERVICE_ACCOUNT_TOKEN` | `~/.zprofile` — every shell |
+| `deployer` — ship, deploy | `agents-admin` | `OP_ADMIN_SERVICE_ACCOUNT_TOKEN` | `~/.zprofile.admin` — **opt-in only** |
+
+A machine whose vaults are named differently overrides with `MCR_OP_VAULT_AGENT` /
+`MCR_OP_VAULT_ADMIN` rather than editing any script.
+
+#### 5a-i. The AGENT token (required — nothing works without it)
+
 2. **Developer Tools → Service Accounts → Create Service Account**
-3. Grant **read** access to the `agents` vault (and `🧱 Blockchain` if you'll need it)
-4. Copy the token (`ops_...` — only shown once)
-5. Copy that token to your clipboard (Cmd+C)
-6. From the `mcritchie-studio` repo, run:
+3. Grant **read** on the **agent** vault (`agents-studio`), plus `🧱 Blockchain` if you'll need it
+4. Copy the token (`ops_...` — shown only once), then:
 
 ```bash
 bin/setup-1pass-token
 ```
 
-The script reads from `pbpaste`, validates the prefix, strips whitespace, writes `OP_SERVICE_ACCOUNT_TOKEN` to `~/.zprofile` (idempotent + `chmod 600`), and verifies with `op vault list`. Token never touches shell parsing — bypasses all the smart-quote / line-wrap / newline-in-paste failure modes that broke direct `! echo ops_… >> ~/.zprofile` attempts. See Gotcha 12.
+Writes `OP_SERVICE_ACCOUNT_TOKEN` to `~/.zprofile` (idempotent, `chmod 600`) and
+verifies with `op vault list`. Then `source ~/.zprofile`, or open a new terminal.
 
-After it succeeds, `source ~/.zprofile` (or open a new terminal) to load the export.
+#### 5a-ii. The ADMIN token (required before any production deploy)
 
-**To rotate the token later**, just re-copy and re-run `bin/setup-1pass-token` — it replaces the existing line.
+5. Create a **SECOND, SEPARATE** service account granted **read** on `agents-admin`.
+   Do **not** simply add `agents-admin` to the agent's service account: one token
+   that sees both vaults still works, but the isolation above is then gone.
+6. Confirm `github.mcritchie-deployer` actually lives in `agents-admin` — the
+   deployer App item, `app-id` field plus the `.pem` **file attachment**.
+7. Copy that token, then:
+
+```bash
+bin/setup-1pass-token --admin
+```
+
+Writes `OP_ADMIN_SERVICE_ACCOUNT_TOKEN` to **`~/.zprofile.admin`** (`chmod 600`),
+which is deliberately **not** auto-loaded. Ship lanes opt in explicitly:
+
+```bash
+source ~/.zprofile.admin
+```
+
+**Verify both lanes before trusting either** — a missing admin token does not
+announce itself until a deploy:
+
+```bash
+eval "$(bin/gh-auth-refresh --export)" && gh api rate_limit --jq .rate.remaining   # agent
+bin/gh-token --identity deployer >/dev/null && echo "deployer OK"                  # admin
+```
+
+Run the deployer check in a shell that has sourced `~/.zprofile.admin`.
+
+**THE CACHE WILL LIE TO YOU HERE, so read this before trusting a green.**
+`bin/gh-token` caches a minted token for **50 minutes**
+(`REFRESH_AFTER_SECONDS = 3000`) in `<projects>/.agents/github-tokens.json`, and
+the main flow reads that cache BEFORE it mints. So within 50 minutes of ANY
+successful admin mint, the check above prints `deployer OK` **in a shell that
+never sourced `~/.zprofile.admin`** — certifying an admin token you have not
+installed, with the truth surfacing at the next production deploy. That is
+exactly the cause-far-behind-symptom failure this section exists to prevent.
+There is no --no-cache flag today. Verify by clearing the deployer slot first:
+`ruby -rjson -e 'p=File.join(ENV["HOME"],"projects/.agents/github-tokens.json"); j=JSON.parse(File.read(p)); j.delete("deployer"); File.write(p, JSON.pretty_generate(j))'` — or on a machine that has never minted one.
+
+What IS genuinely blocked without the admin token is the **1Password read** — the
+mint. A build lane cannot MINT admin credentials. It is not true that it can
+never OBTAIN a deployer token, and nothing here should say otherwise;
+`/tasks/never-cache-deployer-token` closes the window by not caching that token
+at all.
+
+Both scripts read from `pbpaste`, validate the prefix and strip whitespace, so the
+token never touches shell parsing — bypassing the smart-quote / line-wrap /
+newline-in-paste failures that broke direct `! echo ops_… >> ~/.zprofile` attempts.
+See Gotcha 12.
+
+**To rotate either token**, re-copy and re-run the same command — each replaces only
+its own line. (The removal is anchored on `^export VAR=` for exactly this reason:
+an unanchored match on `OP_SERVICE_ACCOUNT_TOKEN` also matches
+`OP_ADMIN_SERVICE_ACCOUNT_TOKEN` as a substring, and once silently deleted the admin
+token while reinstalling the agent one.)
 
 ### 5b. Per-app .env files
 

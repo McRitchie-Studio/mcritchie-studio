@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require_relative "../support/resolved_view"
 
 # [component] Adoption of studio-engine's shared layer scale.
 #
@@ -26,7 +27,16 @@ class LayerScaleAdoptionTest < ActionDispatch::IntegrationTest
   CSS       = Rails.root.join("app/assets/tailwind/application.css")
   HEARTBEAT = Rails.root.join("app/assets/tailwind/heartbeat.css")
   LAYOUT    = Rails.root.join("app/views/layouts/application.html.erb")
-  HOST      = Rails.root.join("app/views/studio/modals/_host.html.erb")
+
+  # THE MODAL HOST IS NOT A PATH IN THIS APP ANY MORE — it is whatever the
+  # lookup resolves. This app shipped a fork of studio/modals/_host that SHADOWED
+  # the engine's (non-isolated engine, same path wins); the fork is deleted and
+  # the engine's host renders. A `Rails.root.join(...)` constant here would now
+  # raise Errno::ENOENT, and — worse — while the fork existed it quietly asserted
+  # the FORK carried the tier, which said nothing about the file on the page.
+  # Resolving asks the question that matters, and keeps asking it if anyone
+  # re-forks. NOT named `host`: ActionDispatch::Integration already owns that.
+  def resolved_host = ResolvedView.resolve("host", "studio/modals")
 
   # Comments are prose, and these files EXPLAIN the defect using the very numbers
   # being banned. Scanning them would make documenting the fix impossible.
@@ -64,7 +74,7 @@ class LayerScaleAdoptionTest < ActionDispatch::IntegrationTest
   end
 
   test "the blocking layers read tiers, not numbers" do
-    assert_includes markup_of(HOST), "z-[var(--z-modal)]",
+    assert_includes markup_of(resolved_host), "z-[var(--z-modal)]",
                     "the modal host is this app's blocker and must sit on the shared tier"
     assert_includes markup_of(LAYOUT), "z-[var(--z-nav)]",
                     "the pinned header must sit on the shared tier"
@@ -162,7 +172,7 @@ class LayerScaleAdoptionTest < ActionDispatch::IntegrationTest
   # container. Both halves are load-bearing; this test names them individually
   # so neither can be dropped as redundant.
   test "the modal scroll lock goes on the element that actually scrolls" do
-    host = markup_of(HOST)
+    host = markup_of(resolved_host)
 
     assert_match(/html:has\(body\.modal-open\)\s*\{[^}]*overflow:\s*hidden/, host,
                  "the lock must be on html — on body it stops propagating the moment " \

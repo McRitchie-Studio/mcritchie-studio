@@ -186,7 +186,7 @@ model allows a null `task_slug`).
 | `ATOMIC_CAPTURE_FOREGROUND` | unset | `1` runs delivery inline (tests/debug) |
 
 The agent token is sourced **exactly like `bin/task`**: `AGENT_API_SECRET` from
-the environment, else 1Password (`op://agents/Agent API Secret/AGENT_API_SECRET`),
+the environment, else 1Password (the agent vault's `Agent API Secret/AGENT_API_SECRET`),
 else the repo `.env`. The minted bearer token is then sent as
 `Authorization: Bearer <token>` to `/api/v1/agent_actions`.
 
