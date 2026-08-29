@@ -99,6 +99,30 @@ end
 LIFETIME_SECONDS = 3600
 REFRESH_AFTER_SECONDS = 3000
 
+# WHICH IDENTITIES MAY BE CACHED AT ALL — and `deployer` deliberately may not.
+#
+# THE DEFECT THIS CLOSES (found 2026-08-28 when the two-vault split was reviewed).
+# The cache exists so sibling agent PROCESSES can share a token: an exported env
+# var is invisible to a sibling, so the shared state has to be on disk. That is
+# right for `agent`, which re-mints roughly hourly across many concurrent lanes.
+#
+# It is wrong for `deployer`. The two-vault split makes a build lane unable to
+# MINT admin credentials — the 1Password read is what is blocked. But the cache
+# is read BEFORE the mint, so for the 50 minutes after any admin-lane mint a
+# deployer token sat in a 0600 file that ordinary lanes read by design, and
+# `bin/gh-token --identity deployer` SUCCEEDED in a shell with no admin token.
+# The isolation was real for minting and hollow for obtaining.
+#
+# Ship lanes run a handful of times a day, so re-minting per call costs almost
+# nothing and removes the window entirely rather than narrowing it. Chosen by the
+# operator over partitioning the cache, which is more machinery and still leaves
+# a deployer token on disk.
+CACHEABLE_IDENTITIES = %w[agent].freeze
+
+def cacheable?(identity)
+  CACHEABLE_IDENTITIES.include?(identity.to_s)
+end
+
 OP_BIN = ENV["GH_TOKEN_OP_BIN"].to_s.strip.empty? ? "/opt/homebrew/bin/op" : ENV["GH_TOKEN_OP_BIN"]
 MINT_BIN = ENV["GH_TOKEN_MINT_BIN"].to_s.strip.empty? ? File.expand_path("gh-app-mint-token", __dir__) : ENV["GH_TOKEN_MINT_BIN"]
 PROJECTS = ENV["CLAUDE_PROJECTS_DIR"].to_s.strip.empty? ? File.expand_path("~/projects") : ENV["CLAUDE_PROJECTS_DIR"]
@@ -206,6 +230,19 @@ def refresh(identity)
   # rather than clobbered — not for exclusion (there is none), just so both agents'
   # tokens survive in the two slots and the newest still wins on read.
   store = read_store
+
+  # A NON-CACHEABLE IDENTITY IS NEVER WRITTEN, and any slot an earlier version of
+  # this script left behind is PURGED here rather than merely ignored. Ignoring it
+  # would leave a live deployer token on disk until it aged out — the exact window
+  # this change exists to close, surviving the change that closes it.
+  unless cacheable?(identity)
+    if store.key?(identity)
+      store.delete(identity)
+      write_store(store)
+    end
+    return token
+  end
+
   # Same shape rule one level down: read_store now guarantees a Hash, but an ENTRY
   # can still be a scalar ({"agent":"oops"}), and String#[]= raises IndexError.
   entry = store[identity]
@@ -269,7 +306,10 @@ end
 identity = resolve_identity(identity)
 die!("unknown identity #{identity.inspect} (expected: #{IDENTITIES.keys.join(', ')})") unless IDENTITIES.key?(identity)
 
-unless force
+# `cacheable?` is checked BEFORE the read, not after: serving a token this script
+# will no longer write is exactly the stale-credential path the purge above exists
+# to prevent.
+unless force || !cacheable?(identity)
   cached = usable_token(read_store[identity] || {})
   if cached
     puts cached
