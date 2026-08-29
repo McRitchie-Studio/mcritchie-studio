@@ -2,7 +2,7 @@ require "test_helper"
 
 # Contract for the studio-engine pin.
 #
-# The Gemfile pin is `~> 0.43` — that is `>= 0.43, < 1.0`, so it DOES floor this
+# The Gemfile pin is `~> 0.65` — that is `>= 0.65, < 1.0`, so it DOES floor this
 # app, and a plain `bundle update` cannot walk the resolved version backwards.
 # What a pin string cannot do is speak for what RESOLVED; reading one as the
 # other is how "turf is on 0.31" got believed while that app's lockfile said

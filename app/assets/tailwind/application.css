@@ -424,6 +424,44 @@
 }
 
 @layer utilities {
+  /* === THIS APP'S NAVBAR COLLAPSE BAND ==================================
+     The engine ships the mechanism (--nav-p, navCollapse) and a DEFAULT band
+     table on .nav-shell; both arrive through layouts/studio/_head and
+     engine.css, which every consumer already renders and imports. This app
+     only overrides the endpoints that differ, which is the whole point of the
+     three-layer split — the engine's defaults are logo 3rem -> 2rem and title
+     1.875rem -> 1.25rem, and this navbar has always been smaller.
+
+     Endpoints are UNCHANGED from the threshold build they replace:
+       logo   w-8 -> w-5      2rem   -> 1.25rem
+       title  text-2xl -> text-base  1.5rem -> 1rem
+       row padding py-6 -> py-2      already the engine default, not restated
+
+     --nav-ramp stays the engine's, and so does --nav-max-step: the ramp is
+     sized at 3x the band's collapse total and the cap is derived from it, so
+     restating one without the other is how that relationship silently drifts.
+
+     LAYERED, after the engine import, so these win on source order at equal
+     specificity — the engine's defaults ship inside @layer utilities for
+     exactly this. */
+  .nav-shell {
+    --nav-logo-size: calc(2rem - 0.75rem * var(--nav-p, 0));      /* 32px -> 20px */
+    --nav-title-size: calc(1.5rem - 0.5rem * var(--nav-p, 0));    /* 24px -> 16px */
+    --nav-title-lead-size: var(--nav-title-size);
+    --nav-title-lead: calc(2rem - 0.5rem * var(--nav-p, 0));      /* line box, 32px -> 24px */
+  }
+  /* ONE LINE UNDER 768px TOO. The engine's mobile band stacks a two-span title
+     into a column; this h1 is a bare text node plus one span and never stacked.
+     Measured at 390/767px, the column made the collapsed title 24px -> 44px and
+     the expanded row 84px -> 108px. Row + wrap keeps the old shape (one line
+     where it fits, a natural wrap where not); the first-child pull, meant for
+     the upper word of a stack, is reset so it cannot shave the last word.
+     Adopting the stack is a design choice for its own task. */
+  @media (max-width: 767px) {
+    .nav-shell .nav-title { flex-direction: row; flex-wrap: wrap; gap: 0 0.25em; }
+    .nav-shell .nav-title span:first-child { margin-bottom: 0; }
+  }
+
   /* Theme CSS custom properties are now engine-generated via studio_theme_css_tag */
   /* [x-cloak], .studio-link-sidebar-layer, and the html overflow-x clip slide
      guard are engine-owned since studio-engine 0.30 (engine.css + the
