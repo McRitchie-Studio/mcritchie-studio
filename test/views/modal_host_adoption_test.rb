@@ -47,7 +47,13 @@ class ModalHostAdoptionTest < ActionDispatch::IntegrationTest
   end
 
   test "the layout still registers the host and hands it a slot" do
-    layout = LAYOUT.read
+    # COMMENTS STRIPPED FIRST, and this file of all files should have done so.
+    # Its own header declares "EVERY ANCHOR HERE IS A FORM PROSE CANNOT TAKE" —
+    # this was the one anchor that could. Proven, not argued: replacing the whole
+    # render block with `<%# render "studio/modals/host" do — removed %>` left
+    # this test GREEN while the host vanished from every page. Mirrors markup_of
+    # in layer_scale_adoption_test.rb.
+    layout = LAYOUT.read.gsub(/<%#.*?%>/m, " ")
 
     assert_includes layout, %(render "studio/modals/host" do),
                     "the host must be rendered WITH A BLOCK — its per-callsite modal " \
