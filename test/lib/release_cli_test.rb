@@ -26,6 +26,7 @@ require "fileutils" # lock_dir cleanup (Minitest.after_run remove_entry)
 require "English"   # $CHILD_STATUS — the gate-lock queue test reaps its own child
 require_relative "release_cli_stubs"
 require_relative "../support/session_env"
+require_relative "../support/outbound_seams"
 require_relative "../support/release_archive_seams"
 
 class ReleaseCliTest < Minitest::Test
@@ -193,7 +194,23 @@ class ReleaseCliTest < Minitest::Test
     # boot-window wait. A sleeper cannot be injected through the loaded script,
     # so without this every red-seal test below would burn a genuine 30s. Zero
     # keeps the retry PATH exercised end-to-end at no wall-clock cost.
-    env = SessionEnv.neutralized(
+    # OutboundSeams, not SessionEnv, and the difference is load-bearing.
+    # SessionEnv scrubs the ambient AGENT-SESSION vars; it says nothing about the
+    # child's ability to REACH THE OUTSIDE WORLD, and these children drive real
+    # bin/release subcommands. This is DEFENCE IN DEPTH, not a bug fix: the cases
+    # below stub `sh` per-case and those stubs hold today. What they do not give
+    # is a floor — a future case that forgets a stub has nothing beneath it, and
+    # `gh` / `heroku` / `op` / `ssh` would resolve to the REAL binaries with the
+    # developer's own credentials. OutboundSeams.env wraps the same SessionEnv
+    # scrub and then puts sealed stubs in FRONT of PATH, so such a call resolves
+    # to a stub that LOGS its argv and exits non-zero with no output. Caller
+    # overrides still win, and the whole file stays green (299 runs, 0 failures),
+    # which is the point: it costs nothing and it cannot be forgotten.
+    #
+    # NOT a substitute for the per-case stubs. PATH sealing cannot catch a script
+    # invoked by RELATIVE PATH (bin/prod-smoke, bin/clean-artifacts), which is why
+    # ReleaseArchiveSeams exists for the archive path.
+    env = OutboundSeams.env(
       "MCR_PRIMARY_LOCK_DIR" => self.class.lock_dir,
       "SEAL_RETRY_DELAY_SECONDS" => "0",
       "TASK_API_BASE" => UNROUTABLE_API_BASE
@@ -300,7 +317,7 @@ class ReleaseCliTest < Minitest::Test
   # run_ruby, but with MCR_PRIMARY_LOCK_DIR explicitly UNSET — the fallback that
   # reaches the operator's real lock dir. (run_ruby pins it, which is the point of it.)
   def run_ruby_unpinned(script)
-    env = SessionEnv.neutralized("MCR_PRIMARY_LOCK_DIR" => nil)
+    env = OutboundSeams.env("MCR_PRIMARY_LOCK_DIR" => nil)
     out, err, status = Open3.capture3(env, "ruby", "-e", script)
     assert_predicate status, :success?, "the abort must be caught in-process, not crash the child: #{err}"
     out
@@ -330,6 +347,26 @@ class ReleaseCliTest < Minitest::Test
   # set before `load`). `setup` is extra ruby injected AFTER load (e.g. to stub
   # `conductor` so the shell orchestration runs WITHOUT Rails/a DB), `call` is the
   # entrypoint method to invoke.
+  # GUARD THE FLOOR ITSELF. run_ruby's env is the only thing between a case that
+  # forgets to stub `sh` and the developer's real `gh` / `heroku` / `op` / `ssh`.
+  #
+  # DRIVEN THROUGH THE REAL RUNNER, and read from the RECEIPT rather than the env
+  # hash. Asserting the env merely NAMES the stub directory would pass against a
+  # PATH that still resolves the real binary first — the exact shape of a guard
+  # that looks armed and is not. This spawns a child through run_ruby and asserts
+  # the stub actually intercepted the call.
+  def test_the_child_env_seals_outbound_binaries
+    OutboundSeams.reset!
+    out = run_ruby(%(system("gh", "--version"); puts "CHILD-DONE"))
+
+    assert_includes out, "CHILD-DONE", "the child must run to completion"
+    refute_empty OutboundSeams.calls_to("gh"),
+                 "run_ruby's child resolved the REAL `gh`. Its env must come from " \
+                 "OutboundSeams.env, not SessionEnv.neutralized — otherwise a case " \
+                 "that forgets to stub `sh` reaches the network with the operator's " \
+                 "own credentials. Receipts seen: #{OutboundSeams.calls.inspect}"
+  end
+
   def run_cli(argv, call:, setup: "")
     run_ruby(%(ARGV.replace(#{argv.inspect}); load #{BIN.inspect}; #{setup}; #{call}))
   end
