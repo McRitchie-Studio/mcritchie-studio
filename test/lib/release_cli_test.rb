@@ -317,7 +317,7 @@ class ReleaseCliTest < Minitest::Test
   # run_ruby, but with MCR_PRIMARY_LOCK_DIR explicitly UNSET — the fallback that
   # reaches the operator's real lock dir. (run_ruby pins it, which is the point of it.)
   def run_ruby_unpinned(script)
-    env = SessionEnv.neutralized("MCR_PRIMARY_LOCK_DIR" => nil)
+    env = OutboundSeams.env("MCR_PRIMARY_LOCK_DIR" => nil)
     out, err, status = Open3.capture3(env, "ruby", "-e", script)
     assert_predicate status, :success?, "the abort must be caught in-process, not crash the child: #{err}"
     out
