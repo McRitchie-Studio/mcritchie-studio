@@ -303,11 +303,10 @@ to prevent. The deployer is now cached NOWHERE (`CACHEABLE_IDENTITIES =
 %w[agent]`), so a green `deployer OK` proves the 1Password read itself
 succeeded, with no cache-clearing dance first.
 
-What IS genuinely blocked without the admin token is the **1Password read** — the
-mint. A build lane cannot MINT admin credentials. It is not true that it can
-never OBTAIN a deployer token, and nothing here should say otherwise;
-`/tasks/never-cache-deployer-token` closes the window by not caching that token
-at all.
+What is blocked without the admin token is the **1Password read** — the mint.
+And since `never-cache-deployer-token` shipped, a build lane can no longer obtain
+a deployer token by any route either: there is nothing on disk to read, so the
+mint is the only path and it is closed.
 
 Both scripts read from `pbpaste`, validate the prefix and strip whitespace, so the
 token never touches shell parsing — bypassing the smart-quote / line-wrap /
