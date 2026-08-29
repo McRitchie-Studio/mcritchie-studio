@@ -6,30 +6,49 @@ This file names credential locations so agents can ask for or reference the righ
 
 | Vault | Purpose |
 |-------|---------|
-| `agents` | Default agent-readable vault. Service account should have read access. |
+| `agents-studio` | The **agent** vault — every build, review, and QA lane reads it through `OP_SERVICE_ACCOUNT_TOKEN`. It is the vault formerly named `agents` (renamed 2026-08-28; same vault id `txqp6ijdo3ujsfhsfzdj5h5dzq`). |
+| `agents-admin` | The **admin** vault — `github.mcritchie-deployer` and other ship-lane credentials. Read only by a SEPARATE service account (`OP_ADMIN_SERVICE_ACCOUNT_TOKEN`, sourced from `~/.zprofile.admin`); the agent token is never granted it, so an ordinary agent shell cannot even list it. That invisibility is the design, not a fault. |
+| `agents-industries` | Industries-brand agent credentials. Created 2026-08-28; empty as of 2026-08-29. The agent token has read. |
+| `agents-mcritchie-family` | Family-brand agent credentials. Created 2026-08-28; empty as of 2026-08-29. The agent token has read. |
+| `Commercial Welding` | Reserved for the Commercial Welding initiative. Created 2026-08-28; empty as of 2026-08-29. The agent token has read. |
 | `Blockchain` / `🧱 Blockchain` | Human-controlled blockchain credentials, if granted. |
+
+`bin/lib/op_vaults.rb` is the one place code names a vault (`MCR_OP_VAULT_AGENT` /
+`MCR_OP_VAULT_ADMIN` override it per machine). The names in this table are for
+humans; when the two disagree, fix both in the same pass.
 
 ## Known Items
 
 | Item | Vault | Purpose | Typical consumer |
 |------|-------|---------|------------------|
-| `agent.heroku` | `agents` | Heroku API key | `bin/ecosystem-build` |
-| `github.mcritchie-agent` | `agents` | GitHub App for the **build/review** lanes (the default identity): Contents + Pull requests + Checks read + Actions + Workflows across the McRitchie-Studio org. Fields: `app-id`, `client-id`; the private key is the **`.pem` FILE attachment** — the concealed `private key` field is NOT the key. | Two legs: `git push` via the global helper `bin/gh-app-git-credential`; `gh` PR create/merge + CI-status reads via a per-session minted `GH_TOKEN` (`bin/gh-app-mint-token`) — `gh` never consults git credential helpers (see `credentials.md` → GitHub). |
-| `github.mcritchie-deployer` | `agents` | GitHub App for the **ship** lane: Contents + Actions + Checks read + Secrets — **no pull-request scope by design** (the deployer cannot open or merge PRs). Fields: `app-id`, `client-id`; key is the **`.pem` FILE attachment**. | `production-deploy` / `bin/release ship` sessions, via `export GH_APP_ITEM=github.mcritchie-deployer`. |
-| `agent.github` | `agents` | **DEPRECATED — delete only after BOTH auth legs are verified on the App identities** (git pushes via the helper AND `gh` writes via a minted `GH_TOKEN` — a premature deletion strands every `gh`-driven lane still holding stored PAT auth). The old `amcritchie` fine-grained PAT — fine-grained PATs cannot call the check-runs API, so it was replaced by the two GitHub Apps above. Do not wire it into anything new. | Historical reference only. |
-| `Agent API Secret` | `agents` | Task-board API secret (`AGENT_API_SECRET`); auth for the agent task API. Also in app `.env` + Heroku config | McRitchie Studio task board (`POST /api/v1/auth`); see `task-board-api.md` |
-| `agent.solana` | `agents` | Legacy Alex Bot Solana wallet; retired after key rotation | Historical reference only |
-| `agent.alex.solana` | `agents` | Rotated Alex Bot/admin wallet | turf-vault and Turf Monster ops |
-| `agent.mason.solana` | `agents` | Mason wallet | multisig / agent wallet |
-| `agent.mack.solana` | `agents` | Mack wallet | agent wallet |
-| `agent.turf.solana` | `agents` | Turf Monster wallet | agent wallet |
-| `agent.managed_wallet` | `agents` | Managed wallet encryption key | Turf Monster managed-wallet flows |
-| `agent.helius` | `agents` | Devnet/mainnet Helius RPC URLs | Solana apps |
-| `agent.aws.mcritchie-ses` | `agents` | Shared SES-scoped AWS API credentials, region `us-east-2`; runtime SMTP credentials are derived/stored separately | McRitchie, Turf Monster, and future app email delivery |
-| `agent.aws` | `agents` | General AWS API credentials (S3 read/write, `us-east-2`); fields `access key` + `access secret key`. One IAM user, `mcritchie-s3`, backs **every** McRitchie app — read **Shared AWS identity** below before rotating or reusing it. Ignore the decoy `dont.use.agent.aws`. | Active Storage + reference-image (e.g. Pokémon) uploads, across hub, Turf Monster, Industries, and moms-app |
-| `Coinbase Developer Platform` | `agents` | CDP API key | Turf Monster CDP ramp |
-| `agent.higgesfield` | `agents` | Higgsfield media generation API | McRitchie Studio content pipeline |
-| `x.api` | `agents` | X/Twitter API credentials | McRitchie Studio news/content |
+| `agent.heroku` | `agents-studio` | Heroku API key | `bin/ecosystem-build` |
+| `github.mcritchie-agent` | `agents-studio` | GitHub App for the **build/review** lanes (the default identity): Contents + Pull requests + Checks read + Actions + Workflows across the McRitchie-Studio org. Fields: `app-id`, `client-id`; the private key is the **`.pem` FILE attachment** — the concealed `private key` field is NOT the key. | Two legs: `git push` via the global helper `bin/gh-app-git-credential`; `gh` PR create/merge + CI-status reads via a per-session minted `GH_TOKEN` (`bin/gh-app-mint-token`) — `gh` never consults git credential helpers (see `credentials.md` → GitHub). |
+| `github.mcritchie-deployer` | `agents-admin` | GitHub App for the **ship** lane: Contents + Actions + Checks read + Secrets — **no pull-request scope by design** (the deployer cannot open or merge PRs). Fields: `app-id`, `client-id`; key is the **`.pem` FILE attachment**. | `production-deploy` / `bin/release ship` sessions, via `export GH_APP_ITEM=github.mcritchie-deployer` — in a shell that has run `source ~/.zprofile.admin` first, because only the admin token can read this vault. |
+| `agent.github` | — (deleted) | **DELETED from 1Password** — verified absent from `agents-studio` on 2026-08-29, after both auth legs were proven on the App identities. It was the old `amcritchie` fine-grained PAT; fine-grained PATs cannot call the check-runs API, so the two GitHub Apps above replaced it. If a `gh` keyring still lists an `amcritchie` account, that is this PAT lingering: `gh auth logout -h github.com -u amcritchie`, then revoke it on GitHub. | Historical reference only. |
+| `Agent API Secret` | `agents-studio` | Task-board API secret (`AGENT_API_SECRET`); auth for the agent task API. Also in app `.env` + Heroku config | McRitchie Studio task board (`POST /api/v1/auth`); see `task-board-api.md` |
+| `agent.solana` | `agents-studio` | Legacy Alex Bot Solana wallet; retired after key rotation | Historical reference only |
+| `agent.alex.solana` | `agents-studio` | Rotated Alex Bot/admin wallet | turf-vault and Turf Monster ops |
+| `agent.mason.solana` | `agents-studio` | Mason wallet | multisig / agent wallet |
+| `agent.mack.solana` | `agents-studio` | Mack wallet | agent wallet |
+| `agent.turf.solana` | `agents-studio` | Turf Monster wallet | agent wallet |
+| `agent.managed_wallet` | `agents-studio` | Managed wallet encryption key | Turf Monster managed-wallet flows |
+| `agent.helius` | `agents-studio` | Devnet/mainnet Helius RPC URLs | Solana apps |
+| `agent.aws.mcritchie-ses` | `agents-studio` | Shared SES-scoped AWS API credentials, region `us-east-2`; runtime SMTP credentials are derived/stored separately | McRitchie, Turf Monster, and future app email delivery |
+| `agent.aws` | `agents-studio` | General AWS API credentials (S3 read/write, `us-east-2`); fields `access key` + `access secret key`. One IAM user, `mcritchie-s3`, backs **every** McRitchie app — read **Shared AWS identity** below before rotating or reusing it. Ignore the decoy `dont.use.agent.aws`. | Active Storage + reference-image (e.g. Pokémon) uploads, across hub, Turf Monster, Industries, and moms-app |
+| `Coinbase Developer Platform` | `agents-studio` | CDP API key | Turf Monster CDP ramp |
+| `agent.higgesfield` | `agents-studio` | Higgsfield media generation API | McRitchie Studio content pipeline |
+| `x.api` | `agents-studio` — **absent on 2026-08-29**; the X credentials present there are `agent.turf.x` | X/Twitter API credentials | McRitchie Studio news/content |
+
+### Also present in `agents-studio` (listed 2026-08-29, not yet described)
+
+Beyond the rows above: `agent.1password` (holds the
+service-account token install recipe), `agent.rails_master_key`,
+`agent.resend`, `agent.google`, `Google | McRitchie Studio`, `agent.gmail`,
+`agent.rubygems`, `agents.cloudflare`, `agent.ipinfo.io`, `agent.coinflow`,
+`agent.stripe`, `agent.stripe.sandbox`, `turf.stripe`, `Moonpay`,
+`agent.turf.x`, `turf.squad`, `turf_vault-mainnet-keypair` (document),
+`discord.webhooks`, `dont.use.agent.aws` (decoy — ignore). Describe an item
+in the table above the first time a doc or script depends on it.
 
 ## Shared AWS identity — `agent.aws`
 

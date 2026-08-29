@@ -73,7 +73,7 @@ above.
 
 Credential inventory entry:
 
-- `agent.aws.mcritchie-ses` in the `agents` vault: shared SES-scoped AWS credentials, region `us-east-2`.
+- `agent.aws.mcritchie-ses` in the `agents-studio` vault: shared SES-scoped AWS credentials, region `us-east-2`.
 
 Environment variables:
 

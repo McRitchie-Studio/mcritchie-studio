@@ -24,7 +24,7 @@
 - **Deploy**: `git push heroku main`; the Heroku `release` process runs
   `bin/rails db:migrate` before promotion.
 - **Workers**: keep `worker=1` scaled for Solid Queue mail/auth job durability.
-- **Env vars**: `RAILS_MASTER_KEY`, `RAILS_SERVE_STATIC_FILES`, `DATABASE_URL` (auto), `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `ANTHROPIC_API_KEY` (for AI chat + content script/metadata agents), `X_BEARER_TOKEN` (read-only, News intake), `X_API_KEY`/`X_API_SECRET`/`X_ACCESS_TOKEN`/`X_ACCESS_TOKEN_SECRET` (OAuth 1.0a write creds for `X::PostMedia` — must be from an X app with "Read and Write" permissions), `HIGGSFIELD_API_KEY`, `HIGGSFIELD_API_SECRET` (for content image/video generation via Nano Banana + Kling 3 — 1Password item `agent.higgesfield` in `agents` vault)
+- **Env vars**: `RAILS_MASTER_KEY`, `RAILS_SERVE_STATIC_FILES`, `DATABASE_URL` (auto), `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `ANTHROPIC_API_KEY` (for AI chat + content script/metadata agents), `X_BEARER_TOKEN` (read-only, News intake), `X_API_KEY`/`X_API_SECRET`/`X_ACCESS_TOKEN`/`X_ACCESS_TOKEN_SECRET` (OAuth 1.0a write creds for `X::PostMedia` — must be from an X app with "Read and Write" permissions), `HIGGSFIELD_API_KEY`, `HIGGSFIELD_API_SECRET` (for content image/video generation via Nano Banana + Kling 3 — 1Password item `agent.higgesfield` in the `agents-studio` vault)
 - **ACM**: Enabled (auto SSL via Let's Encrypt)
 
 ## Root-Domain Launch Status

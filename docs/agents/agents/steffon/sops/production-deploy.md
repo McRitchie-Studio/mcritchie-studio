@@ -24,6 +24,7 @@ GitHub App identity**:
 
 ```bash
 cd /Users/alex/projects/mcritchie-studio
+source ~/.zprofile.admin          # the deployer item lives in agents-admin; only the admin token reads it
 export GH_APP_ITEM=github.mcritchie-deployer
 export GH_TOKEN=$(printf 'protocol=https\nhost=github.com\n\n' | \
   /Users/alex/projects/mcritchie-studio/bin/gh-app-git-credential get | \
@@ -31,7 +32,11 @@ export GH_TOKEN=$(printf 'protocol=https\nhost=github.com\n\n' | \
 ```
 
 Order matters: the helper reads `GH_APP_ITEM`, so the first export is what makes
-the second one mint the **deployer** token rather than the default agent one.
+the second one mint the **deployer** token rather than the default agent one —
+and the `source` comes first because `github.mcritchie-deployer` lives in the
+`agents-admin` vault, which only `OP_ADMIN_SERVICE_ACCOUNT_TOKEN` can read. Without
+it the mint refuses and names that variable; that refusal is the isolation working
+(`bin/setup-1pass-token --admin` installs the token once per machine).
 
 If a credential goes stale mid-ship, it is **yours to fix**:
 `eval "$(bin/gh-auth-refresh --export)"` re-mints on **this** lane (deployer, per
