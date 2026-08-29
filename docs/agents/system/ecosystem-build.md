@@ -135,5 +135,11 @@ or review weight.
 - `bin/agent-runtime` — installs and checks the `AGENTS.md` + `CLAUDE.md`
   entrypoints, shared user-global agent skills (`docs/agents/skills/*` →
   `~/.claude/skills/*` + `~/.codex/skills/*`), and Codex marker hooks
-- `bin/setup-1pass-token` — the Phase 4 token boundary
+- `bin/setup-1pass-token` — the Phase 4 token boundary (AGENT lane).
+  `bin/setup-1pass-token --admin` installs the SHIP lane's token into
+  `~/.zprofile.admin`, which is not auto-loaded — see
+  `docs/agents/modules/credentials.md` for the two-vault map. Phase 4
+  verifies only the AGENT token; a missing ADMIN token stays silent until
+  a production deploy, so verify it explicitly with
+  `bin/gh-token --identity deployer`.
 - `config/satellites.yml` — the satellite registry the script reads

@@ -23,6 +23,24 @@ cd /Users/alex/projects/mcritchie-studio
 bin/setup-1pass-token
 ```
 
+**Two lanes, two vaults, two tokens.** `bin/lib/op_vaults.rb` is the ONE place
+that maps a lane to its vault and token; no other file should name a vault.
+
+| Lane | Vault (default) | Token variable | Loaded where |
+|------|-----------------|----------------|--------------|
+| `agent` — build, review, merge | `agents-studio` | `OP_SERVICE_ACCOUNT_TOKEN` | `~/.zprofile` — every shell |
+| `deployer` — ship, deploy | `agents-admin` | `OP_ADMIN_SERVICE_ACCOUNT_TOKEN` | `~/.zprofile.admin` — opt-in |
+
+Install the admin one with `bin/setup-1pass-token --admin`; ship lanes then
+`source ~/.zprofile.admin`. It is deliberately NOT auto-loaded, so an ordinary
+agent shell is structurally unable to read an admin credential. A machine whose
+vaults are named differently sets `MCR_OP_VAULT_AGENT` / `MCR_OP_VAULT_ADMIN`
+rather than editing any script.
+
+A `bin/gh-token --identity deployer` that fails naming
+`OP_ADMIN_SERVICE_ACCOUNT_TOKEN` is the isolation WORKING — do not route around
+it by granting the agent token access to the admin vault.
+
 Verify:
 
 ```bash
@@ -31,7 +49,7 @@ Verify:
 
 Expected user type: `SERVICE_ACCOUNT`.
 
-Default access is the `agents` vault. Additional vaults should be granted deliberately for a role or task, such as a DevOps-specific vault for AWS credentials.
+Default access is the AGENT vault (`agents-studio`). The ADMIN vault (`agents-admin`) is granted to a SEPARATE service account, never added to this one — that separation is what makes admin credentials unreadable from a build lane. Additional vaults should be granted deliberately for a role or task, such as a DevOps-specific vault for AWS credentials.
 
 ## GitHub (`gh` / `git`)
 
@@ -49,7 +67,7 @@ rather than a personal token.
 
 ### The items
 
-Both live in the `agents` vault.
+Both live in the AGENT vault. The two GitHub App identities are the exception and split across vaults — see the two-lane table above.
 
 | Identity (1Password item) | Lane | Grants |
 |---------------------------|------|--------|

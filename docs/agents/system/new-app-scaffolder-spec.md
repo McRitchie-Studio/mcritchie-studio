@@ -75,7 +75,7 @@ After prompts, confirm summary and proceed.
    heroku config:set RAILS_MASTER_KEY=<from new app's config/master.key> --app <heroku_app>
    heroku config:set RAILS_SERVE_STATIC_FILES=true --app <heroku_app>
    ```
-5. **Add to 1Password** — store the RAILS_MASTER_KEY as item `<slug>/RAILS_MASTER_KEY` in the `agents` vault.
+5. **Add to 1Password** — store the RAILS_MASTER_KEY as item `<slug>/RAILS_MASTER_KEY` in the AGENT vault (`bin/lib/op_vaults.rb` names it; do not hardcode).
 6. **Cross-link docs**:
    - Update `docs/ECOSYSTEM.md` to add the new repo row + per-repo summary entry
    - Update `docs/agents/system/house-burn-down.md` to add the row in The Ecosystem table

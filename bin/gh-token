@@ -68,11 +68,17 @@ require "json"
 require "fileutils"
 require "time"
 require_relative "../lib/task_usage_sandbox"
+require_relative "lib/op_vaults"
 require_relative "lib/gh_identity"
 
 IDENTITIES = {
-  "agent" => { item: "github.mcritchie-agent", pem: "mcritchie-agent.2026-07-29.private-key.pem" },
-  "deployer" => { item: "github.mcritchie-deployer", pem: "mcritchie-deployer.2026-07-29.private-key.pem" }
+  # `lane` selects the VAULT and the TOKEN (see bin/lib/op_vaults.rb). The
+  # deployer's credentials live in the admin vault and are deliberately
+  # unreadable from an ordinary agent shell.
+  "agent" => { item: "github.mcritchie-agent", pem: "mcritchie-agent.2026-07-29.private-key.pem",
+               lane: :agent },
+  "deployer" => { item: "github.mcritchie-deployer", pem: "mcritchie-deployer.2026-07-29.private-key.pem",
+                  lane: :deployer }
 }.freeze
 
 # The lane this process belongs to, resolved by the shared map in bin/lib/gh_identity.rb
@@ -163,10 +169,14 @@ def usable_token(entry)
   }.min_by(&:first)&.last
 end
 
-def read_secret(ref)
+def read_secret(ref, lane = OpVaults::DEFAULT_LANE)
   return "" unless File.executable?(OP_BIN)
 
-  out = IO.popen([OP_BIN, "read", ref], err: File::NULL, &:read).to_s
+  # op takes its credential from OP_SERVICE_ACCOUNT_TOKEN and nothing else, so a
+  # non-default lane must REPLACE it for this child only. In an ordinary agent
+  # shell the admin token is absent and op_env is {} — the read then fails with
+  # the agent token, which is the isolation working, not a bug.
+  out = IO.popen(OpVaults.op_env(lane), [OP_BIN, "read", ref], err: File::NULL, &:read).to_s
   $?.success? ? out : ""
 rescue StandardError
   ""
@@ -174,10 +184,11 @@ end
 
 def mint(identity)
   meta = IDENTITIES.fetch(identity)
-  app_id = read_secret("op://agents/#{meta[:item]}/app-id").strip
-  pem = read_secret("op://agents/#{meta[:item]}/#{meta[:pem]}")
+  lane = meta.fetch(:lane)
+  app_id = read_secret(OpVaults.ref(meta[:item], "app-id", lane), lane).strip
+  pem = read_secret(OpVaults.ref(meta[:item], meta[:pem], lane), lane)
   if app_id.empty? || pem.strip.empty?
-    die!("could not read the #{identity} App credentials from 1Password (is `op` signed in?)")
+    die!("could not read the #{identity} App credentials from 1Password — #{OpVaults.diagnose(lane)} (is `op` signed in?)")
   end
 
   token = IO.popen({ "GH_APP_ID" => app_id, "GH_APP_PEM" => pem }, [MINT_BIN], &:read).to_s.strip

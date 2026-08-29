@@ -12,7 +12,7 @@
 #   * unknown flags are REJECTED (exit 1) with a nearest-flag suggestion —
 #     a typo'd flag can never silently drop data (`--pr` means `--pr-url`).
 #
-# Auth: AGENT_API_SECRET from ENV, else 1Password (op://agents/Agent API
+# Auth: AGENT_API_SECRET from ENV, else 1Password (the agent vault's "Agent API
 # Secret/AGENT_API_SECRET), else the repo .env. Base URL via TASK_API_BASE
 # (default https://mcritchie.studio).
 #

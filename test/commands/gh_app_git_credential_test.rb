@@ -71,8 +71,8 @@ class GhAppGitCredentialTest < Minitest::Test
 
     assert status.success?
     log = File.read(File.join(@sandbox, "op.log"))
-    assert_includes log, "item get github.mcritchie-agent --vault agents --format json"
-    assert_includes log, "read op://agents/github.mcritchie-agent/app-id"
+    assert_includes log, "item get github.mcritchie-agent --vault agents-studio --format json"
+    assert_includes log, "read op://agents-studio/github.mcritchie-agent/app-id"
   end
 
   def test_gh_app_item_selects_the_deployer_identity
@@ -80,8 +80,14 @@ class GhAppGitCredentialTest < Minitest::Test
 
     assert status.success?
     log = File.read(File.join(@sandbox, "op.log"))
-    assert_includes log, "item get github.mcritchie-deployer --vault agents --format json"
-    assert_includes log, "read op://agents/github.mcritchie-deployer/app-id"
+    # THE ISOLATION, asserted rather than assumed: the deployer resolves to a
+    # DIFFERENT vault than the agent. agents-studio carries the agent App item and
+    # NOT the deployer's, so collapsing these two onto one vault turns the build
+    # lane green while breaking production deploys silently. See bin/lib/op_vaults.rb.
+    assert_includes log, "item get github.mcritchie-deployer --vault agents-admin --format json"
+    refute_includes log, "--vault agents-studio",
+                    "the deployer must never read from the agent vault"
+    assert_includes log, "read op://agents-admin/github.mcritchie-deployer/app-id"
   end
 
   # The key is the .pem FILE attachment — the helper must pick it over other
@@ -92,7 +98,7 @@ class GhAppGitCredentialTest < Minitest::Test
 
     assert status.success?
     log = File.read(File.join(@sandbox, "op.log"))
-    assert_includes log, "read op://agents/github.mcritchie-agent/mcritchie-agent.2026-07-29.private-key.pem"
+    assert_includes log, "read op://agents-studio/github.mcritchie-agent/mcritchie-agent.2026-07-29.private-key.pem"
     refute_includes log, "note.txt"
     assert_equal "id=424242\npem=#{FAKE_PEM}\n", File.read(File.join(@sandbox, "mint-env.txt"))
   end
