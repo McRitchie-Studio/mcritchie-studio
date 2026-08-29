@@ -135,7 +135,7 @@ gem "sentry-rails"
 # UserMailer calls Studio::Banner.for(name:) and EmailCatalog.subject_for, and
 # /admin/emails is drawn from Studio::EmailSetting + Studio::EmailPreviewTarget.
 #
-# 0.43.0 IS THE FLOOR THIS APP ACTUALLY RUNS ON, and it fails the same way
+# 0.43.0 WAS THE FLOOR until the pinned stack (below), and it fails the same way
 # 0.40.0 did — the API is simply not there, so it is a NoMethodError rather than
 # a cosmetic regression. user_mailer.rb:44-46 reads the operator's body copy and
 # button straight off the catalog: EmailCatalog.body, .cta_text, .cta_color and
@@ -151,12 +151,23 @@ gem "sentry-rails"
 # operator's copy on /admin/emails has nowhere to be stored and nothing to read
 # it.
 #
-# THE PIN DOES FLOOR — `~> 0.43` is `>= 0.43, < 1.0`, so a plain `bundle update`
+# THE PIN DOES FLOOR — `~> 0.65` is `>= 0.65, < 1.0`, so a plain `bundle update`
 # cannot walk this app backwards. What a pin string cannot do is speak for the
 # version that RESOLVED: a pin loosened later, a `path:`/`git:` override, a
 # hand-edited lockfile, or an unmigrated database all get past it.
 # test/lib/engine_pin_contract_test.rb asserts the resolved version and columns.
-gem "studio-engine", "~> 0.43"
+#
+# 0.65.0 IS THE FLOOR NOW, and a HARD one: it ships the pinned-stack publisher
+# (any element carrying data-pin publishes --pin-<name>-h and --pin-<name>-bottom)
+# and the task board POSITIONS OFF IT — the app-ladder strip from
+# --pin-nav-bottom, the lane headers from max(--pin-nav-bottom, --pin-apps-bottom),
+# with no JS measuring either. Below 0.65 neither property is published, both
+# var() fall back to 0px, and the strip and every stage header pile up under the
+# navbar. It replaced ~40 lines of Alpine that measured the header and chased it
+# through its collapse (task stop-headers-chasing-navbar). The old `~> 0.43`
+# already RESOLVED 0.65.2, so the resolver never saw this bump; it is the floor
+# that moved, which is what this comment records.
+gem "studio-engine", "~> 0.65"
 
 # Pin the majors this app already runs so an engine bump cannot carry a new one
 # in silently. studio-engine declares `redis >= 4.0.1` with NO upper bound — the

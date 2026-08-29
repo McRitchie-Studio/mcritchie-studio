@@ -45,8 +45,12 @@ class GhTokenTest < Minitest::Test
     mint = File.join(dir, "mint-stub")
     File.write(mint, "#!/bin/sh\necho '#{mint_output}'\nexit #{mint_status}\n")
     File.chmod(0o755, mint)
+    # The op stub LOGS its argv. Until 2026-08-29 the deployer's cache slot served
+    # as the observable proof of which App was asked for; the deployer token is no
+    # longer cached (see never-cache-deployer-token), so that proxy is gone. The
+    # op read is the DIRECT evidence and always was the better one.
     op = File.join(dir, "op-stub")
-    File.write(op, "#!/bin/sh\necho stub-secret\n")
+    File.write(op, "#!/bin/sh\necho \"$@\" >> #{File.join(dir, 'op-calls.log')}\necho stub-secret\n")
     File.chmod(0o755, op)
 
     { "CLAUDE_PROJECTS_DIR" => dir, "GH_TOKEN_MINT_BIN" => mint, "GH_TOKEN_OP_BIN" => op }
@@ -56,8 +60,18 @@ class GhTokenTest < Minitest::Test
     Open3.capture3(env, BIN, *args)
   end
 
+  def op_calls(dir)
+    path = File.join(dir, "op-calls.log")
+    File.exist?(path) ? File.read(path) : ""
+  end
+
   def store_path(dir) = File.join(dir, ".agents", "github-tokens.json")
-  def store(dir) = JSON.parse(File.read(store_path(dir)))
+  # A MISSING FILE IS A VALID STATE, not an error. Since never-cache-deployer-token
+  # a deployer-only run writes nothing at all, so the store may not exist —
+  # "nothing was cached" is precisely what several assertions here mean to check.
+  def store(dir)
+    File.exist?(store_path(dir)) ? JSON.parse(File.read(store_path(dir))) : {}
+  end
 
   def test_mints_and_caches_on_a_cold_start
     Dir.mktmpdir do |dir|
@@ -129,14 +143,22 @@ class GhTokenTest < Minitest::Test
 
   # Two Apps with deliberately different powers: a merge call must never receive a
   # deployer token, so the identities cache separately.
-  def test_identities_cache_independently
+  # The AGENT caches and the DEPLOYER deliberately does not — see
+  # never-cache-deployer-token. This asserted both were cached until 2026-08-29,
+  # which was the defect: a deployer token on disk is readable by every lane for
+  # REFRESH_AFTER_SECONDS, so the isolation was real for MINTING and hollow for
+  # OBTAINING. The surviving invariant — one identity's token is never served for
+  # another — is asserted below rather than dropped.
+  def test_the_agent_caches_and_the_deployer_never_does
     Dir.mktmpdir do |dir|
       env = with_env(dir)
       run_token(env)
       run_token(env, "--identity", "deployer")
 
-      assert store(dir).key?("agent")
-      assert store(dir).key?("deployer")
+      assert store(dir).key?("agent"), "sibling agent PROCESSES share this cache — it must survive"
+      refute store(dir).key?("deployer"),
+             "a deployer token must never reach disk: the cache is read BEFORE the mint, " \
+             "so a cached one is obtainable by a lane that could never have minted it"
     end
   end
 
@@ -296,7 +318,14 @@ class GhTokenTest < Minitest::Test
 
       assert status.success?, err
       assert_equal "ghs_sTuBtOkEn", out.strip
-      refute_nil store(dir)["deployer"], "the ship lane's token must be cached as `deployer`"
+
+      calls = op_calls(dir)
+
+      assert_includes calls, "github.mcritchie-deployer",
+                      "the ship lane must read the DEPLOYER App item: #{calls.inspect}"
+      refute_includes calls, "github.mcritchie-agent",
+                      "and must never read the agent's — that App holds pull_requests:write, " \
+                      "which the deployer is denied by design"
       assert_nil store(dir)["agent"], "and NOTHING may land in the agent slot"
     end
   end

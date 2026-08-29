@@ -25,7 +25,14 @@ class StudioThemePolishTest < ActionDispatch::IntegrationTest
 
     assert_includes response.body, "bg-page/95"
     assert_includes response.body, "supports-[backdrop-filter]:backdrop-blur"
-    assert_includes response.body, "invert transition-all duration-300 dark:invert-0"
+    # THE INVERT PAIR is the theme concern here — the mark is dark-on-light and
+    # has to un-invert in dark mode. The timed transition that used to sit
+    # between the two halves went with the navbar's collapse: sizing is
+    # scroll-linked now, so there is nothing left for a clock to ease (task
+    # stop-headers-chasing-navbar). Asserted as the pair rather than as one
+    # string so a future class reorder does not read as a theme regression.
+    assert_includes response.body, "invert", "the mark inverts for the light theme"
+    assert_includes response.body, "dark:invert-0", "and un-inverts in dark mode"
     assert_includes response.body, "hover:bg-surface-alt"
     assert_includes response.body, "focus-visible:ring-primary/40"
     assert_includes response.body, "inline-flex h-9 w-9 items-center justify-center"

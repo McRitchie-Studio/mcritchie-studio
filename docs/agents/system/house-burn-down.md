@@ -233,9 +233,11 @@ The build lanes and the ship lane authenticate as different GitHub App identitie
 (`github.mcritchie-agent` builds and merges; `github.mcritchie-deployer` pushes
 `main` and deploys but cannot touch PRs). Their credentials live in **different
 vaults**, read by **different service-account tokens**, so an ordinary agent shell
-is *structurally* unable to read an admin credential — not merely discouraged from
-it. `bin/lib/op_vaults.rb` is the one place that maps lane → vault → token; nothing
-else should ever name a vault.
+cannot MINT an admin credential — the 1Password read is the step that is
+*structurally* blocked, not merely discouraged. That is the whole claim: it is not
+the wider one that such a shell can never come to HOLD a deployer token, which is
+false and is what the cache warning in 5a-ii is about. `bin/lib/op_vaults.rb` is the
+one place that maps lane → vault → token; nothing else should ever name a vault.
 
 | Lane | Vault (default) | Token variable | Loaded where |
 |------|-----------------|----------------|--------------|
@@ -288,22 +290,23 @@ bin/gh-token --identity deployer >/dev/null && echo "deployer OK"               
 
 Run the deployer check in a shell that has sourced `~/.zprofile.admin`.
 
-**THE CACHE WILL LIE TO YOU HERE, so read this before trusting a green.**
+**THE CACHE USED TO LIE TO YOU HERE. It no longer does — trust the green.**
 `bin/gh-token` caches a minted token for **50 minutes**
 (`REFRESH_AFTER_SECONDS = 3000`) in `<projects>/.agents/github-tokens.json`, and
-the main flow reads that cache BEFORE it mints. So within 50 minutes of ANY
-successful admin mint, the check above prints `deployer OK` **in a shell that
-never sourced `~/.zprofile.admin`** — certifying an admin token you have not
-installed, with the truth surfacing at the next production deploy. That is
-exactly the cause-far-behind-symptom failure this section exists to prevent.
-There is no --no-cache flag today. Verify by clearing the deployer slot first:
-`ruby -rjson -e 'p=File.join(ENV["HOME"],"projects/.agents/github-tokens.json"); j=JSON.parse(File.read(p)); j.delete("deployer"); File.write(p, JSON.pretty_generate(j))'` — or on a machine that has never minted one.
+the main flow reads that cache BEFORE it mints. Until
+`/tasks/never-cache-deployer-token` that cache covered the deployer too, so
+within 50 minutes of ANY successful admin mint the check above printed `deployer
+OK` **in a shell that never sourced `~/.zprofile.admin`** — certifying an admin
+token you had not installed, with the truth surfacing at the next production
+deploy. That is exactly the cause-far-behind-symptom failure this section exists
+to prevent. The deployer is now cached NOWHERE (`CACHEABLE_IDENTITIES =
+%w[agent]`), so a green `deployer OK` proves the 1Password read itself
+succeeded, with no cache-clearing dance first.
 
-What IS genuinely blocked without the admin token is the **1Password read** — the
-mint. A build lane cannot MINT admin credentials. It is not true that it can
-never OBTAIN a deployer token, and nothing here should say otherwise;
-`/tasks/never-cache-deployer-token` closes the window by not caching that token
-at all.
+What is blocked without the admin token is the **1Password read** — the mint.
+And since `never-cache-deployer-token` shipped, a build lane can no longer obtain
+a deployer token by any route either: there is nothing on disk to read, so the
+mint is the only path and it is closed.
 
 Both scripts read from `pbpaste`, validate the prefix and strip whitespace, so the
 token never touches shell parsing — bypassing the smart-quote / line-wrap /
@@ -311,10 +314,15 @@ newline-in-paste failures that broke direct `! echo ops_… >> ~/.zprofile` atte
 See Gotcha 12.
 
 **To rotate either token**, re-copy and re-run the same command — each replaces only
-its own line. (The removal is anchored on `^export VAR=` for exactly this reason:
-an unanchored match on `OP_SERVICE_ACCOUNT_TOKEN` also matches
-`OP_ADMIN_SERVICE_ACCOUNT_TOKEN` as a substring, and once silently deleted the admin
-token while reinstalling the agent one.)
+its own line. (The removal is anchored on `^export VAR=`, so it takes that variable's
+own export line and nothing else — not a comment that mentions the name, not a longer
+variable that contains it. It is **not** protecting the admin line from the agent
+install: an earlier version of this paragraph said an unanchored match on
+`OP_SERVICE_ACCOUNT_TOKEN` also matched `OP_ADMIN_SERVICE_ACCOUNT_TOKEN` as a
+substring and had once silently deleted the admin token. That never happened and
+could not — `OP_ADMIN_` sits between `OP_` and `SERVICE_`, so neither name contains
+the other, and the two variables live in different files. Verified 2026-08-29 by
+replaying the old `sed` against a profile holding both lines in both orders.)
 
 ### 5b. Per-app .env files
 
@@ -326,7 +334,7 @@ The Rails apps read `.env` via Rails' default dotenv (or the `dotenv-rails` gem)
 RAILS_MASTER_KEY=$(heroku config:get RAILS_MASTER_KEY --app mcritchie-studio)
 GOOGLE_CLIENT_ID=...                  # Google Cloud Console
 GOOGLE_CLIENT_SECRET=...
-ANTHROPIC_API_KEY=...                 # 1Password: "anthropic" in agents vault
+ANTHROPIC_API_KEY=...                 # heroku config:get — agents-studio held no "anthropic" item on 2026-08-29
 X_BEARER_TOKEN=...                    # 1Password: "x.api" (read)
 X_API_KEY=...                         # 1Password: "x.api" (write — Read+Write app)
 X_API_SECRET=...
@@ -351,7 +359,7 @@ SES_REGION=us-east-2
 RAILS_MASTER_KEY=$(heroku config:get RAILS_MASTER_KEY --app turf-monster-mainnet)
 GOOGLE_CLIENT_ID=...                  # may differ from mcritchie-studio
 GOOGLE_CLIENT_SECRET=...
-SOLANA_ADMIN_KEY=$(op item get "agent.alex.solana" --vault agents --fields "private key")
+SOLANA_ADMIN_KEY=$(op item get "agent.alex.solana" --vault agents-studio --fields "private key")
 SOLANA_RPC_URL=https://api.devnet.solana.com   # or paid provider if rate-limited
 AWS_ACCESS_KEY_ID=...
 AWS_SECRET_ACCESS_KEY=...
