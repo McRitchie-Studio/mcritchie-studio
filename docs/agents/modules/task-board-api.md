@@ -66,7 +66,7 @@ If you must call the API by hand, never inline the secret or echo it — read it
 call time and pipe it straight into the request:
 
 ```bash
-SECRET="$(/opt/homebrew/bin/op read "op://${MCR_OP_VAULT_AGENT:-agents-studio}/Agent API Secret/AGENT_API_SECRET')"
+SECRET="$(/opt/homebrew/bin/op read "op://${MCR_OP_VAULT_AGENT:-agents-studio}/Agent API Secret/AGENT_API_SECRET")"
 TOKEN="$(curl -sS -X POST https://mcritchie.studio/api/v1/auth \
   -H 'Content-Type: application/json' \
   -d "{\"secret\": \"$SECRET\"}" | python3 -c 'import json,sys;print(json.load(sys.stdin)["token"])')"
@@ -701,7 +701,7 @@ See footgun 4 for the full set of fields that live outside `devops`.
 
 ```bash
 BASE=https://mcritchie.studio
-SECRET="$(/opt/homebrew/bin/op read "op://${MCR_OP_VAULT_AGENT:-agents-studio}/Agent API Secret/AGENT_API_SECRET')"
+SECRET="$(/opt/homebrew/bin/op read "op://${MCR_OP_VAULT_AGENT:-agents-studio}/Agent API Secret/AGENT_API_SECRET")"
 auth() { curl -sS -X POST "$BASE/api/v1/auth" -H 'Content-Type: application/json' \
   -d "{\"secret\": \"$SECRET\"}" | python3 -c 'import json,sys;print(json.load(sys.stdin)["token"])'; }
 TOKEN="$(auth)"
