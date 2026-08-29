@@ -288,16 +288,18 @@ bin/gh-token --identity deployer >/dev/null && echo "deployer OK"               
 
 Run the deployer check in a shell that has sourced `~/.zprofile.admin`.
 
-**THE CACHE WILL LIE TO YOU HERE, so read this before trusting a green.**
+**THE CACHE USED TO LIE TO YOU HERE. It no longer does — trust the green.**
 `bin/gh-token` caches a minted token for **50 minutes**
 (`REFRESH_AFTER_SECONDS = 3000`) in `<projects>/.agents/github-tokens.json`, and
-the main flow reads that cache BEFORE it mints. So within 50 minutes of ANY
-successful admin mint, the check above prints `deployer OK` **in a shell that
-never sourced `~/.zprofile.admin`** — certifying an admin token you have not
-installed, with the truth surfacing at the next production deploy. That is
-exactly the cause-far-behind-symptom failure this section exists to prevent.
-There is no --no-cache flag today. Verify by clearing the deployer slot first:
-`ruby -rjson -e 'p=File.join(ENV["HOME"],"projects/.agents/github-tokens.json"); j=JSON.parse(File.read(p)); j.delete("deployer"); File.write(p, JSON.pretty_generate(j))'` — or on a machine that has never minted one.
+the main flow reads that cache BEFORE it mints. Until
+`/tasks/never-cache-deployer-token` that cache covered the deployer too, so
+within 50 minutes of ANY successful admin mint the check above printed `deployer
+OK` **in a shell that never sourced `~/.zprofile.admin`** — certifying an admin
+token you had not installed, with the truth surfacing at the next production
+deploy. That is exactly the cause-far-behind-symptom failure this section exists
+to prevent. The deployer is now cached NOWHERE (`CACHEABLE_IDENTITIES =
+%w[agent]`), so a green `deployer OK` proves the 1Password read itself
+succeeded, with no cache-clearing dance first.
 
 What IS genuinely blocked without the admin token is the **1Password read** — the
 mint. A build lane cannot MINT admin credentials. It is not true that it can
