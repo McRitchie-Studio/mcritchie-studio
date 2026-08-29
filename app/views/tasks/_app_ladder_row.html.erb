@@ -84,7 +84,6 @@
     <div x-data="{
            fadeRight: '<%= ApplicationHelper::APP_LADDER_FADE_MASK %>',
            pinned: false,
-           offset: 0,
            overflowing: <%= seed_fade %>,
            atEnd: false,
            pinnedOverflowing: <%= seed_fade %>,
@@ -108,10 +107,17 @@
              if (this._ro) { this._ro.disconnect(); this._ro = null; }
            },
            measure() {
-             const header = document.querySelector('.vt-pinned-header');
-             this.offset = header ? Math.round(header.getBoundingClientRect().bottom) : 0;
+             // READ THE PUBLISHED EDGE, DO NOT MEASURE THE HEADER. The engine
+             // publishes --pin-nav-bottom once per animation frame from one
+             // coalesced measurement; a second getBoundingClientRect() here was
+             // both a duplicate forced layout and a frame behind it. Positioning
+             // is pure CSS now (see the style attribute above) — this number only
+             // decides WHETHER the pinned copy shows.
+             const edge = parseFloat(
+               getComputedStyle(document.documentElement).getPropertyValue('--pin-nav-bottom')
+             ) || 0;
              const row = this.$refs.row;
-             this.pinned = !!row && row.getBoundingClientRect().bottom <= this.offset;
+             this.pinned = !!row && row.getBoundingClientRect().bottom <= edge;
              this.gauge();
            },
            gauge() {
@@ -180,8 +186,14 @@
            role="region"
            aria-label="Applications, pinned to the top of the page"
            x-show="pinned"
-           :style="{ top: offset + 'px' }"
-           style="display: none"
+           <%# top comes from the engine's pinned stack, not from JS. The old
+               :style wrote a MEASURED number that chased the site header through
+               every intermediate height of its collapse — see the task
+               stop-headers-chasing-navbar for the 17 values it stepped through.
+               data-pin makes this strip publish its own --pin-apps-* in turn,
+               which is what the board's lane headers stack onto. %>
+           data-pin="apps"
+           style="display: none; top: var(--pin-nav-bottom, 0px)"
            x-transition.opacity.duration.150ms>
         <div class="mx-auto w-full max-w-screen-2xl px-3 py-1.5 sm:px-4 lg:px-6 xl:px-8">
             <div class="flex min-w-0 items-stretch gap-2 overflow-x-auto"

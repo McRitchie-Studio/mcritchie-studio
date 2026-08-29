@@ -156,7 +156,7 @@ gem "sentry-rails"
 # version that RESOLVED: a pin loosened later, a `path:`/`git:` override, a
 # hand-edited lockfile, or an unmigrated database all get past it.
 # test/lib/engine_pin_contract_test.rb asserts the resolved version and columns.
-gem "studio-engine", "~> 0.43"
+gem "studio-engine", "~> 0.65" # 0.65 is the real floor, and the pin SAYS so. 0.65 ships the PINNED STACK publisher: any element carrying data-pin publishes --pin-<name>-h and --pin-<name>-bottom, and this app now POSITIONS OFF IT. The board's app-ladder strip takes its top from --pin-nav-bottom and the lane headers from max(--pin-nav-bottom, --pin-apps-bottom), with no JS measuring either one. Below 0.65 neither property is ever published, both var() fall back to 0px, and the strip and every stage header pile up at the top of the viewport under the navbar. That is a HARD floor rather than a preference, and it replaced roughly 40 lines of Alpine that measured the header itself — laneTop, watchStrip, and a second ResizeObserver — which is what let the strip and the lane headers chase the header through every intermediate height of its collapse (task stop-headers-chasing-navbar). A two-segment ~> admits everything under 1.0, so the OLD "~> 0.43" already resolved 0.65.2 and this bump is invisible to the resolver — it is the FLOOR that moved, which is exactly what this comment exists to record. 
 
 # Pin the majors this app already runs so an engine bump cannot carry a new one
 # in silently. studio-engine declares `redis >= 4.0.1` with NO upper bound — the

@@ -79,7 +79,6 @@ function kanbanBoard(live) {
     // is aligned with the lane it names by construction. A fixed clone would have to
     // re-derive six column x-positions and keep them in step through the collapse, the
     // app filter and a Turbo patch — three chances to drift that this shape does not have.
-    laneTop: 0,
     // Whether the lane row NEEDS its horizontal scroller right now — see the wrapper's
     // own comment for why that question decides whether the headers can pin at all.
     laneScroll: false,
@@ -87,7 +86,6 @@ function kanbanBoard(live) {
     // WHICH strip node _laneRo watches. The app-ladder broadcast replaces `app-ladder-row`
     // and the strip WITH it, and a detached node never resizes — so a node captured once
     // at init stops waking measureLanes(), and the headers pin behind the strip.
-    _laneStrip: null,
 
     stageLabels: <%= raw Task::STAGE_LABELS.to_json %>,
 
@@ -133,17 +131,6 @@ function kanbanBoard(live) {
     },
 
     measureLanes() {
-      const header = document.querySelector('.vt-pinned-header');
-      const base = header ? header.getBoundingClientRect().bottom : 0;
-      // The app-ladder strip is POSITION: FIXED, so offsetParent is null even while it
-      // is on screen — its display is the only honest read of whether it is showing.
-      const strip = document.querySelector('[data-test="app-ladder-pinned"]');
-      this.watchStrip(strip);
-      const stack = strip && getComputedStyle(strip).display !== 'none'
-        ? strip.getBoundingClientRect().height
-        : 0;
-      this.laneTop = Math.round(base + stack);
-
       // DOES THE LANE ROW ACTUALLY OVERFLOW? `scrollWidth` reports the content's true
       // width whether or not the box scrolls, so this reads the same either way and
       // cannot oscillate: turning the scroller on does not make the content narrower.
@@ -151,29 +138,20 @@ function kanbanBoard(live) {
       if (lanes) this.laneScroll = lanes.scrollWidth > lanes.clientWidth + 1;
     },
 
-    // A ResizeObserver for the reason components/_overflow_fade records: a scroll is one
-    // CAUSE of the boxes above changing, this watches the EFFECT. It covers the site
-    // header's 300ms shrink transition (which fires no scroll event of its own) AND the
-    // strip appearing, whose display flip Alpine applies on a later tick than the scroll
-    // handler that triggered it — so a scroll-only reading lags by a frame every time.
+    // ONLY THE LANE ROW IS WATCHED NOW, and only for whether it overflows.
+    // The site header and the app strip used to be observed here so their
+    // heights could be summed into laneTop; both publish their own edge through
+    // the engine's pinned stack and the CSS above reads it, so observing them
+    // was duplicating a measurement the engine already coalesces into one
+    // frame. The old note here justified this observer by the header's 300ms
+    // shrink transition firing no scroll event of its own — that transition is
+    // gone; the collapse is scroll-linked.
     watchLanes() {
       if (!window.ResizeObserver) return;
       this._laneRo = new ResizeObserver(() => this.measureLanes());
-      const header = document.querySelector('.vt-pinned-header');
-      if (header) this._laneRo.observe(header);
-      const strip = document.querySelector('[data-test="app-ladder-pinned"]');
-      this.watchStrip(strip);
       if (this.$refs.lanes) this._laneRo.observe(this.$refs.lanes);
     },
 
-    // The ONE place the strip is observed — from init and from every measure, so the
-    // observation follows the strip across a broadcast. Same node in, nothing happens.
-    watchStrip(strip) {
-      if (!this._laneRo || strip === this._laneStrip) return;
-      if (this._laneStrip) this._laneRo.unobserve(this._laneStrip);
-      if (strip) this._laneRo.observe(strip);
-      this._laneStrip = strip;
-    },
 
     destroy() {
       if (this._laneRo) { this._laneRo.disconnect(); this._laneRo = null; }
@@ -605,9 +583,10 @@ document.addEventListener('turbo:before-cache', function() {
            <% if collapsible %>:class="showAllCols ? '' : 'max-[1399px]:hidden'"<% end %>>
         <!-- Column Header -->
         <%# PINNED, so the lane you are reading keeps its name while you scroll its cards.
-            It sticks to `laneTop` — the bottom of the site header plus the app-ladder
-            strip when that is showing — so the three pinned things stack rather than
-            overlap. z-30 keeps it under the strip (z-40) and the nav (z-50) and over the
+            It sticks to the bottom of the pinned stack — max() over the site
+            header's and the app strip's own published edges — so the three
+            pinned things stack rather than overlap, and a hidden strip measures
+            0 and drops out of the max on its own. z-30 keeps it under the strip (z-40) and the nav (z-50) and over the
             cards, which slide beneath it.
 
             IT NEEDS ITS OWN BACKGROUND. A sticky header with a transparent one shows the
@@ -622,7 +601,14 @@ document.addEventListener('turbo:before-cache', function() {
         <div class="sticky z-30 mb-3 rounded-t-lg bg-page px-1 py-2"
              data-test="stage-header"
              data-stage="<%= stage %>"
-             :style="{ top: laneTop + 'px' }">
+             <%# THE PINNED STACK, COMPOSED IN CSS. This was laneTop — "site
+                 header bottom + strip height" measured in Alpine behind its own
+                 ResizeObserver and recomputed while the header was still easing,
+                 so these headers chased it a frame behind through every
+                 intermediate value. max() takes whichever layer is lower, and a
+                 hidden strip measures 0 and drops out, so nothing here has to
+                 know which layer sits above which. %>
+             style="top: max(var(--pin-nav-bottom, 0px), var(--pin-apps-bottom, 0px))">
           <div class="flex items-center gap-2">
             <h3 class="text-sm font-bold text-heading uppercase tracking-wider">
               <%= Task::STAGE_LABELS.fetch(stage) %>

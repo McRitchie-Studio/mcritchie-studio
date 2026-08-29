@@ -102,17 +102,28 @@ class AppLadderRowViewTest < ActionView::TestCase
 
     assert_select "[data-test='app-ladder-pinned'].fixed.z-40", 1
 
-    # Read rather than selected: `:style` is Alpine's bind shorthand and Nokogiri's CSS
-    # parser will not take a colon in an attribute name.
     strip = css_select("[data-test='app-ladder-pinned']").first
-    assert_equal "{ top: offset + 'px' }", strip[":style"],
-                 "the offset is measured off the header, never hard-coded"
 
-    # AND IT BINDS AN OBJECT. Alpine's string form of :style calls setAttribute("style",
-    # …), replacing the whole attribute — including the `display: none` x-show wrote —
-    # and `offset` changes on every scroll while the header shrinks. The string form
-    # would therefore unhide the strip over the board while the row is still on screen.
-    assert_includes strip[":style"], "{", "bind an object so x-show keeps its display"
+    # NOT HARD-CODED, AND NOT MEASURED EITHER. The offset used to be an Alpine
+    # bind writing a number this component read off the header itself — which is
+    # what made the strip chase the header through every intermediate height of
+    # its collapse, a frame behind, for the whole 300ms ease (task
+    # stop-headers-chasing-navbar). The engine publishes the header's live bottom
+    # edge, so the strip positions off THAT, in CSS, with nothing to lag.
+    assert_match(/top:\s*var\(--pin-nav-bottom/, strip["style"].to_s,
+                 "the strip must take its top from the published edge, never a measured number")
+    assert_nil strip[":style"],
+               "an Alpine style bind would fight the CSS and reintroduce the frame of lag"
+
+    # AND x-show'S DISPLAY MUST SURVIVE IT. This was the reason the old bind had
+    # to use Alpine's OBJECT form: the string form calls setAttribute("style", …)
+    # and replaces the whole attribute, including the `display: none` x-show
+    # wrote, unhiding the strip over the board. A STATIC style attribute is not
+    # exposed to that at all — x-show sets the display property and leaves the
+    # rest standing. Verified in a browser: toggling display none/block leaves
+    # top at the published edge both ways.
+    assert_includes strip["style"].to_s, "display: none",
+                    "the strip still starts hidden, and its top must not disturb that"
   end
 
   # THREE ROWS AND NO FOURTH — the operator's own spec for the pinned form.

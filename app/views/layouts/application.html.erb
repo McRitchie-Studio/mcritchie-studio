@@ -17,17 +17,29 @@
         header down with no change here. Nothing measures, so there is no
         published height to offset by. %>
     <%= render "studio/banners/stack" %>
-    <header x-data="{ scrolled: false }" @scroll.window="scrolled = scrolled ? (window.scrollY > 5) : (window.scrollY > 60)"
-            class="vt-pinned-header sticky top-0 z-[var(--z-nav)] border-b bg-page/95 transition-shadow duration-300 supports-[backdrop-filter]:backdrop-blur"
+    <%# nav-shell + data-pin: this header is a layer of the engine's pinned stack.
+        navCollapse() (studio-engine layouts/studio/_head) writes --nav-p on it
+        once per animation frame from scrollY, and the band table below derives
+        every collapsing dimension from that with calc(). data-pin makes it
+        publish --pin-nav-h / --pin-nav-bottom, which is what the app strip and
+        the board's lane headers now position off — see _app_ladder_row and
+        _deploy_board, which used to measure this element themselves.
+
+        WHAT THIS REPLACED: a scroll-event threshold at 60/5 feeding a 300ms
+        all-property transition. The finger set a step and an ease curve owned
+        the rest, so anything positioned off this header chased it through
+        17 intermediate heights, a frame behind, for 300ms after every scroll.
+        That was the flicker. %>
+    <header data-pin="nav" x-data="navCollapse()"
+            class="nav-shell vt-pinned-header sticky top-0 z-[var(--z-nav)] border-b bg-page/95 transition-shadow duration-300 supports-[backdrop-filter]:backdrop-blur"
             :class="scrolled ? 'shadow-lg border-subtle' : 'border-transparent'">
-      <div class="max-w-7xl mx-auto px-4 transition-all duration-300"
-           :class="scrolled ? 'py-2' : 'py-6'">
+      <div class="nav-row max-w-7xl mx-auto px-4">
         <div class="flex items-center justify-between gap-4 min-w-0">
           <div class="flex items-center gap-6 min-w-0">
             <%= link_to root_path, class: "inline-flex items-center gap-3 group" do %>
-              <%= image_tag "logo-icon.svg", class: "invert transition-all duration-300 dark:invert-0", "x-bind:class": "scrolled ? 'w-5 h-5' : 'w-8 h-8'" %>
-              <h1 class="font-extrabold text-heading tracking-tight transition-all duration-300"
-                  x-bind:class="scrolled ? 'text-base' : 'text-2xl'">McRitchie <span class="text-primary">Studio</span></h1>
+              <%# No w-*/h-* utility: .nav-shell .nav-logo sizes it off --nav-p. %>
+              <%= image_tag "logo-icon.svg", class: "nav-logo invert dark:invert-0" %>
+              <h1 class="nav-title font-extrabold text-heading tracking-tight">McRitchie <span class="text-primary">Studio</span></h1>
             <% end %>
           </div>
 

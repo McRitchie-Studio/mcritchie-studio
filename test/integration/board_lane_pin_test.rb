@@ -32,15 +32,27 @@ class BoardLanePinTest < ActionDispatch::IntegrationTest
     end
   end
 
-  # MEASURED, NEVER HARD-CODED. The site header shrinks on scroll and the ladder strip
-  # comes and goes, so a fixed offset would leave the lane names floating in a gap or
-  # tucked under the nav.
-  test "the lane header takes its top from the measured stack" do
+  # COMPOSED, NEVER MEASURED HERE. The site header shrinks on scroll and the ladder
+  # strip comes and goes, so a fixed offset would leave the lane names floating in a
+  # gap or tucked under the nav. This used to be solved by MEASURING both and summing
+  # them into laneTop — and that is what made these headers chase the site header
+  # through every intermediate height of its collapse, a frame behind, for the whole
+  # ease (task stop-headers-chasing-navbar; the drift after a gesture ended measured
+  # 3px, now 0px). Each layer publishes its own edge through the engine's pinned stack
+  # and the sum is a CSS expression, so there is nothing left to lag.
+  test "the lane header composes its top from the pinned stack" do
     header = css_select("[data-test='stage-header']").first
 
-    assert_equal "{ top: laneTop + 'px' }", header[":style"]
-    assert_includes response.body, "this.laneTop = Math.round(base + stack)",
-                    "laneTop is the site header's bottom plus the pinned strip's height"
+    assert_match(/top:\s*max\(var\(--pin-nav-bottom[^)]*\),\s*var\(--pin-apps-bottom/,
+                 header["style"].to_s,
+                 "the lane header must compose the stack in CSS")
+    assert_nil header[":style"],
+               "an Alpine style bind would fight the CSS and put the lag back"
+
+    # max(), NOT a declared order: a hidden strip measures 0 and drops out on its own,
+    # so nothing here has to know which layer sits above which.
+    assert_not_includes response.body, "this.laneTop",
+                        "laneTop state must go with the writer that used it"
   end
 
   # THE ONE THAT MATTERS. A scroll-container ancestor makes `position: sticky` a no-op
@@ -57,13 +69,31 @@ class BoardLanePinTest < ActionDispatch::IntegrationTest
                     "the scroller switches itself on from a measurement, not a breakpoint"
   end
 
-  # THE BROADCAST REGRESSION. app-ladder-row is replaced wholesale and the strip rides inside
-  # it, so an init-bound observation watches a detached node from the first broadcast on.
-  test "the lane observer follows the strip across a broadcast" do
-    assert_includes response.body, "if (!this._laneRo || strip === this._laneStrip) return;"
-    assert_includes response.body, "this._laneRo.unobserve(this._laneStrip);"
-    assert_equal 2, response.body.scan("this.watchStrip(strip);").size,
-                 "init AND every measure route through the one place that observes"
+  # THE BROADCAST REGRESSION, now handled a layer down. app-ladder-row is replaced
+  # wholesale and the strip rides inside it, so an init-bound observation watches a
+  # detached node from the first broadcast on. This board used to answer that itself,
+  # with watchStrip re-observing from init and from every measure.
+  #
+  # It no longer observes the strip at all: the strip is a data-pin layer, and the
+  # engine's publisher REBUILDS its registry from the document on
+  # turbo:before-stream-render — so a replaced node is re-registered rather than
+  # re-observed by hand. The regression is still guarded; it is guarded once, for
+  # every consumer, instead of once per board.
+  #
+  # What this app still owes is the OPT-IN. Drop data-pin and the strip silently
+  # leaves the registry, publishes nothing, and every lane header falls back to the
+  # site header's edge alone — which looks almost right and is wrong by the strip's
+  # height the moment it shows.
+  test "the strip opts into the pinned stack so a broadcast cannot strand it" do
+    strip = css_select("[data-test='app-ladder-pinned']").first
+    assert strip, "the board must render the pinned strip"
+
+    assert_equal "apps", strip["data-pin"],
+                 "the strip must be a named layer, or the lane headers cannot stack onto it"
+    assert_not_includes response.body, "watchStrip",
+                        "a second observer on the strip duplicates the engine's registry"
+    assert_not_includes response.body, "_laneRo.observe(header)",
+                        "observing the site header duplicates a measurement the engine coalesces"
   end
 
   # The header still carries what it always did — the stage label and its count badge —
