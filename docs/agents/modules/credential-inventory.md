@@ -8,9 +8,9 @@ This file names credential locations so agents can ask for or reference the righ
 |-------|---------|
 | `agents-studio` | The **agent** vault — every build, review, and QA lane reads it through `OP_SERVICE_ACCOUNT_TOKEN`. It is the vault formerly named `agents` (renamed 2026-08-28; same vault id `txqp6ijdo3ujsfhsfzdj5h5dzq`). |
 | `agents-admin` | The **admin** vault — `github.mcritchie-deployer` and other ship-lane credentials. Read only by a SEPARATE service account (`OP_ADMIN_SERVICE_ACCOUNT_TOKEN`, sourced from `~/.zprofile.admin`); the agent token is never granted it, so an ordinary agent shell cannot even list it. That invisibility is the design, not a fault. |
-| `agents-industries` | Industries-brand agent credentials. Created 2026-08-28; empty as of 2026-08-29. The agent token has read. |
-| `agents-mcritchie-family` | Family-brand agent credentials. Created 2026-08-28; empty as of 2026-08-29. The agent token has read. |
-| `Commercial Welding` | Reserved for the Commercial Welding initiative. Created 2026-08-28; empty as of 2026-08-29. The agent token has read. |
+| `agents-industries` | Industries-brand agent credentials. Created 2026-08-28. **Not visible to the agent service account** — on 2026-08-29 `op vault list` returned `agents-studio` alone. Grant it before a lane depends on it. |
+| `agents-mcritchie-family` | Family-brand agent credentials. Created 2026-08-28. **Not visible to the agent service account** — same as above. Grant it before a lane depends on it. |
+| `Commercial Welding` | Reserved for the Commercial Welding initiative. Created 2026-08-28. **Not visible to the agent service account** — same as above. Grant it before a lane depends on it. |
 | `Blockchain` / `🧱 Blockchain` | Human-controlled blockchain credentials, if granted. |
 
 `bin/lib/op_vaults.rb` is the one place code names a vault (`MCR_OP_VAULT_AGENT` /
