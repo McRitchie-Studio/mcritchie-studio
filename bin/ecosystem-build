@@ -90,17 +90,17 @@ have() { command -v "$1" >/dev/null 2>&1; }
 #
 # Is the 1Password vault named "$1" VISIBLE to the token in this environment?
 # Lives here, at top level and taking the name as an argument, for two reasons:
-# the vault name still resolves in exactly ONE place (phase_secrets, mirroring
-# bin/lib/op_vaults.rb), and a guard that is a function can be EXECUTED by a
-# test. The version this replaces could only ever be read, and reading it is
-# what missed the bug: `op vault list | grep -qw agents` PASSED against
+# the vault name resolves inside ONE FUNCTION (phase_secrets, mirroring
+# bin/lib/op_vaults.rb — at three sites within it, enumerated there), and a
+# guard that is a function can be EXECUTED by a test. The version this replaces
+# could only ever be read, and reading it is what missed the bug: `op vault list | grep -qw agents` PASSED against
 # `agents-studio`, because -w treats the hyphen as a word boundary. The guard
 # reported the credential lane healthy for as long as the vault it guarded had
 # been gone. Exercised by test/lib/ecosystem_build_vault_guard_test.rb against a
 # synthetic `op`, since the real one costs a 1Password API call.
 #
-# EXACT NAME, NEVER A SUBSTRING. This account holds four vaults whose names
-# begin `agents` — agents-studio, agents-admin, agents-industries and
+# EXACT NAME, NEVER A SUBSTRING. The 1Password ACCOUNT holds four vaults whose
+# names begin `agents` — agents-studio, agents-admin, agents-industries and
 # agents-mcritchie-family — so "contains the word agents" was never the
 # question being asked.
 #
@@ -111,7 +111,8 @@ have() { command -v "$1" >/dev/null 2>&1; }
 #
 # Exit codes, because the two failures need OPPOSITE responses from the reader:
 #   0 — the vault is in the listing, matched on its exact name
-#   1 — a listing was consulted and the vault is not in it (a grant problem)
+#   1 — op did not name the vault: it is absent from the listing, or op could
+#       not produce a listing at all (a grant, token, or network problem)
 #   2 — it could not be consulted at all: `op` or `jq` is missing (a Phase 1
 #       problem). Reported separately because sending an operator to check
 #       vault grants when the real fault is an uninstalled binary is a
@@ -317,10 +318,19 @@ phase_secrets() {
     return 1
   fi
 
-  # THE VAULT NAME COMES FROM THE OVERRIDE, not a literal, and this is the ONE
-  # place in the script that resolves it — bin/lib/op_vaults.rb is the single
-  # source and this mirrors its default. The guard itself is agent_vault_visible
-  # (top of file), which is where the exact-match and fail-closed rules live.
+  # THE VAULT NAME COMES FROM THE OVERRIDE, not a literal — bin/lib/op_vaults.rb
+  # is the single source and this mirrors its default. The guard itself is
+  # agent_vault_visible (top of file), which is where the exact-match and
+  # fail-closed rules live.
+  #
+  # IT RESOLVES AT THREE SITES IN THIS FUNCTION, and only this one binds a
+  # variable: here; the Heroku item read below; and the SOLANA_ADMIN_KEY entry in
+  # the op_secrets map. The other two expand
+  # ${MCR_OP_VAULT_AGENT:-agents-studio} again instead of reading $agent_vault,
+  # so changing the default HERE alone leaves them pointed at the old vault — the
+  # guard would then report the new vault visible while the real reads went
+  # somewhere else, which is the defect class this guard exists to catch. Change
+  # all three, or pass $agent_vault down to them.
   #
   # THREE OUTCOMES, NOT TWO. Splitting "op/jq missing" out of "vault not
   # visible" is the point of the case below: the old single else-branch sent

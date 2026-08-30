@@ -234,9 +234,11 @@ The build lanes and the ship lane authenticate as different GitHub App identitie
 `main` and deploys but cannot touch PRs). Their credentials live in **different
 vaults**, read by **different service-account tokens**, so an ordinary agent shell
 cannot MINT an admin credential — the 1Password read is the step that is
-*structurally* blocked, not merely discouraged. That is the whole claim: it is not
-the wider one that such a shell can never come to HOLD a deployer token, which is
-false and is what the cache warning in 5a-ii is about. `bin/lib/op_vaults.rb` is the
+*structurally* blocked, not merely discouraged. That such a shell does not come to
+HOLD a deployer token is a **second, separate** mechanism: `bin/gh-token` refuses
+to cache that identity at all (`CACHEABLE_IDENTITIES`). Both hold today — 5a-ii
+has the history — but they are enforced in different files, and a boundary
+described as one thing gets trusted for the other. `bin/lib/op_vaults.rb` is the
 one place that maps lane → vault → token; nothing else should ever name a vault.
 
 | Lane | Vault (default) | Token variable | Loaded where |

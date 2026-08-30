@@ -29,13 +29,18 @@
 # ADMIN token's value, which it can only do if the admin token is present in
 # its environment at all. That refusal is the feature.
 #
-# SAY ONLY THAT MUCH. This comment claimed the stronger property until
-# 2026-08-29, and the stronger property is false: a build lane CAN come to hold
-# a deployer token. bin/gh-token serves an ALREADY-MINTED one from a 50-minute
-# cache (REFRESH_AFTER_SECONDS = 3000) before it mints, so inside that window
-# `bin/gh-token --identity deployer` exits 0 in a shell that never sourced
-# ~/.zprofile.admin. The distance between "cannot mint" and "cannot obtain" is
-# exactly the window /tasks/never-cache-deployer-token closes — and a boundary
+# SAY ONLY THAT MUCH, and the reason is worth keeping. This comment claimed the
+# stronger property — that such a shell can never come to HOLD a deployer token —
+# until 2026-08-29, when it was false: bin/gh-token served an already-minted one
+# from its cache before minting, so `bin/gh-token --identity deployer` exited 0 in
+# a shell that had never sourced ~/.zprofile.admin. That window is now CLOSED
+# (`never-cache-deployer-token`): CACHEABLE_IDENTITIES = %w[agent], the check runs
+# BEFORE the cache read, and any deployer slot an older version left behind is
+# purged rather than merely ignored.
+#
+# The narrow claim is still the one to make. "Cannot mint" is enforced HERE, by
+# the token map; "does not hold" is enforced in bin/gh-token, by the cache rule.
+# Two mechanisms, and only the first is this file's to promise — a boundary
 # described as wider than it is gets trusted for things it does not cover.
 # Guarded by test/lib/credential_isolation_claims_test.rb.
 module OpVaults
