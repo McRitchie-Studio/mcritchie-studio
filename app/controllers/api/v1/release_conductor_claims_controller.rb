@@ -13,9 +13,26 @@ module Api
     class ReleaseConductorClaimsController < BaseController
       # GET /api/v1/releases/:slug/conductor_claim?role=assembler — the "who (if
       # anyone) is assembling/deploying this release" read (CLI `status`, dashboard).
-      # 200 { holder: <info> | null }; `holder` is null when no claim row exists yet.
+      # 200 { holder: <info> | null, release_state: <state> | null }; `holder` is null
+      # when no claim row exists yet.
+      #
+      # `release_state` is here because the DETACHED RENEWER needs it and there is no
+      # GET /api/v1/releases/:slug to ask — releases are routed `only: []`, so this
+      # nested claim endpoint is the only slug-addressed release read the standalone
+      # CLI has. The renewer's stop condition is "is this candidate finished", which it
+      # cannot answer from the claim row alone: a claim looks identical whether the
+      # release is mid-assembly or shipped an hour ago. Serving the release's own
+      # lifecycle state alongside the holder lets it answer without a second endpoint.
+      #
+      # NULL when no release carries the slug — notably the `__forming__` sentinel, a
+      # claim held while a candidate is still being created. A renewer must read that
+      # as NOT finished (ReleaseClaimCli fails open on a nil/unknown state), because a
+      # release that does not exist yet has certainly not ended.
       def show
-        render_data({ "holder" => ReleaseConductorClaim.status_for(params[:slug], claim_params[:role]) })
+        render_data({
+          "holder"        => ReleaseConductorClaim.status_for(params[:slug], claim_params[:role]),
+          "release_state" => Release.find_by(slug: params[:slug])&.state
+        })
       end
 
       # GET /api/v1/release_conductor_claims/live?role=deployer — the CROSS-RELEASE "is

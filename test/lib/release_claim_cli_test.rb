@@ -15,6 +15,7 @@ require "json"
 require "tmpdir"
 require "fileutils"
 require "stringio"
+require "timeout"
 # Arms the narration-marker sandbox for this PROCESS (the sibling guarantee in
 # test/support/task_usage_sandbox.rb). This file drives a CLI that WRITES the marker
 # store, so the guard must be armed or a forgetful stand-in could write the operator's
@@ -390,6 +391,157 @@ class ReleaseClaimCliTest < Minitest::Test
       flags = cli(projects_dir: proj).parse_flags(%w[--role deployer --label Machamp])
       assert_equal "deployer", flags["role"]
       assert_equal "Machamp", flags["label"]
+    end
+  end
+
+  # --- the renew loop must die with its RELEASE, not only with its session --------
+  #
+  # THE DEFECT (found 2026-08-30 alongside its review-lane twin, and deliberately
+  # left for its own task because a production ship was running through this exact
+  # machinery at the time). `renew-loop` passed ShiftRenewer only `alive:`, so a
+  # CONDUCTOR claim renewer stopped on its anchor session dying and on NOTHING else.
+  # A conductor session runs many acts, so after a release shipped the loop went on
+  # renewing a claim over finished work for as long as the anchor lived — bounded
+  # only by ShiftRenewer::MAX_LIFETIME_SECONDS, twelve hours.
+  #
+  # WHY IT BITES HARDER THAN THE REVIEW TWIN: a stale review claim wastes polls, but a
+  # stale ASSEMBLER or DEPLOYER claim makes the next `bin/release prepare` print
+  # "🛑 assembler already held — STAND DOWN" and ABORT before merging or deploying
+  # anything, and it pins the fixed-path `_ship`/`_gate` workspaces against reclaim.
+  # One finished session can wedge the whole qa-release lane.
+  #
+  # THE CONFOUND THESE TESTS ARE BUILT AROUND: every one anchors to Process.pid — THIS
+  # test process, unarguably alive throughout. So a loop that exits here cannot have
+  # exited for the OLD reason, and the control below proves the wiring runs at all
+  # rather than failing open into silence.
+
+  def anchor_flags
+    ["--anchor-pid", Process.pid.to_s, "--anchor-start", SessionIdentity.proc_start(Process.pid)]
+  end
+
+  def renew_posts(cli)
+    cli.instance_variable_get(:@api).posts.select { |p| p[:path].to_s.end_with?("/conductor_claim/renew") }
+  end
+
+  # Every GET the loop made against a conductor_claim path. Deliberately NOT filtered on
+  # the query string: filtering on "?role=" would make the role assertion below assert
+  # itself, so a dropped role would fail as "no read happened" instead of naming the
+  # missing role. Filter on the METHOD, assert the PATH.
+  def state_reads(cli)
+    cli.instance_variable_get(:@api).posts
+       .select { |p| p[:method] == :get && p[:path].to_s.include?("/conductor_claim") }
+  end
+
+  # BOUNDED on purpose. These drive the REAL renew loop, whose whole job is to keep
+  # going; the condition under test is the thing that ends it. Regress that and `run`
+  # never returns — so bound it and FAIL, because a test that hangs CI names no defect.
+  # (`timeout(1)` the shell builtin does not exist on macOS; Timeout is Ruby's own.)
+  def run_bounded(cli, argv, seconds: 15)
+    Timeout.timeout(seconds) { cli.run(argv) }
+  rescue Timeout::Error
+    flunk "the renew loop never exited — it is still renewing a claim on a finished release"
+  end
+
+  # THE ORDERING TEST. `finished` is asked BEFORE `renew`, so a loop born on a shipped
+  # release owes ZERO heartbeats. Move the check after the renew and this fails 1 vs 0
+  # — which is exactly how the criterion "exits without a further poll" is made
+  # literally true rather than approximately true.
+  def test_unit_a_renew_loop_on_a_shipped_release_exits_without_one_further_poll
+    Dir.mktmpdir do |proj|
+      c = cli(projects_dir: proj, data: { "release_state" => "shipped" })
+
+      assert_equal ReleaseClaimCli::OK, run_bounded(c, ["renew-loop", SLUG, "--role", "deployer", *anchor_flags]),
+                   "a renewer with nothing left to protect exits 0, quietly"
+      assert_empty renew_posts(c),
+                   "the release had SHIPPED: every heartbeat from here is meaningless BY " \
+                   "DEFINITION, and heartbeats exactly like these stand down the next prepare"
+    end
+  end
+
+  def test_unit_a_renew_loop_on_a_live_release_still_renews_it
+    Dir.mktmpdir do |proj|
+      # THE CONTROL for the test above. Identical anchor, identical wiring; only the
+      # release STATE differs. Without this, a zero-renew result up there is equally
+      # well explained by a loop that never ran — the shape of the bug, not of the fix.
+      # The 204 ("you no longer hold this") is what lets a loop that IS renewing
+      # terminate inside a unit test; the GET reads the same 204, which `ok?` accepts,
+      # so the state still parses as `assembling`.
+      c = cli(projects_dir: proj, data: { "release_state" => "assembling" }, code: 204)
+
+      assert_equal ReleaseClaimCli::OK, run_bounded(c, ["renew-loop", SLUG, "--role", "assembler", *anchor_flags])
+      assert_equal 1, renew_posts(c).length,
+                   "an assembling release is still being worked — its claim must go on being renewed"
+    end
+  end
+
+  # The role must travel on the completion read, or the endpoint has no role to answer
+  # about and the renewer learns nothing every cycle.
+  def test_unit_the_completion_read_carries_the_role_and_the_release_slug
+    Dir.mktmpdir do |proj|
+      c = cli(projects_dir: proj, data: { "release_state" => "shipped" })
+      run_bounded(c, ["renew-loop", SLUG, "--role", "deployer", *anchor_flags])
+
+      read = state_reads(c).first
+      refute_nil read, "the loop must actually ask the board whether the release is over"
+      assert_equal "/api/v1/releases/#{SLUG}/conductor_claim?role=deployer", read[:path]
+    end
+  end
+
+  # THE TERMINAL SET, and the one line of it that is not a copy of the review lane.
+  def test_unit_only_a_finished_candidate_ends_the_renewal_and_no_active_one_does
+    Dir.mktmpdir do |proj|
+      %w[shipped abandoned].each do |state|
+        assert cli(projects_dir: proj, data: { "release_state" => state }).release_finished?(SLUG, "deployer"),
+               "#{state}: the candidate is over, so the claim protects nothing"
+      end
+
+      # `assembled` is TERMINAL for a review and LIVE for a release — it is precisely
+      # the state a candidate sits in while `bin/release ship` holds the DEPLOYER claim
+      # and pushes it to production. Copying the review lane's set would free that claim
+      # underneath a running production deploy. This assertion is the guard on that.
+      %w[assembling assembled].each do |state|
+        refute cli(projects_dir: proj, data: { "release_state" => state }).release_finished?(SLUG, "deployer"),
+               "#{state}: a conductor can still be mid-act here — stopping would free the " \
+               "claim underneath a LIVE prepare or ship and let a second one start"
+      end
+    end
+  end
+
+  def test_unit_terminal_states_mirror_the_release_model_literal
+    # Drift guard, the same arrangement FORMING_SLUG uses: this CLI runs STANDALONE and
+    # cannot load Release, so it mirrors Release::TERMINAL_STATES as a literal and both
+    # sides are pinned to it. The Rails-side half lives in the controller test.
+    assert_equal %w[shipped abandoned], ReleaseClaimCli::TERMINAL_STATES
+  end
+
+  def test_unit_a_board_it_cannot_read_never_counts_as_a_finished_release
+    Dir.mktmpdir do |proj|
+      # This check fails OPEN, opposite to the anchor check, and the asymmetry is the
+      # design: a wrong "anchor dead" costs a recoverable delay, but a wrong "work
+      # finished" drops a live conductor's claim and lets a SECOND production deploy
+      # start. Silence is not completion.
+      refute cli(projects_dir: proj, data: {}, code: 500).release_finished?(SLUG, "deployer"),
+             "an unreadable board is not evidence that the release ended"
+      refute cli(projects_dir: proj, data: { "holder" => {} }).release_finished?(SLUG, "deployer"),
+             "a response carrying no release state at all is not evidence either"
+      refute cli(projects_dir: proj, data: { "release_state" => nil }).release_finished?(SLUG, "deployer"),
+             "an explicit null state is the __forming__ sentinel's normal answer — a " \
+             "candidate still being created has certainly not finished"
+    end
+  end
+
+  def test_unit_a_renewer_on_the_forming_sentinel_keeps_renewing
+    Dir.mktmpdir do |proj|
+      # A claim on __forming__ is held while the candidate is being CREATED, so no
+      # Release row carries that slug and the board answers with a null state. That must
+      # read as "carry on": stopping here would release the fresh-create claim during
+      # the one window it exists to protect.
+      c = cli(projects_dir: proj, data: { "release_state" => nil }, code: 204)
+
+      assert_equal ReleaseClaimCli::OK,
+                   run_bounded(c, ["renew-loop", FORMING, "--role", "assembler", *anchor_flags])
+      assert_equal 1, renew_posts(c).length,
+                   "the forming sentinel is pre-assembly, not post-ship — it must still renew"
     end
   end
 end
