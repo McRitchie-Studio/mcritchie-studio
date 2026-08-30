@@ -11,6 +11,7 @@ require_relative "../support/session_env"
 class CodexUpdateTest < Minitest::Test
   ROOT = File.expand_path("../..", __dir__)
   SCRIPT = File.join(ROOT, "bin", "codex-update")
+  PATCH = File.join(ROOT, "docs", "agents", "patches", "codex-session-start-thread-name.patch")
 
   def setup
     @tmp = Dir.mktmpdir("codex-update")
@@ -102,7 +103,7 @@ class CodexUpdateTest < Minitest::Test
     assert_equal "0.142.3", payload.fetch("current_version")
     assert_equal "0.142.4", payload.dig("latest", "version")
     assert_equal true, payload.dig("inspection", "thread_name_hook_output")
-    assert_match(%r{docs/agents/patches/codex-0\.142\.3}, payload.fetch("patch_path"))
+    assert_match(%r{docs/agents/patches/codex-session-start-thread-name\.patch\z}, payload.fetch("patch_path"))
   end
 
   def test_inspect_fails_closed_for_stock_binary_without_thread_name_hook
@@ -142,5 +143,27 @@ class CodexUpdateTest < Minitest::Test
 
     last_good = JSON.parse(File.read(File.join(@home, ".codex", "mcritchie-codex-update", "last-good.json")))
     assert_equal File.realpath(@patched), File.realpath(last_good.fetch("target"))
+  end
+
+  def test_patch_applies_to_current_rollout_policy_shape
+    source = File.join(@tmp, "codex-source")
+    policy = File.join(source, "codex-rs", "rollout", "src", "policy.rs")
+    FileUtils.mkdir_p(File.dirname(policy))
+    current_policy_hunk = [
+      "        | EventMsg::RawResponseItem(_)",
+      "        | EventMsg::SessionConfigured(_)",
+      "        | EventMsg::McpToolCallBegin(_)",
+      "        | EventMsg::ExecCommandBegin(_)",
+      "        | EventMsg::TerminalInteraction(_)",
+      ""
+    ].join("\n")
+    File.write(policy, ("\n" * 138) + current_policy_hunk)
+
+    _out, err, status = Open3.capture3(
+      "git", "apply", "--check", "--include=codex-rs/rollout/src/policy.rs", PATCH,
+      chdir: source
+    )
+
+    assert status.success?, "thread-title patch drifted from Codex 0.144.3 rollout policy:\n#{err}"
   end
 end

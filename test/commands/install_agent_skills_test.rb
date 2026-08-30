@@ -420,6 +420,22 @@ class InstallAgentSkillsTest < Minitest::Test
     assert_match(/ok: Codex (managed requirements|user hooks) include activity close-open/, out)
   end
 
+  def test_integration_migrates_legacy_managed_codex_status_line
+    FileUtils.mkdir_p(File.dirname(installed_codex_config))
+    File.write(installed_codex_config, <<~TOML)
+      [tui]
+      status_line = ["model-with-reasoning", "current-dir", "thread-title"]
+    TOML
+
+    _out, err, status = run_installer("install")
+
+    assert status.success?, "install failed: #{err}"
+    assert_match(
+      /^status_line = \["thread-title", "model-with-reasoning", "context-remaining"\]$/,
+      File.read(installed_codex_config)
+    )
+  end
+
   def test_integration_global_hooks_use_runtime_root_override
     skip "jq is required for settings hook install" unless jq_available?
 
@@ -465,7 +481,10 @@ class InstallAgentSkillsTest < Minitest::Test
 
     config = File.read(installed_codex_config)
     assert_match(/^check_for_update_on_startup = false$/, config)
-    assert_match(/status_line = \[[^\n]*"thread-title"/, config)
+    assert_match(
+      /^status_line = \["thread-title", "model-with-reasoning", "context-remaining"\]$/,
+      config
+    )
     assert_match(/terminal_title = \[[^\n]*"thread-title"/, config)
     refute_includes config, "shell_environment_policy.set",
       "installer must not replace Codex PATH and break normal Bash tool lookup"

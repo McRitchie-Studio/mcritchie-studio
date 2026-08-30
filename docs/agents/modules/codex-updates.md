@@ -46,8 +46,12 @@ If stock Codex still lacks hook support, patch and build a source checkout:
 ```bash
 bin/codex-update apply-patch --source /path/to/openai-codex
 # build Codex from that checkout
-bin/codex-update promote --binary /path/to/built/codex --version 0.142.4 --yes
+bin/codex-update promote --binary /path/to/built/codex --version <version> --yes
 ```
+
+The tracked patch is version-neutral by name and currently verified against
+OpenAI's `rust-v0.144.3` source tag. Rebase and reverify it whenever the stock
+runtime changes the touched hook, protocol, rollout, or TUI surfaces.
 
 `promote` refuses binaries that do not contain live `threadName` hook support.
 On success it creates a versioned runtime under
