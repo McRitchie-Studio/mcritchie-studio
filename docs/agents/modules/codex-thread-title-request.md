@@ -93,7 +93,7 @@ Title: Allow hooks to update live thread-title
 
 ### Problem
 
-Codex has a built-in `thread-title` status-line item, but stock Codex 0.142.3
+Codex has a built-in `thread-title` status-line item, but stock Codex 0.144.3
 does not provide a hook output field that updates the live TUI footer. Updating
 the persisted local title is visible on resume, but not in the already-running
 session because the footer reads the in-memory thread name.

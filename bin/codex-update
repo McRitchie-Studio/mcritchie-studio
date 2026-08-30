@@ -19,7 +19,7 @@ require "time"
 require "uri"
 
 ROOT = File.expand_path("..", __dir__)
-PATCH_PATH = File.join(ROOT, "docs", "agents", "patches", "codex-0.142.3-session-start-thread-name.patch")
+PATCH_PATH = File.join(ROOT, "docs", "agents", "patches", "codex-session-start-thread-name.patch")
 DEFAULT_INSTALL_COMMAND = "curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh"
 LATEST_RELEASE_API = "https://api.github.com/repos/openai/codex/releases/latest"
 LATEST_RELEASE_URL = "https://github.com/openai/codex/releases/latest"

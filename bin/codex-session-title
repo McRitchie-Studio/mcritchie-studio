@@ -6,7 +6,7 @@ set -euo pipefail
 # PR #233 gives Codex sessions a persisted McRitchie marker:
 #   <Pokemon> · <app> · <feature>
 #
-# Stock Codex CLI 0.142.3 keeps the live footer's thread name in memory, so
+# Stock Codex CLI through 0.144.3 keeps the live footer's thread name in memory, so
 # updating SQLite only affects history/resume. A locally patched Codex runtime
 # can also consume hookSpecificOutput.threadName from SessionStart and
 # PostToolUse hooks and repaint the live footer silently. This hook emits that
