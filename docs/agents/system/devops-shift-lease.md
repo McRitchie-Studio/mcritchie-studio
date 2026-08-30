@@ -56,6 +56,33 @@ TTL so the two cannot drift) for as long as its **anchor process** — the long-
 `bin/statusline` still renews; it is now a harmless second renewer rather than the
 only one.
 
+**A renewer also dies with its WORK, not only with its holder** (fixed 2026-08-30).
+The anchor answers "is my holder still here?" — it does not answer "is the thing I
+am protecting still a thing?", and for the per-TASK review claim (section C) that is
+the condition that actually ends the job. A session reviews MANY tasks, so anchoring
+alone accumulated one immortal renewer per task: at 05:25Z on 2026-08-30 five
+`review-claim renew-loop` processes were running and **four were renewing claims on
+tasks that had already SHIPPED TO PRODUCTION**, their anchor alive and legitimately
+working the whole time. Nothing had crashed. Between them they polled the board every
+30s indefinitely and spent the **account-wide** 1Password read budget every lane
+shares, so the outage presented as "1Password is down" / "GitHub auth is broken" and
+cost two full days (2026-08-29 and 2026-08-30) before the cause was found.
+
+`ShiftRenewer.run` now takes a third stop condition, `finished:`, asked **before** the
+renew so a loop whose work is done exits having polled the board **zero** further
+times. `bin/lib/review_claim_cli.rb` supplies it as `task_finished?`: a claim on a
+task at `reviewed`, `assembled`, `shipped` or `archived`
+(`ReviewClaimCli::TERMINAL_STAGES`) protects nothing, so the loop exits 0, quietly.
+Two asymmetries are deliberate: `blocked`, `building` and `designed` are NOT terminal
+(a bounced review is often still being written up, and a rework bounce can move a task
+backwards while a real lease is held); and unlike the anchor check, `finished` fails
+**OPEN** — an unreadable board is not evidence that a review ended, and stopping on a
+network blip would free a live reviewer's task underneath them. A wrong "anchor dead"
+costs a recoverable delay; a wrong "work finished" costs a duplicated review.
+
+The `devops-shift` ROLE lease passes no `finished:` and is unchanged: it protects a
+LANE, not a unit of work, so it has no completion signal to give.
+
 - **Simple** — the careless double. Session A holds `avi`; a second Avi launch
   `acquire avi` → the row is live-held → `acquired:false` → the CLI prints
   `🛑 avi shift already held — STAND DOWN` naming the holder, and exits **10**. The
@@ -67,6 +94,12 @@ only one.
   whenever we cannot prove the holder dead would invert `ClaimLease`'s fail-open
   posture and let one crash lock a lane indefinitely. A crash must cost a delay,
   never a deadlock.
+- **Work done** — a per-task review renewer whose task reaches a terminal stage exits
+  on its next cycle even though its anchor is alive and its claim still technically
+  held. This is the exit the original two-condition design lacked; a regression test
+  that only kills the anchor passes against that design and proves nothing, so
+  `test/lib/review_claim_renewer_integration_test.rb` drives a REAL renewer past
+  `shipped` with the anchor held alive throughout.
 - **Headless** — a holder with no status line retains the lane for the whole run.
   Asserted, not assumed: `test/models/devops_shift_test.rb` walks a 20-minute window
   (ten TTLs) refusing a second acquire at every step, and

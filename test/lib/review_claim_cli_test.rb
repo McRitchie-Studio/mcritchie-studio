@@ -11,6 +11,7 @@
 require "minitest/autorun"
 require "json"
 require "tmpdir"
+require "timeout"
 require "fileutils"
 require "stringio"
 # Arms the narration-marker sandbox for this PROCESS (the sibling guarantee in
@@ -640,6 +641,96 @@ class ReviewClaimCliTest < Minitest::Test
 
       assert_equal ReviewClaimCli::NONE, code
       refute_match(/board's OWN ingested CI/i, @err.string)
+    end
+  end
+  # --- the renew loop must die with its TASK, not only with its session ----------
+  #
+  # THE DEFECT (measured 2026-08-29, and again on 2026-08-30 after it had already
+  # cost a day): `renew-loop` stopped on its ANCHOR SESSION dying and on nothing
+  # else. One long-lived session reviews many tasks, so it accumulated one immortal
+  # renewer per task — five were found running at 05:25Z, FOUR of them renewing
+  # claims on work that had shipped to production hours earlier, against an alive and
+  # legitimately busy anchor. Between them they spent the account-wide 1Password
+  # budget every other lane depends on, so the outage presented as "1Password is
+  # down" and went undiagnosed for a day.
+  #
+  # THE CONFOUND THESE TESTS ARE BUILT AROUND: every one of them anchors to
+  # Process.pid — THIS test process, which is unarguably alive for the whole run. So
+  # a loop that exits here cannot have exited for the old reason, and the control
+  # below proves the wiring actually runs rather than failing open into silence.
+
+  def anchor_flags
+    ["--anchor-pid", Process.pid.to_s, "--anchor-start", SessionIdentity.proc_start(Process.pid)]
+  end
+
+  def renew_posts(cli)
+    cli.instance_variable_get(:@api).posts.select { |p| p[:path].to_s.end_with?("/review_claim/renew") }
+  end
+
+  # BOUNDED on purpose. These tests drive the REAL renew loop, whose whole job is to
+  # keep going; the condition under test is the thing that ends it. Regress that and
+  # `run` never returns — so bound it and FAIL, because a test that hangs CI names no
+  # defect and a test that names the defect is the only kind worth writing.
+  def run_bounded(cli, argv, seconds: 15)
+    Timeout.timeout(seconds) { cli.run(argv) }
+  rescue Timeout::Error
+    flunk "the renew loop never exited — it is still polling the board about a task that is done"
+  end
+
+  def test_unit_a_renew_loop_on_a_shipped_task_exits_without_one_further_poll
+    Dir.mktmpdir do |proj|
+      c = cli(projects_dir: proj, data: { "stage" => "shipped" })
+
+      assert_equal ReviewClaimCli::OK, run_bounded(c, ["renew-loop", SLUG, *anchor_flags]),
+                   "a renewer with nothing left to protect exits 0, quietly"
+      assert_empty renew_posts(c),
+                   "the task had SHIPPED: every heartbeat from here is meaningless BY DEFINITION, " \
+                   "and it is heartbeats exactly like these that drained the shared credential budget"
+    end
+  end
+
+  def test_unit_a_renew_loop_on_a_live_review_still_renews_it
+    Dir.mktmpdir do |proj|
+      # THE CONTROL for the test above. Identical anchor, identical wiring; only the
+      # STAGE differs. Without this, a zero-renew result up there is equally well
+      # explained by a loop that never ran at all — which is the shape of the bug, not
+      # the shape of the fix. The 204 ("you no longer hold this") is what lets a
+      # loop that IS renewing terminate inside a unit test.
+      c = cli(projects_dir: proj, data: { "stage" => "submitted" }, code: 204)
+
+      assert_equal ReviewClaimCli::OK, run_bounded(c, ["renew-loop", SLUG, *anchor_flags])
+      assert_equal 1, renew_posts(c).length,
+                   "a submitted task is still under review — its lease must go on being renewed"
+    end
+  end
+
+  def test_unit_every_stage_past_review_ends_the_renewal_and_no_earlier_one_does
+    Dir.mktmpdir do |proj|
+      %w[reviewed assembled shipped archived].each do |stage|
+        assert cli(projects_dir: proj, data: { "stage" => stage }).task_finished?(SLUG),
+               "#{stage}: the review has landed, so the claim protects nothing"
+      end
+
+      # `blocked` is deliberately NOT terminal: a reviewer who has just bounced a task
+      # back is often still writing feedback against it, and a rework bounce can move a
+      # task back to `building` while a legitimate lease is still held.
+      %w[designed building submitted blocked].each do |stage|
+        refute cli(projects_dir: proj, data: { "stage" => stage }).task_finished?(SLUG),
+               "#{stage}: a review can still be live here — stopping would free the task under its reviewer"
+      end
+    end
+  end
+
+  def test_unit_a_board_it_cannot_read_never_counts_as_a_finished_review
+    Dir.mktmpdir do |proj|
+      # This check fails OPEN, in the opposite direction from the anchor check, and the
+      # asymmetry is deliberate: a wrong "anchor dead" costs a recoverable delay, but a
+      # wrong "work finished" drops a LIVE reviewer's lease and lets a second session
+      # claim the task underneath them. Silence is not completion.
+      refute cli(projects_dir: proj, data: {}, code: 500).task_finished?(SLUG),
+             "an unreadable board is not evidence that the review ended"
+      refute cli(projects_dir: proj, data: { "slug" => SLUG }).task_finished?(SLUG),
+             "a response carrying no stage at all is not evidence either"
     end
   end
 end
