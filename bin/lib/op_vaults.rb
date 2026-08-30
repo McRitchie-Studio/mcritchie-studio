@@ -48,16 +48,22 @@ module OpVaults
   #
   # `vault_env` lets a machine whose vaults are named differently override
   # without forking these scripts — the failure mode that produced this file.
+  # `profile` is the file that CARRIES this lane's token once the machine is
+  # provisioned. It exists so #diagnose can tell "you have not sourced it" from
+  # "this machine has never been given one" — two states that need OPPOSITE
+  # responses, and conflating them cost a full session on 2026-08-30 (see below).
   LANES = {
     agent: {
       vault_env: "MCR_OP_VAULT_AGENT",
       default_vault: "agents-studio",
-      token_env: "OP_SERVICE_ACCOUNT_TOKEN"
+      token_env: "OP_SERVICE_ACCOUNT_TOKEN",
+      profile: "~/.zprofile"
     },
     deployer: {
       vault_env: "MCR_OP_VAULT_ADMIN",
       default_vault: "agents-admin",
-      token_env: "OP_ADMIN_SERVICE_ACCOUNT_TOKEN"
+      token_env: "OP_ADMIN_SERVICE_ACCOUNT_TOKEN",
+      profile: "~/.zprofile.admin"
     }
   }.freeze
 
@@ -108,16 +114,60 @@ module OpVaults
     { "OP_SERVICE_ACCOUNT_TOKEN" => value }
   end
 
-  # Why a read failed, in the operator's terms. Callers print this instead of a
-  # bare "op read failed", because the two causes need opposite responses:
-  # a MISSING token is a provisioning step, a WRONG vault is a config override.
+  # Where a lane's token file lives, expanded. Nil for a lane that declares none.
+  def profile_path(name = DEFAULT_LANE)
+    raw = lane(name)[:profile]
+    raw && File.expand_path(raw)
+  end
+
+  # Whether this machine has been PROVISIONED for a lane — i.e. its token file is
+  # on disk, whether or not the current shell has sourced it.
+  def provisioned?(name = DEFAULT_LANE)
+    path = profile_path(name)
+    !path.nil? && File.exist?(path)
+  end
+
+  # Why a read failed, in the operator's terms — and, above all, WHAT TO RUN.
+  #
+  # THREE OUTCOMES, NOT TWO, and the third is why this was rewritten. The old
+  # message had ONE branch for a missing token: "Run this from the admin lane, or
+  # install the token with bin/setup-1pass-token --admin." Both halves failed the
+  # reader. "Run this from the admin lane" names no command — the answer is one
+  # line, `source ~/.zprofile.admin`, and this file was the only one in the repo
+  # that even mentioned that path. And the remedy it DID name is an INSTALL, which
+  # prompts for a credential the operator must fetch by hand — the wrong errand
+  # entirely on a machine already provisioned, which is the common case.
+  #
+  # MEASURED 2026-08-30: an agent read that refusal, concluded the deployer lane
+  # was not self-service, and asked Mr. McRitchie to hand-mint deployer tokens from
+  # a downloaded .pem — repeatedly, blocking a production deploy on him. The token
+  # had been installed at ~/.zprofile.admin since 2026-08-28. Sourcing it worked on
+  # the first try. A tool that prescribes a human step it does not need is worse
+  # than one that says nothing: it converts a self-service fix into operator toil,
+  # which is exactly what AGENTS.md forbids.
+  #
+  # Same shape as bin/ecosystem-build's vault guard, and for the same reason: a
+  # single else-branch sends every cause to one confident, specific, wrong errand.
   def diagnose(name = DEFAULT_LANE)
     spec = lane(name)
     if token(name).nil? && name.to_sym != DEFAULT_LANE
-      "the #{name} lane needs #{spec[:token_env]} in the environment, and it is not set. " \
-        "That is EXPECTED in an ordinary agent shell — admin credentials are deliberately " \
-        "unreadable there. Run this from the admin lane, or install the token with " \
-        "bin/setup-1pass-token --admin."
+      base = "the #{name} lane needs #{spec[:token_env]} in the environment, and it is not set. " \
+             "That is EXPECTED in an ordinary agent shell — admin credentials are deliberately " \
+             "unreadable there. "
+      if provisioned?(name)
+        # PROVISIONED: self-service, no human. Name the command, and name the
+        # export ordering too — GH_APP_ITEM is read by the credential helper at
+        # mint time, so setting it afterwards silently yields the AGENT token,
+        # a wrong-identity SUCCESS that is harder to notice than this refusal.
+        base + "This machine IS provisioned — source it into THIS shell and retry:\n" \
+               "    source #{spec[:profile]}\n" \
+               "(For a git/gh ship lane also `export GH_APP_ITEM=github.mcritchie-deployer` " \
+               "BEFORE minting; the helper reads it at mint time.)"
+      else
+        # NOT PROVISIONED: genuinely the operator's, once per machine.
+        base + "This machine has no #{spec[:profile]} — install the token once:\n" \
+               "    bin/setup-1pass-token --admin"
+      end
     else
       "reading vault #{vault(name).inspect} (override with #{spec[:vault_env]}). " \
         "If that vault is not visible, check `op vault list` — a service account sees " \

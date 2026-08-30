@@ -18,6 +18,7 @@
 
 require "bundler/setup"
 require "minitest/autorun"
+require "tmpdir"
 require_relative "../../bin/lib/op_vaults"
 
 class OpVaultsTest < Minitest::Test
@@ -95,4 +96,107 @@ class OpVaultsTest < Minitest::Test
                  "a missing token and a wrong vault need opposite responses, so the " \
                  "message must distinguish them")
   end
+
+  # ── THE REFUSAL MUST NAME A COMMAND THAT WORKS ──────────────────────────────
+  #
+  # MEASURED 2026-08-30. The old message had ONE branch for a missing admin token:
+  # "Run this from the admin lane, or install the token with
+  # bin/setup-1pass-token --admin." Both halves failed the reader. The first names
+  # NO command — the answer is `source ~/.zprofile.admin`, and this file was the
+  # only place in the repo that mentioned that path at all. The second is an
+  # INSTALL, which prompts for a credential the operator must fetch by hand.
+  #
+  # WHAT IT COST: an agent read that refusal, concluded the deployer lane was not
+  # self-service, and asked Mr. McRitchie to hand-mint deployer tokens from a
+  # downloaded .pem — repeatedly, blocking a production deploy on him. The token
+  # had been at ~/.zprofile.admin since 2026-08-28; sourcing it worked first try.
+  #
+  # THE ASSERTION THAT MATTERS IS THE DIFFERENCE. A single-branch message passes
+  # any test that merely checks "it mentions the admin token" — which is precisely
+  # how the old one survived. So these compare the two states against each other.
+
+  def test_a_provisioned_machine_is_told_to_source_the_file
+    message = with_provisioned(true) { OpVaults.diagnose(:deployer) }
+
+    assert_includes message, "source ~/.zprofile.admin",
+                     "the remedy must name the COMMAND, not merely the lane"
+    refute_includes message, "bin/setup-1pass-token",
+                     "installing is the wrong errand on a machine already provisioned — " \
+                     "it asks the operator for a credential they already supplied"
+  end
+
+  def test_an_unprovisioned_machine_is_told_to_install_once
+    message = with_provisioned(false) { OpVaults.diagnose(:deployer) }
+
+    assert_includes message, "bin/setup-1pass-token --admin",
+                     "with no token file this genuinely IS the operator's step"
+    refute_includes message, "source ~/.zprofile.admin",
+                     "sourcing a file that does not exist is a dead end"
+  end
+
+  # THE GUARD AGAINST THE ORIGINAL DEFECT, stated as the property rather than as
+  # two example strings: the two states must not produce the same advice. If a
+  # future edit collapses the branches, this fails even if both strings change.
+  def test_the_two_states_give_different_remedies
+    provisioned = with_provisioned(true)  { OpVaults.diagnose(:deployer) }
+    fresh       = with_provisioned(false) { OpVaults.diagnose(:deployer) }
+
+    refute_equal provisioned, fresh,
+                 "one message for both states is the defect this test exists to catch — " \
+                 "the causes need opposite responses, one self-service and one the operator's"
+  end
+
+  # The agent lane's diagnosis must not be dragged into the admin branch: its token
+  # is ambient, and a missing one there is a different (Phase 1) problem.
+  def test_the_agent_lane_is_not_given_admin_advice
+    refute_includes OpVaults.diagnose(:agent), "zprofile.admin"
+  end
+
+  # DETERMINISTIC ON BOTH KINDS OF MACHINE. An earlier version of this test read
+  # `File.exist?("~/.zprofile.admin")` and compared it to provisioned? — which on a
+  # PROVISIONED machine is `true == true` and cannot fail. Mutating provisioned? to
+  # `true` survived it. So the file's presence is driven here rather than observed:
+  # each state is asserted against a path this test controls.
+  def test_provisioned_follows_the_token_file_not_the_machine
+    Dir.mktmpdir do |dir|
+      present = File.join(dir, "zprofile.admin")
+      File.write(present, "# token would be here\n")
+
+      assert with_profile_path(present) { OpVaults.provisioned?(:deployer) },
+             "a lane whose token file EXISTS is provisioned"
+      refute with_profile_path(File.join(dir, "definitely-absent")) { OpVaults.provisioned?(:deployer) },
+             "a lane whose token file is ABSENT is not — telling that machine to " \
+             "`source` it would be a dead end"
+    end
+  end
+
+  def test_the_deployer_profile_is_the_admin_one
+    assert OpVaults.profile_path(:deployer).end_with?(".zprofile.admin")
+  end
+
+  private
+
+  # Drive the branch WITHOUT touching the real filesystem or the real home dir —
+  # both states must be testable on any machine, including the provisioned one
+  # this runs on, or half these assertions would be unreachable in practice.
+  def with_profile_path(path)
+    OpVaults.singleton_class.send(:alias_method, :real_profile_path, :profile_path)
+    OpVaults.define_singleton_method(:profile_path) { |_ = nil| path }
+    yield
+  ensure
+    OpVaults.singleton_class.send(:remove_method, :profile_path)
+    OpVaults.singleton_class.send(:alias_method, :profile_path, :real_profile_path)
+    OpVaults.singleton_class.send(:remove_method, :real_profile_path)
+  end
+
+  def with_provisioned(value)
+    OpVaults.singleton_class.send(:alias_method, :real_provisioned?, :provisioned?)
+    OpVaults.define_singleton_method(:provisioned?) { |_ = nil| value }
+    yield
+  ensure
+    OpVaults.singleton_class.send(:remove_method, :provisioned?)
+    OpVaults.singleton_class.send(:alias_method, :provisioned?, :real_provisioned?)
+    OpVaults.singleton_class.send(:remove_method, :real_provisioned?)
+  end
+
 end
