@@ -141,6 +141,23 @@ class TaskBeginFlagGrammarTest < ActiveSupport::TestCase
                  "dev_size rides beside devops as a top-level column, the way `move` sends it"
   end
 
+  # THE HEADLINE LINE, and nothing pinned it until this test. FOUND IN REVIEW
+  # (round 2): deleting the renewal branch's `event.actor` forward left all 31
+  # tests across the three relevant files GREEN — the SAME shape round 1 was
+  # blocked for (a renewal-branch behaviour whose only test drove the child-move
+  # branch), on the sibling line of the same if/else. Without the forward, a
+  # resume of an ALREADY-building task renews the claim with no actor:
+  # Task#builder_to_stamp rule 1 cannot fire, and a resume sets no agent_slug so
+  # rule 4 cannot either — built_by stays blank, which is the whole defect this
+  # task exists to remove.
+  test "the renewal branch names the builder as the event actor" do
+    body = captured_renewal_body("--agent", "carl")
+
+    assert_equal "carl", body.dig("event", "actor"),
+                 "a resume of an already-building task must name the builder on the " \
+                 "claim renewal — it is the ONLY path to built_by on that branch"
+  end
+
   test "the child-move branch forwards the size too" do
     argv = captured_move_argv("--agent", "carl", "--dev-size", "large")
 
