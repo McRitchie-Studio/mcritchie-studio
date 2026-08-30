@@ -557,6 +557,15 @@ NOTE_FLAGS = {
 # estimate; actual_size is auto-derived from measured usage at ship. Every value
 # is validated against SIZES before the request goes out.
 SIZES = %w[small medium large xl].freeze
+# The SOUL-SLUG shape, a deliberate mirror of Task::SOUL_SLUG (this CLI holds no
+# Rails constants — same posture as the PR-url pattern above). It is the contract
+# `Task#builder_to_stamp` reads: a value that does NOT match is accepted by the
+# board (agent_slug is a free-form column, `belongs_to :agent, optional: true`),
+# stored, and then SILENTLY skipped by the stamp — so `--agent Steffon` or
+# `--agent turf_monster` records an assignee whose only job was to feed
+# `devops.built_by` and feeds it nothing. Refuse it here, where a human can still
+# fix it, exactly as --po-size and --gem-bump are refused.
+SOUL_SLUG = /\A[a-z]+(?:-[a-z]+)*\z/
 SIZE_FLAGS = { "--pm-size" => "pm_size", "--po-size" => "po_size", "--dev-size" => "dev_size" }.freeze
 # Top-level Task columns parse_flags accepts alongside the devops flags.
 TOP_FLAGS = %w[--slug --title --description --agent --priority --stage].freeze
@@ -665,10 +674,14 @@ end
 # task as if the PR were recorded while the board still said `pr: -`, and the
 # next gate (bin/dor-check NO_PR) failed naming nothing about the real cause.
 # A CLI must never report an operation that did not happen.
-def unknown_flag!(flag, valid: [], context: nil)
+# `hint:` appends a caller-supplied REMEDY after the generic suggestion — for the
+# refusals where naming the valid flags is not enough to unstick the caller (the
+# resume form, whose fix is "pass --title" or "use bin/task update", neither of
+# which is a flag this call could suggest).
+def unknown_flag!(flag, valid: [], context: nil, hint: nil)
   help! if HELP_FLAGS.include?(flag)
   suggestions = flag_suggestions(flag, valid)
-  hint =
+  suffix =
     if suggestions.any?
       " — did you mean #{suggestions.join(", ")}?"
     elsif valid.any?
@@ -676,7 +689,8 @@ def unknown_flag!(flag, valid: [], context: nil)
     else
       ""
     end
-  die!("unknown flag #{flag.inspect}#{context ? " for #{context}" : ""}#{hint}")
+  suffix += " — #{hint}" if hint
+  die!("unknown flag #{flag.inspect}#{context ? " for #{context}" : ""}#{suffix}")
 end
 
 # A dashed token is never a slug (or any other positional): --help/-h print
@@ -703,6 +717,23 @@ def validate_size!(flag, value)
   return if SIZES.include?(value)
 
   die!("#{flag} must be one of: #{SIZES.join(", ")} (got #{value.inspect})")
+end
+
+# The task's assigned soul. Validated for SHAPE only — the CLI cannot see the
+# Agent table, and a missing Agent row is NOT what breaks the stamp (checked:
+# db/seeds/02_agents.rb seeds every soul). What breaks it is a value outside
+# SOUL_SLUG, which `Task#builder_to_stamp` rules 1 and 4 both test before they
+# stamp `devops.built_by`. reviewer-select reads ONLY that key and REFUSES an
+# unknown builder (bin/reviewer-select), so a dropped stamp does not fail the
+# review — it stalls it, and a hand-picked reviewer once turned out to be the PR's
+# own author. A flag whose whole purpose is stamping must never no-op quietly.
+def validate_agent_slug!(flag, value)
+  return if value.to_s.match?(SOUL_SLUG)
+
+  die!("#{flag} must be a soul slug — lowercase letters and single hyphens " \
+       "(e.g. steffon, turf-monster) — got #{value.inspect}. " \
+       "Anything else is stored but never stamped onto devops.built_by, " \
+       "which is what bin/reviewer-select reads to keep a soul off their own PR.")
 end
 
 # The gem bump override (patch|minor|major). Never required — bin/release derives the
@@ -813,7 +844,12 @@ def parse_flags(argv, context: nil)
       validate_size!(arg, value)
       top[SIZE_FLAGS[arg]] = value; i += 2
     elsif TOP_FLAGS.include?(arg)
-      top[arg.delete_prefix("--")] = argv[i + 1] || die!("#{arg} needs a value"); i += 2
+      key = arg.delete_prefix("--")
+      value = argv[i + 1] || die!("#{arg} needs a value")
+      # The assignee is the stamp's rule-4 input; a non-soul value is a silent
+      # no-op downstream, so it dies here instead.
+      validate_agent_slug!(arg, value) if key == "agent"
+      top[key] = value; i += 2
     elsif BOOL_FLAGS.key?(arg)
       # Valueless — consumes ONE token. Storing the boolean (including `false`)
       # means top_body must ask `key?`, never truthiness, or --no-requires-migration
@@ -1620,14 +1656,53 @@ when "begin"
   # `move building` (which enforces it), and a resume of an already-`building`
   # task runs the SAME gate inline below — a resume must never bypass a live
   # foreign build claim. bin/ship is the handoff twin at the other end.
-  usage = "usage: bin/task begin --title \"Three To Five Words\" [--repo APP] [--steal] [create flags]  |  bin/task begin <slug> [--steal]"
+  usage = "usage: bin/task begin --title \"Three To Five Words\" [--repo APP] [--agent SOUL] [--steal] [create flags]  |  " \
+          "bin/task begin <slug> [--agent SOUL] [--dev-size SIZE] [--steal]"
   # --steal: the house build-claim override, same meaning as on `move` — take
   # over a task a DIFFERENT live instance holds. Honored by the resume gate
   # below and forwarded to the child `move building`. Stripped before
   # parse_flags (create's --no-claim pattern) so it never rides into the body.
   steal = !ARGV.delete("--steal").nil?
+  # The argv BEFORE parse_flags consumes it — the resume-form grammar check below
+  # needs the literal flags the caller typed, which the parsed [scalars, lists,
+  # top] triple has already re-keyed to devops/column names.
+  raw_argv = ARGV.dup
   positionals, scalars, lists, top = parse_flags(ARGV, context: "begin")
   die!(usage) if positionals.size > 1
+
+  # ⛔ THE RESUME FORM ACCEPTS NO CREATE FLAGS. Without --title `begin` CANNOT
+  # create (the die! below says exactly that), so every create flag on this path
+  # is definitionally inert — and until now it was dropped in SILENCE. Measured
+  # 2026-08-29: four tasks resumed with `bin/task begin <slug> --agent alex` came
+  # out with agent_slug nil and devops.built_by nil, while the same flag on a
+  # CREATE stamped both. begin reported success and printed the worktree either
+  # way, so the builder had no signal; the failure surfaced a day later at review,
+  # where bin/reviewer-select refuses an unknown builder and a human hand-picks —
+  # and a hand-picked light once turned out to be the PR's own author.
+  #
+  # Refuse instead of drop. The flags below are the ones the resume path genuinely
+  # honours: --slug (the resume key), --dev-size, and --agent (forwarded to the
+  # claim as --actor, see 4/5) plus --steal, already consumed above. Anything else
+  # belongs on `bin/task update <slug>`, which the hint names.
+  if top["title"].to_s.strip.empty?
+    resume_flags = %w[--slug --agent --dev-size --steal]
+    raw_argv.each do |arg|
+      next unless arg.to_s.start_with?("--")
+      next if resume_flags.include?(arg)
+
+      unknown_flag!(arg, valid: resume_flags, context: "begin's resume form (bin/task begin <slug>)",
+                    hint: "a resumed task is never re-shaped by begin: pass --title to CREATE, " \
+                          "or set it on the existing task with `bin/task update <slug> #{arg} ...`")
+    end
+  end
+
+  # THE BUILDER. `--agent <soul>` is what the documented fast lane passes, and it
+  # reached `devops.built_by` on ONE path only: a CREATE, via agent_slug, via
+  # rule 4 of Task#builder_to_stamp. Forward it to the claim as `--actor` too, so
+  # the stamp rides rule 1 — the rule that does not care whether agent_slug was
+  # ever set, and the one `bin/task move <slug> building --actor <soul>` has
+  # always used. Shape-validated in parse_flags, so this is a soul or begin died.
+  builder = top["agent"].to_s.strip
   # The resume key: an explicit --slug, the positional slug of a prior begin, or
   # the slug the board WOULD derive from the title (FastLane.derive_slug mirrors
   # Task#generate_slug's parameterize) passed explicitly so client and server
@@ -1706,7 +1781,15 @@ when "begin"
       # prior: the stored claim, so a blank-nonce renewal never erases a good nonce.
       merged.merge!(ClaimLease.renewed(session: mover_session, nonce: claim_nonce,
                                        prior: current.dig("metadata", "devops")))
-      api(:patch, "/api/v1/tasks/#{slug}", { "devops" => merged })
+      # The renewal REWRITES the claim lease, so Task#build_claim_save? is true and
+      # the builder stamp runs on this save — it just had no actor to read. An
+      # `event.actor` gives it one (Api::V1::TasksController#capture_task_event_context, a before_action on :update,
+      # drains it into Current), and it writes no spurious TaskEvent:
+      # record_transition_event is gated on `saved_change_to_stage?`, and this
+      # patch carries no stage.
+      renewal = { "devops" => merged }
+      renewal["event"] = { "source" => "cli", "actor" => builder } unless builder.empty?
+      api(:patch, "/api/v1/tasks/#{slug}", renewal)
       seed_usage_baseline(slug)
       write_feature_marker(current.merge("metadata" => { "devops" => merged }))
       warn!("begin 4/5 claim — already [building]; claim renewed for this instance")
@@ -1714,8 +1797,16 @@ when "begin"
   else
     # An explicit child `move building` so the claim lease, --dev-size stamp,
     # usage-baseline seed, and read-back verify all ride the ONE existing path.
-    move_cmd = [File.expand_path(__FILE__), "move", slug, "building"]
+    # The child move is THIS script. TASK_BEGIN_MOVE_BIN overrides it for tests —
+    # the same seam shape as TASK_BEGIN_WORKTREE_BIN / TASK_BEGIN_PREFLIGHT_BIN
+    # above — so the argv begin hands down (above all, --actor) is observable
+    # without a board. Unset in production, which is every real run.
+    move_cmd = [BinHelpers.bin_for("TASK_BEGIN_MOVE_BIN", File.basename(__FILE__)), "move", slug, "building"]
     move_cmd += ["--dev-size", top["dev_size"]] if top["dev_size"]
+    # Without this the child move defaults its actor to the SESSION UUID, which is
+    # not a soul, so rule 1 cannot fire — and on a resume agent_slug is nil, so
+    # rule 4 cannot either. That is the whole of why begin had no path to built_by.
+    move_cmd += ["--actor", builder] unless builder.empty?
     move_cmd << "--steal" if steal
     begin_step!("4/5 claim", slug, *move_cmd)
   end

@@ -266,8 +266,18 @@ bin/ship <task-slug> -m "Commit message"
 selector fails CLOSED: it refuses to pick, the reviewer chooses a light by hand,
 and the no-self-review property goes unverified for that review. Measured
 2026-08-28 — `built_by` blank on six consecutive tasks across one review sitting,
-two reviewers reporting the refusal and hand-picking. The flag always worked; no
-documented path passed it.
+two reviewers reporting the refusal and hand-picking.
+
+**It works on BOTH forms of `begin`, and the value must be a soul SLUG** —
+lowercase with single hyphens (`steffon`, `turf-monster`). `--agent Steffon` or
+`--agent turf_monster` cannot match the pattern the stamp reads, and both are now
+REFUSED rather than accepted-and-ignored. The resume form
+(`bin/task begin <slug> --agent <soul>`) forwards the builder to the claim as
+`--actor`; it takes no other create flags, and passing one is refused with the
+`bin/task update` remedy rather than dropped. Measured 2026-08-29: four tasks
+resumed with `--agent` came back with `agent_slug` nil AND `built_by` nil, while
+the same flag on a create stamped both — the flag was silently discarded, and
+`begin` reported success either way.
 
 `bin/task begin` runs steps 1-3 (create → `agent-worktree new` → `bind-task` →
 `move building` → `session-preflight`) and prints the worktree path, port, and
