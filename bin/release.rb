@@ -4095,6 +4095,85 @@ end
 #     ("Everything up-to-date"), the same no-op the ff was.
 # The local `main` in the primary is deliberately left alone; `restore_primaries`
 # fast-forwards it afterwards, best-effort, and nothing in the ship reads it.
+# WHY A REJECTED PUSH IS NOT AUTOMATICALLY A DIVERGENCE.
+#
+# Measured 2026-08-29, twice, on a real production ship. `git push` failed on
+# CREDENTIALS — `remote: Invalid username or token` — and push_frozen_main
+# answered with the only failure it knew about:
+#
+#   could not fast-forward ... origin/main has diverged from the frozen SHA
+#   (someone pushed to main). Reconcile main, re-run `bin/release prepare` ...
+#
+# Nothing had diverged. `main` was strictly BEHIND `release` and a dry-run
+# fast-forward succeeded. The prescribed remedy — reconcile a branch that needed
+# no reconciling, then re-freeze the whole release — was pure waste, and it was
+# waste delivered with total confidence at the most expensive moment there is.
+# git had already said the true cause three lines above; the code threw those
+# lines away and asserted a cause instead of reading one.
+#
+# So: classify, and never claim more than the output supports. A cause we cannot
+# recognise is reported AS unrecognised, with git's own words attached — an
+# honest "I don't know, here is what it said" beats a confident wrong answer,
+# which is the whole lesson of this function.
+#
+# ORDER MATTERS. `error: failed to push some refs to ...` appears in BOTH
+# failures, so it can never be the discriminator; auth is checked first because
+# it is the one that was being misread.
+PUSH_AUTH_SIGNS = [
+  /invalid username or token/i,
+  /authentication failed/i,
+  /could not read (?:username|password)/i,
+  /terminal prompts disabled/i,
+  /permission denied \(publickey\)/i,
+  /remote: permission to .* denied/i,
+  /support for password authentication was removed/i,
+  /remote: repository not found/i,
+  /\b(?:401|403) (?:unauthorized|forbidden)\b/i
+].freeze
+
+# The genuine non-fast-forward. `[rejected]` alone is not enough — a rejection
+# carries its REASON in parentheses, and that reason is the fact we need.
+PUSH_DIVERGED_SIGNS = [
+  /non-fast-forward/i,
+  /\[rejected\][^\n]*\((?:fetch first|stale info)\)/i,
+  /updates were rejected because/i,
+  /tip of your current branch is behind/i
+].freeze
+
+# => [:auth, :diverged, :unknown]
+def classify_push_failure(output)
+  text = output.to_s
+  return :auth if PUSH_AUTH_SIGNS.any? { |re| text.match?(re) }
+  return :diverged if PUSH_DIVERGED_SIGNS.any? { |re| text.match?(re) }
+
+  :unknown
+end
+
+# The operator-facing sentence for each cause. Kept beside the classifier so a
+# new cause cannot be classified without also being explained.
+def push_failure_message(repo, sha, cause)
+  case cause
+  when :auth
+    "could not push #{repo} origin/main to #{short(sha)} — git was REFUSED ON CREDENTIALS, not on the ref. " \
+      "main has NOT diverged and nothing needs reconciling; the push never got far enough to find out. " \
+      "This is the SHIP lane, which pushes as the DEPLOYER identity: refresh it with " \
+      "`bin/gh-auth-refresh --identity deployer`, and note that minting one reads github.mcritchie-deployer " \
+      "from the agents-admin vault, so the shell needs OP_ADMIN_SERVICE_ACCOUNT_TOKEN " \
+      "(~/.zprofile.admin, installed by `bin/setup-1pass-token --admin`). Then re-run `bin/release ship` — " \
+      "it resumes; do NOT re-run `prepare`, the freeze is still good."
+  when :diverged
+    "could not fast-forward #{repo} origin/main to #{short(sha)} — git REFUSED the ref update as a " \
+      "NON-FAST-FORWARD, which means origin/main has diverged from the frozen SHA (someone pushed to " \
+      "main). NOT forcing. Reconcile main, re-run `bin/release prepare` to re-freeze, then re-run " \
+      "`bin/release ship`."
+  else
+    "could not push #{repo} origin/main to #{short(sha)} — git refused, and the reason is NOT one this " \
+      "script recognises. Read git's output above before acting: it is neither a credential refusal nor a " \
+      "non-fast-forward, so BOTH standard remedies (refresh the deployer token / reconcile main) may be " \
+      "the wrong errand. NOT forcing."
+  end
+end
+
 def push_frozen_main(repo, sha)
   sha = sha.to_s.strip
   step("push #{repo} origin main → frozen #{short(sha)} (ref push — no checkout, no working tree)")
@@ -4105,12 +4184,12 @@ def push_frozen_main(repo, sha)
   path = repo_path(repo)
   abort!("repo not found at #{path} — clone it as a sibling at the projects root") unless Dir.exist?(path)
 
-  _, ok = sh("git", "-C", path, "push", "origin", "#{sha}:refs/heads/main")
-  unless ok
-    abort!("could not fast-forward #{repo} origin/main to #{short(sha)} — git REFUSED the ref update, which " \
-           "means origin/main has diverged from the frozen SHA (someone pushed to main). NOT forcing. " \
-           "Reconcile main, re-run `bin/release prepare` to re-freeze, then re-run `bin/release ship`.")
-  end
+  # CAPTURED, because the diagnosis below is READ from git rather than assumed.
+  # It is echoed either way, so the operator still sees exactly what an uncaptured
+  # push would have shown them.
+  out, ok = sh("git", "-C", path, "push", "origin", "#{sha}:refs/heads/main", capture: true)
+  say(out.to_s.rstrip) unless out.to_s.strip.empty?
+  abort!(push_failure_message(repo, sha, classify_push_failure(out))) unless ok
 
   # THE PER-REPO SHIP EVIDENCE, recorded at the only chokepoint that can't lie
   # about it: this repo's `main` now points at this SHA, because git just accepted
