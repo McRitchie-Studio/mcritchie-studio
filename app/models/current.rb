@@ -26,6 +26,12 @@ class Current < ActiveSupport::CurrentAttributes
   # price() is on the hot capture path; without this it re-SELECTs on every call.
   # ModelRateOverride expires it on write, so a freshly-saved rate is never stale.
   attribute :model_rate_overrides
+  # Request-scoped memo of the soul roster (Task.soul_roster). Task.soul? is asked
+  # once PER CANDIDATE on every build claim and every reviewer selection, so an
+  # un-memoized roster re-SELECTs the agents table several times per save. Same
+  # shape and same reason as model_rate_overrides above. Request-scoped rather than
+  # cached, so a newly seeded soul is recognised on the very next request.
+  attribute :soul_roster
   # Optional override for the two reviewers recorded on a submitted→reviewed
   # event (the avatars payload). When unset, Task#stage_event_metadata selects
   # the pair via ReviewerSelector — so the avatars populate no matter who drove

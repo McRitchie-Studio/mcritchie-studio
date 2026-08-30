@@ -32,32 +32,52 @@
 # records on the submitted→reviewed TaskEvent (a custom --qa-owner shifts the light
 # pool + seed, so the preview is then advisory).
 #
-# Carl YIELDS the primary seat only to the hard no-self-review rule: if Carl BUILT
-# the task (devops.built_by == carl) or a caller names him the qa_owner, he reviews
-# nothing and BOTH seats become domain-fit picks from the specialist pool.
+# Carl YIELDS the primary seat only to the hard no-self-review rule: if Carl is
+# among the task's AUTHORS (not merely its last claimant) or a caller names him the
+# qa_owner, he reviews nothing and BOTH seats become domain-fit picks from the
+# specialist pool.
 #
 # Task source: the production task board API (same auth as bin/task / bin/dor-check),
 # or a local JSON via --file (offline / tests). Degrades gracefully — a missing
 # Agent row (or no DB at all) falls back to ReviewerSelector's domain defaults.
 #
-# The BUILDER is auto-excluded from the LIGHT seat too (read from the task's
-# devops.built_by, stamped on any build CLAIM — a re-claim of an already-`building`
-# task included) so a soul never reviews their own work — no manual flag needed.
+# EVERY AUTHOR is auto-excluded from the LIGHT seat, not just the last one to claim.
+# A task can have several: a session limit kills a builder mid-work and another soul
+# finishes it. devops.built_by holds ONE slug and RE-POINTS on a re-claim, so it
+# names the current builder, not the author list — on 2026-08-30 that seated ALEX as
+# the light on a diff Alex had written every test on (PR #1081, built_by=steffon),
+# and a hand-passed `--busy alex` was the only thing that stopped it. The set is read
+# from devops.builders (server-owned, append-only, stamped on every build claim),
+# unioned with built_by and every `→ building` event actor.
 #
-# ⛔ AN UNKNOWN BUILDER REFUSES. If neither devops.built_by nor a `→ building`
-# event names a SOUL, this tool exits 2 and selects NOTHING (and records nothing).
-# An empty exclusion list is not the same answer as "nobody to exclude", and
-# conflating them is what let it pick Carl to review Carl's own PR on 2026-08-13.
-# State the fact to proceed: `--builder <soul>` names the builder, `--builder none`
-# asserts that no soul built it. Fix it durably upstream with
+# ⛔ THIS TOOL REFUSES (exit 2, selecting and recording NOTHING) in four states,
+# because an empty exclusion list is not the same answer as "nobody to exclude" —
+# conflating them is what let it pick Carl to review Carl's own PR on 2026-08-13:
+#   1. NO author on record — nothing to exclude.
+#   2. The author set is INCOMPLETE — another session claimed the task and named no
+#      soul (devops.builders_unattributed), so a soul we cannot name worked on it.
+#   3. An author would be SEATED — the pool was too small to drop them all, so one
+#      was KEPT eligible (the recorder degrades here by design; the CLI must not).
+#   4. A `--builder` entry NAMED NOBODY — see the roster note below.
+# State the fact to proceed: `--builder <soul>[,<soul>]` names the authors,
+# `--builder none` asserts that no soul built it. Fix it durably upstream with
 # `bin/task move <slug> building --actor <soul>`.
+#
+# An UNRECOGNISED soul cannot lift any of that. Every slug is checked against the
+# roster (Task.soul?), not merely a lowercase-word shape: `--builder stefon` names
+# nobody, where it once passed as a known builder who excluded no one. A PARTIAL
+# typo is the sharp case — `--builder steffon,alexx` yields a non-empty set, so the
+# authors would read as KNOWN while the soul you meant to exclude never registered.
+# That refuses too (state 4), rather than honoring the half it understood.
 #
 # BUSY souls (agents mid-build / mid-review on
 # OTHER in-flight tasks) are excluded from the LIGHT seat via `--busy a,b,c` and/or
-# `--busy-auto` (which reads the board's stage=building tasks). Both the builder and
+# `--busy-auto` (which reads the board's stage=building tasks). Both the author and
 # the busy drops YIELD rather than starve: if the exclusions would leave too few
-# light candidates, the least-bad ones are KEPT back so a pair is always returned
-# (flagged in the audit).
+# light candidates, the least-bad ones are KEPT back so ReviewerSelector always
+# returns a pair (flagged in the audit). The two kept cases are NOT equivalent here:
+# a kept BUSY soul is an inconvenience and prints as a note, while a kept AUTHOR is
+# a self-review and REFUSES (case 3 above).
 #
 # Usage:
 #   bin/reviewer-select <task-slug>                 # print the pair AND record the review intent (default)
@@ -65,14 +85,16 @@
 #   bin/reviewer-select <task-slug> --dry           # alias for --no-record
 #   bin/reviewer-select <task-slug> --json          # machine-readable decision
 #   bin/reviewer-select <task-slug> --qa-owner carl # exclude a different QA owner
-#   bin/reviewer-select <task-slug> --builder carl  # override the recorded built_by
-#   bin/reviewer-select <task-slug> --builder none  # ASSERT no soul built it (lifts the refusal)
+#   bin/reviewer-select <task-slug> --builder carl        # override the recorded author set
+#   bin/reviewer-select <task-slug> --builder steffon,alex # a task with TWO authors
+#   bin/reviewer-select <task-slug> --builder none        # ASSERT no soul built it (lifts the refusal)
 #   bin/reviewer-select <task-slug> --busy a,b      # exclude busy souls (repeatable)
 #   bin/reviewer-select <task-slug> --busy-auto     # also exclude agents on stage=building tasks
 #   bin/reviewer-select --file task.json            # evaluate a local task JSON (advisory — never records)
 #
 # Exit code: 0 = a pair was selected, 1 = task not found / usage error,
-#            2 = REFUSED — the builder is unknown (see the block above).
+#            2 = REFUSED — the authors are unknown, incomplete, one would be
+#                seated, or a --builder entry named nobody (see the block above).
 
 # Activate the bundled gem versions first (Bundler.setup) — before requiring
 # `json` et al, so the pinned json (not the newer default gem) is the one loaded.
@@ -229,13 +251,18 @@ def excluded_line(decision)
   # A known-but-nameless builder is the `--builder none` assertion: nobody is
   # excluded, and the audit line says WHY that is a fact rather than a blank.
   parts << "(no builder — ASSERTED by the caller: no soul built this task)" if builder.empty? && decision["builder_known"]
-  unless builder.empty?
-    parts << if decision["excluded_builder"].to_s == builder
-      "#{builder} (builder — a soul never reviews their own work)"
-    elsif decision["builder_candidate"]
-      "#{builder} (builder — KEPT: excluding would leave too few candidates)"
+  # EVERY author, not just the current builder. A task can have several (a session
+  # limit kills a builder mid-work and another soul finishes it), and printing only
+  # devops.built_by is how an author read as a free reviewer.
+  excluded_builders = Array(decision["excluded_builders"])
+  kept_builders = Array(decision["kept_builders"])
+  Array(decision["builders"]).each do |soul|
+    parts << if excluded_builders.include?(soul)
+      "#{soul} (author — a soul never reviews their own work)"
+    elsif kept_builders.include?(soul)
+      "#{soul} (author — KEPT: excluding would leave too few candidates)"
     else
-      "#{builder} (builder — not a light candidate; reviews nothing on this PR)"
+      "#{soul} (author — not a light candidate; reviews nothing on this PR)"
     end
   end
   Array(decision["excluded_busy"]).each { |s| parts << "#{s} (busy — mid-build/review elsewhere)" }
@@ -285,8 +312,8 @@ OptionParser.new do |o|
   end
   o.on("--dry", "--dry-run", "Advisory only — print the pick, record NOTHING (alias for --no-record)") { options[:record] = false }
   o.on("--qa-owner SLUG", "Exclude this slug instead of the default QA owner (avi)") { |v| options[:qa_owner] = v }
-  o.on("--builder SLUG", "Exclude this builder (overrides the task's recorded built_by); " \
-                         "`none` ASSERTS that no soul built the task, lifting the unknown-builder refusal") do |v|
+  o.on("--builder SLUG", "Exclude these authors, comma/space separated (overrides the task's recorded set); " \
+                         "`none` ASSERTS that no soul built the task, lifting the unknown-author refusal") do |v|
     options[:builder] = v
   end
   o.on("--busy LIST", "Exclude these busy souls — mid-build/review elsewhere (comma/space separated; repeatable)") do |v|
@@ -344,21 +371,72 @@ pr_url = devops["pr_url"].to_s.strip
 #   --builder none    assert NO soul built it (a Pokémon session, an operator)
 # The durable fix is upstream: `bin/task move <slug> building --actor <soul>`
 # stamps devops.built_by on any build claim, re-claims included.
+# Prefer the positional slug, but fall back to the one the payload carries so
+# --file mode prints a copy-pasteable remedy too.
+named = slug.to_s.strip.empty? ? decision["task"].to_s.strip : slug.to_s.strip
+named = "<task>" if named.empty?
+
+# A PARTLY understood override is refused before the known/unknown question: with
+# `--builder steffon,stefon` the set is non-empty, so the authors read as KNOWN
+# while the soul the caller meant to exclude never registered.
+if (unresolved = Array(decision["builder_override_unresolved"])).any?
+  warn!("reviewer-select REFUSED to select for task=#{decision["task"] || "-"} — AN AUTHOR NAMED NOBODY.")
+  warn!("  #{unresolved.join(", ")} matches no soul on the roster, so #{unresolved.size == 1 ? "it names" : "they name"} nobody and")
+  warn!("  #{unresolved.size == 1 ? "excludes" : "exclude"} nobody. The rest of your list would still have been honored,")
+  warn!("  which is how a typo hides inside a correct answer. Check the spelling against:")
+  warn!("    #{ReviewerSelector::POOL.union([ReviewerSelector::DEFAULT_QA_OWNER]).sort.join(", ")}")
+  exit 2
+end
+
 unless decision["builder_known"]
-  # Prefer the positional slug, but fall back to the one the payload carries so
-  # --file mode prints a copy-pasteable remedy too.
-  named = slug.to_s.strip.empty? ? decision["task"].to_s.strip : slug.to_s.strip
-  named = "<task>" if named.empty?
-  warn!("reviewer-select REFUSED to select for task=#{decision["task"] || "-"} — the BUILDER IS UNKNOWN.")
-  warn!("  devops.built_by is blank and no `→ building` event names a soul, so the")
-  warn!("  no-self-review exclusion has nothing to exclude. Selecting anyway could")
-  warn!("  hand the PR to the soul who wrote it — refusing instead.")
+  warn!("reviewer-select REFUSED to select for task=#{decision["task"] || "-"} — the AUTHORS ARE UNKNOWN.")
+  if builder
+    # An override was passed and it named NOBODY on the roster — a typo. Say that,
+    # rather than the record's story: `--builder stefon` is a different problem from
+    # an unstamped task, and reporting the wrong one sends the reader to fix the
+    # wrong thing.
+    warn!("  --builder #{builder.inspect} matches no soul on the roster, and an explicit")
+    warn!("  override is authoritative — so it names nobody rather than falling back to")
+    warn!("  the record it was meant to correct. Check the spelling against:")
+    warn!("    #{ReviewerSelector::POOL.union([ReviewerSelector::DEFAULT_QA_OWNER]).sort.join(', ')}")
+  elsif (session = decision["builders_unattributed"].to_s.strip).empty?
+    warn!("  devops.built_by is blank and no `→ building` event names a soul, so the")
+    warn!("  no-self-review exclusion has nothing to exclude. Selecting anyway could")
+    warn!("  hand the PR to the soul who wrote it — refusing instead.")
+  else
+    # The INCOMPLETE set. Someone else worked this task and the record cannot say
+    # who — so the authors on record are a subset, and a pick made over that subset
+    # can still land on an author (measured 2026-08-30: PR #1081 seated Alex).
+    warn!("  Authors on record: #{Array(decision["builders"]).join(", ")}.")
+    warn!("  But session #{session} ALSO claimed this task and named no soul, so the")
+    warn!("  author list is INCOMPLETE — the exclusion cannot cover a soul it cannot")
+    warn!("  name. A handoff mid-build (a session limit, a re-claim) does this.")
+  end
   warn!("")
-  warn!("  Resolve it by stating the fact:")
-  warn!("    bin/reviewer-select #{named} --builder <soul>   # who built it")
-  warn!("    bin/reviewer-select #{named} --builder none     # no soul built it")
-  warn!("  Durable fix (stamps built_by for next time, re-claims included):")
+  warn!("  Resolve it by stating the fact (name EVERY author, comma-separated):")
+  warn!("    bin/reviewer-select #{named} --builder <soul>[,<soul>]   # who wrote it")
+  warn!("    bin/reviewer-select #{named} --builder none              # no soul built it")
+  warn!("  Durable fix (stamps the author for next time, re-claims included):")
   warn!("    bin/task move #{named} building --actor <soul>")
+  exit 2
+end
+
+# THE SECOND WAY AN AUTHOR GETS SEATED: the pool was too small to drop them all.
+# `builders`/`busy` exclusions YIELD rather than starve, so the selector always
+# returns a pair — correct for the model recorder, which must never break. It is
+# NOT correct here, where a human is present to choose: a kept author is a soul
+# about to review their own diff, and printing it as a note (which is all this did)
+# is the same "reads like ordinary output" failure as the blank builder in the
+# 2026-08-13 incident. The CLI fails closed; the recorder still degrades.
+if (kept = Array(decision["kept_builders"])).any?
+  warn!("reviewer-select REFUSED to select for task=#{decision["task"] || "-"} — AN AUTHOR WOULD BE SEATED.")
+  warn!("  Authors: #{Array(decision["builders"]).join(", ")}. Excluding #{kept.join(", ")} too would")
+  warn!("  leave too few light candidates, so the pool KEPT them eligible — and the")
+  warn!("  light seat may land on a soul who wrote the diff. Refusing instead.")
+  warn!("")
+  warn!("  Resolve it by naming a reviewer yourself, or widen the pool:")
+  warn!("    bin/reviewer-select #{named} --qa-owner <other-soul>   # free the QA-owner seat")
+  warn!("  Then hand the light seat to a soul who is not on the author list.")
   exit 2
 end
 

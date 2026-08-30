@@ -99,17 +99,35 @@ Avi supervisor. Carl:
 3. Determines the **domain LIGHT** by change surface (the table above), previewing
    with **`bin/reviewer-select <task>`**. It scores the pool by domain fit with a
    logged, seeded-per-task tiebreak and **excludes** the QA owner (who QAs the
-   assembled RC — no self-gating), **the builder** (a soul never reviews its own
-   work — read from `devops.built_by`, auto-stamped on any build claim), and any
-   **busy souls** (`--busy a,b,c` and/or `--busy-auto`). The pool is never starved
-   below a pair.
+   assembled RC — no self-gating), **every AUTHOR** (a soul never reviews its own
+   work), and any **busy souls** (`--busy a,b,c` and/or `--busy-auto`). The pool is
+   never starved below a pair.
 
-   **It REFUSES (exit 2) when the builder is unknown** — no `built_by`, no soul on
-   the `→ building` event — because it then cannot tell you apart from the author.
-   Say which it is: `--builder <soul>` names the builder, `--builder none` asserts
-   that no soul built it. Stamp it durably with
-   `bin/task move <task> building --actor <soul>` (which now works on a task
+   **Every author, not just the last one to claim.** A task can have several: a
+   session limit kills a builder mid-work and another soul finishes it.
+   `devops.built_by` holds ONE slug, so on 2026-08-30 it named steffon while ALEX
+   had written every test on the diff — and this command duly seated Alex as the
+   light on Alex's own PR (#1081). The exclusion now reads `devops.builders`, the
+   server-owned set stamped on every build claim, unioned with `built_by` and every
+   `→ building` event actor.
+
+   **It REFUSES (exit 2) in three states**, because an empty exclusion list is not
+   the same answer as "nobody to exclude":
+
+   | Refusal | What it means |
+   |---------|---------------|
+   | authors unknown | no `built_by`, no soul on a `→ building` event |
+   | author set INCOMPLETE | another session claimed the task and named no soul (`devops.builders_unattributed`) |
+   | an author would be SEATED | the pool was too small to drop them all, so one was kept eligible |
+
+   Say which it is: `--builder <soul>[,<soul>]` names the authors (comma-separated
+   for a handoff), `--builder none` asserts that no soul built it. Stamp it durably
+   with `bin/task move <task> building --actor <soul>` (which works on a task
    already at `building`, so a fast-lane build can be corrected in place).
+
+   **A typo cannot lift any of that.** Every slug is checked against the roster
+   (`Task.soul?`), not merely a lowercase-word shape — `--builder stefon` names
+   nobody, so it refuses rather than passing as a known builder who excludes no one.
 
 **Record the intent.** `bin/reviewer-select <task>` **records the picked pair by
 default** — it writes Carl + the light onto the task as the live **review intent**

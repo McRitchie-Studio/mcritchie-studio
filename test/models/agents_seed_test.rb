@@ -132,4 +132,26 @@ class AgentsSeedTest < ActiveSupport::TestCase
     colors = %w[jasper shannon carl steffon].map { |s| Agent.find_by!(slug: s).status_color }
     assert_equal colors.uniq, colors, "each reviewer soul gets a distinct persona tint"
   end
+
+  # --- the roster and the seeds must not drift (reviewer-select-seats-authors) ---
+
+  test "every seeded soul appears in Task::SOUL_ROSTER" do
+    # Task.soul? validates authorship against the roster, and its static floor is
+    # what keeps that working when the DB is unreachable. A soul seeded here but
+    # missing from the floor would be a real builder that a degraded selector reads
+    # as an unknown — fail-closed, but a false refusal, and a guard that cries wolf
+    # gets routed around. Parsed from the seed source rather than from Agent rows so
+    # the assertion holds even if the seed never ran.
+    seeded = File.read(SEED)[/agents_data = \[(.*?)\n\]/m, 1].to_s.scan(/slug:\s*"([a-z0-9-]+)"/).flatten
+
+    assert_operator seeded.size, :>=, 9, "the seed file should still define the full roster"
+    assert_empty seeded - Task::SOUL_ROSTER,
+      "these souls are seeded but missing from Task::SOUL_ROSTER (app/models/task.rb)"
+  end
+
+  test "the roster names no soul the seed does not create" do
+    run_seed
+    assert_empty Task::SOUL_ROSTER - Agent.pluck(:slug),
+      "Task::SOUL_ROSTER names a soul the seed never creates — one of the two is wrong"
+  end
 end
