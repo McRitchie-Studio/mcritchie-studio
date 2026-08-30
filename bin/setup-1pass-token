@@ -12,9 +12,12 @@
 # read is the step that is blocked — not merely discouraged from it. Admin lanes
 # source ~/.zprofile.admin explicitly.
 #
-# That is the whole claim, deliberately. A build lane can still END UP HOLDING a
-# deployer token: bin/gh-token serves one from a 50-minute cache before it mints.
-# See docs/agents/modules/credentials.md and /tasks/never-cache-deployer-token.
+# That is the whole claim, deliberately: this file blocks the MINT. Not holding
+# one is a separate mechanism in bin/gh-token, which refuses to cache a deployer
+# token at all (CACHEABLE_IDENTITIES) — it used to serve one from cache before
+# minting, and `never-cache-deployer-token` closed that. Naming both, and which
+# file owns which, is what keeps the boundary from being trusted too widely.
+# See docs/agents/modules/credentials.md.
 #
 # Usage:
 #   1. Copy your service account token to the clipboard (Cmd+C from 1Password)

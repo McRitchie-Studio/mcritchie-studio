@@ -98,12 +98,14 @@ Three rules, and each one is there because its absence cost something:
 
 - **The vault name comes from `MCR_OP_VAULT_AGENT`, defaulting to
   `agents-studio`** — mirroring `bin/lib/op_vaults.rb`, which is the single
-  source. Phase 4 resolves it in exactly one place and passes it down.
+  source. Phase 4 expands that default at three sites and only the guard's binds
+  a variable — the Heroku item read and the `SOLANA_ADMIN_KEY` secret map each
+  expand it again, so a new default has to be set in all three.
 - **The name is matched EXACTLY.** The guard read `op vault list | grep -qw
   agents` until 2026-08-29 and passed against `agents-studio`, because `-w`
   treats a hyphen as a word boundary — so it reported the credential lane
-  healthy for as long as the vault it guarded had been gone. The account holds
-  four vaults whose names begin `agents` (`agents-studio`, `agents-admin`,
+  healthy for as long as the vault it guarded had been gone. The 1Password
+  account holds four vaults whose names begin `agents` (`agents-studio`, `agents-admin`,
   `agents-industries`, `agents-mcritchie-family`), so "contains the word
   agents" was never the question.
 - **It fails closed.** Absent, empty, unparseable, or non-array output from `op`
@@ -115,7 +117,7 @@ reader to different places:
 | Outcome | What it means | Where to look |
 |---------|---------------|---------------|
 | `✓ ... agent vault '<name>' visible` | matched by exact name in `op vault list` | — |
-| `✗ OP token set but can't see the '<name>' agent vault` | a listing was read; the vault is not in it | the token's vault grants, or set `MCR_OP_VAULT_AGENT` |
+| `✗ OP token set but can't see the '<name>' agent vault` | op answered without naming the vault, or op itself failed | the token's vault grants, or set `MCR_OP_VAULT_AGENT` — but rule out an expired token and a dead network first |
 | `✗ can't check the '<name>' agent vault — op and jq are not both installed` | the listing could never be read | Phase 1, which installs both |
 
 The last row is a separate message on purpose. Sending an operator to audit

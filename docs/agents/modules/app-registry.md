@@ -23,13 +23,17 @@ and `.agent-context.json` carry it the same way the Pokémon mascot's signature
 color does. A brand-new Claude session (no task yet) adopts `App.default`
 (`mcritchie-studio`) via the SessionStart hook → `bin/task session-mascot`.
 Codex sessions expose hook payloads; `bin/agent-runtime install` keeps Codex's
-footer configured with the built-in `thread-title` item and installs a managed
+footer configured as `thread-title` → `model-with-reasoning` →
+`context-remaining` and installs a managed
 `SessionStart` hook plus a `PostToolUse` refresh hook to
 `bin/codex-session-title`. That Codex adapter delegates marker resolution to the
 shared provider `bin/agent-marker current`, then mirrors the marker into Codex's
-persisted local thread title. Stock Codex CLI 0.142.3 renders
+persisted local thread title. The identity makes `current-dir` redundant, while
+`context-remaining` adds the session-health signal that matters during long
+runs. The installer migrates the former managed layout automatically but
+preserves other custom footer layouts. Stock Codex CLI through 0.144.3 renders
 SessionStart `additionalContext` as visible `hook context`, so the hook does not
-use it for mascot identity. Stock 0.142.3 also keeps the live footer thread name
+use it for mascot identity. Stock 0.144.3 also keeps the live footer thread name
 in memory after session configuration; a SQLite title update does not repaint
 that already-running footer, although resume reloads the persisted title and
 shows the Pokémon marker.
@@ -45,7 +49,7 @@ forwards common parent fields from hook JSON, including `parent_session_id` and
 `parentThreadId`.
 
 For local Codex installs patched with the McRitchie `threadName` hook runtime
-(`docs/agents/patches/codex-0.142.3-session-start-thread-name.patch`),
+(`docs/agents/patches/codex-session-start-thread-name.patch`),
 enable live fresh-session and post-task repainting by creating:
 
 ```bash

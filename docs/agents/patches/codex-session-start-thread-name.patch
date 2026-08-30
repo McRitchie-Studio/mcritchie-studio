@@ -739,10 +739,9 @@ diff --git a/codex-rs/rollout/src/policy.rs b/codex-rs/rollout/src/policy.rs
 index b342d69..f448c43 100644
 --- a/codex-rs/rollout/src/policy.rs
 +++ b/codex-rs/rollout/src/policy.rs
-@@ -129,6 +129,7 @@ pub fn should_persist_event_msg(ev: &EventMsg) -> bool {
+@@ -139,5 +139,6 @@ pub fn should_persist_event_msg(ev: &EventMsg, history_mode: ThreadHistoryMode) -> bool {
          | EventMsg::RawResponseItem(_)
          | EventMsg::SessionConfigured(_)
-         | EventMsg::ThreadSettingsApplied(_)
 +        | EventMsg::ThreadNameUpdated(_)
          | EventMsg::McpToolCallBegin(_)
          | EventMsg::ExecCommandBegin(_)

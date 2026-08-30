@@ -363,4 +363,88 @@ class GhTokenTest < Minitest::Test
       refute File.exist?(store_path(dir)), "nothing was minted, so nothing was cached"
     end
   end
+
+  # ── RETIRING A REJECTED SESSION (--reject) ──────────────────────────────────
+  #
+  # PROVEN AGAINST GIT, not assumed (2026-08-30, local server answering every
+  # request with 401): git calls the credential helper with `get`, and when that
+  # credential is rejected it calls it a SECOND time with `erase`, handing the
+  # failed password back on stdin. bin/gh-app-git-credential's erase branch turns
+  # that into this flag. Without it a cached-but-revoked token is re-served on
+  # every subsequent git operation until it ages out on the clock alone — the
+  # helper never sees the 401 itself, so nothing else can notice.
+
+  def test_a_rejected_session_is_purged_from_the_cache
+    Dir.mktmpdir do |dir|
+      seed_store(dir, { "a" => "ghs_REVOKED" })
+
+      out, _err, status = run_token(with_env(dir), "--reject", "ghs_REVOKED")
+
+      assert status.success?, "a reject runs on a path git has ALREADY failed; it must not fail harder"
+      assert_equal "", out.strip, "a reject is a write — it must never print a token"
+      refute store(dir).dig("agent", "a"), "the rejected slot must be gone, not merely ignored"
+    end
+  end
+
+  # THE REASON THE MATCH EXISTS. The cache is shared across sibling agent
+  # PROCESSES. Between our `get` and git's `erase`, another agent may already have
+  # hit the same rejection and minted a replacement into the other slot. A blind
+  # purge of the identity would discard that fresh session and send every sibling
+  # back to 1Password — the exact cost this cache exists to avoid.
+  def test_a_reject_leaves_a_siblings_newer_session_alone
+    Dir.mktmpdir do |dir|
+      seed_store(dir, { "a" => "ghs_REVOKED", "b" => "ghs_SIBLINGFRESH" })
+
+      run_token(with_env(dir), "--reject", "ghs_REVOKED")
+
+      refute store(dir).dig("agent", "a"), "only the rejected slot is retired"
+      assert_equal "ghs_SIBLINGFRESH", store(dir).dig("agent", "b", "token"),
+                   "a sibling's newer session must survive the rejection of an older one"
+    end
+  end
+
+  # EXACTLY ONCE, and note WHERE that property comes from: there is no counter and
+  # no retry budget. The first reject removes the token, so a second reject
+  # carrying the same value matches nothing and does nothing.
+  def test_rejecting_the_same_token_twice_changes_nothing_the_second_time
+    Dir.mktmpdir do |dir|
+      seed_store(dir, { "a" => "ghs_REVOKED", "b" => "ghs_SIBLINGFRESH" })
+      run_token(with_env(dir), "--reject", "ghs_REVOKED")
+      after_first = File.read(store_path(dir))
+
+      _out, _err, status = run_token(with_env(dir), "--reject", "ghs_REVOKED")
+
+      assert status.success?
+      assert_equal after_first, File.read(store_path(dir)),
+                   "the second reject must be a genuine no-op, byte for byte"
+    end
+  end
+
+  # A token we never held is not ours to act on. Rejecting it must not empty the
+  # cache — that would let one stale caller wipe every sibling's live session.
+  def test_rejecting_an_unknown_token_purges_nothing
+    Dir.mktmpdir do |dir|
+      seed_store(dir, { "a" => "ghs_MINE" })
+
+      run_token(with_env(dir), "--reject", "ghs_NEVERSEENTHIS")
+
+      assert_equal "ghs_MINE", store(dir).dig("agent", "a", "token"),
+                   "an unrecognised rejection must leave the cache untouched"
+    end
+  end
+
+  # Seed the cache directly. `created_at` is written fresh so the seeded token is
+  # INSIDE the freshness window — a slot that reads as stale would be skipped by
+  # usable_token and the reject tests would pass for the wrong reason.
+  # NOTE THE BRACES AT EVERY CALL SITE. `seed_store(dir, "a" => tok)` binds that
+  # bare hash to the `identity:` KEYWORD in Ruby 3, not to `slots`, and fails with
+  # a confusing "given 1, expected 2" pointing at this line rather than the caller.
+  def seed_store(dir, slots, identity: "agent")
+    now = Time.now.utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+    entry = slots.transform_values { |token| { "token" => token, "created_at" => now } }
+    entry["active"] = slots.keys.first
+    FileUtils.mkdir_p(File.dirname(store_path(dir)))
+    File.write(store_path(dir), JSON.generate(identity => entry))
+  end
+
 end
