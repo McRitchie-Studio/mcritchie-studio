@@ -80,8 +80,14 @@ backwards while a real lease is held); and unlike the anchor check, `finished` f
 network blip would free a live reviewer's task underneath them. A wrong "anchor dead"
 costs a recoverable delay; a wrong "work finished" costs a duplicated review.
 
-The `devops-shift` ROLE lease passes no `finished:` and is unchanged: it protects a
-LANE, not a unit of work, so it has no completion signal to give.
+Two callers still pass no `finished:`, for DIFFERENT reasons, and the difference
+matters to anyone asking "did we fix all the immortal renewers?". The
+`devops-shift` ROLE lease is unchanged and correctly exempt: it protects a LANE,
+not a unit of work, so it has no completion signal to give. `bin/lib/release_claim_cli.rb`
+is NOT exempt — its renewer is scoped to a RELEASE SLUG, which does reach terminal
+stages — and it still carries this exact defect, tracked at
+`/tasks/release-renewer-outlives-ship`. So this section covers the REVIEW claim
+only; two of the three members of that family are done and one is not.
 
 - **Simple** — the careless double. Session A holds `avi`; a second Avi launch
   `acquire avi` → the row is live-held → `acquired:false` → the CLI prints
