@@ -131,7 +131,7 @@
 # Near-miss: merge-docs-reviewer-into-alex shipped post_deploy_cmd='bin/rails
 # db:seed' because reviewers read the diff, not the deploy metadata.
 #
-# Auth: AGENT_API_SECRET from ENV, else 1Password, else repo .env (same as
+# Auth: AGENT_API_SECRET from ENV, else repo .env, else 1Password LAST (same as
 # bin/task). Base URL via TASK_API_BASE (default https://mcritchie.studio).
 #
 # Usage:
@@ -245,7 +245,7 @@ die!("--gate-role must be one of: #{GATE_ROLES.join(", ")}") unless GATE_ROLES.i
 def agent_secret
   dotenv = File.join(ROOT, ".env")
   TaskBoard.agent_secret(dotenv) ||
-    die!("AGENT_API_SECRET not found (checked ENV, 1Password, #{dotenv})")
+    die!("AGENT_API_SECRET not found (checked ENV, #{dotenv}, 1Password)")
 end
 
 def token

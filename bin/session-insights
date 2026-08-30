@@ -15,7 +15,7 @@
 # Targets the SAME board as the narration stack (ATOMIC_CAPTURE_URL, default
 # https://mcritchie.studio) via the shared AgentApi client (bin/lib/agent_api.rb), which
 # mints/caches the SAME agent token as bin/atomic-event / bin/atomic-capture-hook
-# (AGENT_API_SECRET → 1Password → repo .env).
+# (AGENT_API_SECRET → repo .env → 1Password LAST).
 #
 # NON-FATAL by construction: any failure (no token, unreachable board, empty bank)
 # prints NOTHING and exits 0, so a session with no insights just starts normally —

@@ -63,7 +63,10 @@ stdout, diagnostics to stderr, verifies op auth) over hand-rolling `op read`.
 `bin/task` already uses it, so you usually never touch the secret directly.
 
 If you must call the API by hand, never inline the secret or echo it — read it at
-call time and pipe it straight into the request:
+call time and pipe it straight into the request. **On a provisioned machine take
+it from the repo `.env` instead of the vault** (`grep -m1 ^AGENT_API_SECRET= .env |
+cut -d= -f2-`): every `op read` spends one credential against a 1,000/day cap
+shared account-wide, and the two values are the same secret.
 
 ```bash
 SECRET="$(/opt/homebrew/bin/op read "op://${MCR_OP_VAULT_AGENT:-agents-studio}/Agent API Secret/AGENT_API_SECRET")"

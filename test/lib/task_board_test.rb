@@ -11,8 +11,10 @@
 require "minitest/autorun"
 require "json"
 require "socket"
+require "tmpdir"
 
 require File.expand_path("../../bin/lib/task_board", __dir__)
+require_relative "../support/op_binary_stub"
 
 class TaskBoardTest < Minitest::Test
   # ── [unit] parse_body (the die!-family's lenient parse) ─────────────────────
@@ -111,11 +113,85 @@ class TaskBoardTest < Minitest::Test
     assert_match(/expected an HTTP response/, error.message)
   end
 
-  # ── [unit] agent_secret: ENV precedence ──────────────────────────────────────
+  # ── [unit] agent_secret: the ORDER, measured in VAULT READS ─────────────────
+  #
+  # THE DEFECT THESE PIN. The chain used to run ENV → 1Password → .env. ENV is
+  # unset in agent shells, so the vault read SUCCEEDED and RETURNED, and the
+  # .env branch below it never ran on a provisioned machine. Every `bin/task`
+  # invocation therefore spent one credential against a 1,000/day cap shared
+  # account-wide by every lane — 1,308 invocations measured in one session — to
+  # fetch a secret sitting in the repo's own .env.
+  #
+  # So these count READS, not just return values. An assertion on the returned
+  # secret alone would pass on the BUGGY order too: in production the vault and
+  # the .env hold the SAME string, which is precisely why this went unseen. The
+  # stub prints a different value so the SOURCE is legible, and records every
+  # invocation so "was the vault consulted at all?" is answerable.
+
+  def test_unit_agent_secret_takes_the_dotenv_and_spends_no_vault_read
+    Dir.mktmpdir do |dir|
+      dotenv = File.join(dir, ".env")
+      File.write(dotenv, "OTHER=1\nAGENT_API_SECRET=from-dotenv\n")
+
+      OpBinaryStub.with_stub(TaskBoard, dir: dir) do |op|
+        with_env("AGENT_API_SECRET" => nil) do
+          assert_equal "from-dotenv", TaskBoard.agent_secret(dotenv),
+                       "the .env is consulted BEFORE the vault (old order answered 'from-vault')"
+        end
+        assert_equal 0, op.count,
+                     "a provisioned machine must spend ZERO credentials resolving the board secret"
+      end
+    end
+  end
+
+  def test_unit_agent_secret_still_reaches_the_vault_when_there_is_no_dotenv
+    # The branch is DEMOTED, not deleted: a fresh machine mid-bootstrap has no
+    # .env and the vault is its only way to authenticate. Deleting it would pass
+    # the test above and brick a bootstrap.
+    Dir.mktmpdir do |dir|
+      absent = File.join(dir, "not-provisioned", ".env")
+
+      OpBinaryStub.with_stub(TaskBoard, dir: dir) do |op|
+        with_env("AGENT_API_SECRET" => nil) do
+          assert_equal "from-vault", TaskBoard.agent_secret(absent)
+          assert_equal "from-vault", TaskBoard.agent_secret(absent), "second resolution, same run"
+        end
+
+        assert_equal 1, op.count,
+                     "the vault answers ONCE per process — several subcommands resolve the secret " \
+                     "more than once per run, and each unmemoized retry would bill"
+        assert_equal ["read #{TaskBoard::SECRET_REF}"], op.lines,
+                     "and it asks for the agent-vault ref, not some other item"
+      end
+    end
+  end
 
   def test_unit_agent_secret_prefers_the_env_verbatim
-    with_env("AGENT_API_SECRET" => "from-env") do
-      assert_equal "from-env", TaskBoard.agent_secret("/nonexistent/.env")
+    Dir.mktmpdir do |dir|
+      File.write(File.join(dir, ".env"), "AGENT_API_SECRET=from-dotenv\n")
+
+      OpBinaryStub.with_stub(TaskBoard, dir: dir) do |op|
+        with_env("AGENT_API_SECRET" => "from-env") do
+          assert_equal "from-env", TaskBoard.agent_secret(File.join(dir, ".env"))
+        end
+        assert_equal 0, op.count, "ENV short-circuits before either file or vault"
+      end
+    end
+  end
+
+  def test_unit_agent_secret_survives_a_nil_dotenv_path
+    # bin/devops-reconcile calls `TaskBoard.agent_secret(nil)`, and
+    # `File.exist?(nil)` raises TypeError. That cost nothing while the .env
+    # branch sat unreachable behind a vault read that always returned; promoting
+    # .env AHEAD of the vault is exactly what arms it. Guarded in the method.
+    Dir.mktmpdir do |dir|
+      OpBinaryStub.with_stub(TaskBoard, dir: dir) do |op|
+        with_env("AGENT_API_SECRET" => nil) do
+          assert_equal "from-vault", TaskBoard.agent_secret(nil),
+                       "a nil dotenv path falls through to the vault instead of raising"
+        end
+        assert_equal 1, op.count
+      end
     end
   end
 
@@ -202,6 +278,37 @@ class TaskBoardTest < Minitest::Test
 
       assert_equal [], TaskBoard.rows!(res),
                    "empty-because-true still answers — refusing THAT would be the worse bug"
+    end
+  end
+
+  # ── [integration] a whole board call, priced in credentials ─────────────────
+
+  def test_integration_a_board_call_resolves_and_authenticates_without_a_vault_read
+    # The acceptance criterion end to end: resolve the secret the way a CLI does,
+    # then actually mint a token with it against a live localhost board. The
+    # count that matters is taken across BOTH steps, because the defect was never
+    # visible in either one alone — it was visible in the daily total.
+    Dir.mktmpdir do |dir|
+      dotenv = File.join(dir, ".env")
+      File.write(dotenv, "AGENT_API_SECRET=from-dotenv\n")
+
+      OpBinaryStub.with_stub(TaskBoard, dir: dir) do |op|
+        with_stub_server(payload: '{"token":"tok-9"}') do |port, requests|
+          with_env("AGENT_API_SECRET" => nil) do
+            secret = TaskBoard.agent_secret(dotenv)
+            res = TaskBoard.request(:post, "/api/v1/auth",
+                                    base_url: "http://127.0.0.1:#{port}", body: { secret: secret })
+
+            assert_equal "tok-9", TaskBoard.parse_body(res)["token"], "the board accepted the .env secret"
+          end
+
+          assert_equal({ "secret" => "from-dotenv" }, JSON.parse(requests.first[:body]),
+                       "and it authenticated with the LOCAL secret, not a vault copy")
+        end
+
+        assert_equal 0, op.count,
+                     "one full board call spends zero 1Password reads — the old order spent one PER CALL"
+      end
     end
   end
 

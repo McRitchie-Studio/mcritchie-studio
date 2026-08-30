@@ -45,7 +45,7 @@
 # default https://mcritchie.studio) — events and actions MUST land on the same
 # server for the server-side activity attribution to work. Token + HTTP live on the
 # shared AgentApi client (bin/lib/agent_api.rb): the agent secret sources the
-# same way bin/task does (AGENT_API_SECRET → 1Password → repo .env) and the
+# same way bin/task does (AGENT_API_SECRET → repo .env → 1Password LAST) and the
 # on-disk token cache is shared with the hook.
 #
 # NON-FATAL: this never breaks the agent's flow. Every error is swallowed, a one

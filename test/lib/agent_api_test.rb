@@ -30,6 +30,7 @@ require "time"
 # sibling file that DOES require it happened to run first in the same process — green
 # in the suite, red alone, and proving nothing either way.
 require_relative "../support/session_env"
+require_relative "../support/op_binary_stub"
 require File.expand_path("../../bin/lib/agent_api", __dir__)
 
 class AgentApiTest < Minitest::Test
@@ -189,10 +190,44 @@ class AgentApiTest < Minitest::Test
     $stderr = original
   end
 
-  # ── [unit] secret order: ENV first ───────────────────────────────────────────
+  # ── [unit] secret order: ENV, then the repo .env, then the VAULT LAST ────────
+  #
+  # Counted in vault reads, for the same reason as bin/lib/task_board.rb's twin:
+  # ENV, .env and 1Password hold the SAME string in production, so asserting the
+  # returned value alone passes on every ordering. What distinguishes a correct
+  # chain from the one that drained a 1,000/day account-wide cap is whether the
+  # metered step was CONSULTED, so that is what these assert. The stub is a real
+  # executable at the repointed OP constant, so a green run can never be a run
+  # that quietly reached the operator's live vault.
 
   def test_unit_agent_secret_prefers_the_env_verbatim
     assert_equal "from-env", client("AGENT_API_SECRET" => "from-env").send(:agent_secret)
+  end
+
+  def test_unit_agent_secret_takes_the_repo_dotenv_and_spends_no_vault_read
+    Dir.mktmpdir do |repo|
+      File.write(File.join(repo, ".env"), "OTHER=1\nAGENT_API_SECRET=from-dotenv\n")
+
+      OpBinaryStub.with_stub(AgentApi, dir: repo, consts: { REPO_ROOT: repo }) do |op|
+        assert_equal "from-dotenv", client.send(:agent_secret),
+                     "the repo .env answers before the vault (old order answered 'from-vault')"
+        assert_equal 0, op.count, "a provisioned machine spends ZERO credentials here"
+      end
+    end
+  end
+
+  def test_unit_agent_secret_still_reaches_the_vault_once_when_there_is_no_dotenv
+    # Demoted, not deleted — an unprovisioned machine has nothing else to try.
+    Dir.mktmpdir do |repo|
+      OpBinaryStub.with_stub(AgentApi, dir: repo, consts: { REPO_ROOT: repo }) do |op|
+        c = client
+        assert_equal "from-vault", c.send(:agent_secret)
+        assert_equal "from-vault", c.send(:agent_secret), "second resolution on the same client"
+
+        assert_equal 1, op.count, "memoized per client — a retry would bill a second credential"
+        assert_equal ["read #{AgentApi::SECRET_REF}"], op.lines
+      end
+    end
   end
 
   # ── [unit] the scripts keep their DIVERGENT timeouts ─────────────────────────
@@ -211,6 +246,32 @@ class AgentApiTest < Minitest::Test
   end
 
   # ── [integration] mint once, shared cache, request shape ─────────────────────
+
+  def test_integration_a_token_mint_sources_the_dotenv_and_spends_no_vault_read
+    # The mint is the ONLY thing in this stack that needs the secret, and the
+    # disk cache means it happens about once a day rather than once a call —
+    # which capped the damage here but did not make the ordering right. A cold
+    # cache on a provisioned machine must still cost zero credentials.
+    Dir.mktmpdir do |proj|
+      Dir.mktmpdir do |repo|
+        File.write(File.join(repo, ".env"), "AGENT_API_SECRET=from-dotenv\n")
+
+        OpBinaryStub.with_stub(AgentApi, dir: repo, consts: { REPO_ROOT: repo }) do |op|
+          with_stub_server do |port, requests|
+            env = { "CLAUDE_PROJECTS_DIR" => proj, "ATOMIC_CAPTURE_URL" => "http://127.0.0.1:#{port}" }
+
+            assert_equal "stub-token", client(env).token, "the mint succeeded from a cold cache"
+
+            auth = requests.find { |r| r[:path] == "/api/v1/auth" }
+            assert_equal({ "secret" => "from-dotenv" }, JSON.parse(auth[:body]),
+                         "and it minted with the LOCAL secret, not a vault copy")
+          end
+
+          assert_equal 0, op.count, "a cold-cache token mint spends zero 1Password reads"
+        end
+      end
+    end
+  end
 
   def test_integration_token_mints_once_and_a_second_client_reuses_the_cache
     Dir.mktmpdir do |proj|

@@ -28,8 +28,8 @@
 # what a caller needs to tell two findings apart — the human line shows only the
 # title, and `bin/release retro` matches title AND body verbatim before filing.
 #
-# Auth: AGENT_API_SECRET from ENV, else 1Password, else the repo .env — the same
-# resolution as bin/task (TaskBoard.agent_secret). Base URL via TASK_API_BASE.
+# Auth: AGENT_API_SECRET from ENV, else the repo .env, else 1Password LAST — the
+# same resolution as bin/task (TaskBoard.agent_secret). Base URL via TASK_API_BASE.
 
 require "json"
 require_relative "lib/task_board"
@@ -44,7 +44,7 @@ end
 def agent_secret
   dotenv = File.join(__dir__, "..", ".env")
   TaskBoard.agent_secret(dotenv) ||
-    die!("AGENT_API_SECRET not found (checked ENV, 1Password, #{dotenv})")
+    die!("AGENT_API_SECRET not found (checked ENV, #{dotenv}, 1Password)")
 end
 
 def token
