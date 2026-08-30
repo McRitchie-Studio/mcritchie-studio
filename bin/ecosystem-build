@@ -86,6 +86,66 @@ log_fail()  { local detail="${2:-}"; echo "  ${RED}✗${RESET} $1${detail:+  ${D
 # ─── Helpers ────────────────────────────────────────────────────────────────
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# ─── The agent vault guard ──────────────────────────────────────────────────
+#
+# Is the 1Password vault named "$1" VISIBLE to the token in this environment?
+# Lives here, at top level and taking the name as an argument, for two reasons:
+# the vault name still resolves in exactly ONE place (phase_secrets, mirroring
+# bin/lib/op_vaults.rb), and a guard that is a function can be EXECUTED by a
+# test. The version this replaces could only ever be read, and reading it is
+# what missed the bug: `op vault list | grep -qw agents` PASSED against
+# `agents-studio`, because -w treats the hyphen as a word boundary. The guard
+# reported the credential lane healthy for as long as the vault it guarded had
+# been gone. Exercised by test/lib/ecosystem_build_vault_guard_test.rb against a
+# synthetic `op`, since the real one costs a 1Password API call.
+#
+# EXACT NAME, NEVER A SUBSTRING. This account holds four vaults whose names
+# begin `agents` — agents-studio, agents-admin, agents-industries and
+# agents-mcritchie-family — so "contains the word agents" was never the
+# question being asked.
+#
+# FAILS CLOSED, and that is the whole contract. Absent, empty, non-JSON, or
+# non-array output from `op` is NOT evidence the vault is there, so every one of
+# them is a refusal. A guard is only worth its line count if the ways it can go
+# wrong all land on "no".
+#
+# Exit codes, because the two failures need OPPOSITE responses from the reader:
+#   0 — the vault is in the listing, matched on its exact name
+#   1 — a listing was consulted and the vault is not in it (a grant problem)
+#   2 — it could not be consulted at all: `op` or `jq` is missing (a Phase 1
+#       problem). Reported separately because sending an operator to check
+#       vault grants when the real fault is an uninstalled binary is a
+#       confident, specific, wrong diagnosis — the most expensive kind.
+agent_vault_visible() {
+  local want="$1" listing
+
+  have op && have jq || return 2
+
+  listing=$(op vault list --format=json 2>/dev/null) || return 1
+
+  # DEFENCE IN DEPTH, and honestly labelled as such: deleting this line changes
+  # no test, because `jq -e` already refuses empty input (exit 4) before it can
+  # answer yes. It stays because the cost is one line and the thing on the other
+  # side of it is a credential lane certified healthy by silence — and because
+  # "jq refuses empty input" is a property of whichever jq the machine has, not
+  # of this script.
+  [ -n "$listing" ] || return 1
+
+  # `type == "array"` is load-bearing: without it, JSON that merely happens to
+  # parse gets a vote on whether a credential lane is healthy.
+  #
+  # NORMALISED TO 1, not returned raw. jq answers `false` with 1 but a parse
+  # error with 5 and no-output with 4, so the raw status would leak a third and
+  # fourth code out of a function that documents two — and the reader who later
+  # adds a `5)` branch to the caller's case would be reading tea leaves. Every
+  # "the listing does not say yes" is one code.
+  if jq -e --arg v "$want" 'type == "array" and any(.[]; .name? == $v)' \
+       <<<"$listing" >/dev/null 2>&1; then
+    return 0
+  fi
+  return 1
+}
+
 # Build PATH for child processes (idempotent)
 export PATH="$RUBY_PREFIX/bin:/opt/homebrew/lib/ruby/gems/3.3.0/bin:$MISE_SHIMS:$SOLANA_PREFIX/bin:$CARGO_PREFIX/bin:/opt/homebrew/bin:$PATH"
 
@@ -257,25 +317,32 @@ phase_secrets() {
     return 1
   fi
 
-  # THE VAULT NAME COMES FROM THE OVERRIDE, not a literal. This guard read
-  # `grep -qw agents` until 2026-08-29 and passed against `agents-studio` purely
-  # because -w treats the hyphen as a word boundary — so it would have gone red on
-  # `agents_studio`, and it never consulted MCR_OP_VAULT_AGENT at all. Its failure
-  # message also still named a vault that no longer exists. bin/lib/op_vaults.rb is
-  # the single source; this mirrors its default.
+  # THE VAULT NAME COMES FROM THE OVERRIDE, not a literal, and this is the ONE
+  # place in the script that resolves it — bin/lib/op_vaults.rb is the single
+  # source and this mirrors its default. The guard itself is agent_vault_visible
+  # (top of file), which is where the exact-match and fail-closed rules live.
   #
-  # MATCHED ON THE EXACT NAME, via jq. A substring/word match is what made the old
-  # guard pass by accident, and this account really does hold three vaults whose
-  # names all begin `agents-` — so "contains the word agents" is not the question.
+  # THREE OUTCOMES, NOT TWO. Splitting "op/jq missing" out of "vault not
+  # visible" is the point of the case below: the old single else-branch sent
+  # every failure to "check the token's vault grants", which is the wrong
+  # errand for a machine that has simply not finished Phase 1.
   local agent_vault="${MCR_OP_VAULT_AGENT:-agents-studio}"
-  if op vault list --format=json 2>/dev/null \
-       | jq -e --arg v "$agent_vault" 'any(.[]; .name == $v)' >/dev/null 2>&1; then
-    log_ok "OP_SERVICE_ACCOUNT_TOKEN" "set, agent vault '$agent_vault' visible"
-  else
-    log_fail "OP token set but can't see the '$agent_vault' agent vault" \
-             "check the token's vault grants, or set MCR_OP_VAULT_AGENT"
-    return 1
-  fi
+  agent_vault_visible "$agent_vault"
+  case $? in
+    0)
+      log_ok "OP_SERVICE_ACCOUNT_TOKEN" "set, agent vault '$agent_vault' visible"
+      ;;
+    2)
+      log_fail "can't check the '$agent_vault' agent vault — op and jq are not both installed" \
+               "Phase 1 installs them; re-run bin/ecosystem-build from the top"
+      return 1
+      ;;
+    *)
+      log_fail "OP token set but can't see the '$agent_vault' agent vault" \
+               "check the token's vault grants, or set MCR_OP_VAULT_AGENT"
+      return 1
+      ;;
+  esac
 
   # Heroku API key (auto-pull from 1P if not set)
   if [ -z "${HEROKU_API_KEY:-}" ]; then
@@ -691,4 +758,9 @@ main() {
   echo
 }
 
-main "$@"
+# Sourcing this file must define its functions and run NOTHING — that is what
+# lets a test drive one phase's guard in isolation instead of asserting on the
+# source text of a script it never executes.
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  main "$@"
+fi
