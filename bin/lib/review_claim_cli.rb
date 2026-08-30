@@ -86,6 +86,17 @@ class ReviewClaimCli
     "status"     => []
   }.freeze
 
+  # The stages at which a REVIEW CLAIM has nothing left to protect. A claim exists to
+  # stop a SECOND session reviewing the same task; once the task is `reviewed` the
+  # review has landed, and `assembled`/`shipped`/`archived` are further downstream
+  # still — so a renewal on any of them is meaningless BY DEFINITION, not merely
+  # wasteful. This list is deliberately the four terminal-for-review stages and NOT
+  # simply "anything that is not submitted": `blocked` is excluded because a reviewer
+  # who has just bounced a task back is often still writing feedback against it, and
+  # `building`/`designed` are excluded because a task can be moved BACK to them by a
+  # rework bounce while the review lease legitimately still matters.
+  TERMINAL_STAGES = %w[reviewed assembled shipped archived].freeze
+
   # The subcommands that name their own task. `claim-next` deliberately does NOT:
   # the BOARD picks the task, so a slug on that line is a caller who meant
   # `acquire` — and popping a DIFFERENT task than the one they typed is the same
@@ -218,20 +229,30 @@ class ReviewClaimCli
   end
 
   # The detached renewer body (started by `acquire`; not for hand invocation). Renews
-  # while the anchor process lives, so the review lease follows the RUN and not the
-  # UI. It inherits TASK_REVIEW_CLAIM_SESSION + TASK_CLAIM_NONCE from its parent
-  # because, once detached, it can no longer re-derive the live-instance identity by
-  # walking its own ancestry — a renewer that guessed its nonce would renew NOTHING,
-  # and every renew would 204 silently, which is indistinguishable from the bug it
-  # exists to fix.
+  # while the anchor process lives AND THE TASK IS STILL REVIEWABLE. It inherits
+  # TASK_REVIEW_CLAIM_SESSION + TASK_CLAIM_NONCE from its parent because, once
+  # detached, it can no longer re-derive the live-instance identity by walking its own
+  # ancestry — a renewer that guessed its nonce would renew NOTHING, and every renew
+  # would 204 silently, which is indistinguishable from the bug it exists to fix.
+  #
+  # THE SECOND EXIT, and why the anchor alone was not enough. This loop used to stop
+  # on its anchor dying and on nothing else, which quietly assumed that a session
+  # outlives its reviews. It does not: one long-lived session reviews MANY tasks, so
+  # it accumulates one immortal renewer per task, each polling the board every 30s
+  # forever while the session goes on doing legitimate work. On 2026-08-30 five were
+  # found running and FOUR were renewing claims on tasks that had already shipped to
+  # production — 14k pointless board polls a day between them, against an account-wide
+  # credential budget every other lane shares. Nothing had crashed; the design simply
+  # had no exit for "the thing I am renewing is done". Now it has one.
   def renew_loop(slug, flags)
     return usage_slug("renew-loop") unless present?(slug)
 
     pid = flags["anchor-pid"]
     start = flags["anchor-start"]
     ShiftRenewer.run(
-      alive:   -> { SessionIdentity.process_alive?(pid, start) },
-      renew:   -> { renewed?(slug) },
+      alive:    -> { SessionIdentity.process_alive?(pid, start) },
+      finished: -> { task_finished?(slug) },
+      renew:    -> { renewed?(slug) },
       sleeper: ->(seconds) { sleep(seconds) },
       clock:   -> { Time.now },
       interval: ShiftRenewer.interval_from(@env["TASK_REVIEW_CLAIM_RENEW_INTERVAL"])
@@ -318,6 +339,23 @@ class ReviewClaimCli
     return true if res.nil? # board unreachable — not proof we lost the review
 
     res.code.to_i != 204
+  end
+
+  # Has this task moved past the point where a review claim means anything? Asked once
+  # per cycle BEFORE the renew, so a loop whose task has shipped exits without posting
+  # another heartbeat at all.
+  #
+  # FAILS OPEN, on purpose and in the opposite direction from the anchor check. A
+  # board we cannot read, a stage we cannot parse, an error page — none of those are
+  # evidence that the review FINISHED, and treating them as such would drop a live
+  # reviewer's lease every time the network hiccuped and let a second session claim
+  # the task underneath them. Silence means "carry on"; only the board plainly naming
+  # a terminal stage stops the loop.
+  def task_finished?(slug)
+    res = get(base(slug))
+    return false unless ok?(res)
+
+    TERMINAL_STAGES.include?(parse_data(res)["stage"].to_s)
   end
 
   def stop_renewer(sid, slug)

@@ -32,10 +32,31 @@ require_relative "../../lib/claim_lease"
 #     dead would invert ClaimLease's fail-open posture and let one crashed conductor
 #     wedge a lane indefinitely. A crash must degrade to a delay, never to a deadlock.
 #
-# Every uncertainty resolves toward STOPPING. A renewer that cannot confirm its
-# anchor gives the lane up; the cost is a lapsed lease (recoverable, and no worse
-# than today's behavior), whereas the cost of guessing the other way is an immortal
-# phantom holder that no one can clear.
+# THE THIRD HALF, added after it cost two days of GitHub auth (2026-08-29 and again
+# 2026-08-30). The two conditions above answer "is my HOLDER still here?" and
+# "do I still HOLD it?". Neither answers "is the thing I am protecting still a
+# thing?" — and for a lease scoped to a unit of WORK (a task review) rather than to
+# a lane, that is the condition that actually ends the job. A long-lived agent
+# session that reviewed four tasks accumulated four renewers; all four kept polling
+# the board every 30s long after their tasks had SHIPPED TO PRODUCTION, because
+# their anchor was alive and legitimately working and their claims were still
+# technically held. Five such loops were found running at 05:25Z on 2026-08-30 with
+# the 1Password account read_write cap fully spent; the outage presented as
+# "1Password is down", which is why it went undiagnosed for a day.
+#
+# So a renewer now also asks whether its work is DONE, and a renewal on finished
+# work is treated as meaningless by definition rather than as merely harmless.
+#
+# Every uncertainty resolves toward STOPPING — with ONE deliberate exception. A
+# renewer that cannot confirm its anchor gives the lane up; the cost is a lapsed
+# lease (recoverable, and no worse than today's behavior), whereas the cost of
+# guessing the other way is an immortal phantom holder that no one can clear. The
+# exception is `finished`, which must resolve toward CONTINUING when it cannot get
+# an answer: an unreachable board is not evidence that work completed, and stopping
+# on a network blip would drop a LIVE review's lease and let a second reviewer take
+# the task — reintroducing the collision this whole file exists to prevent. That
+# asymmetry is deliberate: a wrong "dead" costs a delay, a wrong "finished" costs a
+# duplicated review.
 #
 # Pure and injectable — nothing here reads the clock, the process table, or the
 # network, so the loop is tested as arithmetic rather than by waiting on wall time.
@@ -58,19 +79,31 @@ module ShiftRenewer
 
   module_function
 
-  # Run until one of the three stop conditions. Returns the reason:
-  #   :anchor_gone   — the holder's process is gone (crash or clean exit)
-  #   :lease_lost    — the board says we no longer hold it (released, or changed hands)
-  #   :max_lifetime  — the safety cap
+  # Run until one of the four stop conditions. Returns the reason:
+  #   :anchor_gone    — the holder's process is gone (crash or clean exit)
+  #   :work_finished  — the thing being protected is DONE, so the lease is moot
+  #   :lease_lost     — the board says we no longer hold it (released, or changed hands)
+  #   :max_lifetime   — the safety cap
   #
-  # `alive` and `renew` are called in that order and BEFORE the first sleep, so a
-  # renewer whose anchor is already dead renews nothing at all.
-  def run(alive:, renew:, sleeper:, clock:,
+  # ORDER IS THE CONTRACT, not an implementation detail. `finished` is asked BEFORE
+  # `renew`, so a renewer whose work has completed exits having polled the board
+  # ZERO further times. Asking after — or inferring completion from the renew's own
+  # response — would still spend one poll per loop to learn a fact that is already
+  # true, which is the exact cost this stop condition exists to stop paying.
+  #
+  # All three checks run BEFORE the first sleep, so a renewer that is born obsolete
+  # (dead anchor, or work already finished) renews nothing at all.
+  #
+  # `finished` defaults to "never" so a caller with no completion signal — the
+  # devops-shift ROLE lease, which protects a LANE and not a unit of work — keeps
+  # exactly its previous behavior.
+  def run(alive:, renew:, sleeper:, clock:, finished: -> { false },
           interval: INTERVAL_SECONDS, max_lifetime: MAX_LIFETIME_SECONDS)
     started_at = clock.call
     loop do
       return :anchor_gone unless alive.call
       return :max_lifetime if clock.call - started_at >= max_lifetime
+      return :work_finished if finished.call
       return :lease_lost unless renew.call
 
       sleeper.call(interval)
