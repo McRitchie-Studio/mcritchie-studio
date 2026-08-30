@@ -71,8 +71,8 @@
 #     exclusive-lane flag, a top-level Task column. SELF-FLAG it the moment you
 #     discover the task needs a schema change, then take the lane with
 #     `bin/task migration-lane acquire <slug>`. See exclusive-lanes.md. )
-#   bin/task begin --title T [--repo APP] [--steal] [same flags as create]
-#   bin/task begin <slug> [--steal]                  # resume a partial begin
+#   bin/task begin --title T [--repo APP] [--agent SOUL] [--steal] [same flags as create]
+#   bin/task begin <slug> [--agent SOUL] [--dev-size S] [--steal]   # resume a partial begin
 #     ( the fast-lane SESSION-START wrapper: create + agent-worktree new +
 #       bind-task + move building + session-preflight in ONE command, printing
 #       the worktree path, port, and task URL. The slug is derived from the
@@ -83,7 +83,13 @@
 #       `building` task runs the SAME build-claim gate the move applies, so a
 #       task a DIFFERENT live instance holds refuses before any worktree step;
 #       --steal overrides it exactly as it does on `move`, and is forwarded to
-#       the child `move building` on the fresh path. bin/ship is the handoff twin. )
+#       the child `move building` on the fresh path.
+#       --agent SOUL works on BOTH forms and must be a soul SLUG (lowercase with
+#       single hyphens); on the RESUME form it rides to the claim as --actor, so
+#       devops.built_by is stamped even though a resume sets no agent_slug. The
+#       resume form takes no OTHER create flag: one is REFUSED, naming
+#       `bin/task update <slug>`, never dropped in silence. bin/ship is the
+#       handoff twin. )
 #   bin/task update <slug> [same flags as create]   # merges into existing devops
 #   bin/task move <slug> <stage>                     # designed|building|submitted|reviewed|assembled|shipped|blocked|archived
 #     [--model M] [--tokens-in N] [--tokens-out N] [--cost D] [--actor A] [--dev-size S] [--steal]
