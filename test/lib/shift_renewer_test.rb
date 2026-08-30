@@ -23,14 +23,27 @@ require_relative "../../bin/lib/shift_renewer"
 require_relative "../../lib/claim_lease"
 
 class ShiftRenewerTest < Minitest::Test
-  # A scripted run: `alive` answers from a queue, every renew succeeds unless the
-  # renew queue says otherwise, and sleeping only advances a fake clock.
-  def run_loop(alive:, renew: [], interval: 30, max_lifetime: 3600)
+  # A scripted run BOUNDED BY A GUARD: `alive` answers from a queue and then defaults
+  # to true, every renew succeeds unless the renew queue says otherwise, and sleeping
+  # only advances a fake clock.
+  #
+  # THE GUARD IS NOT DECORATION. Several tests below deliberately script NO stop at
+  # all in `alive` or `renew`, because the condition under test is supposed to be the
+  # thing that ends the loop. Remove that condition and the loop runs forever — and a
+  # test that HANGS on a regression is a much worse signal than one that fails: it
+  # stalls CI for its whole timeout and names nothing. With the guard, a regression
+  # falls out as `:anchor_gone` after GUARD_CYCLES and every assertion below reports
+  # the defect by name.
+  GUARD_CYCLES = 50
+
+  def run_loop(alive:, renew: [], finished: [], interval: 30, max_lifetime: 3600)
     slept = []
     now = Time.utc(2026, 7, 20, 12, 0, 0)
     renews = 0
+    cycles = 0
     outcome = ShiftRenewer.run(
-      alive: -> { alive.empty? ? true : alive.shift },
+      alive: -> { (cycles += 1) > GUARD_CYCLES ? false : (alive.empty? ? true : alive.shift) },
+      finished: -> { finished.empty? ? false : finished.shift },
       renew: -> { renews += 1; renew.empty? ? true : renew.shift },
       sleeper: ->(s) { slept << s; now += s },
       clock: -> { now },
@@ -75,6 +88,71 @@ class ShiftRenewerTest < Minitest::Test
     result = run_loop(alive: [], renew: [true, true, false])
     assert_equal :lease_lost, result[:outcome]
     assert_equal 3, result[:renews]
+  end
+
+  # --- the third stop condition: the WORK is done, though the holder is not -------
+  #
+  # These four are the 2026-08-30 regression. Note what every one of them holds
+  # FIXED: `alive` is never scripted to go false and `renew` is never scripted to
+  # fail, so the two pre-existing exits are unreachable throughout. Any of these
+  # tests passing against the old two-exit loop would be a test that proved nothing —
+  # which is precisely the trap this defect hid in for two days.
+
+  def test_unit_a_renewer_stops_when_its_work_finishes_though_its_anchor_lives_on
+    # The outage in one assertion. The anchor never dies (a real session, still
+    # legitimately working) and the board never revokes the lease (the claim is still
+    # genuinely held) — and yet there is nothing left to protect, because the task
+    # shipped. Before this exit existed, this loop ran until the machine rebooted.
+    result = run_loop(alive: [], renew: [], finished: [false, true])
+
+    assert_equal :work_finished, result[:outcome]
+    # ORDER, pinned by arithmetic. `finished` says "not yet" once, then "done".
+    # Checked BEFORE the renew that is ONE renew; checked after it, it would be TWO —
+    # and that second one is the bug in miniature: a poll spent to learn a fact that
+    # was already true. This number is the whole acceptance criterion.
+    assert_equal 1, result[:renews],
+                 "the completion check must run BEFORE the renew, or every finished loop " \
+                 "still pays for one last pointless heartbeat"
+    assert_equal [30], result[:slept]
+  end
+
+  def test_unit_a_renewer_born_after_its_work_finished_never_polls_at_all
+    # The five loops found running on 2026-08-30 were each spawned while their task
+    # was live, but a renewer restarted (or spawned late) against already-finished
+    # work must not get one free heartbeat either.
+    result = run_loop(alive: [], renew: [], finished: [true])
+
+    assert_equal :work_finished, result[:outcome]
+    assert_equal 0, result[:renews], "there was never anything to renew"
+    assert_empty result[:slept], "and nothing to wait for"
+  end
+
+  def test_unit_unfinished_work_never_interrupts_a_live_lease
+    # The other direction, and the one with teeth: a completion check that fired
+    # eagerly would drop a LIVE reviewer's lease and let a second session claim the
+    # task underneath them — the very collision this file exists to prevent.
+    result = run_loop(alive: [true, true, true, false], renew: [], finished: [false, false, false])
+
+    assert_equal :anchor_gone, result[:outcome]
+    assert_equal 3, result[:renews], "work that is not finished is renewed, every cycle, as before"
+  end
+
+  def test_unit_a_lease_with_no_completion_signal_behaves_exactly_as_it_always_did
+    # bin/devops-shift holds a ROLE lease on a LANE, not on a unit of work, so it has
+    # no completion signal to give and passes none. Called without `finished:`, the
+    # loop must be byte-for-byte the old two-exit loop — this pins the default so the
+    # review-claim fix cannot quietly change the shift lease's behavior.
+    renews = 0
+    alive = [true, true, false]
+    outcome = ShiftRenewer.run(
+      alive: -> { alive.shift },
+      renew: -> { renews += 1; true },
+      sleeper: ->(_s) { nil },
+      clock: -> { Time.utc(2026, 7, 20, 12, 0, 0) }
+    )
+
+    assert_equal :anchor_gone, outcome
+    assert_equal 2, renews
   end
 
   def test_unit_a_safety_cap_bounds_a_renewer_whose_anchor_check_never_fails

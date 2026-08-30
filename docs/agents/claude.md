@@ -35,13 +35,26 @@ bin/ship <task-slug> -m "Commit message"
 ```
 
 **Pass `--agent <soul>` — it is what makes review able to exclude you.** It sets
-`agent_slug`, which stamps `devops.built_by`, which is the ONLY thing
-`bin/reviewer-select` can use to keep a soul off its own PR. Omit it and the
-selector fails CLOSED: it refuses to pick, the reviewer chooses a light by hand,
-and the no-self-review property goes unverified for that review. Measured
+`agent_slug`, which stamps the task's AUTHOR SET (`devops.built_by` +
+`devops.builders`) — what `bin/reviewer-select` uses to keep a soul off its own PR.
+Omit it and the selector fails CLOSED: it refuses to pick, the reviewer chooses a
+light by hand, and the no-self-review property goes unverified for that review.
+**If a second soul finishes the task, claim it again** (`bin/task move <task>
+building --actor <soul>`): the set accumulates, so both authors are excluded, and a
+handoff that names nobody makes the selector refuse rather than guess. Measured
 2026-08-28 — `built_by` blank on six consecutive tasks across one review sitting,
-two reviewers reporting the refusal and hand-picking. The flag always worked; no
-documented path passed it.
+two reviewers reporting the refusal and hand-picking.
+
+**It works on BOTH forms of `begin`, and the value must be a soul SLUG** —
+lowercase with single hyphens (`steffon`, `turf-monster`). `--agent Steffon` or
+`--agent turf_monster` cannot match the pattern the stamp reads, and both are now
+REFUSED rather than accepted-and-ignored. The resume form
+(`bin/task begin <slug> --agent <soul>`) forwards the builder to the claim as
+`--actor`; it takes no other create flags, and passing one is refused with the
+`bin/task update` remedy rather than dropped. Measured 2026-08-29: four tasks
+resumed with `--agent` came back with `agent_slug` nil AND `built_by` nil, while
+the same flag on a create stamped both — the flag was silently discarded, and
+`begin` reported success either way.
 
 `bin/task begin` runs steps 1-2 (create → worktree → bind → `move building` →
 preflight) and prints the worktree path, port, and task URL. `bin/ship`, run

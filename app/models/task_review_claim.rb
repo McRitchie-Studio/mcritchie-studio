@@ -94,17 +94,27 @@ class TaskReviewClaim < ApplicationRecord
     outcome
   end
 
-  # True when this claim would put a soul on the review of a PR that soul BUILT —
+  # True when this claim would put a soul on the review of a PR that soul AUTHORED —
   # the one thing reviewer selection exists to prevent. Both sides must resolve: a
   # blank reviewer or an unstamped task is not a known conflict (see .acquire).
   # Any lookup failure answers false, so a telemetry-grade read can never wedge the
   # review lane; reviewer-select remains the gate that refuses on the UNKNOWN.
+  #
+  # Asked over the whole AUTHOR SET, not just `built_by`. This is the second line
+  # behind reviewer-select, and it inherited the same single-slug blind spot: a task
+  # can have several authors (a session limit kills a builder mid-work and another
+  # soul finishes it), and `built_by` names only the current one. On 2026-08-30
+  # agent-flag-silently-drops read built_by=steffon while ALEX had written every test
+  # on the diff — so an Alex review claim would have passed this check too, and the
+  # backstop would have backed nothing up.
   def self.self_review?(task_slug, reviewer)
     slug = reviewer.to_s.strip
     return false if slug.empty?
 
-    built_by = Task.find_by(slug: task_slug.to_s.strip)&.devops_built_by.to_s.strip
-    !built_by.empty? && built_by == slug
+    task = Task.find_by(slug: task_slug.to_s.strip)
+    return false if task.nil?
+
+    ([task.devops_built_by] + task.devops_builders).map { |s| s.to_s.strip }.include?(slug)
   rescue StandardError => e
     Rails.logger.warn("[review-claim] self-review check failed for #{task_slug}: #{e.class}: #{e.message}")
     false

@@ -21,11 +21,11 @@
 # both roll identically — the CLI preview always matches the recorded pick, even
 # on a genuine tie. Different tasks still spread the picks.
 #
-# CARL YIELDS THE PRIMARY SEAT ONLY to the hard "no self-review" rule: if Carl
-# BUILT the task (devops.built_by == carl) — or a caller names Carl the qa_owner —
-# he reviews nothing, and the standing-primary convenience gives way to a
-# domain-fit pair drawn entirely from the specialist pool. Self-review integrity
-# outranks the standing-primary policy.
+# CARL YIELDS THE PRIMARY SEAT ONLY to the hard "no self-review" rule: if Carl is
+# among the task's AUTHORS — or a caller names Carl the qa_owner — he reviews
+# nothing, and the standing-primary convenience gives way to a domain-fit pair drawn
+# entirely from the specialist pool. Self-review integrity outranks the
+# standing-primary policy.
 #
 # The specialist pool is {shannon=UI · jasper=Web3 · steffon=DevOps/Platform ·
 # alex=Documentation}. The QA owner (Avi by default — after the 2026-07-22 reslot he
@@ -35,23 +35,46 @@
 # exclusion is a formal safeguard; pass a different `qa_owner:` (e.g. a specialist)
 # and that soul is dropped from the light pool for this task.
 #
-# The BUILDER is excluded from the LIGHT seat too — a soul shouldn't review their
-# own work. Who built the task is read from devops.built_by (stamped on any build
-# CLAIM whose actor/persona/assignee resolves to a soul slug — see
-# Task#enforce_builder_stamp) and, for a persisted task, falls back to a SOUL actor
-# on the latest `→ building` TaskEvent; pass `builder:` to override. A builder who
-# isn't a specialist (Carl, a non-pool soul, or the QA owner) excludes nobody from
-# the light pool. If excluding a specialist builder would leave too few light
-# candidates the builder is KEPT (the decision/log flags it) so a pair is always
-# returned.
+# EVERY AUTHOR is excluded from the LIGHT seat — a soul shouldn't review their own
+# work, and a task can have SEVERAL authors. `devops.built_by` holds ONE slug and
+# Task#builder_to_stamp RE-POINTS it on an explicit re-claim, so after a mid-build
+# handoff (a session limit kills a builder, another soul finishes the job) it names
+# the LAST claimant and the first author is gone from the only field this class used
+# to read. Measured 2026-08-30 on two tasks in one sitting; on PR #1081 the light
+# seat went to ALEX, who had written every test on the diff, because built_by said
+# "steffon". A hand-passed `--busy alex` was the only thing that stopped it.
 #
-# WHEN NO SOURCE NAMES A SOUL the builder is UNKNOWN, not absent, and the decision
+# So #builders is the exclusion set, unioned from three sources: devops.built_by
+# (the current builder), devops.builders (the SERVER-OWNED append-only claim
+# history — see Task#builder_roll_call), and every soul actor on a `→ building`
+# TaskEvent (persisted tasks only, which self-heals rows stamped before the
+# accumulator existed). Pass `builder:` — a comma/space list — to override the whole
+# set. #builder keeps its old singular meaning for the audit and the log.
+#
+# An author who isn't a specialist (Carl, a non-pool soul, or the QA owner) excludes
+# nobody from the light pool. If excluding them all would leave too few light
+# candidates, the least-likely-to-be-seated are KEPT (the decision/log flag them via
+# #kept_builders) so a pair is always returned — the recorder must never break — and
+# `bin/reviewer-select` REFUSES on that flag, because a kept author is a soul about
+# to review their own diff.
+#
+# WHEN NO SOURCE NAMES A SOUL the authors are UNKNOWN, not absent, and the decision
 # says so via `builder_known` — the distinction this class did not draw until
 # 2026-08-13, when an empty exclusion list read as "nobody to exclude" and
-# `bin/reviewer-select` picked Carl to review Carl's own PR. Selection still
-# DEGRADES here (the reviewed-transition recorder must never break on a missing
+# `bin/reviewer-select` picked Carl to review Carl's own PR. `builder_known` is now
+# asked over the SET and over its COMPLETENESS: a claim that named nobody while
+# other authors were already on record stamps devops.builders_unattributed, and an
+# author list known to be missing someone is not a settled answer either. Selection
+# still DEGRADES here (the reviewed-transition recorder must never break on a missing
 # stamp); it is the CLI that fails closed on the fact, and `builder: "none"`
 # (NO_BUILDER) is the caller's explicit "no soul built this" assertion.
+#
+# EVERY SLUG IS CHECKED AGAINST THE ROSTER (#soul? → Task.soul?), never the shape
+# alone. `Task::SOUL_SLUG` only asks "does this look like a handle", so a typo'd
+# `--builder stefon` was a KNOWN builder excluding NOBODY — the fail-closed refusal
+# lifted by a value identifying no one. Task.soul_roster keeps a static floor when
+# the DB is unreachable, so this holds in the no-Agent-rows degraded mode below
+# without trading fail-closed for fail-open.
 #
 # BUSY souls are excluded from the LIGHT seat too — specialists currently
 # mid-build or mid-review on OTHER in-flight tasks shouldn't be handed a second
@@ -218,7 +241,7 @@ class ReviewerSelector
     # owner AND excluded builder, which set the light pool) makes both passes roll
     # identically over the SAME post-exclusion pool, while different tasks still
     # spread the picks. Tests pass an explicit `random:` to pin a scenario.
-    @random = random || Random.new(seed_for(@task, @qa_owner, builder_excluded? ? builder : nil, excluded_busy))
+    @random = random || Random.new(seed_for(@task, @qa_owner, excluded_builders.join(","), excluded_busy))
   end
 
   # Exactly two entries — [{ "slug" => carl, "weight" => "primary" }, { … "light" }]
@@ -255,6 +278,19 @@ class ReviewerSelector
       "builder_known" => builder_known?,
       "excluded_builder" => builder_excluded? ? builder : nil,
       "builder_candidate" => builder_candidate?,
+      # THE AUTHOR SET, beside the singular builder the four keys above describe.
+      # `builders` is every soul who worked the task; `excluded_builders` is how
+      # many of them the pool could actually drop; `kept_builders` is the residue
+      # that MAY be seated on its own diff — a refusal, not a note.
+      # `builders_unattributed` names the claiming session the record could not
+      # attribute, which is what makes an incomplete set say so.
+      "builders" => builders,
+      "excluded_builders" => excluded_builders,
+      "kept_builders" => kept_builders,
+      "builders_unattributed" => builders_unattributed,
+      # Entries of an explicit --builder list that named nobody. Non-empty means the
+      # caller's stated fact was only partly understood — the CLI refuses on it.
+      "builder_override_unresolved" => (@builder_override && !builder_asserted_none? ? override_unresolved : []),
       "busy" => busy,
       "excluded_busy" => excluded_busy,
       "kept_busy" => kept_busy,
@@ -283,8 +319,10 @@ class ReviewerSelector
   # no-self-review rule: he built the task, or a caller named him the qa_owner.
   # (Busy does NOT unseat Carl — the review model spins a FRESH Carl per PR, so
   # "Carl is busy elsewhere" never applies to the primary seat.)
+  # Asked over the whole author set: Carl co-authoring a task someone else claimed
+  # last is still Carl reviewing his own work, and `!= builder` could not see it.
   def carl_primary?
-    STANDING_PRIMARY != qa_owner && STANDING_PRIMARY != builder
+    STANDING_PRIMARY != qa_owner && !builders.include?(STANDING_PRIMARY)
   end
 
   # The floor of LIGHT candidates a selection needs: 1 when Carl takes the standing
@@ -325,6 +363,10 @@ class ReviewerSelector
   # preview matching the recorded pick). Folding the excluded builder in keeps two
   # passes that exclude DIFFERENT builders from sharing a seed over different pools.
   # A slug-less in-memory stand-in falls back to a constant key (still reproducible).
+  # `excluded_builder` is now the comma-joined excluded AUTHOR SET. For the zero- and
+  # one-author cases that string is byte-for-byte what the single slug produced, so
+  # no existing task's default light pick shifts; a multi-author task excludes a
+  # different pool and correctly gets a different seed.
   def seed_for(task, qa_owner, excluded_builder, excluded_busy_list = [])
     key = "#{task.try(:slug)}:#{qa_owner}:#{excluded_builder}"
     # Fold the excluded busy souls in (only when present, so the no-busy seed is
@@ -348,8 +390,7 @@ class ReviewerSelector
   def busy_base
     return @busy_base if defined?(@busy_base)
 
-    base = light_pool - [qa_owner]
-    @busy_base = builder_excluded? ? base - [builder] : base
+    @busy_base = light_pool - [qa_owner] - excluded_builders
   end
 
   # The busy souls actually removed. Only a busy soul that's a real light candidate
@@ -402,10 +443,79 @@ class ReviewerSelector
         # An explicit override is AUTHORITATIVE: a caller who names a builder has
         # spoken for the task, so a non-soul override resolves to nobody rather
         # than silently falling through to the record it was meant to correct.
-        soul?(@builder_override) ? @builder_override : nil
+        override_builders.first
       else
         [devops_built_by, building_event_actor].map { |s| s.to_s.strip }.find { |s| soul?(s) }
       end
+  end
+
+  # EVERY author, not just the current one — the set the exclusion actually needs.
+  #
+  # #builder above answers "who is building this", which is a genuinely different
+  # question from "who wrote this diff", and conflating them seated an author twice
+  # in one day. A session limit kills a builder mid-work, another soul finishes the
+  # task, and Task#builder_to_stamp rule 1 RE-POINTS built_by to whoever claimed
+  # last: the first author is erased from the only field the pool consults. On
+  # 2026-08-30 `bin/reviewer-select agent-flag-silently-drops --no-record` duly
+  # seated ALEX as the light on a diff Alex had written every test on, because
+  # built_by said "steffon". Only a hand-passed `--busy alex` stopped it, and a
+  # hand-pass is not a property.
+  #
+  # Three sources, unioned so a task stamped before the accumulator existed still
+  # yields its authors: devops.built_by (the current builder), devops.builders (the
+  # server-owned append-only claim history), and EVERY `→ building` event actor that
+  # names a soul — the last being the persisted-task self-heal, since the CLI builds
+  # an in-memory Task from board JSON and never sees events at all. built_by leads,
+  # so #builders.first is #builder in the ordinary single-author case.
+  def builders
+    return @builders if defined?(@builders)
+
+    @builders =
+      if builder_asserted_none?
+        []
+      elsif @builder_override
+        override_builders
+      else
+        ([devops_built_by] + task_devops_builders + building_event_actors)
+          .map { |s| s.to_s.strip }.select { |s| soul?(s) }.uniq
+      end
+  end
+
+  # The caller's `--builder a,b` — a comma/space list, so naming several authors is
+  # a FIRST-CLASS statement of the fact rather than the `--busy` abuse the live
+  # incident had to resort to. Non-roster entries drop out; if that empties the
+  # list, the builder is unknown and the caller gets the refusal, not a free pass.
+  def override_builders
+    override_entries.select { |s| soul?(s) }.uniq
+  end
+
+  # Entries in an explicit `--builder` list that name NOBODY on the roster. A
+  # PARTIAL typo is the dangerous one: `--builder steffon,stefon` resolves to a
+  # non-empty set, so the authors read as KNOWN while the soul the caller meant to
+  # exclude quietly did not register — criterion 2's fail-open, wearing criterion
+  # 1's clothes. The CLI refuses on this rather than dropping it.
+  def override_unresolved
+    override_entries.reject { |s| soul?(s) }.uniq
+  end
+
+  def override_entries
+    @override_entries ||= @builder_override.to_s.split(/[,\s]+/).map(&:strip).reject(&:empty?)
+  end
+
+  # The claiming session that named nobody while other authors were already on
+  # record — "someone else worked this and we cannot say who". Present ⇒ the author
+  # set is INCOMPLETE, so #builder_known? is false and the CLI refuses. An explicit
+  # override (or `none`) clears it: the caller has stated the fact, which is exactly
+  # the escape hatch the fail-closed guard is supposed to have.
+  def builders_unattributed
+    return nil if builder_asserted_none? || @builder_override
+    return nil unless task.respond_to?(:devops_builders_unattributed)
+
+    task.devops_builders_unattributed
+  end
+
+  def task_devops_builders
+    task.respond_to?(:devops_builders) ? Array(task.devops_builders) : []
   end
 
   # The caller's explicit "no soul built this task" assertion (`builder: "none"` /
@@ -419,12 +529,30 @@ class ReviewerSelector
   # Whether WHO BUILT THIS is a settled question. False means the record simply
   # does not say — the state in which a caller must refuse to auto-select rather
   # than roll a reviewer who may be the author.
+  # Asked over the SET, and over its completeness. A set of one that is merely the
+  # last claimant of several is not a settled answer, and reading it as one is what
+  # seated an author: accumulating authors only helps while every claim names a
+  # soul, so the claim that named NOBODY has to be able to say so
+  # (#builders_unattributed). Both halves must hold — someone is on record, and
+  # nobody is missing from it.
   def builder_known?
-    builder_asserted_none? || builder.present?
+    return true if builder_asserted_none?
+
+    builders.any? && builders_unattributed.nil?
   end
 
+  # A soul who EXISTS — Task.soul? checks the roster, not merely the shape.
+  #
+  # This was `slug.to_s.match?(Task::SOUL_SLUG)`: a regex, satisfied by any
+  # lowercase word. So `--builder stefon` (one f) was a KNOWN builder that excluded
+  # NOBODY — the fail-closed refusal, whose entire job is keeping a soul off the
+  # review of their own PR, lifted by a value that identifies no one. Blank failed
+  # closed and was safe; a typo failed OPEN and was not. Task.soul_roster keeps its
+  # static floor when the DB is unreachable, so this stays true in the degraded mode
+  # this class is built for (see the header) without trading fail-closed for
+  # fail-open: an unrecognised slug is UNKNOWN, and unknown refuses.
   def soul?(slug)
-    slug.to_s.match?(Task::SOUL_SLUG)
+    Task.soul?(slug)
   end
 
   # True when the builder is a real selectable LIGHT candidate — present, in the
@@ -437,7 +565,40 @@ class ReviewerSelector
   def builder_candidate?
     return @builder_candidate if defined?(@builder_candidate)
 
-    @builder_candidate = builder.present? && (light_pool - [qa_owner]).include?(builder)
+    @builder_candidate = builder.present? && builder_candidates.include?(builder)
+  end
+
+  # Every AUTHOR who is a real light candidate — the ones an exclusion can actually
+  # remove. Carl (the standing primary, who yields via #carl_primary?), a non-pool
+  # soul, and the already-excluded QA owner are not candidates, so "excluding" them
+  # removes nobody and the audit must not claim otherwise.
+  def builder_candidates
+    @builder_candidates ||= builders & (light_pool - [qa_owner])
+  end
+
+  # The authors actually removed from the light pool — ALL of them when the pool can
+  # afford it, which is the ordinary case.
+  #
+  # The drop order matters and it is the OPPOSITE of #excluded_busy's. Busy keeps
+  # the BEST-fitting soul back, because a busy reviewer is an inconvenience. A kept
+  # AUTHOR is a self-review, so when the pool cannot afford to drop them all we keep
+  # back the one LEAST likely to win the seat — worst fit — and #kept_builders makes
+  # the residue loud enough for `bin/reviewer-select` to refuse on it. Pure of the
+  # tiebreak RNG, so it is safe to compute for the seed.
+  def excluded_builders
+    return @excluded_builders if defined?(@excluded_builders)
+
+    base = light_pool - [qa_owner]
+    room = [base.size - min_candidates, 0].max
+    drop = [builder_candidates.size, room].min
+    @excluded_builders = builder_candidates.sort_by { |slug| [-busy_domain_fit(slug), slug] }.first(drop)
+  end
+
+  # Authors who had to stay eligible to keep a formable pair. Empty in every
+  # ordinary case; non-empty means the next pick MAY seat an author, which is why
+  # the CLI treats it as a refusal rather than a note.
+  def kept_builders
+    builder_candidates - excluded_builders
   end
 
   # True only when the builder IS a light candidate (#builder_candidate?) and is
@@ -448,8 +609,7 @@ class ReviewerSelector
   def builder_excluded?
     return @builder_excluded if defined?(@builder_excluded)
 
-    @builder_excluded =
-      builder_candidate? && (light_pool - [qa_owner] - [builder]).size >= min_candidates
+    @builder_excluded = builder.present? && excluded_builders.include?(builder)
   end
 
   def devops_built_by
@@ -466,6 +626,21 @@ class ReviewerSelector
         .order(:occurred_at, :id).last&.actor.to_s.strip.presence
   rescue StandardError
     nil
+  end
+
+  # EVERY soul who claimed the build, oldest first — the same events the singular
+  # reader above takes only the last of. A handoff writes a second `→ building`
+  # event, so this is where a task built before devops.builders existed still gives
+  # up both its authors. Persisted tasks only (the CLI's in-memory stand-in carries
+  # no events, which is why the accumulator has to live in devops), and any lookup
+  # error degrades to empty so selection never depends on the events being readable.
+  def building_event_actors
+    return [] unless task.respond_to?(:task_events) && task.try(:persisted?)
+
+    task.task_events.where(to_stage: "building").where.not(actor: [nil, ""])
+        .order(:occurred_at, :id).pluck(:actor).map { |a| a.to_s.strip }.uniq
+  rescue StandardError
+    []
   end
 
   # The domains this change needs reviewed: its shape's domains, plus any pulled in
@@ -588,10 +763,14 @@ class ReviewerSelector
   # a DISABLED safety check has to read as disabled, not as a tidy empty field.
   def builder_log_token
     return "none(asserted)" if builder_asserted_none?
-    return "UNKNOWN(no-exclusion)" if builder.blank?
-    return "#{builder}(not-a-candidate)" unless builder_candidate?
+    return "UNKNOWN(unattributed:#{builders_unattributed})" if builders_unattributed
+    return "UNKNOWN(no-exclusion)" if builders.empty?
 
-    "#{builder}(#{builder_excluded? ? 'excluded' : 'kept:too-few'})"
+    builders.map do |soul|
+      next "#{soul}(not-a-candidate)" unless builder_candidates.include?(soul)
+
+      "#{soul}(#{excluded_builders.include?(soul) ? 'excluded' : 'KEPT:too-few'})"
+    end.join(",")
   end
 
   # The busy souls, annotated for the audit log: "-" when none were passed, else the

@@ -574,4 +574,182 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
     assert_equal cli_pair, recorded.first,
       "CLI preview == recorded pick even with a builder folded into the seed"
   end
+  # --- THE AUTHOR SET (reviewer-select-seats-authors) --------------------------
+  # devops.built_by holds ONE soul, but a task can have SEVERAL: a session limit
+  # kills a builder mid-work and another soul finishes it. built_by then names the
+  # LAST claimant, and the pool excluded one author of two — which seated Alex on a
+  # diff Alex had written every test on (PR #1081, 2026-08-30).
+
+  def multi_author_task(shape: "backend", built_by: "steffon", builders: %w[steffon alex], unattributed: nil)
+    devops = { "shape" => shape, "built_by" => built_by, "builders" => builders }
+    devops["builders_unattributed"] = unattributed if unattributed
+    task = task_for(shape: shape)
+    task.update_columns(metadata: { "devops" => devops })
+    task.reload
+  end
+
+  test "EVERY author on devops.builders is excluded from the light pool, not just built_by" do
+    decision = ReviewerSelector.explain(multi_author_task)
+
+    assert_equal %w[steffon alex], decision["builders"], "both authors are on record"
+    refute_includes decision["candidates"], "alex", "the co-author is out of the light pool"
+    refute_includes decision["candidates"], "steffon", "the recorded builder is out of the light pool"
+    refute_includes decision["reviewers"].map { |r| r["slug"] }, "alex",
+      "the co-author must never take the light seat on their own diff"
+  end
+
+  test "NO author is ever seated, over every author PAIR and every shape" do
+    # The PROPERTY, asserted over the whole pool rather than the one pairing that
+    # failed live. Two authors is the shape a mid-build handoff produces.
+    ReviewerSelector::POOL.combination(2).each do |first, second|
+      Task::SHAPES.each do |shape|
+        task = multi_author_task(shape: shape, built_by: second, builders: [first, second])
+
+        seated = slugs(ReviewerSelector.select(task))
+        refute_includes seated, first, "#{first} was seated on a #{shape} task #{first} co-authored"
+        refute_includes seated, second, "#{second} was seated on a #{shape} task #{second} built"
+        assert_equal 2, seated.uniq.size, "a full pair still forms on a #{shape} task"
+      end
+    end
+  end
+
+  test "Carl yields the primary seat when he is a CO-author, not merely the last claimant" do
+    # `STANDING_PRIMARY != builder` could not see this: built_by names shannon, so
+    # the old check left Carl on the deep seat for a diff Carl had worked on.
+    decision = ReviewerSelector.explain(multi_author_task(built_by: "shannon", builders: %w[carl shannon]))
+
+    assert_nil decision["standing_primary"], "Carl has yielded — he is one of the authors"
+    refute_includes decision["reviewers"].map { |r| r["slug"] }, "carl"
+  end
+
+  test "an author list known to be INCOMPLETE is not a known builder" do
+    # The accumulator only helps while each claim names a soul. A handoff that named
+    # NOBODY leaves a set of one that READS complete — the original bug, one layer
+    # along — so the unattributed claim has to be able to say so.
+    decision = ReviewerSelector.explain(
+      multi_author_task(builders: %w[steffon], unattributed: "0198c0de-face-7000-b0b0-5eaced0ff1ce")
+    )
+
+    assert_equal %w[steffon], decision["builders"], "steffon is still on record"
+    assert_equal false, decision["builder_known"],
+      "a set missing a soul we cannot name is not a settled answer"
+    assert_equal "0198c0de-face-7000-b0b0-5eaced0ff1ce", decision["builders_unattributed"],
+      "and the decision names the session it could not attribute"
+  end
+
+  test "a complete two-author set IS known — incompleteness is the only new refusal" do
+    # The guard must not refuse every multi-author task, or it gets routed around.
+    assert_equal true, ReviewerSelector.explain(multi_author_task)["builder_known"]
+  end
+
+  test "an explicit override names SEVERAL authors and excludes them all" do
+    # The hand-pass that saved the live review was `--busy alex`, which says the
+    # wrong thing. Naming co-authors is now a first-class statement of the fact.
+    decision = ReviewerSelector.new(task_for(shape: "backend"), builder: "steffon,alex").decision
+
+    assert_equal %w[steffon alex], decision["builders"]
+    assert_equal true, decision["builder_known"], "the caller has spoken for the task"
+    refute_includes decision["candidates"], "alex"
+    refute_includes decision["candidates"], "steffon"
+  end
+
+  test "an override CLEARS an unattributed gap — the caller stated the fact" do
+    task = multi_author_task(builders: %w[steffon], unattributed: "sess-gone")
+    decision = ReviewerSelector.new(task, builder: "steffon,alex").decision
+
+    assert_equal true, decision["builder_known"], "an explicit override is authoritative"
+    assert_nil decision["builders_unattributed"]
+  end
+
+  test "authors kept back for want of candidates are REPORTED, not silently seated" do
+    # The pool yields rather than starve so the recorder never breaks; the residue is
+    # a soul who MAY review their own diff, which bin/reviewer-select refuses on.
+    task = multi_author_task(shape: "backend", built_by: "shannon", builders: %w[shannon jasper])
+    decision = TinyPoolSelector.new(task, qa_owner: "carl").decision
+
+    assert_equal %w[shannon jasper], decision["builders"]
+    assert decision["kept_builders"].any?, "the two-soul light pool cannot drop both authors"
+    assert_equal 2, decision["reviewers"].map { |r| r["slug"] }.uniq.size, "a pair still forms"
+  end
+
+  test "the audit log names EVERY author and its exclusion state" do
+    logger = CapturingLogger.new
+    ReviewerSelector.new(multi_author_task, logger: logger).reviewers
+
+    assert_match(/builder=steffon\(excluded\),alex\(excluded\)/, logger.lines.last,
+      "both authors and their exclusion state are on the audit line")
+  end
+
+  test "the audit log shouts UNKNOWN with the session it could not attribute" do
+    logger = CapturingLogger.new
+    ReviewerSelector.new(multi_author_task(builders: %w[steffon], unattributed: "sess-42"), logger: logger).reviewers
+
+    assert_match(/builder=UNKNOWN\(unattributed:sess-42\)/, logger.lines.last)
+  end
+
+  test "a single-author task rolls the SAME light as before the author set existed" do
+    # seed_for now folds the joined excluded SET. For zero and one author that string
+    # is byte-for-byte the single slug it replaced, so no live task's default pick
+    # shifted underneath this change.
+    task = task_for(shape: "backend")
+    task.update!(metadata: task.metadata.deep_merge("devops" => { "built_by" => "shannon" }))
+
+    # The key the pre-change code built: "<slug>:<qa_owner>:<the one excluded slug>".
+    pinned = ReviewerSelector.new(task, random: Random.new(Zlib.crc32("#{task.slug}:avi:shannon"))).decision
+    assert_equal pinned["ranked"], ReviewerSelector.explain(task)["ranked"],
+      "the default seed must still be byte-for-byte the single-slug key"
+    assert_equal pinned["reviewers"], ReviewerSelector.explain(task)["reviewers"]
+  end
+
+  # --- THE ROSTER: an unrecognised soul cannot lift the refusal ----------------
+  # #soul? was a SHAPE check (Task::SOUL_SLUG), satisfied by any lowercase word. So
+  # a typo'd builder was a KNOWN builder that excluded NOBODY — the fail-closed
+  # refusal lifted by a value identifying no one.
+
+  test "a typo'd builder override names nobody and leaves the authors UNKNOWN" do
+    decision = ReviewerSelector.new(task_for(shape: "backend"), builder: "stefon").decision
+
+    assert_empty decision["builders"], "`stefon` is not a soul on the roster"
+    assert_equal false, decision["builder_known"], "a typo must not do better than silence"
+    assert_nil decision["excluded_builder"]
+  end
+
+  test "a typo'd built_by ON THE RECORD leaves the authors UNKNOWN" do
+    task = task_for(shape: "backend")
+    task.update_columns(metadata: { "devops" => { "shape" => "backend", "built_by" => "shanon" } })
+
+    decision = ReviewerSelector.explain(task.reload)
+    assert_equal false, decision["builder_known"], "a phantom on the record still refuses"
+  end
+
+  test "every seeded soul is still recognised — the roster narrows nothing real" do
+    Task::SOUL_ROSTER.each do |soul|
+      decision = ReviewerSelector.new(task_for(shape: "backend"), builder: soul).decision
+      assert_equal true, decision["builder_known"], "#{soul} is a real soul and must be accepted"
+      assert_equal soul, decision["builder"]
+    end
+  end
+
+  test "the roster keeps its static floor with NO Agent rows at all" do
+    # ReviewerSelector degrades to domain defaults with no DB (see its header). A
+    # roster that emptied with the Agent table would turn every soul into an unknown
+    # and refuse the whole fleet — fail-closed, but useless.
+    Agent.delete_all
+    Current.soul_roster = nil # the roster is memoized per request; this test IS a new one
+
+    decision = ReviewerSelector.new(task_for(shape: "backend"), builder: "shannon").decision
+    assert_equal true, decision["builder_known"], "the static floor still names the real souls"
+    refute_includes decision["candidates"], "shannon"
+    assert_equal false, ReviewerSelector.new(task_for(shape: "backend"), builder: "stefon").decision["builder_known"],
+      "and a typo is still not a soul when the DB is empty"
+  end
+
+  test "a soul seeded ONLY in the database is recognised too" do
+    Agent.create!(name: "Nova", slug: "nova")
+    Current.soul_roster = nil # a soul seeded mid-request is seen on the NEXT one
+
+    decision = ReviewerSelector.new(task_for(shape: "backend"), builder: "nova").decision
+    assert_equal true, decision["builder_known"], "the roster unions the seeded slugs over the floor"
+    assert_equal "nova", decision["builder"]
+  end
 end
