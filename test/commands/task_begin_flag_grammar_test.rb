@@ -3,6 +3,7 @@ require "open3"
 require "tmpdir"
 require "socket"
 require "fileutils"
+require "json"
 
 # [unit] `bin/task begin`'s flags must LAND or REFUSE — never be dropped in silence.
 #
@@ -114,6 +115,67 @@ class TaskBeginFlagGrammarTest < ActiveSupport::TestCase
                     "a blank built_by fails review CLOSED; a WRONG one fails it open"
   end
 
+
+  # ── EVERY ADVERTISED FLAG MUST BE WIRED ─────────────────────────────────────
+  #
+  # FOUND IN REVIEW of this very PR, and it is the same defect the PR removes.
+  # An earlier draft listed --dev-size as accepted on the resume form and then
+  # dropped it on the already-`building` RENEWAL branch, where `dev_size` never
+  # appeared at all. Accepting a flag and ignoring it is exactly the silent drop
+  # this task exists to end — advertising it is arguably worse than refusing it,
+  # because the caller has been told it works.
+  #
+  # The same review found --repo had regressed the OTHER way: it is genuinely read
+  # on the shared path (as lists["repositories"], to pick which app's desk is
+  # allocated), and the guard turned a working flag into a refused one.
+  # NOTE WHICH BRANCH THIS DRIVES, because the first version of this test drove the
+  # wrong one and PASSED WITH THE FIX REVERTED. `begin` claims two ways: a task in
+  # `designed` gets a child `move` (argv, already correct), and a task already in
+  # `building` gets an inline PATCH — and the PATCH was the branch that dropped
+  # --dev-size. A test against the child-move path cannot express the defect at all.
+  test "the resume form honours the size it advertises on the renewal branch" do
+    body = captured_renewal_body("--agent", "carl", "--dev-size", "large")
+
+    assert_equal "large", body["dev_size"],
+                 "a resume of an ALREADY-building task must send the size it accepted — " \
+                 "dev_size rides beside devops as a top-level column, the way `move` sends it"
+  end
+
+  test "the child-move branch forwards the size too" do
+    argv = captured_move_argv("--agent", "carl", "--dev-size", "large")
+
+    assert_includes argv, "--dev-size"
+    assert_equal "large", argv[argv.index("--dev-size") + 1]
+  end
+
+  test "the repo flag is accepted because the resume path reads it" do
+    _out, err, _status = run_task("begin", "no-such-task-xyz", "--repo", "turf-monster")
+
+    refute_includes err, "unknown flag",
+                    "--repo is read on the shared path to choose which app's desk is " \
+                    "allocated; refusing it regressed a flag that worked"
+  end
+
+  # THE GUARD ON THE GUARD. Anything the resume form advertises has to be read
+  # somewhere in the `begin` block, or the whitelist is lying to its caller. This
+  # is a source-level check on purpose: it is the one assertion that fails when a
+  # future editor adds a flag to the list and forgets to wire it, which is the
+  # mistake that was actually made here.
+  test "every flag the resume form advertises is read by begin" do
+    body = File.read(BIN)[/^when "begin"$.*?^when "/m] or flunk "could not isolate the begin block"
+    advertised = File.read(BIN)[/resume_flags = %w\[([^\]]+)\]/, 1].split
+    reads = { "--slug" => /top\["slug"\]/, "--repo" => /lists\["repositories"\]/,
+              "--agent" => /top\["agent"\]/, "--dev-size" => /top\["dev_size"\]/,
+              "--steal" => /steal/ }
+
+    advertised.each do |flag|
+      pattern = reads.fetch(flag) { flunk "#{flag} is advertised but this test has no reader for it — wire it, then add one" }
+      assert_match pattern, body,
+                   "#{flag} is advertised by the resume form but nothing in `begin` reads it — " \
+                   "an accepted-and-ignored flag is the silent drop this task removes"
+    end
+  end
+
   private
 
   # Run `begin` against a board sink this test owns, with the worktree, preflight
@@ -141,22 +203,54 @@ class TaskBeginFlagGrammarTest < ActiveSupport::TestCase
     end
   end
 
+  # Drive the RENEWAL branch: the task is already `building`, and a session identity
+  # is present so `begin` writes the claim rather than leaving it alone. Returns the
+  # decoded body of the LAST PATCH it sent.
+  def captured_renewal_body(*extra)
+    Dir.mktmpdir do |dir|
+      stub(dir, "worktree-stub", "echo #{dir}")
+      stub(dir, "preflight-stub", "exit 0")
+      writes = []
+
+      with_board_sink(dir, stage: "building", writes: writes) do |base|
+        Open3.capture3(
+          { "TASK_API_BASE" => base, "AGENT_API_SECRET" => "not-a-real-secret",
+            "TASK_SKIP_MARKER" => "1", "TASK_BEGIN_PROJECTS_DIR" => dir,
+            "CLAUDE_CODE_SESSION_ID" => "019f3b0c-3a8d-73b1-9e8b-f380e11fb91b",
+            "TASK_BEGIN_WORKTREE_BIN" => File.join(dir, "worktree-stub"),
+            "TASK_BEGIN_PREFLIGHT_BIN" => File.join(dir, "preflight-stub") },
+          BIN, "begin", "probe-task", "--steal", *extra
+        )
+      end
+
+      parsed = writes.filter_map { |w| JSON.parse(w) rescue nil }
+      flunk "the renewal branch sent no PATCH — the test never reached the code it targets" if parsed.empty?
+      parsed.last
+    end
+  end
+
   # A board answering the two calls `begin` makes before it claims: the bearer
   # exchange (/auth), then the task read. The task comes back in `designed`, so
   # begin takes the child-move branch rather than the already-building renewal
   # branch. ROUTING BY PATH MATTERS — a sink that returns one body for every
   # request answers /auth with a task and bin/task dies on a missing "token".
-  def with_board_sink(_dir)
+  def with_board_sink(_dir, stage: "designed", writes: nil)
     server = TCPServer.new("127.0.0.1", 0)
-    task = { data: { slug: "probe-task", stage: "designed", title: "Probe Task",
+    task = { data: { slug: "probe-task", stage: stage, title: "Probe Task",
                      metadata: { devops: { worktree_slug: "probe-task",
                                            repositories: ["mcritchie-studio"] } } } }.to_json
     auth = { token: "sink-bearer" }.to_json
     thread = Thread.new do
       while (client = server.accept)
         request = client.gets.to_s
-        # Drain headers/body so the client is never left waiting on a half-read socket.
-        while (line = client.gets) && line.strip != ""; end
+        # Drain headers, keeping Content-Length so a PATCH body can be READ rather
+        # than discarded — the renewal branch's payload is the assertion.
+        length = 0
+        while (line = client.gets) && line.strip != ""
+          length = Regexp.last_match(1).to_i if line =~ /^Content-Length:\s*(\d+)/i
+        end
+        payload = length.positive? ? client.read(length) : nil
+        writes << payload if writes && payload && request.start_with?("PATCH")
         body = request.include?("/api/v1/auth") ? auth : task
         client.write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n" \
                      "Content-Length: #{body.bytesize}\r\n\r\n#{body}")

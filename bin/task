@@ -1686,12 +1686,20 @@ when "begin"
   # where bin/reviewer-select refuses an unknown builder and a human hand-picks —
   # and a hand-picked light once turned out to be the PR's own author.
   #
-  # Refuse instead of drop. The flags below are the ones the resume path genuinely
-  # honours: --slug (the resume key), --dev-size, and --agent (forwarded to the
-  # claim as --actor, see 4/5) plus --steal, already consumed above. Anything else
-  # belongs on `bin/task update <slug>`, which the hint names.
+  # Refuse instead of drop. THE LIST IS DERIVED FROM WHAT THE CODE BELOW READS,
+  # not from what feels like a create flag — an earlier draft of this guard omitted
+  # --repo and thereby turned a WORKING flag into a refused one:
+  #   --slug     the resume key
+  #   --repo     read as lists["repositories"] on the shared path, to pick the app
+  #              whose desk is allocated (see the `app =` line below)
+  #   --dev-size forwarded to the claim on BOTH branches
+  #   --agent    forwarded to the claim as --actor (see 4/5)
+  #   --steal    consumed above, before parse_flags
+  # Anything else belongs on `bin/task update <slug>`, which the hint names.
+  # If you add a flag here, WIRE IT FIRST — an advertised flag that no branch reads
+  # is the same silent drop this task exists to remove.
   if top["title"].to_s.strip.empty?
-    resume_flags = %w[--slug --agent --dev-size --steal]
+    resume_flags = %w[--slug --repo --agent --dev-size --steal]
     raw_argv.each do |arg|
       next unless arg.to_s.start_with?("--")
       next if resume_flags.include?(arg)
@@ -1794,6 +1802,11 @@ when "begin"
       # record_transition_event is gated on `saved_change_to_stage?`, and this
       # patch carries no stage.
       renewal = { "devops" => merged }
+      # dev_size is a TOP-LEVEL column, so it rides beside "devops", exactly as
+      # `move` sends it. Without this the resume form ADVERTISED --dev-size and
+      # dropped it on this branch alone — a resume of an already-`building` task —
+      # which is precisely the advertised-but-unwired defect this task removes.
+      renewal["dev_size"] = top["dev_size"] if top["dev_size"]
       renewal["event"] = { "source" => "cli", "actor" => builder } unless builder.empty?
       api(:patch, "/api/v1/tasks/#{slug}", renewal)
       seed_usage_baseline(slug)
