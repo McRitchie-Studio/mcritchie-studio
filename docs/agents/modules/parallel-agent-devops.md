@@ -187,8 +187,23 @@ honest, and **none of them needs a manual flag in the common case**:
 
 - **QA owner** (the soul who QAs the assembled RC) — never a light on a PR he then
   QAs. Override with `--qa-owner SLUG` when someone else QAs this task.
-- **Builder** — a soul never reviews their own work. The builder is read from
-  `devops.built_by`, which is **auto-stamped on any build CLAIM**: a bare
+- **Builder** — a soul never reviews their own work, and that means EVERY author,
+  not just the last one to claim. `devops.built_by` names who is building it NOW;
+  **`devops.builders` accumulates every soul that has claimed it**, append-only and
+  SERVER-OWNED (a client PATCH claiming `builders` is dropped — an author set a
+  caller could shrink is not a guarantee). The whole set is excluded. This exists
+  because a session limit that hands a half-built task to a second soul used to
+  leave `built_by` naming only the FIRST, and the selector then happily seated the
+  actual author: measured twice on 2026-08-30, and prevented only by a hand-passed
+  `--busy`, which is a habit rather than a property.
+  **A handoff that names NOBODY is refused, not guessed.** An anonymous claim by a
+  different session records `devops.builders_unattributed`, and the builder set
+  reads INCOMPLETE until a named claim clears it — because a set of one that is
+  silently missing an author is the original bug one layer along. Note it keys on
+  the claiming SESSION, not on the save: the statusline renews the lease every few
+  seconds with no actor, and treating a renewal as a handoff would refuse every
+  task in the fleet. A guard that cries wolf gets routed around.
+  `built_by` itself is **auto-stamped on any build CLAIM**: a bare
   `bin/task move <slug> building` records the task's soul persona, else its
   assigned `agent_slug` (an explicit `--actor <soul>` move wins over both). The
   stamp is an invariant of the CLAIM, not of the transition, so **a re-claim of a
@@ -205,8 +220,17 @@ honest, and **none of them needs a manual flag in the common case**:
   `--builder <soul>` names the builder, `--builder none` asserts that no soul built
   it — and fix it durably with `bin/task move <slug> building --actor <soul>`.
   A **second line** backs it up: `TaskReviewClaim.acquire` refuses a review claim
-  whose named reviewer equals `devops.built_by` (disposition `self_review`), so a
-  review reached WITHOUT `reviewer-select` still can't be a self-review.
+  whose named reviewer is ANY recorded author (disposition `self_review`), so a
+  review reached WITHOUT `reviewer-select` still can't be a self-review. It read
+  only `built_by` until 2026-08-30, which meant the backstop was backing nothing
+  up — a co-author sailed through the very check meant to catch them.
+  **A soul slug is validated against a ROSTER, not just its shape.** `Task.soul?`
+  checks `SOUL_ROSTER` unioned with the seeded `Agent` slugs; the static floor is
+  what keeps a missing DB from turning every real soul into an unknown, which would
+  trade fail-closed for fail-open. A typo (`--builder stefon`) therefore REFUSES
+  rather than quietly excluding nobody — including a partial typo
+  (`--builder steffon,alexx`), where the half it understood used to make the set
+  read complete.
 - **Busy souls** — agents mid-build or mid-review on OTHER in-flight tasks
   shouldn't be handed a review. Name them with **`--busy a,b,c`** (repeatable),
   and/or add **`--busy-auto`** to also exclude every agent on a `stage=building`
