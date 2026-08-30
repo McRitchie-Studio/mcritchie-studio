@@ -230,8 +230,30 @@ class CertFailureExitContractTest < Minitest::Test
   # NO PIPE. The whole reason the contract could be reported broken while holding
   # is that `cmd | tail -20` reports tail's status. capture2e reads the child's
   # own status.
+  #
+  # HERMETIC, and this cost a red cert to learn. `Open3.capture2e` MERGES its env
+  # onto the parent's, and when this file runs as one lane of a real
+  # `bin/fast-check` the parent is a `bin/rails test` holding the desk's test
+  # database with `DATABASE_URL` exported. The child cert inherited it, resolved
+  # the DESK rather than the throwaway repo this test built, and was refused by
+  # the orphan guard — "the test DB ... is held by 1 other session(s): pid 44073
+  # (bin/rails)", which is this test's own parent. Every fast-check case failed
+  # for a reason that had nothing to do with what they assert, and they passed
+  # standalone, which is the worst combination: green on the desk, red in the
+  # suite. So the child starts from a SCRUBBED env — every FAST_CHECK_*/SHIP_*
+  # and the database/Rails vars removed — and receives only what the case sets.
+  INHERITED_PREFIXES = %w[FAST_CHECK_ SHIP_].freeze
+  # TEST_DATABASE_URL is the one that actually did it: CertOrphanGuard.test_db_url
+  # reads it FIRST, so an inherited value points the child cert's orphan check at
+  # the DESK's test database — which this test's own parent is holding.
+  INHERITED_NAMES = %w[TEST_DATABASE_URL DATABASE_URL RAILS_ENV MCRITCHIE_SESSION_KEY].freeze
+
   def capture(env, argv, chdir:)
-    out, status = Open3.capture2e(env, *argv, chdir: chdir)
+    scrubbed = ENV.keys.select { |k| INHERITED_PREFIXES.any? { |p| k.start_with?(p) } }
+    scrubbed.concat(INHERITED_NAMES)
+    child = scrubbed.uniq.to_h { |k| [k, nil] }.merge(env)
+
+    out, status = Open3.capture2e(child, *argv, chdir: chdir)
     [out, status.exitstatus]
   end
 end
