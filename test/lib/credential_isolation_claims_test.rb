@@ -11,12 +11,17 @@
 #
 # ---------------------------------------------------------------------------
 # DEFECT 1 — THE OVERCLAIM. Five sites said an ordinary agent shell is
-# "structurally unable to READ an admin credential". Measured false: bin/gh-token
-# reads a 50-minute cache (REFRESH_AFTER_SECONDS = 3000) BEFORE it mints, so
-# within that window `bin/gh-token --identity deployer` exits 0 in a shell that
-# never sourced ~/.zprofile.admin. What IS structurally blocked is the 1PASSWORD
-# READ — the mint. The gap between "cannot mint" and "cannot obtain" is the
-# window /tasks/never-cache-deployer-token closes.
+# "structurally unable to READ an admin credential". Measured false at the time:
+# bin/gh-token read its cache BEFORE minting, so `bin/gh-token --identity deployer`
+# exited 0 in a shell that never sourced ~/.zprofile.admin. `never-cache-deployer-token`
+# has since closed that window (CACHEABLE_IDENTITIES = %w[agent], checked before the
+# read, with any stale slot purged).
+#
+# THE SCOPING RULE SURVIVES THE FIX, which is why this guard still earns its keep.
+# What each file may promise is decided by what that file ENFORCES: the token map
+# blocks the MINT, the cache rule stops the HOLDING. A sentence in one that claims
+# the other is unsourced even when both happen to be true — and the next edit to
+# either file breaks it silently.
 #
 # This is not pedantry about wording. A security boundary described as wider than
 # it is gets trusted for things it does not cover, and the discovery arrives at a
@@ -205,9 +210,10 @@ class CredentialIsolationClaimsTest < Minitest::Test
 
     assert_empty offenders,
                  "a sentence denying a build lane an admin credential must scope itself to the " \
-                 "MINT (the 1Password read). `bin/gh-token --identity deployer` exits 0 from a " \
-                 "50-minute cache in a shell with no admin token, so the unscoped claim is false " \
-                 "— and it is the kind of false that is only discovered at a production deploy."
+                 "MINT (the 1Password read), because that is what THIS boundary enforces. Not " \
+                 "holding a deployer token is a separate mechanism in bin/gh-token, and an " \
+                 "unscoped claim here silently depends on a rule another file owns — the kind " \
+                 "of false that is only discovered at a production deploy."
   end
 
   # The other half of the same fix: deleting the overclaim must not leave the

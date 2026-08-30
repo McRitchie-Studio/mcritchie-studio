@@ -34,7 +34,10 @@ class EcosystemBuildVaultGuardTest < Minitest::Test
   ROOT = File.expand_path("../..", __dir__)
   SCRIPT = File.join(ROOT, "bin/ecosystem-build")
 
-  # `op vault list --format=json`, as the real account answers it.
+  # `op vault list --format=json`, as the 1PASSWORD ACCOUNT answers it — not as the
+  # agent service account does. Per docs/agents/modules/credential-inventory.md the
+  # agent token is granted agents-studio alone. The fuller listing is deliberate:
+  # more near-miss names is a STRICTLY HARDER test for an exact matcher.
   REAL_LISTING = <<~JSON
     [
       {"id":"aaa","name":"agents-studio"},
@@ -119,7 +122,8 @@ class EcosystemBuildVaultGuardTest < Minitest::Test
 
   def test_a_failing_op_is_not_visible
     assert_equal NOT_IN_LISTING, guard("agents-studio", op: REAL_LISTING, op_status: 1),
-                 "a token with no grants at all exits nonzero — that is a no, not a maybe"
+                 "op exiting nonzero — no grants, an expired token, no network — is a no, " \
+                 "not a maybe"
   end
 
   # ------------------------------- the diagnosis, which is its own defect ----
