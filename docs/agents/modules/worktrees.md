@@ -7,7 +7,7 @@ with an allocated port.
 ## Fresh Worktree Checklist
 
 **Steps 1-3 are what `bin/task begin` automates** — it is the default path for a
-single-repo task (`bin/task begin --title "Three To Five Words" --repo <app> …`,
+single-repo task (`bin/task begin --title "Three To Five Words" --repo <app> --agent <soul> …`,
 or `bin/task begin <task-slug>` to resume), and it prints the worktree path,
 port, and task URL. (`begin` runs step 3 below with `--root <worktree>`, so its
 preflight inspects the desk it just created.) Run the checklist by hand when the

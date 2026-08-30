@@ -476,7 +476,7 @@ Session start (create → `agent-worktree new` → `bind-task` → `move buildin
 `session-preflight`, printing the worktree path, port, and task URL):
 
 ```bash
-bin/task begin --title "Three To Five Words" --repo <app> --shape <shape> \
+bin/task begin --title "Three To Five Words" --repo <app> --agent <soul> --shape <shape> \
   --risk <tag> --accept "criterion" --test "[unit] ..."
 bin/task begin <task-slug>        # resume a partial begin
 ```

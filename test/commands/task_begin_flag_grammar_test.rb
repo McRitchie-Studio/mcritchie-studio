@@ -4,6 +4,7 @@ require "tmpdir"
 require "socket"
 require "fileutils"
 require "json"
+require "ripper"
 
 # [unit] `bin/task begin`'s flags must LAND or REFUSE — never be dropped in silence.
 #
@@ -41,6 +42,56 @@ class TaskBeginFlagGrammarTest < ActiveSupport::TestCase
     assert_includes err, "unknown flag", "the refusal must name the flag as unknown here"
     assert_includes err, "--shape"
     assert_includes err, "bin/task update", "and must name where the flag DOES belong"
+  end
+
+  # ── DOOR 2: THE TASK ALREADY EXISTS ─────────────────────────────────────────
+  #
+  # THE DEFECT, and it is the same class as the one above rather than a new one.
+  # The guard keyed on a BLANK --title. But a blank title is only ONE WAY to reach
+  # a resume — what actually makes a create flag inert is THE TASK ALREADY
+  # EXISTING. So this walked straight past the check and dropped --shape in
+  # silence:
+  #
+  #     bin/task begin --title "Some Existing Title" --shape backend
+  #
+  # and it did so on the DOCUMENTED re-run path, because `begin` is advertised as
+  # resumable and re-running it is normal — which makes this the door a real
+  # builder is more likely to walk through than the blank-title one.
+  #
+  # THIS DOOR NEEDS THE BOARD, unavoidably: nothing can know the task exists until
+  # the lookup says so. That is precisely why the blank-title door STAYS above the
+  # network in the test above — a grammar fact must not depend on a reachable
+  # board — and why these two checks are not collapsed into one.
+  test "a create flag is refused once the task turns out to already exist" do
+    err, status = begin_against_existing_task("--title", "Probe Task", "--shape", "backend")
+
+    refute status.success?, "a flag begin cannot honour must fail the command, not be dropped"
+    assert_includes err, "unknown flag", "the refusal must name the flag as unknown"
+    assert_includes err, "--shape"
+    assert_includes err, "already exists",
+                     "the refusal must name WHY the flag is inert — the task exists, so this " \
+                     "is a resume — not merely that a flag was unrecognised"
+    assert_includes err, "bin/task update probe-task",
+                     "and must name the remedy against THIS task, ready to paste"
+    refute_includes err, "begin 2/5 worktree",
+                    "the refusal must land BEFORE begin allocates a desk — a run that is " \
+                    "going to be refused must not leave a worktree behind first"
+  end
+
+  # The flag that must NOT be refused here. --title is how a re-run names the task
+  # whose slug `begin` just resolved; refusing it would break every documented
+  # re-run and turn a silent drop into a hard stop, which is not the trade.
+  test "the title itself survives the already-exists refusal" do
+    err, _status = begin_against_existing_task("--title", "Probe Task")
+
+    refute_includes err, "unknown flag",
+                    "--title named the task begin resumed; it is not an attempt to re-create it"
+    # It got PAST the guard and went on resuming. Asserting the whole run exits 0
+    # would assert something else entirely — the later steps want a real worktree
+    # on disk, which this test deliberately does not build.
+    assert_includes err, "already exists [designed]; resuming",
+                    "begin must carry on into the resume rather than stop at the flag"
+    assert_includes err, "begin 2/5 worktree", "and reach the steps the refusal would have cut off"
   end
 
   # THE FLAG THE FAST LANE ACTUALLY DOCUMENTS. If this ever starts refusing, the
@@ -173,27 +224,211 @@ class TaskBeginFlagGrammarTest < ActiveSupport::TestCase
                     "allocated; refusing it regressed a flag that worked"
   end
 
-  # THE GUARD ON THE GUARD. Anything the resume form advertises has to be read
-  # somewhere in the `begin` block, or the whitelist is lying to its caller. This
-  # is a source-level check on purpose: it is the one assertion that fails when a
-  # future editor adds a flag to the list and forgets to wire it, which is the
-  # mistake that was actually made here.
-  test "every flag the resume form advertises is read by begin" do
-    body = File.read(BIN)[/^when "begin"$.*?^when "/m] or flunk "could not isolate the begin block"
-    advertised = File.read(BIN)[/resume_flags = %w\[([^\]]+)\]/, 1].split
-    reads = { "--slug" => /top\["slug"\]/, "--repo" => /lists\["repositories"\]/,
-              "--agent" => /top\["agent"\]/, "--dev-size" => /top\["dev_size"\]/,
-              "--steal" => /steal/ }
+  # ── THE GUARD ON THE GUARD ──────────────────────────────────────────────────
+  #
+  # Anything the resume form advertises has to be READ somewhere in the `begin`
+  # block, or the whitelist is lying to its caller. This is a source-level check
+  # on purpose: it is the one assertion that fails when a future editor adds a
+  # flag to the list and forgets to wire it.
+  #
+  # IT MUST READ CODE, NOT PROSE — and for one release it did not. FOUND IN
+  # REVIEW of the PR that introduced it, and PROVED BY MUTATION twice over:
+  #
+  #   M4  Unwire --repo in the CODE, leave the comment that explains it. The
+  #       comment contained the literal `lists["repositories"]`, so the guard's
+  #       OWN RATIONALE satisfied the guard. Suite stayed GREEN with the flag
+  #       broken.
+  #   M5  Consume --steal but never use it. The reader pattern was /steal/, and
+  #       both the whitelist line `%w[... --steal]` and the usage string contain
+  #       "--steal" — so the ADVERTISEMENT satisfied the assertion that the
+  #       advertisement is honest. GREEN again.
+  #
+  # Two of five entries could not fail for the reason they claimed to test. Three
+  # changes kill both mutations, and all three are load-bearing:
+  #   1. COMMENTS ARE STRIPPED before matching. Ripper's lexer decides what is a
+  #      comment, so a `#` inside a string literal and a `#{}` interpolation are
+  #      left standing — a regex over /#.*$/ gets both wrong.
+  #   2. THE WHITELIST MOVED OUT of the begin block (bin/task's
+  #      BEGIN_RESUME_FLAGS), so it can no longer stand in as its own proof.
+  #   3. EACH READER NAMES A USE OF THE PARSED VALUE, never the flag's spelling.
+  #      --steal's reader is `steal: steal` — the forward into the claim gate —
+  #      not the string "--steal" that still appears in the usage text.
+  #
+  # Both mutations are frozen as tests below, and each one first ASSERTS THE
+  # HAZARD IS PRESENT in the mutated source; otherwise it would pass without
+  # exercising the fix at all.
+  READERS = { "--slug" => /top\["slug"\]/,
+              "--repo" => /lists\["repositories"\]/,
+              "--agent" => /top\["agent"\]/,
+              "--dev-size" => /top\["dev_size"\]/,
+              "--steal" => /steal: steal\b/ }.freeze
 
-    advertised.each do |flag|
-      pattern = reads.fetch(flag) { flunk "#{flag} is advertised but this test has no reader for it — wire it, then add one" }
-      assert_match pattern, body,
-                   "#{flag} is advertised by the resume form but nothing in `begin` reads it — " \
-                   "an accepted-and-ignored flag is the silent drop this task removes"
-    end
+  test "every flag the resume form advertises is read by begin" do
+    assert_empty unwired_flags(File.read(BIN)),
+                 "these flags are advertised by the resume form but nothing in `begin` reads " \
+                 "them — an accepted-and-ignored flag is the silent drop this guard removes"
+  end
+
+  # THE TABLE MUST MATCH THE WHITELIST EXACTLY, in both directions. The reader
+  # table is hand-written by the same author as the code it checks, which makes it
+  # self-confirming in principle: a stale entry keeps asserting against a flag that
+  # no longer exists, and a missing one lets a newly advertised flag through
+  # unchecked. Pinning the two sets equal is the cheapest defence available to a
+  # source-level guard, and it is what makes the loop above exhaustive.
+  test "the reader table covers exactly the advertised whitelist" do
+    assert_equal advertised_flags(File.read(BIN)).sort, READERS.keys.sort,
+                 "bin/task's BEGIN_RESUME_FLAGS and this test's READERS table have drifted; " \
+                 "every advertised flag needs a reader pattern and vice versa"
+  end
+
+  # [integration] M4, FROZEN. The mutation that stayed green: --repo unwired in
+  # code, its explanatory comment left standing.
+  test "a comment naming the reader cannot satisfy the wiring guard" do
+    source = unwire_repo_in_code(File.read(BIN))
+    block = source[/^when "begin"$.*?^when "/m]
+
+    # PROVE THE HAZARD IS PRESENT. Without a surviving comment that names the
+    # reader, this test would pass on the strength of the deletion alone and say
+    # nothing whatever about comment stripping.
+    assert_match(/lists\["repositories"\]/, block,
+                 "the mutation must leave a COMMENT naming the reader inside the block, " \
+                 "or it does not exercise the comment stripper at all")
+
+    assert_equal ["--repo"], unwired_flags(source),
+                 "--repo is unwired in code and only a comment still names its reader; " \
+                 "the guard must report it as unwired"
+  end
+
+  # [integration] M5, FROZEN. --steal consumed so it is not refused as unknown,
+  # then never used — while the usage string keeps advertising it.
+  test "a flag the block only mentions cannot satisfy the wiring guard" do
+    source = unwire_steal_in_code(File.read(BIN))
+    block = source[/^when "begin"$.*?^when "/m]
+
+    # PROVE THE HAZARD IS PRESENT: the naive /steal/ this guard used to carry
+    # would still match the mutated block, so the tightened reader is what is
+    # doing the work here.
+    assert_match(/steal/, block,
+                 "the mutated block must still MENTION steal, or this test says nothing " \
+                 "about the tightened reader pattern")
+
+    assert_equal ["--steal"], unwired_flags(source),
+                 "--steal is consumed and never used; only its spelling survives, and a " \
+                 "spelling is not a reader"
+  end
+
+  # [integration] The stripper must not overshoot. A guard that blanked too much
+  # would report every flag unwired and read as a very thorough test while
+  # asserting nothing — the failure mode where a scan passes having read nothing.
+  test "stripping comments leaves the code that does the reading" do
+    stripped = code_only(File.read(BIN))
+
+    refute_includes stripped, "the mutation that guard now has to fail",
+                    "comment text must not survive the strip"
+    assert_includes stripped, %q(lists["repositories"].first if lists.key?("repositories")),
+                    "the real reader must survive the strip"
+    assert_includes stripped, %q(`bin/task update #{update_target} #{arg} ...`),
+                    "an interpolation is a `#` the stripper must NOT treat as a comment"
+    assert_includes stripped, %q("a resumed task is never re-shaped by begin: pass --title to CREATE one"),
+                    "a string literal is not a comment and must survive"
   end
 
   private
+
+  # ── THE WIRING CHECK, AS A FUNCTION OF SOURCE ───────────────────────────────
+  # Taking SOURCE rather than reading BIN directly is what lets the mutation
+  # tests above run the real check against a deliberately-broken copy of the real
+  # file, instead of against a hand-written fake that could only ever confirm
+  # what its author already believed.
+  def unwired_flags(source)
+    body = executable_begin_block(source)
+    advertised_flags(source).reject { |flag| body.match?(READERS.fetch(flag)) }
+  end
+
+  def advertised_flags(source)
+    source[/^BEGIN_RESUME_FLAGS = %w\[([^\]]+)\]/, 1]&.split ||
+      flunk("could not read BEGIN_RESUME_FLAGS out of bin/task")
+  end
+
+  def executable_begin_block(source)
+    code_only(source)[/^when "begin"$.*?^when "/m] || flunk("could not isolate the begin block")
+  end
+
+  # Blank every COMMENT, preserving line structure so the block regex still
+  # bounds on `when "..."` lines. Ripper's LEXER classifies the tokens, so a `#`
+  # inside a string literal and a `#{}` interpolation are left alone; a regex over
+  # /#.*$/ mangles both, and bin/task contains examples of each.
+  def code_only(source)
+    lines = source.lines
+    Ripper.lex(source).each do |(lineno, col), type, _tok, _state|
+      next unless type == :on_comment
+
+      lines[lineno - 1] = "#{lines[lineno - 1][0, col].rstrip}\n"
+    end
+    lines.join
+  end
+
+  # Run `begin --title …` against a board that answers with an ALREADY-EXISTING
+  # task, and return [stderr, status]. The worktree, preflight and move children
+  # are stubbed, so a run that gets PAST the refusal still does no real work —
+  # which is what lets the second test assert a clean resume succeeds.
+  def begin_against_existing_task(*args)
+    Dir.mktmpdir do |dir|
+      stub(dir, "move-stub", "exit 0")
+      stub(dir, "worktree-stub", "echo #{dir}")
+      stub(dir, "preflight-stub", "exit 0")
+      err = status = nil
+
+      with_board_sink(dir) do |base|
+        _out, err, status = Open3.capture3(
+          { "TASK_API_BASE" => base, "AGENT_API_SECRET" => "not-a-real-secret",
+            "TASK_SKIP_MARKER" => "1", "TASK_BEGIN_PROJECTS_DIR" => dir,
+            "TASK_BEGIN_MOVE_BIN" => File.join(dir, "move-stub"),
+            "TASK_BEGIN_WORKTREE_BIN" => File.join(dir, "worktree-stub"),
+            "TASK_BEGIN_PREFLIGHT_BIN" => File.join(dir, "preflight-stub") },
+          BIN, "begin", *args
+        )
+      end
+
+      [err, status]
+    end
+  end
+
+  # Mutate the `begin` block ONLY, then splice it back. Scoping matters: `steal:
+  # steal` also appears in the `move` block, and unwiring THAT one would prove
+  # nothing about `begin`. The block form of sub is deliberate — a replacement
+  # STRING would reinterpret the backslash line-continuations the block contains.
+  def within_begin_block(source)
+    block = source[/^when "begin"$.*?^when "/m] || flunk("could not isolate the begin block")
+    source.sub(block) { yield(block) }
+  end
+
+  # Delete each anchor from the block, proving first that it is there exactly
+  # once — a mutation that silently applied to nothing would leave the guard
+  # looking at unbroken code and report a pass that means nothing.
+  def delete_from_begin_block(source, anchors, mutation)
+    within_begin_block(source) do |block|
+      anchors.inject(block) do |acc, anchor|
+        assert_equal 1, acc.scan(anchor).size,
+                     "the #{mutation} mutation is anchored on #{anchor.strip.inspect}, which the " \
+                     "begin block no longer contains exactly once — re-anchor it on the code that " \
+                     "reads this flag today, do not delete the test"
+        acc.sub(anchor) { "" }
+      end
+    end
+  end
+
+  # M4: delete --repo's reader from the CODE, leave its comments standing.
+  def unwire_repo_in_code(source)
+    delete_from_begin_block(source, ['(lists["repositories"].first if lists.key?("repositories")), '], "M4")
+  end
+
+  # M5: leave --steal consumed (so it is not refused as an unknown flag) and
+  # remove every USE of the parsed value.
+  def unwire_steal_in_code(source)
+    delete_from_begin_block(source, ["steal: steal, ", %(    move_cmd << "--steal" if steal\n)], "M5")
+  end
+
 
   # Run `begin` against a board sink this test owns, with the worktree, preflight
   # and move children replaced by recording stubs, and return the argv the child
