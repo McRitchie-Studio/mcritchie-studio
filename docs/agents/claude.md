@@ -65,7 +65,12 @@ preflight) and prints the worktree path, port, and task URL. `bin/ship`, run
 from that worktree, runs steps 4-5 (commit → `bin/fast-check` → push →
 **non-draft** PR into `accepted` led by the task URL → record `pr_url` → **wait
 for CI to settle** → `bin/dor-check` → `move submitted` → read-back verify).
-Re-run either after a failure and it **resumes**.
+Re-run either after a failure and it **resumes** — `bin/ship` from its worktree,
+and `begin` **by slug** (`bin/task begin <task-slug>`). Re-running the whole
+`begin --title …` line once the task exists is now REFUSED rather than resumed: a
+create flag cannot land on a task that already exists, and dropping it in silence
+is how a task ends up shaped wrong. The refusal names both moves — where the
+value belongs, and how to resume without it.
 
 **`bin/ship` waits for the PR's CI before the DoR verdict**
 (`gate-submit-on-green-ci`), so a task reaches `submitted` carrying a GREEN CI

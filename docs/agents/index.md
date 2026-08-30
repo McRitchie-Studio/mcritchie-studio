@@ -294,7 +294,11 @@ task URL. `bin/ship`, run from that worktree, runs steps 5-6 (commit →
 record `pr_url` → **wait for CI to settle** → `bin/dor-check` → `move submitted`
 → read-back verify).
 Re-running either after a failure **resumes** — each skips the steps already
-durably recorded. Mechanics: `docs/agents/modules/devops-task-board.md`.
+durably recorded. Resume `begin` **by slug** (`bin/task begin <task-slug>`):
+once the task exists, re-running the whole `--title …` line is REFUSED rather
+than resumed, because a create flag cannot land on an existing task and dropping
+it in silence is how a task ends up shaped wrong. Mechanics:
+`docs/agents/modules/devops-task-board.md`.
 
 **`bin/ship` waits for CI before the verdict** (`gate-submit-on-green-ci`). The
 builder no longer pays for a local FULL suite — measured at ~31 min against CI's

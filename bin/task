@@ -1500,7 +1500,7 @@ BEGIN_RESUME_FLAGS = %w[--slug --repo --agent --dev-size --steal].freeze
 #      EXISTING makes a create flag inert; a blank title is merely one way to get
 #      there. --title itself stays legal on this door — it is how a re-run names
 #      the task whose slug it derives.
-def refuse_inert_create_flags!(raw_argv, because:, hint_lead:, also_valid: [], update_target: "<slug>")
+def refuse_inert_create_flags!(raw_argv, because:, hint_lead:, also_valid: [], update_target: "<slug>", tail: nil)
   valid = BEGIN_RESUME_FLAGS + also_valid
   raw_argv.each do |arg|
     next unless arg.to_s.start_with?("--")
@@ -1508,7 +1508,7 @@ def refuse_inert_create_flags!(raw_argv, because:, hint_lead:, also_valid: [], u
 
     unknown_flag!(arg, valid: valid, context: "begin's resume form (#{because})",
                   hint: "#{hint_lead} — set it on the existing task with " \
-                        "`bin/task update #{update_target} #{arg} ...`")
+                        "`bin/task update #{update_target} #{arg} ...`#{tail}")
   end
 end
 
@@ -1771,10 +1771,15 @@ when "begin"
     # `begin` is advertised as resumable. Refuse it here instead, naming the task
     # so the remedy is copy-pasteable. --title stays legal: it is what named the
     # task whose slug we just resolved, not an attempt to re-create it.
+    # THE REFUSAL MUST LEAVE A WAY FORWARD. Re-running the whole create line is a
+    # real habit — the fast lane prints it and `begin` is advertised as resumable
+    # — so a refusal that only says "no" trades a silent drop for a dead end. Name
+    # both moves: where the value DOES belong, and how to resume without it.
     refuse_inert_create_flags!(
       raw_argv, also_valid: %w[--title], update_target: slug,
       because: "#{slug} already exists",
-      hint_lead: "begin RESUMES an existing task and never re-shapes it"
+      hint_lead: "begin RESUMES an existing task and never re-shapes it",
+      tail: ", then resume with `bin/task begin #{slug}`"
     )
     warn!("begin 1/5 task — #{slug} already exists [#{task["stage"]}]; resuming")
   end

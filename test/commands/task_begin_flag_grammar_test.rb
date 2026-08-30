@@ -78,6 +78,20 @@ class TaskBeginFlagGrammarTest < ActiveSupport::TestCase
                     "going to be refused must not leave a worktree behind first"
   end
 
+  # THE REFUSAL MUST LEAVE A WAY FORWARD, and this is the cost of the fix above
+  # rather than a free win. Re-running the whole create line IS a real habit: the
+  # fast lane prints that line and `begin` is advertised as resumable, so this
+  # change turns a silent drop into a hard stop for anyone who re-runs it verbatim.
+  # That trade is only worth making if the stop is one paste from working — a
+  # refusal that just says "no" would swap a quiet wrong answer for a dead end.
+  test "the already-exists refusal names how to resume" do
+    err, _status = begin_against_existing_task("--title", "Probe Task", "--shape", "backend")
+
+    assert_includes err, "bin/task begin probe-task",
+                     "the refusal must name the resume command, not only the update remedy — " \
+                     "re-running the create line is the habit this newly refuses"
+  end
+
   # The flag that must NOT be refused here. --title is how a re-run names the task
   # whose slug `begin` just resolved; refusing it would break every documented
   # re-run and turn a silent drop into a hard stop, which is not the trade.
