@@ -75,6 +75,64 @@ class GitCredentialUsesSharedSessionTest < Minitest::Test
     end
   end
 
+
+  # ── THE ERASE BRANCH ────────────────────────────────────────────────────────
+  #
+  # PROVEN AGAINST GIT, not assumed. On 2026-08-30 a local server answering every
+  # request with 401 was pointed at by an isolated GIT_CONFIG_GLOBAL, and git
+  # invoked this helper twice: `get`, then `erase` with the rejected password on
+  # stdin. That second call is the ONLY notice a credential helper ever gets that
+  # a token has gone bad — it never sees the 401 — so without this branch a
+  # revoked session is re-served on every git operation until the clock retires it.
+  def test_an_erase_retires_the_rejected_session
+    in_sandbox(cached: "ghs_REVOKED") do |env, _oplog|
+      log = File.join(File.dirname(env["GH_APP_TOKEN_CMD"]), "token-calls.log")
+      write_stub(File.dirname(env["GH_APP_TOKEN_CMD"]), "gh-token", %(echo "$@" >> #{log}))
+
+      run_helper(env, "erase", stdin: "protocol=https\nhost=github.com\n" \
+                                      "username=x-access-token\npassword=ghs_REVOKED\n")
+
+      assert_includes File.read(log), "--reject ghs_REVOKED",
+                      "the rejected password must be handed to bin/gh-token so the shared " \
+                      "cache stops serving it to every sibling agent"
+    end
+  end
+
+  # A credential helper must not be able to make a failing git operation fail
+  # WORSE. `erase` is bookkeeping on a path git has already given up on, so every
+  # way it can go wrong — a missing bin/gh-token here — still exits 0.
+  def test_an_erase_never_fails_the_git_operation
+    in_sandbox(cached: nil) do |env, _oplog|
+      env["GH_APP_TOKEN_CMD"] = "/nonexistent/gh-token"
+
+      _out, status = run_helper_status(env, "erase", stdin: "password=ghs_REVOKED\n")
+
+      assert status.success?, "erase must exit 0 even when the retirement itself could not run"
+    end
+  end
+
+  # An erase with nothing to act on must not reach for 1Password. This is the same
+  # property the warm-path test guards, on the other action: the READ is the cost.
+  def test_an_erase_without_a_password_costs_nothing
+    in_sandbox(cached: "ghs_WARMSESSION") do |env, oplog|
+      run_helper(env, "erase", stdin: "protocol=https\nhost=github.com\n")
+
+      assert_equal "", File.read(oplog), "an erase must never mint or read 1Password"
+    end
+  end
+
+  # `store` is git offering to persist a credential whose lifecycle we own. Writing
+  # it anywhere would fork the source of truth away from bin/gh-token's cache.
+  def test_an_unrecognised_action_is_a_silent_no_op
+    in_sandbox(cached: "ghs_WARMSESSION") do |env, oplog|
+      out, status = run_helper_status(env, "store", stdin: "password=ghs_WARMSESSION\n")
+
+      assert status.success?
+      assert_equal "", out.strip, "store must produce no output"
+      assert_equal "", File.read(oplog), "and must not touch 1Password"
+    end
+  end
+
   private
 
   def in_sandbox(cached:)
@@ -112,8 +170,11 @@ class GitCredentialUsesSharedSessionTest < Minitest::Test
     path
   end
 
-  def run_helper(env)
-    out, = Open3.capture2e(env, BIN, "get")
-    out
+  def run_helper(env, action = "get", stdin: "")
+    run_helper_status(env, action, stdin: stdin).first
+  end
+
+  def run_helper_status(env, action = "get", stdin: "")
+    Open3.capture2e(env, BIN, action, stdin_data: stdin)
   end
 end

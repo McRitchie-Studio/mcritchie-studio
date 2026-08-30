@@ -178,6 +178,15 @@ and report what it said. Architecture, the two lane identities (`agent` builds
 and merges, `deployer` cannot touch PRs), and a symptom→fix table:
 `mcritchie-studio/docs/agents/modules/source-control.md`.
 
+**If that one command does not clear it, run the `token-session` SOP**
+(`mcritchie-studio/docs/agents/modules/token-session.md`) rather than
+improvising. It carries the lifecycle in one table — no token mints one, a fresh
+one is served with ZERO 1Password reads, a 401 retires exactly that token — plus
+the diagnostic that turns an indefinite wait into a decision:
+`op service-account ratelimit` reports the account's remaining quota and its
+reset DIRECTLY. The daily cap is account-wide and shared by every lane, so
+"1Password is down" is usually "the quota is spent".
+
 ---
 
 ## Full operating model

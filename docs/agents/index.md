@@ -66,6 +66,7 @@ required execution path. Do not follow a Background reference to run an SOP.
 | `Alex Heartbeat` | Alex | `mcritchie-studio/docs/agents/agents/alex/HEARTBEAT.md` |
 | `address-blocker` | Shared | `mcritchie-studio/docs/agents/modules/address-blocker.md` |
 | `building-sop` | Shared | `mcritchie-studio/docs/agents/modules/building-sop.md` |
+| `token-session` | Shared | `mcritchie-studio/docs/agents/modules/token-session.md` |
 
 For `pr-review`, read Carl's `pr-review.md` and run the bounded review it
 describes. A review session (a Pokémon orchestrator) spins one Carl per PR;
@@ -530,6 +531,7 @@ Do not merge or deploy unless I explicitly assigned that lane.
 | Credentials and 1Password | `mcritchie-studio/docs/agents/modules/credentials.md` |
 | Credential item names | `mcritchie-studio/docs/agents/modules/credential-inventory.md` |
 | **Source control (GitHub): architecture, auth, usage** | `mcritchie-studio/docs/agents/modules/source-control.md` |
+| **GitHub token session broken (401, `Bad credentials`, push refused)** | `mcritchie-studio/docs/agents/modules/token-session.md` |
 | Shared email operations | `mcritchie-studio/docs/agents/modules/email-operations.md` |
 | Managed app registry | `mcritchie-studio/docs/agents/modules/app-registry.md` |
 | New app onboarding (tiers + SOP) | `mcritchie-studio/docs/agents/system/new-app-onboarding-sop.md` |
@@ -623,6 +625,7 @@ depend on the heartbeat.
 | `clean-up` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/clean-up.md` |
 | `address-blocker` | Shared | `mcritchie-studio/docs/agents/modules/address-blocker.md` |
 | `building-sop` | Shared | `mcritchie-studio/docs/agents/modules/building-sop.md` |
+| `token-session` | Shared | `mcritchie-studio/docs/agents/modules/token-session.md` |
 
 ## Repos
 
