@@ -428,10 +428,33 @@ unless skip_test_prepare
     exit 1
   end
   unless prepare_res.ok
-    warn "fast-check: test-env prepare failed — see the output above. USUALLY an ENV gap (the test " \
-         "DB, or the bundled-asset build), NOT a regression in your diff; but a broken stylesheet " \
-         "IN your diff (a bad @apply, an unknown utility, a malformed @theme) fails this lane too. " \
-         "Nothing certified; fix it and re-run."
+    if prepare_res.unlaunchable?
+      # A COMMAND THAT IS NOT THERE IS NOT AN ENV GAP, and the sentence below is
+      # the wrong errand for it. Measured 2026-08-29 shipping a turf-vault task:
+      # the repo is Anchor/Rust and has no bin/rails, so this lane could not
+      # launch, and the reader was told to go fix a test database that this repo
+      # will never have. "Fix it and re-run" is advice with no fix behind it.
+      #
+      # REFUSING, NOT SKIPPING, and that is the deliberate half. Skipping the
+      # prepare lane for any repo that happens to lack bin/rails would hand back
+      # a GREEN cert for a repo whose tests never ran — silently certifying the
+      # untested, which is worse than refusing to certify at all. A repo whose
+      # cert lane is not Rails has to DECLARE one, the way a gem declares its
+      # test lane in config/release_repos.yml; what that lane should BE for an
+      # Anchor repo is a real design question and it is not this script's to
+      # answer. /tasks/turf-vault-needs-ci owns it.
+      warn "fast-check: the test-env prepare command COULD NOT RUN — #{prepare_res.detail}. " \
+           "NOTHING was certified, and this is NOT a diff problem and NOT an env gap you can fix: " \
+           "this checkout (#{root}) has no such runner, so there was never a test database to prepare. " \
+           "If this repo's cert lane is not Rails, it has to DECLARE one in config/release_repos.yml the " \
+           "way a gem declares its test lane — see /tasks/turf-vault-needs-ci, which owns that decision. " \
+           "Refusing rather than skipping: a skipped prepare lane certifies a repo whose tests never ran."
+    else
+      warn "fast-check: test-env prepare failed — see the output above. USUALLY an ENV gap (the test " \
+           "DB, or the bundled-asset build), NOT a regression in your diff; but a broken stylesheet " \
+           "IN your diff (a bad @apply, an unknown utility, a malformed @theme) fails this lane too. " \
+           "Nothing certified; fix it and re-run."
+    end
       g1_settled = true
   emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
     exit 1
@@ -506,11 +529,22 @@ unless lanes.each_value.all?(&:ok)
   # report the hang FIRST (it is the one that needs a different action), and only call
   # the genuinely-red lanes red.
   hung = lanes.select { |_, result| result.timeout? }
-  red = lanes.reject { |_, result| result.ok || result.timeout? }.keys
+  # THREE VERDICTS, NOT TWO. A lane whose COMMAND is absent is not a red lane any
+  # more than a hung one is: no test ran, so "lane(s) RED" sends the reader to
+  # hunt a regression in code that never executed. run_lane already words the
+  # per-lane line correctly; this summary was the line that undid it.
+  unlaunchable = lanes.select { |_, result| result.unlaunchable? }
+  red = lanes.reject { |_, result| result.ok || result.timeout? || result.unlaunchable? }.keys
 
   if hung.any?
     CertProcess.timeout_report(hung, ceiling: LANE_TIMEOUT, tool: "fast-check",
                                env_var: "FAST_CHECK_LANE_TIMEOUT").each { |l| warn l }
+  end
+  if unlaunchable.any?
+    unlaunchable.each do |label, result|
+      warn "fast-check: lane(s) COULD NOT RUN: #{label} — #{result.detail}. The COMMAND is missing from " \
+           "this checkout; your tests neither passed nor failed. Nothing certified."
+    end
   end
   if red.any?
     warn "fast-check: lane(s) RED: #{red.join(', ')}. Fix, then re-run — nothing certified. " \

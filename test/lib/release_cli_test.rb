@@ -3100,6 +3100,52 @@ class ReleaseCliTest < Minitest::Test
     end
   end
 
+  # THE WIRING, which the pure classifier tests at the end of this file cannot
+  # see. push_frozen_main used to call `sh` WITHOUT capture and then assert a cause
+  # it had thrown away the evidence for; a classifier that is never handed git's
+  # output is a classifier that always answers the same thing. `sh` is stubbed to
+  # refuse the push exactly the way the real one did on 2026-08-29.
+  def test_push_frozen_main_reads_the_auth_failure_instead_of_asserting_a_divergence
+    Dir.mktmpdir do |dir|
+      clone = build_sibling_fixture(dir)
+      setup = <<~RUBY
+        def repo_path(_repo) = #{clone.inspect}
+        # HONOURS `capture:`, exactly as the real sh does — returning git's output
+        # only when the caller asked for it. A stub that hands back the output
+        # either way is MORE GENEROUS THAN REALITY, and it certifies the one thing
+        # this test exists to check: dropping `capture: true` at the call site
+        # would leave the classifier reading "" and this case would still pass.
+        # Measured — that mutation survived until this stub was tightened.
+        def sh(*cmd, capture: false, chdir: nil, env: nil)
+          if cmd.include?("push")
+            return ["", false] unless capture
+
+            return [<<~GIT, false]
+              remote: Invalid username or token. Password authentication is not supported for Git operations.
+              fatal: Authentication failed for 'https://github.com/McRitchie-Studio/sibling/'
+              error: failed to push some refs to 'https://github.com/McRitchie-Studio/sibling'
+            GIT
+          end
+
+          ["", true]
+        end
+      RUBY
+      out = run_cli(["--yes"], setup: setup,
+                    call: %{begin; push_frozen_main("sibling", "a" * 40); puts("PASSED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+      assert_includes out, "ABORTED", "a refused push still aborts the ship"
+      assert_includes out, "REFUSED ON CREDENTIALS",
+                      "git said `Invalid username or token`; the ship must repeat that, not invent a divergence"
+      assert_includes out, "--identity deployer", "and name the lane whose credential it actually is"
+      refute_includes out, "has diverged from the frozen SHA",
+                      "NOTHING had diverged — main was strictly BEHIND release and a dry-run fast-forward " \
+                      "succeeded. This sentence, on this failure, cost a re-freeze that was never needed."
+      assert_includes out, "Invalid username or token",
+                      "git's own words must still reach the operator — the diagnosis explains the output, " \
+                      "it does not replace it"
+    end
+  end
+
   # --- post-ship: re-baseline origin/accepted onto the shipped SHA -------------
   #
   # DevOps v2 Phase 3, Slice 1. After push_frozen_main advances `main`, it also
@@ -7461,5 +7507,92 @@ class ReleaseCliTest < Minitest::Test
     assert_includes out, "ABORTED", "a real (non-intent) conductor failure still aborts the deploy"
     assert_includes out, "prod board down", "the abort surfaces the real failure cause"
     refute_includes out, "NO-ABORT", "the best-effort rescue must not swallow a deploy-critical conductor failure"
+  end
+
+  # ------------------------------------------------ push failure diagnosis ----
+  #
+  # THE DEFECT THIS PINS. Measured 2026-08-29, twice, on a real production ship:
+  # `git push` failed on CREDENTIALS (`remote: Invalid username or token`) and
+  # push_frozen_main answered "origin/main has diverged from the frozen SHA
+  # (someone pushed to main) ... reconcile main, re-run prepare to re-freeze".
+  # Nothing had diverged — main was strictly BEHIND release and a dry-run
+  # fast-forward succeeded — so the prescribed remedy was pure waste, delivered
+  # with complete confidence at the most expensive moment in the pipeline. git had
+  # already named the true cause three lines above; the code discarded it.
+
+  def test_a_credential_refusal_is_diagnosed_as_auth_not_as_a_divergence
+    output = <<~GIT
+      remote: Invalid username or token. Password authentication is not supported for Git operations.
+      fatal: Authentication failed for 'https://github.com/McRitchie-Studio/mcritchie-studio/'
+      error: failed to push some refs to 'https://github.com/McRitchie-Studio/mcritchie-studio'
+    GIT
+
+    assert_equal "auth", eval_helper(%(classify_push_failure(#{output.inspect})))
+  end
+
+  # `error: failed to push some refs to ...` appears in BOTH failures, so it can
+  # never be the discriminator. This is that line ALONE, with no cause: it must
+  # come back unknown rather than be guessed at.
+  def test_the_shared_failure_line_alone_is_not_classified
+    assert_equal "unknown",
+                 eval_helper(%(classify_push_failure("error: failed to push some refs to 'https://github.com/x/y'")))
+  end
+
+  def test_a_real_non_fast_forward_is_still_diagnosed_as_a_divergence
+    output = <<~GIT
+      To https://github.com/McRitchie-Studio/mcritchie-studio
+       ! [rejected]        abc123 -> main (non-fast-forward)
+      error: failed to push some refs to 'https://github.com/McRitchie-Studio/mcritchie-studio'
+    GIT
+
+    assert_equal "diverged", eval_helper(%(classify_push_failure(#{output.inspect})))
+  end
+
+  def test_a_stale_ref_rejection_is_a_divergence
+    output = " ! [rejected]        abc123 -> main (fetch first)\n"
+
+    assert_equal "diverged", eval_helper(%(classify_push_failure(#{output.inspect})))
+  end
+
+  # An unrecognised cause must SAY it is unrecognised. Guessing is the whole
+  # defect; a silent fallback to either standard remedy would reproduce it.
+  def test_an_unrecognised_failure_is_reported_as_unrecognised
+    assert_equal "unknown", eval_helper(%(classify_push_failure("fatal: the remote end hung up unexpectedly")))
+    assert_equal "unknown", eval_helper(%(classify_push_failure("")))
+  end
+
+  # THE MESSAGE, not just the label — the label is only useful if the sentence the
+  # operator reads changes with it. The auth message must not send anyone to
+  # reconcile a branch or re-run `prepare`: re-freezing a good freeze is the waste
+  # the misdiagnosis actually cost.
+  def test_the_auth_message_names_the_deployer_lane_and_never_asks_for_a_re_freeze
+    msg = eval_helper(%(push_failure_message("mcritchie-studio", "a" * 40, :auth)))
+
+    assert_includes msg, "REFUSED ON CREDENTIALS"
+    assert_includes msg, "bin/gh-auth-refresh --identity deployer",
+                     "the ship lane pushes as the DEPLOYER, so the agent-lane refresh is the wrong command"
+    assert_includes msg, "OP_ADMIN_SERVICE_ACCOUNT_TOKEN",
+                     "minting a deployer token reads agents-admin, which an ordinary agent shell cannot"
+    assert_includes msg, "has NOT diverged"
+    refute_match(/re-run `bin\/release prepare`/, msg,
+                 "the freeze is still good — sending the operator back through prepare is the exact " \
+                 "waste this classification exists to stop")
+  end
+
+  def test_the_divergence_message_still_prescribes_the_reconcile
+    msg = eval_helper(%(push_failure_message("mcritchie-studio", "a" * 40, :diverged)))
+
+    assert_includes msg, "NON-FAST-FORWARD"
+    assert_includes msg, "bin/release prepare"
+    assert_includes msg, "NOT forcing"
+  end
+
+  # The honest third answer. It must not quietly prescribe either standard remedy.
+  def test_the_unknown_message_prescribes_neither_remedy
+    msg = eval_helper(%(push_failure_message("mcritchie-studio", "a" * 40, :unknown)))
+
+    assert_includes msg, "NOT one this script recognises"
+    assert_includes msg, "NOT forcing"
+    assert_match(/may be the wrong errand/, msg)
   end
 end

@@ -144,6 +144,15 @@ impossible by construction rather than by every repo remembering to ignore `tmp/
      "tailwind.css" is not present` after a stylesheet change is a REGRESSION IN
      YOUR DIFF failing the asset build; a missing DB/role is a genuine env gap.
      Blaming "an ENV gap" by reflex is the reflex this gate exists to break.
+     There is a FOURTH meaning the cert now separates by itself: the runner is
+     simply **not in this checkout** (turf-vault is Anchor/Rust and has no
+     `bin/rails`). That prints `COULD NOT RUN`, never "an ENV gap you can fix" —
+     there is no fix, because there is nothing to prepare. The cert **refuses**
+     rather than skipping the lane, since a skipped prepare certifies a repo
+     whose tests never ran; a repo whose cert lane is not Rails has to DECLARE
+     one, and `/tasks/turf-vault-needs-ci` owns what that lane should be. The
+     same split applies to the later lanes: a missing command is reported as
+     `lane(s) COULD NOT RUN`, never `lane(s) RED`.
      Both tasks, one boot: the test DB, and
      Rails' `test:prepare` hook, which is what BUILDS the gitignored
      `app/assets/builds/tailwind.css`. The lanes below pass explicit test

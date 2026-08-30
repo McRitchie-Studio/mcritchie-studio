@@ -269,6 +269,20 @@ origin/main:refs/heads/accepted` chore. The advance is guarded (only where
 `origin/accepted` exists), fail-closed (no `--force`), and non-fatal — it never
 aborts a landing deploy.
 
+**A refused `main` push does NOT mean `main` diverged either.** Same rule, one
+rung earlier — and this is the fatal push, not the non-fatal one. The ship
+captures git's output and classifies it before advising:
+
+| Outcome | What you do |
+|---|---|
+| **AUTH** (`Invalid username or token`, `Authentication failed`, a 401/403) | `bin/gh-auth-refresh --identity deployer`, then re-run `bin/release ship` — it resumes. **Do NOT re-run `prepare`**: nothing diverged and the freeze is still good. Minting a deployer token reads `github.mcritchie-deployer` from `agents-admin`, so the shell needs `OP_ADMIN_SERVICE_ACCOUNT_TOKEN` (`~/.zprofile.admin`, from `bin/setup-1pass-token --admin`). |
+| **NON-FAST-FORWARD** | Reconcile `main`, re-run `bin/release prepare` to re-freeze, then re-run `bin/release ship`. |
+| **UNRECOGNISED** | Read git's output, printed just above the verdict, before doing either. |
+
+Measured 2026-08-29: an auth refusal was reported as a divergence, and the
+prescribed re-freeze was pure waste. `main` was strictly behind `release` and a
+dry-run fast-forward succeeded.
+
 **A refused advance does NOT mean `accepted` diverged.** A non-fast-forward only
 says the push was not a fast-forward; the ship classifies WHY before advising,
 and prints one of three outcomes. Read the label — the right action differs:
