@@ -7579,6 +7579,31 @@ class ReleaseCliTest < Minitest::Test
                  "waste this classification exists to stop")
   end
 
+  # ── THE REMEDY MUST BE THE FIRST HOP, NOT THE SECOND ────────────────────────
+  #
+  # This is the message a credential-refused `bin/release ship` prints — the 2026-08-30
+  # incident itself. It named the FILE ("~/.zprofile.admin, installed by
+  # bin/setup-1pass-token --admin") while prescribing the INSTALL, which prompts the
+  # operator for a credential they had already supplied two days earlier. The reader
+  # only reached "source it" by running a second command that shells to a third.
+  #
+  # The install is still named, because a machine that has never been provisioned
+  # genuinely needs it — but CONDITIONALLY, and after the self-service line.
+  def test_the_auth_message_leads_with_the_self_service_command
+    msg = eval_helper(%(push_failure_message("mcritchie-studio", "a" * 40, :auth)))
+
+    assert_includes msg, "source ~/.zprofile.admin",
+                     "on a provisioned machine this one line IS the fix; a message that omits " \
+                     "it converts a self-service failure into operator toil"
+    assert_operator msg.index("source ~/.zprofile.admin"), :<, msg.index("bin/setup-1pass-token"),
+                    "the install must come SECOND and conditionally — leading with it sends a " \
+                    "provisioned machine on the wrong errand, which is what cost the session"
+    assert_match(/export GH_APP_ITEM=github\.mcritchie-deployer/, msg)
+    assert_operator msg.index("export GH_APP_ITEM"), :>, msg.index("source ~/.zprofile.admin"),
+                    "GH_APP_ITEM must be exported BEFORE minting but AFTER sourcing; printed the " \
+                    "other way round the reader mints the AGENT token and calls it a success"
+  end
+
   def test_the_divergence_message_still_prescribes_the_reconcile
     msg = eval_helper(%(push_failure_message("mcritchie-studio", "a" * 40, :diverged)))
 

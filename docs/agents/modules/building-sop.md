@@ -63,11 +63,18 @@ bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> --agent 
 
   This is the RETROFIT path, not the primary one: `--agent <soul>` on `begin`
   above already records the builder, and it is the flag the recipe carries. Both
-  write `devops.built_by`, which is what keeps you off the review of your own PR.
+  write `devops.built_by` **and** append to `devops.builders` — and it is the
+  second one that keeps you off the review of your own PR. `built_by` holds ONE
+  slug and is RE-POINTED when another soul re-claims the task, which erased the
+  first author on PR #1081 and duly seated him as his own light. The exclusion is
+  the union of `built_by`, the server-owned append-only `devops.builders`, and
+  every `→ building` event actor.
   Safe on a task **already** at `building` — the stamp rides the build CLAIM, not
   the transition — and re-running it is idempotent. With neither flag,
   `bin/reviewer-select` has no builder to exclude, so it **refuses to pick
   reviewers at all** and the review stalls until someone states the fact by hand.
+  It refuses in **four** states, one of which fires while a name IS present — see
+  the table in `pr-review-sop.md`.
   A delegated subagent runs under the PARENT session id, so a soul building under
   another session's id must name itself through one of these two flags.
 - **Classify the shape** — it selects the tests you must write

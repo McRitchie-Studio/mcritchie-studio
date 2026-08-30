@@ -60,6 +60,12 @@ class ReviewerSelectCliTest < Minitest::Test
     end
   end
 
+  # The refusal's explanatory body, minus the templated command lines that carry the
+  # task slug — comparing whole outputs would differ on the slug alone.
+  def refusal_body(out)
+    out.lines.reject { |l| l.include?("bin/reviewer-select") || l.include?("bin/task") }.join
+  end
+
   # --- fail CLOSED on an unknown builder (builder-stamp-misses-reviewer-guard) ---
 
   def test_refuses_to_select_when_the_builder_is_unknown
@@ -512,6 +518,86 @@ class ReviewerSelectCliTest < Minitest::Test
     out, code = select_verbose({ "shape" => "backend", "built_by" => "shanon" }, "--no-record")
     assert_equal 2, code, out
     assert_match(/REFUSED/, out)
+    # WHICH refusal, not merely that one fired. This asserted only /REFUSED/, and
+    # all four refusals satisfy that — so the message calling a populated built_by
+    # "blank" was invisible to the suite that covered it.
+    assert_match(/shanon/, out, "the refusal must quote back the name it could not resolve")
+    refute_match(/built_by is blank/, out,
+                 "built_by holds \"shanon\" — reporting it as blank sends the reader to " \
+                 "re-stamp the field, which OVERWRITES the typo instead of fixing it")
+  end
+
+  # THE PROPERTY, not two example strings: a blank record and a typo'd record are
+  # different states, they need opposite fixes, and they must not read alike.
+  def test_a_blank_record_and_a_typod_record_give_different_remedies
+    blank, blank_code = select_verbose({ "shape" => "backend", "built_by" => "" }, "--no-record")
+    typo,  typo_code  = select_verbose({ "shape" => "backend", "built_by" => "shanon" }, "--no-record")
+
+    assert_equal 2, blank_code
+    assert_equal 2, typo_code
+    refute_equal refusal_body(blank), refusal_body(typo),
+                 "one message for both states is the defect — a blank field wants a stamp, " \
+                 "a typo wants a correction"
+  end
+
+  # ── EVERY FLAG A REFUSAL OFFERS MUST BE ABLE TO CLEAR IT ────────────────────
+  #
+  # The SEATED refusal used to offer `--qa-owner <other-soul>  # free the QA-owner
+  # seat`. No value of that flag has ever cleared it — measured, `--qa-owner carl`
+  # makes it strictly worse (kept authors 1 -> 2). A test that greps the message for
+  # a keyword passes on a remedy that does not work, which is how this survived.
+  # So: parse the flags the message actually offers, run each one, and require that
+  # SOME value clears the refusal.
+  FLAG_VALUES = {
+    "--builder" => %w[shannon none],
+    "--qa-owner" => %w[carl shannon jasper steffon alex avi mack],
+    "--busy" => %w[shannon]
+  }.freeze
+
+  def test_every_flag_the_seated_refusal_offers_can_actually_clear_it
+    authors = %w[shannon jasper steffon alex]
+    devops = { "shape" => "backend", "built_by" => "shannon", "builders" => authors }
+    out, code = select_verbose(devops, "--no-record")
+
+    assert_equal 2, code, out
+    assert_match(/AN AUTHOR WOULD BE SEATED/, out)
+
+    offered = out.scan(%r{bin/reviewer-select \S+ (--[a-z-]+)}).flatten.uniq
+    refute_empty offered, "a refusal that offers no runnable flag at all is a dead end"
+
+    offered.each do |flag|
+      values = FLAG_VALUES.fetch(flag) { flunk("refusal offers #{flag}, which this test cannot exercise") }
+      cleared = values.any? do |value|
+        body, status = select_verbose(devops, "--no-record", flag, value)
+        status.zero? && !body.match?(/AN AUTHOR WOULD BE SEATED/)
+      end
+
+      assert cleared,
+             "#{flag} is printed as the remedy for AN AUTHOR WOULD BE SEATED, but no " \
+             "value of it clears the refusal. A remedy that cannot be acted on gets " \
+             "routed around — and the route around here is `--builder none`, which " \
+             "lifts the no-self-review guard entirely."
+    end
+  end
+
+  # ── THE AUDIT LINE MAY NOT INVENT A CALLER ASSERTION ────────────────────────
+  def test_the_audit_line_does_not_claim_an_assertion_nobody_made
+    out, code = select({ "shape" => "backend", "built_by" => "", "builders" => ["steffon"] }, "--no-record")
+
+    assert_equal 0, code, out
+    assert_match(/steffon \(author/, out, "the author must still be excluded")
+    refute_match(/ASSERTED by the caller/, out,
+                 "no caller passed --builder none here; the line claimed a fact the " \
+                 "operator never stated, in the same breath as listing the author")
+  end
+
+  def test_the_audit_line_still_reports_a_real_assertion
+    out, code = select({ "shape" => "backend" }, "--no-record", "--builder", "none")
+
+    assert_equal 0, code, out
+    assert_match(/ASSERTED by the caller/, out,
+                 "when the caller DOES assert none, the audit line must say so — " \
+                 "otherwise a blank and an assertion read alike")
   end
 
   def test_a_real_soul_still_selects

@@ -4156,11 +4156,17 @@ def push_failure_message(repo, sha, cause)
   when :auth
     "could not push #{repo} origin/main to #{short(sha)} — git was REFUSED ON CREDENTIALS, not on the ref. " \
       "main has NOT diverged and nothing needs reconciling; the push never got far enough to find out. " \
-      "This is the SHIP lane, which pushes as the DEPLOYER identity: refresh it with " \
-      "`bin/gh-auth-refresh --identity deployer`, and note that minting one reads github.mcritchie-deployer " \
-      "from the agents-admin vault, so the shell needs OP_ADMIN_SERVICE_ACCOUNT_TOKEN " \
-      "(~/.zprofile.admin, installed by `bin/setup-1pass-token --admin`). Then re-run `bin/release ship` — " \
-      "it resumes; do NOT re-run `prepare`, the freeze is still good."
+      "This is the SHIP lane, which pushes as the DEPLOYER identity, so it needs " \
+      "OP_ADMIN_SERVICE_ACCOUNT_TOKEN to read github.mcritchie-deployer from the agents-admin vault. " \
+      "On a provisioned machine that is SELF-SERVICE — the token is already on disk, just not in " \
+      "this shell:\n" \
+      "    source ~/.zprofile.admin\n" \
+      "    export GH_APP_ITEM=github.mcritchie-deployer\n" \
+      "    bin/gh-auth-refresh --identity deployer --export\n" \
+      "Export GH_APP_ITEM BEFORE minting; the helper reads it at mint time, so setting it afterwards " \
+      "yields the AGENT token — a wrong-identity success. Only if this machine has no ~/.zprofile.admin " \
+      "at all does it need installing once with `bin/setup-1pass-token --admin`. Then re-run " \
+      "`bin/release ship` — it resumes; do NOT re-run `prepare`, the freeze is still good."
   when :diverged
     "could not fast-forward #{repo} origin/main to #{short(sha)} — git REFUSED the ref update as a " \
       "NON-FAST-FORWARD, which means origin/main has diverged from the frozen SHA (someone pushed to " \

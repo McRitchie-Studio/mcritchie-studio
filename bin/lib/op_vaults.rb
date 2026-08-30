@@ -133,8 +133,13 @@ module OpVaults
   # message had ONE branch for a missing token: "Run this from the admin lane, or
   # install the token with bin/setup-1pass-token --admin." Both halves failed the
   # reader. "Run this from the admin lane" names no command — the answer is one
-  # line, `source ~/.zprofile.admin`, and this file was the only one in the repo
-  # that even mentioned that path. And the remedy it DID name is an INSTALL, which
+  # line, `source ~/.zprofile.admin`, and no REFUSAL MESSAGE anywhere named it as a
+  # command to run. (The path itself is mentioned widely — bin/setup-1pass-token,
+  # bin/release.rb and nine docs — so the narrow claim is the one to make: the
+  # reader was never told to SOURCE it at the moment they were refused. Saying
+  # "the only file that mentions it" would be false, and that sentence is exactly
+  # what would persuade the next reader this sweep is finished.)
+  # And the remedy it DID name is an INSTALL, which
   # prompts for a credential the operator must fetch by hand — the wrong errand
   # entirely on a machine already provisioned, which is the common case.
   #
@@ -148,30 +153,69 @@ module OpVaults
   #
   # Same shape as bin/ecosystem-build's vault guard, and for the same reason: a
   # single else-branch sends every cause to one confident, specific, wrong errand.
+  # EVERY LANE, NOT JUST THE DEPLOYER. This used to bail to the vault-visibility
+  # hint for the DEFAULT lane (`name.to_sym != DEFAULT_LANE`), which made the agent
+  # lane's `profile:` key dead data — a reviewer mutated it to garbage on
+  # 2026-08-30 and killed ZERO tests. Worse, it was the SAME defect one rung down:
+  # an agent shell that has never sourced ~/.zprofile has no token, so it was told
+  # to "check `op vault list`" — a command that itself needs the token it is
+  # missing. A refusal that names an impossible command is the whole bug class this
+  # file exists to fix, so the lanes now share one rule.
   def diagnose(name = DEFAULT_LANE)
     spec = lane(name)
-    if token(name).nil? && name.to_sym != DEFAULT_LANE
-      base = "the #{name} lane needs #{spec[:token_env]} in the environment, and it is not set. " \
-             "That is EXPECTED in an ordinary agent shell — admin credentials are deliberately " \
-             "unreadable there. "
-      if provisioned?(name)
-        # PROVISIONED: self-service, no human. Name the command, and name the
-        # export ordering too — GH_APP_ITEM is read by the credential helper at
-        # mint time, so setting it afterwards silently yields the AGENT token,
-        # a wrong-identity SUCCESS that is harder to notice than this refusal.
-        base + "This machine IS provisioned — source it into THIS shell and retry:\n" \
-               "    source #{spec[:profile]}\n" \
-               "(For a git/gh ship lane also `export GH_APP_ITEM=github.mcritchie-deployer` " \
-               "BEFORE minting; the helper reads it at mint time.)"
-      else
-        # NOT PROVISIONED: genuinely the operator's, once per machine.
-        base + "This machine has no #{spec[:profile]} — install the token once:\n" \
-               "    bin/setup-1pass-token --admin"
-      end
+    # The token IS present, so the failure is about which vaults it can SEE.
+    return vault_visibility_hint(name, spec) unless token(name).nil?
+
+    if provisioned?(name)
+      # PROVISIONED: self-service, no human. The explanation goes BEFORE the
+      # command block so the message ENDS on a bare, copy-pasteable line.
+      token_absent_preamble(name, spec) +
+        "This machine IS provisioned — the token is on disk and simply absent from " \
+        "THIS shell. #{mint_order_caveat(name)}Run:\n#{source_commands(name, spec)}"
     else
-      "reading vault #{vault(name).inspect} (override with #{spec[:vault_env]}). " \
-        "If that vault is not visible, check `op vault list` — a service account sees " \
-        "only the vaults granted to it."
+      # NOT PROVISIONED: genuinely the operator's, once per machine.
+      token_absent_preamble(name, spec) +
+        "This machine has no #{spec[:profile]} — install the token once:\n" \
+        "    #{install_command(name)}"
     end
+  end
+
+  def vault_visibility_hint(name, spec)
+    "reading vault #{vault(name).inspect} (override with #{spec[:vault_env]}). " \
+      "If that vault is not visible, check `op vault list` — a service account sees " \
+      "only the vaults granted to it."
+  end
+
+  # An absent token means OPPOSITE things on the two lanes: on the deployer it is
+  # the isolation working, on the agent it is a shell that never sourced its
+  # profile. Saying "that is expected" about the agent lane would teach a reader to
+  # stop at a failure that is entirely theirs to fix.
+  def token_absent_preamble(name, spec)
+    common = "the #{name} lane needs #{spec[:token_env]} in the environment, and it is not set. "
+    return common + "Every 1Password read authenticates with it, so nothing can be read " \
+                    "until it is present. " if name.to_sym == DEFAULT_LANE
+
+    common + "That is EXPECTED in an ordinary agent shell — admin credentials are " \
+             "deliberately unreadable there. "
+  end
+
+  # GH_APP_ITEM is read by the credential helper AT MINT TIME, so exporting it
+  # afterwards silently yields the AGENT token — a wrong-identity SUCCESS, which is
+  # harder to notice than this refusal. Only the ship lane needs it.
+  def mint_order_caveat(name)
+    return "" if name.to_sym == DEFAULT_LANE
+
+    "Export GH_APP_ITEM BEFORE minting — the credential helper reads it at mint " \
+      "time, so setting it afterwards yields the AGENT token instead. "
+  end
+
+  def source_commands(name, spec)
+    lines = ["    source #{spec[:profile]}"]
+    lines << "    export GH_APP_ITEM=github.mcritchie-deployer" unless name.to_sym == DEFAULT_LANE
+    lines.join("\n")
+  end
+
+  def install_command(name)
+    name.to_sym == DEFAULT_LANE ? "bin/setup-1pass-token" : "bin/setup-1pass-token --admin"
   end
 end

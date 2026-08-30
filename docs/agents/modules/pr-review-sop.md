@@ -111,12 +111,13 @@ Avi supervisor. Carl:
    server-owned set stamped on every build claim, unioned with `built_by` and every
    `→ building` event actor.
 
-   **It REFUSES (exit 2) in three states**, because an empty exclusion list is not
+   **It REFUSES (exit 2) in four states**, because an empty exclusion list is not
    the same answer as "nobody to exclude":
 
    | Refusal | What it means |
    |---------|---------------|
-   | authors unknown | no `built_by`, no soul on a `→ building` event |
+   | AN AUTHOR NAMED NOBODY | a `--builder` entry matches no roster soul — including a PARTIAL typo (`--builder steffon,alexx`), where the list still resolves to someone and the missed soul silently goes un-excluded |
+   | authors unknown | no *soul* is named — `built_by` blank, or holding a name that is not on the roster, and no soul on a `→ building` event |
    | author set INCOMPLETE | another session claimed the task and named no soul (`devops.builders_unattributed`) |
    | an author would be SEATED | the pool was too small to drop them all, so one was kept eligible |
 
@@ -128,6 +129,16 @@ Avi supervisor. Carl:
    **A typo cannot lift any of that.** Every slug is checked against the roster
    (`Task.soul?`), not merely a lowercase-word shape — `--builder stefon` names
    nobody, so it refuses rather than passing as a known builder who excludes no one.
+   A typo on the RECORD is reported as one: a `built_by` holding `shanon` refuses
+   and quotes the name back, rather than calling the field blank and sending you to
+   re-stamp over it.
+
+   **The SEATED refusal has no widening flag, by construction.** The light pool is
+   the specialist pool minus the standing primary, and the default QA owner is not
+   in it — so the pool is already at its maximum and `--qa-owner` can only hold or
+   shrink it (naming `carl` costs the standing-primary seat and keeps MORE authors
+   eligible). The only lever that clears it is `--builder`, stating a smaller true
+   author set. If the set is right, every eligible light wrote the diff.
 
 **Record the intent.** `bin/reviewer-select <task>` **records the picked pair by
 default** — it writes Carl + the light onto the task as the live **review intent**

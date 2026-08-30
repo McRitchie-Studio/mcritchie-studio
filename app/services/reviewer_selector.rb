@@ -291,6 +291,16 @@ class ReviewerSelector
       # Entries of an explicit --builder list that named nobody. Non-empty means the
       # caller's stated fact was only partly understood — the CLI refuses on it.
       "builder_override_unresolved" => (@builder_override && !builder_asserted_none? ? override_unresolved : []),
+      # Names the RECORD carries that resolve to no soul. Distinct from the key
+      # above, which is the CALLER's list. This is what lets a refusal tell "the
+      # record says nothing" from "the record says something that is not a soul" —
+      # two states that need OPPOSITE fixes (stamp it vs. correct the spelling) and
+      # which the CLI reported as one, calling a typo'd built_by "blank".
+      "record_unresolved" => record_unresolved,
+      # Whether the caller ASSERTED `--builder none`. The audit line needs the
+      # assertion itself; inferring it from `builder.empty? && builder_known` was
+      # sound only while builder_known? was defined over the singular builder.
+      "builder_asserted_none" => builder_asserted_none?,
       "busy" => busy,
       "excluded_busy" => excluded_busy,
       "kept_busy" => kept_busy,
@@ -512,6 +522,23 @@ class ReviewerSelector
     return nil unless task.respond_to?(:devops_builders_unattributed)
 
     task.devops_builders_unattributed
+  end
+
+  # Names the RECORD carries that resolve to NO soul — a typo'd devops.built_by, or
+  # a `→ building` actor holding a session UUID because someone ran `bin/task move`
+  # without `--actor`. Sibling of #override_unresolved, which covers the CALLER's
+  # list; this one covers the board's.
+  #
+  # It exists so a refusal can stop saying "devops.built_by is blank" about a field
+  # that plainly is not. Those two states need opposite remedies — one wants a
+  # stamp, the other wants a correction, and the stamping command would overwrite
+  # the evidence of the typo — so a message that conflates them sends the reader to
+  # do the wrong thing confidently.
+  def record_unresolved
+    return [] if builder_asserted_none? || @builder_override
+
+    ([devops_built_by] + task_devops_builders + building_event_actors)
+      .map { |s| s.to_s.strip }.reject(&:empty?).reject { |s| soul?(s) }.uniq
   end
 
   def task_devops_builders
