@@ -858,6 +858,26 @@ class Task < ApplicationRecord
     devops.fetch("built_by", "").presence
   end
 
+  # EVERY soul that claimed this task, in claim order — the answer `built_by` cannot
+  # give, because it holds one slug and a task can have several authors (a session
+  # limit kills a builder mid-work and another soul finishes it). Append-only and
+  # SERVER-OWNED: it is deliberately not in DEVOPS_KEYS, so a client can neither
+  # write nor shrink it; #enforce_builder_stamp is the only author. ReviewerSelector
+  # excludes the whole set, so a handoff no longer leaves a co-author eligible to
+  # review their own diff.
+  def devops_builders
+    Array(devops["builders"]).map(&:to_s).select(&:present?)
+  end
+
+  # The claiming session that named NO soul while other authors were already on
+  # record — i.e. "someone else worked this task and the record cannot say who".
+  # Present ⇒ the author set is INCOMPLETE, ReviewerSelector reports the builder
+  # UNKNOWN, and `bin/reviewer-select` refuses rather than rolling a reviewer who
+  # might be that someone. Server-owned like #devops_builders.
+  def devops_builders_unattributed
+    devops.fetch("builders_unattributed", "").presence
+  end
+
   # --- Session resume (V1: store + display + copy; no enforcement gate) -------
   # The Claude/Codex session that worked this task, captured by bin/task on
   # create + on the move to `building` (the claim moment). Lets the operator see
@@ -2414,6 +2434,47 @@ class Task < ApplicationRecord
   # works before the reviewer souls are seeded.
   SOUL_SLUG = /\A[a-z]+(?:-[a-z]+)*\z/
 
+  # THE ROSTER — the souls that actually exist. SOUL_SLUG above answers "does this
+  # LOOK like a handle"; that is a different question from "is this SOMEBODY", and
+  # the gap between them was a live fail-open: `--actor stefon` (one f) matches the
+  # shape, so it stamped as the builder, satisfied every "the builder is known"
+  # check, and excluded NOBODY from the reviewer pool — the fail-closed refusal
+  # lifted by a value identifying no one. A blank builder fails closed and is safe;
+  # a typo'd one failed open and was not.
+  #
+  # The static list is the FLOOR, not the whole answer: .soul_roster unions the
+  # seeded Agent slugs over it, so a newly seeded soul validates without a code
+  # change. It is a floor rather than a plain DB read because ReviewerSelector
+  # DEGRADES to built-in defaults with no Agent rows at all (see its header), and a
+  # roster that empties with the DB would turn every soul into an unknown. Keep it
+  # in lockstep with db/seeds/02_agents.rb — test/models/agents_seed_test.rb asserts
+  # every seeded slug appears here.
+  SOUL_ROSTER = %w[alex avi carl shannon jasper steffon turf-monster mack mason].freeze
+
+  # Every soul slug this deployment recognises: the static floor plus whatever is
+  # seeded. Any lookup error (no table yet, DB down, mid-migration) degrades to the
+  # floor — which still names all nine real souls, so degrading never turns a real
+  # soul into an unknown NOR an unknown into a soul.
+  # Memoized per request/job (Current.soul_roster) — .soul? is asked once per
+  # candidate on every build claim and every reviewer selection, and an unmemoized
+  # roster re-SELECTs the agents table several times per save.
+  def self.soul_roster
+    Current.soul_roster ||= begin
+      (SOUL_ROSTER + Agent.pluck(:slug).map(&:to_s).select { |s| s.match?(SOUL_SLUG) }).uniq
+    rescue StandardError
+      SOUL_ROSTER.dup
+    end
+  end
+
+  # Is this string a soul that EXISTS — the right shape AND on the roster. The
+  # authorship guards (who built this, who may not review it) ask this; the
+  # session-vs-handle disambiguation in #disowned? still asks SOUL_SLUG alone,
+  # because there a typo'd handle is correctly "not a session id".
+  def self.soul?(slug)
+    value = slug.to_s
+    value.match?(SOUL_SLUG) && soul_roster.include?(value)
+  end
+
   # Stamp WHO built this task onto devops.built_by — the soul the reviewer pool
   # later excludes (ReviewerSelector) so a soul never reviews their own work. The
   # value MUST be a soul SLUG to match the soul-keyed pool. Resolved by
@@ -2447,12 +2508,109 @@ class Task < ApplicationRecord
     # #enforce_build_claim_invariant.
     return unless metadata.is_a?(Hash) && metadata["devops"].is_a?(Hash)
 
-    soul = (builder_to_stamp if build_claim_save?) || prior_devops["built_by"].to_s.strip.presence
-    return if soul.nil? || metadata["devops"]["built_by"].to_s == soul
+    claim = build_claim_save?
+    named = (builder_to_stamp if claim)
+    soul = named || prior_devops["built_by"].to_s.strip.presence
+    authors, unattributed = builder_roll_call(claim, named, soul)
+
+    return if soul.nil? && authors.empty? && unattributed.nil?
+    return if metadata["devops"]["built_by"].to_s == soul.to_s &&
+              Array(metadata["devops"]["builders"]) == authors &&
+              metadata["devops"]["builders_unattributed"].to_s == unattributed.to_s
 
     merged = metadata.deep_dup
-    merged["devops"]["built_by"] = soul
+    merged["devops"]["built_by"] = soul if soul
+    if authors.any?
+      merged["devops"]["builders"] = authors
+    else
+      merged["devops"].delete("builders")
+    end
+    if unattributed
+      merged["devops"]["builders_unattributed"] = unattributed
+    else
+      merged["devops"].delete("builders_unattributed")
+    end
     self.metadata = merged
+  end
+
+  # THE AUTHOR SET, and whether it is COMPLETE. Returns [authors, unattributed].
+  #
+  # `built_by` holds ONE soul, but a task can have SEVERAL authors: a session limit
+  # kills a builder mid-work and another soul finishes the job. Rule 1 of
+  # #builder_to_stamp RE-POINTS built_by on an explicit actor, so the handoff
+  # OVERWRITES the first author rather than remembering them — and the reviewer pool
+  # then excludes one of two. Measured 2026-08-30 on TWO tasks in one sitting:
+  # credential-prose-tells-truth reads built_by=avi and agent-flag-silently-drops
+  # reads built_by=steffon, yet ALEX wrote the tests on the first and the whole
+  # rework on the second. `bin/reviewer-select` duly seated Alex as the LIGHT on
+  # Alex's own diff (PR #1081); a hand-passed `--busy alex` was the only thing that
+  # stopped it, and a hand-pass is not a property.
+  #
+  # So `built_by` KEEPS its meaning (the current builder — every existing reader and
+  # the board card are untouched, and nothing needs migrating) and `builders`
+  # ACCUMULATES: append-only, deduped, seeded from whatever built_by already held so
+  # a task stamped before this change still names its author. It is SERVER-OWNED —
+  # deliberately absent from DEVOPS_KEYS, so `normalize_devops_metadata` drops any
+  # client attempt to write it and this callback rebuilds it from the prior record
+  # on every save. A client can no more shrink the author set than forge it.
+  #
+  # `unattributed` is the half that keeps this FAIL-CLOSED. Accumulating only helps
+  # when each claim names a soul; the handoff that names NOBODY (a bare `bin/task
+  # move <slug> building`, actor a session UUID) would otherwise leave a set of one
+  # that READS complete — the original bug, one layer along. When a claim from a
+  # DIFFERENT live instance resolves no soul while authors are already on record, we
+  # record WHICH session we could not name. Present ⇒ "someone else worked this and
+  # we cannot say who" ⇒ ReviewerSelector reports the builder UNKNOWN and the CLI
+  # refuses. It clears when that same session finally identifies itself.
+  #
+  # Keyed on the live INSTANCE (claimed_session + claim_nonce, ClaimLease's identity)
+  # rather than on the claim save, because the statusline renews the lease every few
+  # seconds with no actor: treating a renewal as an anonymous handoff would refuse
+  # every task in the fleet, and a guard that cries wolf gets routed around.
+  def builder_roll_call(claim, named, soul)
+    # The STORED built_by joins the set too, and it has to be read separately from
+    # `soul`: on a claim that names a new soul, `soul` IS that new soul, so seeding
+    # from it alone would drop the author already on record — the very overwrite this
+    # exists to prevent, and the only thing a task stamped before `builders` existed
+    # has to give.
+    authors = (Array(prior_devops["builders"]) + [prior_devops["built_by"]])
+              .map { |s| s.to_s.strip }.select { |s| self.class.soul?(s) }.uniq
+    authors |= [soul] if soul && self.class.soul?(soul)
+    unattributed = prior_devops["builders_unattributed"].to_s.strip.presence
+
+    if claim
+      if named
+        authors |= [named]
+        # The session we could not name has now named itself — the gap it opened is
+        # closed. ONLY that session closes it: a THIRD soul claiming by name says
+        # nothing about who the second one was, and clearing on any named claim
+        # would hand the fail-open straight back.
+        unattributed = nil if unattributed == claiming_party_id
+      elsif authors.any? && claim_party_changed?
+        unattributed = claiming_party_id
+      end
+    end
+
+    [authors, unattributed]
+  end
+
+  # The party holding the claim — the agent SESSION (ClaimLease's `claimed_session`).
+  # Not the session+nonce pair: the nonce distinguishes two PROCESSES of one session
+  # (the operator's terminal-A/terminal-B case), which is the same party working, so
+  # keying on it would refuse to clear a gap the same soul had just closed from a
+  # restarted terminal. "unknown" when the claim names no session, so an
+  # unattributed handoff is still recorded (and still clearable) for want of an id.
+  def claiming_party_id
+    devops = metadata.is_a?(Hash) ? (metadata["devops"] || {}) : {}
+    devops["claimed_session"].to_s.strip.presence || "unknown"
+  end
+
+  # True when a DIFFERENT party is claiming than the one on record — a handoff, not
+  # a heartbeat. claim_expires_at moves on every statusline renewal by design and
+  # claim_nonce moves on every new process, so neither can mark a change of hands.
+  def claim_party_changed?
+    current = metadata.is_a?(Hash) ? (metadata["devops"] || {}) : {}
+    current["claimed_session"].to_s != prior_devops["claimed_session"].to_s
   end
 
   # True when THIS save is a build claim: the task lands (or sits) on `building`
@@ -2497,16 +2655,21 @@ class Task < ApplicationRecord
   # persona and agent_slug) — the builder is then genuinely UNKNOWN, and
   # ReviewerSelector reports it as such so callers can fail closed rather than
   # read an empty exclusion list as "nobody to exclude".
+  # Every rule below tests .soul? — the ROSTER, not just SOUL_SLUG's shape. A
+  # typo'd `--actor stefon` is not a soul who could have built anything, and
+  # stamping it named a builder that excluded nobody while reading as known. It now
+  # falls through to the later rules, and if none resolve the builder stays blank —
+  # UNKNOWN, which refuses. An unrecognised soul must never do better than silence.
   def builder_to_stamp
     actor = Current.task_event_actor.presence
-    return actor if actor&.match?(SOUL_SLUG)
+    return actor if actor && self.class.soul?(actor)
     # Rule 2 consults the STORED builder as well as the incoming one: on a
     # wholesale devops replace the incoming built_by is blank, and reading only
     # that would let the persona/assignee default re-point a builder already on
     # record. Only an explicit soul actor (rule 1) ever re-points.
     return nil if devops["built_by"].presence || prior_devops["built_by"].presence
 
-    [devops["persona"].to_s, agent_slug.to_s].find { |slug| slug.match?(SOUL_SLUG) }
+    [devops["persona"].to_s, agent_slug.to_s].find { |slug| self.class.soul?(slug) }
   end
 
   # `set_initial_position` (the `before_create` genesis seed above) now comes from

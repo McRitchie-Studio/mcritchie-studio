@@ -339,4 +339,46 @@ class TaskReviewClaimCrewSeatTest < ActiveSupport::TestCase
     end
     refute task.reload.review_in_progress?
   end
+
+  # --- the backstop reads the whole AUTHOR SET (reviewer-select-seats-authors) ---
+
+  test "a CO-author cannot claim the review either" do
+    # The second line behind reviewer-select inherited its single-slug blind spot:
+    # built_by names the CURRENT builder, so on a handed-off task the FIRST author
+    # walked straight through. Measured 2026-08-30 on agent-flag-silently-drops
+    # (built_by=steffon, every test on the diff written by ALEX).
+    task = Task.create!(title: "Co Author Claim Probe", stage: "submitted",
+                        metadata: { "devops" => { "built_by" => "steffon",
+                                                  "builders" => %w[steffon alex] } })
+
+    outcome = TaskReviewClaim.acquire(task_slug: task.slug, reviewer: "alex",
+                                      session: "s1d0f2a3-4b5c-4d6e-8f90-a1b2c3d4e5f6", nonce: "inst-A")
+
+    refute outcome.acquired, "a co-author must not take the review of their own diff"
+    assert_equal :self_review, outcome.disposition
+  end
+
+  test "the current builder is still refused" do
+    task = Task.create!(title: "Builder Claim Probe", stage: "submitted",
+                        metadata: { "devops" => { "built_by" => "steffon",
+                                                  "builders" => %w[steffon alex] } })
+
+    outcome = TaskReviewClaim.acquire(task_slug: task.slug, reviewer: "steffon",
+                                      session: "s1d0f2a3-4b5c-4d6e-8f90-a1b2c3d4e5f6", nonce: "inst-A")
+
+    refute outcome.acquired
+    assert_equal :self_review, outcome.disposition
+  end
+
+  test "a soul who authored nothing still claims the review" do
+    # The guard must not refuse the ordinary case, or the review lane wedges.
+    task = Task.create!(title: "Clean Reviewer Claim Probe", stage: "submitted",
+                        metadata: { "devops" => { "built_by" => "steffon",
+                                                  "builders" => %w[steffon alex] } })
+
+    outcome = TaskReviewClaim.acquire(task_slug: task.slug, reviewer: "jasper",
+                                      session: "s1d0f2a3-4b5c-4d6e-8f90-a1b2c3d4e5f6", nonce: "inst-A")
+
+    assert outcome.acquired, "jasper wrote none of this diff"
+  end
 end

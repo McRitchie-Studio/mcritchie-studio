@@ -142,7 +142,7 @@ class ReviewerSelectCliTest < Minitest::Test
     out, code = select("shape" => "ui-only", "built_by" => "shannon")
     assert_equal 0, code, out
     assert_match(/excluded:\s+avi/, out, "the QA owner still leads the excluded line")
-    assert_match(/shannon \(builder/, out, "the specialist builder is named on the excluded line")
+    assert_match(/shannon \(author/, out, "the specialist author is named on the excluded line")
   end
 
   def test_builder_flag_overrides_the_recorded_builder
@@ -406,5 +406,120 @@ class ReviewerSelectCliTest < Minitest::Test
 
     assert_equal 0, status.exitstatus, out
     refute_includes err, "busy-auto: could not read", "a genuinely idle bench raises no alarm"
+  end
+
+  # --- THE AUTHOR SET, end to end through the CLI ------------------------------
+  # (reviewer-select-seats-authors) devops.built_by holds ONE soul; a task can have
+  # SEVERAL. On 2026-08-30 this very command seated ALEX as the light on a diff Alex
+  # had written every test on, because built_by said "steffon" (PR #1081). The CLI
+  # is where a human is present to choose, so it FAILS CLOSED where the in-app
+  # recorder must keep degrading.
+
+  def test_every_author_on_the_task_is_excluded_from_the_light
+    out, code = select({ "shape" => "backend", "built_by" => "steffon",
+                         "builders" => %w[steffon alex] }, "--json")
+    assert_equal 0, code, out
+
+    decision = JSON.parse(out.lines.reverse.find { |l| l.strip.start_with?("{") })
+    assert_equal %w[steffon alex], decision["builders"]
+    refute_includes decision["candidates"], "alex", "the co-author is out of the light pool"
+    refute_includes decision["candidates"], "steffon"
+    refute_includes decision["reviewers"].map { |r| r["slug"] }, "alex",
+                    "THE LIVE FAILURE: alex took this seat on his own diff"
+  end
+
+  def test_human_output_names_every_author_not_just_built_by
+    out, code = select("shape" => "backend", "built_by" => "steffon", "builders" => %w[steffon alex])
+    assert_equal 0, code, out
+    assert_match(/steffon \(author/, out)
+    assert_match(/alex \(author/, out, "the co-author must appear on the excluded line too")
+  end
+
+  def test_an_incomplete_author_set_REFUSES
+    # A claim that named nobody while another author was on record: the set READS
+    # complete (one soul, present) and is not. Exit 2, and nothing is recorded.
+    out, code = select_verbose({ "shape" => "backend", "built_by" => "steffon",
+                                 "builders" => %w[steffon],
+                                 "builders_unattributed" => "sess-alex-0001" }, "--no-record")
+    assert_equal 2, code, out
+    assert_match(/REFUSED/, out)
+    assert_match(/INCOMPLETE/, out, "the refusal must say WHY one name is not enough")
+    assert_match(/sess-alex-0001/, out, "and name the session it could not attribute")
+    refute_match(/^PRIMARY/, out, "a blind pair must never be printed")
+  end
+
+  def test_naming_every_author_lifts_the_refusal
+    # The escape hatch, stated as a fact rather than smuggled through --busy (which
+    # is what saved the live review, and says the wrong thing).
+    out, code = select({ "shape" => "backend", "built_by" => "steffon",
+                         "builders" => %w[steffon],
+                         "builders_unattributed" => "sess-alex-0001" },
+                       "--builder steffon,alex --json")
+    assert_equal 0, code, out
+
+    decision = JSON.parse(out.lines.reverse.find { |l| l.strip.start_with?("{") })
+    assert_equal %w[steffon alex], decision["builders"]
+    refute_includes decision["candidates"], "alex"
+    refute_includes decision["candidates"], "steffon"
+  end
+
+  def test_a_kept_author_REFUSES_rather_than_taking_the_seat
+    # The pool yields rather than starve, so the recorder always returns a pair. Here
+    # that residue is a soul about to review their own diff: with carl the qa_owner
+    # he yields the primary seat, so BOTH seats come from a light pool of four, and
+    # three authors cannot all be dropped.
+    out, code = select_verbose({ "shape" => "backend", "built_by" => "shannon",
+                                 "builders" => %w[shannon jasper steffon alex] },
+                               "--qa-owner carl --no-record")
+    assert_equal 2, code, out
+    assert_match(/AN AUTHOR WOULD BE SEATED/, out)
+    refute_match(/^PRIMARY/, out, "no pair is printed when one seat would be an author")
+  end
+
+  # --- an unrecognised soul cannot lift the refusal ----------------------------
+
+  def test_a_typod_builder_flag_REFUSES
+    # `--builder stefon` (one f) matched the SOUL_SLUG shape, so it was a KNOWN
+    # builder that excluded NOBODY — the fail-closed refusal lifted by a value
+    # identifying no one.
+    out, code = select_verbose({ "shape" => "backend" }, "--builder stefon --no-record")
+    assert_equal 2, code, out
+    assert_match(/REFUSED/, out)
+    refute_match(/^PRIMARY/, out)
+  end
+
+  def test_a_PARTIAL_typo_in_the_builder_list_REFUSES
+    # The sharp case: `steffon` resolves, `alexx` does not, so the set is non-empty
+    # and the authors read as KNOWN — while alex, the soul the caller meant to keep
+    # out, never registered. Honoring the half we understood is criterion 2's
+    # fail-open wearing criterion 1's clothes.
+    out, code = select_verbose({ "shape" => "backend" }, "--builder steffon,alexx --no-record")
+    assert_equal 2, code, out
+    assert_match(/AN AUTHOR NAMED NOBODY/, out)
+    assert_match(/alexx/, out, "the refusal must name the entry that resolved to nobody")
+    refute_match(/^PRIMARY/, out, "no pair is printed on a half-understood answer")
+  end
+
+  def test_a_fully_resolved_builder_list_still_selects
+    out, code = select({ "shape" => "backend" }, "--builder steffon,alex --json")
+    assert_equal 0, code, out
+    decision = JSON.parse(out.lines.reverse.find { |l| l.strip.start_with?("{") })
+    assert_empty decision["builder_override_unresolved"]
+    assert_equal %w[steffon alex], decision["builders"]
+  end
+
+  def test_a_typod_built_by_on_the_record_REFUSES
+    out, code = select_verbose({ "shape" => "backend", "built_by" => "shanon" }, "--no-record")
+    assert_equal 2, code, out
+    assert_match(/REFUSED/, out)
+  end
+
+  def test_a_real_soul_still_selects
+    # The roster narrows nothing real — the guard would be useless if it refused the
+    # ordinary case, because it would simply get routed around.
+    out, code = select({ "shape" => "backend", "built_by" => "shannon" }, "--json")
+    assert_equal 0, code, out
+    decision = JSON.parse(out.lines.reverse.find { |l| l.strip.start_with?("{") })
+    assert_equal "shannon", decision["builder"]
   end
 end
