@@ -133,6 +133,46 @@ class GhAppGitCredentialTest < Minitest::Test
     assert_includes err, "token mint failed"
   end
 
+
+  # ── THE REFUSAL MUST NAME THE DOOR ──────────────────────────────────────────
+  #
+  # MEASURED 2026-08-30. This message used to end "...needs
+  # OP_ADMIN_SERVICE_ACCOUNT_TOKEN, which an ordinary agent shell does not carry,
+  # by design." Every word true, and it reads as a WALL. An agent hit that line,
+  # concluded the ship lane was not self-service, and put a hand-mint chore on the
+  # operator while a production deploy waited — the token had been installed for
+  # two days, and one `source` fixed it.
+  #
+  # As with the Ruby side, THE ASSERTION THAT MATTERS IS THE DIFFERENCE: a
+  # single-branch message satisfies any test that just greps for the token name.
+  def test_a_provisioned_ship_lane_is_told_which_line_to_run
+    Dir.mktmpdir do |home|
+      File.write(File.join(home, ".zprofile.admin"), "# token\n")
+      err = deployer_failure(home)
+
+      assert_includes err, "source ~/.zprofile.admin", "name the command, not the obstacle"
+      refute_includes err, "setup-1pass-token", "installing is the wrong errand here"
+    end
+  end
+
+  def test_an_unprovisioned_ship_lane_is_told_to_install_once
+    Dir.mktmpdir do |home|
+      err = deployer_failure(home)
+
+      assert_includes err, "setup-1pass-token --admin", "with no file this IS the operator's step"
+      refute_includes err, "source ~/.zprofile.admin", "sourcing a missing file is a dead end"
+    end
+  end
+
+  # The AGENT lane must not be handed admin advice — its token is ambient, and a
+  # failure there is a different problem with a different fix.
+  def test_the_agent_lane_gets_no_admin_remedy
+    Dir.mktmpdir do |home|
+      refute_includes agent_failure(home), "zprofile.admin"
+    end
+  end
+
+
   private
 
   def run_credential(*args, env: {})
@@ -158,4 +198,22 @@ class GhAppGitCredentialTest < Minitest::Test
     FileUtils.chmod(0o755, path)
     path
   end
+
+  def deployer_failure(home) = credential_failure(home, "github.mcritchie-deployer")
+  def agent_failure(home) = credential_failure(home, "github.mcritchie-agent")
+
+  # Drive the failure path with an `op` that always fails, so the message under
+  # test is reached deterministically and no real 1Password call is made.
+  def credential_failure(home, item)
+    Dir.mktmpdir do |dir|
+      op = File.join(dir, "op")
+      File.write(op, "#!/bin/sh\nexit 1\n")
+      FileUtils.chmod(0o755, op)
+      env = { "HOME" => home, "GH_APP_ITEM" => item, "GH_APP_OP_BIN" => op,
+              "OP_ADMIN_SERVICE_ACCOUNT_TOKEN" => nil }
+      _out, err, _status = Open3.capture3(env, SCRIPT, "get", stdin_data: "protocol=https\nhost=github.com\n\n")
+      err
+    end
+  end
+
 end
