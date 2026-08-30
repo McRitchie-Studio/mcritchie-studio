@@ -621,12 +621,30 @@ See footgun 4 for the full set of fields that live outside `devops`.
 
 ## Footguns (verified, will bite you)
 
-1. **`update` overwrites `metadata.devops` wholesale.** If a `PATCH` includes a
-   `devops` object, it **replaces** the stored devops entirely — any field you
-   omit is lost. Re-send the *full* devops object on every update that touches
-   it. (A `PATCH` that omits `devops` leaves `metadata` untouched — use that to
-   move only the stage.) **`bin/task update` does this read-merge-write for you**,
-   so partial updates are safe through the CLI.
+1. **`update` MERGES `metadata.devops` key by key.** If a `PATCH` includes a
+   `devops` object, each name you send is authoritative and **every name you omit
+   is left unchanged**. To DELETE a key, post it with a blank value — deletion is
+   expressible, it just has to be said out loud. (A `PATCH` that omits `devops`
+   entirely leaves `metadata` untouched — use that to move only the stage.)
+   `bin/task update` also does a client-side read-merge-write, so partial updates
+   are safe through the CLI whichever board version you are pointed at.
+
+   **⚠ IT REPLACED THE HASH WHOLESALE UNTIL 2026-08-30**, and this footgun told
+   you so — correctly, and at the cost of a task. A one-key PATCH
+   (`{"devops": {"included_in_release": false}}`) took a **`reviewed`** task from
+   20 devops keys to 8 at HTTP 200 with no warning; `acceptance`,
+   `agent_context`, `checks_run` and `risk_tags` were unrecoverable, and the lost
+   acceptance criteria were the contract that review had been conducted against.
+   The board keeps no task-version history, so **prevention is the whole remedy**
+   — there is nothing to restore from. If you are reading a cached copy of this
+   page, or code whose comments still say "wholesale": the merge landed with
+   task `api-devops-patch-replaces`, and the board form has always merged.
+
+   **The merge is per KEY, not per list element.** A `devops` name you post
+   replaces that name's whole value — so sending `acceptance` replaces the whole
+   acceptance list, and sending one `pr_urls` entry replaces the whole map. Send
+   every element you want kept (`bin/task`'s list flags work the same way, which
+   is why `--checks` REPLACES your tier tags).
    **One exception, by design: cert evidence in `checks_run` is machine-owned.**
    The fingerprint-bound lines the cert tools stamp (`[full-suite@<fp>]`,
    `[rubocop@<fp>]`, `[fast-cert@<fp>]` — what `bin/dor-check` grades) survive a

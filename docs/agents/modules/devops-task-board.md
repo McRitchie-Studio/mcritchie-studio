@@ -807,10 +807,12 @@ progress. It never meant that.
 build-stage lease, re-asserted as an invariant on every save
 (`Task#enforce_build_claim_invariant`), so `submitted`/`blocked`/`reviewed`/… all
 drop the keys. The same invariant carries a live claim through a PATCH that omits
-it: the API replaces `metadata["devops"]` wholesale, and the board's own edit form
-permits no claim keys, so before this a board save silently destroyed a live
-claim — which then read as *unclaimed* and invited a second agent onto an occupied
-desk.
+it: the API used to replace `metadata["devops"]` wholesale (it merges since
+`api-devops-patch-replaces`), and the board's own edit form permits no claim keys,
+so before this a board save silently destroyed a live claim — which then read as
+*unclaimed* and invited a second agent onto an occupied desk. The invariant stays:
+it is what defends the claim against a caller that posts the keys BLANK, which the
+merge honors as a deliberate clear.
 
 So the board carries a **second, independent fact** beside it — the task's last
 **durable artifact**, derived (never declared) from evidence we already write:
