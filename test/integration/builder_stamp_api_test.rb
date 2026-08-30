@@ -65,4 +65,43 @@ class BuilderStampApiTest < ActionDispatch::IntegrationTest
 
     assert_equal "shannon", task.reload.metadata.dig("devops", "built_by")
   end
+
+  # ── THE RESUME PATH (rule 1) ────────────────────────────────────────────────
+  #
+  # The tests above cover rule 4: agent_slug, which only a CREATE populates.
+  # `bin/task begin <slug>` — the RESUME form — never creates, so agent_slug is
+  # nil and rule 4 cannot fire. Measured 2026-08-29: four tasks resumed that way
+  # reached review with built_by blank. begin now forwards `--agent <soul>` to its
+  # child claim as `--actor`, which is rule 1, and rule 1 does not care whether
+  # agent_slug was ever set. This is that path, through the API the CLI calls.
+  test "a soul actor records the builder when no agent is assigned" do
+    task = Task.create!(title: "Resumed Claim Builder Probe", stage: "designed",
+                        metadata: { "devops" => {} })
+
+    claim!(task, actor: "steffon")
+
+    assert_response :success
+    assert_equal "steffon", task.reload.metadata.dig("devops", "built_by"),
+                 "a resumed task has no agent_slug, so the ACTOR is the only thing " \
+                 "that can identify the builder — and reviewer-select refuses without one"
+  end
+
+  # THE CLAIM MUST BE A CLAIM. A resume of an ALREADY-building task renews the
+  # lease rather than changing stage, and begin patches devops directly on that
+  # branch instead of shelling out to `move`. Task#build_claim_save? treats a
+  # rewritten lease as a claim precisely so the stamp still runs there — without
+  # this, resuming your own in-flight task would silently leave built_by blank.
+  test "renewing a claim on an already-building task still records the builder" do
+    task = Task.create!(title: "Renewed Claim Builder Probe", stage: "building",
+                        metadata: { "devops" => { "claimed_session" => "old-session" } })
+
+    patch "/api/v1/tasks/#{task.slug}",
+          params: { devops: { "claimed_session" => "new-session" }, event: { actor: "jasper" } },
+          headers: { "Authorization" => "Bearer #{token}" }, as: :json
+
+    assert_response :success
+    assert_equal "jasper", task.reload.metadata.dig("devops", "built_by"),
+                 "a lease rewrite IS a build claim, so the stamp must run on it too"
+  end
+
 end
