@@ -74,7 +74,7 @@ clipboard.
 | 1. System tools | Homebrew packages (`ruby@3.3`, `postgresql@14`, `redis`, `mise`, `gh`, `heroku`, `jq`, etc.), starts Postgres + Redis services, verifies the Ruby socket extension |
 | 2. Languages | Node 22 + yarn (mise), Rust 1.89.0 (rustup), Solana CLI (Anza), Anchor 0.32.1 (cargo), local Solana devnet keypair |
 | 3. Shell config | `~/.zshrc` PATH lines (brew Ruby, mise, Solana, Cargo), `~/.zprofile` chmod 600 |
-| 4. Secrets | Verifies `OP_SERVICE_ACCOUNT_TOKEN`; pulls Heroku key from 1Password; restores each active Rails app's `.env`. **Bails here on the first pass if the OP token is missing.** |
+| 4. Secrets | Verifies `OP_SERVICE_ACCOUNT_TOKEN` **and that the agent vault is visible to it** (see [The Phase 4 vault guard](#the-phase-4-vault-guard)); pulls Heroku key from 1Password; restores each active Rails app's `.env`. **Bails here on the first pass if the OP token is missing.** |
 | 5. Sibling repos | `gh repo clone` for `studio-engine`, `solana-studio`, `turf-vault`, and any satellites (skips ones already present) |
 | 5b. Agent runtime | Runs `bin/agent-runtime install`, which installs **both** entrypoints to `$PROJECTS_DIR`: `AGENTS.md` (from `docs/agents/index.md`, read natively by Codex) and `CLAUDE.md` (from `docs/agents/claude.md`, the Claude Code adapter that `@import`s AGENTS.md). It mirrors the shared user-global agent skills `docs/agents/skills/*` → `~/.claude/skills/*` + `~/.codex/skills/*`, configures Codex marker hooks, and keeps `bin/install-agent-docs` as the lower-level copy/drift implementation. |
 | 5c. Secrets replay | Re-runs Phase 4 now that sibling repos exist, so newly cloned satellites get their `.env` before DB setup |
@@ -84,6 +84,43 @@ clipboard.
 | 7. Anchor + e2e | `yarn install` + `anchor build` for `turf-vault`; `npm install` + `npx playwright install chromium` for the Rails apps |
 | 8. Servers | **Always** kills + restarts each active Rails app on its registered port, then curls each to verify HTTP 2xx/3xx |
 | 9. Env snapshot | Writes `mcritchie-studio/tmp/env-snapshot-YYYY-MM-DD.json` (raw `.env` contents, gitignored, chmod 600) as a Heroku-independent secret-recovery fallback |
+
+## The Phase 4 vault guard
+
+Phase 4 asks one question before it spends a credential: **is the agent vault
+visible to this token?** The answer gates the whole rest of the run, so the
+guard is a named function — `agent_vault_visible` at the top of
+`bin/ecosystem-build` — rather than an inline pipeline, and
+`test/lib/ecosystem_build_vault_guard_test.rb` drives it against a synthetic
+`op`.
+
+Three rules, and each one is there because its absence cost something:
+
+- **The vault name comes from `MCR_OP_VAULT_AGENT`, defaulting to
+  `agents-studio`** — mirroring `bin/lib/op_vaults.rb`, which is the single
+  source. Phase 4 resolves it in exactly one place and passes it down.
+- **The name is matched EXACTLY.** The guard read `op vault list | grep -qw
+  agents` until 2026-08-29 and passed against `agents-studio`, because `-w`
+  treats a hyphen as a word boundary — so it reported the credential lane
+  healthy for as long as the vault it guarded had been gone. The account holds
+  four vaults whose names begin `agents` (`agents-studio`, `agents-admin`,
+  `agents-industries`, `agents-mcritchie-family`), so "contains the word
+  agents" was never the question.
+- **It fails closed.** Absent, empty, unparseable, or non-array output from `op`
+  is not evidence a vault is reachable, so every one of them is a refusal.
+
+Its three outcomes get three different messages, because two of them send the
+reader to different places:
+
+| Outcome | What it means | Where to look |
+|---------|---------------|---------------|
+| `✓ ... agent vault '<name>' visible` | matched by exact name in `op vault list` | — |
+| `✗ OP token set but can't see the '<name>' agent vault` | a listing was read; the vault is not in it | the token's vault grants, or set `MCR_OP_VAULT_AGENT` |
+| `✗ can't check the '<name>' agent vault — op and jq are not both installed` | the listing could never be read | Phase 1, which installs both |
+
+The last row is a separate message on purpose. Sending an operator to audit
+1Password grants when the real fault is an uninstalled binary is a confident,
+specific, wrong diagnosis, and the remedy it prescribes is pure waste.
 
 ## Reset semantics
 

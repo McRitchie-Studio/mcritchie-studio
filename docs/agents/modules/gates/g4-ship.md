@@ -143,6 +143,28 @@ so a diverged `main` still **fails closed**; and they are idempotent, so a re-ru
 of a partial ship no-ops. Nothing is mutated before ship authority at all now — a
 red gate or a declined confirm leaves the machine exactly as it found it.
 
+**A refused `main` push does NOT mean `main` diverged** — and until 2026-08-29
+the ship said it did. `push_frozen_main` ran `git push` without capturing its
+output and then asserted the only cause it knew: *"origin/main has diverged from
+the frozen SHA (someone pushed to main) — reconcile main, re-run `bin/release
+prepare` to re-freeze."* Measured twice that day on a real ship, the true cause
+was `remote: Invalid username or token`, three lines above in git's own output;
+`main` was strictly **behind** `release` and a dry-run fast-forward succeeded. A
+confident, specific, wrong diagnosis whose prescribed remedy — reconciling a
+branch that needed nothing and re-freezing a good freeze — was pure waste.
+
+The push output is now captured, echoed, and CLASSIFIED, the same way
+`advance_accepted` already classified a refused `accepted` push:
+
+| Outcome | What git said | What you do |
+|---|---|---|
+| **AUTH** | `Invalid username or token`, `Authentication failed`, `could not read Username`, `Permission denied (publickey)`, a 401/403 | `bin/gh-auth-refresh --identity deployer` — the ship pushes as the **deployer**, whose credential lives in `agents-admin` and needs `OP_ADMIN_SERVICE_ACCOUNT_TOKEN` (`~/.zprofile.admin`). Then re-run `bin/release ship`; it resumes. **Do NOT re-run `prepare`** — the freeze is still good. |
+| **DIVERGED** | `non-fast-forward`, `[rejected] … (fetch first)`, `Updates were rejected because…` | Reconcile `main`, re-run `bin/release prepare` to re-freeze, then re-run `bin/release ship`. |
+| **UNRECOGNISED** | anything else | Read git's output above before acting — **both** standard remedies may be the wrong errand. The ship says so rather than guessing. |
+
+`error: failed to push some refs to …` appears in **both** failures, so it is
+never the discriminator. Nothing forces in any case.
+
 **A dirty app primary no longer blocks a ship.** The preflight prints a NOTE plus
 a rescue (commit the stranded work to a labeled `rescue/<repo>-<timestamp>`
 branch — never `git stash`, never discard: it may be a live session's work) and
