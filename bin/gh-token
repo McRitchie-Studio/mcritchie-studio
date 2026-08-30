@@ -6,6 +6,7 @@
 #   token="$(bin/gh-token)"                  # the lane's identity (agent unless GH_APP_ITEM says otherwise)
 #   token="$(bin/gh-token --identity deployer)"   # the ship identity (pushes main, deploys)
 #   bin/gh-token --status                    # human-readable cache state; prints NO token
+#   bin/gh-token --reject "$token"           # retire a REJECTED session; prints nothing
 #
 # The identity comes from --identity, else GH_APP_ITEM, else `agent` (see LANE
 # below). To install the result into `gh`'s own keyring, use bin/gh-auth-refresh —
@@ -223,6 +224,42 @@ end
 
 # Mint into the INACTIVE slot and flip. The previous token stays intact and valid,
 # so an agent already using it is never interrupted.
+# Retire a session GitHub has REJECTED, and only that one.
+#
+# The caller is bin/gh-app-git-credential's `erase` branch: git hands back the
+# password it just failed with, which is the only evidence anyone gets that a
+# cached token has gone bad before its clock runs out.
+#
+# MATCHING ON THE TOKEN IS THE WHOLE DESIGN, for two independent reasons.
+#   1. The cache is SHARED. A sibling agent may already have hit the same
+#      rejection and minted a replacement into the other slot; a blind purge of
+#      the identity would discard that fresh session and send every sibling back
+#      to 1Password, which is the cost this cache exists to avoid.
+#   2. It makes the retirement EXACTLY ONCE for free. Once the slot is gone, a
+#      second reject carrying the same token matches nothing — no counter, no
+#      retry budget, no state to get wrong.
+#
+# Silent and non-fatal by contract: this runs on a path git has already decided
+# has failed, and a bookkeeping error must not make that failure worse.
+def reject!(identity, token)
+  return if token.empty?
+
+  store = read_store
+  entry = store[identity]
+  return unless entry.is_a?(Hash)
+
+  doomed = %w[a b].select { |slot| entry[slot].is_a?(Hash) && entry[slot]["token"].to_s == token }
+  return if doomed.empty?
+
+  doomed.each { |slot| entry.delete(slot) }
+  # `active` names a slot. If the rejected one WAS active, the pointer now dangles;
+  # reads tolerate that (usable_token walks a/b and skips non-Hashes) but leaving it
+  # would be a lie about the cache's state, so drop it when its target is gone.
+  entry.delete("active") unless entry.key?(entry["active"].to_s)
+  store[identity] = entry
+  write_store(store)
+end
+
 def refresh(identity)
   token = mint(identity)
 
@@ -284,11 +321,13 @@ end
 
 identity = nil
 force = false
+reject = nil
 args = ARGV.dup
 while (arg = args.shift)
   case arg
   when "--identity" then identity = args.shift.to_s.strip
   when "--force" then force = true
+  when "--reject" then reject = args.shift.to_s.strip
   when "--status"
     # NOT `status and exit 0`: `status` returns nil, the `and` short-circuits, the
     # exit never runs, and execution falls through to the bare token print — which
@@ -305,6 +344,13 @@ while (arg = args.shift)
 end
 identity = resolve_identity(identity)
 die!("unknown identity #{identity.inspect} (expected: #{IDENTITIES.keys.join(', ')})") unless IDENTITIES.key?(identity)
+
+# A REJECTION IS A WRITE, NOT A READ: it never mints, never prints a token, and
+# always exits 0 so a credential helper's cleanup cannot fail a git operation.
+if reject
+  reject!(identity, reject)
+  exit 0
+end
 
 # `cacheable?` is checked BEFORE the read, not after: serving a token this script
 # will no longer write is exactly the stale-credential path the purge above exists
