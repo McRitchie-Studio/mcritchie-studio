@@ -93,7 +93,21 @@ frozen_size:
   # Measured alternative rejected: making the shell poison the default in run_cli
   # fails 167 of 299 runs — 134 of the escapes are sandboxed tmpdir `git` and 60
   # are `ruby`, and the per-case `sh` stubs it clobbers are correct as they are.
-  test/lib/release_cli_test.rb: 7465
+  #
+  # +133 (2026-08-29, ship-must-not-exit-zero): tests for push_frozen_main's push
+  # CLASSIFIER. bin/release.rb reported an AUTH failure as "origin/main has diverged
+  # (someone pushed to main)" and prescribed reconciling a branch that was strictly
+  # BEHIND release — a confident, specific, wrong diagnosis whose remedy is pure
+  # waste. It sent one session hunting a phantom push twice in a day.
+  #
+  # THEY BELONG IN THIS FILE. They drive the classifier through run_cli, this file's
+  # PRIVATE harness — the interleaving the archived split-release-cli-tests task
+  # measured and deferred. A separate file would re-implement that harness and then
+  # be testing its own copy. The genuinely separable half DID go to a new file,
+  # test/lib/cert_failure_exit_contract_test.rb, which drives the real binaries
+  # UNPIPED — because `bin/ship … | tail` reports TAIL's exit status, which is how
+  # the "ship exits 0 on failure" claim was misread in the first place.
+  test/lib/release_cli_test.rb: 7598
   test/lib/dor_check_test.rb: 2745
   test/lib/task_cli_test.rb: 2728
   test/models/task_test.rb: 2266
