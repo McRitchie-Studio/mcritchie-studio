@@ -301,7 +301,11 @@ class EcosystemBuildVaultGuardTest < Minitest::Test
   # jq is the tool under test's collaborator, not something to fake — the guard's
   # correctness IS its jq filter. Symlink the real one in.
   def link_real(dir, name)
-    real = `command -v #{name}`.strip
+    # `sh -c`, NOT a bare backtick. `command` is a shell BUILTIN, and Ruby execs
+    # directly when a backtick string carries no shell metacharacters — so
+    # `command -v jq` raises Errno::ENOENT looking for a binary named `command`.
+    # It survived locally by accident of environment and errored 14 tests in CI.
+    real = `sh -c 'command -v #{name}'`.strip
     skip "#{name} is not installed; it is a declared brew dep of this ecosystem" if real.empty?
     FileUtils.ln_s(real, File.join(dir, name))
   end
