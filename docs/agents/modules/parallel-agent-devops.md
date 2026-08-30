@@ -198,8 +198,11 @@ honest, and **none of them needs a manual flag in the common case**:
   `--busy`, which is a habit rather than a property.
   **A handoff that names NOBODY is refused, not guessed.** An anonymous claim by a
   different session records `devops.builders_unattributed`, and the builder set
-  reads INCOMPLETE until a named claim clears it — because a set of one that is
-  silently missing an author is the original bug one layer along. Note it keys on
+  reads INCOMPLETE until **that same session** names itself — because a set of one
+  that is silently missing an author is the original bug one layer along. Only the
+  unnamed session closes its own gap: a THIRD soul claiming by name says nothing
+  about who the second one was, and clearing on any named claim would hand the
+  fail-open straight back. Note it keys on
   the claiming SESSION, not on the save: the statusline renews the lease every few
   seconds with no actor, and treating a renewal as a handoff would refuse every
   task in the fleet. A guard that cries wolf gets routed around.
