@@ -146,10 +146,112 @@ class OpVaultsTest < Minitest::Test
                  "the causes need opposite responses, one self-service and one the operator's"
   end
 
-  # The agent lane's diagnosis must not be dragged into the admin branch: its token
-  # is ambient, and a missing one there is a different (Phase 1) problem.
+  # The agent lane's diagnosis must not be dragged into the ADMIN branch — the two
+  # lanes have different token files and different install commands.
+  # DRIVE THE BRANCH. Called bare, this asserted against the VAULT-visibility
+  # message — the agent lane's token is set in the suite's own environment, so the
+  # token-absent branch was never reached and mutating the install command to the
+  # admin one survived. Both states are forced here instead.
   def test_the_agent_lane_is_not_given_admin_advice
-    refute_includes OpVaults.diagnose(:agent), "zprofile.admin"
+    ENV.delete("OP_SERVICE_ACCOUNT_TOKEN")
+    [true, false].each do |provisioned|
+      message = with_provisioned(provisioned) { OpVaults.diagnose(:agent) }
+
+      refute_includes message, "zprofile.admin",
+                      "provisioned=#{provisioned}: the agent lane has its own profile"
+      refute_includes message, "--admin",
+                      "provisioned=#{provisioned}: --admin installs the ADMIN token; " \
+                      "handing it to an agent shell prescribes the wrong credential " \
+                      "and prompts the operator for one they need not supply"
+    end
+  end
+
+  # ── THE SAME DEFECT, ONE RUNG DOWN ──────────────────────────────────────────
+  #
+  # `diagnose` used to bail to the vault-visibility hint for the DEFAULT lane, so
+  # an agent shell with no OP_SERVICE_ACCOUNT_TOKEN was told to "check
+  # `op vault list`" — a command that authenticates with the very token it is
+  # missing, and therefore cannot work. That is the bug class this file's other
+  # tests exist for, sitting unnoticed in the same method.
+  #
+  # It also made the agent lane's `profile:` key DEAD DATA: a reviewer mutated it
+  # to garbage on 2026-08-30 and killed zero tests across all three suites. These
+  # tests are what make that key load-bearing.
+
+  def test_a_provisioned_agent_shell_is_told_to_source_its_profile
+    ENV.delete("OP_SERVICE_ACCOUNT_TOKEN")
+    message = with_provisioned(true) { OpVaults.diagnose(:agent) }
+
+    assert_includes message, "source ~/.zprofile",
+                    "an agent shell that never sourced its profile has a self-service fix"
+    refute_includes message, "op vault list",
+                    "naming a command that needs the MISSING token is the whole defect: " \
+                    "`op` authenticates with OP_SERVICE_ACCOUNT_TOKEN, so it cannot run here"
+  end
+
+  def test_an_unprovisioned_agent_machine_is_told_to_install_the_agent_token
+    ENV.delete("OP_SERVICE_ACCOUNT_TOKEN")
+    message = with_provisioned(false) { OpVaults.diagnose(:agent) }
+
+    assert_includes message, "bin/setup-1pass-token",
+                    "with no ~/.zprofile there is genuinely nothing to source"
+    refute_includes message, "source ~/.zprofile",
+                    "sourcing a file that does not exist is a dead end"
+  end
+
+  # THE PROPERTY, per lane: the two machine states must never give the SAME advice,
+  # because they need opposite responses. Asserted for BOTH lanes — the deployer
+  # version of this passed for months while the agent lane had no branch at all.
+  def test_both_lanes_distinguish_the_two_machine_states
+    %i[agent deployer].each do |lane|
+      ENV.delete(OpVaults.token_env(lane))
+      provisioned = with_provisioned(true)  { OpVaults.diagnose(lane) }
+      fresh       = with_provisioned(false) { OpVaults.diagnose(lane) }
+
+      refute_equal provisioned, fresh,
+                   "the #{lane} lane gives one message for both machine states"
+    end
+  end
+
+  # A LANE'S PROFILE PATH IS LOAD-BEARING, not decoration. If `profile:` is ever
+  # dropped or mistyped, the remedy stops naming the file the operator must source
+  # and this fails. Mutating either LANES entry breaks it.
+  def test_each_lane_names_its_own_profile_in_its_remedy
+    { agent: "~/.zprofile", deployer: "~/.zprofile.admin" }.each do |lane, path|
+      ENV.delete(OpVaults.token_env(lane))
+      message = with_provisioned(true) { OpVaults.diagnose(lane) }
+
+      assert_includes message, "source #{path}",
+                      "the #{lane} remedy must name the file that carries ITS token"
+    end
+  end
+
+  # ── THE REMEDY MUST BE PASTEABLE, NOT MERELY PRESENT ────────────────────────
+  #
+  # Every branch that offers a command block indents it and puts it LAST, so the
+  # operator can select the tail of the message and run it. `bin/gh-token` used to
+  # append "(is `op` signed in?)" AFTER this, landing it on the same line as
+  # `bin/setup-1pass-token --admin` — a shell syntax error when pasted. Asserting
+  # only that the command "is included" passes on that contaminated line, which is
+  # how it survived.
+  def test_a_remedy_block_is_the_last_thing_in_the_message
+    %i[agent deployer].each do |lane|
+      ENV.delete(OpVaults.token_env(lane))
+      [true, false].each do |provisioned|
+        message = with_provisioned(provisioned) { OpVaults.diagnose(lane) }
+        indented = message.lines.select { |l| l.start_with?("    ") }
+
+        refute_empty indented, "#{lane}/#{provisioned}: the remedy must be an indented command"
+        assert_equal indented.last.rstrip, message.lines.last.rstrip,
+                     "#{lane}/#{provisioned}: the message must END on the command — " \
+                     "anything appended lands on that line and breaks the paste"
+        indented.each do |line|
+          refute_match(/[()]/, line,
+                       "#{lane}/#{provisioned}: #{line.strip.inspect} carries prose " \
+                       "punctuation; pasting it is a shell syntax error")
+        end
+      end
+    end
   end
 
   # DETERMINISTIC ON BOTH KINDS OF MACHINE. An earlier version of this test read

@@ -250,7 +250,16 @@ def excluded_line(decision)
   builder = decision["builder"].to_s
   # A known-but-nameless builder is the `--builder none` assertion: nobody is
   # excluded, and the audit line says WHY that is a fact rather than a blank.
-  parts << "(no builder — ASSERTED by the caller: no soul built this task)" if builder.empty? && decision["builder_known"]
+  #
+  # KEY ON THE ASSERTION, NOT ON A PROXY FOR IT. This read `builder.empty? &&
+  # builder_known`, which was a sound restatement of "the caller said none" only
+  # while builder_known? was defined over the SINGULAR builder. Once it was
+  # redefined over the author SET, the two stopped agreeing: `builders` also unions
+  # devops.builders, which the singular #builder never reads. A task whose authors
+  # come from that key alone then printed BOTH "no builder — ASSERTED by the
+  # caller" and the author rows below it — self-contradicting, and claiming the
+  # operator stated a fact they never stated.
+  parts << "(no builder — ASSERTED by the caller: no soul built this task)" if decision["builder_asserted_none"]
   # EVERY author, not just the current builder. A task can have several (a session
   # limit kills a builder mid-work and another soul finishes it), and printing only
   # devops.built_by is how an author read as a free reviewer.
@@ -400,9 +409,19 @@ unless decision["builder_known"]
     warn!("  the record it was meant to correct. Check the spelling against:")
     warn!("    #{ReviewerSelector::POOL.union([ReviewerSelector::DEFAULT_QA_OWNER]).sort.join(', ')}")
   elsif (session = decision["builders_unattributed"].to_s.strip).empty?
-    warn!("  devops.built_by is blank and no `→ building` event names a soul, so the")
-    warn!("  no-self-review exclusion has nothing to exclude. Selecting anyway could")
-    warn!("  hand the PR to the soul who wrote it — refusing instead.")
+    if (stray = Array(decision["record_unresolved"])).any?
+      # NAMED, BUT NOT A SOUL. Saying "blank" here is false, and the durable fix
+      # below would overwrite the typo rather than correct it — so the reader is
+      # told what the record actually holds.
+      warn!("  The record NAMES #{stray.join(", ")}, which matches no soul on the roster,")
+      warn!("  so the author set is empty even though devops.built_by is NOT blank. The")
+      warn!("  exclusion has nothing to exclude. Check the spelling against:")
+      warn!("    #{ReviewerSelector::POOL.union([ReviewerSelector::DEFAULT_QA_OWNER]).sort.join(", ")}")
+    else
+      warn!("  devops.built_by is blank and no `→ building` event names a soul, so the")
+      warn!("  no-self-review exclusion has nothing to exclude. Selecting anyway could")
+      warn!("  hand the PR to the soul who wrote it — refusing instead.")
+    end
   else
     # The INCOMPLETE set. Someone else worked this task and the record cannot say
     # who — so the authors on record are a subset, and a pick made over that subset
@@ -434,9 +453,27 @@ if (kept = Array(decision["kept_builders"])).any?
   warn!("  leave too few light candidates, so the pool KEPT them eligible — and the")
   warn!("  light seat may land on a soul who wrote the diff. Refusing instead.")
   warn!("")
-  warn!("  Resolve it by naming a reviewer yourself, or widen the pool:")
-  warn!("    bin/reviewer-select #{named} --qa-owner <other-soul>   # free the QA-owner seat")
-  warn!("  Then hand the light seat to a soul who is not on the author list.")
+  # NO FLAG WIDENS THIS, and the one printed here made it WORSE. `--qa-owner` was
+  # offered as "free the QA-owner seat", but there is no seat to free: the light
+  # pool is POOL minus the standing primary, and the default QA owner is not in
+  # POOL at all — so the pool is ALREADY maximal. Every override holds or shrinks
+  # it. Measured on a four-author fixture, `--qa-owner carl` costs the
+  # standing-primary seat, raising the minimum the pool must keep from 1 to 2 and
+  # taking kept authors from 1 to 2 — strictly worse than doing nothing. A remedy
+  # that moves the reader backwards is worse than none, because the reader who
+  # cannot act on a refusal routes around it, and the route around here is
+  # `--builder none`, which lifts the guard entirely.
+  warn!("  NO FLAG WIDENS THIS. The light pool is already at its maximum:")
+  warn!("    #{(ReviewerSelector::POOL - [ReviewerSelector::STANDING_PRIMARY]).join(", ")}")
+  warn!("  --qa-owner cannot enlarge it (#{ReviewerSelector::DEFAULT_QA_OWNER} is not in the pool, so no")
+  warn!("  seat is held); naming any light REMOVES them, and naming #{ReviewerSelector::STANDING_PRIMARY} costs the")
+  warn!("  standing-primary seat and raises the minimum the pool must keep.")
+  warn!("")
+  warn!("  If the author list OVER-NAMES (a stale stamp, a soul who only rebased),")
+  warn!("  state the true set — this is the only lever that clears the refusal:")
+  warn!("    bin/reviewer-select #{named} --builder <soul>[,<soul>]   # who ACTUALLY wrote it")
+  warn!("  If it is correct, every eligible light authored this diff. There is no")
+  warn!("  eligible light: hand the seat to a soul outside the pool, or split the PR.")
   exit 2
 end
 

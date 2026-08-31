@@ -752,4 +752,119 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
     assert_equal true, decision["builder_known"], "the roster unions the seeded slugs over the floor"
     assert_equal "nova", decision["builder"]
   end
+
+  # ── A REMEDY FLAG MUST WIDEN WHAT IT CLAIMS TO WIDEN ────────────────────────
+  #
+  # The SEATED refusal used to print `--qa-owner <other-soul>  # free the QA-owner
+  # seat` as its remedy. There is no seat to free: the light pool is POOL minus the
+  # standing primary, and DEFAULT_QA_OWNER is not in POOL at all, so the pool is
+  # ALREADY maximal under the default. Every override holds or SHRINKS it.
+  #
+  # WHY THE ARITHMETIC IS THE TEST. A test that greps the refusal for "--qa-owner"
+  # passes on the wrong remedy — which is exactly how it survived its own suite.
+  # This asserts the PROPERTY the remedy claimed: that some value of the flag leaves
+  # fewer authors seated. Nothing does, which is why the flag is no longer offered.
+  test "no --qa-owner value reduces the authors left eligible" do
+    authors = ReviewerSelector::POOL - [ReviewerSelector::STANDING_PRIMARY]
+    task = task_for(shape: "backend")
+    task.metadata["devops"]["built_by"] = authors.first
+    task.metadata["devops"]["builders"] = authors
+
+    baseline = ReviewerSelector.new(task).decision["kept_builders"].size
+    assert baseline.positive?, "fixture must actually reach the SEATED refusal"
+
+    candidates = ReviewerSelector::POOL + [ReviewerSelector::DEFAULT_QA_OWNER, "mack", "nobody-at-all"]
+    candidates.each do |qa|
+      kept = ReviewerSelector.new(task, qa_owner: qa).decision["kept_builders"].size
+
+      assert_operator kept, :>=, baseline,
+                      "--qa-owner #{qa} was offered as the way to widen the pool, but it " \
+                      "leaves #{kept} author(s) seated against #{baseline} by default"
+    end
+  end
+
+  # The one lever that DOES clear it, so the refusal has a real remedy to name.
+  test "naming a smaller true author set clears the seated refusal" do
+    authors = ReviewerSelector::POOL - [ReviewerSelector::STANDING_PRIMARY]
+    task = task_for(shape: "backend")
+    task.metadata["devops"]["built_by"] = authors.first
+    task.metadata["devops"]["builders"] = authors
+
+    assert_predicate ReviewerSelector.new(task).decision["kept_builders"], :any?
+    narrowed = ReviewerSelector.new(task, builder: authors.first).decision
+
+    assert_empty narrowed["kept_builders"],
+                 "--builder is the remedy the refusal names; it must actually work"
+  end
+
+  # ── A RECORD THAT NAMES A NON-SOUL IS NOT A BLANK RECORD ────────────────────
+  #
+  # These are different states needing opposite fixes — one wants a stamp, the
+  # other wants a spelling correction, and the stamping command would overwrite the
+  # evidence. `record_unresolved` is what lets the refusal tell them apart.
+  test "a typo'd built_by is reported as named, not as blank" do
+    task = task_for(shape: "backend")
+    task.metadata["devops"]["built_by"] = "shanon"
+    decision = ReviewerSelector.new(task).decision
+
+    refute decision["builder_known"], "a non-roster name settles nothing"
+    assert_equal ["shanon"], decision["record_unresolved"],
+                 "the refusal cannot quote the typo back unless the decision carries it"
+  end
+
+  test "a genuinely blank record names nobody as unresolved" do
+    task = task_for(shape: "backend")
+    task.metadata["devops"]["built_by"] = ""
+    decision = ReviewerSelector.new(task).decision
+
+    refute decision["builder_known"]
+    assert_empty decision["record_unresolved"],
+                 "a blank field names no one — saying otherwise would invent a typo"
+  end
+
+  # THE CONTROL. Without this, dropping the roster filter from #record_unresolved
+  # survives the two tests above: a blank built_by is filtered by `reject(&:empty?)`
+  # and a typo'd one is unresolved either way. A VALID soul is the only input that
+  # tells the filter is doing anything — and reporting a real author as "unresolved"
+  # would put a working stamp into a refusal that tells the reader to correct it.
+  test "a valid author is never reported as an unresolved name" do
+    task = task_for(shape: "backend")
+    task.metadata["devops"]["built_by"] = "shannon"
+    decision = ReviewerSelector.new(task).decision
+
+    assert decision["builder_known"], "a roster soul settles the question"
+    assert_empty decision["record_unresolved"],
+                 "shannon is on the roster — calling the name unresolved would send the " \
+                 "reader to fix a spelling that is already correct"
+  end
+
+  # ── THE AUDIT LINE MAY ONLY REPORT AN ASSERTION THAT WAS MADE ───────────────
+  #
+  # `builder_asserted_none` is the fact itself. The CLI used to infer it from
+  # `builder.empty? && builder_known`, a proxy that stopped agreeing once
+  # builder_known? was redefined over the author SET: the singular #builder never
+  # reads devops.builders, so a task whose authors come from that key alone looked
+  # like an asserted `none` while also listing its authors.
+  test "builder_asserted_none is true only when the caller said none" do
+    task = task_for(shape: "backend")
+    task.metadata["devops"]["built_by"] = ""
+    task.metadata["devops"]["builders"] = ["steffon"]
+
+    decision = ReviewerSelector.new(task).decision
+
+    assert decision["builder_known"], "the set names an author, so the question is settled"
+    assert_equal "", decision["builder"].to_s,
+                 "the SINGULAR builder is empty here — the proxy's first half holds"
+    refute decision["builder_asserted_none"],
+           "no caller asserted anything; the proxy would have claimed they did"
+    assert_includes decision["builders"], "steffon"
+  end
+
+  test "builder_asserted_none is true when the caller does say none" do
+    task = task_for(shape: "backend")
+    decision = ReviewerSelector.new(task, builder: "none").decision
+
+    assert decision["builder_asserted_none"]
+    assert_empty decision["builders"]
+  end
 end

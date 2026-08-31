@@ -213,7 +213,13 @@ def mint(identity)
   app_id = read_secret(OpVaults.ref(meta[:item], "app-id", lane), lane).strip
   pem = read_secret(OpVaults.ref(meta[:item], meta[:pem], lane), lane)
   if app_id.empty? || pem.strip.empty?
-    die!("could not read the #{identity} App credentials from 1Password — #{OpVaults.diagnose(lane)} (is `op` signed in?)")
+    # The parenthetical goes BEFORE the diagnosis, never after. OpVaults.diagnose
+    # ends on an indented, copy-pasteable command; anything appended lands on that
+    # same line, so `bin/setup-1pass-token --admin (is `op` signed in?)` is what the
+    # operator would paste — a shell syntax error. The remedy must be the last
+    # thing on the last line.
+    die!("could not read the #{identity} App credentials from 1Password " \
+         "(is `op` signed in?) — #{OpVaults.diagnose(lane)}")
   end
 
   token = IO.popen({ "GH_APP_ID" => app_id, "GH_APP_PEM" => pem }, [MINT_BIN], &:read).to_s.strip

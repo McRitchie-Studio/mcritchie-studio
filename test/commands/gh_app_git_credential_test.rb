@@ -173,6 +173,32 @@ class GhAppGitCredentialTest < Minitest::Test
   end
 
 
+  # ── THE HEADER MUST DESCRIBE THE CODE UNDERNEATH IT ────────────────────────
+  #
+  # The header said "Only the `get` action is answered; store/erase are silent
+  # no-ops" — three lines above `case "$ACTION" in get|erase)`, and after `erase`
+  # had become the ONLY way a rejected token is ever retired. A reader who trusted
+  # it would conclude the 401 path self-heals by magic.
+  #
+  # ASSERTED AGAINST THE CODE, not against a fixed string. Pinning the sentence
+  # would just move the staleness into this file the next time an action is added;
+  # the property is that the two agree.
+  def test_the_header_names_exactly_the_actions_the_script_answers
+    source = File.read(SCRIPT)
+    header = source.lines.take_while { |l| l.start_with?("#") || l.strip.empty? }.join
+    answered = source[/^case "\$ACTION" in\n\s*([a-z|]+)\)/, 1].to_s.split("|")
+
+    assert_equal %w[get erase], answered, "guard the guard: the dispatch shape changed"
+
+    answered.each do |action|
+      assert_match(/`#{action}`/, header,
+                   "the header must name `#{action}` — it is answered, and a reader who " \
+                   "believes otherwise misreads the whole 401 retirement path")
+    end
+    refute_match(/store\/erase are silent no-ops|only the `get` action is answered/i, header,
+                 "erase is answered; saying otherwise is the stale claim this pins")
+  end
+
   private
 
   def run_credential(*args, env: {})
@@ -204,14 +230,30 @@ class GhAppGitCredentialTest < Minitest::Test
 
   # Drive the failure path with an `op` that always fails, so the message under
   # test is reached deterministically and no real 1Password call is made.
+  #
+  # PIN EVERY DECLARED SEAM, including GH_APP_TOKEN_CMD. This helper used to build
+  # its env by hand and leave that one unset, so the script invoked the REAL
+  # bin/gh-token for its shared-session read. These assertions passed only because
+  # TASK_USAGE_SANDBOX=1 (test/support/task_usage_sandbox.rb) aborts it — an
+  # INCIDENTAL seal, off in any shell without that variable, and one that would
+  # have let a cached token satisfy the read and skip the message under test
+  # entirely. Its sibling `run_credential` already routes through the seams; so
+  # does this now.
   def credential_failure(home, item)
     Dir.mktmpdir do |dir|
       op = File.join(dir, "op")
       File.write(op, "#!/bin/sh\nexit 1\n")
       FileUtils.chmod(0o755, op)
+      # No cached session and no minter: both legs must fail so the run reaches
+      # the credential-refusal message these tests read.
+      no_token = File.join(dir, "gh-token")
+      File.write(no_token, "#!/bin/sh\nexit 1\n")
+      FileUtils.chmod(0o755, no_token)
       env = { "HOME" => home, "GH_APP_ITEM" => item, "GH_APP_OP_BIN" => op,
+              "GH_APP_TOKEN_CMD" => no_token, "GH_APP_MINT_CMD" => no_token,
               "OP_ADMIN_SERVICE_ACCOUNT_TOKEN" => nil }
-      _out, err, _status = Open3.capture3(env, SCRIPT, "get", stdin_data: "protocol=https\nhost=github.com\n\n")
+      _out, err, _status = Open3.capture3(SessionEnv.neutralized(env), SCRIPT, "get",
+                                          stdin_data: "protocol=https\nhost=github.com\n\n")
       err
     end
   end
