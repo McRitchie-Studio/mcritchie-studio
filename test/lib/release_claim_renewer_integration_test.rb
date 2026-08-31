@@ -68,11 +68,15 @@ class ReleaseClaimRenewerIntegrationTest < Minitest::Test
   class StubBoard
     attr_reader :renews
 
-    def initialize(state:, work_remaining: false)
+    def initialize(state:, work_remaining: false, malformed: false)
       @server = TCPServer.new("127.0.0.1", 0)
       @renews = []
       @state = state
       @work_remaining = work_remaining
+      # OFF by default, deliberately: every other test in this file must keep serving
+      # the exact payload it served before, or this flag would quietly rewrite their
+      # premises instead of adding a case.
+      @malformed = malformed
       @lock = Mutex.new
       @thread = Thread.new { serve }
       @thread.abort_on_exception = false
@@ -85,6 +89,8 @@ class ReleaseClaimRenewerIntegrationTest < Minitest::Test
     def state = @lock.synchronize { @state }
 
     def work_remaining = @lock.synchronize { @work_remaining }
+
+    def malformed = @lock.synchronize { @malformed }
 
     # The DEPLOYER case: a shipped release that still has member flips left. Set this
     # and the renewer must keep going even though the state reads terminal.
@@ -140,6 +146,12 @@ class ReleaseClaimRenewerIntegrationTest < Minitest::Test
                 elsif request.include?("/conductor_claim/renew")
                   @lock.synchronize { @renews << (JSON.parse(body) rescue {}) }
                   { "data" => { "renewed" => true } }
+                elsif malformed
+                  # A 200 whose `data` is an ARRAY rather than a Hash — the realistic
+                  # mistake being an index payload served where a show payload was
+                  # meant. `parse_data` passes a non-Hash `data` straight through, so
+                  # this is what actually reaches `release_finished?`.
+                  { "data" => [{ "holder" => { "live" => true }, "release_state" => state }] }
                 else
                   # BOTH HALVES, as the real endpoint serves them. `release_state`
                   # alone is not "finished" — a deployer legitimately holds a claim
@@ -267,6 +279,43 @@ class ReleaseClaimRenewerIntegrationTest < Minitest::Test
       assert_equal 0, @board.renew_count,
                    "the release had already shipped: not one heartbeat was owed, and a claim " \
                    "renewed past its ship is what stands down the next bin/release prepare"
+    end
+  end
+
+  # ── THE MALFORMED PAYLOAD: THE RENEWER MUST SURVIVE IT ────────────────────────
+  #
+  # The live-process counterpart of the unit test in release_claim_cli_test.rb, and the
+  # half that test CANNOT reach. The unit test proves `release_finished?` RETURNS false;
+  # this one proves the PROCESS is still standing afterwards — which is the property
+  # that actually matters, because the failure mode is not a wrong answer, it is an
+  # exception nobody catches. `ShiftRenewer.run` does not rescue `finished.call`, so
+  # without `return false unless data.is_a?(Hash)` a single malformed 200 raises
+  # TypeError out of the loop, the detached renewer DIES, and the claim lapses at the
+  # 120s TTL — on the deployer lane, where a lapsed claim lets a SECOND production
+  # deploy start. Fail-CLOSED, the exact inversion of the method's documented intent.
+  #
+  # WHAT MAKES IT BITE: the completion read happens BEFORE the first heartbeat (that is
+  # what lets the already-shipped test above post zero renews), so against the unguarded
+  # code this board records ZERO renewals and the renewer is gone. Asserting a RISING
+  # renew count plus a live process is therefore a real kill signal, not a formality.
+  def test_integration_a_malformed_status_payload_does_not_kill_the_renewer
+    Dir.mktmpdir do |proj|
+      # `assembling` is a LIVE candidate: the release must never be the thing that ends
+      # this loop, so anything that DOES end it is the malformed payload.
+      @board = StubBoard.new(state: "assembling", malformed: true)
+      anchor_start = start_anchor
+      spawn_renewer(proj, anchor_start)
+
+      assert wait_until { @board.renew_count >= 3 },
+             "a board answering 200 with a non-Hash `data` is not evidence the release " \
+             "ended — the renewer must carry on. Got #{@board.renew_count} renewals; " \
+             "unguarded, the TypeError kills the loop before the FIRST one"
+      assert alive?(@renewer),
+             "and the renewer PROCESS must still be standing — this is the half the unit " \
+             "test cannot see, and the half the claim's survival actually depends on"
+      assert alive?(@anchor),
+             "with its anchor alive throughout, so a surviving loop is the payload being " \
+             "tolerated and not some other exit path failing to fire"
     end
   end
 

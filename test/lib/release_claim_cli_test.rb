@@ -530,6 +530,46 @@ class ReleaseClaimCliTest < Minitest::Test
     end
   end
 
+  # ── A MALFORMED PAYLOAD MUST NOT KILL THE RENEWER ───────────────────────────
+  #
+  # `parse_data` hands back `body["data"]` UNTOUCHED whenever the body itself is a
+  # Hash, so a 200 shaped `{"data": [...]}` or `{"data": 7}` reaches this method with a
+  # non-Hash `data`. Without `return false unless data.is_a?(Hash)` the very next line
+  # (`data["release_state"]`) raises TypeError on both — Array#[] and Integer#[] each
+  # demand an Integer index. That exception does not stay local: ShiftRenewer.run does
+  # NOT rescue `finished.call` (bin/lib/shift_renewer.rb), so the renewer PROCESS dies,
+  # nothing renews the lease, and the claim lapses at ClaimLease::DEFAULT_TTL_SECONDS
+  # (120s) — fail-CLOSED, the exact inversion of this method's documented fail-open
+  # intent, on the lane where a lapsed claim means a CONCURRENT PRODUCTION DEPLOY.
+  #
+  # The guard is unreachable through the board's own render_data today, which is
+  # precisely why it needs a test rather than trust: nothing else in this file pinned
+  # it, and deleting the line left all 41 CLI unit tests plus the renewer integration
+  # tests GREEN (reproduced twice, independently).
+  #
+  # ONE HONEST CAVEAT about the String case, so it is never read as more coverage than
+  # it is: String#[] accepts a String and answers with a SUBSTRING, so
+  # `"shipped"["release_state"]` returns nil instead of raising. That assertion
+  # therefore holds with OR without the guard — it pins the fail-open contract for the
+  # shape, but only the Array and Integer assertions can kill a mutant that deletes
+  # the line. Do not "simplify" them away into the loop below's sibling.
+  def test_unit_a_malformed_payload_never_kills_the_renewer
+    Dir.mktmpdir do |proj|
+      # The RAISING shapes — the ones the guard exists for. An Array of records is the
+      # realistic mistake here: an index payload served where a show payload was meant.
+      [[], [{ "release_state" => "shipped" }], 0, 7].each do |payload|
+        refute cli(projects_dir: proj, data: payload).release_finished?(SLUG, "deployer"),
+               "a 200 whose data is #{payload.inspect} must read as 'carry on'. Raising " \
+               "here kills the renewer (ShiftRenewer does not rescue finished.call) and " \
+               "lapses the claim 120s into a deploy that needs many minutes"
+      end
+
+      # The NON-raising shape, asserted for contract completeness (see the caveat above).
+      refute cli(projects_dir: proj, data: "shipped").release_finished?(SLUG, "deployer"),
+             "a 200 whose data is a bare String is not evidence the release ended"
+    end
+  end
+
   def test_unit_a_renewer_on_the_forming_sentinel_keeps_renewing
     Dir.mktmpdir do |proj|
       # A claim on __forming__ is held while the candidate is being CREATED, so no
