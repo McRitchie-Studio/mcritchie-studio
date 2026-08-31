@@ -57,6 +57,40 @@ class ReleaseAuthRemedyMessageTest < Minitest::Test
                     "wrong-remedy defect this file exists to prevent"
   end
 
+  # MOVED HERE from release_cli_test.rb, which is the suite's worst append hotspot
+  # and at its ratchet ceiling. This assertion is purely about the AUTH MESSAGE,
+  # so it belongs in the file named for that concern rather than at the bottom of
+  # a 7,598-line general file — which is exactly what the ratchet asks for.
+  #
+  # THE MESSAGE, not just the label — the label is only useful if the sentence the
+  # operator reads changes with it. The auth message must not send anyone to
+  # reconcile a branch or re-run `prepare`: re-freezing a good freeze is the waste
+  # the misdiagnosis actually cost.
+  def test_the_auth_message_names_the_deployer_lane_and_never_asks_for_a_re_freeze
+    msg = eval_helper(%(push_failure_message("mcritchie-studio", "a" * 40, :auth)))
+
+    assert_includes msg, "REFUSED ON CREDENTIALS"
+    # REBOUND, not loosened: this pinned a literal remedy that was itself the bug
+    # (bare, it printed a LIVE deployer token and could not fix the caller's
+    # shell). The concern underneath — name the DEPLOYER lane, never the
+    # agent-lane refresh — is what is asserted now.
+    assert_includes msg, "DEPLOYER identity",
+                    "the ship lane pushes as the DEPLOYER — a message that does not say so " \
+                    "invites the agent-lane refresh, which is the wrong command"
+    assert_includes msg, "source ~/.zprofile.admin",
+                    "on a provisioned machine that one line IS the remedy"
+    refute_includes msg, "gh-auth-refresh",
+                    "prescribing a refresh here leaks a live token AND cannot fix the caller's " \
+                    "shell; the deployer is never cached, so the next push mints on its own"
+    assert_includes msg, "OP_ADMIN_SERVICE_ACCOUNT_TOKEN",
+                     "minting a deployer token reads agents-admin, which an ordinary agent shell cannot"
+    assert_includes msg, "has NOT diverged"
+    refute_match(/re-run `bin\/release prepare`/, msg,
+                 "the freeze is still good — sending the operator back through prepare is the exact " \
+                 "waste this classification exists to stop")
+  end
+
+
   private
 
   # Re-implemented rather than shared: release_cli_test.rb's copy is private to that
