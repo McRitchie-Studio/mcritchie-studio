@@ -186,8 +186,11 @@ model allows a null `task_slug`).
 | `ATOMIC_CAPTURE_FOREGROUND` | unset | `1` runs delivery inline (tests/debug) |
 
 The agent token is sourced **exactly like `bin/task`**: `AGENT_API_SECRET` from
-the environment, else 1Password (the agent vault's `Agent API Secret/AGENT_API_SECRET`),
-else the repo `.env`. The minted bearer token is then sent as
+the environment, else the repo `.env`, else — LAST — 1Password (the agent vault's
+`Agent API Secret/AGENT_API_SECRET`). The vault is last because its reads are
+metered against a 1,000/day cap shared by every lane, and the `.env` holds the
+same secret for free on any provisioned machine; it stays in the chain for a
+fresh machine mid-bootstrap, which has no `.env` yet. The minted bearer token is then sent as
 `Authorization: Bearer <token>` to `/api/v1/agent_actions`.
 
 ## Install — hook snippets
@@ -408,7 +411,7 @@ SessionStart context-injection JSON to stdout and exits 0:
 ```
 
 Same board + token as the rest of the stack (`ATOMIC_CAPTURE_URL`,
-`AGENT_API_SECRET` → 1Password → repo `.env`, reusing the shared token cache).
+`AGENT_API_SECRET` → repo `.env` → 1Password last, reusing the shared token cache).
 **NON-FATAL by construction:** no token, an unreachable board, or an empty bank
 prints **nothing** and exits 0 — the hook can never block or slow a session start.
 `bin/session-insights` is tracked executable (`100755`) because the hook invokes

@@ -15,7 +15,7 @@ require_relative "../../lib/task_usage_sandbox"
 # (POST /api/v1/auth { secret }), cache it on disk at
 # <projects>/.agents/atomic-capture/token.json (ONE cache shared across the
 # whole stack, so `op read` runs at most ~once/day, never per call), source the
-# secret (AGENT_API_SECRET env → 1Password `op read` → the repo .env), and speak
+# secret (AGENT_API_SECRET env → the repo .env → 1Password `op read` LAST), and speak
 # bearer-authed JSON to ATOMIC_CAPTURE_URL (default https://mcritchie.studio).
 # This class is that boilerplate, extracted verbatim.
 #
@@ -198,28 +198,52 @@ class AgentApi
     nil
   end
 
-  # ENV, then 1Password, then repo .env — the same order as bin/task.
+  # ENV, then the repo .env, then 1Password — the same order as bin/task, and
+  # the vault is LAST in both for the same reason. It used to sit second, ahead
+  # of the .env that already holds the secret on every provisioned machine, so
+  # the metered read won a race it should never have entered. See
+  # bin/lib/task_board.rb#agent_secret for the measurement. The vault branch
+  # stays: a fresh machine mid-bootstrap has no .env and nothing else to try.
+  #
+  # This client already caches its TOKEN on disk, which capped the damage here at
+  # roughly one read per day rather than one per call — but the ordering was the
+  # same defect, and a cold cache on an unprovisioned machine still paid it.
   def agent_secret
     env = @env["AGENT_API_SECRET"].to_s
     return env unless env.empty?
 
-    if File.executable?(OP)
-      op = begin
-        IO.popen([OP, "read", SECRET_REF], err: File::NULL, &:read).to_s.strip
-      rescue StandardError
-        ""
-      end
-      return op unless op.empty?
-    end
+    from_dotenv = dotenv_secret(File.join(REPO_ROOT, ".env"))
+    return from_dotenv if from_dotenv
 
-    dotenv = File.join(REPO_ROOT, ".env")
-    if File.file?(dotenv)
-      line = File.readlines(dotenv).find { |l| l.start_with?("AGENT_API_SECRET=") }
-      return line.split("=", 2)[1].to_s.strip if line
-    end
-    nil
+    op_secret
   rescue StandardError
     nil
+  end
+
+  def dotenv_secret(path)
+    return nil unless File.file?(path)
+
+    line = File.readlines(path).find { |l| l.start_with?("AGENT_API_SECRET=") }
+    line ? line.split("=", 2)[1].to_s.strip : nil
+  end
+
+  # Memoized per client: the only metered step in the chain, and nothing about
+  # the answer changes within one process. Failures memoize too — a retry bills.
+  def op_secret
+    return @op_secret if defined?(@op_secret)
+
+    @op_secret = read_op_secret
+  end
+
+  def read_op_secret
+    return nil unless File.executable?(OP)
+
+    op = begin
+      IO.popen([OP, "read", SECRET_REF], err: File::NULL, &:read).to_s.strip
+    rescue StandardError
+      ""
+    end
+    op.empty? ? nil : op
   end
 
   def http_request(klass, path, body, bearer:)

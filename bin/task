@@ -12,8 +12,10 @@
 #   * unknown flags are REJECTED (exit 1) with a nearest-flag suggestion —
 #     a typo'd flag can never silently drop data (`--pr` means `--pr-url`).
 #
-# Auth: AGENT_API_SECRET from ENV, else 1Password (the agent vault's "Agent API
-# Secret/AGENT_API_SECRET), else the repo .env. Base URL via TASK_API_BASE
+# Auth: AGENT_API_SECRET from ENV, else the repo .env, else — LAST — 1Password
+# (the agent vault's "Agent API Secret/AGENT_API_SECRET). The vault is last
+# because its reads are METERED against a 1,000/day account-wide cap and the
+# .env holds the same secret for free; see bin/lib/task_board.rb#agent_secret. Base URL via TASK_API_BASE
 # (default https://mcritchie.studio).
 #
 # Usage:
@@ -761,7 +763,7 @@ end
 def agent_secret
   dotenv = File.join(__dir__, "..", ".env")
   TaskBoard.agent_secret(dotenv) ||
-    die!("AGENT_API_SECRET not found (checked ENV, 1Password, #{dotenv})")
+    die!("AGENT_API_SECRET not found (checked ENV, #{dotenv}, 1Password)")
 end
 
 def token

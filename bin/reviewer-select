@@ -157,7 +157,7 @@ end
 def agent_secret
   dotenv = File.join(ROOT, ".env")
   TaskBoard.agent_secret(dotenv) ||
-    die!("AGENT_API_SECRET not found (checked ENV, 1Password, #{dotenv})")
+    die!("AGENT_API_SECRET not found (checked ENV, #{dotenv}, 1Password)")
 end
 
 def token
