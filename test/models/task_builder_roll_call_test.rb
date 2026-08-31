@@ -322,13 +322,23 @@ class TaskBuilderRollCallTest < ActiveSupport::TestCase
     # Keyed on the TRANSITION. `bin/task update --checks`, a pr_url stamp, and the
     # review's own writes all touch a submitted task; treating those as handoffs
     # would let any passing session stamp one.
+    #
+    # The claim lease is PUT BACK with update_columns on purpose, and without it this
+    # test proves nothing about the guard it names: #enforce_build_claim_invariant
+    # strips every claim key on any non-`building` save, so after the submit the
+    # BLANK-claim guard already refuses and `submit_save?` is never consulted.
+    # Verified by mutation — dropping `will_save_change_to_stage?` left the original
+    # version of this test green. The coupling is exactly why submit_save? asks about
+    # the TRANSITION and not the stage: the day that invariant changes, a `--checks`
+    # write must still not stamp a handoff.
     task = new_task
     claim!(task, actor: "shannon", session: STEFFON_SESSION)
     submit!(task, actor: STEFFON_SESSION)
     assert_nil unattributed(task)
+    task.update_columns(metadata: { "devops" => task.reload.devops.merge("claimed_session" => STEFFON_SESSION) })
 
     Current.task_event_actor = ALEX_SESSION
-    task.update!(metadata: { "devops" => task.devops.merge("pr_url" => "https://example.test/pr/1") })
+    task.reload.update!(metadata: { "devops" => task.reload.devops.merge("pr_url" => "https://example.test/pr/1") })
     Current.reset
 
     assert_nil unattributed(task), "a stamp on a submitted task is not a handover"
