@@ -178,8 +178,10 @@ git -C /Users/alex/projects/<app> branch -D feat/<slug>               # only aft
 git -C /Users/alex/projects/<app> worktree prune
 ```
 
-Hand-edit `docs/agents/maintenance/delete-later.md` to record the override — no
-CLI path writes an unmerged desk there.
+Record the override yourself — no CLI path files an unmerged desk on the desk ledger.
+File it by hand with `bin/agent-worktree cleanup --write` if the desk is a candidate, or
+post the record directly (`POST /api/v1/desk_records`, `status: "removed"`), so the
+teardown has an audit row like every other one.
 
 ### Step 4 — Sweep the regenerable disk
 
@@ -236,15 +238,18 @@ so one live session near the top of the band blocks the entire contraction. Free
 the highest desks first, and expect the band to stay wide until they close. A
 full 55 → 20 contraction is four calls, not one.
 
-Kill stale stack pids and drop orphaned per-desk databases that `doctor` names.
-Append anything you are unsure about to
-[`../../../maintenance/delete-later.md`](../../../maintenance/delete-later.md)
+Kill stale stack pids and drop orphaned per-desk databases that `doctor` names. File
+anything you are unsure about on the desk ledger (`bin/agent-worktree cleanup --write`)
 rather than deleting it.
 
-> **The reclaim dirties the primary.** It appends audit rows to
-> `delete-later.md` in the primary checkout — and **the ship requires a clean
-> primary.** Move that change into a worktree and commit it through a PR. Do not
-> commit from the primary, and do not throw the ledger away.
+> **The reclaim no longer dirties the primary.** Its audit rows land on the board
+> (`DeskRecord`, visible on the Desks panel at `/deployments`), not in
+> `docs/agents/maintenance/delete-later.md`. That file used to take them, and because a
+> sweep runs from the primary — which sits on `main` — the rows could never be committed:
+> 98 of them were stranded in six "restore later" stashes and never restored. **A
+> teardown now REFUSES when the board is unreachable**, and it refuses *before* anything
+> is destroyed, so a failed write costs a re-run and nothing else. If you see that
+> refusal, fix the board access and re-run the same command.
 
 ## The "no space" fast path
 

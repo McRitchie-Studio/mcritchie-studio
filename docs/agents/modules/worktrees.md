@@ -283,41 +283,51 @@ bin/agent-worktree scale status
   ref, ahead/behind count, stack health, `/up` code, pidfile state, Redis DB,
   database state, and the exact `bin/agent-worktree remove … --yes` command. Use
   that dry run as the approval packet before deleting anything.
-- `cleanup --write` appends candidates to [`../maintenance/delete-later.md`](../maintenance/delete-later.md). It does not remove files, worktrees, branches, databases, Redis keys, or processes.
-- **The ledger is keyed by TEARDOWN, not by path.** Desk paths recycle — `_ship`
-  is torn down once per release cycle at the same path — so every teardown
-  appends its own row, carrying its own HEAD SHA and its own date. The only row
-  a write may edit in place is an **open** one for that path: a `pending
-  approval` candidate being resolved into `removed <date>`, which is one episode
-  changing state. A row whose Status carries a **date** is history and is never
-  rewritten. That is the same rule
-  [`archive-shipped`](../agents/steffon/sops/archive-shipped.md) reads when it
-  rolls resolved rows into
-  `docs/agents/archive/maintenance/delete-later-archive.md` — which is
-  append-only and path-repeating by design. Until 2026-08-19 the primary ledger
-  keyed its update on the path alone and quietly overwrote the earlier row, so
-  the two ledgers disagreed and only the archive was honest.
-- **The rule is enforced OUTSIDE the writer, because the writer is what goes
-  stale.** `ledger_path` is anchored to `HUB_DIR`, so a teardown driven from ANY
-  desk rewrites the **hub's** ledger using whatever copy of `bin/agent-worktree`
-  **that desk** carries. On 2026-08-21, 12 of 18 hub desks were still carrying
-  the pre-fix writer, and one of them destroyed three dated rows — the fix above
-  had already landed on `main` and protected nothing. So the invariant is
-  checked where the change becomes durable, on the writer's **output**:
-  `bin/ledger-guard` compares the ledger plus its archive against the merge base
-  with `origin/accepted` (then `release`, `main`) and refuses a tree that lost a
-  dated row; `bin/archive-docs` runs it at both ends of the roll; and
-  `test/lib/ledger_guard_test.rb` runs it in CI on every PR and every push to
-  `accepted`/`release`/`main`. A stale desk can still write a bad row into the
-  hub's working tree — nothing in this repo can reach a checkout that has not
-  been updated — but a bad row is now **caught and named** while it is still one
-  `git show` away, instead of being noticed weeks later by a reviewer running
-  `comm` by hand. Be precise about what stops it, though: `accepted` carries **no
-  branch protection** (`gh api …/branches/accepted/protection` → 404), so a red
-  `rails` lane does not mechanically block the merge — the **reviewer's gate-zero
-  does**, refusing to merge a red-CI PR. The lane is the detector; the reviewer is
-  the gate. **Tear desks down from an up-to-date checkout**, and prefer the hub
-  primary for a sweep.
+- `cleanup --write` files candidates on the **desk ledger** — `DeskRecord` on the
+  board, visible on the Desks panel at [/deployments](https://mcritchie.studio/deployments).
+  It does not remove files, worktrees, branches, databases, Redis keys, or processes.
+- **The ledger is a database now, and that is the fix — not a relocation.** It used
+  to be [`../maintenance/delete-later.md`](../maintenance/delete-later.md), written by
+  `bin/agent-worktree` into whatever checkout it ran from. `ledger_path` was anchored
+  to `HUB_DIR`, and a cleanup is normally run from the **primary**, which sits on
+  `main` — a branch nobody may commit to. So the audit row was created in the one
+  place it could never be saved from. Six "restore later" stashes piled up between
+  2026-07-02 and 2026-08-31 carrying **98 rows**; not one was ever restored, and a
+  reclaim sweep stranded 25 more *during the conversation about the defect*. Every
+  earlier fix idea moved the write somewhere else and still needed a human to
+  remember a follow-up; a board write is durable the moment it lands.
+- **The episode rule survived the move, unchanged.** The ledger is keyed by
+  TEARDOWN, not by path. Desk paths recycle — `_ship` is torn down once per release
+  cycle at the same path — so every teardown opens its own record, carrying its own
+  HEAD SHA and its own date. The only record a write may edit is an **open** one for
+  that path: a `candidate` being resolved into `removed <date>`, which is one episode
+  changing state. A record carrying `resolved_on` is history and is never rewritten —
+  `DeskRecord` raises `ResolvedRecordImmutable` on an update or a destroy, which is a
+  stronger guarantee than the file could offer because this medium has exactly ONE
+  writer. `test/models/desk_record_test.rb` holds it.
+- **When the board is unreachable the teardown REFUSES.** `bin/agent-worktree` files
+  the record **before** it stops a stack, flushes a Redis DB, drops a database or
+  removes a git worktree, so a refused write costs a retry and leaves nothing
+  half-done. There is deliberately **no local queue**: a spool that flushes "on next
+  contact" is the same *somebody must remember* this change removes. The cost is
+  close to zero in practice, because the automatic sweeps already withhold every
+  bound desk when the board is unreadable (see the CLAIM channel below) — all that
+  fails closed is the explicit single-desk `remove … --yes`. `snapshot --write` is
+  the other way round: it destroys nothing, so a failed sync warns loudly and the
+  local registry file is still written.
+- **The markdown ledger and its archive are TRACKED HISTORY. Do not delete either.**
+  They hold every row filed before the cutover, `bin/archive-docs` still rolls
+  resolved rows between them on the `archive-shipped` beat, and `bin/ledger-guard`
+  still refuses a tree that lost a dated row — it compares the two files against the
+  merge base with `origin/accepted` (then `release`, `main`), `bin/archive-docs` runs
+  it at both ends of the roll, and `test/lib/ledger_guard_test.rb` runs it in CI on
+  every PR. **The guard names its own scope in its verdict** (`markdown ledger +
+  archive`), because a green exit there is not a verdict on the board's desk records —
+  those are covered by the model invariant above, and a guard that silently stops
+  covering something is worse than no guard. `/tasks/harvest-stranded-ledger-stashes`
+  imports the 98 stranded rows from those files; it sequences **after** this change,
+  because recovering them while the system still stranded records would just re-strand
+  them.
 - **A refusal is only a guard if its caller reads it.** `bin/archive-docs` runs
   the same check at both ends of the archive roll and exits non-zero — and that
   exit code sat **ignored** by `bin/release archive`, which printed the warning
@@ -337,7 +347,7 @@ bin/agent-worktree scale status
   can never nominate a desk the sweep would refuse. A withheld desk is named with its
   reason, and **every branch that gives up on checking says so**, because a guard that
   silently disables itself is worse than no guard. A *nominated* desk is explained too:
-  the dry run prints a `rationale:` line and the ledger row carries the same
+  the dry run prints a `rationale:` line and the desk record carries the same
   `Cleared: …` sentence, naming which questions were asked and what came back — see
   **Every nomination explains itself** below.
   - **The ORIGIN channel** (`origin_hold`) asks the repo's remote whether merge evidence
@@ -476,8 +486,8 @@ bin/agent-worktree scale status
   - **There is no "advisory" lane.** Every caller answers one question — *is this desk
     a cleanup candidate?* — and that answer is consumed to **destroy**: the registry
     feeds `bin/qa-intake`, which prints a `remove … --yes` per candidate; the `cleanup`
-    dry-run prints the same command; `cleanup --write` files the desk in the
-    delete-later ledger; `doctor` labels it a candidate. An earlier cut split these
+    dry-run prints the same command; `cleanup --write` files the desk on the desk
+    ledger; `doctor` labels it a candidate. An earlier cut split these
     into "destroy" and "advisory" lanes and let the advisory ones fail open — so during
     exactly the outage this guard exists to survive, the sweep withheld a live
     builder's desk while the conductor's front door recommended tearing it down. During
@@ -502,7 +512,7 @@ bin/agent-worktree scale status
     +0/-0)` is a **git fact**, and it was true of all three load-bearing desks the
     2026-08-14 sweep offered up. So a nominated candidate also prints
     `rationale: <what each channel asked and answered>` in the dry run
-    (`reclaim_evidence` → `rationale`), and the `delete-later.md` row carries the same
+    (`reclaim_evidence` → `rationale`), and the desk record carries the same
     sentence as `Cleared: …` beside the git facts. Read it as the approval packet: a
     channel that could not be asked says so there (`GitHub unreachable`), which is how
     you spot a sweep running with a blind guard **before** approving 29 teardowns. A
@@ -522,7 +532,7 @@ bin/agent-worktree scale status
   `.worktrees/*` only, so the primary checkout is never a candidate.
 - `cleanup --reclaim --yes` runs the **same full teardown as `remove`** for each
   safe candidate (stop the stack, flush the stack's Redis DB, drop the desk's
-  Postgres databases, update the cleanup ledger, remove the Git worktree, delete
+  Postgres databases, file the desk record **first**, remove the Git worktree, delete
   the stale local branch), re-verifying each candidate under the worktree lock — **including a fresh re-read of the build
   claim**. That re-read matters: the candidate list is computed once, but teardowns
   run serially inside the lock, so a builder who sits down and claims a task
@@ -544,8 +554,8 @@ bin/agent-worktree scale status
   reused DB number cannot inherit stale keys), **drops the desk's per-worktree
   Postgres databases** — the dev DB, its `_test_` sibling, and their parallel-test
   shards, named from the desk's own stack env rather than swept by pattern, and any
-  that still has an open connection is left in place — updates the cleanup ledger,
-  removes the Git worktree, deletes the stale local branch, shrinks the Redis band toward
+  that still has an open connection is left in place — files the desk record on the
+  board **before** any of it, removes the Git worktree, deletes the stale local branch, shrinks the Redis band toward
   the floor when slots free up, and refreshes the registry.
 - `scale status` prints the Redis band: floor, step, current band + DB range,
   used, free, and the physical ceiling (`databases` from Redis). `scale out` /
@@ -611,7 +621,10 @@ repo's resolved base ref):
   it as shared-floor drift. Do not fold those changes into your task silently.
   Report it and continue from the isolated worktree.
 - Do not remove a worktree until its branch/PR status is known.
-- Log stale worktrees in [`../maintenance/delete-later.md`](../maintenance/delete-later.md) before deleting them.
+- Log stale worktrees on the desk ledger (`bin/agent-worktree cleanup --write`, or the
+  teardown's own record) before deleting them. The markdown
+  [`../maintenance/delete-later.md`](../maintenance/delete-later.md) is history now —
+  read it, do not append to it.
 - **One writer per desk — the build-claim holder.** Conductor, primary reviewer,
   and light reviewer read; they do not write. Run every mutation pass on a
   throwaway. See [The Desk Writer Convention](#the-desk-writer-convention).

@@ -314,7 +314,8 @@ Ship the assembled, QA-green release to production.
   main`, or no QA-green release) → report "nothing to ship" and continue to
   `archive-shipped` (idempotent no-op).
 - **Steps:**
-  1. Clean the primary checkouts (stash the delete-later ledger if needed) — ship
+  1. Clean the primary checkouts (the delete-later ledger no longer grows on its own —
+     desk records go to the board — but a pre-cutover stash may still be parked there) — ship
      from a **primary checkout**, not a worktree (gems resolve as siblings).
   2. Run the **full e2e on the FROZEN ship SHA**, then `bin/release ship --yes` —
      drive **stages 4–5** (Confirming → Deploying): fast-forward each repo's

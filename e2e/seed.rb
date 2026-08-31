@@ -1161,4 +1161,50 @@ TriageFinding.delete_all
 TriageFinding.create!(title: "E2E Promotable Finding", body: "A follow-up worth a task.",
                       source: "e2e-seed", repo: "mcritchie-studio")
 
+# The /deployments DESK PANEL. The desk ledger moved off docs/agents/maintenance/delete-later.md
+# and onto the board (a teardown row written from the primary checkout lands on `main` and can
+# never be committed — 98 rows were stranded that way), so the panel needs desks to show:
+# live ones with a safety account each, a finished one with the reason it was safe to take,
+# and one open record the newest snapshot did not see — the "left without a teardown record"
+# case, which is the defect detector and must be visible in a browser.
+DeskRecord.delete_all
+DeskSnapshot.delete_all
+
+e2e_desk = lambda do |slug, **overrides|
+  {
+    "label" => "mcritchie-studio/#{slug}", "app" => "mcritchie-studio", "task" => slug,
+    "worktree" => "/Users/alex/projects/mcritchie-studio/.worktrees/#{slug}",
+    "branch" => "feat/#{slug}", "head" => "e2e#{slug.length}beef", "dirty" => false,
+    "health" => "down", "app_port" => 3050, "redis_db" => 30,
+    "cleanup_candidate" => false, "withheld_reason" => "a builder is live-claiming it",
+    "cleanup_rationale" => nil
+  }.merge(overrides)
+end
+
+DeskRecord.file!(
+  worktree_path: "/Users/alex/projects/mcritchie-studio/.worktrees/e2e-desk-finished",
+  label: "mcritchie-studio/e2e-desk-finished", app_slug: "mcritchie-studio",
+  status: "removed", resolved_on: Date.new(2026, 8, 18), source: "remove", safety: "merged",
+  reason: "Hidden worktree; branch `feat/e2e-desk-finished` is clean and HEAD e2ebeef1 is contained in origin/accepted."
+)
+
+DeskRecord.sync!(
+  "generated_at" => Time.current.utc.iso8601,
+  "projects_dir" => "/Users/alex/projects",
+  "capacity" => { "floor" => 20, "step" => 10, "current" => 55, "used" => 25, "free" => 30, "physical_max" => 64 },
+  "summary" => { "worktrees" => 3, "dirty_worktrees" => 1, "withheld" => 2, "cleanup_candidates" => 1 },
+  "worktrees" => [
+    e2e_desk.call("e2e-desk-held"),
+    e2e_desk.call("e2e-desk-dirty", "dirty" => true),
+    e2e_desk.call("e2e-desk-free", "cleanup_candidate" => true, "withheld_reason" => nil,
+                  "cleanup_rationale" => "merged into origin/accepted, tree clean, no live claim")
+  ]
+)
+
+DeskRecord.file!(
+  worktree_path: "/Users/alex/projects/mcritchie-studio/.worktrees/e2e-desk-vanished",
+  label: "mcritchie-studio/e2e-desk-vanished", app_slug: "mcritchie-studio",
+  status: "live", last_seen_at: 1.day.ago
+)
+
 puts "Seeded: #{User.count} users, #{Agent.count} agents, #{Task.count} tasks, #{Activity.count} activities, #{Coach.count} coaches, #{Release.count} releases, #{AgentAction.count} agent actions, #{AgentActivity.count} agent activities, #{GithubWorkflowRun.count} github runs, #{News.count} news, #{Content.count} content"

@@ -1,0 +1,187 @@
+<%# THE DESK PANEL — what the worktree desks ARE, on the page the operator already watches.
+
+    WHY IT EXISTS. The desk ledger used to be docs/agents/maintenance/delete-later.md, and
+    `bin/agent-worktree` wrote its teardown rows into whatever checkout it ran from. Cleanups
+    run from the PRIMARY, which sits on `main` — a branch nobody may commit to — so the audit
+    row was created in the one place it could never be saved from. 98 rows were stranded in
+    six "restore later" stashes; none was ever restored. The records live on the board now
+    (DeskRecord), and this is where they are read.
+
+    IT LEADS WITH A JUDGEMENT, NOT WITH JSON. Four numbers first — how many desks, how many
+    Redis-band slots are free, how many desks carry uncommitted work, how many the sweep is
+    holding back — then anything that needs a decision, then the desks themselves, then for a
+    desk that is GONE, why it was safe to take. That last column is the whole point of an
+    audit trail and it is the thing a JSON dump buries.
+
+    NO INLINE <script>. Everything here is server-rendered: the panel is a read surface, and
+    a board page that already carries a 380-line Alpine factory does not need a second one.
+
+    Locals: panel - Desks::Panel, card_class - optional extra classes on the outer card. %>
+<% panel = local_assigns.fetch(:panel) %>
+<% card_class = ["rounded-xl border border-subtle bg-surface p-4", local_assigns[:card_class]].compact.join(" ") %>
+
+<div id="desk-panel" class="<%= card_class %>" data-test="desk-panel">
+  <div class="flex items-start justify-between gap-3">
+    <div class="min-w-0">
+      <h3 class="text-sm font-semibold text-heading">Desks</h3>
+      <p class="text-[11px] text-muted">
+        Worktree desks and their teardown records — the ledger, live.
+      </p>
+    </div>
+    <%# THE AGE OF THE ANSWER, always shown. A capacity number with no timestamp on it is
+        the kind of number people trust for a week. `stale` flips it to a warning tone
+        rather than hiding it: an old reading is still the only reading there is. %>
+    <div class="shrink-0 text-right text-[10px] <%= panel.stale? ? "text-amber-600 dark:text-amber-400 font-semibold" : "text-muted" %>"
+         data-test="desk-panel-freshness">
+      <% if panel.unsynced? %>
+        never synced
+      <% else %>
+        as of <%= time_ago_in_words(panel.generated_at) %> ago<%= " — STALE" if panel.stale? %>
+      <% end %>
+    </div>
+  </div>
+
+  <% if panel.unsynced? %>
+    <%# "No desks" and "nobody has told us about the desks" are different facts, and only
+        one of them is reassuring. Say which one this is. %>
+    <div class="mt-3 rounded-lg border border-dashed border-subtle bg-inset px-3 py-4 text-[11px] text-muted"
+         data-test="desk-panel-empty">
+      No desk snapshot has reached the board yet. Run
+      <code class="font-mono">bin/agent-worktree snapshot --write</code> from the hub to file one.
+    </div>
+  <% else %>
+    <%# --- the four numbers ------------------------------------------------------- %>
+    <div class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4" data-test="desk-panel-tiles">
+      <div class="rounded-lg border border-subtle bg-inset px-3 py-2" data-test="desk-tile-desks">
+        <p class="text-[10px] uppercase tracking-wide text-muted font-semibold">Desks</p>
+        <p class="mt-1 font-mono text-lg font-bold text-heading tabular-nums"><%= panel.live_total %></p>
+        <p class="mt-1 text-[11px] text-muted">open records</p>
+      </div>
+      <div class="rounded-lg border border-subtle bg-inset px-3 py-2" data-test="desk-tile-band">
+        <p class="text-[10px] uppercase tracking-wide text-muted font-semibold">Free slots</p>
+        <p class="mt-1 font-mono text-lg font-bold text-heading tabular-nums"><%= panel.free_slots || "—" %></p>
+        <p class="mt-1 text-[11px] text-muted">of <%= panel.band_size || "—" %> in the Redis band</p>
+      </div>
+      <div class="rounded-lg border border-subtle bg-inset px-3 py-2" data-test="desk-tile-dirty">
+        <p class="text-[10px] uppercase tracking-wide text-muted font-semibold">Dirty</p>
+        <p class="mt-1 font-mono text-lg font-bold text-heading tabular-nums"><%= panel.dirty_count %></p>
+        <p class="mt-1 text-[11px] text-muted">carry uncommitted work</p>
+      </div>
+      <div class="rounded-lg border border-subtle bg-inset px-3 py-2" data-test="desk-tile-held">
+        <p class="text-[10px] uppercase tracking-wide text-muted font-semibold">Held</p>
+        <p class="mt-1 font-mono text-lg font-bold text-heading tabular-nums"><%= panel.held_count || "—" %></p>
+        <p class="mt-1 text-[11px] text-muted">withheld from reclaim</p>
+      </div>
+    </div>
+
+    <%# --- desks that left without a record --------------------------------------- %>
+    <%# THE DEFECT DETECTOR. An open episode the newest snapshot did not see is a desk that
+        went away outside `bin/agent-worktree remove` — the exact class of loss this whole
+        change exists to end. It is never inferred away as "probably fine"; it is shown. %>
+    <% if panel.vanished.any? %>
+      <div class="mt-3 rounded-lg border border-amber-500/50 bg-amber-50/60 px-3 py-2 dark:bg-amber-950/30"
+           data-test="desk-panel-vanished">
+        <p class="text-[11px] font-semibold text-amber-700 dark:text-amber-300">
+          <%= pluralize(panel.vanished.size, "desk") %> left without a teardown record
+        </p>
+        <p class="text-[10px] text-amber-700/80 dark:text-amber-300/80">
+          An open ledger record, absent from the latest snapshot — removed outside <code class="font-mono">bin/agent-worktree remove</code>.
+        </p>
+        <ul class="mt-1.5 space-y-0.5">
+          <% panel.vanished.each do |desk| %>
+            <li class="truncate font-mono text-[10px] text-amber-800 dark:text-amber-200" title="<%= desk.worktree_path %>">
+              <%= desk.label.presence || desk.worktree_path %>
+            </li>
+          <% end %>
+        </ul>
+      </div>
+    <% end %>
+
+    <%# --- per-app strip ----------------------------------------------------------- %>
+    <% if panel.apps.any? %>
+      <div class="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px]" data-test="desk-panel-apps">
+        <% panel.apps.each do |app| %>
+          <span class="inline-flex items-center gap-1.5 rounded border border-subtle bg-inset px-2 py-1"
+                data-test="desk-app-chip" data-app="<%= app[:slug] %>">
+            <span class="font-semibold text-heading"><%= app[:slug] %></span>
+            <span class="tabular-nums text-muted"><%= app[:total] %></span>
+            <% if app[:dirty].to_i.positive? %>
+              <span class="tabular-nums text-amber-600 dark:text-amber-400" title="dirty"><%= app[:dirty] %> dirty</span>
+            <% end %>
+            <% if app[:free].to_i.positive? %>
+              <span class="tabular-nums text-mint-600 dark:text-mint-400" title="cleared for reclaim"><%= app[:free] %> free</span>
+            <% end %>
+          </span>
+        <% end %>
+      </div>
+    <% end %>
+
+    <div class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
+      <%# --- live desks ------------------------------------------------------------ %>
+      <div class="min-w-0">
+        <p class="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">Live</p>
+        <% if panel.live.empty? %>
+          <p class="rounded border border-dashed border-subtle px-2 py-3 text-[11px] text-muted">No open desks.</p>
+        <% else %>
+          <ul class="space-y-1" data-test="desk-live-list">
+            <% panel.live.each do |desk| %>
+              <li class="rounded border border-subtle bg-inset px-2 py-1.5" data-test="desk-live-row">
+                <div class="flex items-baseline justify-between gap-2 min-w-0">
+                  <span class="truncate text-[11px] font-medium text-heading" title="<%= desk.worktree_path %>">
+                    <%= desk.label.presence || desk.desk_slug.presence || desk.worktree_path %>
+                  </span>
+                  <span class="shrink-0 text-[10px] uppercase tracking-wide <%= desk.dirty? ? "text-amber-600 dark:text-amber-400" : "text-muted" %>">
+                    <%= desk.dirty? ? "dirty" : desk.health.presence || "—" %>
+                  </span>
+                </div>
+                <div class="mt-0.5 flex items-baseline justify-between gap-2 text-[10px] text-muted min-w-0">
+                  <span class="truncate font-mono"><%= desk.branch %></span>
+                  <span class="shrink-0 tabular-nums"><%= desk.app_port.present? ? ":#{desk.app_port}" : "" %></span>
+                </div>
+                <%# THE SAFETY LINE, on every desk. Either the sweep cleared it and says why,
+                    or it is holding it and says why. A desk with neither is stated as such
+                    rather than left blank — a blank cell reads as "nothing to see". %>
+                <p class="mt-0.5 line-clamp-2 text-[10px] <%= desk.cleanup_candidate? ? "text-mint-700 dark:text-mint-300" : "text-muted" %>"
+                   data-test="desk-safety">
+                  <%= desk.safety_account %>
+                </p>
+              </li>
+            <% end %>
+          </ul>
+          <% if panel.truncated_live.positive? %>
+            <p class="mt-1 text-right text-[10px] text-muted" data-test="desk-live-truncated">
+              +<%= panel.truncated_live %> more open desk<%= "s" if panel.truncated_live != 1 %>
+            </p>
+          <% end %>
+        <% end %>
+      </div>
+
+      <%# --- finished desks --------------------------------------------------------- %>
+      <div class="min-w-0">
+        <p class="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">Finished</p>
+        <% if panel.removed.empty? %>
+          <p class="rounded border border-dashed border-subtle px-2 py-3 text-[11px] text-muted">No teardowns recorded yet.</p>
+        <% else %>
+          <ul class="space-y-1" data-test="desk-removed-list">
+            <% panel.removed.each do |desk| %>
+              <li class="rounded border border-subtle bg-inset px-2 py-1.5" data-test="desk-removed-row">
+                <div class="flex items-baseline justify-between gap-2 min-w-0">
+                  <span class="truncate text-[11px] font-medium text-heading" title="<%= desk.worktree_path %>">
+                    <%= desk.label.presence || desk.desk_slug.presence || desk.worktree_path %>
+                  </span>
+                  <span class="shrink-0 tabular-nums text-[10px] text-muted"><%= desk.status_label %></span>
+                </div>
+                <%# WHY IT WAS SAFE — the sentence a reader lands on months later, when the
+                    desk and its session are long gone. This is the cell the markdown ledger
+                    existed to carry, and losing it is what made the stranded rows matter. %>
+                <p class="mt-0.5 line-clamp-3 text-[10px] text-muted" data-test="desk-removed-reason">
+                  <%= desk.reason.presence || desk.safety_account %>
+                </p>
+              </li>
+            <% end %>
+          </ul>
+        <% end %>
+      </div>
+    </div>
+  <% end %>
+</div>
