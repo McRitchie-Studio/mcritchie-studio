@@ -77,6 +77,7 @@ require_relative "lib/bin_helpers"
 require_relative "lib/projects_root"
 require_relative "lib/zap_revalidation"
 require_relative "lib/merge_command"
+require_relative "lib/acting_identity"
 
 ROOT = File.expand_path("..", __dir__)
 PROJECTS_ROOT = ProjectsRoot.default_projects_dir(ROOT)
@@ -627,6 +628,58 @@ def gh_write(*args)
   ok
 end
 
+# THE IDENTITY ASSERTION — the gate in front of every merge write. TRUE when `gh`
+# will act as a GitHub App installation; FALSE refuses the merge, and the caller's
+# existing failure path leaves the task `submitted` and UNSTAMPED (invariant:
+# reviewed ⟺ code-on-accepted). Refusing therefore costs a re-review, never a
+# broken board state — which is why refusing is affordable enough to do on doubt.
+#
+# WHY THE CHECK IS HERE AND NOT IN A LINT. A lint tells you afterwards, and this
+# defect's whole nature is that it is invisible afterwards: a merge performed with a
+# personal credential succeeds, prints nothing unusual, and only reveals itself in
+# the commit's author field during an audit. The assertion has to sit in front of
+# the irreversible effect. See bin/lib/acting_identity.rb for the 2026-08-29
+# incident and the choice of discriminator.
+#
+# ONE RECOVERY, DELIBERATELY BOUNDED. An UNKNOWN identity — an expired token, or the
+# EMPTY GH_TOKEN that caused the incident — is the ordinary end of a long review
+# session, so it earns exactly one mint-and-re-ask, the same recovery
+# gh_with_auth_retry already performs for a refused write. A HUMAN identity earns
+# none: minting cannot un-sign-in a person, and retrying would only spend a
+# 1Password read to reach the same refusal. Under dry-run nothing is written, so
+# nothing is asserted.
+def assert_merge_identity(slug)
+  return true unless OPTIONS.fetch(:run)
+
+  identity, message = ActingIdentity.check(gh_bin: GH_BIN)
+  return true if identity == ActingIdentity::APP
+
+  # The mint is skipped when this process already minted (gh_with_auth_retry shares
+  # @gh_token): the fresh token is already in ENV, so the answer would not change and
+  # the read would be spent for nothing.
+  if identity == ActingIdentity::UNKNOWN && !@gh_token
+    puts "  identity: #{message}"
+    puts "  identity: that shape is recoverable — minting an agent token and asking once more."
+    # identity: "agent" for the same reason gh_with_auth_retry pins it — review MERGES
+    # pull requests, which the deployer App is denied by design, so a stray GH_APP_ITEM
+    # export must not choose the App that cannot do the write it is recovering.
+    if (@gh_token = GhAuthRetry.mint(identity: "agent"))
+      # Process-local, never printed. The re-probe and every later gh child inherit it.
+      ENV["GH_TOKEN"] = @gh_token
+      identity, message = ActingIdentity.check(gh_bin: GH_BIN)
+      return true if identity == ActingIdentity::APP
+    else
+      reason = GhAuthRetry.last_error
+      message = "could not mint an agent token to establish identity" \
+                "#{reason.to_s.strip.empty? ? '' : " (#{reason})"}"
+    end
+  end
+
+  puts "  REFUSING to merge #{slug}: #{message}"
+  puts "  #{slug} stays submitted and UNSTAMPED — nothing was merged, so a re-review is the whole cost."
+  false
+end
+
 # The PR's live merge state — the crash-recovery read: a gh merge that fails
 # because the PR ALREADY merged on a prior interrupted run (whose stamp/move died)
 # must not bounce the task back.
@@ -655,6 +708,10 @@ end
 # on ANY failure — the caller then leaves the task `submitted` and UNSTAMPED,
 # preserving the invariant reviewed ⟺ code-on-accepted.
 def merge_feature_pr(slug, pr_url, merge_head: nil)
+  # WHO IS ABOUT TO MERGE — asked FIRST, before the PR is even read, because every
+  # later step in this function is a gh WRITE whose author field is permanent.
+  return false unless assert_merge_identity(slug)
+
   if pr_url.to_s.empty?
     puts "  cannot merge #{slug}: no PR url on the task (devops.pr_url) — leaving it submitted"
     return false
