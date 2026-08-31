@@ -647,9 +647,9 @@ permission to write to the desk.
 
 Note also that `--actor` does not express the claim. `bin/task move <slug>
 building --actor <soul>` records the soul on the *event*; the claim itself is
-`claimed_session` + `claim_nonce` in `metadata.devops`
-(`lib/claim_lease.rb:31`), keyed by session, not
-by soul. A soul slug and a session id live in different namespaces.
+`claimed_session` + `claim_nonce` in `metadata.devops` (`lib/claim_lease.rb:31`),
+keyed by session, not by soul. A soul slug and a session id live in different
+namespaces.
 
 ### How to tell whether someone is already in a desk
 
@@ -657,14 +657,13 @@ Three cheap reads, in the order worth trying. None of them requires new
 machinery.
 
 ```bash
-bin/task show <slug> --verbose            # claim state: session, nonce, expiry (120s TTL)
-bin/agent-worktree list | grep -A1 <slug> # the desk's `dirty` flag and live pid
-```
+bin/task show <slug> --verbose             # prints `claim: session <id> · expires <ts>`
+bin/agent-worktree list | grep -A1 <slug>  # the desk's `dirty` flag and live pid
 
-```ruby
-# Is anyone touching the files right now? (mtime walk, .git and tmp pruned)
-require "desk_activity"
-DeskActivity.touched_since?("<repo>/.worktrees/<slug>", Time.now - 600)
+# Has anyone touched the files in the last 10 minutes? (mtime walk, .git and tmp pruned)
+ruby -I lib -r desk_activity \
+  -e 'puts DeskActivity.touched_since?(ARGV[0], Time.now - 600).inspect' \
+  "$PWD/.worktrees/<slug>"
 ```
 
 What each one is worth:
@@ -678,8 +677,9 @@ What each one is worth:
   and it is a symptom, not an identity — it says work is present, never whose.
 - **`DeskActivity.touched_since?`** is the same filesystem-mtime probe the
   reclaim guard uses to withhold a desk somebody is working in
-  (`lib/desk_activity.rb:74`). Verified callable
-  as a standalone occupancy check.
+  (`lib/desk_activity.rb:74`), and it is the only one of the three that answers
+  "right now" rather than "at some point". It discriminates: `true` on a desk
+  being worked, `false` on an idle one.
 
 ### If you believe a builder lost work, tell the builder
 
