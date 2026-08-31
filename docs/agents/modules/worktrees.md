@@ -693,6 +693,20 @@ claim — precisely the fail-open the builder had rejected in design. The builde
 caught it only because it was forced to explain a commit it did not author. A
 rescue writes unreviewed prose onto someone else's PR under their name.
 
+**If the builder is gone, become the writer — do not write as a non-writer.**
+The claim already distinguishes the two cases, so you do not have to judge it:
+
+```bash
+bin/task move <slug> building --actor <soul>   # reclaims a dead lease automatically
+bin/task begin <slug> --steal --agent <soul>   # takes over a LIVE holder, deliberately
+```
+
+An expired or dead-session lease is reclaimed **automatically** by the move; a
+different live instance's lease **refuses loudly**, and `--steal` is the explicit
+override. Either way you end up the desk's writer on the record before you touch
+a file, which is the whole point — the problem in incident 1 was never that the
+prose got fixed, it was that nobody owned the fix.
+
 ### Mutation testing never runs in a shared desk
 
 **Run every mutation pass on a throwaway desk, never in the desk itself.** Both
@@ -746,9 +760,10 @@ A reviewer zap is a legitimate non-writer commit. Three things make it safe:
 1. **Announce on the task record before pushing**, so the desk's holder learns it
    from the board rather than from a refused gate. The zap protocol already
    requires a `bin/task note`; do it *before* the push, not after.
-2. **Prefix the subject `zap:`** — the established machine-readable marker, and
-   59 of the last 500 commits use it. The 2026-08-30 conductor write carried no
-   prefix, no body, and no trailer, which is why it read as unexplained.
+2. **Prefix the subject `zap:`** — the established machine-readable marker
+   (`git log --format='%s' -500 | grep -c '^zap'` → 60 on `accepted`,
+   2026-08-31). The 2026-08-30 conductor write carried no prefix, no body, and
+   no trailer, which is why it read as unexplained.
 3. **The writer re-derives its cert.** A foreign commit invalidates the
    fingerprint by construction; the cert must be retaken, not re-credited.
 
@@ -786,11 +801,18 @@ convention:**
 **Two things that look like they would help and do not:**
 
 - **Git authorship cannot identify a soul.** Every agent commits under one
-  identity: 181 of the last 300 commits are `Alex McRitchie
-  <amcritchie@gmail.com>`, 113 are the merge bot, and only 3 ever set a soul
-  name. The conductor's foreign write and the builder's own correction are
-  indistinguishable by author, date, or trailer. Any guard keyed on "commit
-  author differs from claim holder" is dead on arrival.
+  identity. Re-derive it rather than trusting this sentence — the count drifts
+  with the branch and the window:
+
+  ```bash
+  git log --format='%an <%ae>' -300 | sort | uniq -c | sort -rn
+  ```
+
+  Measured on `accepted`, 2026-08-31: 192 of 300 are `Alex McRitchie
+  <amcritchie@gmail.com>`, 103 are the merge bot, and **none** name a soul.
+  The 2026-08-30 conductor write (`9f9ad2de`) and the builder's own correction
+  (`0f6c0ddf`) are indistinguishable by author, date, and trailer. Any guard
+  keyed on "commit author differs from claim holder" is dead on arrival.
 - **`.agent-context.json` does not record an occupant.** Its 27 keys name the
   task, branch, port, database, and Redis slot; there is no agent, soul, or
   session field, and `bin/agent-worktree list` has no occupant column.
