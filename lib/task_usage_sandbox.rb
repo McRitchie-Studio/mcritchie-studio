@@ -13,6 +13,7 @@ require_relative "../bin/lib/projects_root"
 #   <projects>/.agents/worktree-registry.json        the worktree registry
 #   <projects>/.agents/agent-worktree.lock           the DB-allocation flock
 #   <projects>/.agents/redis-capacity.json           the elastic Redis band
+#   <projects>/.agents/op-reads.log                  the 1Password read log
 #
 # ONE FAMILY, not five bugs. Every one of these is resolved by the SAME fallback
 # shape — an env var, ELSE a path under the operator's real <projects>/.agents —
@@ -100,7 +101,20 @@ module TaskUsageSandbox
     "agent-locks" => %w[MCR_PRIMARY_LOCK_DIR],     # bin/release.rb — the conductor flocks
     "worktree-registry" => %w[AGENT_WORKTREE_REGISTRY PROJECTS_DIR], # bin/agent-worktree — the registry snapshot
     "worktree-lock" => %w[AGENT_WORKTREE_LOCK PROJECTS_DIR],         # bin/agent-worktree — the DB-allocation flock
-    "redis-capacity" => %w[AGENT_REDIS_CAPACITY_FILE PROJECTS_DIR]   # bin/agent-worktree — the elastic Redis band
+    "redis-capacity" => %w[AGENT_REDIS_CAPACITY_FILE PROJECTS_DIR], # bin/agent-worktree — the elastic Redis band
+    # bin/lib/op_meter.rb + bin/lib/op-meter.sh — the 1Password read-attribution
+    # log. TWO WRITERS, ONE STORE, and the shell half cannot call this guard: it
+    # re-derives RULE 1 inline (see the header there) and LAYER 3 of
+    # state_store_containment_test.rb watches the bytes for the rest.
+    #
+    # THE ONLY STORE HERE WHOSE RULE-1 POSTURE IS *SKIP* RATHER THAN ABORT, and
+    # that asymmetry is deliberate. This log rides on the credential paths
+    # themselves, so an abort would convert a metering hiccup into a failed
+    # `op read` — the exact outage its consumers keep fallbacks for. OpMeter
+    # answers rule 1 itself and returns early; what reaches enforce! is rule 2,
+    # which still aborts, because a pin aimed back INSIDE the real store is a
+    # misconfiguration and not a routine test condition.
+    "op-reads" => %w[MCR_OP_READS_LOG CLAUDE_PROJECTS_DIR]
   }.freeze
 
   module_function

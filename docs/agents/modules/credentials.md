@@ -46,6 +46,36 @@ A `bin/gh-token --identity deployer` that fails naming
 `OP_ADMIN_SERVICE_ACCOUNT_TOKEN` is the isolation WORKING — do not route around
 it by granting the agent token access to the admin vault.
 
+### Who spent the quota
+
+The daily read cap is **1,000, account-wide** — shared by every service account
+and every lane — so one careless loop stops the whole ecosystem. Every `op`
+invocation the `bin/` stack makes is therefore recorded, and the question is a
+query rather than an investigation:
+
+```bash
+bin/op-reads                 # by calling command, last 24h
+bin/op-reads --by context    # by fan-out, when MCR_OP_METER_CONTEXT was exported
+bin/op-reads --tail 40       # the raw rows
+```
+
+| Piece | What it is |
+|---|---|
+| `bin/lib/op_meter.rb` | the Ruby half — `OpMeter.popen` wraps the call; `bin/lib/agent_api.rb`, `bin/lib/task_board.rb`, `bin/gh-token` use it |
+| `bin/lib/op-meter.sh` | the shell half — `op_metered <bin> <args…>`, sourced by `bin/secret`, `bin/gh-app-git-credential`, `bin/ecosystem-build`, `bin/setup-1pass-token` |
+| `<projects>/.agents/op-reads.log` | the append-only log: timestamp, calling command, action, outcome, seam, pid, context |
+| `bin/op-reads` | the read-only query |
+
+**New `op` call sites go through the wrapper.** That is the whole contract — a
+bare `op` is invisible to the log, and an unattributed read is the defect this
+closes. Metering is best-effort in both halves: it never raises, never changes
+the child's exit status, and never costs a read of its own, so a consumer's
+fallback for an absent or rate-limited `op` is untouched.
+
+⚠️ `op service-account ratelimit` **itself costs a read** — do not poll it.
+There is deliberately **no alarm or budget threshold**; once spend is
+attributable it is findable.
+
 Verify:
 
 ```bash

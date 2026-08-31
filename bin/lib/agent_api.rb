@@ -6,6 +6,7 @@ require "uri"
 require "time"
 require "fileutils"
 require_relative "op_vaults"
+require_relative "op_meter"
 require_relative "projects_root"
 require_relative "../../lib/task_usage_sandbox"
 
@@ -263,7 +264,10 @@ class AgentApi
     return nil unless File.executable?(OP)
 
     op = begin
-      IO.popen([OP, "read", SECRET_REF], err: File::NULL, &:read).to_s.strip
+      # Metered so `bin/op-reads` can say WHICH command spent this read. The
+      # wrapper runs the same child and returns the same string; it spawns no
+      # process of its own, so `$?` still holds op's status for the caller.
+      OpMeter.popen({}, [OP, "read", SECRET_REF], via: "agent_api", env: @env, err: File::NULL).strip
     rescue StandardError
       ""
     end

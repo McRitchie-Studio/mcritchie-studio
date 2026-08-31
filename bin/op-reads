@@ -1,0 +1,141 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/op-reads — WHAT SPENT THE 1PASSWORD QUOTA. The query half of OpMeter.
+#
+#   bin/op-reads                     # by calling command, last 24h
+#   bin/op-reads --since 3h          # a window: 45m, 3h, 7d, or an ISO8601 stamp
+#   bin/op-reads --by action         # caller (default) | action | context | hour
+#   bin/op-reads --tail 40           # the raw rows, newest last
+#   bin/op-reads --json              # for a script
+#
+# WHY THIS COMMAND EXISTS. On 2026-08-31 the account-wide quota showed 247
+# read_writes consumed in three hours and the only way to ask what spent them was
+# to re-measure the whole ecosystem by hand — which came up empty, because the
+# spend was bursty and had already stopped. The same diagnosis had been made and
+# lost once before (see the comment in bin/gh-app-git-credential about three
+# reads per push). A finding that must be re-derived from scratch every time is
+# not a finding, so it is a query now.
+#
+# READ-ONLY, deliberately and structurally. Every row comes from OpMeter.records;
+# this file never resolves the store itself and never writes. That is why it does
+# not appear in state_store_containment_test.rb's ALLOWED_CONSTRUCTORS — it
+# cannot construct the path to begin with.
+#
+# NO ALARM, NO BUDGET THRESHOLD, ON PURPOSE. That was the operator's explicit
+# call on this task and it is the right one: once the spend is attributable it is
+# findable, and an alarm on a solved problem is noise that trains people to
+# ignore alarms. If you are here to add one, re-read this paragraph first.
+#
+# COSTS NOTHING. Reading this log spends no quota — unlike `op service-account
+# ratelimit`, which itself costs a read, and which is how the original
+# investigation ended up measuring mostly itself.
+
+require "json"
+require "time"
+require_relative "lib/op_meter"
+
+WINDOW = /\A(\d+)([mhdw])\z/.freeze
+UNITS = { "m" => 60, "h" => 3600, "d" => 86_400, "w" => 604_800 }.freeze
+GROUPS = %w[caller action context hour].freeze
+
+def die(message)
+  warn("op-reads: #{message}")
+  exit 2
+end
+
+# "90m" / "3h" / "7d" / "2w", or an ISO8601 stamp. Returns nil for "all".
+def cutoff(value)
+  return nil if value.nil? || value == "all"
+
+  if (m = WINDOW.match(value))
+    return Time.now.utc - (m[1].to_i * UNITS.fetch(m[2]))
+  end
+
+  Time.parse(value).utc
+rescue ArgumentError
+  die("cannot read --since #{value.inspect}. Use 45m, 3h, 7d, 2w, an ISO8601 stamp, or 'all'.")
+end
+
+def parse_time(row)
+  Time.parse(row["ts"]).utc
+rescue ArgumentError, TypeError
+  nil
+end
+
+def key_for(row, group)
+  return row["ts"].to_s[0, 13].tr("T", " ") if group == "hour"
+
+  row.fetch(group, OpMeter::BLANK)
+end
+
+# ── options ───────────────────────────────────────────────────────────────────
+opts = { since: "24h", by: "caller", tail: nil, json: false }
+args = ARGV.dup
+until args.empty?
+  case (arg = args.shift)
+  when "--since" then opts[:since] = args.shift
+  when "--by" then opts[:by] = args.shift
+  when "--tail" then opts[:tail] = (args.shift || "20").to_i
+  when "--json" then opts[:json] = true
+  when "--all" then opts[:since] = "all"
+  when "-h", "--help"
+    puts File.read(__FILE__).lines[2..27].map { |l| l.sub(/\A# ?/, "") }.join
+    exit 0
+  else die("unknown argument #{arg.inspect} (try --help)")
+  end
+end
+GROUPS.include?(opts[:by]) or die("--by must be one of #{GROUPS.join(', ')}")
+
+# ── the data ──────────────────────────────────────────────────────────────────
+floor = cutoff(opts[:since])
+rows = OpMeter.records
+# A row whose timestamp will not parse is KEPT, not dropped. This log's job is to
+# account for spend; silently discarding a row because its clock looks odd is how
+# a total quietly stops adding up.
+rows = rows.select { |r| (t = parse_time(r)).nil? || t >= floor } if floor
+
+if rows.empty?
+  puts "op-reads: no 1Password reads recorded#{floor ? " since #{opts[:since]}" : ''}."
+  puts "          (Nothing has spent a read, or nothing has run since bin/lib/op-meter.sh landed.)"
+  exit 0
+end
+
+if opts[:tail]
+  tail = rows.last(opts[:tail])
+  if opts[:json]
+    puts JSON.pretty_generate(tail)
+  else
+    tail.each { |r| puts OpMeter::FIELD_NAMES.map { |f| r[f] }.join("  ") }
+  end
+  exit 0
+end
+
+groups = rows.group_by { |r| key_for(r, opts[:by]) }
+summary = groups.map do |key, group|
+  {
+    opts[:by] => key,
+    "reads" => group.length,
+    "failed" => group.count { |r| r["outcome"].to_s.start_with?("fail") },
+    "actions" => group.map { |r| r["action"] }.tally.sort_by { |_, n| -n }.map { |a, n| "#{a}×#{n}" }.join(" "),
+    "first" => group.map { |r| r["ts"] }.min,
+    "last" => group.map { |r| r["ts"] }.max
+  }
+end.sort_by { |r| -r["reads"] }
+
+if opts[:json]
+  puts JSON.pretty_generate("since" => opts[:since], "total" => rows.length, "by" => opts[:by], "groups" => summary)
+  exit 0
+end
+
+label = opts[:by].upcase
+width = [summary.map { |r| r[opts[:by]].to_s.length }.max, label.length].max
+puts "#{rows.length} 1Password read(s) in the last #{opts[:since]}, by #{opts[:by]}:"
+puts
+puts format("  %-#{width}s  %6s  %6s  %s", label, "READS", "FAILED", "ACTIONS")
+summary.each do |r|
+  puts format("  %-#{width}s  %6d  %6d  %s", r[opts[:by]], r["reads"], r["failed"], r["actions"])
+end
+puts
+puts "  window: #{summary.map { |r| r['first'] }.min} .. #{summary.map { |r| r['last'] }.max}"
+puts "  --by #{(GROUPS - [opts[:by]]).join(' | --by ')}   --tail N   --json   --all"
