@@ -41,9 +41,11 @@ class TaskBuildClaimInvariantTest < ActiveSupport::TestCase
 
   # --- PRESERVE: a client that forgets the claim must not destroy it ---------
 
-  # The board's edit form permits no claim keys, so this payload IS what a board
-  # save sends. Before the invariant it wiped a live lease and the desk read as
-  # unclaimed — inviting a second agent onto a desk someone was working at.
+  # The board's edit form permits no claim keys, so this payload is the shape a board
+  # save USED TO leave at the model. Before the invariant it wiped a live lease and
+  # the desk read as unclaimed — inviting a second agent onto a desk someone was
+  # working at. Both write paths fold through Task.merge_devops_into_metadata since
+  # api-devops-patch-replaces, so this now drives the model write directly.
   test "a wholesale devops replace that omits the claim keys does not destroy a live claim" do
     @task.update!(metadata: { "devops" => { "kind" => "feature", "branch" => "feat/x" } })
 
