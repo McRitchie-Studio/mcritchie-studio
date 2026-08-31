@@ -613,6 +613,146 @@ repo's resolved base ref):
 - Do not remove a worktree until its branch/PR status is known.
 - Log stale worktrees in [`../maintenance/delete-later.md`](../maintenance/delete-later.md) before deleting them.
 
+## The Desk Writer Convention
+
+A desk is a worktree. Three collisions on 2026-08-30 came from the same gap:
+nothing said who may **write** to one, so every agent improvised.
+
+- A conductor believed a builder had lost staged work, wrote the correction
+  itself, and committed it onto the builder's branch **while that builder's ship
+  was running**. The rescue prose was wrong on the one point that mattered, and
+  the only reason anyone noticed was the cert's tree binding (below).
+- A primary reviewer's backup of a source file captured **his light's
+  in-flight mutation** instead of the shipped code.
+- A light's mutation run was corrupted by her **primary's** concurrent mutation
+  and reported four unrelated failures.
+
+Instances 2 and 3 were caught by luck plus a good invariant. Read the rules
+below as the cheapest way to stop relying on either.
+
+### One writer per desk: the build-claim holder
+
+**The desk belongs to whoever holds the task's build claim. Everyone else
+reads.** Conductor, primary reviewer, and light reviewer are all readers.
+
+Reading is unrestricted: `git log`, `git diff`, `git show`, opening files,
+running the suite. Writing is not — and "writing" is wider than committing. A
+mutation, a `git stash`, a `git checkout` of one path, an editor save, a
+`bin/rails db:*` are all writes, and every one of them is visible to the desk's
+holder as a changed working tree.
+
+A task's claim is not a desk claim. A reviewer legitimately holds a **review**
+claim on a task whose desk the **builder** still owns, and a light legitimately
+works the same task as its primary. Holding a claim on the task is therefore not
+permission to write to the desk.
+
+### If you believe a builder lost work, tell the builder
+
+A helper who thinks a desk has lost work cannot distinguish *lost* from *not
+written yet* from *deliberately discarded*. Report it on the task record and
+let the writer decide. Do not reconstruct the work yourself.
+
+The 2026-08-30 rescue is the argument. The conductor's replacement prose said an
+incomplete-author flag clears on "a named claim", which reads as **any** named
+claim — precisely the fail-open the builder had rejected in design. The builder
+caught it only because it was forced to explain a commit it did not author.
+A rescue writes unreviewed prose onto someone else's PR under their name.
+
+### Mutation testing never runs in a shared desk
+
+**Run every mutation pass on a copy, never in the desk itself.** This is not a
+new rule; both reviewers who were bitten reached it independently, one mid-review.
+
+The copy is cheap — measured 0.27s and 28M for mcritchie-studio:
+
+```bash
+COPY="$(git -C <repo> rev-parse --show-toplevel)/.worktrees/mutcopy-<slug>"
+mkdir -p "$COPY" && git -C <desk> archive HEAD | tar -x -C "$COPY"
+cp <desk>/.env.test.local "$COPY"/          # REQUIRED — see below
+```
+
+**Put the copy under `.worktrees/`, and carry `.env.test.local` into it.** Both
+halves are load-bearing, and skipping either turns a loud tree collision into a
+silent database one:
+
+- `.env.test.local` is **untracked**, so `git archive HEAD` does not carry it.
+  Without it `TEST_DATABASE_URL` renders empty, `config/database.yml` falls back
+  to `database: <app>_test`, and the copy runs against the **shared** test
+  database that the primary checkout, CI, and every other suite use. Verified:
+  a naive copy resolves to `mcritchie_studio_test`.
+- `bin/lib/desk_guard.rb` exists to refuse exactly that, but `desk?` (line 139)
+  returns true **only** for a path whose parent directory is `.worktrees`. A
+  copy in `/tmp` is not a desk, so the guard never fires and the shared-database
+  run is admitted in silence. The same copy under `.worktrees/` is refused, by
+  name, with the missing file called out.
+
+Note what the copy does and does not isolate. It isolates the **tree**, which is
+what mutation testing corrupts. Carrying `.env.test.local` points it at the
+desk's test database, which the builder's own suite also uses — so the copy ends
+tree-safe but still shares a database. When primary and light both intend to
+mutate, give each a **real second desk** (`bin/agent-worktree new <app> <slug>`),
+which provisions an isolated test DB, port, and Redis slot atomically. The
+orchestrator's spawn brief is the only place that can arrange this, because a
+light cannot see what its primary is doing.
+
+### A sanctioned non-writer commit announces itself first
+
+A reviewer zap is a legitimate non-writer commit. Three things make it safe:
+
+1. **Announce on the task record before pushing**, so the desk's holder learns
+   it from the board rather than from a refused gate.
+2. **Prefix the subject `zap:`** — an established marker, 59 of the last 500
+   commits. The 2026-08-30 conductor write carried no prefix, no body, and no
+   trailer, which is why it read as unexplained.
+3. **The writer re-derives its cert.** A foreign commit invalidates the
+   fingerprint by construction; the cert must be retaken, not re-credited.
+
+### What already enforces this, and what does not
+
+Prefer these checks over trust. All four were verified by execution.
+
+| Check | Command | Catches |
+|---|---|---|
+| Cert tree fingerprint | `bin/dor-check <task> --suite-fingerprint` | Any foreign change to the desk's working tree |
+| Dirty-tree cert refusal | `bin/lib/cert_tree_guard.rb`, on every cert | Certifying over uncommitted (possibly foreign) state |
+| Shared-test-DB refusal | `bin/lib/desk_guard.rb`, on every cert lane | A desk or copy whose test DB is the shared one |
+| Desk dirty column | `bin/agent-worktree list` | A desk with uncommitted work in it right now |
+
+The fingerprint is a git tree hash of `git add -A` + `write-tree`
+(`bin/lib/full_suite_gate.rb:104`), so it covers tracked edits **and**
+untracked-not-ignored files. Verified: dropping one untracked file into a desk
+moved it `b584e196…` → `49db0fb3…`, and removing the file restored it exactly.
+
+**Its four limits, stated plainly, because it is a backstop and not a
+convention:**
+
+- It fires only at **cert and ship time**. A foreign write between ships is
+  invisible to it. It caught the 2026-08-30 conductor write only because a ship
+  happened to be in flight.
+- It is **state-based, not event-based**. A write that is reverted before the
+  next cert leaves the fingerprint identical, so a mutation pass that cleans up
+  after itself is undetectable — which is exactly what incidents 2 and 3 were.
+- It reports **"stale cert"**, not "someone else wrote here". The reader still
+  has to work out why.
+- It serves only the **writer**. No reader is warned about anything.
+
+**Two things that look like they would help and do not:**
+
+- **Git authorship cannot identify a soul.** Every agent commits under one
+  identity: 181 of the last 300 commits are `Alex McRitchie
+  <amcritchie@gmail.com>`, 113 are the merge bot, and only 3 ever set a soul
+  name. The conductor's foreign write and the builder's own correction are
+  indistinguishable by author, date, or trailer. Any guard keyed on "commit
+  author differs from claim holder" is dead on arrival.
+- **`.agent-context.json` does not record an occupant.** It names the task,
+  branch, port, database, and Redis slot — there is no agent, soul, or session
+  field in it, and `bin/agent-worktree list` has no occupant column. Today the
+  only cheap signal that someone may be in a desk is its `dirty` flag.
+
+Closing that gap needs a new field written at claim time and read by a second
+party — genuinely new machinery, worth filing rather than improvising. The rules
+above hold without it.
+
 ## Multi-Agent Safety & Merge Patterns
 
 When several agents build in parallel and their work converges on **one branch**
