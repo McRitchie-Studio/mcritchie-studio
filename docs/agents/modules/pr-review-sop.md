@@ -108,8 +108,18 @@ Avi supervisor. Carl:
    `devops.built_by` holds ONE slug, so on 2026-08-30 it named steffon while ALEX
    had written every test on the diff — and this command duly seated Alex as the
    light on Alex's own PR (#1081). The exclusion now reads `devops.builders`, the
-   server-owned set stamped on every build claim, unioned with `built_by` and every
-   `→ building` event actor.
+   server-owned set stamped on every build claim AND on the submit, unioned with
+   `built_by` and every `→ building` event actor.
+
+   **The author is not always the claimer.** A session limit kills the claimer with
+   nothing committed and another soul writes and ships the whole diff — the standard
+   shape of a handover, four of them in one day. Accumulating on the CLAIM alone read
+   as COMPLETE and named the wrong soul: on PR #1094 the selector excluded shannon,
+   who wrote nothing, and left the real author (alex) a live light candidate at rank
+   3. So the SUBMIT is an authorship moment too: `bin/task move <task> submitted
+   --actor <soul>` ADDS that soul to the set, and a bare submit whose session never
+   claimed the task stamps `builders_unattributed` instead — the refusal below.
+   Forgetting the flag is therefore LOUD, not silent.
 
    **It REFUSES (exit 2) in four states**, because an empty exclusion list is not
    the same answer as "nobody to exclude":
@@ -118,13 +128,15 @@ Avi supervisor. Carl:
    |---------|---------------|
    | AN AUTHOR NAMED NOBODY | a `--builder` entry matches no roster soul — including a PARTIAL typo (`--builder steffon,alexx`), where the list still resolves to someone and the missed soul silently goes un-excluded |
    | authors unknown | no *soul* is named — `built_by` blank, or holding a name that is not on the roster, and no soul on a `→ building` event |
-   | author set INCOMPLETE | another session claimed the task and named no soul (`devops.builders_unattributed`) |
+   | author set INCOMPLETE | another session claimed **or shipped** the task and named no soul (`devops.builders_unattributed`) |
    | an author would be SEATED | the pool was too small to drop them all, so one was kept eligible |
 
    Say which it is: `--builder <soul>[,<soul>]` names the authors (comma-separated
    for a handoff), `--builder none` asserts that no soul built it. Stamp it durably
    with `bin/task move <task> building --actor <soul>` (which works on a task
-   already at `building`, so a fast-lane build can be corrected in place).
+   already at `building`, so a fast-lane build can be corrected in place). A soul who
+   picked the work up mid-flight and shipped it names themselves the same way, on the
+   submit: `bin/task move <task> submitted --actor <soul>`.
 
    **A typo cannot lift any of that.** Every slug is checked against the roster
    (`Task.soul?`), not merely a lowercase-word shape — `--builder stefon` names
