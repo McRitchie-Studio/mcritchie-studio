@@ -13,8 +13,10 @@
 # acceptance bullet outside ACCEPTANCE_WORD_RANGE, fails on a model callback or a
 # validation rather than on the behavior under test.
 #
-# Used by test/models/task_test.rb (Task.merge_devops_metadata) and
-# test/controllers/tasks_controller_test.rb (the board UI edit path).
+# Used by test/models/task_test.rb (Task.merge_devops_metadata),
+# test/controllers/tasks_controller_test.rb (the board UI edit path), and
+# test/controllers/api/v1/tasks_controller_test.rb (the v1 JSON path, which folds
+# through the same Task.merge_devops_into_metadata since api-devops-patch-replaces).
 module DevopsKeySpread
   module_function
 

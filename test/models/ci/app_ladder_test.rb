@@ -56,7 +56,13 @@ module Ci
     test "reportable_repos is exactly the repos that can report a verdict" do
       # solana-studio joined on 2026-08-20 — it grew a Rails engine, and with it
       # a "Gem CI" lane, so it now has a verdict to report.
-      assert_equal %w[mcritchie-industries mcritchie-studio solana-studio studio-engine turf-monster],
+      # turf-vault joined on 2026-08-31 — registering it in config/release_repos.yml
+      # (to unblock a sweep its absence aborted) put it on the three-rung ladder, so
+      # it draws a card. It resolves the plain "CI" workflow like any non-gem repo,
+      # and its .github/workflows/ci.yml declares `name: CI`, so it has a real
+      # verdict to report.
+      assert_equal %w[mcritchie-industries mcritchie-studio solana-studio studio-engine turf-monster
+                      turf-vault],
                    Ci::AppLadder.reportable_repos.sort
     end
 

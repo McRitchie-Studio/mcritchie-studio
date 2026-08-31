@@ -222,8 +222,11 @@ How a gem rides a release:
 1. **The gem task is a normal task — and it carries NO version.** Its PR/branch
    lives in the gem's *own* repo (e.g. `studio-engine`), not in
    `mcritchie-studio`. Shape `library`. The PR must **not** touch the registry's
-   `version_file` (`lib/studio/version.rb` for studio-engine, the `.gemspec` for
-   solana-studio): `bin/dor-check` **refuses** a diff that edits one, because N
+   `version_file` (`lib/studio/version.rb` for studio-engine,
+   `lib/solana_studio/version.rb` for solana-studio — it was the `.gemspec` until
+   2026-08-20, when pointing dor-check's PATH match at the whole manifest made
+   spec.files and the dependencies release-owned and un-editable through the normal
+   cycle): `bin/dor-check` **refuses** a diff that edits one, because N
    PRs riding one candidate publish exactly **one** version, so no single PR can
    know the answer. The **release** owns the number (step 2). Editing
    `CHANGELOG.md` is *not* refused. Otherwise it is reviewed → `reviewed` like

@@ -10,11 +10,14 @@
 #   its columns. The devops build claim had none: sessions stopped heartbeating
 #   and walked away, leaving a dead holder on the row.
 #
-#   PRESERVE — Api::V1::TasksController assigns metadata WHOLESALE, so any PATCH
-#   carrying `devops` deletes the keys it does not echo, and the board's own edit
+#   PRESERVE — Api::V1::TasksController ASSIGNED metadata WHOLESALE, so any PATCH
+#   carrying `devops` deleted the keys it did not echo, and the board's own edit
 #   form echoes none of them. A board save silently destroyed a LIVE claim, which
 #   is why two readers of "the same fact" disagreed 20 seconds apart: the fact was
-#   being erased and rewritten underneath them.
+#   being erased and rewritten underneath them. Since api-devops-patch-replaces both
+#   write paths fold through Task.merge_devops_into_metadata, so an OMITTED claim key
+#   survives on its own; the invariant still answers a key posted BLANK and a raw
+#   whole-column `metadata:` write, which is what the cases below drive.
 require "test_helper"
 
 class TaskBuildClaimInvariantTest < ActiveSupport::TestCase
@@ -41,9 +44,11 @@ class TaskBuildClaimInvariantTest < ActiveSupport::TestCase
 
   # --- PRESERVE: a client that forgets the claim must not destroy it ---------
 
-  # The board's edit form permits no claim keys, so this payload IS what a board
-  # save sends. Before the invariant it wiped a live lease and the desk read as
-  # unclaimed — inviting a second agent onto a desk someone was working at.
+  # The board's edit form permits no claim keys, so this payload is the shape a board
+  # save USED TO leave at the model. Before the invariant it wiped a live lease and
+  # the desk read as unclaimed — inviting a second agent onto a desk someone was
+  # working at. Both write paths fold through Task.merge_devops_into_metadata since
+  # api-devops-patch-replaces, so this now drives the model write directly.
   test "a wholesale devops replace that omits the claim keys does not destroy a live claim" do
     @task.update!(metadata: { "devops" => { "kind" => "feature", "branch" => "feat/x" } })
 

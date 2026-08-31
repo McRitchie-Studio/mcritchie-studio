@@ -1606,6 +1606,155 @@ class TaskCliTest < Minitest::Test
     refute_match(/merged:/, out)
   end
 
+  # --- WHO BUILT IT vs WHO IT IS ASSIGNED TO -----------------------------------
+  #
+  # `show` printed ONE line beginning `agent:`, rendering the top-level
+  # `agent_slug` COLUMN — the ASSIGNEE. The field review actually reads is
+  # `metadata.devops.built_by`, and `bin/task move <slug> building --actor <soul>`
+  # stamps that and sets no agent_slug at all. Measured 2026-08-30, three of four
+  # actor-stamped tasks printed `agent: -` while correctly stamped; two agents
+  # reported the blank as a review-integrity incident and a third was avoided only
+  # because a conductor knew to read `--json`.
+  #
+  # These cases pin it THROUGH THE REAL CLI so the fix cannot regress into
+  # "prints something" while losing the distinction that IS the fix.
+  #
+  # THEY ANCHOR ON STRUCTURE, NOT ON A BARE SUBSTRING. The words `agent` and
+  # `built_by` appear all over this output — in `agent_context`, in the locator,
+  # in the CLI's own prose — so a `assert_match(/carl/, out)` would pass on a
+  # build that printed the author nowhere near a label. Every case below reads the
+  # SUMMARY LINE by position (line 2 of print_task, the line that used to carry
+  # `agent:`) and asserts on that line alone.
+
+  # print_task's summary line, addressed by POSITION — deliberately not by its
+  # labels, which are the thing under test.
+  def summary_line(out)
+    out.lines[1].to_s.strip
+  end
+
+  # THE ACCEPTANCE CASE, and the one that fails on the old code: an actor-stamped
+  # task carrying no assignee. This is the exact record shape of three of the four
+  # measured tasks.
+  def test_show_prints_the_stamped_builder_on_a_task_with_no_assignee
+    _requests, out, _err, status = run_task(
+      ["show", "demo-task"],
+      stub_devops: { "kind" => "bug", "built_by" => "carl", "builders" => ["carl"] }
+    )
+    assert status.success?
+    assert_match(/builders: carl/, summary_line(out),
+                 "the summary must name the soul review will exclude")
+    refute_match(/agent: -/, summary_line(out),
+                 "a stamped task must never summarise as an empty agent")
+  end
+
+  # A soul who is BOTH assignee and author still reads once as each — the fix is
+  # not "swap which field is printed", it is "print both, named".
+  def test_show_labels_the_assignee_and_the_builder_distinctly
+    _requests, out, _err, status = run_task(
+      ["show", "demo-task"],
+      stub_devops: { "kind" => "bug", "built_by" => "carl", "builders" => ["carl"] },
+      stub_columns: { "agent_slug" => "jasper" }
+    )
+    assert status.success?
+    line = summary_line(out)
+    assert_match(/assignee: jasper/, line)
+    assert_match(/builders: carl/, line)
+    # The disagreement the single line could not express: jasper is assigned,
+    # carl built it, and neither value may be attributed to the other's label.
+    refute_match(/assignee: carl/, line)
+    refute_match(/builders: jasper/, line)
+  end
+
+  # The two empties. A shared "-" said "nobody is assigned" and "nobody is
+  # recorded as having built this" in the same glyph, and only the second one
+  # blocks a review.
+  def test_show_distinguishes_an_unassigned_task_from_an_unstamped_one
+    _requests, out, _err, status = run_task(["show", "demo-task"], stub_devops: { "kind" => "bug" })
+    assert status.success?
+    line = summary_line(out)
+    assert_match(/assignee: unassigned/, line)
+    assert_match(/builders: NOT STAMPED/, line)
+    refute_match(/: -(\s|$)/, line, "the glyph that caused the incident is gone from this line")
+  end
+
+  # An assigned-but-unstamped task is the state that makes reviewer-select fail
+  # closed, and it is invisible if the assignee alone is printed: the old line
+  # read `agent: jasper` and looked completely healthy.
+  def test_show_flags_an_assigned_task_whose_builder_was_never_stamped
+    _requests, out, _err, status = run_task(
+      ["show", "demo-task"], stub_devops: { "kind" => "bug" }, stub_columns: { "agent_slug" => "jasper" }
+    )
+    assert status.success?
+    line = summary_line(out)
+    assert_match(/assignee: jasper/, line)
+    assert_match(/builders: NOT STAMPED/, line, "an assignee is not evidence that anyone built it")
+  end
+
+  # `builders_unattributed` means a session worked this task while naming no soul,
+  # so the names on record are a SUBSET. Rendering a subset as the whole set is
+  # the failure that fails confidently rather than closed.
+  def test_show_marks_an_incomplete_author_set_as_incomplete
+    stamped = { "kind" => "bug", "built_by" => "shannon", "builders" => ["shannon"] }
+    _requests, complete_out, = run_task(["show", "demo-task"], stub_devops: stamped)
+    _requests, incomplete_out, _err, status = run_task(
+      ["show", "demo-task"],
+      stub_devops: stamped.merge("builders_unattributed" => "02a41c7d-4b9e-84c2-af9c-041f22ac02c7")
+    )
+    assert status.success?
+    assert_match(/UNNAMED/, summary_line(incomplete_out))
+    refute_equal summary_line(complete_out), summary_line(incomplete_out),
+                 "a complete author set and an incomplete one must not summarise alike"
+  end
+
+  # A bare `bin/task move <slug> building` leaves the SESSION on the record. It is
+  # not an author (reviewer-select cannot exclude it), but it is the tell that the
+  # claim ran without `--actor`, so the reader must see it rather than hunt for a
+  # write that did happen.
+  def test_show_reports_a_session_id_on_the_record_as_unusable_not_as_an_author
+    session = "02a41c7d-4b9e-84c2-af9c-041f22ac02c7"
+    _requests, out, _err, status = run_task(
+      ["show", "demo-task"], stub_devops: { "kind" => "bug", "built_by" => session }
+    )
+    assert status.success?
+    line = summary_line(out)
+    assert_match(/builders: NOT STAMPED/, line)
+    assert_match(/#{Regexp.escape(session)}/, line, "the value on record is shown, not swallowed")
+  end
+
+  # --verbose expands the set into the three raw fields behind it, and says WHERE
+  # each lives. The lookup path is what actually cost the time in both incidents.
+  def test_show_verbose_prints_the_author_sources_and_where_they_live
+    _requests, out, _err, status = run_task(
+      ["show", "demo-task", "--verbose"],
+      stub_devops: { "kind" => "bug", "built_by" => "alex", "builders" => %w[shannon alex] }
+    )
+    assert status.success?
+    # Structural anchor: the two lines that FOLLOW the claim line, wherever the
+    # verbose block grows to. Reading them by content would let the assertion
+    # match the CLI's own prose about built_by instead of the rendered values.
+    lines = out.lines.map(&:rstrip)
+    claim_at = lines.index { |l| l.include?("claim: session") }
+    refute_nil claim_at, "the verbose block must still print the claim line"
+    sources, locator = lines[claim_at + 1], lines[claim_at + 2]
+    assert_match(/built_by: alex/, sources)
+    assert_match(/builders: shannon, alex/, sources)
+    assert_match(/unattributed: none/, sources)
+    assert_match(/metadata\.devops\.builders/, locator)
+    assert_match(/agent_slug/, locator)
+  end
+
+  # UNCONDITIONAL, like the column line beside it: a field printed only when set
+  # reproduces the original ambiguity ("no output" -> "the write dropped") one
+  # surface over.
+  def test_show_verbose_prints_the_author_sources_even_when_nothing_is_stamped
+    _requests, out, _err, status = run_task(["show", "demo-task", "--verbose"])
+    assert status.success?
+    lines = out.lines.map(&:rstrip)
+    sources = lines[lines.index { |l| l.include?("claim: session") } + 1]
+    assert_match(/built_by: NOT STAMPED/, sources)
+    assert_match(/builders: NOT STAMPED/, sources)
+  end
+
   # --- `bin/task field` reaches the columns too --------------------------------
   #
   # The machine-readable half of the same trap: `field` did a devops-only lookup,

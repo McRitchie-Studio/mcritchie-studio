@@ -267,8 +267,13 @@ class TaskMascotEvolutionTest < ActiveSupport::TestCase
     assert_equal "charmeleon", task.reload.devops["mascot"], "a wiped gate must not re-evolve"
   end
 
-  # The same wipe, seen from the handle: a PATCH that never mentions the mascot
-  # must not hand the task a different Pokémon on its next build-stage move.
+  # The same wipe, seen from the handle: a write that DROPS the mascot must not hand
+  # the task a different Pokémon on its next build-stage move.
+  #
+  # Same mechanism note as its sibling above: this drives `update!` on the MODEL, so
+  # it covers any wholesale metadata assignment — the raw `metadata: {}` API door
+  # included. The v1 devops PATCH merges since api-devops-patch-replaces, so mere
+  # omission no longer reaches this guard; a name posted BLANK still does.
   test "a client write that omits the mascot keeps the task's Pokemon" do
     seed_charmander_line!
     task = make_task(mascot: "charmander", stage: "designed")

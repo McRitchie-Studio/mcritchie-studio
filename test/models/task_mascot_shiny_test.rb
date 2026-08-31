@@ -57,8 +57,11 @@ class TaskMascotShinyTest < ActiveSupport::TestCase
   end
 
   # The wipe these guard: mascot_shiny/color/emoji/stage are server-owned (absent
-  # from DEVOPS_KEYS), and the API assigns metadata WHOLESALE, so a client PATCH
-  # writes a devops hash carrying only whitelisted keys. Before sync_mascot_display
+  # from DEVOPS_KEYS), and a client that REBUILDS the hash from the whitelist — what
+  # `bin/task`'s read-modify-write does, and what this helper reproduces — writes a
+  # devops hash carrying only whitelisted keys. (The v1 devops PATCH itself merges
+  # since api-devops-patch-replaces, and being absent from DEVOPS_KEYS is what makes
+  # these four survive it; this echo is the door still open.) Before sync_mascot_display
   # the stamps died there and every later event snapshot baked the NON-shiny face —
   # the board card's second crew slot lost its sprite and its ✨.
   def client_patch(task, devops)

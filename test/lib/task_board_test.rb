@@ -12,6 +12,7 @@ require "minitest/autorun"
 require "json"
 require "socket"
 require "tmpdir"
+require "fileutils"
 
 require File.expand_path("../../bin/lib/task_board", __dir__)
 require_relative "../support/op_binary_stub"
@@ -195,6 +196,136 @@ class TaskBoardTest < Minitest::Test
     end
   end
 
+  # ── [unit] agent_secret: the .env branch's UNGUARDED EDGES ──────────────────
+  #
+  # THE DEFECT THESE PIN, and why it is a different one from the block above.
+  # The reorder above is correct and shipped. But it PROMOTED a branch that had
+  # sat unreachable behind a vault read that always returned, and an unreachable
+  # branch's edges are untested by construction. Each test below feeds a .env
+  # state that is malformed rather than absent, and asserts the SAME property:
+  # the resolver falls through to the vault (op.count == 1, "from-vault") instead
+  # of raising or — worse — answering with something blank.
+  #
+  # WHY THE VAULT READ IS THE ASSERTION. "Falls through" is the demotion's whole
+  # safety argument: 1Password stays LAST so a machine whose .env cannot be used
+  # can still authenticate. A test that only asserted "does not raise" would pass
+  # on a method that returned "" and left the caller unauthenticated, which is
+  # the sharper half of what was actually wrong here.
+  #
+  # THESE PIN THE CONTRACT, NOT ONE MECHANISM — stated plainly because mutation
+  # testing said so. dotenv_secret guards twice on purpose: the `File.file?` +
+  # `File.readable?` predicates, and a `rescue SystemCallError` for the TOCTOU
+  # remainder. Measured: dropping EITHER predicate leaves these tests GREEN,
+  # because the rescue catches what the missing predicate lets through; dropping
+  # a predicate AND the rescue turns the matching test RED. So each predicate is
+  # load-bearing only in the other guard's absence, and what is actually pinned
+  # here is the observable promise — every unusable .env resolves to the vault
+  # and nothing escapes as an exception. Reverting the method to its pre-fix
+  # form fails all five (two as raw Errno errors), which is the regression that
+  # matters. Do not read a surviving single-predicate mutation as dead code.
+  def test_unit_agent_secret_strips_quotes_off_a_dotenv_value
+    Dir.mktmpdir do |dir|
+      { %(AGENT_API_SECRET="from-dotenv"\n) => "double",
+        %(AGENT_API_SECRET='from-dotenv'\n) => "single" }.each do |body, style|
+        dotenv = File.join(dir, ".env")
+        File.write(dotenv, body)
+
+        OpBinaryStub.with_stub(TaskBoard, dir: dir) do |op|
+          with_env("AGENT_API_SECRET" => nil) do
+            assert_equal "from-dotenv", TaskBoard.agent_secret(dotenv),
+                         "#{style}-quoted .env value keeps its quotes without the strip, and the " \
+                         "quotes would be POSTed as part of the secret"
+          end
+          assert_equal 0, op.count, "a quoted value is still a usable value — no vault read"
+        end
+      end
+    end
+  end
+
+  def test_unit_agent_secret_treats_a_blank_dotenv_value_as_no_value
+    # THE SHARPEST EDGE. `AGENT_API_SECRET=` returned "" — TRUTHY in Ruby — so
+    # agent_secret short-circuited, the vault fallback never ran, AND every
+    # caller's `|| die!` guard failed to fire. The caller proceeded
+    # UNAUTHENTICATED and the operator got `KeyError: key not found: "token"`
+    # off the auth response instead of a message naming the real problem.
+    Dir.mktmpdir do |dir|
+      dotenv = File.join(dir, ".env")
+      File.write(dotenv, "OTHER=1\nAGENT_API_SECRET=\n")
+
+      OpBinaryStub.with_stub(TaskBoard, dir: dir) do |op|
+        with_env("AGENT_API_SECRET" => nil) do
+          assert_equal "from-vault", TaskBoard.agent_secret(dotenv),
+                       "a set-but-empty .env value must NOT satisfy the chain"
+        end
+        assert_equal 1, op.count,
+                     "and it must reach the vault — the fallback a blank value used to defeat"
+      end
+    end
+  end
+
+  def test_unit_agent_secret_falls_through_a_dotenv_that_is_a_directory
+    # `File.exist?` is true for a directory, so the old guard let one straight
+    # into File.readlines -> Errno::EISDIR, UNCAUGHT: TaskBoard.agent_secret has
+    # no rescue of its own. `File.readable?` alone does NOT close this — a
+    # directory IS readable. It takes `File.file?` too.
+    Dir.mktmpdir do |dir|
+      as_directory = File.join(dir, ".env")
+      FileUtils.mkdir_p(as_directory)
+
+      OpBinaryStub.with_stub(TaskBoard, dir: dir) do |op|
+        with_env("AGENT_API_SECRET" => nil) do
+          assert_equal "from-vault", TaskBoard.agent_secret(as_directory),
+                       "a directory .env falls through instead of raising Errno::EISDIR"
+        end
+        assert_equal 1, op.count
+      end
+    end
+  end
+
+  def test_unit_agent_secret_falls_through_an_unreadable_dotenv
+    # The case `File.file?` does NOT close: a mode-000 REGULAR file is still
+    # File.file? => true, and File.readlines raises Errno::EACCES. This is why
+    # the guard needs BOTH predicates rather than either one.
+    Dir.mktmpdir do |dir|
+      locked = File.join(dir, ".env")
+      File.write(locked, "AGENT_API_SECRET=from-dotenv\n")
+      File.chmod(0o000, locked)
+
+      # Stated as an assertion, not a skip: under a uid that can read anything
+      # (root) this premise is false and the test below would pass vacuously.
+      assert File.file?(locked), "premise: still a regular file"
+      refute File.readable?(locked), "premise: unreadable by this uid (fails as root)"
+
+      OpBinaryStub.with_stub(TaskBoard, dir: dir) do |op|
+        with_env("AGENT_API_SECRET" => nil) do
+          assert_equal "from-vault", TaskBoard.agent_secret(locked),
+                       "an unreadable .env falls through instead of raising Errno::EACCES"
+        end
+        assert_equal 1, op.count
+      end
+    ensure
+      File.chmod(0o600, locked) if locked && File.exist?(locked)
+    end
+  end
+
+  def test_unit_agent_secret_does_not_let_a_blank_env_short_circuit_the_chain
+    # Same defect class one rung up: ENV was returned verbatim when non-empty,
+    # so a whitespace-only AGENT_API_SECRET satisfied the chain and skipped both
+    # the .env that had the real secret and the vault behind it.
+    Dir.mktmpdir do |dir|
+      dotenv = File.join(dir, ".env")
+      File.write(dotenv, "AGENT_API_SECRET=from-dotenv\n")
+
+      OpBinaryStub.with_stub(TaskBoard, dir: dir) do |op|
+        with_env("AGENT_API_SECRET" => "   ") do
+          assert_equal "from-dotenv", TaskBoard.agent_secret(dotenv),
+                       "a blank ENV is not a secret; the .env below it is"
+        end
+        assert_equal 0, op.count
+      end
+    end
+  end
+
   # ── [integration] request shape against a localhost stub ────────────────────
 
   def test_integration_request_sends_bearer_and_json_body
@@ -308,6 +439,45 @@ class TaskBoardTest < Minitest::Test
 
         assert_equal 0, op.count,
                      "one full board call spends zero 1Password reads — the old order spent one PER CALL"
+      end
+    end
+  end
+
+  def test_integration_a_malformed_dotenv_authenticates_from_the_vault_not_a_blank_secret
+    # THE CALLER-VISIBLE CONSEQUENCE of the blank-value edge, end to end.
+    #
+    # Before the fix, `AGENT_API_SECRET=` in .env resolved to "" and this exact
+    # sequence POSTed `{"secret":""}` — an unauthenticated call that the board
+    # answers 401, whereupon a caller doing `.fetch("token")` dies with
+    # `KeyError: key not found: "token"` and the operator is left debugging the
+    # wrong layer. The vault, which holds a working secret, was never consulted
+    # because "" is truthy.
+    #
+    # Asserted on the WIRE rather than the return value: what went wrong was the
+    # bytes that reached the board, and the point of the demotion is that a
+    # machine whose .env is unusable can still authenticate for real.
+    Dir.mktmpdir do |dir|
+      dotenv = File.join(dir, ".env")
+      File.write(dotenv, "OTHER=1\nAGENT_API_SECRET=\n")
+
+      OpBinaryStub.with_stub(TaskBoard, dir: dir) do |op|
+        with_stub_server(payload: '{"token":"tok-9"}') do |port, requests|
+          with_env("AGENT_API_SECRET" => nil) do
+            secret = TaskBoard.agent_secret(dotenv)
+
+            refute_predicate secret.to_s, :empty?,
+                             "a blank .env must never resolve to a blank secret"
+
+            res = TaskBoard.request(:post, "/api/v1/auth",
+                                    base_url: "http://127.0.0.1:#{port}", body: { secret: secret })
+            assert_equal "tok-9", TaskBoard.parse_body(res)["token"]
+          end
+
+          assert_equal({ "secret" => "from-vault" }, JSON.parse(requests.first[:body]),
+                       "the request carries the VAULT secret — the fallback the blank value defeated")
+        end
+
+        assert_equal 1, op.count, "and the vault was consulted exactly once to get there"
       end
     end
   end

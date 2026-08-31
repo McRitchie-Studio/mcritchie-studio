@@ -52,6 +52,11 @@ module Api
         })
       end
 
+      # GET /api/v1/release_conductor_claims/live?role=deployer — the CROSS-RELEASE "is
+      # ANY claim for this role live?" read (NOT nested under a slug). bin/agent-worktree's
+      # `_ship`/`_gate` reclaim guard asks this: a live `deployer` claim = a ship is in
+      # progress, so those fixed-path workspaces must not be reclaimed. 200 { live: bool,
+      # holder: <info>|null }.
       def live
         role = claim_params[:role]
         render_data({
@@ -187,12 +192,6 @@ module Api
           members_all_shipped: !release.tasks.where.not(stage: "shipped").exists?
         ).any?
       end
-
-      # GET /api/v1/release_conductor_claims/live?role=deployer — the CROSS-RELEASE "is
-      # ANY claim for this role live?" read (NOT nested under a slug). bin/agent-worktree's
-      # `_ship`/`_gate` reclaim guard asks this: a live `deployer` claim = a ship is in
-      # progress, so those fixed-path workspaces must not be reclaimed. 200 { live: bool,
-      # holder: <info>|null }.
 
       def claim_params
         params.permit(:slug, :role, :session, :nonce, :label, :operator_secret)

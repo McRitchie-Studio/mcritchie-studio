@@ -22,8 +22,8 @@ humans; when the two disagree, fix both in the same pass.
 | Item | Vault | Purpose | Typical consumer |
 |------|-------|---------|------------------|
 | `agent.heroku` | `agents-studio` | Heroku API key | `bin/ecosystem-build` |
-| `github.mcritchie-agent` | `agents-studio` | GitHub App for the **build/review** lanes (the default identity): Contents + Pull requests + Checks read + Actions + Workflows across the McRitchie-Studio org. Fields: `app-id`, `client-id`; the private key is the **`.pem` FILE attachment** — the concealed `private key` field is NOT the key. | Two legs: `git push` via the global helper `bin/gh-app-git-credential`; `gh` PR create/merge + CI-status reads via a per-session minted `GH_TOKEN` (`bin/gh-app-mint-token`) — `gh` never consults git credential helpers (see `credentials.md` → GitHub). |
-| `github.mcritchie-deployer` | `agents-admin` | GitHub App for the **ship** lane: Contents + Actions + Checks read + Secrets — **no pull-request scope by design** (the deployer cannot open or merge PRs). Fields: `app-id`, `client-id`; key is the **`.pem` FILE attachment**. | `production-deploy` / `bin/release ship` sessions, via `export GH_APP_ITEM=github.mcritchie-deployer` — in a shell that has run `source ~/.zprofile.admin` first, because only the admin token can read this vault. |
+| `github.mcritchie-agent` | `agents-studio` | GitHub App for the **build/review** lanes (the default identity): Contents + Pull requests + Checks read + Actions + Workflows across the McRitchie-Studio org. Fields: `app-id` = **`4431410`** (recorded here on purpose — see **GitHub App IDs** below), `client-id`; the private key is the **`.pem` FILE attachment** — the concealed `private key` field is NOT the key. | Two legs: `git push` via the global helper `bin/gh-app-git-credential`; `gh` PR create/merge + CI-status reads via a per-session minted `GH_TOKEN` (`bin/gh-app-mint-token`) — `gh` never consults git credential helpers (see `credentials.md` → GitHub). |
+| `github.mcritchie-deployer` | `agents-admin` | GitHub App for the **ship** lane: Contents + Actions + Checks read + Secrets — **no pull-request scope by design** (the deployer cannot open or merge PRs). Fields: `app-id` = **`4431542`** (recorded here on purpose — see **GitHub App IDs** below), `client-id`; key is the **`.pem` FILE attachment**. | `production-deploy` / `bin/release ship` sessions, via `export GH_APP_ITEM=github.mcritchie-deployer` — in a shell that has run `source ~/.zprofile.admin` first, because only the admin token can read this vault. |
 | `agent.github` | — (deleted) | **DELETED from 1Password** — verified absent from `agents-studio` on 2026-08-29, after both auth legs were proven on the App identities. It was the old `amcritchie` fine-grained PAT; fine-grained PATs cannot call the check-runs API, so the two GitHub Apps above replaced it. If a `gh` keyring still lists an `amcritchie` account, that is this PAT lingering: `gh auth logout -h github.com -u amcritchie`, then revoke it on GitHub. | Historical reference only. |
 | `Agent API Secret` | `agents-studio` | Task-board API secret (`AGENT_API_SECRET`); auth for the agent task API. Also in app `.env` + Heroku config | McRitchie Studio task board (`POST /api/v1/auth`); see `task-board-api.md` |
 | `agent.solana` | `agents-studio` | Legacy Alex Bot Solana wallet; retired after key rotation | Historical reference only |
@@ -49,6 +49,67 @@ service-account token install recipe), `agent.rails_master_key`,
 `agent.turf.x`, `turf.squad`, `turf_vault-mainnet-keypair` (document),
 `discord.webhooks`, `dont.use.agent.aws` (decoy — ignore). Describe an item
 in the table above the first time a doc or script depends on it.
+
+## GitHub App IDs — identifiers, not secrets
+
+| App | 1Password item | Vault | `app-id` |
+|-----|----------------|-------|----------|
+| agent (build/review) | `github.mcritchie-agent` | `agents-studio` | **`4431410`** |
+| deployer (ship) | `github.mcritchie-deployer` | `agents-admin` | **`4431542`** |
+
+A convenience copy sits at `~/.config/mcritchie/app-ids.json` on Mr.
+McRitchie's Mac. Nothing generates that file, so a rebuilt machine will not
+have it — this table is the durable copy.
+
+**Why they are written down.** `bin/gh-token` mints from two halves: the numeric
+`app-id` and the `.pem` private key. Both used to live only in 1Password — so
+when `op` was unreachable, the documented fallback ("mint from the `.pem` by
+hand") needed the very service that was down. On 2026-08-30 that circle cost a
+night: three finished tasks could not be pushed during a quota outage because
+the agent `app-id` was not to hand. Recording the number breaks the circle. The
+hand-mint recipe itself lives in `token-session.md`.
+
+**Why this does not violate the "no secret values" rule at the top of this
+file.** An app id is an *identity claim*, not a *proof of identity*. It is the
+`iss` of the JWT, and GitHub verifies that JWT's signature against the app's
+registered **public** key — so the id only chooses which key to check against.
+Tested against the live API on 2026-08-30 rather than assumed:
+
+| Test | Result |
+|---|---|
+| `GET /app` with an id and the `.pem` that matches it | `200` — the pairing is exact |
+| the right `.pem`, the wrong id | `401` |
+| the right id, the wrong `.pem` | `401` |
+| the id and no key at all | `401 A JSON web token could not be decoded` |
+
+The id is the username and the `.pem` is the password. Alone, it opens nothing.
+
+**How public is "public" — precisely, because the loose version of this claim is
+wrong.** Both Apps have profile pages that answer anonymously
+(`https://github.com/apps/mcritchie-agent`, and the same for `-deployer`, both
+`200`), but neither page prints the numeric id. `GET /apps/mcritchie-agent`
+*does* return `{"id":4431410}` — to that App's **own** installation token, which
+is a self-read; the same call for `mcritchie-deployer` from the agent's token is
+`403`. So do not repeat "GitHub publishes these": what is demonstrated is that
+the ids are **low-sensitivity internal identifiers**, not that a stranger can
+fetch them.
+
+That is still enough to write them down here, for three reasons. They confer
+nothing without the `.pem` (the table above). They sit 132 apart in one
+sequence, so withholding the second while the first is recorded buys nothing.
+And on any machine where the `.pem` exists, the ids already sit beside it in
+cleartext at `~/.config/mcritchie/app-ids.json` — the attacker this would
+inconvenience is one who stole the key without the filesystem.
+
+**Why the repo, rather than somewhere less public.** It is the only store that
+survives BOTH a wiped Mac and a 1Password outage. That pair of failures is
+exactly the case the number is needed for, and it is what `house-burn-down.md`
+rebuilds from.
+
+**What stays secret, and never enters this repo:** the `.pem` private key (the
+FILE attachment on each item), the OAuth **client secret**, and any minted
+installation token. `client-id` is likewise not a secret, but none is recorded
+here, because nothing needs one.
 
 ## Shared AWS identity — `agent.aws`
 

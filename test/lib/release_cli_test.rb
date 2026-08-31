@@ -2749,9 +2749,10 @@ class ReleaseCliTest < Minitest::Test
   HUB_GATE_CMD = "bin/rails db:test:prepare test test:system"
 
   def test_qa_gate_cmd_reads_the_registered_g3_tier_from_the_real_registry
-    # ONE subprocess reads all five apps through the REAL config/release_repos.yml
-    # — the exact seam pre_qa_gate reads at run time. The tier a repo registers
-    # turns on whether its DEPLOY runs the suite, not on hub-vs-satellite:
+    # ONE subprocess reads every registered app through the REAL
+    # config/release_repos.yml — the exact seam pre_qa_gate reads at run time. The
+    # tier a repo registers turns on whether its DEPLOY runs the suite, not on
+    # hub-vs-satellite:
     #   * the HUB and ROLIO both deploy via git_push_heroku (NO test step), so each
     #     registers CI's full suite VERBATIM — base AND system tiers. It is the same
     #     STRING for both (HUB_GATE_CMD), which is why rolio reuses the constant:
@@ -2760,10 +2761,15 @@ class ReleaseCliTest < Minitest::Test
     #     SKIPS its test/system — the gap this pins shut.
     #   * turf-monster keeps the integration subset — bin/deploy runs its full
     #     suite pre-prod, and it has no test/system at all.
-    out = eval_helper(%(%w[mcritchie-studio turf-monster rolio tax-studio chain-ops].map { |r| qa_gate_cmd(r) }.inspect))
+    #   * turf-vault registers NOTHING, and this is the reader that proves it. The
+    #     Rails-side Release::Repos.qa_test_cmd is nil for it, but `bin/release`
+    #     reads the registry STANDALONE (no Rails), so the two could disagree. A
+    #     non-empty answer here would arm a Rails gate against an Anchor repo with
+    #     no bin/rails — red at G3, aborting the whole batch sweep.
+    out = eval_helper(%(%w[mcritchie-studio turf-monster turf-vault rolio tax-studio chain-ops].map { |r| qa_gate_cmd(r) }.inspect))
 
     expected = [HUB_GATE_CMD,
-                "bin/rails test test/integration", HUB_GATE_CMD,
+                "bin/rails test test/integration", "", HUB_GATE_CMD,
                 "", ""]
     assert_equal expected.inspect, out,
                  "hub + rolio certify CI's full suite at G3 (no test step in their deploy); turf-monster " \

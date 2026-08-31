@@ -672,6 +672,42 @@ the exact blocker, expected owner action, and any PR/CI link needed to reproduce
 the issue. Also leave a GitHub PR comment when the blocker is code-review
 specific or should be visible on the PR.
 
+## Assignee vs Builder — two facts, two labels
+
+`bin/task show <slug>` prints both, and they are **different questions**:
+
+| Line | Reads | Means |
+|------|-------|-------|
+| `assignee:` | the top-level `agent_slug` column | who the task is assigned to; `unassigned` when blank |
+| `builders:` | `metadata.devops.builders` + `built_by` | the AUTHOR SET `bin/reviewer-select` excludes; `NOT STAMPED` when blank |
+
+**They disagree routinely, by design.** `bin/task move <slug> building --actor
+<soul>` stamps the author (`Task#builder_to_stamp` rule 1) and sets no assignee
+at all, so an actor-stamped task is correctly attributed while carrying no
+`agent_slug`. Measured 2026-08-30 across four such tasks, three of them.
+
+Until this split landed the summary printed ONE line, `agent: <agent_slug>`, and
+those three read `agent: -`. Two agents checking the field the operating model
+tells them is load-bearing reported a blank builder that was in fact stamped;
+a third instance was avoided only because a conductor knew to read `--json`.
+Neither empty prints `-` any more, because "nobody is assigned" is ordinary and
+"nobody is recorded as having built it" makes review fail closed.
+
+```bash
+bin/task show <slug>              # assignee: unassigned  builders: carl
+bin/task show <slug> --verbose    # built_by / builders / unattributed, + where each lives
+bin/task move <slug> building --actor <soul>   # stamp an author, in place, at any time
+```
+
+`builders: shannon +1 UNNAMED` means `devops.builders_unattributed` is set — a
+session worked the task while naming no soul, so the names shown are a SUBSET and
+`bin/reviewer-select` refuses rather than seating a pool that may hold an author.
+A value shown as `not a soul handle` is a session id or an email left on the
+record by a claim that ran without `--actor`: visible on purpose, because it is
+the tell for a stamp that never happened. The roster check itself lives in
+`ReviewerSelector` (DB-backed), so this display reports what the record holds and
+never predicts the selector's verdict.
+
 ## Release Slug — read-only, attached by the sweep
 
 `release_slug` is a **top-level Task column, not a field you set.** It is the

@@ -756,6 +756,22 @@ class Release
     # read it, exactly as the live ship orders steps 5c → 6. The primary-restore +
     # install-agent-docs steps are idempotent file ops the CLI rides along whenever
     # ANY step is pending; they are not gated here.
+    #
+    # AND THEY MUST NOT BE, which is worth stating because the omission reads like one.
+    # This list has a SECOND job: conductor_work_remaining derives from it, so anything
+    # added here extends the deployer claim's cover. It is tempting to add the file ops
+    # for exactly that reason — they run AFTER notes flips work_remaining false, so the
+    # claim can lapse while they are still going. Adding them breaks the renewer.
+    # `restore_primaries` legitimately REFUSES a primary carrying uncommitted work, and
+    # that refusal is a CORRECT outcome, so a `done[:restore]` predicate has no truthful
+    # value: true on a refusal is a lie, and false leaves finalize_pending? reporting
+    # work forever — conductor_work_remaining never goes false and the renewer NEVER
+    # STOPS, which is the 12-hour orphaned claim /tasks/release-renewer-outlives-ship
+    # was opened to fix. Same shape as the `abandoned` short-circuit the claims
+    # controller flags as "REQUIRED, not defensive". Every step here must be a durable
+    # release FACT; these two are best-effort local file ops, and there is no
+    # ReleaseEvent step for either. Reasoning + the priced alternative:
+    # /tasks/cover-renewer-payload-guard.
     FINALIZE_ORDER = %i[seal ship notes].freeze
 
     def finalize_pending?(state:, sealed:, notes_completed:, members_all_shipped: true)
