@@ -124,11 +124,16 @@ class InstallAgentDocsStatusLineArrayTest < Minitest::Test
   # ── unit ──────────────────────────────────────────────────────────────────
 
   def test_unit_multi_line_status_line_survives_the_rewrite
+    # FOUR-SPACE INDENT ON PURPOSE. A two-space fixture made the indent assertion
+    # below INERT: the fallback for "no elements found" is also two spaces, so a
+    # rewriter that ignored the operator's indentation entirely produced output
+    # identical to a correct one and the mutation survived unseen. Four spaces is
+    # the smallest change that makes the two behaviours distinguishable.
     result = rewrite(<<~TOML)
       [tui]
       status_line = [
-        "model-with-reasoning",
-        "current-dir",
+          "model-with-reasoning",
+          "current-dir",
       ]
       status_line_use_colors = true
     TOML
@@ -145,8 +150,10 @@ class InstallAgentDocsStatusLineArrayTest < Minitest::Test
     element_indents = status_line_block(result)
       .select { |line| line.match?(/^\s*"/) }
       .map { |line| line[/\A\s*/] }
-    assert_equal ["  ", "  ", "  "], element_indents,
-      "the added element must adopt the indentation of the ones already there"
+    assert_equal ["    ", "    ", "    "], element_indents,
+      "the added element must adopt the indentation of the ones already there — " \
+      "four spaces here, not the two-space fallback, so a rewriter that ignores " \
+      "the operator's layout is actually distinguishable from one that keeps it"
   end
 
   def test_unit_multi_line_without_a_trailing_comma_stays_valid
@@ -316,5 +323,57 @@ class InstallAgentDocsStatusLineArrayTest < Minitest::Test
   # strands no orphaned elements. If you want the runtime leg back, give it a home
   # that is not gated on a binary CI does not have.
 
+
+
+  # ── THE COMMA MUST PRECEDE A TRAILING COMMENT ───────────────────────────────
+  #
+  # FOUND IN REVIEW, and it is this PR's own defect class one branch over. The
+  # comma-append anchored to end-of-LINE, so on
+  #     "current-dir" # the working directory
+  # the separator landed INSIDE the comment and the element never got one. Real
+  # codex refuses the result outright ("config could not be loaded").
+  #
+  # ⛔ WHY assert_no_orphaned_elements CANNOT CATCH THIS, which is the whole
+  # reason this test exists separately: the array stays bracket-balanced and the
+  # element count is right — it is merely UNSEPARATED. Structure proxies pass. So
+  # assert on the SEPARATOR itself, positionally against the comment.
+  def test_unit_a_trailing_comment_keeps_its_comma_before_the_hash
+    result = rewrite(<<~TOML)
+      [tui]
+      status_line = [
+        "model-with-reasoning",
+        "current-dir" # the working directory
+      ]
+    TOML
+
+    line = result.lines.find { |l| l.include?("current-dir") }
+
+    assert_operator line.index(","), :<, line.index("#"),
+                    "the comma must terminate the ELEMENT, not sit inside the comment — " \
+                    "codex refuses the file outright when the separator is swallowed"
+    assert_includes line, "# the working directory", "and the operator's comment must survive"
+    assert_equal %w[model-with-reasoning current-dir thread-title], status_line_items(result)
+  end
+
+  # A STANDALONE COMMENT IS NOT AN ELEMENT. `element_lines` selected any non-blank
+  # line, so the last "element" could BE a comment line and the separator was
+  # appended to it — same corruption by a different door.
+  def test_unit_a_standalone_comment_is_not_treated_as_an_element
+    result = rewrite(<<~TOML)
+      [tui]
+      status_line = [
+        "model-with-reasoning",
+        "current-dir"
+        # keep this list short
+      ]
+    TOML
+
+    element = result.lines.find { |l| l.include?("current-dir") }
+    comment = result.lines.find { |l| l.strip.start_with?("#") && l.include?("keep this list") }
+
+    assert_includes element, ",", "the real element above the comment must get the separator"
+    refute_includes comment, ",", "a standalone comment must never be commaed as if it were an element"
+    assert_equal %w[model-with-reasoning current-dir thread-title], status_line_items(result)
+  end
 
 end

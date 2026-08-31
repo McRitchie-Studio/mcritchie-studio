@@ -33,7 +33,10 @@ persisted local thread title. The identity makes `current-dir` redundant, while
 runs. The installer migrates the former managed layout automatically. It keeps a
 custom footer layout by ADDING `thread-title` to the existing `status_line`
 array in place, preserving the operator's own formatting — single-line and
-one-element-per-line arrays alike. It replaces the value outright only when
+one-element-per-line arrays alike, including their indentation and any comments
+on the element lines (the separator is written BEFORE a trailing `#`, not after
+it, which is where an earlier version swallowed the comma and produced a file
+Codex refused). It replaces the value outright only when
 `status_line` is not an array at all. (The multi-line case is load-bearing, not
 incidental: rewriting only an array's opening line strands the remaining element
 lines as bare text, which Codex refuses to load — `key with no value, expected

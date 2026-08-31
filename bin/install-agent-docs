@@ -277,11 +277,25 @@ def ensure_array_item(lines, range, key, item, default_items)
 
   # Multi-line: keep the operator's layout and add one element line before the
   # closing bracket, first terminating the previous element so the array stays valid.
-  element_lines = ((first + 1)...last).select { |i| lines[i].match?(/\S/) }
+  # COMMENT LINES ARE NOT ELEMENTS. Selecting any non-blank line let `previous`
+  # BE a standalone comment, and the separator was then appended to the comment
+  # instead of to the element above it.
+  element_lines = ((first + 1)...last).select { |i| lines[i].match?(/\S/) && !lines[i].match?(/\A\s*#/) }
   indent = element_lines.empty? ? "  " : lines[element_lines.first][/\A\s*/]
   unless element_lines.empty?
     previous = element_lines.last
-    lines[previous] = lines[previous].sub(/\s*\z/, "").sub(/,?\z/, ",") + "\n"
+    # THE COMMA GOES BEFORE A TRAILING COMMENT, NOT AFTER IT. The old
+    # `.sub(/,?\z/, ",")` anchored to end-of-LINE, so on
+    #     "current-dir" # the working directory
+    # the comma landed INSIDE the comment and the element never got its
+    # separator. Codex then refuses the file outright ("config could not be
+    # loaded"), and `assert_no_orphaned_elements` cannot see it: the array is
+    # still bracket-balanced, merely unseparated. Split the comment off, comma
+    # the body, put the comment back.
+    prev_line    = lines[previous]
+    prev_comment = prev_line[/\s+#.*$/]
+    prev_body    = prev_comment ? prev_line.sub(/\s+#.*$/, "") : prev_line.chomp
+    lines[previous] = "#{prev_body.sub(/,?\s*\z/, ',')}#{prev_comment}\n"
   end
   lines.insert(last, "#{indent}#{item.inspect},\n")
 
