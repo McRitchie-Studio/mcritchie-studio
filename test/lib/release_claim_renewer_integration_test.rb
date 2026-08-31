@@ -68,10 +68,11 @@ class ReleaseClaimRenewerIntegrationTest < Minitest::Test
   class StubBoard
     attr_reader :renews
 
-    def initialize(state:)
+    def initialize(state:, work_remaining: false)
       @server = TCPServer.new("127.0.0.1", 0)
       @renews = []
       @state = state
+      @work_remaining = work_remaining
       @lock = Mutex.new
       @thread = Thread.new { serve }
       @thread.abort_on_exception = false
@@ -82,6 +83,14 @@ class ReleaseClaimRenewerIntegrationTest < Minitest::Test
     def renew_count = @lock.synchronize { @renews.length }
 
     def state = @lock.synchronize { @state }
+
+    def work_remaining = @lock.synchronize { @work_remaining }
+
+    # The DEPLOYER case: a shipped release that still has member flips left. Set this
+    # and the renewer must keep going even though the state reads terminal.
+    def work_remaining=(value)
+      @lock.synchronize { @work_remaining = value }
+    end
 
     # The one thing a test changes mid-flight: the release ships. Nothing else moves —
     # no signal, no teardown, no crash.
@@ -132,7 +141,14 @@ class ReleaseClaimRenewerIntegrationTest < Minitest::Test
                   @lock.synchronize { @renews << (JSON.parse(body) rescue {}) }
                   { "data" => { "renewed" => true } }
                 else
-                  { "data" => { "holder" => { "live" => true }, "release_state" => state } }
+                  # BOTH HALVES, as the real endpoint serves them. `release_state`
+                  # alone is not "finished" — a deployer legitimately holds a claim
+                  # on a SHIPPED release while resuming member flips or finalizing a
+                  # partial, and a stub that omitted work_remaining would let this
+                  # suite certify a renewer that exits mid-deploy.
+                  { "data" => { "holder" => { "live" => true },
+                                "release_state" => state,
+                                "conductor_work_remaining" => work_remaining } }
                 end
       json = JSON.generate(payload)
       socket.print("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n" \
@@ -307,4 +323,47 @@ class ReleaseClaimRenewerIntegrationTest < Minitest::Test
              "window it exists to protect"
     end
   end
+
+  # ── THE DEPLOYER PATH: SHIPPED IS NOT FINISHED ──────────────────────────────
+  #
+  # FOUND IN REVIEW of this PR, and it is the case the first version got wrong.
+  # A deployer legitimately holds a claim on a release that is ALREADY `shipped`,
+  # on two supported paths: a `bin/release ship` RE-RUN resuming member flips
+  # (`resuming_member_ship = !r.active? && unfinished.positive?`, bin/release.rb),
+  # and `bin/release finalize` on a partial finalize. Stopping on state ALONE
+  # exited before the first heartbeat there, so the claim lapsed 120s into a run
+  # needing many minutes — a 2-minute orphan in place of a 12-hour one, on the lane
+  # where a lapsed claim means a CONCURRENT PRODUCTION DEPLOY.
+  #
+  # The test directly above (shipped, nothing left, zero polls) passes EITHER way.
+  # That is why the first version looked correct, and why this one had to exist.
+  def test_integration_a_shipped_release_with_member_work_left_keeps_renewing
+    Dir.mktmpdir do |proj|
+      @board = StubBoard.new(state: "shipped", work_remaining: true)
+      anchor_start = start_anchor
+      spawn_renewer(proj, anchor_start)
+
+      assert wait_until(timeout: 15) { @board.renew_count >= 2 },
+             "a DEPLOYER resuming member flips on a shipped release still holds a REAL " \
+             "claim; exiting here lapses it mid-deploy and lets a second ship start"
+      assert alive?(@renewer), "and the loop must still be running, not merely slow to exit"
+    end
+  end
+
+  # The counterweight: it must STILL exit once the work is genuinely done, or the
+  # fix above would have traded this bug for the original 12-hour orphan.
+  def test_integration_the_renewer_exits_once_the_last_member_finishes
+    Dir.mktmpdir do |proj|
+      @board = StubBoard.new(state: "shipped", work_remaining: true)
+      anchor_start = start_anchor
+      spawn_renewer(proj, anchor_start)
+
+      assert wait_until(timeout: 15) { @board.renew_count >= 1 }
+      @board.work_remaining = false
+
+      assert wait_until(timeout: 15) { !alive?(@renewer) },
+             "terminal AND nothing left is the only combination that stops the loop"
+    end
+  end
+
 end

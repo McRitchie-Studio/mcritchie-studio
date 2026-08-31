@@ -28,10 +28,27 @@ module Api
       # claim held while a candidate is still being created. A renewer must read that
       # as NOT finished (ReleaseClaimCli fails open on a nil/unknown state), because a
       # release that does not exist yet has certainly not ended.
+      # `conductor_work_remaining` is the SECOND half of "is this candidate finished",
+      # and it exists because the state alone answered that question WRONG on two
+      # supported paths. A deployer legitimately holds a claim on a release that is
+      # ALREADY `shipped`: `bin/release ship` re-run resuming member flips
+      # (`resuming_member_ship = !r.active? && unfinished.positive?`), and
+      # `bin/release finalize` on a partial finalize. A renewer that stopped on state
+      # alone exited before its first heartbeat there and the claim lapsed 120s into a
+      # run needing many minutes — trading a 12-hour orphan for a 2-minute one, on the
+      # lane where a lapsed claim means a CONCURRENT PRODUCTION DEPLOY.
+      #
+      # Computed HERE rather than shipping two fields for the CLI to combine, because
+      # the model is what knows: `unfinished` is the same count bin/release.rb uses to
+      # decide a resume is legitimate, so the two cannot drift into disagreeing about
+      # whether work is left.
       def show
+        release = Release.find_by(slug: params[:slug])
+
         render_data({
-          "holder"        => ReleaseConductorClaim.status_for(params[:slug], claim_params[:role]),
-          "release_state" => Release.find_by(slug: params[:slug])&.state
+          "holder"                    => ReleaseConductorClaim.status_for(params[:slug], claim_params[:role]),
+          "release_state"             => release&.state,
+          "conductor_work_remaining"  => release ? release.tasks.where.not(stage: "shipped").exists? : nil
         })
       end
 

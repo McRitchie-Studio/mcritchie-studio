@@ -436,7 +436,22 @@ class ReleaseClaimCli
     res = get("#{base(slug)}/conductor_claim?role=#{role}")
     return false unless ok?(res)
 
-    TERMINAL_STATES.include?(parse_data(res)["release_state"].to_s)
+    data = parse_data(res)
+    return false unless TERMINAL_STATES.include?(data["release_state"].to_s)
+
+    # TERMINAL IS NOT ENOUGH, and this is the correction that came out of review.
+    # A DEPLOYER legitimately holds a claim on a release that is already `shipped`:
+    # a `bin/release ship` re-run resuming member flips, and `bin/release finalize`
+    # on a partial finalize. Stopping on state alone exited BEFORE THE FIRST
+    # HEARTBEAT on those paths, so the claim lapsed 120s into a run that needs many
+    # minutes — a 2-minute orphan in place of a 12-hour one, on the lane where a
+    # lapsed claim means a concurrent production deploy. Not an improvement.
+    #
+    # FAIL OPEN ON ABSENCE, deliberately: `false` here means "keep renewing". A
+    # server that does not send the key (an older board, a partial payload) yields
+    # nil, which is not `false`, so the loop keeps going. The only thing that stops
+    # a renewer is the board PLAINLY saying both "terminal" and "nothing left".
+    data["conductor_work_remaining"] == false
   end
 
   def stop_renewer(sid, role, slug)
