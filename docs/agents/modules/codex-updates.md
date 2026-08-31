@@ -74,6 +74,28 @@ bin/agent-runtime doctor
 bin/agent-marker current --format title
 ```
 
+## Detecting An Unmanaged Install
+
+`bin/agent-runtime doctor` calls `bin/codex-update inspect` and fails on its
+exit 2:
+
+```
+fail: Codex runtime lacks live thread-title repaint support; an unmanaged Codex
+install replaced the patched runtime — restore it with bin/agent-runtime codex-update run
+```
+
+Nothing cheaper can catch this. Stock and patched runtimes self-report the SAME
+`codex-cli` version, so `codex --version` cannot tell them apart, and the
+`~/.codex/mcritchie-live-thread-title.enabled` sentinel is a zero-byte opt-in
+touch-file that survives any reinstall — it records that the operator WANTS live
+repaint, never that the runtime still delivers it. Only reading the binary's
+SessionStart wire-struct arity distinguishes the two, which is what `inspect`
+does.
+
+This is the guard for the path `run` cannot cover: `run` saves a last-good
+runtime and relinks it when an update loses hook support, but a raw
+`curl … install.sh` bypasses `run` entirely. Doctor is where that shows up.
+
 ## Rules
 
 - Do not choose Codex's startup update prompt for McRitchie workstations.
