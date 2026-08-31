@@ -29,16 +29,57 @@ require "json"
 require "open3"
 require "timeout"
 require_relative "lib/artifact_sweep"
+require_relative "lib/cli_arg_guard"
 require_relative "lib/projects_root"
 
-DRY        = ARGV.include?("--dry-run")
-JSON_ONLY  = ARGV.include?("--json")
-SKIP_AUDIT = ARGV.include?("--skip-audit")
-VERBOSE    = ARGV.include?("--verbose")
-ROOT       = (ARGV.grep(/\A--root=/).first&.split("=", 2)&.last) ||
+USAGE = <<~TXT
+  usage: bin/clean-artifacts [--root <path>] [--audit-envs <list>] [--dry-run] [--skip-audit] [--verbose] [--json]
+
+    Truncate logs and drop regenerable caches across every managed repo and worktree.
+
+    --root <path>        projects root to sweep (default: $PROJECTS_DIR)
+    --audit-envs <list>  comma-separated envs for the log-cap audit (default: development)
+    --dry-run            report only; changes nothing
+    --skip-audit         sweep without booting any app (fast)
+    --verbose            per-checkout detail
+    --json               print the machine summary line only
+    --help, -h           this text — SWEEPS NOTHING
+
+  Only gitignored, regenerable paths are touched. Both `--flag=value` and
+  `--flag value` parse.
+TXT
+
+# EVERY ARGUMENT IS ACCOUNTED FOR BEFORE THE SWEEP.
+#
+# This script had the defect that cost bin/archive-docs a docs ledger on
+# 2026-08-31: six exact spellings read out of ARGV, and no notion of an argument
+# it does not recognize. `bin/clean-artifacts --help` therefore matched nothing,
+# left DRY false, and ran the REAL sweep — truncating logs and deleting caches
+# across every repo and worktree on the machine, and booting every managed app to
+# do it. That is not hypothetical here: it is recorded in the operator's own notes
+# as having swept for real when probed.
+#
+# The guard runs FIRST, before the sweep plan is built, because a probe has to be
+# answerable before anything can be deleted.
+ARGS = CliArgGuard.guard!(
+  ARGV,
+  program: "clean-artifacts",
+  usage: USAGE,
+  bool: %w[--dry-run --json --skip-audit --verbose],
+  value: %w[--root --audit-envs],
+  # exit 0: this script's 0 means only "it ran", not a verdict read as safety.
+  help_exit: 0,
+  consequence: "NOTHING was swept — no log was truncated and no cache was removed."
+)
+
+DRY        = ARGS.bool?("--dry-run")
+JSON_ONLY  = ARGS.bool?("--json")
+SKIP_AUDIT = ARGS.bool?("--skip-audit")
+VERBOSE    = ARGS.bool?("--verbose")
+ROOT       = ARGS.first("--root") ||
              ENV["PROJECTS_DIR"] ||
              ProjectsRoot.default_projects_dir
-AUDIT_ENVS = ((ARGV.grep(/\A--audit-envs=/).first&.split("=", 2)&.last) || "development").split(",").map(&:strip).reject(&:empty?)
+AUDIT_ENVS = (ARGS.first("--audit-envs") || "development").split(",").map(&:strip).reject(&:empty?)
 AUDIT_TIMEOUT = Integer(ENV.fetch("CLEAN_ARTIFACTS_AUDIT_TIMEOUT", "90"))
 AUDIT_CONCURRENCY = 4
 

@@ -82,13 +82,27 @@ class ReleaseConsumerCheckoutTest < Minitest::Test
     end
   end
 
-  # The hub's ACTUAL doc sweep, copied in — bin/archive-docs plus the three libs it
+  # The hub's ACTUAL doc sweep, copied in — bin/archive-docs plus every lib it
   # requires. Copied rather than stubbed because `--repo=` is the variable under test.
+  #
+  # THE LIST IS DERIVED, NOT WRITTEN DOWN. It used to be the literal
+  # `%w[docs_archive.rb ledger_guard.rb repo_root.rb]`, which was true only for as
+  # long as bin/archive-docs required exactly those three. Adding a fourth
+  # (lib/cli_arg_guard, the argument guard) broke both tests in this file with a
+  # LoadError from inside the fixture — a failure about the FIXTURE's shape wearing
+  # the costume of a failure about consumer checkouts, which is the most expensive
+  # kind to read. Reading the requires out of the script keeps the copy honest
+  # against a file that will keep growing.
   def copy_real_sweep(hub)
-    FileUtils.cp(File.join(HUB, "bin", "archive-docs"), File.join(hub, "bin", "archive-docs"))
+    script = File.join(HUB, "bin", "archive-docs")
+    FileUtils.cp(script, File.join(hub, "bin", "archive-docs"))
     FileUtils.chmod(0o755, File.join(hub, "bin", "archive-docs"))
-    %w[docs_archive.rb ledger_guard.rb repo_root.rb].each do |lib|
-      FileUtils.cp(File.join(HUB, "bin", "lib", lib), File.join(hub, "bin", "lib", lib))
+
+    libs = File.read(script).scan(/^require_relative\s+"lib\/([a-z0-9_]+)"/).flatten
+    assert_operator libs.size, :>=, 3,
+                    "expected to find bin/archive-docs' lib requires; got #{libs.inspect}"
+    libs.each do |lib|
+      FileUtils.cp(File.join(HUB, "bin", "lib", "#{lib}.rb"), File.join(hub, "bin", "lib", "#{lib}.rb"))
     end
   end
 

@@ -213,8 +213,21 @@ put it back.
 ```bash
 bin/archive-docs --dry-run                  # report only
 bin/archive-docs --ledger-cutoff=2026-08-09 # override the derived cycle boundary
+bin/archive-docs --help                     # usage; sweeps nothing, rolls nothing
 bin/ledger-guard                            # the same invariant, on demand
 ```
+
+**`--help` is safe to probe, and it was not always.** Until 2026-08-31
+`bin/archive-docs --help` was not a help flag at all: the script read four exact
+spellings out of `ARGV` and silently ignored everything else, so `--help` fell
+through to a REAL roll — it rewrote `delete-later.md` by −41 lines and staged a
+second file for an operator who was only asking what the command does. It now
+prints usage and exits without touching the working tree or the index, and an
+argument it cannot account for REFUSES rather than proceeding. The same guard
+(`bin/lib/cli_arg_guard.rb`) covers `bin/clean-artifacts`, `bin/control-check`
+and `bin/reap-cert-databases`; `test/lib/bin_help_flag_class_test.rb` fails when
+a new `bin/` script is added without deciding what it does with an unrecognised
+argument.
 
 ## Exit Seam
 
