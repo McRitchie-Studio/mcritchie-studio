@@ -25,6 +25,8 @@ module Review
   #  11. live PR head == the pin  — the tree must still BE the reviewed tree
   #  12. PR open, based right, and mergeable — a CONFLICTING PR is refused
   #  13. GitHub re-checks the pin — `sha:` on the merge API; 409 if it moved
+  #  14. a REJECTED merge is RE-READ — 405/409 is also GitHub's answer for a PR
+  #      that is already merged, so the status code alone is not a conclusion
   #
   # Guards 9 and 10 are why "no checks reported" cannot slip through. A CONFLICTING
   # PR stops GitHub Actions firing ENTIRELY rather than going red, so its checks
@@ -289,8 +291,7 @@ module Review
       # Someone (a revived reviewer, a human) already merged it. Not a failure —
       # the order has been carried out, so record it as done and stop retrying.
       if pr["merged"] == true
-        return settle(:executed, ReviewPendingAction::EXECUTED,
-                      "already merged before this action ran", merge_sha: pr.dig("merge_commit_sha"))
+        return settle_already_merged(pr, "already merged before this action ran")
       end
 
       return settle_refused("PR ##{action.pr_number} is #{pr["state"]}, not open") unless pr["state"] == "open"
@@ -343,12 +344,73 @@ module Review
       when 200
         finish_merge(task, response.body["sha"].to_s)
       when 409
-        settle_refused("GitHub refused the merge: the head moved off the pinned #{action.head_sha}")
+        settle_merge_rejection(response,
+                               "GitHub refused the merge: the head moved off the pinned #{action.head_sha}")
       when 405
-        settle_refused("GitHub refused the merge as not mergeable: #{api_message(response)}")
+        settle_merge_rejection(response,
+                               "GitHub refused the merge as not mergeable: #{api_message(response)}")
       else
         result(:error, "GitHub merge returned HTTP #{response.status}: #{api_message(response)}")
       end
+    end
+
+    # 14. A REJECTED MERGE IS TWO DIFFERENT FACTS WEARING ONE STATUS CODE, and the
+    # response cannot tell them apart: GitHub answers 405 "not mergeable" (message
+    # frequently EMPTY) and 409 "head was modified" both for a PR that genuinely
+    # cannot be merged AND for one that is ALREADY MERGED. Concluding from the code
+    # alone is how a merge that landed gets recorded as a refusal, so this re-reads
+    # the PR and lets the record say which of the two actually happened.
+    #
+    # THIS IS THE LOSER OF THE RACE #settle! DELIBERATELY DOES NOT ARBITRATE (see
+    # ReviewPendingAction#settle!). Two executions of one armed merge both pass
+    # `pending?` by design — the claim lock is released before the network trip so a
+    # merge does not pin a Postgres connection — and from the PUT onward the two have
+    # very different path lengths: the sibling that MERGED still has a stamp and a
+    # stage move between it and its settle, while this one, rejected, has a straight
+    # line to the write. So the REFUSAL usually gets there FIRST and wins, and the row
+    # reads `refused` for code that is sitting on `accepted`. Ranking the states at the
+    # write ("executed may overwrite refused") cannot fix it without putting a second
+    # writer on a settled row, which is the guard being removed. It fixes HERE, by not
+    # forming the wrong opinion in the first place.
+    #
+    # OBSERVED 2026-08-29 16:23Z on /tasks/stop-headers-chasing-navbar (PR #1073):
+    # merged into `accepted` at 16:23:36Z by the autopilot itself, recorded
+    # `refused — GitHub refused the merge as not mergeable: ` with an empty message.
+    #
+    # AND THE REFUSAL THAT SURVIVES THE RE-READ NOW CARRIES IT. Making the raced case
+    # quieter would leave the two indistinguishable from the other side — a reader
+    # could never tell a real refusal from one that had simply not looked. A refusal
+    # here now states positively that the PR is NOT merged, on evidence read after the
+    # rejection, so `refused` means refused.
+    #
+    # A re-read that itself fails raises out to #call, which leaves the action PENDING
+    # for the next trigger. That is deliberate: settling terminally on evidence we
+    # could not obtain is the exact failure being closed, and every guard re-runs on
+    # the retry (the already-merged gate catches it next time round).
+    def settle_merge_rejection(response, refusal)
+      pr = pull_request
+
+      if pr["merged"] == true
+        return settle_already_merged(
+          pr,
+          "PR ##{action.pr_number} was ALREADY MERGED when GitHub answered #{response.status} — " \
+          "the merge landed; this execution did not perform it"
+        )
+      end
+
+      settle_refused("#{refusal} — re-read after the rejection confirms PR ##{action.pr_number} " \
+                     "is NOT merged (#{pr["state"]}, head #{pr.dig("head", "sha").to_s[0, 7].presence || "unknown"})")
+    end
+
+    # THE ORDER WAS CARRIED OUT — by a sibling execution, a revived reviewer, or a
+    # human at a terminal. Never a refusal, whichever of them did it: the row is the
+    # only account of what the machine decided, and one that reads `refused` over a
+    # merged PR sends the next reader to re-arm or hand-merge a branch that has
+    # already moved. The merge commit travels with it because that is the fact which
+    # proves the code landed; #settle! records it, or #record_merge_sha! backfills it
+    # to the winner if this run loses the write.
+    def settle_already_merged(pr, note)
+      settle(:executed, ReviewPendingAction::EXECUTED, note, merge_sha: pr.dig("merge_commit_sha"))
     end
 
     # Merge → STAMP → move, the order the review SOP fixes: the task reads
