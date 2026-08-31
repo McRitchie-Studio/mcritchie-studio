@@ -109,7 +109,17 @@ frozen_size:
   # the "ship exits 0 on failure" claim was misread in the first place.
   test/lib/release_cli_test.rb: 7598
   test/lib/dor_check_test.rb: 2745
-  test/lib/task_cli_test.rb: 2728
+  # +149 (2026-08-31, show-prints-wrong-builder): CLI-level cases pinning that
+  # `show` prints the AUTHOR SET (devops.built_by + builders), not the assignee
+  # column it used to render. They stay in THIS file deliberately. The defect was
+  # that careful readers TRUSTED A LABEL — three of four actor-stamped tasks printed
+  # `agent: -` while correctly stamped, and two agents filed it as a review-integrity
+  # incident — so the fix is only proven through the output an operator actually sees,
+  # driven end to end through the real binary against this file's private harness.
+  # The PURE rendering decisions DID go to a new file, test/lib/task_author_fields_test.rb
+  # (its whole test_unit_* tier), which is what this ceiling asks for. Folding these in
+  # beside them would conflate the two tiers and drop the end-to-end proof entirely.
+  test/lib/task_cli_test.rb: 2877
   test/models/task_test.rb: 2266
   # +77 (2026-08-27, retire-acquisition-studio-checkout): three CLI-level tests for
   # the origin-unreachable withhold — the error case, the retired-repo (:gone) case,
