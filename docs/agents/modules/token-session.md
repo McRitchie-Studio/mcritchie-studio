@@ -149,11 +149,22 @@ token is already on disk. It is simply not loaded into this shell:
 
 ```bash
 source ~/.zprofile.admin
-export GH_APP_ITEM=github.mcritchie-deployer   # BEFORE minting — see below
-bin/gh-auth-refresh --identity deployer --export
+export GH_APP_ITEM=github.mcritchie-deployer   # BEFORE the push — see below
 ```
 
-**Export `GH_APP_ITEM` before you mint, not after.** The credential helper reads
+**Those two lines are the whole fix — there is no third command.** The deployer
+is never cached (`bin/gh-token`'s `CACHEABLE_IDENTITIES`), so the next git
+operation mints a fresh deployer token through the credential helper on its own.
+There is no stale token to refresh by hand.
+
+**Do NOT run `bin/gh-auth-refresh --identity deployer --export` here.** Bare, it
+`puts` a live installation token to your terminal — into scrollback and any agent
+transcript — and it still cannot alter the parent shell, so whatever you run next
+fails identically. It is also the wrong lane: the deployer App has **no
+`pull_requests` grant**, while `bin/release` calls `gh pr view`/`create`/`merge`,
+so installing that token into `gh` makes a later failure *more* likely, not less.
+
+**Export `GH_APP_ITEM` before you push, not after.** The credential helper reads
 it at mint time, so setting it afterwards hands you the **agent** token instead —
 a wrong-identity *success*, which is harder to notice than an outright refusal.
 

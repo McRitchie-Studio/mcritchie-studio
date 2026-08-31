@@ -4162,11 +4162,13 @@ def push_failure_message(repo, sha, cause)
       "this shell:\n" \
       "    source ~/.zprofile.admin\n" \
       "    export GH_APP_ITEM=github.mcritchie-deployer\n" \
-      "    bin/gh-auth-refresh --identity deployer --export\n" \
-      "Export GH_APP_ITEM BEFORE minting; the helper reads it at mint time, so setting it afterwards " \
-      "yields the AGENT token — a wrong-identity success. Only if this machine has no ~/.zprofile.admin " \
-      "at all does it need installing once with `bin/setup-1pass-token --admin`. Then re-run " \
-      "`bin/release ship` — it resumes; do NOT re-run `prepare`, the freeze is still good."
+      "Export GH_APP_ITEM BEFORE the push; the credential helper reads it at MINT TIME, so setting it " \
+      "afterwards yields the AGENT token — a wrong-identity success, which is harder to notice than a " \
+      "refusal. Those two lines are the whole fix: the deployer is never cached (bin/gh-token\'s " \
+      "CACHEABLE_IDENTITIES), so the next push mints fresh through the helper on its own — there is no " \
+      "token to refresh by hand, and nothing further to run. Only if this machine has no " \
+      "~/.zprofile.admin at all does it need installing once with `bin/setup-1pass-token --admin`. " \
+      "Then re-run `bin/release ship` — it resumes; do NOT re-run `prepare`, the freeze is still good."
   when :diverged
     "could not fast-forward #{repo} origin/main to #{short(sha)} — git REFUSED the ref update as a " \
       "NON-FAST-FORWARD, which means origin/main has diverged from the frozen SHA (someone pushed to " \

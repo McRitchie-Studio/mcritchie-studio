@@ -174,6 +174,62 @@ class TokenSessionSopClaimsTest < Minitest::Test
     end
   end
 
+
+  # ── A REMEDY MUST NOT PRINT A LIVE TOKEN ────────────────────────────────────
+  #
+  # FOUND IN REVIEW of this PR, and it is this PR's own defect class reappearing
+  # inside its own fix. The deployer remedy prescribed:
+  #     bin/gh-auth-refresh --identity deployer --export
+  # Bare, that is `puts "export GH_TOKEN='<live installation token>'"`
+  # (bin/gh-auth-refresh) — it writes a DEPLOYER credential into scrollback and
+  # into every agent transcript that captures the run. It also cannot alter the
+  # parent shell, so the "then re-run bin/release ship" that followed failed
+  # identically. A remedy that leaks a secret AND does not work is strictly worse
+  # than no remedy, because the reader ACTS on it.
+  #
+  # THE RIGHT ANSWER IS TO PRESCRIBE NOTHING THERE. The deployer is never cached
+  # (bin/gh-token's CACHEABLE_IDENTITIES), so the next git operation mints fresh
+  # through the credential helper on its own — `source` + `export GH_APP_ITEM` is
+  # the entire fix. Wrapping it in `eval "$(...)"` would stop the leak but is
+  # still wrong: the deployer App has NO pull_requests grant while bin/release
+  # calls `gh pr view`/`create`/`merge`, so installing that token into `gh` makes
+  # a later failure MORE likely.
+  def test_no_remedy_prescribes_a_bare_exporting_refresh
+    offenders = REMEDY_SOURCES.filter_map do |rel|
+      body = File.read(File.join(ROOT, rel))
+      body.each_line.with_index(1).filter_map { |line, n|
+        # ONLY A PRESCRIPTION COUNTS — a line the reader would COPY. Prose that
+        # merely explains what `--export` does is not a hazard, and an earlier
+        # version of this guard flagged exactly that (token-session.md:115,
+        # "`--export` is the half that repairs this shell"), which would have
+        # taught the next editor to delete a correct sentence. A prescription is
+        # a bare command: the line begins with it, up to leading whitespace or a
+        # shell prompt, and carries no surrounding prose.
+        # Strip the wrappers a prescription can arrive in: markdown indentation,
+        # a shell prompt, and — the one an earlier version of this guard MISSED —
+        # the opening quote of a Ruby string literal, which is how bin/release.rb
+        # builds its messages. Without that, this guard read markdown only and
+        # would have passed over the very file whose message caused the bounce.
+        command = line.strip.sub(/\A"\s*/, "").sub(/\A[$>]\s*/, "")
+        next unless command.start_with?("bin/gh-auth-refresh")
+        next unless command.include?("--export")
+        next if command.include?('eval "$(')
+
+        "#{rel}:#{n}"
+      }.presence
+    end.flatten
+
+    assert_empty offenders,
+                 "a bare `--export` refresh PRINTS a live token and cannot repair the caller's " \
+                 "shell; prescribe `eval \"$(...)\"` where a refresh is genuinely wanted, and " \
+                 "nothing at all on the deployer lane, which mints fresh per push"
+  end
+
+  REMEDY_SOURCES = [
+    "bin/release.rb",
+    "docs/agents/modules/token-session.md"
+  ].freeze
+
   private
 
   # The lines a reader ACTS on: markdown table rows.
