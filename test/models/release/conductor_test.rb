@@ -682,6 +682,35 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert_nil bad.merged, "the rolled-back member's merged stamp is rolled back too"
   end
 
+  # THE REGRESSION THIS TASK EXISTS FOR. On 2026-08-31 a live qa-release sweep
+  # aborted here: turf-vault was in neither registry section, so every member
+  # naming it read :unknown and validate_member_repos_known! refused to build the
+  # release. The guard was RIGHT — the missing registry entry was the defect — so
+  # the fix is the entry, and this is the test that pins it. Before
+  # config/release_repos.yml gained `turf-vault:` this raised ArgumentError.
+  test "[integration] curate! accepts a member naming turf-vault, the registered on-chain repo" do
+    member = reviewed_task("vault", repo: "turf-vault")
+    assert_equal :app, member.release_kind, "precondition: the registry classifies it"
+
+    rel = nil
+    assert_nothing_raised do
+      rel = Release::Conductor.curate!(task_slugs: [member.slug], slug: "rel-turf-vault")
+    end
+
+    assert_not_nil rel, "the sweep completes rather than aborting"
+    assert_equal [member.slug], rel.tasks.pluck(:slug)
+    assert_equal 1, Release.count, "and nothing was rolled back"
+  end
+
+  # The other half of the same guard: registering turf-vault must not have blunted
+  # it. An unregistered repo still refuses, so this is a fix to the DATA, not a
+  # weakening of the check.
+  test "[integration] the repo guard still refuses an unregistered repo after turf-vault was added" do
+    bad = reviewed_task("unregistered", repo: "turf-vault-nope")
+    assert_raises(ArgumentError) { Release::Conductor.curate!(task_slugs: [bad.slug], slug: "rel-still-bad") }
+    assert_equal 0, Release.count
+  end
+
   test "assemble! flips a swept RC assembling→assembled (idempotent)" do
     rel = Release::Conductor.curate!(task_slugs: [reviewed_task.slug], slug: "rel-asm")
     assert_equal "assembling", rel.state

@@ -101,7 +101,8 @@ class Release::ReposTest < ActiveSupport::TestCase
   # --- apps as a hash: app_meta / prod_deploy / qa_app ---
 
   test "app_repos lists the registry's app hash keys" do
-    assert_equal %w[mcritchie-studio turf-monster mcritchie-industries rolio tax-studio chain-ops].sort,
+    assert_equal %w[mcritchie-studio turf-monster turf-vault mcritchie-industries rolio tax-studio
+                    chain-ops].sort,
                  Release::Repos.app_repos.sort
   end
 
@@ -215,6 +216,50 @@ class Release::ReposTest < ActiveSupport::TestCase
     assert_nil Release::Repos.prod_deploy("chain-ops"),
                "chain-ops has no production deployment target; declaring one is what wedged G4"
     assert Release::Repos.app?("chain-ops"), "it is still a registered app — just an undeployed one"
+  end
+
+  # --- turf-vault: a registered repo with NO production target -----------------
+  #
+  # The Anchor program. Registered 2026-08-31 because
+  # Release::Conductor#validate_member_repos_known! aborted a live sweep on its
+  # absence. These assertions pin the SHAPE of that entry, because the danger here
+  # is not an absent entry (which fails loudly) but a WRONG one, which would point
+  # the pipeline at a program custodying real USDC.
+
+  test "[unit] turf-vault is a registered app so the conductor can classify a member" do
+    assert_equal :app, Release::Repos.kind("turf-vault"),
+                 "an :unknown kind is what aborted rel-20260831-6f1ed1 mid-sweep"
+    assert Release::Repos.app?("turf-vault")
+    assert_not Release::Repos.gem?("turf-vault"),
+               "turf-vault has no gemspec — a `gems` row would make the conductor publish it to RubyGems"
+  end
+
+  test "[unit] turf-vault declares NO production deploy target" do
+    assert_nil Release::Repos.prod_deploy("turf-vault"),
+               "turf-vault is an Anchor program upgraded BY HAND through a Squads 2-of-3 multisig " \
+               "(scripts/squad-upgrade.js, gated by docs/MAINNET_LAUNCH.md). No automated path has ever " \
+               "deployed it. Declaring an adapter makes `bin/release ship` attempt that act against a " \
+               "program custodying real USDC — and a no-op script is worse still, because ship then " \
+               "REPORTS a deploy that never happened."
+    assert Release::Repos.app?("turf-vault"), "it is still a registered app — just an undeployed one"
+  end
+
+  test "[unit] turf-vault registers no Rails gate command at either gate" do
+    # Both gates run inside a Rails gate workspace, which runs
+    # `bin/rails db:test:prepare test:prepare` BEFORE the registered command.
+    # turf-vault is Rust/Anchor and ships no bin/rails, so either key arms a gate
+    # that cannot run — red at G3 (aborting an unrelated batch) or at G4 AFTER
+    # push_frozen_main has already advanced origin/main.
+    assert_nil Release::Repos.test_cmd("turf-vault"),
+               "a G4 ship gate here would run bin/rails in a repo that has none"
+    assert_nil Release::Repos.qa_test_cmd("turf-vault"),
+               "a G3 pre-QA gate here would abort the whole batch sweep on ENOENT"
+  end
+
+  test "[unit] turf-vault walks the three-rung ladder it actually has" do
+    assert_equal Release::Ladder::THREE_RUNG, Release::Repos.ladder("turf-vault"),
+                 "anything else strands turf-vault work on `accepted` — Ladder.sweepable is three-rung only"
+    assert_includes Release::Repos.three_rung_repos, "turf-vault"
   end
 
   test "prod_deploy is nil for a gem or an unknown repo" do
