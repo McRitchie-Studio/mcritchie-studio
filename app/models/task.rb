@@ -2673,9 +2673,10 @@ class Task < ApplicationRecord
   end
 
   # True when this save writes a claim lease that differs from the stored one — a
-  # re-claim or a renewal. Compared AFTER enforce_build_claim_invariant, so a
-  # wholesale devops replace that simply omitted the claim (its keys restored from
-  # the prior record) reads as unchanged and is correctly not a claim.
+  # re-claim or a renewal. Compared AFTER enforce_build_claim_invariant, so a write
+  # that simply omitted the claim — a raw whole-column `metadata:` assignment, or a
+  # key posted blank — reads as unchanged once that guard restores the keys from the
+  # prior record, and is correctly not a claim.
   def claim_lease_rewritten?
     current = metadata.is_a?(Hash) ? (metadata["devops"] || {}) : {}
     ClaimLease::CLAIM_KEYS.any? { |key| current[key].to_s != prior_devops[key].to_s }

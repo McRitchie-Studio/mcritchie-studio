@@ -1000,12 +1000,15 @@ module Api
                "sizing must surface in the creator's heartbeat as an agent=avi event"
       end
 
-      # The regression this file owns: task_params assigns metadata WHOLESALE as
-      # {"devops" => <whitelisted client keys>}, so a PATCH that never mentions the
-      # mascot still rewrites its hash. mascot_shiny/color/emoji are server-owned
+      # The regression this file owns: task_params USED TO assign metadata WHOLESALE
+      # as {"devops" => <whitelisted client keys>}, so a PATCH that never mentioned
+      # the mascot still rewrote its hash. mascot_shiny/color/emoji are server-owned
       # (absent from DEVOPS_KEYS) and used to vanish on the first such write — the
       # `bin/task begin` bind — leaving every later stage-event snapshot to bake the
-      # NON-shiny sprite. This walks the real fast-lane order: create, bind, claim.
+      # NON-shiny sprite. Since api-devops-patch-replaces the fold keys on the POSTED
+      # names intersected with DEVOPS_KEYS, so it can no longer drop a name it does
+      # not know: these four now survive the PATCH twice over, by the merge and by
+      # sync_mascot_display. This walks the real fast-lane order: create, bind, claim.
       test "a devops PATCH cannot wipe the server-owned mascot stamps" do
         Pokemon.create!(dex: 302, name: "Snorlax", slug: "snorlax", types: %w[normal], generation: 1,
                         avatar_url: "normal-crop.png", sprite_url: "normal-sprite.png",

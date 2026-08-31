@@ -10,11 +10,14 @@
 #   its columns. The devops build claim had none: sessions stopped heartbeating
 #   and walked away, leaving a dead holder on the row.
 #
-#   PRESERVE — Api::V1::TasksController assigns metadata WHOLESALE, so any PATCH
-#   carrying `devops` deletes the keys it does not echo, and the board's own edit
+#   PRESERVE — Api::V1::TasksController ASSIGNED metadata WHOLESALE, so any PATCH
+#   carrying `devops` deleted the keys it did not echo, and the board's own edit
 #   form echoes none of them. A board save silently destroyed a LIVE claim, which
 #   is why two readers of "the same fact" disagreed 20 seconds apart: the fact was
-#   being erased and rewritten underneath them.
+#   being erased and rewritten underneath them. Since api-devops-patch-replaces both
+#   write paths fold through Task.merge_devops_into_metadata, so an OMITTED claim key
+#   survives on its own; the invariant still answers a key posted BLANK and a raw
+#   whole-column `metadata:` write, which is what the cases below drive.
 require "test_helper"
 
 class TaskBuildClaimInvariantTest < ActiveSupport::TestCase
