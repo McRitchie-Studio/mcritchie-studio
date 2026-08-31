@@ -48,15 +48,10 @@ module Api
         render_data({
           "holder"                    => ReleaseConductorClaim.status_for(params[:slug], claim_params[:role]),
           "release_state"             => release&.state,
-          "conductor_work_remaining"  => release ? release.tasks.where.not(stage: "shipped").exists? : nil
+          "conductor_work_remaining"  => conductor_work_remaining(release)
         })
       end
 
-      # GET /api/v1/release_conductor_claims/live?role=deployer — the CROSS-RELEASE "is
-      # ANY claim for this role live?" read (NOT nested under a slug). bin/agent-worktree's
-      # `_ship`/`_gate` reclaim guard asks this: a live `deployer` claim = a ship is in
-      # progress, so those fixed-path workspaces must not be reclaimed. 200 { live: bool,
-      # holder: <info>|null }.
       def live
         role = claim_params[:role]
         render_data({
@@ -153,6 +148,51 @@ module Api
       end
 
       private
+
+      # Does the conductor still have STEPS TO RUN on this release?
+      #
+      # ⛔ "ARE THERE UNSHIPPED MEMBERS" IS THE WRONG QUESTION, and answering it was
+      # a real defect caught in review. `bin/release finalize` runs three INDEPENDENT
+      # steps — seal, ship, notes (Release::ShipSequence::FINALIZE_ORDER) — and it
+      # proceeds while ANY of them pends (bin/release.rb early-returns only on
+      # `pending.empty?`). So a release can be `shipped` with every member shipped
+      # and STILL have an outstanding seal or notes step, during which the deployer
+      # legitimately holds its claim through a live-on-prod guard, an UNBOUNDED HUMAN
+      # CONFIRM PROMPT, a production smoke seal, a heroku-run notes dyno, and a
+      # workspace restore that reads the `_ship` gate directory.
+      # Reachable by the ordinary killed-ship path: `Conductor.ship!` and
+      # `post_release_notes` run in ONE heroku call, so a dropped connection between
+      # them leaves state=shipped, members all shipped, notes_completed=false.
+      # Answering "no work left" there lapsed the claim 120s into that window.
+      #
+      # ASK THE PREDICATE `bin/release.rb` ITSELF ASKS. That is the same principle
+      # this endpoint was already built on — the model is what knows, so the two
+      # cannot drift into disagreeing about whether work remains.
+      #
+      # ⚠️ THE `abandoned` SHORT-CIRCUIT IS REQUIRED, not defensive. `done[:ship]` is
+      # false for any state that is not "shipped", so `finalize_pending?` would report
+      # work pending forever on an abandoned candidate and the `abandoned` half of
+      # TERMINAL_STATES could never stop a renewer.
+      #
+      # nil (no release for this slug — notably the `__forming__` sentinel) is NOT
+      # `false`, so the CLI keeps renewing. Absence is unknown, never finished.
+      def conductor_work_remaining(release)
+        return nil if release.nil?
+        return false if release.state.to_s == "abandoned"
+
+        Release::ShipSequence.finalize_pending?(
+          state: release.state,
+          sealed: release.smoke_sealed?,
+          notes_completed: release.event_completed?("release_notes"),
+          members_all_shipped: !release.tasks.where.not(stage: "shipped").exists?
+        ).any?
+      end
+
+      # GET /api/v1/release_conductor_claims/live?role=deployer — the CROSS-RELEASE "is
+      # ANY claim for this role live?" read (NOT nested under a slug). bin/agent-worktree's
+      # `_ship`/`_gate` reclaim guard asks this: a live `deployer` claim = a ship is in
+      # progress, so those fixed-path workspaces must not be reclaimed. 200 { live: bool,
+      # holder: <info>|null }.
 
       def claim_params
         params.permit(:slug, :role, :session, :nonce, :label, :operator_secret)

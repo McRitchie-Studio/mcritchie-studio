@@ -49,8 +49,10 @@
 # minutes), renewed cheaply over the fast HTTP AgentApi rather than a per-heartbeat
 # `heroku run` dyno, and a crashed one frees the release within a TTL.
 #
-# THAT RENEWER ALSO DIES WITH ITS RELEASE, not only with its session. It stops the
-# moment the candidate reaches a TERMINAL_STATES state, so a conductor session that
+# THAT RENEWER ALSO DIES WITH ITS RELEASE, not only with its session. It stops when
+# the candidate is in a TERMINAL_STATES state AND the board reports no conductor work
+# left — both halves, because `bin/release finalize` legitimately runs on an already
+# `shipped` release while seal or notes still pends. So a conductor session that
 # finishes one act and goes on working cannot leave a claim renewing over shipped
 # work — which would make the next `bin/release prepare` STAND DOWN against nobody.
 #
@@ -101,10 +103,14 @@ class ReleaseClaimCli
   # A drift-guard test pins both to the same literal.
   FORMING_SLUG = "__forming__"
 
-  # The release states at which a CONDUCTOR CLAIM has nothing left to protect. A claim
-  # exists to stop a SECOND session assembling or deploying the same candidate; once a
-  # release is `shipped` that work is over, and `abandoned` means the candidate was
-  # dropped — so renewing on either is meaningless BY DEFINITION, not merely wasteful.
+  # The release states at which a conductor claim CAN have nothing left to protect.
+  # NECESSARY, NOT SUFFICIENT — and that distinction was itself a defect. `shipped`
+  # does NOT mean the work is over: `bin/release finalize` runs on an already-shipped
+  # release whenever seal or notes still pends, holding the deployer claim through a
+  # prod smoke seal and an unbounded human confirm. So a terminal state is only half
+  # the test; `conductor_work_remaining` from the board is the other half, and both
+  # must agree before a renewer stops. `abandoned` is the exception the board answers
+  # `false` for outright — the candidate was dropped, so nothing can pend.
   #
   # THIS IS NOT THE REVIEW LANE'S TERMINAL SET, and copying that one here would be a bug
   # of the dangerous kind. `assembled` is terminal for a REVIEW and fully LIVE for a
@@ -437,6 +443,11 @@ class ReleaseClaimCli
     return false unless ok?(res)
 
     data = parse_data(res)
+    # A malformed body (a 200 whose `data` is not a Hash) must not RAISE here:
+    # ShiftRenewer does not rescue `finished.call`, so an exception kills the renewer
+    # and the claim lapses — fail-CLOSED, the opposite of this method's whole intent.
+    # Unreachable against the board's own render_data; one line to keep it that way.
+    return false unless data.is_a?(Hash)
     return false unless TERMINAL_STATES.include?(data["release_state"].to_s)
 
     # TERMINAL IS NOT ENOUGH, and this is the correction that came out of review.

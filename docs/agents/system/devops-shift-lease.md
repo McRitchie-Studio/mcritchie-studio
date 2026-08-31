@@ -235,7 +235,9 @@ the lease math above. Two properties matter for the release acts specifically:
   unclaimed — a claim outage must never wedge a real release); a live DIFFERENT holder
   (exit 10) still stands the run down.
 - **Its renewer dies with the RELEASE, not only with the session.** The detached
-  renewer stops as soon as the candidate reaches `shipped` or `abandoned`
+  renewer stops once the candidate is `shipped` or `abandoned` AND the board
+  reports no conductor work left (`conductor_work_remaining: false`) — both halves,
+  because `finalize` legitimately runs on a shipped release with seal or notes pending
   (`ReleaseClaimCli::TERMINAL_STATES`, mirroring `Release::TERMINAL_STATES` because the
   standalone CLI cannot load the model). **That set is NOT the review lane's**, and the
   difference is the point: `assembled` is terminal for a REVIEW and fully LIVE for a
