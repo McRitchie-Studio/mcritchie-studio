@@ -65,11 +65,40 @@ Where you commit depends on which seat you hold when you find the defect.
 | **Conductor** | Sweep/release conductor | `accepted` only | The nearest member task of the open release |
 
 **Every seam that applies a zap prepares it on a throwaway desk** — a
-detached worktree (`git worktree add ../zap-<slug> --detach <base>`), never a
-checkout that holds other work. The payoff is the abort path: discarding the
-throwaway (`git worktree remove --force ../zap-<slug>`) removes the working
-copy, the index, and any zap-created files together — and cannot touch a desk
-where unrelated work lives.
+detached worktree, never a checkout that holds other work. The payoff is the
+abort path: discarding the throwaway (`git worktree remove --force <path>`)
+removes the working copy, the index, and any zap-created files together — and
+cannot touch a desk where unrelated work lives. The same rule covers a
+reviewer's mutation pass, for the same reason in reverse: a mutation is a write,
+and a write into an occupied desk corrupts whatever else is reading it (see
+[The Desk Writer Convention](worktrees.md#the-desk-writer-convention)).
+
+**Cut it under `.worktrees/`, and carry `.env.test.local` across.** Both halves
+are load-bearing the moment your zap runs a test tier:
+
+```bash
+REPO="$(dirname "$(cd "$(git rev-parse --git-common-dir)" && pwd)")"   # the PRIMARY checkout, from anywhere
+ZAP="$REPO/.worktrees/zap-<slug>"
+git worktree add "$ZAP" --detach <base>
+cp <desk>/.env.test.local "$ZAP"/     # or: bin/agent-worktree new <app> zap-<slug>
+```
+
+`.env.test.local` is **untracked**, so no `git worktree add` carries it. Without
+it `TEST_DATABASE_URL` renders empty, `config/database.yml` falls back to
+`database: <app>_test`, and the throwaway's test tier runs against the **shared**
+test database used by the primary checkout, CI, and every concurrent suite —
+polluting them and being polluted by them. Verified 2026-08-31: a detached
+worktree off `origin/accepted` resolves to `mcritchie_studio_test`.
+
+Cutting it under `.worktrees/` is what lets `bin/lib/desk_guard.rb` catch that
+for you. Its `desk?` predicate returns true **only** for a path whose parent
+directory is `.worktrees`, and where `../zap-<slug>` lands depends on the seat
+you hold. From the primary checkout — the reviewer and conductor seats — it
+resolves *outside* `.worktrees/`, so it is **never refused** and fails silently.
+From a desk — the builder seat — it resolves to a sibling *inside* `.worktrees/`,
+where the guard does fire. Cutting under `.worktrees/` deliberately stops the
+answer depending on where you happened to be standing: the tree is refused by
+name, with the missing file called out.
 
 ### Builder — on your own feat branch
 
@@ -79,13 +108,15 @@ desk may hold uncommitted work a cleanup must never touch — and land it as
 its own commit:
 
 ```bash
-git worktree add ../zap-<slug> --detach HEAD   # throwaway desk off your feat head
-cd ../zap-<slug>
+ZAP="$(dirname "$(cd "$(git rev-parse --git-common-dir)" && pwd)")/.worktrees/zap-<slug>"
+git worktree add "$ZAP" --detach HEAD          # throwaway desk off your feat head
+cp .env.test.local "$ZAP"/                     # REQUIRED before any test tier
+cd "$ZAP"
 # …fix, then:
 git add -p
 git commit -m "zap: <what was broken, one line>"
 git push origin HEAD:refs/heads/feat/<slug>    # fast-forward; rejects loudly if stale
-cd - && git worktree remove ../zap-<slug>
+cd - && git worktree remove --force "$ZAP"
 git pull --ff-only origin feat/<slug>          # bring your desk level
 ```
 
@@ -114,13 +145,15 @@ the PR head, run its test tier, and **lease-push** the `zap:` commit to the PR
 branch:
 
 ```bash
-git worktree add ../zap-<slug> --detach FETCH_HEAD   # off the PR head you fetched
-cd ../zap-<slug>
+ZAP="$(dirname "$(cd "$(git rev-parse --git-common-dir)" && pwd)")/.worktrees/zap-<slug>"
+git worktree add "$ZAP" --detach FETCH_HEAD           # off the PR head you fetched
+cp <desk>/.env.test.local "$ZAP"/                     # REQUIRED before any test tier
+cd "$ZAP"
 BASE=$(git rev-parse HEAD)                            # the head you zap FROM — pin the lease to it
 # ...one bounded fix...
 git commit -m "zap: <what was broken, one line>"
 git push --force-with-lease=refs/heads/feat/<slug>:$BASE origin HEAD:refs/heads/feat/<slug>
-cd - && git worktree remove ../zap-<slug>
+cd - && git worktree remove --force "$ZAP"
 ```
 
 An **explicit** lease-push (`--force-with-lease=<ref>:<sha>`), never a **bare**
@@ -163,13 +196,18 @@ touch):
 
 ```bash
 git fetch origin accepted
-git worktree add ../zap-<slug> --detach origin/accepted   # throwaway desk
-cd ../zap-<slug>
+ZAP="$(dirname "$(cd "$(git rev-parse --git-common-dir)" && pwd)")/.worktrees/zap-<slug>"
+git worktree add "$ZAP" --detach origin/accepted   # throwaway desk
+cd "$ZAP"
+# Running a test tier here? This throwaway has NO desk to copy .env.test.local
+# from, and under .worktrees/ desk_guard refuses that cert lane by name — which
+# is the right failure, but it leaves you holding a refusal. Provision a real
+# desk instead:  bin/agent-worktree new <app> zap-<slug>
 # …fix, then:
 git add -p
 git commit -m "zap: <what was broken, one line>"
 git push origin HEAD:refs/heads/accepted       # fast-forward; rejects loudly if stale
-cd - && git worktree remove ../zap-<slug>
+cd - && git worktree remove --force "$ZAP"
 ```
 
 Two hard edges:
@@ -265,7 +303,7 @@ rejected) — discard the throwaway desk whole; working copy, index, and
 zap-created files go together, and no shared desk is touched:
 
 ```bash
-git worktree remove --force ../zap-<slug>
+git worktree remove --force "$ZAP"
 ```
 
 **A zap commit landed** (failed check, resurfaced defect, zap-on-zap

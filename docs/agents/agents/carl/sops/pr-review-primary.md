@@ -81,6 +81,18 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
    most one** light — a focused second read, not a committee. (You may skip the
    light on a trivial change and note that you did.)
 
+   **Say in the brief where the light may write.** The builder still owns the
+   task's desk; you and your light are readers there
+   ([the desk writer convention](../../../modules/worktrees.md#the-desk-writer-convention)).
+   If either of you will run a MUTATION pass, each needs a throwaway of its own —
+   a mutation is a write, and two mutation passes in one tree corrupt each other's
+   results. It happened on 2026-08-30: your backup captured your light's
+   mutation, and her run came back with four failures that were yours — one
+   collision, seen from both seats. **If BOTH of you will mutate, a throwaway
+   each is not enough**: a copied `.env.test.local` names the desk's ONE test
+   database, so ask for a real desk each (`bin/agent-worktree new`).
+   Name the throwaway in the spawn brief; the light cannot see what you are doing.
+
 3. **Deep review.** Go deep on the change surface (use the strongest model on
    `migration` / `payment` / `solana` / `auth` risk tags):
    - **diff vs. acceptance** — the change does what the task's acceptance criteria say.
