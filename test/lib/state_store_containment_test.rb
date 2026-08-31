@@ -138,7 +138,12 @@ class StateStoreContainmentTest < Minitest::Test
     "bin/gh-token" => [:ruby, "GitHub token cache: store_path is the ONE seam and it enforce!s — " \
                               "the cache holds a live credential, so a sandboxed run must abort rather " \
                               "than write one into the operator's real .agents"],
-    "bin/statusline" => [:bash, "BASH heartbeat throttles — LAYER 2 cannot read it; LAYER 3 executes it"]
+    "bin/statusline" => [:bash, "BASH heartbeat throttles — LAYER 2 cannot read it; LAYER 3 executes it"],
+    "bin/lib/op_meter.rb" => [:ruby, "1Password read-attribution log: append is the ONE write seam and it " \
+                                     "enforce!s; log_path is private so no caller can take the raw path"],
+    "bin/lib/op-meter.sh" => [:bash, "BASH `op` wrapper, sourced by bin/secret, bin/gh-app-git-credential, " \
+                                     "bin/ecosystem-build and bin/setup-1pass-token — LAYER 2 cannot read " \
+                                     "it; LAYER 3 executes it"]
   }.freeze
 
   # THE ENTIRE EXEMPTION SURFACE of LAYER 2 — every method allowed to hold a raw store
@@ -192,6 +197,10 @@ class StateStoreContainmentTest < Minitest::Test
     # constant, a hash value) and launder at every seam that acts on it.
     "bin/reviewer-select" => {},
     "bin/qa-intake" => {},
+    "bin/lib/op_meter.rb" => {
+      "log_path" => "BUILDER — private; append launders it at the write seam",
+      "records" => "READ — parses the log for bin/op-reads; append is the only writer"
+    },
     # EMPTY, and that is the point: bin/gh-token holds no raw store path anywhere.
     # `store_path` returns the ENFORCED path and every reader/writer calls it, so
     # there is nothing to exempt — the strongest answer this table accepts.

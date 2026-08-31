@@ -32,6 +32,12 @@ studio-engine gem ──┐
                                        ──> turf-vault (devnet + mainnet deployments)
 ```
 
+**Two templates, and the graph shows them.** `studio-engine` is the BASE every app
+is built on; the `solana-studio` arm is the WEB3 ADD, bolted on only for a Solana
+app. `chain-ops` is being deprecated, so turf-monster is the web3 arm that
+remains. See [`docs/agents/system/app-templates.md`](agents/system/app-templates.md)
+for the decision and its reasoning.
+
 The Rails apps consume `studio-engine` and `solana-studio` from RubyGems. Local clones are still part of the ecosystem because agents edit, release, and audit those gems.
 
 ## Where to start
@@ -42,6 +48,7 @@ The Rails apps consume `studio-engine` and `solana-studio` from RubyGems. Local 
 | Onboarding to the codebase | [`docs/agents/index.md`](agents/index.md), then the app README/runbook/topic docs for the repo you'll touch |
 | Hardening or modularizing the stack | [`docs/agents/audits/final-closeout-2026-06-17.md`](agents/audits/final-closeout-2026-06-17.md), then the current app runbooks |
 | Adding or promoting an app | [`docs/agents/system/new-app-onboarding-sop.md`](agents/system/new-app-onboarding-sop.md) (tier decision), then [`docs/agents/modules/app-registry.md`](agents/modules/app-registry.md), `bin/register-satellite --list`, and `studio-engine/docs/NEW_APP_SETUP.md` |
+| Deciding whether an app is web2 or web3 | [`docs/agents/system/app-templates.md`](agents/system/app-templates.md) — the BASE template (`studio-engine` + `mcritchie-studio`) applies to every app; the WEB3 ADD (`solana-studio` + `turf-monster`) bolts on only for a Solana app |
 | Working on Solana | `turf-monster/docs/SOLANA.md` and `turf-vault/docs/CURRENT_DEPLOYMENT.md` |
 | Working on auth | `studio-engine/docs/USER_CONTRACT.md`, `mcritchie-studio/docs/topics/auth-and-sso.md`, and `turf-monster/docs/AUTH.md` |
 

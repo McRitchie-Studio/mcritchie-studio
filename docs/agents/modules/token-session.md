@@ -93,6 +93,45 @@ already at 1000/1000 — an indefinite wait that one command turns into a
 decision. A retry loop against a quota-limited broker **must** query the quota
 before it sleeps.
 
+⚠️ **`op service-account ratelimit` ITSELF COSTS A READ.** Poll it in a loop and
+you are spending the quota you are measuring. Measured 2026-08-31: every read
+observed during a 25-minute "steady state" window was the monitoring command.
+
+**2a. Then ask WHAT SPENT IT — that part is a query now, not an investigation.**
+
+```bash
+bin/op-reads                 # by calling command, last 24h
+bin/op-reads --since 3h      # a window: 45m, 3h, 7d, or an ISO8601 stamp
+bin/op-reads --by action     # caller (default) | action | context | hour
+bin/op-reads --tail 40       # the raw rows
+```
+
+Every `op` invocation the `bin/` stack makes is recorded to
+`<projects>/.agents/op-reads.log` — calling command, action, outcome,
+timestamp — by `bin/lib/op_meter.rb` (Ruby callers) and `bin/lib/op-meter.sh`
+(shell callers). Reading that log costs nothing.
+
+**Why this exists.** On 2026-08-31 the account showed 247 read_writes consumed in
+three hours and nothing recorded which command spent them. Reconstruction by
+measurement came up empty — `bin/task`: 0 reads, authenticated git ops: 0,
+steady state: 0 — because the spend was **bursty**, concentrated across twelve
+review subagents plus their merges and ships, roughly 20 reads per agent. And it
+was the *second* time: `bin/gh-app-git-credential` already carried a comment
+saying three reads per push/fetch/repo was "the reason a day of ordinary work
+spent the account's quota". Found once, fixed once, un-findable again because
+nothing logged it.
+
+**Attributing a fan-out.** Export `MCR_OP_METER_CONTEXT` before spawning a batch
+and `--by context` separates that batch's spend from everything else:
+
+```bash
+MCR_OP_METER_CONTEXT=review-sweep-2026-08-31 bin/pr-review
+bin/op-reads --by context
+```
+
+There is **no alarm and no budget threshold**, deliberately. Once the spend is
+attributable it is findable, and an alarm on a solved problem is noise.
+
 **3. Inspect the cache without printing a secret.**
 
 ```bash
@@ -163,6 +202,7 @@ and the tests behind that classification are in `credential-inventory.md`.
 | `could not read Username for 'https://github.com'` | the git credential helper could not mint | step 2, then step 1 |
 | `"agents" isn't a vault` | **the hub primary is stale** | fast-forward `main`; the fix shipped as `bin/lib/op_vaults.rb` |
 | `Too many requests` from `op` | account-wide daily quota | step 2 — read the `[ERROR]` line, not the summary; if the quota really is spent, mint by hand rather than wait |
+| Quota spent and nobody knows by what | nothing recorded WHICH command read | step 2a — `bin/op-reads` (and `--by context` for a fan-out). Do NOT re-derive it by measurement; that was tried on 2026-08-31 and came up empty |
 | `gh` acts as a person, not a bot | an EMPTY token fell back to the keyring | never hand `gh` an empty `GH_TOKEN`; see the trap below |
 | `REFUSING to merge <slug>` from `pr-review` | the merge-path identity assertion refused | read the line — it names which of the three causes; see the trap below |
 | deployer mint fails, and you hold the ship lane | `OP_ADMIN_SERVICE_ACCOUNT_TOKEN` is not in **this shell** | `source ~/.zprofile.admin`, then `export GH_APP_ITEM=github.mcritchie-deployer` **before** minting |

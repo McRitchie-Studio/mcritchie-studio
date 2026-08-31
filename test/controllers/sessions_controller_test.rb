@@ -1,12 +1,15 @@
 require "test_helper"
 
 class SessionsControllerTest < ActionDispatch::IntegrationTest
-  test "signin page renders all three auth methods" do
+  # Two methods, not three: :wallet was dropped from config.auth_methods, which
+  # removes the engine's Solana routes outright. The wallet CTA is refuted here
+  # so the picker cannot creep back in without the routes behind it.
+  test "signin page renders both auth methods and no wallet CTA" do
     get signin_path
     assert_response :success
     assert_select "form[action=?]", "/auth/google_oauth2"          # Google (button_to)
     assert_match "Email Link", response.body                       # magic-link email
-    assert_match "wallet-connect", response.body                   # Solana wallet picker modal
+    refute_match "wallet-connect", response.body                   # wallet picker dropped
     assert_select "input[type=password]", false                    # passwordless: no password field
   end
 
