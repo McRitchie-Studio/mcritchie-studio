@@ -159,7 +159,7 @@
 # board, a dev database and production.
 # MEASURED with the lister: `npx playwright test --list` => 140.
 # Coverage ADDED; `quarantined` is untouched.
-total_specs: 140
+total_specs: 141
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
@@ -250,7 +250,15 @@ quarantined: 10
 # Re-derived after the folded-CI-meter coverage landed:
 #   npx playwright test --list                           => 140
 #   npx playwright test --list --grep-invert @quarantine => 130
-executed: 130
+#
+# 140 -> 141 on 2026-08-31: e2e/smoke.spec.js gains "no wallet auth surface is served to
+# the browser" — dropping :wallet from config.auth_methods deletes the base58 +
+# wallet_provider importmap modules, and only a live browser can assert those globals
+# never installed (/tasks/drop-hub-wallet-auth). Coverage ADDED; `quarantined` untouched.
+# Re-derived after the wallet-auth removal landed:
+#   npx playwright test --list                           => 141
+#   npx playwright test --list --grep-invert @quarantine => 131
+executed: 131
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to

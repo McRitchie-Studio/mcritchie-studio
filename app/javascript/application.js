@@ -3,8 +3,6 @@ import "@hotwired/turbo-rails"
 import "dropping_text"
 import "alex_chat"
 import "depth_chart"
-import "base58"          // window.encodeBase58/decodeBase58 — load before wallet_provider
-import "wallet_provider" // window.walletProvider (Phantom + Wallet Standard hub)
 
 // Charts for /intelligence (task-development trends dashboard). chart.js is the
 // self-contained jsDelivr/esm.sh "auto" bundle (controllers + scales already
