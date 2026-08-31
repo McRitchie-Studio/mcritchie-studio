@@ -123,7 +123,7 @@ takes its two halves from the environment and never touches 1Password:
 
 | Half | Where it is when 1Password is down |
 |---|---|
-| `GH_APP_ID` — the numeric app id | `credential-inventory.md` → **GitHub App IDs**: agent **`4431410`**, deployer **`4431542`**. Mirrored at `~/.config/mcritchie/app-ids.json`. |
+| `GH_APP_ID` — the numeric app id | `credential-inventory.md` → **GitHub App IDs**: agent **`4431410`**, deployer **`4431542`**. Also at `~/.config/mcritchie/app-ids.json` on Mr. McRitchie's Mac, but nothing creates that file — on a rebuilt machine, read the doc. |
 | `GH_APP_PEM` — the private key | the `.pem` as last downloaded: `~/Downloads/mcritchie-{agent,deployer}.*.private-key.pem`. **Never** in the repo. |
 
 ```bash

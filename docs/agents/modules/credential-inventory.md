@@ -57,7 +57,9 @@ in the table above the first time a doc or script depends on it.
 | agent (build/review) | `github.mcritchie-agent` | `agents-studio` | **`4431410`** |
 | deployer (ship) | `github.mcritchie-deployer` | `agents-admin` | **`4431542`** |
 
-Also mirrored on Mr. McRitchie's Mac at `~/.config/mcritchie/app-ids.json`.
+A convenience copy sits at `~/.config/mcritchie/app-ids.json` on Mr.
+McRitchie's Mac. Nothing generates that file, so a rebuilt machine will not
+have it — this table is the durable copy.
 
 **Why they are written down.** `bin/gh-token` mints from two halves: the numeric
 `app-id` and the `.pem` private key. Both used to live only in 1Password — so
@@ -69,28 +71,44 @@ hand-mint recipe itself lives in `token-session.md`.
 
 **Why this does not violate the "no secret values" rule at the top of this
 file.** An app id is an *identity claim*, not a *proof of identity*. It is the
-`iss` of the JWT; GitHub verifies the JWT's signature against the app's
-registered **public** key, so the id only selects which key to check. Verified
-on 2026-08-30 against the live API, not assumed:
+`iss` of the JWT, and GitHub verifies that JWT's signature against the app's
+registered **public** key — so the id only chooses which key to check against.
+Tested against the live API on 2026-08-30 rather than assumed:
 
 | Test | Result |
 |---|---|
-| `GET /app` with the correct id **and** its `.pem` | `200` — the pairing is exact |
-| correct `.pem`, wrong id | `401` |
-| correct id, wrong `.pem` | `401` |
-| the id and no key at all (installation token) | `401 A JSON web token could not be decoded` |
-| `GET /apps/mcritchie-agent` with an ordinary installation token | `200 {"id":4431410}` — GitHub itself serves it |
-| `https://github.com/apps/{mcritchie-agent,mcritchie-deployer}` anonymously | `200` — both Apps are publicly listed |
+| `GET /app` with an id and the `.pem` that matches it | `200` — the pairing is exact |
+| the right `.pem`, the wrong id | `401` |
+| the right id, the wrong `.pem` | `401` |
+| the id and no key at all | `401 A JSON web token could not be decoded` |
 
-So the id alone grants nothing, and the agent's is already readable from
-GitHub's own API by anyone holding any App installation token. The ids are also
-low-entropy sequential integers 132 apart; treating the second as a secret while
-the first is served publicly would be theatre, not defence.
+The id is the username and the `.pem` is the password. Alone, it opens nothing.
+
+**How public is "public" — precisely, because the loose version of this claim is
+wrong.** Both Apps have profile pages that answer anonymously
+(`https://github.com/apps/mcritchie-agent`, and the same for `-deployer`, both
+`200`), but neither page prints the numeric id. `GET /apps/mcritchie-agent`
+*does* return `{"id":4431410}` — to that App's **own** installation token, which
+is a self-read; the same call for `mcritchie-deployer` from the agent's token is
+`403`. So do not repeat "GitHub publishes these": what is demonstrated is that
+the ids are **low-sensitivity internal identifiers**, not that a stranger can
+fetch them.
+
+That is still enough to write them down here, for three reasons. They confer
+nothing without the `.pem` (the table above). They sit 132 apart in one
+sequence, so withholding the second while the first is recorded buys nothing.
+And on any machine where the `.pem` exists, the ids already sit beside it in
+cleartext at `~/.config/mcritchie/app-ids.json` — the attacker this would
+inconvenience is one who stole the key without the filesystem.
+
+**Why the repo, rather than somewhere less public.** It is the only store that
+survives BOTH a wiped Mac and a 1Password outage. That pair of failures is
+exactly the case the number is needed for, and it is what `house-burn-down.md`
+rebuilds from.
 
 **What stays secret, and never enters this repo:** the `.pem` private key (the
 FILE attachment on each item), the OAuth **client secret**, and any minted
-installation token. `client-id` is likewise not a secret — GitHub publishes its
-own apps' client ids through the same endpoint — but no client id is recorded
+installation token. `client-id` is likewise not a secret, but none is recorded
 here, because nothing needs one.
 
 ## Shared AWS identity — `agent.aws`
