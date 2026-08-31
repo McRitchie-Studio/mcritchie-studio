@@ -16,8 +16,35 @@ require "fileutils"
 
 require File.expand_path("../../bin/lib/task_board", __dir__)
 require_relative "../support/op_binary_stub"
+# ARMS THE TASK-USAGE SANDBOX FOR THIS PROCESS, and it is load-bearing rather
+# than tidiness. This file drives TaskBoard.agent_secret, whose vault step is now
+# METERED (bin/lib/op_meter.rb), and OpMeter writes to the operator's REAL
+# <projects>/.agents/op-reads.log whenever the sandbox is not armed — a test
+# process that does not arm it is indistinguishable from a real agent run.
+# MEASURED: six phantom `op read / ok` rows per run, after which `bin/op-reads`
+# named THIS FILE the heaviest spender of a quota it never touched, ahead of the
+# only real spender. A log that answers the outage question with a lie is worse
+# than no log, so the guard is armed here where it cannot be forgotten.
+require_relative "../support/task_usage_sandbox"
 
 class TaskBoardTest < Minitest::Test
+  # ── [unit] the metering guard this file must keep armed ─────────────────────
+
+  # The regression, pinned at the mechanism rather than at the symptom. Deleting
+  # the sandbox require above turns `refused?` false, and the very next
+  # agent_secret test appends to the operator's real op-reads.log. Asserting on
+  # the log file itself would be worse: it would have to name the real store to
+  # check it, which is the thing state_store_containment_test.rb forbids.
+  def test_unit_metering_is_refused_so_this_file_cannot_write_the_real_op_reads_log
+    assert TaskUsageSandbox.active?,
+           "TASK_USAGE_SANDBOX must be armed for this process — without it OpMeter resolves the " \
+           "operator's real <projects>/.agents/op-reads.log and records phantom reads for every " \
+           "stubbed `op` this file drives."
+    assert OpMeter.refused?(ENV),
+           "armed and unpinned must REFUSE the write; if this fails, a pin is steering the log " \
+           "somewhere and the phantom rows are landing there instead."
+  end
+
   # ── [unit] parse_body (the die!-family's lenient parse) ─────────────────────
 
   def test_unit_parse_body_returns_empty_hash_for_blank_or_invalid_bodies
