@@ -3,9 +3,14 @@ require "test_helper"
 module Api
   module V1
     # Integration coverage for the per-release conductor-claim endpoints (assembler /
-    # deployer). Mirrors the task review-claim controller test one lane over: the
-    # controller reads params[:slug] + role directly (no Release lookup), so the slug
-    # is a plain string here.
+    # deployer). Mirrors the task review-claim controller test one lane over: the claim
+    # actions read params[:slug] + role directly, so the slug is a plain string and most
+    # tests here need no Release row at all.
+    #
+    # `show` is the one exception — it also serves `release_state`, looked up by slug,
+    # for the detached renewer's "is this candidate finished" stop condition. A slug
+    # with no Release row answers null there, which is why the claim tests below are
+    # unaffected by it.
     class ReleaseConductorClaimsControllerTest < ActionDispatch::IntegrationTest
       SLUG = "rel-20260721-test"
 
@@ -102,6 +107,58 @@ module Api
         assert_response :ok
         assert response.parsed_body.dig("data", "holder", "live")
         assert_equal "Snorlax", response.parsed_body.dig("data", "holder", "label")
+      end
+
+      # --- the renewer's completion read -----------------------------------------
+      #
+      # There is no GET /api/v1/releases/:slug (releases are routed `only: []`), so this
+      # nested claim endpoint is the only slug-addressed release read the STANDALONE
+      # bin/release CLI has. It carries `release_state` for exactly one reader: the
+      # detached renewer, which without it renews a conductor claim over finished work
+      # for up to twelve hours and stands down the next `bin/release prepare`.
+
+      test "[integration] status GET serves the release state the renewer stops on" do
+        Release.create!(slug: SLUG, branch: "release", state: "shipped")
+        get conductor_claim_status_api_v1_release_path(SLUG), params: { role: "deployer" }, headers: @headers
+        assert_response :ok
+        assert_equal "shipped", response.parsed_body.dig("data", "release_state"),
+                     "the renewer cannot ask any other endpoint whether its candidate is over"
+      end
+
+      test "[integration] a slug with no release answers a null state, not an error" do
+        get conductor_claim_status_api_v1_release_path("__forming__"), params: { role: "assembler" },
+                                                                       headers: @headers
+        assert_response :ok
+        assert_nil response.parsed_body.dig("data", "release_state"),
+                   "the __forming__ sentinel is a claim on a candidate still being created; " \
+                   "the CLI fails OPEN on null, so a forming claim keeps renewing"
+      end
+
+      test "[integration] the state read never disturbs the holder half of the payload" do
+        Release.create!(slug: SLUG, branch: "release", state: "assembling")
+        acquire(session: "A", nonce: "a", label: "Snorlax")
+        get conductor_claim_status_api_v1_release_path(SLUG), params: { role: "assembler" }, headers: @headers
+        assert_response :ok
+        body = response.parsed_body.fetch("data")
+        assert_equal "assembling", body["release_state"]
+        assert_equal "Snorlax", body.dig("holder", "label"), "the pre-existing status read is intact"
+        assert body.dig("holder", "live")
+      end
+
+      # THE DRIFT GUARD, Rails half. ReleaseClaimCli runs STANDALONE and cannot load
+      # this model, so it mirrors TERMINAL_STATES as a literal (pinned on its own side in
+      # test/lib/release_claim_cli_test.rb). The real risk is a NEW state added to the
+      # model that the CLI never hears about: it would be neither terminal nor asserted
+      # anywhere, and a renewer would treat it as live forever. Pinning the PARTITION
+      # makes that addition fail here, loudly, instead of silently ageing out a claim.
+      test "[integration] active and terminal states partition every release state" do
+        assert_equal %w[shipped abandoned], Release::TERMINAL_STATES,
+                     "ReleaseClaimCli::TERMINAL_STATES mirrors this literal and cannot read it"
+        assert_equal Release::STATES.sort, (Release::ACTIVE_STATES + Release::TERMINAL_STATES).sort,
+                     "every release state must be either active (keep renewing) or terminal (stop); " \
+                     "a new state in neither bucket is a renewer that never exits"
+        assert_empty Release::ACTIVE_STATES & Release::TERMINAL_STATES,
+                     "a state cannot be both live and finished"
       end
 
       test "[integration] acquire requires auth" do
@@ -233,6 +290,64 @@ module Api
         get "/api/v1/release_conductor_claims/live", params: { role: "deployer" }, headers: {}
         assert_response :unauthorized
       end
+
+      # ── conductor_work_remaining: THE SERVER HALF OF THE STOP CONDITION ────────
+      #
+      # FOUND IN REVIEW: this field had ZERO controller coverage. Both CLI suites
+      # STUB it, so the endpoint could have returned true, nil, or omitted the key
+      # entirely and every one of those tests would still pass. The half that
+      # actually decides whether a live deployer keeps its claim was untested.
+      #
+      # It must answer the question `bin/release finalize` asks — "are there STEPS
+      # LEFT" — not the narrower "are there unshipped members". Those differ exactly
+      # where it matters: a release can be `shipped` with every member shipped while
+      # seal or notes still pends, and finalize then runs holding the claim through
+      # an unbounded human confirm prompt.
+
+      def show_claim(slug: SLUG, role: "deployer")
+        get conductor_claim_api_v1_release_path(slug), params: { role: role }, headers: @headers
+        JSON.parse(response.body).fetch("data")
+      end
+
+      test "[integration] a shipped release with an unshipped member reports work remaining" do
+        release = Release.create!(slug: "rel-work-members", state: "shipped")
+        Task.create!(title: "Member Still Building", stage: "building", release_slug: release.slug)
+
+        assert_equal true, show_claim(slug: release.slug)["conductor_work_remaining"],
+                     "an unshipped member means the ship half of finalize still pends"
+      end
+
+      # THE REGRESSION THE REVIEW CAUGHT. Members all shipped, state shipped — the
+      # earlier version answered "no work left" here and the renewer exited at cycle
+      # zero, lapsing the claim 120s into a finalize that was still running.
+      test "[integration] a shipped release with seal or notes pending still reports work" do
+        release = Release.create!(slug: "rel-work-seal", state: "shipped")
+        Task.create!(title: "Member Already Shipped", stage: "shipped", release_slug: release.slug)
+
+        assert_equal true, show_claim(slug: release.slug)["conductor_work_remaining"],
+                     "seal and notes are INDEPENDENT finalize steps; all-members-shipped " \
+                     "does not mean the conductor is done"
+      end
+
+      # ⚠️ WITHOUT THE abandoned SHORT-CIRCUIT this returns true forever: done[:ship]
+      # is false for any state that is not "shipped", so finalize_pending? would
+      # always report work and the `abandoned` half of TERMINAL_STATES could never
+      # stop a renewer.
+      test "[integration] an abandoned release reports no work remaining" do
+        release = Release.create!(slug: "rel-work-abandoned", state: "abandoned")
+
+        assert_equal false, show_claim(slug: release.slug)["conductor_work_remaining"],
+                     "an abandoned candidate is over; nothing is left to assemble or deploy"
+      end
+
+      # A slug with no Release row — notably the `__forming__` sentinel, a claim held
+      # while a candidate is still being created. NULL is unknown, not finished, and
+      # the CLI keeps renewing on it.
+      test "[integration] an unknown slug reports null rather than finished" do
+        assert_nil show_claim(slug: "rel-does-not-exist")["conductor_work_remaining"],
+                   "a release that does not exist yet has certainly not ended"
+      end
+
     end
   end
 end

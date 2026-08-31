@@ -80,14 +80,13 @@ backwards while a real lease is held); and unlike the anchor check, `finished` f
 network blip would free a live reviewer's task underneath them. A wrong "anchor dead"
 costs a recoverable delay; a wrong "work finished" costs a duplicated review.
 
-Two callers still pass no `finished:`, for DIFFERENT reasons, and the difference
-matters to anyone asking "did we fix all the immortal renewers?". The
-`devops-shift` ROLE lease is unchanged and correctly exempt: it protects a LANE,
-not a unit of work, so it has no completion signal to give. `bin/lib/release_claim_cli.rb`
-is NOT exempt — its renewer is scoped to a RELEASE SLUG, which does reach terminal
-stages — and it still carries this exact defect, tracked at
-`/tasks/release-renewer-outlives-ship`. So this section covers the REVIEW claim
-only; two of the three members of that family are done and one is not.
+**Both per-unit renewers now pass `finished:`; one caller is exempt and stays that
+way.** `bin/lib/release_claim_cli.rb` supplies `release_finished?`
+(`/tasks/release-renewer-outlives-ship`) — see section B for its terminal set, which is
+deliberately NOT the review lane's. The `devops-shift` ROLE lease is the exemption and
+is correct: it protects a LANE, not a unit of work, so it has no completion signal to
+give. That is the whole family — a reader asking "did we fix all the immortal
+renewers?" can stop here.
 
 - **Simple** — the careless double. Session A holds `avi`; a second Avi launch
   `acquire avi` → the row is live-held → `acquired:false` → the CLI prints
@@ -100,12 +99,14 @@ only; two of the three members of that family are done and one is not.
   whenever we cannot prove the holder dead would invert `ClaimLease`'s fail-open
   posture and let one crash lock a lane indefinitely. A crash must cost a delay,
   never a deadlock.
-- **Work done** — a per-task review renewer whose task reaches a terminal stage exits
-  on its next cycle even though its anchor is alive and its claim still technically
-  held. This is the exit the original two-condition design lacked; a regression test
-  that only kills the anchor passes against that design and proves nothing, so
-  `test/lib/review_claim_renewer_integration_test.rb` drives a REAL renewer past
-  `shipped` with the anchor held alive throughout.
+- **Work done** — a per-unit renewer whose work reaches a terminal state exits on its
+  next cycle even though its anchor is alive and its claim still technically held. This
+  is the exit the original two-condition design lacked; a regression test that only
+  kills the anchor passes against that design and proves nothing, so both lanes drive a
+  REAL detached renewer past completion with the anchor held alive throughout:
+  `test/lib/review_claim_renewer_integration_test.rb` past a `shipped` TASK, and
+  `test/lib/release_claim_renewer_integration_test.rb` past a `shipped` RELEASE (its
+  control sits at `assembled` — live mid-deploy for a release, terminal for a review).
 - **Headless** — a holder with no status line retains the lane for the whole run.
   Asserted, not assumed: `test/models/devops_shift_test.rb` walks a 20-minute window
   (ten TTLs) refusing a second acquire at every step, and
@@ -233,6 +234,23 @@ the lease math above. Two properties matter for the release acts specifically:
   renew is unacceptable). A telemetry hiccup fails OPEN (the release proceeds
   unclaimed — a claim outage must never wedge a real release); a live DIFFERENT holder
   (exit 10) still stands the run down.
+- **Its renewer dies with the RELEASE, not only with the session.** The detached
+  renewer stops once the candidate is `shipped` or `abandoned` AND the board
+  reports no conductor work left (`conductor_work_remaining: false`) — both halves,
+  because `finalize` legitimately runs on a shipped release with seal or notes pending
+  (`ReleaseClaimCli::TERMINAL_STATES`, mirroring `Release::TERMINAL_STATES` because the
+  standalone CLI cannot load the model). **That set is NOT the review lane's**, and the
+  difference is the point: `assembled` is terminal for a REVIEW and fully LIVE for a
+  RELEASE — it is precisely the state a candidate sits in while `bin/release ship` holds
+  the deployer claim and pushes to production. Calling it finished would free the claim
+  underneath a running deploy. Like the review lane, the check is asked BEFORE the renew
+  (so a finished loop polls zero further times) and fails **OPEN** (an unreadable board,
+  or the `__forming__` sentinel's null state, means "carry on"): a wrong "anchor dead"
+  costs a delay, a wrong "work finished" costs a CONCURRENT PRODUCTION DEPLOY. Without
+  this exit an orphaned renewer stood down the next `bin/release prepare` — and pinned
+  the `_ship`/`_gate` workspaces below — for up to `MAX_LIFETIME_SECONDS` (12h).
+  Because there is no `GET /api/v1/releases/:slug` (releases are routed `only: []`), the
+  claim `show` endpoint carries `release_state` for this one reader.
 - **It re-provides the ship↔cleanup exclusion the shift used to.** When ship held the
   `avi` shift, `clean-up` (also `avi`) could not run against a live ship — so it could
   never reclaim ship's fixed-path `_ship`/`_gate` workspaces mid-ship. Ship left the
