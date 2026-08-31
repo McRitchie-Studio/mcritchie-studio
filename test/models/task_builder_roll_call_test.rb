@@ -79,9 +79,9 @@ class TaskBuilderRollCallTest < ActiveSupport::TestCase
   end
 
   test "a client cannot shrink the author set through a wholesale devops replace" do
-    # The API assigns devops WHOLESALE, so a --checks update echoes none of these
-    # keys. If that erased the set, the record could be laundered clean between the
-    # handoff and the review.
+    # This drives the raw whole-column write directly — the shape a --checks update
+    # that echoes none of these keys leaves at the model. If that erased the set, the
+    # record could be laundered clean between the handoff and the review.
     task = new_task
     claim!(task, actor: "steffon", session: STEFFON_SESSION)
     claim!(task, actor: "alex", session: ALEX_SESSION, nonce: "inst-B")

@@ -337,8 +337,8 @@ class Task < ApplicationRecord
   # mascot that owns the transition. Runs before the after_update TaskEvent, so
   # the transition's snapshot bakes the EVOLVED form (older events keep theirs).
   # Unconditional, and BEFORE the evolution gate: the mascot's shiny/color/emoji
-  # and its consumed gate are server-owned, so the API's wholesale devops replace
-  # deletes them on every client PATCH. Re-asserting them here — the same
+  # and its consumed gate are server-owned, so a client that rebuilds the hash from
+  # the whitelist drops them. Re-asserting them here — the same
   # self-healing shape as sync_app_identity below — means the gate check reads a
   # restored mascot_stage (a wiped one re-opens a spent gate and double-evolves)
   # and evolve_stage_mascot's own emoji stamp reads a restored mascot_shiny. The
@@ -360,14 +360,14 @@ class Task < ApplicationRecord
   before_save :preserve_cert_evidence
   # The build claim is a BUILD-STAGE lease, re-asserted as an INVARIANT on every
   # save rather than handled at any one transition. It both RELEASES the claim
-  # once the task leaves `building` and DEFENDS it from the wholesale devops
-  # replace while it is there. See #enforce_build_claim_invariant.
+  # once the task leaves `building` and DEFENDS it from a client write that blanks
+  # or bypasses the keys while it is there. See #enforce_build_claim_invariant.
   before_save :enforce_build_claim_invariant
   # WHO BUILT THIS is a property of the build CLAIM, not of the transition into
   # `building`. Registered AFTER enforce_build_claim_invariant so it reads the
   # restored claim (that guard decides what counts as a claim write) — and, like
   # its five siblings above, it re-asserts a server-owned devops key on every save
-  # so the API's wholesale devops replace can't drop it. See #enforce_builder_stamp.
+  # so a client cannot clear it by posting it blank. See #enforce_builder_stamp.
   before_save :enforce_builder_stamp
   # One TaskEvent per save that lands a stage: the genesis on create (the default
   # "designed" stage isn't a dirty change, so this is guard-free) and one per real
@@ -2538,12 +2538,17 @@ class Task < ApplicationRecord
   #     Keyed on the claim so it stays a claim stamp: a note, a checks update, or
   #     any other save that happens to carry a soul actor while the task sits in
   #     `building` must not make that soul the builder.
-  #   DEFEND — on ANY save, carry a stored builder forward. The API route replaces
-  #     the devops subhash WHOLESALE (TasksController#merged_metadata_with_devops:
-  #     `base["devops"] = normalized`), so a partial PATCH that never mentions
-  #     built_by would otherwise DELETE the record of who built the task — and
-  #     `normalize_devops_metadata` drops blanks, so no client can deliberately
-  #     clear it either way. A regression test drives exactly that PATCH.
+  #   DEFEND — on ANY save, carry a stored builder forward. Since
+  #     api-devops-patch-replaces BOTH write paths fold through
+  #     Task.merge_devops_into_metadata, so a partial PATCH that never mentions
+  #     built_by now preserves it on its own — the merge, not this guard, is what
+  #     covers omission. What the merge does NOT cover is a name posted BLANK: it
+  #     keys on the POSTED names and `normalize_devops_metadata` drops blanks, so
+  #     `{"devops":{"built_by":""}}` deletes the record of who built the task. That
+  #     is this half's remaining job, and it is the whole of it. A regression test
+  #     drives exactly that PATCH — test/integration/builder_stamp_api_test.rb,
+  #     "a client cannot erase the builder by posting it blank"; without it,
+  #     deleting the `|| prior_devops["built_by"]` below passes the whole suite.
   def enforce_builder_stamp
     # An explicit devops teardown (the whole hash removed) is left alone — this
     # guard defends the builder key, not the existence of devops. Same posture as
@@ -2741,9 +2746,10 @@ class Task < ApplicationRecord
   end
 
   # True when this save writes a claim lease that differs from the stored one — a
-  # re-claim or a renewal. Compared AFTER enforce_build_claim_invariant, so a
-  # wholesale devops replace that simply omitted the claim (its keys restored from
-  # the prior record) reads as unchanged and is correctly not a claim.
+  # re-claim or a renewal. Compared AFTER enforce_build_claim_invariant, so a write
+  # that simply omitted the claim — a raw whole-column `metadata:` assignment, or a
+  # key posted blank — reads as unchanged once that guard restores the keys from the
+  # prior record, and is correctly not a claim.
   def claim_lease_rewritten?
     current = metadata.is_a?(Hash) ? (metadata["devops"] || {}) : {}
     ClaimLease::CLAIM_KEYS.any? { |key| current[key].to_s != prior_devops[key].to_s }
@@ -2777,10 +2783,11 @@ class Task < ApplicationRecord
   def builder_to_stamp
     actor = Current.task_event_actor.presence
     return actor if actor && self.class.soul?(actor)
-    # Rule 2 consults the STORED builder as well as the incoming one: on a
-    # wholesale devops replace the incoming built_by is blank, and reading only
-    # that would let the persona/assignee default re-point a builder already on
-    # record. Only an explicit soul actor (rule 1) ever re-points.
+    # Rule 2 consults the STORED builder as well as the incoming one: a client that
+    # posts built_by BLANK — or a raw whole-column `metadata:` write, which is
+    # permitted wholesale and folds through nothing — leaves the incoming value
+    # empty, and reading only that would let the persona/assignee default re-point a
+    # builder already on record. Only an explicit soul actor (rule 1) ever re-points.
     return nil if devops["built_by"].presence || prior_devops["built_by"].presence
 
     [devops["persona"].to_s, agent_slug.to_s].find { |slug| self.class.soul?(slug) }
@@ -2856,7 +2863,8 @@ class Task < ApplicationRecord
   # moment approval flips to "approved", mirroring stamp_operator_approval_request's
   # open. Still a real release/operator metric (the /deployments approval chip reads
   # it); it just no longer projects as a task testing phase since VERSION 2.
-  # Runs in before_save so it survives the controller's wholesale devops replace.
+  # Runs in before_save so it stamps onto the metadata the controller has already
+  # folded — server-owned, with no client write left that could land after it.
   def stamp_operator_approval_approved
     return unless will_save_change_to_metadata?
     return unless devops["approval_status"] == OPERATOR_APPROVAL_APPROVED
@@ -2945,12 +2953,18 @@ class Task < ApplicationRecord
   # carrying a dead claim, and it cannot be escaped by a path that moves the stage
   # some other way.
   #
-  # PRESERVE. Api::V1::TasksController#task_params assigns metadata WHOLESALE, so
-  # every PATCH carrying `devops` REPLACES the subhash and deletes any key the
-  # client did not echo. The board's own edit form permits no claim keys at all
-  # (app/controllers/tasks_controller.rb), so opening a task on the board and
-  # saving it silently destroyed a LIVE claim — and a destroyed claim reads as
-  # unclaimed, which lets a second agent take a desk someone is working at. That
+  # PRESERVE. This USED TO BE the whole story: Api::V1::TasksController#task_params
+  # assigned metadata WHOLESALE, so every PATCH carrying `devops` REPLACED the
+  # subhash and deleted any key the client did not echo. The board's own edit form
+  # permits no claim keys at all (app/controllers/tasks_controller.rb), so opening a
+  # task on the board and saving it silently destroyed a LIVE claim — and a destroyed
+  # claim reads as unclaimed, which lets a second agent take a desk someone is working
+  # at. Since api-devops-patch-replaces both paths fold through
+  # Task.merge_devops_into_metadata, so a merely OMITTED claim key survives on its own
+  # now. Two doors still reach this guard: a key posted BLANK (the fold keys on the
+  # posted names and the normalizer drops blanks, so a blank claim key IS a delete),
+  # and a raw whole-column `metadata:` write, which is permitted wholesale and folds
+  # through nothing. That
   # is also why `bin/task show --json` and `bin/task begin` disagreed about the
   # same lease 20 seconds apart: not two readers of one fact, but one fact being
   # erased and rewritten underneath them. This is the same self-healing shape as
@@ -2982,9 +2996,9 @@ class Task < ApplicationRecord
       # naming a NEW claimed_session with NO claim_nonce at all — precisely the
       # shape this guard has to refuse to complete from the old record.
       #
-      # A payload naming NO session is not talking about the claim (the
-      # wholesale-replace case this method exists for), and there the stored claim
-      # is restored whole.
+      # A payload naming NO session is not talking about the claim (the blank-post
+      # and raw-metadata-write cases this method exists for), and there the stored
+      # claim is restored whole.
       incoming_session = updated["claimed_session"].to_s
       return unless incoming_session.empty? || incoming_session == prior_devops["claimed_session"].to_s
 
@@ -3105,9 +3119,10 @@ class Task < ApplicationRecord
     DEVOPS_COLUMN_KEYS.each_key { |key| devops.delete(key) }
   end
 
-  # Carry the mascot HANDLE across a client write that never mentioned it. `mascot`
-  # and `mascot_session` ARE client keys, but Api::V1::TasksController#task_params
-  # assigns metadata WHOLESALE, which turns every omission into a deletion — and
+  # Carry the mascot HANDLE across a client write that dropped it. `mascot` and
+  # `mascot_session` ARE client keys, so the fold now preserves them when a PATCH
+  # simply OMITS them. What still empties them is a name posted BLANK (the fold keys
+  # on the posted names) or a raw whole-column `metadata:` write — and
   # normalize_devops_metadata already SKIPS blank values, so no client can express
   # "clear the mascot" through this path anyway. A client that sends a real slug
   # (the --mascot override) still wins; only silence is undone. Without this a bare
@@ -3127,11 +3142,15 @@ class Task < ApplicationRecord
 
   # Re-derive the mascot's DISPLAY stamps — shiny, signature color, type emoji(s) —
   # plus carry its consumed evolution gate forward. These four are server-owned
-  # (deliberately absent from DEVOPS_KEYS), and Api::V1::TasksController#task_params
-  # assigns metadata WHOLESALE as {"devops" => <whitelisted client keys>}, so every
-  # client PATCH deletes them. sync_session_mascot cannot restore them: it runs only
+  # (deliberately absent from DEVOPS_KEYS) — which is now also what SAVES them from a
+  # v1 devops PATCH, since the fold keys on the posted names INTERSECTED with
+  # DEVOPS_KEYS and so can never drop a name it does not know. What still wipes them
+  # is a client that rebuilds the hash FROM the whitelist — `bin/task`'s
+  # read-modify-write echoes normalize_devops_metadata, which keeps only DEVOPS_KEYS
+  # — or a raw whole-column `metadata:` write, permitted wholesale and folded by
+  # nothing. sync_session_mascot cannot restore them: it runs only
   # on a build-stage change, and its own `needs` guard short-circuits while `mascot`
-  # (a client key) survives the replace. So they are re-asserted here on EVERY save
+  # (a client key) survives. So they are re-asserted here on EVERY save
   # — the same shape as sync_app_identity's app_color, which is why app_color never
   # suffered this. Without it the stamps died on the first bind-task PATCH: the
   # →designed event snapshot baked the shiny face and every later one baked the
