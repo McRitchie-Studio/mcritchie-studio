@@ -470,13 +470,15 @@ They change **no gate semantics** — every gate (the build claim,
 `bin/session-preflight`, `bin/fast-check`, `bin/dor-check`, the stage read-back
 verify) still runs and still owns its verdict; the wrappers only sequence the
 steps and skip the ones whose outcome is already durably recorded, so rerunning
-after a partial failure **resumes** instead of duplicating.
+after a partial failure **resumes** instead of duplicating. Resume `begin` **by
+slug**: once the task exists it REFUSES create flags rather than dropping them,
+so the whole `--title …` line is not the way back in.
 
 Session start (create → `agent-worktree new` → `bind-task` → `move building` →
 `session-preflight`, printing the worktree path, port, and task URL):
 
 ```bash
-bin/task begin --title "Three To Five Words" --repo <app> --shape <shape> \
+bin/task begin --title "Three To Five Words" --repo <app> --agent <soul> --shape <shape> \
   --risk <tag> --accept "criterion" --test "[unit] ..."
 bin/task begin <task-slug>        # resume a partial begin
 ```

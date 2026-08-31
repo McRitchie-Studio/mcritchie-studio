@@ -15,20 +15,59 @@ require "test_helper"
 # always documentation, which is exactly why it needs a test: prose has no
 # other way to fail.
 class FastLaneTeachesAgentTest < ActiveSupport::TestCase
-  DOCS = %w[
-    docs/agents/claude.md
-    docs/agents/index.md
-    docs/agents/modules/building-sop.md
-  ].freeze
+  # THE DOC SET IS DERIVED, NOT LISTED — and the hand-list is why. FOUND IN
+  # REVIEW: the constant here named three files, while `devops-task-board.md:479`
+  # and `worktrees.md:10` BOTH documented `begin --title` with no `--agent` and
+  # neither was in it. The guard passed, green and useless, while two of the docs
+  # it did not read taught the exact omission this test exists to remove.
+  #
+  # A hand-maintained list is the same failure mode as a hand-maintained reader
+  # table (see task_begin_flag_grammar_test.rb): it can only ever check what its
+  # author already remembered. Deriving the set means a doc written next month is
+  # covered without anyone remembering to add it.
+  #
+  # ARCHIVES ARE EXCLUDED on purpose: `docs/agents/archive/**` holds FROZEN
+  # snapshots, not instructions, and AGENTS.md says to leave them as written. A
+  # snapshot of a pre-fix doc must not be able to redden this.
+  INVOCATION = "bin/task begin"
+  RECIPE = "bin/task begin --title"
+
+  def self.docs_naming_begin
+    Dir.glob(Rails.root.join("docs/**/*.md")).sort
+       .reject { |path| path.include?("/agents/archive/") }
+       .select { |path| File.read(path).include?(INVOCATION) }
+       .map { |path| Pathname.new(path).relative_path_from(Rails.root).to_s }
+  end
+
+  DOCS = docs_naming_begin.freeze
+
+  # PROVE THE DERIVATION READ SOMETHING. A glob that matched nothing would make
+  # every assertion below pass while inspecting no files at all — the quietest way
+  # for this guard to die. The names pinned here are a FLOOR, not the coverage
+  # list: DOCS may legitimately grow past them, and that is the point.
+  test "the derived doc set actually found the docs that carry the invocation" do
+    refute_empty DOCS, "the docs glob matched nothing — this guard is inspecting no files"
+
+    # The two the old hand-list MISSED. They are pinned by name because their
+    # absence is the regression, and a derivation that loses them again has
+    # reintroduced it.
+    assert_includes DOCS, "docs/agents/modules/devops-task-board.md"
+    assert_includes DOCS, "docs/agents/modules/worktrees.md"
+    # The canonical sources the projects-root CLAUDE.md / AGENTS.md generate from.
+    assert_includes DOCS, "docs/agents/claude.md"
+    assert_includes DOCS, "docs/agents/index.md"
+  end
 
   test "every documented bin/task begin invocation passes --agent" do
     offenders = []
 
     DOCS.each do |rel|
       Rails.root.join(rel).read.each_line.with_index(1) do |line, n|
-        next unless line.include?("bin/task begin --title")
-        # The flag may sit on this line or the wrapped continuation; scan the
-        # invocation as written on the line that opens it.
+        next unless line.include?(RECIPE)
+        # THE OPENING LINE MUST CARRY IT. A wrapped invocation may continue over
+        # several lines, but an agent skimming for the recipe reads the line that
+        # starts it — so `--agent` belongs there, not on a continuation. This is
+        # stricter than checking the whole command, deliberately.
         offenders << "#{rel}:#{n}" unless line.include?("--agent")
       end
     end

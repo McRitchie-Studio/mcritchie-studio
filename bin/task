@@ -1471,6 +1471,47 @@ def verify_merged_persisted!(slug, expected)
 end
 
 # --- Fast lane: `begin` ------------------------------------------------------
+
+# THE FLAGS `begin` HONOURS ON A RESUME — the single source, read back by the
+# wiring guard in test/commands/task_begin_flag_grammar_test.rb. DERIVED FROM
+# WHAT THE CODE READS, not from what feels like a create flag: an earlier draft
+# omitted --repo and thereby turned a WORKING flag into a refused one.
+#   --slug     the resume key                       (read as top["slug"])
+#   --repo     picks the app whose desk is allocated (read as lists["repositories"])
+#   --agent    forwarded to the claim as --actor     (read as top["agent"])
+#   --dev-size forwarded to the claim on BOTH branches (read as top["dev_size"])
+#   --steal    consumed before parse_flags, then forwarded to the claim gate
+# If you add a flag here, WIRE IT FIRST — an advertised flag no branch reads is
+# the silent drop this whole guard exists to remove.
+BEGIN_RESUME_FLAGS = %w[--slug --repo --agent --dev-size --steal].freeze
+
+# REFUSE — never drop — a create flag on a path that cannot honour it.
+#
+# TWO DOORS REACH A RESUME, and keying on only the first is the defect this
+# replaces:
+#   1. NO --title. `begin` cannot create at all, so every create flag is inert.
+#      This door is decided in argument parsing, BEFORE the board lookup, and it
+#      stays there on purpose: the refusal must not depend on the network.
+#   2. THE TASK ALREADY EXISTS. `begin` resumes it, so every create flag is inert
+#      here TOO — including when --title was passed. This is the door a real
+#      builder walks through, because `begin` is advertised as resumable and
+#      re-running it is normal: `bin/task begin --title "Some Existing Title"
+#      --shape backend` accepted --shape and dropped it in silence. Only the task
+#      EXISTING makes a create flag inert; a blank title is merely one way to get
+#      there. --title itself stays legal on this door — it is how a re-run names
+#      the task whose slug it derives.
+def refuse_inert_create_flags!(raw_argv, because:, hint_lead:, also_valid: [], update_target: "<slug>", tail: nil)
+  valid = BEGIN_RESUME_FLAGS + also_valid
+  raw_argv.each do |arg|
+    next unless arg.to_s.start_with?("--")
+    next if valid.include?(arg)
+
+    unknown_flag!(arg, valid: valid, context: "begin's resume form (#{because})",
+                  hint: "#{hint_lead} — set it on the existing task with " \
+                        "`bin/task update #{update_target} #{arg} ...`#{tail}")
+  end
+end
+
 # The task record for `begin`'s resume decision: the data on 2xx, nil on the
 # board's POSITIVE "task not found" (create it), die on everything else — a
 # failed read must never be read as "no such task" (that is the same contract
@@ -1676,38 +1717,24 @@ when "begin"
   positionals, scalars, lists, top = parse_flags(ARGV, context: "begin")
   die!(usage) if positionals.size > 1
 
-  # ⛔ THE RESUME FORM ACCEPTS NO CREATE FLAGS. Without --title `begin` CANNOT
-  # create (the die! below says exactly that), so every create flag on this path
-  # is definitionally inert — and until now it was dropped in SILENCE. Measured
-  # 2026-08-29: four tasks resumed with `bin/task begin <slug> --agent alex` came
-  # out with agent_slug nil and devops.built_by nil, while the same flag on a
-  # CREATE stamped both. begin reported success and printed the worktree either
-  # way, so the builder had no signal; the failure surfaced a day later at review,
-  # where bin/reviewer-select refuses an unknown builder and a human hand-picks —
-  # and a hand-picked light once turned out to be the PR's own author.
+  # ⛔ DOOR 1 — NO --title, SO `begin` CANNOT CREATE. Every create flag on this
+  # path is definitionally inert, and until this guard existed it was dropped in
+  # SILENCE. Measured 2026-08-29: four tasks resumed with `bin/task begin <slug>
+  # --agent alex` came out with agent_slug nil and devops.built_by nil, while the
+  # same flag on a CREATE stamped both. begin reported success and printed the
+  # worktree either way, so the builder had no signal; the failure surfaced a day
+  # later at review, where bin/reviewer-select refuses an unknown builder and a
+  # human hand-picks — and a hand-picked light once turned out to be the PR's own
+  # author.
   #
-  # Refuse instead of drop. THE LIST IS DERIVED FROM WHAT THE CODE BELOW READS,
-  # not from what feels like a create flag — an earlier draft of this guard omitted
-  # --repo and thereby turned a WORKING flag into a refused one:
-  #   --slug     the resume key
-  #   --repo     read as lists["repositories"] on the shared path, to pick the app
-  #              whose desk is allocated (see the `app =` line below)
-  #   --dev-size forwarded to the claim on BOTH branches
-  #   --agent    forwarded to the claim as --actor (see 4/5)
-  #   --steal    consumed above, before parse_flags
-  # Anything else belongs on `bin/task update <slug>`, which the hint names.
-  # If you add a flag here, WIRE IT FIRST — an advertised flag that no branch reads
-  # is the same silent drop this task exists to remove.
+  # THIS DOOR IS DECIDED BEFORE THE BOARD LOOKUP, and must stay that way: the
+  # refusal is a grammar fact, so it must not depend on the network. Door 2 (the
+  # task already exists) necessarily runs after the lookup — see below.
   if top["title"].to_s.strip.empty?
-    resume_flags = %w[--slug --repo --agent --dev-size --steal]
-    raw_argv.each do |arg|
-      next unless arg.to_s.start_with?("--")
-      next if resume_flags.include?(arg)
-
-      unknown_flag!(arg, valid: resume_flags, context: "begin's resume form (bin/task begin <slug>)",
-                    hint: "a resumed task is never re-shaped by begin: pass --title to CREATE, " \
-                          "or set it on the existing task with `bin/task update <slug> #{arg} ...`")
-    end
+    refuse_inert_create_flags!(
+      raw_argv, because: "bin/task begin <slug>",
+      hint_lead: "a resumed task is never re-shaped by begin: pass --title to CREATE one"
+    )
   end
 
   # THE BUILDER. `--agent <soul>` is what the documented fast lane passes, and it
@@ -1736,6 +1763,24 @@ when "begin"
     write_feature_marker(task)
     warn!("begin 1/5 task — created #{slug} [designed]")
   else
+    # ⛔ DOOR 2 — THE TASK ALREADY EXISTS, so this is a RESUME and every create
+    # flag is inert, --title or no --title. Door 1 catches only the blank-title
+    # spelling; what actually makes a create flag inert is the task EXISTING.
+    # `begin --title "Some Existing Title" --shape backend` walked straight past
+    # door 1 and dropped --shape in silence — on the DOCUMENTED re-run path, since
+    # `begin` is advertised as resumable. Refuse it here instead, naming the task
+    # so the remedy is copy-pasteable. --title stays legal: it is what named the
+    # task whose slug we just resolved, not an attempt to re-create it.
+    # THE REFUSAL MUST LEAVE A WAY FORWARD. Re-running the whole create line is a
+    # real habit — the fast lane prints it and `begin` is advertised as resumable
+    # — so a refusal that only says "no" trades a silent drop for a dead end. Name
+    # both moves: where the value DOES belong, and how to resume without it.
+    refuse_inert_create_flags!(
+      raw_argv, also_valid: %w[--title], update_target: slug,
+      because: "#{slug} already exists",
+      hint_lead: "begin RESUMES an existing task and never re-shapes it",
+      tail: ", then resume with `bin/task begin #{slug}`"
+    )
     warn!("begin 1/5 task — #{slug} already exists [#{task["stage"]}]; resuming")
   end
 
@@ -1770,6 +1815,11 @@ when "begin"
   narrate("start", "--category", "Explore", "--task", slug,
           "--reason", "orient: #{task["title"].to_s.strip.empty? ? slug : task["title"]}")
 
+  # WHICH APP'S DESK. --repo wins (read here as lists["repositories"] — parse_flags
+  # re-keys the flag to the devops list name), then the task's own recorded repo,
+  # then the hub. This is the ONLY place --repo is read, which is why the wiring
+  # guard names `lists["repositories"]` as its reader; deleting it here while
+  # leaving this comment standing is the mutation that guard now has to fail.
   app = [(lists["repositories"].first if lists.key?("repositories")), Array(dv["repositories"]).first,
          "mcritchie-studio"].find { |v| !v.to_s.strip.empty? }
   worktree_slug = [dv["worktree_slug"], slug].find { |v| !v.to_s.strip.empty? }
