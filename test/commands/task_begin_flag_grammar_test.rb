@@ -457,13 +457,20 @@ class TaskBeginFlagGrammarTest < ActiveSupport::TestCase
     ENTRY_DOCS.each do |rel|
       body = Rails.root.join(rel).read
 
-      assert_includes body, "A RESUME HONOURS #{word} FLAGS",
-                      "#{rel} states a flag count bin/task does not honour (#{honoured.size}: " \
-                      "#{honoured.join(", ")})"
-      honoured.each do |flag|
-        assert_includes body, "`#{flag}`",
-                        "#{rel} omits #{flag} from the flags it says a resume honours"
-      end
+      # READ THE SENTENCE, NOT THE FILE. A whole-body `assert_includes body,
+      # "`--title`"` passed while the sentence had dropped the flag entirely —
+      # MEASURED, as a surviving mutation — because both docs name `--title`
+      # elsewhere, in the fast-lane recipe. A substring assertion against a
+      # 700-line operating-model doc will always find its needle somewhere.
+      list = body[/A RESUME HONOURS #{word} FLAGS — (.+?) — and refuses/m, 1]
+
+      refute_nil list,
+                 "#{rel} no longer states the flags a resume honours in the sentence this " \
+                 "guard reads, or states a count bin/task does not honour (#{honoured.size}: " \
+                 "#{honoured.join(", ")})"
+      assert_equal honoured.sort, list.scan(/`(--[a-z-]+)`/).flatten.sort,
+                   "#{rel}'s honoured-flag sentence and bin/task's whitelists have drifted; " \
+                   "the sentence must name every flag a resume honours and no others"
     end
   end
 

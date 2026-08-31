@@ -30,7 +30,39 @@ class FastLaneTeachesAgentTest < ActiveSupport::TestCase
   # snapshots, not instructions, and AGENTS.md says to leave them as written. A
   # snapshot of a pre-fix doc must not be able to redden this.
   INVOCATION = "bin/task begin"
-  RECIPE = "bin/task begin --title"
+  # `--title` is what makes a documented line a CREATE, and a create is the form
+  # that stamps a builder. `bin/task begin <slug>` is the RESUME form and prose
+  # like "`bin/task begin` runs steps 1-2" is not an invocation at all; neither
+  # can carry a builder to stamp, so neither is an offender.
+  CREATE_FLAG = "--title"
+
+  # MATCHED BY CONTENT, NEVER BY FLAG ORDER. This was one concatenation —
+  # `"bin/task begin --title"` — so the scan only fired on lines that happened to
+  # spell the flags in that order. MEASURED: rewriting `devops-task-board.md` so
+  # `--repo` precedes `--title`, with no `--agent` anywhere on the line, passed
+  # the whole guard clean. A documented invocation bought an exemption by
+  # rearranging its own flags, and the doc that taught the omission read as
+  # covered. The two markers are now tested independently.
+  def self.create_invocation?(line)
+    line.include?(INVOCATION) && line.include?(CREATE_FLAG)
+  end
+
+  # THE SCAN AS A FUNCTION OF TEXT, so the tests below can drive the real matcher
+  # over a synthetic doc instead of mutating a file on disk. A guard that can only
+  # read the repo can only ever assert that the repo is currently clean — it can
+  # never show WHICH breakages it would catch.
+  def self.offenders_in(body, rel)
+    body.each_line.with_index(1).filter_map do |line, n|
+      next unless create_invocation?(line)
+      # THE OPENING LINE MUST CARRY IT. A wrapped invocation may continue over
+      # several lines, but an agent skimming for the recipe reads the line that
+      # starts it — so `--agent` belongs there, not on a continuation. This is
+      # stricter than checking the whole command, deliberately.
+      next if line.include?("--agent")
+
+      "#{rel}:#{n}"
+    end
+  end
 
   def self.docs_naming_begin
     Dir.glob(Rails.root.join("docs/**/*.md")).sort
@@ -59,22 +91,55 @@ class FastLaneTeachesAgentTest < ActiveSupport::TestCase
   end
 
   test "every documented bin/task begin invocation passes --agent" do
-    offenders = []
-
-    DOCS.each do |rel|
-      Rails.root.join(rel).read.each_line.with_index(1) do |line, n|
-        next unless line.include?(RECIPE)
-        # THE OPENING LINE MUST CARRY IT. A wrapped invocation may continue over
-        # several lines, but an agent skimming for the recipe reads the line that
-        # starts it — so `--agent` belongs there, not on a continuation. This is
-        # stricter than checking the whole command, deliberately.
-        offenders << "#{rel}:#{n}" unless line.include?("--agent")
-      end
-    end
+    offenders = DOCS.flat_map { |rel| self.class.offenders_in(Rails.root.join(rel).read, rel) }
 
     assert_empty offenders,
                  "these fast-lane invocations omit --agent, so a build following them " \
                  "records no builder and reviewer-select fails closed: #{offenders.join(', ')}"
+  end
+
+  # [integration] THE REORDER ESCAPE, FROZEN. The measured hole: flags spelled in
+  # a different order slipped the concatenation the scan matched on, so a
+  # documented create invocation with NO `--agent` passed clean.
+  test "an invocation that omits --agent is caught whatever order its flags are in" do
+    body = <<~MD
+      Start the session:
+
+      ```bash
+      bin/task begin --repo mcritchie-studio --title "Three To Five Words" --shape backend
+      ```
+    MD
+
+    # PROVE THE HAZARD IS PRESENT. If the fixture happened to spell the old
+    # concatenation, the previous matcher would have caught it too and this test
+    # would say nothing about flag order.
+    refute_includes body, "bin/task begin --title",
+                    "the fixture must NOT spell the old concatenation, or it exercises nothing"
+
+    assert_equal ["docs/fixture.md:4"], self.class.offenders_in(body, "docs/fixture.md"),
+                 "a reordered create invocation missing --agent must still be reported"
+  end
+
+  # [unit] THE COUNTERPART, so the matcher above is not simply flagging everything.
+  # A guard that reports every line is as useless as one that reports none, and
+  # from the assertion alone the two look identical.
+  test "the matcher spares the resume form, prose, and a compliant invocation" do
+    spared = [
+      %(bin/task begin --repo mcritchie-studio --title "Three To Five Words" --agent avi),
+      "bin/task begin <task-slug>        # resume a partial begin",
+      "`bin/task begin` runs steps 1-2 (create → worktree → bind → `move building`)",
+      %(bin/ship <task-slug> -m "msg"  # not begin at all, despite the --title below)
+    ]
+
+    spared.each do |line|
+      assert_empty self.class.offenders_in(line, "docs/fixture.md"),
+                   "this line must not be reported as an offender: #{line.inspect}"
+    end
+
+    refute self.class.create_invocation?("bin/task begin <task-slug>"),
+           "the resume form carries no builder to stamp and is not a create invocation"
+    assert self.class.create_invocation?(%(bin/task begin --repo x --title "y")),
+           "a create invocation is a create invocation in any flag order"
   end
 
   test "at least one doc explains WHY the flag matters" do
