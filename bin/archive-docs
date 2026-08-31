@@ -8,6 +8,7 @@
 #   bin/archive-docs --dry-run              # report only, change nothing
 #   bin/archive-docs --ledger-cutoff=2026-08-09
 #   bin/archive-docs --json                 # machine summary only
+#   bin/archive-docs --help                 # usage; SWEEPS NOTHING, ROLLS NOTHING
 #
 # `bin/release archive` drives this beside the log sweep, same contract:
 # --dry-run previews, the confirm authorizes it. Nothing is ever deleted; every
@@ -21,18 +22,63 @@
 
 require "fileutils"
 require "json"
+require_relative "lib/cli_arg_guard"
 require_relative "lib/docs_archive"
 require_relative "lib/ledger_guard"
 require_relative "lib/repo_root"
 
-DRY       = ARGV.include?("--dry-run")
-JSON_ONLY = ARGV.include?("--json")
+USAGE = <<~TXT
+  usage: bin/archive-docs [--repo <path>] [--ledger-cutoff <YYYY-MM-DD>] [--dry-run] [--json]
+
+    Retire frozen doc snapshots out of the live tree into docs/agents/archive/,
+    and roll resolved delete-later ledger rows into the ledger archive.
+
+    --repo <path>           repository to sweep (default: this script's checkout)
+    --ledger-cutoff <date>  override the derived cycle boundary
+    --dry-run               report only; changes nothing
+    --json                  print the machine summary line only
+    --help, -h              this text — SWEEPS NOTHING, ROLLS NOTHING
+
+  Nothing is ever deleted: every retirement is a `git mv`, staged not committed.
+  Both `--flag=value` and `--flag value` parse.
+TXT
+
+# EVERY ARGUMENT IS ACCOUNTED FOR BEFORE THE ROLL, and this guard is the whole
+# reason the script is safe to probe.
+#
+# Until 2026-08-31 the four lines below were the ENTIRE parser: four exact
+# spellings read out of ARGV, with no notion of an argument this script does not
+# recognize. So `bin/archive-docs --help` matched nothing, was silently dropped,
+# and fell straight through to a REAL archive roll — it rewrote
+# docs/agents/maintenance/delete-later.md by -41 lines and staged a second file,
+# for an operator who was only asking what the command does. The ledger is
+# append-only audit product; the rows it was mid-roll on had no reflog behind
+# them, and only his copy-first habit saved them.
+#
+# The guard runs FIRST — ahead of the ledger loss check, ahead of the sweep —
+# because a probe has to be answerable before anything can mutate, and it has to
+# work on a repo whose state would make the real action refuse.
+ARGS = CliArgGuard.guard!(
+  ARGV,
+  program: "archive-docs",
+  usage: USAGE,
+  bool: %w[--dry-run --json],
+  value: %w[--repo --ledger-cutoff],
+  # exit 0 because THIS script's 0 means only "it ran". Contrast bin/ledger-guard,
+  # whose 0 is a green verdict, and bin/devops-shift, whose 0 asserts "you are on
+  # shift" — both must answer help with non-zero so it is never read as that claim.
+  help_exit: 0,
+  consequence: "NOTHING was archived and the ledger was NOT rolled."
+)
+
+DRY       = ARGS.bool?("--dry-run")
+JSON_ONLY = ARGS.bool?("--json")
 # The repo whose docs are swept: an explicit --repo, else the checkout this
 # script ships in (a worktree ships its own bin/, so it sweeps its own tree).
-REPO      = (ARGV.grep(/\A--repo=/).first&.split("=", 2)&.last) ||
+REPO      = ARGS.first("--repo") ||
             RepoRoot.git_toplevel(__dir__) ||
             File.expand_path("..", __dir__)
-CUTOFF    = ARGV.grep(/\A--ledger-cutoff=/).first&.split("=", 2)&.last
+CUTOFF    = ARGS.first("--ledger-cutoff")
 
 def say(message = "")
   puts(message) unless JSON_ONLY
