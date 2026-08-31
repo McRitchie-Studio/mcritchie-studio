@@ -92,9 +92,13 @@ worktree off `origin/accepted` resolves to `mcritchie_studio_test`.
 
 Cutting it under `.worktrees/` is what lets `bin/lib/desk_guard.rb` catch that
 for you. Its `desk?` predicate returns true **only** for a path whose parent
-directory is `.worktrees`, so a throwaway at `../zap-<slug>` is refused nothing
-and fails silently; the same tree under `.worktrees/` is refused by name, with
-the missing file called out.
+directory is `.worktrees`, and where `../zap-<slug>` lands depends on the seat
+you hold. From the primary checkout — the reviewer and conductor seats — it
+resolves *outside* `.worktrees/`, so it is **never refused** and fails silently.
+From a desk — the builder seat — it resolves to a sibling *inside* `.worktrees/`,
+where the guard does fire. Cutting under `.worktrees/` deliberately stops the
+answer depending on where you happened to be standing: the tree is refused by
+name, with the missing file called out.
 
 ### Builder — on your own feat branch
 
@@ -106,7 +110,7 @@ its own commit:
 ```bash
 ZAP="$(dirname "$(cd "$(git rev-parse --git-common-dir)" && pwd)")/.worktrees/zap-<slug>"
 git worktree add "$ZAP" --detach HEAD          # throwaway desk off your feat head
-cp .env.test.local "$ZAP"/ 2>/dev/null || true  # needed only if you run a test tier
+cp .env.test.local "$ZAP"/                     # REQUIRED before any test tier
 cd "$ZAP"
 # …fix, then:
 git add -p
@@ -195,6 +199,10 @@ git fetch origin accepted
 ZAP="$(dirname "$(cd "$(git rev-parse --git-common-dir)" && pwd)")/.worktrees/zap-<slug>"
 git worktree add "$ZAP" --detach origin/accepted   # throwaway desk
 cd "$ZAP"
+# Running a test tier here? This throwaway has NO desk to copy .env.test.local
+# from, and under .worktrees/ desk_guard refuses that cert lane by name — which
+# is the right failure, but it leaves you holding a refusal. Provision a real
+# desk instead:  bin/agent-worktree new <app> zap-<slug>
 # …fix, then:
 git add -p
 git commit -m "zap: <what was broken, one line>"

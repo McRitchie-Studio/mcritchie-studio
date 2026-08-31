@@ -86,8 +86,11 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
    ([the desk writer convention](../../../modules/worktrees.md#the-desk-writer-convention)).
    If either of you will run a MUTATION pass, each needs a throwaway of its own —
    a mutation is a write, and two mutation passes in one tree corrupt each other's
-   results. This happened twice on 2026-08-30: once your backup captured your
-   light's mutation, once her run came back with four failures that were yours.
+   results. It happened on 2026-08-30: your backup captured your light's
+   mutation, and her run came back with four failures that were yours — one
+   collision, seen from both seats. **If BOTH of you will mutate, a throwaway
+   each is not enough**: a copied `.env.test.local` names the desk's ONE test
+   database, so ask for a real desk each (`bin/agent-worktree new`).
    Name the throwaway in the spawn brief; the light cannot see what you are doing.
 
 3. **Deep review.** Go deep on the change surface (use the strongest model on

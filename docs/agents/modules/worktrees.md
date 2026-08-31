@@ -612,11 +612,16 @@ repo's resolved base ref):
   Report it and continue from the isolated worktree.
 - Do not remove a worktree until its branch/PR status is known.
 - Log stale worktrees in [`../maintenance/delete-later.md`](../maintenance/delete-later.md) before deleting them.
+- **One writer per desk — the build-claim holder.** Conductor, primary reviewer,
+  and light reviewer read; they do not write. Run every mutation pass on a
+  throwaway. See [The Desk Writer Convention](#the-desk-writer-convention).
 
 ## The Desk Writer Convention
 
-A desk is a worktree. Three collisions on 2026-08-30 came from the same gap:
-nothing said who may **write** to one, so every agent improvised.
+A desk is a worktree. Two collisions on 2026-08-30 came from the same gap:
+nothing said who may **write** to one, so every agent improvised. The second is
+listed from both seats below, because each reviewer saw a different symptom of
+the one episode.
 
 - A conductor believed a builder had lost staged work, wrote the correction
   itself, and committed it onto the builder's branch **while that builder's ship
@@ -627,8 +632,8 @@ nothing said who may **write** to one, so every agent improvised.
 - A light's mutation run was corrupted by her **primary's** concurrent mutation
   and reported four unrelated failures.
 
-Instances 2 and 3 were caught by luck plus a good invariant. The rules below are
-the cheapest way to stop relying on either.
+The mutation collision was caught by luck plus a good invariant. The rules below
+are the cheapest way to stop relying on either.
 
 ### One writer per desk: the build-claim holder
 
@@ -647,7 +652,8 @@ permission to write to the desk.
 
 Note also that `--actor` does not express the claim. `bin/task move <slug>
 building --actor <soul>` records the soul on the *event*; the claim itself is
-`claimed_session` + `claim_nonce` in `metadata.devops` (`lib/claim_lease.rb:31`),
+`claimed_session` + `claim_nonce` in `metadata.devops`
+(`ClaimLease::CLAIM_KEYS`, `lib/claim_lease.rb:37`),
 keyed by session, not by soul. A soul slug and a session id live in different
 namespaces.
 
@@ -670,9 +676,11 @@ What each one is worth:
 
 - **The claim** is authoritative for the *task* and renews on a ~5s statusline
   cadence with a 120s TTL, so a live holder is unambiguous. `bin/task move …
-  building` on a task another live instance holds **warns and proceeds** — it is
-  loud, not blocking, and `--steal` overrides it. Treat the warning as a stop
-  sign; nothing else will.
+  building` on a task another live instance holds **refuses** — `exit 1`, naming
+  the holder, its heartbeat age, and its last durable progress
+  (`enforce_claim_gate!` in `bin/task`, wired at both the `move` and the
+  `begin`-resume call site). `--steal` is the only override. You do not have to
+  remember this rule; the tooling enforces it.
 - **The `dirty` flag** is the only desk-side occupancy signal that exists today,
   and it is a symptom, not an identity — it says work is present, never whose.
 - **`DeskActivity.touched_since?`** is the same filesystem-mtime probe the
@@ -704,8 +712,8 @@ bin/task begin <slug> --steal --agent <soul>   # takes over a LIVE holder, delib
 An expired or dead-session lease is reclaimed **automatically** by the move; a
 different live instance's lease **refuses loudly**, and `--steal` is the explicit
 override. Either way you end up the desk's writer on the record before you touch
-a file, which is the whole point — the problem in incident 1 was never that the
-prose got fixed, it was that nobody owned the fix.
+a file, which is the whole point. The problem in incident 1 was never that the
+prose got fixed; it was that nobody owned the fix.
 
 ### Mutation testing never runs in a shared desk
 
@@ -744,14 +752,21 @@ a silent database one:
 
 Isolating the tree does not isolate the database. Carrying `.env.test.local`
 points the throwaway at the **desk's** test DB, which the builder's own suite
-also uses — fine when the desk is idle, not fine when it is not. **When primary
-and light both intend to mutate, each needs a real desk of its own**
-(`bin/agent-worktree new <app> <slug>`), which provisions an isolated test DB,
-port, and Redis slot atomically. Only the orchestrator can arrange that: no
-review SOP assigns a working directory inside the task's desk today — the
-primary is pointed at the studio primary checkout and the light at the projects
-root — so both reviewers reach the same desk by improvisation, and a light has
-no way to see what its primary is doing.
+also uses — so copying it is right for one mutator and wrong for two. The rule:
+
+- **One mutator, idle desk** — a throwaway under `.worktrees/` with
+  `.env.test.local` copied across. This is the common case.
+- **Two mutators, or a busy desk** — a real desk each
+  (`bin/agent-worktree new <app> <slug>`), which provisions an isolated test DB,
+  port, and Redis slot atomically. Nothing else gives two mutators two
+  databases: two throwaways carrying the *same* `.env.test.local` share one, and
+  `db:test:purge` drops the other's mid-run.
+
+Ask the orchestrator for the second case. No review SOP assigns a working
+directory inside the task's desk today — the primary is pointed at the studio
+primary checkout and the light at the projects root — so both reviewers reach
+the same desk by improvisation, and a light cannot see what its primary is doing
+unless the spawn brief says so.
 
 ### A sanctioned non-writer commit announces itself first
 
@@ -808,18 +823,22 @@ convention:**
   git log --format='%an <%ae>' -300 | sort | uniq -c | sort -rn
   ```
 
-  Measured on `accepted`, 2026-08-31: 192 of 300 are `Alex McRitchie
-  <amcritchie@gmail.com>`, 103 are the merge bot, and **none** name a soul.
+  Measured on `origin/accepted`, 2026-08-31: 187 of the last 300 commits are
+  `Alex McRitchie <amcritchie@gmail.com>`, 107 are the merge bot, and **two**
+  name a soul — `Shannon` and `Alex (Claude)` — both under the operator's own
+  email address. Two in 300, and not separable by email even then.
   The 2026-08-30 conductor write (`9f9ad2de`) and the builder's own correction
   (`0f6c0ddf`) are indistinguishable by author, date, and trailer. Any guard
   keyed on "commit author differs from claim holder" is dead on arrival.
-- **`.agent-context.json` does not record an occupant.** Its 27 keys name the
+- **`.agent-context.json` does not record an occupant.** Its keys name the
   task, branch, port, database, and Redis slot; there is no agent, soul, or
   session field, and `bin/agent-worktree list` has no occupant column.
 
 Closing that last gap would mean writing the holder into the desk marker at claim
-time and reading it from a second party — genuinely new machinery, and worth
-filing rather than improvising. Its price, so the trade is decidable: a new key
+time and reading it from a second party — genuinely new machinery, so it is
+filed rather than improvised:
+[`desk-marker-names-holder`](https://mcritchie.studio/tasks/desk-marker-names-holder).
+Its price, so the trade is decidable: a new key
 in `.agent-context.json`, a writer on the claim path, and a reader in whatever
 warns; the marker is regenerated by `bin/agent-worktree` on several operations,
 so it would need refreshing or it goes stale and lies; and it is an unsigned
