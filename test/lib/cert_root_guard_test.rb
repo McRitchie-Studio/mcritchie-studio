@@ -217,6 +217,175 @@ class CertRootGuardTest < Minitest::Test
     Dir.mktmpdir { |dir| assert_nil CertRootGuard.current_branch(dir) }
   end
 
+  # ── [unit] BOTH desk layouts ─────────────────────────────────────────────────
+  # A desk is written two ways on this machine, and the guard used to know one:
+  #
+  #   <projects>/<repo>/.worktrees/<slug>   the MANAGED layout bin/agent-worktree builds
+  #   <projects>/<repo>.worktrees/<slug>    the SIBLING tree the gem repos use
+  #
+  # The sibling tree exists because bin/agent-worktree manages only the registered
+  # Rails apps, so studio-engine and solana-studio desks are cut with a plain
+  # `git worktree add` and land beside the repo. Reading only the managed layout made
+  # the guard refuse a REAL desk while reporting it was not on disk — a refusal that
+  # is right about the verdict, wrong about the reason, and whose remedy line pointed
+  # somewhere the desk was not. Reviewers answered it by exporting
+  # DOR_CHECK_DIFF_ROOT on every engine review, which is a guard training people to
+  # override it.
+
+  # A desk in the SIBLING tree. Yields [projects, desk].
+  def with_sibling_desk(app: "studio-engine", slug: "task-x", branch: "feat/task-x")
+    Dir.mktmpdir do |raw|
+      projects = File.realpath(raw)
+      with_git_repo(branch: branch, dir: File.join(projects, "#{app}.worktrees", slug)) do |desk|
+        yield projects, desk
+      end
+    end
+  end
+
+  def test_worktree_candidates_finds_a_desk_in_the_sibling_tree
+    with_sibling_desk do |projects, desk|
+      assert_equal [desk], CertRootGuard.worktree_candidates("task-x", projects),
+                   "a desk in the sibling tree is ON DISK; the glob simply could not see it"
+    end
+  end
+
+  def test_app_of_names_the_repo_for_a_sibling_tree_desk
+    assert_equal "studio-engine", CertRootGuard.app_of("/p/studio-engine.worktrees/task-x")
+    assert_equal "studio-engine", CertRootGuard.app_of("/p/studio-engine.worktrees/task-x/")
+    # The pre-fix answer was "task-x". Not a miss — an unrecognised desk takes the
+    # PRIMARY-checkout branch, whose answer is the last path segment — so it returned
+    # the task SLUG as a repo name, confidently, to two callers that compare it.
+    refute_equal "task-x", CertRootGuard.app_of("/p/studio-engine.worktrees/task-x")
+    # The layouts it already knew must not have moved.
+    assert_equal "turf-monster", CertRootGuard.app_of("/p/turf-monster/.worktrees/task-x")
+    assert_equal "turf-monster", CertRootGuard.app_of("/p/turf-monster")
+  end
+
+  def test_the_writer_certifies_from_a_sibling_tree_desk_whatever_its_branch
+    # The WRITER's physical vouch, sibling-tree twin of
+    # test_the_tasks_worktree_dir_is_accepted_regardless_of_branch_state. Pre-fix a
+    # builder mid-rebase in an engine desk was refused for the one reason that could
+    # not be true: that they were not standing at the task's desk. They were in it.
+    Dir.mktmpdir do |parent|
+      desk = File.join(parent, "studio-engine.worktrees", "task-x")
+      with_git_repo(dir: desk) do |real| # default branch, NOT feat/task-x
+        assert_nil CertRootGuard.refusal(task_bin: write_task_stub(nil), slug: "task-x", root: real)
+      end
+    end
+  end
+
+  def test_assess_resolves_a_sibling_tree_desk_for_the_reader
+    with_sibling_desk do |projects, desk|
+      with_git_repo do |primary| # not the task's branch — the wrong-root case
+        found = CertRootGuard.assess(task_bin: write_task_stub(nil), slug: "task-x",
+                                     root: primary, projects_dir: projects)
+        refute_nil found, "a primary checkout is still not the task's tree"
+        assert_equal desk, found[:resolved_root],
+                     "the READER must re-root at the sibling desk, not report no desk at all"
+      end
+    end
+  end
+
+  # ── [unit] the two cases a second glob alone would get wrong ────────────────
+
+  def test_a_slug_present_in_BOTH_layouts_is_ambiguous_and_resolves_to_nothing
+    # THE DECISION. Both layouts feed one candidate list and neither outranks the
+    # other, so two desks that each pass every axis leave the guard with no fact to
+    # choose on — and it refuses instead of picking. Ranking (managed beats sibling)
+    # would be the cheaper fix and the wrong one: bin/agent-worktree#worktree_dir
+    # records hard-coding one layout "destroy[ing] the WRONG DESK the moment the same
+    # desk name exists in both trees". A gate grading the wrong tree fails the same
+    # way and looks exactly like a real verdict.
+    Dir.mktmpdir do |raw|
+      projects = File.realpath(raw)
+      managed = File.join(projects, "studio-engine", ".worktrees", "task-x")
+      sibling = File.join(projects, "studio-engine.worktrees", "task-x")
+      with_git_repo(branch: "feat/task-x", dir: managed) do |m|
+        with_git_repo(branch: "feat/task-x", dir: sibling) do |s|
+          assert_equal [m, s].sort, CertRootGuard.worktree_candidates("task-x", projects).sort,
+                       "both layouts are candidates; the set is the fact, the pick would be a guess"
+          with_git_repo do |primary|
+            found = CertRootGuard.assess(task_bin: write_task_stub(nil), slug: "task-x",
+                                         root: primary, projects_dir: projects)
+            assert_equal [m, s].sort, found[:eligible_roots].sort, "both pass every axis"
+            assert_nil found[:resolved_root],
+                       "two qualified desks and nothing to separate them: refuse, never rank"
+            assert_includes found[:message], "nothing separates them"
+            assert_includes found[:message], m, "the refusal must NAME both, so the reader can choose"
+            assert_includes found[:message], s
+          end
+        end
+      end
+    end
+  end
+
+  def test_no_desk_in_either_layout_still_refuses_and_says_which_layouts_it_searched
+    # FAIL CLOSED is the half a second glob must not cost. A desk found at NEITHER
+    # path is still a refusal, and the text now says so positively instead of leaving
+    # the reader to infer it from a missing line.
+    Dir.mktmpdir do |empty|
+      with_git_repo do |primary|
+        found = CertRootGuard.assess(task_bin: write_task_stub(nil), slug: "task-x",
+                                     root: primary, projects_dir: empty)
+        refute_nil found, "no desk anywhere is still not-the-task's-tree"
+        assert_nil found[:resolved_root], "inventing a path here would be the fail-GREEN"
+        assert_empty found[:candidate_roots]
+        assert_includes found[:message], "No desk for task-x exists"
+        assert_includes found[:message], empty, "name the root that was searched"
+        assert_includes found[:message], "<repo>/.worktrees/task-x", "name the managed layout"
+        assert_includes found[:message], "<repo>.worktrees/task-x", "name the sibling layout"
+        refute_includes found[:message], "cd ", "there is nowhere to cd; do not invent a destination"
+      end
+    end
+  end
+
+  # ── [unit] the message tells the reader WHICH situation they are in ─────────
+
+  def test_the_message_distinguishes_a_missing_desk_from_a_mis_rooted_run
+    # The two need OPPOSITE actions — create a desk, versus go stand in the one you
+    # already have — and pre-fix they rendered as the same text minus a `cd` line.
+    # Silence was doing double duty, so the reviewer whose sibling desk WAS on disk
+    # went looking for a missing directory and found it.
+    missing = Dir.mktmpdir do |empty|
+      with_git_repo do |primary|
+        CertRootGuard.assess(task_bin: write_task_stub(nil), slug: "task-x",
+                             root: primary, projects_dir: empty)[:message]
+      end
+    end
+
+    with_sibling_desk do |projects, desk|
+      with_git_repo do |primary|
+        mis_rooted = CertRootGuard.assess(task_bin: write_task_stub(nil), slug: "task-x",
+                                          root: primary, projects_dir: projects)[:message]
+        assert_includes mis_rooted, "cd #{desk}", "a desk that exists gets a destination"
+        refute_includes mis_rooted, "No desk for", "it must not claim a desk that is right there"
+        assert_includes missing, "No desk for"
+        refute_equal missing, mis_rooted, "a reader must be able to tell these two apart"
+      end
+    end
+  end
+
+  def test_a_desk_that_exists_but_never_carried_the_branch_names_the_axis_it_failed
+    # The third situation: on disk, but not this task's tree. "Your desk is stale" and
+    # "your desk is another repo's" need opposite fixes, so the refusal names the path
+    # AND the axis rather than falling back to the no-desk-anywhere wording.
+    Dir.mktmpdir do |raw|
+      projects = File.realpath(raw)
+      stale = File.join(projects, "studio-engine.worktrees", "task-x")
+      with_git_repo(branch: "release", dir: stale) do |real|
+        with_git_repo do |primary|
+          found = CertRootGuard.assess(task_bin: write_task_stub(nil), slug: "task-x",
+                                       root: primary, projects_dir: projects)
+          assert_equal [real], found[:candidate_roots], "it IS on disk — the guard must say so"
+          assert_nil found[:resolved_root], "fail closed: a stale desk is not the task's tree"
+          assert_includes found[:message], "IS on disk"
+          assert_includes found[:message], "is on branch release, not feat/task-x"
+          refute_includes found[:message], "No desk for", "it exists; do not report it missing"
+        end
+      end
+    end
+  end
+
   def test_task_devops_is_empty_on_unreachable_board_or_bad_json
     assert_equal({}, CertRootGuard.task_devops(write_task_stub(nil), "task-x"))
     garbled = Dir.mktmpdir

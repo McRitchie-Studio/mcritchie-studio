@@ -160,7 +160,8 @@ be a lie when one is sitting on disk under exactly that name, and a reader who
 believes it points the gate straight back at the desk that was just rejected.
 
 **The one asymmetry, and it is deliberate.** Standing physically at the task's desk
-(`…/.worktrees/<slug>`) still vouches for a cert **writer** — `bin/fast-check`,
+(EITHER layout — `<repo>/.worktrees/<slug>` or the sibling
+`<repo>.worktrees/<slug>`) still vouches for a cert **writer** — `bin/fast-check`,
 `bin/full-suite-check` — even mid-rebase on a detached `HEAD`: the operator is working
 there, and a cert is content-addressed, so a transient tree can only later read
 `STALE`, which is loud and self-correcting. It does **not** vouch for the **reader**:
@@ -182,7 +183,7 @@ rung — the diff base stays the per-root release-aware default, so a repo with 
 **Every repo the task names gets its own CERT verdict.** A task that owes a cert in
 more than one repo — the ones it both names in `devops.repositories` **and** has a PR
 open in (`devops.pr_url` + the per-repo `devops.pr_urls` register) — is graded repo by
-repo: each repo's own tree is resolved (its `.worktrees/<slug>` desk, validated on
+repo: each repo's own tree is resolved (its desk in either layout, validated on
 both axes, else its primary checkout's branch tree), fingerprinted, and graded against
 the evidence scoped to it (`[lane@<fp>:<repo>]`, see `lib/cert_evidence.rb`). The
 verdict **names every repo it graded** — `full_suite.repos[]` in `--json`, a

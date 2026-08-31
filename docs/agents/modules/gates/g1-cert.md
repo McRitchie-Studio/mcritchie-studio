@@ -56,10 +56,13 @@ provisional credit needs the PR open, so the verdict runs last, with **no CI
 wait** before `submitted`).
 
 The worktree rooting is **enforced**: given a task slug, both cert runners
-verify the cwd's checkout IS the task's tree (its branch, or its
-`.worktrees/<worktree_slug>` dir) and **refuse** otherwise — a run from the
-wrong checkout (e.g. the hub primary on `main`) exits 1 naming the worktree to
-`cd` into instead of green-certifying an unrelated tree
+verify the cwd's checkout IS the task's tree (its branch, or its desk in
+EITHER layout — `<repo>/.worktrees/<slug>`, or the sibling
+`<repo>.worktrees/<slug>` the gem repos use) and **refuse** otherwise. A run
+from the wrong checkout (e.g. the hub primary on `main`) exits 1 instead of
+green-certifying an unrelated tree, and the refusal names WHICH case it is:
+the desk to `cd` into, the desks that exist but are not this task's (each with
+the axis it failed), the desks that tie, or no desk anywhere
 (`bin/lib/cert_root_guard.rb`).
 
 **A cert can refuse for an ENV/CONFIG reason — that is not a red suite.** Before
