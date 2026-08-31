@@ -290,6 +290,93 @@ apps:
       strategy: repo_script
       command: bin/deploy
       args: ["--yes"]
+  turf-vault:
+    # THE ANCHOR PROGRAM. Registered 2026-08-31 after
+    # Release::Conductor#validate_member_repos_known! aborted a live sweep
+    # (rel-20260831-6f1ed1) with "can't deploy unknown repo(s):
+    # mainnet-launch-doc-vault-rename (turf-vault), turf-vault-needs-ci
+    # (turf-vault)". THE GUARD WAS RIGHT — it refuses to build a release naming a
+    # repo the conductor has no plan for. The defect was this missing entry.
+    #
+    # WHY IT ONLY BIT THEN: turf-vault had never had a task reach `reviewed`.
+    # /tasks/turf-vault-needs-ci gave the repo its first CI, which unblocked
+    # /tasks/mainnet-launch-doc-vault-rename after FOUR held sweeps — and the
+    # moment two turf-vault tasks became eligible members, the absence became a
+    # hard abort.
+    #
+    # FILED UNDER `apps`, NOT `gems`, and the distinction is load-bearing: a
+    # `gems` row makes the conductor PUBLISH the repo to RubyGems producer-first.
+    # turf-vault has no gemspec and no business on RubyGems. `apps` + no
+    # prod_deploy is the chain-ops shape — a first-class case, not a gap.
+    #
+    # LADDER: three-rung, VERIFIED not assumed. `git ls-remote` returns all three
+    # refs (accepted b1648706, release f7be9680, main 0479fc8f, 2026-08-31), and
+    # the local checkout carries origin/accepted + origin/release, which is what
+    # repos_test's "every three-rung repo really has both rungs" actually reads.
+    # The sweep had ALREADY promoted this repo successfully (PR #8, accepted →
+    # release, 6 commits) before it aborted at the record step, so the promote
+    # mechanic is proven on it rather than hoped for. Anything but three-rung
+    # would be a false declaration AND would strand future turf-vault work on
+    # `accepted` forever: Release::Ladder.sweepable is three-rung only.
+    ladder: three-rung
+    #
+    # ⛔ NO prod_deploy — DELIBERATE, AND A SAFETY BOUNDARY, NOT AN OMISSION.
+    #
+    # turf-vault is an Anchor program custodying real USDC in live contest
+    # vaults. It is not a deployable app and there is no automated path that has
+    # EVER deployed it: nothing in bin/ or app/ contains `anchor deploy` or
+    # `program deploy`. The program is upgraded by hand through
+    # scripts/squad-upgrade.js against a Squads 2-of-3 multisig, gated by
+    # docs/MAINNET_LAUNCH.md and docs/VERIFICATION_MATRIX.md — a human, multi-
+    # signer act that a release conductor must never attempt on its own.
+    #
+    # Declaring ANY adapter here would make `bin/release ship` try to execute
+    # that act. With no adapter, ship advances main and records `no production
+    # deploy target — nothing dispatched`, which is the truth. Do NOT "fix" the
+    # absence with a no-op deploy script — that makes ship REPORT a deploy that
+    # never happened, the exact foot-gun chain-ops' entry documents below.
+    #
+    # ⛔ NO test_cmd, NO qa_test_cmd — ALSO DELIBERATE.
+    #
+    # Both gate commands run inside a Rails GATE WORKSPACE, and
+    # Release::GateWorkspace#prepare_gate_workspace! runs `bin/rails
+    # db:test:prepare test:prepare` there BEFORE the registered command. This
+    # repo is Rust/Anchor and has no bin/rails, so registering EITHER key arms a
+    # Rails gate against a repo that cannot run one — it would fail on ENOENT at
+    # G3 (aborting an unrelated batch sweep) or at G4 (after push_frozen_main has
+    # already advanced origin/main, the way chain-ops' phantom bin/deploy wedged
+    # a ship on 2026-08-22). UNSET is the correct declaration: the pre-QA gate
+    # and the ship gate both skip a repo that registers no command.
+    #
+    # There is also no single command to register. CI here is three lanes across
+    # two toolchains (`cargo check --workspace --all-targets --locked`, `cargo
+    # clippy … -D clippy::correctness`, and `npm run check:doc-op-refs`), not one
+    # suite invocation.
+    #
+    # NO qa_deploy / QA ENV, and none is needed. Release::Repos.qa_app defaults
+    # the key to the repo slug, turf-vault is absent from
+    # config/qa_environments.yml, and `bin/release prepare` warns + skips the QA
+    # deploy for an app with no registered QA environment (bin/release.rb:3164) —
+    # the same path tax-studio and chain-ops take. An Anchor program has no dyno
+    # to boot and no /up to smoke.
+    #
+    # SUITE CERTIFICATION WORKS AS-IS. Release::AcceptedCertification resolves a
+    # non-gem repo to DEFAULT_SUITE_WORKFLOW ("CI"), and this repo's
+    # .github/workflows/ci.yml declares `name: CI` on push to
+    # [main, release, accepted] with no path filter — so the sweep's accepted-rung
+    # guard can certify it. That is why no workflow override belongs here.
+    #
+    # ⚠ WHAT THIS ENTRY DOES **NOT** FIX: `bin/fast-check` still refuses this
+    # repo. Its test-prepare lane is skipped only for repos in the `gems` SECTION
+    # (FullSuiteGate.gem_repo?), not for repos that declare a command — so an
+    # `apps` row cannot reach the whole-gate branch, and a `release_check:` key
+    # here would be read by FullSuiteGate.release_check_cmd yet never reached,
+    # because the Rails prepare lane aborts the run first. Fixing that needs a
+    # change to bin/fast-check itself (key the skip + whole-gate branch on the
+    # DECLARED command rather than on section membership), which is a separate
+    # task with its own test surface. Until then a turf-vault ship documents a
+    # `[full-suite-bypass]`. An inert `release_check:` line that LOOKS like the
+    # fix is worse than no line at all, so there isn't one.
   rolio:
     # DORMANT — parked 2026-07 (satellites.yml carries status: reserved) and its
     # GitHub remote no longer resolves for the agent identity, so a sweep that
