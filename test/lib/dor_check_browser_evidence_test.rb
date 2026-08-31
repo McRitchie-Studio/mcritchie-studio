@@ -160,7 +160,7 @@ class DorCheckBrowserEvidenceTest < Minitest::Test
   # The first version of this self-test passed locally and failed in CI, and the
   # cause is worth recording because it is the same ambient-coupling family
   # SessionEnv exists for, running the other way. bin/dor-check resolves
-  # AGENT_API_SECRET from ENV, then 1Password, then the repo's .env, and `die!`s if
+  # AGENT_API_SECRET from ENV, then the repo's .env, then 1Password, and `die!`s if
   # all three miss. A dev worktree HAS a .env, so the child reached the auth POST
   # and the sink saw it. CI has none of the three — .env is gitignored,
   # AGENT_API_SECRET appears nowhere in ci.yml, and TaskBoard::OP is the hardcoded

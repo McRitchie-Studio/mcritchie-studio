@@ -23,7 +23,7 @@ this file in the same pass.
 > **Preferred path: use `bin/task`.** Don't hand-roll the HTTP calls below
 > unless you're debugging. `bin/task create|update|move|list|show` handles auth,
 > JSON, devops read-merge-write, and stage routing for you, and reads the secret
-> via `bin/secret`. The raw API in this doc is the reference `bin/task` is built
+> from `ENV` or the repo `.env`. The raw API in this doc is the reference `bin/task` is built
 > on. See the "Use bin/task" section at the end.
 
 ## Authentication
@@ -58,23 +58,31 @@ Every endpoint except `POST /api/v1/auth` requires a bearer token.
 
 ### Secret hygiene
 
-Prefer **`bin/secret agents 'Agent API Secret' AGENT_API_SECRET`** (value to
-stdout, diagnostics to stderr, verifies op auth) over hand-rolling `op read`.
-`bin/task` already uses it, so you usually never touch the secret directly.
+**Read the secret from the repo `.env`, not the vault.** On any provisioned
+machine the two hold the same string, and `.env` is free while every `op read`
+spends one credential against a **1,000/day cap shared account-wide** — a cap
+routine board traffic has exhausted twice, taking every agent lane down for a
+day each time. `bin/task` and the rest of the CLIs resolve it that way already
+(`ENV` → `.env` → 1Password; see `bin/lib/task_board.rb#agent_secret`), so you
+usually never touch the secret directly.
 
 If you must call the API by hand, never inline the secret or echo it — read it at
-call time and pipe it straight into the request. **On a provisioned machine take
-it from the repo `.env` instead of the vault** (`grep -m1 ^AGENT_API_SECRET= .env |
-cut -d= -f2-`): every `op read` spends one credential against a 1,000/day cap
-shared account-wide, and the two values are the same secret.
+call time and pipe it straight into the request:
 
 ```bash
-SECRET="$(/opt/homebrew/bin/op read "op://${MCR_OP_VAULT_AGENT:-agents-studio}/Agent API Secret/AGENT_API_SECRET")"
+# ENV first, then the repo .env. Quotes stripped; a set-but-empty value is no value.
+SECRET="${AGENT_API_SECRET:-$(grep -m1 '^AGENT_API_SECRET=' .env | cut -d= -f2- | tr -d "\"'")}"
+[ -n "$SECRET" ] || { echo "no AGENT_API_SECRET in ENV or .env" >&2; exit 1; }
 TOKEN="$(curl -sS -X POST https://mcritchie.studio/api/v1/auth \
   -H 'Content-Type: application/json' \
   -d "{\"secret\": \"$SECRET\"}" | python3 -c 'import json,sys;print(json.load(sys.stdin)["token"])')"
 # use $TOKEN; never print $SECRET or $TOKEN
 ```
+
+**Only** on a fresh machine mid-bootstrap, which has no `.env` yet, fall back to
+the vault — `bin/secret agents 'Agent API Secret' AGENT_API_SECRET` (value to
+stdout, diagnostics to stderr) rather than a hand-rolled `op read`. That call is
+metered; the `.env` read above is not.
 
 **Sub-agent constraint:** in sub-agent/headless sandboxes the
 `op read → curl` secret chain (and `redis-cli`) is classifier-blocked. A
@@ -722,7 +730,8 @@ See footgun 4 for the full set of fields that live outside `devops`.
 
 ```bash
 BASE=https://mcritchie.studio
-SECRET="$(/opt/homebrew/bin/op read "op://${MCR_OP_VAULT_AGENT:-agents-studio}/Agent API Secret/AGENT_API_SECRET")"
+# ENV, then the repo .env — never the vault on a provisioned machine (see Secret hygiene).
+SECRET="${AGENT_API_SECRET:-$(grep -m1 '^AGENT_API_SECRET=' .env | cut -d= -f2- | tr -d "\"'")}"
 auth() { curl -sS -X POST "$BASE/api/v1/auth" -H 'Content-Type: application/json' \
   -d "{\"secret\": \"$SECRET\"}" | python3 -c 'import json,sys;print(json.load(sys.stdin)["token"])'; }
 TOKEN="$(auth)"
@@ -804,8 +813,9 @@ grep -n "STAGES\|DEVOPS_KEYS\|normalize_devops" app/models/task.rb   # stages + 
 ## Use `bin/task` (the preferred path)
 
 `bin/task` wraps everything above so you don't construct JSON, manage tokens, or
-remember which stages have transition endpoints. It reads the secret via
-`bin/secret`, does devops **read-merge-write** (partial updates never wipe
+remember which stages have transition endpoints. It reads the secret from `ENV`
+or the repo `.env` (the vault only on a machine that has neither), does devops
+**read-merge-write** (partial updates never wipe
 fields), and sends list flags as arrays so comma-containing items stay intact.
 
 ```bash

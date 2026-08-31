@@ -209,7 +209,9 @@ class AgentApi
   # roughly one read per day rather than one per call — but the ordering was the
   # same defect, and a cold cache on an unprovisioned machine still paid it.
   def agent_secret
-    env = @env["AGENT_API_SECRET"].to_s
+    # Blank-stripped for the same reason dotenv_secret rejects a blank value: a
+    # set-but-blank AGENT_API_SECRET would short-circuit the .env and the vault.
+    env = @env["AGENT_API_SECRET"].to_s.strip
     return env unless env.empty?
 
     from_dotenv = dotenv_secret(File.join(REPO_ROOT, ".env"))
@@ -220,11 +222,33 @@ class AgentApi
     nil
   end
 
+  # Twin of bin/lib/task_board.rb#dotenv_secret — SAME rules, and they must stay
+  # the same: the two chains resolve one secret for one fleet, and a machine whose
+  # .env one accepts and the other rejects is the hardest kind of thing to debug.
+  #
+  # BOTH predicates are needed. `File.file?` alone (what this used to be) closes
+  # the DIRECTORY case (Errno::EISDIR) but NOT a mode-000 regular file, which is
+  # still `File.file?` => true and raises Errno::EACCES; `File.readable?` alone
+  # closes EACCES but a directory is readable, so it lets EISDIR through. Every
+  # unusable .env must come back nil so the caller falls through to the vault.
+  # This client HAS a `rescue StandardError` upstream at #agent_secret, but that
+  # swallowed these into an indistinguishable nil rather than skipping the file.
   def dotenv_secret(path)
-    return nil unless File.file?(path)
+    return nil unless File.file?(path) && File.readable?(path)
 
     line = File.readlines(path).find { |l| l.start_with?("AGENT_API_SECRET=") }
-    line ? line.split("=", 2)[1].to_s.strip : nil
+    line ? unquote(line.split("=", 2)[1]) : nil
+  rescue SystemCallError
+    nil
+  end
+
+  # Strips ONE matched pair of surrounding quotes; nil for an empty value. A bare
+  # `AGENT_API_SECRET=` used to return "" — TRUTHY in Ruby — which short-circuited
+  # the vault fallback and defeated the callers' own emptiness guards.
+  def unquote(raw)
+    value = raw.to_s.strip
+    value = Regexp.last_match(1) if value =~ /\A"(.*)"\z/m || value =~ /\A'(.*)'\z/m
+    value.empty? ? nil : value
   end
 
   # Memoized per client: the only metered step in the chain, and nothing about
