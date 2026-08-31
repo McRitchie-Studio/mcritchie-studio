@@ -2072,7 +2072,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
   SINK_HOST = "127.0.0.1"
 
   # A fake secret, so the child gets FAR ENOUGH to open a socket. bin/task resolves
-  # AGENT_API_SECRET from ENV → 1Password → the repo .env and dies if all three
+  # AGENT_API_SECRET from ENV → the repo .env → 1Password and dies if all three
   # miss; on CI all three DO miss, so without this the child would exit before the
   # sink ever saw a connection and the receipt would refuse for the wrong reason.
   # The value can only ever be offered to a localhost sink, because TASK_API_BASE

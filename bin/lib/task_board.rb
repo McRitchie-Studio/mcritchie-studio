@@ -198,10 +198,15 @@ module TaskBoard
   # mid-bootstrap has no .env yet and the vault is its only way to authenticate.
   # Demoted, not deleted.
   # NOTE: bin/devops-cycle keeps its OWN chain — it deliberately SKIPS 1Password
-  # and strips quotes from .env values; do not fold it into this method.
+  # entirely; do not fold it into this method. (It also strips quotes off the .env
+  # value, which this chain used NOT to do. That disagreement is now resolved:
+  # dotenv_secret strips them here too.)
   def agent_secret(dotenv)
-    env = ENV["AGENT_API_SECRET"]
-    return env if env && !env.empty?
+    # `.strip` before the emptiness test for the same reason dotenv_secret rejects
+    # a blank value: a set-but-blank AGENT_API_SECRET is NOT a secret, and letting
+    # one through here would short-circuit the .env and the vault both.
+    env = ENV["AGENT_API_SECRET"].to_s.strip
+    return env unless env.empty?
 
     from_dotenv = dotenv_secret(dotenv)
     return from_dotenv if from_dotenv
@@ -209,16 +214,44 @@ module TaskBoard
     op_secret
   end
 
-  # The secret from a .env file, or nil. `dotenv` is OPTIONAL — bin/devops-reconcile
-  # passes nil, and `File.exist?(nil)` raises TypeError. That cost nothing while
-  # this branch sat unreachable behind the vault read; promoting it ahead of the
-  # vault is exactly what would have turned it into a live crash.
+  # The secret from a .env file, or nil. EVERY unusable .env must return nil rather
+  # than raise or answer blank, because nil is what falls through to the vault —
+  # the demotion's whole safety argument is that a machine with a broken .env can
+  # still authenticate.
+  #
+  # `dotenv` is OPTIONAL — bin/devops-reconcile passes nil, and `File.exist?(nil)`
+  # raises TypeError. That cost nothing while this branch sat unreachable behind
+  # the vault read; promoting it ahead of the vault is what made it a live crash.
+  #
+  # THE GUARD NEEDS BOTH PREDICATES, and each closes a case the other does not:
+  # a .env that is a DIRECTORY is `File.readable?` => true and raises Errno::EISDIR,
+  # while a mode-000 REGULAR file is `File.file?` => true and raises Errno::EACCES.
+  # `File.exist?` caught neither, and this method has no caller-side rescue at all.
+  # The `rescue` covers the TOCTOU remainder — permissions can change between the
+  # check and the read — so no .env state can escape this method as an exception.
   def dotenv_secret(dotenv)
     path = dotenv.to_s
-    return nil if path.empty? || !File.exist?(path)
+    return nil if path.empty? || !File.file?(path) || !File.readable?(path)
 
     line = File.readlines(path).find { |l| l.start_with?("AGENT_API_SECRET=") }
-    line ? line.split("=", 2)[1].to_s.strip : nil
+    line ? unquote(line.split("=", 2)[1]) : nil
+  rescue SystemCallError
+    nil
+  end
+
+  # Strips ONE matched pair of surrounding quotes; returns nil for an empty value.
+  # Both halves are load-bearing. A quoted .env value used to come back WITH its
+  # quotes and go to the API as part of the secret. Worse, a bare
+  # `AGENT_API_SECRET=` returned "", which is TRUTHY in Ruby: it short-circuited
+  # the vault fallback AND sailed through every caller's `|| die!` guard, so the
+  # caller proceeded UNAUTHENTICATED and the operator got a bare
+  # `KeyError: key not found: "token"` instead of an actionable message.
+  # bin/devops-cycle#secret_from_env_file has stripped quotes off this same key all
+  # along; the two chains used to disagree.
+  def unquote(raw)
+    value = raw.to_s.strip
+    value = Regexp.last_match(1) if value =~ /\A"(.*)"\z/m || value =~ /\A'(.*)'\z/m
+    value.empty? ? nil : value
   end
 
   # The vault read — the last resort, and the only METERED step in the chain, so

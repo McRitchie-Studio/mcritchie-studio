@@ -194,7 +194,7 @@ class DorCheckTest < Minitest::Test
   SINK_HOST = "127.0.0.1"
 
   # A fake secret so the child reaches a socket at all: bin/dor-check resolves
-  # AGENT_API_SECRET from ENV → 1Password → the repo .env and dies if all three
+  # AGENT_API_SECRET from ENV → the repo .env → 1Password and dies if all three
   # miss, which is the CI shape. It can only ever be offered to a localhost sink,
   # because TASK_API_BASE is pinned in the same hash.
   PIN_PROOF_SECRET = "pin-proof-not-a-real-secret"

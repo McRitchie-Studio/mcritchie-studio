@@ -67,7 +67,7 @@ end
 def token
   @token ||= begin
     secret = TaskBoard.agent_secret(DOTENV)
-    die("no AGENT_API_SECRET (env, 1Password, or .env)") if secret.to_s.empty?
+    die("no AGENT_API_SECRET (env, .env, or 1Password)") if secret.to_s.empty?
 
     res = TaskBoard.request(:post, "/api/v1/auth", base_url: BASE_URL, body: { secret: secret })
     die("auth failed -> HTTP #{res.code}") unless res.is_a?(Net::HTTPSuccess)
