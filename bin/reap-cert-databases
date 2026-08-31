@@ -10,6 +10,38 @@
 #
 # Usage:  bin/reap-cert-databases
 
+require_relative "lib/cli_arg_guard"
+
+USAGE = <<~TXT
+  usage: bin/reap-cert-databases
+
+    Drop the per-run cert TEST databases a hard-killed run stranded. Acts only on
+    databases named in a lease we wrote whose leasing run is provably gone.
+
+    --help, -h    this text — DROPS NOTHING
+
+  This command takes no arguments.
+TXT
+
+# EVERY ARGUMENT IS ACCOUNTED FOR BEFORE ANY DATABASE IS DROPPED.
+#
+# This script read NO ARGV WHATSOEVER, so every invocation was the same
+# invocation: `bin/reap-cert-databases --help` reached line 17 and DROPPED
+# DATABASES, exactly as a bare run does. It is the purest form of the defect that
+# cost bin/archive-docs a docs ledger on 2026-08-31 — there was not even a wrong
+# parse to blame, just an action with no gate in front of it.
+#
+# The guard runs BEFORE the Rails boot on purpose: a probe should not load an
+# environment or open a connection, and `--help` must answer on a machine where
+# the test database is not reachable at all.
+CliArgGuard.guard!(
+  ARGV,
+  program: "reap-cert-databases",
+  usage: USAGE,
+  # No flags and no positionals: anything at all on this line is unaccounted for.
+  consequence: "NOTHING was dropped — no database was touched."
+)
+
 ENV["RAILS_ENV"] ||= "test"
 require_relative "../config/environment"
 require_relative "../test/support/cert_database_reaper"

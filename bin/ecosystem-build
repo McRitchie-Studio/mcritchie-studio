@@ -751,7 +751,42 @@ phase_env_snapshot() {
 }
 
 # ─── Main ───────────────────────────────────────────────────────────────────
+usage() {
+  cat <<'TXT'
+usage: bin/ecosystem-build
+
+  Idempotent McRitchie ecosystem setup + verification. Installs missing system
+  tools and bundles, prepares databases, BOUNCES EVERY RAILS SERVER, and writes
+  an env snapshot.
+
+    --help, -h    this text — BUILDS NOTHING, bounces no server
+
+  This command takes no arguments.
+TXT
+}
+
 main() {
+  # EVERY ARGUMENT IS ACCOUNTED FOR BEFORE THE BUILD RUNS.
+  #
+  # main() took no parameters and read no arguments, while the call site below
+  # passes "$@" — so every argument was silently discarded and `bin/ecosystem-build
+  # --help` ran the FULL build: brew/gem installs, `git clone`, `bundle install`,
+  # `db:prepare` with seeds, a restart of every Rails server, and a chmod-600 env
+  # snapshot. The largest blast radius of any script in this bin/, reachable from
+  # the one probe an operator is most likely to try on an unfamiliar command.
+  #
+  # Same defect class as bin/archive-docs, whose `--help` rolled a docs ledger on
+  # 2026-08-31. Guarded by test/lib/bin_help_flag_class_test.rb.
+  case "${1:-}" in
+    --help|-h) usage; return 0 ;;
+  esac
+  if [ "$#" -gt 0 ]; then
+    echo "ecosystem-build: unrecognized argument(s): $* — NOTHING was built, installed, or restarted." >&2
+    echo >&2
+    usage >&2
+    return 2
+  fi
+
   echo "${BOLD}${YELLOW}McRitchie ecosystem build${RESET}"
   echo "${DIM}Detects state, fills gaps, bounces servers. Idempotent.${RESET}"
 

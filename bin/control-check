@@ -57,6 +57,7 @@
 require "English"
 require "fileutils"
 require "shellwords"
+require_relative "lib/cli_arg_guard"
 require_relative "lib/repo_root"
 require_relative "lib/fast_cert"
 require_relative "lib/full_suite_gate"
@@ -88,8 +89,40 @@ rescue SystemCallError
   false
 end
 
-slug = ARGV.shift
-die "usage: bin/control-check <task-slug>" if slug.to_s.strip.empty?
+USAGE = <<~TXT
+  usage: bin/control-check <task-slug>
+
+    Execute the `test-only` shape's control: run the changed test files at HEAD,
+    then restore their PRE-CHANGE content and run those, and stamp the verdict.
+
+    --help, -h    this text — REPLAYS NOTHING
+
+  Takes exactly one task slug and no flags. The tree must be clean: the harness
+  restores files by content, so uncommitted work in the blast radius is destroyed.
+TXT
+
+# EVERY ARGUMENT IS ACCOUNTED FOR BEFORE THE HARNESS RUNS.
+#
+# `slug = ARGV.shift` accepted ANY non-empty token, and only an empty one was
+# refused. So `bin/control-check --help` took "--help" as the task slug and ran the
+# replay harness for real: it prepares the test database, OVERWRITES working-tree
+# files with their pre-change blobs, deletes files, and `git checkout HEAD --`s the
+# survivors. The dirty-tree refusal below was the only thing standing between a
+# probe and a clobbered desk — and a probe is precisely the moment nobody has
+# checked whether their desk is clean.
+#
+# Same defect class that cost bin/archive-docs a docs ledger on 2026-08-31.
+ARGS = CliArgGuard.guard!(
+  ARGV,
+  program: "control-check",
+  usage: USAGE,
+  allow_positional: true,
+  help_exit: 0,
+  consequence: "NOTHING was replayed — the tree was not touched and no verdict was stamped."
+)
+die "usage: bin/control-check <task-slug>" unless ARGS.positionals.size == 1
+
+slug = ARGS.positionals.first
 
 root = RepoRoot.code_root(ENV["CONTROL_CHECK_ROOT"], ROOT)
 die "#{root} is not a git repo — the control replays committed content, so it needs one" unless

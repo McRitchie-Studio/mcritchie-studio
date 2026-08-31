@@ -54,6 +54,47 @@ OP_METER_SH="$(cd "$(dirname "$0")" && pwd)/lib/op-meter.sh"
 [ -r "$OP_METER_SH" ] && . "$OP_METER_SH" || true
 command -v op_metered >/dev/null 2>&1 || op_metered() { local __b="$1"; shift; "$__b" "$@"; }
 
+usage() {
+  cat <<'TXT'
+usage: bin/setup-1pass-token [--admin]
+
+  Install a 1Password service account token, read from the CLIPBOARD.
+
+    (no flag)   AGENT token -> ~/.zprofile (sourced by every shell)
+    --admin     ADMIN token -> ~/.zprofile.admin (opt-in, never auto-loaded)
+    --help, -h  this text — INSTALLS NOTHING, writes no profile
+
+  Takes at most one flag.
+TXT
+}
+
+case "${1:-}" in
+  --help|-h) usage; exit 0 ;;
+esac
+
+# EVERY ARGUMENT IS ACCOUNTED FOR BEFORE A CREDENTIAL IS WRITTEN.
+#
+# `if [[ "${1:-}" == "--admin" ]]` used to be the ENTIRE parser, and its implicit
+# else-branch is the AGENT lane. So ANY argument that was not exactly "--admin" —
+# `--help`, or a near-miss typo like `--admiin` — fell through and installed
+# whatever sat on the clipboard into ~/.zprofile as OP_SERVICE_ACCOUNT_TOKEN.
+#
+# THE LANE COMES FROM ARGV; THE SECRET COMES FROM THE CLIPBOARD; NOTHING
+# CROSS-CHECKS THEM. Mistype the flag with the ADMIN token copied and the admin
+# credential lands in the profile every background agent shell sources — inverting
+# the exact structural isolation this file's own header says it exists to create,
+# silently, with a success message. A defaulted lane is not a safe default when
+# the two lanes have different blast radii, so an unrecognized argument refuses.
+#
+# Same defect class as bin/archive-docs, whose `--help` rolled a docs ledger on
+# 2026-08-31. Guarded by test/lib/bin_help_flag_class_test.rb.
+if [[ $# -gt 1 ]] || { [[ -n "${1:-}" ]] && [[ "${1}" != "--admin" ]]; }; then
+  echo "setup-1pass-token: unrecognized argument(s): $* — NOTHING was installed and no profile was written." >&2
+  echo >&2
+  usage >&2
+  exit 2
+fi
+
 LANE="agent"
 VAR="OP_SERVICE_ACCOUNT_TOKEN"
 PROFILE="$HOME/.zprofile"
