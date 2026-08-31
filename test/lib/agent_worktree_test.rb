@@ -1652,7 +1652,9 @@ class AgentWorktreeTest < Minitest::Test
 
     assert_includes text, "REFUSING to tear down"
     assert_includes text, "-> 500", "the operator needs the board's own answer, not a summary of it"
-    assert_includes text, "NOTHING has been destroyed"
+    assert_includes text, "THIS DESK IS UNTOUCHED",
+                    "precise in a BATCH too: earlier desks in the run were torn down, each " \
+                    "with its own record filed first"
     assert_includes text, "bin/agent-worktree remove mcritchie-studio _ship --yes"
   end
 

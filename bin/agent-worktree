@@ -2863,8 +2863,15 @@ end
 # (see reclaim_evidence: an unverifiable desk is withheld everywhere), so a board outage
 # was never a window in which mass teardown was safe. All this closes is the explicit
 # single-desk `remove … --yes`, which the operator can simply run again.
-def file_desk_record!(record, status:, source:)
-  result = DeskLedger.file(
+# The desk ledger payload, built ONCE for both postures below.
+#
+# The registry record goes over the wire VERBATIM — `stack_record_snapshot` is the same
+# hash `snapshot --write` writes — and the server owns the mapping onto columns
+# (DeskRecord.registry_attributes). A second mapping on this side would be a second answer
+# waiting to disagree with the first. The three narrative fields are the ones the SWEEP
+# owns and the registry does not carry.
+def desk_ledger_write(record, status:, source:)
+  DeskLedger.file(
     desk: stack_record_snapshot(record, {}),
     status: status,
     source: source,
@@ -2874,6 +2881,10 @@ def file_desk_record!(record, status:, source:)
     safe_delete_condition: cleanup_condition(record, status: status),
     dotenv: File.join(HUB_DIR, ".env")
   )
+end
+
+def file_desk_record!(record, status:, source:)
+  result = desk_ledger_write(record, status: status, source: source)
   return result if result.ok?
 
   abort <<~MSG
@@ -2881,8 +2892,11 @@ def file_desk_record!(record, status:, source:)
 
       #{result.error}
 
-    NOTHING has been destroyed. The record is written BEFORE the teardown precisely so a
-    board this script cannot reach costs a retry instead of an unrecorded removal.
+    THIS DESK IS UNTOUCHED — nothing was stopped, flushed, dropped or removed for it. The
+    record is written BEFORE the teardown precisely so a board this script cannot reach
+    costs a retry instead of an unrecorded removal. (In a BATCH sweep, desks torn down
+    earlier in this run each filed their own record first, so the audit trail is whole;
+    only this desk and the ones after it are left standing.)
 
     The ledger is #{DeskLedger.base_url}/deployments now, not a markdown file — it moved
     because a row written into the primary checkout lands on `main` and can never be
@@ -2900,16 +2914,7 @@ end
 # than a refusal — the fail-closed rule is scoped to the destroy path, which is where it
 # buys something.
 def file_desk_record(record, status:, source:)
-  result = DeskLedger.file(
-    desk: stack_record_snapshot(record, {}),
-    status: status,
-    source: source,
-    actor: desk_ledger_actor,
-    safety: cleanup_safety_label(record),
-    reason: cleanup_reason(record),
-    safe_delete_condition: cleanup_condition(record, status: status),
-    dotenv: File.join(HUB_DIR, ".env")
-  )
+  result = desk_ledger_write(record, status: status, source: source)
   warn "warning: desk ledger write failed for #{worktree_label(record)}: #{result.error}" unless result.ok?
   result
 end
