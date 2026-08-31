@@ -559,6 +559,7 @@ Do not merge or deploy unless I explicitly assigned that lane.
 | Shared email operations | `mcritchie-studio/docs/agents/modules/email-operations.md` |
 | Managed app registry | `mcritchie-studio/docs/agents/modules/app-registry.md` |
 | New app onboarding (tiers + SOP) | `mcritchie-studio/docs/agents/system/new-app-onboarding-sop.md` |
+| **App templates (base vs web3 bolt-on)** | `mcritchie-studio/docs/agents/system/app-templates.md` |
 | Ports, servers, callbacks | `mcritchie-studio/docs/agents/modules/ports-and-processes.md` |
 | Parallel DevOps and QA graduation | `mcritchie-studio/docs/agents/modules/parallel-agent-devops.md` |
 | Modular PR review SOP | `mcritchie-studio/docs/agents/modules/pr-review-sop.md` |
