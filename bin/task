@@ -36,6 +36,12 @@
 #       server refuses a devops write to both names (Task::DEVOPS_COLUMN_KEYS).
 #       --verbose always prints both, and distinguishes empty ("not merged") from a
 #       payload that carries no such key at all ("UNREPORTED"). )
+#     ( `assignee:` is the agent_slug COLUMN; `builders:` is the AUTHOR SET
+#       (metadata.devops.builders + built_by) that bin/reviewer-select excludes.
+#       They are DIFFERENT FACTS and disagree routinely — `move <slug> building
+#       --actor <soul>` stamps the author and sets no assignee — so an unassigned
+#       task reads "unassigned" and an unstamped one reads "NOT STAMPED", never
+#       the same "-". --verbose adds the raw fields behind the set. )
 #   bin/task stale [<slug>]
 #     ( flags a task whose work is already on origin/main (fixed out-of-band) while
 #       the task isn't shipped/archived. Resolves the branch (devops.branch or
@@ -220,6 +226,7 @@ require_relative "../lib/feature_marker"
 require_relative "lib/task_board"
 require_relative "lib/bounce_ledger"
 require_relative "lib/task_column_fields"
+require_relative "lib/task_author_fields"
 require_relative "lib/session_identity"
 require_relative "lib/projects_root"
 require_relative "lib/bin_helpers"
@@ -961,7 +968,17 @@ end
 def print_task(task)
   dv = task.dig("metadata", "devops") || {}
   puts "#{task["slug"]}  [#{task["stage"]}]  #{task["title"]}"
-  puts "  agent: #{task["agent_slug"] || "-"}  kind: #{dv["kind"] || "-"}  repos: #{Array(dv["repositories"]).join(", ")}"
+  # TWO FACTS, TWO NAMES. This line used to read `agent: <agent_slug>` — the
+  # ASSIGNEE — while every agent reading it was checking for the AUTHOR, because
+  # the operating model tells them devops.built_by is what keeps a soul off their
+  # own PR. `bin/task move <slug> building --actor <soul>` stamps the author and
+  # sets no assignee at all, so three of four tasks measured on 2026-08-30 printed
+  # `agent: -` while correctly stamped, and two agents filed the blank as an
+  # incident. Renaming the label without printing the author would have moved the
+  # ambiguity rather than removed it; both facts are printed, under names that say
+  # which is which. See bin/lib/task_author_fields.rb.
+  puts "  #{TaskAuthorFields.assignee_pair(task)}  #{TaskAuthorFields.pair(task)}  " \
+       "kind: #{dv["kind"] || "-"}  repos: #{Array(dv["repositories"]).join(", ")}"
   puts "  branch: #{dv["branch"] || "-"}  pr: #{dv["pr_url"] || "-"}"
   # The per-repo register, only when there IS one — the terse view stays terse for
   # the single-repo task that is most of the board, and a multi-repo task's extra
@@ -1009,6 +1026,17 @@ end
 # The trailing locator line names WHERE the fields live, which is the lookup
 # error that actually cost the time — printed even when the values are set,
 # because the worst case was a reader mis-pathing a stamp that WAS there.
+# The AUTHORSHIP sources, printed UNCONDITIONALLY — same rule as
+# print_column_fields above, for the same reason and after the same kind of
+# incident. The terse header already names the author SET; this expands it into
+# the three raw fields behind it, so an agent verifying a stamp reads the exact
+# paths instead of guessing one. The locator is what actually cost the time: both
+# false alarms were lookups in the wrong store, not wrong values.
+def print_author_fields(task)
+  puts "  #{TaskAuthorFields.source_line(task)}"
+  puts "  ↳ #{TaskAuthorFields::LOCATOR}"
+end
+
 def print_column_fields(task)
   puts "  #{TaskColumnFields.pair(task, "merged")}   #{TaskColumnFields.pair(task, "release_slug")}"
   puts "  ↳ #{TaskColumnFields::LOCATOR}"
@@ -1028,6 +1056,7 @@ def print_task_verbose(task)
   print_bullets("test_plan", dv["test_plan"])
   print_bullets("checks_run", dv["checks_run"])
   puts "  claim: session #{dv["claimed_session"] || "-"} · expires #{dv["claim_expires_at"] || "-"}"
+  print_author_fields(task)
   puts "  approval_status: #{dv["approval_status"] || "-"}"
   puts "  pr_url: #{dv["pr_url"] || "-"}   local_url: #{dv["local_url"] || "-"}"
   # ALWAYS emitted, "-" when empty — the same rule print_column_fields is built
