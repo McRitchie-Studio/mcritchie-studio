@@ -364,15 +364,19 @@ class ReviewPendingAction < ApplicationRecord
   # down is a boundary the next reader assumes away. If a sibling that is going to
   # REFUSE wins the race against the sibling that actually merged, the row reads
   # refused for a merge that happened — the same class of lie, from the other end.
-  # It is much narrower than the defect this closes (the refusing paths are all
-  # DB-only reads, and the one that reads the post-merge PR settles EXECUTED by
-  # #gate_pull_request, not refused), and it is NOT closed by ranking the states:
-  # "executed may overwrite refused" would put a second writer back on a settled
-  # row, which is the whole thing being removed. It closes at the READING instead
-  # — an executor whose merge is rejected 405/409 should re-read the PR before
-  # concluding the head moved, because "already merged" and "head moved" are the
-  # same HTTP answer. That is a separate defect in the refusal path, and it wants
-  # its own test.
+  # It is NOT closed by ranking the states: "executed may overwrite refused" would
+  # put a second writer back on a settled row, which is the whole thing being
+  # removed. It closes at the READING instead — an executor whose merge is rejected
+  # 405/409 re-reads the PR before concluding anything, because "already merged"
+  # and "not mergeable"/"head moved" are the same HTTP answer.
+  #
+  # THAT IS NOW DONE — Review::PendingActionExecutor#settle_merge_rejection. And it
+  # was not the narrow case this paragraph once guessed it was ("the refusing paths
+  # are all DB-only reads"): it fired in production on 2026-08-29, when PR #1073
+  # merged into `accepted` and its row recorded `refused … 405`. The refusal is in
+  # fact the LIKELY winner, because the sibling that merges still has a stamp and a
+  # stage move between its 200 and its settle while the rejected one runs straight
+  # to the write.
   def settle!(state:, reason: nil, merge_sha: nil, now: Time.current)
     unless TERMINAL_STATES.include?(state)
       raise ArgumentError,

@@ -673,6 +673,135 @@ class Review::PendingActionExecutorTest < ActiveSupport::TestCase
     assert_match(/already merged/, result.reason)
   end
 
+  # ── A REJECTED MERGE IS RE-READ ─────────────────────────────────────────────
+  #
+  # 405 "not mergeable" and 409 "head was modified" are ALSO what GitHub answers for
+  # a PR that is already merged, so the status code is not a conclusion. Concluding
+  # from it alone put `refused` on the record of a merge that landed — observed
+  # 2026-08-29 on PR #1073.
+  #
+  # THE FAKE FLIPS ITS PR TO MERGED INSIDE THE PUT. That is the interleave itself:
+  # this execution read an open, mergeable PR (so it does not take the already-merged
+  # gate), and the merge landed between that read and its own rejected attempt.
+  #
+  # MUTATION PROOF: change `if pr["merged"] == true` in #settle_merge_rejection to
+  # `if false` and the first, third and fourth tests fail — the row goes back to
+  # naming a merge that happened `refused`.
+
+  RACED_SHA = "74d2407craced000"
+
+  # The PR as GitHub reports it AFTER the merge landed — closed, merged, and
+  # carrying the merge commit that proves the code is on `accepted`.
+  def merged_pr_after_race
+    open_pr(state: "closed", merged: true, mergeable: nil).merge("merge_commit_sha" => RACED_SHA)
+  end
+
+  # A merge attempt GitHub rejects, against a PR that merged while it was in flight.
+  def rejected_after_merge(status:, message: "")
+    github = FakeGithub.new(pr: open_pr, merge_status: status, merge_body: { "message" => message })
+    merged = merged_pr_after_race
+    github.define_singleton_method(:put_response) do |path, body: nil|
+      @pr = merged
+      super(path, body: body)
+    end
+    github
+  end
+
+  test "[unit] a 405 for a PR that merged mid-flight settles EXECUTED, never refused" do
+    ingest_ci
+    action = arm
+    github = rejected_after_merge(status: 405)
+
+    result, = run_executor(action, github: github)
+
+    assert_equal :executed, result.status, result.reason
+    assert_equal 1, github.merge_calls, "the rejection is re-read, not re-attempted"
+    assert_match(/ALREADY MERGED/, result.reason)
+    assert_match(/answered 405/, result.reason)
+    assert_match(/did not perform it/, result.reason,
+                 "the row must say the merge landed AND that this run was not the one that did it")
+    refute_match(/refus/i, result.reason,
+                 "a reader scanning for refusals must not find this row among them")
+
+    action.reload
+    assert_equal ReviewPendingAction::EXECUTED, action.state,
+                 "a merge that happened must never read as refused"
+    assert_equal RACED_SHA, action.merge_sha,
+                 "the merge commit is the fact that proves the code landed"
+    refute action.pending?, "a settled race must not retry forever"
+  end
+
+  test "[unit] a 405 for a PR that did NOT merge still REFUSES, and carries the re-read" do
+    ingest_ci
+    action = arm
+    github = FakeGithub.new(pr: open_pr, merge_status: 405,
+                            merge_body: { "message" => "Pull Request is not mergeable" })
+
+    result, = run_executor(action, github: github)
+
+    assert_equal :refused, result.status
+    assert_match(/not mergeable: Pull Request is not mergeable/, result.reason)
+    assert_match(/is NOT merged/, result.reason,
+                 "a real refusal states positively that the PR did not merge — otherwise it is " \
+                 "indistinguishable from a raced one, which is the same lie the other way round")
+    assert_equal ReviewPendingAction::REFUSED, action.reload.state
+    assert_equal "submitted", @task.reload.stage
+    assert_nil @task.merged
+  end
+
+  test "[unit] a 409 for a PR that merged mid-flight settles EXECUTED, not 'head moved'" do
+    ingest_ci
+    action = arm
+    github = rejected_after_merge(status: 409, message: "Head branch was modified")
+
+    result, = run_executor(action, github: github)
+
+    assert_equal :executed, result.status, result.reason
+    assert_match(/answered 409/, result.reason)
+    refute_match(/head moved/, result.reason,
+                 "409 on a merged PR is not a moved head — that reading is the defect")
+    assert_equal ReviewPendingAction::EXECUTED, action.reload.state
+    assert_equal RACED_SHA, action.merge_sha
+  end
+
+  # THE OBSERVED INCIDENT, REPRODUCED: two executions of ONE armed merge on ONE green
+  # run. Both claim a pending row (the claim lock is released before the network trip
+  # by design), and the sibling's PUT arrives AFTER the merger's. From there the two
+  # have very different path lengths — the merger still owes a stamp and a stage move
+  # before it settles, the rejected sibling runs straight to the write — so the
+  # SIBLING settles first and its opinion becomes the record.
+  test "[unit] TWO executions, one green run: the rejected loser never records refused" do
+    ingest_ci
+    action = arm
+
+    sibling_action = ReviewPendingAction.find(action.id)
+    sibling = rejected_after_merge(status: 405)
+    sibling_result = nil
+
+    merger = FakeGithub.new(pr: open_pr, merge_body: { "sha" => RACED_SHA })
+    merger.define_singleton_method(:put_response) do |path, body: nil|
+      response = super(path, body: body)
+      # The merge has landed on GitHub; the sibling's rejected attempt follows it,
+      # and settles before this execution has stamped anything.
+      sibling_result = Review::PendingActionExecutor.call(sibling_action, client: sibling)
+      response
+    end
+
+    result, = run_executor(action, github: merger)
+
+    assert_equal :executed, sibling_result.status, sibling_result.reason
+    assert_equal :already_settled, result.status, "the merger arrived at a row the sibling settled"
+    assert_match(/would have written executed/, result.reason)
+
+    action.reload
+    assert_equal ReviewPendingAction::EXECUTED, action.state,
+                 "the row must name the merge that happened, not the rejection that followed it"
+    assert_equal RACED_SHA, action.merge_sha
+    assert_equal 2, action.attempts, "a double execution is COUNTED, never silently swallowed"
+    assert_equal "reviewed", @task.reload.stage
+    assert_equal Task::MERGED_ACCEPTED, @task.merged
+  end
+
   # ── FAILURE PATHS ───────────────────────────────────────────────────────────
 
   test "a GitHub API failure stays pending and lands in an ErrorLog" do

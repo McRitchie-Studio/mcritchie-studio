@@ -93,6 +93,13 @@ module Github
     # means "not mergeable" — both are correct, expected outcomes that a caller
     # must read and act on, not exceptions. Transient 5xx retries and rate-limit
     # handling still apply; only the final raise is suppressed.
+    #
+    # NEITHER CODE IS A CONCLUSION ON ITS OWN. GitHub answers 405 (frequently with
+    # an EMPTY message) and 409 for a PR that is ALREADY MERGED as well, so a
+    # caller that reads them as "not mergeable" or "head moved" will record a
+    # merge that landed as a refusal — it did, on 2026-08-29. Re-read the PR and
+    # branch on `merged` before concluding; see
+    # Review::PendingActionExecutor#settle_merge_rejection.
     def put_response(path, body: nil, params: {}, headers: {})
       response = request(path, params: params, headers: headers, method: :put, body: body,
                                raise_on_error: false)
