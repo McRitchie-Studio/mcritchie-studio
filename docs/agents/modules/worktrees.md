@@ -706,8 +706,10 @@ mutation is a write, and a write into an occupied desk corrupts whatever else is
 reading it. Same remedy, same command:
 
 ```bash
-git worktree add "$(git rev-parse --show-toplevel)/.worktrees/mut-<slug>" --detach <pr-head>
-cp <desk>/.env.test.local "$(git rev-parse --show-toplevel)/.worktrees/mut-<slug>"/   # REQUIRED
+REPO="$(dirname "$(cd "$(git rev-parse --git-common-dir)" && pwd)")"   # the PRIMARY checkout, from anywhere
+MUT="$REPO/.worktrees/mut-<slug>"
+git worktree add "$MUT" --detach <pr-head>
+cp <desk>/.env.test.local "$MUT"/                        # REQUIRED — see below
 ```
 
 **Both details are load-bearing.** Skip either and a loud tree collision becomes
