@@ -86,6 +86,19 @@ log_fail()  { local detail="${2:-}"; echo "  ${RED}✗${RESET} $1${detail:+  ${D
 # ─── Helpers ────────────────────────────────────────────────────────────────
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# ── 1Password read attribution ────────────────────────────────────────────────
+# Route every `op` call through op_metered so the read is recorded against THIS
+# script (bin/lib/op-meter.sh; query with bin/op-reads). Sourcing is OPTIONAL by
+# construction: if the shim is missing or unreadable, op_metered falls back to
+# running the binary directly. A metering problem must never cost this script its
+# credential read — every consumer here has a working fallback for a rate-limited
+# or absent `op`, and that survived a full-day 1Password outage.
+OP_METER_VIA="ecosystem-build"
+OP_METER_SH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/op-meter.sh"
+# shellcheck source=lib/op-meter.sh
+[ -r "$OP_METER_SH" ] && . "$OP_METER_SH" || true
+command -v op_metered >/dev/null 2>&1 || op_metered() { local __b="$1"; shift; "$__b" "$@"; }
+
 # ─── The agent vault guard ──────────────────────────────────────────────────
 #
 # Is the 1Password vault named "$1" VISIBLE to the token in this environment?
@@ -122,7 +135,7 @@ agent_vault_visible() {
 
   have op && have jq || return 2
 
-  listing=$(op vault list --format=json 2>/dev/null) || return 1
+  listing=$(op_metered op vault list --format=json 2>/dev/null) || return 1
 
   # DEFENCE IN DEPTH, and honestly labelled as such: deleting this line changes
   # no test, because `jq -e` already refuses empty input (exit 4) before it can
@@ -357,7 +370,7 @@ phase_secrets() {
   # Heroku API key (auto-pull from 1P if not set)
   if [ -z "${HEROKU_API_KEY:-}" ]; then
     log_act "fetching agent.heroku from 1Password"
-    HEROKU_API_KEY=$(op item get "agent.heroku" --vault "${MCR_OP_VAULT_AGENT:-agents-studio}" --format json 2>/dev/null \
+    HEROKU_API_KEY=$(op_metered op item get "agent.heroku" --vault "${MCR_OP_VAULT_AGENT:-agents-studio}" --format json 2>/dev/null \
       | jq -r '.urls[]? | select(.label == "api key") | .href')
     if [ -z "$HEROKU_API_KEY" ]; then
       log_fail "agent.heroku item missing or 'api key' URL field empty"
@@ -422,7 +435,7 @@ phase_secrets() {
     local env_path="$PROJECTS_DIR/$app/.env"
     [ -f "$env_path" ] || continue
     local value
-    value=$(op read "op://$ref" 2>/dev/null)
+    value=$(op_metered op read "op://$ref" 2>/dev/null)
     if [ -z "$value" ]; then
       log_fail "$var (op://$ref)" "not retrievable — does the token have read on that vault?"
       continue

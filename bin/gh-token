@@ -70,6 +70,7 @@ require "fileutils"
 require "time"
 require_relative "../lib/task_usage_sandbox"
 require_relative "lib/op_vaults"
+require_relative "lib/op_meter"
 require_relative "lib/gh_identity"
 
 IDENTITIES = {
@@ -201,7 +202,10 @@ def read_secret(ref, lane = OpVaults::DEFAULT_LANE)
   # non-default lane must REPLACE it for this child only. In an ordinary agent
   # shell the admin token is absent and op_env is {} — the read then fails with
   # the agent token, which is the isolation working, not a bug.
-  out = IO.popen(OpVaults.op_env(lane), [OP_BIN, "read", ref], err: File::NULL, &:read).to_s
+  # Metered (bin/lib/op_meter.rb) so a burst of mints is attributable to the
+  # command that caused it. OpMeter.popen spawns nothing beyond this child, so
+  # `$?` below still reports op's status and not the recorder's.
+  out = OpMeter.popen(OpVaults.op_env(lane), [OP_BIN, "read", ref], via: "gh-token", err: File::NULL)
   $?.success? ? out : ""
 rescue StandardError
   ""

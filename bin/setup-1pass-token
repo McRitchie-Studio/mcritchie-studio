@@ -41,6 +41,19 @@
 
 set -e
 
+# ── 1Password read attribution ────────────────────────────────────────────────
+# Route every `op` call through op_metered so the read is recorded against THIS
+# script (bin/lib/op-meter.sh; query with bin/op-reads). Sourcing is OPTIONAL by
+# construction: if the shim is missing or unreadable, op_metered falls back to
+# running the binary directly. A metering problem must never cost this script its
+# credential read — every consumer here has a working fallback for a rate-limited
+# or absent `op`, and that survived a full-day 1Password outage.
+OP_METER_VIA="setup-1pass-token"
+OP_METER_SH="$(cd "$(dirname "$0")" && pwd)/lib/op-meter.sh"
+# shellcheck source=lib/op-meter.sh
+[ -r "$OP_METER_SH" ] && . "$OP_METER_SH" || true
+command -v op_metered >/dev/null 2>&1 || op_metered() { local __b="$1"; shift; "$__b" "$@"; }
+
 LANE="agent"
 VAR="OP_SERVICE_ACCOUNT_TOKEN"
 PROFILE="$HOME/.zprofile"
@@ -108,7 +121,7 @@ fi
 echo ""
 echo "Verifying with 'op vault list'..."
 export OP_SERVICE_ACCOUNT_TOKEN="$TOKEN"
-op vault list
+op_metered op vault list
 
 echo ""
 echo "Done. Either run 'source ~/.zprofile' in your current shell or open a"
