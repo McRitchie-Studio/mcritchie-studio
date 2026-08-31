@@ -62,6 +62,15 @@ deliberate decision, never a default.
   doesn't re-litigate it.
 
 ### 3. Runtime decisions
+
+**A second, orthogonal axis: which TEMPLATE.** The tier above decides how an app
+is *governed*; the template decides what it is *built from*. The **BASE**
+template (`studio-engine` + `mcritchie-studio`) applies to every app, web2 and
+web3 alike. The **WEB3 ADD** (`solana-studio` + `turf-monster`) bolts on **only**
+for a Solana application — do not stand up web3 infrastructure for an app that
+will never sign a transaction. Most apps are web2. See
+[`app-templates.md`](app-templates.md).
+
 | Decision | Managed satellite | Standalone / client app |
 |---|---|---|
 | Engine | consume `studio-engine` from RubyGems | no engine — vendor only what you need |
@@ -261,6 +270,9 @@ Merge Patterns**. Read that before fanning out agents.
 
 ## Related
 
+- [`app-templates.md`](app-templates.md) — the **base vs web3 bolt-on** template
+  decision, orthogonal to the tier decision above: a new app picks a tier here
+  and a template there.
 - [`../modules/app-registry.md`](../modules/app-registry.md) — the registry
   contract plus the **unmanaged candidate → managed satellite** promotion
   lifecycle and its readiness checklist.
