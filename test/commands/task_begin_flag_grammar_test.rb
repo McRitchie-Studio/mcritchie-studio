@@ -35,6 +35,23 @@ class TaskBeginFlagGrammarTest < ActiveSupport::TestCase
   # the API call cannot accidentally pass by reaching a real board.
   OFFLINE = { "TASK_API_BASE" => "http://127.0.0.1:1", "TASK_SKIP_MARKER" => "1" }.freeze
 
+  # EVERY TOKEN TYPE THAT IS PROSE, not code. `=begin`/`=end` blocks do NOT lex as
+  # :on_comment — they arrive as :on_embdoc_beg / :on_embdoc / :on_embdoc_end, one
+  # token per line at col 0 — so a stripper that filtered on :on_comment alone let
+  # a block comment through WHOLE. bin/task carries none today, which is exactly
+  # the condition under which the hole goes unnoticed: it re-opens M4 the first
+  # time someone explains a reader inside `=begin`.
+  COMMENT_TOKENS = %i[on_comment on_embdoc_beg on_embdoc on_embdoc_end].freeze
+
+  # The local M6 injects into the begin block, named so the test can find its own
+  # probe line again without matching anything bin/task legitimately contains.
+  MULTIBYTE_PROBE = "multibyte_probe"
+
+  # The canonical sources. The projects-root CLAUDE.md / AGENTS.md are GENERATED
+  # from these two, so a correction lands here or it does not land at all.
+  ENTRY_DOCS = %w[docs/agents/claude.md docs/agents/index.md].freeze
+  FLAG_COUNT_WORDS = { 5 => "FIVE", 6 => "SIX", 7 => "SEVEN", 8 => "EIGHT" }.freeze
+
   test "a create flag on the resume form is refused, not dropped" do
     _out, err, status = run_task("begin", "some-slug", "--shape", "backend")
 
@@ -347,6 +364,116 @@ class TaskBeginFlagGrammarTest < ActiveSupport::TestCase
                     "a string literal is not a comment and must survive"
   end
 
+  # [integration] M6, FROZEN — M4 WEARING A MULTIBYTE COSTUME. Ripper reports the
+  # comment's column in BYTES; String#[] slices CHARACTERS. So a trailing comment
+  # sitting after an em dash or an emoji survives the strip by (bytes - chars)
+  # characters, and a long enough prefix leaks the READER NAME itself. That is M4
+  # exactly — reachable again, through a line nobody would look at twice.
+  #
+  # NOT REACHABLE IN TODAY'S bin/task: measured 0 of 1104 comment tokens affected,
+  # because every multibyte character in the file happens to sit AFTER its `#`.
+  # That is a property of the current text, not of the guard, and it holds only
+  # until the next person writes a trailing comment after an emoji.
+  test "a multibyte comment naming the reader cannot satisfy the wiring guard" do
+    source = inject_multibyte_reader_comment(unwire_repo_in_code(File.read(BIN)))
+    block = source[/^when "begin"$.*?^when "/m]
+
+    hazard = block.lines.find { |line| line.include?(MULTIBYTE_PROBE) }
+    refute_nil hazard, "the mutation must inject its probe INSIDE the begin block"
+
+    # PROVE THE HAZARD IS PRESENT, and prove it against the OLD slice rather than
+    # by counting characters here: the probe only exercises this fix if the
+    # character-based slice it replaces would have leaked the reader through.
+    assert_match(/lists\["repositories"\]/, char_sliced(hazard),
+                 "the probe must be a line the OLD character-slice leaked the reader through, " \
+                 "or M6 is only M4 again and says nothing whatever about byte columns")
+    assert_operator hazard.bytesize, :>, hazard.size,
+                    "the probe line must carry multibyte characters BEFORE its comment, or byte " \
+                    "and character columns agree and there is nothing here to catch"
+
+    assert_equal ["--repo"], unwired_flags(source),
+                 "--repo is unwired in code and only a MULTIBYTE-SHIFTED comment still names its " \
+                 "reader; a byte-correct strip must still report it unwired"
+  end
+
+  # [unit] THE SLICE ITSELF, at the smallest scale that can tell a byte column
+  # from a character one. Exact equality rather than a substring check on purpose:
+  # the leak is (bytes - chars) characters wide, so a fixture tuned to leak one
+  # particular word would still pass while leaking three characters of another.
+  test "the strip cuts at the comment even when multibyte characters precede it" do
+    source = <<~'RUBY'
+      plain = lists["repositories"] # ascii comment, no column shift
+      shifted = warn!("🗿💧 begin — resuming") # lists["repositories"] named in prose
+    RUBY
+
+    assert_operator source.bytesize, :>, source.size,
+                    "the fixture must be multibyte or it cannot distinguish the two columns"
+
+    assert_equal <<~'RUBY', code_only(source)
+      plain = lists["repositories"]
+      shifted = warn!("🗿💧 begin — resuming")
+    RUBY
+  end
+
+  # [unit] A BLOCK COMMENT IS PROSE TOO. `=begin`/`=end` lex as :on_embdoc_beg /
+  # :on_embdoc / :on_embdoc_end, NEVER as :on_comment, so a stripper filtering on
+  # :on_comment alone left one standing whole. bin/task uses no block comments
+  # today, which is precisely why adopting one would reintroduce M4 unnoticed.
+  test "a block comment cannot survive the strip either" do
+    source = <<~'RUBY'
+      plain = lists["repositories"]
+      =begin
+      this prose names lists["repositories"] and must not survive the strip
+      =end
+      tail = 1
+    RUBY
+
+    stripped = code_only(source)
+
+    refute_includes stripped, "must not survive the strip",
+                    "=begin/=end prose survived: a block comment can still satisfy the guard"
+    assert_includes stripped, %q(plain = lists["repositories"]),
+                    "the real reader must survive — a strip that blanks code asserts nothing"
+    assert_equal source.lines.size, stripped.lines.size,
+                 "the strip must preserve line structure, or the begin-block regex loses its bounds"
+  end
+
+  # ── THE DOCS MUST NAME WHAT THE CODE HONOURS ────────────────────────────────
+  #
+  # PROSE HAS NO OTHER WAY TO FAIL. Both entry docs said a resume "HONOURS FIVE
+  # FLAGS" and listed BEGIN_RESUME_FLAGS — but door 2 ALSO whitelists `--title`
+  # (bin/task's `also_valid`), so the live refusal prints SIX. The gap taught the
+  # opposite of the behaviour: a builder read that re-running the create line is
+  # refused, while the code resumes it cleanly and refuses only the OTHER create
+  # flags riding along on it.
+  #
+  # THE COUNT IS DERIVED FROM THE SOURCE and never restated here, so a sixth or
+  # seventh flag added to either whitelist reddens this until the sentence catches up.
+  test "the entry docs name every flag a resume actually honours" do
+    source = File.read(BIN)
+    honoured = advertised_flags(source) + door_two_extra_flags(source)
+    word = FLAG_COUNT_WORDS.fetch(honoured.size) { flunk("no word for #{honoured.size} flags") }
+
+    ENTRY_DOCS.each do |rel|
+      body = Rails.root.join(rel).read
+
+      # READ THE SENTENCE, NOT THE FILE. A whole-body `assert_includes body,
+      # "`--title`"` passed while the sentence had dropped the flag entirely —
+      # MEASURED, as a surviving mutation — because both docs name `--title`
+      # elsewhere, in the fast-lane recipe. A substring assertion against a
+      # 700-line operating-model doc will always find its needle somewhere.
+      list = body[/A RESUME HONOURS #{word} FLAGS — (.+?) — and refuses/m, 1]
+
+      refute_nil list,
+                 "#{rel} no longer states the flags a resume honours in the sentence this " \
+                 "guard reads, or states a count bin/task does not honour (#{honoured.size}: " \
+                 "#{honoured.join(", ")})"
+      assert_equal honoured.sort, list.scan(/`(--[a-z-]+)`/).flatten.sort,
+                   "#{rel}'s honoured-flag sentence and bin/task's whitelists have drifted; " \
+                   "the sentence must name every flag a resume honours and no others"
+    end
+  end
+
   private
 
   # ── THE WIRING CHECK, AS A FUNCTION OF SOURCE ───────────────────────────────
@@ -357,6 +484,35 @@ class TaskBeginFlagGrammarTest < ActiveSupport::TestCase
   def unwired_flags(source)
     body = executable_begin_block(source)
     advertised_flags(source).reject { |flag| body.match?(READERS.fetch(flag)) }
+  end
+
+  # Door 2's extra whitelist entry, read from the source rather than restated.
+  # `--title` is legal on the already-exists path because it is how a re-run NAMES
+  # the task whose slug `begin` just resolved — and it is exactly the flag the
+  # entry docs left out of their count.
+  def door_two_extra_flags(source)
+    source[/also_valid: %w\[([^\]]+)\]/, 1]&.split ||
+      flunk("could not read door 2's also_valid whitelist out of bin/task")
+  end
+
+  # THE OLD, CHARACTER-BASED SLICE — kept only so M6 can prove its hazard. A probe
+  # line is only worth asserting against if the implementation this replaces would
+  # actually have leaked the reader through it.
+  def char_sliced(line)
+    pos, = Ripper.lex(line).find { |_pos, type, _tok, _state| type == :on_comment }
+    line[0, pos[1]]
+  end
+
+  # M6's mutation: a line of CODE carrying multibyte characters, then a trailing
+  # comment naming --repo's reader. The emoji and the em dash are the whole point
+  # — each one pushes Ripper's byte column further past the character index of the
+  # `#`, and that gap is how much comment a character-slice keeps.
+  def inject_multibyte_reader_comment(source)
+    probe = %(  #{MULTIBYTE_PROBE} = "🗿💧🗿💧🗿💧🗿💧 — em dash" ) +
+            %(# lists["repositories"] named only in prose\n)
+    raise "M6 anchor missing from bin/task" unless source.match?(/^when "begin"\n/)
+
+    source.sub(/^when "begin"\n/) { |m| m + probe }
   end
 
   def advertised_flags(source)
@@ -372,12 +528,25 @@ class TaskBeginFlagGrammarTest < ActiveSupport::TestCase
   # bounds on `when "..."` lines. Ripper's LEXER classifies the tokens, so a `#`
   # inside a string literal and a `#{}` interpolation are left alone; a regex over
   # /#.*$/ mangles both, and bin/task contains examples of each.
+  #
+  # SLICE BY BYTE, NOT BY CHARACTER. Ripper reports `col` as a BYTE offset while
+  # String#[] counts CHARACTERS, so on any line where a multibyte character
+  # precedes the `#`, the slice keeps (bytes - chars) extra characters OF COMMENT.
+  # MEASURED: a `#` at character 14 is reported at col 22, leaking eight characters
+  # of comment text past the strip.
+  #
+  # The direction is ONE-WAY, and that is what makes it dangerous rather than
+  # merely wrong: a byte offset is never SMALLER than the character offset it
+  # corresponds to, so this can only ever UNDER-strip. It never eats code — it
+  # leaks comment. Leaked comment text is precisely what satisfied M4, so this
+  # quietly re-opens the hole the strip exists to close, on the first trailing
+  # comment written after an em dash or an emoji.
   def code_only(source)
     lines = source.lines
     Ripper.lex(source).each do |(lineno, col), type, _tok, _state|
-      next unless type == :on_comment
+      next unless COMMENT_TOKENS.include?(type)
 
-      lines[lineno - 1] = "#{lines[lineno - 1][0, col].rstrip}\n"
+      lines[lineno - 1] = "#{lines[lineno - 1].byteslice(0, col).rstrip}\n"
     end
     lines.join
   end
