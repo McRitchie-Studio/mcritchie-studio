@@ -277,8 +277,12 @@ lowercase with single hyphens (`steffon`, `turf-monster`). `--agent Steffon` or
 `--agent turf_monster` cannot match the pattern the stamp reads, and both are now
 REFUSED rather than accepted-and-ignored. The resume form
 (`bin/task begin <slug> --agent <soul>`) forwards the builder to the claim as
-`--actor`; it takes no other create flags, and passing one is refused with the
-`bin/task update` remedy rather than dropped. Measured 2026-08-29: four tasks
+`--actor`. A RESUME HONOURS FIVE FLAGS — `--slug`, `--repo`, `--agent`,
+`--dev-size`, `--steal` — and refuses every create flag with the `bin/task
+update` remedy rather than dropping it. It refuses them **whenever the task
+already exists**, not merely when `--title` is missing: re-running `begin` with
+the same title and a `--shape` is a resume too, and `--shape` used to vanish
+there in silence. Measured 2026-08-29: four tasks
 resumed with `--agent` came back with `agent_slug` nil AND `built_by` nil, while
 the same flag on a create stamped both — the flag was silently discarded, and
 `begin` reported success either way.
@@ -290,7 +294,11 @@ task URL. `bin/ship`, run from that worktree, runs steps 5-6 (commit →
 record `pr_url` → **wait for CI to settle** → `bin/dor-check` → `move submitted`
 → read-back verify).
 Re-running either after a failure **resumes** — each skips the steps already
-durably recorded. Mechanics: `docs/agents/modules/devops-task-board.md`.
+durably recorded. Resume `begin` **by slug** (`bin/task begin <task-slug>`):
+once the task exists, re-running the whole `--title …` line is REFUSED rather
+than resumed, because a create flag cannot land on an existing task and dropping
+it in silence is how a task ends up shaped wrong. Mechanics:
+`docs/agents/modules/devops-task-board.md`.
 
 **`bin/ship` waits for CI before the verdict** (`gate-submit-on-green-ci`). The
 builder no longer pays for a local FULL suite — measured at ~31 min against CI's

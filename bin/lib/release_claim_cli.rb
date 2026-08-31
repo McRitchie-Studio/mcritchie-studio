@@ -49,6 +49,13 @@
 # minutes), renewed cheaply over the fast HTTP AgentApi rather than a per-heartbeat
 # `heroku run` dyno, and a crashed one frees the release within a TTL.
 #
+# THAT RENEWER ALSO DIES WITH ITS RELEASE, not only with its session. It stops when
+# the candidate is in a TERMINAL_STATES state AND the board reports no conductor work
+# left — both halves, because `bin/release finalize` legitimately runs on an already
+# `shipped` release while seal or notes still pends. So a conductor session that
+# finishes one act and goes on working cannot leave a claim renewing over shipped
+# work — which would make the next `bin/release prepare` STAND DOWN against nobody.
+#
 # EXIT CODES make the acquire gate scriptable (bin/release branches on it). This is the
 # same table usage() prints, and the two must stay in step:
 #   0  — acquired (you hold the claim; proceed to assemble/deploy this release).
@@ -95,6 +102,30 @@ class ReleaseClaimCli
   # read the ActiveRecord model's constant; it reads the sentinel from here instead.
   # A drift-guard test pins both to the same literal.
   FORMING_SLUG = "__forming__"
+
+  # The release states at which a conductor claim CAN have nothing left to protect.
+  # NECESSARY, NOT SUFFICIENT — and that distinction was itself a defect. `shipped`
+  # does NOT mean the work is over: `bin/release finalize` runs on an already-shipped
+  # release whenever seal or notes still pends, holding the deployer claim through a
+  # prod smoke seal and an unbounded human confirm. So a terminal state is only half
+  # the test; `conductor_work_remaining` from the board is the other half, and both
+  # must agree before a renewer stops. `abandoned` is the exception the board answers
+  # `false` for outright — the candidate was dropped, so nothing can pend.
+  #
+  # THIS IS NOT THE REVIEW LANE'S TERMINAL SET, and copying that one here would be a bug
+  # of the dangerous kind. `assembled` is terminal for a REVIEW and fully LIVE for a
+  # RELEASE: it is precisely the state a candidate sits in while `bin/release ship`
+  # holds the DEPLOYER claim and pushes it to production. Calling it finished would free
+  # that claim underneath a running production deploy and let a second ship start — the
+  # concurrent-deploy collision this claim exists to prevent. `assembling` is live for
+  # the same reason one act earlier. The complement of this set is Release::ACTIVE_STATES,
+  # and that is the point: a claim is meaningful exactly while its release is active.
+  #
+  # Mirrors Release::TERMINAL_STATES. bin/release.rb runs STANDALONE — it never boots
+  # Rails, so it cannot read the ActiveRecord model's constant; it reads the set from
+  # here instead, exactly as it does for FORMING_SLUG above, and drift-guard tests pin
+  # both sides to the same literal.
+  TERMINAL_STATES = %w[shipped abandoned].freeze
 
   # --help/-h from ANY position prints usage and mutates nothing. The same two
   # spellings bin/task and review_claim_cli honor, because an agent probing this CLI
@@ -240,12 +271,28 @@ class ReleaseClaimCli
   end
 
   # The detached renewer body (started by `acquire`; not for hand invocation). Renews
-  # while the anchor process lives, so the claim lease follows the RUN and not the UI.
-  # It inherits RELEASE_CONDUCTOR_CLAIM_SESSION + TASK_CLAIM_NONCE from its parent
-  # because, once detached, it can no longer re-derive the live-instance identity by
-  # walking its own ancestry — a renewer that guessed its nonce would renew NOTHING,
-  # and every renew would 204 silently, which is indistinguishable from the bug it
-  # exists to fix.
+  # while the anchor process lives AND THE RELEASE IS STILL ACTIVE, so the claim lease
+  # follows the RUN and not the UI. It inherits RELEASE_CONDUCTOR_CLAIM_SESSION +
+  # TASK_CLAIM_NONCE from its parent because, once detached, it can no longer re-derive
+  # the live-instance identity by walking its own ancestry — a renewer that guessed its
+  # nonce would renew NOTHING, and every renew would 204 silently, which is
+  # indistinguishable from the bug it exists to fix.
+  #
+  # THE SECOND EXIT, and why the anchor alone was not enough. This loop used to stop on
+  # its anchor dying and on nothing else, which quietly assumed a session outlives its
+  # releases. It does not: one long-lived conductor session runs many acts, so after a
+  # release ships the loop keeps renewing a claim on finished work for as long as the
+  # anchor lives — bounded only by ShiftRenewer::MAX_LIFETIME_SECONDS, twelve hours.
+  #
+  # THAT COSTS MORE HERE THAN IT DOES ONE LANE OVER. A stale review claim wastes board
+  # polls; a stale ASSEMBLER or DEPLOYER claim makes the next `bin/release prepare`
+  # print "🛑 assembler already held — STAND DOWN" and ABORT before merging or deploying
+  # anything. An orphaned renewer can therefore wedge the ENTIRE qa-release lane on
+  # behalf of a session that finished its work hours ago — the exact stranding the
+  # per-release claim design was meant to end, arriving through a different door.
+  #
+  # ORDER IS THE CONTRACT: ShiftRenewer asks `finished` BEFORE `renew`, so a loop whose
+  # release is over exits having polled the board ZERO further times.
   def renew_loop(slug, flags)
     return usage_slug("renew-loop") unless present?(slug)
 
@@ -255,8 +302,9 @@ class ReleaseClaimCli
     pid = flags["anchor-pid"]
     start = flags["anchor-start"]
     ShiftRenewer.run(
-      alive:   -> { SessionIdentity.process_alive?(pid, start) },
-      renew:   -> { renewed?(slug, role) },
+      alive:    -> { SessionIdentity.process_alive?(pid, start) },
+      finished: -> { release_finished?(slug, role) },
+      renew:    -> { renewed?(slug, role) },
       sleeper: ->(seconds) { sleep(seconds) },
       clock:   -> { Time.now },
       interval: ShiftRenewer.interval_from(@env["RELEASE_CONDUCTOR_CLAIM_RENEW_INTERVAL"])
@@ -369,6 +417,52 @@ class ReleaseClaimCli
     return true if res.nil? # board unreachable — not proof we lost the claim
 
     res.code.to_i != 204
+  end
+
+  # Has this candidate reached a state where a conductor claim protects nothing? Asked
+  # once per cycle BEFORE the renew, so a loop whose release has shipped exits without
+  # posting another heartbeat at all.
+  #
+  # It reads the CLAIM endpoint, not a release endpoint, because there is no
+  # GET /api/v1/releases/:slug — releases are routed `only: []`. The conductor_claim
+  # show action serves `release_state` alongside the holder for exactly this reader.
+  #
+  # FAILS OPEN, on purpose and in the opposite direction from the anchor check. A board
+  # we cannot read, a state we cannot parse, a response carrying no state at all, an
+  # error page — none of those are evidence that the release ENDED, and treating them as
+  # such would drop a live conductor's claim on every network hiccup and let a second
+  # prepare or ship start underneath it. Silence means "carry on"; only the board plainly
+  # naming a terminal state stops the loop. The asymmetry is the whole design: a wrong
+  # "anchor dead" costs a recoverable delay, a wrong "work finished" costs a CONCURRENT
+  # PRODUCTION DEPLOY.
+  #
+  # A nil state is the `__forming__` sentinel's normal answer — a claim held while the
+  # candidate is still being created. Not finished: it has not begun.
+  def release_finished?(slug, role)
+    res = get("#{base(slug)}/conductor_claim?role=#{role}")
+    return false unless ok?(res)
+
+    data = parse_data(res)
+    # A malformed body (a 200 whose `data` is not a Hash) must not RAISE here:
+    # ShiftRenewer does not rescue `finished.call`, so an exception kills the renewer
+    # and the claim lapses — fail-CLOSED, the opposite of this method's whole intent.
+    # Unreachable against the board's own render_data; one line to keep it that way.
+    return false unless data.is_a?(Hash)
+    return false unless TERMINAL_STATES.include?(data["release_state"].to_s)
+
+    # TERMINAL IS NOT ENOUGH, and this is the correction that came out of review.
+    # A DEPLOYER legitimately holds a claim on a release that is already `shipped`:
+    # a `bin/release ship` re-run resuming member flips, and `bin/release finalize`
+    # on a partial finalize. Stopping on state alone exited BEFORE THE FIRST
+    # HEARTBEAT on those paths, so the claim lapsed 120s into a run that needs many
+    # minutes — a 2-minute orphan in place of a 12-hour one, on the lane where a
+    # lapsed claim means a concurrent production deploy. Not an improvement.
+    #
+    # FAIL OPEN ON ABSENCE, deliberately: `false` here means "keep renewing". A
+    # server that does not send the key (an older board, a partial payload) yields
+    # nil, which is not `false`, so the loop keeps going. The only thing that stops
+    # a renewer is the board PLAINLY saying both "terminal" and "nothing left".
+    data["conductor_work_remaining"] == false
   end
 
   def stop_renewer(sid, role, slug)

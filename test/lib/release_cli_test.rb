@@ -3136,7 +3136,9 @@ class ReleaseCliTest < Minitest::Test
       assert_includes out, "ABORTED", "a refused push still aborts the ship"
       assert_includes out, "REFUSED ON CREDENTIALS",
                       "git said `Invalid username or token`; the ship must repeat that, not invent a divergence"
-      assert_includes out, "--identity deployer", "and name the lane whose credential it actually is"
+      # REBOUND like its sibling above — the flag it pinned belonged to a removed
+      # remedy; the concern (an AUTH failure names its own lane) is asserted here.
+      assert_includes out, "DEPLOYER identity", "and name the lane whose credential it actually is"
       refute_includes out, "has diverged from the frozen SHA",
                       "NOTHING had diverged — main was strictly BEHIND release and a dry-run fast-forward " \
                       "succeeded. This sentence, on this failure, cost a re-freeze that was never needed."
@@ -7559,24 +7561,6 @@ class ReleaseCliTest < Minitest::Test
   def test_an_unrecognised_failure_is_reported_as_unrecognised
     assert_equal "unknown", eval_helper(%(classify_push_failure("fatal: the remote end hung up unexpectedly")))
     assert_equal "unknown", eval_helper(%(classify_push_failure("")))
-  end
-
-  # THE MESSAGE, not just the label — the label is only useful if the sentence the
-  # operator reads changes with it. The auth message must not send anyone to
-  # reconcile a branch or re-run `prepare`: re-freezing a good freeze is the waste
-  # the misdiagnosis actually cost.
-  def test_the_auth_message_names_the_deployer_lane_and_never_asks_for_a_re_freeze
-    msg = eval_helper(%(push_failure_message("mcritchie-studio", "a" * 40, :auth)))
-
-    assert_includes msg, "REFUSED ON CREDENTIALS"
-    assert_includes msg, "bin/gh-auth-refresh --identity deployer",
-                     "the ship lane pushes as the DEPLOYER, so the agent-lane refresh is the wrong command"
-    assert_includes msg, "OP_ADMIN_SERVICE_ACCOUNT_TOKEN",
-                     "minting a deployer token reads agents-admin, which an ordinary agent shell cannot"
-    assert_includes msg, "has NOT diverged"
-    refute_match(/re-run `bin\/release prepare`/, msg,
-                 "the freeze is still good — sending the operator back through prepare is the exact " \
-                 "waste this classification exists to stop")
   end
 
   def test_the_divergence_message_still_prescribes_the_reconcile

@@ -74,7 +74,14 @@ class ReleaseLanesTest < ActionView::TestCase
 
   test "[component] a library lane shows Published + n/a for the deploy phases" do
     rel = lane_release("studio-engine")
-    seed_ci("McRitchie-Studio/studio-engine", "main", "Engine CI", "eng", 5)
+    # REBOUND, not loosened. This seeded `main`, encoding the premise this task
+    # corrects: that a gem's release-candidate verdict lives on `main`. studio-engine
+    # is declared `ladder: three-rung` (config/release_repos.yml:217) and has a live
+    # `release` ref, so its candidate is read from `release` — the rung it is actually
+    # promoted to. The concern here is unchanged and is about LANE RENDERING (a lib
+    # lane shows Published + n/a), not about which branch; seeding the branch the
+    # reader now reads is what keeps that concern testable.
+    seed_ci("McRitchie-Studio/studio-engine", Release::BRANCH, "Engine CI", "eng", 5)
 
     render partial: "tasks/release_lanes", locals: { release: rel.reload }
 

@@ -461,20 +461,33 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
     assert_includes current.to_html, %(data-phase="assembling"), "with its Assembling meter"
   end
 
-  test "[integration] ci_progress live-updates the card for a GEM member's Engine CI job (main branch)" do
+  # REBASED onto `release` 2026-08-30 (/tasks/gem-track-reads-main). This seeded the
+  # job on `main` and said "a gem's verdict is Engine CI on MAIN" — the same false
+  # premise Ci::ProgressReader carried. studio-engine is a THREE-RUNG gem: the sweep
+  # pushes the candidate onto `release`, and `main` only takes it at G4 ship. The
+  # concern is unchanged — a gem member's OWN workflow fans out to the Next Release
+  # card — but it must fan out on the branch that repo's track actually reads, so the
+  # negative half is asserted here rather than left implied.
+  test "[integration] ci_progress live-updates the card for a GEM member's Engine CI job" do
     rel = Release.open! # active candidate → Release.current
     rel.add(Task.create!(title: "Studio engine gem member", stage: "reviewed",
                          metadata: { "devops" => { "repositories" => ["studio-engine"] } }))
-    # A gem's verdict is Engine CI on MAIN — the fan-out must reach it there, not only
-    # on the `release` branch app repos use.
-    job = seed_ci(repo: "McRitchie-Studio/studio-engine", branch: "main", sha: "engine-live-sha",
-                  passed: 1, pending: 0, workflow: "Engine CI")
+    job = seed_ci(repo: "McRitchie-Studio/studio-engine", branch: Release::BRANCH,
+                  sha: "engine-live-sha", passed: 1, pending: 0, workflow: "Engine CI")
 
     streams = capture_turbo_stream_broadcasts("deployments") { DeploymentsBroadcaster.ci_progress(job) }
 
     current = streams.find { |s| s["target"] == "current-release" }
     assert current, "a gem member's Engine CI job refreshes the Next Release card"
     assert_includes current.to_html, %(data-repo="studio-engine"), "the gem's lane rides along"
+
+    # The SHIP lane, not the candidate lane: a three-rung gem's `main` run describes the
+    # release that already went out, so it must not morph the Next Release card.
+    shipped = seed_ci(repo: "McRitchie-Studio/studio-engine", branch: "main",
+                      sha: "engine-shipped-sha", passed: 1, pending: 0, workflow: "Engine CI")
+    after = capture_turbo_stream_broadcasts("deployments") { DeploymentsBroadcaster.ci_progress(shipped) }
+    assert_nil after.find { |s| s["target"] == "current-release" },
+               "an already-shipped commit's CI must not redraw the candidate's card"
   end
 
   test "[integration] ci_progress does NOT refresh the release card for a non-member repo's release push" do

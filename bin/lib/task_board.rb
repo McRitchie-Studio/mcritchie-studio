@@ -178,28 +178,74 @@ module TaskBoard
     code.empty? ? "" : " [HTTP #{code}]"
   end
 
-  # The agent secret: ENV, then 1Password, then the given .env file — the same
-  # order every task-board CLI used inline. Returns nil when not found so each
-  # caller keeps its own missing-secret posture (die! vs degrade to "").
+  # The agent secret: ENV, then the given .env file, then 1Password — in that
+  # order, and THE ORDER IS THE POINT. Returns nil when not found so each caller
+  # keeps its own missing-secret posture (die! vs degrade to "").
+  #
+  # WHY 1PASSWORD IS LAST. It used to be SECOND, ahead of .env — "the same order
+  # every task-board CLI used inline", i.e. INHERITED when the chains were folded
+  # together, never chosen. ENV is unset in agent shells, so the vault read
+  # succeeded and returned EVERY time and the .env branch was dead code on every
+  # provisioned machine. Each `op read` spends one credential against a 1,000/day
+  # cap shared account-wide by every service account and every lane, so routine
+  # board traffic — 1,308 `bin/task` invocations measured in ONE session —
+  # exhausted the ecosystem's entire daily budget. It never presented as a board
+  # problem: the failure always surfaced later, somewhere else, as a credential
+  # error during a push, a review, or a deploy. The secret it was paying for was
+  # sitting in the repo's own .env the whole time.
+  #
+  # 1PASSWORD STAYS, LAST, because it is not redundant: a fresh machine
+  # mid-bootstrap has no .env yet and the vault is its only way to authenticate.
+  # Demoted, not deleted.
   # NOTE: bin/devops-cycle keeps its OWN chain — it deliberately SKIPS 1Password
   # and strips quotes from .env values; do not fold it into this method.
   def agent_secret(dotenv)
     env = ENV["AGENT_API_SECRET"]
     return env if env && !env.empty?
 
-    if File.executable?(OP)
-      op = begin
-        IO.popen([OP, "read", SECRET_REF], err: File::NULL, &:read).to_s.strip
-      rescue SystemCallError
-        ""
-      end
-      return op unless op.empty?
-    end
+    from_dotenv = dotenv_secret(dotenv)
+    return from_dotenv if from_dotenv
 
-    if File.exist?(dotenv)
-      line = File.readlines(dotenv).find { |l| l.start_with?("AGENT_API_SECRET=") }
-      return line.split("=", 2)[1].to_s.strip if line
-    end
+    op_secret
+  end
+
+  # The secret from a .env file, or nil. `dotenv` is OPTIONAL — bin/devops-reconcile
+  # passes nil, and `File.exist?(nil)` raises TypeError. That cost nothing while
+  # this branch sat unreachable behind the vault read; promoting it ahead of the
+  # vault is exactly what would have turned it into a live crash.
+  def dotenv_secret(dotenv)
+    path = dotenv.to_s
+    return nil if path.empty? || !File.exist?(path)
+
+    line = File.readlines(path).find { |l| l.start_with?("AGENT_API_SECRET=") }
+    line ? line.split("=", 2)[1].to_s.strip : nil
+  end
+
+  # The vault read — the last resort, and the only METERED step in the chain, so
+  # it is memoized for the life of the process. Several subcommands resolve the
+  # secret more than once per run; on an unprovisioned machine (now the only
+  # place this branch runs at all) that was one billed read apiece. A FAILURE is
+  # memoized too: it will fail the same way twice, and the retry would still bill.
+  def op_secret
+    return @op_secret if defined?(@op_secret)
+
+    @op_secret = read_op_secret
+  end
+
+  # Drops the memo. FOR TESTS — no CLI run wants a second vault read.
+  def reset_op_secret_cache!
+    remove_instance_variable(:@op_secret) if defined?(@op_secret)
     nil
+  end
+
+  def read_op_secret
+    return nil unless File.executable?(OP)
+
+    op = begin
+      IO.popen([OP, "read", SECRET_REF], err: File::NULL, &:read).to_s.strip
+    rescue SystemCallError
+      ""
+    end
+    op.empty? ? nil : op
   end
 end

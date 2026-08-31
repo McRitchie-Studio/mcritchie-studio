@@ -117,6 +117,11 @@ class PrReviewCommandTest < Minitest::Test
     #   GH_MERGE_FAIL=1 — `gh pr merge` exits nonzero
     #   GH_EDIT_FAIL=1  — `gh pr edit` (retarget) exits nonzero
     #   GH_PR_STATE  — `gh pr view --json state` value (default OPEN; "MERGED" = crash recovery)
+    #   GH_API_USER  — `gh api user` answers 200 as THIS login (a PERSON — the 2026-08-29
+    #                 shape). Unset (default) answers the 403 "Resource not accessible by
+    #                 integration" that an App INSTALLATION token gets, which is what the
+    #                 merge-path identity assertion admits.
+    #   GH_API_USER_FAIL=1 — `gh api user` fails unclassifiably (expired token, no network)
     #   GH_HEAD_OID  — `gh pr view --json headRefOid` on the FIRST read (review-start capture)
     #   GH_HEAD_OID_AFTER — the head on the SECOND+ read (pre-merge revalidation); when set
     #                 different from GH_HEAD_OID it models a reviewer zap pushed mid-review.
@@ -139,6 +144,19 @@ class PrReviewCommandTest < Minitest::Test
       end
       if ARGV[0] == "pr" && ARGV[1] == "view" && ARGV.include?("state")
         puts ENV.fetch("GH_PR_STATE", "OPEN"); exit 0
+      end
+      if ARGV[0] == "api" && ARGV[1] == "user"
+        login = ENV.fetch("GH_API_USER", "")
+        unless login.empty?
+          puts JSON.generate("login" => login, "type" => "User")
+          exit 0
+        end
+        if ENV["GH_API_USER_FAIL"].to_s == "1"
+          STDERR.puts "gh: Bad credentials (HTTP 401)"
+          exit 1
+        end
+        STDERR.puts "gh: Resource not accessible by integration (HTTP 403)"
+        exit 1
       end
       exit(ENV["GH_EDIT_FAIL"].to_s == "1" ? 1 : 0) if ARGV[0] == "pr" && ARGV[1] == "edit"
       exit(ENV["GH_MERGE_FAIL"].to_s == "1" ? 1 : 0) if ARGV[0] == "pr" && ARGV[1] == "merge"
@@ -235,6 +253,12 @@ class PrReviewCommandTest < Minitest::Test
       "GATE_BIN" => File.join(@dir, "gate"),
       "GH_BIN" => File.join(@dir, "gh"),
       "GH_LOG" => @gh_log,
+      # UNSET, deliberately (nil ⇒ removed in the child). The merge-path identity
+      # assertion reads GH_TOKEN to spot the PRESENT-BUT-BLANK shape that caused the
+      # 2026-08-29 bad merges, so an operator running this suite with GH_TOKEN=""
+      # exported would otherwise flip every merge test to "refused" on their machine
+      # and nowhere else. The fake gh decides identity here; the ambient shell does not.
+      "GH_TOKEN" => nil,
       "SNAPSHOT_DIR" => @snapshots,
       "SNAPSHOT_COUNTER" => @counter,
       "DEVOPS_LOG" => @devops_log,
@@ -1185,5 +1209,120 @@ class PrReviewCommandTest < Minitest::Test
     verbs = json_lines(@task_log).map(&:first)
     refute_includes verbs, "merged", "and must NOT stamp merged:accepted"
     refute_includes verbs, "move", "and must NOT move the task reviewed — it holds for re-review"
+  end
+
+  # --- the merge-path identity assertion (bin/lib/acting_identity.rb) -----------
+  # On 2026-08-29 two merges landed under Mr. McRitchie's PERSONAL account because
+  # 1Password hit its daily cap, bin/gh-token returned EMPTY, and `gh` read an empty
+  # GH_TOKEN as "not set" and fell back to a keyring where a personal `gho_` login was
+  # active. Nobody chose it and no instruction could have stopped it, so the defence is
+  # mechanical: the merge asks WHO it is about to act as, and refuses anything that is
+  # not a GitHub App installation. The classification itself is unit-tested in
+  # test/lib/acting_identity_test.rb; these cover the WIRING — that the question is
+  # asked, that it is asked BEFORE the first write, and that a bad answer stops a merge.
+
+  # [integration] `gh` authenticated as a PERSON refuses the merge outright. This is the
+  # incident's exact shape, and the invariant it must protect is the one the merge-failure
+  # path already owns: no merge, no merged:accepted stamp, no move to reviewed.
+  def test_a_human_identity_refuses_the_merge_and_leaves_the_task_submitted
+    ready = task("human-cred-pr", created_at: "2026-06-29T12:00:00Z")
+    reviewed = task("human-cred-pr", created_at: "2026-06-29T12:00:00Z",
+                                     reports: [report("carl", "merge-ready"), report("shannon", "merge-ready")])
+    write_snapshots(snapshot([ready]), snapshot([reviewed]))
+
+    out, err, status = run_heartbeat("--run", "--limit", "1", env: { "GH_API_USER" => "alexmcritchie" })
+    assert status.success?, err
+
+    # ASSERT ON THE REFUSAL LINE ITSELF, not on the output as a whole. The whole output
+    # is a weak anchor here: the recovery branch also echoes the identity message, so a
+    # regression that sent a signed-in person down the minting path would still leave the
+    # words somewhere on screen while the line the operator actually reads changed to
+    # "could not mint an agent token" — the wrong diagnosis and the wrong fix.
+    refusal = out.lines.find { |line| line.include?("REFUSING to merge human-cred-pr") }
+    refute_nil refusal, "the merge must be refused, in a line naming the task"
+    assert_match(/alexmcritchie/, refusal, "the refusal itself must name the account gh would have acted as")
+    assert_match(/a PERSON, not a GitHub App installation/, refusal)
+
+    # A person is not a minting problem, and minting is a 1Password read against an
+    # account-wide daily cap — the very resource whose exhaustion caused this defect.
+    refute_match(/that shape is recoverable/, out,
+                 "a signed-in human earns no mint: it cannot help, and the read is not free")
+
+    refute json_lines(@gh_log).find { |a| a[0] == "pr" && a[1] == "merge" },
+           "a personal credential must NOT merge — that is how the 2026-08-29 merges were mis-attributed"
+    verbs = json_lines(@task_log).map(&:first)
+    refute_includes verbs, "merged", "and must NOT stamp merged:accepted"
+    refute_includes verbs, "move", "and must NOT move the task reviewed (invariant: reviewed ⟺ code-on-accepted)"
+  end
+
+  # [integration] The assertion runs BEFORE the first gh WRITE, not merely somewhere in
+  # the function. Order is the whole property: a check that runs after `gh pr edit` has
+  # already retargeted a PR under a human's name has not prevented anything. Driven on
+  # the HAPPY path (App identity, which merges) so the two calls both exist to order.
+  def test_identity_is_asserted_before_any_gh_write_on_the_merge_path
+    ready = task("order-pr", created_at: "2026-06-29T12:00:00Z")
+    reviewed = task("order-pr", created_at: "2026-06-29T12:00:00Z",
+                                reports: [report("carl", "merge-ready"), report("shannon", "merge-ready")])
+    write_snapshots(snapshot([ready]), snapshot([reviewed]))
+
+    # base=release forces the retarget write too, so BOTH writes are ordered against the probe.
+    _out, err, status = run_heartbeat("--run", "--limit", "1", env: { "GH_PR_BASE" => "release" })
+    assert status.success?, err
+
+    seq = json_lines(@sequence_log).select { |e| e[0] == "gh" }
+    probe_i = seq.index { |e| e[1] == "api" && e[2] == "user" }
+    edit_i  = seq.index { |e| e[1] == "pr" && e[2] == "edit" }
+    merge_i = seq.index { |e| e[1] == "pr" && e[2] == "merge" }
+    refute_nil probe_i, "the merge path must ASK which account gh will act as"
+    assert edit_i && merge_i, "expected the retarget and the merge to both run on an App identity"
+    assert probe_i < edit_i, "identity must be asserted BEFORE the retarget write"
+    assert probe_i < merge_i, "identity must be asserted BEFORE the merge"
+  end
+
+  # [integration] An EMPTY GH_TOKEN is caught WITHOUT asking GitHub, and never reaches gh.
+  # This is the defect's root: `gh` treats an empty GH_TOKEN as absent and substitutes the
+  # keyring, so the probe would only report which innocent human it picked. Naming the
+  # empty token instead points at the call site that exported a failed mint.
+  def test_an_empty_gh_token_is_refused_without_ever_probing_github
+    ready = task("empty-token-pr", created_at: "2026-06-29T12:00:00Z")
+    reviewed = task("empty-token-pr", created_at: "2026-06-29T12:00:00Z",
+                                      reports: [report("carl", "merge-ready"), report("shannon", "merge-ready")])
+    write_snapshots(snapshot([ready]), snapshot([reviewed]))
+
+    # GH_API_USER would make a probe answer "a person" — it must never be consulted.
+    out, err, status = run_heartbeat("--run", "--limit", "1",
+                                     env: { "GH_TOKEN" => "", "GH_API_USER" => "alexmcritchie" })
+    assert status.success?, err
+
+    assert_match(/GH_TOKEN is set but EMPTY/, out)
+    assert_match(/REFUSING to merge empty-token-pr/, out)
+    refute_match(/alexmcritchie/, out, "the empty token is the defect; the account gh would have borrowed is not")
+
+    gh = json_lines(@gh_log)
+    refute gh.find { |a| a[0] == "api" && a[1] == "user" },
+           "a blank GH_TOKEN is decided from the environment — no API call is needed or made"
+    refute gh.find { |a| a[0] == "pr" && a[1] == "merge" }, "and nothing merges"
+    refute_includes json_lines(@task_log).map(&:first), "move", "the task stays submitted"
+  end
+
+  # [integration] FAIL CLOSED. An identity that cannot be determined at all (an expired
+  # credential answering 401) is refused exactly like a bad one — it earns one mint, and
+  # when that mint cannot be had (a 1Password outage, which is what started this) the
+  # merge does not proceed on hope.
+  def test_an_undeterminable_identity_fails_closed_after_one_failed_mint
+    ready = task("unknown-cred-pr", created_at: "2026-06-29T12:00:00Z")
+    reviewed = task("unknown-cred-pr", created_at: "2026-06-29T12:00:00Z",
+                                       reports: [report("carl", "merge-ready"), report("shannon", "merge-ready")])
+    write_snapshots(snapshot([ready]), snapshot([reviewed]))
+
+    out, err, status = run_heartbeat("--run", "--limit", "1", env: { "GH_API_USER_FAIL" => "1" })
+    assert status.success?, err
+
+    assert_match(/that shape is recoverable — minting an agent token/, out,
+                 "an undeterminable identity must TRY the one bounded recovery")
+    assert_match(/REFUSING to merge unknown-cred-pr/, out)
+    refute json_lines(@gh_log).find { |a| a[0] == "pr" && a[1] == "merge" },
+           "an identity that could not be established must not merge"
+    refute_includes json_lines(@task_log).map(&:first), "merged", "and must not stamp merged:accepted"
   end
 end

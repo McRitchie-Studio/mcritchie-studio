@@ -237,10 +237,17 @@ class TaskMascotEvolutionTest < ActiveSupport::TestCase
     assert_nil task.devops["mascot_stage"]
   end
 
-  # mascot_stage is server-owned, so the API's wholesale devops replace deletes it
-  # on any client PATCH. A spent gate that reads back as unspent re-opens, and the
-  # rework loop above evolves a SECOND time. sync_mascot_display carries it forward
-  # for the same Pokémon, which is why this survives the wipe.
+  # mascot_stage is server-owned and NOT a DEVOPS_KEY, so a client that echoes a
+  # normalized devops hash drops it — normalize_devops_metadata keeps only the
+  # whitelist. A spent gate that reads back as unspent re-opens, and the rework
+  # loop above evolves a SECOND time. sync_mascot_display carries it forward for
+  # the same Pokémon, which is why this survives the wipe.
+  #
+  # NOTE the mechanism, since it moved: this drives `update!` on the MODEL, so it
+  # covers any wholesale metadata assignment — the raw `metadata: {}` API door
+  # included. The v1 devops PATCH itself no longer replaces the hash (it merges
+  # since api-devops-patch-replaces), so omission alone no longer wipes this key.
+  # The guard still earns its keep against the echo below.
   test "a spent gate survives a client devops write" do
     seed_charmander_line!
     task = make_task(mascot: "charmander")

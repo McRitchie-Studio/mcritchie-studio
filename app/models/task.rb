@@ -1792,6 +1792,47 @@ class Task < ApplicationRecord
     (existing || {}).to_h.deep_dup.except(*posted).merge(normalized)
   end
 
+  # Fold a PARTIAL devops post into a task's FULL metadata hash — the ONE
+  # implementation both write paths share.
+  #
+  # WHY IT LIVES ON THE MODEL. This fold used to be a private method on
+  # TasksController (the board form), so the JSON API — the path every agent and
+  # every bin/ script writes through — did not have it, and assigned the metadata
+  # column from the posted params instead. Two controllers, one field name,
+  # OPPOSITE semantics. On 2026-08-30 a one-key PATCH
+  # ({"devops": {"included_in_release": false}}) took a REVIEWED task from 20
+  # devops keys to 8 at HTTP 200 with no warning, and seven of the lost names —
+  # acceptance, agent_context, checks_run, risk_tags among them — existed nowhere
+  # else to restore from. The board keeps no task-version history, so prevention
+  # is the whole remedy. Putting the fold here is what stops the paths drifting
+  # apart again: a new caller gets the merge by construction rather than by
+  # remembering to copy it.
+  #
+  # BOTH halves of the metadata column are preserved:
+  #   * names OUTSIDE "devops" ride through untouched — the API used to replace
+  #     them too, so a devops PATCH silently dropped every other metadata name.
+  #   * names INSIDE "devops" follow merge_devops_metadata's posted-name rule —
+  #     unposted means UNCHANGED, posted-and-blank still CLEARS. Deletion stays
+  #     expressible; it just has to be said out loud instead of happening by
+  #     omission.
+  #
+  # The "devops" key itself is DROPPED when the merge empties it, so a task with
+  # no devops data carries no empty hash — Task#devops? and the show page's
+  # handoff panel both key off presence.
+  #
+  # Pure: returns a new hash and writes nothing. Raises whatever
+  # normalize_devops_metadata raises (both controllers turn that into a 422).
+  def self.merge_devops_into_metadata(metadata, raw_devops)
+    base = (metadata || {}).to_h.deep_dup
+    merged = merge_devops_metadata(base["devops"], raw_devops)
+    if merged.any?
+      base["devops"] = merged
+    else
+      base.delete("devops")
+    end
+    base
+  end
+
   def self.normalize_devops_metadata(raw)
     return {} if raw.blank?
 

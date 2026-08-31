@@ -112,14 +112,19 @@ class Ci::ProgressReaderTest < ActiveSupport::TestCase
     assert_empty Ci::ProgressReader.new.for_release(Release.new(state: "shipped"))
   end
 
-  test "[unit] for_release resolves a gem member from its main suite CI, not the consumer CI" do
+  # REBASED onto `release` 2026-08-30, and the branch is not incidental: studio-engine
+  # is a THREE-RUNG gem, so its candidate lives on `release` (see
+  # Ci::ProgressReaderGemReleaseBranchTest). What this test is about is unchanged —
+  # WHICH WORKFLOW on that branch speaks for the gem.
+  test "[unit] for_release resolves a gem member from its own suite CI, not the consumer CI" do
     reader = build_reader(fixtures: { "engine-rc" => { "passed" => 6, "failed" => 0, "pending" => 0 } }, &ok([]))
     rel = release_with_members("studio-engine")
-    # The gem's OWN suite (Engine CI on main) IS the RC verdict...
-    seed_run(repo: "McRitchie-Studio/studio-engine", branch: "main", sha: "engine-rc", workflow: "Engine CI")
-    # ...NOT the downstream Consumer CI that also runs on main — and it is NEWER, so a
+    # The gem's OWN suite (Engine CI on the candidate branch) IS the RC verdict...
+    seed_run(repo: "McRitchie-Studio/studio-engine", branch: Release::BRANCH, sha: "engine-rc",
+             workflow: "Engine CI")
+    # ...NOT the downstream Consumer CI that also runs on it — and it is NEWER, so a
     # missing workflow-name filter would wrongly pick it.
-    seed_run(repo: "McRitchie-Studio/studio-engine", branch: "main", sha: "consumer-rc",
+    seed_run(repo: "McRitchie-Studio/studio-engine", branch: Release::BRANCH, sha: "consumer-rc",
              workflow: "Consumer CI", started_at: 1.minute.from_now)
 
     progress = reader.for_release(rel)
@@ -156,7 +161,8 @@ class Ci::ProgressReaderTest < ActiveSupport::TestCase
       FakeResponse.new("500", "the blind check-runs API must NOT be consulted for a gem", {})
     end
     rel = release_with_members("studio-engine")
-    seed_run(repo: "McRitchie-Studio/studio-engine", branch: "main", sha: "engine-mix-sha", workflow: "Engine CI")
+    seed_run(repo: "McRitchie-Studio/studio-engine", branch: Release::BRANCH, sha: "engine-mix-sha",
+             workflow: "Engine CI")
     seed_check_job(repo: "McRitchie-Studio/studio-engine", sha: "engine-mix-sha", workflow: "Engine CI", conclusion: "success")
     seed_check_job(repo: "McRitchie-Studio/studio-engine", sha: "engine-mix-sha", workflow: "Engine CI", conclusion: "success")
     seed_check_job(repo: "McRitchie-Studio/studio-engine", sha: "engine-mix-sha", workflow: "Consumer CI", conclusion: "failure")

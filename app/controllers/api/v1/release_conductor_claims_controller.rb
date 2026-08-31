@@ -13,16 +13,45 @@ module Api
     class ReleaseConductorClaimsController < BaseController
       # GET /api/v1/releases/:slug/conductor_claim?role=assembler — the "who (if
       # anyone) is assembling/deploying this release" read (CLI `status`, dashboard).
-      # 200 { holder: <info> | null }; `holder` is null when no claim row exists yet.
+      # 200 { holder: <info> | null, release_state: <state> | null }; `holder` is null
+      # when no claim row exists yet.
+      #
+      # `release_state` is here because the DETACHED RENEWER needs it and there is no
+      # GET /api/v1/releases/:slug to ask — releases are routed `only: []`, so this
+      # nested claim endpoint is the only slug-addressed release read the standalone
+      # CLI has. The renewer's stop condition is "is this candidate finished", which it
+      # cannot answer from the claim row alone: a claim looks identical whether the
+      # release is mid-assembly or shipped an hour ago. Serving the release's own
+      # lifecycle state alongside the holder lets it answer without a second endpoint.
+      #
+      # NULL when no release carries the slug — notably the `__forming__` sentinel, a
+      # claim held while a candidate is still being created. A renewer must read that
+      # as NOT finished (ReleaseClaimCli fails open on a nil/unknown state), because a
+      # release that does not exist yet has certainly not ended.
+      # `conductor_work_remaining` is the SECOND half of "is this candidate finished",
+      # and it exists because the state alone answered that question WRONG on two
+      # supported paths. A deployer legitimately holds a claim on a release that is
+      # ALREADY `shipped`: `bin/release ship` re-run resuming member flips
+      # (`resuming_member_ship = !r.active? && unfinished.positive?`), and
+      # `bin/release finalize` on a partial finalize. A renewer that stopped on state
+      # alone exited before its first heartbeat there and the claim lapsed 120s into a
+      # run needing many minutes — trading a 12-hour orphan for a 2-minute one, on the
+      # lane where a lapsed claim means a CONCURRENT PRODUCTION DEPLOY.
+      #
+      # Computed HERE rather than shipping two fields for the CLI to combine, because
+      # the model is what knows: `unfinished` is the same count bin/release.rb uses to
+      # decide a resume is legitimate, so the two cannot drift into disagreeing about
+      # whether work is left.
       def show
-        render_data({ "holder" => ReleaseConductorClaim.status_for(params[:slug], claim_params[:role]) })
+        release = Release.find_by(slug: params[:slug])
+
+        render_data({
+          "holder"                    => ReleaseConductorClaim.status_for(params[:slug], claim_params[:role]),
+          "release_state"             => release&.state,
+          "conductor_work_remaining"  => conductor_work_remaining(release)
+        })
       end
 
-      # GET /api/v1/release_conductor_claims/live?role=deployer — the CROSS-RELEASE "is
-      # ANY claim for this role live?" read (NOT nested under a slug). bin/agent-worktree's
-      # `_ship`/`_gate` reclaim guard asks this: a live `deployer` claim = a ship is in
-      # progress, so those fixed-path workspaces must not be reclaimed. 200 { live: bool,
-      # holder: <info>|null }.
       def live
         role = claim_params[:role]
         render_data({
@@ -119,6 +148,51 @@ module Api
       end
 
       private
+
+      # Does the conductor still have STEPS TO RUN on this release?
+      #
+      # ⛔ "ARE THERE UNSHIPPED MEMBERS" IS THE WRONG QUESTION, and answering it was
+      # a real defect caught in review. `bin/release finalize` runs three INDEPENDENT
+      # steps — seal, ship, notes (Release::ShipSequence::FINALIZE_ORDER) — and it
+      # proceeds while ANY of them pends (bin/release.rb early-returns only on
+      # `pending.empty?`). So a release can be `shipped` with every member shipped
+      # and STILL have an outstanding seal or notes step, during which the deployer
+      # legitimately holds its claim through a live-on-prod guard, an UNBOUNDED HUMAN
+      # CONFIRM PROMPT, a production smoke seal, a heroku-run notes dyno, and a
+      # workspace restore that reads the `_ship` gate directory.
+      # Reachable by the ordinary killed-ship path: `Conductor.ship!` and
+      # `post_release_notes` run in ONE heroku call, so a dropped connection between
+      # them leaves state=shipped, members all shipped, notes_completed=false.
+      # Answering "no work left" there lapsed the claim 120s into that window.
+      #
+      # ASK THE PREDICATE `bin/release.rb` ITSELF ASKS. That is the same principle
+      # this endpoint was already built on — the model is what knows, so the two
+      # cannot drift into disagreeing about whether work remains.
+      #
+      # ⚠️ THE `abandoned` SHORT-CIRCUIT IS REQUIRED, not defensive. `done[:ship]` is
+      # false for any state that is not "shipped", so `finalize_pending?` would report
+      # work pending forever on an abandoned candidate and the `abandoned` half of
+      # TERMINAL_STATES could never stop a renewer.
+      #
+      # nil (no release for this slug — notably the `__forming__` sentinel) is NOT
+      # `false`, so the CLI keeps renewing. Absence is unknown, never finished.
+      def conductor_work_remaining(release)
+        return nil if release.nil?
+        return false if release.state.to_s == "abandoned"
+
+        Release::ShipSequence.finalize_pending?(
+          state: release.state,
+          sealed: release.smoke_sealed?,
+          notes_completed: release.event_completed?("release_notes"),
+          members_all_shipped: !release.tasks.where.not(stage: "shipped").exists?
+        ).any?
+      end
+
+      # GET /api/v1/release_conductor_claims/live?role=deployer — the CROSS-RELEASE "is
+      # ANY claim for this role live?" read (NOT nested under a slug). bin/agent-worktree's
+      # `_ship`/`_gate` reclaim guard asks this: a live `deployer` claim = a ship is in
+      # progress, so those fixed-path workspaces must not be reclaimed. 200 { live: bool,
+      # holder: <info>|null }.
 
       def claim_params
         params.permit(:slug, :role, :session, :nonce, :label, :operator_secret)

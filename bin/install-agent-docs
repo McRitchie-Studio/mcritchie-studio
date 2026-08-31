@@ -222,6 +222,23 @@ def find_section(lines, name)
   [start, finish]
 end
 
+# Locate the whole array value that starts on `index`, which may span several lines.
+# Returns [first, last] line indexes, or nil when the value is not an array literal.
+#
+# THIS IS THE WHOLE POINT OF THE FUNCTION: a hand-authored TOML array is commonly
+# written one element per line. Matching only the opening line and rewriting it in
+# place strands the remaining element lines and the closing bracket as bare text —
+# invalid TOML that Codex REFUSES to load ("key with no value, expected `=`"),
+# bricking the operator's own runtime config.
+def array_value_span(lines, index)
+  line = lines[index]
+  return [index, index] if line.match?(/=\s*\[.*\]\s*(#.*)?$/)
+  return nil unless line.match?(/=\s*\[\s*(#.*)?$/)
+
+  last = ((index + 1)...lines.length).find { |i| lines[i].match?(/^\s*\]/) }
+  last && [index, last]
+end
+
 def ensure_array_item(lines, range, key, item, default_items)
   start, finish = range
   key_re = /^\s*#{Regexp.escape(key)}\s*=/
@@ -233,21 +250,56 @@ def ensure_array_item(lines, range, key, item, default_items)
     return [start, finish + 1]
   end
 
-  return range if lines[index].include?(item)
+  span = array_value_span(lines, index)
 
-  line = lines[index]
-  if line.match?(/=\s*\[.*\]\s*(#.*)?$/)
+  # Not an array literal at all (a scalar, or an unterminated `[`): fall back to
+  # replacing the line with the managed default, as before.
+  unless span
+    lines[index] = default_line
+    return range
+  end
+
+  first, last = span
+  # Membership is a property of the ARRAY, not of its first line. Checking only
+  # lines[index] would re-insert an item a multi-line array already carries.
+  return range if lines[first..last].any? { |value_line| value_line.include?(item) }
+
+  if first == last
+    line = lines[index]
     comment = line[/\s+#.*$/]
     body = comment ? line.sub(/\s+#.*$/, "") : line.chomp
     prefix, values = body.split("[", 2)
     values = values.sub(/\]\s*\z/, "").strip
     inserted = values.empty? ? item.inspect : "#{values}, #{item.inspect}"
     lines[index] = "#{prefix}[#{inserted}]#{comment}\n"
-  else
-    lines[index] = default_line
+    return range
   end
 
-  range
+  # Multi-line: keep the operator's layout and add one element line before the
+  # closing bracket, first terminating the previous element so the array stays valid.
+  # COMMENT LINES ARE NOT ELEMENTS. Selecting any non-blank line let `previous`
+  # BE a standalone comment, and the separator was then appended to the comment
+  # instead of to the element above it.
+  element_lines = ((first + 1)...last).select { |i| lines[i].match?(/\S/) && !lines[i].match?(/\A\s*#/) }
+  indent = element_lines.empty? ? "  " : lines[element_lines.first][/\A\s*/]
+  unless element_lines.empty?
+    previous = element_lines.last
+    # THE COMMA GOES BEFORE A TRAILING COMMENT, NOT AFTER IT. The old
+    # `.sub(/,?\z/, ",")` anchored to end-of-LINE, so on
+    #     "current-dir" # the working directory
+    # the comma landed INSIDE the comment and the element never got its
+    # separator. Codex then refuses the file outright ("config could not be
+    # loaded"), and `assert_no_orphaned_elements` cannot see it: the array is
+    # still bracket-balanced, merely unseparated. Split the comment off, comma
+    # the body, put the comment back.
+    prev_line    = lines[previous]
+    prev_comment = prev_line[/\s+#.*$/]
+    prev_body    = prev_comment ? prev_line.sub(/\s+#.*$/, "") : prev_line.chomp
+    lines[previous] = "#{prev_body.sub(/,?\s*\z/, ',')}#{prev_comment}\n"
+  end
+  lines.insert(last, "#{indent}#{item.inspect},\n")
+
+  [start, finish + 1]
 end
 
 def migrate_array_value(lines, range, key, from_items, to_items)

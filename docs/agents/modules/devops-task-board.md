@@ -470,13 +470,15 @@ They change **no gate semantics** — every gate (the build claim,
 `bin/session-preflight`, `bin/fast-check`, `bin/dor-check`, the stage read-back
 verify) still runs and still owns its verdict; the wrappers only sequence the
 steps and skip the ones whose outcome is already durably recorded, so rerunning
-after a partial failure **resumes** instead of duplicating.
+after a partial failure **resumes** instead of duplicating. Resume `begin` **by
+slug**: once the task exists it REFUSES create flags rather than dropping them,
+so the whole `--title …` line is not the way back in.
 
 Session start (create → `agent-worktree new` → `bind-task` → `move building` →
 `session-preflight`, printing the worktree path, port, and task URL):
 
 ```bash
-bin/task begin --title "Three To Five Words" --repo <app> --shape <shape> \
+bin/task begin --title "Three To Five Words" --repo <app> --agent <soul> --shape <shape> \
   --risk <tag> --accept "criterion" --test "[unit] ..."
 bin/task begin <task-slug>        # resume a partial begin
 ```
@@ -807,10 +809,12 @@ progress. It never meant that.
 build-stage lease, re-asserted as an invariant on every save
 (`Task#enforce_build_claim_invariant`), so `submitted`/`blocked`/`reviewed`/… all
 drop the keys. The same invariant carries a live claim through a PATCH that omits
-it: the API replaces `metadata["devops"]` wholesale, and the board's own edit form
-permits no claim keys, so before this a board save silently destroyed a live
-claim — which then read as *unclaimed* and invited a second agent onto an occupied
-desk.
+it: the API used to replace `metadata["devops"]` wholesale (it merges since
+`api-devops-patch-replaces`), and the board's own edit form permits no claim keys,
+so before this a board save silently destroyed a live claim — which then read as
+*unclaimed* and invited a second agent onto an occupied desk. The invariant stays:
+it is what defends the claim against a caller that posts the keys BLANK, which the
+merge honors as a deliberate clear.
 
 So the board carries a **second, independent fact** beside it — the task's last
 **durable artifact**, derived (never declared) from evidence we already write:

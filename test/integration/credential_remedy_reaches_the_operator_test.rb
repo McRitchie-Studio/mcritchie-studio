@@ -49,6 +49,35 @@ class CredentialRemedyReachesTheOperatorTest < ActiveSupport::TestCase
                  "the other is genuinely the operator's"
   end
 
+  # ── THE REMEDY MUST BE PASTEABLE WHERE THE OPERATOR READS IT ────────────────
+  #
+  # This is the last inch, and it is the one that broke. `OpVaults.diagnose` ends on
+  # an indented command, and `bin/gh-token` composed its own sentence AROUND it —
+  # appending "(is `op` signed in?)" after the diagnosis, which landed the
+  # parenthetical on the same line as the command:
+  #
+  #     bin/setup-1pass-token --admin (is `op` signed in?)
+  #
+  # Pasting that is a shell syntax error. Every unit test passed: they call
+  # `diagnose` directly and never see the caller's wrapper. Only the real binary
+  # shows it, which is why this assertion lives at this tier.
+  test "the last line of the refusal is a command, in both machine states" do
+    [true, false].each do |provisioned|
+      with_home(provisioned: provisioned) do |err|
+        command_lines = err.lines.select { |l| l.start_with?("    ") }
+
+        refute_empty command_lines, "provisioned=#{provisioned}: no indented remedy at all"
+        assert_equal command_lines.last.rstrip, err.lines.reject { |l| l.strip.empty? }.last.rstrip,
+                     "provisioned=#{provisioned}: the message must END on the command"
+        command_lines.each do |line|
+          refute_match(/[()]/, line,
+                       "provisioned=#{provisioned}: #{line.strip.inspect} carries prose " \
+                       "punctuation — pasting it is a shell syntax error")
+        end
+      end
+    end
+  end
+
   private
 
   # Run the real `bin/gh-token --identity deployer` with HOME pointed at a sandbox,
