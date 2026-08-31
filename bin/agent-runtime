@@ -131,6 +131,46 @@ login_shell_ruby_version() {
   "$ZSH_BIN" -lc 'ruby -e "print RUBY_VERSION"' 2>/dev/null || true
 }
 
+# Ask the REAL detector whether the installed Codex runtime can still repaint the
+# footer live.
+#
+# Why this is not optional: the sentinel checked above is a zero-byte opt-in
+# touch-file. It records that the operator WANTS live repaint; it can never record
+# whether the installed runtime still DELIVERS it. The version line cannot tell them
+# apart either — stock and patched Codex both self-report the same `codex-cli`
+# version. So an unmanaged `curl ... install.sh` silently swaps the patched runtime
+# for a stock one, the footer reverts to a thread UUID, and both the sentinel and the
+# version still look fine.
+#
+# bin/codex-update inspect reads the binary's SessionStart wire-struct arity, which is
+# the only signal that distinguishes the two. It exits 2 when live-repaint support is
+# missing, and doctor surfaces that as a failure.
+check_codex_live_repaint_support() {
+  local out status
+
+  if [ ! -x "$CODEX_UPDATE" ]; then
+    warn_line "cannot inspect Codex runtime for live repaint support: missing $CODEX_UPDATE"
+    return 0
+  fi
+
+  status=0
+  out="$("$CODEX_UPDATE" inspect 2>&1)" || status=$?
+
+  case "$status" in
+    0)
+      ok "Codex runtime supports live thread-title repaint ($CODEX_UPDATE inspect)"
+      ;;
+    2)
+      fail_line "Codex runtime lacks live thread-title repaint support; an unmanaged Codex install replaced the patched runtime — restore it with bin/agent-runtime codex-update run"
+      printf '%s\n' "$out" | sed 's/^/  /' >&2
+      ;;
+    *)
+      warn_line "Codex runtime inspection did not complete (exit $status): $CODEX_UPDATE inspect"
+      printf '%s\n' "$out" | sed 's/^/  /' >&2
+      ;;
+  esac
+}
+
 doctor() {
   AGENT_RUNTIME_DOCTOR_STATUS=0
 
@@ -202,6 +242,7 @@ doctor() {
 
   if command -v codex >/dev/null 2>&1; then
     ok "codex binary: $(command -v codex) ($(codex --version 2>/dev/null || printf 'version unavailable'))"
+    check_codex_live_repaint_support
   else
     warn_line "codex binary not found on PATH"
   fi

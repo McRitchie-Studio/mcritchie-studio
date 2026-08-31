@@ -30,10 +30,21 @@ footer configured as `thread-title` → `model-with-reasoning` →
 shared provider `bin/agent-marker current`, then mirrors the marker into Codex's
 persisted local thread title. The identity makes `current-dir` redundant, while
 `context-remaining` adds the session-health signal that matters during long
-runs. The installer migrates the former managed layout automatically but
-preserves other custom footer layouts. Stock Codex CLI through 0.144.3 renders
-SessionStart `additionalContext` as visible `hook context`, so the hook does not
-use it for mascot identity. Stock 0.144.3 also keeps the live footer thread name
+runs. The installer migrates the former managed layout automatically. It keeps a
+custom footer layout by ADDING `thread-title` to the existing `status_line`
+array in place, preserving the operator's own formatting — single-line and
+one-element-per-line arrays alike, including their indentation and any comments
+on the element lines (the separator is written BEFORE a trailing `#`, not after
+it, which is where an earlier version swallowed the comma and produced a file
+Codex refused). It replaces the value outright only when
+`status_line` is not an array at all. (The multi-line case is load-bearing, not
+incidental: rewriting only an array's opening line strands the remaining element
+lines as bare text, which Codex refuses to load — `key with no value, expected
+"="` — so a hand-authored footer would be bricked by running the installer.
+`test/commands/install_agent_docs_status_line_array_test.rb` guards it.)
+
+Stock Codex CLI through 0.144.3 renders SessionStart `additionalContext` as
+visible `hook context`, so the hook does not use it for mascot identity. Stock 0.144.3 also keeps the live footer thread name
 in memory after session configuration; a SQLite title update does not repaint
 that already-running footer, although resume reloads the persisted title and
 shows the Pokémon marker.
