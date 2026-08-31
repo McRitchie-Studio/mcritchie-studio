@@ -230,6 +230,90 @@ class AgentApiTest < Minitest::Test
     end
   end
 
+  # ── [unit] the .env branch's UNGUARDED EDGES, mirrored from TaskBoard ────────
+  #
+  # These are the twin of the block in test/lib/task_board_test.rb, and they
+  # exist SEPARATELY rather than by a shared helper on purpose: the two chains
+  # are independent implementations of one rule, and the bug being fixed here is
+  # precisely that they had DRIFTED (task_board guarded with File.exist?, this
+  # one with File.file?, and neither stripped quotes). A shared helper would
+  # re-couple them and hide the next divergence; two copies of the same
+  # assertions catch it.
+  #
+  # This client wraps #agent_secret in `rescue StandardError`, so an EISDIR or
+  # EACCES here never crashed — it degraded to nil, which reads as "no secret
+  # anywhere" and sends the caller to the vault. That is the right destination
+  # for the wrong reason, and it hid the defect rather than handling it.
+  def test_unit_agent_secret_strips_quotes_off_the_repo_dotenv
+    Dir.mktmpdir do |repo|
+      File.write(File.join(repo, ".env"), %(AGENT_API_SECRET="from-dotenv"\n))
+
+      OpBinaryStub.with_stub(AgentApi, dir: repo, consts: { REPO_ROOT: repo }) do |op|
+        assert_equal "from-dotenv", client.send(:agent_secret),
+                     "quotes are stripped, not shipped as part of the secret"
+        assert_equal 0, op.count
+      end
+    end
+  end
+
+  def test_unit_agent_secret_treats_a_blank_dotenv_value_as_no_value
+    # `AGENT_API_SECRET=` yielded "" — truthy — so the vault fallback never ran
+    # and the caller's own emptiness guard could not fire either.
+    Dir.mktmpdir do |repo|
+      File.write(File.join(repo, ".env"), "AGENT_API_SECRET=\n")
+
+      OpBinaryStub.with_stub(AgentApi, dir: repo, consts: { REPO_ROOT: repo }) do |op|
+        assert_equal "from-vault", client.send(:agent_secret),
+                     "a set-but-empty .env value must not satisfy the chain"
+        assert_equal 1, op.count, "and the vault fallback must actually run"
+      end
+    end
+  end
+
+  def test_unit_agent_secret_falls_through_a_dotenv_that_is_a_directory
+    Dir.mktmpdir do |repo|
+      FileUtils.mkdir_p(File.join(repo, ".env"))
+
+      OpBinaryStub.with_stub(AgentApi, dir: repo, consts: { REPO_ROOT: repo }) do |op|
+        assert_equal "from-vault", client.send(:agent_secret),
+                     "a directory .env is skipped, not read"
+        assert_equal 1, op.count
+      end
+    end
+  end
+
+  def test_unit_agent_secret_falls_through_an_unreadable_dotenv
+    # The case `File.file?` alone does NOT close: mode-000 is still a file.
+    Dir.mktmpdir do |repo|
+      locked = File.join(repo, ".env")
+      File.write(locked, "AGENT_API_SECRET=from-dotenv\n")
+      File.chmod(0o000, locked)
+
+      assert File.file?(locked), "premise: still a regular file"
+      refute File.readable?(locked), "premise: unreadable by this uid (fails as root)"
+
+      OpBinaryStub.with_stub(AgentApi, dir: repo, consts: { REPO_ROOT: repo }) do |op|
+        assert_equal "from-vault", client.send(:agent_secret),
+                     "an unreadable .env falls through to the vault"
+        assert_equal 1, op.count
+      end
+    ensure
+      File.chmod(0o600, locked) if locked && File.exist?(locked)
+    end
+  end
+
+  def test_unit_agent_secret_does_not_let_a_blank_env_short_circuit_the_chain
+    Dir.mktmpdir do |repo|
+      File.write(File.join(repo, ".env"), "AGENT_API_SECRET=from-dotenv\n")
+
+      OpBinaryStub.with_stub(AgentApi, dir: repo, consts: { REPO_ROOT: repo }) do |op|
+        assert_equal "from-dotenv", client("AGENT_API_SECRET" => "   ").send(:agent_secret),
+                     "a whitespace-only ENV is not a secret"
+        assert_equal 0, op.count
+      end
+    end
+  end
+
   # ── [unit] the scripts keep their DIVERGENT timeouts ─────────────────────────
   # The one real behavioral difference between the three scripts is how long they
   # will wait (the PostToolUse hook fires on every tool call → tightest). The
