@@ -60,6 +60,19 @@ require_relative "projects_root"
 # conventions, so the hub-primary-on-main case still refuses offline. A caller that
 # already holds the task passes `devops:` and skips the board read entirely.
 module CertRootGuard
+  # The two on-disk desk layouts, BOTH in active use on this machine:
+  #
+  #   <projects>/<repo>/.worktrees/<slug>   the MANAGED layout bin/agent-worktree builds
+  #   <projects>/<repo>.worktrees/<slug>    the SIBLING tree the gem repos use
+  #
+  # The sibling tree is not a legacy shape awaiting migration. bin/agent-worktree only
+  # manages the registered Rails apps, so a studio-engine or solana-studio desk is made
+  # with a plain `git worktree add` and lands BESIDE the repo instead of inside it.
+  # bin/agent-worktree already reads both layouts (discovered_worktree_configs); this
+  # guard read only the managed one, and that asymmetry is the defect the desk
+  # resolution below now closes.
+  WORKTREES_DIRNAME = ".worktrees"
+
   module_function
 
   # nil when `root` is `slug`'s tree (the cert may proceed); else the refusal
@@ -163,7 +176,8 @@ module CertRootGuard
 
     {
       message: refusal_message(slug, root, actual_branch, expected_branch, worktree_slug, projects_dir,
-                               resolved: resolved, prefer_repo: prefer_repo),
+                               resolved: resolved, prefer_repo: prefer_repo,
+                               candidates: candidates, eligible: eligible),
       # Why the STANDING root is not the task's tree ("is on branch release, not
       # feat/x" / "answers to repo …"), so a caller can say which axis failed without
       # re-deriving it.
@@ -193,19 +207,87 @@ module CertRootGuard
   # directory that merely carries the task's NAME — a stale desk on `release`, or
   # another repo's worktree — sends the reader to certify the wrong tree. Without a
   # validated tree the advice stays generic rather than confidently wrong.
+  # `candidates`/`eligible` let #assess hand over the sets it already computed; both
+  # fall back to computing them, so the positional call still works unchanged.
   def refusal_message(slug, root, actual_branch, expected_branch, worktree_slug, projects_dir = nil,
-                      resolved: nil, prefer_repo: nil)
+                      resolved: nil, prefer_repo: nil, candidates: nil, eligible: nil)
     message = "this run roots at #{root} (branch #{actual_branch || 'unknown'}), " \
               "which is not #{slug}'s tree — refusing to certify it.\n" \
-              "Expected branch #{expected_branch} or the task worktree .worktrees/#{worktree_slug}."
-    # `prefer_repo` threads through because this `cd` line is advice someone FOLLOWS,
-    # and it is the text bin/ship, bin/fast-check and bin/full-suite-check all die!
-    # with — so dropping the repo filter here sent four callers to a validated-but-
-    # wrong-repo desk while the comment above claimed the tie was broken.
-    hint = resolved || eligible_worktrees(worktree_slug, expected_branch, projects_dir: projects_dir,
-                                          prefer_repo: prefer_repo).first
-    message += "\nRun the cert from the task worktree: cd #{hint}" if hint
-    message
+              "Expected branch #{expected_branch} or the task's desk " \
+              "(#{desk_path_forms(worktree_slug)})."
+    advice = desk_advice(worktree_slug, expected_branch, projects_dir, resolved: resolved,
+                         prefer_repo: prefer_repo, candidates: candidates, eligible: eligible)
+    "#{message}\n#{advice}"
+  end
+
+  # BOTH layouts, named. The old line said "the task worktree .worktrees/<slug>" as
+  # though one layout were the only one, which is how a reviewer whose sibling desk was
+  # sitting on disk was told, in effect, that their desk was not a desk.
+  def desk_path_forms(worktree_slug)
+    "<repo>/#{WORKTREES_DIRNAME}/#{worktree_slug} or <repo>#{WORKTREES_DIRNAME}/#{worktree_slug}"
+  end
+
+  # WHICH situation the reader is in. The four need four different actions, and the old
+  # text could not tell them apart: it appended a `cd` line or it did not, so SILENCE
+  # was doing double duty — "no desk exists for this task" and "a desk exists but this
+  # run is not standing in it" rendered as the same message minus a line. The reader who
+  # most needs the distinction is the one whose desk EXISTS: they go looking for a
+  # missing directory, find it, and learn that the guard is wrong. That is what trains
+  # the standing DOR_CHECK_DIFF_ROOT override, and an overridden guard guards nothing.
+  #
+  # `prefer_repo` threads through every branch because this text is advice someone
+  # FOLLOWS, and it is what bin/ship, bin/fast-check and bin/full-suite-check all die!
+  # with — dropping the repo filter here sent four callers to a validated-but-wrong-repo
+  # desk while claiming the tie was broken.
+  def desk_advice(worktree_slug, expected_branch, projects_dir,
+                  resolved: nil, prefer_repo: nil, candidates: nil, eligible: nil)
+    return cd_advice(resolved) if resolved
+
+    candidates ||= worktree_candidates(worktree_slug, projects_dir)
+    return no_desk_advice(worktree_slug, projects_dir) if candidates.empty?
+
+    eligible ||= candidates.reject do |path|
+      worktree_mismatch(path, expected_branch: expected_branch, prefer_repo: prefer_repo)
+    end
+    return cd_advice(eligible.first) if eligible.size == 1
+    return ambiguous_desk_advice(eligible) if eligible.size > 1
+
+    rejected_desk_advice(candidates, expected_branch, prefer_repo)
+  end
+
+  # The desk EXISTS and is validated: the one situation where a `cd` is safe advice.
+  def cd_advice(path)
+    "Run the cert from the task's desk: cd #{path}"
+  end
+
+  # No desk anywhere. The action is to CREATE one; naming both searched layouts, and
+  # the root they were searched under, is what stops the reader hunting for a directory
+  # that was never there.
+  def no_desk_advice(worktree_slug, projects_dir)
+    base = projects_dir.to_s.strip.empty? ? ProjectsRoot.default_projects_dir : projects_dir.to_s
+    "No desk for #{worktree_slug} exists under #{base} in either layout " \
+      "(#{desk_path_forms(worktree_slug)}), so there is no tree to certify yet — " \
+      "create the desk rather than looking for a missing one."
+  end
+
+  # Desks exist; none is this task's tree. Naming the path AND the axis it failed is the
+  # difference between "your desk is stale" and "your desk is another repo's", which
+  # need opposite fixes — and it is the half a bare refusal never told anyone.
+  def rejected_desk_advice(candidates, expected_branch, prefer_repo)
+    reasons = candidates.map do |path|
+      "  #{path} — #{worktree_mismatch(path, expected_branch: expected_branch, prefer_repo: prefer_repo)}"
+    end
+    "A desk for this task IS on disk, but none of these is its tree:\n#{reasons.join("\n")}"
+  end
+
+  # More than one desk passed EVERY axis and nothing separates them — the same slug
+  # under both layouts, or under two repos. The guard refuses to rank rather than
+  # picking, for the reason in #worktree_patterns: a silent pick is a gate grading the
+  # wrong tree, and it reads exactly like a real verdict.
+  def ambiguous_desk_advice(eligible)
+    "#{eligible.size} desks qualify as this task's tree and nothing separates them:\n" \
+      "#{eligible.map { |path| "  #{path}" }.join("\n")}\n" \
+      "Re-run from the desk you mean, or name it explicitly with the root override."
   end
 
   # The branch checked out at `dir`, or nil. Errors and empty output read as
@@ -229,10 +311,29 @@ module CertRootGuard
     {}
   end
 
-  # True when `dir` IS a `.worktrees/<worktree_slug>` checkout.
+  # True when `dir` IS this task's desk, under EITHER layout. The cert WRITERS'
+  # physical vouch (#assess's `standing_in_task_desk`), so a builder standing in a
+  # SIBLING-tree desk mid-rebase used to be refused for the one reason that cannot be
+  # true: that they were not at the task's desk. They were standing in it.
   def worktree_dir?(dir, worktree_slug)
-    File.basename(dir.to_s) == worktree_slug &&
-      File.basename(File.dirname(dir.to_s)) == ".worktrees"
+    File.basename(dir.to_s.chomp("/")) == worktree_slug && !desk_repo_root(dir).nil?
+  end
+
+  # The repo checkout a DESK belongs to, or nil when `dir` is not a desk under either
+  # layout (a primary checkout, or any other directory).
+  #
+  # ONE definition, because three call sites used to answer this question with three
+  # different inline string comparisons and each knew only the managed layout — so a
+  # sibling desk read as "not a desk" three separate ways: invisible to the candidate
+  # glob, unrecognised as the writer's own desk, and MISNAMED by #app_of, which falls
+  # through to its primary-checkout branch and answers with the task SLUG.
+  def desk_repo_root(dir)
+    parent = File.dirname(dir.to_s.chomp("/"))
+    name = File.basename(parent)
+    return File.dirname(parent) if name == WORKTREES_DIRNAME
+    return parent.delete_suffix(WORKTREES_DIRNAME).chomp("/") if name.end_with?(WORKTREES_DIRNAME)
+
+    nil
   end
 
   # EVERY …/<app>/.worktrees/<worktree_slug> on disk under the projects root, sorted.
@@ -248,21 +349,51 @@ module CertRootGuard
   # (the test seam). Best-effort: [] on any failure.
   def worktree_candidates(worktree_slug, projects_dir = nil)
     base = projects_dir.to_s.strip.empty? ? ProjectsRoot.default_projects_dir : projects_dir.to_s
-    Dir.glob(File.join(base, "*", ".worktrees", worktree_slug)).select { |path| File.directory?(path) }.sort
+    worktree_patterns(base, worktree_slug)
+      .flat_map { |pattern| Dir.glob(pattern) }
+      .select { |path| File.directory?(path) }
+      .uniq.sort
   rescue StandardError
     []
   end
 
-  # The app a checkout belongs to, for BOTH shapes the guard is handed:
-  #   …/<app>/.worktrees/<slug> → "<app>"   (a task desk)
+  # Both layouts, as globs. They are DISJOINT by shape — the managed pattern carries a
+  # path segment the sibling one does not — and `*` never matches a leading dot, so the
+  # sibling pattern cannot pick up a bare `<projects>/.worktrees`. The `uniq` above is
+  # belt to that braces, not a load-bearing dedupe.
+  #
+  # Both sets land in the SAME candidate list on purpose. A sibling desk is trusted
+  # neither more nor less than a managed one: it faces the identical two-axis
+  # #worktree_mismatch, and the caller's "exactly one eligible" rule then decides.
+  # Adding a layout PRECEDENCE here — managed beats sibling — would have been the
+  # cheaper fix and the wrong one. bin/agent-worktree#worktree_dir records what ranking
+  # layouts costs, where hard-coding one "destroy[ed] the WRONG DESK the moment the same
+  # desk name exists in both trees". A gate that silently grades the wrong tree fails
+  # the same way, minus the crater.
+  def worktree_patterns(base, worktree_slug)
+    [File.join(base, "*", WORKTREES_DIRNAME, worktree_slug),
+     File.join(base, "*#{WORKTREES_DIRNAME}", worktree_slug)]
+  end
+
+  # The app a checkout belongs to, for every shape the guard is handed:
+  #   …/<app>/.worktrees/<slug> → "<app>"   (a task desk, managed layout)
+  #   …/<app>.worktrees/<slug>  → "<app>"   (a task desk, sibling tree)
   #   …/<app>                   → "<app>"   (a primary checkout)
   # The unconditional two-level climb this replaces was written for desks only, so on
   # a primary it returned the PROJECTS directory's name — which is nobody's repo. It
   # went unnoticed because `origin` normally answers first; it only surfaced when
   # mutation-testing nulled the remote and the directory fallback took over.
+  #
+  # The sibling case failed in that same quiet direction, one step worse: an
+  # unrecognised desk takes the PRIMARY branch, whose answer is the last path segment —
+  # the task SLUG. So this did not merely miss the repo, it confidently returned a
+  # string that is no repo's name. #repo_mismatch's no-origin fallback then compared
+  # THAT against the wanted repo (rejecting a valid desk), and #worktree_hint's
+  # preference could never match it (dropping sibling desks out of multi-repo ties).
   def app_of(path)
     dir = path.to_s.chomp("/")
-    return File.basename(File.expand_path("../..", dir)) if File.basename(File.dirname(dir)) == ".worktrees"
+    repo_root = desk_repo_root(dir)
+    return File.basename(repo_root) if repo_root
 
     File.basename(dir)
   end
