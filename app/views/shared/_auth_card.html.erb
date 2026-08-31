@@ -1,7 +1,7 @@
 <%# Shared sign-in / sign-up card (ported from turf-monster). Under unified
     create-or-login the two pages are identical except copy, so both
-    sessions/new and registrations/new render this. CTA order: Google ->
-    Solana wallet hub -> (or) -> email magic link. No password.
+    sessions/new and registrations/new render this. CTA order: Google -> (or)
+    -> email magic link. No password.
     locals: (subheading:, footer_prompt:, footer_link_label:, footer_link_path:) %>
 <div class="min-h-[70vh] flex items-center justify-center">
   <div class="w-full max-w-md">
@@ -19,17 +19,12 @@
         Google
       <% end %>
 
-      <%# 2. Solana wallet hub %>
-      <div class="mt-3">
-        <%= render "shared/solana_wallet_connect" %>
-      </div>
-
       <div class="relative my-6">
         <div class="absolute inset-0 flex items-center"><div class="w-full border-t border-strong"></div></div>
         <div class="relative flex justify-center text-sm"><span class="bg-surface px-3 text-secondary">or</span></div>
       </div>
 
-      <%# 3. Email magic link — no password. Fires window.postMagicLink and only
+      <%# 2. Email magic link — no password. Fires window.postMagicLink and only
           opens the "check your inbox" modal after the server accepts the request. %>
       <form x-data="{
               sending: false,

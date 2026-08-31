@@ -20,9 +20,21 @@ Studio.configure do |config|
   config.sidebar_sections = ->(view) { view.sidebar_link_sections }
   config.nav_spinner_min_ms = 300
 
-  # Passwordless: magic-link email + Google + Solana wallet. No :password —
-  # has_secure_password stays on the model only as a dormant fallback.
-  config.auth_methods = %i[magic_link google wallet]
+  # Passwordless: magic-link email + Google. No :password — has_secure_password
+  # stays on the model only as a dormant fallback.
+  #
+  # No :wallet, deliberately. The hub carries no on-chain PRODUCT surface —
+  # wallet identity belongs to turf-monster — and studio-engine draws
+  # /auth/solana/nonce, /auth/solana/verify and /auth/phantom/callback behind
+  # `Studio.auth_method?(:wallet)`, so dropping it REMOVES those routes rather
+  # than merely hiding a button. The admin signing console is untouched: it is
+  # `require_admin` only and drives Phantom in the signer's own browser, never a
+  # wallet SESSION.
+  #
+  # EDIT this line, never delete it: studio-engine's own default is still
+  # %i[magic_link google wallet] (0.65.2, lib/studio.rb), so an absent line
+  # would silently re-enable wallet auth. Every consumer pins its methods.
+  config.auth_methods = %i[magic_link google]
   config.registration_params = [:name, :email]
 
   # The magic-link MessageVerifier purpose. MUST differ from other Studio apps:

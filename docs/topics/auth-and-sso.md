@@ -12,7 +12,7 @@ Studio.configure do |config|
   config.session_key = :studio_user_id
   config.sso_logo = "/studio-logo.svg"
   config.welcome_message = ->(user) { "Welcome to McRitchie Studio, #{user.display_name}!" }
-  config.auth_methods = %i[magic_link google wallet]
+  config.auth_methods = %i[magic_link google]
   config.registration_params = [:name, :email]
   config.magic_link_token_name = "magic_link_mcritchie_v1"
   config.configure_sso_user = ->(user) { user.role = "viewer" }
@@ -21,7 +21,20 @@ end
 
 **From the engine:** `Studio::ErrorHandling` concern (in ApplicationController), `ErrorLog` model, `Sluggable` concern, passwordless magic-link primitives, auth controllers (sessions, registrations, omniauth_callbacks, error_logs), error log views, generic auth views, local email capture, theme routes, and shared email delivery primitives.
 
-**Overridden locally:** `sessions/new.html.erb` and `registrations/new.html.erb` render the same unified `/signin` card with magic link, Google, and Solana wallet options.
+**Overridden locally:** `sessions/new.html.erb` and `registrations/new.html.erb` render the same unified `/signin` card with magic link and Google options.
+
+**No wallet auth, deliberately.** The hub carries no on-chain *product* surface —
+wallet identity belongs to turf-monster (studio-engine + mcritchie-studio is the
+base template; solana-studio + turf-monster is the web3 bolt-on). Because
+studio-engine draws `/auth/solana/nonce`, `/auth/solana/verify` and
+`/auth/phantom/callback` behind `Studio.auth_method?(:wallet)`, omitting `:wallet`
+REMOVES those routes rather than hiding a button. Keep the `auth_methods` line
+explicit: the engine's own default still includes `:wallet` (0.65.2), so deleting
+the line would re-enable wallet sign-in silently.
+
+The admin signing console (`/admin/signing_requests`) is unaffected: it is
+`require_admin` only and drives Phantom in the signer's own browser, so it never
+reads a wallet session. `User#solana_address` is retained for signer identity.
 
 **Routes:** The app defines canonical `GET /signin` first. Legacy `GET /login` and `GET /signup` redirect there, then `Studio.routes(self)` draws the compatibility auth routes, magic-link request/confirm/consume routes, `/logout`, `/sso_continue`, `/sso_login`, OAuth callbacks, `/error_logs`, local email capture, and `/admin/theme`.
 
