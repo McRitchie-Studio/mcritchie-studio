@@ -48,6 +48,13 @@ cd /Users/alex/projects
 Read `/Users/alex/projects/AGENTS.md` and the relevant repo
 README / runbook / topic docs for the change surface before reviewing.
 
+**You are a READER in the task's desk.** The builder holds it, and your primary
+may be working in it too. Read it freely; write nothing into it — no mutation, no
+stash, no checkout of a path. Run any MUTATION pass on a throwaway of your own,
+cut under `.worktrees/` with the desk's `.env.test.local` copied across, per
+[the desk writer convention](../../../modules/worktrees.md#the-desk-writer-convention).
+If your primary's brief did not name your throwaway, ask before you mutate.
+
 ## Preconditions
 
 Carl handed you a task slug, its PR (base `accepted`), branch, repos, risk tags,
