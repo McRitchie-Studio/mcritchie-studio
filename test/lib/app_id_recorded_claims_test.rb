@@ -135,6 +135,22 @@ class AppIdRecordedClaimsTest < Minitest::Test
       "back to the keyring identity.")
   end
 
+  # A failed mint leaves GH_TOKEN unset, and `gh` then falls back to the KEYRING,
+  # where the proof call still answers — certifying a mint that never happened.
+  def test_the_recipes_proof_call_runs_only_when_the_mint_succeeded
+    block   = recipe_block
+    guarded = block[/^if\s+\[\s*-z\s+"\$GH_TOKEN"\s*\].*?^fi$/m]
+    refute_nil guarded, "the recipe's empty-token guard is not a multi-line block."
+
+    proof = block.lines.grep(/\bgh\s+api\b/).map(&:strip)
+    refute_empty proof, "the recipe carries no proof call to place."
+    proof.each do |line|
+      assert_includes guarded, line,
+        "the recipe runs `#{line}` OUTSIDE the empty-token guard; after a failed " \
+        "mint `gh` falls back to the keyring and it answers anyway."
+    end
+  end
+
   # ── 6. THE SECRET HALF IS NEVER IN THE REPO ─────────────────────────────────
   #
   # The id is recorded BECAUSE it is not a credential. The line that makes that

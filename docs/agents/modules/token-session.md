@@ -131,8 +131,12 @@ cd /Users/alex/projects/mcritchie-studio
 GH_TOKEN="$(GH_APP_ID=4431410 \
   GH_APP_PEM="$(cat ~/Downloads/mcritchie-agent.*.private-key.pem)" \
   bin/gh-app-mint-token)"
-if [ -z "$GH_TOKEN" ]; then echo "mint FAILED — do not export an empty token"; else export GH_TOKEN; fi
-gh api /installation/repositories --jq '.total_count'   # answers => the token works
+if [ -z "$GH_TOKEN" ]; then
+  echo "mint FAILED — do not export an empty token"
+else
+  export GH_TOKEN
+  gh api /installation/repositories --jq '.total_count'   # answers => the token works
+fi
 ```
 
 Executed 2026-08-30 during the quota outage that prompted this section: it
