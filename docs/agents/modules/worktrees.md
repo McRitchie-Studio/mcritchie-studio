@@ -648,7 +648,7 @@ permission to write to the desk.
 Note also that `--actor` does not express the claim. `bin/task move <slug>
 building --actor <soul>` records the soul on the *event*; the claim itself is
 `claimed_session` + `claim_nonce` in `metadata.devops`
-([`lib/claim_lease.rb:31`](../../../lib/claim_lease.rb)), keyed by session, not
+(`lib/claim_lease.rb:31`), keyed by session, not
 by soul. A soul slug and a session id live in different namespaces.
 
 ### How to tell whether someone is already in a desk
@@ -678,7 +678,7 @@ What each one is worth:
   and it is a symptom, not an identity — it says work is present, never whose.
 - **`DeskActivity.touched_since?`** is the same filesystem-mtime probe the
   reclaim guard uses to withhold a desk somebody is working in
-  ([`lib/desk_activity.rb:74`](../../../lib/desk_activity.rb)). Verified callable
+  (`lib/desk_activity.rb:74`). Verified callable
   as a standalone occupancy check.
 
 ### If you believe a builder lost work, tell the builder
@@ -763,7 +763,7 @@ Prefer these over trust. All were verified by execution.
 | Reclaim withhold | `desk_hold`, `bin/agent-worktree cleanup --reclaim` | Destroying a desk younger than 1h29m, touched, or mid-gate |
 
 The fingerprint is a git tree hash of `git add -A` + `write-tree`
-([`bin/lib/full_suite_gate.rb:104`](../../../bin/lib/full_suite_gate.rb)), so it
+(`bin/lib/full_suite_gate.rb:104`), so it
 covers tracked edits **and** untracked-not-ignored files. Verified: dropping one
 untracked file into a desk moved it `b584e196…` → `49db0fb3…`, and removing the
 file restored it exactly.
