@@ -50,10 +50,12 @@ printed `config.auth_methods = %i[magic_link google]` as the new-app line **sinc
 strip out.
 
 So the architecture was already the documented intent, and had been for two and a
-half months before it was stated as a decision. What drifted was the code: the
-hub declares `%i[magic_link google wallet]` today, and the engine shipped web3
-view code to every consumer. The tasks below close that gap. Read this as
-*restoring* a documented intent, not imposing a new constraint.
+half months before it was stated as a decision. What drifted was the code: at the
+time of the decision the hub declared `%i[magic_link google wallet]`, and the
+engine shipped web3 view code to every consumer. The tasks below close that gap —
+[`drop-hub-wallet-auth`](https://mcritchie.studio/tasks/drop-hub-wallet-auth)
+closed the hub's half the same day. Read this as *restoring* a documented intent,
+not imposing a new constraint.
 
 ## What was decided, and the reasoning that survived scrutiny
 
@@ -110,12 +112,12 @@ It is the third consumer of `solana-studio` and is being wound down separately.
 
 ## Do not record these as fact
 
-Two claims are **false** and have already been asserted in conversation. They are
-listed here so the correction outlives the error.
+Two claims were asserted in conversation and were **false when asserted**. They
+are listed here so the correction outlives the error.
 
 | Claim | Reality |
 |---|---|
-| "The hub has no wallet sign-in." | **It does.** The hub's `config/initializers/studio.rb` declares `%i[magic_link google wallet]`, and its `config/routes.rb` calls `Studio.routes(self)`. The engine draws `/auth/solana/nonce`, `/auth/solana/verify` and `/auth/phantom/callback` behind `Studio.draw_auth_routes && Studio.auth_method?(:wallet)`, and the hub passes both gates — so `bin/rails routes` lists all three today, served by the engine's own `SolanaSessionsController`. Dropping it is *pending work*, not the current state. |
+| "The hub has no wallet sign-in" — offered as a *reason* for the decision. | **It had one.** When the decision was made, `config/initializers/studio.rb` declared `%i[magic_link google wallet]` and `config/routes.rb` called `Studio.routes(self)`. The engine draws `/auth/solana/nonce`, `/auth/solana/verify` and `/auth/phantom/callback` behind `Studio.draw_auth_routes && Studio.auth_method?(:wallet)`, and the hub passed both gates — so `bin/rails routes` listed all three, served by the engine's own `SolanaSessionsController`. The decision had to **remove** wallet auth, not merely decline to add it. [`drop-hub-wallet-auth`](https://mcritchie.studio/tasks/drop-hub-wallet-auth) removed it on 2026-08-31, so the hub has none **now** — as a result of this decision, not as a fact that preceded it. |
 | "turf-vault has an automated deploy path." | **It does not, and must not.** The repo carries no `.github/` at all. Program deploys stay deliberate and manual under the Squads upgrade authority. |
 
 ## Implementing tasks
