@@ -237,15 +237,30 @@ class OpMeterFallbackTest < Minitest::Test
   # so the single attribution this whole feature exists to produce was the one it
   # silently got wrong. Both shells are asserted because fixing one is easy and
   # fixing one is what happened the first time.
-  %w[bash zsh].each do |shell|
-    define_method(:"test_integration_#{shell}_attributes_the_read_to_the_calling_script") do
-      skip "#{shell} not installed" unless system("command -v #{shell} >/dev/null 2>&1")
+  # NO `skip` HERE, DELIBERATELY. The obvious shape for this is one test per
+  # shell, skipped when the shell is missing — and that is what it was, until it
+  # crossed two ratchets at once (config/test_health.yml's skip-call-site count
+  # and config/rails_lane.yml's skipped-test ceiling). Both were RIGHT to fire: a
+  # skip is a test switched off while keeping its name, and CI runners have no
+  # zsh, so the zsh lane — the ONLY lane that covers the bug this pins — was
+  # switched off on exactly the machine that matters. Raising the ceilings would
+  # have bought a green ratchet and kept the hole.
+  #
+  # So the coverage is split by what each half can honestly promise:
+  #   * bash runs EVERYWHERE, so it is asserted unconditionally here.
+  #   * zsh is asserted too WHEN PRESENT — an extra assertion inside this test,
+  #     never a separate skippable one.
+  #   * the STATIC test below pins the mechanism on every platform, zsh or not.
+  def test_integration_the_calling_script_is_attributed_in_every_shell
+    shells = ["bash"] + (system("command -v zsh >/dev/null 2>&1") ? ["zsh"] : [])
 
+    shells.each do |shell|
+      FileUtils.rm_f(@log)
       script = File.join(@dir, "pretend-consumer")
       write(script, <<~SH)
         #!/bin/#{shell}
         . "#{File.join(ROOT, 'bin', 'lib', 'op-meter.sh')}"
-        op_metered "#{File.join(@bindir, 'op')}" read "op://v/i/f" >/dev/null 2>&1 || true
+        op_metered "#{File.join(@bindir, 'op')}" read "op://$V/$I/f" >/dev/null 2>&1 || true
       SH
 
       Open3.capture3(trapped_env, script)
@@ -253,6 +268,54 @@ class OpMeterFallbackTest < Minitest::Test
       assert_equal "pretend-consumer", rows.first[1],
                    "#{shell} must attribute the read to the SCRIPT, not to a function or the shim"
     end
+  end
+
+  # THE BUG, PINNED STATICALLY — and this is the half that runs on CI.
+  #
+  # zsh's FUNCTION_ARGZERO (on by default) rebinds $0 to the FUNCTION NAME inside
+  # a function body. bin/setup-1pass-token is #!/bin/zsh, so reading `${0##*/}`
+  # in the recorder logged `op_meter_record` as the caller for every zsh consumer
+  # — the single attribution this whole feature exists to produce was the one it
+  # silently got wrong, and a log full of confident useless rows is worse than no
+  # log. The fix is to capture the caller ONCE at source time, at top level,
+  # where bash and zsh disagree about nothing.
+  #
+  # Asserted on the SOURCE because the runtime proof needs a zsh that CI does not
+  # have. The rule is exact and mechanical: $0 may be read at top level (that is
+  # the capture), never inside a function body.
+  def test_unit_the_shim_never_reads_dollar_zero_inside_a_function
+    path = File.join(ROOT, "bin", "lib", "op-meter.sh")
+    lines = File.readlines(path)
+    first_fn = lines.index { |l| l =~ /^\s*[a-z_]\w*\(\)\s*\{/ }
+
+    refute_nil first_fn, "the shim must define functions for this rule to mean anything"
+
+    offenders = lines[first_fn..].each_with_index.filter_map do |line, i|
+      next if line.strip.start_with?("#")
+      next unless line =~ /\$\{?0/
+
+      "bin/lib/op-meter.sh:#{first_fn + i + 1}: #{line.strip}"
+    end
+
+    assert_empty offenders,
+                 "$0 is read inside a function body. Under zsh that is the FUNCTION NAME, not the calling " \
+                 "script, so every zsh consumer (bin/setup-1pass-token) is misattributed. Capture the " \
+                 "caller at top level instead:\n  " + offenders.join("\n  ")
+  end
+
+  # The other half of the same claim: the top-level capture must actually handle
+  # zsh. Without this, deleting the ZSH_ARGZERO branch would leave the rule above
+  # satisfied (no $0 in a function) while silently attributing every zsh caller
+  # to the SHIM's own path, because a sourced file's $0 is the file in zsh.
+  def test_unit_the_caller_capture_handles_zsh_argzero
+    src = File.read(File.join(ROOT, "bin", "lib", "op-meter.sh"))
+    code = src.lines.reject { |l| l.strip.start_with?("#") }.join
+
+    assert_includes code, "ZSH_ARGZERO",
+                    "the top-level capture must use ZSH_ARGZERO — in zsh a SOURCED file's $0 is the file " \
+                    "itself, so plain $0 would attribute every zsh read to op-meter.sh"
+    assert_includes code, "OP_METER_CALLER",
+                    "the explicit override must survive — git spawns the credential helper by absolute path"
   end
 
   # ── LAYER 3 containment: the shim may not touch the operator's real store ────

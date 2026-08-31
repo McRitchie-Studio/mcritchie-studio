@@ -4,7 +4,25 @@ require "English"
 require "time"
 require "fileutils"
 require_relative "projects_root"
-require_relative "../../lib/task_usage_sandbox"
+
+# THE SANDBOX GUARD IS OPTIONAL AT LOAD TIME, and that is a hard requirement
+# rather than defensiveness. This file lives in bin/lib but the guard lives in
+# lib/, one directory OUTSIDE the bin/ tree — and the bin/ tree travels on its
+# own: bin/session-preflight is run from a HUB checkout against an unrelated
+# --root, and test/commands/session_preflight_test.rb copies only `hub/bin` to a
+# temp root and asserts the helpers still resolve there.
+#
+# MEASURED on PR #1113: a plain `require_relative "../../lib/task_usage_sandbox"`
+# here raised LoadError in that relocated tree — and because bin/lib/task_board.rb
+# requires this file, it took the ENTIRE BOARD CLI down with it. Telemetry that
+# can break the thing it measures is worse than no telemetry; that is the same
+# constraint as "must not break when `op` is absent", one layer up, and it must
+# hold at LOAD time and not merely at call time.
+#
+# FAIL CLOSED, not open: when the guard is unreachable this meter REFUSES to
+# write at all (see #refused?). Nothing here re-implements the guard's rules — a
+# second copy of a safety rule is how the two halves drift apart — so a tree
+# without the guard simply records nothing.
 
 # OpMeter — WHO SPENT THE 1PASSWORD QUOTA. Every `op` invocation the bin/ stack
 # makes is recorded here: the calling command, the action, the outcome, a
@@ -75,6 +93,17 @@ require_relative "../../lib/task_usage_sandbox"
 # So `refused?` answers rule 1 and returns early; `append` then reaches
 # enforce!, which is left holding exactly rule 2. Neither check is dead.
 module OpMeter
+  # Scoped to OpMeter, NOT to Object. Defining it at file scope (the first
+  # attempt) leaked a bare SANDBOX_AVAILABLE onto Object for every process that
+  # loads the board CLI, and `OpMeter::SANDBOX_AVAILABLE` then raised NameError —
+  # a constant that is both too public and unreachable at once.
+  SANDBOX_AVAILABLE = begin
+    require_relative "../../lib/task_usage_sandbox"
+    true
+  rescue LoadError
+    false
+  end
+
   STORE = "op-reads"
 
   # The env vars that can LOCATE this log — mirrored in TaskUsageSandbox::STORES.
@@ -193,6 +222,11 @@ module OpMeter
   # keeping the path out of this method is what lets `append` stay the single
   # laundered seam.
   def refused?(env)
+    # No guard on this tree (a relocated bin/ — see the header) → nothing can
+    # prove the destination is safe, so write nothing. This also keeps `append`
+    # unreachable without the guard, which is why it may name enforce! directly.
+    return true unless SANDBOX_AVAILABLE
+
     guard = TaskUsageSandbox.guard_env(env)
     return false unless TaskUsageSandbox.active?(guard)
 

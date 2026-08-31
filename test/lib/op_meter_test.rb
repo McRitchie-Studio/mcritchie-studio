@@ -20,6 +20,7 @@ require "tmpdir"
 require "fileutils"
 require "json"
 require "open3"
+require "rbconfig"
 require_relative "../support/session_env"
 require_relative "../support/op_binary_stub"
 require_relative "../../bin/lib/op_meter"
@@ -303,6 +304,46 @@ class OpMeterTest < Minitest::Test
 
       assert status.success?, "an empty log is not an error"
       assert_match(/no 1Password reads recorded/, out)
+    end
+  end
+
+  # ── the meter must LOAD wherever bin/ travels ────────────────────────────────
+
+  # THE REGRESSION. This file lives in bin/lib; the sandbox guard lives in lib/,
+  # one directory OUTSIDE the bin/ tree — and the bin/ tree travels alone.
+  # bin/session-preflight runs from a HUB checkout against an unrelated --root,
+  # and test/commands/session_preflight_test.rb copies only `hub/bin` to a temp
+  # root and asserts the helpers still resolve there.
+  #
+  # MEASURED on PR #1113: a plain `require_relative "../../lib/task_usage_sandbox"`
+  # raised LoadError in that tree — and since bin/lib/task_board.rb requires this
+  # file, it took THE ENTIRE BOARD CLI down with it. Telemetry that can break the
+  # thing it measures is worse than no telemetry, and it must hold at LOAD time,
+  # not merely at call time. A fresh process is required: `require` is cached, so
+  # this cannot be observed in-process.
+  def test_integration_the_board_cli_still_loads_in_a_bin_only_tree
+    Dir.mktmpdir do |dir|
+      FileUtils.cp_r(File.join(ROOT, "bin"), dir) # bin/ ONLY — deliberately no lib/
+      log = File.join(dir, "op-reads.log")
+
+      script = <<~RUBY
+        require #{File.join(dir, 'bin', 'lib', 'task_board').inspect}
+        OpMeter.record(action: "read", outcome: "ok", via: "probe",
+                       env: { "MCR_OP_READS_LOG" => #{log.inspect} })
+        puts "GUARD:\#{OpMeter::SANDBOX_AVAILABLE}"
+        puts "BOARD:\#{TaskBoard.respond_to?(:agent_secret)}"
+      RUBY
+
+      out, err, status = Open3.capture3(SessionEnv.neutralized, RbConfig.ruby, "-e", script)
+
+      assert status.success?, "the board CLI must load with no lib/ present: #{err}"
+      assert_includes out, "BOARD:true", "TaskBoard must still be usable — it is how every lane writes"
+      assert_includes out, "GUARD:false", "the guard is genuinely absent here, so the case is real"
+
+      # FAIL CLOSED. With no guard reachable, nothing can prove the destination is
+      # safe, so the meter records NOTHING rather than guessing.
+      refute File.exist?(log),
+             "with the sandbox guard unreachable the meter must write nothing at all"
     end
   end
 
