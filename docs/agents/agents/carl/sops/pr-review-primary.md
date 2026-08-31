@@ -202,12 +202,22 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
      against the recorded one, then merge in ONE load-bearing sequence:
 
      ```bash
+     gh api user   # WHO am I merging as? 403 "not accessible by integration" = the App. STOP on a 200.
      gh pr view <feat-pr> --json headRefOid --jq .headRefOid   # equal to the recorded head → merge; moved → revalidate the new head's CI, merge only if green
      gh pr merge <feat-pr> --merge --match-head-commit <validated-head>   # feat → accepted (retarget a mis-based PR first)
      bin/task merged <task-slug> accepted     # stamp the git-location BEFORE the stage move
      bin/task move <task-slug> reviewed
      bin/task note <task-slug> --handoff "Carl review approved; merged into accepted; ready for Avi's qa-release sweep." --agent carl
      ```
+
+     **The identity line comes first because the damage it prevents is invisible
+     afterwards.** A 200 with a `login` means `gh` would merge as a PERSON, and the
+     merge carries that human's name permanently. On 2026-08-29 two merges landed
+     under Mr. McRitchie's own account this way — 1Password hit its cap,
+     `bin/gh-token` returned EMPTY, and `gh` reads an empty `GH_TOKEN` as *not set*
+     and falls back to its keyring. Refuse on a 200, and on any answer you cannot
+     read. `bin/pr-review` does this automatically before every merge write
+     (`bin/lib/acting_identity.rb`); this line covers the hand-run sequence.
 
      `bin/task merged` verifies its own write, so a silent success IS the stamp.
      If you double-check it anyway, read the **top-level** field — `merged` is a

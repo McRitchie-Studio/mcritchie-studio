@@ -101,6 +101,7 @@ bin/gh-token --force >/dev/null && echo "minted"
 | `"agents" isn't a vault` | **the hub primary is stale** | fast-forward `main`; the fix shipped as `bin/lib/op_vaults.rb` |
 | `Too many requests` from `op` | account-wide daily quota | step 2 — read the `[ERROR]` line, not the summary |
 | `gh` acts as a person, not a bot | an EMPTY token fell back to the keyring | never hand `gh` an empty `GH_TOKEN`; see the trap below |
+| `REFUSING to merge <slug>` from `pr-review` | the merge-path identity assertion refused | read the line — it names which of the three causes; see the trap below |
 | deployer mint fails in a build shell | `OP_ADMIN_SERVICE_ACCOUNT_TOKEN` absent **by design** | escalate |
 
 ## Two traps
@@ -111,6 +112,21 @@ bin/gh-token --force >/dev/null && echo "minted"
 account may be signed in. On 2026-08-29 two merges landed under Mr. McRitchie's
 own account this way, with every agent having been told not to use it. Check the
 value before exporting it, or let the command fail loudly.
+
+**A merge no longer takes your word for it.** The instruction above already
+existed on 2026-08-29 and was already followed — every agent had been told not
+to use the personal credential, and none did; `gh` substituted it for them. So
+the defence is mechanical, and it sits at the merge itself: `bin/pr-review`
+asks `gh api user` **before** any write on the merge path and refuses unless the
+answer is a GitHub App installation (`bin/lib/acting_identity.rb`). An App gets
+403 "Resource not accessible by integration"; a person gets 200 with a login.
+It **fails closed** — an identity it cannot determine is refused like a bad
+one — and a refusal costs only a re-review, because the task stays `submitted`
+and unstamped. An empty `GH_TOKEN` is caught from the environment without an API
+call at all, and earns one mint-and-retry before the refusal stands.
+
+Note the boundary: this guards the **feat → `accepted`** merge. The
+`accepted → release` batch merge in `bin/release.rb` is not yet wired to it.
 
 **Never run `gh auth login` to fix this.** `gh` refuses to store a credential
 while `GH_TOKEN` is set, and `GH_TOKEN` outranks the keyring it would write to.

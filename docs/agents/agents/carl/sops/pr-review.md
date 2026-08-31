@@ -243,11 +243,25 @@ doc).
   Carl merges in ONE sequence — the order is load-bearing:
 
   ```bash
+  gh api user   # WHO am I about to merge as? 403 "not accessible by integration" = the App. STOP on a 200.
   gh pr merge <feat-pr> --merge --match-head-commit <validated-head>   # feat → accepted; pin the head you validated (retarget a mis-based PR first)
   bin/task merged <task> accepted      # stamp the git-location BEFORE the stage move
   bin/task move <task> reviewed
   bin/task note <task> --handoff "Carl review approved; merged into accepted; ready for Avi's qa-release sweep." --agent carl
   ```
+
+  **The first line is not optional, and it is not advice.** A 200 with a `login`
+  means `gh` would merge as a PERSON, and the merge would carry that human's name
+  forever. On 2026-08-29 two merges landed under Mr. McRitchie's own account
+  exactly this way: 1Password hit its cap, `bin/gh-token` returned EMPTY, and `gh`
+  treats an empty `GH_TOKEN` as *not set* and falls back to its keyring. Nobody
+  chose it; every agent had already been told not to. Refuse to merge on a 200, and
+  on any answer you cannot read — an identity you cannot establish is treated like a
+  bad one, and a refusal costs only a re-review. `bin/pr-review` performs this same
+  check automatically before every merge write (`bin/lib/acting_identity.rb`); this
+  line is for the hand-run sequence, which has no such guard. Do NOT substitute a
+  permissions probe ("can it read PRs?") — the deployer App and a personal `repo`
+  scope both pass that, so it admits the very credential this catches.
 
   Order matters: merge → stamp → move, so the task is `reviewed` **iff** its code
   is on `accepted` (invariant: `reviewed` ⟺ code-on-`accepted`). If the `gh pr
