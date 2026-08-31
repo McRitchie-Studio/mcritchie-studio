@@ -53,7 +53,7 @@ lanes are rare, so the cost is one extra mint. Do not "fix" this.
 | **Token older than 50 min** | mint a replacement, cache it | automatic |
 | **Token rejected (401) on a `git` operation** | retire that token, next call mints once | automatic |
 | **Token rejected (401) on `gh` or an API call** | nothing retires it — it is served until it ages out | **you** — step 1 |
-| **1Password unreachable / quota spent** | nothing can mint — see below | **you** |
+| **1Password unreachable / quota spent** | `op` cannot serve the key, so `bin/gh-token` cannot mint — but you can, from the recorded app id plus a local `.pem` | **you** — *When 1Password itself is down* |
 | **Deployer token needed, admin token absent, machine provisioned** | `source ~/.zprofile.admin` in this shell, then retry | **you** |
 | **Deployer token needed, and this machine has no `~/.zprofile.admin`** | install it once — `bin/setup-1pass-token --admin` | **Mr. McRitchie** |
 
@@ -115,6 +115,42 @@ and the reader loops. `--force` bypasses the broker cache
 (`bin/gh-auth-refresh:41`) and `--export` is the half that repairs **this
 shell**.
 
+## When 1Password itself is down — mint by hand
+
+Steps 1-4 all end at `op`. When the broker is unreachable or the daily quota is
+spent (step 2 tells you which), **you can still mint** — `bin/gh-app-mint-token`
+takes its two halves from the environment and never touches 1Password:
+
+| Half | Where it is when 1Password is down |
+|---|---|
+| `GH_APP_ID` — the numeric app id | `credential-inventory.md` → **GitHub App IDs**: agent **`4431410`**, deployer **`4431542`**. Mirrored at `~/.config/mcritchie/app-ids.json`. |
+| `GH_APP_PEM` — the private key | the `.pem` as last downloaded: `~/Downloads/mcritchie-{agent,deployer}.*.private-key.pem`. **Never** in the repo. |
+
+```bash
+cd /Users/alex/projects/mcritchie-studio
+GH_TOKEN="$(GH_APP_ID=4431410 \
+  GH_APP_PEM="$(cat ~/Downloads/mcritchie-agent.*.private-key.pem)" \
+  bin/gh-app-mint-token)"
+if [ -z "$GH_TOKEN" ]; then echo "mint FAILED — do not export an empty token"; else export GH_TOKEN; fi
+gh api /installation/repositories --jq '.total_count'   # answers => the token works
+```
+
+Executed 2026-08-30 during the quota outage that prompted this section: it
+minted a working installation token with **zero** 1Password reads and the proof
+call answered `10`. The empty-token guard is not decoration — see
+*An empty token is not an absent one* below.
+
+Two notes. **Do not `echo` the token**; capture it, use it, let it age out.
+And for the **ship** lane swap in `4431542` and the deployer `.pem` — that pair
+reaches its `McRitchie-Studio` installation, verified the same day.
+
+**Why the app id is in the repo at all.** Before 2026-08-30 it lived only in
+1Password, so this recipe — the documented fallback for "1Password is down" —
+required 1Password. That circle cost a night's pushes. An app id is an identity
+claim, not a credential: it is the JWT's `iss`, and GitHub checks the signature
+against the app's **public** key, so the id alone earns a `401`. The reasoning
+and the tests behind that classification are in `credential-inventory.md`.
+
 ## Symptom → cause → fix
 
 | Symptom | Cause | Fix |
@@ -122,7 +158,7 @@ shell**.
 | `Bad credentials`, 401 on `gh` | session aged out | step 1 |
 | `could not read Username for 'https://github.com'` | the git credential helper could not mint | step 2, then step 1 |
 | `"agents" isn't a vault` | **the hub primary is stale** | fast-forward `main`; the fix shipped as `bin/lib/op_vaults.rb` |
-| `Too many requests` from `op` | account-wide daily quota | step 2 — read the `[ERROR]` line, not the summary |
+| `Too many requests` from `op` | account-wide daily quota | step 2 — read the `[ERROR]` line, not the summary; if the quota really is spent, mint by hand rather than wait |
 | `gh` acts as a person, not a bot | an EMPTY token fell back to the keyring | never hand `gh` an empty `GH_TOKEN`; see the trap below |
 | `REFUSING to merge <slug>` from `pr-review` | the merge-path identity assertion refused | read the line — it names which of the three causes; see the trap below |
 | deployer mint fails, and you hold the ship lane | `OP_ADMIN_SERVICE_ACCOUNT_TOKEN` is not in **this shell** | `source ~/.zprofile.admin`, then `export GH_APP_ITEM=github.mcritchie-deployer` **before** minting |
@@ -189,6 +225,10 @@ refusal names `source ~/.zprofile.admin`; only on a machine with no such file
 does it name the install.
 
 ### The one honest escalation
+
+**A 1Password outage is not it.** Whatever `op` is doing, the hand-mint above
+needs neither the broker nor Mr. McRitchie, as long as the `.pem` is on this
+machine. Reach for it before you decide the night is over.
 
 A machine that has **never been given** an admin token — no `~/.zprofile.admin`
 on disk at all — genuinely needs Mr. McRitchie, once, to run
