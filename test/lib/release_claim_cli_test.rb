@@ -448,7 +448,7 @@ class ReleaseClaimCliTest < Minitest::Test
   # literally true rather than approximately true.
   def test_unit_a_renew_loop_on_a_shipped_release_exits_without_one_further_poll
     Dir.mktmpdir do |proj|
-      c = cli(projects_dir: proj, data: { "release_state" => "shipped" })
+      c = cli(projects_dir: proj, data: { "release_state" => "shipped", "conductor_work_remaining" => false })
 
       assert_equal ReleaseClaimCli::OK, run_bounded(c, ["renew-loop", SLUG, "--role", "deployer", *anchor_flags]),
                    "a renewer with nothing left to protect exits 0, quietly"
@@ -478,7 +478,7 @@ class ReleaseClaimCliTest < Minitest::Test
   # about and the renewer learns nothing every cycle.
   def test_unit_the_completion_read_carries_the_role_and_the_release_slug
     Dir.mktmpdir do |proj|
-      c = cli(projects_dir: proj, data: { "release_state" => "shipped" })
+      c = cli(projects_dir: proj, data: { "release_state" => "shipped", "conductor_work_remaining" => false })
       run_bounded(c, ["renew-loop", SLUG, "--role", "deployer", *anchor_flags])
 
       read = state_reads(c).first
@@ -491,7 +491,7 @@ class ReleaseClaimCliTest < Minitest::Test
   def test_unit_only_a_finished_candidate_ends_the_renewal_and_no_active_one_does
     Dir.mktmpdir do |proj|
       %w[shipped abandoned].each do |state|
-        assert cli(projects_dir: proj, data: { "release_state" => state }).release_finished?(SLUG, "deployer"),
+        assert cli(projects_dir: proj, data: { "release_state" => state, "conductor_work_remaining" => false }).release_finished?(SLUG, "deployer"),
                "#{state}: the candidate is over, so the claim protects nothing"
       end
 
@@ -500,7 +500,7 @@ class ReleaseClaimCliTest < Minitest::Test
       # and pushes it to production. Copying the review lane's set would free that claim
       # underneath a running production deploy. This assertion is the guard on that.
       %w[assembling assembled].each do |state|
-        refute cli(projects_dir: proj, data: { "release_state" => state }).release_finished?(SLUG, "deployer"),
+        refute cli(projects_dir: proj, data: { "release_state" => state, "conductor_work_remaining" => false }).release_finished?(SLUG, "deployer"),
                "#{state}: a conductor can still be mid-act here — stopping would free the " \
                "claim underneath a LIVE prepare or ship and let a second one start"
       end
@@ -544,4 +544,36 @@ class ReleaseClaimCliTest < Minitest::Test
                    "the forming sentinel is pre-assembly, not post-ship — it must still renew"
     end
   end
+
+  # ── SHIPPED IS NOT FINISHED WHILE MEMBER WORK REMAINS ───────────────────────
+  #
+  # The unit counterpart of the integration regression. A DEPLOYER legitimately
+  # holds a claim on an ALREADY-`shipped` release on two supported paths — a
+  # `bin/release ship` re-run resuming member flips, and `bin/release finalize` on
+  # a partial. Reading the state alone called those finished, so the renewer
+  # exited before its first heartbeat and the claim lapsed 120s into a run needing
+  # many minutes. Note every OTHER test in this file passes under either rule,
+  # which is exactly why the first version looked correct.
+  def test_unit_a_shipped_release_with_work_left_is_not_finished
+    Dir.mktmpdir do |proj|
+      refute cli(projects_dir: proj,
+                 data: { "release_state" => "shipped", "conductor_work_remaining" => true })
+        .release_finished?(SLUG, "deployer"),
+             "a deployer resuming member flips still holds a real claim; calling this " \
+             "finished lapses it mid-deploy and lets a second ship start"
+    end
+  end
+
+  # FAIL OPEN ON ABSENCE. A board that does not send the key at all (an older
+  # deploy, a partial payload) must NOT stop a renewer: `nil` is not `false`.
+  # Only the board plainly saying BOTH "terminal" and "nothing left" ends the loop.
+  def test_unit_a_missing_work_signal_never_ends_the_renewal
+    Dir.mktmpdir do |proj|
+      refute cli(projects_dir: proj, data: { "release_state" => "shipped" })
+        .release_finished?(SLUG, "deployer"),
+             "an absent conductor_work_remaining is unknown, not finished — stopping " \
+             "here would free a claim on the word of a payload that never spoke"
+    end
+  end
+
 end
