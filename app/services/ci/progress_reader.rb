@@ -35,18 +35,44 @@ module Ci
     # member repo (see for_release), not just the hub.
     HUB_REPO = "mcritchie-studio"
 
-    # A GEM member has no `release` branch (two-rung ladder), so its release-candidate
-    # verdict is its OWN suite CI on `main`. GEM_CI_WORKFLOWS pins WHICH workflow that
-    # is per gem — studio-engine also runs a "Consumer CI" on main (the downstream
-    # apps' suites), which is NOT the gem's own verdict, so the name filter is
-    # load-bearing. A gem absent from this map resolves the newest `main` run of any
-    # workflow (solana-studio ships none → a blank, invisible track).
+    # WHICH WORKFLOW carries a gem's own release-candidate verdict. GEM_CI_WORKFLOWS
+    # pins it per gem — studio-engine also runs a "Consumer CI" (the downstream apps'
+    # suites), which is NOT the gem's own verdict, so the name filter is load-bearing.
+    # A gem absent from this map resolves the newest run of ANY workflow on its
+    # candidate branch (solana-studio ships none → a blank, invisible track).
     # Sourced from GithubWorkflowRun — the ONE place a repo's CI workflow name is
     # decided — so the reader, the ingest, and Ci::ReviewGate can no longer drift
     # apart. Kept as a named constant here because this is the release-track reader's
     # documented vocabulary and callers/tests reference it.
     GEM_CI_WORKFLOWS = GithubWorkflowRun::GEM_CI_WORKFLOWS
-    GEM_CI_BRANCH = "main"
+
+    # WHICH BRANCH carries a gem's release CANDIDATE, read from the gem's registry
+    # LADDER (config/release_repos.yml) rather than assumed:
+    #
+    #   three-rung (accepted → release → main) — the candidate sits on `release`.
+    #   two-rung   (no `release` rung)         — the gem's own `main` IS the candidate.
+    #
+    # THIS REPLACED `GEM_CI_BRANCH = "main"`, whose stated premise was "a GEM member
+    # has no `release` branch (two-rung ladder)". THAT PREMISE WAS FALSE FOR EVERY
+    # REGISTERED GEM: studio-engine and solana-studio BOTH declare `ladder: three-rung`
+    # and both answer `git ls-remote origin release` (checked 2026-08-30). A three-rung
+    # gem's version bump is pushed straight onto `release` by the sweep — which is why
+    # engine-ci.yml and consumer-ci.yml carry `push: branches: [main, release]` — and
+    # `main` only takes that code at G4 SHIP. So reading `main` reported the LAST
+    # SHIPPED commit's CI as this candidate's verdict, and the Assembling meter could
+    # draw a confident green describing a release that had already gone out.
+    #
+    # KEYED BY LADDER, NOT BY REPO, so a genuinely two-rung gem keeps `main` with no
+    # hardcoded slug list, and a gem that changes rungs needs no code change here.
+    #
+    # FAILS CLOSED. Any other ladder (dormant/planned/blocked) or a missing declaration
+    # resolves to NO branch, and every caller degrades that to a blank track — DECLARED,
+    # NEVER INFERRED, the rule config/release_repos.yml already applies to `lint_lane`.
+    # A blank meter reads as "no data" and an operator investigates; a meter pointed at
+    # the wrong branch reads as a verdict and nobody does. This also covers a three-rung
+    # gem whose `release` ref does not exist YET: no ingested run on that branch means a
+    # blank track, never a silent fallback to `main`.
+    GEM_CI_BRANCHES = { "three-rung" => Release::BRANCH, "two-rung" => "main" }.freeze
 
     # Which stages can show a CI bar. BUILDING is in the list because `bin/ship`
     # opens the PR and then WAITS for its CI (gate-submit-on-green-ci) while the task
@@ -115,8 +141,10 @@ module Ci
     #   * an APP repo — the `name: "CI"` run on the swept `release` branch tip
     #     (already per-repo: each app is its own GitHub repo and each runs CI on
     #     push:release, ingested into GithubWorkflowRun/CiCheckJob keyed on repo+sha);
-    #   * a GEM repo — its own two-rung suite on `main` (studio-engine's "Engine CI"),
-    #     since a gem has no `release` branch.
+    #   * a GEM repo — its own suite (studio-engine's "Engine CI") on the branch its
+    #     registry LADDER puts the candidate on: `release` for a three-rung gem (which
+    #     is what both registered gems are), `main` only for a genuine two-rung one.
+    #     See GEM_CI_BRANCHES.
     #
     # Every member repo gets an ENTRY even with no ingested run yet — a blank
     # CheckProgress (renders an empty, zero-height slot) — so the live #dom_id target
@@ -148,8 +176,10 @@ module Ci
     # [repo_slug, Ci::CheckProgress], or nil — the live broadcaster's fan-out unit, so
     # a single job event morphs JUST that repo's G3 track. Fires only when nwo is a
     # MEMBER repo of the active release AND `branch` is the branch that repo's track
-    # reads (app → `release`, gem → `main`), so a hub `main` push — whose release track
-    # lives on `release` — never triggers a release-CI morph on the wrong branch.
+    # reads (an app → `release`; a gem → whichever branch its ladder names, `release`
+    # for a three-rung gem and `main` only for a two-rung one), so a hub `main` push —
+    # whose release track lives on `release` — never triggers a morph on the wrong
+    # branch.
     def release_ci_slot_for(release, nwo, branch)
       return nil unless release.respond_to?(:active?) && release.active?
 
@@ -157,6 +187,8 @@ module Ci
       return nil unless member_repos(release).include?(repo)
 
       target_nwo, target_branch, workflow = ci_target_for(repo)
+      # A gem whose ladder names NO candidate branch arrives here as nil, which no
+      # real branch equals — so it fires nothing, which is the fail-closed outcome.
       return nil unless branch.to_s == target_branch
 
       # Same split as #for_release, and it must STAY the same: this is the live path
@@ -515,13 +547,30 @@ module Ci
 
     # Where a repo's release-candidate CI lives: [nwo, branch, workflow_name]. App
     # repos → the `release` branch's `name: "CI"` run; gem repos → their own suite on
-    # `main` (workflow may be nil for an unmapped gem, meaning "newest main run of any
-    # workflow"). See GEM_CI_WORKFLOWS.
+    # the branch their registry LADDER puts the candidate on (three-rung → `release`,
+    # two-rung → `main`; workflow may be nil for an unmapped gem, meaning "newest run
+    # of any workflow on that branch"). See GEM_CI_BRANCHES and GEM_CI_WORKFLOWS.
+    #
+    # THE BRANCH CAN BE NIL — a gem whose ladder declares neither rung count. Every
+    # caller reads that as "no verdict" and renders a blank track; none falls back.
     def ci_target_for(repo)
       nwo = nwo_for(repo)
-      return [nwo, GEM_CI_BRANCH, GEM_CI_WORKFLOWS[repo]] if Release::Repos.gem?(repo)
+      return [nwo, gem_ci_branch(repo), GEM_CI_WORKFLOWS[repo]] if Release::Repos.gem?(repo)
 
       [nwo, Release::BRANCH, GithubWorkflowRun::CI_WORKFLOW]
+    end
+
+    # The branch a gem's release candidate lives on, by its registry ladder, or nil
+    # when the registry declares no ladder this reader understands. See GEM_CI_BRANCHES.
+    #
+    # An unreadable or malformed registry must not 500 the board, and must not GUESS a
+    # branch either — so it lands in ErrorLog and fails closed to nil, which every
+    # caller renders as a blank track.
+    def gem_ci_branch(repo)
+      GEM_CI_BRANCHES[Release::Repos.ladder(repo)]
+    rescue StandardError => e
+      ErrorLog.capture!(e)
+      nil
     end
 
     # Latest ingested CI-run SHA for one repo+branch, or nil. `workflow_name` scopes

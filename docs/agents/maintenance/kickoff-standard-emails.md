@@ -152,8 +152,12 @@ Operational notes for the gem repo, which behaves differently from an app:
 
 - **The fast lane does not work for gem repos.** `bin/task begin` / `bin/ship`
   assume an app checkout. Use plain worktrees and the long-form commands.
-- **Gem-repo PRs ride the two-rung ladder** — retarget to `release`, not
-  `accepted`.
+- **Gem-repo PRs target `accepted`, like every other repo.** studio-engine
+  declares `ladder: three-rung` in `config/release_repos.yml` and carries all
+  three rungs (`git ls-remote origin accepted release main` answers for each,
+  checked 2026-08-30). The "gems are two-rung" line this replaces was wrong on
+  both counts — it also put a gem's release-candidate CI on `main`, which is the
+  bug /tasks/gem-track-reads-main fixed.
 - **Consumer CI reads the consumers' `main`.** Anything that would break a host
   needs the host made forward-compatible first. This change should be additive,
   so verify that rather than assume it.
