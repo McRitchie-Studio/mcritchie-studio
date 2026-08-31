@@ -427,9 +427,11 @@ unless decision["builder_known"]
     # who — so the authors on record are a subset, and a pick made over that subset
     # can still land on an author (measured 2026-08-30: PR #1081 seated Alex).
     warn!("  Authors on record: #{Array(decision["builders"]).join(", ")}.")
-    warn!("  But session #{session} ALSO claimed this task and named no soul, so the")
-    warn!("  author list is INCOMPLETE — the exclusion cannot cover a soul it cannot")
-    warn!("  name. A handoff mid-build (a session limit, a re-claim) does this.")
+    warn!("  But session #{session} ALSO worked this task — it claimed or shipped it")
+    warn!("  while naming no soul — so the author list is INCOMPLETE, and the exclusion")
+    warn!("  cannot cover a soul it cannot name. A handoff mid-build does this: a")
+    warn!("  session limit kills the claimer and ANOTHER soul writes and ships the diff,")
+    warn!("  so the set names the claimer and the real author is still in the pool.")
   end
   warn!("")
   warn!("  Resolve it by stating the fact (name EVERY author, comma-separated):")

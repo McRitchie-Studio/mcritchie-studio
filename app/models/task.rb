@@ -858,7 +858,8 @@ class Task < ApplicationRecord
     devops.fetch("built_by", "").presence
   end
 
-  # EVERY soul that claimed this task, in claim order — the answer `built_by` cannot
+  # EVERY soul that WORKED this task, in the order recorded — the answer `built_by`
+  # cannot
   # give, because it holds one slug and a task can have several authors (a session
   # limit kills a builder mid-work and another soul finishes it). Append-only and
   # SERVER-OWNED: it is deliberately not in DEVOPS_KEYS, so a client can neither
@@ -2608,6 +2609,10 @@ class Task < ApplicationRecord
   # rather than on the claim save, because the statusline renews the lease every few
   # seconds with no actor: treating a renewal as an anonymous handoff would refuse
   # every task in the fleet, and a guard that cries wolf gets routed around.
+  #
+  # TWO authorship moments, not one. Accumulating on the CLAIM alone still misses the
+  # author who never claimed — see the `submit_save?` branch below, which closes that
+  # half and is why this method no longer keys on the claim exclusively.
   def builder_roll_call(claim, named, soul)
     # The STORED built_by joins the set too, and it has to be read separately from
     # `soul`: on a claim that names a new soul, `soul` IS that new soul, so seeding
@@ -2630,9 +2635,77 @@ class Task < ApplicationRecord
       elsif authors.any? && claim_party_changed?
         unattributed = claiming_party_id
       end
+    elsif submit_save?
+      # THE AUTHOR IS NOT ALWAYS THE CLAIMER — the half the accumulator above cannot
+      # see. Everything before this point keys on the CLAIM, so a soul who never
+      # claimed the task and wrote the entire diff never enters the set. Measured
+      # 2026-08-30 on PR #1094: shannon's agent claimed the task and was killed by a
+      # session limit with NOTHING committed; ALEX then wrote the whole diff and both
+      # test files, and shipped it. built_by read "shannon" and `builders` held only
+      # shannon, so `bin/reviewer-select` ran happily, excluded a soul who had written
+      # nothing, and left the REAL author in the light pool (alex:0.9968, ranked 3rd).
+      # Jasper drew the seat by luck of the seeded roll; a different roll seats the
+      # author on his own diff and every mechanical check still reports the property
+      # upheld. That is the WORSE failure: the blank-built_by case fails CLOSED and a
+      # human decides, while this one fails CONFIDENTLY WRONG. It is also the standard
+      # shape of a session-limit handover, which happened FOUR times that day.
+      #
+      # So the SUBMIT is an authorship moment too, and it is the right one: it is the
+      # save that turns a diff into a PR, so whoever drives it is the party handing
+      # over work. Two outcomes, mirroring the claim above:
+      #   NAMED — `--actor <soul>` on the submit ADDS that soul to the set. The
+      #     handover author can therefore declare themselves through the flag that
+      #     already exists, with no new one to remember.
+      #   UNNAMED — a bare submit carries the mover's SESSION as its actor. When that
+      #     session is provably not the one that claimed the task, an author worked
+      #     here whom the record cannot name, which is precisely what
+      #     `builders_unattributed` already means: ReviewerSelector reports the authors
+      #     UNKNOWN and the CLI refuses. Omitting the flag is therefore LOUD (a refusal
+      #     a human must clear) rather than silent, which is the failure mode that
+      #     produced /tasks/agent-flag-silently-drops.
+      actor = Current.task_event_actor.to_s.strip
+      if self.class.soul?(actor)
+        authors |= [actor]
+      elsif authors.any? && (shipper = handoff_shipping_party(actor))
+        unattributed = shipper
+      end
     end
 
     [authors, unattributed]
+  end
+
+  # True when THIS save hands the build off — the task LANDS on `submitted`. Keyed on
+  # the transition, not on sitting there: the later writes a submitted task takes
+  # (`--checks`, a pr_url stamp, the review's own moves) are not authorship moments,
+  # and treating them as such would let any passing session stamp a handoff.
+  def submit_save?
+    stage == "submitted" && will_save_change_to_stage?
+  end
+
+  # The SHIPPING session, when it is provably NOT the one holding the claim — the
+  # signature of an author who never claimed. nil (no signal, stay silent) unless
+  # every part of that is on record, because a guard that cries wolf gets routed
+  # around and this one has to survive the ordinary case untouched:
+  #   - a blank actor says nothing (a plain shell / CI submit stamps no actor);
+  #   - a soul actor is handled by the caller — it NAMES the author rather than
+  #     flagging one, so it never reaches here;
+  #   - an operator EMAIL is a board action, not a shipping session. Dragging a card
+  #     to `submitted` on the web is not evidence about who wrote the diff, and
+  #     stamping it would refuse reviews for a move that carries no authorship claim
+  #     at all (TasksController sets the actor to current_user.email there);
+  #   - a BLANK claimed_session leaves nothing to differ FROM. A claim that recorded
+  #     no session (plain shell / CI) is already the degraded path; inferring a
+  #     handover from its absence would flag every such task;
+  #   - and the common case by far — the claimer ships their OWN work, actor ==
+  #     claimed_session — must produce no signal whatsoever.
+  # What remains is the exact PR #1094 shape: session A claimed, session B shipped.
+  def handoff_shipping_party(actor)
+    return nil if actor.empty? || actor.include?("@")
+
+    claimed = prior_devops["claimed_session"].to_s.strip
+    return nil if claimed.empty? || actor == claimed
+
+    actor
   end
 
   # The party holding the claim — the agent SESSION (ClaimLease's `claimed_session`).
