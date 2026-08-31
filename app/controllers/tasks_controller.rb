@@ -410,15 +410,24 @@ class TasksController < ApplicationController
       :priority,
       :agent_slug,
       :stage,
-      # WHAT THIS LIST DOES AND DOES NOT DECIDE. It governs which devops names a
-      # form POST may WRITE. It does NOT govern which names SURVIVE the write —
-      # Task.merge_devops_metadata merges the posted subset onto the stored hash,
-      # so a name absent from this list (and from the form) is left untouched
-      # rather than deleted. It used to decide both, which made every unlisted
-      # name — agent_context, built_by, gem_bump, pr_urls, the mascot/session
-      # keys — silently destructible by anyone editing an acceptance bullet in a
-      # browser, and made the list permanently one key behind the model.
+      # WHAT THIS LIST DOES AND DOES NOT DECIDE — FOR THIS FORM PATH. It governs
+      # which devops names a form POST may WRITE. It does NOT govern which names
+      # SURVIVE the write — Task.merge_devops_into_metadata merges the posted
+      # subset onto the stored hash, so a name absent from this list (and from the
+      # form) is left untouched rather than deleted. It used to decide both, which
+      # made every unlisted name — agent_context, built_by, gem_bump, pr_urls, the
+      # mascot/session keys — silently destructible by anyone editing an acceptance
+      # bullet in a browser, and made the list permanently one key behind the model.
       # Adding a name here is now about letting the board EDIT it, nothing more.
+      #
+      # SCOPE, stated because its absence cost a task's acceptance criteria. This
+      # paragraph is about the BOARD FORM's permit list and nothing else. Until
+      # 2026-08-30 it was the only place the merge rule was written down, while the
+      # JSON API — the path every agent and every bin/ script writes through —
+      # REPLACED metadata["devops"] wholesale. Every word here was true of this
+      # path and read as a guarantee about the field, so a caller who greps for the
+      # semantics found it and stopped looking. Both paths now share one fold; the
+      # incident note lives with it, on Task.merge_devops_into_metadata.
       devops: [
         :kind,
         :shape,
@@ -470,23 +479,15 @@ class TasksController < ApplicationController
 
   # Fold a form's PARTIAL devops post into the task's full metadata.
   #
-  # The devops half is a MERGE, not a replacement — see
-  # Task.merge_devops_metadata for why an unposted name means "unchanged" and a
-  # posted-but-blank one still means "cleared". `#create` reaches here with
-  # @task nil, so the merge starts from an empty base and the result is exactly
-  # the normalized post.
+  # The fold itself lives on the MODEL (Task.merge_devops_into_metadata) because
+  # the JSON API needs the identical rule. It used to live here, private to this
+  # controller, and the API therefore did not have it — it replaced
+  # metadata["devops"] wholesale and destroyed a reviewed task's acceptance
+  # criteria on 2026-08-30. One implementation, two callers, no drift.
   #
-  # The `devops` key itself is dropped when the merge empties it, so a task with
-  # no devops data carries no empty hash — `Task#devops?` and the show page's
-  # handoff panel both key off presence.
+  # `#create` reaches here with @task nil, so the merge starts from an empty base
+  # and the result is exactly the normalized post.
   def merged_metadata_with_devops(raw_devops)
-    base = (@task&.metadata || {}).deep_dup
-    merged = Task.merge_devops_metadata(base["devops"], raw_devops)
-    if merged.any?
-      base["devops"] = merged
-    else
-      base.delete("devops")
-    end
-    base
+    Task.merge_devops_into_metadata(@task&.metadata, raw_devops)
   end
 end

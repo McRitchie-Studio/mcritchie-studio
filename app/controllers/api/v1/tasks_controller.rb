@@ -280,9 +280,36 @@ module Api
         attrs.delete("slug") unless action_name == "create"
         return attrs unless params[:devops]
 
-        attrs["metadata"] = attrs.fetch("metadata", {}).to_h.merge(
-          "devops" => Task.normalize_devops_metadata(raw_devops_params)
-        )
+        # A devops post MERGES onto what the task already carries. It does NOT
+        # replace metadata["devops"], and it does NOT replace the metadata column.
+        #
+        # ⚠ IT USED TO DO BOTH, and that is the defect this line closes. This
+        # endpoint built the column from the POSTED params alone, so a PATCH
+        # carrying one devops key ({"devops": {"included_in_release": false}})
+        # deleted every devops name it did not mention AND every non-devops
+        # metadata name — at HTTP 200, with no warning and no history to recover
+        # from. On 2026-08-30 that took a REVIEWED task from 20 devops keys to 8,
+        # and the lost acceptance criteria were the contract its review had been
+        # conducted against.
+        #
+        # The board form has always merged. The divergence survived because the
+        # merge rule was documented on the FORM controller's permit list, where it
+        # reads as a general guarantee about the field — so a caller who greps for
+        # the semantics finds a true statement about the other path and stops
+        # looking. Both paths now call Task.merge_devops_into_metadata; read the
+        # incident note there before changing either.
+        #
+        # TO DELETE A DEVOPS KEY, POST IT BLANK. Deletion stays expressible, it
+        # just has to be said out loud. Omission means "unchanged" — which is what
+        # every caller already believed it meant.
+        #
+        # An explicitly posted `metadata` is still an authoritative whole-column
+        # write (that is what assigning the column means); the devops half is then
+        # folded onto it rather than onto the stored hash. On #create @task is nil,
+        # so the fold starts from an empty base and the result is exactly the
+        # normalized post.
+        base = attrs.key?("metadata") ? attrs["metadata"] : @task&.metadata
+        attrs["metadata"] = Task.merge_devops_into_metadata(base, raw_devops_params)
         attrs
       end
 

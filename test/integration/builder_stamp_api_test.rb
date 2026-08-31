@@ -52,9 +52,9 @@ class BuilderStampApiTest < ActionDispatch::IntegrationTest
     # the authors UNKNOWN, and refuses. See the roster cases at the bottom of this
     # file and in test/models/task_builder_roll_call_test.rb.
     #
-    # The API replaces devops WHOLESALE, so a `--checks` update that never
-    # mentions built_by would otherwise erase who built the task — after review
-    # had already been routed on it.
+    # Since api-devops-patch-replaces the API MERGES, so an unmentioned key now
+    # survives on its own: this drives the MERGE, not the guard. The guard's one
+    # remaining job — a key posted BLANK — is the test below it.
     task = Task.create!(title: "Builder Defend Probe Task", stage: "designed",
                         agent_slug: "shannon", metadata: { "devops" => {} })
     claim!(task, actor: "019f3b0c-3a8d-73b1-9e8b-f380e11fb91b")
@@ -64,6 +64,24 @@ class BuilderStampApiTest < ActionDispatch::IntegrationTest
           headers: { "Authorization" => "Bearer #{token}" }, as: :json
 
     assert_equal "shannon", task.reload.metadata.dig("devops", "built_by")
+  end
+
+  # The DEFEND half of Task#enforce_builder_stamp, which the merge did NOT make
+  # redundant: built_by is a DEVOPS_KEY and the merge keys on the POSTED names, so
+  # a blank post drops it and only the before_save puts it back. Without this case
+  # deleting that `|| prior_devops["built_by"]` passes the whole suite.
+  test "a client cannot erase the builder by posting it blank" do
+    task = Task.create!(title: "Builder Blank Post Probe", stage: "designed",
+                        agent_slug: "shannon", metadata: { "devops" => {} })
+    claim!(task, actor: "019f3b0c-3a8d-73b1-9e8b-f380e11fb91b")
+
+    patch "/api/v1/tasks/#{task.slug}",
+          params: { devops: { built_by: "" } },
+          headers: { "Authorization" => "Bearer #{token}" }, as: :json
+
+    assert_response :success
+    assert_equal "shannon", task.reload.metadata.dig("devops", "built_by"),
+                 "a client must not be able to erase who built the task"
   end
 
   # ── THE RESUME PATH (rule 1) ────────────────────────────────────────────────

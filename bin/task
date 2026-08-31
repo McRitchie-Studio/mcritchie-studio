@@ -6,7 +6,11 @@
 # Wraps /api/v1 so agents never hand-roll auth, JSON, or stage transitions.
 # Three footguns it removes for you:
 #   * `update` does read-merge-write on metadata.devops, so a partial update
-#     NEVER wipes existing devops fields (the raw API replaces them wholesale).
+#     NEVER wipes existing devops fields. The server merges too now
+#     (api-devops-patch-replaces, 2026-08-30 — it used to REPLACE them wholesale,
+#     and did destroy a reviewed task's acceptance criteria). This client-side
+#     merge stays: it is what makes the PATCH body say what the caller meant, and
+#     it keeps this CLI correct against a board that has not taken the fix yet.
 #   * list flags are repeatable and sent as arrays, so commas inside individual
 #     values are preserved by the task-board API.
 #   * unknown flags are REJECTED (exit 1) with a nearest-flag suggestion —
@@ -543,11 +547,13 @@ LIST_FLAGS = { "--repo" => "repositories", "--risk" => "risk_tags", "--accept" =
 #
 # MERGES per repo (read-merge-write, like every other `update` flag): recording
 # turf's PR leaves the hub's entry alone. SEQUENTIALLY — say the caveat rather
-# than write "never". The merge happens CLIENT-side against a server that replaces
-# metadata["devops"] wholesale with no optimistic lock, so a peer devops writer
-# that read the record first can still restore a devops without the entry. That is
-# true of every devops key and is not new here; the house's ≤5-concurrent-writers
-# norm is what keeps it theoretical, not a mechanism in this file.
+# than write "never". The merge happens CLIENT-side, and the server treats a
+# POSTED name as authoritative with no optimistic lock, so a peer devops writer
+# that read the record first still overwrites the map with its own copy — one
+# without the entry. That is true of every devops key and is not new here; the
+# house's ≤5-concurrent-writers norm is what keeps it theoretical, not a mechanism
+# in this file. (The server-side merge closes the OMISSION hazard, not this
+# read-then-write one: a lost update needs two writers, a silent wipe needed one.)
 #
 # `--pr-url` stays the primary and is folded into the map automatically by
 # Task#release_pr_urls — you do not repeat it here, and it WINS for the repo it
@@ -878,9 +884,15 @@ end
 # Fold one map flag's entries into whatever the board already holds for that key.
 # A nil value is the TOMBSTONE `--pr-url-for <repo>=none` writes: it DELETES the
 # entry rather than storing a blank, so the PATCH body carries the map the
-# operator meant and the server's wholesale devops replace makes it stick. A map
-# left empty by the last delete is sent as `{}`, which the server drops — the key
-# disappears, which is the point.
+# operator meant. It sticks because the server treats a POSTED name as
+# authoritative — `pr_urls` is in the body, so the stored map is replaced by this
+# one, not merged with it. A map left empty by the last delete is sent as `{}`,
+# which the server drops — the key disappears, which is the point.
+#
+# That survived the server-side merge (api-devops-patch-replaces) precisely
+# BECAUSE Task.merge_devops_metadata keys on the posted NAMES rather than on the
+# values that survive normalization. Pinned by "emptying the pr_urls map still
+# removes the key" in test/controllers/api/v1/tasks_controller_test.rb.
 def merge_devops_map(prior, incoming)
   merged = prior.is_a?(Hash) ? prior.dup : {}
   incoming.each { |repo, value| value.nil? ? merged.delete(repo) : merged[repo] = value }
@@ -1956,8 +1968,10 @@ when "move"
   # Claim the task on the move to building. The gate refuses (loudly, overridable
   # with --steal) when a DIFFERENT live instance already holds it; otherwise it
   # claims/renews the lease. Read-merge-write so the claim + session fields ride
-  # alongside existing devops without wiping them (the raw API replaces
-  # metadata.devops wholesale). No session → no claim (plain shell / CI degrades).
+  # alongside existing devops without wiping them. Belt and braces since
+  # api-devops-patch-replaces: the server merges too now, but this CLI must stay
+  # correct against a board that has not taken that fix yet.
+  # No session → no claim (plain shell / CI degrades).
   if stage == "building" && !mover_session.nil?
     current = api(:get, "/api/v1/tasks/#{slug}")["data"]
     current_devops = current.dig("metadata", "devops") || {}

@@ -1,9 +1,11 @@
 require "test_helper"
+require_relative "../../../support/devops_key_spread"
 
 module Api
   module V1
     class TasksControllerTest < ActionDispatch::IntegrationTest
       include ActiveJob::TestHelper
+      include DevopsKeySpread
 
       # Stands in for Avi::Sizer.new(task) in the perform-through sizing test.
       SizerReturning = Struct.new(:size) { def call = size }
@@ -169,14 +171,136 @@ module Api
         assert @task.requires_release_conductor?
       end
 
+      # === A PARTIAL devops PATCH must not delete the rest (api-devops-patch-replaces) ===
+      #
+      # THE INCIDENT, 2026-08-30. A `PATCH /api/v1/tasks/<slug>` carrying one key
+      # ({"devops": {"included_in_release": false}}) took
+      # /tasks/mainnet-launch-doc-vault-rename from 20 devops keys to 8. HTTP 200,
+      # no warning. Seven of the lost keys — acceptance, agent_context, checks_run,
+      # risk_tags, app_color, session_id, session_provider — could not be
+      # recovered: the board keeps no task-version history, and the free-text
+      # fields exist nowhere else. The task was already `reviewed`, so the lost
+      # acceptance criteria were the contract the review had been conducted
+      # against.
+      #
+      # WHY THE FORM PATH'S TESTS DID NOT COVER THIS. The identical bug was found
+      # and fixed for the BOARD FORM (see test/controllers/tasks_controller_test.rb,
+      # "a board UI edit leaves the devops keys its form omits intact"). The API
+      # path was never touched, so two controllers accepting the same field
+      # behaved OPPOSITELY — and the API is the one every agent and every bin/
+      # script writes through.
+      #
+      # These assert the PROPERTY over Task::DEVOPS_KEYS, deliberately mirroring
+      # the form-path test. Naming today's keys would keep passing while the NEXT
+      # key added to the model was still destroyed.
+
+      test "[integration] a partial devops PATCH leaves the devops keys it omits intact" do
+        @task.update!(metadata: { "devops" => devops_key_spread, "unrelated" => "kept" })
+        # Baseline = what the MODEL actually kept, not what the spread offered. A
+        # `designed` task legitimately carries no ClaimLease::CLAIM_KEYS (they live
+        # only on `building`), so asserting over the spread would fail on that
+        # invariant rather than on the behavior under test.
+        stored = @task.reload.devops
+        posted = %w[kind]
+        unposted = (Task::DEVOPS_KEYS & stored.keys) - posted
+
+        # Vacuity guards. The loop below says nothing unless there really are
+        # stored keys this PATCH never mentions, and these four are the ones
+        # measured lost in the incident — a fixture that stopped carrying them
+        # would make this test pass while proving nothing.
+        assert_not_empty unposted, "guard: stored keys must be omitted for this test to mean anything"
+        assert_empty %w[agent_context acceptance checks_run risk_tags] - unposted,
+                     "guard: the keys measured lost on the board must be in the covered set"
+
+        patch api_v1_task_path(@task.slug),
+              params: { devops: { kind: "feature" } }, headers: @headers, as: :json
+
+        assert_response :success
+        devops = @task.reload.devops
+        assert_equal "feature", devops["kind"], "the posted key is authoritative"
+        unposted.each do |key|
+          assert_equal stored[key], devops[key],
+                       "devops.#{key} was destroyed by an API PATCH that never mentioned it"
+        end
+      end
+
+      # The blast radius was wider than metadata["devops"]. The API assigned the
+      # whole `metadata` COLUMN from the posted params, so a devops PATCH replaced
+      # every top-level metadata name too — `reviewers` among them. The form path
+      # has always merged onto the stored column; this pins the API to the same.
+      test "[integration] a partial devops PATCH leaves the rest of metadata intact" do
+        @task.update!(metadata: { "devops" => { "kind" => "bug" }, "unrelated" => "kept" })
+
+        patch api_v1_task_path(@task.slug),
+              params: { devops: { branch: "feat/api-devops-patch-replaces" } },
+              headers: @headers, as: :json
+
+        assert_response :success
+        assert_equal "kept", @task.reload.metadata["unrelated"],
+                     "a devops PATCH must not touch the rest of the metadata column"
+        # Guards, both halves: the post must actually LAND, and the stored key
+        # must SURVIVE. Asserting only the survivor would pass on a controller
+        # that dropped the payload entirely.
+        assert_equal "feat/api-devops-patch-replaces", @task.devops["branch"],
+                     "guard: the posted key must land"
+        assert_equal "bug", @task.devops_kind, "guard: the stored key must survive"
+      end
+
+      # The OTHER half of the contract, and the reason the merge keys on the POSTED
+      # NAMES rather than on the normalized hash. Deleting a key stays expressible —
+      # it just has to be said out loud (post it blank) instead of happening by
+      # omission. Without this, the fix would trade silent deletion for no deletion.
+      test "[integration] a devops PATCH that carries a key blank still clears it" do
+        @task.update!(metadata: { "devops" => { "branch" => "feat/old", "agent_context" => "why this exists" } })
+
+        patch api_v1_task_path(@task.slug),
+              params: { devops: { branch: "" } }, headers: @headers, as: :json
+
+        assert_response :success
+        devops = @task.reload.devops
+        assert_not devops.key?("branch"), "a key posted blank must still clear"
+        assert_equal "why this exists", devops["agent_context"],
+                     "clearing one key must not clear an unposted one"
+      end
+
+      # bin/task's ONE deletion idiom, pinned. `--pr-url-for <repo>=none` removes a
+      # repo entry; when it removes the last one, bin/task sends `pr_urls: {}` and
+      # relies on the key DISAPPEARING (see its merge_devops_map comment, which
+      # credited "the server's wholesale devops replace"). Keying the merge on the
+      # posted names preserves that: `pr_urls` is posted, so it is dropped from the
+      # stored hash, and normalize drops the empty map rather than re-adding it.
+      test "[integration] emptying the pr_urls map still removes the key" do
+        @task.update!(metadata: { "devops" => {
+                        "pr_urls" => { "turf-monster" => "https://github.com/McRitchie-Studio/turf-monster/pull/305" },
+                        "agent_context" => "why this exists"
+                      } })
+
+        patch api_v1_task_path(@task.slug),
+              params: { devops: { pr_urls: {} } }, headers: @headers, as: :json
+
+        assert_response :success
+        devops = @task.reload.devops
+        assert_not devops.key?("pr_urls"), "the last entry removed must unfile the key entirely"
+        assert_equal "why this exists", devops["agent_context"],
+                     "unfiling the map must not delete an unposted key"
+      end
+
       # --- the builder stamp rides the real API path (builder-stamp-misses-reviewer-guard) ---
       #
-      # The route that has to carry it is hostile to it: merged_metadata_with_devops
-      # does `base["devops"] = normalized`, a WHOLESALE replace, so anything not in
-      # the payload is dropped. The stamp is therefore a before_save invariant, and
-      # these drive the exact request `bin/task move <slug> building --actor <soul>`
-      # sends — the one that silently no-op'd at exit 0 and sent two tasks to review
-      # with no builder on record.
+      # The route used to be hostile to it: this endpoint replaced metadata["devops"]
+      # wholesale, so anything not in the payload was dropped. The stamp is
+      # therefore a before_save invariant, and these drive the exact request
+      # `bin/task move <slug> building --actor <soul>` sends — the one that
+      # silently no-op'd at exit 0 and sent two tasks to review with no builder on
+      # record.
+      #
+      # THE REPLACE IS GONE (api-devops-patch-replaces): the endpoint now merges,
+      # so an omitted key survives on its own. The before_save invariant STAYS —
+      # it is what defends built_by against a caller that posts the name blank,
+      # which the merge honors as a deliberate clear. Note the shape of the old
+      # bug: built_by, checks_run, app_color and the mascot keys each earned their
+      # own server-side defense against the same wound, one key at a time. The
+      # merge is what stops the next key needing one.
 
       test "[integration] a re-claim PATCH on an already-building task stamps built_by" do
         @task.update!(stage: "building")
@@ -196,7 +320,7 @@ module Api
           "the re-claim stamps the builder even with no stage transition"
       end
 
-      test "[integration] a later wholesale devops PATCH cannot drop built_by" do
+      test "[integration] a later partial devops PATCH cannot drop built_by" do
         @task.update!(stage: "building")
         patch api_v1_task_path(@task.slug),
               params: { stage: "building", event: { source: "cli", actor: "carl" },
@@ -205,14 +329,14 @@ module Api
               headers: @headers, as: :json
         assert_equal "carl", @task.reload.devops_built_by
 
-        # A partial client PATCH that never mentions built_by — the shape that
-        # wipes any devops key not defended by a before_save.
+        # A partial client PATCH that never mentions built_by — the shape that used
+        # to wipe any devops key not defended by a before_save.
         patch api_v1_task_path(@task.slug),
               params: { devops: { kind: "bug" } }, headers: @headers, as: :json
 
         assert_response :success
         assert_equal "carl", @task.reload.devops_built_by,
-          "the builder survives the controller's wholesale devops replace"
+          "the builder survives a partial PATCH that never mentions it"
       end
 
       # --- Column-backed names are not devops metadata (release-slug-two-universes) ---
