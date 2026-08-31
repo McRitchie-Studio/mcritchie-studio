@@ -1197,6 +1197,52 @@ class FastCheckTest < Minitest::Test
     end
   end
 
+  # A desk is written two ways on this machine, and the guard knew one:
+  #
+  #   <repo>/.worktrees/<slug>   the MANAGED layout bin/agent-worktree builds
+  #   <repo>.worktrees/<slug>    the SIBLING tree the gem repos use
+  #
+  # bin/agent-worktree manages only the registered Rails apps, so a studio-engine or
+  # solana-studio desk is cut with a plain `git worktree add` and lands beside the
+  # repo. Shelled, because this is the seam the operator actually meets: the refusal
+  # below is the text bin/fast-check, bin/full-suite-check and bin/ship all die! with,
+  # and answering it by hand — export DOR_CHECK_DIFF_ROOT and re-run — is what taught
+  # reviewers to override the guard on every engine review.
+  def test_a_sibling_tree_desk_certifies_on_its_physical_vouch
+    with_repo(subpath: "studio-engine.worktrees/task-x") do |dir, _|
+      # COMMIT first: the cert is the LAST build step, so the dirty-tree guard would
+      # otherwise refuse before the root guard is ever consulted (and this test would
+      # pass for the wrong reason). Diffing from HEAD~1 keeps widget.rb in the lane.
+      commit_all(dir)
+      # Default branch, NOT feat/task-x: the branch axis cannot vouch, so ONLY the
+      # physical desk vouch can save this run — which is what makes it a layout test
+      # rather than a branch test that would pass either way.
+      out, code, lines = run_check(dir, args: ["task-x"], implicit_root: true,
+                                   extra_env: { "TASK_SHOW_JSON" => GUARD_JSON,
+                                                "FAST_CHECK_DIFF_BASE" => "HEAD~1" })
+
+      assert_equal 0, code, "standing IN the task's desk must certify, whatever the layout: #{out}"
+      refute_match(/not task-x's tree/, out, "the builder was standing in the desk it named")
+      assert_match(/\[fast-cert@/, out, "the cert must actually be stamped")
+      refute_empty lane_calls(lines, "TEST"), "the lanes must run in the task's own desk"
+    end
+  end
+
+  # The control, and the half a second glob must not cost: the sibling tree is a desk
+  # LAYOUT, not a blanket exemption. A tree that merely lives in one, under the wrong
+  # name, is still not this task's tree and must still refuse.
+  def test_a_sibling_tree_directory_that_is_not_the_tasks_desk_still_refuses
+    with_repo(subpath: "studio-engine.worktrees/some-other-task") do |dir, _|
+      out, code, lines = run_check(dir, args: ["task-x"], implicit_root: true,
+                                   extra_env: { "TASK_SHOW_JSON" => GUARD_JSON })
+
+      assert_equal 1, code, "another task's desk is not this task's tree: #{out}"
+      assert_match(/not task-x's tree/, out)
+      refute_match(/\[fast-cert@/, out, "no evidence for a tree the task never touched")
+      assert_empty lane_calls(lines, "TEST"), "refusal fires BEFORE any lane runs"
+    end
+  end
+
   def test_task_branch_checkout_certifies_without_a_root_override
     with_repo do |dir, _|
       assert system("git", "-C", dir, "checkout", "-qb", "feat/task-x", out: File::NULL, err: File::NULL)
