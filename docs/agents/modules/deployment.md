@@ -304,6 +304,20 @@ bin/qa-server deploy turf-monster origin/main --yes
 bin/qa-server deploy rolio origin/release --yes
 ```
 
+**Every argument is accounted for before anything runs.** `bin/qa-server` guards
+its whole command line through `bin/lib/cli_arg_guard.rb` (dictionary:
+`bin/lib/qa_server_cli.rb`) before the dispatcher, so `--help` works in any
+position — including after a subcommand — and an argument the named subcommand
+does not read REFUSES instead of being silently dropped. Until 2026-08-31 it was
+dropped: `bin/qa-server provision <app> --yes --help` provisioned a QA server for
+real, because `--yes` had already suppressed the confirmation and `--help` was
+never inspected.
+
+Both answers exit NON-ZERO on purpose — help exits 1, an unrecognized argument
+exits 2. `bin/release` shells `bin/qa-server deploy <app> origin/release --yes`
+and reads its exit status as "the QA deploy succeeded", so a guard answering 0
+would hand the release sweep a green QA deploy it never performed.
+
 QA deploys are external writes, but they are not production deploys. They should
 use QA Heroku apps only, with production-like Rails boot and QA-safe config.
 Production deploy remains a separate, explicit ship decision Mr. McRitchie makes
