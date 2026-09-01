@@ -534,7 +534,8 @@ here. File anything you are unsure about on the desk ledger
 > **The reclaim no longer dirties the primary.** Its audit rows land on the board
 > (`DeskRecord`, on the Desks panel at `/deployments`), not in
 > `docs/agents/maintenance/delete-later.md` — which a sweep run from the primary could
-> never commit, stranding 98 rows across six stashes. A teardown REFUSES when the board
+> never commit, stranding 166 rows across twelve stashes and the primary's uncommitted
+> tree (recovered by `bin/harvest-desk-ledger`). A teardown REFUSES when the board
 > is unreachable, before anything is destroyed, so re-run the same command once it
 > answers.
 

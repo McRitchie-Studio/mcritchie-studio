@@ -20,7 +20,8 @@
 # ⛔ WHAT THIS GUARD COVERS, NOW THAT THE LEDGER HAS TWO HALVES. Since
 # `ledger-writes-to-primary`, `bin/agent-worktree` no longer writes these files: a teardown
 # run from the PRIMARY checkout landed its row on `main`, a branch nobody may commit to,
-# and 98 rows were stranded in stashes that were never restored. New desk records go to the
+# and 166 rows were stranded in stashes that were never restored (since recovered onto
+# the board by bin/harvest-desk-ledger). New desk records go to the
 # board (DeskRecord, POST /api/v1/desk_records) and render at /deployments.
 #
 # So this guard covers the FILES, and it still must: they are tracked history, they hold

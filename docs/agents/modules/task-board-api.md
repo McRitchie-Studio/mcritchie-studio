@@ -394,9 +394,10 @@ GET  /api/v1/desk_records         # read (filters: app, status, worktree_path, o
 **Why this exists.** `bin/agent-worktree` used to append its teardown row to
 `docs/agents/maintenance/delete-later.md`, resolved against the hub checkout. A cleanup
 is normally run from the **primary**, which sits on `main` — a branch nobody may commit
-to — so the audit row was created in the one place it could never be saved from. Six
-"restore later" stashes carrying 98 rows accumulated and none was ever restored. The
-records live here now and render on the **Desks panel at `/deployments`**.
+to — so the audit row was created in the one place it could never be saved from. Twelve
+"restore later" stashes carrying 166 rows accumulated, plus the primary's own uncommitted
+tree, and none was ever restored. The records live here now and render on the **Desks
+panel at `/deployments`**; `bin/harvest-desk-ledger` recovered the stranded ones.
 
 **Post the registry record verbatim.** The caller sends the hash
 `bin/agent-worktree snapshot` already builds; the server owns the mapping onto columns

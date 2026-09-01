@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_31_221500) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_01_020000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -536,6 +536,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_31_221500) do
     t.datetime "updated_at", null: false
     t.text "withheld_reason"
     t.string "worktree_path", null: false
+    t.index "((payload ->> 'import_key'::text))", name: "index_desk_records_on_import_key", unique: true, where: "((payload ->> 'import_key'::text) IS NOT NULL)"
     t.index ["app_slug"], name: "index_desk_records_on_app_slug"
     t.index ["last_seen_at"], name: "index_desk_records_on_last_seen_at"
     t.index ["resolved_on"], name: "index_desk_records_on_resolved_on"

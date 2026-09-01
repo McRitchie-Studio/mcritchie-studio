@@ -246,7 +246,9 @@ rather than deleting it.
 > (`DeskRecord`, visible on the Desks panel at `/deployments`), not in
 > `docs/agents/maintenance/delete-later.md`. That file used to take them, and because a
 > sweep runs from the primary — which sits on `main` — the rows could never be committed:
-> 98 of them were stranded in six "restore later" stashes and never restored. **A
+> **166** of them were stranded across twelve "restore later" stashes and the primary's own
+> uncommitted tree, and never restored. `/tasks/harvest-stranded-ledger-stashes` recovered
+> all 166 onto the board with `bin/harvest-desk-ledger`, which is safe to re-run. **A
 > teardown now REFUSES when the board is unreachable**, and it refuses *before* anything
 > is destroyed, so a failed write costs a re-run and nothing else. If you see that
 > refusal, fix the board access and re-run the same command.
