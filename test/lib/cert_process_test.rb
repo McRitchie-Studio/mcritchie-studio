@@ -407,11 +407,49 @@ class CertProcessTest < Minitest::Test
     assert_match(/PARALLEL_WORKERS=1/, diagnosis, "and the one command that gets the reader unstuck")
   end
 
-  def test_the_signature_names_a_parked_runner_with_no_zombies_to_point_at
-    diagnosis = CertProcess.diagnosis(zombies: 0, live: 1, cpu: 0.4, timeout: 900)
+  # REBOUND, not loosened. This test used to `assert_match(/PARKED/i, ...)` — it pinned the
+  # DEFECT. "The runner is PARKED, not working" is a claim about a HANG, and near-zero CPU
+  # cannot tell a hang from a healthy lane being starved by a loaded machine. It was wrong
+  # THREE TIMES on 2026-09-01 (load 111, load 244, a release sweep colliding), and each time
+  # it sent the reader at the wrong repair: kill the run, hunt a deadlock, raise the shared
+  # ceiling. The concern the assertion should have carried is what survives here — say what
+  # was SEEN, name the other explanation, and assert neither.
+  def test_an_idle_group_with_no_output_refuses_to_assert_a_hang
+    diagnosis = CertProcess.diagnosis(zombies: 0, live: 1, cpu: 0.4, timeout: 900,
+                                      pressure: saturated_machine)
 
-    assert_match(/PARKED/i, diagnosis)
+    refute_match(/is PARKED, not working/i, diagnosis,
+                 "THE REGRESSION: a hang asserted from evidence that cannot distinguish waiting from hung")
+    assert_match(/SATURATION/i, diagnosis, "name the explanation that was correct all three measured times")
+    assert_match(/244\.50/, diagnosis, "and carry the number that settles it, so the reader need not go find it")
     refute_match(/workers are DEAD/i, diagnosis, "do not claim corpses we did not see")
+  end
+
+  # THE DISCRIMINATOR. Carl's lane was writing dots FOUR SECONDS before it was sampled;
+  # a runner blocked on a lock does not do that. Output advancing beats a low CPU reading,
+  # and it routes to the branch that was correct in all three cases.
+  def test_output_that_advanced_beats_a_low_cpu_reading
+    advancing = CertProcess::Output.new(path: "log/test.log", age: 4.0, grew: true)
+    diagnosis = CertProcess.diagnosis(zombies: 0, live: 1, cpu: 0.4, timeout: 900, output: advancing)
+
+    refute_match(/PARKED/i, diagnosis)
+    assert_match(/still WRITING OUTPUT/i, diagnosis, "say WHY we think it was working")
+    assert_match(/slower than this ceiling/i, diagnosis)
+  end
+
+  def test_output_evidence_is_not_accepted_stale_or_second_hand
+    hour_old = CertProcess::Output.new(path: "log/test.log", age: 3600.0, grew: true)
+
+    assert_equal "log/test.log last written 1.0h ago and it GREW while we waited", hour_old.to_fact,
+                 "a stale age must read as a DURATION, not as raw seconds the reader has to divide"
+
+    refute hour_old.advancing?, "an hour-old write is not proof this lane is working NOW"
+
+    # `grew` is measured against a baseline taken BEFORE the wait. A log left fresh by the
+    # PREVIOUS run, or touched by a neighbouring process, must not certify this lane alive.
+    touched_by_somebody_else = CertProcess::Output.new(path: "log/test.log", age: 2.0, grew: false)
+
+    refute touched_by_somebody_else.advancing?, "it did not grow on OUR watch"
   end
 
   def test_an_unrecognised_hang_admits_it_rather_than_guessing
@@ -459,4 +497,191 @@ class CertProcessTest < Minitest::Test
                  "THE REGRESSION: 'RED' is the word that sent agents back into the wall for 41 minutes.")
   end
 
+
+  # --- [unit] the CPU sample: the GROUP, not its idling leader ---------------------------
+
+  def test_cpu_is_summed_across_the_group_not_read_off_the_leader
+    # bin/lib/cert_process.rb:191 read `live.find { |p| p[:pid] == pgid } || live.first` —
+    # the group LEADER. A cert lane's leader is a WRAPPER (sh -c, bin/rails, an Open3
+    # parent) that idles BY DESIGN while its child does the work. Measured 2026-09-01:
+    # leader 0.05s, real runner 52s, verdict "PARKED".
+    ps = cpu_stub("4242" => "0:00.05", "4243" => "0:52.00")
+    live = [{ pid: 4242, pgid: 4242 }, { pid: 4243, pgid: 4242 }]
+
+    assert_in_delta 52.05, CertProcess.group_cpu_seconds(live, ps: ps), 0.01
+  end
+
+  def test_an_unreadable_group_yields_no_cpu_reading_rather_than_zero
+    # The fabrication guard from parse_cpu_time, one level up. Zero CPU is the INPUT to a
+    # hang diagnosis, so inventing it is how this file lies with confidence.
+    ps = cpu_stub("4242" => "0:00.05")
+
+    assert_nil CertProcess.group_cpu_seconds([{ pid: 9999, pgid: 9999 }], ps: ps),
+               "no reading is NOT zero CPU"
+  end
+
+  # --- [unit] the output baseline: only growth on OUR watch counts -----------------------
+
+  def test_output_progress_counts_only_growth_on_our_own_watch
+    FileUtils.mkdir_p(File.join(@root, "log"))
+    log = File.join(@root, "log", "test.log")
+    File.write(log, "left over from the previous run\n")
+    baseline = CertProcess.output_probe(@root)
+
+    # A fresh mtime with NO growth — a neighbouring process, or a log rotated to the same
+    # size. Freshness alone would let the previous run vouch for this one.
+    FileUtils.touch(log)
+
+    refute CertProcess.output_progress(@root, baseline: baseline).advancing?,
+           "a fresh mtime with no growth is not this lane working"
+
+    File.write(log, "and now the lane itself writes\n", mode: "a")
+
+    assert CertProcess.output_progress(@root, baseline: baseline).advancing?,
+           "growth past the baseline IS the lane working"
+  end
+
+  # --- [unit] machine pressure rides the verdict -----------------------------------------
+
+  def test_the_verdict_carries_load_and_swap
+    signature = CertProcess.hang_signature(Process.getpgrp, timeout: 900, ps: "ps",
+                                           root: @root, pressure: saturated_machine)
+
+    assert_match(/load is 244\.50/, signature, "the reader should not have to go find the load themselves")
+    assert_match(/swap 860 MB free of 26624 MB/i, signature)
+
+    # ...and in the FACTS, not merely inside whichever diagnosis branch happened to fire.
+    # The DRb-zombie branch names no pressure at all, so a verdict carrying the numbers only
+    # through the diagnosis would drop them on exactly the hang that most needs them.
+    facts = signature.split(/No known deadlock signature|SIGNATURE:/).first
+
+    assert_match(/load is 244\.50/, facts, "load must ride the FACTS, whichever branch fires")
+    assert_match(/swap 860 MB free/, facts)
+  end
+
+  def test_machine_pressure_is_actually_readable_on_this_platform
+    # The parsers can be perfect and still read nothing if neither source exists here — in
+    # which case the verdict silently loses the fact that settled all three false positives,
+    # and no other test would notice.
+    pressure = CertProcess.pressure_reading
+
+    refute_nil pressure, "neither /proc nor sysctl answered: the saturation fact would be missing in production"
+    refute_nil pressure.load1
+    assert_operator pressure.load1, :>=, 0.0
+  end
+
+  def test_load_and_swap_are_parsed_strictly_or_not_at_all
+    assert_equal [6.0, 7.01, 12.46], CertProcess.parse_loadavg("{ 6.00 7.01 12.46 }"), "macOS sysctl"
+    assert_equal [0.52, 0.58, 0.59], CertProcess.parse_loadavg("0.52 0.58 0.59 1/1234 5678"), "/proc/loadavg"
+    ["", "{ }", "not a load", "{ 1.00 2.00 }"].each do |junk|
+      assert_nil CertProcess.parse_loadavg(junk), "#{junk.inspect} must yield NO reading, not a made-up one"
+    end
+
+    assert_equal [1574.75, 24_576.0],
+                 CertProcess.parse_swapusage("total = 24576.00M  used = 23001.25M  free = 1574.75M  (encrypted)")
+    assert_nil CertProcess.parse_swapusage("vm.swapusage: unavailable")
+
+    assert_equal [2048.0, 4096.0],
+                 CertProcess.parse_meminfo_swap("SwapTotal:       4194304 kB\nSwapFree:        2097152 kB\n")
+    assert_nil CertProcess.parse_meminfo_swap("MemTotal:  100 kB")
+  end
+
+  # --- [integration] the shape that fooled it: a waiting parent, a working child ----------
+
+  # THE DISCRIMINATING CASE, built as the process shape MEASURED on 2026-09-01.
+  #
+  # bin/fast-check's integration tier is subprocess-bound BY CONSTRUCTION: the parent sits
+  # in Open3.capture3 while children burn the CPU. Run against this same fixture BEFORE the
+  # fix, the signature read: "runner burned 0.1s of CPU across 900s ... SIGNATURE: the
+  # runner is PARKED, not working" — with a child beside it at 1.97s and a log growing by
+  # megabytes. Real processes, because the claim is about what `ps` actually shows.
+  def test_a_parent_blocked_in_open3_with_a_busy_child_is_not_called_parked
+    pgid, baseline = spawn_open3_shape
+
+    signature = CertProcess.hang_signature(pgid, timeout: 900, ps: "ps", root: @root,
+                                           baseline: baseline, pressure: saturated_machine)
+
+    refute_match(/PARKED/i, signature, "THE REGRESSION: a parent waiting on a working child is not parked")
+    refute_match(/not working/i, signature, "and do not assert it in any other words either")
+    assert_match(/slower than this ceiling/i, signature,
+                 "prefer the branch that was correct in all three measured cases")
+    assert_match(%r{log/test\.log}, signature, "name the evidence that settled it")
+
+    burned = signature[/burned ([\d.]+)s of CPU/, 1].to_f
+
+    assert_operator burned, :>=, 0.5,
+                    "the CPU fact must be the GROUP's, not the idling leader's: #{signature}"
+  end
+
+  private
+
+  # Load 244.50 and 860 MB of swap free — carl's machine at the moment it was told its
+  # healthy lane was parked.
+  def saturated_machine
+    CertProcess::Pressure.new(load1: 244.5, load5: 200.0, load15: 111.0,
+                              swap_free_mb: 860.0, swap_total_mb: 26_624.0)
+  end
+
+  # A `ps -p <pid> -o time=` that answers per pid and exits non-zero for anything it was not
+  # told about — so "unreadable" is testable as distinct from "idle".
+  def cpu_stub(times)
+    script = File.join(@root, "ps-cpu-stub")
+    arms = times.map { |pid, time| "  #{pid}) echo \"#{time}\" ;;" }.join("\n")
+    File.write(script, "#!/bin/sh\ncase \"$2\" in\n#{arms}\n  *) exit 1 ;;\nesac\n")
+    FileUtils.chmod(0o755, script)
+    script
+  end
+
+  # A parent BLOCKED in Open3.capture3 while its child burns CPU and writes the lane's own
+  # log — a healthy subprocess-bound test lane. Returns [pgid, output baseline].
+  def spawn_open3_shape
+    FileUtils.mkdir_p(File.join(@root, "log"))
+    log = File.join(@root, "log", "test.log")
+    File.write(log, "")
+    baseline = CertProcess.output_probe(@root)
+
+    burn = File.join(@root, "burn.rb")
+    File.write(burn, <<~KID)
+      log = File.open(ARGV[0], "a")
+      finish = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 30
+      n = 0
+      while Process.clock_gettime(Process::CLOCK_MONOTONIC) < finish
+        n += 1
+        if (n % 20_000).zero?
+          log.write(".")
+          log.flush
+        end
+      end
+    KID
+    block = File.join(@root, "block.rb")
+    File.write(block, <<~PARENT)
+      require "open3"
+      Open3.capture3(#{Gem.ruby.inspect}, #{burn.inspect}, #{log.inspect})
+    PARENT
+
+    pid = Process.spawn(Gem.ruby, block, pgroup: true, out: File::NULL, err: File::NULL)
+    @spawned << pid
+    pgid = Process.getpgid(pid)
+    # Reap the whole GROUP in teardown, not just the parent: killing the Open3 parent alone
+    # leaves its spinning child orphaned for the rest of the suite. A negative pid IS the
+    # group, and teardown already rescues ESRCH.
+    @spawned << -pgid if pgid.positive? && pgid != Process.getpgrp
+
+    # Wait for the shape to EXIST before sampling it: a child in the group, burning
+    # measurable CPU, with the log growing. A fixture asserted before it is ready proves
+    # nothing about the code under test.
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 20
+    loop do
+      members = CertOrphanGuard.process_table(ps: "ps").select { |p| p[:pgid] == pgid }
+      child = members.find { |p| p[:pid] != pgid }
+      break if child && File.size(log).positive? &&
+               CertProcess.cpu_seconds(child[:pid], ps: "ps").to_f >= 0.5
+      flunk "the Open3 fixture never reached its shape" if
+        Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+
+      sleep 0.1
+    end
+
+    [pgid, baseline]
+  end
 end

@@ -32,12 +32,76 @@ require_relative "cert_orphan_guard"
 # returns `:timeout` with a signature naming what the runner was doing. FAIL LOUD AND
 # ACCURATE BEATS FAIL SLOW AND WRONG — and a ceiling is worth having even when today's
 # deadlock is environmental, because the next one will not announce itself either.
+#
+# WHAT THE SIGNATURE IS ALLOWED TO CLAIM. The ceiling was the easy half; saying what the
+# runner was DOING is the hard one, and this file got it wrong for a while. It inferred a
+# hang from near-zero CPU on the process-group LEADER — but a cert lane's leader is a
+# WRAPPER that idles by design while its child works, so on 2026-09-01 it told three
+# different agents their healthy lanes were "PARKED, not working". All three were being
+# starved by a loaded machine (load 111; load 244; a release sweep colliding), and the
+# damage was the REPAIR the word invites: kill the run, hunt a deadlock, raise a shared
+# ceiling. So the evidence rules are now explicit — sample the whole GROUP, never its
+# leader; prefer OUTPUT LIVENESS over CPU, because a subprocess-bound lane burns no CPU
+# either way while only a working one keeps writing; carry the machine's load and swap in
+# every verdict; and where the evidence cannot separate waiting from hung, SAY SO rather
+# than pick. A confident wrong diagnosis costs more than an honest "I cannot tell".
 module CertProcess
   SIGNALS = %w[TERM INT HUP].freeze
 
   # How often a bounded wait re-checks a running lane. Invisible against a lane measured
   # in minutes, and it keeps the ceiling's resolution well under a second.
   POLL_INTERVAL = 0.25
+
+  # How fresh the lane's own output must be to count as PROOF OF WORK.
+  #
+  # Generous ON PURPOSE, and the asymmetry is the whole point: reading a live lane as
+  # merely slow costs the reader nothing (that IS the honest fallback), while reading a
+  # slow lane as parked is the bug this window exists to prevent. Carl's lane was writing
+  # dots four seconds before it was sampled; a runner blocked on a lock does not do that.
+  OUTPUT_FRESH_WINDOW = 120.0
+
+  # The lane's own output stream, as a FILE we can stat.
+  #
+  # The runner's stdout is the CERT's stdout — inherited, never captured — so the progress
+  # marks an agent watches scroll past are not ours to read. A Rails lane's durable
+  # equivalent is log/test.log: every query it runs lands there, which is exactly how all
+  # three false PARKED calls were refuted after the fact.
+  OUTPUT_PATHS = ["log/test.log"].freeze
+
+  # What the lane's output did WHILE WE WAITED.
+  #
+  # `grew` is measured against a baseline taken BEFORE the wait, so a log left fresh by a
+  # previous run — or touched by a neighbour — cannot masquerade as this lane working.
+  # `age` is wall-clock since the last write. Together they are the discriminator that CPU
+  # cannot be: a subprocess-bound parent burns no CPU whether it is working or hung, but
+  # only a working lane keeps advancing its output.
+  Output = Struct.new(:path, :age, :grew, keyword_init: true) do
+    def advancing?
+      grew && !age.nil? && age <= OUTPUT_FRESH_WINDOW
+    end
+
+    def to_fact
+      return "#{path}: gone" if age.nil?
+
+      "#{path} last written #{CertProcess.humanize_age(age)} ago" \
+        "#{grew ? " and it GREW while we waited" : ' but it did NOT grow while we waited'}"
+    end
+  end
+
+  # Machine pressure — the number every reader of a hang verdict had to go and find for
+  # themselves. All three false positives on 2026-09-01 were SATURATION (15-minute load of
+  # 111; load 244.50 with 860 MB of swap left; a release sweep colliding), and in each case
+  # the load average was the fact that settled it. It costs one sysctl to carry it here
+  # instead of leaving it as homework.
+  Pressure = Struct.new(:load1, :load5, :load15, :swap_free_mb, :swap_total_mb, keyword_init: true) do
+    def to_sentence
+      parts = []
+      parts << "load is #{format('%.2f', load1)} (5m #{format('%.2f', load5)}, " \
+               "15m #{format('%.2f', load15)})" if load1
+      parts << "swap #{format('%.0f', swap_free_mb)} MB free of #{format('%.0f', swap_total_mb)} MB" if swap_total_mb
+      parts.empty? ? "machine pressure unreadable" : parts.join(", ")
+    end
+  end
 
   # What the lane DID, as distinct from what it returned:
   #   :completed — the runner produced a verdict; `ok` carries it
@@ -123,7 +187,7 @@ module CertProcess
     end
 
     with_traps(pgid, started_at, root, ps: ps, on_signal: on_signal) do
-      wait_bounded(pid, pgid, timeout: timeout, ps: ps)
+      wait_bounded(pid, pgid, timeout: timeout, ps: ps, root: root)
     end
   ensure
     # Any abnormal exit (exception, `abort`, a trap that re-raises): never leave the
@@ -152,12 +216,16 @@ module CertProcess
   # on the main thread, where `with_traps`' handlers already live: a signal arriving mid-
   # wait must reap the group and `exit!`, and that is far easier to reason about when
   # there is no second thread holding a half-finished waitpid.
-  def self.wait_bounded(pid, pgid, timeout: nil, ps: "ps")
+  def self.wait_bounded(pid, pgid, timeout: nil, ps: "ps", root: nil)
     unless timeout.is_a?(Numeric) && timeout.positive?
       _, status = Process.waitpid2(pid)
       return Result.new(ok: status.success?, outcome: :completed)
     end
 
+    # BASELINE THE OUTPUT BEFORE THE WAIT. Freshness alone would let a log left behind by
+    # the PREVIOUS run vouch for this one; measured against a baseline, only growth on our
+    # own watch counts as evidence.
+    baseline = output_probe(root)
     deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
     loop do
       reaped = Process.waitpid2(pid, Process::WNOHANG)
@@ -171,7 +239,8 @@ module CertProcess
     # out; after that there is nothing left to diagnose, and the verdict would be reduced
     # to "it took too long" — which is the uninformative half of the bug we are fixing.
     Result.new(ok: false, outcome: :timeout,
-               detail: hang_signature(pgid, timeout: timeout, ps: ps))
+               detail: hang_signature(pgid, timeout: timeout, ps: ps, root: root,
+                                      baseline: baseline))
   end
 
   # What the process table says a hung lane was DOING — the sentence that tells a DEADLOCK
@@ -183,35 +252,192 @@ module CertProcess
   # fork-safety SIGSEGV in `pg/connection.rb`, `connect_start`, before any test runs) the
   # parent waits for results that can never arrive. Fourteen corpses and a parked parent is
   # not a slow suite, and the cert should say so instead of guessing.
-  def self.hang_signature(pgid, timeout:, ps: "ps")
+  def self.hang_signature(pgid, timeout:, ps: "ps", root: nil, baseline: nil,
+                          pressure: pressure_reading)
     table = CertOrphanGuard.process_table(ps: ps)
     members = table.select { |p| p[:pgid] == pgid.to_i }
     zombies, live = members.partition { |p| CertOrphanGuard.zombie?(p) }
-    leader = live.find { |p| p[:pid] == pgid.to_i } || live.first
-    cpu = leader && cpu_seconds(leader[:pid], ps: ps)
+    cpu = group_cpu_seconds(live, ps: ps)
+    output = output_progress(root, baseline: baseline)
 
     facts = ["process group #{pgid}: #{live.size} live, #{zombies.size} zombie"]
-    facts << "runner burned #{format('%.1fs', cpu)} of CPU across #{format('%.0fs', timeout)} of wall clock" if cpu
+    facts << "the group burned #{format('%.1fs', cpu)} of CPU across " \
+             "#{format('%.0fs', timeout)} of wall clock" if cpu
+    facts << output.to_fact if output
+    facts << "machine: #{pressure.to_sentence}" if pressure
 
-    "#{facts.join('; ')}. #{diagnosis(zombies: zombies.size, live: live.size, cpu: cpu, timeout: timeout)}"
+    "#{facts.join('; ')}. #{diagnosis(zombies: zombies.size, live: live.size, cpu: cpu,
+                                      timeout: timeout, output: output, pressure: pressure)}"
+  end
+
+  # CPU burned by the WHOLE process group, not by whichever member happens to lead it.
+  #
+  # THE BUG THIS REPLACES, in one line: `live.find { |p| p[:pid] == pgid } || live.first`
+  # sampled the group LEADER. A cert lane's leader is a WRAPPER — `sh -c`, `bin/rails`, an
+  # Open3 parent — that blocks BY DESIGN while its child does the work, so the number this
+  # produced was an idle parent's and the diagnosis built on it was "PARKED, not working".
+  # Measured three times on 2026-09-01: a leader at 0.1s in front of a runner that had
+  # burned 52s; a leader in front of children that had emitted 757 progress marks.
+  #
+  # nil when we could read NOTHING — `parse_cpu_time`'s fabrication guard, one level up. A
+  # PARTIAL read is honest (it is a floor on the group's CPU, and a floor is what the
+  # threshold needs); an empty one is not evidence at all, and zero is the input to a hang
+  # verdict, so inventing it is precisely how this file would lie with confidence.
+  def self.group_cpu_seconds(live, ps: "ps")
+    readings = live.filter_map { |p| cpu_seconds(p[:pid], ps: ps) }
+    return nil if readings.empty?
+
+    readings.sum
+  end
+
+  # The newest lane output file under `root`, as {path:, size:, mtime:} — or nil when there
+  # is nothing to read. `path` is kept RELATIVE because it is printed at the reader.
+  def self.output_probe(root)
+    return nil unless root
+
+    OUTPUT_PATHS.each do |rel|
+      stat = File.stat(File.join(root.to_s, rel))
+      return { path: rel, size: stat.size, mtime: stat.mtime }
+    rescue SystemCallError
+      next
+    end
+    nil
+  end
+
+  # Compare the output now against the baseline taken before the wait.
+  def self.output_progress(root, baseline: nil, now: Time.now)
+    current = output_probe(root)
+    return nil unless current || baseline
+    return Output.new(path: baseline[:path], age: nil, grew: false) unless current
+
+    grew = baseline.nil? ? current[:size].positive? : current[:size] > baseline[:size]
+    Output.new(path: current[:path], age: (now - current[:mtime]).to_f, grew: grew)
   end
 
   # The named signatures, most specific first. Anything we cannot recognise gets an honest
   # "we do not know" rather than a confident wrong answer — a diagnosis this file invents
   # is the same failure as the "lane(s) RED" it replaces.
-  def self.diagnosis(zombies:, live:, cpu:, timeout:)
+  #
+  # ADVANCING OUTPUT OUTRANKS A LOW CPU READING, and that ordering is the fix. The middle
+  # branch used to fire on near-zero CPU alone and print "the runner is PARKED, not
+  # working". CPU cannot carry that claim: a subprocess-bound lane's parent burns none
+  # whether it is working or hung, and a machine under load starves a healthy lane into the
+  # identical shape. Output can — a lane still writing its log four seconds ago is working,
+  # and a lane blocked on a lock is not writing anything. So when the output advanced we
+  # fall through to the ceiling branch, which was the CORRECT reading in all three measured
+  # false positives.
+  def self.diagnosis(zombies:, live:, cpu:, timeout:, output: nil, pressure: nil)
     if zombies.positive? && live <= 1
       "SIGNATURE: the forked test workers are DEAD (#{zombies} zombie(s)) and the runner is still " \
         "waiting on them over its DRb channel — results that can never arrive. Locally this is the pg " \
         "fork-safety SIGSEGV at the fork (pg/connection.rb, connect_start), before any test runs. " \
         "Re-run the lane with PARALLEL_WORKERS=1."
-    elsif cpu && cpu < [timeout * 0.02, 5.0].max
-      "SIGNATURE: the runner is PARKED, not working — near-zero CPU across the entire window. It is " \
-        "blocked on something (a channel, a lock, a database connection), not grinding through tests."
+    elsif cpu && cpu < [timeout * 0.02, 5.0].max && !output&.advancing?
+      idle_diagnosis(pressure)
     else
-      "No known deadlock signature: the runner may simply be slower than this ceiling allows. Raise " \
-        "the ceiling deliberately if so, and record what you measured."
+      slow_diagnosis(output, pressure)
     end
+  end
+
+  # WHAT THIS DELIBERATELY NO LONGER SAYS: "the runner is PARKED, not working."
+  #
+  # That sentence asserted a HANG from evidence that cannot tell a hang from a wait, and on
+  # 2026-09-01 it was wrong three times in one day — to three different agents, in two
+  # different runners, every one of them actually being starved by a loaded machine. The
+  # cost was never the wrong word; it was the wrong REPAIR it invites: kill the run, hunt a
+  # deadlock, or raise a shared ceiling. One agent came within a keystroke of raising
+  # FAST_CHECK_LANE_TIMEOUT and refused only because he had measured the opposite; a clean
+  # re-run later finished comfortably under the UNCHANGED ceiling. Raising it would have
+  # hidden every future sweep collision behind a bigger number, permanently.
+  #
+  # So: say what was SEEN, name the other explanation, and put the numbers that settle it in
+  # the same breath. "No CPU, and this may be saturation — load is N, swap is M" would have
+  # been TRUE in all three cases; "PARKED" was true in none.
+  def self.idle_diagnosis(pressure)
+    "SIGNATURE: no CPU worth the name anywhere in the process group, and no lane output advanced " \
+      "while we waited. That is consistent with a BLOCK (a channel, a lock, a database connection) " \
+      "— and equally consistent with SATURATION starving a healthy lane" \
+      "#{pressure ? ": #{pressure.to_sentence}" : ''}. CHECK THE LOAD BEFORE YOU HUNT A DEADLOCK. " \
+      "Re-run on a quiet machine first; if it passes there, the ceiling was never the problem."
+  end
+
+  # The branch that was RIGHT all three times, now able to say why.
+  def self.slow_diagnosis(output, pressure)
+    seen = if output&.advancing?
+             "the lane was still WRITING OUTPUT #{humanize_age(output.age)} before we gave up, so it " \
+               "was working rather than blocked, and "
+           else
+             ""
+           end
+    "No known deadlock signature: #{seen}the runner may simply be slower than this ceiling allows" \
+      "#{pressure ? " (#{pressure.to_sentence})" : ''}. Raise the ceiling deliberately if so, and " \
+      "record what you measured — but if the machine was merely BUSY, the remedy is to wait or to " \
+      "reduce concurrency, not a bigger ceiling."
+  end
+
+  # Read the machine's load and swap. Nil when this platform reports neither, so a verdict
+  # never carries a pressure claim we could not actually measure.
+  def self.pressure_reading(sysctl: "sysctl")
+    load = parse_loadavg(read_file("/proc/loadavg") || run_quietly(sysctl, "-n", "vm.loadavg"))
+    swap = parse_meminfo_swap(read_file("/proc/meminfo")) ||
+           parse_swapusage(run_quietly(sysctl, "-n", "vm.swapusage"))
+    return nil unless load || swap
+
+    Pressure.new(load1: load&.first, load5: load&.at(1), load15: load&.last,
+                 swap_free_mb: swap&.first, swap_total_mb: swap&.last)
+  end
+
+  # `sysctl -n vm.loadavg` renders "{ 6.00 7.01 12.46 }"; /proc/loadavg renders
+  # "6.00 7.01 12.46 1/2 3". One parser reads both: take the first three decimals and
+  # REFUSE anything else — a fabricated load average inside a saturation verdict is the
+  # same disease as a fabricated CPU reading, and this file already learned that one.
+  def self.parse_loadavg(text)
+    numbers = text.to_s.scan(/\d+\.\d+/).first(3).map(&:to_f)
+    numbers.size == 3 ? numbers : nil
+  end
+
+  # `sysctl -n vm.swapusage` → "total = 24576.00M  used = 23001.25M  free = 1574.75M".
+  def self.parse_swapusage(text)
+    total = text.to_s[/total\s*=\s*([\d.]+)M/, 1]
+    free  = text.to_s[/free\s*=\s*([\d.]+)M/, 1]
+    return nil unless total && free
+
+    [free.to_f, total.to_f]
+  end
+
+  # /proc/meminfo → "SwapTotal:  4194304 kB" / "SwapFree:  2097152 kB".
+  def self.parse_meminfo_swap(text)
+    total = text.to_s[/^SwapTotal:\s+(\d+) kB/, 1]
+    free  = text.to_s[/^SwapFree:\s+(\d+) kB/, 1]
+    return nil unless total && free
+
+    [free.to_f / 1024, total.to_f / 1024]
+  end
+
+  # A stale log is the load-bearing half of the idle signature, so its age has to READ
+  # correctly at a glance. Measured against a log left over from January, the raw seconds
+  # rendered as "21040718s ago" — arithmetic homework inside the one message whose entire
+  # job is to be understood on the first pass.
+  def self.humanize_age(seconds)
+    seconds = seconds.to_f
+    return format("%.0fs", seconds) if seconds < 90
+    return format("%.0fm", seconds / 60) if seconds < 3600
+    return format("%.1fh", seconds / 3600) if seconds < 172_800
+
+    format("%.1f days", seconds / 86_400)
+  end
+
+  def self.read_file(path)
+    File.read(path)
+  rescue SystemCallError
+    nil
+  end
+
+  def self.run_quietly(*cmd)
+    out = IO.popen(cmd, err: File::NULL, &:read).to_s
+    $?.success? ? out : nil
+  rescue Errno::ENOENT, SystemCallError
+    nil
   end
 
   # CPU seconds consumed by one pid, or nil when we cannot read it honestly.
