@@ -1205,6 +1205,60 @@ def current_code_phrase(eval)
   end
 end
 
+# WHAT IS RECORDED for a secondary repo whose cert just refused — read across EVERY
+# fingerprint-bound lane, not only the graded ones.
+#
+# THE DEFECT (2026-09-01, raised off /tasks/port-script-comment-guard): this clause
+# was built from FullSuiteGate::LANES alone, so it announced "and NOTHING is recorded
+# for it" while a fast-cert sat recorded at the EXACT fingerprint the same sentence
+# had just printed. Literally true of the graded lanes; false in the English a reader
+# acts on — and the reader acts. Measured cost, same day: "nothing is recorded" reads
+# as "certify it", the fast route is the cheap way to (dor-check's own help documents
+# it, for the PRIMARY repo), and bin/fast-check was run TWICE against a repo whose
+# fast cert was already recorded and whose CI was already green.
+#
+# So the clause reads EVIDENCE_LANES and names each lane beside its fingerprints.
+#
+# AND IT NAMES WHY, whenever a fast-cert line exists at all. That half is the one that
+# actually stops the wasted run: a reader told only that the fast cert does not count
+# goes hunting for the threshold to nudge, and there is none to find. FAST_LANE is in
+# EVIDENCE_LANES and deliberately NOT in LANES (bin/lib/full_suite_gate.rb, "the fast
+# lane is deliberately NOT part of `ok`"), and `ok` is computed over required_lanes —
+# so NO CI state can make a secondary repo's verdict true. The staleness of that
+# fast-cert is beside the point, which is why the reason fires for a STALE one too:
+# re-running bin/fast-check produces a FRESH fast cert that still cannot satisfy this
+# bar, so the trap is identical one step later.
+#
+# THE GATE IS UNCHANGED — this builds a STRING and grades nothing. LANES is untouched,
+# `ok` is still computed where it always was, and a fast-cert-only secondary repo still
+# REFUSES. test/lib/dor_check_multi_repo_cert_test.rb asserts that refusal alongside
+# the wording, in that order, because a test pinning only the wording would keep
+# passing on a gate someone had loosened by folding FAST_LANE into LANES.
+def secondary_cert_evidence(eval)
+  recorded = FullSuiteGate::EVIDENCE_LANES.filter_map do |lane|
+    fps = Array(eval.dig(:recorded, lane)).reject { |fp| fp.to_s.strip.empty? }
+    next if fps.empty?
+
+    "#{lane} @#{fps.map { |fp| fp[0, 12] }.join(', @')}"
+  end
+  return " and NOTHING is recorded for it" if recorded.empty?
+
+  "; recorded for it: #{recorded.join('; ')}#{secondary_fast_cert_reason(eval)}"
+end
+
+# Why a recorded fast-cert does not clear a SECONDARY repo — appended only when one
+# exists, because the sentence is only worth its length to the reader holding one.
+def secondary_fast_cert_reason(eval)
+  return "" if Array(eval.dig(:recorded, FullSuiteGate::FAST_LANE)).reject { |fp| fp.to_s.strip.empty? }.empty?
+
+  fresh = eval.dig(:lanes, FullSuiteGate::FAST_LANE) == :fresh
+  " — that fast-cert is #{fresh ? 'FRESH for this exact code' : 'for OLDER code'}, and re-running " \
+    "bin/fast-check cannot clear this: a SECONDARY repo's bar is the FULL cert, structurally. The fast lane " \
+    "sits in FullSuiteGate::EVIDENCE_LANES and deliberately NOT in LANES, which is what `ok` is computed " \
+    "over, because a fast cert only counts beside that repo's OWN green CI and this gate reads one PR. No CI " \
+    "state clears it; the full cert does"
+end
+
 def suite_evidence_error(eval, slug, ci, review_role)
   unless eval[:verifiable]
     return "FULL-suite gate unverifiable — couldn't fingerprint the working tree (no git repo / git identity?). " \
@@ -2307,12 +2361,11 @@ if suite_eval && gate != "build" && !suite_eval[:bypass] && suite_eval[:verifiab
     next if repo_eval[:ok]
 
     state = FullSuiteGate::LANES.map { |lane| "#{lane}: #{repo_eval.dig(:lanes, lane) || :missing}" }.join(", ")
-    was = FullSuiteGate::LANES.flat_map { |lane| Array(repo_eval.dig(:recorded, lane)) }.uniq
     errors << "cert gate: #{repo} is not certified for the code under review (#{state}). Its tree is " \
               "#{tree[:root]}#{tree[:override] ? " at #{tree[:override][:ref]}" : ""} = " \
-              "@#{repo_eval[:fingerprint].to_s[0, 12]}#{was.empty? ? " and NOTHING is recorded for it" : "; " \
-              "recorded for @#{was.map { |fp| fp[0, 12] }.join(', @')}"}. A task that names two repos owes a " \
-              "cert in EACH — certify it there: cd #{tree[:root]} && bin/full-suite-check #{task['slug'] || slug}."
+              "@#{repo_eval[:fingerprint].to_s[0, 12]}#{secondary_cert_evidence(repo_eval)}. A task that names " \
+              "two repos owes a cert in EACH — certify it there: cd #{tree[:root]} && " \
+              "bin/full-suite-check #{task['slug'] || slug}."
   end
 
   # DECLARED but PR-less repos are NOT gated (see cert_owing_repos — the gem-release
