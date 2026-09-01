@@ -12,6 +12,7 @@
 #   PR #980     bin/lib/release_claim_cli.rb  same shape, release lane
 #   (devops)    bin/devops-shift              `acquire avi --help` TOOK THE SHIFT
 #   2026-08-31  bin/archive-docs              `--help` ROLLED THE DOCS LEDGER
+#   2026-08-31  bin/release.rb                `prepare --yes --help` PROMOTED FOR REAL
 #
 # Each of those was fixed one at a time, in place, and the third was written up as
 # "the third and last member of the family". It was not — a sweep on 2026-08-31
@@ -52,13 +53,34 @@ class BinHelpFlagClassTest < Minitest::Test
   #                    bin/ledger-guard, and the shell scripts fixed alongside them).
   #   :optparse      — OptionParser with a -h/--help arm; an unknown flag raises
   #                    OptionParser::InvalidOption, which is never rescued.
-  #   :subcommand    — dispatches on a subcommand and falls through to usage.
+  #   :subcommand    — dispatches on a subcommand and falls through to usage FOR
+  #                    THE BARE FORM ONLY. Read that narrowly: it asserts what
+  #                    `bin/foo --help` does and NOTHING about `bin/foo <cmd>
+  #                    --help`, because a dispatcher that shifts the subcommand
+  #                    and never validates the REST is the same defect one
+  #                    position over. bin/release carried this label under the old
+  #                    wording — "falls through to usage", full stop — while
+  #                    `bin/release prepare --yes --help` promoted `accepted` onto
+  #                    `release` across every repo and deployed QA. The label was
+  #                    true and the reader's conclusion was false, which is the
+  #                    worst thing a safety record can be.
+  #   :subcommand_gap — that shape, CONFIRMED reachable: a subcommand-position
+  #                    argument is dropped onto a durable mutation. Each entry
+  #                    carries the exact probe an operator would type and the task
+  #                    filed to fix it. A gap you can reproduce is not a shrug.
   #   :delegates     — a binstub; the underlying tool owns --help.
   #   :accepted_gap  — a KNOWN gap, deliberately not fixed here, with the reason.
   #                    Every entry is a filed obligation, not a shrug.
   MANIFEST = {
     # --- retrofitted onto the shared guard, 2026-08-31 ------------------------
     "archive-docs"           => :cli_arg_guard,
+    # --- retrofitted 2026-08-31, /tasks/release-subcommand-drops-help ---------
+    # The release machinery, and the sharpest instance the class has produced:
+    # the side effect is not a local file but shared branch state in every repo,
+    # a production board write, and (on `ship`) a RubyGems publish, whose version
+    # can never be re-pushed. Its per-subcommand dictionary is
+    # Release::Cli::COMMANDS.
+    "release.rb"             => :cli_arg_guard,
     "clean-artifacts"        => :cli_arg_guard,
     "control-check"          => :cli_arg_guard,
     "reap-cert-databases"    => :cli_arg_guard,
@@ -85,23 +107,30 @@ class BinHelpFlagClassTest < Minitest::Test
     "review-autopilot"       => :optparse,
     "verify-review-hop"      => :optparse,
     "measure-client-surface" => :optparse,
-    # --- subcommand dispatch that falls through to usage ----------------------
-    "agent-worktree"         => :subcommand,
+    # --- subcommand dispatch that falls through to usage (BARE form) ----------
+    #
+    # Read the legend above before trusting this bucket: it says what the BARE
+    # probe does and nothing about `<cmd> --help`. The six entries that were
+    # measured to drop a subcommand-position argument onto a mutation now sit in
+    # :subcommand_gap below.
+    #
+    # KNOWN DILUTION, filed rather than silently re-sorted. Nine of the entries
+    # below are not subcommand dispatchers at all — ci-shard, op-reads,
+    # measure-test-timings, gh-auth-refresh, gh-token, prod-smoke,
+    # e2e-executed-set-check, rails-executed-set-check and secret are single-level
+    # flag loops, most with an explicit unknown-argument refusal, i.e. closer to
+    # :own_guard. They are safe, so re-sorting them is cosmetic — but a bucket
+    # holding two different shapes is exactly what let six real gaps sit here
+    # looking classified. Re-judge them in the next sweep, from this written set
+    # rather than by rediscovering it.
     "qa-server"              => :subcommand,
     "conductor"              => :subcommand,
     "triage"                 => :subcommand,
     "agent-marker"           => :subcommand,
     "codex-update"           => :subcommand,
-    "agent-runtime"          => :subcommand,
-    "install-agent-docs"     => :subcommand,
     "session-kickoff"        => :subcommand,
-    "release"                => :subcommand,
-    "release.rb"             => :subcommand,
-    "atomic-event"           => :subcommand,
-    "agent-activity"         => :subcommand,
     "gate"                   => :subcommand,
     "secret"                 => :subcommand,
-    "gh-app-git-credential"  => :subcommand,
     "ci-shard"               => :subcommand,
     "op-reads"               => :subcommand,
     "measure-test-timings"   => :subcommand,
@@ -111,6 +140,7 @@ class BinHelpFlagClassTest < Minitest::Test
     "e2e-executed-set-check" => :subcommand,
     "rails-executed-set-check" => :subcommand,
     # --- binstubs -------------------------------------------------------------
+    "release"                => :delegates, # sh binstub: execs bin/release.rb, which owns --help
     "rails"                  => :delegates,
     "rake"                   => :delegates,
     "bundle"                 => :delegates,
@@ -121,6 +151,24 @@ class BinHelpFlagClassTest < Minitest::Test
     "dev"                    => :delegates,
     "docker-entrypoint"      => :delegates,
     "island-background"      => :delegates,
+    # --- CONFIRMED subcommand-position gaps, each with a filed task -----------
+    #
+    # Found by the sweep that shipped the bin/release fix
+    # (/tasks/release-subcommand-drops-help, 2026-08-31) and verified line by line
+    # at source, not inferred. Every one dispatches on a subcommand and then drops
+    # whatever is left, so the probe named on each entry RUNS THE REAL ACTION.
+    # They are not fixed here on purpose: this change already touches the release
+    # machinery, and four more scripts in one PR is how a safety fix becomes
+    # unreviewable. They are recorded HERE rather than only on the board so a
+    # reader of the manifest cannot conclude, as one just did about bin/release,
+    # that a `:subcommand` label means the command is safe to probe.
+    "agent-worktree"         => :subcommand_gap, # `new <app> <task> --help` creates the worktree, port, Redis DB and Postgres DB — /tasks/worktree-subcommand-drops-help
+    "atomic-event"           => :subcommand_gap, # `grade 42 --disposition good --help` POSTs the grade — /tasks/atomic-event-help-mutates
+    "agent-activity"         => :subcommand_gap, # 8-line shim over bin/atomic-event; `close-open --help` closes every activity — /tasks/atomic-event-help-mutates
+    "install-agent-docs"     => :subcommand_gap, # `install --help` publishes AGENTS.md/CLAUDE.md/skills and rewrites ~/.claude/settings.json + ~/.zprofile — /tasks/docs-installer-help-publishes
+    "agent-runtime"          => :subcommand_gap, # `install --help` execs the installer above with the flag intact — /tasks/docs-installer-help-publishes
+    "gh-app-git-credential"  => :subcommand_gap, # `get --help` mints a live installation token and writes it to .agents/github-tokens.json — /tasks/credential-helper-help-mints
+
     # --- known gaps, filed rather than fixed in this change -------------------
     #
     # Each of these ignores an unrecognized argument. None of them mutates a
@@ -204,7 +252,14 @@ class BinHelpFlagClassTest < Minitest::Test
     "archive-docs"        => "DocsArchive.roll_ledger!",
     "clean-artifacts"     => "ArtifactSweep",
     "control-check"       => "ControlReplay.partition",
-    "reap-cert-databases" => "CertDatabaseReaper.reap!"
+    "reap-cert-databases" => "CertDatabaseReaper.reap!",
+    # Not a single call but the DISPATCHER: every mutation bin/release can perform
+    # — promote, merge, board write, prod deploy, gem publish — is reached through
+    # `case ARGV.shift`, so that line is the seam the guard has to precede. The
+    # guard's own verdict is proven behaviourally in
+    # test/integration/release_argv_guard_test.rb, which never runs a mutating
+    # subcommand.
+    "release.rb"          => "case ARGV.shift"
   }.freeze
 
   def test_the_guard_runs_before_the_first_mutation
@@ -275,6 +330,38 @@ class BinHelpFlagClassTest < Minitest::Test
                    "bin/#{name} rescues InvalidOption — an unknown flag must refuse, not be logged " \
                    "and stepped over")
     end
+  end
+
+  # A CONFIRMED gap is worth less than nothing if the next reader cannot reproduce
+  # it: an unreproducible warning gets re-litigated, then quietly dropped. So each
+  # entry must carry BOTH the exact probe an operator would type — the thing that
+  # turns "I think this is unsafe" into a two-second demonstration — and the task
+  # that owns the fix, so the manifest never becomes the only place the obligation
+  # lives.
+  def test_every_subcommand_gap_carries_a_probe_and_a_filed_task
+    section = File.read(__FILE__)[/CONFIRMED subcommand-position gaps.*?known gaps, filed rather/m]
+    refute_nil section, "the :subcommand_gap block moved — re-anchor this test"
+
+    MANIFEST.select { |_, kind| kind == :subcommand_gap }.each_key do |name|
+      entry = section[/"#{Regexp.escape(name)}"\s*=> :subcommand_gap,\s*#(.+)/, 1].to_s
+
+      assert_match(/`bin\/#{Regexp.escape(name)} [^`]+--help`|`[^`]*--help`/, entry,
+                   "the :subcommand_gap entry for bin/#{name} must quote the probe that mutates — " \
+                   "a gap nobody can reproduce is a gap nobody will fix")
+      assert_match(%r{/tasks/[a-z0-9-]+}, entry,
+                   "…and name the task that owns it, so the manifest is a pointer and not the ledger")
+    end
+  end
+
+  # The two subcommand buckets answer opposite questions, so an entry in both — or
+  # a gap quietly demoted back to :subcommand — would put two truths on one screen.
+  def test_the_two_subcommand_buckets_are_disjoint
+    plain = MANIFEST.select { |_, k| k == :subcommand }.keys
+    gaps  = MANIFEST.select { |_, k| k == :subcommand_gap }.keys
+
+    assert_empty plain & gaps
+    refute_empty gaps, "the confirmed-gap bucket emptied without the scripts being fixed — if they " \
+                       "were fixed, reclassify them; do not delete the record"
   end
 
   # An accepted gap is a filed obligation. Keeping the reason ON the entry is what

@@ -2,7 +2,7 @@
 
 # CliArgGuard — account for EVERY argument before a flat bin/ script acts.
 #
-# THE DEFECT CLASS THIS CLOSES, and it has now cost this ecosystem four times.
+# THE DEFECT CLASS THIS CLOSES, and it has now cost this ecosystem five times.
 # A script hand-parses its flags with `ARGV.include?("--dry-run")` and
 # `ARGV.grep(/\A--repo=/)`, scans for no help flag, and has no notion of an
 # argument it does not recognize. So an unrecognized token — `--help` above all
@@ -16,6 +16,19 @@
 #               rewriting docs/agents/maintenance/delete-later.md by -41 lines and
 #               staging a second file, for an operator who was asking what the
 #               command does.
+#   2026-08-31  bin/release                — `prepare --yes --help` PROMOTED
+#               `accepted` onto `release` in EVERY repo, merged the batch PRs,
+#               wrote membership to the PRODUCTION board and deployed QA.
+#
+# THE FIFTH ONE IS THE ONE TO READ, because it sat one POSITION over rather
+# than one script over. bin/release dispatches with `case ARGV.shift`, so the
+# BARE `bin/release --help` was safe — it matched no `when` and printed usage —
+# and the record classified it safe on exactly that evidence. The flag only
+# vanished once a subcommand had been shifted off the front. A guard that reads
+# the WHOLE line closes both halves; a guard that reads ARGV[0] closes the half
+# that was never dangerous. bin/release also shows the shape this retrofit takes
+# on a multi-command script: a per-subcommand dictionary (Release::Cli::COMMANDS)
+# fed to ONE guard! call placed ahead of the dispatcher.
 #
 # The first three were each fixed in place, bespoke, and the third was called
 # "the third and last member of the family". It was not. The class kept costing
@@ -33,7 +46,7 @@
 # strictly safer than guessing, because guessing means running a mutation against
 # a line whose meaning was never established.
 #
-# WHAT THIS LIB DELIBERATELY DOES NOT DO. It does not retrofit the three CLIs
+# WHAT THIS LIB DELIBERATELY DOES NOT DO. It does not retrofit the three claim CLIs
 # above. Each carries its own usage text, its own per-subcommand
 # REFUSAL_CONSEQUENCE table, and its own passing tests; rewriting them onto this
 # would be churn with no safety gain. This serves the FLAT scripts — the ones

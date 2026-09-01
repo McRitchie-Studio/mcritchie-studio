@@ -225,6 +225,11 @@ require_relative "../lib/claim_lease"
 # asked about the release-tip SHA the pre-QA/ship gate certifies (CiStatus.for_sha).
 # Since DevOps v2 Phase 3 CI IS the G3/G4 verdict (ci_pass?), not a cross-check.
 require_relative "lib/ci_status"
+# The SHARED argument guard (bin/lib/cli_arg_guard.rb) — help from ANY position
+# exits without acting, and an argument no subcommand accounts for REFUSES rather
+# than being silently dropped into a promote. The dictionary it reads lives in
+# Release::Cli::COMMANDS, beside the parsers that consume those same flags.
+require_relative "lib/cli_arg_guard"
 
 APP = "mcritchie-studio"
 HEROKU_REMOTE = "heroku"
@@ -376,6 +381,40 @@ ASSUME_YES = Release::Cli.take_flag(ARGV, "--yes")
 # the gate; this one demands `--reason`, confirms, and records a RED gate SOP. See
 # test_gate.
 SKIP_TEST_GATE = Release::Cli.take_flag(ARGV, "--skip-test-gate")
+
+# THE ARGUMENT GUARD — runs before the dispatcher can reach a single subcommand.
+#
+# Until 2026-08-31 this CLI accounted for no argument it did not recognise. The
+# BARE form was safe by accident: `bin/release --help` shifts "--help", matches no
+# `when`, and prints usage. But in SUBCOMMAND position the same flag vanished —
+#
+#     bin/release prepare --yes --help
+#
+# shifted "prepare", dispatched, and every parser downstream (take_flag,
+# opt_value, opt_values) consumed only the flags it knew, so `--help` matched
+# nothing and the REAL sweep ran: `accepted` promoted onto `release` in every
+# repo, batch PRs merged, membership written to the PRODUCTION board, QA deployed
+# — with ASSUME_YES set, so no prompt stood in the way. `ship` is a rung worse
+# still: it pushes `main` and publishes gems, and a RubyGems version can never be
+# re-pushed.
+#
+# The same defect class cost this ecosystem four times before (PR #974, PR #980,
+# bin/devops-shift, bin/archive-docs) and each fix was private, so the next script
+# inherited nothing. This one is not private: it is the SHARED guard, reading the
+# SHARED dictionary in Release::Cli::COMMANDS.
+#
+# INJECTABLE (out:/err:/exiter:) so the verdict for every subcommand can be proven
+# in a unit test WITHOUT running a release. That is not a nicety — the thing under
+# test is a command that promotes branches and publishes software when probed, so
+# "just run it and see" is the one experiment that must never be performed.
+def guard_argv!(argv = ARGV, out: $stdout, err: $stderr, exiter: nil)
+  spec = Release::Cli.guard_args(argv.first)
+  # Not a subcommand at all (a bare `--help`, a typo, an empty line): fall through
+  # to the dispatcher's `else`, which prints usage and exits 1 exactly as before.
+  return nil unless spec
+
+  CliArgGuard.guard!(argv.drop(1), out: out, err: err, exiter: exiter, **spec)
+end
 
 def abort!(msg) = abort("✗ #{msg}")
 def say(msg) = puts(msg)
@@ -7468,6 +7507,12 @@ end
 
 # Guarded so the file can be `require`d (helper coverage) without dispatching.
 if __FILE__ == $PROGRAM_NAME
+  # BEFORE the dispatcher, always. Every mutation this CLI can perform is reached
+  # through the `case` below, so this is the one line that has to run first: it
+  # answers `--help` from any position and REFUSES an argument no subcommand
+  # accounts for, instead of shifting the subcommand and letting the flag fall on
+  # the floor. Unknown subcommands still fall through to the `else`.
+  guard_argv!
   case ARGV.shift
   when "init"    then init
   when "merge"   then merge
@@ -7479,9 +7524,9 @@ if __FILE__ == $PROGRAM_NAME
   when "archive"  then archive
   when "retro"    then retro
   else
-    warn "usage: bin/release {init|merge <task-slug> [<task-slug>...]|prepare|eject <task-slug>|ship [--finalize-only [<release>]]|finalize [<release>]|status|archive|retro} " \
-         "[--task SLUG ...] [--slug REL] [--by NAME] [--feedback …] [--clean-only] [--expedite] " \
-         "[--worked …] [--friction …] [--followup …] [--file-tasks] [--local] [--dry-run] [--yes]"
+    # The usage string moved to Release::Cli::USAGE so the guard's per-subcommand
+    # help and this fall-through print the SAME text from one place.
+    warn Release::Cli::USAGE
     exit 1
   end
 end
