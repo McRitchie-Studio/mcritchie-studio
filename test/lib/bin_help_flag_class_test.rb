@@ -121,9 +121,13 @@ class BinHelpFlagClassTest < Minitest::Test
     # AgentActivityCli::HELP_EXIT.
     "atomic-event"           => :cli_arg_guard,
     # RECLASSIFIED FROM :subcommand_gap, NOT DELETED (/tasks/worktree-subcommand-drops-help).
-    # The WIDEST surface the class has produced: TWENTY subcommands, THIRTEEN of which
+    # The WIDEST surface the class has produced: TWENTY subcommands, FOURTEEN of which
     # reach a durable write — measured from the dispatcher, not estimated; the SIX
-    # read-only arms are apps, list, plan, env, shell-hook and doctor. It dispatched with `cmd = ARGV.shift || "help"` and no arm
+    # read-only arms are apps, list, plan, env, shell-hook and doctor. (Both counts were
+    # off by one until 2026-09-01: `whereami` was listed read-only and is not —
+    # `run_whereami(app, task)` with both positionals calls write_context_marker, which
+    # File.writes .agent-context.json. Re-derived from source, 20 − 6 = 14, not carried
+    # forward.) It dispatched with `cmd = ARGV.shift || "help"` and no arm
     # validated the remainder, so `bin/agent-worktree new <app> <task> --help` created a
     # REAL desk — `git worktree add -b`, a port and Redis DB written into
     # .env.agent-stack, the .agent-context.json marker, and a Postgres database from
