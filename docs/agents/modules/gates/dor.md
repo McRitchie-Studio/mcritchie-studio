@@ -415,10 +415,31 @@ attempt n+1.
     asserted, so the split cannot quietly collapse either way.
   - The **remedies stay distinct**, because the fixes are: `unreadable` names the
     credential and says re-running is futile (a `conductor-review`, not a
-    `request-changes` — the builder does not own the token); `none` / `unverified`
-    say to wait for checks to appear, *or* to certify in full where no check will
-    ever appear (`solana-studio` and `turf-vault` have zero workflows, so `none` is
-    permanent there and waiting is the PR-#509 stall).
+    `request-changes` — the builder does not own the token); `none` /
+    `unverified` say the opposite — **wait, a check is coming** — with the FULL
+    cert above as the one standing escape.
+  - **"No check will ever appear" is never a property of a REPO.** Every repo in
+    the ecosystem ships a `pull_request`-triggered workflow. `solana-studio`
+    ships `.github/workflows/gem-ci.yml` (`name: Gem CI`; jobs `gem-suite`,
+    `playwright`) and `turf-vault` ships `.github/workflows/ci.yml` (`name: CI`;
+    jobs `program`, `guards`) — both re-derived at source 2026-09-01 on
+    `origin/accepted` **and** `origin/main`, which hold an identical blob, and
+    both also triggered on `push` to `[accepted, release, main]`. On
+    `origin/accepted` the rest follow: `studio-engine`'s `engine-ci.yml`
+    (`name: Engine CI`) and `consumer-ci.yml` (`name: Consumer CI`), and `ci.yml`
+    in `mcritchie-studio`, `turf-monster`, and `rolio`. This bullet used to say
+    `solana-studio` and `turf-vault` had **zero workflows**, so `none` was
+    permanent there and a full cert was the only route; every part of that is
+    false. `pr-review-primary.md` carried the same sentence and was corrected in
+    PR #1128 — this was the second copy.
+  - **When a check genuinely never arrives, read the PR's MERGE STATE, not the
+    repo.** `bin/lib/ci_status.rb` classifies that as `conflicted`
+    (`mergeStateStatus DIRTY`) or `ci_less` (zero check-runs *plus* an
+    affirmatively refused merge) — distinct entries in `TOKENS`, each carrying
+    its own remedy (`conflicted_remedy`, `ci_less_remedy`), and neither
+    clearable by a cert (see above). Folding either into `none` is the
+    **PR-#509 stall** the module's own header names: it prescribes waiting for a
+    run GitHub will never queue.
 - The supervisor's **pre-spawn CI-red bounce** opens then closes `dor_review`
   `--failed` with a `ci` SOP (`--meta outcome=ci-red`, actor `avi`) — no reviewer
   runs, but the round-trip is visible on the gates card.
