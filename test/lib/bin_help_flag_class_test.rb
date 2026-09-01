@@ -98,6 +98,41 @@ class BinHelpFlagClassTest < Minitest::Test
     # the mutating flat scripts. Its help exits 1: exit 0 from it asserts "the stranded
     # rows are recorded", which a probe never established.
     "harvest-desk-ledger"    => :cli_arg_guard,
+    # RECLASSIFIED FROM :subcommand_gap, NOT DELETED (/tasks/worktree-subcommand-drops-help).
+    # The WIDEST surface the class has produced: twenty subcommands, sixteen of which
+    # reach a durable write. It dispatched with `cmd = ARGV.shift || "help"` and no arm
+    # validated the remainder, so `bin/agent-worktree new <app> <task> --help` created a
+    # REAL desk — `git worktree add -b`, a port and Redis DB written into
+    # .env.agent-stack, the .agent-context.json marker, and a Postgres database from
+    # prepare_test_env. The `new` arm did not merely ignore the flag: it destructured
+    # `app_name, raw_task, maybe_type, *rest = ARGV` and then chose the branch type with
+    # `maybe_type&.start_with?("--") ? "feat" : ...`, so `--help` was RECOGNISED as
+    # flag-shaped and thrown away on purpose, while `*rest` was never inspected at all.
+    # Four more arms were reachable identically — `bind-task … --help` wrote the stack
+    # env and marker, `up … --help` STARTED the stack, `status … --help` wrote the
+    # marker, `scale out --help` GREW the persisted Redis band — and `remove`,
+    # `cleanup --reclaim`, `sweep-orphan-dbs` and `snapshot --write` were safe only
+    # because each gates on an explicit --yes/--write. Safe by luck, not by design.
+    #
+    # Its per-subcommand dictionary is AgentWorktreeCli::COMMANDS. Help exits 1 and the
+    # refusal 2, because exit 0 from this script is read as a FACT by four callers:
+    # bin/task:1869 as "THE WORKTREE WAS CREATED" (begin_step! die!s on anything else),
+    # bin/qa-intake:56 as "the registry was refreshed", and bin/release.rb:6999/:7047 as
+    # "the primary was restored" / "the reclaim ran". A fifth reader is not a script —
+    # `shell-hook zsh` is consumed as eval "$(...)" from the login shell — which is why
+    # usage goes to stderr.
+    #
+    # ONE ARM FORWARDS, and is guarded per-arm rather than wholesale: `test <app>
+    # <task> [-- rails-test-args]` hands its tail to `bin/rails test`, so it gets the
+    # help scan and only the help scan. Classifying that tail would refuse `-n
+    # /pattern/` and `--` itself — a top-level guard wearing a per-arm guard's clothes,
+    # the mistake bin/agent-runtime's `codex-update` arm exists to avoid.
+    #
+    # The behavioural half — the guard proven BY RECEIPT, with a pinned `git` spy that
+    # stays silent through the probe beside a control that fills it — lives in
+    # test/integration/agent_worktree_argv_guard_test.rb, because a green manifest
+    # cannot tell a guard that is CALLED from one merely DEFINED.
+    "agent-worktree"         => :cli_arg_guard,
     # --- shell scripts, same sweep, same defect, different idiom --------------
     "setup-1pass-token"      => :own_guard,
     "ecosystem-build"        => :own_guard,
@@ -218,15 +253,23 @@ class BinHelpFlagClassTest < Minitest::Test
     # unreviewable. They are recorded HERE rather than only on the board so a
     # reader of the manifest cannot conclude, as one just did about bin/release,
     # that a `:subcommand` label means the command is safe to probe.
-    # Two entries LEFT THIS BUCKET on 2026-09-01 — bin/install-agent-docs and
-    # bin/agent-runtime, fixed by /tasks/docs-installer-help-publishes and
-    # reclassified :own_guard above, where their record is kept in full. THE NEXT
-    # READER SHOULD KNOW: when the three below are fixed too, this bucket empties,
-    # and test_the_two_subcommand_buckets_are_disjoint's `refute_empty gaps` goes RED
-    # ON PURPOSE. That is the record refusing to be deleted quietly, not a broken
-    # test — whoever fixes the last one reclassifies it and retires that assertion in
-    # the same change, carrying this history into a comment the way these two did.
-    "agent-worktree"         => :subcommand_gap, # `new <app> <task> --help` creates the worktree, port, Redis DB and Postgres DB — /tasks/worktree-subcommand-drops-help
+    # THREE entries have LEFT THIS BUCKET, each reclassified above with its record
+    # kept in full rather than deleted: bin/install-agent-docs and bin/agent-runtime
+    # (:own_guard, /tasks/docs-installer-help-publishes) and bin/agent-worktree
+    # (:cli_arg_guard, /tasks/worktree-subcommand-drops-help), all on 2026-09-01.
+    #
+    # ⚠ TO WHOEVER FIXES bin/atomic-event — YOU ARE THE LAST ONE, AND THIS TRIPWIRE IS
+    # YOURS TO RETIRE. The two entries below are ALL that remain, and BOTH belong to
+    # the single task /tasks/atomic-event-help-mutates (bin/agent-activity is an
+    # 8-line shim over bin/atomic-event, so one fix retires both). The moment you
+    # reclassify them this bucket is EMPTY and `refute_empty gaps` in
+    # test_the_two_subcommand_buckets_are_disjoint goes RED — BY DESIGN, not by
+    # breakage. It is the record refusing to be deleted quietly. Do NOT delete these
+    # entries to keep it green, and do NOT weaken the assertion in place. Reclassify
+    # both with their history in a comment the way the three above did, and DELETE the
+    # `refute_empty gaps` line in the SAME change — keeping `assert_empty plain &
+    # gaps`, which stays meaningful on an empty bucket. Nothing after you needs this
+    # tripwire, because there is nothing after you.
     "atomic-event"           => :subcommand_gap, # `grade 42 --disposition good --help` POSTs the grade — /tasks/atomic-event-help-mutates
     "agent-activity"         => :subcommand_gap, # 8-line shim over bin/atomic-event; `close-open --help` closes every activity — /tasks/atomic-event-help-mutates
 
@@ -352,7 +395,11 @@ class BinHelpFlagClassTest < Minitest::Test
     # and git write bin/qa-server can perform — create, addons:create, domains:add,
     # certs:auto:enable, the config-var PATCH, the QA force-push, ps:scale — is
     # reached through `case cmd`, so that line is the seam the guard has to precede.
-    "qa-server"           => "case cmd"
+    "qa-server"           => "case cmd",
+    # Same reasoning again, and the widest surface of the three: every worktree, port,
+    # Redis DB, Postgres database, branch removal and Redis-band write
+    # bin/agent-worktree can perform is reached through `case cmd`.
+    "agent-worktree"      => "case cmd"
   }.freeze
 
   def test_the_guard_runs_before_the_first_mutation
@@ -366,6 +413,46 @@ class BinHelpFlagClassTest < Minitest::Test
       assert_operator guard_at, :<, mutation_at,
                       "bin/#{name} calls #{mutation} BEFORE its argument guard — the guard cannot " \
                       "protect a side effect that has already happened"
+    end
+  end
+
+  # The two scripts big enough to wrap the shared guard in a helper of their own, and
+  # the CALL that helper has to make. Both keep their dispatcher in
+  # `if $PROGRAM_NAME == __FILE__`, so the seam is the `ARGV.shift` that reads the
+  # subcommand.
+  GUARD_HELPER_CALLERS = %w[qa-server agent-worktree].freeze
+
+  # ANCHORED ON THE CALL SITE, NEVER THE DEFINITION — the property
+  # test_the_guard_runs_before_the_first_mutation above CANNOT establish on these two.
+  #
+  # WHY THIS TEST EXISTS (finding-e429a953ff23, reproduced twice). That test indexes
+  # `CliArgGuard.guard!`, and in a script that wraps the guard in `def guard_argv!`
+  # near the top, the first occurrence of that string is inside the DEFINITION — which
+  # sits above the dispatcher by construction, whether or not anything ever calls it.
+  # Measured: with the guard's CALL deleted and its definition left intact,
+  # this entire file passed 16 runs, 209 assertions, 0 failures against a script that
+  # was fully unguarded. A guard that is defined and never called is the exact shape
+  # of an inert fix, and it is invisible to every assertion in this file but this one.
+  #
+  # The regex matches the INVOCATION — a bare `guard_argv!` or `guard_argv!(ARGV)`
+  # alone on its line — and cannot match `def guard_argv!(argv = ARGV, out: …)`.
+  # The behavioural proof that the call is reached at RUNTIME lives one tier up, in
+  # test/integration/agent_worktree_argv_guard_test.rb and
+  # test/integration/qa_server_argv_guard_test.rb; this is the cheap static half that
+  # fails the instant the line is deleted.
+  def test_the_dispatcher_calls_its_guard_rather_than_merely_defining_it
+    GUARD_HELPER_CALLERS.each do |name|
+      src = code_only(name)
+      call_at = src.index(/^\s*guard_argv!(\(ARGV\))?\s*$/)
+      shift_at = src.index("ARGV.shift")
+
+      refute_nil call_at,
+                 "bin/#{name} DEFINES guard_argv! but never CALLS it — a defined-and-uncalled " \
+                 "guard passes every other assertion in this file on a fully unguarded script"
+      refute_nil shift_at, "bin/#{name} no longer shifts its subcommand — re-anchor this test"
+      assert_operator call_at, :<, shift_at,
+                      "bin/#{name} shifts its subcommand BEFORE calling its guard — the rest of " \
+                      "the line is then on the floor, which IS the defect this family closes"
     end
   end
 
