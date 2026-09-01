@@ -223,6 +223,35 @@ impossible by construction rather than by every repo remembering to ignore `tmp/
    evidence is stamped. Such a repo therefore CERTIFIES BY THIS ROUTE, owing
    only `[full-suite@<fp>]`.
 
+   **Who declares it:** `studio-engine` and — since 2026-08-31 — `solana-studio`.
+   Until then solana-studio declared nothing, so this route COULD NOT PASS there:
+   the lane shelled out to a `bin/rubocop` the repo does not ship, came back
+   `COULD NOT RUN`, and the writer exits before recording — **discarding the GREEN
+   suite lane with it** (`no evidence recorded for the red lane(s)`). That is not
+   cosmetic. `agents/carl/sops/pr-review-primary.md` names this command as THE
+   escape when a PR's CI verdict is red, pending or unreadable, so a reviewer
+   following the SOP in that repo had no path at all.
+
+   **ABSENT vs BROKEN — the pair of rules that keeps them apart.** A missing lint
+   toolchain and a broken one want opposite treatments, and the waiver is only safe
+   because BOTH rules hold:
+
+   - **Never inferred** (`FullSuiteGate#lint_waived?`). A missing `bin/rubocop`
+     waives NOTHING — only a reviewable line in `config/release_repos.yml` does.
+     Without this, every broken rubocop install silently stops linting its repo.
+   - **Always audited** (`bin/lib/lint_waiver_guard.rb`). A declaration is a claim
+     about the tree, so a waived repo found carrying a lint toolchain
+     (`.rubocop.yml`, `bin/rubocop`, or rubocop in the `Gemfile`/gemspec — a
+     transitive `Gemfile.lock` entry is deliberately NOT a marker) is **REFUSED**,
+     before any lane runs, naming the registry line to delete. Without this, a
+     waived repo that later GAINS rubocop certifies green while nothing lints it.
+
+   The guard can only ever REVOKE a waiver, never grant one; that is why it lives
+   outside `FullSuiteGate`, whose source is asserted free of any environment read
+   (`test/lib/cert_lint_lane_waiver_test.rb`). When the lint lane is UNRUNNABLE in
+   a repo that declared nothing, the verdict stays RED — and now also names the
+   registry route, so a genuinely toolchain-less repo has somewhere to go.
+
    (This paragraph previously said the writer did not yet honour the
    declaration and that such a repo "cannot yet be certified by this route".
    That was true for fifteen minutes: the prose landed `f99639be` at 13:18:33

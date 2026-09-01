@@ -125,6 +125,19 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
      enough, and neither is a `[full-suite-bypass]`. This is why the refusal names
      that command: the gate honours the remedy it prints.
 
+     **In a GEM repo the escape is the same command with a different source.**
+     `studio-engine` and `solana-studio` have no `ci.yml` for the resolver to read
+     (their workflow is `engine-ci.yml` / `gem-ci.yml`), so the cert runs the
+     `release_check` their `config/release_repos.yml` row names —
+     `bin/release-check`, which is exactly what their CI runs. They also declare
+     `lint_lane: none`, so the cert owes only `[full-suite@<fp>]`; that is a
+     complete full cert there, not a partial one. Scope it the same way as
+     anywhere else: the cert stands in for CI's Ruby suite, so solana-studio's
+     `playwright` and `e2e-executed-set-check` jobs remain CI's alone. Until
+     2026-08-31 this escape could not pass in solana-studio at all — the lint lane
+     shelled out to a `bin/rubocop` the repo does not ship, and the red discarded
+     the green suite lane with it, leaving a reviewer here with no path.
+
      **When it refuses on an unread verdict, that is a `conductor-review`, not a
      `request-changes`.** The builder does not own the credential, and
      `wait-for-ci` is futile — CI already reported and this token cannot hear it.
