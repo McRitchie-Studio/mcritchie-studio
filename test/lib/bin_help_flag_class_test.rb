@@ -91,6 +91,19 @@ class BinHelpFlagClassTest < Minitest::Test
     # --- shell scripts, same sweep, same defect, different idiom --------------
     "setup-1pass-token"      => :own_guard,
     "ecosystem-build"        => :own_guard,
+    # RECLASSIFIED, NOT DELETED (/tasks/credential-helper-help-mints). This was
+    # :subcommand, a label claiming it "falls through to usage"; it fell through to
+    # `*) exit 0` — no usage, no signal — and `get --help` ran the REAL `get`. The
+    # release sweep then re-filed it as :subcommand_gap with the probe
+    # `bin/gh-app-git-credential get --help`, measured to mint a live installation
+    # token, write it to the shared token store, and print it. Both entries were
+    # true when written; the fix landed underneath them, so the gap bucket no
+    # longer holds this script and the record lives here instead.
+    #
+    # THE LESSON WORTH KEEPING: :subcommand carried no wiring assertion, so its
+    # claim was never checked against the code for anyone. :own_guard is, by
+    # test_the_shell_scripts_answer_help_without_acting below.
+    "gh-app-git-credential"  => :own_guard,
     # --- the three prior fixes -----------------------------------------------
     "task"                   => :own_guard,
     "devops-shift"           => :own_guard,
@@ -171,7 +184,6 @@ class BinHelpFlagClassTest < Minitest::Test
     "agent-activity"         => :subcommand_gap, # 8-line shim over bin/atomic-event; `close-open --help` closes every activity — /tasks/atomic-event-help-mutates
     "install-agent-docs"     => :subcommand_gap, # `install --help` publishes AGENTS.md/CLAUDE.md/skills and rewrites ~/.claude/settings.json + ~/.zprofile — /tasks/docs-installer-help-publishes
     "agent-runtime"          => :subcommand_gap, # `install --help` execs the installer above with the flag intact — /tasks/docs-installer-help-publishes
-    "gh-app-git-credential"  => :subcommand_gap, # `get --help` mints a live installation token and writes it to .agents/github-tokens.json — /tasks/credential-helper-help-mints
 
     # --- known gaps, filed rather than fixed in this change -------------------
     #
@@ -225,6 +237,33 @@ class BinHelpFlagClassTest < Minitest::Test
                  "If it MUTATES anything, wire bin/lib/cli_arg_guard.rb and use :cli_arg_guard — " \
                  "`--help` is the probe every operator tries first, and on this ecosystem it has " \
                  "already rolled a docs ledger, taken a shift lease, and dropped databases."
+  end
+
+  # A HASH LITERAL WITH ONE KEY TWICE KEEPS THE LAST, SILENTLY — so a duplicate is
+  # invisible to every other test in this file, because MANIFEST.keys has already
+  # collapsed it before they run. This one reads the SOURCE instead.
+  #
+  # MEASURED 2026-08-31. The sweep that fixed bin/release filed five more scripts as
+  # :subcommand_gap, one of them bin/gh-app-git-credential. A branch fixing that
+  # script reclassified it :own_guard. Both landed, git merged both hunks without a
+  # conflict, and the gap entry — being LATER in the literal — won. The
+  # reclassification the change existed to make was discarded, the enforced
+  # shell-promise hash below still passed because it is a SEPARATE literal, and
+  # nothing went red.
+  #
+  # That is not a one-off: four more :subcommand_gap entries are still open, each
+  # with a filed task that will do exactly this to exactly this hash.
+  def test_no_script_is_classified_twice
+    literal = File.read(__FILE__)[/MANIFEST = \{.*?\}\.freeze/m]
+    refute_nil literal, "the MANIFEST literal moved — re-anchor this test"
+
+    names = literal.scan(/^\s*"([a-z0-9._-]+)"\s*=>/).flatten
+    dupes = names.tally.select { |_, count| count > 1 }
+
+    assert_empty dupes.keys,
+                 "classified more than once in MANIFEST: #{dupes.keys.join(', ')}. Ruby keeps the " \
+                 "LAST entry, so the earlier classification is silently discarded — pick one and " \
+                 "carry the other's record into a comment on it."
   end
 
   # The manifest must not outlive the scripts it names, or it becomes a list of
@@ -292,8 +331,9 @@ class BinHelpFlagClassTest < Minitest::Test
 
   def test_the_shell_scripts_answer_help_without_acting
     {
-      "setup-1pass-token" => "INSTALLS NOTHING",
-      "ecosystem-build"   => "BUILDS NOTHING"
+      "setup-1pass-token"     => "INSTALLS NOTHING",
+      "ecosystem-build"       => "BUILDS NOTHING",
+      "gh-app-git-credential" => "MINTS NOTHING"
     }.each do |name, promise|
       src = source(name)
 

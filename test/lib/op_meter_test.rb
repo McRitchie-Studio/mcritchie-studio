@@ -147,7 +147,7 @@ class OpMeterTest < Minitest::Test
   def test_unit_metering_adds_no_read_to_the_consumer_chain
     with_log do |log, env, dir|
       OpBinaryStub.with_stub(TaskBoard, dir: dir) do |op|
-        with_env(env) { TaskBoard.agent_secret(File.join(dir, "no-such.env")) }
+        with_env(unset_ambient_secret(env)) { TaskBoard.agent_secret(File.join(dir, "no-such.env")) }
 
         assert_equal 1, op.count, "the chain must still spend exactly ONE read, not two"
         assert_equal 1, rows(log).length, "and that one read must be attributed"
@@ -184,7 +184,7 @@ class OpMeterTest < Minitest::Test
         TaskBoard.send(:remove_instance_variable, :@op_secret) if TaskBoard.instance_variable_defined?(:@op_secret)
         OpBinaryStub.swap_const(TaskBoard, :OP, File.join(dir, "gone"))
 
-        assert_equal "from-dotenv", with_env(env) { TaskBoard.agent_secret(dotenv) }
+        assert_equal "from-dotenv", with_env(unset_ambient_secret(env)) { TaskBoard.agent_secret(dotenv) }
       end
 
       assert_empty rows(log), "the .env answered before op was ever reached, so there is nothing to attribute"
@@ -348,6 +348,23 @@ class OpMeterTest < Minitest::Test
   end
 
   private
+
+  # ESTABLISH THE PREMISE, DO NOT ASSUME IT. TaskBoard#agent_secret reads the REAL
+  # process ENV first (bin/lib/task_board.rb:209), so a set AGENT_API_SECRET
+  # short-circuits the .env and the vault both. The two cases that assert on the
+  # chain's COST and on its .env FALLBACK are only meaningful with it unset.
+  #
+  # Nothing in this file sets it — dotenv does, from the repo's .env, the moment ANY
+  # Rails-loading test shares the process. So both cases passed alone, and passed in
+  # CI (which has no .env), and failed the moment bin/fast-check mapped them beside
+  # an integration test: the chain answered from ENV, spending zero reads and
+  # returning the developer's real secret instead of the fixture's "from-dotenv".
+  # Measured 2026-08-31 against three separate co-residents.
+  #
+  # nil is UNSET, not blank: `ENV[k] = nil` deletes the key, and with_env restores
+  # whatever was there afterwards. A blank string would be a different test — the
+  # set-but-blank case the chain deliberately treats as absent.
+  def unset_ambient_secret(env) = env.merge("AGENT_API_SECRET" => nil)
 
   def with_env(overrides)
     original = overrides.keys.to_h { |k| [k, ENV.fetch(k, nil)] }
