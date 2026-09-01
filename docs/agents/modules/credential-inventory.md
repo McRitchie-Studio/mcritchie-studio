@@ -35,6 +35,7 @@ humans; when the two disagree, fix both in the same pass.
 | `agent.helius` | `agents-studio` | Devnet/mainnet Helius RPC URLs | Solana apps |
 | `agent.aws.mcritchie-ses` | `agents-studio` | Shared SES-scoped AWS API credentials, region `us-east-2`; runtime SMTP credentials are derived/stored separately | McRitchie, Turf Monster, and future app email delivery |
 | `agent.aws` | `agents-studio` | General AWS API credentials (S3 read/write, `us-east-2`); fields `access key` + `access secret key`. One IAM user, `mcritchie-s3`, backs **every** McRitchie app — read **Shared AWS identity** below before rotating or reusing it. Ignore the decoy `dont.use.agent.aws`. | Active Storage + reference-image (e.g. Pokémon) uploads, across hub, Turf Monster, Industries, and moms-app |
+| `AWS` | `agents-admin` | IAM user `agents-admin` (account `534727954137`), created 2026-09-01. Fields `access-key` + `secret-access-key` (+ `account-id`, `region` = `us-east-2`). Policy `agents-admin-provisioning`: `s3:*`, mint/rotate IAM users under path `/mcr/*`, account read-only. It sits outside `/mcr/`, so it cannot edit its own policy; the admin service account's vault grant is READ-ONLY (`op item get` works, `op item edit` is refused — expected). | Steffon's `bucket-provision` sessions and fleet audits, via `source ~/.zprofile.admin` + the admin op token. Conventions: `modules/object-storage.md` |
 | `Coinbase Developer Platform` | `agents-studio` | CDP API key | Turf Monster CDP ramp |
 | `agent.higgesfield` | `agents-studio` | Higgsfield media generation API | McRitchie Studio content pipeline |
 | `x.api` | `agents-studio` — **absent on 2026-08-29**; the X credentials present there are `agent.turf.x` | X/Twitter API credentials | McRitchie Studio news/content |
@@ -130,8 +131,8 @@ behind fail on their next upload.
 | `mcritchie-studio-dev` | hub `amazon_dev` service | Yes |
 | `turf-monster-production` | `turf-monster-mainnet` (live) | Yes |
 | `turf-monster-dev` | Turf Monster dev | Yes |
-| `mcritchie-industries-production` | `mcritchie-industries` **and** `mcritchie-industries-qa` — QA has no bucket of its own | Yes |
-| `mcritchie-industries-dev` | Industries dev | Yes |
+| `mcritchie-industries-production` | `mcritchie-industries` **and** `mcritchie-industries-qa` — QA has no bucket of its own | **No** — flipped private 2026-09-01 while still empty |
+| `mcritchie-industries-dev` | Industries dev | **No** — flipped private 2026-09-01 while still empty |
 | `moms-app-production` | moms-app (deployed off the hub Heroku account) | **No** — the one private bucket |
 
 **Where the value lives.** 1Password, plus each deployed consumer's
@@ -164,6 +165,12 @@ rotation list the moment those vars land.
   (`<bucket>.s3.us-east-2.amazonaws.com`) resembles `mcritchie.studio` closely
   enough that Chrome's lookalike-domain protection shows a "this site looks fake"
   interstitial on direct navigation.
+
+**Successor convention (2026-09-01).** Per-app IAM users under path `/mcr/`,
+minted by Steffon's `bucket-provision` SOP, replace this shared identity for
+every newly provisioned app; migrating an existing app off `mcritchie-s3` is
+ladder work, one app per task, coordinated with that app's config vars. Rules
+and tiers: `modules/object-storage.md`.
 
 ## Convention
 

@@ -58,6 +58,7 @@ required execution path. Do not follow a Background reference to run an SOP.
 | `archive-shipped` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
 | `archive-completed` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
 | `clean-infra` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/clean-infra.md` |
+| `bucket-provision` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/bucket-provision.md` |
 | `Steffon Heartbeat` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/HEARTBEAT.md` |
 | `full-cycle` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/full-cycle.md` |
 | `clean-up` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/clean-up.md` |
@@ -561,6 +562,7 @@ Do not merge or deploy unless I explicitly assigned that lane.
 | New app onboarding (tiers + SOP) | `mcritchie-studio/docs/agents/system/new-app-onboarding-sop.md` |
 | **App templates (base vs web3 bolt-on)** | `mcritchie-studio/docs/agents/system/app-templates.md` |
 | Ports, servers, callbacks | `mcritchie-studio/docs/agents/modules/ports-and-processes.md` |
+| Object storage (S3 buckets, keys, conventions) | `mcritchie-studio/docs/agents/modules/object-storage.md` |
 | Parallel DevOps and QA graduation | `mcritchie-studio/docs/agents/modules/parallel-agent-devops.md` |
 | Modular PR review SOP | `mcritchie-studio/docs/agents/modules/pr-review-sop.md` |
 | Zap protocol (small mid-cycle fixes, no new task) | `mcritchie-studio/docs/agents/modules/zap-protocol.md` |
@@ -578,6 +580,7 @@ Do not merge or deploy unless I explicitly assigned that lane.
 | Steffon production deploy SOP | `mcritchie-studio/docs/agents/agents/steffon/sops/production-deploy.md` |
 | Steffon archive shipped SOP | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
 | Steffon clean infra SOP (worktrees, disk, "no space") | `mcritchie-studio/docs/agents/agents/steffon/sops/clean-infra.md` |
+| Steffon bucket provision SOP (per-app S3 + IAM) | `mcritchie-studio/docs/agents/agents/steffon/sops/bucket-provision.md` |
 | Turf Monster heartbeat launcher | `mcritchie-studio/docs/agents/agents/turf_monster/HEARTBEAT.md` |
 | Turf Monster live score watch SOP | `mcritchie-studio/docs/agents/agents/turf_monster/sops/live-score-watch.md` |
 | Address a blocker (shared primitive) | `mcritchie-studio/docs/agents/modules/address-blocker.md` |
@@ -643,6 +646,7 @@ depend on the heartbeat.
 | `archive-shipped` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
 | `archive-completed` (legacy alias) | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
 | `clean-infra` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/clean-infra.md` |
+| `bucket-provision` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/bucket-provision.md` |
 | `Alex Heartbeat` | Alex | `mcritchie-studio/docs/agents/agents/alex/HEARTBEAT.md` |
 | `grade-events` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/grade-events.md` |
 | `share-insights` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/share-insights.md` |
