@@ -66,9 +66,16 @@ class GhTokenTest < Minitest::Test
   end
 
   def store_path(dir) = File.join(dir, ".agents", "github-tokens.json")
-  # A MISSING FILE IS A VALID STATE, not an error. Since never-cache-deployer-token
-  # a deployer-only run writes nothing at all, so the store may not exist —
+  # A MISSING FILE IS A VALID STATE, not an error. A deployer-only run caches no
+  # token since `never-cache-deployer-token`, so this file may never be created —
   # "nothing was cached" is precisely what several assertions here mean to check.
+  #
+  # NO TOKEN, not "nothing at all" — which this comment claimed until the meter
+  # landed and quietly falsified it. The run still writes a sibling INTO THE SAME
+  # .agents DIRECTORY: bin/lib/op_meter.rb records the 1Password read to
+  # op-reads.log. That file is spend telemetry and says nothing about the cache,
+  # so a directory that exists is not evidence a token was stored. Only
+  # store_path is.
   def store(dir)
     File.exist?(store_path(dir)) ? JSON.parse(File.read(store_path(dir))) : {}
   end
