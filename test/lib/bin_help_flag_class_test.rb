@@ -101,6 +101,36 @@ class BinHelpFlagClassTest < Minitest::Test
     # --- shell scripts, same sweep, same defect, different idiom --------------
     "setup-1pass-token"      => :own_guard,
     "ecosystem-build"        => :own_guard,
+    # RECLASSIFIED FROM :subcommand_gap, NOT DELETED (/tasks/docs-installer-help-publishes).
+    # These two were the sharpest pair in the gap bucket, because the thing they
+    # publish is GLOBAL and shared. `bin/install-agent-docs install --help` read its
+    # mode as `MODE="${1:-install}"`, tested $1 alone, and had no `$#` check anywhere
+    # in the file — so the flag sat in $2, was discarded, and the probe copied
+    # AGENTS.md + CLAUDE.md into the projects root, mirrored every skill into
+    # ~/.claude/skills and ~/.codex/skills, `rm -rf`'d the retired ones, rewrote the
+    # hooks in ~/.claude/settings.json, and appended to ~/.zprofile — the operator's
+    # live login profile, from the command people type BECAUSE it should do nothing.
+    # bin/agent-runtime was the same defect with a longer fuse: its install/repair/
+    # check arms exec'd the installer with the flag intact. Exactly one of its six
+    # arms (`doctor`) counted its arguments, which is what made the omission legible
+    # as an omission rather than a design.
+    #
+    # Both now carry the shell idiom the three above use — a whole-line --help|-h
+    # scan plus an explicit unrecognized-argument refusal — asserted by
+    # test_the_shell_scripts_answer_help_without_acting and positioned by
+    # test_the_installer_refuses_before_it_publishes. The behavioural half (a
+    # sandboxed HOME/PROJECTS_DIR that stays EMPTY through the probe, with a control
+    # install that fills it) lives in
+    # test/commands/install_agent_docs_help_guard_test.rb, because a green manifest
+    # cannot tell a guard that is CALLED from one merely DEFINED.
+    #
+    # NOT the shared bin/lib/cli_arg_guard.rb, and the reason is specific to these
+    # two: it is Ruby, and this is the fresh-machine bootstrap that installs the
+    # login-shell Ruby PATH and whose `doctor` exists to diagnose Ruby drift. An
+    # argument guard that needs a working modern Ruby cannot read its own command
+    # line on the machine it exists to repair.
+    "install-agent-docs"     => :own_guard,
+    "agent-runtime"          => :own_guard,
     # RECLASSIFIED, NOT DELETED (/tasks/credential-helper-help-mints). This was
     # :subcommand, a label claiming it "falls through to usage"; it fell through to
     # `*) exit 0` — no usage, no signal — and `get --help` ran the REAL `get`. The
@@ -188,11 +218,17 @@ class BinHelpFlagClassTest < Minitest::Test
     # unreviewable. They are recorded HERE rather than only on the board so a
     # reader of the manifest cannot conclude, as one just did about bin/release,
     # that a `:subcommand` label means the command is safe to probe.
+    # Two entries LEFT THIS BUCKET on 2026-09-01 — bin/install-agent-docs and
+    # bin/agent-runtime, fixed by /tasks/docs-installer-help-publishes and
+    # reclassified :own_guard above, where their record is kept in full. THE NEXT
+    # READER SHOULD KNOW: when the three below are fixed too, this bucket empties,
+    # and test_the_two_subcommand_buckets_are_disjoint's `refute_empty gaps` goes RED
+    # ON PURPOSE. That is the record refusing to be deleted quietly, not a broken
+    # test — whoever fixes the last one reclassifies it and retires that assertion in
+    # the same change, carrying this history into a comment the way these two did.
     "agent-worktree"         => :subcommand_gap, # `new <app> <task> --help` creates the worktree, port, Redis DB and Postgres DB — /tasks/worktree-subcommand-drops-help
     "atomic-event"           => :subcommand_gap, # `grade 42 --disposition good --help` POSTs the grade — /tasks/atomic-event-help-mutates
     "agent-activity"         => :subcommand_gap, # 8-line shim over bin/atomic-event; `close-open --help` closes every activity — /tasks/atomic-event-help-mutates
-    "install-agent-docs"     => :subcommand_gap, # `install --help` publishes AGENTS.md/CLAUDE.md/skills and rewrites ~/.claude/settings.json + ~/.zprofile — /tasks/docs-installer-help-publishes
-    "agent-runtime"          => :subcommand_gap, # `install --help` execs the installer above with the flag intact — /tasks/docs-installer-help-publishes
 
     # --- known gaps, filed rather than fixed in this change -------------------
     #
@@ -347,7 +383,9 @@ class BinHelpFlagClassTest < Minitest::Test
     {
       "setup-1pass-token"     => "INSTALLS NOTHING",
       "ecosystem-build"       => "BUILDS NOTHING",
-      "gh-app-git-credential" => "MINTS NOTHING"
+      "gh-app-git-credential" => "MINTS NOTHING",
+      "install-agent-docs"    => "PUBLISHES NOTHING",
+      "agent-runtime"         => "INSTALLS NOTHING"
     }.each do |name, promise|
       src = source(name)
 
@@ -370,6 +408,52 @@ class BinHelpFlagClassTest < Minitest::Test
                     "an unrecognized argument must refuse BEFORE a lane is defaulted"
     assert_operator src.index("unrecognized argument"), :<, src.index("TOKEN=$(pbpaste"),
                     "…and before the clipboard secret is read"
+  end
+
+  # The docs installer is the credential installer's twin, one blast radius up: the
+  # targets are not this repo but the SHARED roots every session reads — the projects
+  # root AGENTS.md/CLAUDE.md, ~/.claude/skills, ~/.codex/skills, ~/.claude/settings.json
+  # and ~/.zprofile. So the refusal has to come before the first COPY, not merely
+  # somewhere in the file.
+  #
+  # ANCHORED ON CALL SITES, NEVER DEFINITIONS. `install_pair` and `guard_no_arguments`
+  # are both FUNCTIONS defined near the top, so indexing `install_pair() {` or the `cp`
+  # inside it finds the definition — which sits ABOVE the guard by construction — and
+  # this test would fail on correct code while passing on a script whose guard runs
+  # after the copy loop. The pairs below are the invocations: the loop that copies, the
+  # `rm -rf` of a retired skill, and the exec that hands the line to the installer.
+  FIRST_PUBLISH = {
+    "install-agent-docs" => ['install_pair "$src" "$tgt"', 'rm -rf "$retired"'],
+    "agent-runtime"      => ['exec "$INSTALLER"']
+  }.freeze
+
+  def test_the_installer_refuses_before_it_publishes
+    FIRST_PUBLISH.each do |name, publishes|
+      src = code_only(name)
+      refusal_at = src.index("unrecognized argument")
+      refute_nil refusal_at, "bin/#{name} must REFUSE an argument it cannot account for"
+
+      publishes.each do |publish|
+        publish_at = src.index(publish)
+        refute_nil publish_at, "bin/#{name} no longer contains #{publish} — update FIRST_PUBLISH"
+        assert_operator refusal_at, :<, publish_at,
+                        "bin/#{name} reaches #{publish} BEFORE its argument refusal — a guard cannot " \
+                        "protect a publish that has already happened, and these targets are the " \
+                        "SHARED roots every other session on the machine reads"
+      end
+    end
+  end
+
+  # …and the help scan must precede the refusal, so a probe is answerable on a line
+  # that is otherwise malformed — the property CliArgGuard.guard! spells "HELP FIRST".
+  def test_the_installer_answers_help_before_it_refuses
+    FIRST_PUBLISH.each_key do |name|
+      src = code_only(name)
+
+      assert_operator src.index("--help|-h)"), :<, src.index("unrecognized argument"),
+                      "bin/#{name} must answer a help probe ahead of the dictionary check, so " \
+                      "`--help` still works on a command line it would otherwise refuse"
+    end
   end
 
   # OptionParser answers `--help` from its OFFICIOUS default even when a script

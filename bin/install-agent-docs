@@ -93,6 +93,14 @@ manifest DRY RUN: write NOTHING; print every absolute path install WOULD write,
          one per line, each prefixed "WRITE\\t". Lets a guard assert ATTRIBUTABLY
          that no destination escapes a sandbox — without fingerprinting the
          runtime-written skills dirs (which the Claude/Codex runtimes also touch).
+
+--help, -h  this text — PUBLISHES NOTHING: copies no doc, mirrors no skill,
+         prunes nothing, and rewrites neither ~/.claude/settings.json nor
+         ~/.zprofile. It exits 1, because exit 0 from this script is read as
+         "the docs were synced" (bin/release.rb) and "there is no drift"
+         (bin/session-preflight), and a probe establishes neither.
+
+Takes exactly one mode, and nothing else.
 USAGE
 }
 
@@ -124,9 +132,68 @@ install_pair() {
   cp "$src" "$tgt"
 }
 
+# EVERY ARGUMENT IS ACCOUNTED FOR BEFORE ANYTHING IS PUBLISHED.
+#
+# THE DEFECT THIS CLOSES (/tasks/docs-installer-help-publishes). `MODE="${1:-install}"`
+# above reads $1, and the mode case below tested $1 ALONE — there was no `$#` check
+# anywhere in this file, so every token past the first was silently discarded. The
+# `--help` arm therefore fired only for the BARE probe, which was the one form that
+# was already safe. ONE POSITION OVER:
+#
+#     bin/install-agent-docs install --help
+#
+# the flag fell off the line, MODE stayed `install`, and the probe PUBLISHED FOR
+# REAL — AGENTS.md + CLAUDE.md into $PROJECTS_DIR, every tracked skill into
+# ~/.claude/skills and ~/.codex/skills, `rm -rf` of the retired ones, the hooks in
+# ~/.claude/settings.json, and the Ruby PATH block appended to ~/.zprofile. That is
+# the operator's live login profile and editor settings, rewritten by the command
+# people type precisely BECAUSE they expect it to do nothing.
+#
+# These targets are GLOBAL and shared, which is what makes it worse than a local
+# file write: the header at the check-failure branch below records that publishing
+# from a worktree flips every concurrent session to "installed docs drift". So one
+# agent probing an unfamiliar command reddens the preflight for every other agent on
+# the machine — and nothing keeps a reflog for ~/.zprofile.
+#
+# WHY HELP EXITS 1 AND NOT 0. Exit 0 from this script is read as a FACT by two
+# callers: bin/release.rb's sync_agent_docs (`out, ok = sh(installer)`) warns "agent-
+# docs install failed" on anything else, and bin/session-preflight's install_docs_check
+# turns `check`'s exit status straight into its pass/fail drift verdict. A help probe
+# establishes neither "the docs were synced" nor "there is no drift", so it must not
+# answer with the code that asserts them. Same reasoning as bin/qa-server, whose exit
+# status bin/release reads as "the QA deploy succeeded".
+#
+# The refusal exits 2, matching the other guarded shell scripts (bin/setup-1pass-token,
+# bin/gh-app-git-credential). An unknown MODE keeps its established 64 below, which
+# test/commands/install_agent_skills_test.rb pins.
+#
+# Guarded by test/lib/bin_help_flag_class_test.rb (wiring) and
+# test/commands/install_agent_docs_help_guard_test.rb (a sandboxed no-publish receipt).
+#
+# `$#` is tested BEFORE "$@" is iterated: macOS ships bash 3.2, where "$@" with no
+# positional parameters is an unbound-variable error under `set -u`.
+if [ "$#" -gt 0 ]; then
+  # ANY position, on purpose: `install --help` is the same request as `--help`, and a
+  # scan that only reads $1 hands the publish straight to the second spelling.
+  for arg in "$@"; do
+    case "$arg" in
+      --help|-h) usage >&2; exit 1 ;;
+    esac
+  done
+fi
+
+if [ "$#" -gt 1 ]; then
+  shift
+  echo "install-agent-docs: unrecognized argument(s): $* — NOTHING was published: no doc was copied, no skill mirrored or pruned, and neither ~/.claude/settings.json nor ~/.zprofile was rewritten." >&2
+  echo >&2
+  usage >&2
+  exit 2
+fi
+
 case "$MODE" in
   install|check|manifest) ;;
-  -h|--help|help) usage; exit 0 ;;
+  # The bare `help` WORD, kept working. It exits 1 for the same reason --help does.
+  help) usage >&2; exit 1 ;;
   *) echo "ERROR: unknown mode: $MODE" >&2; usage >&2; exit 64 ;;
 esac
 
