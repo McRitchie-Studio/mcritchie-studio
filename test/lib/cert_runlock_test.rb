@@ -206,4 +206,59 @@ class CertRunlockTest < Minitest::Test
       assert_equal 7, CertOrphanGuard.read_lock(dir)["cert_pid"]
     end
   end
+
+  # --- [unit] the lock is PUBLISHED atomically, never observable half-written ----------
+  #
+  # A plain `File.write` is open(O_CREAT|O_TRUNC) then write, so it publishes a ZERO-BYTE
+  # lock for the width of that gap. That matters here more than it does for most files,
+  # because `read_lock` rescues a torn parse to NIL and `decide` grades a nil lock `:none`
+  # — indistinguishable from "no cert is running". A reader landing in the gap therefore
+  # concludes there is nothing to reap, the DETECT half never runs, and a detectable
+  # orphan becomes an unnameable one: the exact failure this module exists to prevent.
+  # It is not theoretical — polling the old writer, the path was observed at zero bytes
+  # and 4.6% of reads taken the moment it appeared came back nil, which is what made
+  # CertProcessTest flaky enough to red-seal a consumer lane and stop a gem publish.
+  #
+  # The property, asserted through the reader that actually has to be right: while the
+  # lock is being REWRITTEN, every read returns a COMPLETE lock — the old one or the new
+  # one, never nil. Asserting "it calls rename" would be the spelling; this is the claim.
+  def test_a_rewritten_lock_is_never_observable_as_nil
+    Dir.mktmpdir do |dir|
+      CertOrphanGuard.write_lock(dir, cert_pid: 1, pgid: 1000) # an existing lock to replace
+      readings = []
+      writing = true
+
+      # The reader runs for exactly as long as the writer does, so the overlap is
+      # STRUCTURAL rather than lucky — a fixed reading count could be satisfied before the
+      # first rewrite even started, and the test would prove nothing while staying green.
+      reader = Thread.new { readings << CertOrphanGuard.read_lock(dir) while writing }
+      2_000.times { |i| CertOrphanGuard.write_lock(dir, cert_pid: 1, pgid: 2000 + i) }
+      writing = false
+      reader.join
+
+      # Proof the sampling actually straddled the rewrites, so a nil-free result means
+      # "never torn" and not "never looked".
+      assert_operator readings.compact.map { |r| r["pgid"] }.uniq.size, :>, 1,
+                      "the reader must have sampled ACROSS the rewrites, not before them"
+      assert_empty readings.compact.select { |r| r["pgid"].nil? },
+                   "a lock that parsed must always name its group"
+      assert_nil readings.index(nil),
+                 "a reader caught mid-rewrite saw a TORN lock (nil). `read_lock` cannot tell that " \
+                 "from an absent one, so `decide` grades it :none and the orphan it names goes " \
+                 "unseen. The lock must be renamed into place, not written in place."
+    end
+  end
+
+  # And no partial sibling may survive the write — the lock lives in the git dir, and a
+  # stray file there is exactly the kind of litter the runlock was moved out of the
+  # working tree to avoid.
+  def test_publishing_the_lock_leaves_no_temporary_sibling
+    Dir.mktmpdir do |dir|
+      3.times { |i| CertOrphanGuard.write_lock(dir, cert_pid: 1, pgid: 100 + i) }
+
+      siblings = Dir.children(File.dirname(CertOrphanGuard.lock_path(dir)))
+      assert_equal ["cert-run.json"], siblings.sort,
+                   "the write must leave the lock and nothing else"
+    end
+  end
 end
