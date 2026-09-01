@@ -1261,6 +1261,117 @@ class FullSuiteCheckTest < Minitest::Test
     end
   end
 
+
+  # --- [integration] a SIBLING's failure must not discard a lane that PASSED ----------
+  #
+  # THE BUG (measured 2026-09-01, /tasks/timeout-discards-passing-lane). The
+  # all-or-nothing guard `exit 1`'d ABOVE the recording block, so a run whose suite
+  # lane hung at the 2700s ceiling while rubocop went green over 1,229 files PRINTED
+  # "[rubocop@<fp>:mcritchie-studio] bin/rubocop clean" and then recorded NOTHING.
+  # Twenty minutes of valid, fingerprint-bound measurement was discarded because a
+  # DIFFERENT lane produced no verdict, and bin/dor-check still read "rubocop:
+  # MISSING". The retry re-paid those twenty minutes at an UNCHANGED tree hash.
+  #
+  # BOTH HALVES ARE THE TEST, and either alone proves nothing: banking without still
+  # refusing would loosen the gate (the one outcome a cert must never produce), and
+  # refusing without banking is the bug itself. So each of these asserts that the
+  # green lane reaches the BOARD, that the lane which produced no verdict banks
+  # NOTHING, that the exit stays 1, and that the durable G1 attempt still closes
+  # --failed.
+  def test_a_timed_out_lane_does_not_discard_a_sibling_that_passed
+    with_repo do |dir|
+      assert system("git", "-C", dir, "checkout", "-qb", "feat/task-x", out: File::NULL, err: File::NULL)
+      out, code, lines = run_check_implicit_root(
+        dir, "task-x",
+        extra_env: { "FULL_SUITE_TEST_CMD" => "sleep 30", "FULL_SUITE_LANE_TIMEOUT" => "1" }
+      )
+
+      # HALF ONE — the run still REFUSES. `ok` is unchanged and the task still owes
+      # its suite lane; a banked sibling may never buy a pass.
+      assert_equal 1, code, "a hung lane must still FAIL the cert — banking a sibling is not a pass:\n#{out}"
+      assert_match(/RUNNER HUNG/, out, "the hung lane is still named HUNG, never reported as a red suite")
+      close = lines.select { |l| l[0] == "GATE" && l[1] == "close" }.last
+      refute_nil close, "the G1 attempt must still be closed:\n#{out}"
+      assert_includes close, "--failed", "a banked sibling must never close the durable gate --success"
+
+      # HALF TWO — the lane that COMPLETED GREEN is written to the board.
+      sent = checks_sent(lines)
+      assert(sent.any? { |l| l.match?(/\A\[rubocop@\h{7,64}(?::[^\]\s]+)?\] /) },
+             "the lane that completed GREEN must be BANKED, not discarded by its sibling: #{sent.inspect}")
+      refute(sent.any? { |l| l.match?(/\A\[full-suite@/) },
+             "the lane that HUNG produced no verdict and must bank NOTHING: #{sent.inspect}")
+      # Fingerprint-bound and repo-scoped, exactly as a green run's line is: the
+      # banked evidence asserts what was measured AT THIS TREE, or it asserts nothing.
+      assert_equal FullSuiteGate.fingerprint(dir), sent.first[/@(\h{7,64})[:\]]/, 1],
+                   "banked evidence must carry the tree hash dor-check recomputes: #{sent.inspect}"
+    end
+  end
+
+  # The same property with the sibling RED rather than HUNG — the two verdicts take
+  # different arms of the guard, and a fix that only reached the timeout arm would
+  # leave the commoner case still discarding good work.
+  def test_a_red_lane_does_not_discard_a_sibling_that_passed
+    with_repo do |dir|
+      assert system("git", "-C", dir, "checkout", "-qb", "feat/task-x", out: File::NULL, err: File::NULL)
+      out, code, lines = run_check_implicit_root(dir, "task-x", extra_env: { "FULL_SUITE_TEST_CMD" => "false" })
+
+      assert_equal 1, code, "a red lane must still FAIL the cert:\n#{out}"
+      assert_match(/lane\(s\) RED/, out)
+      close = lines.select { |l| l[0] == "GATE" && l[1] == "close" }.last
+      assert_includes close.to_a, "--failed", "a banked sibling must never close the durable gate --success"
+
+      sent = checks_sent(lines)
+      assert(sent.any? { |l| l.match?(/\A\[rubocop@\h{7,64}(?::[^\]\s]+)?\] /) },
+             "the GREEN lint lane must be banked even beside a red suite: #{sent.inspect}")
+      refute(sent.any? { |l| l.match?(/\A\[full-suite@/) },
+             "a RED lane must never record evidence: #{sent.inspect}")
+    end
+  end
+
+  # A --print run is a DRY RUN: it prints the evidence and touches no board. The
+  # partial bank must honour that seam exactly as the green path does, or `--print`
+  # silently becomes a write. Run WITH a slug on purpose — a slugless run is refused
+  # by a different guard, so passing one is the only way to exercise this seam.
+  def test_print_mode_banks_nothing_when_a_sibling_hangs
+    with_repo do |dir|
+      assert system("git", "-C", dir, "checkout", "-qb", "feat/task-x", out: File::NULL, err: File::NULL)
+      out, code, lines = run_check_implicit_root(
+        dir, "--print task-x",
+        extra_env: { "FULL_SUITE_TEST_CMD" => "sleep 30", "FULL_SUITE_LANE_TIMEOUT" => "1" }
+      )
+
+      assert_equal 1, code, out
+      assert_match(/\[rubocop@/, out, "--print still PRINTS the green lane's evidence")
+      assert_empty checks_sent(lines), "--print must never write to the board: #{out}"
+      refute_match(/banked on/, out, "…nor claim it did: #{out}")
+    end
+  end
+
+  # The bank is VERIFIED, never declared — the same rule the green path holds itself
+  # to (test_evidence_lines_missing_from_the_read_back_fail_the_cert is its twin).
+  # A write that returns 200 but does not land must NOT be reported as banked, or a
+  # builder re-runs believing a lane is already on the board.
+  def test_a_bank_that_does_not_land_is_never_reported_as_banked
+    with_repo do |dir|
+      assert system("git", "-C", dir, "checkout", "-qb", "feat/task-x", out: File::NULL, err: File::NULL)
+      out, code, = run_check_implicit_root(
+        dir, "task-x",
+        extra_env: { "FULL_SUITE_TEST_CMD" => "sleep 30", "FULL_SUITE_LANE_TIMEOUT" => "1",
+                     "STUB_READBACK_DROP_WRITTEN" => "1" }
+      )
+
+      assert_equal 1, code, out
+      assert_match(/did NOT land/, out, "an unlanded bank must say so: #{out}")
+      refute_match(/read-back confirms/, out, "…and must never claim confirmation: #{out}")
+    end
+  end
+
+  # Every --checks VALUE the cert handed the board stub, across all update calls.
+  def checks_sent(lines)
+    lines.select { |l| l[0] == "TASK" && l[1] == "update" }
+         .flat_map { |l| l.each_cons(2).select { |a, _| a == "--checks" }.map(&:last) }
+  end
+
   # --- [integration] the orphan guard is wired into THIS cert too ---------------------
   #
   # This lane is the more exposed of the two: a multi-minute full suite (it will outrun

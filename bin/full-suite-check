@@ -538,10 +538,73 @@ unless lint_waived
   details[FullSuiteGate::RUBOCOP_LANE] = "#{rubocop_cmd} clean"
 end
 
+# BANK THE LANES THAT COMPLETED GREEN when a SIBLING lane did not.
+#
+# THE BUG THIS FIXES (measured 2026-09-01, /tasks/timeout-discards-passing-lane).
+# The all-or-nothing guard below used to `exit 1` ABOVE the recording block, so a run
+# whose full-suite lane hung at the ceiling while rubocop went green over 1,229 files
+# PRINTED "[rubocop@<fp>:mcritchie-studio] bin/rubocop clean" and then recorded
+# NOTHING. Twenty minutes of valid, fingerprint-bound measurement was discarded
+# because a DIFFERENT lane produced no verdict; bin/dor-check still read "rubocop:
+# MISSING", and the retry re-paid those twenty minutes at an UNCHANGED tree hash.
+#
+# WHY THIS IS NOT A LOOSENING — the evidence model was ALREADY per-lane and per-repo,
+# and only the WRITE was atomic. FullSuiteGate.evidence_line emits one line PER LANE;
+# lib/cert_evidence.rb defines LANES as separate lanes and gives each (lane, repo)
+# pair its own namespace; bin/dor-check GRADES them separately, printing
+# "full-suite: MISSING; rubocop: MISSING" as two independent verdicts. So banking a
+# green rubocop asserts exactly what was measured — bin/rubocop was clean at THIS
+# tree hash — and asserts nothing whatever about the test lane, which stays MISSING
+# and keeps the gate refusing. `ok` is untouched and LANES is NOT widened: this run
+# still exits 1, still closes G1 --failed, and the task still owes every lane.
+#
+# WHAT IT BUYS. The fingerprint is a git TREE HASH, so two partial runs over an
+# UNCHANGED tree COMPOSE: a run that banks rubocop plus a later run that banks the
+# suite leave both lanes fresh at the SAME hash — which is precisely what `ok` means.
+# On a loaded machine, where whichever lane loses the race is the one that hangs,
+# that is the difference between converging and oscillating forever.
+#
+# NEVER A LANE THAT HUNG OR WENT RED. The caller passes only `result.ok` lines, and
+# `ok` is true solely for a lane that COMPLETED with a successful status
+# (CertProcess::Result — a timeout carries outcome :timeout and ok false).
+#
+# The write is PURE-EVIDENCE (only "[lane@fp:repo]" lines), so the funnel merges it
+# against the board's CURRENT state and can never supersede the author's tier tags
+# (lib/cert_evidence.rb #preserve). It is VERIFIED, not declared — the rule the green
+# path holds itself to. It deliberately does NOT re-read a baseline to audit the
+# author's pre-existing lines first: that is the TERMINAL claim's duty on the green
+# path, this run is already refusing, and a second board read on a failing run buys
+# no claim. The verdict and the exit code belong to the CALLER; nothing here can turn
+# a refusal into a pass.
+def bank_completed_lanes(lines, slug:, banked:, owed:, fingerprint:)
+  return if lines.empty? || slug.nil?
+
+  unless system(TASK_BIN, "update", slug, *lines.flat_map { |line| ["--checks", line] })
+    warn "full-suite-check: the green lane(s) could NOT be banked on #{slug.inspect} (bin/task update failed) — " \
+         "they will have to be re-run. Or record by hand: bin/task update #{slug} " \
+         "#{lines.map { |line| "--checks #{Shellwords.escape(line)}" }.join(' ')}"
+    return
+  end
+
+  headline = "#{banked.join(', ')} green at #{fingerprint[0, 12]} — banked on #{slug}" \
+             "#{owed.empty? ? '' : " (still owed: #{owed.join(', ')})"}"
+  missing = CertEmission.missing_after_write(TASK_BIN, slug, lines)
+  if missing.nil?
+    warn "full-suite-check: #{headline}, but the read-back FAILED — UNVERIFIED that it landed. " \
+         "Verify: bin/task show #{slug} -v."
+  elsif missing.any?
+    warn "full-suite-check: the green lane(s) did NOT land on #{slug} — the read-back is missing " \
+         "#{missing.length} line(s). Nothing was banked; the re-run owes them again."
+  else
+    warn "full-suite-check: #{headline} (read-back confirms)."
+  end
+end
+
 # cert_repo was resolved before the lanes ran (see the waiver above). A task naming
 # two repos holds a cert per repo instead of one slot the second cert silently
 # overwrote (lib/cert_evidence.rb, THE REPO DIMENSION).
-passed_lines = lanes.select { |_, result| result.ok }.map do |lane, _|
+passed = lanes.select { |_, result| result.ok }.keys
+passed_lines = passed.map do |lane|
   FullSuiteGate.evidence_line(lane, fingerprint, details[lane], repo: cert_repo)
 end
 
@@ -559,12 +622,26 @@ unless lanes.each_value.all?(&:ok)
                                env_var: "FULL_SUITE_LANE_TIMEOUT").each { |l| warn l }
   end
   failed = lanes.reject { |_, result| result.ok || result.timeout? }.keys.join(", ")
-  if failed.empty?
-    emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
-    exit 1
+  unless failed.empty?
+    warn "full-suite-check: lane(s) RED: #{failed}. Fix, then re-run — no evidence recorded for the red lane(s)."
   end
-  warn "full-suite-check: lane(s) RED: #{failed}. Fix, then re-run — no evidence recorded for the red lane(s)."
-  # A red lane is a G1 verdict: close the attempt failed (the re-run opens n+1).
+
+  # …but a lane that COMPLETED GREEN is banked, even though a sibling did not. The
+  # two arms above only DESCRIBE the failure; this records the half that succeeded.
+  # `--print` and a slugless run still write nothing — the same seam the green path
+  # honours below. See bank_completed_lanes for why this is not a loosening.
+  #
+  # The bank speaks LAST on purpose. The hung-lane report above is the shared one
+  # (CertProcess.timeout_report), and it still ends "Nothing certified." — a line
+  # written when a hung sibling really did discard everything, and now too broad by
+  # exactly this change. It is another gate's file and another task's edit surface,
+  # so it is reported rather than reached into; until it is reworded, the accurate
+  # sentence is the one printed after it.
+  bank_completed_lanes(passed_lines, slug: (options[:print] ? nil : slug), banked: passed,
+                       owed: lanes.keys - passed, fingerprint: fingerprint)
+
+  # A lane that produced no verdict, or a red one, is a G1 verdict either way: close
+  # the attempt failed (the re-run opens n+1). Banking a sibling never changes this.
   emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
   exit 1
 end
