@@ -288,7 +288,14 @@ The companion producer is the **SessionEnd** hook, which runs
 activity still open for the session (reading the session id off the SessionEnd stdin
 payload) with a generic `session ended` outcome — so a session's **last** activity
 never hangs open forever and trailing actions never fall into "Unlabeled". It is
-best-effort and always exits 0, exactly like the activity narration CLI.
+best-effort and exits 0 on every narration OUTCOME, exactly like the activity
+narration CLI — including the outcomes that record nothing (no session id, an
+unknown `--category`, a failed POST, any swallowed error). The ONE exception,
+since /tasks/atomic-event-help-mutates, is a command line the CLI cannot account
+for: an unrecognized argument REFUSES with exit 2 and `--help` answers with usage
+and exit 0, both without acting. That refusal is deliberate — `close-open --help`
+used to close every open activity and delete three session markers — and it is
+invisible to this hook, whose command line carries no flags.
 
 Add to `~/.claude/settings.json` (command points at the **primary checkout** so it
 survives worktree cleanup; **no `matcher`** ⇒ it fires for every end reason —

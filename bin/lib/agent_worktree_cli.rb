@@ -6,9 +6,15 @@
 # every verdict below be proven in a unit test WITHOUT running the script.
 #
 # THE DEFECT IT CLOSES (/tasks/worktree-subcommand-drops-help), and it is the
-# WIDEST surface the class has produced — TWENTY subcommands, THIRTEEN of which
-# reach a durable write (measured; the seven read-only arms are apps, list, plan,
-# env, whereami, shell-hook and doctor). The dispatcher did `cmd = ARGV.shift || "help"` and no arm
+# WIDEST surface the class has produced — TWENTY subcommands, FOURTEEN of which
+# reach a durable write (measured; the SIX read-only arms are apps, list, plan, env,
+# shell-hook and doctor). `whereami` was counted read-only here and in the manifest
+# test until 2026-09-01 and is NOT: `run_whereami(app, task)` — both positionals
+# given — calls write_context_marker, which File.writes .agent-context.json, excludes
+# it from git and refreshes the Codex session title. Re-derived from source rather
+# than carried forward, because a count is only true of the tree it came from: 20
+# arms in COMMANDS below, minus the six above, is 14. The dispatcher did
+# `cmd = ARGV.shift || "help"` and no arm
 # validated what was left, so:
 #
 #     bin/agent-worktree new <app> <task> --help
