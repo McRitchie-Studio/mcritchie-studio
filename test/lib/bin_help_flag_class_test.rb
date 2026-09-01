@@ -82,6 +82,16 @@ class BinHelpFlagClassTest < Minitest::Test
     # Release::Cli::COMMANDS.
     "release.rb"             => :cli_arg_guard,
     "clean-artifacts"        => :cli_arg_guard,
+    # --- retrofitted 2026-08-31, /tasks/qa-server-help-provisions -------------
+    # It sat in :subcommand looking classified while `provision <app> --yes --help`
+    # ran a REAL provision — heroku create, billable add-ons, domains, ACM and a
+    # config-var PATCH — with the confirmation already suppressed by the --yes
+    # beside it. Found by READING this manifest rather than by an operator watching
+    # it act, which is the first time this class has been caught that way. Its
+    # per-subcommand dictionary is QaServerCli::COMMANDS; help and refusal both exit
+    # NON-ZERO because bin/release reads this script's exit status as "the QA
+    # deploy succeeded".
+    "qa-server"              => :cli_arg_guard,
     "control-check"          => :cli_arg_guard,
     "reap-cert-databases"    => :cli_arg_guard,
     # The harvest WRITES desk records to the board, so it is guarded like the rest of
@@ -127,7 +137,6 @@ class BinHelpFlagClassTest < Minitest::Test
     # holding two different shapes is exactly what let six real gaps sit here
     # looking classified. Re-judge them in the next sweep, from this written set
     # rather than by rediscovering it.
-    "qa-server"              => :subcommand,
     "conductor"              => :subcommand,
     "triage"                 => :subcommand,
     "agent-marker"           => :subcommand,
@@ -263,7 +272,12 @@ class BinHelpFlagClassTest < Minitest::Test
     # guard's own verdict is proven behaviourally in
     # test/integration/release_argv_guard_test.rb, which never runs a mutating
     # subcommand.
-    "release.rb"          => "case ARGV.shift"
+    "release.rb"          => "case ARGV.shift",
+    # Same reasoning as release.rb: not one call but the DISPATCHER. Every Heroku
+    # and git write bin/qa-server can perform — create, addons:create, domains:add,
+    # certs:auto:enable, the config-var PATCH, the QA force-push, ps:scale — is
+    # reached through `case cmd`, so that line is the seam the guard has to precede.
+    "qa-server"           => "case cmd"
   }.freeze
 
   def test_the_guard_runs_before_the_first_mutation
@@ -366,6 +380,107 @@ class BinHelpFlagClassTest < Minitest::Test
     assert_empty plain & gaps
     refute_empty gaps, "the confirmed-gap bucket emptied without the scripts being fixed — if they " \
                        "were fixed, reclassify them; do not delete the record"
+  end
+
+  # --- the :subcommand label, made a tested property -------------------------
+  #
+  # WHY THIS EXISTS. Until 2026-08-31 :subcommand was the ONLY bucket in this
+  # manifest with no wiring assertion behind it. Its legend was prose, and prose
+  # does not fail CI — which is exactly how bin/qa-server sat here looking
+  # classified while
+  #
+  #     bin/qa-server provision <app> --yes --help
+  #
+  # PROVISIONED A QA SERVER FOR REAL. It deleted `--yes` to suppress the
+  # confirmation, dispatched on ARGV[0], and never inspected `--help` at all, so
+  # the flag fell off the end of the line and the create / addons / domains /
+  # config-var writes ran to completion. The label was true about the BARE form
+  # and the reader's conclusion was false — the same way bin/release read one
+  # task earlier. Narrowing that legend's wording was the right move and did not
+  # fix a single script. This does.
+  #
+  # WHAT IT ASSERTS, and why the predicate is exactly this wide. The bucket only
+  # ever claimed something about the BARE form, so this must NOT assert that
+  # `<cmd> --help` is safe — that would be a STRONGER promise than the label
+  # makes, and a record that overclaims is the very thing being fixed here. What
+  # it CAN require is the property whose absence makes the bare-form claim
+  # actively misleading: a script that reaches a durable, outside-the-process
+  # mutation must account for an argument it does not recognize SOMEWHERE in its
+  # code. Three spellings satisfy that, because all three genuinely account for
+  # the line — the shared guard, an explicit help-flag arm, or an explicit
+  # unknown-argument refusal.
+  #
+  # MEASURED across all sixteen entries before it was written: bin/qa-server was
+  # the ONLY failure. bin/gate and bin/triage both write to the PRODUCTION board
+  # and both refuse an unknown flag BEFORE the POST; the nine confessed
+  # flag-loops carry explicit `--help` arms; bin/secret reaches no durable
+  # mutation. So this assertion cost no reclassification and no churn — it makes
+  # the one real gap impossible to re-introduce silently, which is the only thing
+  # a safety record is for.
+
+  # Calls that reach outside this process and leave something behind. A small,
+  # literal vocabulary rather than a clever heuristic, and every entry is a call
+  # this bin/ actually makes. The control test below proves the set still matches
+  # source known to mutate: a vocabulary that quietly stopped matching would turn
+  # this whole assertion green by reading nothing at all.
+  DURABLE_MUTATION = {
+    "heroku create"   => /heroku["',\s]+create/,
+    "heroku addons"   => /addons:create/,
+    "heroku domains"  => /domains:add/,
+    "heroku ps:scale" => /ps:scale/,
+    "git push"        => /git["',\s]+push/,
+    "HTTP write"      => /Net::HTTP::(?:Post|Patch|Put|Delete)|\b(?:request|api)\(:(?:post|patch|put|delete)|-X\s*(?:POST|PATCH|PUT|DELETE)/,
+    "file write"      => /File\.write|FileUtils\.(?:mv|rm|cp|mkdir)/
+  }.freeze
+
+  # The three spellings that genuinely account for an unrecognized argument.
+  ACCOUNTS_FOR_ARGV = /CliArgGuard\.guard!|--help|(?<!\w)-h\)|"-h"|'-h'|unknown flag|unrecognized argument|refuse_unknown_args!/
+
+  def test_every_mutating_subcommand_script_accounts_for_an_unknown_argument
+    offenders = MANIFEST.select { |_, kind| kind == :subcommand }.each_key.filter_map do |name|
+      src = code_only(name)
+      mutations = DURABLE_MUTATION.select { |_, re| src.match?(re) }.keys
+      next if mutations.empty? || src.match?(ACCOUNTS_FOR_ARGV)
+
+      "bin/#{name} (reaches: #{mutations.join(', ')})"
+    end
+
+    assert_empty offenders,
+                 "#{offenders.join('; ')} — classified :subcommand, reaches a DURABLE mutation, and " \
+                 "accounts for an unrecognized argument nowhere in its code. That is the bin/qa-server " \
+                 "shape: `provision <app> --yes --help` dropped the flag and provisioned for real. " \
+                 "Wire bin/lib/cli_arg_guard.rb and reclassify :cli_arg_guard, or — if the gap is " \
+                 "being left open on purpose — move it to :subcommand_gap with its probe and a filed task."
+  end
+
+  # The defect, frozen as a fixture, so the assertion above is proven to BITE.
+  # A predicate that silently stopped matching would pass the bucket by reading
+  # nothing, and "the test is green" would mean the opposite of what it looks
+  # like. This is the pre-fix bin/qa-server dispatcher, verbatim in shape.
+  REGRESSED_SHAPE = <<~SHAPE
+    cmd = ARGV.shift || "help"
+    case cmd
+    when "provision"
+      assume_yes = ARGV.delete("--yes")
+      run_provision(ARGV[0], assume_yes: !!assume_yes)
+    end
+    sh("heroku", "create", app, "--no-remote")
+  SHAPE
+
+  def test_the_unknown_argument_predicate_actually_bites
+    assert DURABLE_MUTATION.any? { |_, re| REGRESSED_SHAPE.match?(re) },
+           "the mutation vocabulary no longer recognizes `heroku create` — the bucket assertion above " \
+           "would pass by matching nothing"
+    refute REGRESSED_SHAPE.match?(ACCOUNTS_FOR_ARGV),
+           "the accounting predicate now matches source that accounts for nothing — it would bless the " \
+           "exact shape that provisioned a QA server"
+
+    # …and it must still SEE the accounting in a script that really has it.
+    gate = code_only("gate")
+    assert DURABLE_MUTATION.any? { |_, re| gate.match?(re) },
+           "bin/gate writes to the board; a vocabulary that misses it is reading nothing"
+    assert gate.match?(ACCOUNTS_FOR_ARGV),
+           "bin/gate refuses an unknown flag before its POST — the predicate must see that"
   end
 
   # An accepted gap is a filed obligation. Keeping the reason ON the entry is what
