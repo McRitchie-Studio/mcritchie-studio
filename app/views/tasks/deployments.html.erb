@@ -21,4 +21,12 @@
         app_ladder_cards: @app_ladder_cards,
         current_page: "deployments",
         show_kickoffs: false %>
+
+  <%# The desk panel sits BELOW the board on purpose. The board is the work; the desks are
+      the machine the work runs on, and an operator scanning /deployments should reach the
+      pipeline first. Rendered here rather than inside _deploy_board so the board partial —
+      which /tasks also renders — keeps exactly the locals it has today. %>
+  <div class="mt-6">
+    <%= render "desk_panel", panel: @desk_panel %>
+  </div>
 </div>

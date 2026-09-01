@@ -48,11 +48,13 @@ require_relative "../lib/claim_lease"
 # with bin/statusline's heartbeat, which asks the same filesystem question about the
 # same directories — see desk_hold.
 require_relative "../lib/desk_activity"
-# The delete-later ledger's move-never-delete invariant. Used here as a BELT on this
-# script's own writes — the durable gate is bin/ledger-guard + test/lib/ledger_guard_test.rb,
-# which judge the committed tree and therefore hold even when the desk that wrote the row
-# was carrying a stale copy of THIS file. See bin/lib/ledger_guard.rb.
-require_relative "lib/ledger_guard"
+# THE DESK LEDGER, on the board. This script no longer writes
+# docs/agents/maintenance/delete-later.md: that file is resolved against HUB_DIR, so a
+# teardown run from the PRIMARY checkout landed its audit row on `main` — a branch nobody
+# may commit to — and 98 rows were stranded in "restore later" stashes that were never
+# restored. The markdown ledger and its archive stay as TRACKED HISTORY and bin/ledger-guard
+# still guards them; new rows go here. See bin/lib/desk_ledger.rb.
+require_relative "lib/desk_ledger"
 require_relative "lib/projects_root"
 
 PROJECTS_DIR = File.expand_path(ENV.fetch("PROJECTS_DIR") { ProjectsRoot.default_projects_dir })
@@ -2194,12 +2196,12 @@ def build_discovered_worktree_configs
     # The sibling tree (<repo>.worktrees) and the managed one (<repo>/.worktrees)
     # are two homes for the SAME repo, so basename alone gives both configs one
     # slug. The dirs are distinct, so nothing is torn down twice — but every label
-    # built from the slug (worktree_label, the delete-later ledger row, the
+    # built from the slug (worktree_label, the desk ledger record, the
     # registry) then names two different desks identically, which is exactly the
     # ambiguity an archive record must not have.
     slug = File.basename(repo)
     # ".sibling", not "(sibling)": this slug is printed INTO a command the operator is
-    # meant to paste (cleanup_command) and written into the delete-later ledger as the
+    # meant to paste (cleanup_command) and written into the desk ledger as the
     # archive record. Parentheses are shell metacharacters — unquoted, bash answers
     # "syntax error near unexpected token `('" and zsh "unknown file attribute" — so the
     # remediation line could not run at all. sweep_app_for matches the slug verbatim, so
@@ -2682,11 +2684,45 @@ def run_snapshot(app = nil, write: false)
   FileUtils.mkdir_p(File.dirname(path))
   File.write(path, "#{json}\n")
   puts "wrote #{payload.fetch("worktrees").size} worktree record(s) to #{path}"
+  sync_desk_ledger(payload)
 rescue Errno::EACCES, Errno::EPERM => e
   # Report the LAUNDERED path, not a second raw `snapshot_path`: the containment scan
   # subtracts only the expression enforce! was handed, so re-naming the producer here
   # is a raw hold it (correctly) flags. `path` is bound before the write that can EACCES.
   abort "could not write worktree registry to #{path}: #{e.message}\nSet AGENT_WORKTREE_REGISTRY=/tmp/worktree-registry.json for a scratch write, or rerun with filesystem approval for the projects registry."
+end
+
+# Fold the registry we just wrote into the board's desk ledger, so /deployments can show
+# what the desks ARE — how many, how many band slots are free, which are live and which
+# are finished — instead of the operator reading a JSON file.
+#
+# BEST-EFFORT, and that is the deliberate other half of the fail-closed rule on the
+# destroy path. A snapshot destroys nothing: the local registry file is already written
+# above, so a board outage here costs a stale panel, not an unrecorded teardown. It still
+# says so out loud — a sync that fails quietly is how a panel starts describing last week.
+#
+# AGENT_WORKTREE_DESK_SYNC=off disarms it for a local experiment; the destroy path has no
+# such switch, on purpose.
+def sync_desk_ledger(payload)
+  return if ENV["AGENT_WORKTREE_DESK_SYNC"].to_s.strip.casecmp?("off")
+
+  result = DeskLedger.sync(payload, dotenv: File.join(HUB_DIR, ".env"))
+  unless result.ok?
+    warn "warning: desk ledger sync failed: #{result.error}"
+    warn "         #{DeskLedger.base_url}/deployments will show the previous snapshot until this succeeds."
+    return
+  end
+
+  vanished = result.record.is_a?(Hash) ? result.record["vanished"].to_i : 0
+  puts "synced #{payload.fetch("worktrees").size} desk(s) to #{DeskLedger.base_url}/deployments"
+  return if vanished.zero?
+
+  # A desk with an OPEN ledger episode that this snapshot did not see left without a
+  # teardown record. That is the defect class itself, and it is the one question the
+  # markdown ledger could never answer — so it is said here rather than left on a panel
+  # nobody has open.
+  warn "warning: #{vanished} desk(s) have an open ledger record but were not in this snapshot — " \
+       "removed outside `bin/agent-worktree remove`. See #{DeskLedger.base_url}/deployments."
 end
 
 # The git-eligible worktrees split into [free, withheld], where withheld is
@@ -2728,10 +2764,6 @@ def no_candidates_message(kind, withheld)
 
   desks = withheld.size == 1 ? "desk" : "desks"
   "#{kind}: no free candidates — #{withheld.size} #{desks} withheld (see the reasons above)"
-end
-
-def ledger_path
-  File.join(HUB_DIR, "docs", "agents", "maintenance", "delete-later.md")
 end
 
 # The ledger row's reason — the archive record a reader lands on months later, when the
@@ -2795,109 +2827,102 @@ def print_cleanup_candidate(record)
   puts "    remove: #{cleanup_command(record)}"
 end
 
-def cleanup_row(record, status: "pending approval")
-  path = record[:dir]
+# The "Safe-delete condition" the ledger has always carried: what must be true before
+# this desk may go, or — once it is gone — the command that took it. It is prose for a
+# reader, not a machine field, and it is the one cell of the old markdown row that has
+# no equivalent anywhere in the registry.
+def cleanup_condition(record, status:)
   command = cleanup_command(record)
-  condition = status.start_with?("removed") ? "Removed with `#{command}` during approved lifecycle cleanup." : "Remove with `#{command}` after operator approval."
-  "| `#{path}` | worktree | #{cleanup_reason(record)} | #{condition} | #{status} |"
+  return "Removed with `#{command}` during approved lifecycle cleanup." if status == "removed"
+
+  "Remove with `#{command}` after operator approval."
 end
 
-# A ledger table row that names exactly this desk path.
-#
-# Anchored at the start of the line and closed by the cell's trailing "` |", so it can
-# match neither a longer sibling path (`…/_ship-2`) nor a path mentioned inside the
-# reason or condition cells.
-def ledger_row_for_path?(line, dir)
-  line.start_with?("| `#{dir}` |")
+# WHO filed the row, when anything knows. The markdown ledger never carried this and the
+# board can, so it is recorded when a caller offers it and left nil rather than guessed
+# at — `source` (remove / cleanup / reclaim / snapshot) is the field that always answers.
+def desk_ledger_actor
+  value = ENV["DESK_LEDGER_ACTOR"].to_s.strip
+  value = ENV["AGENT_SLUG"].to_s.strip if value.empty?
+  value.empty? ? nil : value
 end
 
-# Is this ledger row RESOLVED — history rather than an open item?
+# THE DESK LEDGER WRITE — and the one thing on this script's destroy path that may not
+# be best-effort.
 #
-# The rule is the archive rollover's own (DocsArchive#row_date, bin/lib/docs_archive.rb):
-# read the Status cell (the last one, after dropping the closing pipe) and look for a date.
-# A dated status ("removed 2026-08-18") records something that already happened; an undated
-# one ("pending approval", "reference only") is an unresolved item still awaiting its
-# outcome. Keeping the two ledgers on ONE definition is the point — the archive is
-# append-only and path-repeating by design, and the primary drifted from it silently.
-def ledger_row_resolved?(line)
-  status = line.strip.sub(/\|\z/, "").split("|").last.to_s
-  status.match?(/\d{4}-\d{2}-\d{2}/)
+# IT FAILS CLOSED, DELIBERATELY, and the cost of that is close to zero because the write
+# happens FIRST: teardown_worktree posts the record before it stops a stack, flushes a
+# Redis DB, drops a database or removes a git worktree. A refused write therefore costs a
+# retry and nothing else — there is no half-torn-down desk to reconcile, and no desk is
+# ever destroyed without a durable record already committed.
+#
+# WHY NOT A LOCAL QUEUE. A spool that flushes "on next contact" re-introduces the exact
+# failure this replaces: a record that exists on one machine until somebody remembers.
+# The offline property the markdown file had was real, and this gives it up on purpose —
+# the automatic sweeps ALREADY withhold every bound desk when the board is unreadable
+# (see reclaim_evidence: an unverifiable desk is withheld everywhere), so a board outage
+# was never a window in which mass teardown was safe. All this closes is the explicit
+# single-desk `remove … --yes`, which the operator can simply run again.
+# The desk ledger payload, built ONCE for both postures below.
+#
+# The registry record goes over the wire VERBATIM — `stack_record_snapshot` is the same
+# hash `snapshot --write` writes — and the server owns the mapping onto columns
+# (DeskRecord.registry_attributes). A second mapping on this side would be a second answer
+# waiting to disagree with the first. The three narrative fields are the ones the SWEEP
+# owns and the registry does not carry.
+def desk_ledger_write(record, status:, source:)
+  DeskLedger.file(
+    desk: stack_record_snapshot(record, {}),
+    status: status,
+    source: source,
+    actor: desk_ledger_actor,
+    safety: cleanup_safety_label(record),
+    reason: cleanup_reason(record),
+    safe_delete_condition: cleanup_condition(record, status: status),
+    dotenv: File.join(HUB_DIR, ".env")
+  )
 end
 
-# The index of the row this teardown should CLOSE, or nil when it must open a new one.
-#
-# Desk paths RECYCLE. `_ship` is torn down once per release cycle at the same path every
-# time, so keying the in-place update on the PATH ALONE overwrote the previous teardown's
-# row — and did it to every matching line at once, since the old map rewrote them all.
-# The 2026-08-18 `_ship` rows for the hub and turf-monster are still readable at
-# `git show origin/accepted:docs/agents/maintenance/delete-later.md` and exist nowhere at
-# the head of PR 966, because the 08-19 teardown replaced them in place. The arithmetic is
-# the signature: the primary gained 32 markers dated 08-19 while the append-only archive
-# gained 34 rows, and 08-18 shows the mirror deficit. That is steady loss, not a rare race.
-#
-# So the row a teardown may overwrite is not "the row with this path" — it is the row for
-# this path that is still OPEN, i.e. a candidate `cleanup --write` filed and nothing has
-# resolved yet. Closing that is a state transition within ONE teardown episode. Writing
-# over a dated row is forgetting that a DIFFERENT episode ever happened, which is the bug.
-# `rindex` so the newest open row wins if an older ledger ever carried more than one.
-def open_ledger_row_index(lines, dir)
-  lines.rindex { |line| ledger_row_for_path?(line, dir) && !ledger_row_resolved?(line) }
+def file_desk_record!(record, status:, source:)
+  result = desk_ledger_write(record, status: status, source: source)
+  return result if result.ok?
+
+  abort <<~MSG
+    agent-worktree: REFUSING to tear down #{worktree_label(record)} — the desk ledger write failed.
+
+      #{result.error}
+
+    THIS DESK IS UNTOUCHED — nothing was stopped, flushed, dropped or removed for it. The
+    record is written BEFORE the teardown precisely so a board this script cannot reach
+    costs a retry instead of an unrecorded removal. (In a BATCH sweep, desks torn down
+    earlier in this run each filed their own record first, so the audit trail is whole;
+    only this desk and the ones after it are left standing.)
+
+    The ledger is #{DeskLedger.base_url}/deployments now, not a markdown file — it moved
+    because a row written into the primary checkout lands on `main` and can never be
+    committed (98 rows were stranded that way). There is no local queue on purpose: a
+    spool that flushes "on next contact" is the same "somebody must remember" this fix
+    removes.
+
+    Re-run the teardown once the board answers:
+      #{cleanup_command(record)}
+  MSG
 end
 
-# EVERY ledger write goes through here, and none of them may destroy history.
-#
-# THE BELT, NOT THE GUARD. The writer that destroyed the 2026-08-20 rows was a STALE COPY
-# of this script — `ledger_path` is anchored to HUB_DIR, so a teardown driven from any of
-# the 12-of-18 desks still carrying the pre-269e2db4 logic rewrote the hub's ledger with
-# that logic. A rule added here cannot reach those copies, which is why the real gate
-# (bin/ledger-guard, test/lib/ledger_guard_test.rb) judges the COMMITTED TREE instead.
-# This check is what the copies that ARE current owe the file: a destructive write is
-# refused BEFORE it reaches the disk, so there is no damage to recover from.
-def write_ledger!(content, before:)
-  losses = LedgerGuard.lost(base: [before], head: [content])
-  unless losses.empty?
-    abort <<~MSG
-      agent-worktree: REFUSING to write #{ledger_path}.
-
-      The write destroys #{losses.sum(&:missing)} resolved row(s):
-
-      #{losses.map { |episode| "  #{episode.line}" }.join("\n")}
-
-      Rows here are MOVED to the archive, never deleted. A DATED row is a teardown that
-      already happened; a new teardown of a recycled desk path (`_ship` is torn down every
-      release cycle) appends beside it rather than replacing it.
-
-      If you are seeing this, the ledger logic in THIS checkout is behind the hub. Re-run
-      the teardown from the hub primary:
-        cd #{HUB_DIR} && git pull --ff-only && bin/agent-worktree remove <app> <task> --yes
-    MSG
-  end
-
-  File.write(ledger_path, content)
-end
-
-def write_cleanup_ledger_record(record, status:)
-  row = cleanup_row(record, status: status)
-  lines = File.exist?(ledger_path) ? File.readlines(ledger_path) : []
-  before = lines.join
-  index = open_ledger_row_index(lines, record[:dir])
-
-  if index
-    lines[index] = "#{row}\n"
-    write_ledger!(lines.join, before: before)
-    puts "updated cleanup ledger: #{ledger_path}"
-    return
-  end
-
-  write_ledger!("#{before}\n<!-- agent-worktree remove #{Time.now.strftime("%Y-%m-%d")} -->\n#{row}\n",
-                before: before)
-  puts "wrote cleanup ledger: #{ledger_path}"
+# File ONE desk record and do not stop the caller on failure. `cleanup --write` and
+# `snapshot --write` destroy nothing, so a board outage there is a loud warning rather
+# than a refusal — the fail-closed rule is scoped to the destroy path, which is where it
+# buys something.
+def file_desk_record(record, status:, source:)
+  result = desk_ledger_write(record, status: status, source: source)
+  warn "warning: desk ledger write failed for #{worktree_label(record)}: #{result.error}" unless result.ok?
+  result
 end
 
 def run_cleanup(app = nil, write: false)
-  # Same refresh the reclaim sweep runs. `cleanup --write` FILES desks into
-  # docs/agents/maintenance/delete-later.md and qa-intake prints `remove --yes` for
-  # them, so it must not nominate a desk whose origin could not be consulted.
+  # Same refresh the reclaim sweep runs. `cleanup --write` NOMINATES desks on the board
+  # and qa-intake prints `remove --yes` for them, so it must not nominate a desk whose
+  # origin could not be consulted.
   refresh_origin_reachability!(app)
 
   candidates, withheld = cleanup_partition(app)
@@ -2912,28 +2937,18 @@ def run_cleanup(app = nil, write: false)
 
   unless write
     puts
-    puts "dry run only. Re-run with --write to append candidates to #{ledger_path}."
+    puts "dry run only. Re-run with --write to file candidates on the desk ledger (#{DeskLedger.base_url}/deployments)."
     return
   end
 
-  # Idempotent on the OPEN item, not on the path. Re-running the dry run must not file a
-  # second pending row for a candidate already awaiting approval — but a RECYCLED path
-  # whose earlier row is resolved is a new candidate, and the old substring test (does this
-  # path appear anywhere in the file?) silently refused to nominate it for the rest of
-  # time. Same rule as the teardown write above, so both halves of the ledger agree.
-  existing = File.exist?(ledger_path) ? File.readlines(ledger_path) : []
-  rows = candidates.reject { |record| open_ledger_row_index(existing, record[:dir]) }
-                   .map { |record| cleanup_row(record) }
-  if rows.empty?
-    puts "cleanup: candidates already present in #{ledger_path}"
-    return
-  end
-
-  before = existing.join
-  write_ledger!("#{before}\n<!-- agent-worktree cleanup #{Time.now.strftime("%Y-%m-%d")} -->\n" \
-                "#{rows.map { |row| "#{row}\n" }.join}",
-                before: before)
-  puts "wrote #{rows.size} candidate(s) to #{ledger_path}"
+  # IDEMPOTENCE IS THE SERVER'S NOW, and it is the same rule the markdown file used:
+  # DeskRecord.file! updates the OPEN episode for a desk path or opens one, and never
+  # touches a resolved row. So a second `--write` run re-files the same open candidate
+  # rather than duplicating it, and a RECYCLED path whose earlier row is resolved opens a
+  # fresh episode instead of being refused for the rest of time (the old substring dedupe
+  # — does this path appear ANYWHERE in the file? — did exactly that).
+  filed = candidates.count { |record| file_desk_record(record, status: "candidate", source: "cleanup").ok? }
+  puts "filed #{filed} of #{candidates.size} candidate(s) on the desk ledger: #{DeskLedger.base_url}/deployments"
   maybe_scale_in
 end
 
@@ -3008,10 +3023,15 @@ end
 # worktree, and delete the local branch. Callers handle band scale-in and the
 # registry refresh once, after the (possibly batched) teardown.
 def teardown_worktree(app, dir, record)
+  # RECORD FIRST, DESTROY SECOND. The ledger write used to sit in the middle of this
+  # sequence, which was survivable while it was a local file append and is not while it
+  # is a network call — a teardown that stopped the stack and then failed to record would
+  # be the defect with extra steps. file_desk_record! aborts on a failed write, so the
+  # only thing a board outage can cost here is a re-run.
+  file_desk_record!(record, status: "removed", source: "remove")
   stop_stack_for_removal(app, dir, record)
   flush_redis_db(record)
   drop_desk_databases(record)
-  write_cleanup_ledger_record(record, status: "removed #{Time.now.strftime("%Y-%m-%d")}")
   sh("git", "-C", app.fetch("repo"), "worktree", "remove", dir)
   delete_local_branch_if_safe(app, record[:branch])
 end
@@ -3170,7 +3190,7 @@ def run_remove(app, task, yes: false, force: false)
     puts "branch:   #{record[:branch]}"
     puts "reason:   #{cleanup_reason(record)}"
     puts
-    puts "dry run only. Re-run with --yes after approval to stop the stack, update the ledger, remove the worktree, delete the local branch, and refresh the registry."
+    puts "dry run only. Re-run with --yes after approval to record the desk on the ledger, stop the stack, remove the worktree, delete the local branch, and refresh the registry."
     return
   end
 
@@ -4061,9 +4081,8 @@ ORIGIN_CHECKED = {}
 # and `cleanup --write`), doctor, and the registry snapshot. Populating the map in
 # run_reclaim alone meant the other three evaluated origin_hold against an EMPTY
 # map, got nil, and wrote `cleanup_candidate: true` for a desk the sweep would
-# refuse — with run_cleanup --write additionally FILING that desk into
-# docs/agents/maintenance/delete-later.md, and bin/qa-intake then printing
-# `remove ... --yes` for it.
+# refuse — with run_cleanup --write additionally FILING that desk on the desk
+# ledger, and bin/qa-intake then printing `remove ... --yes` for it.
 #
 # The usual "stale refs are conservative anyway" defence does NOT cover this case.
 # It holds for a repo that is merely offline: stale refs make a merged branch look
@@ -4161,7 +4180,7 @@ end
 # There is no "advisory" lane. EVERY caller here answers one question — "is this desk a
 # cleanup candidate?" — and that answer is consumed to DESTROY: the registry feeds
 # bin/qa-intake, which prints a `remove … --yes` per candidate; the cleanup dry-run prints the
-# same removal command; `cleanup --write` files the desk in the delete-later ledger; doctor
+# same removal command; `cleanup --write` files the desk on the desk ledger; doctor
 # labels it a candidate. An earlier cut split these into "destroy" and "advisory" and let the
 # advisory ones fail open on an unreadable board — so during exactly the outage this guard
 # exists to survive, the sweep withheld a live builder's desk while the conductor's front door
@@ -4919,7 +4938,7 @@ if $PROGRAM_NAME == __FILE__
     app_name, raw_task = ARGV
     usage unless app_name && raw_task
     # sweep_app_for, not app_for: the sweep PRINTS this exact command for every desk it
-    # nominates or withholds, and writes it into the delete-later ledger as the archive
+    # nominates or withholds, and writes it into the desk ledger as the archive
     # record. Resolving through the registry made every one of those lines dead for a
     # discovered repo ("unknown app: studio-engine") — an archive record naming a command
     # that cannot run. run_remove already handles a stackless desk: stop_stack_for_removal

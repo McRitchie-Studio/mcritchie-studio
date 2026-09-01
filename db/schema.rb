@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_20_130931) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_31_221500) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -499,6 +499,61 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_20_130931) do
     t.datetime "updated_at", null: false
     t.index ["slug"], name: "index_depth_charts_on_slug", unique: true
     t.index ["team_slug"], name: "index_depth_charts_on_team_slug", unique: true
+  end
+
+  create_table "desk_records", force: :cascade do |t|
+    t.string "actor"
+    t.string "ahead"
+    t.integer "app_port"
+    t.string "app_slug"
+    t.string "base_ref"
+    t.string "behind"
+    t.string "branch"
+    t.boolean "cleanup_candidate", default: false, null: false
+    t.string "commit_subject"
+    t.datetime "created_at", null: false
+    t.string "database"
+    t.string "desk_slug"
+    t.boolean "dirty", default: false, null: false
+    t.string "head"
+    t.string "health"
+    t.string "label"
+    t.datetime "last_seen_at"
+    t.string "local_url"
+    t.boolean "merged", default: false, null: false
+    t.jsonb "payload", default: {}, null: false
+    t.text "rationale"
+    t.text "reason"
+    t.datetime "recorded_at"
+    t.integer "redis_db"
+    t.date "resolved_on"
+    t.text "safe_delete_condition"
+    t.string "safety"
+    t.string "source"
+    t.string "status", default: "live", null: false
+    t.string "task_slug"
+    t.string "task_url"
+    t.datetime "updated_at", null: false
+    t.text "withheld_reason"
+    t.string "worktree_path", null: false
+    t.index ["app_slug"], name: "index_desk_records_on_app_slug"
+    t.index ["last_seen_at"], name: "index_desk_records_on_last_seen_at"
+    t.index ["resolved_on"], name: "index_desk_records_on_resolved_on"
+    t.index ["status"], name: "index_desk_records_on_status"
+    t.index ["worktree_path", "resolved_on"], name: "index_desk_records_on_worktree_path_and_resolved_on"
+  end
+
+  create_table "desk_snapshots", force: :cascade do |t|
+    t.jsonb "capacity", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.integer "desk_count", default: 0, null: false
+    t.datetime "generated_at", null: false
+    t.string "hub_dir"
+    t.string "projects_dir"
+    t.jsonb "redis_db_range", default: {}, null: false
+    t.jsonb "summary", default: {}, null: false
+    t.datetime "updated_at", null: false
+    t.index ["generated_at"], name: "index_desk_snapshots_on_generated_at"
   end
 
   create_table "devops_shifts", force: :cascade do |t|

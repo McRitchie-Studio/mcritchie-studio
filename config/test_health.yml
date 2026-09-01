@@ -133,4 +133,13 @@ frozen_size:
   # desk, same lapsed claim, one variable flipped), which is most of their value.
   # The PURE decisions stay split out in test/commands/origin_unreachable_reclaim_test.rb,
   # which is what this ceiling actually asks for.
-  test/commands/agent_worktree_test.rb: 2340
+  # +17 (2026-08-31, ledger-writes-to-primary): NO new test. The desk ledger moved off
+  # docs/agents/maintenance/delete-later.md and onto the board, so `remove` and
+  # `cleanup --reclaim --yes` now file their audit record BEFORE they destroy anything and
+  # ABORT when they cannot — which no teardown in this file could satisfy under the
+  # OutboundSeams floor (TASK_API_BASE pinned unroutable). The growth is 6 lines wiring a
+  # real localhost board into setup/teardown/command_env (test/support/desk_ledger_sink.rb,
+  # a NEW file, which is where this ceiling asks new code to go) plus 11 lines where two
+  # checks that used to `File.read` the markdown ledger now assert the RECORD the sweep
+  # filed — a stronger assertion, in the tests that already own that behaviour.
+  test/commands/agent_worktree_test.rb: 2357

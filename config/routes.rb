@@ -314,6 +314,15 @@ Rails.application.routes.draw do
       # Triage findings: agents FILE and LIST; promotion to a task is deliberately
       # web-only (TriageController#promote, admin-gated) — the operator's lane.
       resources :triage_findings, only: [:index, :create]
+      # The desk ledger — the audit row `bin/agent-worktree` files when it nominates or
+      # tears down a worktree desk. It used to be a markdown table in the hub repo, which
+      # a teardown run from the PRIMARY checkout wrote onto `main` and could never commit.
+      # `sync` folds a whole `snapshot --write` registry in; `create` files one desk.
+      resources :desk_records, only: [:index, :create] do
+        collection do
+          post :sync
+        end
+      end
       # The armed-merge roster — "what is armed right now, pinned to what,
       # expiring when". Read-only; arming is per-task (member routes below).
       resources :review_pending_actions, only: [:index]

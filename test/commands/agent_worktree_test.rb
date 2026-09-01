@@ -9,6 +9,7 @@ require "socket"
 require "tmpdir"
 require "uri"
 require "yaml"
+require_relative "../support/desk_ledger_sink"
 
 class AgentWorktreeCommandTest < ActiveSupport::TestCase
   def setup
@@ -20,10 +21,17 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     @task = "terminal-context"
     @worktree_dir = File.join(@hub_dir, ".worktrees", @task)
     @script = Rails.root.join("bin/agent-worktree").to_s
+    # THE DESK LEDGER, for real. `remove`/`cleanup --reclaim --yes` file their audit record
+    # on the board BEFORE they destroy anything and ABORT when they cannot — so under the
+    # OutboundSeams floor (TASK_API_BASE pinned unroutable) no teardown in this file could
+    # complete. The answer is a real board on localhost, not a test-only bypass: a skip flag
+    # on a destroy path is how a fail-closed guard quietly stops being one.
+    @desk_ledger = DeskLedgerSink.start
     setup_repo
   end
 
   def teardown
+    @desk_ledger&.stop
     FileUtils.rm_rf(@projects_dir) if @projects_dir
   end
 
@@ -461,10 +469,20 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     out, err, status = agent_worktree("cleanup", "mcritchie-studio", "--write", env: command_env)
 
     assert status.success?, "#{out}\n#{err}"
-    ledger = File.read(File.join(@hub_dir, "docs", "agents", "maintenance", "delete-later.md"))
-    assert_includes ledger, "health down, Redis DB 9"
-    assert_includes ledger, "database mcritchie_studio_development_terminal_context"
-    assert_includes ledger, "bin/agent-worktree remove mcritchie-studio terminal-context --yes"
+    # Asserted on the RECORD the sweep filed, not on markdown prose — the ledger is a board
+    # row now, and the operational context has to survive the move or the archive record
+    # months from now is thinner than the one it replaced.
+    desk = @desk_ledger.desk_for(@worktree_dir)
+
+    assert desk, "cleanup --write must file the candidate on the desk ledger"
+    assert_equal "candidate", desk["status"]
+    assert_equal "cleanup", desk["source"]
+    assert_includes desk["reason"], "health down, Redis DB 9"
+    assert_includes desk["reason"], "database mcritchie_studio_development_terminal_context"
+    assert_includes desk["safe_delete_condition"],
+                    "bin/agent-worktree remove mcritchie-studio terminal-context --yes"
+    # The full registry record rides along, so nothing the snapshot knew is dropped.
+    assert_equal @worktree_dir, desk.dig("registry", "worktree")
   end
 
   # --- reclaim guard: a live-claimed builder desk is never destroyed ----------
@@ -1231,10 +1249,12 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
 
     out, err, status = agent_worktree("cleanup", "mcritchie-studio", "--write", env: env)
     assert status.success?, "#{out}\n#{err}"
-    ledger = File.read(File.join(@hub_dir, "docs", "agents", "maintenance", "delete-later.md"))
-    assert_includes ledger, "Cleared:",
+    desk = @desk_ledger.desk_for(@worktree_dir)
+
+    assert desk, "cleanup --write must file the candidate on the desk ledger"
+    assert_includes desk["reason"], "Cleared:",
                     "an archive row without a rationale is what made the 08-13 sweep ambiguous"
-    assert_includes ledger, "no open PR for feat/terminal-context"
+    assert_includes desk["reason"], "no open PR for feat/terminal-context"
   end
 
   # The conductor's front door prints a `remove … --yes` per candidate, so it carries the
@@ -2246,7 +2266,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
       # the withhold path deliberately.
       "AGENT_WORKTREE_ORIGIN_FETCH" => "ok",
       "AGENT_WORKTREE_TASK_BIN" => OutboundSeams.stub("task-cli")
-    }.merge(extra))
+    }.merge(@desk_ledger.env).merge(extra))
   end
 
   def agent_worktree(*args, chdir: Rails.root.to_s, env: {})

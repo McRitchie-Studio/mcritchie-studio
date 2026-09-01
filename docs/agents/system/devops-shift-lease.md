@@ -350,7 +350,7 @@ just candidate selection:
   **There is no "advisory" lane.** Every caller answers *"is this desk a cleanup
   candidate?"*, and that answer is consumed to destroy: the registry feeds `bin/qa-intake`,
   which prints a `remove … --yes` per candidate; the cleanup dry-run prints the same command;
-  `--write` files it in the delete-later ledger; doctor labels it a candidate. An earlier cut
+  `--write` files it on the desk ledger; doctor labels it a candidate. An earlier cut
   split these into "destroy" and "advisory" and let the advisory ones fail open — so during
   the very outage this guard exists to survive, the sweep withheld a live builder's desk
   while the front door recommended tearing it down. Only `remove … --yes`, the explicit

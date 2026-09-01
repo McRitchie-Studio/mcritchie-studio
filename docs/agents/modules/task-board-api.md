@@ -383,6 +383,52 @@ Prefer the CLI over raw curl: `bin/gate open|sop|close|show` wraps this
 surface with the same flags the producers use (`bin/gate show task <slug>` /
 `bin/gate show release <slug>` to read).
 
+### Desk Ledger API (the worktree desk records)
+
+```bash
+POST /api/v1/desk_records         # file ONE desk record (a nomination or a teardown)
+POST /api/v1/desk_records/sync    # fold a whole `snapshot --write` registry in
+GET  /api/v1/desk_records         # read (filters: app, status, worktree_path, open=1)
+```
+
+**Why this exists.** `bin/agent-worktree` used to append its teardown row to
+`docs/agents/maintenance/delete-later.md`, resolved against the hub checkout. A cleanup
+is normally run from the **primary**, which sits on `main` — a branch nobody may commit
+to — so the audit row was created in the one place it could never be saved from. Six
+"restore later" stashes carrying 98 rows accumulated and none was ever restored. The
+records live here now and render on the **Desks panel at `/deployments`**.
+
+**Post the registry record verbatim.** The caller sends the hash
+`bin/agent-worktree snapshot` already builds; the server owns the mapping onto columns
+(`DeskRecord.registry_attributes`), so the single-desk post and the bulk sync can never
+give two accounts of the same desk. The full record is also kept in `payload`, so nothing
+the snapshot knew is dropped.
+
+```bash
+api POST /api/v1/desk_records '{
+  "desk": {
+    "registry": { "worktree": "/…/.worktrees/_ship", "branch": "release", "…": "…" },
+    "status": "removed",
+    "source": "remove",
+    "safety": "merged",
+    "reason": "Hidden worktree; branch `release` is clean and HEAD be798149 is contained in origin/accepted."
+  }
+}'
+```
+
+**`status` is `live` | `candidate` | `removed`**, and the episode rule is the markdown
+ledger's, unchanged: a `removed` record is DATED and immutable; anything else is the
+**open** episode for that desk path, updated in place. A second teardown of a **recycled**
+path (`_ship` goes every release cycle) opens a NEW episode beside the resolved one. An
+attempt to rewrite a resolved episode answers **409 `RESOLVED_RECORD_IMMUTABLE`** — a
+distinguishable code on purpose, because a poster reading a 422 would retry a write that
+must never succeed.
+
+**This endpoint is on the DESTROY path, so it is NOT fire-and-forget.**
+`bin/agent-worktree` posts here *before* it stops a stack or drops a worktree and aborts
+the teardown on anything but a 2xx. There is deliberately no local queue: a spool that
+flushes "on next contact" is the same *somebody must remember* the move removes.
+
 ### Review Check-In API
 
 Reviewer agents broadcast progress with:

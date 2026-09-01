@@ -751,8 +751,10 @@ Do not include unrelated PRs or new feature work in this rollout.
   abandoned.
 - Start conductor sessions with `bin/agent-worktree snapshot --write` so the
   current machine queue is captured before branches, pidfiles, or ports move.
-- `cleanup` only records candidates in the delete-later ledger; removal remains
-  approval-gated.
+- `cleanup` only records candidates on the desk ledger (`DeskRecord`, shown on the
+  Desks panel at `/deployments`); removal remains approval-gated. A teardown files its
+  record **before** it destroys anything and REFUSES when the board is unreachable, so a
+  failed write costs a re-run rather than an unrecorded removal.
 - After a squash merge, ahead/behind can look stale even when the branch diff is
   fully represented on `origin/main`. The launcher marks empty-diff branches as
   cleanup candidates; after approval use

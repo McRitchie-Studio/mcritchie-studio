@@ -301,49 +301,61 @@ class LedgerGuardTest < Minitest::Test
   end
 
   # ================================================================================
-  # [integration] the writer's own belt — prevention at the source, for fresh desks
+  # [integration] SCOPE — what this guard covers, said out loud
   # ================================================================================
+  #
+  # THIS REPLACES "the writer's own belt". bin/agent-worktree no longer writes these files
+  # at all: a teardown run from the PRIMARY checkout landed its row on `main`, a branch
+  # nobody may commit to, and 98 rows were stranded in stashes nobody ever restored. New
+  # desk records go to the board (DeskRecord); the belt test drove a writer that is gone.
+  #
+  # What replaces it is the thing that change insisted on — a guard that silently stops
+  # covering something is worse than no guard. So this guard still covers the FILES (tracked
+  # history, and `bin/archive-docs` still moves rows between them, which is the operation
+  # that destroyed three rows on 2026-08-21), and it SAYS SO in its verdict, in both the
+  # human and the machine rendering, so a green exit here can never be read as a verdict on
+  # the board's desk records.
 
-  # bin/agent-worktree now verifies its OWN ledger write and rolls it back rather than
-  # leaving a destroyed row behind. Driven here through the REAL script with the pre-fix
-  # selection helper redefined — i.e. the script IS the stale writer for the length of
-  # this check — so the assertion is about the belt, not about the already-fixed selector.
-  def test_integration_the_writer_refuses_and_reverts_its_own_destructive_write
-    Dir.mktmpdir("ledger-writer") do |root|
-      ledger = File.join(root, "delete-later.md")
-      File.write(ledger, HEADER + row(SHIP, "removed 2026-08-20", reason: "HEAD d7ccca8d"))
+  def test_integration_the_green_verdict_names_its_own_scope
+    with_repo do |repo|
+      File.write(ledger_file(repo), HEADER)
+      File.write(archive_file(repo), HEADER)
+      commit(repo)
 
-      script = File.join(ROOT, "bin", "agent-worktree")
-      body = <<~RUBY
-        load #{script.inspect}
-        def ledger_path; #{ledger.inspect}; end
-        def reclaim_evidence(_record, **_kw)
-          { free: true, hold: nil, rationale: "merged into origin/accepted, tree clean" }
-        end
-        # THE STALE SELECTOR: the pre-269e2db4 rule — any row for this path, dated or not.
-        def open_ledger_row_index(lines, dir)
-          lines.index { |line| line.include?("`\#{dir}` |") }
-        end
-        record = { app: { "slug" => "mcritchie-studio" }, task: "_ship", dir: #{SHIP.inspect},
-                   branch: "release", head: "be798149", merged: true, base_ref: "origin/accepted",
-                   redis_db: "24", db_name: "hub_ship", db_exists: true,
-                   env_exists: true, code: "000", port_pid: "" }
-        begin
-          write_cleanup_ledger_record(record, status: "removed 2026-08-21")
-        rescue SystemExit, StandardError => e
-          puts "REFUSED: \#{e.class}"
-        end
-      RUBY
+      result = guard(repo, "--base=HEAD")
 
-      out, err, = Open3.capture3(SessionEnv.neutralized, "ruby", "-e", body)
-      after = File.read(ledger)
-
-      assert_includes "#{out}#{err}", "REFUSED",
-                      "the writer must ABORT on a destructive write, not print a success line"
-      assert_includes after, "removed 2026-08-20",
-                      "…and it must leave the predecessor row exactly where it found it"
-      assert_includes after, "d7ccca8d"
+      assert result[:ok], result[:out]
+      assert_includes result[:out], "markdown ledger + archive",
+                      "a bare OK on a ledger that now has TWO halves reads as a verdict on both"
+      assert_includes result[:out], "DeskRecord",
+                      "…and it must name what covers the other half, or the gap is invisible"
     end
+  end
+
+  def test_integration_the_json_verdict_carries_the_scope_too
+    with_repo do |repo|
+      File.write(ledger_file(repo), HEADER)
+      File.write(archive_file(repo), HEADER)
+      commit(repo)
+
+      result = guard(repo, "--base=HEAD", "--json")
+      payload = JSON.parse(result[:out])
+
+      assert payload["ok"]
+      assert_equal "markdown-ledger+archive", payload["scope"],
+                   "a machine caller must be able to tell WHICH ledger this green is about"
+    end
+  end
+
+  # The writer is gone, and that is asserted by name. A reintroduced markdown write would
+  # look correct locally and land its rows on a branch nobody can commit — the exact defect
+  # this guard's own header now describes.
+  def test_the_worktree_script_no_longer_writes_the_files_this_guard_protects
+    code = File.readlines(File.join(ROOT, "bin", "agent-worktree"))
+               .reject { |line| line.strip.start_with?("#") }.join
+
+    refute_includes code, "delete-later.md"
+    refute_includes code, "def write_cleanup_ledger_record"
   end
 
   # ================================================================================

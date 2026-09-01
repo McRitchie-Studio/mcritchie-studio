@@ -2,6 +2,22 @@
 
 This ledger tracks files and directories that look removable once replacement docs, merged PRs, or migration checks are complete. Do not delete from this list without confirming the condition.
 
+> **Worktree desk rows have moved to the board. This file no longer takes them.**
+> `bin/agent-worktree` used to append its teardown rows here, resolved against the hub
+> checkout — and cleanups run from the **primary**, which sits on `main`, a branch nobody
+> may commit to. So the audit row was created in the one place it could never be saved
+> from: six "restore later" stashes piled up between 2026-07-02 and 2026-08-31 carrying
+> 98 rows, and not one was ever restored. Desk records are `DeskRecord` now, on the Desks
+> panel at [/deployments](https://mcritchie.studio/deployments).
+>
+> **What still belongs here:** hand-written rows for a *file or doc* that looks removable
+> once some condition holds — the original purpose of this ledger, and a human write, not
+> a machine one.
+>
+> **Do not delete this file or its archive.** They hold every desk row filed before the
+> cutover, `bin/ledger-guard` still refuses a tree that lost a dated row, and
+> `/tasks/harvest-stranded-ledger-stashes` imports the stranded rows from here.
+
 **Rows are moved, never deleted.** A row whose Status carries a **date** (`removed 2026-08-20`) is a teardown that already happened — immutable history. On the `archive-shipped` beat it moves to [`../archive/maintenance/delete-later-archive.md`](../archive/maintenance/delete-later-archive.md); it never leaves both files. A row with **no** date (`pending approval`, `reference only`) is an open item, and the teardown that resolves it closes that row in place.
 
 Desk paths **recycle** — `_ship` is torn down every release cycle at the same path — so a second teardown of one path **appends a new row beside** the first. Overwriting the earlier dated row destroys a teardown record, which is what happened on 2026-08-21 (three rows, restored by zap `6c2eb98e`). The invariant is now mechanical: `bin/ledger-guard` compares this file plus its archive against git history and refuses any tree that lost a dated row, `bin/archive-docs` runs the same check at both ends of the roll, and `test/lib/ledger_guard_test.rb` runs it in CI on every PR. If it fires, recover the row with `git show <ref>:docs/agents/maintenance/delete-later.md` — do not edit the guard.

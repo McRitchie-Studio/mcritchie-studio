@@ -7198,9 +7198,11 @@ def archive
   end
   docs = docs_summary(docs_out)
 
-  # The reclaim appended to the delete-later ledger, and the doc retirement moved
-  # frozen snapshots + rolled the ledger's resolved rows — commit ALL of it to
-  # `release` so it rides the next ship instead of becoming ship-preflight dirt
+  # The doc retirement moved frozen snapshots and rolled the ledger's resolved rows into
+  # the archive — commit ALL of it to `release` so it rides the next ship instead of
+  # becoming ship-preflight dirt. (The RECLAIM no longer writes here: since
+  # `ledger-writes-to-primary`, `bin/agent-worktree` files desk records on the board, and
+  # these two files are tracked history the archive beat still rolls.)
   # (best-effort). Every path must be named: the safety check refuses when
   # anything ELSE is dirty, so omitting the retirements would strand them.
   hub = repo_path("mcritchie-studio")
