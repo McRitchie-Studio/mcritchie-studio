@@ -398,6 +398,29 @@ class CertProcessTest < Minitest::Test
     end
   end
 
+  # END TO END, through the entry point the certs ACTUALLY call.
+  #
+  # Every signature test above drives `hang_signature` directly, so none of them can see a
+  # `root:` that `run_bounded` forgets to thread through — and without it `output_probe`
+  # reads nothing, the baseline is nil, and the whole discriminator quietly reverts to the
+  # CPU-only behaviour this task exists to remove. That regression would ship with all of
+  # them still green. So: run a real lane past a real ceiling and read the verdict the cert
+  # would actually print.
+  def test_the_real_entry_point_carries_the_output_and_machine_evidence
+    FileUtils.mkdir_p(File.join(@root, "log"))
+    File.write(File.join(@root, "log", "test.log"), "")
+
+    result = CertProcess.run_bounded({}, "while :; do echo . >> log/test.log; sleep 0.1; done",
+                                     chdir: @root, root: @root, lane: LANE, timeout: 2)
+
+    assert result.timeout?, "the lane outran its ceiling"
+    assert_match(%r{log/test\.log}, result.detail,
+                 "run_bounded must thread root:/baseline through to the verdict, or the fix is inert in production")
+    assert_match(/GREW while we waited/, result.detail, "and it must READ the growth, not merely name the file")
+    assert_match(/machine: load is/, result.detail, "the saturation numbers must reach the real reader")
+    refute_match(/PARKED/i, result.detail, "a lane writing output every 100ms is not parked")
+  end
+
   # --- [unit] the SIGNATURE: name the deadlock, or admit you cannot ----------------------
 
   def test_the_signature_names_dead_forked_workers
@@ -422,8 +445,19 @@ class CertProcessTest < Minitest::Test
                  "THE REGRESSION: a hang asserted from evidence that cannot distinguish waiting from hung")
     assert_match(/SATURATION/i, diagnosis, "name the explanation that was correct all three measured times")
     assert_match(/244\.50/, diagnosis, "and carry the number that settles it, so the reader need not go find it")
-    refute_match(/workers are DEAD/i, diagnosis, "do not claim corpses we did not see")
-  end
+  refute_match(/workers are DEAD/i, diagnosis, "do not claim corpses we did not see")
+
+  # SAY WHICH IT WAS. With no log to read we measured nothing; wording that as "no output
+  # advanced" would be a smaller copy of the over-claim this task exists to remove.
+  assert_match(/no lane output we know how to read/, diagnosis,
+               "an absent log is not the same observation as a silent one")
+
+  silent = CertProcess::Output.new(path: "log/test.log", age: 900.0, grew: false)
+  measured = CertProcess.diagnosis(zombies: 0, live: 1, cpu: 0.4, timeout: 900,
+                                   output: silent, pressure: saturated_machine)
+
+  assert_match(%r{log/test\.log did not advance}, measured, "and a silent log IS an observation — name it")
+end
 
   # THE DISCRIMINATOR. Carl's lane was writing dots FOUR SECONDS before it was sampled;
   # a runner blocked on a lock does not do that. Output advancing beats a low CPU reading,

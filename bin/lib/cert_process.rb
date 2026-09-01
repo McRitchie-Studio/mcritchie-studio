@@ -333,7 +333,7 @@ module CertProcess
         "fork-safety SIGSEGV at the fork (pg/connection.rb, connect_start), before any test runs. " \
         "Re-run the lane with PARALLEL_WORKERS=1."
     elsif cpu && cpu < [timeout * 0.02, 5.0].max && !output&.advancing?
-      idle_diagnosis(pressure)
+      idle_diagnosis(output, pressure)
     else
       slow_diagnosis(output, pressure)
     end
@@ -353,10 +353,19 @@ module CertProcess
   # So: say what was SEEN, name the other explanation, and put the numbers that settle it in
   # the same breath. "No CPU, and this may be saturation — load is N, swap is M" would have
   # been TRUE in all three cases; "PARKED" was true in none.
-  def self.idle_diagnosis(pressure)
-    "SIGNATURE: no CPU worth the name anywhere in the process group, and no lane output advanced " \
-      "while we waited. That is consistent with a BLOCK (a channel, a lock, a database connection) " \
-      "— and equally consistent with SATURATION starving a healthy lane" \
+  def self.idle_diagnosis(output, pressure)
+    # SAY WHICH IT WAS. "No output advanced" is a MEASUREMENT; when there is no log to read
+    # we made no measurement at all, and reporting the two as one sentence is a smaller
+    # version of the same over-claim this whole file just stopped making.
+    output_clause = if output.nil?
+                      "and no lane output we know how to read (#{OUTPUT_PATHS.join(', ')}) exists here, " \
+                        "so nothing corroborates either way"
+                    else
+                      "and #{output.path} did not advance while we waited"
+                    end
+    "SIGNATURE: no CPU worth the name anywhere in the process group, #{output_clause}. That is " \
+      "consistent with a BLOCK (a channel, a lock, a database connection) — and equally consistent " \
+      "with SATURATION starving a healthy lane" \
       "#{pressure ? ": #{pressure.to_sentence}" : ''}. CHECK THE LOAD BEFORE YOU HUNT A DEADLOCK. " \
       "Re-run on a quiet machine first; if it passes there, the ceiling was never the problem."
   end
