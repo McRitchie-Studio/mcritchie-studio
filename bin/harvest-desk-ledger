@@ -1,0 +1,249 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# harvest-desk-ledger — recover desk teardown rows stranded in stashes and land them on
+# the board as DeskRecords.
+#
+#   bin/harvest-desk-ledger --dry-run          # what WOULD be imported; writes nothing
+#   bin/harvest-desk-ledger                    # import into the board
+#   bin/harvest-desk-ledger --json             # machine-readable report
+#   bin/harvest-desk-ledger --repo <path>      # repository whose stashes to read
+#   bin/harvest-desk-ledger --base <ref>       # baseline already-landed rows (origin/accepted)
+#   bin/harvest-desk-ledger --help             # usage; IMPORTS NOTHING (see exit codes)
+#
+# WHAT IT READS, AND WHY IT NEVER APPLIES A STASH. `bin/agent-worktree` used to append its
+# teardown row to docs/agents/maintenance/delete-later.md resolved against HUB_DIR — and
+# cleanups run from the PRIMARY checkout, which sits on `main`, a branch nobody may commit
+# to. Thirteen sweeps stashed the row they could not save, and none was ever restored.
+# Those stashes sit on THIRTEEN DIFFERENT BASES, each expecting a different file tail, so
+# `git stash apply` self-conflicts on the second one; two of them also carry feature code
+# alongside their ledger row, which an apply would drag in. So this reads the ledger each
+# stash CONTAINED (`git show stash@{N}:<file>`) plus the primary's uncommitted tree, and
+# imports rows. Nothing is applied, dropped, or checked out.
+#
+# DE-DUPE IS BY EXACT ROW TEXT, NEVER BY DESK PATH. `_ship` is torn down every release
+# cycle at the same path; the harvested set holds 5 distinct `_ship` teardowns under
+# mcritchie-studio and 3 under turf-monster. A path-keyed import would collapse those 8
+# into 2 and destroy 6 teardown records — the loss of 2026-08-21 that `bin/ledger-guard`
+# exists to refuse. The key is DeskLedgerImport.import_key and it is unique in the schema,
+# so a re-run — and a job with fourteen inputs WILL be re-run — writes nothing the second
+# time rather than duplicating all of them.
+#
+# EXIT CODES:
+#   0 — every row that belongs on the board is on it (or, under --dry-run, is accounted for).
+#   1 — a row failed to import, an argument was refused, or the baseline could not be read.
+#
+# HELP EXITS 1, like bin/ledger-guard's, and for the same reason: exit 0 here is not "the
+# command ran", it is the assertion "the stranded rows are recorded". A help probe records
+# nothing, so answering it with 0 would state a fact that was never established.
+
+require "json"
+require "date"
+require_relative "lib/desk_ledger_import"
+require_relative "lib/desk_ledger"
+require_relative "lib/repo_root"
+
+HELP_FLAGS  = %w[--help -h].freeze
+VALUE_FLAGS = %w[--repo --base].freeze
+BOOL_FLAGS  = %w[--dry-run --json].freeze
+
+USAGE = <<~TXT
+  usage: bin/harvest-desk-ledger [--repo <path>] [--base <ref>] [--dry-run] [--json]
+
+    --repo <path>   repository whose stashes and working tree to read
+                    (default: the PRIMARY checkout — the stranded working tree
+                    lives only there, though the stashes are visible from a desk)
+    --base <ref>    rows already landed here are skipped (default: origin/accepted)
+    --dry-run       report what would be imported; write NOTHING
+    --json          machine-readable report
+    --help, -h      this text — IMPORTS NOTHING, and exits 1 so it is never
+                    mistaken for a successful harvest
+
+  Both `--flag=value` and `--flag value` parse. An argument this script cannot
+  account for is REFUSED rather than silently ignored.
+TXT
+
+# Every argument is accounted for before any work is done — the shape bin/ledger-guard
+# and bin/lib/release_claim_cli.rb both closed on 2026-08-21. A flag that vanishes turns
+# a report about one thing into a confident report about another.
+def parse_argv(argv)
+  values = {}
+  bools  = []
+  bad    = []
+  index  = 0
+
+  while index < argv.length
+    arg = argv[index]
+    name = nil
+    inline = nil
+    name, inline = arg.split("=", 2) if arg.start_with?("--") && arg.include?("=")
+
+    if name && VALUE_FLAGS.include?(name)
+      values[name] = inline
+      index += 1
+    elsif name
+      bad << arg
+      index += 1
+    elsif VALUE_FLAGS.include?(arg)
+      if index + 1 >= argv.length
+        bad << "#{arg} (missing value)"
+        index += 1
+      else
+        values[arg] = argv[index + 1]
+        index += 2
+      end
+    elsif BOOL_FLAGS.include?(arg)
+      bools << arg
+      index += 1
+    else
+      bad << arg
+      index += 1
+    end
+  end
+
+  [values, bools, bad]
+end
+
+# `-C <repo>` rather than GIT_DIR/GIT_WORK_TREE, and the difference is not cosmetic.
+#
+# A PATHSPEC is resolved against the process's CURRENT DIRECTORY, not against the work
+# tree root. Run from a desk — which lives INSIDE the primary at
+# `<primary>/.worktrees/<slug>` — `git diff --name-only … -- docs/agents/…` resolved to
+# `.worktrees/<slug>/docs/agents/…`, matched nothing, and returned empty. `git show
+# <ref>:<path>` is always root-relative, so the BASELINE read fine at 606 rows while every
+# source came back empty: the harvest reported a confident "0 missing" for a tree holding
+# 166 stranded rows. `-C` puts git at the repo root, so both spellings agree.
+def git(repo, *args)
+  IO.popen(["git", "-C", repo, *args], err: File::NULL, &:read)
+end
+
+# Every place a stranded row can be hiding: each stash that touched a ledger file, read as
+# the file it CONTAINED, plus the primary's uncommitted working tree — which the cutover
+# stopped adding to but did not clear.
+def sources(repo)
+  found = []
+  stashes = git(repo, "stash", "list").lines.size
+
+  (0...stashes).each do |i|
+    touched = git(repo, "diff", "--name-only", "stash@{#{i}}^1", "stash@{#{i}}", "--", *DeskLedgerImport::FILES).split("\n")
+    DeskLedgerImport::FILES.each do |file|
+      next unless touched.include?(file)
+
+      found << { name: "stash@{#{i}}", file: file,
+                 base: git(repo, "rev-parse", "stash@{#{i}}^1").strip[0, 8],
+                 text: git(repo, "show", "stash@{#{i}}:#{file}") }
+    end
+  end
+
+  DeskLedgerImport::FILES.each do |file|
+    next if git(repo, "diff", "--name-only", "--", file).strip.empty?
+
+    found << { name: "primary working tree", file: file, base: "HEAD",
+               text: File.read(File.join(repo, file)) }
+  end
+
+  found
+end
+
+values, bools, bad = parse_argv(ARGV)
+
+if ARGV.any? { |a| HELP_FLAGS.include?(a) }
+  puts USAGE
+  exit 1
+end
+
+unless bad.empty?
+  warn "harvest-desk-ledger: unrecognized argument(s): #{bad.join(', ')}"
+  warn USAGE
+  exit 1
+end
+
+# DEFAULT TO THE PRIMARY CHECKOUT, not to this script's own worktree.
+#
+# `refs/stash` is a COMMON ref: a desk sees all nineteen of the primary's stashes and
+# would look like the right place to run from. But the other half of the stranded content
+# is the primary's UNCOMMITTED working tree — 25 rows the cutover stopped adding to and
+# did not clear — and a desk reading its own clean tree finds none of them while reporting
+# a confident total. So the repo resolves through the git COMMON dir, whose parent is the
+# primary, and a desk run harvests the primary's tree unless `--repo` says otherwise.
+def primary_checkout(dir)
+  common = IO.popen(["git", "-C", dir, "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                    err: File::NULL, &:read).to_s.strip
+  common.empty? ? nil : File.dirname(common)
+rescue StandardError
+  nil
+end
+
+repo = File.expand_path(values["--repo"] || primary_checkout(__dir__) ||
+                        RepoRoot.git_toplevel(__dir__) || File.expand_path("..", __dir__))
+base    = values["--base"] || "origin/accepted"
+dry_run = bools.include?("--dry-run")
+as_json = bools.include?("--json")
+
+# An unreadable baseline is RED. Without it every already-landed row reads as missing, and
+# the harvest would offer to import six hundred rows that are already recorded.
+baseline = {}
+DeskLedgerImport::FILES.each do |file|
+  text = git(repo, "show", "#{base}:#{file}")
+  if text.to_s.strip.empty?
+    warn "harvest-desk-ledger: cannot read #{base}:#{file} — baseline unreadable, refusing to guess"
+    exit 1
+  end
+  DeskLedgerImport.rows_from(text).each { |row| baseline[DeskLedgerImport.import_key(row)] = file }
+end
+
+union = {}
+skipped_non_desk = 0
+sources(repo).each do |source|
+  DeskLedgerImport.rows_from(source[:text]).each do |row|
+    unless DeskLedgerImport.desk_row?(row)
+      skipped_non_desk += 1
+      next
+    end
+
+    key = DeskLedgerImport.import_key(row)
+    entry = (union[key] ||= { row: row, file: source[:file], seen: [] })
+    entry[:seen] << source[:name]
+  end
+end
+
+missing = union.reject { |key, _| baseline.key?(key) }
+report = { repo: repo, base: base, dry_run: dry_run, baseline_rows: baseline.size,
+           union_rows: union.size, already_landed: union.size - missing.size,
+           missing: missing.size, imported: 0, already_on_board: 0, failed: 0, errors: [] }
+
+unless dry_run
+  missing.each do |key, entry|
+    attrs = DeskLedgerImport.attributes_for(entry[:row], source: entry[:seen].uniq.join(","), file: entry[:file])
+    result = DeskLedger.import(attributes: attrs)
+    if result.ok?
+      # The board answers 201 for a row it wrote and 200 for one it already held, so a
+      # second run can report honestly that it wrote nothing instead of claiming 166
+      # successes it did not perform.
+      result.created ? report[:imported] += 1 : report[:already_on_board] += 1
+    else
+      report[:failed] += 1
+      report[:errors] << "#{key[0, 12]} #{attrs[:worktree_path]}: #{result.error}"
+    end
+  end
+end
+
+if as_json
+  puts JSON.pretty_generate(report)
+else
+  puts "harvest-desk-ledger #{dry_run ? '(DRY RUN — nothing written)' : ''}"
+  puts "  repo................ #{report[:repo]}"
+  puts "  baseline (#{base}).. #{report[:baseline_rows]} rows"
+  puts "  desk rows found..... #{report[:union_rows]} (de-duped by exact row text)"
+  puts "  already landed...... #{report[:already_landed]}"
+  puts "  MISSING............. #{report[:missing]}"
+  puts "  non-desk rows left.. #{skipped_non_desk} (hand-written file rows stay in markdown)"
+  unless dry_run
+    puts "  imported............ #{report[:imported]}"
+    puts "  already on board.... #{report[:already_on_board]}"
+    puts "  failed.............. #{report[:failed]}"
+  end
+  report[:errors].first(10).each { |e| puts "    ERROR #{e}" }
+end
+
+exit(report[:failed].zero? ? 0 : 1)

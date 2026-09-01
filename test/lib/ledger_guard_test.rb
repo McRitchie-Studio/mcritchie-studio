@@ -306,7 +306,7 @@ class LedgerGuardTest < Minitest::Test
   #
   # THIS REPLACES "the writer's own belt". bin/agent-worktree no longer writes these files
   # at all: a teardown run from the PRIMARY checkout landed its row on `main`, a branch
-  # nobody may commit to, and 98 rows were stranded in stashes nobody ever restored. New
+  # nobody may commit to, and 166 rows were stranded in stashes nobody ever restored. New
   # desk records go to the board (DeskRecord); the belt test drove a writer that is gone.
   #
   # What replaces it is the thing that change insisted on — a guard that silently stops

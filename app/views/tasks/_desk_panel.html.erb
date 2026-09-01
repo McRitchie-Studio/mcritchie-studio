@@ -3,8 +3,9 @@
     WHY IT EXISTS. The desk ledger used to be docs/agents/maintenance/delete-later.md, and
     `bin/agent-worktree` wrote its teardown rows into whatever checkout it ran from. Cleanups
     run from the PRIMARY, which sits on `main` — a branch nobody may commit to — so the audit
-    row was created in the one place it could never be saved from. 98 rows were stranded in
-    six "restore later" stashes; none was ever restored. The records live on the board now
+    row was created in the one place it could never be saved from. 166 rows were stranded in
+    twelve "restore later" stashes and the primary's own uncommitted tree; none was ever
+    restored until bin/harvest-desk-ledger recovered them. The records live on the board now
     (DeskRecord), and this is where they are read.
 
     IT LEADS WITH A JUDGEMENT, NOT WITH JSON. Four numbers first — how many desks, how many

@@ -207,6 +207,80 @@ module Api
 
         assert_equal [SHIP], response.parsed_body["data"].map { |row| row["worktree_path"] }
       end
+
+      # ---- [integration] the stranded-row import across the HTTP boundary ----------
+      #
+      # The harvest posts here 166 times and is re-run. The endpoint must answer 201 for a
+      # row it wrote and 200 for one it already held, because the CLI counts those
+      # separately — a second run that read every 200 as a success would report 166 writes
+      # it never performed.
+
+      def import_row(key:, path: SHIP, on: "2026-08-21", **extra)
+        post "/api/v1/desk_records",
+             params: { desk: { import_key: key, worktree_path: path, resolved_on: on,
+                               app_slug: "mcritchie-studio", desk_slug: "_ship",
+                               reason: "Hidden worktree; branch `release` is clean.",
+                               payload: { "ledger_row" => "| `#{path}` |", "recovered_from" => "stash@{0}" } }.merge(extra) },
+             headers: @headers, as: :json
+      end
+
+      test "[integration] an import lands once and a re-run writes nothing" do
+        assert_difference -> { DeskRecord.count }, 1 do
+          import_row(key: "abc123")
+        end
+        assert_response :created
+
+        assert_no_difference -> { DeskRecord.count } do
+          import_row(key: "abc123")
+        end
+        assert_response :ok, "a row the board already holds answers 200, so the harvest can " \
+                             "report that it wrote nothing rather than claiming a write"
+      end
+
+      # The import must NOT be absorbed by the teardown path. `file!` resolves through the
+      # OPEN episode for the desk path; a resolved import never matches one, so routing an
+      # import through it duplicates every row on the second pass. Two DIFFERENT stranded
+      # teardowns of one recycled path must both land, and re-running must add neither.
+      test "[integration] two teardowns of a recycled path import, and neither duplicates" do
+        assert_difference -> { DeskRecord.count }, 2 do
+          import_row(key: "row-08-21", on: "2026-08-21", head: "96f30d99")
+          import_row(key: "row-07-29", on: "2026-07-29", head: "9a8dc1a6")
+        end
+
+        assert_no_difference -> { DeskRecord.count } do
+          import_row(key: "row-08-21", on: "2026-08-21", head: "96f30d99")
+          import_row(key: "row-07-29", on: "2026-07-29", head: "9a8dc1a6")
+        end
+
+        assert_equal %w[9a8dc1a6 96f30d99],
+                     DeskRecord.where(worktree_path: SHIP).order(:resolved_on).map(&:head)
+      end
+
+      # An import with no key duplicates on every re-run. It is refused with its own code
+      # rather than rendered as a generic validation failure the poster would retry.
+      test "[integration] an unkeyed import is refused" do
+        assert_no_difference -> { DeskRecord.count } do
+          post "/api/v1/desk_records",
+               params: { desk: { import_key: "", worktree_path: SHIP, resolved_on: "2026-08-21" } },
+               headers: @headers, as: :json
+        end
+        assert_response :unprocessable_entity
+        assert_equal "INVALID_DESK_IMPORT", response.parsed_body["error_code"]
+        assert_match(/import_key is required/, response.parsed_body["error"])
+      end
+
+      # The row it was recovered from rides along, so the record is auditable back to the
+      # stash months later.
+      test "[integration] an imported row keeps its ledger provenance" do
+        import_row(key: "abc123")
+        record = DeskRecord.last
+
+        assert_equal "import", record.source
+        assert_equal "stash@{0}", record.payload["recovered_from"]
+        assert_equal "abc123", record.payload["import_key"]
+        assert_equal Date.new(2026, 8, 21), record.resolved_on
+      end
+
     end
   end
 end

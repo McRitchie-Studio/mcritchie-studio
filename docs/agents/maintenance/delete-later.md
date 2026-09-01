@@ -6,17 +6,26 @@ This ledger tracks files and directories that look removable once replacement do
 > `bin/agent-worktree` used to append its teardown rows here, resolved against the hub
 > checkout — and cleanups run from the **primary**, which sits on `main`, a branch nobody
 > may commit to. So the audit row was created in the one place it could never be saved
-> from: six "restore later" stashes piled up between 2026-07-02 and 2026-08-31 carrying
-> 98 rows, and not one was ever restored. Desk records are `DeskRecord` now, on the Desks
-> panel at [/deployments](https://mcritchie.studio/deployments).
+> from: "restore later" stashes piled up between 2026-06-26 and 2026-08-31 carrying **166
+> rows** across **twelve stashes** plus the primary's own uncommitted tree, and not one was
+> ever restored. Desk records are `DeskRecord` now, on the Desks panel at
+> [/deployments](https://mcritchie.studio/deployments).
+>
+> *(An earlier survey put this at 98 rows in six stashes. That was the count across the six
+> stashes it examined; sweeping all nineteen plus the uncommitted tree found 166. Re-derive
+> before quoting a number here — `bin/harvest-desk-ledger --dry-run` prints it.)*
 >
 > **What still belongs here:** hand-written rows for a *file or doc* that looks removable
 > once some condition holds — the original purpose of this ledger, and a human write, not
 > a machine one.
 >
 > **Do not delete this file or its archive.** They hold every desk row filed before the
-> cutover, `bin/ledger-guard` still refuses a tree that lost a dated row, and
-> `/tasks/harvest-stranded-ledger-stashes` imports the stranded rows from here.
+> cutover, `bin/ledger-guard` still refuses a tree that lost a dated row, and they are the
+> SOURCE the harvest reads: `/tasks/harvest-stranded-ledger-stashes` recovered the 166
+> stranded rows from the stashed copies of these two files onto the board with
+> `bin/harvest-desk-ledger`. That command stays runnable and is safe to run again — it is
+> keyed on the row text, so a second pass writes nothing — and it is what to reach for if
+> another stranded ledger copy ever turns up.
 
 **Rows are moved, never deleted.** A row whose Status carries a **date** (`removed 2026-08-20`) is a teardown that already happened — immutable history. On the `archive-shipped` beat it moves to [`../archive/maintenance/delete-later-archive.md`](../archive/maintenance/delete-later-archive.md); it never leaves both files. A row with **no** date (`pending approval`, `reference only`) is an open item, and the teardown that resolves it closes that row in place.
 

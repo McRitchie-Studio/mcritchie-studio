@@ -6,8 +6,8 @@
 # docs/agents/maintenance/delete-later.md, resolved against HUB_DIR — so a teardown run
 # from the PRIMARY checkout (which is where cleanups are run) landed the row on `main`,
 # a branch nobody may commit to. The record was created in the one place it could never
-# be saved from. Six stashes of "restore later" ledger content accumulated between
-# 2026-07-02 and 2026-08-31, 98 rows, none ever restored; a reclaim sweep on 2026-08-31
+# be saved from. Twelve stashes of "restore later" ledger content accumulated between
+# 2026-06-26 and 2026-08-31, 166 rows, none ever restored; a reclaim sweep on 2026-08-31
 # stranded 25 more DURING the conversation about the defect.
 #
 # Two tables, because the panel has two questions to answer:
@@ -62,8 +62,10 @@ class CreateDeskRecords < ActiveRecord::Migration[8.1]
       t.string :database
 
       # The full registry record, verbatim. Nothing the snapshot knows is dropped on the
-      # way in — which is also the door left open for /tasks/harvest-stranded-ledger-stashes
-      # to import the 98 stranded rows without a second schema change.
+      # way in — which is also the door /tasks/harvest-stranded-ledger-stashes used to
+      # import the 166 stranded rows, carrying each one's original ledger row and the stash
+      # it was recovered from. The one thing it needed on top was a UNIQUE index on the
+      # import key; see 20260901020000_add_import_key_index_to_desk_records.rb.
       t.jsonb :payload, null: false, default: {}
 
       # The snapshot generated_at that last SAW this desk. An open record older than the

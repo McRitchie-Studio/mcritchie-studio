@@ -94,7 +94,7 @@ class DeskPanelTest < ActionView::TestCase
   end
 
   # THE CELL THE MARKDOWN LEDGER EXISTED TO CARRY. A finished desk is only auditable if
-  # the record says why taking it was safe; losing that sentence is what made 98 stranded
+  # the record says why taking it was safe; losing that sentence is what made 166 stranded
   # rows matter.
   test "[component] a finished desk shows the date it went and why it was safe" do
     DeskRecord.file!(worktree_path: SHIP, status: "removed", resolved_on: Date.new(2026, 8, 18),

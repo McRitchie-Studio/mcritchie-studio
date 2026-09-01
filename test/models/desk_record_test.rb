@@ -249,4 +249,94 @@ class DeskRecordTest < ActiveSupport::TestCase
     assert_equal "uncommitted work at this desk",
                  file(path: "#{SHIP}-4", dirty: true).safety_account
   end
+
+  # ---- [unit] the stranded-row import: /tasks/harvest-stranded-ledger-stashes -------
+  #
+  # The harvest recovers desk teardown rows out of thirteen stashes and the primary's
+  # uncommitted tree. It WILL be re-run, and `file!` cannot absorb the second run: it
+  # resolves an existing record through `open_for(worktree_path)`, which matches OPEN
+  # episodes only, and every stranded row is a RESOLVED teardown. That is the defect these
+  # cover — the one that would have duplicated all 166 rows on a second pass.
+
+  def import(key:, path: SHIP, on: Date.new(2026, 8, 21), **attrs)
+    DeskRecord.import!(import_key: key, worktree_path: path, resolved_on: on, **attrs)
+  end
+
+  # THE PROPERTY. Import the same row twice; the board holds ONE record. Asserted through
+  # the public count rather than the return value, because a version that returned the
+  # right object while writing a second row would pass a return-value check.
+  test "[unit] re-importing the same row writes nothing the second time" do
+    first = import(key: "abc123")
+    second = import(key: "abc123")
+
+    assert_equal 1, DeskRecord.where(worktree_path: SHIP).count,
+                 "a re-run of the harvest must be a no-op; file! would have written 166 duplicates here"
+    assert_equal first.id, second.id
+    refute second.previously_new_record?, "the caller needs to tell a write from a no-op to report honestly"
+  end
+
+  # A resolved episode is immutable, so the second import must not try to UPDATE the row
+  # it found — that would raise ResolvedRecordImmutable and turn an idempotent re-run into
+  # a hard failure. It returns the existing record untouched instead.
+  test "[unit] re-importing does not rewrite the resolved episode" do
+    first = import(key: "abc123", head: "96f30d99")
+    recorded = first.recorded_at
+
+    second = nil
+    assert_nothing_raised { second = import(key: "abc123", head: "DIFFERENT") }
+
+    assert_equal "96f30d99", second.reload.head, "history is not rewritten by a later harvest"
+    assert_equal recorded.to_i, second.recorded_at.to_i
+  end
+
+  # THE DE-DUPE RULE, in the medium that enforces it. Same desk path, different rows —
+  # `_ship` is torn down every release cycle, and the harvested set carries five distinct
+  # teardowns at this one path. Keying the import on the path would collapse them.
+  test "[unit] two stranded teardowns of one recycled path both import" do
+    import(key: "row-08-21", on: Date.new(2026, 8, 21), head: "96f30d99")
+    import(key: "row-07-29", on: Date.new(2026, 7, 29), head: "9a8dc1a6")
+
+    rows = DeskRecord.where(worktree_path: SHIP).order(:resolved_on)
+    assert_equal 2, rows.size,
+                 "six teardown records die if this import keys on the desk path"
+    assert_equal %w[9a8dc1a6 96f30d99], rows.map(&:head)
+  end
+
+  # An unkeyed import is exactly the write that duplicates on re-run, and it would also
+  # slip past the partial unique index, which constrains only rows that HAVE a key. Refuse
+  # it at the funnel rather than letting it through as an ordinary create.
+  test "[unit] an import with no key is refused" do
+    assert_raises(ArgumentError) { DeskRecord.import!(import_key: "", worktree_path: SHIP, resolved_on: Date.current) }
+    assert_raises(ArgumentError) { DeskRecord.import!(import_key: nil, worktree_path: SHIP, resolved_on: Date.current) }
+    assert_equal 0, DeskRecord.count
+  end
+
+  # A stranded row is a COMPLETED teardown. Importing one with no date would file it as an
+  # open episode — a desk that reads as still standing forever, which is the state the
+  # ledger's own "a teardown closes its own row" rule exists to prevent.
+  test "[unit] an import with no resolution date is refused" do
+    assert_raises(ArgumentError) { DeskRecord.import!(import_key: "k", worktree_path: SHIP, resolved_on: nil) }
+  end
+
+  # The key is unique in the SCHEMA, not merely checked before the write, so two harvests
+  # racing cannot both insert. Proven by writing straight past the model's own read.
+  test "[unit] the import key is unique at the database" do
+    import(key: "abc123")
+
+    duplicate = DeskRecord.new(worktree_path: SHIP, status: "removed", resolved_on: Date.current,
+                               source: "import", payload: { "import_key" => "abc123" })
+    assert_raises(ActiveRecord::RecordNotUnique) { duplicate.save!(validate: false) }
+  end
+
+  # An imported row carries the ledger row it came from, so months later a reader can
+  # audit the record back to the stash that held it.
+  test "[unit] an imported row keeps its provenance" do
+    record = import(key: "abc123", payload: { "ledger_row" => "| `#{SHIP}` | worktree |", "recovered_from" => "stash@{0}" })
+
+    assert_equal "import", record.source
+    assert_equal "stash@{0}", record.payload["recovered_from"]
+    assert_equal "abc123", record.payload["import_key"]
+    assert record.resolved?
+  end
+
 end

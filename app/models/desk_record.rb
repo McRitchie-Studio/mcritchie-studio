@@ -6,9 +6,10 @@
 # teardown row into `docs/agents/maintenance/delete-later.md`, resolved against HUB_DIR.
 # Cleanups are run from the PRIMARY checkout, and the primary sits on `main` — a branch
 # nobody may commit to. So the audit row was created in the one place it could never be
-# saved from. Six stashes of "restore later" ledger content piled up between 2026-07-02
-# and 2026-08-31 (98 rows); not one was ever restored, and a reclaim sweep stranded 25
-# more DURING the conversation about the defect. Every earlier fix idea relocated the
+# saved from. Twelve stashes of "restore later" ledger content piled up between 2026-06-26
+# and 2026-08-31 (166 rows, plus the primary's own uncommitted tree); not one was ever
+# restored, and a reclaim sweep stranded 25 more DURING the conversation about the defect.
+# `bin/harvest-desk-ledger` recovered all 166 onto this table — see `import!` below. Every earlier fix idea relocated the
 # write and still needed a human to remember a follow-up; a row here is durable the
 # moment it lands, which is the acceptance bar met outright.
 #
@@ -98,6 +99,61 @@ class DeskRecord < ApplicationRecord
     record.recorded_at = Time.current
     record.save!
     record
+  end
+
+  # ---- IMPORT: the stranded-row harvest ---------------------------------------------
+  #
+  # WHY THIS IS NOT `file!`. `file!` resolves an existing row through
+  # `open_for(worktree_path)`, which matches OPEN episodes only. Every stranded row is a
+  # RESOLVED `removed` episode, so `open_for` never matches one: a second harvest would
+  # file all 166 again. `import!` therefore keys on the row's OWN identity — a digest of
+  # the ledger row text (DeskLedgerImport.import_key) — and that key is unique in the
+  # schema, so a re-run cannot duplicate even if two harvests race.
+  #
+  # THE KEY IS THE ROW TEXT, NEVER THE DESK PATH, and the distinction is the whole
+  # correctness argument. `_ship` is torn down every release cycle at the same path; the
+  # harvested set holds 5 distinct `_ship` teardowns under mcritchie-studio and 3 under
+  # turf-monster. Keying on the path would collapse those 8 into 2 and silently destroy 6
+  # teardown records — the exact loss of 2026-08-21 that `bin/ledger-guard` exists to
+  # refuse.
+  #
+  # AN EXISTING ROW IS RETURNED UNTOUCHED, never updated. A resolved episode is history
+  # and `refuse_rewriting_history` would raise on the attempt; re-running the harvest must
+  # be a no-op, not a conflict. The caller distinguishes the two outcomes through
+  # `previously_new_record?` so a second run can report honestly that it wrote nothing.
+  IMPORT_SOURCE = "import"
+  IMPORT_KEY = "import_key"
+
+  scope :imported, -> { where(source: IMPORT_SOURCE) }
+
+  def self.for_import_key(key)
+    where("payload->>'import_key' = ?", key.to_s).first
+  end
+
+  def self.import!(import_key:, worktree_path:, resolved_on:, payload: {}, **attrs)
+    key = import_key.to_s
+    # An import with no key is precisely the write that duplicates on re-run. Refuse it
+    # here rather than letting it through as an ordinary create — a nil key would also
+    # slip past the partial unique index, which only constrains rows that HAVE one.
+    raise ArgumentError, "import_key is required — an unkeyed import duplicates on re-run" if key.empty?
+    raise ArgumentError, "resolved_on is required — a stranded row is a completed teardown" if resolved_on.blank?
+
+    existing = for_import_key(key)
+    return existing if existing
+
+    create!(
+      **attrs.slice(*WRITABLE).except(:payload),
+      worktree_path: worktree_path,
+      status: RESOLVED_STATUS,
+      resolved_on: resolved_on,
+      source: IMPORT_SOURCE,
+      payload: payload.merge(IMPORT_KEY => key),
+      recorded_at: Time.current
+    )
+  rescue ActiveRecord::RecordNotUnique
+    # Two harvests raced. The index settled it; re-read and hand back the winner, which
+    # is the same row this call would have written.
+    for_import_key(key) || raise
   end
 
   # Fold ONE registry snapshot into the table: every desk it lists is seen, and the
