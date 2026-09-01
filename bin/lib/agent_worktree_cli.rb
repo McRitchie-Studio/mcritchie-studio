@@ -6,8 +6,9 @@
 # every verdict below be proven in a unit test WITHOUT running the script.
 #
 # THE DEFECT IT CLOSES (/tasks/worktree-subcommand-drops-help), and it is the
-# WIDEST surface the class has produced — twenty subcommands, sixteen of which
-# reach a durable write. The dispatcher did `cmd = ARGV.shift || "help"` and no arm
+# WIDEST surface the class has produced — TWENTY subcommands, THIRTEEN of which
+# reach a durable write (measured; the seven read-only arms are apps, list, plan,
+# env, whereami, shell-hook and doctor). The dispatcher did `cmd = ARGV.shift || "help"` and no arm
 # validated what was left, so:
 #
 #     bin/agent-worktree new <app> <task> --help

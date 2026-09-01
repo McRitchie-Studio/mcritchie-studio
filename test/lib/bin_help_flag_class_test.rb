@@ -99,8 +99,9 @@ class BinHelpFlagClassTest < Minitest::Test
     # rows are recorded", which a probe never established.
     "harvest-desk-ledger"    => :cli_arg_guard,
     # RECLASSIFIED FROM :subcommand_gap, NOT DELETED (/tasks/worktree-subcommand-drops-help).
-    # The WIDEST surface the class has produced: twenty subcommands, sixteen of which
-    # reach a durable write. It dispatched with `cmd = ARGV.shift || "help"` and no arm
+    # The WIDEST surface the class has produced: TWENTY subcommands, THIRTEEN of which
+    # reach a durable write — measured from the dispatcher, not estimated; the seven
+    # read-only arms are apps, list, plan, env, whereami, shell-hook and doctor. It dispatched with `cmd = ARGV.shift || "help"` and no arm
     # validated the remainder, so `bin/agent-worktree new <app> <task> --help` created a
     # REAL desk — `git worktree add -b`, a port and Redis DB written into
     # .env.agent-stack, the .agent-context.json marker, and a Postgres database from
