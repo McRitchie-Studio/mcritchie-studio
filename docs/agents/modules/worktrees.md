@@ -181,9 +181,60 @@ bin/agent-worktree new turf-monster docs-stack
 bin/agent-worktree bind-task turf-monster docs-stack task-abc123def456
 bin/agent-worktree up turf-monster docs-stack
 bin/agent-worktree finish turf-monster docs-stack
+bin/agent-worktree sweep-orphan-dbs          # dry run; --yes drops orphaned desk DBs
 ```
 
 The launcher creates `/Users/alex/projects/<repo>/.worktrees/<task-slug>`, branches from the current **base ref** — `origin/accepted` when the repo has one (the persistent feature-PR target), else `origin/release`, else `origin/main` — copies the primary `.env`, writes `.env.agent-stack`, prepares the isolated database, and prints the local URL.
+
+### Every subcommand accounts for its whole command line
+
+`--help` on **any** subcommand answers and does **nothing** — it allocates no
+worktree, port, Redis DB or Postgres database, starts no stack, and writes no
+stack env or context marker. An argument a subcommand does not recognize is
+**refused**, not dropped.
+
+This was not always true, and the gap was the dangerous kind. The dispatcher read
+`cmd = ARGV.shift || "help"` and no arm validated the remainder, so the bare
+`bin/agent-worktree --help` fell through to usage — looking safe — while one
+position over:
+
+```bash
+bin/agent-worktree new <app> <task> --help     # ONCE created a real desk;
+                                               # now answers and allocates nothing
+```
+
+`new` destructured `app_name, raw_task, maybe_type, *rest = ARGV` and chose the
+branch type with `maybe_type&.start_with?("--") ? "feat" : ...`, so `--help` was
+*recognized as flag-shaped and thrown away on purpose* while `*rest` was never
+inspected. `bind-task … --help` wrote the stack env and marker, `up … --help`
+started the stack, `status … --help` wrote the marker, and `scale out --help`
+grew the persisted Redis band. Fixed by
+[`/tasks/worktree-subcommand-drops-help`](https://mcritchie.studio/tasks/worktree-subcommand-drops-help).
+
+**Exit codes, and why help is never 0.** Help exits **1**; a refusal exits **2**.
+Exit 0 from this launcher is read as a *fact* by four callers, and a probe
+establishes none of them:
+
+| Caller | What exit 0 asserts |
+|---|---|
+| `bin/task` (`begin_step!`, on `new` + `bind-task`) | the worktree was created, and the task is bound |
+| `bin/qa-intake` (`snapshot --write`) | the worktree registry was refreshed |
+| `bin/release.rb` (`restore-primary`) | the primary was returned to a clean `main` |
+| `bin/release.rb` (`cleanup --reclaim`) | the reclaim ran |
+
+Usage goes to **stderr**, never stdout, because `shell-hook zsh` is consumed as
+`eval "$(bin/agent-worktree shell-hook zsh)"` from the login shell.
+
+**One arm forwards.** `test <app> <task-slug> [-- rails-test-args]` hands its
+tail to `bin/rails test`, so those tokens are minitest's to account for: that arm
+gets the help scan and nothing else, and `-n /pattern/` still forwards. For
+minitest's own help, run `bin/rails test --help` inside the desk.
+
+The dictionary lives in `bin/lib/agent_worktree_cli.rb` (`AgentWorktreeCli::COMMANDS`),
+read by the shared `bin/lib/cli_arg_guard.rb` — the same shape `bin/release` and
+`bin/qa-server` use. Adding a subcommand without a dictionary entry fails
+`test/lib/agent_worktree_cli_test.rb`, which derives the arm list from the
+dispatcher's own source.
 
 ### `new` is atomic: a complete desk, or nothing
 
