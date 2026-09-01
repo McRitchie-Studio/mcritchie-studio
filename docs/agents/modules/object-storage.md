@@ -32,7 +32,7 @@ is the act that applies them to a new app.
 |---|---|---|---|
 | 1 | `alex-admin` / root | Mr. McRitchie only | his private vault |
 | 2 | `agents-admin` | Steffon's provisioning lane: `s3:*`, mint/rotate `/mcr/*` users, account read-only | item `AWS`, vault `agents-admin` (admin op lane only) |
-| 3 | `agent-studio` | day-to-day agent object surgery across the fleet; no IAM, no bucket create/delete | vault `agents-studio` (minted by `bucket-provision`, first run) |
+| 3 | `agent-studio` | day-to-day agent object surgery across the fleet; no IAM, no bucket create/delete | **design pending** — nothing mints it yet, `bucket-provision` included; until it exists, use tier 2 or the app's tier-4 key |
 | 4 | `mcr-<app>-prod` / `mcr-<app>-dev` | one app's buckets, exactly | Heroku config vars + 1Password record |
 
 A credential belongs to exactly one kind of principal. Apps never borrow agent
