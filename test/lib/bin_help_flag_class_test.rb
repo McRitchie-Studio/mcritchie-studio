@@ -287,16 +287,18 @@ class BinHelpFlagClassTest < Minitest::Test
     # unreviewable. They are recorded HERE rather than only on the board so a
     # reader of the manifest cannot conclude, as one just did about bin/release,
     # that a `:subcommand` label means the command is safe to probe.
-    # THREE entries have LEFT THIS BUCKET, each reclassified above with its record
-    # kept in full rather than deleted: bin/install-agent-docs and bin/agent-runtime
-    # (:own_guard, /tasks/docs-installer-help-publishes) and bin/agent-worktree
-    # (:cli_arg_guard, /tasks/worktree-subcommand-drops-help), all on 2026-09-01.
-    #
     # ⚠ THE BUCKET IS NOW EMPTY, and that is the finished state, not a missing record.
-    # All FIVE confirmed gaps have been reclassified above with their history kept in
-    # full: bin/install-agent-docs and bin/agent-runtime (:own_guard), bin/agent-worktree
-    # (:cli_arg_guard), and — on 2026-09-01, closing the family — bin/atomic-event
-    # (:cli_arg_guard) with its bin/agent-activity shim (:delegates).
+    # All FIVE entries have LEFT IT, each reclassified above with its record kept in
+    # full rather than deleted — every one of them on 2026-09-01:
+    #
+    #   bin/install-agent-docs  :own_guard      /tasks/docs-installer-help-publishes
+    #   bin/agent-runtime       :own_guard      /tasks/docs-installer-help-publishes
+    #   bin/agent-worktree      :cli_arg_guard  /tasks/worktree-subcommand-drops-help
+    #   bin/atomic-event        :cli_arg_guard  /tasks/atomic-event-help-mutates
+    #   bin/agent-activity      :delegates      /tasks/atomic-event-help-mutates
+    #
+    # The last two closed the family: bin/agent-activity is an 8-line shim over
+    # bin/atomic-event, so one guard placed inside AgentActivityCli#run retired both.
     #
     # The tripwire that guarded this moment has been retired DELIBERATELY. Steffon left
     # `refute_empty gaps` in test_the_two_subcommand_buckets_are_disjoint with a note
