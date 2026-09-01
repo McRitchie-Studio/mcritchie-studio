@@ -815,6 +815,19 @@ class AgentActivityCliTest < Minitest::Test
   # requests. chdir into the isolated proj dir so no stray .agent-context.json up
   # the real tree leaks into the marker resolution.
   def run_cli(argv, proj:, with_session_env: true, stdin: nil)
+    spawn_cli(argv, proj: proj, with_session_env: with_session_env, stdin: stdin).first
+  end
+
+  # The SAME spawn, returning the child's [stdout, stderr, status] instead of the
+  # recorded requests. The exit code is half the argument guard's contract — help
+  # exits 0 here and a refusal exits 2 — and an assertion about a code needs the
+  # code, so both readings come off ONE run of the real script rather than two.
+  def capture_cli(argv, proj:, with_session_env: true, stdin: nil)
+    spawn_cli(argv, proj: proj, with_session_env: with_session_env, stdin: stdin).drop(1)
+  end
+
+  # Returns [requests, out, err, status].
+  def spawn_cli(argv, proj:, with_session_env: true, stdin: nil)
     server = TCPServer.new("127.0.0.1", 0)
     port = server.addr[1]
     requests = []
@@ -824,8 +837,8 @@ class AgentActivityCliTest < Minitest::Test
     env["CLAUDE_CODE_SESSION_ID"] = SESSION if with_session_env && !argv.include?("--session")
     opts = { chdir: proj }
     opts[:stdin_data] = stdin unless stdin.nil?
-    Open3.capture3(env, RbConfig.ruby, BIN, *argv, **opts)
-    requests
+    out, err, status = Open3.capture3(env, RbConfig.ruby, BIN, *argv, **opts)
+    [requests, out, err, status]
   ensure
     server&.close
     thread&.join(1)
@@ -985,4 +998,260 @@ class AgentActivityCliTest < Minitest::Test
       assert_equal "carl\n", File.read(marker), "the sticky acting-agent still writes normally"
     end
   end
+
+  # --- [integration] the ARGUMENT GUARD, proven by HTTP + marker RECEIPT -------
+  #
+  # THE DEFECT (/tasks/atomic-event-help-mutates). `run` did `command = argv.shift`
+  # and handed the REST to a parse_flags that had no notion of an argument it did
+  # not recognize: an unknown `--token` simply became `flags["token"] = true` and
+  # was never read. There was no help arm and no unknown-flag arm anywhere in the
+  # file, so `--help` — the universal safe probe — fell onto the floor and the
+  # subcommand RAN ITS REAL ACTION. Measured at source, each of these mutated:
+  #
+  #   grade 42 --disposition good --help        POST /api/v1/agent_activities/42/grade
+  #   start --category Edit --reason x --help   POST /api/v1/agent_activities
+  #   close-open --help                         POST .../close_all + three marker deletes
+  #   heartbeat avi --help                      the .acting-agent marker write
+  #
+  # AGGRAVATED by this CLI's own non-fatal contract: `run` swallows every
+  # StandardError and the script always exits 0, so a probe that mutated reported
+  # NOTHING and returned success. And bin/agent-activity — an 8-line shim that
+  # `load`s this file and calls the same `run` — is shelled by the SessionEnd hook
+  # and by bin/task, bin/ship, bin/release, bin/full-suite-check and
+  # bin/ci-scope-capture, which makes this the highest-frequency member of the class.
+  #
+  # WHY A RECEIPT AND NOT AN ABSENCE. An empty request log also describes a spy that
+  # was never wired — the failure mode that makes a green guard test worthless. So
+  # every probe below is paired with a CONTROL: the SAME command line with `--help`
+  # removed, which must record the POST (or write the marker) for real. The refusal
+  # is only meaningful because the control fires.
+  #
+  # These run the REAL script through the stub server, which is safe HERE and is
+  # NOT safe by hand: run_cli pins ATOMIC_CAPTURE_URL at 127.0.0.1 and HOME at a
+  # tmpdir, so the grade lands on the stub instead of the production board. Never
+  # type these probes at a shell.
+
+  # bin/atomic-event with whole-line comments removed.
+  #
+  # NOT INTERCHANGEABLE with the raw file, and this file proved it: the source
+  # assertions below first ran on File.read(BIN) and went RED on `--token`, a flag
+  # that appears NOWHERE in the code — it is quoted in the doctrinal comment above
+  # COMMANDS, which explains that an unknown `--token` used to become
+  # `flags["token"] = true`. A substring assertion that can match a comment is
+  # asserting about documentation, not about code. Same reasoning, and the same
+  # remedy, as BinHelpFlagClassTest#code_only.
+  def bin_code_only
+    File.read(BIN).lines.reject { |line| line.lstrip.start_with?("#") }.join
+  end
+
+  # command line => the receipt its control must produce.
+  HTTP_PROBES = {
+    %w[grade 42 --disposition good] => "/api/v1/agent_activities/42/grade",
+    %w[start --category Edit --reason probe] => "/api/v1/agent_activities",
+    %w[close-open] => "/api/v1/agent_activities/close_all"
+  }.freeze
+
+  def test_integration_a_trailing_help_posts_nothing_and_its_control_posts
+    HTTP_PROBES.each do |argv, path|
+      Dir.mktmpdir do |proj|
+        # CONTROL FIRST — an empty log below means nothing unless this fires.
+        control = run_cli(argv, proj: proj)
+
+        assert_includes control.map { |r| r[:path] }, path,
+                        "the control `#{argv.join(' ')}` recorded no #{path} — the spy is not " \
+                        "wired, so the refusal below would pass by reading nothing"
+
+        requests = run_cli(argv + ["--help"], proj: proj)
+
+        assert_empty requests,
+                     "`bin/atomic-event #{(argv + ['--help']).join(' ')}` reached the network — " \
+                     "the probe every operator tries first must POST NOTHING"
+      end
+    end
+  end
+
+  # The OTHER spelling, proven once rather than once per probe: CliArgGuard.help?
+  # matches `-h` and `--help` through the same HELP_FLAGS list for every subcommand,
+  # so the per-subcommand dimension is already covered above and repeating it only
+  # bought process spawns — the dominant cost of this tier.
+  def test_integration_the_short_help_spelling_also_posts_nothing
+    Dir.mktmpdir do |proj|
+      assert_empty run_cli(%w[grade 42 --disposition good -h], proj: proj),
+                   "`-h` must be honored exactly like `--help` — an operator has no way to know " \
+                   "which spelling this parser answers to"
+    end
+  end
+
+  def test_integration_a_trailing_help_writes_no_local_marker_and_its_control_does
+    Dir.mktmpdir do |proj|
+      marker = File.join(proj, ".agents", "sessions", "#{SESSION}.acting-agent")
+
+      run_cli(%w[heartbeat avi --help], proj: proj)
+      refute_path_exists marker,
+                         "`heartbeat avi --help` wrote the sticky acting-agent — the local-write " \
+                         "vector is the same defect one seam over from the POST"
+
+      # CONTROL: the identical line without the flag must write it.
+      run_cli(%w[heartbeat avi], proj: proj)
+      assert_equal "avi\n", File.read(marker),
+                   "the control did not write the marker — the assertion above proved nothing"
+    end
+  end
+
+  # Help answers on the line the old parser dropped, and exits 0.
+  #
+  # 0 IS DELIBERATE HERE, and it is the opposite of the sibling guards' choice
+  # (bin/release, bin/qa-server and bin/agent-worktree all exit 1, because a caller
+  # reads THEIR 0 as a verdict). Traced through every caller of this CLI: bin/task,
+  # bin/ship, bin/release.rb, bin/full-suite-check and bin/ci-scope-capture ALL
+  # invoke it as `system(..., out: File::NULL, err: File::NULL)` with the return
+  # value DISCARDED inside `rescue StandardError; nil`, and three of them carry a
+  # comment asserting "the verb always exits 0". Nothing reads it. See the rationale
+  # on AgentActivityCli::HELP_EXIT.
+  # ONE fix retires BOTH manifest entries — asserted, not asserted-about.
+  #
+  # bin/agent-activity is an 8-line shim that `load`s bin/atomic-event and calls the
+  # SAME AgentActivityCli#run, which is why the guard was placed inside `run` rather
+  # than under this file's `$PROGRAM_NAME == __FILE__` block. That inheritance is the
+  # whole argument for classifying the shim :delegates instead of giving it a second
+  # guard, and an argument is not a test — so this runs the REAL shim binary. It is
+  # also the higher-frequency of the two names: the SessionEnd hook, bin/task,
+  # bin/ship, bin/release, bin/full-suite-check and bin/ci-scope-capture all shell
+  # `bin/agent-activity`, never `bin/atomic-event`.
+  def test_integration_the_agent_activity_shim_inherits_the_same_guard
+    shim = File.expand_path("../../bin/agent-activity", __dir__)
+    Dir.mktmpdir do |proj|
+      server = TCPServer.new("127.0.0.1", 0)
+      requests = []
+      thread = Thread.new { serve(server, requests) }
+      env = base_env(proj).merge("ATOMIC_CAPTURE_URL" => "http://127.0.0.1:#{server.addr[1]}",
+                                 "CLAUDE_CODE_SESSION_ID" => SESSION)
+
+      out, _err, status = Open3.capture3(env, RbConfig.ruby, shim, "grade", "42",
+                                         "--disposition", "good", "--help", chdir: proj)
+
+      assert_empty requests, "bin/agent-activity grade … --help POSTED — the shim did not inherit the guard"
+      assert_equal 0, status.exitstatus, "help exits 0 through the shim too"
+      assert_match(/grade <activity-id>/, out)
+
+      # THE DISCRIMINATING CASE. The assertion above cannot tell the guard's exit
+      # from the shim's own trailing `exit 0` — both are 0. A REFUSAL can: the guard
+      # exits 2, which reaches the shell only because `exit` raises SystemExit, which
+      # is not a StandardError and so passes straight through `run`'s rescue AND past
+      # the shim's `exit 0`, which is never executed. If that line ever ran, this
+      # would read 0 and the shim would be silently swallowing every refusal.
+      _o, refusal_err, refusal = Open3.capture3(env, RbConfig.ruby, shim, "grade", "42",
+                                                "--disposition", "good", "--force", chdir: proj)
+
+      assert_equal 2, refusal.exitstatus,
+                   "the shim reported #{refusal.exitstatus} for a refused line — its trailing " \
+                   "`exit 0` is masking the guard's exit code"
+      assert_match(/unrecognized argument "--force"/, refusal_err)
+
+      # CONTROL: the same line through the SHIM, without the flag, must post for real.
+      control = []
+      cserver = TCPServer.new("127.0.0.1", 0)
+      cthread = Thread.new { serve(cserver, control) }
+      cenv = env.merge("ATOMIC_CAPTURE_URL" => "http://127.0.0.1:#{cserver.addr[1]}")
+      Open3.capture3(cenv, RbConfig.ruby, shim, "grade", "42", "--disposition", "good", chdir: proj)
+
+      assert_includes control.map { |r| r[:path] }, "/api/v1/agent_activities/42/grade",
+                      "the shim's control did not post — the assertion above proved nothing"
+    ensure
+      server&.close
+      cserver&.close
+      thread&.join(1)
+      cthread&.join(1)
+    end
+  end
+
+  def test_integration_help_exits_zero_and_prints_the_subcommand_usage
+    Dir.mktmpdir do |proj|
+      out, _err, status = capture_cli(%w[grade 42 --disposition good --help], proj: proj)
+
+      assert_equal 0, status.exitstatus, "help exits 0 — this CLI's 0 means only `this ran`"
+      assert_match(/grade <activity-id>/, out, "help must answer with the SUBCOMMAND's usage")
+      assert_match(/POSTED NOTHING/, out, "usage must say plainly that it did not act")
+    end
+  end
+
+  # An argument nothing accounts for REFUSES rather than being silently dropped —
+  # the other half of the class, and the half that has no obvious probe.
+  def test_integration_an_unaccounted_argument_refuses_with_exit_two_and_posts_nothing
+    Dir.mktmpdir do |proj|
+      # ONE spawn, both readings. Running the same line twice to read the request
+      # log and then the exit code doubled the process cost of the slowest tier in
+      # this file for no extra coverage.
+      requests, _out, err, status = spawn_cli(%w[grade 42 --disposition good --force], proj: proj)
+
+      assert_empty requests, "a refused line must not reach the network"
+      assert_equal 2, status.exitstatus, "an unaccounted-for argument refuses with 2"
+      assert_match(/unrecognized argument "--force"/, err)
+      assert_match(/POSTED NOTHING/, err, "the reader's question is whether the grade landed")
+    end
+  end
+
+  # The half that WEDGES THE ECOSYSTEM if it is wrong. Every one of these is a real
+  # invocation somewhere in bin/ or the hooks; a dictionary that refuses one of them
+  # silences narration for every session on the machine — a worse outcome than the
+  # defect being fixed, because it fails on the happy path.
+  LIVE_INVOCATIONS = [
+    %w[close-open],                                                    # SessionEnd hook
+    %w[start --category Explore --task some-slug --reason orient],     # bin/task begin
+    %w[end --outcome shipped],                                         # bin/ship
+    %w[start --category Remote --reason deploy --agent avi],           # bin/release.rb
+    %w[next --outcome done --category Edit --reason go],
+    %w[next --outcome done --category Edit --reason go --key-method x --key-lang ruby],
+    %w[start --category Verify --reason review --agent carl --supervisor avi],
+    %w[action --summary step --key-method git --kind test_scope --event-slug s --result-slug pass
+       --duration-ms 12],                                              # bin/full-suite-check
+    %w[action --summary step --kind test_scope --event-slug s --result-slug pass --duration-ms 12
+       --idempotency-key k --started-at t1 --completed-at t2],         # bin/ci-scope-capture
+    %w[action --summary conclusion --finding],
+    %w[heartbeat avi], %w[heartbeat --clear], %w[heartbeat clear],
+    %w[reconcile --session sid],
+    %w[awaiting --limit 5],
+    %w[grade 42 --disposition good --slug s --long-form text --bank],
+    %w[grade 42 --disposition not --discard]
+  ].freeze
+
+  def test_unit_every_live_invocation_is_still_handed_to_the_dispatcher
+    LIVE_INVOCATIONS.each do |argv|
+      spec = AgentActivityCli.guard_args(argv.first)
+      refute_nil spec, "`#{argv.first}` is dispatched but absent from COMMANDS — a missing entry " \
+                       "falls THROUGH the guard, which re-opens the gap silently"
+
+      _parsed, bad = CliArgGuard.classify(argv.drop(1), bool: spec[:bool], value: spec[:value],
+                                                        allow_positional: spec[:allow_positional])
+
+      assert_empty bad, "bin/agent-activity #{argv.join(' ')} is a LIVE invocation — a guard that " \
+                        "refuses it silences narration for every session on this machine"
+    end
+  end
+
+  # The dictionary and the dispatcher must name the SAME set. A subcommand missing
+  # from COMMANDS gets no guard at all (guard_args returns nil and the line falls
+  # through), so drift here does not fail loudly — it re-opens the defect.
+  def test_unit_the_dictionary_and_the_dispatcher_name_the_same_subcommands
+    dispatched = bin_code_only[/case command\n(.*?)\n    else/m].to_s.scan(/when ([^\n]*?) then/)
+                    .flatten.join(",").scan(/"([a-z-]+)"/).flatten.sort
+
+    refute_empty dispatched, "the dispatcher moved — re-anchor this test"
+    assert_equal dispatched, AgentActivityCli::COMMANDS.keys.sort,
+                 "every dispatched subcommand needs a COMMANDS entry and vice versa"
+  end
+
+  # Every flag the code actually READS must be accounted for by the dictionary of
+  # some subcommand — otherwise the guard refuses a flag the script supports, which
+  # is the wedge above discovered at runtime instead of here.
+  def test_unit_the_dictionary_accounts_for_every_flag_the_code_reads
+    read = bin_code_only.scan(/flags\.key\?\("([a-z-]+)"\)|flags\["([a-z-]+)"\]/)
+               .flatten.compact.map { |name| "--#{name}" }.uniq
+    known = AgentActivityCli::COMMANDS.values.flat_map { |s| s[:bool] + s[:value] }.uniq
+
+    assert_empty(read - known,
+                 "bin/atomic-event READS #{(read - known).join(', ')} but no COMMANDS entry lists " \
+                 "it — the guard would refuse a flag the script supports")
+  end
+
 end

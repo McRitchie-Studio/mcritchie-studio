@@ -56,6 +56,7 @@ require "fileutils"
 require_relative "../lib/agent_session_usage"
 require_relative "../lib/agent_fanout_usage"
 require_relative "lib/agent_api"
+require_relative "lib/cli_arg_guard"
 require_relative "lib/session_markers"
 require_relative "lib/session_identity"
 
@@ -77,6 +78,168 @@ class AgentActivityCli
   OPEN_TIMEOUT = 2
   READ_TIMEOUT = 5
 
+  # ── the argument guard's DICTIONARY ────────────────────────────────────────
+  #
+  # THE DEFECT THIS CLOSES (/tasks/atomic-event-help-mutates), and it is the
+  # HIGHEST-FREQUENCY member of its class. `run` shifted the subcommand and handed
+  # the rest to a parse_flags with no notion of an argument it did not recognize —
+  # an unknown `--token` became `flags["token"] = true` and was never read again.
+  # There was no help arm and no unknown-flag arm anywhere in the file, so `--help`,
+  # the probe every operator and agent reaches for PRECISELY because it is expected
+  # to do nothing, fell onto the floor and the subcommand ran for real:
+  #
+  #   grade 42 --disposition good --help        POSTED THE GRADE to the production board
+  #   start --category Edit --reason x --help    opened a real activity
+  #   close-open --help                          closed every open activity + deleted 3 markers
+  #   heartbeat avi --help                       wrote the sticky .acting-agent marker
+  #
+  # AGGRAVATED by this file's own non-fatal contract: `run` swallows every
+  # StandardError and the process always exits 0, so a probe that mutated reported
+  # nothing and returned success. bin/agent-activity is an 8-line shim that `load`s
+  # this file and calls the same `run`, so it carried the identical exposure — and
+  # it is shelled by the SessionEnd hook and by bin/task, bin/ship, bin/release,
+  # bin/full-suite-check and bin/ci-scope-capture, many times per session.
+  #
+  # WHY THE DICTIONARY LIVES HERE rather than in bin/lib/ like its three siblings
+  # (Release::Cli::COMMANDS, QaServerCli::COMMANDS, AgentWorktreeCli::COMMANDS).
+  # Those scripts are thousands of lines and their flag sets are only discoverable
+  # by reading all of them, so the dictionary had to be lifted somewhere it could be
+  # read beside the parsers. HERE the parsers are ten lines below, in this same
+  # file, and the file already `load`s inert under test ($PROGRAM_NAME guard), so
+  # this IS "beside the parsers, unit-testable without running" — a separate lib
+  # would only add a second place to drift from.
+  #
+  # A PROPERTY OF THE SHARED GUARD WORTH KNOWING HERE, because this CLI's values are
+  # free-form prose: a value flag must consume a token that does not start with `-`.
+  # So `end --outcome "--help now refuses"` REFUSES rather than recording a blank
+  # outcome. That is the deliberate trade every sibling makes on its free-text flags
+  # (bin/release's --feedback/--worked, bin/agent-worktree's --reason): today that
+  # line silently lost the outcome and exited 0, which is the worse half of the same
+  # coin. Lead a narration value with a word, not a dash.
+
+  # `--help` and a refusal print this, so the dispatcher's fall-through and every
+  # per-subcommand help answer with the SAME text.
+  USAGE = "usage: atomic-event start --category <C> --reason <text> [--outcome <text>] [--agent <soul>] [--task <slug>] | " \
+          "next --outcome <text> --category <C> --reason <text> [--key-method <code> [--key-lang <lang>]] [--agent <soul>] [--task <slug>] | " \
+          "end [--outcome <text>] [--key-method <code> [--key-lang <lang>]] | close-open [--outcome <text>] | " \
+          "reconcile [--session <id>] | " \
+          "action --summary <text> [--finding | --kind <k>] [--key-method <code> [--key-lang <lang>]] | " \
+          "heartbeat <soul> | heartbeat --clear | " \
+          "grade <activity-id> --disposition good|not [--slug <text>] [--long-form <text>] [--bank|--discard] | " \
+          "awaiting [--limit <n>]\n" \
+          "       every subcommand also takes [--session <id>] except grade and awaiting.\n" \
+          "       This answer POSTED NOTHING, opened and closed nothing, and wrote no marker."
+
+  # `--help` exits 0 HERE, which is the OPPOSITE of what bin/release, bin/qa-server
+  # and bin/agent-worktree chose — and the difference is the whole rule, not an
+  # inconsistency. The shared guard's doc states it: help must not answer with 0
+  # where 0 CARRIES A MEANING beyond "the command ran". It carries one on those
+  # three (`release status --clean-only` asserts a clean ladder, `qa-server`'s 0 is
+  # read by bin/release as "the QA deploy succeeded", `agent-worktree snapshot`'s is
+  # read as "the registry is fresh"). It carries none here, and that was TRACED
+  # rather than assumed — every caller of this CLI:
+  #
+  #   bin/task:368              system(ACTIVITY_BIN, *args, out: NULL, err: NULL)  result discarded
+  #   bin/ship:128              system(ACTIVITY_BIN, *args, out: NULL, err: NULL)  result discarded
+  #   bin/release.rb:689        system(AGENT_ACTIVITY, *args, …)  "The command itself always exits 0"
+  #   bin/full-suite-check:351  system(AGENT_ACTIVITY, "action", …)  "the verb always exits 0"
+  #   bin/ci-scope-capture:205  system(*argv, …)  "there is no caller to fail"
+  #   ~/.claude/settings.json   SessionEnd hook: `bin/agent-activity close-open`
+  #
+  # Every one discards the status inside `rescue StandardError; nil`, and three say
+  # so in a comment. Nor does 0 mean "the event was recorded": this CLI ALREADY
+  # exits 0 with nothing recorded on a missing session id, an unknown --category, a
+  # missing --reason, a failed POST, and any swallowed StandardError. So 0 here
+  # means only "this ran", which is exactly the case the guard documents 0 for, and
+  # what every operator expects from an explicit --help. The REFUSAL still exits 2 —
+  # the shared guard's fixed code — because a refusal is a real answer.
+  HELP_EXIT = 0
+
+  # The flags each subcommand ACTUALLY READS, checked against the `flags[…]` reads
+  # ten lines below by test_unit_the_dictionary_accounts_for_every_flag_the_code_reads.
+  # Anything else REFUSES rather than being guessed at.
+  #
+  # `--session` rides on the six arms that call resolve_session_id, and on no other:
+  # `grade` and `awaiting` address an activity by id and never resolve a session, so
+  # accepting it there would advertise a flag they ignore — the silent no-op this
+  # whole family exists to stop.
+  #
+  # :allow_positional is TRUE on exactly the two arms with a real bare token —
+  # `grade <activity-id>` and `heartbeat <soul>` (which also takes the bare words
+  # `clear`/`off`). Everywhere else a stray word REFUSES instead of being dropped.
+  COMMANDS = {
+    "start" => {
+      synopsis: "atomic-event start --category <C> --reason <text> [--outcome <text>] [--agent <soul>] [--task <slug>]",
+      consequence: "NO activity was opened, none was closed, and no outcome was stamped",
+      bool: [], allow_positional: false,
+      value: %w[--category --reason --outcome --agent --task --supervisor --key-method --key-lang --session]
+    },
+    "next" => {
+      synopsis: "atomic-event next --outcome <text> --category <C> --reason <text> [--key-method <code> [--key-lang <lang>]]",
+      consequence: "the prior activity was NOT closed and no new one was opened",
+      bool: [], allow_positional: false,
+      value: %w[--category --reason --outcome --agent --task --supervisor --key-method --key-lang --session]
+    },
+    "end" => {
+      synopsis: "atomic-event end [--outcome <text>] [--key-method <code> [--key-lang <lang>]]",
+      consequence: "the open activity is STILL OPEN and no outcome was stamped",
+      bool: [], allow_positional: false,
+      value: %w[--outcome --agent --key-method --key-lang --session]
+    },
+    "close-open" => {
+      synopsis: "atomic-event close-open [--outcome <text>]",
+      consequence: "NOTHING was closed and no session marker was deleted",
+      bool: [], value: %w[--outcome --session], allow_positional: false
+    },
+    "reconcile" => {
+      synopsis: "atomic-event reconcile [--session <id>]",
+      consequence: "no subagent spend was attributed to any activity",
+      bool: [], value: %w[--session], allow_positional: false
+    },
+    "action" => {
+      synopsis: "atomic-event action --summary <text> [--finding | --kind <k>] [--key-method <code> [--key-lang <lang>]]",
+      consequence: "no action was reported to the open activity",
+      bool: %w[--finding], allow_positional: false,
+      value: %w[--summary --kind --key-method --key-lang --event-slug --result-slug --duration-ms
+                --idempotency-key --started-at --completed-at --session]
+    },
+    "heartbeat" => {
+      synopsis: "atomic-event heartbeat <soul> | heartbeat --clear",
+      consequence: "the sticky acting-agent marker was NOT written or cleared",
+      bool: %w[--clear], value: %w[--agent --session], allow_positional: true
+    },
+    "grade" => {
+      synopsis: "atomic-event grade <activity-id> --disposition good|not [--slug <text>] [--long-form <text>] [--bank|--discard]",
+      consequence: "NO grade was posted — the activity is ungraded and nothing was banked or discarded",
+      bool: %w[--bank --discard], value: %w[--disposition --slug --long-form], allow_positional: true
+    },
+    "awaiting" => {
+      synopsis: "atomic-event awaiting [--limit <n>]",
+      consequence: "nothing was read — this is NOT an empty awaiting-grade queue",
+      bool: [], value: %w[--limit], allow_positional: false
+    }
+  }.freeze
+
+  # The keyword set `run` hands CliArgGuard.guard! — nil when the token is not a
+  # subcommand at all (a bare `--help`, a typo, an empty line), which run answers
+  # for itself. ONE hash, so the production call and the tests that exercise it read
+  # the same dictionary with no second copy to drift.
+  def self.guard_args(command)
+    spec = COMMANDS[command.to_s]
+    return nil unless spec
+
+    {
+      program: "atomic-event #{command}",
+      usage: "usage: #{spec[:synopsis]}\n\n#{USAGE}",
+      consequence: spec[:consequence],
+      bool: spec[:bool],
+      value: spec[:value],
+      allow_positional: spec[:allow_positional],
+      help_exit: HELP_EXIT
+    }
+  end
+
+
   def initialize(env: ENV, out: $stdout, err: $stderr, input: $stdin)
     @env = env
     @out = out
@@ -88,6 +251,22 @@ class AgentActivityCli
   # Entry point. Parses argv, dispatches the command, and ALWAYS returns (the main
   # guard exits 0 regardless) — nothing here may break the calling session.
   def run(argv)
+    # THE GUARD, ahead of the dispatcher and therefore ahead of every mutation this
+    # CLI can perform. Called INLINE rather than wrapped in a `def guard_argv!`, so
+    # the only occurrence of `CliArgGuard.guard!` in this file IS the call site —
+    # finding-e429a953ff23 is a guard left DEFINED and never CALLED, which passes a
+    # position assertion anchored on the definition while the script runs unguarded.
+    # bin/agent-activity reaches the same `run`, so this one call guards both names.
+    spec = AgentActivityCli.guard_args(argv.first)
+    if spec
+      CliArgGuard.guard!(argv.drop(1), out: @out, err: @err, **spec)
+    elsif CliArgGuard.help?(argv)
+      # No subcommand to key the dictionary off (a bare `--help`, or help ahead of
+      # the verb). Answer with the whole-CLI usage, on stdout, still without acting.
+      @out.puts(USAGE)
+      return nil
+    end
+
     command = argv.shift
     flags = parse_flags(argv)
 
@@ -101,14 +280,7 @@ class AgentActivityCli
     when "grade"         then grade_activity(argv, flags) # bearer AGENT grade of a resolved activity
     when "awaiting"      then awaiting(flags)             # resolved activities still awaiting an Alex grade
     else
-      warn_note("usage: atomic-event start --category <C> --reason <text> [--outcome <text>] [--agent <soul>] [--task <slug>] | " \
-                "next --outcome <text> --category <C> --reason <text> [--key-method <code> [--key-lang <lang>]] [--agent <soul>] [--task <slug>] | " \
-                "end [--outcome <text>] [--key-method <code> [--key-lang <lang>]] | close-open [--outcome <text>] | " \
-                "reconcile [--session <id>] | " \
-                "action --summary <text> [--finding | --kind <k>] [--key-method <code> [--key-lang <lang>]] | " \
-                "heartbeat <soul> | heartbeat --clear | " \
-                "grade <activity-id> --disposition good|not [--slug <text>] [--long-form <text>] [--bank|--discard] | " \
-                "awaiting [--limit <n>]")
+      warn_note(USAGE)
     end
   rescue StandardError => e
     warn_note("atomic-event failed (ignored): #{e.class}: #{e.message}")
@@ -447,7 +619,11 @@ class AgentActivityCli
 
   # ── argv + session/marker resolution ──────────────────────────────────────
 
-  # Minimal --flag value parser (repeats: last wins). Bare/unknown args ignored.
+  # Minimal --flag value parser (repeats: last wins), in BOTH spellings — `--flag
+  # value` and `--flag=value`. Bare tokens are ignored HERE, but no longer reach
+  # here unaccounted for: run's CliArgGuard call refuses anything this CLI does not
+  # read before the dispatcher is entered, so "unknown args ignored" is now true
+  # only of lines the guard has already blessed.
   # A flag whose next token is ANOTHER flag (or the end) is a valueless BOOLEAN
   # (stored as true) — so `--clear --session X` reads clear=true + session=X rather
   # than clear swallowing "--session" as its value. Values never legitimately start
@@ -458,7 +634,15 @@ class AgentActivityCli
     i = 0
     while i < argv.length
       arg = argv[i]
-      if arg.start_with?("--")
+      if arg.start_with?("--") && arg.include?("=")
+        # `--flag=value`, the spelling CliArgGuard.classify accepts. Taught here so
+        # the guard and this reader share ONE grammar: a form the guard BLESSED and
+        # this parser dropped would be a silent no-op wearing a green light, which is
+        # the same silent-substitution bug the guard exists to close, one seam over.
+        name, value = arg.split("=", 2)
+        flags[name.delete_prefix("--")] = value
+        i += 1
+      elsif arg.start_with?("--")
         nxt = argv[i + 1]
         if nxt.nil? || nxt.start_with?("--")
           flags[arg.delete_prefix("--")] = true
