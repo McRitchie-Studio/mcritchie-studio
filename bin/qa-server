@@ -9,6 +9,8 @@ require "json"
 require "net/http"
 require "uri"
 require_relative "lib/projects_root"
+require_relative "lib/cli_arg_guard"
+require_relative "lib/qa_server_cli"
 
 SCRIPT_ROOT = File.expand_path("..", __dir__)
 
@@ -17,24 +19,37 @@ HUB_DIR = SCRIPT_ROOT
 QA_CONFIG = File.join(HUB_DIR, "config", "qa_environments.yml")
 HEROKU_APP_INFO_CACHE = {}
 
+# The usage text lives in QaServerCli::USAGE so this fall-through and the guard's
+# per-subcommand `--help` print the SAME text from one place.
 def usage
-  warn <<~TEXT
-    bin/qa-server - stable QA server conductor helper
-
-      list
-      plan [app]
-      provision <app> [--yes]
-      status [app]
-      deploy <app> [git-ref] [--yes]
-
-    Examples:
-      bin/qa-server list
-      bin/qa-server plan turf-monster
-      bin/qa-server provision turf-monster --yes
-      bin/qa-server status mcritchie-studio
-      bin/qa-server deploy turf-monster origin/main --yes
-  TEXT
+  warn QaServerCli::USAGE
   exit 1
+end
+
+# THE ARGUMENT GUARD — run BEFORE the dispatcher, always.
+#
+# Every mutation this script can perform (heroku create, addons:create,
+# domains:add, certs:auto:enable, the config-var PATCH, the QA force-push,
+# ps:scale) is reached through the `case cmd` below, so this is the one call that
+# has to run first. It answers `--help` from ANY position and REFUSES an argument
+# the named subcommand does not account for, instead of shifting the subcommand
+# and letting the rest of the line fall on the floor — which is precisely what
+# `provision <app> --yes --help` did when it provisioned a QA server for real.
+#
+# Unknown subcommands still fall through to the dispatcher's `else`, which prints
+# usage and exits 1 exactly as before.
+#
+# INJECTABLE (out:/err:/exiter:) so every subcommand's verdict can be proven in a
+# test WITHOUT running the script. That is not a nicety: the thing under test
+# creates billable infrastructure when probed, so "just run it and see" is the one
+# experiment that must never be performed.
+def guard_argv!(argv = ARGV, out: $stdout, err: $stderr, exiter: nil)
+  spec = QaServerCli.guard_args(argv.first)
+  # Not a subcommand at all (a bare `--help`, a typo, an empty line): fall through
+  # to the dispatcher's `else`, which prints usage and exits 1 exactly as before.
+  return nil unless spec
+
+  CliArgGuard.guard!(argv.drop(1), out: out, err: err, exiter: exiter, **spec)
 end
 
 def capture_status(*cmd, chdir: nil)
@@ -487,23 +502,27 @@ def run_deploy(app_name, ref, assume_yes:)
   notify_discord_deploy(config.merge("slug" => app_name), sha: sha, qa_code: qa_code)
 end
 
-cmd = ARGV.shift || "help"
+# Guarded so the file can be `require`d (guard coverage) without dispatching.
+if __FILE__ == $PROGRAM_NAME
+  guard_argv!
+  cmd = ARGV.shift || "help"
 
-case cmd
-when "list"
-  run_list
-when "plan"
-  run_plan(ARGV[0])
-when "provision"
-  assume_yes = ARGV.delete("--yes")
-  run_provision(ARGV[0], assume_yes: !!assume_yes)
-when "status"
-  run_status(ARGV[0])
-when "deploy"
-  assume_yes = ARGV.delete("--yes")
-  app_name, ref = ARGV
-  usage unless app_name
-  run_deploy(app_name, ref, assume_yes: !!assume_yes)
-else
-  usage
+  case cmd
+  when "list"
+    run_list
+  when "plan"
+    run_plan(ARGV[0])
+  when "provision"
+    assume_yes = ARGV.delete("--yes")
+    run_provision(ARGV[0], assume_yes: !!assume_yes)
+  when "status"
+    run_status(ARGV[0])
+  when "deploy"
+    assume_yes = ARGV.delete("--yes")
+    app_name, ref = ARGV
+    usage unless app_name
+    run_deploy(app_name, ref, assume_yes: !!assume_yes)
+  else
+    usage
+  end
 end

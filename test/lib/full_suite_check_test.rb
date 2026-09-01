@@ -203,6 +203,96 @@ class FullSuiteCheckTest < Minitest::Test
     end
   end
 
+  # THE REPORTED DEFECT, EXECUTED END TO END. `bin/full-suite-check` could not pass
+  # in solana-studio at all: the repo ships no rubocop (no .rubocop.yml, no
+  # bin/rubocop, none in the Gemfile or gemspec), so the lint lane came back COULD
+  # NOT RUN and the writer exits before recording — discarding the GREEN suite lane
+  # with it. That mattered beyond cosmetics because pr-review-primary.md names this
+  # command as THE escape when a PR's CI verdict is unreadable, so a reviewer there
+  # had no path at all.
+  #
+  # NOTHING IS STUBBED THAT WOULD HIDE IT: no FULL_SUITE_TEST_CMD (the registry must
+  # resolve bin/release-check) and no FULL_SUITE_RUBOCOP_CMD (the default bin/rubocop
+  # is genuinely absent from the fixture, exactly as it is from the real repo). Drop
+  # the `lint_lane: none` line from the registry and this test goes red on the same
+  # COULD NOT RUN the bug report carries.
+  def test_a_toolchain_less_gem_certifies_instead_of_a_false_red
+    with_repo_named("solana-studio") do |dir|
+      FileUtils.mkdir_p(File.join(dir, "bin"))
+      File.write(File.join(dir, "bin/release-check"), "#!/bin/sh\nexit 0\n")
+      File.chmod(0o755, File.join(dir, "bin/release-check"))
+
+      out, code = run_check_unaided(dir, rubocop_cmd: nil)
+
+      assert_equal 0, code, "a repo with no lint toolchain must still certify:\n#{out}"
+      assert_match(/\[full-suite@\h+:solana-studio\]/, out,
+        "the GREEN suite lane's evidence must survive — discarding it is the bug:\n#{out}")
+      refute_match(/COULD NOT RUN/, out,
+        "the lane must be SKIPPED as declared, never attempted and reported unrunnable:\n#{out}")
+      refute_match(/\[rubocop@/, out,
+        "and skipped means OMITTED — a stamp for a lint that never ran is the dishonest fix:\n#{out}")
+    end
+  end
+
+  # --- the waiver AUDIT: absent must not outlive the fact -------------------------
+  #
+  # The waiver is a claim about the tree. Trusted forever, it lets a waived repo GAIN
+  # rubocop and go on certifying green while nothing lints it — indistinguishable from
+  # a repo that genuinely has none, which is the confusion the whole fix turns on. So
+  # a declaration is refused the moment the tree contradicts it, and the refusal lands
+  # BEFORE any lane: a stale registry line is not worth a multi-minute suite to find.
+
+  def test_a_waived_repo_that_has_GAINED_rubocop_is_refused_not_silently_unlinted
+    with_repo_named("solana-studio") do |dir|
+      File.write(File.join(dir, ".rubocop.yml"), "AllCops:\n  NewCops: enable\n")
+      log = File.join(dir, "order.log")
+
+      out, code = run_check(dir, test_cmd: append_command(log, "test"), rubocop_cmd: "true",
+                                 merge_stderr: true)
+
+      refute_equal 0, code, "a waiver whose claim has stopped being true must not certify:\n#{out}"
+      assert_match(/\.rubocop\.yml/, out, "the refusal must name what it found:\n#{out}")
+      assert_match(/config\/release_repos\.yml/, out,
+        "and point at the DECLARATION as the repair, not at this run:\n#{out}")
+      refute_match(/\[full-suite@/, out, "nothing may be certified:\n#{out}")
+      refute File.exist?(log),
+        "and it must refuse BEFORE any lane runs — discovering a stale registry line after a " \
+        "full suite is the expensive version of being right"
+    end
+  end
+
+  def test_an_unwaived_repo_is_never_refused_by_the_waiver_audit
+    with_repo_named("turf-monster") do |dir|
+      # The same tree shape that revokes a waiver above. Here there IS no waiver, so
+      # the audit must stay silent: it revokes, it never grants, and it has no opinion
+      # about a repo that declared nothing.
+      File.write(File.join(dir, ".rubocop.yml"), "AllCops:\n")
+      out, code = run_check(dir, test_cmd: "true", rubocop_cmd: "true")
+
+      assert_equal 0, code, "the audit must not touch a repo that declared no waiver:\n#{out}"
+      assert_match(/\[rubocop@\h+:turf-monster\]/, out,
+        "and that repo still owes — and records — its rubocop lane:\n#{out}")
+    end
+  end
+
+  # The RED path's other half. A missing rubocop in an unwaived repo stays RED (see
+  # test_an_unwaived_repo_whose_rubocop_is_missing_fails_closed — a missing binary
+  # waives nothing, or every broken install becomes a silent skip), but "the COMMAND
+  # is the problem" left a builder in a genuinely toolchain-less repo with no route.
+  # The verdict is unchanged; the reader is told where the honest route is.
+  def test_an_unrunnable_lint_lane_names_the_registry_route_without_taking_it
+    with_repo_named("turf-monster") do |dir|
+      out, code = run_check(dir, test_cmd: "true",
+                                 rubocop_cmd: File.join(dir, "definitely-not-installed"),
+                                 merge_stderr: true)
+
+      refute_equal 0, code, "naming the route must not soften the verdict:\n#{out}"
+      assert_match(/lint_lane: none/, out, "the builder is told the declaration exists:\n#{out}")
+      assert_match(/config\/release_repos\.yml/, out, "and where it is written:\n#{out}")
+      refute_match(/\[rubocop@/, out, "while nothing is certified for the lane:\n#{out}")
+    end
+  end
+
   # --- the registry-resolved TEST lane ------------------------------------------
   #
   # The lint waiver was only the THIRD of three ENOENT crash points. On a default
@@ -266,11 +356,14 @@ class FullSuiteCheckTest < Minitest::Test
 
   # Like run_check, but WITHOUT FULL_SUITE_TEST_CMD — the path a builder actually
   # runs, and the one the acceptance criterion is written about.
-  def run_check_unaided(dir, reset_cmd: "true")
+  # `rubocop_cmd: nil` UNSETS the override so the script falls back to its real
+  # default, `bin/rubocop` — the only way to test a waiver honestly, since a stubbed
+  # "true" would certify a waived repo and an unwaived one identically.
+  def run_check_unaided(dir, reset_cmd: "true", rubocop_cmd: "true")
     env = child_env(
       "FULL_SUITE_ROOT" => dir,
       "FULL_SUITE_TEST_DB_RESET_CMD" => reset_cmd,
-      "FULL_SUITE_RUBOCOP_CMD" => "true"
+      "FULL_SUITE_RUBOCOP_CMD" => rubocop_cmd
     )
     out = IO.popen(env, "#{BIN} --print 2>&1", &:read)
     [out, $?.exitstatus]

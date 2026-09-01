@@ -25,6 +25,7 @@ class GhAppGitCredentialTest < Minitest::Test
       #!/usr/bin/env ruby
       dir = __dir__
       File.open(File.join(dir, "op.log"), "a") { |f| f.puts ARGV.join(" ") }
+      File.open(File.join(dir, "spy.log"), "a") { |f| f.puts "op \#{ARGV.join(' ')}" }
       case ARGV[0]
       when "item" then puts File.read(File.join(dir, "item.json"))
       when "read"
@@ -40,8 +41,17 @@ class GhAppGitCredentialTest < Minitest::Test
     RUBY
     @fake_mint = write_script("fake-mint", <<~RUBY)
       #!/usr/bin/env ruby
-      File.write(File.join(__dir__, "mint-env.txt"), "id=\#{ENV["GH_APP_ID"]}\\npem=\#{ENV["GH_APP_PEM"]}\\n")
+      File.open(File.join(__dir__, "spy.log"), "a") { |f| f.puts "mint \#{ARGV.join(' ')}" }
+      File.write(File.join(__dir__, "mint-env.txt"), "id=\#{ENV["GH_APP_ID"]}\npem=\#{ENV["GH_APP_PEM"]}\n")
       puts "minted-token-\#{ENV["GH_APP_ID"]}"
+    RUBY
+    # The shared-session leg. It RECORDS and then declines (exit 1, no stdout), so a
+    # `get` falls through to the op+mint path exactly as a cold cache does — which is
+    # what lets one harness watch all three legs in a single run.
+    @fake_token = write_script("fake-gh-token", <<~RUBY)
+      #!/usr/bin/env ruby
+      File.open(File.join(__dir__, "spy.log"), "a") { |f| f.puts "gh-token \#{ARGV.join(' ')}" }
+      exit 1
     RUBY
   end
 
@@ -199,12 +209,113 @@ class GhAppGitCredentialTest < Minitest::Test
                  "erase is answered; saying otherwise is the stale claim this pins")
   end
 
+  # ── A PROBE MUST NOT MINT ───────────────────────────────────────────────────
+  #
+  # THE DEFECT, found 2026-08-31 by the subcommand-shape sweep and deliberately
+  # NEVER RUN — a probe that mints cannot be reproduced by probing. `ACTION` read
+  # only ARGV[0], and the case below it accepted `get|erase`, so `get --help` WAS
+  # a `get`: $2 was never read, the `get` arm reads no stdin, and the script ran
+  # straight through to the real work. What "the real work" means here is why this
+  # is a spy harness and not a string assertion:
+  #
+  #   COLD CACHE — bin/gh-token mints and WRITES a live GitHub App installation
+  #                token to <projects>/.agents/github-tokens.json.
+  #   WARM CACHE — that live token is PRINTED to the terminal as `password=…`.
+  #   NEITHER    — three metered `op` reads against the account-wide daily quota
+  #                whose exhaustion this script's own header records as costing
+  #                eighteen hours of downtime.
+  #
+  # SO THE PROOF IS A RECEIPT, NOT AN ABSENCE. All three legs are pinned to
+  # recording spies through the script's declared seams, and a probe must leave
+  # the log EMPTY. An empty log proves nothing on its own — a spy that was never
+  # wired is silent too — so `test_the_spies_would_have_caught_a_mint` drives a
+  # real `get` through the SAME spies and asserts every leg fires. The pair is the
+  # assertion: the second is what makes the first able to fail.
+  #
+  # THE DISK WRITE IS COVERED BY THE gh-token RECEIPT. bin/gh-token's write_store
+  # is reachable only through bin/gh-token, so "gh-token was never invoked" IS
+  # "nothing was written to .agents/github-tokens.json" — asserted without ever
+  # running the code that would do it.
+  HELP_PROBES = [%w[--help], %w[-h], %w[get --help], %w[get -h], %w[erase --help]].freeze
+
+  def test_a_help_probe_touches_none_of_the_credential_legs
+    HELP_PROBES.each do |argv|
+      out, err, status = run_spied(*argv)
+      probe = argv.join(" ")
+
+      assert_equal [], spy_calls,
+                   "`#{probe}` reached #{spy_calls.join(', ')} — a help probe must mint nothing, " \
+                   "read no 1Password, and write no token to disk"
+      assert status.success?, "`#{probe}` exited #{status.exitstatus}: #{err}"
+      refute_match(/password=/, out + err, "`#{probe}` printed a credential line")
+      assert_includes out, "MINTS NOTHING", "`#{probe}` must say plainly that it did not act"
+    end
+  end
+
+  # THE CONTROL for the test above. Same script, same spies, same env — only the
+  # argv differs. If this goes red the harness is inert and the empty log above is
+  # measuring nothing.
+  def test_the_spies_would_have_caught_a_mint
+    out, err, status = run_spied("get")
+
+    assert status.success?, err
+    assert_equal %w[gh-token mint op], spy_calls.uniq.sort,
+                 "every leg a probe must not reach has to be reachable HERE"
+    assert_includes out, "password=minted-token-424242"
+  end
+
+  # SILENCE IS THE DEFECT. A bare probe hit `*) exit 0` — no usage, no signal, and
+  # a zero status, which reads to the next reader as "the probe worked".
+  def test_a_bare_probe_answers_with_usage_rather_than_silence
+    out, err, status = run_spied
+
+    assert_equal [], spy_calls
+    refute status.success?, "exit 0 on a bare probe reads as a command that ran"
+    assert_equal 2, status.exitstatus
+    assert_match(/Usage/i, out + err, "answer the probe: say what the command wants")
+  end
+
+  # An argument the script cannot account for REFUSES rather than being dropped
+  # into a `get` that mints. This is the shape the whole sweep is named after.
+  def test_the_get_arm_refuses_an_argument_it_cannot_account_for
+    out, err, status = run_spied("get", "--dry-run")
+
+    assert_equal [], spy_calls, "a refused line must not have minted first"
+    assert_equal 2, status.exitstatus
+    assert_includes err, "unrecognized argument"
+    refute_match(/password=/, out)
+  end
+
+  # GIT'S CONTRACT, which the refusal above must not break. gitcredentials(7): "If
+  # a helper receives any other operation, it should silently ignore the request."
+  # So a single unknown ACTION stays a quiet exit 0 — only an unaccountable
+  # ARGUMENT refuses. Inverting this would make every git operation fail loudly on
+  # the day git adds an operation (it added `capability` in 2.46).
+  def test_a_single_unknown_operation_stays_a_silent_no_op
+    %w[store capability approve].each do |action|
+      out, err, status = run_spied(action)
+
+      assert status.success?, "#{action}: #{err}"
+      assert_empty out, "#{action} must stay silent — git's spec says ignore it"
+      assert_empty err
+      assert_equal [], spy_calls
+    end
+  end
+
   private
 
   def run_credential(*args, env: {})
     base = {
       "GH_APP_OP_BIN" => @fake_op,
       "GH_APP_MINT_CMD" => @fake_mint,
+      # THE THIRD SEAM, pinned. The note on `credential_failure` below already says
+      # every declared seam must be pinned, and claimed this sibling did it. It did
+      # not: GH_APP_TOKEN_CMD was unset here, so the script ran the REAL bin/gh-token
+      # for its shared-session read on every test in this file. Nothing failed,
+      # because TASK_USAGE_SANDBOX aborts it — an INCIDENTAL seal, off in any shell
+      # without that variable, and one a warm cache would satisfy instead, skipping
+      # the mint path these tests exist to assert on.
+      "GH_APP_TOKEN_CMD" => @fake_token,
       "GH_APP_ITEM" => nil
     }
     Open3.capture3(SessionEnv.neutralized(base.merge(env)), SCRIPT, *args)
@@ -258,4 +369,27 @@ class GhAppGitCredentialTest < Minitest::Test
     end
   end
 
+  # The spy log every leg appends to, newest last, as "<leg> <argv>".
+  def spy_log = File.join(@sandbox, "spy.log")
+
+  # Just the leg names, in call order.
+  def spy_calls
+    return [] unless File.exist?(spy_log)
+
+    File.readlines(spy_log, chomp: true).map { |line| line.split(" ", 2).first }
+  end
+
+  # Run the script with ALL THREE declared seams pointed at recording spies, from a
+  # cleared log. Deliberately separate from `run_credential`: this one exists to be
+  # asserted about by RECEIPT, so clearing the log belongs inside it.
+  def run_spied(*args)
+    File.delete(spy_log) if File.exist?(spy_log)
+    env = {
+      "GH_APP_OP_BIN" => @fake_op,
+      "GH_APP_MINT_CMD" => @fake_mint,
+      "GH_APP_TOKEN_CMD" => @fake_token,
+      "GH_APP_ITEM" => nil
+    }
+    Open3.capture3(SessionEnv.neutralized(env), SCRIPT, *args)
+  end
 end

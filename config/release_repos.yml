@@ -255,6 +255,32 @@ gems:
     # publish a pre-artifact gate instead of pushing on membership alone.
     release_check: bin/release-check
     build_cmd: bin/release-check --build
+    # lint_lane: none — SAME FACT AS studio-engine ABOVE, and verified against
+    # origin/accepted on 2026-08-31 rather than assumed: `git ls-tree -r` matches
+    # nothing named rubocop (no .rubocop.yml, no bin/rubocop — bin/ holds only
+    # release-check, e2e-executed-set-check and lib/), and rubocop appears nowhere
+    # in the Gemfile, the gemspec or Gemfile.lock. Its static gate is bin/release-check,
+    # which the `release_check` key above already names, and which is exactly what CI
+    # runs here.
+    #
+    # WHY IT WAS NEEDED (found 2026-08-31 by carl, reviewing solana-studio #9):
+    # bin/full-suite-check ran `bin/rubocop` anyway, got COULD NOT RUN, and then
+    # DISCARDED THE GREEN SUITE LANE WITH IT ("no evidence recorded for the red
+    # lane(s)" — the writer exits before recording when any lane is red). So the
+    # full cert could never go green in this repo. That is not a cosmetic gap:
+    # docs/agents/agents/carl/sops/pr-review-primary.md names bin/full-suite-check
+    # as THE escape when a PR's CI verdict is red, pending or unreadable, so a
+    # reviewer following the SOP here had no path and would stall or merge on
+    # weaker evidence than the SOP intends.
+    #
+    # DECLARED, NEVER INFERRED — and now also AUDITED. bin/lib/full_suite_gate.rb
+    # reads this key and never probes for a binary (a waiver inferred from a missing
+    # install turns every BROKEN rubocop into a silently skipped lane). The other
+    # half is bin/lib/lint_waiver_guard.rb: if this repo ever GAINS a lint toolchain,
+    # the cert REFUSES rather than honouring a claim that has stopped being true, and
+    # tells you to delete this line. So you do not have to remember to — but delete
+    # it when that day comes.
+    lint_lane: none
 
 apps:
   mcritchie-studio:

@@ -133,6 +133,22 @@ ghost claim can never strand the ship lane again. (Background — not needed to 
 If `release == main`, no release is active, the active release is still
 `assembling`, or `qa_deployed_at` is blank, report "nothing to ship" and stop.
 
+**`bin/release <cmd> --help` is safe to probe, and it was not always.** Until
+2026-08-31 the help flag was silently dropped in subcommand position: the CLI
+dispatched on `ARGV.shift` and each subcommand read only the flags it knew, so
+`bin/release prepare --yes --help` shifted `prepare` and ran the REAL sweep —
+promoting `accepted` onto `release` in every repo, merging the batch PRs, writing
+membership to the production board and deploying QA, with `--yes` already set so
+nothing paused to ask. Only the BARE `bin/release --help` was ever safe. It now
+answers with that subcommand's own usage and touches nothing, and an argument no
+subcommand accounts for REFUSES instead of being ignored.
+
+**Both exit non-zero, on purpose** — `--help` exits 1 and a refusal exits 2.
+`bin/release status --clean-only` uses exit 0 to ASSERT a clean ladder (that is
+the gate `deploy-with-task` reads), so a probe must never answer with it. If you
+are checking an exit code, a 1 or 2 from `bin/release` means "nothing ran", never
+"the ladder is clean".
+
 ## Procedure
 
 **Direct-drive this act — do NOT wrap it in a subagent.** Run `bin/release ship

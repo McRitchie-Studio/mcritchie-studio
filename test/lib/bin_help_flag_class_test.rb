@@ -12,6 +12,7 @@
 #   PR #980     bin/lib/release_claim_cli.rb  same shape, release lane
 #   (devops)    bin/devops-shift              `acquire avi --help` TOOK THE SHIFT
 #   2026-08-31  bin/archive-docs              `--help` ROLLED THE DOCS LEDGER
+#   2026-08-31  bin/release.rb                `prepare --yes --help` PROMOTED FOR REAL
 #
 # Each of those was fixed one at a time, in place, and the third was written up as
 # "the third and last member of the family". It was not — a sweep on 2026-08-31
@@ -52,19 +53,67 @@ class BinHelpFlagClassTest < Minitest::Test
   #                    bin/ledger-guard, and the shell scripts fixed alongside them).
   #   :optparse      — OptionParser with a -h/--help arm; an unknown flag raises
   #                    OptionParser::InvalidOption, which is never rescued.
-  #   :subcommand    — dispatches on a subcommand and falls through to usage.
+  #   :subcommand    — dispatches on a subcommand and falls through to usage FOR
+  #                    THE BARE FORM ONLY. Read that narrowly: it asserts what
+  #                    `bin/foo --help` does and NOTHING about `bin/foo <cmd>
+  #                    --help`, because a dispatcher that shifts the subcommand
+  #                    and never validates the REST is the same defect one
+  #                    position over. bin/release carried this label under the old
+  #                    wording — "falls through to usage", full stop — while
+  #                    `bin/release prepare --yes --help` promoted `accepted` onto
+  #                    `release` across every repo and deployed QA. The label was
+  #                    true and the reader's conclusion was false, which is the
+  #                    worst thing a safety record can be.
+  #   :subcommand_gap — that shape, CONFIRMED reachable: a subcommand-position
+  #                    argument is dropped onto a durable mutation. Each entry
+  #                    carries the exact probe an operator would type and the task
+  #                    filed to fix it. A gap you can reproduce is not a shrug.
   #   :delegates     — a binstub; the underlying tool owns --help.
   #   :accepted_gap  — a KNOWN gap, deliberately not fixed here, with the reason.
   #                    Every entry is a filed obligation, not a shrug.
   MANIFEST = {
     # --- retrofitted onto the shared guard, 2026-08-31 ------------------------
     "archive-docs"           => :cli_arg_guard,
+    # --- retrofitted 2026-08-31, /tasks/release-subcommand-drops-help ---------
+    # The release machinery, and the sharpest instance the class has produced:
+    # the side effect is not a local file but shared branch state in every repo,
+    # a production board write, and (on `ship`) a RubyGems publish, whose version
+    # can never be re-pushed. Its per-subcommand dictionary is
+    # Release::Cli::COMMANDS.
+    "release.rb"             => :cli_arg_guard,
     "clean-artifacts"        => :cli_arg_guard,
+    # --- retrofitted 2026-08-31, /tasks/qa-server-help-provisions -------------
+    # It sat in :subcommand looking classified while `provision <app> --yes --help`
+    # ran a REAL provision — heroku create, billable add-ons, domains, ACM and a
+    # config-var PATCH — with the confirmation already suppressed by the --yes
+    # beside it. Found by READING this manifest rather than by an operator watching
+    # it act, which is the first time this class has been caught that way. Its
+    # per-subcommand dictionary is QaServerCli::COMMANDS; help and refusal both exit
+    # NON-ZERO because bin/release reads this script's exit status as "the QA
+    # deploy succeeded".
+    "qa-server"              => :cli_arg_guard,
     "control-check"          => :cli_arg_guard,
     "reap-cert-databases"    => :cli_arg_guard,
+    # The harvest WRITES desk records to the board, so it is guarded like the rest of
+    # the mutating flat scripts. Its help exits 1: exit 0 from it asserts "the stranded
+    # rows are recorded", which a probe never established.
+    "harvest-desk-ledger"    => :cli_arg_guard,
     # --- shell scripts, same sweep, same defect, different idiom --------------
     "setup-1pass-token"      => :own_guard,
     "ecosystem-build"        => :own_guard,
+    # RECLASSIFIED, NOT DELETED (/tasks/credential-helper-help-mints). This was
+    # :subcommand, a label claiming it "falls through to usage"; it fell through to
+    # `*) exit 0` — no usage, no signal — and `get --help` ran the REAL `get`. The
+    # release sweep then re-filed it as :subcommand_gap with the probe
+    # `bin/gh-app-git-credential get --help`, measured to mint a live installation
+    # token, write it to the shared token store, and print it. Both entries were
+    # true when written; the fix landed underneath them, so the gap bucket no
+    # longer holds this script and the record lives here instead.
+    #
+    # THE LESSON WORTH KEEPING: :subcommand carried no wiring assertion, so its
+    # claim was never checked against the code for anyone. :own_guard is, by
+    # test_the_shell_scripts_answer_help_without_acting below.
+    "gh-app-git-credential"  => :own_guard,
     # --- the three prior fixes -----------------------------------------------
     "task"                   => :own_guard,
     "devops-shift"           => :own_guard,
@@ -85,23 +134,29 @@ class BinHelpFlagClassTest < Minitest::Test
     "review-autopilot"       => :optparse,
     "verify-review-hop"      => :optparse,
     "measure-client-surface" => :optparse,
-    # --- subcommand dispatch that falls through to usage ----------------------
-    "agent-worktree"         => :subcommand,
-    "qa-server"              => :subcommand,
+    # --- subcommand dispatch that falls through to usage (BARE form) ----------
+    #
+    # Read the legend above before trusting this bucket: it says what the BARE
+    # probe does and nothing about `<cmd> --help`. The six entries that were
+    # measured to drop a subcommand-position argument onto a mutation now sit in
+    # :subcommand_gap below.
+    #
+    # KNOWN DILUTION, filed rather than silently re-sorted. Nine of the entries
+    # below are not subcommand dispatchers at all — ci-shard, op-reads,
+    # measure-test-timings, gh-auth-refresh, gh-token, prod-smoke,
+    # e2e-executed-set-check, rails-executed-set-check and secret are single-level
+    # flag loops, most with an explicit unknown-argument refusal, i.e. closer to
+    # :own_guard. They are safe, so re-sorting them is cosmetic — but a bucket
+    # holding two different shapes is exactly what let six real gaps sit here
+    # looking classified. Re-judge them in the next sweep, from this written set
+    # rather than by rediscovering it.
     "conductor"              => :subcommand,
     "triage"                 => :subcommand,
     "agent-marker"           => :subcommand,
     "codex-update"           => :subcommand,
-    "agent-runtime"          => :subcommand,
-    "install-agent-docs"     => :subcommand,
     "session-kickoff"        => :subcommand,
-    "release"                => :subcommand,
-    "release.rb"             => :subcommand,
-    "atomic-event"           => :subcommand,
-    "agent-activity"         => :subcommand,
     "gate"                   => :subcommand,
     "secret"                 => :subcommand,
-    "gh-app-git-credential"  => :subcommand,
     "ci-shard"               => :subcommand,
     "op-reads"               => :subcommand,
     "measure-test-timings"   => :subcommand,
@@ -111,6 +166,7 @@ class BinHelpFlagClassTest < Minitest::Test
     "e2e-executed-set-check" => :subcommand,
     "rails-executed-set-check" => :subcommand,
     # --- binstubs -------------------------------------------------------------
+    "release"                => :delegates, # sh binstub: execs bin/release.rb, which owns --help
     "rails"                  => :delegates,
     "rake"                   => :delegates,
     "bundle"                 => :delegates,
@@ -121,6 +177,23 @@ class BinHelpFlagClassTest < Minitest::Test
     "dev"                    => :delegates,
     "docker-entrypoint"      => :delegates,
     "island-background"      => :delegates,
+    # --- CONFIRMED subcommand-position gaps, each with a filed task -----------
+    #
+    # Found by the sweep that shipped the bin/release fix
+    # (/tasks/release-subcommand-drops-help, 2026-08-31) and verified line by line
+    # at source, not inferred. Every one dispatches on a subcommand and then drops
+    # whatever is left, so the probe named on each entry RUNS THE REAL ACTION.
+    # They are not fixed here on purpose: this change already touches the release
+    # machinery, and four more scripts in one PR is how a safety fix becomes
+    # unreviewable. They are recorded HERE rather than only on the board so a
+    # reader of the manifest cannot conclude, as one just did about bin/release,
+    # that a `:subcommand` label means the command is safe to probe.
+    "agent-worktree"         => :subcommand_gap, # `new <app> <task> --help` creates the worktree, port, Redis DB and Postgres DB — /tasks/worktree-subcommand-drops-help
+    "atomic-event"           => :subcommand_gap, # `grade 42 --disposition good --help` POSTs the grade — /tasks/atomic-event-help-mutates
+    "agent-activity"         => :subcommand_gap, # 8-line shim over bin/atomic-event; `close-open --help` closes every activity — /tasks/atomic-event-help-mutates
+    "install-agent-docs"     => :subcommand_gap, # `install --help` publishes AGENTS.md/CLAUDE.md/skills and rewrites ~/.claude/settings.json + ~/.zprofile — /tasks/docs-installer-help-publishes
+    "agent-runtime"          => :subcommand_gap, # `install --help` execs the installer above with the flag intact — /tasks/docs-installer-help-publishes
+
     # --- known gaps, filed rather than fixed in this change -------------------
     #
     # Each of these ignores an unrecognized argument. None of them mutates a
@@ -175,6 +248,33 @@ class BinHelpFlagClassTest < Minitest::Test
                  "already rolled a docs ledger, taken a shift lease, and dropped databases."
   end
 
+  # A HASH LITERAL WITH ONE KEY TWICE KEEPS THE LAST, SILENTLY — so a duplicate is
+  # invisible to every other test in this file, because MANIFEST.keys has already
+  # collapsed it before they run. This one reads the SOURCE instead.
+  #
+  # MEASURED 2026-08-31. The sweep that fixed bin/release filed five more scripts as
+  # :subcommand_gap, one of them bin/gh-app-git-credential. A branch fixing that
+  # script reclassified it :own_guard. Both landed, git merged both hunks without a
+  # conflict, and the gap entry — being LATER in the literal — won. The
+  # reclassification the change existed to make was discarded, the enforced
+  # shell-promise hash below still passed because it is a SEPARATE literal, and
+  # nothing went red.
+  #
+  # That is not a one-off: four more :subcommand_gap entries are still open, each
+  # with a filed task that will do exactly this to exactly this hash.
+  def test_no_script_is_classified_twice
+    literal = File.read(__FILE__)[/MANIFEST = \{.*?\}\.freeze/m]
+    refute_nil literal, "the MANIFEST literal moved — re-anchor this test"
+
+    names = literal.scan(/^\s*"([a-z0-9._-]+)"\s*=>/).flatten
+    dupes = names.tally.select { |_, count| count > 1 }
+
+    assert_empty dupes.keys,
+                 "classified more than once in MANIFEST: #{dupes.keys.join(', ')}. Ruby keeps the " \
+                 "LAST entry, so the earlier classification is silently discarded — pick one and " \
+                 "carry the other's record into a comment on it."
+  end
+
   # The manifest must not outlive the scripts it names, or it becomes a list of
   # reassurances about files that no longer exist.
   def test_the_manifest_names_no_script_that_is_gone
@@ -204,7 +304,19 @@ class BinHelpFlagClassTest < Minitest::Test
     "archive-docs"        => "DocsArchive.roll_ledger!",
     "clean-artifacts"     => "ArtifactSweep",
     "control-check"       => "ControlReplay.partition",
-    "reap-cert-databases" => "CertDatabaseReaper.reap!"
+    "reap-cert-databases" => "CertDatabaseReaper.reap!",
+    # Not a single call but the DISPATCHER: every mutation bin/release can perform
+    # — promote, merge, board write, prod deploy, gem publish — is reached through
+    # `case ARGV.shift`, so that line is the seam the guard has to precede. The
+    # guard's own verdict is proven behaviourally in
+    # test/integration/release_argv_guard_test.rb, which never runs a mutating
+    # subcommand.
+    "release.rb"          => "case ARGV.shift",
+    # Same reasoning as release.rb: not one call but the DISPATCHER. Every Heroku
+    # and git write bin/qa-server can perform — create, addons:create, domains:add,
+    # certs:auto:enable, the config-var PATCH, the QA force-push, ps:scale — is
+    # reached through `case cmd`, so that line is the seam the guard has to precede.
+    "qa-server"           => "case cmd"
   }.freeze
 
   def test_the_guard_runs_before_the_first_mutation
@@ -233,8 +345,9 @@ class BinHelpFlagClassTest < Minitest::Test
 
   def test_the_shell_scripts_answer_help_without_acting
     {
-      "setup-1pass-token" => "INSTALLS NOTHING",
-      "ecosystem-build"   => "BUILDS NOTHING"
+      "setup-1pass-token"     => "INSTALLS NOTHING",
+      "ecosystem-build"       => "BUILDS NOTHING",
+      "gh-app-git-credential" => "MINTS NOTHING"
     }.each do |name, promise|
       src = source(name)
 
@@ -275,6 +388,139 @@ class BinHelpFlagClassTest < Minitest::Test
                    "bin/#{name} rescues InvalidOption — an unknown flag must refuse, not be logged " \
                    "and stepped over")
     end
+  end
+
+  # A CONFIRMED gap is worth less than nothing if the next reader cannot reproduce
+  # it: an unreproducible warning gets re-litigated, then quietly dropped. So each
+  # entry must carry BOTH the exact probe an operator would type — the thing that
+  # turns "I think this is unsafe" into a two-second demonstration — and the task
+  # that owns the fix, so the manifest never becomes the only place the obligation
+  # lives.
+  def test_every_subcommand_gap_carries_a_probe_and_a_filed_task
+    section = File.read(__FILE__)[/CONFIRMED subcommand-position gaps.*?known gaps, filed rather/m]
+    refute_nil section, "the :subcommand_gap block moved — re-anchor this test"
+
+    MANIFEST.select { |_, kind| kind == :subcommand_gap }.each_key do |name|
+      entry = section[/"#{Regexp.escape(name)}"\s*=> :subcommand_gap,\s*#(.+)/, 1].to_s
+
+      assert_match(/`bin\/#{Regexp.escape(name)} [^`]+--help`|`[^`]*--help`/, entry,
+                   "the :subcommand_gap entry for bin/#{name} must quote the probe that mutates — " \
+                   "a gap nobody can reproduce is a gap nobody will fix")
+      assert_match(%r{/tasks/[a-z0-9-]+}, entry,
+                   "…and name the task that owns it, so the manifest is a pointer and not the ledger")
+    end
+  end
+
+  # The two subcommand buckets answer opposite questions, so an entry in both — or
+  # a gap quietly demoted back to :subcommand — would put two truths on one screen.
+  def test_the_two_subcommand_buckets_are_disjoint
+    plain = MANIFEST.select { |_, k| k == :subcommand }.keys
+    gaps  = MANIFEST.select { |_, k| k == :subcommand_gap }.keys
+
+    assert_empty plain & gaps
+    refute_empty gaps, "the confirmed-gap bucket emptied without the scripts being fixed — if they " \
+                       "were fixed, reclassify them; do not delete the record"
+  end
+
+  # --- the :subcommand label, made a tested property -------------------------
+  #
+  # WHY THIS EXISTS. Until 2026-08-31 :subcommand was the ONLY bucket in this
+  # manifest with no wiring assertion behind it. Its legend was prose, and prose
+  # does not fail CI — which is exactly how bin/qa-server sat here looking
+  # classified while
+  #
+  #     bin/qa-server provision <app> --yes --help
+  #
+  # PROVISIONED A QA SERVER FOR REAL. It deleted `--yes` to suppress the
+  # confirmation, dispatched on ARGV[0], and never inspected `--help` at all, so
+  # the flag fell off the end of the line and the create / addons / domains /
+  # config-var writes ran to completion. The label was true about the BARE form
+  # and the reader's conclusion was false — the same way bin/release read one
+  # task earlier. Narrowing that legend's wording was the right move and did not
+  # fix a single script. This does.
+  #
+  # WHAT IT ASSERTS, and why the predicate is exactly this wide. The bucket only
+  # ever claimed something about the BARE form, so this must NOT assert that
+  # `<cmd> --help` is safe — that would be a STRONGER promise than the label
+  # makes, and a record that overclaims is the very thing being fixed here. What
+  # it CAN require is the property whose absence makes the bare-form claim
+  # actively misleading: a script that reaches a durable, outside-the-process
+  # mutation must account for an argument it does not recognize SOMEWHERE in its
+  # code. Three spellings satisfy that, because all three genuinely account for
+  # the line — the shared guard, an explicit help-flag arm, or an explicit
+  # unknown-argument refusal.
+  #
+  # MEASURED across all sixteen entries before it was written: bin/qa-server was
+  # the ONLY failure. bin/gate and bin/triage both write to the PRODUCTION board
+  # and both refuse an unknown flag BEFORE the POST; the nine confessed
+  # flag-loops carry explicit `--help` arms; bin/secret reaches no durable
+  # mutation. So this assertion cost no reclassification and no churn — it makes
+  # the one real gap impossible to re-introduce silently, which is the only thing
+  # a safety record is for.
+
+  # Calls that reach outside this process and leave something behind. A small,
+  # literal vocabulary rather than a clever heuristic, and every entry is a call
+  # this bin/ actually makes. The control test below proves the set still matches
+  # source known to mutate: a vocabulary that quietly stopped matching would turn
+  # this whole assertion green by reading nothing at all.
+  DURABLE_MUTATION = {
+    "heroku create"   => /heroku["',\s]+create/,
+    "heroku addons"   => /addons:create/,
+    "heroku domains"  => /domains:add/,
+    "heroku ps:scale" => /ps:scale/,
+    "git push"        => /git["',\s]+push/,
+    "HTTP write"      => /Net::HTTP::(?:Post|Patch|Put|Delete)|\b(?:request|api)\(:(?:post|patch|put|delete)|-X\s*(?:POST|PATCH|PUT|DELETE)/,
+    "file write"      => /File\.write|FileUtils\.(?:mv|rm|cp|mkdir)/
+  }.freeze
+
+  # The three spellings that genuinely account for an unrecognized argument.
+  ACCOUNTS_FOR_ARGV = /CliArgGuard\.guard!|--help|(?<!\w)-h\)|"-h"|'-h'|unknown flag|unrecognized argument|refuse_unknown_args!/
+
+  def test_every_mutating_subcommand_script_accounts_for_an_unknown_argument
+    offenders = MANIFEST.select { |_, kind| kind == :subcommand }.each_key.filter_map do |name|
+      src = code_only(name)
+      mutations = DURABLE_MUTATION.select { |_, re| src.match?(re) }.keys
+      next if mutations.empty? || src.match?(ACCOUNTS_FOR_ARGV)
+
+      "bin/#{name} (reaches: #{mutations.join(', ')})"
+    end
+
+    assert_empty offenders,
+                 "#{offenders.join('; ')} — classified :subcommand, reaches a DURABLE mutation, and " \
+                 "accounts for an unrecognized argument nowhere in its code. That is the bin/qa-server " \
+                 "shape: `provision <app> --yes --help` dropped the flag and provisioned for real. " \
+                 "Wire bin/lib/cli_arg_guard.rb and reclassify :cli_arg_guard, or — if the gap is " \
+                 "being left open on purpose — move it to :subcommand_gap with its probe and a filed task."
+  end
+
+  # The defect, frozen as a fixture, so the assertion above is proven to BITE.
+  # A predicate that silently stopped matching would pass the bucket by reading
+  # nothing, and "the test is green" would mean the opposite of what it looks
+  # like. This is the pre-fix bin/qa-server dispatcher, verbatim in shape.
+  REGRESSED_SHAPE = <<~SHAPE
+    cmd = ARGV.shift || "help"
+    case cmd
+    when "provision"
+      assume_yes = ARGV.delete("--yes")
+      run_provision(ARGV[0], assume_yes: !!assume_yes)
+    end
+    sh("heroku", "create", app, "--no-remote")
+  SHAPE
+
+  def test_the_unknown_argument_predicate_actually_bites
+    assert DURABLE_MUTATION.any? { |_, re| REGRESSED_SHAPE.match?(re) },
+           "the mutation vocabulary no longer recognizes `heroku create` — the bucket assertion above " \
+           "would pass by matching nothing"
+    refute REGRESSED_SHAPE.match?(ACCOUNTS_FOR_ARGV),
+           "the accounting predicate now matches source that accounts for nothing — it would bless the " \
+           "exact shape that provisioned a QA server"
+
+    # …and it must still SEE the accounting in a script that really has it.
+    gate = code_only("gate")
+    assert DURABLE_MUTATION.any? { |_, re| gate.match?(re) },
+           "bin/gate writes to the board; a vocabulary that misses it is reading nothing"
+    assert gate.match?(ACCOUNTS_FOR_ARGV),
+           "bin/gate refuses an unknown flag before its POST — the predicate must see that"
   end
 
   # An accepted gap is a filed obligation. Keeping the reason ON the entry is what

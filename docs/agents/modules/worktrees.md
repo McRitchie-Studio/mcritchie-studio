@@ -291,9 +291,10 @@ bin/agent-worktree scale status
   `bin/agent-worktree` into whatever checkout it ran from. `ledger_path` was anchored
   to `HUB_DIR`, and a cleanup is normally run from the **primary**, which sits on
   `main` — a branch nobody may commit to. So the audit row was created in the one
-  place it could never be saved from. Six "restore later" stashes piled up between
-  2026-07-02 and 2026-08-31 carrying **98 rows**; not one was ever restored, and a
-  reclaim sweep stranded 25 more *during the conversation about the defect*. Every
+  place it could never be saved from. "Restore later" stashes piled up between
+  2026-06-26 and 2026-08-31 carrying **166 rows** across **twelve stashes** plus the
+  primary's own uncommitted tree; not one was ever restored, and a reclaim sweep
+  stranded 25 more *during the conversation about the defect*. Every
   earlier fix idea moved the write somewhere else and still needed a human to
   remember a follow-up; a board write is durable the moment it lands.
 - **The episode rule survived the move, unchanged.** The ledger is keyed by
@@ -325,9 +326,14 @@ bin/agent-worktree scale status
   archive`), because a green exit there is not a verdict on the board's desk records —
   those are covered by the model invariant above, and a guard that silently stops
   covering something is worse than no guard. `/tasks/harvest-stranded-ledger-stashes`
-  imports the 98 stranded rows from those files; it sequences **after** this change,
-  because recovering them while the system still stranded records would just re-strand
-  them.
+  imported the stranded rows from those files with **`bin/harvest-desk-ledger`** — 166 of
+  them, not the 98 first surveyed, because that survey read six of the twelve stashes and
+  none of the primary's uncommitted tree. It sequenced **after** this change, because
+  recovering them while the system still stranded records would just re-strand them. The
+  harvest is keyed on the row text (`DeskLedgerImport.import_key`, unique in the schema),
+  so re-running it writes nothing — `DeskRecord.file!` could not absorb a second run, as
+  it resolves through the OPEN episode for a desk path and every stranded row is a
+  resolved teardown.
 - **A refusal is only a guard if its caller reads it.** `bin/archive-docs` runs
   the same check at both ends of the archive roll and exits non-zero — and that
   exit code sat **ignored** by `bin/release archive`, which printed the warning

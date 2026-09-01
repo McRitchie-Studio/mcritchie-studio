@@ -1111,7 +1111,7 @@ preserving the release history. `shipped` is therefore **no longer terminal** �
 the Deploy loop now closes at `archived`. **Desk teardown records are board rows**
 (`DeskRecord`, on the Desks panel at `/deployments`) — the reclaim no longer writes
 `delete-later.md`, because a sweep runs from the primary, the primary sits on `main`, and
-98 rows were stranded that way. The archive beat still rolls that file's historical
+166 rows were stranded that way (recovered onto the board by `bin/harvest-desk-ledger`). The archive beat still rolls that file's historical
 resolved rows into its archive and commits **that** update to `release` (best-effort, only
 when the ledger is the *sole* uncommitted change — pure guard `Release::ArtifactCommit`),
 so it ships next round instead of piling up as uncommitted dirt.

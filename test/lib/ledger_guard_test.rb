@@ -210,9 +210,18 @@ class LedgerGuardTest < Minitest::Test
 
   # The CLI with NOTHING added — the argument-accounting tests below need to control the
   # whole line, including whether --repo arrives as `--repo=x` or `--repo x`.
+  #
+  # `:out` MERGES both streams on purpose: a verdict line may be printed to either, and a
+  # test asserting the guard "said" something should not have to know which. But `--json`
+  # promises a PARSEABLE stdout, and merging makes that promise untestable — anything the
+  # subprocess writes to stderr lands in front of the document. Under `bin/rails test` the
+  # child inherits enough bundler environment to emit "already initialized constant"
+  # warnings, so JSON.parse(out) died on a gem path while the same test passed standalone.
+  # `:stdout` is therefore kept separate, and the JSON test parses THAT — which is also the
+  # stream a real machine caller would read.
   def run_guard(*args)
     out, err, status = Open3.capture3(SessionEnv.neutralized, "ruby", CLI, *args)
-    { out: "#{out}#{err}", ok: status.success? }
+    { out: "#{out}#{err}", stdout: out, stderr: err, ok: status.success? }
   end
 
   # THE PRE-FIX WRITER, transcribed from 269e2db4's parent: it rewrote EVERY line
@@ -306,7 +315,7 @@ class LedgerGuardTest < Minitest::Test
   #
   # THIS REPLACES "the writer's own belt". bin/agent-worktree no longer writes these files
   # at all: a teardown run from the PRIMARY checkout landed its row on `main`, a branch
-  # nobody may commit to, and 98 rows were stranded in stashes nobody ever restored. New
+  # nobody may commit to, and 166 rows were stranded in stashes nobody ever restored. New
   # desk records go to the board (DeskRecord); the belt test drove a writer that is gone.
   #
   # What replaces it is the thing that change insisted on — a guard that silently stops
@@ -339,7 +348,9 @@ class LedgerGuardTest < Minitest::Test
       commit(repo)
 
       result = guard(repo, "--base=HEAD", "--json")
-      payload = JSON.parse(result[:out])
+      # stdout ONLY — `--json` is a promise about that stream, and a warning on stderr
+      # must not be able to break a machine caller's parse.
+      payload = JSON.parse(result[:stdout])
 
       assert payload["ok"]
       assert_equal "markdown-ledger+archive", payload["scope"],

@@ -115,7 +115,7 @@ confusion here.
 
 | Tool | Wiring |
 |------|--------|
-| **`git`** (https push/fetch) | The global credential helper `bin/gh-app-git-credential` mints a fresh token **per call**. Nothing to refresh — it cannot go stale |
+| **`git`** (https push/fetch) | The global credential helper `bin/gh-app-git-credential` answers from the **shared session** `bin/gh-token` holds, and mints only on a cache miss. Nothing to refresh BY HAND — a token git rejects comes back to the helper as `erase`, which retires that one session so the next call mints once. (It minted per call until 2026-08-29; that cost three 1Password reads per git operation and once spent the daily quota.) |
 | **`gh`** (and any API caller) | Reads an ambient credential. **Goes stale hourly.** This is the one you fix |
 
 Wire the git leg once, globally:

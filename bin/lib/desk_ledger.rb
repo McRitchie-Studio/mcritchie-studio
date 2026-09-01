@@ -9,8 +9,8 @@ require_relative "task_board"
 # `docs/agents/maintenance/delete-later.md`, resolved against HUB_DIR. A cleanup is
 # normally run from the PRIMARY checkout, and the primary sits on `main` — a branch
 # nobody may commit to. So the record was created in the one place it could never be
-# saved from: six stashes of "restore later" ledger content between 2026-07-02 and
-# 2026-08-31, 98 rows, none restored, plus 25 more stranded by a reclaim sweep that ran
+# saved from: twelve stashes of "restore later" ledger content between 2026-06-26 and
+# 2026-08-31, 166 rows, none restored, plus 25 more stranded by a reclaim sweep that ran
 # DURING the conversation about the defect. The board write is durable the moment it
 # lands, which is the whole point.
 #
@@ -40,7 +40,10 @@ module DeskLedger
   # ok      — the board accepted the write (2xx)
   # record  — the parsed `data` payload, when there is one
   # error   — a one-line reason, ALWAYS set when ok is false
-  Result = Struct.new(:ok, :record, :error, keyword_init: true) do
+  # created — 201 (the board WROTE a row) vs 200 (it already held it). Carried so an
+  #           idempotent import can report what it actually did: a second harvest that
+  #           counted 200s as successes would claim 166 writes it never performed.
+  Result = Struct.new(:ok, :record, :error, :created, keyword_init: true) do
     def ok? = !!ok
   end
 
@@ -73,6 +76,15 @@ module DeskLedger
     post("/api/v1/desk_records", body, dotenv: dotenv, env: env)
   end
 
+  # Import ONE stranded ledger row. Distinct from `file` because that path resolves an
+  # existing record through the OPEN episode for the desk path, and every stranded row is
+  # a RESOLVED teardown that no open episode matches — so `file` would write a duplicate
+  # on every re-run. The board keys this write on `import_key` instead, and answers 200
+  # rather than 201 for a row it already holds.
+  def import(attributes:, dotenv: nil, env: ENV)
+    post("/api/v1/desk_records", { desk: attributes.merge(status: "removed") }, dotenv: dotenv, env: env)
+  end
+
   # Fold a whole snapshot registry in. `registry` is the parsed snapshot payload.
   def sync(registry, dotenv: nil, env: ENV)
     post("/api/v1/desk_records/sync", { registry: registry }, dotenv: dotenv, env: env)
@@ -91,7 +103,9 @@ module DeskLedger
     res = TaskBoard.request(:post, path, base_url: base_url(env), token: tok[:token],
                                          body: body, read_timeout: READ_TIMEOUT)
     parsed = TaskBoard.parse_body(res)
-    return Result.new(ok: true, record: parsed["data"]) if res.code.to_i.between?(200, 299)
+    if res.code.to_i.between?(200, 299)
+      return Result.new(ok: true, record: parsed["data"], created: res.code.to_i == 201)
+    end
 
     Result.new(ok: false,
                error: "POST #{path} -> #{res.code}: #{parsed["error"] || res.body.to_s[0, 200]}")
