@@ -62,6 +62,10 @@ class BinHelpFlagClassTest < Minitest::Test
     "clean-artifacts"        => :cli_arg_guard,
     "control-check"          => :cli_arg_guard,
     "reap-cert-databases"    => :cli_arg_guard,
+    # The harvest WRITES desk records to the board, so it is guarded like the rest of
+    # the mutating flat scripts. Its help exits 1: exit 0 from it asserts "the stranded
+    # rows are recorded", which a probe never established.
+    "harvest-desk-ledger"    => :cli_arg_guard,
     # --- shell scripts, same sweep, same defect, different idiom --------------
     "setup-1pass-token"      => :own_guard,
     "ecosystem-build"        => :own_guard,

@@ -39,13 +39,13 @@
 
 require "json"
 require "date"
+require_relative "lib/cli_arg_guard"
 require_relative "lib/desk_ledger_import"
 require_relative "lib/desk_ledger"
 require_relative "lib/repo_root"
 
-HELP_FLAGS  = %w[--help -h].freeze
-VALUE_FLAGS = %w[--repo --base].freeze
 BOOL_FLAGS  = %w[--dry-run --json].freeze
+VALUE_FLAGS = %w[--repo --base].freeze
 
 USAGE = <<~TXT
   usage: bin/harvest-desk-ledger [--repo <path>] [--base <ref>] [--dry-run] [--json]
@@ -63,56 +63,26 @@ USAGE = <<~TXT
   account for is REFUSED rather than silently ignored.
 TXT
 
-# Every argument is accounted for before any work is done — the shape bin/ledger-guard
-# and bin/lib/release_claim_cli.rb both closed on 2026-08-21. A flag that vanishes turns
-# a report about one thing into a confident report about another.
-def parse_argv(argv)
-  values = {}
-  bools  = []
-  bad    = []
-  index  = 0
-
-  while index < argv.length
-    arg = argv[index]
-    name = nil
-    inline = nil
-    name, inline = arg.split("=", 2) if arg.start_with?("--") && arg.include?("=")
-
-    if name && VALUE_FLAGS.include?(name)
-      values[name] = inline
-      index += 1
-    elsif name
-      bad << arg
-      index += 1
-    elsif VALUE_FLAGS.include?(arg)
-      if index + 1 >= argv.length
-        bad << "#{arg} (missing value)"
-        index += 1
-      else
-        values[arg] = argv[index + 1]
-        index += 2
-      end
-    elsif BOOL_FLAGS.include?(arg)
-      bools << arg
-      index += 1
-    else
-      bad << arg
-      index += 1
-    end
-  end
-
-  [values, bools, bad]
-end
-
-# `-C <repo>` rather than GIT_DIR/GIT_WORK_TREE, and the difference is not cosmetic.
+# EVERY ARGUMENT IS ACCOUNTED FOR BEFORE ANY WORK, through the SHARED guard rather than a
+# private copy of it. `bin/lib/cli_arg_guard.rb` exists because this defect class kept
+# recurring — `--help` matching nothing, being dropped, and the script running its real
+# action — and because every fix before it was bespoke, so the next script inherited
+# nothing. A hand-rolled parser here would be the fifth private copy.
 #
-# A PATHSPEC is resolved against the process's CURRENT DIRECTORY, not against the work
-# tree root. Run from a desk — which lives INSIDE the primary at
-# `<primary>/.worktrees/<slug>` — `git diff --name-only … -- docs/agents/…` resolved to
-# `.worktrees/<slug>/docs/agents/…`, matched nothing, and returned empty. `git show
-# <ref>:<path>` is always root-relative, so the BASELINE read fine at 606 rows while every
-# source came back empty: the harvest reported a confident "0 missing" for a tree holding
-# 166 stranded rows. `-C` puts git at the repo root, so both spellings agree.
+# `help_exit: 1` because exit 0 from this command is not "the command ran", it is the
+# assertion "the stranded rows are recorded". A help probe records nothing, so answering
+# it with 0 would state a fact that was never established — the same call bin/ledger-guard
+# and bin/devops-shift make about their own zeros.
+PARSED = CliArgGuard.guard!(
+  ARGV,
+  program: "harvest-desk-ledger",
+  usage: USAGE,
+  consequence: "nothing was read and nothing was imported",
+  bool: BOOL_FLAGS,
+  value: VALUE_FLAGS,
+  help_exit: 1
+)
+
 def git(repo, *args)
   IO.popen(["git", "-C", repo, *args], err: File::NULL, &:read)
 end
@@ -145,19 +115,6 @@ def sources(repo)
   found
 end
 
-values, bools, bad = parse_argv(ARGV)
-
-if ARGV.any? { |a| HELP_FLAGS.include?(a) }
-  puts USAGE
-  exit 1
-end
-
-unless bad.empty?
-  warn "harvest-desk-ledger: unrecognized argument(s): #{bad.join(', ')}"
-  warn USAGE
-  exit 1
-end
-
 # DEFAULT TO THE PRIMARY CHECKOUT, not to this script's own worktree.
 #
 # `refs/stash` is a COMMON ref: a desk sees all nineteen of the primary's stashes and
@@ -174,11 +131,11 @@ rescue StandardError
   nil
 end
 
-repo = File.expand_path(values["--repo"] || primary_checkout(__dir__) ||
+repo = File.expand_path(PARSED.first("--repo") || primary_checkout(__dir__) ||
                         RepoRoot.git_toplevel(__dir__) || File.expand_path("..", __dir__))
-base    = values["--base"] || "origin/accepted"
-dry_run = bools.include?("--dry-run")
-as_json = bools.include?("--json")
+base    = PARSED.first("--base") || "origin/accepted"
+dry_run = PARSED.bool?("--dry-run")
+as_json = PARSED.bool?("--json")
 
 # An unreadable baseline is RED. Without it every already-landed row reads as missing, and
 # the harvest would offer to import six hundred rows that are already recorded.
