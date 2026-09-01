@@ -77,6 +77,15 @@ will never sign a transaction. Most apps are web2. See
 | Auth | engine passwordless + hub SSO | own auth (the app's call) |
 | DB | Postgres | **SQLite is fine for a demo**; Postgres when it matters |
 | External adapters (AI, payments, …) | mock-first behind a swappable adapter | same — mock-first behind a swappable adapter |
+| Object storage | **prompt Mr. McRitchie: provision buckets, y/n?** | same prompt — a silly little app says no |
+
+On a **yes**, run Steffon's
+[`bucket-provision`](../agents/steffon/sops/bucket-provision.md) (as a subagent
+or in-session): it creates the private `<app>-dev`/`<app>-production` pair in
+`us-east-2`, versions production, tags both, and mints the two `/mcr/` IAM
+users. On a **no**, record the opt-out in the app's README and move on —
+storage can be provisioned later by the same SOP. Conventions:
+[`object-storage.md`](../modules/object-storage.md).
 
 ### 4. Branch model — a managed app is BORN laddered
 
