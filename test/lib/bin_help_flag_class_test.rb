@@ -98,10 +98,36 @@ class BinHelpFlagClassTest < Minitest::Test
     # the mutating flat scripts. Its help exits 1: exit 0 from it asserts "the stranded
     # rows are recorded", which a probe never established.
     "harvest-desk-ledger"    => :cli_arg_guard,
+    # RECLASSIFIED FROM :subcommand_gap, NOT DELETED (/tasks/atomic-event-help-mutates,
+    # 2026-09-01) — the LAST member of the class, and the highest-frequency one. It
+    # dispatched with `command = argv.shift` inside AgentActivityCli#run and handed the
+    # rest to a parse_flags with no unknown-argument arm, so an unrecognized `--token`
+    # became `flags["token"] = true` and was never read. Measured at source, each of
+    # these RAN FOR REAL:
+    #
+    #   grade 42 --disposition good --help        POSTED the grade to the production board
+    #   start --category Edit --reason x --help   opened a real activity
+    #   close-open --help                         closed every open activity + deleted 3 markers
+    #   heartbeat avi --help                      wrote the sticky .acting-agent marker
+    #
+    # …and `run` swallows every StandardError while the script always exits 0, so a
+    # probe that mutated reported nothing and returned SUCCESS. Its per-subcommand
+    # dictionary is AgentActivityCli::COMMANDS, which lives in bin/atomic-event itself
+    # rather than in bin/lib/: the parsers it must agree with are ten lines below it and
+    # the file already `load`s inert under test, so a separate lib would only add a
+    # second place to drift. Help exits 0 here — the opposite of bin/release,
+    # bin/qa-server and bin/agent-worktree — because this CLI's 0 means only "this ran";
+    # every caller discards its status. The rationale names all six callers, on
+    # AgentActivityCli::HELP_EXIT.
+    "atomic-event"           => :cli_arg_guard,
     # RECLASSIFIED FROM :subcommand_gap, NOT DELETED (/tasks/worktree-subcommand-drops-help).
-    # The WIDEST surface the class has produced: TWENTY subcommands, THIRTEEN of which
-    # reach a durable write — measured from the dispatcher, not estimated; the seven
-    # read-only arms are apps, list, plan, env, whereami, shell-hook and doctor. It dispatched with `cmd = ARGV.shift || "help"` and no arm
+    # The WIDEST surface the class has produced: TWENTY subcommands, FOURTEEN of which
+    # reach a durable write — measured from the dispatcher, not estimated; the SIX
+    # read-only arms are apps, list, plan, env, shell-hook and doctor. (Both counts were
+    # off by one until 2026-09-01: `whereami` was listed read-only and is not —
+    # `run_whereami(app, task)` with both positionals calls write_context_marker, which
+    # File.writes .agent-context.json. Re-derived from source, 20 − 6 = 14, not carried
+    # forward.) It dispatched with `cmd = ARGV.shift || "help"` and no arm
     # validated the remainder, so `bin/agent-worktree new <app> <task> --help` created a
     # REAL desk — `git worktree add -b`, a port and Redis DB written into
     # .env.agent-stack, the .agent-context.json marker, and a Postgres database from
@@ -233,6 +259,17 @@ class BinHelpFlagClassTest < Minitest::Test
     "rails-executed-set-check" => :subcommand,
     # --- binstubs -------------------------------------------------------------
     "release"                => :delegates, # sh binstub: execs bin/release.rb, which owns --help
+    # RECLASSIFIED FROM :subcommand_gap, NOT DELETED (/tasks/atomic-event-help-mutates,
+    # 2026-09-01). It carried the identical exposure — `close-open --help` closed every
+    # open activity — because it is an 8-line shim that `load`s bin/atomic-event and
+    # calls the SAME AgentActivityCli#run. The guard was therefore placed INSIDE `run`,
+    # not under bin/atomic-event's `$PROGRAM_NAME == __FILE__` block, so ONE call guards
+    # both names. This is the same relationship bin/release has to bin/release.rb above,
+    # and it is the bucket's rule rather than an exception — but a label is not a test,
+    # so test_the_in_repo_delegating_stubs_reach_a_guarded_script below asserts the
+    # delegation, and the shim's refusal is proven by real execution with a control in
+    # test/lib/atomic_event_cli_test.rb.
+    "agent-activity"         => :delegates, # 8-line shim: loads bin/atomic-event, which owns --help
     "rails"                  => :delegates,
     "rake"                   => :delegates,
     "bundle"                 => :delegates,
@@ -254,25 +291,33 @@ class BinHelpFlagClassTest < Minitest::Test
     # unreviewable. They are recorded HERE rather than only on the board so a
     # reader of the manifest cannot conclude, as one just did about bin/release,
     # that a `:subcommand` label means the command is safe to probe.
-    # THREE entries have LEFT THIS BUCKET, each reclassified above with its record
-    # kept in full rather than deleted: bin/install-agent-docs and bin/agent-runtime
-    # (:own_guard, /tasks/docs-installer-help-publishes) and bin/agent-worktree
-    # (:cli_arg_guard, /tasks/worktree-subcommand-drops-help), all on 2026-09-01.
+    # ⚠ THE BUCKET IS NOW EMPTY, and that is the finished state, not a missing record.
+    # All FIVE entries have LEFT IT, each reclassified above with its record kept in
+    # full rather than deleted — every one of them on 2026-09-01:
     #
-    # ⚠ TO WHOEVER FIXES bin/atomic-event — YOU ARE THE LAST ONE, AND THIS TRIPWIRE IS
-    # YOURS TO RETIRE. The two entries below are ALL that remain, and BOTH belong to
-    # the single task /tasks/atomic-event-help-mutates (bin/agent-activity is an
-    # 8-line shim over bin/atomic-event, so one fix retires both). The moment you
-    # reclassify them this bucket is EMPTY and `refute_empty gaps` in
-    # test_the_two_subcommand_buckets_are_disjoint goes RED — BY DESIGN, not by
-    # breakage. It is the record refusing to be deleted quietly. Do NOT delete these
-    # entries to keep it green, and do NOT weaken the assertion in place. Reclassify
-    # both with their history in a comment the way the three above did, and DELETE the
-    # `refute_empty gaps` line in the SAME change — keeping `assert_empty plain &
-    # gaps`, which stays meaningful on an empty bucket. Nothing after you needs this
-    # tripwire, because there is nothing after you.
-    "atomic-event"           => :subcommand_gap, # `grade 42 --disposition good --help` POSTs the grade — /tasks/atomic-event-help-mutates
-    "agent-activity"         => :subcommand_gap, # 8-line shim over bin/atomic-event; `close-open --help` closes every activity — /tasks/atomic-event-help-mutates
+    #   bin/install-agent-docs  :own_guard      /tasks/docs-installer-help-publishes
+    #   bin/agent-runtime       :own_guard      /tasks/docs-installer-help-publishes
+    #   bin/agent-worktree      :cli_arg_guard  /tasks/worktree-subcommand-drops-help
+    #   bin/atomic-event        :cli_arg_guard  /tasks/atomic-event-help-mutates
+    #   bin/agent-activity      :delegates      /tasks/atomic-event-help-mutates
+    #
+    # The last two closed the family: bin/agent-activity is an 8-line shim over
+    # bin/atomic-event, so one guard placed inside AgentActivityCli#run retired both.
+    #
+    # The tripwire that guarded this moment has been retired DELIBERATELY. Steffon left
+    # `refute_empty gaps` in test_the_two_subcommand_buckets_are_disjoint with a note
+    # saying it would go red BY DESIGN on the last fix, so the record could not be
+    # deleted quietly, and instructing whoever did that fix to remove the line in the
+    # SAME change. That is what happened; `assert_empty plain & gaps` stays, because it
+    # is still meaningful on an empty bucket. Its failure message anticipated a bucket
+    # emptied by DELETION and told the reader to reclassify — which was already done, so
+    # the message alone would have been misleading here. That is why the instruction
+    # lived on the entries and not only in the assertion.
+    #
+    # THE BUCKET ITSELF STAYS, armed and empty: :subcommand_gap remains a legal
+    # classification, test_every_subcommand_gap_carries_a_probe_and_a_filed_task still
+    # enforces the probe + filed task on any future entry, and the section headers below
+    # are what that test anchors on. The next sweep that finds a gap files it here.
 
     # --- known gaps, filed rather than fixed in this change -------------------
     #
@@ -400,7 +445,18 @@ class BinHelpFlagClassTest < Minitest::Test
     # Same reasoning again, and the widest surface of the three: every worktree, port,
     # Redis DB, Postgres database, branch removal and Redis-band write
     # bin/agent-worktree can perform is reached through `case cmd`.
-    "agent-worktree"      => "case cmd"
+    "agent-worktree"      => "case cmd",
+    # Same reasoning once more, and the LAST of the family. Every POST and marker write
+    # bin/atomic-event can perform — the activity open/close, the close_all teardown,
+    # the grade, the action report, the sticky acting-agent — is reached through
+    # `case command` inside AgentActivityCli#run, so that line is the seam the guard has
+    # to precede. Unlike the three above, this one wraps the guard in NO helper: the
+    # only occurrence of `CliArgGuard.guard!` in the file IS the call site, which is why
+    # it needs no GUARD_HELPER_CALLERS entry below. Its behavioural proof is stronger
+    # than a static index either way — test/lib/atomic_event_cli_test.rb runs the real
+    # script against a recording stub server and asserts a POST RECEIPT, each probe
+    # paired with a control that fires.
+    "atomic-event"        => "case command"
   }.freeze
 
   def test_the_guard_runs_before_the_first_mutation
@@ -414,6 +470,43 @@ class BinHelpFlagClassTest < Minitest::Test
       assert_operator guard_at, :<, mutation_at,
                       "bin/#{name} calls #{mutation} BEFORE its argument guard — the guard cannot " \
                       "protect a side effect that has already happened"
+    end
+  end
+
+  # The two binstubs whose TARGET lives in this same bin/, mapped to the script that
+  # owns `--help` for them. The other :delegates entries (rails, rake, bundle,
+  # rubocop, …) hand off to a gem outside this repo, which this file cannot assert
+  # about; these two it can.
+  #
+  # WHY THIS EXISTS. :delegates was, until 2026-09-01, the last bucket in this manifest
+  # with no wiring assertion behind it — the exact condition this file spent a hundred
+  # lines recording as the reason six real gaps sat here looking classified. Moving
+  # bin/agent-activity from :subcommand_gap (which enforces a probe AND a filed task)
+  # into :delegates would have been a NET LOSS of enforcement on the very script the
+  # change existed to fix, and the label's claim — "the underlying tool owns --help" —
+  # would have rested on prose. Prose does not fail CI. This does.
+  IN_REPO_DELEGATES = {
+    "release"        => "release.rb",
+    "agent-activity" => "atomic-event"
+  }.freeze
+
+  def test_the_in_repo_delegating_stubs_reach_a_guarded_script
+    IN_REPO_DELEGATES.each do |stub, target|
+      assert_equal :delegates, MANIFEST[stub], "bin/#{stub} is no longer a delegating stub"
+      assert_equal :cli_arg_guard, MANIFEST[target],
+                   "bin/#{stub} delegates to bin/#{target}, so bin/#{target} must own a REAL guard — " \
+                   "a stub whose target is unguarded is a gap wearing a safe label"
+
+      src = code_only(stub)
+
+      assert_includes src, target, "bin/#{stub} must actually invoke bin/#{target}"
+      assert_match(/"\$@"|\bARGV\b/, src,
+                   "bin/#{stub} must hand bin/#{target} the WHOLE line — a stub that forwards only " \
+                   "part of it puts the dropped part back on the floor")
+      refute_match(/ARGV\.(?:include\?|delete|shift)|OptionParser|getopts/, src,
+                   "bin/#{stub} parses the line ITSELF — then bin/#{target}'s dictionary is not what " \
+                   "read it, and the stub is a second, laxer parser of exactly the kind this family " \
+                   "of defects is made of")
     end
   end
 
@@ -585,13 +678,19 @@ class BinHelpFlagClassTest < Minitest::Test
 
   # The two subcommand buckets answer opposite questions, so an entry in both — or
   # a gap quietly demoted back to :subcommand — would put two truths on one screen.
+  #
+  # This carried a `refute_empty gaps` tripwire until 2026-09-01, whose whole purpose
+  # was to go RED on the last fix in the family so the record could not be deleted
+  # quietly. bin/atomic-event was that last fix; the gap bucket is now legitimately
+  # empty and the tripwire was retired in the same change, exactly as the note on the
+  # bucket instructed. The disjointness below stays meaningful on an empty bucket.
   def test_the_two_subcommand_buckets_are_disjoint
     plain = MANIFEST.select { |_, k| k == :subcommand }.keys
     gaps  = MANIFEST.select { |_, k| k == :subcommand_gap }.keys
 
-    assert_empty plain & gaps
-    refute_empty gaps, "the confirmed-gap bucket emptied without the scripts being fixed — if they " \
-                       "were fixed, reclassify them; do not delete the record"
+    assert_empty plain & gaps,
+                 "a script cannot be both a plain :subcommand and a CONFIRMED gap — the two buckets " \
+                 "answer opposite questions, so an entry in both puts two truths on one screen"
   end
 
   # --- the :subcommand label, made a tested property -------------------------

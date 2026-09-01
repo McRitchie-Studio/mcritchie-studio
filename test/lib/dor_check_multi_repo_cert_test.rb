@@ -207,6 +207,12 @@ class DorCheckMultiRepoCertTest < Minitest::Test
       refute turf_entry["ok"], "turf-monster must be reported NOT certified"
       assert(verdict["errors"].any? { |e| e.include?("turf-monster") && e.include?("bin/full-suite-check") },
              "the refusal must name the repo AND how to certify it: #{verdict['errors']}")
+      # The OTHER half of the 2026-09-01 separation: when a repo carries no evidence in
+      # ANY lane, "NOTHING is recorded" is the true sentence and must survive. The fix
+      # to the fast-cert case widened the read to EVIDENCE_LANES; it must not have
+      # widened it to the point where an empty read prints an empty list instead.
+      assert(verdict["errors"].any? { |e| e.include?("turf-monster") && e.include?("NOTHING is recorded") },
+             "no evidence in any lane must still read as NOTHING recorded: #{verdict['errors']}")
       assert_equal turf, turf_entry["fingerprint_root"],
                    "the second repo must be graded against ITS OWN tree, not the one we stand in"
       refute_equal turf_entry["fingerprint"], verdict.dig("full_suite", "fingerprint"),
@@ -226,6 +232,88 @@ class DorCheckMultiRepoCertTest < Minitest::Test
       assert_equal 1, code
       assert(verdict["errors"].any? { |e| e.include?("turf-monster") && e.include?(stale[0, 12]) },
              "the refusal must report the delta it was certified FOR: #{verdict['errors']}")
+    end
+  end
+
+  # ── [integration] A FAST CERT IN THE SECONDARY REPO: refused, AND named ─────
+  #
+  # THE DEFECT (2026-09-01, raised off /tasks/port-script-comment-guard): the refusal
+  # clause was built from FullSuiteGate::LANES alone, so it announced "and NOTHING is
+  # recorded for it" while a fast-cert sat recorded at the EXACT fingerprint the same
+  # sentence had just printed. Literally true of the graded lanes; false in the
+  # English a reader acts on. Measured cost, same day: two bin/fast-check runs against
+  # a repo whose fast cert was already recorded and whose CI was already green.
+  #
+  # BOTH HALVES ARE THE TEST, and the first one is why this file is the right home:
+  # the fix is a STRING, so a test that pinned only the new wording would keep passing
+  # on a gate someone had "helpfully" loosened by adding FAST_LANE to LANES. So this
+  # asserts the REFUSAL first — with the CI forced GREEN, which is the state under
+  # which a fast cert IS sufficient for the PRIMARY repo — and only then that the
+  # refusal names what it is rejecting.
+
+  def test_a_fast_cert_in_the_second_repo_still_refuses_and_the_refusal_names_it
+    with_two_repo_world do |projects, hub, turf|
+      turf_fp = FullSuiteGate.fingerprint(turf)
+      # turf has a FRESH fast-cert for this exact code and nothing else. The harness
+      # already forces DOR_CHECK_CI_STATUS=green, so the one pairing that makes a fast
+      # cert sufficient for the PRIMARY repo is in force here too.
+      checks = full_cert("mcritchie-studio", FullSuiteGate.fingerprint(hub)) +
+               [FullSuiteGate.evidence_line(FullSuiteGate::FAST_LANE, turf_fp,
+                                            "mapped+spine tests + scoped rubocop", repo: "turf-monster")]
+
+      verdict, code = dor_check(task_json(checks), hub, projects)
+
+      # HALF ONE — the gate is unchanged. A secondary repo's bar is the FULL cert, and
+      # no CI state may reach past that. This half fails if FAST_LANE is ever folded
+      # into FullSuiteGate::LANES.
+      refute verdict["ready"], "a SECONDARY repo carrying only a fast cert must still refuse, green CI or not"
+      assert_equal 1, code
+      turf_entry = Array(verdict.dig("full_suite", "repos")).find { |e| e["repo"] == "turf-monster" }
+      refute turf_entry["ok"], "the fast lane must not count toward a secondary repo's ok: #{turf_entry}"
+
+      # HALF TWO — the refusal names the evidence it is rejecting, at its fingerprint.
+      refusal = Array(verdict["errors"]).find { |e| e.include?("cert gate:") && e.include?("turf-monster") }
+      refute_nil refusal, "expected a cert-gate refusal naming turf-monster: #{verdict['errors']}"
+      refute_includes refusal, "NOTHING is recorded",
+                      "a fast-cert IS recorded at @#{turf_fp[0, 12]} — claiming nothing is recorded is what " \
+                      "sent a builder to run bin/fast-check twice against an already-certified tree"
+      assert_includes refusal, FullSuiteGate::FAST_LANE,
+                      "the refusal must NAME the lane whose evidence it is rejecting: #{refusal}"
+      assert_includes refusal, "@#{turf_fp[0, 12]}",
+                      "the refusal must name the FINGERPRINT the fast cert is recorded at: #{refusal}"
+      assert_includes refusal, "bin/fast-check cannot clear this",
+                      "and say WHY — the reason is the half that stops the wasted run. Told only that the " \
+                      "fast cert does not count, a reader goes hunting for a threshold to nudge, and there " \
+                      "is none: #{refusal}"
+      assert_includes refusal, "bin/full-suite-check",
+                      "and still say what WOULD satisfy it: #{refusal}"
+    end
+  end
+
+  # The other side of the same clause: a fast cert recorded for OLDER code must not be
+  # reported as if it were for this code. The trap is one step later but identical —
+  # "re-run bin/fast-check" is the wrong conclusion from either freshness state,
+  # because re-running it produces a FRESH fast cert that still cannot satisfy a
+  # secondary repo.
+
+  def test_a_stale_fast_cert_in_the_second_repo_is_named_as_stale_not_as_nothing
+    with_two_repo_world do |projects, hub, _turf|
+      stale = "b" * 40
+      checks = full_cert("mcritchie-studio", FullSuiteGate.fingerprint(hub)) +
+               [FullSuiteGate.evidence_line(FullSuiteGate::FAST_LANE, stale, "mapped+spine", repo: "turf-monster")]
+
+      verdict, code = dor_check(task_json(checks), hub, projects)
+
+      refute verdict["ready"], "a stale fast cert certifies nothing — still refuse"
+      assert_equal 1, code
+      refusal = Array(verdict["errors"]).find { |e| e.include?("cert gate:") && e.include?("turf-monster") }
+      refute_nil refusal, "expected a cert-gate refusal naming turf-monster: #{verdict['errors']}"
+      refute_includes refusal, "NOTHING is recorded", "a fast-cert line IS recorded, for older code: #{refusal}"
+      assert_includes refusal, "@#{stale[0, 12]}",
+                      "the refusal must report the fingerprint that evidence was taken at: #{refusal}"
+      assert_includes refusal, "bin/fast-check cannot clear this",
+                      "the reason must fire for a STALE fast cert too — re-running it produces a FRESH one " \
+                      "that still cannot satisfy a secondary repo: #{refusal}"
     end
   end
 

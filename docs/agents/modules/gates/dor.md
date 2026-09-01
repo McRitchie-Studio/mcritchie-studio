@@ -198,7 +198,12 @@ Two limits, stated so nobody assumes otherwise:
   alongside a GREEN CI on that repo's own PR, and this gate reads **one** PR's CI.
   Pairing a fast cert with a *different* repo's CI would be the same cross-repo
   confusion the per-repo certs exist to end, so a secondary repo needs
-  `bin/full-suite-check` in its own tree.
+  `bin/full-suite-check` in its own tree. The refusal reports what **is** recorded
+  across every evidence lane, not just the graded ones, and names the reason when a
+  fast cert is among them — so a fast cert sitting at the current fingerprint reads
+  as *rejected for its lane*, never as *absent*. It said "NOTHING is recorded" until
+  2026-09-01, and that sentence cost two `bin/fast-check` runs against an
+  already-certified tree.
 - **The DIFF half is still one PR.** `devops.pr_url` is a single value, so the
   shape/tier gate (changed files → required tiers) is measured against **one** PR.
   The cert half now covers every repo; the tier half does not. Reviewing a multi-repo

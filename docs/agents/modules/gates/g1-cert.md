@@ -342,8 +342,16 @@ window.
 - A **red lane closes the attempt `failed`** (the re-run opens attempt n+1) —
   a red test-DB lane short-circuits the cert on the spot; a red mapped / spine
   / rubocop lane still lets the remaining lanes run, and the `failed` close
-  lands once the lanes finish. Either way nothing is certified; no evidence
-  line is written.
+  lands once the lanes finish. Either way the cert REFUSES and the attempt
+  never closes `success`; a lane that went red or hung records nothing.
+- **A green lane is banked even when a SIBLING lane fails** — `bin/full-suite-check`
+  only, since 2026-09-01. A rubocop lane that passed over 1,229 files used to be
+  discarded because the suite lane hung at the ceiling, so the re-run re-paid
+  twenty minutes at an UNCHANGED tree hash. The banked line is fingerprint-bound
+  and per-repo, exactly as on the green path, so two partial runs over one tree
+  COMPOSE. It buys no pass: the run still exits 1, still closes `failed`, and the
+  task still owes every lane it did not measure. `bin/fast-check` does not bank —
+  its lanes roll into one `[fast-cert@…]` line, so there is no sibling to keep.
 - A **green cert CLOSES the attempt `success`** ITSELF — the cert owns the whole
   `g1_cert` window (open + close). `dor-check` no longer touches `g1_cert`; its
   verdict is the separate [DoR](dor.md) gate.
