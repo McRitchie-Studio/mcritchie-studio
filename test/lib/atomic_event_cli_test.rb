@@ -1061,14 +1061,24 @@ class AgentActivityCliTest < Minitest::Test
                         "the control `#{argv.join(' ')}` recorded no #{path} — the spy is not " \
                         "wired, so the refusal below would pass by reading nothing"
 
-        %w[--help -h].each do |flag|
-          requests = run_cli(argv + [flag], proj: proj)
+        requests = run_cli(argv + ["--help"], proj: proj)
 
-          assert_empty requests,
-                       "`bin/atomic-event #{(argv + [flag]).join(' ')}` reached the network — " \
-                       "the probe every operator tries first must POST NOTHING"
-        end
+        assert_empty requests,
+                     "`bin/atomic-event #{(argv + ['--help']).join(' ')}` reached the network — " \
+                     "the probe every operator tries first must POST NOTHING"
       end
+    end
+  end
+
+  # The OTHER spelling, proven once rather than once per probe: CliArgGuard.help?
+  # matches `-h` and `--help` through the same HELP_FLAGS list for every subcommand,
+  # so the per-subcommand dimension is already covered above and repeating it only
+  # bought process spawns — the dominant cost of this tier.
+  def test_integration_the_short_help_spelling_also_posts_nothing
+    Dir.mktmpdir do |proj|
+      assert_empty run_cli(%w[grade 42 --disposition good -h], proj: proj),
+                   "`-h` must be honored exactly like `--help` — an operator has no way to know " \
+                   "which spelling this parser answers to"
     end
   end
 
@@ -1169,10 +1179,12 @@ class AgentActivityCliTest < Minitest::Test
   # the other half of the class, and the half that has no obvious probe.
   def test_integration_an_unaccounted_argument_refuses_with_exit_two_and_posts_nothing
     Dir.mktmpdir do |proj|
-      requests = run_cli(%w[grade 42 --disposition good --force], proj: proj)
-      assert_empty requests, "a refused line must not reach the network"
+      # ONE spawn, both readings. Running the same line twice to read the request
+      # log and then the exit code doubled the process cost of the slowest tier in
+      # this file for no extra coverage.
+      requests, _out, err, status = spawn_cli(%w[grade 42 --disposition good --force], proj: proj)
 
-      _out, err, status = capture_cli(%w[grade 42 --disposition good --force], proj: proj)
+      assert_empty requests, "a refused line must not reach the network"
       assert_equal 2, status.exitstatus, "an unaccounted-for argument refuses with 2"
       assert_match(/unrecognized argument "--force"/, err)
       assert_match(/POSTED NOTHING/, err, "the reader's question is whether the grade landed")
