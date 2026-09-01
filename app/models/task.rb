@@ -2538,12 +2538,12 @@ class Task < ApplicationRecord
   #     Keyed on the claim so it stays a claim stamp: a note, a checks update, or
   #     any other save that happens to carry a soul actor while the task sits in
   #     `building` must not make that soul the builder.
-  #   DEFEND — on ANY save, carry a stored builder forward. Since
-  #     api-devops-patch-replaces BOTH write paths fold through
-  #     Task.merge_devops_into_metadata, so a partial PATCH that never mentions
-  #     built_by now preserves it on its own — the merge, not this guard, is what
-  #     covers omission. What the merge does NOT cover is a name posted BLANK: it
-  #     keys on the POSTED names and `normalize_devops_metadata` drops blanks, so
+  #   DEFEND — on ANY save, carry a stored builder forward. BOTH write paths fold
+  #     through Task.merge_devops_into_metadata since `api-devops-patch-replaces`,
+  #     so a partial PATCH that never mentions built_by now preserves it on its
+  #     own — the merge, not this guard, is what covers omission. What the merge
+  #     does NOT cover is a name posted BLANK: it keys on the POSTED names and
+  #     `normalize_devops_metadata` drops blanks, so
   #     `{"devops":{"built_by":""}}` deletes the record of who built the task. That
   #     is this half's remaining job, and it is the whole of it. A regression test
   #     drives exactly that PATCH — test/integration/builder_stamp_api_test.rb,
@@ -2959,17 +2959,16 @@ class Task < ApplicationRecord
   # permits no claim keys at all (app/controllers/tasks_controller.rb), so opening a
   # task on the board and saving it silently destroyed a LIVE claim — and a destroyed
   # claim reads as unclaimed, which lets a second agent take a desk someone is working
-  # at. Since api-devops-patch-replaces both paths fold through
-  # Task.merge_devops_into_metadata, so a merely OMITTED claim key survives on its own
-  # now. Two doors still reach this guard: a key posted BLANK (the fold keys on the
+  # at. Both paths now fold through Task.merge_devops_into_metadata since
+  # `api-devops-patch-replaces`, so a merely OMITTED claim key survives on its own.
+  # Two doors still reach this guard: a key posted BLANK (the fold keys on the
   # posted names and the normalizer drops blanks, so a blank claim key IS a delete),
   # and a raw whole-column `metadata:` write, which is permitted wholesale and folds
-  # through nothing. That
-  # is also why `bin/task show --json` and `bin/task begin` disagreed about the
-  # same lease 20 seconds apart: not two readers of one fact, but one fact being
-  # erased and rewritten underneath them. This is the same self-healing shape as
-  # #restore_mascot_identity and #preserve_cert_evidence, applied to the keys that
-  # decide who owns a desk.
+  # through nothing. That is also why `bin/task show --json` and `bin/task begin`
+  # disagreed about the same lease 20 seconds apart: not two readers of one fact,
+  # but one fact being erased and rewritten underneath them. This is the same
+  # self-healing shape as #restore_mascot_identity and #preserve_cert_evidence,
+  # applied to the keys that decide who owns a desk.
   #
   # Note what is NOT here: nothing expires a lease. Expiry stays where it belongs,
   # on the TTL clock in ClaimLease — restoring an omitted key preserves a lease

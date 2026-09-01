@@ -70,7 +70,7 @@ class BuilderStampApiTest < ActionDispatch::IntegrationTest
     # the authors UNKNOWN, and refuses. See the roster cases at the bottom of this
     # file and in test/models/task_builder_roll_call_test.rb.
     #
-    # Since api-devops-patch-replaces the API MERGES, so an unmentioned key now
+    # The API MERGES since `api-devops-patch-replaces`, so an unmentioned key now
     # survives on its own: this drives the MERGE, not the guard. The guard's one
     # remaining job — a key posted BLANK — is the test below it.
     task = Task.create!(title: "Builder Defend Probe Task", stage: "designed",
