@@ -91,11 +91,18 @@ class BinHelpFlagClassTest < Minitest::Test
     # --- shell scripts, same sweep, same defect, different idiom --------------
     "setup-1pass-token"      => :own_guard,
     "ecosystem-build"        => :own_guard,
-    # WAS :subcommand, which claimed it "falls through to usage". It fell through
-    # to `*) exit 0` — no usage, no signal — and `get --help` ran the REAL `get`,
-    # printing a live installation token and writing one to disk. :subcommand
-    # carries no wiring assertion, so that claim was never checked against the
-    # code. It is :own_guard now, and enforced below.
+    # RECLASSIFIED, NOT DELETED (/tasks/credential-helper-help-mints). This was
+    # :subcommand, a label claiming it "falls through to usage"; it fell through to
+    # `*) exit 0` — no usage, no signal — and `get --help` ran the REAL `get`. The
+    # release sweep then re-filed it as :subcommand_gap with the probe
+    # `bin/gh-app-git-credential get --help`, measured to mint a live installation
+    # token, write it to the shared token store, and print it. Both entries were
+    # true when written; the fix landed underneath them, so the gap bucket no
+    # longer holds this script and the record lives here instead.
+    #
+    # THE LESSON WORTH KEEPING: :subcommand carried no wiring assertion, so its
+    # claim was never checked against the code for anyone. :own_guard is, by
+    # test_the_shell_scripts_answer_help_without_acting below.
     "gh-app-git-credential"  => :own_guard,
     # --- the three prior fixes -----------------------------------------------
     "task"                   => :own_guard,
@@ -177,7 +184,6 @@ class BinHelpFlagClassTest < Minitest::Test
     "agent-activity"         => :subcommand_gap, # 8-line shim over bin/atomic-event; `close-open --help` closes every activity — /tasks/atomic-event-help-mutates
     "install-agent-docs"     => :subcommand_gap, # `install --help` publishes AGENTS.md/CLAUDE.md/skills and rewrites ~/.claude/settings.json + ~/.zprofile — /tasks/docs-installer-help-publishes
     "agent-runtime"          => :subcommand_gap, # `install --help` execs the installer above with the flag intact — /tasks/docs-installer-help-publishes
-    "gh-app-git-credential"  => :subcommand_gap, # `get --help` mints a live installation token and writes it to .agents/github-tokens.json — /tasks/credential-helper-help-mints
 
     # --- known gaps, filed rather than fixed in this change -------------------
     #
