@@ -133,8 +133,61 @@ of these advanced a stage while this file was being written). Follow the link.
 | [`gate-solana-routes-on-wallet`](https://mcritchie.studio/tasks/gate-solana-routes-on-wallet) | Engine draws Solana routes only for a wallet app. Carries the fullest statement of the decision. |
 | [`drop-hub-wallet-auth`](https://mcritchie.studio/tasks/drop-hub-wallet-auth) | McRitchie Studio's `auth_methods` → `%i[magic_link google]`. |
 | [`move-web3-modals-to-solana`](https://mcritchie.studio/tasks/move-web3-modals-to-solana) | Web3 modals ship from `solana-studio`, not the engine. |
-| [`lint-web2-app-boundary`](https://mcritchie.studio/tasks/lint-web2-app-boundary) | Makes the boundary **enforced** rather than observed. |
+| [`lint-web2-app-boundary`](https://mcritchie.studio/tasks/lint-web2-app-boundary) | Makes the boundary **enforced** rather than observed. Landed — see [Enforced, not observed](#enforced-not-observed). |
 | [`declare-hub-solana-cluster`](https://mcritchie.studio/tasks/declare-hub-solana-cluster) | Archived: its premise died with the decision. Kept as the record of why. |
+
+## Enforced, not observed
+
+The rule above is a test. `lib/web2_app_boundary.rb` + `test/lib/web2_app_boundary_test.rb`
+assert it on every CI run of this repo, so it fails on the tree rather than
+waiting for someone to re-read this file.
+
+**Where "this app is web2" is declared: the absence of `:web3` from
+`Studio.features`.** That is a *read* of the signal described above, not a new
+one — the accessor already exists, already means exactly this, and the engine's
+own comment beside it already names McRitchie Studio as the app that "ships
+neither". The two alternatives lost for concrete reasons, recorded in the seam's
+header: a key in `config/release_repos.yml` would put template classification
+into a registry whose job is the deploy ladder, and "the absence of the gem
+itself" is circular — with no independent claim, an app that adds
+`solana-studio` tomorrow would simply redefine itself as web3 by adding it.
+
+Dependencies are read **structurally**, through Bundler's own parse of the
+Gemfile, never by grepping for `solana`. That distinction is load-bearing here:
+this repo mentions Solana in comments and throughout the managed-app registry
+that names the solana-studio **repo** (`app/models/release/repos.rb`,
+`ci/app_ladder.rb`, `github_workflow_run.rb`, `release/gem_version.rb`,
+`reviewer_selector.rb`). Those are not Solana logic and a substring guard would
+flag every one of them.
+
+**Scope.** The guard speaks for the repo it runs in. CI checks out no sibling
+repos, so a cross-repo sweep would resolve against whatever happened to be on
+disk and pass vacuously in CI — the failure mode
+`test/lib/feature_shape_tiers_test.rb` exists to kill. `mcritchie-industries`
+and `rolio` already satisfy the boundary today; each carries its own copy when
+it wants the guard.
+
+### The hub's exemption, and why it cannot rot
+
+McRitchie Studio **cannot** pass this check today — the admin signing console is
+its last real use of the gem, and it stays until the console moves to
+turf-monster. So the boundary landed **enforced with one named exemption**
+rather than waiting for that move.
+
+The exemption is not a mute. It is an entry in `Web2AppBoundary::ALLOWLIST` that
+the same test audits three ways, any of which goes red on its own:
+
+| Audit | Fails when |
+|---|---|
+| **It must still be needed** | Every path in `justified_by` (the signing console) is gone. The exemption **expires by itself** the moment the console lands elsewhere, telling you to drop the gem and the entry. |
+| **It must name its exit** | It names neither a `clearing_task` slug nor an explicit `unfiled_reason`. An exemption pointing at nothing is itself a violation. |
+| **It must still describe a real violation** | The app no longer declares the gem, so the entry is obsolete and must go. |
+
+**The clearing task does not exist yet, and the entry says so** rather than
+pointing at a slug that resolves to nothing. The signing console move is one of
+the three unfiled pieces below, and it **sequences after** signer verification
+(§3) — filing the move first would ship the weaker ordering. When it is filed,
+put its slug in the entry's `clearing_task`.
 
 ## Not yet filed
 
@@ -143,7 +196,9 @@ Named here so the gap stays visible instead of being mistaken for finished work:
 
 - **Signer verification** (§3) — the missing control. It **sequences before** the
   console move; filing the move first would ship the weaker ordering.
-- **The signing console move** to turf-monster (§2).
+- **The signing console move** to turf-monster (§2). The web2 boundary guard's
+  allowlist entry for the hub names this gap explicitly and expires on its own
+  once the console leaves; when the task is filed, record its slug there.
 - **chain-ops deprecation** (§4).
 
 ## Related

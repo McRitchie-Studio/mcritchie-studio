@@ -528,14 +528,15 @@ git status --short                          # every primary checkout must be cle
 
 The stale pids, orphaned per-desk databases, tmp residue and registry refresh are
 [`clean-infra`](../../steffon/sops/clean-infra.md)'s step 5 — run there, reported
-here. Append anything you are unsure about to
-[`../../../maintenance/delete-later.md`](../../../maintenance/delete-later.md)
-rather than deleting it.
+here. File anything you are unsure about on the desk ledger
+(`bin/agent-worktree cleanup --write`) rather than deleting it.
 
-> **The reclaim dirties the primary.** It appends its audit rows to
-> `delete-later.md` in the primary checkout — and **the ship requires a clean
-> primary.** Move that change into a worktree and commit it through a PR; do not
-> commit from the primary and do not throw the ledger away.
+> **The reclaim no longer dirties the primary.** Its audit rows land on the board
+> (`DeskRecord`, on the Desks panel at `/deployments`), not in
+> `docs/agents/maintenance/delete-later.md` — which a sweep run from the primary could
+> never commit, stranding 98 rows across six stashes. A teardown REFUSES when the board
+> is unreachable, before anything is destroyed, so re-run the same command once it
+> answers.
 
 ---
 

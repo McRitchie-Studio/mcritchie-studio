@@ -1,5 +1,27 @@
 const { test, expect } = require("@playwright/test");
 
+// SCROLL TO THE BOTTOM OF THE BOARD, not the bottom of the DOCUMENT.
+//
+// These checks are about a lane header pinning *while its own lane scrolls beneath it*, and
+// a sticky header only sticks inside its own containing block — past the board it is
+// SUPPOSED to travel up and out. `scrollTo(0, document.scrollHeight)` meant "past the
+// board's top" only for as long as the board happened to be the last thing on the page,
+// which is a proxy, not the property. /deployments now renders a desk panel below the board
+// (tasks/_desk_panel), so the document bottom is well past the lanes and the old scroll
+// asserted a header should pin somewhere it must not.
+//
+// This addresses the board directly, so it means the same thing it always did — and stays
+// true whatever the page grows underneath. It clamps to the document, so a page where the
+// board IS last scrolls exactly as far as before.
+async function scrollToBoardBottom(page) {
+  await page.evaluate(() => {
+    const board = document.querySelector("[data-test='kanban-board']");
+    const bottom = board.getBoundingClientRect().bottom + window.scrollY;
+    const max = document.documentElement.scrollHeight - window.innerHeight;
+    window.scrollTo(0, Math.max(0, Math.min(bottom - window.innerHeight, max)));
+  });
+}
+
 // THE PINNED STACK on /deployments, in a real browser: the site nav, then the app-ladder
 // strip, then the swim-lane headers — three things holding the top of the page, each one
 // sitting on the bottom edge of the one above it.
@@ -35,7 +57,7 @@ test("the lane headers pin under the applications strip while cards scroll benea
   const restingTop = await headers.first().evaluate((el) => Math.round(el.getBoundingClientRect().top));
   expect(restingTop, "nothing is pinned while the board's top is on screen").toBeGreaterThan(200);
 
-  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await scrollToBoardBottom(page);
 
   // POLLED, because the nav's 300ms shrink and the strip's appearance both land after
   // the scroll event that triggered them. What is asserted is that the stack CONVERGES.
@@ -111,7 +133,7 @@ test("the lane row is not a scroll container while the lanes fit", async ({ page
 // the flow again, so the board reads as it always did.
 test("the lane headers return to the flow at the top of the page", async ({ page }) => {
   await page.goto("/deployments");
-  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await scrollToBoardBottom(page);
   await page.waitForTimeout(400);
   await page.evaluate(() => window.scrollTo(0, 0));
 

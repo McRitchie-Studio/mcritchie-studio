@@ -40,6 +40,11 @@ class TasksController < ApplicationController
     # `accepted` between releases). Pipeline-wide for the same reason as WIP above:
     # it must not shrink under a board filter.
     @app_ladder_cards = Ci::AppLadder.build
+    # The desk panel: what the worktree desks ARE, and the teardown records that used to
+    # live in a markdown file the primary checkout could never commit. Fixed query count
+    # by construction (Desks::Panel) so it cannot make the board's cost grow with the
+    # number of desks — the one number around here that grows fastest.
+    @desk_panel = Desks::Panel.build
   end
 
   # Row budget for /tasks/recent — enough to cover the active pipeline plus the

@@ -795,8 +795,9 @@ bin/agent-worktree remove <app> <task-slug> --yes
 
 `snapshot --write` refreshes the local non-secret worktree registry at
 `/Users/alex/projects/.agents/worktree-registry.json` for QA/conductor
-sessions. `cleanup` is dry-run only; `cleanup --write` only appends candidates
-to the delete-later ledger. Actual removal stays approval-gated and should use
+sessions. `cleanup` is dry-run only; `cleanup --write` only files candidates on the
+desk ledger (`DeskRecord`; the Desks panel at `/deployments`). Actual removal stays
+approval-gated and should use
 `bin/agent-worktree remove <app> <task-slug> --yes` so stack stop, ledger
 update, Git worktree removal, local branch deletion, and registry refresh happen
 together. `cleanup --reclaim` is the scale-down-on-close batch flow: the dry run

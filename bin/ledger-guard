@@ -17,6 +17,26 @@
 # here — outside the writer — rather than in bin/agent-worktree, and
 # test/lib/ledger_guard_test.rb for the invariant's own tests.
 #
+# ⛔ WHAT THIS GUARD COVERS, NOW THAT THE LEDGER HAS TWO HALVES. Since
+# `ledger-writes-to-primary`, `bin/agent-worktree` no longer writes these files: a teardown
+# run from the PRIMARY checkout landed its row on `main`, a branch nobody may commit to,
+# and 98 rows were stranded in stashes that were never restored. New desk records go to the
+# board (DeskRecord, POST /api/v1/desk_records) and render at /deployments.
+#
+# So this guard covers the FILES, and it still must: they are tracked history, they hold
+# every row filed before the cutover, and `bin/archive-docs` still moves rows between them
+# on the archive beat — which is exactly the operation that destroyed three rows on
+# 2026-08-21. Nothing about that risk went away.
+#
+# The BOARD half is guarded differently, and deliberately so: DeskRecord refuses to update
+# or destroy a resolved episode at the moment of the write (DeskRecord::ResolvedRecordImmutable),
+# so there is no committed-tree comparison to make. That is a stronger guarantee than this
+# one, and it is available there because the medium has ONE writer — the reason this guard
+# had to judge the tree instead was that the offending writer was a STALE COPY of a script
+# no rule could reach. test/models/desk_record_test.rb holds that half; this file holds
+# this one. Neither silently covers the other, which is why the verdict below names its
+# own scope out loud.
+#
 # An unreadable baseline is RED, not a pass: this instrument is nothing but a comparison
 # against history outside the working tree.
 #
@@ -68,6 +88,12 @@ USAGE = <<~TXT
                     mistaken for the guard's green verdict
 
   Both `--flag=value` and `--flag value` parse.
+
+  SCOPE: the markdown ledger + its archive (historical desk rows, and the
+  archive beat that moves rows between them). Desk records filed AFTER the
+  board cutover live on DeskRecord; their move-never-delete invariant is
+  enforced at write time by the model and tested in
+  test/models/desk_record_test.rb. This guard says nothing about those.
 TXT
 
 # Walk the line the way the flags are actually written, so a value-flag's VALUE is never
@@ -187,6 +213,9 @@ if JSON_ONLY
   puts JSON.generate(
     ok: losses.empty?,
     repo: REPO,
+    # The machine-readable twin of the scope line below: a caller must be able to tell
+    # that a green verdict here is about the FILES, not about the board's desk records.
+    scope: "markdown-ledger+archive",
     checked: resolved,
     lost: losses.transform_values { |found| found.map { |e| { path: e.path, status: e.status, missing: e.missing } } }
   )
@@ -194,7 +223,11 @@ if JSON_ONLY
 end
 
 if losses.empty?
+  # NAMES ITS OWN SCOPE. A bare "OK" on a ledger that now has a second half would read as
+  # a verdict on the whole record, which it is not and must never be mistaken for.
   say "ledger-guard: OK — every resolved row at #{resolved.join(', ')} is still in the ledger or its archive."
+  say "ledger-guard: scope is the markdown ledger + archive (historical rows). Desk records " \
+      "filed on the board are guarded by DeskRecord's resolved-record immutability, not by this check."
   exit 0
 end
 
