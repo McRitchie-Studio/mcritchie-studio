@@ -208,7 +208,14 @@ require_relative "lib/session_identity"
 require_relative "lib/artifact_sweep"
 # The frozen-doc retirement's summary contract — `archive` drives
 # bin/archive-docs as a step and parses its tagged JSON line for the Exit Seam.
+# Also its FAILURE contract (DocsArchive.failure_report): the sweep's non-zero exit
+# is one bit with four causes, so the beat reports what actually failed instead of
+# reading a ledger loss out of it.
 require_relative "lib/docs_archive"
+# The delete-later ledger's MOVE-NEVER-DELETE invariant. `archive` measures it ITSELF
+# when the doc sweep fails, so a ledger-loss claim is backed by a row count rather
+# than by the sub-command's exit code. See ledger_verdict.
+require_relative "lib/ledger_guard"
 # Repo NAME → checkout DIRECTORY. The registry's hyphenated name is not always the
 # directory on disk: studio-engine's consumer-ci checks each consumer out at its
 # UNDERSCORED matrix label, so `repo_path` looks for the checkout instead of
@@ -7102,18 +7109,67 @@ end
 # two above it. The reclaim and the artifact sweep are MACHINE-LOCAL and
 # best-effort: they run after the board write, and a hiccup there just means fewer
 # worktrees freed this run, so both call sites take `.first` on purpose. This one
-# refuses — bin/archive-docs exits 1 when the delete-later ledger has already lost
-# a resolved row — and the caller must HONOUR that refusal, because the very next
-# thing the beat does is commit the ledger and its archive to `release`. Taking
-# `.first` here (which both call sites did until this was fixed) printed the
-# refusal and committed the loss anyway. See the two `abort!`s below and
+# refuses — and the caller must HONOUR that refusal, because the very next thing the
+# beat does is commit the ledger and its archive to `release`. Taking `.first` here
+# (which both call sites did until this was fixed) printed the refusal and committed
+# the loss anyway. See the two `abort!`s below and
 # test/lib/release_archive_docs_refusal_test.rb.
+#
+# THE EXIT STATUS SAYS "IT FAILED". IT DOES NOT SAY WHY. bin/archive-docs exits
+# non-zero for a genuine ledger loss, for an UNREADABLE baseline, for an argument its
+# guard does not account for, and for any crash inside the sweep. Reading one cause
+# out of that single bit is what put "the delete-later ledger has lost resolved
+# row(s)" in front of an operator during a production deploy when a `git mv` had
+# simply crashed — see DocsArchive.failure_report, which is why the pieces of the
+# answer (the repo swept, the command, the exit status, and stderr SEPARATED from
+# stdout) are carried out of here instead of being flattened into one string.
+DocsSweep = Struct.new(:repo, :command, :out, :err, :status, keyword_init: true) do
+  def ok? = status.success?
+
+  # Printable exit status. A signal death has a nil exitstatus, and printing "exit:"
+  # blank there would hide the most interesting failure of the lot.
+  def exit_label = status.exitstatus ? status.exitstatus.to_s : "killed by signal #{status.termsig}"
+end
+
 def sweep_docs(apply:)
-  cmd = ["bin/archive-docs", "--repo=#{repo_path('mcritchie-studio')}"]
+  repo = repo_path("mcritchie-studio")
+  cmd = ["bin/archive-docs", "--repo=#{repo}"]
   cmd << "--dry-run" unless apply
-  out, status = Open3.capture2e(*cmd)
+  # capture3, not capture2e: the failure report quotes STDERR specifically, and a
+  # merged stream cannot say which lines were the complaint. Both are still printed,
+  # on their own streams, so a passing run reads exactly as it always did.
+  out, err, status = Open3.capture3(*cmd)
   print(out)
-  [out, status.success?]
+  warn(err) unless err.to_s.empty?
+  DocsSweep.new(repo: repo, command: cmd.join(" "), out: out, err: err, status: status)
+end
+
+# THE LEDGER VERDICT, MEASURED — never inferred from an exit code.
+#
+# LedgerGuard.lost_against_ref is the same instrument bin/archive-docs refuses on:
+# resolved rows counted as a MULTISET across delete-later.md AND its archive, against
+# the merge base with HEAD. Counting the union is what makes it the honest test — a
+# row that merely MOVED from the ledger into the archive is conserved (that is the
+# whole archive beat), and only a row that left BOTH files is a loss. The 2026-09-01
+# rollover this defect maligned was 41 out of one file and 41 into the other; this
+# check calls that intact, because it is.
+#
+# Three outcomes, three sentences. `:unreadable` is NOT a pass: a comparison that
+# could not run certifies nothing, and collapsing it into `:intact` would rebuild
+# this very bug facing the other way. The bare StandardError rescue exists for the
+# same reason — if the check itself breaks, the honest answer is "unknown", never
+# "intact".
+def ledger_verdict(repo)
+  losses = LedgerGuard.lost_against_ref(repo, "HEAD")
+  return { verdict: :intact } if losses.empty?
+
+  { verdict: :lost,
+    missing: losses.sum(&:missing),
+    detail: LedgerGuard.report(losses, base_label: "HEAD") }
+rescue LedgerGuard::UnreadableBase => e
+  { verdict: :unreadable, detail: e.message }
+rescue StandardError => e
+  { verdict: :unreadable, detail: "#{e.class}: #{e.message}" }
 end
 
 def docs_summary(out)
@@ -7170,10 +7226,20 @@ def archive
   # not be produced at all — and confirming a sweep you were unable to preview is
   # the worst moment to carry on. Nothing has been mutated yet, so aborting here
   # costs nothing and stops short of the confirm.
-  docs_preview_out, docs_preview_ok = sweep_docs(apply: false)
-  abort!("docs archive PREVIEW failed (bin/archive-docs --dry-run exited non-zero) — " \
-         "nothing has been archived, reclaimed, or swept. Fix the sweep, then re-run.") unless docs_preview_ok
-  docs_preview = docs_summary(docs_preview_out)
+  #
+  # NO `ledger:` IS PASSED, deliberately. The ledger is not what failed here, and a
+  # report that stayed silent about it is the honest one — `failure_report` then says
+  # "not measured" rather than guessing in either direction.
+  docs_preview_sweep = sweep_docs(apply: false)
+  unless docs_preview_sweep.ok?
+    abort!(DocsArchive.failure_report(
+             command: docs_preview_sweep.command,
+             exit_label: docs_preview_sweep.exit_label,
+             stderr: docs_preview_sweep.err,
+             consequence: "Nothing has been archived, reclaimed, or swept, and the confirm was never reached."
+           ))
+  end
+  docs_preview = docs_summary(docs_preview_sweep.out)
 
   # 5. --dry-run stops here: the plan + all three previews are shown, nothing mutated.
   if DRY
@@ -7221,21 +7287,34 @@ def archive
   #     `release` as ONE artifact commit.
   say("")
   step("docs archive: bin/archive-docs")
-  docs_out, docs_ok = sweep_docs(apply: true)
-  # THE REFUSAL, HONOURED. bin/archive-docs exits 1 when the delete-later ledger has
-  # lost a resolved row — before the roll, or because the roll itself lost one. The
-  # commit below git-adds the ledger AND its archive and pushes them to `release`, so
-  # continuing past a refusal is what turns a recoverable working-tree loss into
-  # committed history. Stop here instead: the board archive, the reclaim, and the
-  # artifact sweep have already succeeded and are all idempotent, so a re-run after
-  # the row is recovered picks up exactly where this left off.
-  unless docs_ok
-    abort!("docs archive REFUSED (bin/archive-docs exited non-zero) — the delete-later " \
-           "ledger has lost resolved row(s), and committing now would make that loss " \
-           "permanent on `release`. Nothing was committed. Recover the row(s) with " \
-           "`git show HEAD:#{DocsArchive::LEDGER}`, then re-run `bin/release archive`.")
+  docs_sweep = sweep_docs(apply: true)
+  # THE REFUSAL, HONOURED — AND DIAGNOSED. The commit below git-adds the ledger AND its
+  # archive and pushes them to `release`, so continuing past a non-zero exit is what
+  # turns a recoverable working-tree loss into committed history. Stop here: the board
+  # archive, the reclaim, and the artifact sweep have already succeeded and are all
+  # idempotent, so a re-run picks up exactly where this left off.
+  #
+  # HALTING WAS ALWAYS RIGHT. THE EXPLANATION WAS NOT. This branch used to announce
+  # "the delete-later ledger has lost resolved row(s)" for EVERY non-zero exit, having
+  # checked no such thing — and on 2026-09-01 it said exactly that when a `git mv` had
+  # crashed, mid production deploy, over a ledger that was perfectly conserved (41 rows
+  # out of one file, 41 into the other). Data loss in an audit trail is the most
+  # alarming thing this beat can say; saying it on a hunch cost the deploying agent a
+  # detour at the worst possible moment.
+  #
+  # So the halt stays and the claim is MEASURED: ledger_verdict counts the rows itself
+  # against the same repo the sweep was pointed at, and failure_report says only what
+  # that count supports — while always naming the command, its exit status and its
+  # stderr, which is what an operator actually needed to read.
+  unless docs_sweep.ok?
+    abort!(DocsArchive.failure_report(
+             command: docs_sweep.command,
+             exit_label: docs_sweep.exit_label,
+             stderr: docs_sweep.err,
+             ledger: ledger_verdict(docs_sweep.repo)
+           ))
   end
-  docs = docs_summary(docs_out)
+  docs = docs_summary(docs_sweep.out)
 
   # The doc retirement moved frozen snapshots and rolled the ledger's resolved rows into
   # the archive — commit ALL of it to `release` so it rides the next ship instead of

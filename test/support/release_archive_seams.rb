@@ -24,10 +24,16 @@
 #     and pushes. What prevented that was an unrelated dirty working tree, not
 #     anything in the test.
 #
-# THE STUBS STAY FAITHFUL. Each returns the real [output, ok] pair carrying the
-# genuine tagged JSON line, so sweep_summary/docs_summary still parse real input
-# and the callers' summary assertions still mean something. A stub emitting more
-# than the tool does would certify broken parsing as green.
+# THE STUBS STAY FAITHFUL. Each returns the real value its seam returns, carrying
+# the genuine tagged JSON line, so sweep_summary/docs_summary still parse real
+# input and the callers' summary assertions still mean something. A stub emitting
+# more than the tool does would certify broken parsing as green.
+#
+# sweep_docs returns a DocsSweep, not the [output, ok] pair the others use: its
+# failure path has to report the command, the exit status and stderr SEPARATELY
+# (bin/release.rb's DocsSweep / DocsArchive.failure_report), and a pair cannot carry
+# them. The stub therefore mirrors the two methods production actually reads off the
+# Process::Status — `success?` and `exitstatus` — rather than faking the whole class.
 module ReleaseArchiveSeams
   # Every seam `archive` uses to touch the filesystem. Interpolate into a stub
   # passed as `run_cli(..., setup:)`. Add to it whenever a new seam appears —
@@ -40,11 +46,20 @@ module ReleaseArchiveSeams
       ["==> \#{apply ? 'Reclaimed' : 'Would reclaim'} 1 KB\\n" \\
        "clean-artifacts-summary: \#{JSON.generate(payload)}\\n", true]
     end
+    StubExitStatus = Struct.new(:exitstatus) do
+      def success? = exitstatus.zero?
+    end
     def sweep_docs(apply:)
       payload = { dry_run: !apply, moved: 1, moved_paths: ["docs/agents/audits/stub.md"],
                   skipped: [], ledger_rolled: 2, ledger_cutoff: nil }
-      ["==> \#{apply ? 'Retired' : 'Would retire'} 1 doc(s)\\n" \\
-       "archive-docs-summary: \#{JSON.generate(payload)}\\n", true]
+      DocsSweep.new(
+        repo: "/stub/mcritchie-studio",
+        command: "bin/archive-docs --repo=/stub/mcritchie-studio\#{apply ? '' : ' --dry-run'}",
+        out: "==> \#{apply ? 'Retired' : 'Would retire'} 1 doc(s)\\n" \\
+             "archive-docs-summary: \#{JSON.generate(payload)}\\n",
+        err: "",
+        status: StubExitStatus.new(0)
+      )
     end
     def commit_artifact_to_release(repo, paths, message)
       nil
