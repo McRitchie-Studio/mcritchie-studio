@@ -20,15 +20,36 @@ class CertLintLaneWaiverTest < ActiveSupport::TestCase
   RUBOCOP = FullSuiteGate::RUBOCOP_LANE
 
   test "a repo that declares no lint lane owes only the suite" do
-    assert_equal [TEST], FullSuiteGate.required_lanes("studio-engine"),
-                 "studio-engine declares lint_lane: none, so a rubocop cert is not owed"
+    %w[studio-engine solana-studio].each do |repo|
+      assert_equal [TEST], FullSuiteGate.required_lanes(repo),
+                   "#{repo} declares lint_lane: none, so a rubocop cert is not owed"
+    end
   end
 
   test "every other repo still owes BOTH lanes" do
-    %w[mcritchie-studio turf-monster solana-studio].each do |repo|
+    %w[mcritchie-studio turf-monster].each do |repo|
       assert_equal FullSuiteGate::LANES, FullSuiteGate.required_lanes(repo),
                    "#{repo} has not declared a waiver and must still owe a rubocop cert"
     end
+  end
+
+  # bin/fast-check carries NO lint-waiver branch, and says so in a comment whose
+  # reasoning is "every declaring repo is a gem, and the gem branch above already
+  # omitted the lane". That is only true while it is true. Asserting it here means a
+  # NON-gem repo declaring the waiver reddens this test instead of silently turning
+  # that paragraph into a lie and leaving fast-check running `bin/rubocop` against a
+  # repo the registry says has none.
+  test "every repo declaring the waiver is a gem, which is what lets fast-check skip the branch" do
+    registry = YAML.safe_load_file(Rails.root.join("config/release_repos.yml"))
+    declaring = %w[gems apps].flat_map do |section|
+      (registry[section] || {}).select { |_, row| row.is_a?(Hash) && row["lint_lane"].to_s == "none" }
+                               .keys.map { |slug| [section, slug] }
+    end
+
+    assert declaring.any?, "the waiver must still be declared by someone, or every test here is vacuous"
+    assert_equal [], declaring.reject { |section, _| section == "gems" },
+                 "a NON-gem repo now declares lint_lane: none — bin/fast-check's gem branch no longer " \
+                 "covers it, so give that script the waiver branch its comment defers"
   end
 
   # FAIL CLOSED. A gate that waives a lane for an input it does not recognise is
@@ -44,12 +65,20 @@ class CertLintLaneWaiverTest < ActiveSupport::TestCase
   # guard: if someone later makes the gate probe for a rubocop binary, the
   # registry stops being the source of truth and this test should be the thing
   # that objects.
+  # UNCHANGED AND UNLOOSENED by the audit added on 2026-08-31. The audit
+  # (bin/lib/lint_waiver_guard.rb) does read the tree, but it can only REVOKE a
+  # waiver, never grant one — so it deliberately lives in its OWN file and this
+  # assertion still bites, verbatim, on the module that DECIDES the waiver.
+  # Moving any environment read into full_suite_gate.rb must still redden here.
+  # The revoke-only direction is asserted in test/lib/lint_waiver_guard_test.rb.
   test "the waiver comes from the registry, not from probing the environment" do
     registry = Rails.root.join("config/release_repos.yml")
-    declared = YAML.safe_load_file(registry).fetch("gems").fetch("studio-engine")
+    gems = YAML.safe_load_file(registry).fetch("gems")
 
-    assert_equal "none", declared["lint_lane"],
-                 "the waiver must be a reviewable line in config/release_repos.yml"
+    %w[studio-engine solana-studio].each do |repo|
+      assert_equal "none", gems.fetch(repo)["lint_lane"],
+                   "#{repo}'s waiver must be a reviewable line in config/release_repos.yml"
+    end
     source = Rails.root.join("bin/lib/full_suite_gate.rb").read
     assert_no_match(/which\s+rubocop|rubocop\s+--version|File\.exist\?\(.*rubocop/, source,
                     "the gate must NOT probe for a rubocop binary — a waiver inferred from a " \

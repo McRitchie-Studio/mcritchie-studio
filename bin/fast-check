@@ -232,15 +232,18 @@ registry_test_cmd = FullSuiteGate.release_check_cmd(cert_repo)
 gem_repo = FullSuiteGate.gem_repo?(cert_repo)
 
 # NO LINT-WAIVER BRANCH HERE, deliberately. bin/full-suite-check needs one because it
-# runs a rubocop lane for every repo; this script does not reach that question for the
-# only repo that declares `lint_lane: none`. studio-engine is a GEM, and the gem branch
-# below omits the rubocop lane before a waiver could be consulted — so a waiver check
-# on this path would be code no repo can currently execute.
+# runs a rubocop lane for every repo; this script does not reach that question for
+# EITHER repo that declares `lint_lane: none`. studio-engine and solana-studio (added
+# 2026-08-31) are both GEMS, and the gem branch below omits the rubocop lane before a
+# waiver could be consulted — so a waiver check on this path would be code no repo can
+# currently execute.
 #
 # It was written, and removed after a mutation proved the point: flipping
 # FullSuiteGate.lint_waived? to false changed nothing observable, because the gem
 # branch had already decided. If a NON-gem repo ever declares lint_lane: none, add the
-# branch then, with a test that can actually redden.
+# branch then, with a test that can actually redden. (The set of declaring repos is
+# asserted in test/lib/cert_lint_lane_waiver_test.rb, so growing it past the gems
+# section reddens there rather than silently invalidating this paragraph.)
 
 test_cmd = ENV.fetch("FAST_CHECK_TEST_CMD") { registry_test_cmd || "bin/rails test" }
 rubocop_cmd = ENV.fetch("FAST_CHECK_RUBOCOP_CMD", "bin/rubocop")

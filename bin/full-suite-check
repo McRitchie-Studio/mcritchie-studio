@@ -88,6 +88,7 @@ require_relative "lib/system_test_browser"
 require_relative "lib/cert_tree_guard"
 require_relative "lib/cert_orphan_guard"
 require_relative "lib/cert_process"
+require_relative "lib/lint_waiver_guard"
 
 # ROOT = the gate script's OWN repo (the hub). CONFIG (lib/) is required relative
 # to __dir__, and the board is reached via TASK_BIN — both stay anchored here. The
@@ -229,6 +230,27 @@ if slug && ENV["FULL_SUITE_ROOT"].to_s.strip.empty?
   dirty = CertTreeGuard.refusal(command: "bin/full-suite-check", root: root)
   abort "full-suite-check: #{dirty}" if dirty
 end
+
+# --- lint-waiver audit ---------------------------------------------------------
+# A repo may DECLARE that it has no lint lane (`lint_lane: none`), and the lane
+# below is then omitted rather than run. That declaration is a claim ABOUT THIS
+# TREE, and a claim nobody re-checks is one that goes quietly stale: a waived repo
+# that later GAINS rubocop would keep certifying green while nothing linted it,
+# looking identical to a repo that genuinely has no lint lane.
+#
+# So the waiver is DECLARED (FullSuiteGate#lint_waived? — never inferred from a
+# missing binary, or every broken rubocop becomes a silent skip) AND AUDITED here
+# (never honoured over a tree that carries a toolchain). Those two rules together
+# are what keeps ABSENT and BROKEN apart; either alone collapses them. The guard
+# can only ever REVOKE — it has no return value that grants anything — which is why
+# it lives outside FullSuiteGate. bin/lib/lint_waiver_guard.rb carries the reasoning
+# and the marker calibration.
+#
+# It runs HERE, with the other refusals: before the g1_cert attempt opens, before
+# the test-DB reset's `db:test:purge`, and before a multi-minute suite. A stale
+# registry line is not worth six minutes to discover.
+stale_waiver = LintWaiverGuard.refusal(repo: cert_repo, root: root)
+abort "full-suite-check: #{stale_waiver}" if stale_waiver
 
 # The test lane runs WHAT CI RUNS for the repo being certified — read from its own
 # .github/workflows/ci.yml, verbatim (bin/lib/ci_test_command.rb). Hard-coding
@@ -484,6 +506,19 @@ end
 
 test_res = run_lane("full-suite", test_cmd, root, gate_slug: gate_slug)
 rubocop_res = lint_waived ? nil : run_lane("rubocop", rubocop_cmd, root, gate_slug: gate_slug)
+
+# THE OTHER SHAPE OF THIS PROBLEM: no waiver declared, and the rubocop command
+# cannot even launch. The verdict is RED and STAYS RED — a missing binary waives
+# nothing, or every broken rubocop install becomes a silently skipped gate — but
+# the red said only "the COMMAND is the problem, not your diff", which leaves a
+# builder in a genuinely toolchain-less repo with no route at all: the green suite
+# lane is discarded with the red one and there is nothing they can do about it.
+# This names the route (a reviewed `lint_lane: none` line) WITHOUT granting it, and
+# says plainly that it is not for a rubocop that merely broke. Verdict unchanged;
+# only the reader is better off.
+if rubocop_res&.unlaunchable? && (hint = LintWaiverGuard.undeclared_hint(cert_repo))
+  warn "   #{hint}"
+end
 
 # Close the Local Certification testing phase (fires whether the cert passed or
 # failed — the pass/fail lives in checks_run; this only bounds the phase window).
