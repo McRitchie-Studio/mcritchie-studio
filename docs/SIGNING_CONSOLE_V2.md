@@ -1,10 +1,69 @@
 # Admin Signing Console — v2 (keyless coordinator)
 
+## 🧊 ON ICE — decided by Mr. McRitchie, 2026-08-31
+
+**Frozen, not removed.** Everything below still works and still ships. Nothing
+here is deprecated, nothing is scheduled for deletion, and the earlier plan to
+move the console to turf-monster is **cancelled, not pending** — see
+[`agents/system/app-templates.md`](agents/system/app-templates.md). His words:
+*"if it comes up for a purpose we can pick it up then."* So: stop investing in
+it, and do not "finish" it.
+
+**Why it went on ice.** Three facts that only mattered together:
+
+1. **It has no unique job.** It supports exactly two instructions, `initialize`
+   and `update_signers`, and **both already have another path**. Mainnet
+   `initialize` runs from `turf-vault/scripts/initialize-mainnet.js` with the CLI
+   keypair set to the `INIT_AUTHORITY`. Program upgrades go through the Squads
+   2-of-3 upgrade authority (`turf-vault/scripts/squad-upgrade.js`) and never
+   touched this console. Contest and treasury operations (`settle_contest`,
+   `pause`, `sweep_operator_revenue`) are 2-of-3 **vault signer** operations that
+   turf-monster's own flows handle.
+2. **It has no users.** Zero signing requests in production as of the decision.
+   One durable nonce, on devnet. Mainnet sits on turf-vault v0.24 awaiting an
+   upgrade window (`turf-vault/docs/CURRENT_DEPLOYMENT.md`). It has never been
+   used for anything.
+3. **It has an unfixed control gap**, and the gap is not small. The signer page
+   shows the operator an **opaque byte blob**. It signs via
+   `phantom.signMessage`, so Phantom's own transaction preview **does not apply**
+   — the wallet cannot tell the signer what they are approving. And the
+   **Simulate** button proxies through **the same server that built the
+   message**, so a compromised builder simulates its own lie. Two signers
+   approving the same falsified screen is **one lie signed twice**: multisig
+   defends against one signer going rogue, not against a compromised message
+   builder. Until a signer can verify the message independently of the server
+   that composed it, adding signers adds no assurance.
+
+   **That gap is inherited, not new.** The retired v1 console
+   (`Admin::SigningController` + `Signing::Cosigner`, retired 2026-06-02, which
+   also held Mason's key server-side) had the identical RPC-proxy shape. v2
+   removed the server-held key; it did not close this.
+
+So rather than fix a display gap on a tool with no users and no unique job, the
+whole thing is frozen.
+
+**What would take it off ice — check this before assuming the ice is permanent.**
+The console's one genuine advantage over the scripts is **multi-signer
+coordination**: N wallets signing in **separate browsers**, anchored on a durable
+nonce so a half-signed transaction does not expire between signers. No script
+does that. So the reviving question is narrow and concrete:
+
+> **Does Squads cover rotating the turf-vault 2-of-3 *signer set* (`update_signers`)?**
+
+Squads holds the program's **upgrade** authority, which is a different thing from
+the vault's signer set. If signer rotation turns out **not** to be covered there,
+that is a job only this console does, and it comes off ice. **Nobody has
+confirmed either way** — this is an open question, not a settled "Squads covers
+it," and it should be answered before the next signer-set change, not after.
+
+---
+
 > The whole point of v2: **no signer private key in the repo, env, or server.**
-> (v1 partial-signed with a server-held Mason cosigner key — retired after this is
-> dogfooded.) The server is a pure coordinator: it builds an unsigned transaction,
-> holds only the PUBLIC half-signed signatures, never signs, and broadcasts the
-> assembled fully-signed tx (which needs no key). Admin-gated → safe on prod.
+> (v1 partial-signed with a server-held Mason cosigner key — `Admin::SigningController`
+> + `Signing::Cosigner`, **retired 2026-06-02**; both files are gone.) The server is
+> a pure coordinator: it builds an unsigned transaction, holds only the PUBLIC
+> half-signed signatures, never signs, and broadcasts the assembled fully-signed
+> tx (which needs no key). Admin-gated → safe on prod.
 
 ## What it does
 
