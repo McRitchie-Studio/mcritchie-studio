@@ -14,8 +14,9 @@ require "time"
 # reader carried that reading into docs/agents/modules/worktrees.md as "warns and
 # proceeds — it is loud, not blocking", which would have had the next agent
 # pre-arm --steal against a live builder's desk: the exact fail-open the gate
-# exists to close. `lib/claim_lease.rb`'s disposition legend carried the same
-# error one word wide ("the gate warns/refuses").
+# exists to close. That doc was corrected first and reads "refuses — exit 1"
+# today; `lib/claim_lease.rb`'s disposition legend carried the same error one
+# word wide ("the gate warns/refuses") and is corrected here.
 #
 # The code was never wrong. `enforce_claim_gate!` has ended in `exit 1` the whole
 # time, and nothing in the tree exercised that fact, so the prose was free to
