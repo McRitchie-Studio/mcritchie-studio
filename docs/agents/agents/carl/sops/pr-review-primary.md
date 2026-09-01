@@ -133,19 +133,30 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
      `lint_lane: none`, so the cert owes only `[full-suite@<fp>]`; that is a
      complete full cert there, not a partial one. Scope it the same way as
      anywhere else: the cert stands in for CI's Ruby suite, so solana-studio's
-     `playwright` and `e2e-executed-set-check` jobs remain CI's alone. Until
-     2026-08-31 this escape could not pass in solana-studio at all — the lint lane
-     shelled out to a `bin/rubocop` the repo does not ship, and the red discarded
-     the green suite lane with it, leaving a reviewer here with no path.
+     `playwright` job — and the `bin/e2e-executed-set-check` step inside it —
+     remains CI's alone. Until 2026-08-31 this escape could not pass in
+     solana-studio at all — the lint lane shelled out to a `bin/rubocop` the repo
+     does not ship, and the red discarded the green suite lane with it, leaving a
+     reviewer here with no path.
 
      **When it refuses on an unread verdict, that is a `conductor-review`, not a
-     `request-changes`.** The builder does not own the credential, and
-     `wait-for-ci` is futile — CI already reported and this token cannot hear it.
-     For `unreadable`, mint a fresh App token with `bin/gh-app-mint-token` (never
+     `request-changes`.** The builder does not own the credential. For
+     `unreadable`, `wait-for-ci` is futile — CI already reported and this token
+     cannot hear it — so mint a fresh App token with `bin/gh-app-mint-token` (never
      print it) and retry the exact check read; re-running `dor-check` alone will
-     never clear it. For `none` in a repo with **no workflows at all**
-     (`solana-studio`, `turf-vault`), no check will ever appear — the full cert is
-     the only route, and waiting is the PR-#509 stall.
+     never clear it. For `none`, the opposite: **wait, a check is coming.** Every
+     repo in the ecosystem ships a `pull_request`-triggered workflow — verified at
+     source 2026-08-31 on both `accepted` and `main`: `solana-studio`'s
+     `gem-ci.yml` (`name: Gem CI`), `turf-vault`'s `ci.yml` (`name: CI`),
+     `studio-engine`'s `engine-ci.yml`, and `ci.yml` in every app — so there is no
+     repo left where "no check will ever appear" is a property of the REPO. This
+     paragraph used to say `solana-studio` and `turf-vault` had **no workflows at
+     all** and that the full cert was the only route there; both halves are now
+     false, and it contradicted the gem-repo paragraph two above, which already
+     named `gem-ci.yml`. When checks genuinely never arrive the cause is the PR's
+     MERGE STATE, not the repo: `bin/lib/ci_status.rb` calls that `conflicted` or
+     `ci_less`, each carrying its own remedy, and folding either into `none` is the
+     PR-#509 stall.
 
      **Run it from wherever you are — the gate validates every tree it touches.**
      You are standing in the studio primary (the Entry above), which is not the
