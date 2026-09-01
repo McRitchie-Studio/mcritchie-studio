@@ -82,6 +82,55 @@ class CertProcessTest < Minitest::Test
     path
   end
 
+  # THE RUNLOCK, PARSED — the observable these tests actually depend on, waited on directly.
+  #
+  # `File.exist?` is NOT that observable, and polling it is what made this file flaky. The
+  # runlock used to be published with a plain `File.write` — open(O_CREAT|O_TRUNC) and THEN
+  # write — so between those two syscalls the path EXISTED and was ZERO BYTES. A poll that
+  # stops at `exist?` therefore returned while the lock was empty or half-written;
+  # `read_lock` rescues the JSON::ParserError to NIL, and the caller's `["pgid"]` raised
+  #
+  #     NoMethodError: undefined method `[]' for nil
+  #
+  # on a lock that was about to be perfectly valid. Measured against that writer, 4.6% of
+  # reads taken the instant `exist?` went true came back nil, and the path was observed at
+  # zero bytes 139k times — a wide window, not a theoretical one. It fires on a LOADED box
+  # (a sharded consumer lane) because the child gets descheduled inside the gap, which is
+  # why a quiet desk never saw it and studio-engine's publish preflight did: it red-sealed
+  # the `mcritchie_studio suite vs this engine (shard 1/4)` lane and cost 0.66.0 a release
+  # cycle. 1960 runs, 0 failures, 1 error.
+  #
+  # `write_lock` now renames the lock into place, so that particular window is closed at
+  # the source (see cert_runlock_test.rb, which pins it). This wait does NOT lean on that:
+  # a test that depends on its writer's publish strategy is one refactor away from being
+  # silently flaky again, and the deadline can still legitimately expire for an unrelated
+  # reason — a child that dies before it ever gets to the lock. So wait for the STATE, not
+  # the path: a lock that parses AND names its group. Nil stays a legitimate reading, and
+  # it gets a NAMED outcome here rather than being subscripted blind. The deadline is
+  # unchanged (10s), and nothing about the claim under test is retried or loosened. When
+  # the wait does expire, the failure says which state it ended in and hands over the
+  # child's stderr, which is what tells the two causes apart.
+  def await_lock(timeout: 10)
+    deadline = Time.now + timeout
+    loop do
+      parsed = CertOrphanGuard.read_lock(@root)
+      return parsed if parsed && parsed["pgid"]
+
+      break if Time.now >= deadline
+
+      sleep 0.05
+    end
+
+    flunk(<<~MSG)
+      the cert never published a readable runlock within #{timeout}s.
+        lock path : #{lock}
+        on disk   : #{File.exist?(lock) ? "yes, #{File.size(lock)} bytes" : "NO FILE — the cert never got as far as writing it"}
+        contents  : #{File.exist?(lock) ? File.read(lock).inspect : "(none)"}
+        read_lock : #{CertOrphanGuard.read_lock(@root).inspect}
+        child said: #{warning.empty? ? "(nothing on stderr)" : warning}
+    MSG
+  end
+
   # Where the child cert's stderr goes, so we can read back what it TOLD the operator as it
   # died. The warning line is the artefact under test as much as the runlock is.
   def stderr_log = File.join(@root, "cert.err")
@@ -101,11 +150,7 @@ class CertProcessTest < Minitest::Test
     child = Process.spawn("ruby", "-e", script, err: stderr_log)
     @spawned << child
 
-    deadline = Time.now + 10
-    sleep 0.05 while !File.exist?(lock) && Time.now < deadline
-    assert_path_exists lock, "the cert writes its runlock while the lane runs"
-
-    suite = CertOrphanGuard.read_lock(@root)["pgid"]
+    suite = await_lock["pgid"]
     @spawned << suite
     [child, suite]
   end
@@ -170,11 +215,7 @@ class CertProcessTest < Minitest::Test
     child = Process.spawn("ruby", "-e", script, err: stderr_log)
     @spawned << child
 
-    deadline = Time.now + 10
-    sleep 0.05 while !File.exist?(lock) && Time.now < deadline
-    assert_path_exists lock, "the cert writes its runlock while the lane runs"
-
-    suite = CertOrphanGuard.read_lock(@root)["pgid"]
+    suite = await_lock["pgid"]
     @spawned << suite
     [child, suite]
   end
@@ -246,7 +287,7 @@ class CertProcessTest < Minitest::Test
     # it must NOT do is delete the evidence and declare victory.
     child, suite = spawn_cert(ps: blind_lstart_ps)
 
-    assert_nil CertOrphanGuard.read_lock(@root)["pgid_started_at"],
+    assert_nil await_lock["pgid_started_at"],
                "the vector: a runlock carrying NO identity for its group"
 
     Process.kill("TERM", child)

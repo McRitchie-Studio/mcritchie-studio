@@ -228,11 +228,31 @@ module CertOrphanGuard
                       lane: nil, db: nil, now: Time.now)
     path = lock_path(root)
     FileUtils.mkdir_p(File.dirname(path))
-    File.write(path, JSON.generate(
-                       "cert_pid" => cert_pid, "cert_started_at" => cert_started_at,
-                       "pgid" => pgid, "pgid_started_at" => pgid_started_at,
-                       "lane" => lane, "db" => db, "started_at" => now.utc.iso8601
-                     ))
+    body = JSON.generate(
+      "cert_pid" => cert_pid, "cert_started_at" => cert_started_at,
+      "pgid" => pgid, "pgid_started_at" => pgid_started_at,
+      "lane" => lane, "db" => db, "started_at" => now.utc.iso8601
+    )
+
+    # ATOMIC: write a sibling, then rename over. A plain `File.write` is
+    # open(O_CREAT|O_TRUNC) and THEN write, so it publishes a ZERO-BYTE lock for the width
+    # of that gap — and every reader here goes through `read_lock`, which cannot tell a
+    # torn lock from an absent one and rescues both to nil. `decide` grades a nil lock
+    # `:none`, so a reader landing in that gap concludes THERE IS NOTHING TO REAP: the
+    # DETECT half never runs and a detectable orphan becomes an unnameable one, which is
+    # the exact failure this whole module exists to prevent. `rename(2)` is atomic within
+    # a directory, so a reader now sees the previous complete lock or this one, never a
+    # half. The temp name carries our pid so two certs racing here cannot scribble on each
+    # other's partial file. Measured before this change: the path was observable at zero
+    # bytes, and 4.6% of reads taken the moment it appeared came back nil.
+    tmp = "#{path}.#{Process.pid}.tmp"
+    begin
+      File.write(tmp, body)
+      File.rename(tmp, path)
+    rescue SystemCallError
+      File.delete(tmp) if File.exist?(tmp) # never leave a partial sibling behind
+      raise
+    end
   rescue SystemCallError
     nil # a cert must never die because it could not write its own lock
   end
