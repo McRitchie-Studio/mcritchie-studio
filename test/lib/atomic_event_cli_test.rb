@@ -1121,8 +1121,22 @@ class AgentActivityCliTest < Minitest::Test
                                          "--disposition", "good", "--help", chdir: proj)
 
       assert_empty requests, "bin/agent-activity grade … --help POSTED — the shim did not inherit the guard"
-      assert_equal 0, status.exitstatus, "the shim's own trailing `exit 0` must not mask the guard's code"
+      assert_equal 0, status.exitstatus, "help exits 0 through the shim too"
       assert_match(/grade <activity-id>/, out)
+
+      # THE DISCRIMINATING CASE. The assertion above cannot tell the guard's exit
+      # from the shim's own trailing `exit 0` — both are 0. A REFUSAL can: the guard
+      # exits 2, which reaches the shell only because `exit` raises SystemExit, which
+      # is not a StandardError and so passes straight through `run`'s rescue AND past
+      # the shim's `exit 0`, which is never executed. If that line ever ran, this
+      # would read 0 and the shim would be silently swallowing every refusal.
+      _o, refusal_err, refusal = Open3.capture3(env, RbConfig.ruby, shim, "grade", "42",
+                                                "--disposition", "good", "--force", chdir: proj)
+
+      assert_equal 2, refusal.exitstatus,
+                   "the shim reported #{refusal.exitstatus} for a refused line — its trailing " \
+                   "`exit 0` is masking the guard's exit code"
+      assert_match(/unrecognized argument "--force"/, refusal_err)
 
       # CONTROL: the same line through the SHIM, without the flag, must post for real.
       control = []
