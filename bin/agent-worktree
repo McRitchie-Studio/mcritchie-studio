@@ -56,6 +56,8 @@ require_relative "../lib/desk_activity"
 # still guards them; new rows go here. See bin/lib/desk_ledger.rb.
 require_relative "lib/desk_ledger"
 require_relative "lib/projects_root"
+require_relative "lib/cli_arg_guard"
+require_relative "lib/agent_worktree_cli"
 
 PROJECTS_DIR = File.expand_path(ENV.fetch("PROJECTS_DIR") { ProjectsRoot.default_projects_dir })
 HUB_DIR = File.join(PROJECTS_DIR, "mcritchie-studio")
@@ -145,50 +147,68 @@ APP_OVERRIDES = {
   }
 }.freeze
 
+# The usage text lives in AgentWorktreeCli::USAGE so this fall-through and the
+# guard's per-subcommand `--help` print the SAME text from one place.
+#
+# It goes to STDERR and exits 1, and both halves are load-bearing. `shell-hook zsh`
+# is consumed as `eval "$(bin/agent-worktree shell-hook zsh)"` from the login shell,
+# so usage on stdout would be eval'd into the operator's shell; and exit 0 from this
+# script is read by bin/task begin as "the worktree was created".
 def usage
-  warn <<~TEXT
-    bin/agent-worktree - hidden worktrees + isolated local stacks
-
-      apps
-      list [app]
-      plan <app> <task-slug> [type]
-      new <app> <task-slug> [type] [--start]
-      bind-task <app> <task-slug> <task-record-slug-or-url>
-      whereami [app task-slug] [--json|--shell]
-      shell-hook zsh
-      env <app> <task-slug>
-      up <app> <task-slug>
-      test <app> <task-slug> [-- rails-test-args]
-      status <app> <task-slug>
-      finish <app> <task-slug> [--push] [--pr]
-      restore-primary <app> [--dry-run]
-      doctor [app]
-      snapshot [app] [--write]
-      cleanup [app] [--write]
-      cleanup [app] --reclaim [--yes]
-      remove <app> <task-slug> [--force] [--yes]
-      down <app> <task-slug>
-
-      remove --force: override the content-on-<base> guard ONLY for a
-        merge-verified branch (a merged PR on GitHub). Never overrides
-        the dirty or not-git-registered guards.
-      scale [status|out|in]
-      scale --provision [--yes]
-
-    Environment:
-      AGENT_REDIS_MIN_DB         first Redis DB in the worktree band (default 9)
-      AGENT_REDIS_MAX_DB         override the band's top DB (default: derived from band size)
-      AGENT_REDIS_FLOOR          steady-state band size in slots (default 20)
-      AGENT_REDIS_STEP           grow/shrink increment in slots (default 10)
-      AGENT_REDIS_PHYSICAL_TARGET  Redis `databases` target for --provision (default 64)
-      AGENT_REDIS_CONF           brew redis.conf path for --provision (default <brew>/etc/redis.conf)
-
-    Examples:
-      bin/agent-worktree plan turf-monster button-color
-      bin/agent-worktree new turf-monster button-color
-      bin/agent-worktree up turf-monster button-color
-  TEXT
+  warn AgentWorktreeCli::USAGE
   exit 1
+end
+
+# THE ARGUMENT GUARD — run BEFORE the dispatcher, always.
+#
+# THE DEFECT THIS CLOSES (/tasks/worktree-subcommand-drops-help). The dispatcher
+# below did `cmd = ARGV.shift || "help"` and NO arm validated what was left, so
+# `bin/agent-worktree new <app> <task> --help` created a real desk: `git worktree
+# add -b`, a port and Redis DB written into .env.agent-stack, the
+# .agent-context.json marker, and a Postgres database from prepare_test_env. The
+# `new` arm did not merely ignore the flag — it destructured `app_name, raw_task,
+# maybe_type, *rest = ARGV` and chose the branch type with
+# `maybe_type&.start_with?("--") ? "feat" : ...`, so `--help` was RECOGNISED as
+# flag-shaped and discarded on purpose, while `*rest` was never inspected at all.
+# Four more arms were reachable the same way (bind-task, up, status, scale out).
+#
+# Every mutation this script can perform is reached through the `case cmd` below,
+# so this is the one call that has to run first. It answers `--help` from ANY
+# position and REFUSES an argument the named subcommand does not account for.
+#
+# Unknown subcommands still fall through to the dispatcher's `else`, which prints
+# usage and exits 1 exactly as before — that path was never the defect.
+#
+# ONE ARM FORWARDS. `test <app> <task> [-- rails-test-args]` hands its tail to
+# `bin/rails test`, so those tokens are minitest's to account for and not this
+# script's; classifying them would refuse `-n /pattern/` and `--` itself and wedge
+# the documented form. That arm gets the help scan and only the help scan — which
+# is the defect there, because `test <app> <task> --help` reached
+# clear_orphan_test_procs (SIGKILL) and prepare_test_env (CREATES the desk's test
+# database, builds the Tailwind bundle) before ever shelling bin/rails.
+#
+# INJECTABLE (out:/err:/exiter:) so every subcommand's verdict can be proven in a
+# test WITHOUT running the script. That is not a nicety: the thing under test
+# allocates a worktree, a port, a Redis DB and a Postgres database when probed, so
+# "just run it and see" is the one experiment that must never be performed.
+def guard_argv!(argv = ARGV, out: $stdout, err: $stderr, exiter: nil)
+  command = argv.first
+  spec = AgentWorktreeCli.guard_args(command)
+  # Not a subcommand at all (a bare `--help`, a typo, an empty line): fall through
+  # to the dispatcher's `else`, which prints usage and exits 1 exactly as before.
+  return nil unless spec
+
+  rest = argv.drop(1)
+
+  if AgentWorktreeCli.passthrough?(command)
+    return nil unless CliArgGuard.help?(rest)
+
+    err.puts(spec[:usage])
+    exiter ||= ->(code) { exit code }
+    return exiter.call(AgentWorktreeCli::HELP_EXIT)
+  end
+
+  CliArgGuard.guard!(rest, out: out, err: err, exiter: exiter, **spec)
 end
 
 def sh(*cmd, chdir: nil, env: {}, allow_fail: false)
@@ -4620,6 +4640,8 @@ def run_scale_provision(yes: false)
 end
 
 if $PROGRAM_NAME == __FILE__
+  guard_argv!(ARGV)
+
   cmd = ARGV.shift || "help"
 
   case cmd

@@ -51,7 +51,15 @@ module ClaimLease
   #                    a re-claim WRITES a fresh lease (renewed), healing the
   #                    corruption; destroying a desk heals nothing.
   #   :same_instance — held by THIS live instance (session AND nonce match) → re-move is fine
-  #   :held_by_other — held by a DIFFERENT, still-live instance → the gate warns/refuses
+  #   :held_by_other — held by a DIFFERENT, still-live instance → EVERY consumer
+  #                    REFUSES on it; not one proceeds. bin/task's build gate and
+  #                    bin/ship's ownership guard exit nonzero without writing,
+  #                    bin/task's heartbeat declines to renew, and
+  #                    MigrationLaneClaim / DevopsShift / TaskReviewClaim /
+  #                    ReleaseConductorClaim return a false Outcome. The refusal
+  #                    is pinned by test/commands/task_claim_gate_test.rb, which
+  #                    also guards this line — it offered a second reading for one
+  #                    release, and two files were written to that reading.
   #
   # Like :expired, :corrupt is a lease-level disposition and outranks identity:
   # even the holder reads its own garbled lease as :corrupt (its next claim/

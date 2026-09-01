@@ -78,7 +78,7 @@ class TaskBuilderRollCallTest < ActiveSupport::TestCase
     assert_equal %w[shannon alex], authors(task), "the legacy author is not lost on the next claim"
   end
 
-  test "a client cannot shrink the author set through a wholesale devops replace" do
+  test "a client cannot shrink the author set through a raw whole-column metadata write" do
     # This drives the raw whole-column write directly — the shape a --checks update
     # that echoes none of these keys leaves at the model. If that erased the set, the
     # record could be laundered clean between the handoff and the review.

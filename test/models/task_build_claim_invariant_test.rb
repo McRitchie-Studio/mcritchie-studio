@@ -14,10 +14,10 @@
 #   carrying `devops` deleted the keys it did not echo, and the board's own edit
 #   form echoes none of them. A board save silently destroyed a LIVE claim, which
 #   is why two readers of "the same fact" disagreed 20 seconds apart: the fact was
-#   being erased and rewritten underneath them. Since api-devops-patch-replaces both
-#   write paths fold through Task.merge_devops_into_metadata, so an OMITTED claim key
-#   survives on its own; the invariant still answers a key posted BLANK and a raw
-#   whole-column `metadata:` write, which is what the cases below drive.
+#   being erased and rewritten underneath them. Both write paths fold through
+#   Task.merge_devops_into_metadata since `api-devops-patch-replaces`, so an OMITTED
+#   claim key survives on its own; the invariant still answers a key posted BLANK and
+#   a raw whole-column `metadata:` write, which is what the cases below drive.
 require "test_helper"
 
 class TaskBuildClaimInvariantTest < ActiveSupport::TestCase
@@ -48,8 +48,8 @@ class TaskBuildClaimInvariantTest < ActiveSupport::TestCase
   # save USED TO leave at the model. Before the invariant it wiped a live lease and
   # the desk read as unclaimed — inviting a second agent onto a desk someone was
   # working at. Both write paths fold through Task.merge_devops_into_metadata since
-  # api-devops-patch-replaces, so this now drives the model write directly.
-  test "a wholesale devops replace that omits the claim keys does not destroy a live claim" do
+  # `api-devops-patch-replaces`, so this now drives the model write directly.
+  test "a raw whole-column metadata write that omits the claim keys does not destroy a live claim" do
     @task.update!(metadata: { "devops" => { "kind" => "feature", "branch" => "feat/x" } })
 
     assert_equal @claim, claim_keys, "an omitted key is not a released claim"

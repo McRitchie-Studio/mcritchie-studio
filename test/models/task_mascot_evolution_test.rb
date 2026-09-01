@@ -246,7 +246,7 @@ class TaskMascotEvolutionTest < ActiveSupport::TestCase
   # NOTE the mechanism, since it moved: this drives `update!` on the MODEL, so it
   # covers any wholesale metadata assignment — the raw `metadata: {}` API door
   # included. The v1 devops PATCH itself no longer replaces the hash (it merges
-  # since api-devops-patch-replaces), so omission alone no longer wipes this key.
+  # since `api-devops-patch-replaces`), so omission alone no longer wipes this key.
   # The guard still earns its keep against the echo below.
   test "a spent gate survives a client devops write" do
     seed_charmander_line!
@@ -272,7 +272,7 @@ class TaskMascotEvolutionTest < ActiveSupport::TestCase
   #
   # Same mechanism note as its sibling above: this drives `update!` on the MODEL, so
   # it covers any wholesale metadata assignment — the raw `metadata: {}` API door
-  # included. The v1 devops PATCH merges since api-devops-patch-replaces, so mere
+  # included. The v1 devops PATCH merges since `api-devops-patch-replaces`, so mere
   # omission no longer reaches this guard; a name posted BLANK still does.
   test "a client write that omits the mascot keeps the task's Pokemon" do
     seed_charmander_line!

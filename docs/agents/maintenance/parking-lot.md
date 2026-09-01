@@ -199,7 +199,14 @@ explicit decision — the only parked items that do — because they may belong 
 concurrent CI/CD session.
 
 - **`build-devnet-e2e-lane`** — turf-vault, the Anchor program that moves real
-  money, has **zero CI**: no `.github/workflows` at all.
+  money, runs **no test lane**. It is no longer uncovered outright: the repo
+  ships `.github/workflows/ci.yml` (`name: CI`, on `pull_request` plus `push` to
+  `[accepted, release, main]`), whose two jobs are `program` (`cargo check` and
+  `clippy -D clippy::correctness`) and `guards` (a doc `op://` reference check).
+  That is compile-and-lint coverage — **nothing executes the program's
+  instructions**, which is what this task is for. Corrected 2026-09-01: this
+  bullet used to say the repo had "zero CI: no `.github/workflows` at all",
+  which stopped being true when that workflow shipped.
 - **`enable-or-delete-devnet-nightly`** — `devnet-nightly.yml` has **never once
   executed.** It gates on `if: vars.DEVNET_NIGHTLY_ENABLED == true`, and all 30
   scheduled runs since 2026-06-14 completed `skipped`. The `@devnet` on-chain e2e

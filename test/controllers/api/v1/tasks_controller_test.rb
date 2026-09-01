@@ -171,7 +171,7 @@ module Api
         assert @task.requires_release_conductor?
       end
 
-      # === A PARTIAL devops PATCH must not delete the rest (api-devops-patch-replaces) ===
+      # === A PARTIAL devops PATCH must not delete the rest (`api-devops-patch-replaces`) ===
       #
       # THE INCIDENT, 2026-08-30. A `PATCH /api/v1/tasks/<slug>` carrying one key
       # ({"devops": {"included_in_release": false}}) took
@@ -294,7 +294,7 @@ module Api
       # silently no-op'd at exit 0 and sent two tasks to review with no builder on
       # record.
       #
-      # THE REPLACE IS GONE (api-devops-patch-replaces): the endpoint now merges,
+      # THE REPLACE IS GONE (`api-devops-patch-replaces`): the endpoint now merges,
       # so an omitted key survives on its own. The before_save invariant STAYS —
       # it is what defends built_by against a caller that posts the name blank,
       # which the merge honors as a deliberate clear. Note the shape of the old
@@ -1005,9 +1005,9 @@ module Api
       # the mascot still rewrote its hash. mascot_shiny/color/emoji are server-owned
       # (absent from DEVOPS_KEYS) and used to vanish on the first such write — the
       # `bin/task begin` bind — leaving every later stage-event snapshot to bake the
-      # NON-shiny sprite. Since api-devops-patch-replaces the fold keys on the POSTED
-      # names intersected with DEVOPS_KEYS, so it can no longer drop a name it does
-      # not know: these four now survive the PATCH twice over, by the merge and by
+      # NON-shiny sprite. The fold keys on the POSTED names intersected with
+      # DEVOPS_KEYS since `api-devops-patch-replaces`, so it can no longer drop a name
+      # it does not know: these four now survive the PATCH twice over, by the merge and by
       # sync_mascot_display. This walks the real fast-lane order: create, bind, claim.
       test "a devops PATCH cannot wipe the server-owned mascot stamps" do
         Pokemon.create!(dex: 302, name: "Snorlax", slug: "snorlax", types: %w[normal], generation: 1,
