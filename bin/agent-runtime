@@ -20,12 +20,61 @@ Usage:
   bin/agent-runtime doctor    # inspect local marker/runtime configuration
   bin/agent-runtime codex-update [args...]  # controlled Codex update + mascot patch gate
   bin/agent-runtime repair    # alias for install
+  bin/agent-runtime --help    # this text — INSTALLS NOTHING: the installer is
+                              # never exec'd, so no doc, skill, settings file or
+                              # profile is written. Exits 1, because exit 0 from
+                              # this script is read as "installed" by
+                              # bin/ecosystem-build.
 
 Fresh machine:
   cd /Users/alex/projects/mcritchie-studio
   bin/agent-runtime install
   bin/agent-runtime doctor
 USAGE
+}
+
+# EVERY ARGUMENT IS ACCOUNTED FOR BEFORE THE INSTALLER IS EXEC'd.
+#
+# THE DEFECT THIS CLOSES (/tasks/docs-installer-help-publishes). This script is a
+# pass-through: the install/repair/check arms `shift` and then
+# `exec "$INSTALLER" <mode> "$@"`. Nothing inspected what was left on the line, so
+# `bin/agent-runtime install --help` handed `--help` straight down to
+# bin/install-agent-docs — which dropped it in turn and PUBLISHED FOR REAL:
+# AGENTS.md + CLAUDE.md into the projects root, every skill into ~/.claude/skills
+# and ~/.codex/skills, the hooks in ~/.claude/settings.json, and the Ruby PATH
+# block in ~/.zprofile. Exactly ONE of the six arms — `doctor` — ever counted its
+# arguments, which is evidence the check was known to be needed and applied once.
+#
+# WHY PER-ARM AND NOT A TOP-LEVEL SCAN. `codex-update [args...]` is a DECLARED
+# pass-through and bin/codex-update owns its own --help, so a blanket scan here
+# would swallow a flag that is not this script's to answer — a top-level guard
+# wearing a per-arm guard's clothes. The arms that take no arguments of their own
+# account for the whole remaining line instead; the forwarding arm keeps forwarding.
+#
+# WHY THE SHARED bin/lib/cli_arg_guard.rb IS NOT USED HERE. It is Ruby, and this is
+# the fresh-machine bootstrap that INSTALLS the login-shell Ruby PATH (see
+# install_zprofile_ruby_path in the installer) and whose `doctor` exists to diagnose
+# Ruby drift. Making argument parsing depend on a working modern Ruby would mean the
+# bootstrap cannot read its own command line on precisely the machine it exists to
+# repair. So this uses the shell idiom that test/lib/bin_help_flag_class_test.rb
+# already enforces for bin/setup-1pass-token, bin/ecosystem-build and
+# bin/gh-app-git-credential: a --help|-h scan plus an explicit refusal.
+#
+# `$#` is tested before "$@" is iterated (macOS bash 3.2 + `set -u`).
+guard_no_arguments() {
+  local subcommand="$1"
+  local arg
+  shift
+  if [ "$#" -gt 0 ]; then
+    for arg in "$@"; do
+      case "$arg" in
+        --help|-h) usage >&2; exit 1 ;;
+      esac
+    done
+    printf 'agent-runtime: unrecognized argument(s) after %s: %s — INSTALLS NOTHING: the installer was not run, so no doc, skill, settings file or profile was written.\n\n' "$subcommand" "$*" >&2
+    usage >&2
+    exit 2
+  fi
 }
 
 ok() {
@@ -271,30 +320,39 @@ doctor() {
 }
 
 command="${1:-install}"
+# `shift` returns non-zero when there are no positional parameters, and this script
+# runs under `set -e` — so the unconditional `shift` inside each arm below KILLED the
+# bare `bin/agent-runtime` (exit 1, nothing installed, no message), defeating the
+# `${1:-install}` default that exists to make the bare form mean "install".
+if [ "$#" -gt 0 ]; then shift; fi
 case "$command" in
   install)
-    shift
-    exec "$INSTALLER" install "$@"
+    guard_no_arguments install "$@"
+    exec "$INSTALLER" install
     ;;
   repair)
-    shift
-    exec "$INSTALLER" install "$@"
+    guard_no_arguments repair "$@"
+    exec "$INSTALLER" install
     ;;
   check)
-    shift
-    exec "$INSTALLER" check "$@"
+    guard_no_arguments check "$@"
+    exec "$INSTALLER" check
     ;;
   doctor)
-    shift
-    [ "$#" -eq 0 ] || { usage >&2; exit 64; }
+    # This arm already counted its arguments (`[ "$#" -eq 0 ] || { usage >&2; exit 64; }`)
+    # — the one guarded arm of six. It keeps refusing; it now also answers a help
+    # probe as help instead of as a usage error.
+    guard_no_arguments doctor "$@"
     doctor
     ;;
   codex-update)
-    shift
+    # The ONE forwarding arm. bin/codex-update owns its own --help, so the argv
+    # passes through untouched; guarding it here would answer for another script.
     exec "$CODEX_UPDATE" "$@"
     ;;
   -h|--help|help)
-    usage
+    usage >&2
+    exit 1
     ;;
   *)
     printf 'agent-runtime: unknown command: %s\n' "$command" >&2
