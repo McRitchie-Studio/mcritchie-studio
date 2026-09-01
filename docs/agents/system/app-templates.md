@@ -122,9 +122,12 @@ repo (not linked: the docs route serves only `docs/agents/**`).
    (`turf-vault/scripts/squad-upgrade.js`) and never touched the console; and
    contest/treasury operations are 2-of-3 **vault signer** operations that
    turf-monster's own flows handle.
-2. **No users.** Zero signing requests in production. One durable nonce, on
-   devnet. Mainnet sits on turf-vault v0.24 awaiting an upgrade window. It has
-   never been used for anything.
+2. **No users.** Zero signing requests in production, one durable nonce on
+   devnet — **measured against production on 2026-08-31**, not asserted
+   (`SigningRequest.count` → 0; `DurableNonce.pluck(:cluster).tally` →
+   `{"devnet"=>1}`; the re-runnable command is in the console's own doc).
+   Mainnet sits on turf-vault v0.24 awaiting an upgrade window. It has never
+   been used for anything.
 3. **The unfixed control gap in §3** — which is **inherited, not new**: the
    retired v1 console (`Admin::SigningController` + `Signing::Cosigner`, retired
    2026-06-02, which also held Mason's key server-side) had the identical

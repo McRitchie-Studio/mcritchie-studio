@@ -19,10 +19,21 @@ it, and do not "finish" it.
    touched this console. Contest and treasury operations (`settle_contest`,
    `pause`, `sweep_operator_revenue`) are 2-of-3 **vault signer** operations that
    turf-monster's own flows handle.
-2. **It has no users.** Zero signing requests in production as of the decision.
-   One durable nonce, on devnet. Mainnet sits on turf-vault v0.24 awaiting an
-   upgrade window (`turf-vault/docs/CURRENT_DEPLOYMENT.md`). It has never been
-   used for anything.
+2. **It has no users.** Zero signing requests in production. One durable nonce,
+   on devnet. Mainnet sits on turf-vault v0.24 awaiting an upgrade window
+   (`turf-vault/docs/CURRENT_DEPLOYMENT.md`). It has never been used for
+   anything.
+
+   That is **measured, not asserted** — and it is the one premise most likely to
+   have changed by the time you read this, so re-run it rather than trusting the
+   line above:
+
+   ```bash
+   heroku run --exit-code -a mcritchie-studio \
+     "bin/rails runner 'puts %(requests=#{SigningRequest.count} nonces=#{DurableNonce.pluck(:cluster).tally})'"
+   # 2026-08-31 → requests=0 nonces={"devnet"=>1}
+   ```
+
 3. **It has an unfixed control gap**, and the gap is not small. The signer page
    shows the operator an **opaque byte blob**. It signs via
    `phantom.signMessage`, so Phantom's own transaction preview **does not apply**
