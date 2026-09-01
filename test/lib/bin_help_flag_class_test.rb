@@ -239,6 +239,33 @@ class BinHelpFlagClassTest < Minitest::Test
                  "already rolled a docs ledger, taken a shift lease, and dropped databases."
   end
 
+  # A HASH LITERAL WITH ONE KEY TWICE KEEPS THE LAST, SILENTLY — so a duplicate is
+  # invisible to every other test in this file, because MANIFEST.keys has already
+  # collapsed it before they run. This one reads the SOURCE instead.
+  #
+  # MEASURED 2026-08-31. The sweep that fixed bin/release filed five more scripts as
+  # :subcommand_gap, one of them bin/gh-app-git-credential. A branch fixing that
+  # script reclassified it :own_guard. Both landed, git merged both hunks without a
+  # conflict, and the gap entry — being LATER in the literal — won. The
+  # reclassification the change existed to make was discarded, the enforced
+  # shell-promise hash below still passed because it is a SEPARATE literal, and
+  # nothing went red.
+  #
+  # That is not a one-off: four more :subcommand_gap entries are still open, each
+  # with a filed task that will do exactly this to exactly this hash.
+  def test_no_script_is_classified_twice
+    literal = File.read(__FILE__)[/MANIFEST = \{.*?\}\.freeze/m]
+    refute_nil literal, "the MANIFEST literal moved — re-anchor this test"
+
+    names = literal.scan(/^\s*"([a-z0-9._-]+)"\s*=>/).flatten
+    dupes = names.tally.select { |_, count| count > 1 }
+
+    assert_empty dupes.keys,
+                 "classified more than once in MANIFEST: #{dupes.keys.join(', ')}. Ruby keeps the " \
+                 "LAST entry, so the earlier classification is silently discarded — pick one and " \
+                 "carry the other's record into a comment on it."
+  end
+
   # The manifest must not outlive the scripts it names, or it becomes a list of
   # reassurances about files that no longer exist.
   def test_the_manifest_names_no_script_that_is_gone
