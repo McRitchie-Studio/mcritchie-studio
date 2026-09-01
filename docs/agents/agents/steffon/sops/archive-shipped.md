@@ -224,8 +224,10 @@ through to a REAL roll — it rewrote `delete-later.md` by −41 lines and stage
 second file for an operator who was only asking what the command does. It now
 prints usage and exits without touching the working tree or the index, and an
 argument it cannot account for REFUSES rather than proceeding. The same guard
-(`bin/lib/cli_arg_guard.rb`) covers `bin/clean-artifacts`, `bin/control-check`
-and `bin/reap-cert-databases`; `test/lib/bin_help_flag_class_test.rb` fails when
+(`bin/lib/cli_arg_guard.rb`) covers `bin/clean-artifacts`, `bin/control-check`,
+`bin/reap-cert-databases` and — since 2026-08-31 — `bin/release`, where the same
+defect sat one position over: `bin/release prepare --yes --help` promoted for
+real, because only the BARE form fell through to usage; `test/lib/bin_help_flag_class_test.rb` fails when
 a new `bin/` script is added without deciding what it does with an unrecognised
 argument.
 
