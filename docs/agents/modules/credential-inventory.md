@@ -149,11 +149,12 @@ rotation list the moment those vars land.
   `put_object(acl: "public-read")` raises `AccessControlListNotSupported`, and
   `public: true` in `storage.yml` makes every upload fail. Grant reads through
   the bucket policy, never a per-object ACL.
-- Six of the seven carry a standing **`PublicReadGetObject`** on `arn:.../*`
-  with `block_public_policy=false`, so every object is world-readable.
-  `moms-app-production` is the exception: no bucket policy, public access fully
-  blocked.
-- **On those six, `public: false` is not a privacy control.** Active Storage
+- Four of the seven — the studio and Turf Monster pairs — carry a standing
+  **`PublicReadGetObject`** on `arn:.../*` with `block_public_policy=false`, so
+  every object is world-readable. Three are exceptions, with no bucket policy and
+  public access fully blocked: `moms-app-production`, which never had one, and
+  both Industries buckets, flipped private 2026-09-01 (see the table above).
+- **On those four, `public: false` is not a privacy control.** Active Storage
   hands out expiring presigned URLs and the expiry is genuine — the signed URL
   starts returning 403 on schedule. The bucket policy, though, keeps the raw
   object URL readable for as long as the object exists, so anyone holding the
