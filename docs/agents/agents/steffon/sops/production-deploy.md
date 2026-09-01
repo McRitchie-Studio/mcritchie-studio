@@ -486,10 +486,23 @@ Three conditions on this step, and none of them is optional:
   the release is still `assembled`. Fix the blocker, re-run the ship, then
   archive. Never archive past a failed ship to "tidy up".
 - **It is a separate verdict, and it can refuse.** `bin/archive-docs` stops the
-  beat when the ledger has lost rows, and `bin/release archive` honours that exit
-  code. **A refusal here does NOT unship anything** — production is already live
-  and correct. Recover the row per [`archive-shipped`](archive-shipped.md) and
-  re-run the archive; do not touch the release.
+  beat, and `bin/release archive` honours that exit code. **A refusal here does
+  NOT unship anything** — production is already live and correct. Never touch the
+  release over it.
+  **READ THE REPORT — DO NOT ASSUME IT IS THE LEDGER.** The sweep exits non-zero
+  for four unrelated reasons: a genuine ledger loss, an unreadable baseline, an
+  argument its guard rejects, and any crash inside the sweep (a `git mv` onto an
+  existing destination did it on 2026-09-01). The report names the command, its
+  exit status, its stderr, and a `ledger check:` line that is MEASURED, not
+  guessed — `INTACT`, `LOST`, or `UNKNOWN`. Only `LOST` means rows are missing;
+  recover those per [`archive-shipped`](archive-shipped.md), then re-run. On
+  `INTACT`, fix the cause the report quotes and re-run — there is nothing to
+  recover, and hunting for rows costs a detour you do not have mid-deploy. On
+  `UNKNOWN` the check could not run, so establish the ledger's state before
+  concluding anything either way.
+  A crash leaves the tree MID-ROLLOVER — rows already moved out of
+  `delete-later.md` and into its archive, both staged. That is conserved and
+  correct, and it is not damage, however much it looks like it.
 - **Report both halves separately.** The ship's result and the archive's result
   are different facts about different state. A reader must be able to see a green
   ship next to an archive that refused.

@@ -18,6 +18,27 @@ require "set"
 # dead end — and mirroring the subdirectory keeps sibling cross-links (the
 # prelaunch cluster links to itself by bare filename) resolving after the move.
 #
+# ONE BAD MOVE ABORTS THE WHOLE ROLL — IT IS NOT SKIPPED. `git mv` fails with
+# "fatal: destination exists" when the archive already holds that filename (a
+# commit that added an archive copy while leaving the live copy tracked does it),
+# and apply_moves! neither rescues nor continues: DocsArchive::CommandFailed
+# propagates out of bin/archive-docs and the run dies on the spot. A reader of the
+# paragraph above would reasonably expect the one bad file to be passed over and the
+# rest to retire. It does not work that way, and the difference matters, because the
+# run does not die cleanly:
+#
+#   * the moves ALREADY made in that loop stay STAGED, and
+#   * the LEDGER ROLLOVER RAN FIRST (bin/archive-docs rolls before it sweeps, so a
+#     retired row stops pinning the doc it named), so both ledger files are already
+#     rewritten and staged too.
+#
+# So the tree is left mid-rollover: rows gone from delete-later.md, the same rows
+# added to its archive. That is CONSERVED and correct — but it looks exactly like
+# damage, which is how `bin/release archive` came to announce a ledger loss for a
+# crash that lost nothing (2026-09-01, mid production deploy; see failure_report
+# below). Nothing is lost here — but nothing is finished either, and the fix is to
+# clear the colliding destination, not to re-run and hope.
+#
 # A file QUALIFIES when BOTH hold:
 #   1. its name carries a date (YYYY-MM-DD or retro-rel-*) OR it lives in
 #      docs/agents/audits/; AND
@@ -282,5 +303,138 @@ module DocsArchive
     JSON.parse(line.split(SUMMARY_TAG, 2).last.strip, symbolize_names: true)
   rescue JSON::ParserError
     nil
+  end
+
+  # ---- reporting a FAILED sweep ---------------------------------------------
+
+  # THE FAILURE CONTRACT, sibling to the summary contract above.
+  #
+  # bin/archive-docs exits non-zero for at least four UNRELATED reasons: a genuine
+  # ledger loss, an UNREADABLE baseline, an argument CliArgGuard does not account
+  # for, and any crash inside the sweep itself — a `git mv` onto an existing
+  # destination did it on 2026-09-01. Its caller (`bin/release archive`) caught all
+  # four and reported exactly ONE of them: "the delete-later ledger has lost
+  # resolved row(s)".
+  #
+  # THAT DIAGNOSIS WAS NEVER CHECKED. It fired for the `git mv` crash in the middle
+  # of a production deploy, and the operator — reading DATA LOSS IN AN AUDIT TRAIL —
+  # stopped and counted the rows by hand: delete-later.md 86 → 45 (−41), its archive
+  # 524 → 565 (+41). Forty-one out, forty-one in, perfectly conserved. The ledger had
+  # lost nothing. A wrong diagnosis in a deploy path is worse than no diagnosis: it
+  # sends the reader hunting in the wrong place, at the worst possible moment, and an
+  # operator who BELIEVES it may start "recovering" rows that were never lost.
+  #
+  # So this report separates the two questions the old message conflated:
+  #
+  #   * WHAT FAILED — the command, its exit status, its stderr. Reported ALWAYS,
+  #     whatever the cause, because that is the answer to "what actually happened"
+  #     and it is the one thing the old message never said.
+  #   * WHETHER THE LEDGER LOST ROWS — a MEASUREMENT the caller supplies
+  #     (LedgerGuard.lost_against_ref, against the same repo the sweep was pointed
+  #     at), never an inference from the exit code. `ledger: nil` means the caller
+  #     did not measure, and then the report claims NOTHING about the ledger rather
+  #     than guessing.
+  #
+  # The three verdicts are three different sentences on purpose, and `:unreadable`
+  # is neither of the other two: a comparison that could not run certifies nothing,
+  # so it must not read as "intact" any more than as "lost".
+  #
+  # PURE — strings in, string out, no git and no I/O — so the discrimination is
+  # unit-testable directly. See test/lib/docs_archive_failure_report_test.rb for the
+  # unit tier and test/lib/release_archive_docs_diagnosis_test.rb for the caller
+  # driving it across a real process boundary.
+  #
+  # DEPENDENCY DIRECTION: this module must NOT reach for LedgerGuard. LedgerGuard
+  # requires THIS file (it reuses row_date/data_row? so the two ledgers cannot drift
+  # apart again), so the arrow runs one way and the caller hands the verdict down.
+
+  # How much of a failing sweep's stderr to quote. A Ruby backtrace runs long and its
+  # FIRST line carries the message that names the cause, so quoting the head is what
+  # makes the report legible. The tail is NAMED as elided, never dropped in silence.
+  STDERR_QUOTE_LINES = 12
+
+  NO_STDERR = "(none — the sweep failed without writing anything to stderr)"
+
+  DEFAULT_CONSEQUENCE = "Nothing was committed."
+
+  # Label column: "  ledger check: " is 16 characters, and every label aligns to it so
+  # continuation lines hang under the text rather than under the label.
+  LABEL_WIDTH = 16
+
+  def failure_report(command:, exit_label:, stderr:, ledger: nil, consequence: DEFAULT_CONSEQUENCE)
+    verdict = ledger && ledger[:verdict]
+    [
+      "docs archive FAILED — #{failure_lead(verdict)}",
+      "",
+      labelled("command", command),
+      labelled("exit status", exit_label),
+      labelled("ledger check", ledger_check_text(ledger)),
+      "",
+      "  the sweep said (stderr):",
+      quoted_stderr(stderr),
+      ledger_evidence(ledger),
+      "  #{consequence} #{next_step(verdict)}"
+    ].join("\n")
+  end
+
+  # The lead sentence. ONLY `:lost` — a measured loss — is allowed to raise the alarm.
+  def failure_lead(verdict)
+    return "and the delete-later ledger HAS lost resolved row(s)." if verdict == :lost
+
+    "the sweep itself failed."
+  end
+
+  def ledger_check_text(ledger)
+    case ledger && ledger[:verdict]
+    when :intact
+      "INTACT — every resolved row recorded at HEAD is still accounted for across\n" \
+        "#{File.basename(LEDGER)} and its archive. This is NOT ledger loss, and\n" \
+        "there is nothing to recover."
+    when :lost
+      "LOST — #{ledger[:missing]} resolved row(s) recorded at HEAD are now in NEITHER\n" \
+        "#{File.basename(LEDGER)} nor its archive. Committing would make that\n" \
+        "loss permanent on `release`."
+    when :unreadable
+      "UNKNOWN — the conservation check could not run, so whether any row was lost\n" \
+        "is UNDETERMINED. Do not assume either way.\n" \
+        "#{ledger[:detail]}"
+    else
+      "not measured — this run stopped before the ledger was inspected, so NO claim\n" \
+        "is made about it either way."
+    end
+  end
+
+  # The rows themselves, for a MEASURED loss only. Nothing else earns this block:
+  # printing recovery instructions under a failure that lost nothing is precisely the
+  # defect. Every other verdict contributes a blank separator line and no claim.
+  def ledger_evidence(ledger)
+    return "" unless ledger && ledger[:verdict] == :lost && ledger[:detail]
+
+    "\n#{ledger[:detail].to_s.lines.map { |l| l.strip.empty? ? '' : "  #{l.chomp}" }.join("\n")}\n"
+  end
+
+  def next_step(verdict)
+    return "Recover the row(s) above, then re-run `bin/release archive`." if verdict == :lost
+
+    "Fix the cause above, then re-run `bin/release archive`."
+  end
+
+  def labelled(label, text)
+    body = text.to_s.split("\n")
+    pad = " " * LABEL_WIDTH
+    [format("  %-13s %s", "#{label}:", body.first)]
+      .concat(body.drop(1).map { |line| "#{pad}#{line}" })
+      .join("\n")
+  end
+
+  def quoted_stderr(stderr, limit: STDERR_QUOTE_LINES)
+    lines = stderr.to_s.lines.map(&:chomp).reject { |line| line.strip.empty? }
+    return "    #{NO_STDERR}" if lines.empty?
+
+    quoted = lines.first(limit).map { |line| "    #{line}" }
+    if lines.size > limit
+      quoted << "    … (#{lines.size - limit} more line(s) — re-run the command above to see them)"
+    end
+    quoted.join("\n")
   end
 end
