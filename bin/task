@@ -370,10 +370,27 @@ rescue StandardError
   nil
 end
 
-# Refuse a move-to-building when the task is already claimed by a DIFFERENT,
-# still-live instance — unless --steal. Unclaimed / expired / corrupt /
-# same-instance claim freely. Loud (not a hard block): it prints WHO holds it +
-# how to override.
+# REFUSES a move-to-building — `exit 1`, before any write — when the task is
+# already claimed by a DIFFERENT, still-live instance. Unclaimed / expired /
+# corrupt / same-instance claim freely. `--steal` is the ONLY way past it.
+#
+# It is LOUD about that refusal: it names WHO holds the task, the heartbeat age,
+# the holder's last durable progress, and the exact --steal command to re-run.
+# Loud is HOW it refuses, not INSTEAD of refusing.
+#
+# WHY THAT SENTENCE IS SPELLED OUT. This comment used to read "Loud (not a hard
+# block)", meaning "overridable by --steal" — and it READ as warns-and-proceeds.
+# A reader carried that reading into docs/agents/modules/worktrees.md as "warns
+# and proceeds — it is loud, not blocking", which would have had the next agent
+# pre-arm --steal against a live builder's desk: the exact fail-open this gate
+# exists to close. That doc has SINCE BEEN CORRECTED (it reads "refuses — exit
+# 1" today, so do not go hunting for the bad sentence there); this comment and
+# ClaimLease's disposition legend are the other half of the same fix.
+#
+# test/commands/task_claim_gate_test.rb pins the refusal by asserting the gate
+# sends NO PATCH on the refused path — the one assertion a warns-and-proceeds
+# gate could not pass — and it reads the exit code out of THIS function, so a
+# future reword cannot drift from the code again in silence.
 #
 # :corrupt (an unparseable lease) stays DELIBERATELY fail-open here, unlike the
 # reclaim guard (bin/agent-worktree), which withholds on it: claiming a task
