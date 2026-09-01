@@ -92,16 +92,22 @@ aws iam put-user-policy --user-name "mcr-$APP-dev" --policy-name bucket-access \
     {\"Effect\":\"Allow\",\"Action\":[\"s3:GetObject\",\"s3:ListBucket\"],
      \"Resource\":[\"arn:aws:s3:::$APP-production\",\"arn:aws:s3:::$APP-production/*\"]}]}"
 
+# Mint WITHOUT printing: `create-access-key` writes the secret to stdout, and
+# stdout is the session transcript (AGENTS.md First Rules: "Do not print
+# secrets"). Capture to owner-only files, read them in step 4, shred in step 6.
+umask 077
 for env in prod dev; do
-  aws iam create-access-key --user-name "mcr-$APP-$env"
+  aws iam create-access-key --user-name "mcr-$APP-$env" \
+    --query 'AccessKey.[AccessKeyId,SecretAccessKey]' --output text \
+    > "$HOME/.mcr-$APP-$env.key"
 done
 ```
 
 ## 4. Store the keys — the one manual seam
 
 The admin service account's vault grant is **read-only**, so this SOP cannot
-write 1Password items. Route each key pair to its stores without printing it
-into a transcript:
+write 1Password items. Each pair is in `$HOME/.mcr-$APP-<env>.key` from step 3
+(id, then secret). Route it to its stores without printing it into a transcript:
 
 - **Deployed app:** set `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` on the
   Heroku app directly (`heroku config:set`, deployer lane) — prod key on the
@@ -115,12 +121,15 @@ into a transcript:
 ## 5. Verify — positive and negative
 
 ```bash
-# each minted key answers as itself (repeat with dev key)
-AWS_ACCESS_KEY_ID=<prod-key> AWS_SECRET_ACCESS_KEY=<prod-secret> \
+read -r PROD_ID PROD_SECRET < "$HOME/.mcr-$APP-prod.key"
+read -r DEV_ID DEV_SECRET < "$HOME/.mcr-$APP-dev.key"
+
+# each minted key answers as itself (repeat with $DEV_ID/$DEV_SECRET)
+AWS_ACCESS_KEY_ID=$PROD_ID AWS_SECRET_ACCESS_KEY=$PROD_SECRET \
   aws sts get-caller-identity
 
 # THE law: the dev key must FAIL to write production
-AWS_ACCESS_KEY_ID=<dev-key> AWS_SECRET_ACCESS_KEY=<dev-secret> \
+AWS_ACCESS_KEY_ID=$DEV_ID AWS_SECRET_ACCESS_KEY=$DEV_SECRET \
   aws s3api put-object --bucket "$APP-production" --key probe.txt --body /dev/null \
   && echo "VIOLATION — dev key wrote prod; fix the policy before handing off" \
   || echo "read-only prod confirmed"
@@ -135,6 +144,7 @@ is the point of the whole design.
   [`../../../modules/object-storage.md`](../../../modules/object-storage.md).
 - Describe the new 1Password item in
   [`../../../modules/credential-inventory.md`](../../../modules/credential-inventory.md).
+- Shred the key files: `rm -P "$HOME/.mcr-$APP-prod.key" "$HOME/.mcr-$APP-dev.key"`.
 - Close the activity:
   `bin/agent-activity end --outcome "provisioned <app> buckets + users"`.
 
