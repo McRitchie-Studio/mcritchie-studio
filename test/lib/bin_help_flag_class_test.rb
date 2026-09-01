@@ -91,6 +91,12 @@ class BinHelpFlagClassTest < Minitest::Test
     # --- shell scripts, same sweep, same defect, different idiom --------------
     "setup-1pass-token"      => :own_guard,
     "ecosystem-build"        => :own_guard,
+    # WAS :subcommand, which claimed it "falls through to usage". It fell through
+    # to `*) exit 0` — no usage, no signal — and `get --help` ran the REAL `get`,
+    # printing a live installation token and writing one to disk. :subcommand
+    # carries no wiring assertion, so that claim was never checked against the
+    # code. It is :own_guard now, and enforced below.
+    "gh-app-git-credential"  => :own_guard,
     # --- the three prior fixes -----------------------------------------------
     "task"                   => :own_guard,
     "devops-shift"           => :own_guard,
@@ -292,8 +298,9 @@ class BinHelpFlagClassTest < Minitest::Test
 
   def test_the_shell_scripts_answer_help_without_acting
     {
-      "setup-1pass-token" => "INSTALLS NOTHING",
-      "ecosystem-build"   => "BUILDS NOTHING"
+      "setup-1pass-token"     => "INSTALLS NOTHING",
+      "ecosystem-build"       => "BUILDS NOTHING",
+      "gh-app-git-credential" => "MINTS NOTHING"
     }.each do |name, promise|
       src = source(name)
 
