@@ -15,7 +15,7 @@ live in [`object-storage.md`](object-storage.md); this module owns the FLOW.
 
 | Source | How it arrives |
 |---|---|
-| **Email** | forward to **`desk@mcritchie.studio`** (Google alias → `desk@in.mcritchie.studio` → SES → the private `mcritchie-studio-desk` bucket → hub poller → `/admin/desk`) |
+| **Email** | forward to **`desk@mcritchie.studio`** (Google account → forward to `desk@in.mcritchie.studio` → Resend inbound → svix-signed `email.received` webhook → hub ingest job re-stores the raw in the private `mcritchie-studio-desk` bucket → `/admin/desk`) |
 | **File drop** | `mcritchie-industries/business-data/_inbox/` — folders, zips, anything; do not pre-sort |
 | **Chat** | hand a path or paste content to a session and say what it is |
 | **UI upload** | the entity app's `/admin/knowledge` intake form |
@@ -83,7 +83,7 @@ heroku run -a mcritchie-studio --no-tty rails runner \
 ```
 
 For each awaiting item: run the intake protocol on its body and attachments
-(raw + parsed parts live in the `mcritchie-studio-desk` bucket, us-east-1),
+(raw + parsed parts live in the `mcritchie-studio-desk` bucket, us-east-1; raw arrives via the Resend ingest job — Resend's own download URLs are temporary, the bucket copy is the durable one),
 then stamp the outcome — `status` to `filed` (or `ignored`) and one line in
 `filed_note` saying what was done and where it went. Quarantined items are
 REPORTED to Mr. McRitchie, never processed, never deleted.
