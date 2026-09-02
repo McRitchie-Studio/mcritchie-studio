@@ -131,17 +131,16 @@ behind fail on their next upload.
 | `mcritchie-studio-dev` | hub `amazon_dev` service | Yes |
 | `turf-monster-production` | `turf-monster-mainnet` (live) | Yes |
 | `turf-monster-dev` | Turf Monster dev | Yes |
-| `mcritchie-industries-production` | `mcritchie-industries` **and** `mcritchie-industries-qa` — QA has no bucket of its own | **No** — flipped private 2026-09-01 while still empty |
+| `mcritchie-industries-production` | `mcritchie-industries` (per-app key since 2026-09-02); `mcritchie-industries-qa` still RESOLVES this bucket but its dev key is refused here — cutover: `/tasks/industries-qa-bucket-cutover` | **No** — flipped private 2026-09-01 while still empty |
 | `mcritchie-industries-dev` | Industries dev | **No** — flipped private 2026-09-01 while still empty |
 | `moms-app-production` | moms-app (deployed off the hub Heroku account) | **No** — the one private bucket |
 
 **Where the value lives.** 1Password, plus each deployed consumer's
 `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` config vars. As of 2026-08-13 only
 `mcritchie-studio` and `turf-monster-mainnet` carry them, and both are identical
-to the 1Password item. Industries' `config/storage.yml` already names its bucket,
-but neither `mcritchie-industries` nor `mcritchie-industries-qa` has the config
-vars set — so Industries is wired but not yet authenticated, and joins the
-rotation list the moment those vars land.
+to the 1Password item. Industries' deployed apps carry per-app tier-4 keys
+instead (set 2026-09-02 — see **First migration landed** below), so Industries
+never joins this rotation list.
 
 **Object posture** (probed live 2026-08-13):
 
