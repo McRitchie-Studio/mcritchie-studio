@@ -162,8 +162,39 @@ of the same glob rather than needing another state surface.
 ```
 
 `phase` carries the distinction cost #4 is about: **`waiting` consumes nothing.**
-`started_at` is the OS's rendering of the process start time — the identity
-proof, and the only field that decides whether any of the others may be believed.
+
+**Correction, from building it (slice 3).** The sketch above spelled `started_at`
+as the OS start time, and §5(c) says these claims are read by *the same glob and
+the same GRADER* as the runlock. Those two cannot both hold: the grader reads
+`started_at` as the ISO stamp of when the record was written and takes its
+identity proof from `<subject>_started_at`. **§5(c) wins** — a record that spelled
+one field two ways would put two truths on one screen and neither call site would
+look wrong. The shipped record therefore uses the runlock's vocabulary exactly:
+
+```
+started_at        ISO — when this record was written (what the grader ages)
+pid  / pid_started_at    the SUPERVISOR subject (a runlock spells it cert_pid)
+pgid / pgid_started_at   the GROUP subject — same spelling as the runlock's
+began_at          ISO — when the RUN began; fixed across every republish
+```
+
+**Two subjects, not one**, for the reason the runlock has always carried two: a
+supervisor can be killed while the work it spawned SURVIVES — reparented, still
+burning the machine, still holding a test DB — and a claim naming only the
+supervisor reports that worst case as `dead`. `bin/ship` spawns its cert with
+`system` and no `pgroup:`, so the runner lives in the ship's own group, which
+makes the group the subject that stays true after the ship dies.
+
+The supervisor subject keeps an honest name rather than borrowing `cert_pid`: a
+ship is not a cert, and the reader translates that one pair of names at its
+boundary (`AgentPresence.supervisor_pid`) instead of the record lying about what
+it holds.
+
+**And the claim stays OUT of the runlock slot**, which is a safety property rather
+than a filing preference. `CertOrphanGuard.preflight` REAPS — it SIGKILLs the
+group a `cert-run.json` names — and it reads only `<root>/.git/cert-run.json`. A
+claim in the session-marker namespace is invisible to it by construction, so the
+reaper can never be aimed at a process no cert spawned.
 
 **Any new writer must launder its path through
 `TaskUsageSandbox.enforce!(..., store: "session-marker")`.** This is enforced,
@@ -217,14 +248,12 @@ states — which is `bin/ship`, not the cert.
 
 ### (c) Sweeps and ships
 
-`bin/ship` wrote **nothing locally for its entire ~12-minute run**: its eight
-phases existed only as stderr strings and header comments, and the boundary that
-matters is cert → CI wait. Slice 3 landed the ship half — it now publishes the
-claim below at every one of those eight boundaries (`bin/lib/presence_claim.rb`).
-`bin/release prepare` still takes flocks — invisible to anything not itself
-contending for them — plus a board claim that answers *"is a release live"*, not
-*"is a sweep saturating this machine"*; that half is slice 4, and it reuses the
-same writer.
+`bin/ship` wrote **nothing locally for its entire ~12-minute run**. Its eight
+phases existed only as stderr strings and header comments; the boundary that
+matters is cert → CI wait. Slice 3 landed the ship half (`bin/lib/presence_claim.rb`).
+`bin/release prepare` takes flocks — invisible to anything not itself contending
+for them — plus a board claim that answers *"is a release live"*, not *"is a
+sweep saturating this machine."*
 
 | | |
 |---|---|
@@ -490,18 +519,25 @@ through `SessionMarkers` (so no new store, and `bin/ship` never names `.agents`)
 and `bin/ship` republishes it at each of the eight boundaries it already prints.
 The atomic write path in §4 landed with it.
 
-**The READER hop is still open, and until it lands nothing consumes these
-claims.** `AgentPresence::CLAIM_GLOBS` names only the two runlock patterns, so a
-ship claim is invisible to slice 1's reader and a CI-waiting ship is still
-reported as unattributed load. What it needs: the
-`.agents/sessions/*.presence-*` glob, a normalizer mapping the claim's `pid` /
-`started_at` onto the grader's subject pair (it keys on `cert_pid` /
-`cert_started_at`), and a dedupe so a ship's cert-phase claim and the runlock its
-own child publishes are not counted as two suites — resolving each claim's pid to
-its live row and collapsing claims that share a process group does it with no new
-field, reusing the resolution the backstop already performs. Until then the ship
-claim deliberately over-reports its cert phase (`weight: suite`), because
-over-reporting cost buys delay and under-reporting buys a saturated machine.
+**The READER hop landed with it, and it had to.** A first cut shipped the writer
+alone, on the reasoning that slice 1 owned the reader — and the claims went
+somewhere nothing looked. Measured on the live machine: a `bin/ship` parked in its
+CI wait, publishing `waiting/idle` correctly on disk, was STILL reported under
+`backstop:` as unattributed and the machine still called BUSY. A claim the reader
+cannot see closes no cost. So the reader gained three things:
+
+1. the `.agents/sessions/*.presence-*` glob;
+2. the supervisor-subject normalizer, so one grader reads both vocabularies;
+3. **the dedupe**, without which headroom double counts. A ship publishes
+   `weight: suite` while it certifies and the bin/fast-check it spawned writes a
+   runlock moments later: two claims, one suite. The rule is *a supervisor claim
+   adds no cost on top of a runner already counted inside its own process group*
+   — resolved from the live table, reusing what the backstop already does, no new
+   field. Deliberately **not** "collapse claims sharing a pgid": two independent
+   certs launched from one shell share a group, and deleting one of them from the
+   arithmetic is the expensive direction. A supervisor whose runner has not
+   appeared yet keeps its full weight, which covers the real ~11s window between
+   `bin/ship`'s 2/8 and the lane's runlock.
 
 ### Slice 4 — sweeps publish locally
 

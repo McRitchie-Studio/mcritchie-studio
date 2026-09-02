@@ -27,6 +27,7 @@ require "json"
 require "tmpdir"
 require "fileutils"
 require "stringio"
+require "time"
 require_relative "../support/session_env"
 
 require File.expand_path("../../bin/lib/presence_claim", __dir__)
@@ -48,9 +49,57 @@ class PresenceClaimTest < Minitest::Test
       record = claim.body
 
       assert_equal Process.pid, record["pid"]
-      refute_nil record["started_at"], "a claim with no start time can prove nothing about itself"
-      assert_equal CertOrphanGuard.process_started_at(Process.pid), record["started_at"],
+      refute_nil record["pid_started_at"], "a claim with no start time can prove nothing about itself"
+      assert_equal CertOrphanGuard.process_started_at(Process.pid), record["pid_started_at"],
                    "the start time must be the OS's, read for THIS process — not a clock we kept"
+    end
+  end
+
+  # THE SECOND SUBJECT, and the reason the runlock has always carried two. A
+  # supervisor can be SIGKILLed while the work it spawned survives — reparented,
+  # still burning the machine, still holding a test DB — and a claim naming only the
+  # supervisor reports that worst case as `dead`, which is the single direction this
+  # design may never fail in. bin/ship spawns its cert with `system` and no
+  # `pgroup:`, so the runner lives in the ship's own group; the group is therefore
+  # the subject that stays true after the ship dies.
+  def test_unit_the_record_carries_the_process_GROUP_as_a_second_subject
+    with_claim do |claim, _dir|
+      record = claim.body
+
+      assert_equal Process.getpgrp, record["pgid"], "the group is the subject that outlives the supervisor"
+      assert_equal CertOrphanGuard.process_started_at(Process.getpgrp), record["pgid_started_at"],
+                   "and it carries its OWN identity — a pgid is a recyclable integer like any other"
+    end
+  end
+
+  # The vocabulary is the RUNLOCK'S, because §5(c) of the design says these claims
+  # are read by the same GRADER — and that grader reads `started_at` as the ISO
+  # stamp of when the record was written, taking identity from `<subject>_started_at`.
+  # A record spelling one field two ways puts two truths on one screen.
+  def test_unit_started_at_is_the_ISO_write_stamp_exactly_as_the_runlock_spells_it
+    with_claim do |claim, dir|
+      claim.publish(phase: PresenceClaim::WORKING, weight: PresenceClaim::SUITE)
+      record = read_claim(dir)
+
+      parsed = Time.iso8601(record.fetch("started_at"))
+      assert_in_delta Time.now.utc, parsed, 60, "started_at must be the ISO write stamp the grader ages"
+      refute_equal record["started_at"], record["pid_started_at"],
+                   "the OS start time lives in pid_started_at — conflating them is the two-vocabularies bug"
+    end
+  end
+
+  # began_at is the RUN's age and must not move when the phase does; started_at is
+  # this RECORD's age and must.
+  def test_unit_began_at_is_fixed_across_republishes_while_started_at_moves
+    with_claim do |claim, dir|
+      claim.publish(phase: PresenceClaim::WORKING, weight: PresenceClaim::SUITE)
+      first = read_claim(dir)
+      sleep 1.1
+      claim.publish(phase: PresenceClaim::WAITING, weight: PresenceClaim::IDLE)
+      second = read_claim(dir)
+
+      assert_equal first.fetch("began_at"), second.fetch("began_at"), "the RUN began once"
+      refute_equal first.fetch("started_at"), second.fetch("started_at"), "this RECORD was written twice"
     end
   end
 
@@ -60,10 +109,10 @@ class PresenceClaimTest < Minitest::Test
   def test_unit_the_start_time_is_read_once_and_survives_every_republish
     with_claim do |claim, dir|
       claim.publish(phase: PresenceClaim::WORKING, weight: PresenceClaim::SUITE, lane: "2/8 cert")
-      first = read_claim(dir).fetch("started_at")
+      first = read_claim(dir).values_at("pid_started_at", "pgid_started_at")
       claim.publish(phase: PresenceClaim::WAITING, weight: PresenceClaim::IDLE, lane: "6/8 ci")
 
-      assert_equal first, read_claim(dir).fetch("started_at")
+      assert_equal first, read_claim(dir).values_at("pid_started_at", "pgid_started_at")
     end
   end
 

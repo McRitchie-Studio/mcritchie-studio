@@ -855,8 +855,13 @@ class ShipTest < Minitest::Test
 
       cert = JSON.parse(File.read(File.join(snaps, "FAST.json")))
       assert_operator cert.fetch("pid"), :>, 0
-      refute_nil cert.fetch("started_at"), "a claim with no start time proves nothing about itself"
-      refute_empty cert.fetch("started_at").to_s
+      refute_nil cert.fetch("pid_started_at"), "a claim with no start time proves nothing about itself"
+      refute_empty cert.fetch("pid_started_at").to_s
+      # BOTH subjects, for the reason CertOrphanGuard's runlock carries both: the ship
+      # can be killed while the cert it spawned survives in its group, and a
+      # single-subject claim reports that worst case as dead.
+      assert_operator cert.fetch("pgid"), :>, 0
+      refute_empty cert.fetch("pgid_started_at").to_s
     end
   end
 
@@ -889,7 +894,12 @@ class ShipTest < Minitest::Test
       FileUtils.chmod("+x", slow_fast_check)
 
       pid = spawn_ship(dir, "SHIP_FAST_CHECK_BIN" => slow_fast_check)
-      claim = wait_for_claim(dir)
+      # Wait for the CERT phase specifically, not merely for a claim to exist. The
+      # first claim appears at 1/8, where the ship is inside `git commit` — killing
+      # it there strands a .git/HEAD.lock and the assertion becomes a race with the
+      # tmpdir teardown rather than a statement about claims. Parked in the slow
+      # stub, the kill lands where this test says it lands.
+      claim = wait_for_claim(dir, lane: "2/8 cert")
       Process.kill("KILL", pid)
       Process.wait(pid)
 
@@ -924,12 +934,12 @@ class ShipTest < Minitest::Test
 
   # Poll for the claim rather than sleeping a guessed interval: the assertion is
   # about the file's CONTENT, and a fixed sleep would make the test a race.
-  def wait_for_claim(dir, timeout: 20)
+  def wait_for_claim(dir, timeout: 20, lane: nil)
     deadline = Time.now + timeout
     loop do
-      found = presence_claims(dir)
-      return found.first.last if found.any?
-      raise "no presence claim appeared within #{timeout}s" if Time.now > deadline
+      found = presence_claims(dir).map(&:last).select { |c| lane.nil? || c["lane"] == lane }
+      return found.first if found.any?
+      raise "no presence claim#{lane && " at #{lane}"} appeared within #{timeout}s" if Time.now > deadline
 
       sleep 0.05
     end

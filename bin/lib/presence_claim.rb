@@ -99,15 +99,37 @@ class PresenceClaim
   def self.unbound_key(pid) = "unbound-#{pid}"
 
   # Open a claim for the current process. Reads the process table ONCE, here, for
-  # the identity proof: a process's start time cannot change, so re-reading it at
+  # both identity proofs: a process's start time cannot change, so re-reading it at
   # every phase boundary would spend a `ps` to learn the same fact.
   #
+  # TWO SUBJECTS, for the reason CertOrphanGuard's runlock names two. The supervisor
+  # can be killed while the work it spawned SURVIVES — reparented to launchd, still
+  # burning the machine and still holding a test DB — and a claim naming only the
+  # supervisor reports that worst case as `dead`, which is the one direction this
+  # design may never fail in. `bin/ship` spawns bin/fast-check with `system` and no
+  # `pgroup:`, so the child runs in the SHIP'S OWN group: the group is exactly the
+  # right second subject, and it is what makes a SIGKILLed ship whose cert lives on
+  # still grade live.
+  #
+  # Publishing a pgid here carries NO reaping hazard, and that is a property of WHERE
+  # this claim lives rather than of luck. CertOrphanGuard.preflight REAPS — it SIGKILLs
+  # the group a lock names — and it reads `<root>/.git/cert-run.json`, only ever that.
+  # A claim in the session-marker namespace is invisible to it by construction, so the
+  # reaper can never be pointed at a process no cert spawned. A non-cert claim written
+  # into a desk's runlock SLOT would not have that property.
+  #
   # `session_id` nil is a first-class state, not a failure — see `unbound_key`.
-  def self.open(kind:, root:, projects_dir: nil, session_id: nil,
-                task_slug: nil, pid: Process.pid, env: ENV, ps: CertOrphanGuard.ps_bin, now: Time.now)
+  def self.open(kind:, root:, projects_dir: nil, session_id: nil, task_slug: nil,
+                pid: Process.pid, pgid: nil, env: ENV, ps: CertOrphanGuard.ps_bin, now: Time.now)
+    pgid ||= begin
+      Process.getpgid(pid)
+    rescue SystemCallError
+      nil
+    end
     new(kind: kind, root: root, projects_dir: projects_dir || projects_dir_from(env), session_id: session_id,
-        task_slug: task_slug, pid: pid, env: env,
-        started_at: CertOrphanGuard.process_started_at(pid, ps: ps), began_at: now)
+        task_slug: task_slug, pid: pid, pgid: pgid, env: env,
+        pid_started_at: CertOrphanGuard.process_started_at(pid, ps: ps),
+        pgid_started_at: pgid && CertOrphanGuard.process_started_at(pgid, ps: ps), began_at: now)
   end
 
   # The session-marker store's OWN pin, resolved exactly as bin/lib/agent_api.rb
@@ -122,20 +144,25 @@ class PresenceClaim
     dir.empty? ? ProjectsRoot.default_projects_dir : File.expand_path(dir)
   end
 
-  attr_reader :kind, :pid, :started_at, :session_id, :task_slug, :root, :phase, :weight
+  attr_reader :kind, :pid, :pgid, :pid_started_at, :pgid_started_at, :session_id, :task_slug,
+              :root, :phase, :weight
 
-  def initialize(kind:, root:, projects_dir:, session_id:, task_slug:, pid:, env:, started_at:, began_at:)
+  def initialize(kind:, root:, projects_dir:, session_id:, task_slug:, pid:, pgid:, env:,
+                 pid_started_at:, pgid_started_at:, began_at:)
     @kind = sanitize(kind)
     @root = root.to_s
     @projects_dir = projects_dir.to_s
     @session_id = session_id.to_s.strip.empty? ? nil : session_id.to_s.strip
     @task_slug = task_slug
     @pid = pid.to_i
+    @pgid = pgid&.to_i
     @env = env
-    @started_at = started_at
+    @pid_started_at = pid_started_at
+    @pgid_started_at = pgid_started_at
     @began_at = began_at.utc.iso8601
     @phase = nil
     @weight = nil
+    @lane = nil
   end
 
   # Publish (or re-publish) the claim at a phase boundary. Returns the marker path,
@@ -158,7 +185,25 @@ class PresenceClaim
 
   # The record. Every field is either a FACT ABOUT THIS PROCESS or a label; none of
   # them is an assertion of liveness, because that is the reader's to make.
+  #
+  # THE FIELD NAMES ARE THE RUNLOCK'S, and that is deliberate — it is where the
+  # design's §4 and §5(c) disagreed and §5(c) wins. §4 sketched `started_at` as the
+  # OS start time; §5(c) says these claims are read by "the same glob and the same
+  # GRADER" as the runlock, and that grader reads `started_at` as the ISO stamp of
+  # when the record was written and takes its identity from `<subject>_started_at`.
+  # A record that spelled one field two ways would put two truths on one screen and
+  # neither call site would look wrong. So:
+  #
+  #   started_at        ISO — when this record was written. Same meaning as the runlock's.
+  #   pid  / pid_started_at    the SUPERVISOR subject (the runlock spells it cert_pid).
+  #   pgid / pgid_started_at   the GROUP subject. Same spelling as the runlock's.
+  #   began_at          ISO — when the RUN began; constant across every republish.
+  #
+  # The supervisor subject keeps an honest name rather than borrowing `cert_pid`: a
+  # ship is not a cert, and the reader translates one pair of names at its boundary
+  # instead of the record lying about what it holds.
   def body(now = Time.now)
+    stamp = now.utc.iso8601
     {
       "schema_version" => SCHEMA_VERSION,
       "kind" => @kind,
@@ -166,14 +211,17 @@ class PresenceClaim
       "weight" => @weight,
       "lane" => @lane,
       "pid" => @pid,
-      "started_at" => @started_at,
+      "pid_started_at" => @pid_started_at,
+      "pgid" => @pgid,
+      "pgid_started_at" => @pgid_started_at,
       "session_id" => @session_id,
       "agent" => acting_agent,
       "task_slug" => @task_slug,
       "repo" => repo,
       "root" => @root,
+      "started_at" => stamp,
       "began_at" => @began_at,
-      "phase_since" => now.utc.iso8601
+      "phase_since" => stamp
     }
   end
 
