@@ -1,0 +1,65 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# agent-presence — who is doing what on this machine right now, and is it safe to start?
+#
+#   bin/agent-presence            # table + headroom + backstop
+#   bin/agent-presence --json     # the same snapshot, for agents
+#   bin/agent-presence --quiet    # exit code only
+#   bin/agent-presence --root <path>
+#
+# IT WRITES NOTHING. It takes no locks, signals no process, unlinks no file and makes
+# no network or board call. A crashed reader therefore changes nothing, which is the
+# property that lets an agent run it before anything expensive without a second thought.
+#
+# Exit codes, for scripts (`--json` is for agents):
+#   0  clear    — headroom, and nothing heavy left unattributed
+#   1  busy     — no headroom, OR heavy load this reader could not attribute to a claim
+#   2  usage    — an argument it could not account for; nothing was read
+#   3  unknown  — no process table, so nothing was graded. Today's state, said out loud.
+#
+# Slice 1 of docs/agents/system/agent-presence.md. Implementation and the grading
+# rule it inherits from bin/lib/cert_orphan_guard.rb: bin/lib/agent_presence.rb.
+
+require "json"
+require_relative "lib/agent_presence"
+require_relative "lib/cli_arg_guard"
+require_relative "lib/projects_root"
+
+USAGE = <<~TXT
+  usage: bin/agent-presence [--root <path>] [--json] [--quiet]
+
+    Read every cert runlock on this machine, grade each against the process table,
+    and report live suites, headroom, and any heavy process carrying no claim.
+
+    --root <path>   projects root to scan (default: the projects dir above this repo)
+    --json          emit the full snapshot as JSON
+    --quiet         print nothing; the exit code is the answer
+
+  exit: 0 clear · 1 busy or unattributed load · 2 usage · 3 unknown (no process table)
+
+  This command is READ-ONLY. It writes no file, signals no process and takes no lock.
+TXT
+
+ARGS = CliArgGuard.guard!(
+  ARGV,
+  program: "agent-presence",
+  usage: USAGE,
+  bool: %w[--json --quiet],
+  value: %w[--root],
+  # exit 0: this script's 0 is a VERDICT ("clear to start"), so --help must not answer
+  # with it. An operator probing the command must never get a green light for free.
+  help_exit: 3,
+  consequence: "NOTHING was read and no verdict was produced."
+)
+
+root = ARGS.first("--root") || ENV["PROJECTS_DIR"] || ProjectsRoot.default_projects_dir
+snapshot = AgentPresence.snapshot(root: root)
+
+if ARGS.bool?("--json")
+  puts JSON.pretty_generate(snapshot)
+elsif !ARGS.bool?("--quiet")
+  puts AgentPresence.render(snapshot)
+end
+
+exit AgentPresence.exit_code(snapshot)
