@@ -604,12 +604,23 @@ def enforce_archive_open_pr_gate!(slug, force:)
         "Recording the choice on the task so a later reader knows they were dropped deliberately.")
 
   entries = OpenPrGuard.record(prs: prs, at: Time.now.utc.iso8601, by: session_identity.first)
-  # READ-MERGE-WRITE, belt and braces. The board merges a devops PATCH now, but this
-  # CLI must stay correct against a board that has not taken that fix — a partial
-  # devops write wipes every key it did not send.
-  devops.merge(
-    OpenPrGuard::RECORD_KEY => OpenPrGuard.merged_record(devops[OpenPrGuard::RECORD_KEY], entries)
-  )
+  # SEND ONLY THE KEY THIS GATE OWNS, merged onto whatever the task already carried in
+  # it. NOT a full read-merge-write echo of `devops`, which is what the `move building`
+  # claim path does — and which would BREAK HERE.
+  #
+  # MEASURED 2026-09-02 against the live board: of 1,585 tasks, 128 carry `block_kind`
+  # and 29 carry `release_train` INSIDE metadata.devops. Both are Task::DEVOPS_COLUMN_KEYS,
+  # and normalize_devops_metadata RAISES on a non-blank one ("devops.block_kind is not
+  # writable") which both controllers turn into a 422. So echoing a task's stored devops
+  # back at the board fails outright on ~10% of the board — and it would fail at the
+  # WORST moment: after an operator deliberately chose to abandon a PR, losing exactly
+  # the receipt this path exists to write.
+  #
+  # Sending one key is safe because the board MERGES a devops PATCH onto what is stored
+  # (Task.merge_devops_into_metadata, shared by both controllers since
+  # `api-devops-patch-replaces`) — verified live on this task, whose `kind`, `branch`,
+  # `repositories` and `acceptance` all survived two partial `bin/task update` writes.
+  { OpenPrGuard::RECORD_KEY => OpenPrGuard.merged_record(devops[OpenPrGuard::RECORD_KEY], entries) }
 end
 
 # Each ref enriched with its live PR state. I/O only — OpenPrGuard owns the

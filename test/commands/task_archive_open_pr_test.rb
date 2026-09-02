@@ -216,15 +216,39 @@ class TaskArchiveOpenPrTest < ActiveSupport::TestCase
     assert_includes err, "studio-engine#245"
   end
 
-  test "[integration] --force preserves the devops the task already carried" do
-    devops = UNHELD.merge(pr_url: ENGINE_PR, worktree_slug: "probe-desk", branch: "feat/probe")
+  # THE 422 REGRESSION. The obvious implementation echoes the task's whole stored
+  # devops back (belt-and-braces read-merge-write, which is what the `move building`
+  # claim path does). It BREAKS HERE. Measured 2026-09-02 against the live board: of
+  # 1,585 tasks, 128 carry `block_kind` and 29 carry `release_train` INSIDE
+  # metadata.devops, and both are Task::DEVOPS_COLUMN_KEYS — normalize_devops_metadata
+  # RAISES on a non-blank one and both controllers turn that into a 422. So a full echo
+  # fails on ~10% of the board, at the worst possible moment: right after an operator
+  # deliberately chose to abandon a PR, destroying the very receipt this path writes.
+  #
+  # The board merges a devops PATCH onto what is stored, so sending one key is both
+  # sufficient and the only safe option.
+  test "[integration] --force sends ONLY the key it owns, never a column-backed name" do
+    devops = UNHELD.merge(pr_url: ENGINE_PR, worktree_slug: "probe-desk", branch: "feat/probe",
+                          block_kind: "rework")
     result = archive(devops: devops, states: { ENGINE_PR => "OPEN" }, flags: ["--force"])
 
     written = result[:writes].last["devops"]
-    assert_equal "feat/probe", written["branch"],
-                 "a devops PATCH that sends only the new key wipes every key it did not send " \
-                 "on any board that has not taken the merge fix — read-merge-write, always"
-    assert_equal ENGINE_PR, written["pr_url"]
+    assert_equal [OpenPrGuard::RECORD_KEY], written.keys,
+                 "echoing the stored devops back 422s on any task carrying block_kind or " \
+                 "release_train — 157 of them on the live board. Preserving the rest is the " \
+                 "SERVER's job (Task.merge_devops_into_metadata), not this CLI's"
+  end
+
+  # `merged_record` has to be wired, not just unit-tested. A task can be archived,
+  # revived and archived again, and the earlier decision is still why the earlier PR
+  # was dropped.
+  test "[integration] --force appends to an abandonment already on the task" do
+    devops = UNHELD.merge(pr_url: ENGINE_PR, abandoned_prs: ["an-older-abandonment"])
+    result = archive(devops: devops, states: { ENGINE_PR => "OPEN" }, flags: ["--force"])
+
+    recorded = result[:writes].last.dig("devops", OpenPrGuard::RECORD_KEY)
+    assert_includes recorded, "an-older-abandonment", "a later archive must not erase the earlier one"
+    assert(recorded.any? { |entry| entry.include?(ENGINE_PR) }, "and must add the new one")
   end
 
   # THE SILENT-EVAPORATION REGRESSION. `abandoned_prs` has to be a storable name in
