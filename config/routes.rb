@@ -133,8 +133,13 @@ Rails.application.routes.draw do
 
   # TikTok OAuth handshake (one-time, admin-only) — visit /admin/tiktok/connect
   # to authorize @turfmonstershow and capture refresh_token + open_id.
+  # Resend inbound (email.received, svix-signed) -> the desk capture queue.
+  post "webhooks/resend/inbound", to: "webhooks/resend_inbound#create"
+
   namespace :admin do
     get "dashboard", to: "dashboard#show", as: :dashboard
+    # The knowledge-capture front door's mail queue (desk@mcritchie.studio).
+    get "desk", to: "desk#index", as: :desk
     get "models", to: "models#index", as: :models
     get "models/:key", to: "models#show", as: :model
 
