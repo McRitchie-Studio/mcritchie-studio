@@ -144,7 +144,7 @@ behind fail on their next upload.
 | `mcritchie-studio-dev` | hub `amazon_dev` service | Yes |
 | `turf-monster-production` | `turf-monster-mainnet` (live) | Yes |
 | `turf-monster-dev` | Turf Monster dev | Yes |
-| `mcritchie-industries-production` | `mcritchie-industries` (per-app key since 2026-09-02); `mcritchie-industries-qa` still RESOLVES this bucket but its dev key is refused here — cutover: `/tasks/industries-qa-bucket-cutover` | **No** — flipped private 2026-09-01 while still empty |
+| `mcritchie-industries-production` | `mcritchie-industries` (per-app key since 2026-09-02); `mcritchie-industries-qa` Active Storage was CUT OVER to the dev bucket 2026-09-02 (`/tasks/industries-qa-bucket-cutover`), but its `Studio::S3` writers (`/admin/emails`, `/admin/knowledge`) STILL resolve this bucket and are still refused here — `Studio::S3.environment` reads `Rails.env`, not `QA_ENV` | **No** — flipped private 2026-09-01 while still empty |
 | `mcritchie-industries-dev` | Industries dev | **No** — flipped private 2026-09-01 while still empty |
 | `moms-app-production` | moms-app (deployed off the hub Heroku account) | **No** — the one private bucket |
 
