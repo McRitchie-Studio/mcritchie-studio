@@ -128,13 +128,16 @@ class AgentPresenceIntegrationTest < Minitest::Test
     # zombie. It used to read `assert_match(/\AS/, row[:state])`: a one-letter prefix
     # test for SLEEPING, standing in for liveness by accident.
     #
-    # That spelling is RACY. A process sampled immediately after spawn is frequently
-    # still RUNNING — `R`/`Rs`, both present on the box at any moment — and `/\AS/`
-    # reddens on them. It cost a CI re-run on 2026-09-02. Sleeping was never the
-    # property under test and it flickers; liveness is the property, and it does not.
+    # SLEEPING is not a property this process guarantees. On 2026-09-02 it sampled as
+    # "D" — uninterruptible I/O: alive, but blocked in the kernel — and reddened
+    # studio-engine PR #265 on hub shard 3 (Consumer CI run 33672861848, attempt 1); a
+    # re-run of the same head passed. Any non-S state does it. Liveness is the property
+    # under test, and it does not flicker.
     #
-    # State the exclusion instead of a prefix: GONE is caught by refute_nil above,
-    # ZOMBIE by the check below. Both are mutation-proven to redden this test.
+    # So exclude what is NOT alive rather than name what is: GONE by the refute_nil
+    # above, ZOMBIE by the check below. Both are preconditions for legibility, not
+    # coverage — either also fails the grade assertion that follows, the real subject.
+    # Injecting a table here would assert that conclusion, so the process stays REAL.
     refute_match(/\AZ/, row[:state].to_s,
                  "a zombie holds no DB connection and is not the live process this test needs")
 
