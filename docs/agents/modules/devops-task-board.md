@@ -553,8 +553,17 @@ point:
   while `gh pr checks` showed 12/12 GREEN and dor-check said "GitHub CI green": it
   had rendered a network fault with `none`'s sentence. Elapsed figures are
   reconciled against the budget they were judged against, too — budgets are tested
-  BETWEEN polls, so one slow read can overrun one, and the summary says so instead
-  of printing a number that cannot come from the configured timeout.
+  BETWEEN polls, so the elapsed CAN overrun one, and the summary says so instead of
+  printing a number that cannot come from the configured timeout. **It reports the
+  read's MEASURED duration and never infers it.** The first cut of that note charged
+  the whole excess to the final read, reasoning that a nap is capped at the remaining
+  budget — but the cap is on the nap the loop *computes*, `Kernel#sleep` is only
+  lower-bounded, and the default clock counts host suspend on macOS, so an overrun
+  can be 100% sleep and 0% read. `settle` times the probe; whatever the measured read
+  does not account for is named as unbounded wall-clock rather than blamed on `gh`.
+  A read the TOKEN was refused (`unreadable`, a 401/403) settles at once — waiting
+  cannot mend a credential — and `bin/ship` points at `bin/gh-auth-refresh` for it,
+  not only for the gh/network fault a re-run may clear on its own.
 - **An unknown state settles.** `CiStatus`'s state list may grow; a state the wait
   has never heard of degrades to the behaviour that predates it, never to an
   unbounded wait on an unrecognised symbol.

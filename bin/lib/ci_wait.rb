@@ -142,7 +142,12 @@ module CiWait
   # `budget_s` is the budget THIS outcome was judged against (nil when none applied),
   # carried so the summary can reconcile the elapsed figure against it instead of
   # printing a number that looks impossible next to the configured timeout.
-  Result = Struct.new(:state, :outcome, :polls, :waited_s, :budget_s, keyword_init: true) do
+  #
+  # `read_s` is the MEASURED duration of the final probe — the one `settle` timed,
+  # not one deduced from the nap cap. It exists because the first cut of `overrun`
+  # inferred it and was wrong (see the note there); a module whose whole subject is
+  # "report the read, never the repo" has no business inferring how long the read took.
+  Result = Struct.new(:state, :outcome, :polls, :waited_s, :budget_s, :read_s, keyword_init: true) do
     # The wait SETTLED on a real verdict (`:settled`) or gave up (`:timeout` /
     # `:absent` / `:unread`). None of these is a pass or a fail — dor-check decides.
     def timed_out? = outcome == :timeout
@@ -151,6 +156,13 @@ module CiWait
     # We never heard from GitHub. NOT the same fact, and never reported as one.
     def unread? = outcome == :unread
     def settled? = outcome == :settled
+
+    # The read was REFUSED — ci_status.rb's own :unreadable, a 401/403 on the TOKEN.
+    # It SETTLES, because waiting cannot mend a credential, but it is not a verdict
+    # and its remedy is the token. A predicate here rather than a state-name match at
+    # the call site, so the one caller that needs the distinction gets it from the
+    # module that owns the states.
+    def token_refused? = state.to_s.to_sym == :unreadable
   end
 
   # The loop. Impure only through injected collaborators, so the harness drives it
@@ -161,6 +173,20 @@ module CiWait
   #
   # A silent block is indistinguishable from a hang, and this codebase has already
   # paid for that lesson once (the cert orphan that read as a slow suite).
+  # THE DEFAULT CLOCK COUNTS HOST SUSPEND, AND THAT IS KEPT DELIBERATELY. On macOS
+  # Process::CLOCK_MONOTONIC keeps counting while the lid is closed — measured on the
+  # ship machine during the review of this task at CLOCK_MONOTONIC 2_375_243s against
+  # CLOCK_UPTIME_RAW 1_682_913s, i.e. 692_330s (eight days) of suspend that the
+  # monotonic clock counted. It is kept because BOTH budgets ask a question about
+  # elapsed REAL time at GitHub — "has a run had long enough to appear / to finish?"
+  # — and GitHub keeps working while this laptop sleeps, so a wait resumed after a
+  # suspend should give up, not politely start its budget over. Switching is also
+  # worse than it looks: CLOCK_UPTIME_RAW is Darwin-only, and the two constants INVERT
+  # across platforms (on Linux CLOCK_MONOTONIC already excludes suspend and
+  # CLOCK_BOOTTIME is the suspend-inclusive one), so pinning it would make the waiter
+  # behave one way on the ship machine and another in CI, silently. The suspend was
+  # never the defect anyway — ATTRIBUTING that wall-clock to a `gh` read was. The
+  # probe is timed below, so the elapsed figure is honest under either clock.
   def self.settle(probe:, timeout_s: DEFAULT_TIMEOUT_S, appearance_s: DEFAULT_APPEARANCE_S,
                   interval_s: DEFAULT_INTERVAL_S, sleeper: ->(s) { sleep(s) },
                   clock: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) }, reporter: nil)
@@ -169,9 +195,14 @@ module CiWait
     polls = 0
 
     loop do
+      # TIME THE READ. `overrun` used to deduce this from the nap cap and got it
+      # wrong; the only trustworthy figure is the one taken around the call.
+      read_started = clock.call
       state = probe.call.to_s.to_sym
+      now = clock.call
       polls += 1
-      waited = clock.call - started
+      read_s = now - read_started
+      waited = now - started
 
       emerging_expired = waited >= appearance_s
       if action_for(state, emerging_expired: emerging_expired) == :settle
@@ -182,18 +213,25 @@ module CiWait
                           else
                             [:settled, nil]
                           end
-        return Result.new(state: state, outcome: outcome, polls: polls, waited_s: waited, budget_s: budget)
+        return Result.new(state: state, outcome: outcome, polls: polls, waited_s: waited,
+                          budget_s: budget, read_s: read_s)
       end
 
       remaining = timeout_s - waited
       if remaining <= 0
-        return Result.new(state: state, outcome: :timeout, polls: polls, waited_s: waited, budget_s: timeout_s)
+        return Result.new(state: state, outcome: :timeout, polls: polls, waited_s: waited,
+                          budget_s: timeout_s, read_s: read_s)
       end
 
       # Never sleep past either budget — an emerging state must be re-judged the
       # moment its shorter window closes, not one full interval later.
       nap = [interval, remaining, (emerging_expired ? remaining : appearance_s - waited)].reject(&:negative?).min
-      reporter&.call(state, polls, remaining)
+      # REPORT THE BUDGET ACTUALLY IN FORCE. An EMERGING state that reaches here is
+      # by definition not yet expired, and it is judged against the APPEARANCE budget
+      # — so handing the reporter `timeout_s - waited` printed "900s left" beside a
+      # state that had 120s. Same one-line habit as the rest of this file: the number
+      # a reader sees must be the number the code is about to act on.
+      reporter&.call(state, polls, EMERGING.include?(state) ? appearance_s - waited : remaining)
       sleeper.call(nap)
     end
   end
@@ -233,14 +271,28 @@ module CiWait
   # count stops believing the next thing it says, including a genuinely red CI.
   #
   # The elapsed is TRUE wall-clock; nothing is miscomputed. The budgets are tested
-  # BETWEEN polls and never during one, and naps are already capped so a sleep can
-  # never cross a budget — so the ONLY way elapsed can exceed it is a single read that
-  # did not return within it. That is a fact worth printing, not hiding: it points at
-  # a hung `gh` call, which is also the likeliest producer of the :unverified above.
-  # WHY THE ATTRIBUTION IS SOUND, and not another guess: `nap` is already capped at
-  # the remaining budget on every branch, so a sleep can never carry `waited` past
-  # one. Whatever excess exists therefore accrued inside the FINAL read — the only
-  # unbounded step in the loop. That is a measurement, not an inference about GitHub.
+  # BETWEEN polls and never during one, so the elapsed CAN exceed one — a fact worth
+  # printing rather than hiding, since a reader who cannot reconcile the two numbers
+  # stops believing everything else on the line.
+  #
+  # WHERE THE EXCESS SAT IS MEASURED, NOT INFERRED — and the first cut of this note
+  # inferred it and was FALSE. It attributed the whole excess to the final read, on
+  # the reasoning that `nap` is capped at the remaining budget so a sleep can never
+  # carry `waited` past one. The cap is on the nap the loop COMPUTES. The REALIZED
+  # sleep is only LOWER-bounded (Kernel#sleep's contract), so any wall-clock the
+  # process loses inside `sleeper.call(nap)` lands in `waited` with ZERO read time.
+  # Deterministic counterexample, now pinned in ci_wait_test.rb: two instant polls and
+  # one 20s nap realized as 600s renders a 480s overrun in which no read was slow.
+  # And it is live on this machine — the default clock counts host suspend (see
+  # `settle`), which makes a lid-close mid-nap the likeliest real producer of the
+  # 2277s figure above. So the old note would have "explained" the very incident this
+  # task was filed over with a `gh` call that never ran slow: a written claim
+  # vouching for more than the mechanism delivers, inside the module written to end
+  # exactly that, one layer down.
+  #
+  # Hence `settle` TIMES the probe and carries `read_s`, and this prints that measured
+  # number. Whatever is left over is named for what it is — wall-clock the loop does
+  # not bound, and therefore does not get to attribute.
   #
   # It fires only when a READER would see two numbers that disagree. Sub-second
   # slippage is ordinary poll granularity, and explaining a discrepancy nobody can
@@ -251,7 +303,14 @@ module CiWait
     budget = result.budget_s
     return "" unless budget && result.waited_s.round > budget
 
-    " (past the #{budget}s budget — budgets are tested BETWEEN polls and a nap never " \
-      "crosses one, so the final read alone ran ~#{(result.waited_s - budget).round}s long)"
+    excess = result.waited_s - budget
+    read = result.read_s.to_f
+    unbounded = excess - read
+    note = " (past the #{budget}s budget by #{excess.round}s; the final read MEASURED #{read.round}s"
+    if unbounded.round.positive?
+      note += ", so the remaining #{unbounded.round}s sat in a nap that overslept or a host " \
+              "suspend — the loop bounds the nap it COMPUTES, never wall-clock"
+    end
+    "#{note})"
   end
 end

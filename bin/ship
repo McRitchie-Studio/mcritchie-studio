@@ -572,6 +572,16 @@ if CiWait.enabled?(ENV)
     # when the problem is that nobody could ask.
     say "6/8 ci — the DoR verdict below decides; if it cannot read CI either, refresh the " \
         "token (eval \"$(bin/gh-auth-refresh --export)\") and re-run bin/ship #{slug}."
+  elsif wait.token_refused?
+    # THE INVERSION this branch closes (review of ship-waiter-misreports-ci): the
+    # advisory above fires on :unverified — a gh/network fault, which a re-run may
+    # well clear on its own — while :unreadable, ci_status.rb's name for a 401/403
+    # where the token IS the remedy, got no line at all. It settles rather than
+    # waiting because no amount of waiting mends a credential, and settling quietly
+    # is exactly how a blind read gets mistaken for a verdict.
+    say "6/8 ci — that read was REFUSED (401/403), which is the TOKEN and not a CI verdict: " \
+        "refresh it (eval \"$(bin/gh-auth-refresh --export)\") and re-run bin/ship #{slug} " \
+        "if the DoR verdict below is blind too."
   end
 else
   say "6/8 ci — wait disabled (SHIP_CI_WAIT=off); the DoR verdict grades whatever CI it finds."
