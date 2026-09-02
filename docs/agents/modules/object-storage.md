@@ -89,7 +89,11 @@ only true for the day it was taken.
   Removing it is app work (CDN or public-prefix migration — see
   [`../system/cdn-rollout.md`](../system/cdn-rollout.md)), not a console flip;
   on those buckets `public: false` in `storage.yml` is NOT a privacy control.
-- **Industries QA.** `mcritchie-industries-qa` historically pointed at the
-  production bucket with no credentials of its own. Under the rules it runs the
-  `mcr-mcritchie-industries-dev` credential against the dev bucket — wire this
-  when Industries' per-app users are minted.
+- **Industries QA — RESOLVED 2026-09-02.** Industries became the first app on
+  tier-4 credentials: `mcr-mcritchie-industries-{prod,dev}` were minted under
+  `/mcr/` by `bucket-provision`'s first live run, the routing law was proven by
+  refusal (the dev key's write to the production bucket was rejected by IAM),
+  and both Heroku apps carry their vars (prod key on `mcritchie-industries`,
+  dev key on `mcritchie-industries-qa`). The 1Password record
+  (`agent.mcritchie-industries.aws`, `agents-industries` vault) is owed by a
+  write-capable lane — values live in Heroku config until it lands.

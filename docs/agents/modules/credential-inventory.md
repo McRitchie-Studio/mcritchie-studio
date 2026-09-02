@@ -173,6 +173,14 @@ every newly provisioned app; migrating an existing app off `mcritchie-s3` is
 ladder work, one app per task, coordinated with that app's config vars. Rules
 and tiers: `modules/object-storage.md`.
 
+**First migration landed 2026-09-02:** Industries' deployed apps now run
+`mcr-mcritchie-industries-{prod,dev}` via Heroku config vars and are OFF this
+shared identity's rotation list. The 1Password item
+`agent.mcritchie-industries.aws` (vault `agents-industries`; four fields:
+prod/dev key id + secret) is **owed** — the admin service account's vault grant
+is read-only, so an agent could not write it; copy the values from
+`heroku config` until a write-capable lane or the operator lands the item.
+
 ## Convention
 
 Use `agent.<name>.<service>` for agent-owned identities, and clear product names for third-party integrations where a vendor UI uses that name.
