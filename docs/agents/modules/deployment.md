@@ -131,12 +131,13 @@ Use `turf-monster/bin/deploy`; do not hand-push around its preflight checks for 
 
 ### Retired Host: `turf.mcritchie.studio`
 
-`turf.mcritchie.studio` no longer serves Turf Monster. It is a Heroku CNAME
-pointing at `primal-rosemallows-ok21wsy2yfumngfxgr1gvbeh.herokudns.com`, a target
-that resolves to no address, so every request returns HTTP 000. There is likewise
-no Heroku app named `turf-monster`; production is `turf-monster-mainnet`.
+`turf.mcritchie.studio` does not serve Turf Monster, and it is retired (below).
+As measured 2026-09-02 it was still a Heroku CNAME pointing at
+`primal-rosemallows-ok21wsy2yfumngfxgr1gvbeh.herokudns.com`, a target that
+resolves to no address, so every request returned HTTP 000. There is likewise no
+Heroku app named `turf-monster`; production is `turf-monster-mainnet`.
 
-Measured 2026-09-01:
+Measured 2026-09-01, re-measured 2026-09-02 with identical results:
 
 | Host | Result |
 |------|--------|
@@ -152,11 +153,28 @@ result from this host is evidence about DNS, never about Turf Monster. Smoke-tes
 the canonical host, which is what `config/qa_environments.yml`, `bin/prod-smoke`,
 and `config/satellites.yml` already record.
 
-**Open decision — do not assume either way.** Whether `turf.mcritchie.studio` is
-repointed at the live app or formally retired is Mr. McRitchie's call, and it is
-unresolved: https://mcritchie.studio/tasks/runbook-names-dead-host. Until he
-decides, create, change, and delete no DNS record for it. This section names the
-host that serves the app today, not the intended vanity host.
+**Decided 2026-09-02: retired.** Mr. McRitchie retired `turf.mcritchie.studio`
+rather than repoint it at the live app, closing the question this section
+previously left open (https://mcritchie.studio/tasks/runbook-names-dead-host).
+No vanity host replaces it. `turfmonster.media` is canonical, and nothing should
+be built against the retired name again.
+
+**One action remains, and it is Mr. McRitchie's:** delete the
+`turf.mcritchie.studio` CNAME from the `mcritchie.studio` zone, which is hosted
+on **Google Cloud DNS** (`ns-cloud-d1..d4.googledomains.com`). That is the whole
+action — no Heroku step comes first. The CNAME target
+`primal-rosemallows-ok21wsy2yfumngfxgr1gvbeh.herokudns.com` belongs to an app
+that no longer exists, and a sweep of every app in the Heroku account on
+2026-09-02 found none holding the hostname or that target, so there is no domain
+to detach. Agents cannot finish it: `gcloud` is not installed on the operator
+machine, and the zone needs a Google credential only Mr. McRitchie can supply.
+
+**The record was still in place when this was written, and that changes nothing
+above.** Retired is the decision; removing the record is the outstanding
+paperwork. Whether a lookup returns the dead CNAME (HTTP 000, as measured) or
+nothing at all once the record is gone, the reading is the same: this host never
+serves Turf Monster and is never a valid smoke-test target. Do not recreate or
+repoint it.
 
 ### Root-Domain Launch
 
