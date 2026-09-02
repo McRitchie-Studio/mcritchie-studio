@@ -564,6 +564,7 @@ Do not merge or deploy unless I explicitly assigned that lane.
 | Ports, servers, callbacks | `mcritchie-studio/docs/agents/modules/ports-and-processes.md` |
 | Object storage (S3 buckets, keys, conventions) | `mcritchie-studio/docs/agents/modules/object-storage.md` |
 | Parallel DevOps and QA graduation | `mcritchie-studio/docs/agents/modules/parallel-agent-devops.md` |
+| Agent presence (who is working, machine headroom) | `mcritchie-studio/docs/agents/system/agent-presence.md` |
 | Modular PR review SOP | `mcritchie-studio/docs/agents/modules/pr-review-sop.md` |
 | Zap protocol (small mid-cycle fixes, no new task) | `mcritchie-studio/docs/agents/modules/zap-protocol.md` |
 | Building SOP (feature-agent build flow + local-review decision) | `mcritchie-studio/docs/agents/modules/building-sop.md` |
