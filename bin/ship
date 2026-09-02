@@ -84,6 +84,7 @@ require_relative "lib/pr_overlap"
 require_relative "lib/migration_collision"
 require_relative "lib/full_suite_gate"
 require_relative "lib/session_identity"
+require_relative "lib/presence_claim"
 require_relative "lib/ci_status"
 require_relative "lib/ci_wait"
 require_relative "../lib/claim_lease"
@@ -264,7 +265,52 @@ unless actual_branch == branch
        "check the branch out (or finish the rebase) before shipping.")
 end
 
+# --- presence: publish the phase, so a peer can READ what this run costs ------
+#
+# A ship SPANS both states — it certifies (expensive) and then it waits on CI
+# (free) — and the PROCESS NAME is identical in both. That is the one place a
+# cert runlock structurally cannot answer, because the runlock describes a SUITE
+# and this describes the supervisor that comes and goes around several.
+#
+# MEASURED on this box, 2026-09-01, by the reader this feeds
+# (bin/agent-presence): five `bin/ship` groups, all at 0.0% CPU, all reported
+# UNATTRIBUTED and the machine called BUSY. Four were parked in a CI wait costing
+# nothing; the fifth had spawned bin/fast-check eleven seconds earlier and was
+# about to take a core-set for ten minutes. Nothing on disk told them apart.
+#
+# The weights below are the SHIP'S OWN cost, and they are deliberately not
+# uniform. `2/8 cert` carries `suite` even though bin/fast-check publishes a
+# runlock of its own moments later: between this line and that lock there is a
+# real window (measured at ~11s) in which a suite is starting and NOTHING says
+# so. Over-reporting cost buys a peer some delay; under-reporting it buys a
+# saturated machine and a lost 45-minute run, so the double count is the side to
+# err on. The reader's own dedupe is the follow-up seam — see the task record.
+#
+# Publishing is best-effort by construction (SessionMarkers.write rescues to nil):
+# a marker must never take down the ship it is describing. Clearing is an
+# OPTIMIZATION ONLY — a killed ship leaves its claim behind and the reader grades
+# it a corpse on the very next read, with no timeout to elapse.
+PRESENCE_PHASES = {
+  commit: ["1/8 commit", PresenceClaim::WORKING, PresenceClaim::LIGHT],
+  cert: ["2/8 cert", PresenceClaim::WORKING, PresenceClaim::SUITE],
+  push: ["3/8 push", PresenceClaim::WORKING, PresenceClaim::LIGHT],
+  pr: ["4/8 pr", PresenceClaim::WAITING, PresenceClaim::IDLE],
+  record: ["5/8 record", PresenceClaim::WAITING, PresenceClaim::IDLE],
+  ci: ["6/8 ci", PresenceClaim::WAITING, PresenceClaim::IDLE],
+  dor: ["7/8 dor", PresenceClaim::WORKING, PresenceClaim::LIGHT],
+  submit: ["8/8 submit", PresenceClaim::WAITING, PresenceClaim::IDLE]
+}.freeze
+
+PRESENCE = PresenceClaim.open(kind: "ship", root: root, session_id: mover_session, task_slug: slug)
+at_exit { PRESENCE.clear }
+
+def presence!(step)
+  lane, phase, weight = PRESENCE_PHASES.fetch(step)
+  PRESENCE.publish(phase: phase, weight: weight, lane: lane)
+end
+
 # --- 1/8 commit --------------------------------------------------------------
+presence!(:commit)
 
 git(root, "update-index", "-q", "--refresh") # never commit on stat-stale dirt (a false-dirty index)
 porcelain, = git(root, "status", "--porcelain")
@@ -286,6 +332,7 @@ end
 # Skipped only when the recorded evidence is FRESH for this exact tree — the
 # fingerprint is a git tree hash, so any edit since the cert re-arms this step.
 
+presence!(:cert)
 fingerprint = FullSuiteGate.fingerprint(root)
 if FastLane.cert_fresh?(devops["checks_run"], fingerprint)
   say "2/8 cert — fresh cert evidence already recorded for #{fingerprint.to_s[0, 12]}; skipping bin/fast-check."
@@ -297,6 +344,7 @@ else
 end
 
 # --- 3/8 push ----------------------------------------------------------------
+presence!(:push)
 
 # A plain push fast-forwards the common case (first push, or the branch only
 # grew). It fails NON-FAST-FORWARD when the branch was REBASED — routine here,
@@ -325,6 +373,7 @@ unless pushed
 end
 
 # --- 4/8 PR (non-draft, base #{BASE_BRANCH}) ---------------------------------
+presence!(:pr)
 
 # One `gh` call, with a single mint-and-retry when it fails on CREDENTIALS.
 #
@@ -524,6 +573,7 @@ if MigrationCollision.blocking?(collisions)
 end
 
 # --- 5/8 record pr_url -------------------------------------------------------
+presence!(:record)
 
 if devops["pr_url"].to_s == pr_url
   say "5/8 record — pr_url already recorded."
@@ -550,6 +600,7 @@ end
 # appears (`:absent`) or never finishes (`:timeout`) falls through to dor-check,
 # which then applies precisely the rules it applied before this step existed.
 
+presence!(:ci)
 if CiWait.enabled?(ENV)
   cfg = CiWait.config(ENV)
   say "6/8 ci — waiting for CI to settle on the PR (timeout #{cfg[:timeout_s]}s, poll #{cfg[:interval_s]}s)"
@@ -568,6 +619,7 @@ end
 
 # --- 7/8 DoR verdict (bin/dor-check) -----------------------------------------
 # Always runs — the verdict closes the gate; there is no cached skip for it.
+presence!(:dor)
 
 say "7/8 dor — running bin/dor-check #{slug}"
 unless system(DOR_CHECK_BIN, slug, chdir: root)
@@ -575,6 +627,7 @@ unless system(DOR_CHECK_BIN, slug, chdir: root)
 end
 
 # --- 8/8 submit + read-back verify -------------------------------------------
+presence!(:submit)
 # bin/task move already refuses a silently-non-persisting write; the fresh show
 # below is ship's own end-to-end read-back so the summary NEVER reports a stage
 # the board doesn't hold.

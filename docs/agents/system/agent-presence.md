@@ -172,11 +172,13 @@ set from source and refuses any method that so much as *holds* a raw marker path
 in any spelling. It is the reason the namespace has one owner, and it is why another
 store would have to re-earn a guarantee this one already has.
 
-**`SessionMarkers` writes are not atomic today.** They are plain `File.write`,
-which is exactly the torn-read the runlock measured at 4.6%. Giving that store
-an atomic write path is a prerequisite of the first slice that *writes* — and it
-retroactively fixes every existing marker. It is not needed by slice 1, which
-writes nothing.
+**`SessionMarkers` writes are atomic as of slice 3.** They were plain
+`File.write` — exactly the torn-read the runlock measured at 4.6% — and the store
+now publishes through the same write-tmp-then-rename the runlock uses, which
+retroactively fixes every existing marker. The property is asserted by re-running
+the original measurement rather than by argument: a reader thread watching a
+200 KB marker under a rewriting writer observed it at ZERO BYTES under the old
+write and never under the new one (`test/lib/session_markers_test.rb`).
 
 ---
 
@@ -215,12 +217,14 @@ states — which is `bin/ship`, not the cert.
 
 ### (c) Sweeps and ships
 
-`bin/ship` writes **nothing locally for its entire ~12-minute run**. Its eight
-phases exist only as stderr strings and header comments; the boundary that
-matters is cert (line 285) → CI wait (line 536). `bin/release prepare` takes
-flocks — invisible to anything not itself contending for them — plus a board
-claim that answers *"is a release live"*, not *"is a sweep saturating this
-machine."*
+`bin/ship` wrote **nothing locally for its entire ~12-minute run**: its eight
+phases existed only as stderr strings and header comments, and the boundary that
+matters is cert → CI wait. Slice 3 landed the ship half — it now publishes the
+claim below at every one of those eight boundaries (`bin/lib/presence_claim.rb`).
+`bin/release prepare` still takes flocks — invisible to anything not itself
+contending for them — plus a board claim that answers *"is a release live"*, not
+*"is a sweep saturating this machine"*; that half is slice 4, and it reuses the
+same writer.
 
 | | |
 |---|---|
@@ -477,10 +481,27 @@ size was, and the size was wrong.
 ### Slice 3 — `bin/ship` publishes its phase
 
 The one place the runlock genuinely cannot answer, because a ship *spans* both
-states: cert (`bin/ship`'s `2/8 G1 cert`) and CI wait (`6/8 CI settle wait`). Today it writes
+states: cert (`bin/ship`'s `2/8 G1 cert`) and CI wait (`6/8 CI settle wait`). It wrote
 nothing locally for its entire ~12-minute run. This is what remains of
-`/tasks/certs-publish-no-phase` once §5(b) is accounted for. Requires the atomic
-write path in `SessionMarkers` (§4). Closes cost #4.
+`/tasks/certs-publish-no-phase` once §5(b) is accounted for.
+
+**Landed — the WRITER half.** `bin/lib/presence_claim.rb` publishes the §4 record
+through `SessionMarkers` (so no new store, and `bin/ship` never names `.agents`),
+and `bin/ship` republishes it at each of the eight boundaries it already prints.
+The atomic write path in §4 landed with it.
+
+**The READER hop is still open, and until it lands nothing consumes these
+claims.** `AgentPresence::CLAIM_GLOBS` names only the two runlock patterns, so a
+ship claim is invisible to slice 1's reader and a CI-waiting ship is still
+reported as unattributed load. What it needs: the
+`.agents/sessions/*.presence-*` glob, a normalizer mapping the claim's `pid` /
+`started_at` onto the grader's subject pair (it keys on `cert_pid` /
+`cert_started_at`), and a dedupe so a ship's cert-phase claim and the runlock its
+own child publishes are not counted as two suites — resolving each claim's pid to
+its live row and collapsing claims that share a process group does it with no new
+field, reusing the resolution the backstop already performs. Until then the ship
+claim deliberately over-reports its cert phase (`weight: suite`), because
+over-reporting cost buys delay and under-reporting buys a saturated machine.
 
 ### Slice 4 — sweeps publish locally
 
