@@ -237,6 +237,11 @@ require_relative "lib/ci_status"
 # than being silently dropped into a promote. The dictionary it reads lives in
 # Release::Cli::COMMANDS, beside the parsers that consume those same flags.
 require_relative "lib/cli_arg_guard"
+# The LOCAL presence claim a sweep/ship publishes beside the board claim it already
+# takes. The board claim answers "is a release live" REMOTELY; this answers "is this
+# machine saturated" LOCALLY, and only the second decides whether a peer may launch a
+# suite. Slice 4 of docs/agents/system/agent-presence.md.
+require_relative "lib/release_presence"
 
 APP = "mcritchie-studio"
 HEROKU_REMOTE = "heroku"
@@ -561,6 +566,22 @@ end
 #     progress: the "never-appearing" run). A single successful live read resets
 #     the streak, so an approval pause of any length never trips it.
 def run_concluded_success?(run_id, chdir: nil, poll: 10, unreadable_limit: 30)
+  # A CONDUCTOR PARKED ON A GITHUB ACTIONS POLL CONSUMES NOTHING. That distinction is
+  # cost #4 of docs/agents/system/agent-presence.md — two idle `bin/ship` processes in a
+  # CI wait read as competing certs and nearly held off a launch — and `phase: waiting` is
+  # the field the reader already honours for it (weight 0). The claim stays COUNTED, so
+  # this sweep's process group is still ATTRIBUTED rather than falling back into the
+  # reader's `backstop`; it simply costs a peer nothing while it sleeps.
+  ReleasePresence.with_phase(phase: ReleasePresence::PHASE_WAITING,
+                             weight: ReleasePresence::WEIGHT_IDLE) do
+    poll_until_concluded(run_id, chdir: chdir, poll: poll, unreadable_limit: unreadable_limit)
+  end
+end
+
+# The poll itself, extracted so the presence transition above wraps ONE call rather than
+# re-indenting this loop around a block. `return` inside the block returns from
+# `run_concluded_success?` either way, so the verdict semantics are unchanged.
+def poll_until_concluded(run_id, chdir:, poll:, unreadable_limit:)
   unreadable = 0
   last_status = nil
   loop do
@@ -900,7 +921,16 @@ def run_test_scope(key, *cmd, capture: false, chdir: nil, repo: nil, label: nil,
     # stub (or any caller that predates env:) is untouched.
     kw = { capture: capture, chdir: chdir }
     kw[:env] = env if env && !env.empty?
-    out, ok = block ? block.call : sh(*cmd, **kw)
+    # THE SUITE PHASE, published locally for its exact duration. This is the choke point
+    # every conductor-run test scope passes through — the G3 pre-QA gate and the ship's
+    # frozen-SHA test gate alike — so one wrap covers all of them, and a scope added
+    # later is covered without anyone remembering to. Outside this block the sweep is
+    # still working (git, gh, deploys) but at a QUARTER of a suite's weight; inside it,
+    # it costs a full suite, which is what stops a peer launching one beside it.
+    out, ok = ReleasePresence.with_phase(phase: ReleasePresence::PHASE_WORKING,
+                                         weight: ReleasePresence::WEIGHT_SUITE) do
+      block ? block.call : sh(*cmd, **kw)
+    end
   rescue StandardError => e
     elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
     gate_sop(key, printable, false, (elapsed * 1000).round)
@@ -2778,6 +2808,18 @@ def prepare
 
   say("Prepare release — Avi qa-deploy (self-healing)#{PROD ? ' (PROD board)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
   warn_local!
+
+  # LOCAL PRESENCE — the twin of the board `assembler` claim taken further down, and it
+  # answers a DIFFERENT question. The board claim says "a release is live" to every
+  # machine; this says "a sweep is consuming THIS machine" to the peer standing next to
+  # it, which is the only fact that decides whether that peer may launch a suite. Cost #3
+  # of docs/agents/system/agent-presence.md is what its absence bought: a 45-minute
+  # full-suite run SIGTERMed at its 2700s ceiling, 11% complete, killed by a sweep no
+  # status command reported. Opened HERE — before the first gh/git/board call — so the
+  # claim covers the WHOLE run, not just its suite. Best-effort and non-fatal.
+  ReleasePresence.open!(kind: ReleasePresence::SWEEP, root: File.expand_path("..", __dir__),
+                        lane: "release:prepare", session_id: conductor_session_id,
+                        agent: "avi", command: "bin/release prepare")
   # On the prod default a non-dry prepare fires a REAL accepted→release batch merge +
   # a REAL `bin/qa-server deploy`, so gate it like `ship` does. confirm returns true
   # under --yes (hands-off) and --dry-run (previews nothing-executed).
@@ -3427,6 +3469,12 @@ ensure
   # exit — idempotent with the releases above (a no-op once nothing is held), matching
   # finalize's begin/ensure posture. Crash/SIGKILL still relies on the TTL.
   release_conductor_claim!
+  # The LOCAL presence claim closes exactly where the BOARD claim does. THIS IS AN
+  # OPTIMIZATION, NOT THE CORRECTNESS STORY: a SIGKILLed conductor runs no ensure and
+  # leaves its claim file behind ON PURPOSE, and the reader grades it a corpse against the
+  # process table on the very next read — no timeout to elapse, no renewal to miss, so the
+  # wedge window is ZERO rather than one TTL. Clearing here just keeps the report tidy.
+  ReleasePresence.close!
 end
 
 # --- eject (block-on-regression) ---------------------------------------------
@@ -6514,6 +6562,14 @@ def ship
   say("Run Deployment#{PROD ? ' (PROD)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
   warn_local!
 
+  # LOCAL PRESENCE — see the twin in `prepare`. A ship runs its own test gate in the gate
+  # workspace and then deploys, so it saturates this machine exactly as a sweep does and
+  # publishes the same claim. Opened before the first read so it covers the whole run.
+  # Best-effort and non-fatal.
+  ReleasePresence.open!(kind: ReleasePresence::SHIP, root: File.expand_path("..", __dir__),
+                        lane: "release:ship", session_id: conductor_session_id,
+                        agent: "steffon", command: "bin/release ship")
+
   # 1a. MINIMAL, STABLE read — resolve WHICH release ships + its slug, BEFORE the claim.
   #     If the prior run already promoted the release card but did not finish member flips,
   #     this resolves that shipped release by slug (Release.current || Release.last_shipped).
@@ -6803,6 +6859,12 @@ ensure
   # the releases above. Crash/SIGKILL still relies on the TTL; the same-session resume is
   # unchanged (a re-run re-acquires either way).
   release_conductor_claim!
+  # The LOCAL presence claim closes exactly where the BOARD claim does. THIS IS AN
+  # OPTIMIZATION, NOT THE CORRECTNESS STORY: a SIGKILLed conductor runs no ensure and
+  # leaves its claim file behind ON PURPOSE, and the reader grades it a corpse against the
+  # process table on the very next read — no timeout to elapse, no renewal to miss, so the
+  # wedge window is ZERO rather than one TTL. Clearing here just keeps the report tidy.
+  ReleasePresence.close!
 end
 
 # --- finalize: record the steps a KILLED ship skipped ------------------------

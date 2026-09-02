@@ -94,6 +94,32 @@ ghost claim can never strand the whole qa-release lane again — the failure the
 `steffon` shift lease could suffer. (Background — not needed to execute: the design is
 `docs/agents/system/devops-shift-lease.md`, section B.)
 
+### And a LOCAL presence claim, automatic, on THIS MACHINE
+
+The assembler claim above is a **board** claim: it answers *"is a release live"*
+to every machine, on a TTL. It does not answer *"is this machine saturated"*,
+and only the second question decides whether the agent at the next desk may
+launch a suite. That gap cost a measured 45-minute full-suite run — SIGTERMed
+at its 2700s ceiling, 11% complete, killed by a sweep no status command
+reported (`docs/agents/system/agent-presence.md`, cost #3).
+
+So `bin/release prepare` now also publishes a **local** claim beside the board one, at
+`<projects>/<repo>/.git/cert-run.json` — the runlock slot, in the runlock's
+shape, carrying `kind: sweep`, `lane: release:prepare`, a phase, a weight, and the
+OS's `(pid, lstart)` identity for both this process and its group. A peer
+reads it with `bin/agent-presence`. Nothing here needs running by hand:
+
+| | |
+|---|---|
+| Opened | at the top of `bin/release prepare`, before the first `git`/`gh`/board call |
+| Weight | `light` while the conductor works; `suite` inside any test scope; `idle` while parked on a GitHub Actions poll |
+| Cleared | on graceful exit — **an optimization only** |
+| On a kill | the file stays, by design, and the reader grades it a corpse on the very next read. No TTL to wait out |
+| Disarm | `RELEASE_PRESENCE=off` |
+
+A second conductor that finds a **live** claim in that slot publishes nothing
+rather than overwrite it, and stays visible through the reader's backstop.
+
 ## Preconditions
 
 There is work to prepare:

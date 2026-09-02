@@ -263,6 +263,45 @@ sweep saturating this machine."*
 | **Read** | the same glob and the same grader as (b) |
 | **On death** | identical: a corpse the reader recognizes with no timeout |
 
+**AS BUILT (slice 4, steffon, 2026-09-02) — the claim is a RUNLOCK, in the
+runlock's own slot.** §4 above sketches
+`.agents/sessions/<id>.presence-<kind>-<pid>`. The shipped writer
+(`bin/lib/release_presence.rb`) publishes to `CertOrphanGuard.lock_path(root)`
+instead, and this row is why: the design specifies sweeps are read by *the same
+glob and the same grader as (b)*, and (b)'s glob is the runlock's —
+`*/.git/cert-run.json` and `*/.git/worktrees/*/cert-run.json`, the only two
+patterns the slice-1 reader holds. A claim written anywhere else is invisible to
+it, which would leave the sweep in the reader's `backstop` as unattributed heavy
+work — i.e. would not close cost #3 at all. Measured on this machine before and
+after: the same live sweep read as `backstop: sweep pgid 57266 … UNATTRIBUTED`,
+then as `LIVE mcritchie-studio/primary release:prepare pid 57266 pgid 57266`.
+
+Three consequences, stated because each is load-bearing:
+
+- **The writer is `CertOrphanGuard.write_lock`, not a second writer.** Its
+  atomic tmp+rename is the whole reason a runlock can be trusted (a plain
+  `File.write` was measured returning nil on 4.6% of reads taken inside its
+  zero-byte window), so the claim rides it and gains an `extra:` passthrough for
+  `kind`/`phase`/`weight`. An empty `extra` is byte-identical to what every cert
+  has always written.
+- **The claim roots at the PRIMARY checkout, never a desk.** A desk's runlock
+  slot is read by `CertOrphanGuard.preflight`, which *reaps* — it SIGKILLs a
+  process group the lock names once it can prove the group is ours — so a sweep
+  claim sitting there would be a sweep-killing landmine. At a primary it is
+  unreachable by construction: `CertRootGuard.refusal` turns back a cert whose
+  root is not the task's tree, and it runs long *before* the orphan preflight.
+- **One file per root, so a second conductor REFUSES rather than clobbers.** A
+  `prepare` and a `ship` may legitimately run at once and both root at the same
+  primary. The loser publishes nothing and stays visible through the backstop,
+  which degrades to today; overwriting would destroy a live peer's only local
+  record — the same reasoning that makes the guard keep a lock when a reap is
+  refused.
+
+`RELEASE_PRESENCE=off` disarms the writer. **When the reader gains a glob for the
+session-marker namespace, this claim should move there** and the `extra:`
+passthrough retires with it; until then §4's path and this row disagree, and this
+row is what runs.
+
 ### (d) Machine headroom — a derivation, not a mechanism
 
 Cost #5's load average was not misread. A load average is an exponentially
@@ -460,7 +499,7 @@ All five are filed. This design builds none of them.
 | 1 | [`agent-presence-reader`](https://mcritchie.studio/tasks/agent-presence-reader) | cost #4, most of #2 |
 | 2 | [`desk-context-names-session`](https://mcritchie.studio/tasks/desk-context-names-session) | cost #1 |
 | 3 | [`certs-publish-no-phase`](https://mcritchie.studio/tasks/certs-publish-no-phase) — **re-scoped, see below** | cost #4 |
-| 4 | [`sweeps-publish-local-claim`](https://mcritchie.studio/tasks/sweeps-publish-local-claim) | cost #3 |
+| 4 | [`sweeps-publish-local-claim`](https://mcritchie.studio/tasks/sweeps-publish-local-claim) — **BUILT**, see §5(c) *As built* | cost #3 |
 | — | [`archive-refuses-unknown-holder`](https://mcritchie.studio/tasks/archive-refuses-unknown-holder) | cost #1, unblocked |
 
 ### Slice 1 — `bin/agent-presence`, the READER ALONE. **Build this first.**
