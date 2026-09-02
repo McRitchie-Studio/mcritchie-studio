@@ -10,6 +10,11 @@ require_relative "../../lib/open_pr_guard"
 class OpenPrGuardTest < Minitest::Test
   ENGINE = "https://github.com/McRitchie-Studio/studio-engine/pull/245"
   SOLANA = "https://github.com/McRitchie-Studio/solana-studio/pull/9"
+  # THE COLLIDING PAIR, and it is not hypothetical: studio-engine #245 is the PR
+  # this whole guard was built for, and #24 is a real neighbour in the same repo.
+  # One url is a strict PREFIX of the other, which is the entire defect.
+  ENGINE_24 = "https://github.com/McRitchie-Studio/studio-engine/pull/24"
+  AT = "2026-09-02T14:00:00Z"
 
   # THE LIVE RECORD, copied from `bin/task show move-web3-modals-to-solana --json`
   # on 2026-09-02. Both keys populated, the singular duplicating one map entry —
@@ -139,23 +144,66 @@ class OpenPrGuardTest < Minitest::Test
     assert_equal :open, OpenPrGuard.decide(prs: [pr(:open)], stage: "shipped")
   end
 
-  # THE COMPLETENESS PROPERTY, asserted against the REAL predicate rather than a
-  # hardcoded copy of the grade list. Every grade `decide` can actually produce is
-  # either permitted or carries a refusal the operator can act on — so a grade added
-  # later cannot slip through as a silent pass with no message behind it.
+  # THE COMPLETENESS PROPERTY: every grade `decide` can actually produce is either
+  # PERMITTED or carries a message the operator can act on. So a grade added later
+  # cannot slip through as a silent refusal with nothing behind it.
+  #
+  # WHAT THIS TEST USED TO BE, and why it proved nothing: it derived the grade list
+  # from the real predicate — correctly — and then built its assertion from a
+  # hardcoded `prs: [pr(:open)]`, never passing `grade` into anything. So every
+  # unpermitted grade rendered the same open-PR refusal, which is of course
+  # non-empty, and the property was never exercised. Proven inert by execution: an
+  # unpermitted grade with no message left the file at 26 runs / 0 failures.
+  #
+  # It bites now because the message is looked up BY GRADE, through the same
+  # dispatcher bin/task calls, using the very roster and stage that produced it.
+  # An unanswered grade returns nil, and nil is a fact this can see.
   def test_every_grade_decide_produces_is_either_permitted_or_explained
-    grades = [[], [pr(:open)], [pr(:merged)], [pr(:closed)], [pr(:unknown)],
-              [pr(:open), pr(:unknown)], [pr(:merged), pr(:unknown)]]
-             .product(%w[designed building submitted reviewed assembled shipped archived])
-             .map { |prs, stage| OpenPrGuard.decide(prs: prs, stage: stage) }
-             .uniq
+    cases = ROSTERS.product(STAGES).map do |prs, stage|
+      [OpenPrGuard.decide(prs: prs, stage: stage), prs, stage]
+    end
 
+    grades = cases.map(&:first).uniq
     refute_empty grades
-    grades.each do |grade|
+    assert_includes grades, :open,
+                    "the rosters must actually reach the refusing grade, or this property " \
+                    "passes by never testing anything"
+
+    cases.each do |grade, prs, stage|
       next if OpenPrGuard.permitted?(grade)
 
-      text = OpenPrGuard.refusal(slug: "probe", stage: "designed", prs: [pr(:open)])
-      refute_empty text.to_s.strip, "grade #{grade.inspect} refuses with no message to act on"
+      message = OpenPrGuard.message_for(grade: grade, slug: "probe", stage: stage, prs: prs)
+      refute_nil message, "grade #{grade.inspect} refuses with no message to act on"
+      refute_empty message.to_s.strip, "grade #{grade.inspect} refuses with an empty message"
+    end
+  end
+
+  # The other half of the same property, and the half a bare `permitted?` check
+  # hides: :unreadable PROCEEDS and still has something to say. Permission and
+  # silence are different questions.
+  def test_a_permitted_grade_can_still_carry_a_message
+    message = OpenPrGuard.message_for(grade: :unreadable, slug: "probe", stage: "designed",
+                                      prs: [pr(:unknown)])
+
+    assert OpenPrGuard.permitted?(:unreadable)
+    assert_includes message.to_s, "could not read"
+  end
+
+  def test_message_for_routes_open_to_the_refusal
+    message = OpenPrGuard.message_for(grade: :open, slug: "probe", stage: "shipped",
+                                      prs: [pr(:open)])
+
+    assert_includes message.to_s, "REFUSING to archive probe"
+    assert_includes message.to_s, "shipped", "the stage it was in is part of the refusal"
+  end
+
+  # A grade with genuinely nothing to say says nothing — the dispatcher must not
+  # manufacture a message for a clean archive.
+  def test_message_for_is_silent_on_a_clean_grade
+    %i[concluded none clear].each do |grade|
+      assert_nil OpenPrGuard.message_for(grade: grade, slug: "probe", stage: "designed",
+                                         prs: [pr(:merged)]),
+                 "#{grade.inspect} archives cleanly; a message here would be noise"
     end
   end
 
@@ -230,7 +278,118 @@ class OpenPrGuardTest < Minitest::Test
     assert_equal ["x"], OpenPrGuard.merged_record(nil, ["x"])
   end
 
+  # ── reading the receipt back: WHOLE URLS, NOT PREFIXES ──────────────────────
+
+  # THE UNSAFE FAILURE, and the reason this task exists. `.../pull/24` is a strict
+  # PREFIX of `.../pull/245`, so the substring reader this replaced
+  # (`recorded.any? { |entry| entry.include?(ref[:url]) }`) answered TRUE for a PR
+  # nobody ever abandoned. Downstream, `bin/task orphan-prs` printed a REAL orphan
+  # as "abandoned on purpose", suppressed its `decide:` remediation line, and sorted
+  # it to the bottom — the alarm going quiet about live, forgotten work, which is
+  # precisely the harm this guard shipped to close.
+  #
+  # THE SECOND ASSERTION IS THE CONTROL. It proves the fixture still exhibits the
+  # collision, so a green first assertion can never mean "these two urls simply do
+  # not overlap" — the way a fixture that cannot express the bug passes against the
+  # defect and the fix alike.
+  def test_a_receipt_for_245_does_not_cover_24
+    receipt = OpenPrGuard.record(prs: [pr(:open, url: ENGINE)], at: AT)
+
+    refute OpenPrGuard.abandonment_recorded?(receipt, ENGINE_24),
+           "#{ENGINE_24} was never abandoned; reading it as deliberate silences the alarm " \
+           "about a real orphan"
+    assert receipt.first.include?(ENGINE_24),
+           "control: the receipt really does CONTAIN the shorter url, so the refutation above " \
+           "is testing the anchoring and not an accident of these two strings"
+  end
+
+  def test_a_receipt_for_245_still_covers_245
+    receipt = OpenPrGuard.record(prs: [pr(:open, url: ENGINE)], at: AT)
+
+    assert OpenPrGuard.abandonment_recorded?(receipt, ENGINE),
+           "anchoring must not cost the receipt its actual job"
+  end
+
+  # The other direction, which the substring reader got right by accident: a
+  # receipt for the SHORTER url must not cover the longer one either.
+  def test_a_receipt_for_24_does_not_cover_245
+    receipt = OpenPrGuard.record(prs: [pr(:open, url: ENGINE_24, number: "24")], at: AT)
+
+    refute OpenPrGuard.abandonment_recorded?(receipt, ENGINE)
+  end
+
+  def test_a_receipt_written_by_hand_as_a_bare_url_still_matches
+    assert OpenPrGuard.abandonment_recorded?([ENGINE], ENGINE),
+           "a bare url is its own first field; a human-written receipt must still count"
+  end
+
+  def test_an_empty_or_missing_receipt_covers_nothing
+    refute OpenPrGuard.abandonment_recorded?(nil, ENGINE)
+    refute OpenPrGuard.abandonment_recorded?([], ENGINE)
+    refute OpenPrGuard.abandonment_recorded?([ENGINE], "  "),
+           "an empty url must never match a receipt; every PR would read as abandoned"
+  end
+
+  # ── the receipt covers every PR the override drops ──────────────────────────
+
+  # THE MIRROR OF THE PREFIX BUG, erring SAFE and still wrong. `record` folded
+  # `open_prs`, so on a roster of [OPEN, UNREADABLE] the refusal named both PRs,
+  # one `--force` abandoned both, and only one receipt was written. The unreadable
+  # sibling then reported as ORPHANED — forgotten — when it was dropped by the same
+  # deliberate keystroke. Measured 2026-09-02: 2 PRs in, 1 receipt out.
+  def test_force_records_a_receipt_for_the_unreadable_sibling_too
+    entries = OpenPrGuard.record(
+      prs: [pr(:open, url: ENGINE), pr(:unknown, url: SOLANA, repo: "McRitchie-Studio/solana-studio",
+                                       number: "9")],
+      at: AT
+    )
+
+    assert_equal 2, entries.size, "both PRs were dropped by the same choice: #{entries.inspect}"
+    assert OpenPrGuard.abandonment_recorded?(entries, SOLANA),
+           "the PR whose state we could not read is the one most likely to be forgotten"
+  end
+
+  # The receipt is prose a human reads months later. `:unknown` there invites the
+  # reader to ask "unknown what?" about the one field telling them the check never
+  # completed; every other message in the guard calls that state unreadable.
+  def test_the_receipt_calls_an_unread_state_unreadable
+    entry = OpenPrGuard.record(prs: [pr(:unknown), pr(:open, url: SOLANA)], at: AT).first
+
+    assert_includes entry, "unreadable"
+    refute_includes entry, "unknown"
+  end
+
+  def test_a_resolved_pr_never_gets_a_receipt
+    entries = OpenPrGuard.record(prs: [pr(:merged), pr(:closed), pr(:open, url: SOLANA)], at: AT)
+
+    assert_equal 1, entries.size, "merged and closed PRs were resolved, not abandoned"
+    assert_includes entries.first, SOLANA
+  end
+
+  def test_the_receipt_records_the_soul_who_made_the_choice
+    entry = OpenPrGuard.record(prs: [pr(:open)], at: AT, by: "carl").first
+
+    assert_includes entry, "by carl",
+                    "a later reader needs WHO decided, not only that somebody did"
+  end
+
   private
+
+  # Every roster shape the gate can be handed, used by the completeness property.
+  # Kept beside `pr` so a new state added to the vocabulary has one obvious home.
+  ROSTERS = [
+    [],
+    [{ repo: "r/a", number: "1", url: "https://github.com/r/a/pull/1", state: :open }],
+    [{ repo: "r/a", number: "1", url: "https://github.com/r/a/pull/1", state: :merged }],
+    [{ repo: "r/a", number: "1", url: "https://github.com/r/a/pull/1", state: :closed }],
+    [{ repo: "r/a", number: "1", url: "https://github.com/r/a/pull/1", state: :unknown }],
+    [{ repo: "r/a", number: "1", url: "https://github.com/r/a/pull/1", state: :open },
+     { repo: "r/b", number: "2", url: "https://github.com/r/b/pull/2", state: :unknown }],
+    [{ repo: "r/a", number: "1", url: "https://github.com/r/a/pull/1", state: :merged },
+     { repo: "r/b", number: "2", url: "https://github.com/r/b/pull/2", state: :unknown }]
+  ].freeze
+
+  STAGES = %w[designed building submitted reviewed assembled shipped archived blocked].freeze
 
   def pr(state, url: ENGINE, repo: "McRitchie-Studio/studio-engine", number: "245")
     { repo: repo, number: number, url: url, state: state }

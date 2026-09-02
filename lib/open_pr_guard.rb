@@ -108,6 +108,11 @@ module OpenPrGuard
   # later must be admitted on purpose rather than permitted by omission.
   PERMITTED = %i[concluded none clear unreadable].freeze
 
+  # The PR states an override abandons. `:unknown` rides with `:open` because a
+  # state we could not read is a state we could not establish as resolved — the
+  # same asymmetry `state_of` applies, carried through to the receipt.
+  ABANDONED_STATES = %i[open unknown].freeze
+
   # The devops list key that records a deliberate abandonment. It MUST be a
   # storable name in Task::DEVOPS_LIST_KEYS or the record silently evaporates —
   # `normalize_devops_metadata` drops any key outside DEVOPS_KEYS and the caller
@@ -181,7 +186,43 @@ module OpenPrGuard
     Array(prs).select { |pr| pr[:state] == :unknown }
   end
 
+  # Every PR an override would ABANDON: the OPEN ones, AND the ones whose state
+  # could not be read. `record` folds THIS list, never `open_prs`.
+  #
+  # THE MIRROR OF THE PREFIX BUG (see `abandonment_recorded?`), erring the SAFE way
+  # and still wrong. On a roster of [OPEN, UNREADABLE] the refusal names both, one
+  # `--force` abandons both, and a receipt written only for the open one leaves the
+  # unreadable one reporting as ORPHANED — forgotten — when it was dropped by the
+  # same deliberate keystroke. Measured 2026-09-02: 2 PRs in, 1 receipt out.
+  #
+  # An unreadable PR ALONE never reaches here: :unreadable is PERMITTED, so that
+  # archive proceeds with a warning and nothing is abandoned by anybody. This list
+  # only matters once an OPEN PR has already forced the operator to decide, and at
+  # that point the unreadable sibling is being dropped by the same choice.
+  def abandoned_prs(prs)
+    Array(prs).select { |pr| ABANDONED_STATES.include?(pr[:state]) }
+  end
+
   # --- refusal + warning ---------------------------------------------------------
+
+  # The message ONE grade carries, or nil when that grade has nothing to say.
+  #
+  # THE GRADE PICKS THE MESSAGE, in one place, because that is what makes the
+  # completeness property assertable: a grade added to `decide` and not answered
+  # here returns nil, and nil is a fact a test can see. The property test that
+  # shipped with this guard could not see it — it derived the grade list from the
+  # real predicate, then built its assertion from a hardcoded roster and never
+  # passed `grade` into anything, so every unpermitted grade rendered the same
+  # open-PR refusal and the file stayed green with the property unexercised.
+  #
+  # `:unreadable` is PERMITTED and still has a message. Permission and silence are
+  # different questions, and the caller asks them separately.
+  def message_for(grade:, slug:, stage:, prs:)
+    case grade
+    when :open       then refusal(slug: slug, stage: stage, prs: prs)
+    when :unreadable then unreadable_warning(slug: slug, prs: prs)
+    end
+  end
 
   # NAME EVERY PR AND ITS STATE, not just the open ones. The operator's next move is
   # close-vs-revive, and that decision is made against the whole set: on
@@ -262,10 +303,41 @@ module OpenPrGuard
   # NEWLINE-FREE BY CONSTRUCTION. Task.normalize_devops_list splits every array
   # element on "\n", so an entry containing one would be silently torn into two
   # rows — a record that reads as more abandonments than happened.
+  # THE URL IS THE FIRST WHITESPACE-SEPARATED FIELD, and `abandonment_recorded?`
+  # depends on that. Anything prepended to it turns every receipt on the board into
+  # a receipt nothing can find.
   def record(prs:, at:, by: nil)
-    open_prs(prs).map do |pr|
-      "#{pr[:url]} #{pr[:state]} abandoned-at-archive #{at}#{by ? " by #{by}" : ""}".tr("\n", " ")
+    abandoned_prs(prs).map do |pr|
+      "#{pr[:url]} #{receipt_state(pr[:state])} abandoned-at-archive #{at}#{by ? " by #{by}" : ""}".tr("\n", " ")
     end
+  end
+
+  # The word a receipt uses for a state. `:unknown` is written as `unreadable`
+  # because that is what every message in this file calls it, and a receipt is prose
+  # a human reads months later — "unknown" invites the reader to ask *unknown what?*
+  # about the one field that is telling them the check never completed.
+  def receipt_state(state)
+    state == :unknown ? "unreadable" : state.to_s
+  end
+
+  # Does `recorded` carry an abandonment receipt for THIS url?
+  #
+  # ANCHORED ON THE WHOLE URL, NEVER A SUBSTRING. The first cut of this predicate
+  # lived in bin/task as `recorded.any? { |entry| entry.include?(ref[:url]) }`, and
+  # a shorter PR url is a PREFIX of a longer one: a receipt written for
+  # .../pull/245 answers TRUE for .../pull/24. That fails in the UNSAFE direction —
+  # a real orphan reads as "abandoned on purpose", its `decide:` remediation line is
+  # suppressed, and it sorts to the bottom of `bin/task orphan-prs`. The alarm goes
+  # quiet about live work, which is the exact harm this guard shipped to close.
+  #
+  # Comparing the first FIELD rather than matching a pattern means there is nothing
+  # to escape, and a bare-url entry — a receipt written by hand — still matches,
+  # because a bare url is its own first field.
+  def abandonment_recorded?(recorded, url)
+    target = url.to_s.strip
+    return false if target.empty?
+
+    Array(recorded).any? { |entry| entry.to_s.split(/\s+/).first == target }
   end
 
   # Merge the record onto whatever the task already carries, never replacing it: a

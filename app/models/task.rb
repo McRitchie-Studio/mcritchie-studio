@@ -1127,6 +1127,14 @@ class Task < ApplicationRecord
     devops_list("checks_run")
   end
 
+  # The open-PR archive gate's abandonment receipt (lib/open_pr_guard.rb): one line
+  # per PR that `bin/task move <slug> archived --force` deliberately dropped. Its
+  # entire purpose is that a LATER READER can tell a dropped PR from a forgotten
+  # one, so it needs a reader on the surfaces a human actually opens.
+  def devops_abandoned_prs
+    devops_list("abandoned_prs")
+  end
+
   def approval_status
     devops.fetch("approval_status", "").presence
   end
