@@ -6,14 +6,14 @@
 # every verdict below be proven in a unit test WITHOUT running the script.
 #
 # THE DEFECT IT CLOSES (/tasks/worktree-subcommand-drops-help), and it is the
-# WIDEST surface the class has produced — TWENTY subcommands, FOURTEEN of which
-# reach a durable write (measured; the SIX read-only arms are apps, list, plan, env,
-# shell-hook and doctor). `whereami` was counted read-only here and in the manifest
-# test until 2026-09-01 and is NOT: `run_whereami(app, task)` — both positionals
+# WIDEST surface the class has produced — TWENTY-ONE subcommands, FOURTEEN of which
+# reach a durable write (measured; the SEVEN read-only arms are apps, list, plan, env,
+# holder, shell-hook and doctor). `whereami` was counted read-only here and in the
+# manifest test until 2026-09-01 and is NOT: `run_whereami(app, task)` — both positionals
 # given — calls write_context_marker, which File.writes .agent-context.json, excludes
 # it from git and refreshes the Codex session title. Re-derived from source rather
-# than carried forward, because a count is only true of the tree it came from: 20
-# arms in COMMANDS below, minus the six above, is 14. The dispatcher did
+# than carried forward, because a count is only true of the tree it came from: 21
+# arms in COMMANDS below, minus the seven above, is 14. The dispatcher did
 # `cmd = ARGV.shift || "help"` and no arm
 # validated what was left, so:
 #
@@ -96,6 +96,8 @@ module AgentWorktreeCli
       new <app> <task-slug> [type] [--start]
       bind-task <app> <task-slug> <task-record-slug-or-url>
       whereami [app task-slug] [--json|--shell]
+      holder <task-slug> [--json]
+      holder --session <session-id> [--json]
       shell-hook zsh
       env <app> <task-slug>
       up <app> <task-slug>
@@ -208,6 +210,14 @@ module AgentWorktreeCli
       synopsis: "bin/agent-worktree whereami [app task-slug] [--json|--shell]",
       consequence: "nothing was reported and no desk was touched",
       bool: ["--json", "--shell"], value: [], allow_positional: true
+    },
+    # READ-ONLY, and one of the few arms that genuinely is: it takes one `ps`
+    # snapshot and globs the desk markers. It writes nothing, signals nothing, and
+    # never touches a desk it reports on.
+    "holder" => {
+      synopsis: "bin/agent-worktree holder <task-slug> [--json] | holder --session <session-id> [--json]",
+      consequence: "nothing was looked up and no desk was touched",
+      bool: ["--json"], value: ["--session"], allow_positional: true
     },
     "shell-hook" => {
       synopsis: "bin/agent-worktree shell-hook zsh",
