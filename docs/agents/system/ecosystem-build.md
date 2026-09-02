@@ -97,16 +97,16 @@ guard is a named function — `agent_vault_visible` at the top of
 Three rules, and each one is there because its absence cost something:
 
 - **The vault name comes from `MCR_OP_VAULT_AGENT`, defaulting to
-  `agents-studio`** — mirroring `bin/lib/op_vaults.rb`, which is the single
+  `studio-agents`** — mirroring `bin/lib/op_vaults.rb`, which is the single
   source. Phase 4 expands that default at three sites and only the guard's binds
   a variable — the Heroku item read and the `SOLANA_ADMIN_KEY` secret map each
   expand it again, so a new default has to be set in all three.
 - **The name is matched EXACTLY.** The guard read `op vault list | grep -qw
-  agents` until 2026-08-29 and passed against `agents-studio`, because `-w`
+  agents` until 2026-08-29 and passed against `studio-agents`, because `-w`
   treats a hyphen as a word boundary — so it reported the credential lane
   healthy for as long as the vault it guarded had been gone. The 1Password
-  account holds four vaults whose names begin `agents` (`agents-studio`, `agents-admin`,
-  `agents-industries`, `agents-mcritchie-family`), so "contains the word
+  account holds four vaults whose names begin `agents` (`studio-agents`, `studio-agents-admin`,
+  `industries-agents`, `family-agents`), so "contains the word
   agents" was never the question.
 - **It fails closed.** Absent, empty, unparseable, or non-array output from `op`
   is not evidence a vault is reachable, so every one of them is a refusal.

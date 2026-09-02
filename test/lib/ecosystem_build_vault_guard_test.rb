@@ -9,13 +9,13 @@
 # is a statement about a string. None of them runs the guard, and the defect they
 # were written for was a guard that read correctly and ANSWERED WRONG:
 # `op vault list | grep -qw agents` reported the credential lane healthy against
-# `agents-studio`, because -w treats a hyphen as a word boundary. A script whose
+# `studio-agents`, because -w treats a hyphen as a word boundary. A script whose
 # only test is a scan of its own text can be wrong in exactly that way forever.
 #
 # So this file stubs `op` and asks the guard questions.
 #
-# THE FOUR VAULTS ARE THE WHOLE POINT. The account holds agents-studio,
-# agents-admin, agents-industries and agents-mcritchie-family. "Contains the word
+# THE FOUR VAULTS ARE THE WHOLE POINT. The account holds studio-agents,
+# studio-agents-admin, industries-agents and family-agents. "Contains the word
 # agents" is true of all four and of the vault `agents`, which has not existed
 # since 2026-08-28 — so a match that is not an EXACT one answers a question
 # nobody asked.
@@ -36,14 +36,14 @@ class EcosystemBuildVaultGuardTest < Minitest::Test
 
   # `op vault list --format=json`, as the 1PASSWORD ACCOUNT answers it — not as the
   # agent service account does. Per docs/agents/modules/credential-inventory.md the
-  # agent token is granted agents-studio alone. The fuller listing is deliberate:
+  # agent token is granted studio-agents alone. The fuller listing is deliberate:
   # more near-miss names is a STRICTLY HARDER test for an exact matcher.
   REAL_LISTING = <<~JSON
     [
-      {"id":"aaa","name":"agents-studio"},
-      {"id":"bbb","name":"agents-admin"},
-      {"id":"ccc","name":"agents-industries"},
-      {"id":"ddd","name":"agents-mcritchie-family"}
+      {"id":"aaa","name":"studio-agents"},
+      {"id":"bbb","name":"studio-agents-admin"},
+      {"id":"ccc","name":"industries-agents"},
+      {"id":"ddd","name":"family-agents"}
     ]
   JSON
 
@@ -54,8 +54,8 @@ class EcosystemBuildVaultGuardTest < Minitest::Test
   # ------------------------------------------------------- the exact match ----
 
   def test_the_real_vault_is_visible
-    assert_equal VISIBLE, guard("agents-studio", op: REAL_LISTING),
-                 "agents-studio is in the listing, matched on its exact name"
+    assert_equal VISIBLE, guard("studio-agents", op: REAL_LISTING),
+                 "studio-agents is in the listing, matched on its exact name"
   end
 
   # THE REGRESSION. `grep -qw agents` returned 0 here — that is the bug, in one
@@ -76,24 +76,24 @@ class EcosystemBuildVaultGuardTest < Minitest::Test
   end
 
   def test_a_longer_name_sharing_the_prefix_is_not_visible
-    assert_equal NOT_IN_LISTING, guard("agents-studio", op: '[{"name":"agents-studio-old"}]'),
+    assert_equal NOT_IN_LISTING, guard("studio-agents", op: '[{"name":"studio-agents-old"}]'),
                  "a listing entry that merely STARTS WITH the wanted name is a different vault"
   end
 
   # The other lane, so the match is shown to be about names rather than about
   # one blessed spelling.
   def test_the_admin_vault_is_visible_under_its_own_name
-    assert_equal VISIBLE, guard("agents-admin", op: REAL_LISTING)
+    assert_equal VISIBLE, guard("studio-agents-admin", op: REAL_LISTING)
   end
 
   # ------------------------------------------------------- failing closed ----
 
   def test_an_empty_listing_is_not_visible
-    assert_equal NOT_IN_LISTING, guard("agents-studio", op: "[]")
+    assert_equal NOT_IN_LISTING, guard("studio-agents", op: "[]")
   end
 
   def test_no_output_at_all_is_not_visible
-    assert_equal NOT_IN_LISTING, guard("agents-studio", op: ""),
+    assert_equal NOT_IN_LISTING, guard("studio-agents", op: ""),
                  "silence is not a yes"
   end
 
@@ -103,25 +103,25 @@ class EcosystemBuildVaultGuardTest < Minitest::Test
   # that is not 0 or 2 to the grant message, and a trap tomorrow for whoever
   # reads a function documenting two codes and finds it emitting four.
   def test_garbage_output_is_not_visible
-    assert_equal NOT_IN_LISTING, guard("agents-studio", op: "[ERROR] 2026/08/29 not authenticated"),
+    assert_equal NOT_IN_LISTING, guard("studio-agents", op: "[ERROR] 2026/08/29 not authenticated"),
                  "unparseable output is a refusal, reported with the same code as any other " \
                  "listing that did not say yes"
   end
 
   # The reason `type == "array"` is in the jq filter — and the FIXTURE IS THE
-  # TEST. This started as `{"name":"agents-studio"}`, which the filter refuses
+  # TEST. This started as `{"name":"studio-agents"}`, which the filter refuses
   # with or without the type check (`.[]` yields the string, and `.name?` on a
   # string is empty), so deleting the type check killed nothing and the
   # assertion proved only that jq dislikes one particular object. A keyed map of
   # vaults is the shape that separates them: without `type == "array"` this
   # answers YES.
   def test_json_that_is_not_a_listing_is_not_visible
-    assert_equal NOT_IN_LISTING, guard("agents-studio", op: '{"personal":{"name":"agents-studio"}}'),
+    assert_equal NOT_IN_LISTING, guard("studio-agents", op: '{"personal":{"name":"studio-agents"}}'),
                  "an object is not a vault listing, whatever its values happen to contain"
   end
 
   def test_a_failing_op_is_not_visible
-    assert_equal NOT_IN_LISTING, guard("agents-studio", op: REAL_LISTING, op_status: 1),
+    assert_equal NOT_IN_LISTING, guard("studio-agents", op: REAL_LISTING, op_status: 1),
                  "op exiting nonzero — no grants, an expired token, no network — is a no, " \
                  "not a maybe"
   end
@@ -132,11 +132,11 @@ class EcosystemBuildVaultGuardTest < Minitest::Test
   # an uninstalled binary spends the afternoon in the 1Password console. The two
   # failures are reported apart because they need opposite responses.
   def test_a_missing_op_binary_is_reported_as_uncheckable_not_as_a_grant_problem
-    assert_equal CANNOT_CHECK, guard("agents-studio", op: nil)
+    assert_equal CANNOT_CHECK, guard("studio-agents", op: nil)
   end
 
   def test_a_missing_jq_binary_is_reported_as_uncheckable_not_as_a_grant_problem
-    assert_equal CANNOT_CHECK, guard("agents-studio", op: REAL_LISTING, jq: false)
+    assert_equal CANNOT_CHECK, guard("studio-agents", op: REAL_LISTING, jq: false)
   end
 
   # ------------------------------------------------------------ the wiring ----
@@ -153,17 +153,17 @@ class EcosystemBuildVaultGuardTest < Minitest::Test
   def test_phase_secrets_routes_each_guard_outcome_to_its_own_verdict
     ok = phase_secrets(op: REAL_LISTING)
 
-    assert_match(/agent vault 'agents-studio' visible/, ok)
+    assert_match(/agent vault 'studio-agents' visible/, ok)
     refute_match(/can't see|can't check/, ok)
 
     grants = phase_secrets(op: "[]")
 
-    assert_match(/can't see the 'agents-studio' agent vault/, grants)
+    assert_match(/can't see the 'studio-agents' agent vault/, grants)
     assert_match(/check the token's vault grants/, grants)
 
     uninstalled = phase_secrets(op: nil)
 
-    assert_match(/can't check the 'agents-studio' agent vault/, uninstalled)
+    assert_match(/can't check the 'studio-agents' agent vault/, uninstalled)
     assert_match(/op and jq are not both installed/, uninstalled)
     refute_match(/check the token's vault grants/, uninstalled,
                  "the missing-binary path must NOT send the reader to the 1Password console")

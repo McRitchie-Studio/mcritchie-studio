@@ -91,27 +91,27 @@ cd ~/projects/turf-monster && bin/setup-cdp-key   # no args → reads the key fr
 **Account ID**: `MWOV5OT5BRHATI4EGMN26C5DPA`
 
 **Vault layout**:
-- `agents-studio` — All agent wallet credentials (renamed from "🦞 Bots" 2026-05-03, and from `agents` 2026-08-28)
+- `studio-agents` — All agent wallet credentials (renamed from "🦞 Bots" 2026-05-03, and from `agents` 2026-08-28)
 - `🧱 Blockchain` — General blockchain credentials
 
 **Retrieve a wallet's private key** (items renamed 2026-05-03 to `agent.*` convention):
 ```bash
 # Alex Bot
-op item get "agent.alex.solana" --vault "agents-studio" --account MWOV5OT5BRHATI4EGMN26C5DPA --fields "private key"
+op item get "agent.alex.solana" --vault "studio-agents" --account MWOV5OT5BRHATI4EGMN26C5DPA --fields "private key"
 
 # Mason
-op item get "agent.mason.solana" --vault "agents-studio" --account MWOV5OT5BRHATI4EGMN26C5DPA --fields "private key"
+op item get "agent.mason.solana" --vault "studio-agents" --account MWOV5OT5BRHATI4EGMN26C5DPA --fields "private key"
 
 # Mack
-op item get "agent.mack.solana" --vault "agents-studio" --account MWOV5OT5BRHATI4EGMN26C5DPA --fields "private key"
+op item get "agent.mack.solana" --vault "studio-agents" --account MWOV5OT5BRHATI4EGMN26C5DPA --fields "private key"
 
 # Turf Monster
-op item get "agent.turf.solana" --vault "agents-studio" --account MWOV5OT5BRHATI4EGMN26C5DPA --fields "private key"
+op item get "agent.turf.solana" --vault "studio-agents" --account MWOV5OT5BRHATI4EGMN26C5DPA --fields "private key"
 ```
 
 **Set as env var (one-liner)**:
 ```bash
-export SOLANA_ADMIN_KEY=$(op item get "agent.alex.solana" --vault "agents-studio" --account MWOV5OT5BRHATI4EGMN26C5DPA --fields "private key")
+export SOLANA_ADMIN_KEY=$(op item get "agent.alex.solana" --vault "studio-agents" --account MWOV5OT5BRHATI4EGMN26C5DPA --fields "private key")
 ```
 
 **Item fields**: Each wallet entry contains `recovery phrase`, `private key` (base58), and `wallet address` (base58 public key).

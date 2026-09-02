@@ -2,7 +2,7 @@
 
 > **When to read this:** A token/key/secret needs to be rotated — scheduled, compromised, or expiring. Each section is a self-contained procedure: where the secret is stored, how to regenerate it at the source, how to push the new value to every consumer, how to verify the rotation succeeded.
 
-The 1Password account is `alex@mcritchie.studio` (account ID `MWOV5OT5BRHATI4EGMN26C5DPA`), vaults `agents-studio` (agent lane) and `agents-admin` (ship lane — separate service account, `bin/setup-1pass-token --admin`). Heroku apps are `mcritchie-studio` and `turf-monster-mainnet`. After every rotation, re-run `bin/ecosystem-build` so the dev `.env` files refresh from Heroku's new config.
+The 1Password account is `alex@mcritchie.studio` (account ID `MWOV5OT5BRHATI4EGMN26C5DPA`), vaults `studio-agents` (agent lane) and `studio-agents-admin` (ship lane — separate service account, `bin/setup-1pass-token --admin`). Heroku apps are `mcritchie-studio` and `turf-monster-mainnet`. After every rotation, re-run `bin/ecosystem-build` so the dev `.env` files refresh from Heroku's new config.
 
 ---
 
@@ -14,12 +14,12 @@ The 1Password account is `alex@mcritchie.studio` (account ID `MWOV5OT5BRHATI4EGM
 
 **Procedure:**
 1. https://start.1password.com → Developer Tools → Service Accounts.
-2. Find the existing service account row. Click "Rotate token" (or delete + recreate with read on `agents-studio`). The admin token is a second, separate service account with read on `agents-admin` — rotate it the same way and install it with `bin/setup-1pass-token --admin`.
+2. Find the existing service account row. Click "Rotate token" (or delete + recreate with read on `studio-agents`). The admin token is a second, separate service account with read on `studio-agents-admin` — rotate it the same way and install it with `bin/setup-1pass-token --admin`.
 3. Copy the new `ops_...` token to clipboard.
 4. From `~/projects/mcritchie-studio`: `bin/setup-1pass-token`. The script reads from `pbpaste`, validates the prefix, replaces the existing line in `~/.zprofile`, chmods 600, and verifies with `op vault list`.
 5. `source ~/.zprofile` (or open a new terminal).
 
-**Verify:** `op vault list` lists `agents-studio`. `bin/ecosystem-build` reaches Phase 4 cleanly.
+**Verify:** `op vault list` lists `studio-agents`. `bin/ecosystem-build` reaches Phase 4 cleanly.
 
 ---
 

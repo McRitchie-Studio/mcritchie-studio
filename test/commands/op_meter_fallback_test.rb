@@ -109,7 +109,7 @@ class OpMeterFallbackTest < Minitest::Test
   # what to do — not with a shell error from inside the metering wrapper.
   def test_integration_secret_still_fails_loudly_when_op_is_absent
     _out, err, status = Open3.capture3(
-      trapped_env, File.join(ROOT, "bin", "secret"), "agents-studio", "agent.heroku", "api key"
+      trapped_env, File.join(ROOT, "bin", "secret"), "studio-agents", "agent.heroku", "api key"
     )
 
     refute status.success?, "an absent op must still be a failure"
@@ -124,7 +124,7 @@ class OpMeterFallbackTest < Minitest::Test
   # message, and no crash from the meter.
   def test_integration_secret_reports_its_own_guard_not_a_wrapper_error
     _out, err, status = Open3.capture3(
-      trapped_env, File.join(ROOT, "bin", "secret"), "agents-studio", "agent.heroku"
+      trapped_env, File.join(ROOT, "bin", "secret"), "studio-agents", "agent.heroku"
     )
 
     refute status.success?
@@ -181,7 +181,7 @@ class OpMeterFallbackTest < Minitest::Test
 
     out, err, status = Open3.capture3(
       trapped_env("SECRET_OP_BIN" => File.join(@bindir, "op-ok")),
-      File.join(bindir, "secret"), "agents-studio", "agent.heroku"
+      File.join(bindir, "secret"), "studio-agents", "agent.heroku"
     )
 
     assert status.success?, "with the shim gone, bin/secret must still reach op and answer: #{err}"

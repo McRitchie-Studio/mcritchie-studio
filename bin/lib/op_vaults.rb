@@ -14,7 +14,7 @@
 # which is how every lane writes to the board.
 #
 # THE TRAP THIS ENCODES, and the reason the mapping is per-IDENTITY rather than
-# one global vault name. `agents-studio` holds github.mcritchie-agent but NOT
+# one global vault name. `studio-agents` holds github.mcritchie-agent but NOT
 # github.mcritchie-deployer. A blind repoint of everything to the reachable
 # vault turns the AGENT lane green immediately — builds, PRs, merges — and
 # breaks PRODUCTION DEPLOYS hours later, with the cause far behind the symptom.
@@ -55,13 +55,13 @@ module OpVaults
   LANES = {
     agent: {
       vault_env: "MCR_OP_VAULT_AGENT",
-      default_vault: "agents-studio",
+      default_vault: "studio-agents",
       token_env: "OP_SERVICE_ACCOUNT_TOKEN",
       profile: "~/.zprofile"
     },
     deployer: {
       vault_env: "MCR_OP_VAULT_ADMIN",
-      default_vault: "agents-admin",
+      default_vault: "studio-agents-admin",
       token_env: "OP_ADMIN_SERVICE_ACCOUNT_TOKEN",
       profile: "~/.zprofile.admin"
     }
