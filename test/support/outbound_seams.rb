@@ -140,8 +140,33 @@ module OutboundSeams
       "GIT_SSH_COMMAND" => stub("ssh"),
       "GIT_ASKPASS" => stub("git-askpass"),
       "GIT_TERMINAL_PROMPT" => "0",
-      "OUTBOUND_SEAM_LOG" => log_path
+      "OUTBOUND_SEAM_LOG" => log_path,
+      # THE SESSION-MARKER STORE, pinned for every child built from this env.
+      #
+      # Several bin/ entry points now publish a presence claim through SessionMarkers
+      # (bin/lib/presence_claim.rb, and bin/lib/release_presence.rb for the release
+      # conductors). That store is FAIL-CLOSED: test/support/task_usage_sandbox.rb arms
+      # TASK_USAGE_SANDBOX for this whole PROCESS, every child inherits it, and a child
+      # that then resolves an UNPINNED CLAUDE_PROJECTS_DIR does not degrade — it ABORTS,
+      # naming the var. That guard is right and must stay loud: it exists because an
+      # unpinned store once wrote ~1.9 BILLION tokens into the operator's live cost data.
+      #
+      # So the pin belongs on the harness, never in the writer — a presence writer taught
+      # to shrug off a sandbox violation is the leak wearing a rescue. And it belongs HERE
+      # rather than in each harness, for this file's own stated reason: every leak it
+      # exists to close was in a file whose author believed it was already sealed. A
+      # caller that wants its own store still wins via `overrides`.
+      "CLAUDE_PROJECTS_DIR" => marker_store
     }
+  end
+
+  # One throwaway marker store per test process, cleaned up with the rest.
+  def marker_store
+    @marker_store ||= begin
+      dir = Dir.mktmpdir("outbound-seams-markers")
+      register_cleanup(dir)
+      dir
+    end
   end
 
   # The child env: the session scrub, the network floor, then the caller's

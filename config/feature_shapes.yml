@@ -115,13 +115,25 @@
 # THE OTHER TWO CONTRACT KEYS — `dor_tiers` is not the only thing a shape can ask
 # for, and two shapes now ask for something a tier list cannot express:
 #
-#   claimable_when: test_only_diff
-#     The shape may be claimed ONLY on a diff bin/dor-check OBSERVES to be 100%
-#     test files (bin/lib/test_only_diff.rb, an allowlist — an unrecognized file
-#     blocks the claim). This is checked against the diff, never against the label.
-#     A shape whose lighter contract is unlocked by TYPING its name is the
-#     declaration-over-evidence disease this whole file exists to kill, one level
-#     up: `kind: chore` was that bug, and PR #512 is what it cost.
+#   claimable_when: test_only_diff | doc_only_diff
+#     The shape may be claimed ONLY on a diff bin/dor-check OBSERVES to match it.
+#     Checked against the diff, never against the label. A shape whose lighter
+#     contract is unlocked by TYPING its name is the declaration-over-evidence
+#     disease this whole file exists to kill, one level up: `kind: chore` was that
+#     bug, and PR #512 is what it cost. Two rules, two classifiers, opposite
+#     polarities — and in both, THE UNRECOGNIZED FILE BLOCKS THE CLAIM:
+#       test_only_diff → 100% test files (bin/lib/test_only_diff.rb, an ALLOWLIST:
+#         test/, tests/, e2e/ and nothing else).
+#       doc_only_diff  → 100% provable prose (bin/lib/code_diff.rb, a DENYLIST:
+#         non-behavioral by file TYPE, so anything unrecognized is behavior).
+#     `doc_only_diff` reuses CodeDiff — the SAME classifier the exempt-KIND gate
+#     runs — rather than adding a second "what is prose" list, because two lists
+#     drift and the defect it fixed WAS two answers to one question: the kind gate
+#     refused a behavioral `kind: docs` diff, and the `docs` SHAPE then granted the
+#     same exemption one step later. See the `docs` shape's notes for the measured
+#     case (PR #1172) and for what "doc-only" means at the edges.
+#     A `claimable_when` value bin/dor-check does not implement REFUSES the claim
+#     rather than falling through — an unrecognized guard must not be a free pass.
 #
 #   full_suite_gate: true|false
 #     Whether the merge gate demands fingerprint-bound FULL-suite + rubocop
@@ -198,6 +210,7 @@ shapes:
     description: Documentation-only change — SOP, runbook, agent-operating-model, or README. No code, no persistence.
     dor_tiers: []
     full_suite_gate: false
+    claimable_when: doc_only_diff
     required_metadata: [acceptance, repositories, risk_tags]
     notes: >-
       No code tiers: a doc change certifies by REVIEW, not a test lane — so
@@ -209,6 +222,45 @@ shapes:
       required_metadata for the same reason there is nothing to plan; prose
       acceptance is the reviewer's and the operator's at the QA stop, not a
       pre-submit tier.
+
+      `claimable_when: doc_only_diff` (added 2026-09-02) IS WHAT MAKES THE TWO
+      EXEMPTIONS ABOVE SAFE, and it was added because they were not. Until it
+      landed, this shape's zero tiers and waived suite were unlocked by TYPING
+      `docs` — the diff was never consulted. MEASURED, live, on PR #1172: a task
+      shaped `docs` carrying test/integration/open_pr_receipt_visibility_test.rb
+      was told "DoR-to-Merge met" with no tier and no cert demanded, and the
+      output named neither waiver. Real production code rode it just as easily
+      (a `docs`-shaped diff carrying app/models/task.rb passed identically).
+
+      THE HOLE WAS A FALL-THROUGH, WHICH IS WHY IT SURVIVED SO LONG. bin/dor-
+      check's exempt-KIND gate already asks exactly this question and already
+      refuses: a `kind: docs` diff carrying behavior loses its exemption there.
+      It then falls through to THIS shape contract, which granted the same
+      exemption one step later without re-asking. One observation, asked twice,
+      answered two opposite ways.
+
+      WHAT "DOC-ONLY" MEANS, PRECISELY — the rule, because the next reader will
+      hit an edge. It is CodeDiff's rule (bin/lib/code_diff.rb), the same
+      classifier the kind exemption uses, deliberately NOT a second list:
+        · Decided by the file's TYPE — .md/.markdown/.mdx/.rdoc, inert media
+          (.png/.svg/.pdf…), and LICENSE-class basenames. Everything else ships
+          behavior.
+        · A TEST FILE IS NOT DOC-ONLY. `test/` is executable; that is the case
+          that motivated this guard, and `test-only` is the shape for it.
+        · A COMMENT-ONLY EDIT to a .yml or an .rb IS NOT DOC-ONLY. The
+          granularity is the FILE, never the hunk — "this hunk is only comments"
+          is a parse an author can talk the gate out of. Cost of the strict
+          answer: one tier line on another shape. Cost of the loose one: the
+          gate.
+        · LOCATION BUYS NOTHING. `docs/agents/setup.sh` is mode 100755.
+      Fail-closed both ways: a disqualifying file refuses the claim, and so does
+      an UNOBSERVABLE diff (an empty view is the absence of evidence, not proof
+      of prose) — except at the build gate, where no code exists yet.
+
+      NOT the alternative fix, and this is deliberate: `full_suite_gate` stays
+      FALSE. Making every doc change pay a full suite would undo the cheap prose
+      pass this shape exists to provide, and push people to mislabel shapes,
+      which is strictly worse than the hole. Gate the CLAIM, not the cost.
 
   test-only:
     description: A change whose entire content is test code — a fixed, deleted, added, or re-diagnosed test. No production diff.

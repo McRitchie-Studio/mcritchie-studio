@@ -142,8 +142,10 @@
 #       read WARNS rather than refusing (the GitHub token expires hourly by design),
 #       and `bin/task orphan-prs` is where anything that slips through stays
 #       findable. --force archives anyway and RECORDS the abandonment in
-#       devops.abandoned_prs, so a later reader can tell a PR that was dropped on
-#       purpose from one that was forgotten. See lib/open_pr_guard.rb. )
+#       devops.abandoned_prs — every PR it drops, the open ones AND any whose state
+#       could not be read — so a later reader can tell a PR that was dropped on
+#       purpose from one that was forgotten. `show <slug> --verbose` prints the
+#       receipt back. See lib/open_pr_guard.rb. )
 #   bin/task merged <slug> <accepted|release|main>
 #     ( set the git-location crash-recovery signal (Task::MERGED_STATES) — where the
 #       task's code physically is. Review stamps `accepted` when it lands a feat PR
@@ -637,31 +639,51 @@ end
 #
 # It reads the task FRESH for the same reason the holder gate does: the question is
 # what is open RIGHT NOW, and a stale record answers a different one.
-def enforce_archive_open_pr_gate!(slug, force:)
+def enforce_archive_open_pr_gate!(slug, force:, by: nil)
   task = api(:get, "/api/v1/tasks/#{slug}")["data"]
   devops = task.dig("metadata", "devops") || {}
   prs = archive_pr_states(OpenPrGuard.refs(devops))
   grade = OpenPrGuard.decide(prs: prs, stage: task["stage"])
+  # ONE dispatcher owns grade → message, so this function cannot drift into having
+  # an opinion the guard's own completeness test never sees. nil means the grade
+  # genuinely has nothing to say (:concluded, :none, :clear).
+  message = OpenPrGuard.message_for(grade: grade, slug: slug, stage: task["stage"], prs: prs)
 
   # A check that did not complete has established NOTHING, and says so. It must not
   # borrow the refusal's voice — see "WHY AN UNREADABLE PR STATE WARNS" in the guard.
-  warn!(OpenPrGuard.unreadable_warning(slug: slug, prs: prs)) if grade == :unreadable
-  return nil if OpenPrGuard.permitted?(grade)
+  # PERMITTED and SILENT are different questions: :unreadable proceeds AND speaks.
+  if OpenPrGuard.permitted?(grade)
+    warn!(message) if message
+    return nil
+  end
 
   unless force
-    warn!(OpenPrGuard.refusal(slug: slug, stage: task["stage"], prs: prs))
+    # A grade with NO message would exit 1 in silence, and a refusing gate that says
+    # nothing is worse than no gate — the operator learns only that something went
+    # wrong. OpenPrGuard's completeness property keeps this branch unreachable; it is
+    # here so that if it ever is reached, it is survivable and names its own defect.
+    warn!(message || "⚠  REFUSING to archive #{slug} — open-PR grade #{grade.inspect} carries no " \
+                     "message. That is a defect in lib/open_pr_guard.rb#message_for, not a fact " \
+                     "about your PRs. Check them yourself, then archive with --force.")
     exit 1
   end
 
   # NAME WHAT IS BEING OVERRIDDEN, then RECORD it. A --force that prints nothing
   # turns the gate into a speed bump nobody remembers clearing; a --force that
   # records nothing leaves a board state indistinguishable from the bug itself.
-  open = OpenPrGuard.open_prs(prs)
-  named = open.map { |pr| "#{pr[:repo]}##{pr[:number]}" }.join(", ")
-  warn!("--force: archiving #{slug} anyway — ABANDONING #{open.size} open PR(s): #{named}. " \
-        "Recording the choice on the task so a later reader knows they were dropped deliberately.")
+  #
+  # THE ABANDONED SET IS WIDER THAN THE OPEN SET. One keystroke drops the open PRs
+  # AND every sibling whose state could not be read, so both are named and both get
+  # a receipt — see OpenPrGuard.abandoned_prs.
+  abandoned = OpenPrGuard.abandoned_prs(prs)
+  named = abandoned.map { |pr| "#{pr[:repo]}##{pr[:number]}" }.join(", ")
+  unread = OpenPrGuard.unreadable_prs(prs).size
+  aside = unread.zero? ? "" : " (#{unread} of them UNREADABLE — dropped by the same choice)"
+  warn!("--force: archiving #{slug} anyway — ABANDONING #{abandoned.size} unresolved PR(s): " \
+        "#{named}#{aside}. Recording the choice on the task so a later reader knows they were " \
+        "dropped deliberately.")
 
-  entries = OpenPrGuard.record(prs: prs, at: Time.now.utc.iso8601, by: session_identity.first)
+  entries = OpenPrGuard.record(prs: prs, at: Time.now.utc.iso8601, by: by || session_identity.first)
   # SEND ONLY THE KEY THIS GATE OWNS, merged onto whatever the task already carried in
   # it. NOT a full read-merge-write echo of `devops`, which is what the `move building`
   # claim path does — and which would BREAK HERE.
@@ -780,8 +802,12 @@ def archived_pr_index(tasks)
     recorded = Array(devops[OpenPrGuard::RECORD_KEY]).map(&:to_s)
     OpenPrGuard.refs(devops).each do |ref|
       key = "#{ref[:repo]}##{ref[:number]}"
+      # ANCHORED, never `entry.include?(ref[:url])` — a receipt for .../pull/245
+      # CONTAINS .../pull/24, and reading that as "abandoned on purpose" silences
+      # this alarm about a real orphan. OpenPrGuard owns the comparison so the
+      # receipt's writer and its reader cannot drift apart.
       index[key] ||= ref.merge(slug: task["slug"],
-                               deliberate: recorded.any? { |entry| entry.include?(ref[:url]) })
+                               deliberate: OpenPrGuard.abandonment_recorded?(recorded, ref[:url]))
     end
   end
 end
@@ -1457,6 +1483,15 @@ def print_task_verbose(task)
   # --pr-url-for write on, and a line that vanishes when the map is empty makes
   # "nothing recorded" indistinguishable from "this CLI cannot show it".
   print_bullets("pr_urls", map_pairs(dv["pr_urls"]))
+  # THE ABANDONMENT RECEIPT, on the surface a human actually reads. Its whole
+  # purpose is that a later reader can tell a PR dropped ON PURPOSE from one that
+  # was forgotten — and until this line existed the only readers that showed it were
+  # raw JSON and `orphan-prs`, which lists a PR only while it is still OPEN. So the
+  # moment the abandoned PR closed, the record survived in a place no default tool
+  # would print. Unconditional, "-" when empty, for print_column_fields' reason:
+  # this is where an operator confirms what `--force` just recorded, and a line that
+  # vanishes makes "recorded nothing" look like "this CLI cannot show it".
+  print_bullets("abandoned_prs", dv[OpenPrGuard::RECORD_KEY])
   print_column_fields(task)
   puts "  review_in_progress: #{task["review_in_progress"] ? "yes" : "no"}" if task.key?("review_in_progress")
   if task.key?("unresolved_feedback")
@@ -2457,7 +2492,10 @@ when "move"
   archive_devops = nil
   if stage == "archived"
     enforce_archive_holder_gate!(slug, force: force)
-    archive_devops = enforce_archive_open_pr_gate!(slug, force: force)
+    # `by:` is the EVENT ACTOR, so `move <slug> archived --actor carl` records the
+    # soul who dropped the PR rather than an opaque session id. It falls back to the
+    # session inside the gate, so a plain shell still writes a receipt.
+    archive_devops = enforce_archive_open_pr_gate!(slug, force: force, by: event["actor"])
   end
   body = { "stage" => stage, "event" => event }
   # The abandonment receipt rides the SAME PATCH as the stage move, so there is no

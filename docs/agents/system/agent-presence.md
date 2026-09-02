@@ -164,8 +164,9 @@ of the same glob rather than needing another state surface.
 `phase` carries the distinction cost #4 is about: **`waiting` consumes nothing.**
 
 **Correction, from building it (slice 3).** The sketch above spelled `started_at`
-as the OS start time, and §5(c) says these claims are read by *the same glob and
-the same GRADER* as the runlock. Those two cannot both hold: the grader reads
+as the OS start time, and §5(c) says these claims are read by *the same GRADER*
+as the runlock (its "same glob" half was corrected by this very slice — see the
+row above). Those two cannot both hold: the grader reads
 `started_at` as the ISO stamp of when the record was written and takes its
 identity proof from `<subject>_started_at`. **§5(c) wins** — a record that spelled
 one field two ways would put two truths on one screen and neither call site would
@@ -260,8 +261,70 @@ sweep saturating this machine."*
 | **Written** | a claim with `kind: ship\|sweep`, `phase`, `weight`, identity |
 | **By whom** | the process itself, at each phase boundary it already prints |
 | **Cleared** | by the writer on graceful exit — an optimization only; by the reader on any proven corpse |
-| **Read** | the same glob and the same grader as (b) |
+| **Read** | the same GRADER as (b), plus its own glob — `.agents/sessions/*.presence-*`, added by slice 3. An earlier revision of this row said "the same glob", which was true when written, became false when slice 3 landed, and in the meantime argued slice 4's claim into the runlock slot |
 | **On death** | identical: a corpse the reader recognizes with no timeout |
+
+**AS BUILT (slice 4, steffon, 2026-09-02).** `bin/lib/release_presence.rb` — the
+release CLI's phase vocabulary wrapped around slice 3's `PresenceClaim`. It owns
+no file format and no writer, and it publishes to §4's own path,
+`.agents/sessions/<key>.presence-<kind>-<pid>`. Measured on this machine: a live
+sweep that read as `backstop: sweep pgid 57266 … UNATTRIBUTED` now reads as
+`LIVE mcritchie-studio/primary release:prepare`.
+
+Two things it decides for itself, both load-bearing:
+
+- **`pgid` records the writer's own pid, not the group it runs in.**
+  `PresenceClaim`'s default is `Process.getpgid`, which is right for `bin/ship` —
+  ship spawns `bin/fast-check` into its own group, so the group is a true second
+  subject. `bin/release` is not shaped that way: it never calls `setpgrp`, so its
+  group is the one it *inherited* from the launching shell (measured:
+  `bin/release.rb ship --yes` at pid 61666 in pgid 61388, a `/bin/zsh -c …`
+  wrapper shared with the session). Recording that group makes a **killed** sweep
+  grade `:live` forever — the wrapper outlives the conductor and its
+  `(pid, lstart)` still matches — an unbounded wedge, and the exact inversion of
+  the killed-writer rule. The price is the two-subject walk: a conductor killed
+  while its suite survives is no longer attributed to *this* claim, and the
+  `backstop` covers that gap (`HEAVY_PATTERNS` matches `bin/rails test`).
+  `Process.setpgrp` would restore the walk and was rejected: it detaches a
+  **production deploy** from the signals that stop it, so a killed session would
+  leave Heroku pushes and a `release → main` fast-forward running unsupervised.
+- **Weight is derived from `config/devops_test_suites.yml`, not passed at the call
+  site.** A scope is `light` only when its `host` is not `local` **and** its
+  `tier` executes elsewhere — `smoke` (a curl poll) or `hook` (`heroku run`);
+  everything else, including anything unrecognised, is `suite`. Four of the eight
+  registered scopes were publishing `suite` for work a Heroku dyno performs. The
+  `repo_script` production deploy needed its own explicit wrap, because it never
+  passes through `run_test_scope` and no registry row can reach it —
+  turf-monster's `bin/deploy` runs `bin/rails test` inside it, so the heaviest
+  local workload the ship creates was reporting the conductor's ambient `light`.
+
+**FIRST BUILT IN THE RUNLOCK SLOT, AND MOVED — the reasoning, because it is a
+reasoning this document caused.** The first revision published to
+`CertOrphanGuard.lock_path(root)`. It was not arbitrary: §5(c) above said sweeps
+are read by *"the same glob and the same grader"* as certs, and at that moment
+`CLAIM_GLOBS` held two `cert-run.json` patterns and nothing else — so a claim at
+§4's path was invisible to the reader and would have closed none of cost #3. That
+premise died when slice 3 (`certs-publish-no-phase`) taught the reader the marker
+namespace directly, under the comment that names the property: **read here, reaped
+nowhere.**
+
+The move matters because `CertOrphanGuard.preflight` **reaps** — it SIGKILLs the
+process group a `cert-run.json` names — so a release-lane claim in that slot points
+a reaper at a production deploy, and makes a concurrent cert print a `kill -TERM`
+line naming it. **Rooting at a primary checkout does not make that safe, and an
+earlier version of this section said it did.** `CertRootGuard.refusal` is gated on
+a slug (`bin/fast-check:180`, `bin/full-suite-check:204`) while the orphan preflight
+is unconditional (`:372`, `:448`), so every slug-less cert skips the root guard and
+preflights anyway — including the `bin/full-suite-check --print` that
+`--install-hook` writes into `.git/hooks/pre-push`. The defence is the namespace,
+not the path within it.
+
+**What the move retired, recorded so nobody restores it.** The runlock is one file
+per ROOT, so the old writer had to refuse rather than clobber when a `prepare` and a
+`ship` ran together, and the loser published nothing. The marker namespace is one
+file per PROCESS: there is no shared slot, both conductors publish, and both are
+counted — the accurate answer to "how saturated is this machine", not merely the
+simpler one. `RELEASE_PRESENCE=off` disarms the writer.
 
 ### (d) Machine headroom — a derivation, not a mechanism
 
@@ -460,7 +523,7 @@ All five are filed. This design builds none of them.
 | 1 | [`agent-presence-reader`](https://mcritchie.studio/tasks/agent-presence-reader) | cost #4, most of #2 |
 | 2 | [`desk-context-names-session`](https://mcritchie.studio/tasks/desk-context-names-session) | cost #1 |
 | 3 | [`certs-publish-no-phase`](https://mcritchie.studio/tasks/certs-publish-no-phase) — **re-scoped, see below** | cost #4 |
-| 4 | [`sweeps-publish-local-claim`](https://mcritchie.studio/tasks/sweeps-publish-local-claim) | cost #3 |
+| 4 | [`sweeps-publish-local-claim`](https://mcritchie.studio/tasks/sweeps-publish-local-claim) — **BUILT**, see §5(c) *As built* | cost #3 |
 | — | [`archive-refuses-unknown-holder`](https://mcritchie.studio/tasks/archive-refuses-unknown-holder) | cost #1, unblocked |
 
 ### Slice 1 — `bin/agent-presence`, the READER ALONE. **Build this first.**

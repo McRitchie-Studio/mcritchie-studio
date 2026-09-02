@@ -156,6 +156,7 @@ require_relative "lib/client_surface_diff"
 require_relative "lib/control_replay"
 require_relative "lib/task_board"
 require_relative "lib/cert_root_guard"
+require_relative "lib/review_tree_guard"
 require_relative "lib/dor/checks"
 require_relative "lib/dor/check_context"
 Dor::Checks.load!
@@ -1937,50 +1938,119 @@ missing_meta = required_meta.reject { |field| present?(devops[field]) }
 checks = Array(devops["checks_run"])
 missing_tiers = dor_tiers.reject { |tier| tier_satisfied?(checks, tier) }
 
-# ==== `claimable_when: test_only_diff` — the shape is EARNED FROM THE DIFF ======
+# ==== `claimable_when:` — a LIGHT SHAPE IS EARNED FROM THE DIFF, NEVER TYPED ===
 #
-# `test-only` carries no tiers, because a diff made entirely of test code has no
-# behavior for a tier to be evidence of. That trade is only safe while the shape
-# cannot be claimed by a change that DOES ship behavior — otherwise the lightest
-# contract in the file is unlocked by typing its name, which is `kind: chore`'s
-# bug (PR #512) rebuilt one level up, in the taxonomy this time.
+# Two shapes carry no tiers, for two different reasons, and BOTH are unsafe if the
+# shape can be claimed by a diff that does not match it:
 #
-# So the claim is checked against the OBSERVED diff, exactly like the doc-only
-# exemption above and with the same fail-closed rule: an unrecognized file blocks
-# the claim (TestOnlyDiff is an ALLOWLIST — see its header on the mirrored
-# polarity), and an UNOBSERVABLE diff blocks it too. "We saw nothing" is not
-# "there is nothing but tests"; reading silence as proof is how a blind checkout
-# would hand out the discount.
+#   test-only  claimable_when: test_only_diff — a diff made entirely of test code
+#              has no behavior for a tier to be evidence OF.
+#   docs       claimable_when: doc_only_diff  — prose certifies by REVIEW, and
+#              there is no suite to certify.
+#
+# Without the guard, the lightest contracts in config/feature_shapes.yml are
+# unlocked by TYPING their name, which is `kind: chore`'s bug (PR #512) rebuilt one
+# level up, in the taxonomy this time.
+#
+# WHY `docs` GOT THIS GUARD (2026-09-02, /tasks/docs-shape-admits-test-code), and
+# it is the sharpest statement of the hole: THE EXEMPT-KIND GATE ABOVE ALREADY ASKS
+# THIS EXACT QUESTION, AND ALREADY REFUSES. A `kind: docs` task shipping
+# app/models/task.rb loses its exemption up there (gated_code_files is non-empty)
+# and falls through to the shape contract — which was `shape: docs`: zero tiers,
+# full_suite_gate false, "✓ DoR-to-Merge met". The kind gate's own FALL-THROUGH was
+# the hole: one observation, asked twice, answered two opposite ways.
+#
+# MEASURED on PR #1172 (shape docs, carrying test/integration/
+# open_pr_receipt_visibility_test.rb): no tier demanded, no cert demanded, and the
+# output said nothing about either. That PR was well-certified anyway, by a builder
+# who volunteered what the gate never asked for — which is the failure mode, not
+# the mitigation. A gate that relies on volunteered evidence holds for careful
+# builders and fails SILENTLY for everyone else.
+#
+# THE RULE REUSES CodeDiff — THE CLASSIFIER THE KIND GATE ALREADY USES. Not a
+# second "what is prose" list: a second list drifts, and the whole defect here was
+# two answers to one question. Precisely: doc-only is decided by FILE TYPE
+# (CodeDiff's denylist — .md/.markdown/.mdx/.rdoc, inert media, LICENSE-class
+# basenames), never by directory and never by hunk content. THREE EDGES the next
+# reader will hit, written down because they will:
+#   * A TEST FILE IS NOT DOC-ONLY. test/ is executable, and it is the case that
+#     motivated this guard.
+#   * A COMMENT-ONLY EDIT to config/*.yml or an .rb IS NOT DOC-ONLY. CodeDiff's
+#     header refuses hunk granularity on purpose ("the honest granularity is the
+#     FILE"): deciding a hunk is "only comments" means trusting a parse an author
+#     can talk the gate out of. The cost of the strict answer is one tier line; the
+#     cost of the loose one is the gate.
+#   * LOCATION BUYS NOTHING. docs/agents/setup.sh is mode 100755 and gates, exactly
+#     as it does for the kind exemption. Where a file was FILED is a declaration.
+#
+# The fail-closed rules are shared by both claims, and both mirror the exempt-kind
+# gate above: a disqualifying file blocks the claim, and an UNOBSERVABLE diff blocks
+# it too. "We saw nothing" is not "there is nothing"; reading silence as proof is
+# how a blind checkout hands out the discount.
 #
 # The BUILD gate stays lenient on an empty observation for the reason it always
 # has: at design time no code exists yet, so an empty diff is the expected state.
 # It cannot disarm anything, because the build gate enforces no tiers either way.
-# A build-gate diff that IS observable and DOES carry a non-test file still errors
-# here — the earlier the shape is corrected, the less work is thrown away.
-if shape_def && shape_def["claimable_when"] == "test_only_diff"
+# A build-gate diff that IS observable and DOES carry a disqualifying file still
+# errors here — the earlier the shape is corrected, the less work is thrown away.
+claim_rule = shape_def && shape_def["claimable_when"]
+if claim_rule
   observed = changed_files
-  offenders = TestOnlyDiff.non_test_files(observed)
 
-  # THE VERDICT IS TestOnlyDiff.test_only?, NOT A SECOND COPY OF ITS RULES. An
+  # THE VERDICT IS THE MODULE'S PREDICATE, NOT A SECOND COPY OF ITS RULES. An
   # earlier cut re-derived "empty means refuse" here, next to the module that
   # already documents it at length — two copies of one truth, which is the drift
   # this repo's guards exist to catch. A mutation harness caught it as a DEAD
   # PATH: flipping the module's empty case to `true` changed nothing, because
-  # nothing called it. `non_test_files` is used only to NAME the offenders, so a
-  # refusal can say which file disqualified the claim.
-  if offenders.any?
+  # nothing called it. The offender LIST is used only to NAME the files, so a
+  # refusal can say which one disqualified the claim.
+  case claim_rule
+  when "test_only_diff"
+    offenders = TestOnlyDiff.non_test_files(observed)
+    proven = TestOnlyDiff.test_only?(observed)
+    must_be = "ENTIRELY test code"
+    proven_label = "test-only"
+    offender_help = "Test content means test/, tests/ or e2e/ — a workflow, a Gemfile, a playwright.config.js " \
+      "or an app/ file is a behavioral change whose tests are evidence FOR it, which is what the other shapes " \
+      "are for."
+  when "doc_only_diff"
+    offenders = CodeDiff.code_files(observed)
+    proven = CodeDiff.doc_only?(observed)
+    must_be = "ENTIRELY prose"
+    proven_label = "doc-only"
+    offender_help = "Prose is decided by the file's TYPE (.md/.markdown/.mdx/.rdoc, inert media, LICENSE-class " \
+      "basenames) — not by where it was filed, and not by whether the hunk was only comments. A test file, a " \
+      "workflow, a .yml or an app/ file ships behavior. This is the SAME classifier that already denies an " \
+      "exempt kind (chore/cleanup/docs) its doc-only exemption on this very diff, so a shape that could still " \
+      "claim it here would be one observation answered two ways."
+  else
+    # AN UNCLASSIFIED CLAIM RULE REFUSES. A `claimable_when` this gate does not
+    # implement used to fall through and GRANT the claim in silence — the shape
+    # keeping its light contract BECAUSE its guard was unrecognized, which is this
+    # block's own failure arriving through the block itself. Same allow-list
+    # discipline the CI-state gate applies: a state nobody classified is evidence
+    # the gate is out of date, never evidence of health.
+    offenders = []
+    proven = false
+    must_be = nil
+    proven_label = nil
+    errors << "shape #{shape.inspect} declares claimable_when: #{claim_rule.inspect}, a claim rule bin/dor-check " \
+      "does not implement — so the shape's lighter contract is REFUSED rather than granted by an unrecognized " \
+      "guard. Implement the rule in bin/dor-check's claimable_when block (beside test_only_diff / doc_only_diff), " \
+      "or fix the value in config/feature_shapes.yml"
+  end
+
+  if must_be && offenders.any?
     sample = offenders.first(3).join(", ") + (offenders.size > 3 ? ", …" : "")
-    errors << "shape #{shape.inspect} may only be claimed on a diff that is ENTIRELY test code, and the " \
+    errors << "shape #{shape.inspect} may only be claimed on a diff that is #{must_be}, and the " \
       "observed diff ships #{offenders.size} file(s) that are not: #{sample} [source: #{diff_source}]. " \
-      "Test content means test/, tests/ or e2e/ — a workflow, a Gemfile, a playwright.config.js or an " \
-      "app/ file is a behavioral change whose tests are evidence FOR it, which is what the other shapes " \
-      "are for. Re-shape it (#{(shapes.keys - [shape]).join(', ')}) and record that shape's tiers, or " \
-      "split the test-only work into its own task"
-  elsif !TestOnlyDiff.test_only?(observed) && gate != "build"
-    errors << "shape #{shape.inspect} could not be proven test-only — NO diff could be observed " \
+      "#{offender_help} Re-shape it (#{(shapes.keys - [shape]).join(', ')}) and record that shape's tiers, or " \
+      "split the #{shape} work into its own task"
+  elsif must_be && !proven && gate != "build"
+    errors << "shape #{shape.inspect} could not be proven #{proven_label} — NO diff could be observed " \
       "(no PR files readable, and the git tree at #{diff_root} is clean or unreadable), so the claim is " \
       "REFUSED rather than granted (fail-closed). An empty observation is the absence of evidence, not " \
-      "evidence of a test-only diff. Re-run this from the task's worktree, or set devops.pr_url, so the " \
+      "evidence of a #{proven_label} diff. Re-run this from the task's worktree, or set devops.pr_url, so the " \
       "gate can see the diff it is meant to judge"
   end
 end
@@ -2198,6 +2268,88 @@ if gate != "build"
       "base WITHOUT re-running anything. The green describes a tree that is no longer the tree this merge " \
       "would produce, and the review gate-zero is the authoritative CI verdict. Update the branch from its " \
       "base (`git rebase origin/accepted` or the PR's Update-branch button) and let CI re-run, then re-check."
+  end
+
+
+  # ==== THE REVIEWER-ZAP SEAMS (/tasks/reviewer-zap-has-unmapped-seams) ============
+  #
+  # A ZAP — a reviewer fixing a small defect forward on the PR branch instead of
+  # spending a bounce — is an ENCOURAGED act, bounded by the zap protocol at 25 lines
+  # and 2 files. Nothing below discourages one. The problem being fixed is the
+  # opposite: the machinery AROUND a zap assumed nobody pushed, which made zapping
+  # quietly riskier than bouncing and pushed reviewers toward the expensive action.
+  #
+  # Both checks are LOCAL-REF reads (this gate never fetches — deliberately: a fetch
+  # inside a verdict would mutate the tree it is grading). ReviewTreeGuard's header
+  # carries the error-direction argument for each; the two severities below follow
+  # from it and are NOT interchangeable.
+  zap_branch = review_branch(devops, task["slug"] || slug)
+
+  # SEAM 1 — REFUSES, because the gate would otherwise describe a tree that is not
+  # the one merging. `--gate-role review` re-roots to the BUILDER'S DESK, which sits
+  # wherever the builder left it; measured on turf #519, that was 262059b while the
+  # merged commit was 9137d57. The cert fingerprint catches this ONLY when the desk's
+  # ref has seen the push, and a zap pushed from any other checkout leaves that ref
+  # pre-zap — so the cert reads FRESH and nothing else asks the question.
+  #
+  # A mismatch can only ever be a FALSE REFUSAL (an unfetched desk), never a false
+  # pass, and the remedy for the harmless case is the same `git fetch` that fixes the
+  # real one. That is why this one is allowed to block.
+  head_check = ReviewTreeGuard.head_assessment(
+    root: diff_root, branch: zap_branch,
+    pr_head: ENV["DOR_CHECK_PR_HEAD"] || (ci && ci[:head_oid])
+  )
+  if review_role && head_check[:state] == :mismatch
+    errors << "the tree this review gate graded is NOT the PR head — #{head_check[:ref]} in #{diff_root} is at " \
+      "#{head_check[:local_sha][0, 12]} while the PR head is #{head_check[:pr_head][0, 12]}. Somebody pushed " \
+      "(a reviewer zap is the usual cause) and this checkout has not seen it, so the DIFF, the file contents " \
+      "and the cert fingerprint all describe a tree that is not the one merging — while the CI verdict beside " \
+      "them describes the PR head. The fingerprint does NOT reliably catch this on its own: it hashes " \
+      "#{head_check[:ref]}, which a push from another checkout never touched. Fetch the branch " \
+      "(git fetch origin #{zap_branch}) and re-run; if the zap was yours, re-certify it " \
+      "(bin/full-suite-check #{task["slug"] || slug}) so the cert describes what will merge."
+  elsif review_role && head_check[:state] == :unobservable && head_check[:reason] == :no_pr_head
+    # NOT a refusal: with no head from GitHub the question could not be asked, and the
+    # CI gate above already owns "we could not read this PR". Say which check went
+    # unmade rather than letting its silence read as a pass.
+    suggestions << "could not confirm the graded tree IS the PR head — GitHub returned no headRefOid, so the " \
+      "zap check (is this verdict about the commit that will merge?) did not run. The cert fingerprint is the " \
+      "only thing still standing between a post-zap push and this verdict, and it catches one only when this " \
+      "checkout has fetched the push."
+  end
+
+  # SEAM 2 — REPORTS, and deliberately does not refuse. `accepted` moves constantly;
+  # refusing every review whose base gained a commit would wedge the lane for a fact
+  # that is usually harmless, and a gate that refuses correct work is one people learn
+  # to route around. Measured case: turf #517 merged 97 SECONDS after #519's e2e
+  # declared-set check finished, touching BOTH e2e/auth_modal.spec.js and
+  # config/e2e_lane.yml — the spec set and the contract that counts it. That review
+  # came out right only because the reviewer re-derived by hand.
+  #
+  # GitHub's own answer is not enough, which is why this re-derives from refs: the
+  # BEHIND check above fires only where branch protection demands an up-to-date
+  # branch, and CiStatus.base_drift maps ""/UNKNOWN to :unknown, which that check
+  # passes over in silence. So the one signal in hand says nothing precisely when
+  # nothing is configured to make it speak.
+  #
+  # :no_movement_seen is NEVER rendered as "the base is current" — with an unfetched
+  # ref this can only UNDERSTATE movement, so the absence of a finding is not a
+  # freshness certificate. Reporting it as one would be this task's own defect, one
+  # level down.
+  # No ActiveSupport in this script, so no `.presence` — spell the fallback out.
+  ci_base = ci ? ci[:base].to_s.strip : ""
+  base_branch = ci_base.empty? ? ENV.fetch("DOR_BASE_BRANCH", "accepted") : ci_base
+  base_check = ReviewTreeGuard.base_assessment(root: diff_root, branch: zap_branch, base: base_branch)
+  if review_role && base_check[:state] == :moved && ci_error.nil?
+    behind = base_check[:behind_by]
+    suggestions << "the base has MOVED since this branch last took it — origin/#{base_branch} is at " \
+      "#{base_check[:base_sha][0, 12]}#{behind ? " (#{behind} commit(s) ahead of this branch)" : ""}, and it " \
+      "is not an ancestor of #{base_check[:branch_ref]}. Every check that ran against the old merge describes " \
+      "a tree this merge will not produce — including the e2e DECLARED-vs-EXECUTED set, whose expected count " \
+      "lives in config/e2e_lane.yml and can be changed by the very merge that moved the base. Re-derive it " \
+      "before trusting the spec counts, or update the branch (git rebase origin/#{base_branch}) and let CI " \
+      "re-run. Re-derived from LOCAL refs, which this gate never fetches, so this is a floor on the movement, " \
+      "not a measure of it."
   end
 
   # A refusal a cert can clear is DEFERRED past the suite gate below, which is
@@ -2870,6 +3022,36 @@ print_suggestions = -> { suggestions.each { |s| puts "  ⓘ suggestion: #{s}" } 
 if ready
   puts "✓ #{gate_label} met for #{title.inspect} (shape: #{shape})"
   puts "  tiers green in checks_run: #{dor_tiers.join(", ")}" unless dor_tiers.empty?
+  # SAY THE WAIVER OUT LOUD. A gate that skips a requirement in SILENCE reads,
+  # to every human and every log scraper, exactly like a gate that enforced one
+  # and passed. That is not a presentation nit — it is why the `docs` hole
+  # (/tasks/docs-shape-admits-test-code) survived to be found by accident rather
+  # than by any of the readers who had already seen the output. On PR #1172 this
+  # verdict printed "✓ DoR-to-Merge met (shape: docs)" and one blank line where
+  # the tier line goes, over a diff carrying a test file: nothing said a tier was
+  # skipped, nothing said the suite cert was waived, and nothing said whether
+  # anything had checked that the shape fit the diff.
+  #
+  # So a waived requirement now NAMES ITSELF, and names what (if anything)
+  # earned it. The claim rule is printed even though it also refuses on its own,
+  # because the reader's question is "was this checked?" — and only a printed
+  # answer distinguishes "verified against the diff" from "nobody asked".
+  #
+  # Build gate excluded: it zeroes dor_tiers for EVERY shape by design (tiers are
+  # build artifacts, unknowable at design time), so a waiver line there would fire
+  # on every task and say nothing true about the shape.
+  if gate != "build"
+    waived = []
+    waived << "no test tier required" if dor_tiers.empty?
+    waived << "full-suite cert waived" if shape_def && !shape_def.fetch("full_suite_gate", true)
+    unless waived.empty?
+      claim = shape_def && shape_def["claimable_when"]
+      puts "  ⓘ shape #{shape}: #{waived.join(" · ")} — " +
+           (claim ? "claim verified against the OBSERVED diff (#{claim}, #{changed_files.size} file(s) " \
+                    "[source: #{diff_source}])"
+                  : "nothing verified this claim against the diff")
+    end
+  end
   if suite_eval && suite_eval[:bypass]
     puts "  ⚠ FULL-SUITE GATE BYPASSED: #{suite_eval[:bypass]}"
   elsif suite_route == "fast"

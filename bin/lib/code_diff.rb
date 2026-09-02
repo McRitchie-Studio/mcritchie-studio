@@ -96,6 +96,26 @@ module CodeDiff
     Array(files).map { |f| f.to_s.strip }.reject(&:empty?).select { |f| behavioral?(f) }
   end
 
+  # May this file list claim a doc-only contract? The positive form of code_files,
+  # and the predicate behind `claimable_when: doc_only_diff` (the `docs` shape).
+  #
+  # AN EMPTY LIST IS FALSE, exactly as in TestOnlyDiff.test_only?. "We observed
+  # nothing" and "there is nothing but prose" are different facts, and collapsing
+  # them is how a blind checkout grants the claim. bin/dor-check's exempt-KIND gate
+  # has always drawn that line (its `indeterminate` branch); this puts the same rule
+  # where a SHAPE claim can reach it, rather than re-deriving it at the call site —
+  # two copies of one truth being the drift these guards exist to catch.
+  #
+  # NOTE THE ASYMMETRY WITH code_files, and that it is deliberate: `code_files([])`
+  # is legitimately empty (nothing behavioral was seen), so a caller that reads only
+  # that half cannot tell a prose diff from a blind one. This predicate can.
+  def self.doc_only?(files)
+    list = Array(files).map { |f| f.to_s.strip }.reject(&:empty?)
+    return false if list.empty?
+
+    code_files(list).empty?
+  end
+
   # BOTH SIDES OF A RENAME. A rename has two paths, and every path-list view of a
   # diff shows you only ONE — the destination. `git diff --name-only` collapses
   # `R100 bin/deploy.sh docs/deploy-notes.md` to `docs/deploy-notes.md`, and

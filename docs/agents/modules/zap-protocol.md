@@ -185,6 +185,65 @@ without you —
   block <task> --kind rework --feedback "…"`) and the builder fixes it on the
   feat branch — where it may well be a builder zap.
 
+### After a reviewer zap — what re-checks itself, and what does not
+
+Pushing a zap moves the PR head. Some of the machinery around the review notices
+and some of it does not, and the difference used to be invisible. Measured on
+2026-09-02 across three reviewers in one afternoon; two got the right answer only
+because they happened to re-verify by hand.
+
+| Fact | Re-checked after your push? |
+|---|---|
+| GitHub CI verdict | **Yes** — checks re-run on the new head. |
+| The tree `bin/dor-check --gate-role review` grades | **Now guarded.** It re-roots to the *builder's desk*, which sits wherever the builder left it. It refuses when that tree is not the PR head. |
+| The full-suite cert fingerprint | **Only sometimes** — see below. |
+| The e2e declared-vs-executed set | **No** — it ran once, against the base as it was then. |
+| The task's stage | **No mechanism found.** See the open question below. |
+
+**The gate now refuses a stale tree rather than grading one.** `--gate-role
+review` re-roots to the builder's desk, and on turf #519 that desk sat at
+`262059b` while the merged commit was `9137d57`. `bin/dor-check` now compares the
+commit it is about to grade against the PR head and refuses on a mismatch,
+naming both SHAs. The remedy is one command:
+
+```bash
+git fetch origin <branch>     # then re-run dor-check
+```
+
+**Do not rely on the cert fingerprint to catch your zap.** It often does — the
+cert is bound to a git *tree* hash, so a zap changes the tree and the cert reads
+STALE (observed on solana-studio #29, where the reviewer had to re-certify). But
+it hashes `origin/<branch>` **in the builder's desk**, and `bin/dor-check` never
+runs `git fetch`. Push your zap from that desk and the ref moves as a side effect,
+so the cert goes stale as expected; push it from anywhere else and the desk's ref
+stays pre-zap, the hash still matches the builder's cert, and the lane reads
+FRESH. Same act, opposite outcome, decided by which checkout you were standing
+in. If the zap was yours, re-certify it: `bin/full-suite-check <task>`.
+
+**A base that moves mid-review is reported, not refused.** `accepted` moves
+constantly and blocking every review after any merge would wedge the lane, so
+`dor-check` re-derives base movement from local refs and prints it as a
+suggestion. Take it seriously when the e2e counts matter: turf #517 merged **97
+seconds after** #519's declared-set check finished, and it touched both
+`e2e/auth_modal.spec.js` and `config/e2e_lane.yml` — the spec set *and* the
+contract that counts it. That review came out right by luck. GitHub's own
+`BEHIND` signal is not a substitute: it only appears where branch protection
+demands an up-to-date branch, and `UNKNOWN` is passed over in silence.
+
+**OPEN QUESTION — what demotes a task out of `submitted`.** It was believed that
+a reviewer zap demotes a task out of the review queue, citing turf #513. **That
+was falsified:** on #518 a reviewer pushed a zap and the task stayed `submitted`
+with the breaker clear. The zap and the demotion merely co-occurred on #513, and
+what actually moved it overnight is **still unidentified**. No zap-demotion
+mechanism exists in the code — every stage writer found is an explicit call
+(`Task#block!` via `bin/task block`, `bin/pr-review`, the block endpoints, the
+web Block button, `Release::Conductor.eject!`) or a bare stage write through
+`PATCH /api/v1/tasks/:slug`, which validates no transition. Nothing is keyed on a
+branch push. If you see a task move after a zap, the `TaskEvent` row that
+`after_update :record_transition_event` writes is where the mover is named —
+capture it, because nobody has yet. Do not repeat the zap-demotion story as
+mechanism.
+
 ### Conductor — on `accepted` only
 
 You are sweeping or assembling a release and find a small defect in code
