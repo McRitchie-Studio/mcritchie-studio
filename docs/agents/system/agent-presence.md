@@ -284,12 +284,34 @@ Three consequences, stated because each is load-bearing:
   zero-byte window), so the claim rides it and gains an `extra:` passthrough for
   `kind`/`phase`/`weight`. An empty `extra` is byte-identical to what every cert
   has always written.
+- **The claim names only the process that wrote it.** `pgid` records the writer's
+  own pid, not `Process.getpgrp`. `bin/release` never calls `setpgrp`, so its
+  group is the one it *inherited* from the shell that launched it — under the
+  agent harness a `/bin/zsh -c …` wrapper shared with the rest of the session
+  (measured: `bin/release.rb ship --yes` at pid 61666 in pgid 61388). Recording
+  that inherited group made a **killed** sweep grade `:live` through the `:lane`
+  subject — the wrapper outlives the conductor and its `(pid, lstart)` still
+  matches — so the corpse counted against capacity forever, `foreign_live?`
+  suppressed every later sweep, and `decide` graded it `:orphan`, pointing
+  `reap_group` at a bystander group. The cost of naming only ourselves is the
+  two-subject walk: a conductor killed while its suite survives is no longer
+  attributed to *this* claim. The `backstop` covers exactly that gap —
+  `HEAVY_PATTERNS` matches `bin/rails test` — so the orphan is still reported,
+  as unattributed load. `Process.setpgrp` would have kept the walk, and was
+  rejected: it detaches a **production deploy** from the signals that stop it,
+  so a killed session would leave Heroku pushes and `release → main`
+  fast-forwards running unsupervised.
 - **The claim roots at the PRIMARY checkout, never a desk.** A desk's runlock
   slot is read by `CertOrphanGuard.preflight`, which *reaps* — it SIGKILLs a
   process group the lock names once it can prove the group is ours — so a sweep
-  claim sitting there would be a sweep-killing landmine. At a primary it is
-  unreachable by construction: `CertRootGuard.refusal` turns back a cert whose
-  root is not the task's tree, and it runs long *before* the orphan preflight.
+  claim sitting there would be a sweep-killing landmine. A primary is **not**
+  unreachable, and an earlier version of this section said it was:
+  `CertRootGuard.refusal` is gated on a slug, while the orphan preflight is
+  unconditional, so any slug-less cert skips the root guard and preflights
+  anyway — including the `bin/full-suite-check --print` that `--install-hook`
+  writes into `.git/hooks/pre-push`. Safety comes from the bullet above: a dead
+  conductor's claim names nothing alive, so `decide` returns `:stale`, clears
+  the file, and proceeds.
 - **One file per root, so a second conductor REFUSES rather than clobbers.** A
   `prepare` and a `ship` may legitimately run at once and both root at the same
   primary. The loser publishes nothing and stays visible through the backstop,

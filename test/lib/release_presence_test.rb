@@ -89,9 +89,18 @@ class ReleasePresenceClaimTest < Minitest::Test
       claim = read_claim(root)
 
       # The identity half — the ONLY fields that decide whether any of the others may be
-      # believed. Both subjects, because a supervisor can die while its group survives.
+      # believed. BOTH SUBJECTS MUST NAME A PROCESS THIS WRITER IS. `bin/release` never
+      # calls setpgrp, so `Process.getpgrp` would name the group it INHERITED from the
+      # shell that launched it — a group it does not own, cannot speak for, and must never
+      # aim a reaper at. This assertion used to demand exactly that inherited value and so
+      # PINNED the defect in place (review, 2026-09-02); it now pins the invariant instead.
       assert_equal Process.pid, claim["cert_pid"]
-      assert_equal Process.getpgrp, claim["pgid"]
+      assert_equal Process.pid, claim["pgid"],
+                   "the group subject must be the writer's OWN pid, not its inherited group"
+      refute_equal Process.getpgrp, claim["pgid"],
+                   "and specifically NOT Process.getpgrp: under the agent harness that is a " \
+                   "/bin/zsh -c wrapper shared with the rest of the session, which outlives " \
+                   "this process and would keep a dead claim reading as :live forever"
       refute_nil claim["cert_started_at"], "a claim with no start time can prove nothing and " \
                                           "is graded `unverifiable` rather than trusted"
       refute_nil claim["pgid_started_at"]
@@ -206,6 +215,29 @@ class ReleasePresenceClaimTest < Minitest::Test
     end
   end
 
+
+  # The failure this module must never cause: replacing a deploy's real exception with one
+  # from its own bookkeeping. `close!` under the block nils `@state`, and the `ensure` then
+  # touched `@state[:stack]` — a NoMethodError raised FROM an ensure, which supersedes the
+  # exception already in flight (review, 2026-09-02). The release would have reported a
+  # presence bug instead of the deploy failure the operator needs to see.
+  def test_with_phase_never_replaces_the_blocks_exception_with_its_own_bookkeeping
+    with_root do |root|
+      ReleasePresence.open!(kind: ReleasePresence::SWEEP, root: root)
+
+      error = assert_raises(RuntimeError) do
+        ReleasePresence.with_phase(phase: ReleasePresence::PHASE_WORKING,
+                                   weight: ReleasePresence::WEIGHT_SUITE) do
+          ReleasePresence.close! # the claim goes away underneath the block
+          raise "the deploy failed"
+        end
+      end
+
+      assert_equal "the deploy failed", error.message,
+                   "the caller's exception must arrive intact — presence accounting is " \
+                   "best-effort and must never be the thing a release dies reporting"
+    end
+  end
   def test_with_phase_yields_and_returns_the_block_value_when_no_claim_is_open
     with_root do |_root|
       refute_predicate ReleasePresence, :open?
@@ -240,6 +272,11 @@ class ReleasePresenceClaimTest < Minitest::Test
 
   def test_open_takes_a_slot_whose_holder_is_a_corpse
     with_root do |root|
+      # cert_pid == pgid is EXACTLY the shape `open!` writes (it records its own pid as the
+      # group it speaks for), so this fixture is a claim the writer can actually produce.
+      # Under the pre-fix writer, which recorded the INHERITED Process.getpgrp, it was not:
+      # those two numbers always differed, and equalising them here quietly excluded the
+      # `:lane` subject — which is where the defect lived (review, 2026-09-02).
       CertOrphanGuard.write_lock(root, cert_pid: DEAD_PID, pgid: DEAD_PID,
                                  cert_started_at: "Tue Sep  1 11:05:12 2026",
                                  pgid_started_at: "Tue Sep  1 11:05:12 2026",
@@ -281,9 +318,11 @@ class ReleasePresenceClaimTest < Minitest::Test
     assert_equal "/Users/alex/projects/mcritchie-studio", ReleasePresence.claim_root(desk),
                  "a DESK's runlock slot is read by CertOrphanGuard.preflight, which REAPS — it " \
                  "SIGKILLs a process group a runlock names once it can prove the group is ours. " \
-                 "A sweep claim sitting there would be a sweep-killing landmine. At a PRIMARY " \
-                 "checkout it is unreachable: CertRootGuard.refusal turns back a cert whose root " \
-                 "is not the task's tree, and it runs long BEFORE the orphan preflight"
+                 "A sweep claim sitting there would be a sweep-killing landmine. A PRIMARY is " \
+                 "NOT out of that reach — CertRootGuard.refusal is gated on a slug while the " \
+                 "orphan preflight is unconditional, so a slug-less cert (what --install-hook " \
+                 "writes into .git/hooks/pre-push) preflights a primary anyway. Safety comes " \
+                 "from the claim naming only its own writer, not from where it sits"
     assert_equal "/Users/alex/projects/mcritchie-studio",
                  ReleasePresence.claim_root("/Users/alex/projects/mcritchie-studio")
   end
@@ -320,6 +359,30 @@ class ReleasePresenceClaimTest < Minitest::Test
     end
   end
 
+
+  # The `extra:` overlay may ENRICH a lock; it may never restate WHO the lock names. Every
+  # reader in this house trusts the identity block unconditionally — it is the whole basis
+  # on which a claim is graded live or dead — so a caller able to forge `cert_pid` could
+  # make the grader vouch for a process the writer is not (review, 2026-09-02).
+  def test_extra_cannot_forge_the_identity_the_readers_trust
+    with_root do |root|
+      CertOrphanGuard.write_lock(root, cert_pid: 4321, pgid: 4321,
+                                 cert_started_at: "real", pgid_started_at: "real",
+                                 extra: { "cert_pid" => 9999, "pgid" => 9999,
+                                          "cert_started_at" => "forged",
+                                          "pgid_started_at" => "forged",
+                                          "kind" => "sweep" })
+      claim = JSON.parse(File.read(CertOrphanGuard.lock_path(root)))
+
+      assert_equal 4321, claim["cert_pid"], "the overlay must not be able to rename the writer"
+      assert_equal 4321, claim["pgid"]
+      assert_equal "real", claim["cert_started_at"],
+                   "nor restate the start time that PROVES the pid is not a recycled stranger"
+      assert_equal "real", claim["pgid_started_at"]
+      assert_equal "sweep", claim["kind"],
+                   "while everything the overlay legitimately carries still lands"
+    end
+  end
   def test_write_lock_drops_nil_extras_rather_than_recording_absent_facts
     with_root do |root|
       CertOrphanGuard.write_lock(root, cert_pid: 1, pgid: 2,

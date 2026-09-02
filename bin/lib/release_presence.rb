@@ -64,16 +64,31 @@ require_relative "cert_orphan_guard"
 # writer (tmp + rename; a plain `File.write` was measured returning nil on 4.6% of reads
 # taken during its zero-byte window) and one identity format.
 #
-# WHY THE PRIMARY CHECKOUT, AND WHY THAT IS COLLISION-FREE. `claim_root` normalizes any
-# desk path to its primary checkout, so a claim can never land in the slot a CERT's
-# runlock occupies. That matters because `CertOrphanGuard.preflight` REAPS — it SIGKILLs
-# a process group a runlock names once it can prove the group is ours — so a sweep claim
-# sitting in a desk's runlock slot would be a sweep-killing landmine. At a PRIMARY
-# checkout it cannot be reached: `CertRootGuard.refusal` refuses a cert writer whose root
-# is not the task's tree (bin/fast-check:181, bin/full-suite-check:204), and it runs long
-# BEFORE `CertOrphanGuard.preflight` (bin/fast-check:372, bin/full-suite-check:448). So
-# no cert ever preflights a primary checkout, and nothing ever reads this file as a
-# reapable orphan.
+# WHY THE PRIMARY CHECKOUT. `claim_root` normalizes any desk path to its primary
+# checkout, so a claim can never land in the slot a CERT's runlock occupies. That
+# matters because `CertOrphanGuard.preflight` REAPS — it SIGKILLs a process group a
+# runlock names once it can prove the group is ours — so a sweep claim sitting in a
+# desk's runlock slot would be a sweep-killing landmine.
+#
+# A PRIMARY CHECKOUT IS NOT UNREACHABLE, AND THIS FILE USED TO CLAIM IT WAS. The earlier
+# version of this header argued no cert ever preflights a primary, because
+# `CertRootGuard.refusal` rejects a cert whose root is not the task's tree. That proof is
+# FALSE, and it was stated as fact (review, 2026-09-02). The refusal is GATED —
+# `if slug && ENV["FAST_CHECK_ROOT"].to_s.strip.empty?` (bin/fast-check:180,
+# bin/full-suite-check:204) — while `CertOrphanGuard.preflight` is UNCONDITIONAL
+# (bin/fast-check:372, bin/full-suite-check:448). So every slug-less cert skips the root
+# guard and still preflights. The sharpest path is this repo's own opt-in hook:
+# `--install-hook` writes `exec bin/full-suite-check --print` into `.git/hooks/pre-push`
+# (bin/full-suite-check:170) with NO slug, so a plain `git push` from the primary reads
+# this claim. `FAST_CHECK_ROOT`/`FULL_SUITE_ROOT` and a primary standing on `feat/<slug>`
+# (cert_root_guard.rb:141) reach it too.
+#
+# SO SAFETY IS NOT LOCATION, IT IS WHAT THE CLAIM NAMES. A cert reading this file is
+# expected and fine, because `open!` records `pgid` as the writer's OWN pid: once the
+# conductor is dead, `decide` finds nothing alive at either subject and returns `:stale`
+# — it clears the file and proceeds. It can never reach `:orphan` against a group this
+# process did not own, which is the bystander-reaping bug that made the inherited-group
+# record unsafe. See the long note in `open!`.
 #
 # ONE FILE PER ROOT, so `open!` REFUSES rather than clobbers. Two conductors are a
 # documented occurrence here (a `prepare` and a `ship` may legitimately run at once), and
@@ -129,13 +144,50 @@ module ReleasePresence
       return nil if target.empty?
       return nil if foreign_live?(target, table)
 
-      pid  = Process.pid
-      pgid = Process.getpgrp
+      # THE RECORDED PGID NAMES THIS PROCESS, NOT THE GROUP IT WAS LAUNCHED IN.
+      #
+      # `Process.getpgrp` here would record a group this writer DOES NOT OWN. `bin/release`
+      # never calls `setpgrp`, so its group is whatever launched it — under the agent
+      # harness a `/bin/zsh -c …` wrapper it shares with `gh run watch` and the rest of the
+      # session. Every cert runlock before this one named a group the cert CREATED
+      # (`cert_process.rb` spawns each lane with `pgroup: true`), and the identity proof
+      # rests on exactly that ownership. Measured on a real `bin/release.rb ship --yes`:
+      # pid 61666 in pgid 61388, whose leader was another session's shell.
+      #
+      # Recording the INHERITED group broke all three of this module's promises at once,
+      # each reproduced against the REAL reader (`AgentPresence.grade`), not a stand-in:
+      #   * a killed sweep graded :live, not :dead — the wrapper's leader was still alive
+      #     and its (pid, lstart) matched, so the `:lane` subject carried it. COUNTED, at
+      #     weight 0.25, with no TTL to expire: an UNBOUNDED wedge, the exact opposite of
+      #     the "wedge window is zero" rule this module is built on;
+      #   * `foreign_live?` then saw that same live leader forever, so every later sweep
+      #     published nothing — the feature permanently disabling itself;
+      #   * `CertOrphanGuard.decide` graded the corpse :orphan, and `preflight`'s
+      #     `reap_group` would SIGTERM/SIGKILL that wrapper group — a bystander measured
+      #     holding 5 unrelated processes, including the session's own shell.
+      #
+      # So the claim names only a subject this process IS. The lane subject collapses onto
+      # the cert subject, which costs the two-subject walk (a conductor killed while the
+      # suite it spawned SURVIVES is no longer attributed to THIS claim) — and that gap is
+      # precisely what the reader's `backstop` covers: `HEAVY_PATTERNS` matches
+      # `bin/rails test`, so an orphaned release suite is still reported as heavy load and
+      # still forces EXIT_BUSY. Degraded ATTRIBUTION, never silence.
+      #
+      # The alternative was `Process.setpgrp` before this call, making the group record
+      # true by giving the conductor a group it owns. REJECTED for a PRODUCTION DEPLOY
+      # TOOL, because it also detaches `bin/release ship` from the signals that stop it:
+      # Ctrl-C would stop reaching an interactive `prepare`, and — worse — a harness that
+      # kills the session's process group would no longer stop the deploy, leaving Heroku
+      # pushes and `release → main` fast-forwards running with no supervisor and no signal
+      # path. Today's "a killed session kills the ship, nothing half-deployed, just
+      # re-run" is a safety property worth more than orphan-child attribution.
+      pid = Process.pid
+      started = CertOrphanGuard.process_started_at(pid)
       @state = {
         root: target, kind: kind.to_s, lane: lane, db: db,
-        cert_pid: pid, pgid: pgid,
-        cert_started_at: CertOrphanGuard.process_started_at(pid),
-        pgid_started_at: CertOrphanGuard.process_started_at(pgid),
+        cert_pid: pid, pgid: pid,
+        cert_started_at: started,
+        pgid_started_at: started,
         session_id: session_id, agent: agent, command: command,
         began_at: now.utc.iso8601, stack: []
       }
@@ -163,14 +215,31 @@ module ReleasePresence
         return yield
       end
 
-      previous = { phase: @state[:phase], weight: @state[:weight] }
-      @state[:stack].push(previous)
-      phase!(phase: phase, weight: weight)
+      # BOOKKEEPING IS BEST-EFFORT; THE BLOCK'S OWN EXCEPTION IS NOT.
+      #
+      # This was the module's only entry point that could raise from its own presence
+      # accounting (review, 2026-09-02). `@state` can go nil under the block — `close!`
+      # inside it, or a `forget!` — and `@state[:stack]` in the `ensure` then raised
+      # NoMethodError FROM the ensure, which REPLACES whatever the block was already
+      # raising. A deploy would have died reporting a presence bug instead of the real
+      # failure. So each half is guarded separately: the restore can never raise, and
+      # `yield` is never rescued — the release's own error must always propagate intact.
+      begin
+        @state[:stack].push({ phase: @state[:phase], weight: @state[:weight] })
+        phase!(phase: phase, weight: weight)
+      rescue StandardError
+        nil
+      end
+
       begin
         yield
       ensure
-        restored = @state[:stack].pop
-        phase!(phase: restored[:phase], weight: restored[:weight]) if restored
+        begin
+          restored = @state && @state[:stack]&.pop
+          phase!(phase: restored[:phase], weight: restored[:weight]) if restored
+        rescue StandardError
+          nil
+        end
       end
     end
 
@@ -235,7 +304,11 @@ module ReleasePresence
 
       pid  = CertOrphanGuard.coerce_pid(lock["cert_pid"])
       pgid = CertOrphanGuard.coerce_pid(lock["pgid"])
-      return false if pid == Process.pid && pgid == Process.getpgrp
+      # Our OWN claim is never foreign. Recognise it by `cert_pid` alone: the writer now
+      # records `pgid` as its own pid (see `open!`), so comparing against `Process.getpgrp`
+      # here would never match what we wrote and a conductor would refuse to re-open its
+      # own slot. If the live process at `cert_pid` is us, the claim is ours by definition.
+      return false if pid == Process.pid
 
       table ||= CertOrphanGuard.process_table
       subjects = [[pid, lock["cert_started_at"]], [pgid, lock["pgid_started_at"]]].reject { |p, _| p.nil? }

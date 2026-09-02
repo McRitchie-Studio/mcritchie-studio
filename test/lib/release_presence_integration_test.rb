@@ -26,17 +26,30 @@ require "fileutils"
 require "shellwords"
 require_relative "../../bin/lib/release_presence"
 require_relative "../../bin/lib/cert_orphan_guard"
+require_relative "../../bin/lib/agent_presence"
 
 class ReleasePresenceIntegrationTest < Minitest::Test
   LIB = File.expand_path("../../bin/lib/release_presence", __dir__)
   BOOT_TIMEOUT = 20.0
 
-  # A conductor stand-in: its own process group (as `bin/release` gets from the shell that
-  # launches it), a real claim through the real module, then an unbounded sleep. It never
-  # exits on its own, so the ONLY way this test ends it is the kill it is here to prove.
+  # A conductor stand-in: a real claim through the real module, then an unbounded sleep.
+  # It never exits on its own, so the ONLY way this test ends it is the kill it is here
+  # to prove.
+  #
+  # IT DELIBERATELY DOES NOT CALL `Process.setpgrp`, and that omission is the whole point.
+  # An earlier version opened with `Process.setpgrp` and commented it as "what bin/release
+  # gets from the shell that launches it" — backwards. `bin/release` calls `setpgrp`
+  # NOWHERE; it INHERITS its caller's group. So the stand-in was installing a topology the
+  # real conductor never has: it MANUFACTURED the safe case and then certified the unsafe
+  # code, and 12/12 green proved only that the fixture agreed with itself (review,
+  # 2026-09-02).
+  #
+  # Spawned plainly, the child inherits THIS TEST RUNNER'S process group — whose leader is
+  # the runner, which by construction OUTLIVES the child we are about to kill. That is
+  # exactly the harness shape (`/bin/zsh -c …` wrapper, measured at pid 61666 in pgid
+  # 61388), reproduced with no artifice at all.
   def spawn_conductor(root, kind:, lane:)
     script = <<~RB
-      Process.setpgrp
       require #{LIB.inspect}
       ReleasePresence.open!(kind: #{kind.inspect}, root: #{root.inspect}, lane: #{lane.inspect},
                             agent: "avi", command: "bin/release prepare")
@@ -71,14 +84,22 @@ class ReleasePresenceIntegrationTest < Minitest::Test
     nil
   end
 
-  # The reader's rule (bin/lib/agent_presence.rb#grade), in the guard's primitives.
+  # THE REAL READER — `bin/lib/agent_presence.rb#grade`, not a restatement of it.
+  #
+  # The earlier version of this helper reimplemented the rule over `cert_pid` ONLY, so it
+  # structurally COULD NOT SEE the `:lane` (pgid) subject — which is exactly where the
+  # defect lived. A grader that reads one subject cannot express a two-subject bug, and
+  # this tier exists to catch precisely that (review, 2026-09-02). So call the shipped
+  # reader and let it disagree with us: the reader walks BOTH subjects, and a claim is
+  # only a corpse when it is dead on both.
   def grade(claim)
-    table = CertOrphanGuard.process_table
-    pid = CertOrphanGuard.coerce_pid(claim["cert_pid"])
-    process = CertOrphanGuard.live_process(table, pid)
-    return :dead if process.nil?
+    AgentPresence.grade(lock: claim, table: CertOrphanGuard.process_table).first
+  end
 
-    CertOrphanGuard.identity_of(process, claim["cert_started_at"])
+  # What the reader does with that grade — `:unverifiable` counts against capacity too,
+  # so "not :live" is NOT the same question as "frees the machine".
+  def counted?(claim)
+    AgentPresence::COUNTED_GRADES.include?(grade(claim))
   end
 
   def read_claim(root)
@@ -93,7 +114,7 @@ class ReleasePresenceIntegrationTest < Minitest::Test
       claim = read_claim(root)
 
       assert_equal pid, claim["cert_pid"]
-      assert_equal :ours, grade(claim),
+      assert_equal :live, grade(claim),
                    "while the sweep runs, the reader must PROVE the claim is that process — " \
                    "identity is what lets a peer trust the phase and weight beside it"
 
@@ -147,6 +168,83 @@ class ReleasePresenceIntegrationTest < Minitest::Test
       ensure
         ReleasePresence.forget!
       end
+    end
+  end
+
+  # --- [integration] the claim may only name a subject its writer OWNS -----------------
+  #
+  # THIS IS THE TEST THAT WOULD HAVE CAUGHT THE BLOCKER, and every clause of it is chosen
+  # so that it CANNOT pass by agreeing with itself:
+  #
+  #   * it grades with the REAL `AgentPresence.grade` (both subjects), not a helper that
+  #     reads `cert_pid` and calls that the reader;
+  #   * it spawns the conductor with NO `setpgrp`, exactly as `bin/release` runs, so the
+  #     child inherits THIS RUNNER'S group;
+  #   * the runner — the group's leader — is alive throughout and by construction outlives
+  #     the child, which is the harness shape (`/bin/zsh -c …` wrapper) that made an
+  #     inherited pgid read as a live claim forever.
+  #
+  # Against the pre-fix writer (`pgid: Process.getpgrp`) this fails on the first
+  # assertion: the killed sweep grades :live via the `:lane` subject, COUNTED at weight
+  # 0.25, with no TTL to expire — an unbounded wedge, and the exact inverse of the rule
+  # this module is named for.
+  def test_a_killed_sweep_is_a_corpse_to_the_real_reader_not_just_to_its_own_helper
+    Dir.mktmpdir do |root|
+      pid = spawn_conductor(root, kind: "sweep", lane: "release:prepare")
+      claim = read_claim(root)
+
+      assert_equal pid, claim["pgid"],
+                   "the claim must name a process group its WRITER OWNS. `bin/release` " \
+                   "never calls setpgrp, so recording Process.getpgrp names the LAUNCHING " \
+                   "SHELL's group — a group shared with the rest of the session, which " \
+                   "this process has no right to speak for and no right to signal"
+      refute_equal Process.getpgrp, claim["pgid"],
+                   "and it must NOT be the inherited group: this test runner leads that " \
+                   "group and outlives the conductor, which is precisely how a corpse " \
+                   "kept reading as live"
+
+      kill!(pid)
+
+      assert_equal :dead, grade(read_claim(root)),
+                   "the REAL reader must call a killed sweep dead on the very next read. " \
+                   "With the inherited pgid it returned :live via the `:lane` subject — " \
+                   "the runner leading that group is still alive and its (pid, lstart) " \
+                   "still matches — so the corpse counted against capacity forever"
+      refute counted?(read_claim(root)),
+             "and dead must mean UNCOUNTED, or the machine reports saturation that " \
+             "no process is causing and every later suite is refused headroom"
+    end
+  end
+
+  # The reaper's half of the same invariant. `CertOrphanGuard.preflight` REAPS what it
+  # grades `:orphan` — SIGTERM then SIGKILL at the whole process group — and a primary
+  # checkout is NOT out of its reach (a slug-less `bin/full-suite-check`, which is what
+  # `--install-hook` writes into `.git/hooks/pre-push`, skips the root guard and preflights
+  # anyway). So the verdict on a dead conductor's claim must never point a kill at a group
+  # this process did not own.
+  #
+  # Graded from a foreign vantage point on purpose: a real cert is spawned with
+  # `pgroup: true`, so it sits in its OWN group and `signalable?` does NOT refuse the
+  # claim's group for it. Grading as `self` would hide the bug behind that refusal.
+  def test_a_dead_conductors_claim_never_sends_the_reaper_at_a_bystander_group
+    Dir.mktmpdir do |root|
+      pid = spawn_conductor(root, kind: "sweep", lane: "release:prepare")
+      kill!(pid)
+
+      verdict, detail = CertOrphanGuard.decide(lock: read_claim(root),
+                                               table: CertOrphanGuard.process_table,
+                                               self_pid: 999_998, self_pgid: 999_999)
+
+      assert_equal :stale, verdict,
+                   "nothing the claim names is alive, so the only safe verdict is :stale " \
+                   "— clear the file and proceed. With the inherited pgid this graded " \
+                   ":orphan and reap_group would have SIGKILLed the launching shell's " \
+                   "group, measured holding 5 unrelated processes including the session"
+      refute_equal :orphan, verdict,
+                   "an :orphan verdict here is a licence to kill a group this process " \
+                   "never created"
+      assert_equal pid, detail[:pgid],
+                   "and whatever the verdict, the group named must be the writer's own"
     end
   end
 end

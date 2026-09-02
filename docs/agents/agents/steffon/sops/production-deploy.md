@@ -134,7 +134,9 @@ reported (`docs/agents/system/agent-presence.md`, cost #3).
 So `bin/release ship` now also publishes a **local** claim beside the board one, at
 `<projects>/<repo>/.git/cert-run.json` — the runlock slot, in the runlock's
 shape, carrying `kind: ship`, `lane: release:ship`, a phase, a weight, and the
-OS's `(pid, lstart)` identity for both this process and its group. A peer
+OS's `(pid, lstart)` identity for this process. (It records its OWN pid as
+the group it speaks for, never the group it was launched in — a conductor
+does not own the shell's group and must never point a reaper at it.) A peer
 reads it with `bin/agent-presence`. Nothing here needs running by hand:
 
 | | |
@@ -147,6 +149,15 @@ reads it with `bin/agent-presence`. Nothing here needs running by hand:
 
 A second conductor that finds a **live** claim in that slot publishes nothing
 rather than overwrite it, and stays visible through the reader's backstop.
+
+**It also refuses a cert rooted at that primary while it runs.** The claim sits
+in the runlock slot, so `CertOrphanGuard.preflight` grades a live conductor
+`:concurrent` and a `bin/fast-check` / `bin/full-suite-check` run from the
+PRIMARY checkout is turned back until the sweep finishes. That is intended — a
+suite launched beside a live sweep is the saturation this claim exists to
+prevent — but it is a real behaviour change: certify from your **desk**, which
+roots at the worktree and is unaffected, or wait. `RELEASE_PRESENCE=off`
+disarms the writer and with it the refusal.
 
 ## Preconditions
 

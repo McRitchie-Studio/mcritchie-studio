@@ -238,12 +238,23 @@ module CertOrphanGuard
                       lane: nil, db: nil, now: Time.now, extra: {})
     path = lock_path(root)
     FileUtils.mkdir_p(File.dirname(path))
+    # THE IDENTITY BLOCK IS NOT OVERRIDABLE BY `extra:`. Re-merging it AFTER the overlay
+    # means a caller can enrich the lock (kind, phase, weight, agent…) but can never
+    # restate WHO the lock names — a forged `cert_pid` would make the grader vouch for a
+    # process the writer is not, which is the one thing every reader here trusts
+    # unconditionally (review, 2026-09-02). Key ORDER is unchanged: these four keys already
+    # exist in the base hash, so re-merging overwrites in place and appends nothing, which
+    # keeps the empty-`extra` output byte-identical to the pre-`extra` writer.
+    identity = {
+      "cert_pid" => cert_pid, "cert_started_at" => cert_started_at,
+      "pgid" => pgid, "pgid_started_at" => pgid_started_at
+    }
     body = JSON.generate(
       {
         "cert_pid" => cert_pid, "cert_started_at" => cert_started_at,
         "pgid" => pgid, "pgid_started_at" => pgid_started_at,
         "lane" => lane, "db" => db, "started_at" => now.utc.iso8601
-      }.merge((extra || {}).reject { |_, v| v.nil? })
+      }.merge((extra || {}).reject { |_, v| v.nil? }).merge(identity)
     )
 
     # ATOMIC: write a sibling, then rename over. A plain `File.write` is
