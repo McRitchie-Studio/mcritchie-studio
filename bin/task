@@ -42,6 +42,12 @@
 #       --actor <soul>` stamps the author and sets no assignee — so an unassigned
 #       task reads "unassigned" and an unstamped one reads "NOT STAMPED", never
 #       the same "-". --verbose adds the raw fields behind the set. )
+#   bin/task orphan-prs [--json]
+#     ( READ-ONLY inverse alarm: PRs still OPEN whose task is already ARCHIVED —
+#       work that is neither merged nor closed with no board state describing it.
+#       One `gh pr list` per repo the archived tasks name, so it stays cheap. A PR
+#       carrying an abandonment receipt (devops.abandoned_prs) reports as
+#       "abandoned on purpose" rather than orphaned. Never blocks; always exits 0. )
 #   bin/task stale [<slug>]
 #     ( flags a task whose work is already on origin/main (fixed out-of-band) while
 #       the task isn't shipped/archived. Resolves the branch (devops.branch or
@@ -127,6 +133,17 @@
 #       resolved only by messaging the peer session. `shipped`/`archived` tasks and
 #       tasks nobody ever picked up archive freely. --force is the human decision
 #       seam and names the grade it waived. See lib/archive_holder_guard.rb. )
+#     ( the move to `archived` ALSO refuses when the task still has an OPEN PR, and
+#       names each PR and its state. That is a DIFFERENT question from the holder
+#       gate above: the PR is durable and survives the archive, but it survives OPEN
+#       and UNWATCHED — neither merged nor closed, with no board state describing it.
+#       It reads devops.pr_url AND every devops.pr_urls entry, because a multi-repo
+#       task records its second repo's PR only in the map. A PR state that cannot be
+#       read WARNS rather than refusing (the GitHub token expires hourly by design),
+#       and `bin/task orphan-prs` is where anything that slips through stays
+#       findable. --force archives anyway and RECORDS the abandonment in
+#       devops.abandoned_prs, so a later reader can tell a PR that was dropped on
+#       purpose from one that was forgotten. See lib/open_pr_guard.rb. )
 #   bin/task merged <slug> <accepted|release|main>
 #     ( set the git-location crash-recovery signal (Task::MERGED_STATES) — where the
 #       task's code physically is. Review stamps `accepted` when it lands a feat PR
@@ -232,6 +249,7 @@ require_relative "../lib/task_usage_audit"
 require_relative "../lib/claim_lease"
 require_relative "../lib/desk_activity"
 require_relative "../lib/archive_holder_guard"
+require_relative "../lib/open_pr_guard"
 require_relative "../lib/cert_evidence"
 require_relative "../lib/stale_check"
 require_relative "../lib/feature_marker"
@@ -542,6 +560,154 @@ def archive_desk_dirs(devops)
 
   Array(devops["repositories"]).map { |repo| repo.to_s.strip }.reject(&:empty?).map do |repo|
     File.join(PROJECTS_DIR, repo, ".worktrees", worktree)
+  end
+end
+
+# --- the ARCHIVE open-PR gate --------------------------------------------------
+#
+# THE OTHER HALF OF THE ARCHIVE QUESTION. `enforce_archive_holder_gate!` above asks
+# whether a live session's UNCOMMITTED work is at risk, and by design says nothing
+# about durable artifacts. This one asks whether the archive would leave a PR OPEN
+# and UNWATCHED — neither merged nor closed, with no board state describing it.
+# Different harms, different evidence, and neither covered the other: on 2026-09-01
+# `move-web3-modals-to-solana` was archived with studio-engine #245 still open, and
+# it took a human backlog audit a month later to notice.
+#
+# Returns nil when there is nothing to record, or the FULL devops hash the caller
+# must PATCH when `--force` abandoned open PRs. The decision table and every message
+# live in lib/open_pr_guard.rb; this function is only the I/O around them.
+#
+# It reads the task FRESH for the same reason the holder gate does: the question is
+# what is open RIGHT NOW, and a stale record answers a different one.
+def enforce_archive_open_pr_gate!(slug, force:)
+  task = api(:get, "/api/v1/tasks/#{slug}")["data"]
+  devops = task.dig("metadata", "devops") || {}
+  prs = archive_pr_states(OpenPrGuard.refs(devops))
+  grade = OpenPrGuard.decide(prs: prs, stage: task["stage"])
+
+  # A check that did not complete has established NOTHING, and says so. It must not
+  # borrow the refusal's voice — see "WHY AN UNREADABLE PR STATE WARNS" in the guard.
+  warn!(OpenPrGuard.unreadable_warning(slug: slug, prs: prs)) if grade == :unreadable
+  return nil if OpenPrGuard.permitted?(grade)
+
+  unless force
+    warn!(OpenPrGuard.refusal(slug: slug, stage: task["stage"], prs: prs))
+    exit 1
+  end
+
+  # NAME WHAT IS BEING OVERRIDDEN, then RECORD it. A --force that prints nothing
+  # turns the gate into a speed bump nobody remembers clearing; a --force that
+  # records nothing leaves a board state indistinguishable from the bug itself.
+  open = OpenPrGuard.open_prs(prs)
+  named = open.map { |pr| "#{pr[:repo]}##{pr[:number]}" }.join(", ")
+  warn!("--force: archiving #{slug} anyway — ABANDONING #{open.size} open PR(s): #{named}. " \
+        "Recording the choice on the task so a later reader knows they were dropped deliberately.")
+
+  entries = OpenPrGuard.record(prs: prs, at: Time.now.utc.iso8601, by: session_identity.first)
+  # READ-MERGE-WRITE, belt and braces. The board merges a devops PATCH now, but this
+  # CLI must stay correct against a board that has not taken that fix — a partial
+  # devops write wipes every key it did not send.
+  devops.merge(
+    OpenPrGuard::RECORD_KEY => OpenPrGuard.merged_record(devops[OpenPrGuard::RECORD_KEY], entries)
+  )
+end
+
+# Each ref enriched with its live PR state. I/O only — OpenPrGuard owns the
+# vocabulary, so one notion of "is this PR open" serves both this gate and
+# bin/devops-reconcile.
+#
+# EVERY FAILURE RESOLVES TO :unknown, never to a state. A `gh` that could not run,
+# a non-zero exit, unparseable output, or a payload with no `state` are all facts we
+# did not read — and reading an unread fact as "merged" is the direction that
+# strands work silently.
+def archive_pr_states(refs)
+  refs.map { |ref| ref.merge(state: archive_pr_state(ref)) }
+end
+
+def archive_pr_state(ref)
+  raw = IO.popen(["gh", "pr", "view", ref[:number], "--repo", ref[:repo], "--json", "state"],
+                 err: File::NULL, &:read)
+  return :unknown unless $?.success?
+
+  OpenPrGuard.state_of(JSON.parse(raw.to_s)["state"])
+rescue StandardError
+  :unknown
+end
+
+# The abandonment record has to SURVIVE the write. `abandoned_prs` must be a
+# storable name in Task::DEVOPS_LIST_KEYS; anything outside DEVOPS_KEYS is dropped
+# by normalize_devops_metadata and the caller still gets a 200. That silent
+# evaporation is exactly what `release_slug` cost and what `agent_slug` cost inside
+# ArchiveHolderGuard::PAINT_KEYS, so this reads the record back and fails LOUDLY
+# rather than reporting an override that recorded nothing.
+#
+# The archive has ALREADY LANDED by the time this runs — the stage move and the
+# record ride one PATCH, so there is no ordering that could verify first. The honest
+# response to a dropped record is therefore a loud non-zero telling the operator the
+# archive stands and the receipt does not.
+def verify_abandonment_recorded!(slug, expected)
+  stored = Array(api(:get, "/api/v1/tasks/#{slug}")["data"].dig("metadata", "devops",
+                                                               OpenPrGuard::RECORD_KEY)).map(&:to_s)
+  missing = Array(expected).map(&:to_s) - stored
+  return if missing.empty?
+
+  die!("#{slug}: ARCHIVED, but devops.#{OpenPrGuard::RECORD_KEY} did not persist — the board " \
+       "dropped #{missing.size} of #{Array(expected).size} entr(ies). The archive stands and the " \
+       "receipt does not, so the abandoned PR now reads as forgotten rather than dropped on " \
+       "purpose. Most likely this board predates #{OpenPrGuard::RECORD_KEY} in Task::DEVOPS_LIST_KEYS; " \
+       "deploy it, then re-record: #{missing.join(" | ")}")
+end
+
+# --- the INVERSE ALARM: open PRs whose task is archived ---------------------------
+#
+# The gate above stops a NEW orphan. This finds the ones that already exist, and it
+# is the reason an unreadable PR state is allowed to warn rather than refuse: every
+# archive the gate lets through wrongly stays findable here.
+#
+# IT ASKS THE QUESTION FROM THE PR SIDE, which is what makes it cheap. Resolving one
+# `gh pr view` per recorded PR would be hundreds of calls across the archived board;
+# `gh pr list --state open` is ONE call per repo, and the repos are only those the
+# archived tasks actually name. Seven repos, seven calls, however large the board.
+def fetch_archived_tasks(per_page: 100, max_pages: 40)
+  rows = []
+  (1..max_pages).each do |page|
+    batch = api(:get, "/api/v1/tasks?stage=archived&per_page=#{per_page}&page=#{page}")["data"] || []
+    rows.concat(batch)
+    return rows if batch.size < per_page
+  end
+  # Hitting the cap means the scan is TRUNCATED, and a truncated scan that prints
+  # "nothing found" is the false all-clear this alarm exists to remove.
+  warn "warning: stopped after #{max_pages} pages (#{rows.size} tasks) — results may be incomplete"
+  rows
+end
+
+# Every OPEN PR number in one repo, or nil when the listing could not be read. nil is
+# NOT an empty list: an empty list means "this repo has no open PRs", and reporting a
+# failed read as a clean one is how an alarm goes quiet while the thing it watches
+# for is still there.
+def gh_open_pr_numbers(repo)
+  raw = IO.popen(["gh", "pr", "list", "--repo", repo, "--state", "open",
+                  "--limit", "200", "--json", "number"], err: File::NULL, &:read)
+  return nil unless $?.success?
+
+  JSON.parse(raw.to_s).map { |row| row["number"].to_s }
+rescue StandardError
+  nil
+end
+
+# { "owner/repo#number" => {slug:, url:, repo:, number:, deliberate:} } for every PR
+# named by an archived task. `deliberate` reads the abandonment receipt --force
+# writes, so a PR an operator DROPPED ON PURPOSE is reported differently from one
+# that was simply forgotten — which is the entire point of recording it.
+def archived_pr_index(tasks)
+  tasks.each_with_object({}) do |task, index|
+    devops = task.dig("metadata", "devops") || {}
+    recorded = Array(devops[OpenPrGuard::RECORD_KEY]).map(&:to_s)
+    OpenPrGuard.refs(devops).each do |ref|
+      key = "#{ref[:repo]}##{ref[:number]}"
+      index[key] ||= ref.merge(slug: task["slug"],
+                               deliberate: recorded.any? { |entry| entry.include?(ref[:url]) })
+    end
   end
 end
 
@@ -1858,6 +2024,60 @@ when "stale"
     stale.each { |r| render_stale(r) }
     puts "(#{stale.size} stale task(s) — work on main but not shipped/archived)"
   end
+when "orphan-prs"
+  # READ-ONLY. The inverse of the archive gate: a PR still OPEN whose task is already
+  # ARCHIVED. The work is neither merged nor closed and no board state describes it,
+  # so nothing downstream will ever raise its hand about it again.
+  #
+  # WHY IT EXISTS SEPARATELY FROM THE GATE. `bin/release archive` flips shipped tasks
+  # through Release::Conductor.archive_completed! — the MODEL path — which by design
+  # bypasses the CLI gate entirely (see lib/archive_holder_guard.rb, "THIS GATE IS
+  # THE CLI PATH, DELIBERATELY"). So the gate cannot be the only answer even in
+  # principle, and it says nothing at all about the orphans already on the board:
+  # studio-engine #245 sat open under an archived task for a month and surfaced only
+  # because a human asked for a backlog audit.
+  #
+  # NEVER BLOCKS — it exits 0 whether or not it found anything, the same policy
+  # bin/devops-reconcile fixes for the same reason.
+  as_json = false
+  while ARGV.any?
+    case (flag = ARGV.shift)
+    when "--json" then as_json = true
+    else unknown_flag!(flag, valid: %w[--json], context: "orphan-prs")
+    end
+  end
+  tasks = fetch_archived_tasks
+  index = archived_pr_index(tasks)
+  findings = []
+  index.values.map { |entry| entry[:repo] }.uniq.sort.each do |repo|
+    numbers = gh_open_pr_numbers(repo)
+    if numbers.nil?
+      # A failed read is not a clean read. Say which repo went unchecked, or the
+      # summary line below silently understates the board.
+      warn "warning: #{repo}: could not list open PRs — NOT checked. " \
+           "Usually a stale token: eval \"$(bin/gh-auth-refresh --export)\""
+      next
+    end
+    numbers.each { |number| findings << index["#{repo}##{number}"] if index["#{repo}##{number}"] }
+  end
+  # Forgotten first — those are the ones needing a decision. A deliberate
+  # abandonment is already decided and only needs to stay visible.
+  findings.sort_by! { |f| [f[:deliberate] ? 1 : 0, f[:repo], f[:number].to_i] }
+  if as_json
+    puts JSON.pretty_generate(findings.map { |f| f.transform_keys(&:to_s) })
+  else
+    findings.each do |finding|
+      mark = finding[:deliberate] ? "abandoned on purpose" : "ORPHANED"
+      puts "#{mark}  #{finding[:repo]}##{finding[:number]}  #{finding[:url]}"
+      puts "   task /tasks/#{finding[:slug]} is archived while this PR is still open"
+      unless finding[:deliberate]
+        puts "   decide: gh pr merge/close it, or revive the task (`archived` is not a lock)"
+      end
+    end
+    forgotten = findings.count { |f| !f[:deliberate] }
+    puts "(#{forgotten} orphaned PR(s), #{findings.size - forgotten} deliberately abandoned, " \
+         "across #{tasks.size} archived task(s))"
+  end
 when "create"
   # --no-claim: file the task WITHOUT repointing this session's active-feature
   # marker at it. Filing a task is not building it — a conductor (bin/release)
@@ -2147,8 +2367,19 @@ when "move"
   # ARCHIVE REFUSES WHAT IT CANNOT PROVE FREE. Runs BEFORE the PATCH, so a refusal
   # leaves the task exactly where it was. lib/archive_holder_guard.rb owns the
   # decision table and every refusal message.
-  enforce_archive_holder_gate!(slug, force: force) if stage == "archived"
+  # BOTH ARCHIVE GATES, in order of what they protect. The holder gate guards
+  # UNCOMMITTED work (irreversible if wrong); the open-PR gate guards a DURABLE PR
+  # from going unwatched (recoverable, and bin/task orphan-prs is the recovery).
+  # Both run BEFORE the PATCH, so a refusal leaves the task exactly where it was.
+  archive_devops = nil
+  if stage == "archived"
+    enforce_archive_holder_gate!(slug, force: force)
+    archive_devops = enforce_archive_open_pr_gate!(slug, force: force)
+  end
   body = { "stage" => stage, "event" => event }
+  # The abandonment receipt rides the SAME PATCH as the stage move, so there is no
+  # window in which a task is archived without the record of why its PR was dropped.
+  body["devops"] = archive_devops if archive_devops
   body["dev_size"] = dev_size if dev_size # the builder's estimate, set alongside the stage move
   # Claim the task on the move to building. The gate refuses (loudly, overridable
   # with --steal) when a DIFFERENT live instance already holds it; otherwise it
@@ -2176,6 +2407,7 @@ when "move"
   # silently-non-persisting write exits nonzero + loud instead of stranding the
   # task while the handoff claims it advanced.
   verify_move_persisted!(slug, stage)
+  verify_abandonment_recorded!(slug, archive_devops[OpenPrGuard::RECORD_KEY]) if archive_devops
   write_feature_marker(task)
   print_task(task)
 when "merged"
