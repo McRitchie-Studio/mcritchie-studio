@@ -133,6 +133,10 @@ class StateStoreContainmentTest < Minitest::Test
     "bin/reviewer-select" => [:ruby, "cost store: enforce! at its dir seam"],
     "bin/agent-worktree" => [:ruby, "registry + worktree lock + redis band: enforce! at each seam"],
     "bin/agent-marker" => [:ruby, "READ-ONLY resolver — prints/reads the marker, mutates nothing"],
+    "bin/lib/agent_presence.rb" => [:ruby, "READ-ONLY presence reader: it GLOBS the claim store to report " \
+                                           "who is working and mutates NOTHING — no write, no delete, no " \
+                                           "signal. claim_paths is private, so the raw path cannot escape " \
+                                           "to a caller who would (LAYER 2a)"],
     "bin/atomic-capture-hook" => [:ruby, "READ-ONLY — finds the open-activity marker, mutates nothing"],
     "bin/qa-intake" => [:ruby, "READ-ONLY — reads the worktree registry; the WRITER is bin/agent-worktree"],
     "bin/gh-token" => [:ruby, "GitHub token cache: store_path is the ONE seam and it enforce!s — " \
@@ -185,6 +189,12 @@ class StateStoreContainmentTest < Minitest::Test
       "redis_capacity_path" => "BUILDER — write_current_capacity launders it",
       "worktree_lock_path" => "BUILDER — with_worktree_lock launders it before the flock",
       "load_current_capacity" => "READ — parses the Redis band; write_current_capacity is the writer"
+    },
+    # EMPTY: the store name appears ONCE, in an inert top-level constant (CLAIM_GLOBS),
+    # and no method body of this file holds a raw store path at all.
+    "bin/lib/agent_presence.rb" => {
+      "claim_paths" => "READ — globs the claim store to report who is working; this file has no " \
+                       "write path at all, and the builder is private so none can be taken from it"
     },
     "bin/agent-marker" => {
       "session_path" => "BUILDER — for the READ below; this script mutates nothing",

@@ -39,7 +39,7 @@ class SessionMarkersTest < Minitest::Test
   REAL = ProjectsRoot.default_projects_dir              # the operator's real projects root
   ON = { "TASK_USAGE_SANDBOX" => "1" }.freeze
   SUFFIXES = %w[.json .acting-agent .open-activity .open-span .activity-usage.json
-                .devops-shift .devops-shift-renewer].freeze
+                .devops-shift .devops-shift-renewer .presence-ship-4242].freeze
 
   # ── [unit] read_context_marker ───────────────────────────────────────────────
 
@@ -201,6 +201,87 @@ class SessionMarkersTest < Minitest::Test
       SessionMarkers.delete(SESSION, dir, ".open-activity", env: env)
       refute_path_exists path, "delete must remove the marker"
       assert_nil SessionMarkers.read(SESSION, dir, ".open-activity"), "a deleted marker reads as nil"
+    end
+  end
+
+  # ── [unit] the write is ATOMIC — a reader never sees a half ──────────────────
+
+  # WHY THIS TIER EXISTS. Every marker in this store is written by one process and
+  # read by ANOTHER (the statusline reads what bin/atomic-event wrote; a presence
+  # reader reads what bin/ship wrote), which is the only arrangement in which a
+  # torn read is reachable at all. A plain `File.write` is open(O_CREAT|O_TRUNC)
+  # and THEN write, so the marker is observable at ZERO BYTES for the width of
+  # that gap — measured on the cert runlock at 4.6% of reads taken the moment it
+  # appeared. Nothing in that measurement was specific to the runlock: it is a
+  # property of truncate-then-write, so it was true of every marker here.
+  #
+  # The first test below RE-RUNS THAT MEASUREMENT rather than arguing from it.
+
+  def test_unit_a_concurrent_reader_never_observes_a_truncated_marker
+    Dir.mktmpdir do |dir|
+      body = "#{"x" * 200_000}\n" # wide enough that truncate-then-write has a real window
+      SessionMarkers.write(SESSION, dir, ".activity-usage.json", body, env: OFF)
+      path = File.join(dir, ".agents", "sessions", "#{SESSION}.activity-usage.json")
+      stop = false
+      short = nil
+
+      reader = Thread.new do
+        until stop
+          seen = begin
+            File.read(path)
+          rescue Errno::ENOENT
+            "" # the marker VANISHING is a torn read too — rename can never do it
+          end
+          short ||= seen.bytesize unless seen.bytesize == body.bytesize
+        end
+      end
+
+      200.times { SessionMarkers.write(SESSION, dir, ".activity-usage.json", body, env: OFF) }
+      stop = true
+      reader.join
+
+      assert_nil short,
+                 "a reader observed the marker at #{short} bytes instead of #{body.bytesize} — " \
+                 "the publish is not atomic, and every reader of this store rescues a torn file to nil"
+    end
+  end
+
+  # The failure direction of the same property: a publish that CANNOT complete must
+  # leave the marker it was replacing untouched. Driven with a real IO failure (a
+  # read-only sessions dir, where the sibling cannot be created) rather than a stub,
+  # because the discrimination is the point — truncate-then-write does not fail
+  # there at all: it opens the EXISTING file and replaces its contents, and the
+  # previous marker is gone.
+  def test_unit_a_publish_that_cannot_complete_leaves_the_previous_marker_intact
+    Dir.mktmpdir do |dir|
+      SessionMarkers.write(SESSION, dir, ".open-activity", "first\n", env: OFF)
+      sessions = File.join(dir, ".agents", "sessions")
+      path = File.join(sessions, "#{SESSION}.open-activity")
+      File.chmod(0o500, sessions)
+
+      begin
+        assert_nil SessionMarkers.write(SESSION, dir, ".open-activity", "second\n", env: OFF),
+                   "a failed publish still degrades to nil — the best-effort contract is unchanged"
+        assert_equal "first\n", File.read(path),
+                     "a failed publish must leave the PREVIOUS marker readable"
+      ensure
+        File.chmod(0o700, sessions)
+      end
+    end
+  end
+
+  # A successful publish leaves the marker and NOTHING else. The sibling is the
+  # enforced path plus a suffix, so it lands in this same directory — which is what
+  # keeps rename(2) atomic (a cross-filesystem rename is a copy, and the property
+  # would be silently gone). Store litter would also be read by any glob-based
+  # reader as a claim of its own.
+  def test_unit_a_successful_publish_leaves_no_temp_sibling_behind
+    Dir.mktmpdir do |dir|
+      SessionMarkers.write(SESSION, dir, ".open-activity", "1720\n", env: OFF)
+
+      assert_equal ["#{SESSION}.open-activity"],
+                   Dir.children(File.join(dir, ".agents", "sessions")).sort,
+                   "the sessions dir must hold the marker and nothing else"
     end
   end
 

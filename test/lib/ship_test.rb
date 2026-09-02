@@ -88,6 +88,15 @@ class ShipTest < Minitest::Test
       log = ENV.fetch("STUB_LOG")
       # One log line per call: escape embedded newlines (the PR body is multi-line).
       File.open(log, "a") { |f| f.puts(["#{marker}", *ARGV].map { |a| a.to_s.gsub("\\n", "\\\\n") }.join("\\t")) }
+      # SNAPSHOT THE LIVE PRESENCE CLAIM. A claim is REWRITTEN at each boundary and
+      # cleared on exit, so it cannot be observed after the run — only from inside
+      # it. Each stub runs DURING a known phase (FAST during 2/8, GH during 4/8,
+      # DOR during 7/8), which makes these stubs the only vantage point from which
+      # the phase sequence is visible at all.
+      if (snap = ENV["PRESENCE_SNAP_DIR"].to_s) != ""
+        claims = Dir.glob(File.join(ENV.fetch("CLAUDE_PROJECTS_DIR"), ".agents", "sessions", "*.presence-*"))
+        File.write(File.join(snap, "#{marker}.json"), claims.map { |c| File.read(c) }.join)
+      end
       if "#{marker}" == "TASK" && ARGV.first == "show"
         moved = File.readlines(log).any? { |l| l.split("\\t")[0, 2] == %w[TASK move] }
         puts(moved && ENV["TASK_SHOW_JSON_MOVED"] ? ENV["TASK_SHOW_JSON_MOVED"] : ENV["TASK_SHOW_JSON"])
@@ -127,6 +136,12 @@ class ShipTest < Minitest::Test
     log = File.join(dir, "stub.log")
     env = OutboundSeams.env({
       "SHIP_ROOT" => dir,
+      # The presence claim's store, PINNED — and pinned OUTSIDE the work repo on
+      # purpose. Unpinned, the task-usage sandbox refuses the write outright (that
+      # is the containment guarantee, asserted in its own test below); pinned INSIDE
+      # `dir`, the marker would land in the working tree and ship's own 1/8 commit
+      # would sweep it into the diff.
+      "CLAUDE_PROJECTS_DIR" => presence_root(dir),
       "SHIP_TASK_BIN" => write_stub(dir, "task-stub", "TASK"),
       "SHIP_FAST_CHECK_BIN" => write_stub(dir, "fast-stub", "FAST"),
       "SHIP_DOR_CHECK_BIN" => write_stub(dir, "dor-stub", "DOR"),
@@ -150,6 +165,19 @@ class ShipTest < Minitest::Test
 
   def markers(lines)
     lines.map { |l| l[0, 2].join(" ") }
+  end
+
+  # Where run_ship pins the session-marker store: a sibling of the work repo, so
+  # nothing written there can be swept into ship's commit.
+  def presence_root(dir)
+    File.join(File.expand_path("..", dir), "projects")
+  end
+
+  # Every presence claim on disk after a run, parsed. The glob is the one a reader
+  # uses — <projects>/.agents/sessions/<id>.presence-<kind>-<pid>.
+  def presence_claims(dir)
+    Dir.glob(File.join(presence_root(dir), ".agents", "sessions", "*.presence-*"))
+       .map { |p| [File.basename(p), JSON.parse(File.read(p))] }
   end
 
 
@@ -791,4 +819,175 @@ class ShipTest < Minitest::Test
       assert_includes err, SLUG
     end
   end
+  # --- presence: the phase this run is in, published for peers to READ ---------
+  #
+  # THE DEFECT, measured on this box on 2026-09-01 with the slice-1 reader
+  # (bin/agent-presence) pointed at a live machine: FIVE `bin/ship` groups, every
+  # one at 0.0% CPU, all reported UNATTRIBUTED and the machine called BUSY. Four
+  # were parked in a CI wait costing nothing; the fifth had spawned bin/fast-check
+  # eleven seconds earlier and was about to take a core-set for ten minutes.
+  # Nothing on disk told them apart, because the PROCESS NAME is identical in both
+  # states — the check that usually gets this right is right by coincidence.
+  #
+  # These prove the writer half: the ship publishes WHICH state it is in, at the
+  # boundaries it already prints, and the record is gradeable by a reader that
+  # trusts nothing it says about being alive.
+
+  def test_the_cert_phase_publishes_a_suite_claim_and_the_ci_wait_publishes_an_idle_one
+    with_repo do |dir|
+      snaps = File.join(dir, "..", "snaps")
+      FileUtils.mkdir_p(snaps)
+
+      # The CI wait is driven through the REAL CiStatus path (SHIP_CI_STATE unset)
+      # so a stub runs INSIDE step 6/8 — the one phase no other stub can see, and
+      # the exact phase the whole defect is about.
+      ci_gh = File.join(dir, "ci-gh-stub")
+      File.write(ci_gh, <<~SH)
+        #!/bin/sh
+        claims=$(cat "$CLAUDE_PROJECTS_DIR"/.agents/sessions/*.presence-* 2>/dev/null)
+        printf '%s' "$claims" > "$PRESENCE_SNAP_DIR/CI.json"
+        case "$2" in
+          view) echo '{"state":"OPEN","mergeStateStatus":"CLEAN","mergeable":"MERGEABLE","baseRefName":"accepted"}' ;;
+          checks) echo '[{"name":"CI","state":"SUCCESS","bucket":"pass"}]' ;;
+          *) echo '{"total_count":1,"check_runs":[{"name":"CI","status":"completed","conclusion":"success"}]}' ;;
+        esac
+      SH
+      FileUtils.chmod("+x", ci_gh)
+
+      _, err, status, = run_ship(dir, extra_env: {
+        "PRESENCE_SNAP_DIR" => snaps,
+        "SHIP_CI_STATE" => nil,
+        "CI_STATUS_GH_BIN" => ci_gh,
+        "CLAUDE_CODE_SESSION_ID" => "b41d7c02-0000-4000-8000-0123456789ab"
+      })
+      assert status.success?, "the run must still succeed: #{err}"
+
+      cert = JSON.parse(File.read(File.join(snaps, "FAST.json")))
+      ci = JSON.parse(File.read(File.join(snaps, "CI.json")))
+      dor = JSON.parse(File.read(File.join(snaps, "DOR.json")))
+
+      # THE DISTINCTION, on disk, at the two boundaries that matter.
+      assert_equal ["working", "suite", "2/8 cert"], cert.values_at("phase", "weight", "lane"),
+                   "the cert phase is the one that costs everything — it must say so"
+      assert_equal ["waiting", "idle", "6/8 ci"], ci.values_at("phase", "weight", "lane"),
+                   "the CI wait costs NOTHING, and reading it as a competing cert is the whole defect"
+      assert_equal ["working", "light", "7/8 dor"], dor.values_at("phase", "weight", "lane")
+
+      # It is the SAME claim moving, not three claims accumulating — otherwise a
+      # reader would count one ship as three workloads.
+      assert_equal 1, cert.fetch("pid").then { [cert, ci, dor].map { |c| c["pid"] }.uniq.size }
+      assert_equal "ship", cert.fetch("kind")
+      assert_equal SLUG, cert.fetch("task_slug")
+      assert_equal "b41d7c02-0000-4000-8000-0123456789ab", cert.fetch("session_id")
+    end
+  end
+
+  # The identity proof, end to end. Without it a reader holds a recyclable integer
+  # and cannot tell our process from a stranger that inherited the number — which
+  # is the failure that once made the orphan reaper kill a bystander.
+  def test_the_published_claim_carries_the_OSs_start_time_for_a_live_pid
+    with_repo do |dir|
+      snaps = File.join(dir, "..", "snaps")
+      FileUtils.mkdir_p(snaps)
+      run_ship(dir, extra_env: { "PRESENCE_SNAP_DIR" => snaps })
+
+      cert = JSON.parse(File.read(File.join(snaps, "FAST.json")))
+      assert_operator cert.fetch("pid"), :>, 0
+      refute_nil cert.fetch("pid_started_at"), "a claim with no start time proves nothing about itself"
+      refute_empty cert.fetch("pid_started_at").to_s
+      # BOTH subjects, for the reason CertOrphanGuard's runlock carries both: the ship
+      # can be killed while the cert it spawned survives in its group, and a
+      # single-subject claim reports that worst case as dead.
+      assert_operator cert.fetch("pgid"), :>, 0
+      refute_empty cert.fetch("pgid_started_at").to_s
+    end
+  end
+
+  # Clearing is an OPTIMIZATION. It runs on the graceful path so the surface stays
+  # tidy — but correctness never depends on it, which is what the next test is for.
+  def test_a_graceful_ship_leaves_no_claim_behind
+    with_repo do |dir|
+      _, err, status, = run_ship(dir)
+
+      assert status.success?, err
+      assert_empty presence_claims(dir), "a ship that exited cleanly must leave nothing to grade"
+    end
+  end
+
+  # THE KILLED-WRITER RULE, asserted against a real SIGKILL — the constraint the
+  # original ticket set, and the reason this is not a heartbeat: "a stale
+  # cert-running file that never clears would make every future agent wait forever,
+  # strictly worse than the grep it replaces."
+  #
+  # The answer is that the file's only claim to being live is a pid and a start
+  # time the OS contradicts on the very next read. There is no timeout to elapse
+  # and no renewal to miss, so THE WEDGE WINDOW IS ZERO. This kills a ship parked
+  # in its cert phase and asserts both halves: the claim SURVIVES (so the workload
+  # is still nameable) and the process it names is GONE (so any reader grades it a
+  # corpse immediately).
+  def test_a_KILLED_ship_leaves_a_claim_that_grades_as_a_corpse_on_the_next_read
+    with_repo do |dir|
+      slow_fast_check = File.join(dir, "slow-fast")
+      File.write(slow_fast_check, "#!/bin/sh\nsleep 30\n")
+      FileUtils.chmod("+x", slow_fast_check)
+
+      pid = spawn_ship(dir, "SHIP_FAST_CHECK_BIN" => slow_fast_check)
+      # Wait for the CERT phase specifically, not merely for a claim to exist. The
+      # first claim appears at 1/8, where the ship is inside `git commit` — killing
+      # it there strands a .git/HEAD.lock and the assertion becomes a race with the
+      # tmpdir teardown rather than a statement about claims. Parked in the slow
+      # stub, the kill lands where this test says it lands.
+      claim = wait_for_claim(dir, lane: "2/8 cert")
+      Process.kill("KILL", pid)
+      Process.wait(pid)
+
+      assert_equal [claim], presence_claims(dir).map(&:last),
+                   "a SIGKILLed writer leaves its claim behind, exactly as the cert runlock does"
+      assert_equal "working", claim.fetch("phase")
+      assert_equal pid, claim.fetch("pid"), "and it still NAMES the process, which is what makes it gradeable"
+      refute alive?(claim.fetch("pid")),
+             "the pid is gone, so a reader grades this a corpse on its very next read — no TTL to wait out"
+    end
+  end
+
+  # Spawn ship detached with the same stubbed env run_ship builds, and return its
+  # pid so the test can kill it. (run_ship blocks; a kill test cannot.)
+  def spawn_ship(dir, overrides = {})
+    log = File.join(dir, "stub.log")
+    env = OutboundSeams.env({
+      "SHIP_ROOT" => dir,
+      "CLAUDE_PROJECTS_DIR" => presence_root(dir),
+      "SHIP_TASK_BIN" => write_stub(dir, "task-stub", "TASK"),
+      "SHIP_FAST_CHECK_BIN" => write_stub(dir, "fast-stub", "FAST"),
+      "SHIP_DOR_CHECK_BIN" => write_stub(dir, "dor-stub", "DOR"),
+      "SHIP_GH_BIN" => write_stub(dir, "gh-stub", "GH"),
+      "SHIP_ACTIVITY_BIN" => write_stub(dir, "activity-stub", "ACTIVITY"),
+      "STUB_LOG" => log,
+      "SHIP_CI_STATE" => "state:green",
+      "TASK_SHOW_JSON" => task_record,
+      "TASK_SHOW_JSON_MOVED" => task_record(stage: "submitted", pr_url: PR_URL)
+    }.merge(overrides))
+    Process.spawn(env, RbConfig.ruby, BIN, SLUG, out: File::NULL, err: File::NULL)
+  end
+
+  # Poll for the claim rather than sleeping a guessed interval: the assertion is
+  # about the file's CONTENT, and a fixed sleep would make the test a race.
+  def wait_for_claim(dir, timeout: 20, lane: nil)
+    deadline = Time.now + timeout
+    loop do
+      found = presence_claims(dir).map(&:last).select { |c| lane.nil? || c["lane"] == lane }
+      return found.first if found.any?
+      raise "no presence claim#{lane && " at #{lane}"} appeared within #{timeout}s" if Time.now > deadline
+
+      sleep 0.05
+    end
+  end
+
+  def alive?(pid)
+    Process.kill(0, pid)
+    true
+  rescue Errno::ESRCH
+    false
+  end
+
 end

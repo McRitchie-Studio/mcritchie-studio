@@ -15,6 +15,7 @@ require_relative "../../lib/task_usage_sandbox"
 #   <projects>/.agents/sessions/<id>.devops-shift-renewer its detached renewer's pid (ditto)
 #   <projects>/.agents/sessions/<id>.task-review-claim-<slug>          a held per-task review claim (bin/task review-claim)
 #   <projects>/.agents/sessions/<id>.task-review-claim-renewer-<slug>  its detached renewer's pid (ditto)
+#   <projects>/.agents/sessions/<id>.presence-<kind>-<pid> a HEAVY-WORK claim (bin/lib/presence_claim.rb)
 #   <projects>/.agents/sessions/<id>.heartbeat            statusline's claim throttle (bash)
 #   <projects>/.agents/sessions/<id>.shift-heartbeat      statusline's shift-renew throttle (bash)
 #   <projects>/.agents/sessions/<id>.mascot-heal          statusline's mascot self-heal throttle (bash)
@@ -176,7 +177,36 @@ module SessionMarkers
   def write(session_id, projects_dir, suffix, content, env: ENV, state_dir: TaskUsageSandbox.real_state_dir)
     path = write_path(session_id, projects_dir, suffix, env: env, state_dir: state_dir)
     FileUtils.mkdir_p(File.dirname(path))
-    File.write(path, content)
+    # ATOMIC: write a sibling, then rename over — the SAME publish
+    # bin/lib/cert_orphan_guard.rb#write_lock already uses, for the same MEASURED
+    # reason. A plain `File.write` is open(O_CREAT|O_TRUNC) and THEN write, so it
+    # publishes a ZERO-BYTE marker for the width of that gap, and every reader of
+    # this store rescues an unparseable file to nil — which is indistinguishable
+    # from "there is no marker". Measured on the runlock before it switched: the
+    # path was observable at zero bytes, and 4.6% of reads taken the moment it
+    # appeared came back nil. Nothing in that measurement was specific to the
+    # runlock — it is a property of truncate-then-write — so it was true of EVERY
+    # marker in this store, and moving the publish here fixes them all at once.
+    #
+    # It matters more than it looks, because these markers are read by a DIFFERENT
+    # process than the one writing, which is the only arrangement in which the gap
+    # is reachable at all: `.open-activity` torn to nil strands the open activity
+    # and mis-attributes every action captured after it, and `.acting-agent` torn
+    # to nil re-asks the soul question the marker exists to answer once.
+    #
+    # `rename(2)` is atomic within a directory, so a reader sees the previous
+    # complete marker or this one, never a half. The temp name carries our pid so
+    # two writers racing here cannot scribble on each other's partial file. The
+    # sibling needs no guard of its own: it is the ENFORCED path plus a suffix, so
+    # it lands inside the directory `write_path` just cleared, by construction.
+    tmp = "#{path}.#{Process.pid}.tmp"
+    begin
+      File.write(tmp, content)
+      File.rename(tmp, path)
+    rescue StandardError
+      File.delete(tmp) if File.exist?(tmp) # never leave a partial sibling behind
+      raise
+    end
     path
   rescue StandardError
     nil
