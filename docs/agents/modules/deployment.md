@@ -159,7 +159,7 @@ previously left open (https://mcritchie.studio/tasks/runbook-names-dead-host).
 No vanity host replaces it. `turfmonster.media` is canonical, and nothing should
 be built against the retired name again.
 
-**One action remains, and it is Mr. McRitchie's:** delete the
+**One action remains as of 2026-09-02, and it is Mr. McRitchie's:** delete the
 `turf.mcritchie.studio` CNAME from the `mcritchie.studio` zone, which is hosted
 on **Google Cloud DNS** (`ns-cloud-d1..d4.googledomains.com`). That is the whole
 action — no Heroku step comes first. The CNAME target
@@ -168,6 +168,8 @@ that no longer exists, and a sweep of every app in the Heroku account on
 2026-09-02 found none holding the hostname or that target, so there is no domain
 to detach. Agents cannot finish it: `gcloud` is not installed on the operator
 machine, and the zone needs a Google credential only Mr. McRitchie can supply.
+**Once the record is gone, delete this paragraph;** the rest of the section
+stays true as written.
 
 **The record was still in place when this was written, and that changes nothing
 above.** Retired is the decision; removing the record is the outstanding
