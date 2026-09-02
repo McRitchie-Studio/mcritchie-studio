@@ -32,7 +32,14 @@ require_relative "claim_lease"
 #
 # POSITIVE, asserted — never a blacklist of the ways a task might still be live:
 #
-#   ARCHIVE ONLY WHAT WE CAN PROVE IS NOT LIVE WORK.
+#   ARCHIVE ONLY WHAT WE CAN PROVE HOLDS NO WORK AT RISK.
+#
+# "WORK AT RISK" is the load-bearing phrase, and it is narrower than "live". What an
+# archive can destroy is UNCOMMITTED state, and uncommitted state lives in a DESK.
+# Anything already durable — a commit, a PR, a board row, a TaskEvent — survives the
+# archive untouched and can be read back afterwards, so it is not at risk and must
+# not hold the gate. See the board-progress section below for the measured cost of
+# getting that distinction wrong.
 #
 # Proof comes in exactly three forms, and everything else is a refusal:
 #
@@ -91,6 +98,72 @@ require_relative "claim_lease"
 #   the desk exists but cannot be read → `nil`. A genuine unknown. PROTECTS.
 #
 # Inapplicability is not a soft pass, and unreadability is not silence.
+#
+# ═══ WHY BOARD PROGRESS IS NOT A CHANNEL HERE ═══
+#
+# THE MEASUREMENT that put this section in the file. Graded against the live board
+# on 2026-09-02 (34 tasks in designed/building/submitted/reviewed), the first cut of
+# this gate REFUSED 31 — every one of them on `:working`, and every one held by
+# `progress_age`, while `:unverifiable`, the case the whole file exists for, fired on
+# ZERO. SIXTEEN of the 31 had `desk_touched == false`: no desk at all, or a desk
+# provably quiet past the idle window. There was nothing uncommitted to protect, and
+# the gate refused anyway.
+#
+# That is not a tuning miss, it is the wrong proposition. THREE REASONS, in order of
+# how much they should worry you:
+#
+#   1. IT ANSWERS A DIFFERENT QUESTION. `progress_age` here is Task
+#      #holder_liveness_seconds_ago — "seconds since the newest artifact not
+#      DEMONSTRABLY someone else's". That predicate is defined relative to a holder.
+#      Where there is no holder, nothing is demonstrably anyone else's, so it
+#      degrades to the age of the task's own creation event. Measured:
+#      `document-credential-slot-engine-floor`, `designed`, no desk, progress_age
+#      72s — the age of its CREATE, read by the gate as somebody working.
+#
+#   2. IT IS A SIGNAL THIS VERB WRITES. Every `bin/task` write — a note, a block, a
+#      stage move, an update — lands a TaskEvent and resets it, so triaging a task
+#      arms the gate against archiving that same task for the next
+#      DESK_IDLE_SECONDS. Six of the 16 came back reading 155-156s: one board sweep,
+#      one instant, six tasks locked away from the archive at once. Steffon's
+#      archive-shipped.md already documents this trap
+#      for the reclaim gate ("⛔ Step 7 BLOCKS step 8 — the run under-reclaims by
+#      design"; measured 2026-08-26, 7 desks previewed, 4 taken). The reclaim can
+#      afford it — it is an idempotent sweep that re-runs after the window. The
+#      archive is the TERMINAL act at the end of Alex's `clean-up`, whose earlier
+#      phases triage the very tasks the last phase archives; there is no later run
+#      to catch what the gate bounced.
+#
+#   3. IT COSTS THE GUARD ITS LIFE. `clean-up` archives exactly this population, so
+#      under the first cut its first run was 31 `--force` invocations — after which
+#      `--force` is muscle memory and the gate protects nothing. THIS FILE'S OWN
+#      docblock names that outcome as fatal ("a guard that refuses everything is
+#      uninstalled within a week"). Refusing everything and archiving everything are
+#      the SAME failure wearing different clothes, and a gate has to survive both.
+#
+# So the archive path asks `abandonable?` (below) rather than ClaimLease.abandoned?
+# directly: same predicate, same arithmetic, one notion of liveness — with the
+# board-progress channel deliberately not supplied. The three channels that remain
+# all attest work at risk: a desk being written into, a cert running against one, or
+# an operator parked in front of one.
+#
+# RE-GRADED ON THE SAME 34 TASKS, the narrowing takes the refusals from 31 to 15, and
+# the split is TOTAL rather than approximate — which is the result to re-check if you
+# change any of this:
+#   * all 16 that flipped to ARCHIVE had `desk_touched == false`. Not one of them had
+#     a desk being worked in.
+#   * all 15 that still REFUSE have `desk_touched == true`. Not one of them is held
+#     by anything other than a live desk.
+# The gate now refuses exactly where uncommitted work exists, and nowhere else.
+#
+# ═══ SCOPE: THIS GATE IS THE CLI PATH, DELIBERATELY ═══
+#
+# Task#archive!, the board's Archive buttons, and a raw API PATCH all bypass it.
+# That asymmetry is intended, not an oversight. The gate exists to stop an AGENT
+# archiving work it never looked at, and `bin/task` is the agent's hand; the board
+# buttons are Mr. McRitchie's own, and a human clicking Archive on a task page they
+# are reading IS the deliberate decision `--force` exists to represent. Putting the
+# gate in the model would make the operator fight it from a UI with nowhere to show
+# a refusal — and the failure this guard was built for was an agent's, not his.
 module ArchiveHolderGuard
   # Stages whose work the pipeline has already concluded. Reaching `shipped` means
   # the code is merged to `main`; there is no unmerged work left for an archive to
@@ -103,7 +176,22 @@ module ArchiveHolderGuard
 
   # Keys that prove SOMEBODY filed this task while naming no session to check. This
   # is the near-miss's record shape exactly: app + mascot, and nothing to ask.
-  PAINT_KEYS = %w[mascot agent_slug built_by].freeze
+  #
+  # EVERY NAME HERE MUST BE A STORABLE devops KEY, or the refusal it is supposed to
+  # trigger can never fire. `agent_slug` sat in this list for one review and was
+  # dead the whole time: it is a top-level `tasks` COLUMN, so Task
+  # .normalize_devops_metadata drops it (`next unless DEVOPS_KEYS.include?(key)`)
+  # and `devops["agent_slug"]` is nil on all 1,575 tasks on the board. A key list
+  # nobody can populate is a promise the gate cannot keep, so it is gone.
+  #
+  # The three that replaced it carry real paint and were graded `:unheld` — the
+  # "nobody was ever here" verdict — while naming a worker out loud:
+  #   builders               the AUTHOR SET bin/reviewer-select excludes (113 tasks)
+  #   builders_unattributed  the model's own words: "a session worked this while
+  #                          naming no soul" — which IS this file's definition of
+  #                          :unverifiable, spelled by a different subsystem
+  #   persona                the soul a session ran as
+  PAINT_KEYS = %w[mascot built_by builders builders_unattributed persona].freeze
 
   # Grades on which the archive PROCEEDS. Stated as a positive allowlist so a grade
   # added later must be explicitly admitted rather than silently permitted.
@@ -135,6 +223,34 @@ module ArchiveHolderGuard
   # May the archive proceed on this grade?
   def permitted?(grade)
     PERMITTED.include?(grade)
+  end
+
+  # "Every channel that attests WORK AT RISK is silent" — the `abandoned:` fact
+  # `decide` consumes, and the one place this file states which channels those are.
+  #
+  # It DELEGATES rather than reimplements. ClaimLease.abandoned? owns the fold (any
+  # positive signal and any unknown keep the holder), so there is still exactly one
+  # notion of "is the holder working" on this machine and no second one to drift
+  # from it. What this wrapper adds is the SELECTION, and it is the whole fix: the
+  # board-progress channel is not supplied, because a durable board artifact is not
+  # work an archive can destroy. See "WHY BOARD PROGRESS IS NOT A CHANNEL HERE".
+  #
+  # `progress_age` is deliberately NOT a parameter. Accepting it and ignoring it
+  # would let a future caller pass it in good faith and quietly get nothing; leaving
+  # it out means Ruby raises `unknown keyword: :progress_age` at the call site, so
+  # re-wiring the channel has to be a decision somebody makes on purpose.
+  #
+  # The omission is also arithmetic rather than taste. Read ClaimLease.abandoned?'s
+  # short-circuits in order: nil desk, touched desk, gate, approval all return early,
+  # so `progress_age` is only ever REACHED when the desk has already answered false —
+  # already told us there is no uncommitted work in one. It could never do anything
+  # but overturn that answer, which is precisely the 16 false refusals it produced.
+  def abandonable?(desk_touched:, gate_in_flight: false, awaiting_approval: false)
+    ClaimLease.abandoned?(
+      desk_touched: desk_touched,
+      gate_in_flight: gate_in_flight,
+      awaiting_approval: awaiting_approval
+    )
   end
 
   # A holder we can go and check: some key names a session.
@@ -216,6 +332,7 @@ module ArchiveHolderGuard
 
          Identify the holder before archiving:
            bin/agent-presence                          # who is live on this machine right now
+           bin/agent-worktree list                     # which desk carries this task, and whose
            bin/task show #{slug} --verbose
          Then, if you have established that nobody holds it, say so explicitly:
            bin/task move #{slug} archived --force
@@ -257,10 +374,18 @@ module ArchiveHolderGuard
   end
 
   # Name the channel that kept the task, mirroring bin/agent-worktree's
-  # desk_hold_reason: ClaimLease.abandoned? owns the DECISION, this renders it, so
-  # the two can never disagree about whether to hold — at most about how to say it.
-  # The trailing fallback is for exactly that residue: an honest "could not be shown
-  # abandoned" rather than a confident lie about which channel spoke.
+  # desk_hold_reason: `abandonable?` owns the DECISION, this renders it, so the two
+  # can never disagree about whether to hold — at most about how to say it.
+  #
+  # THE BRANCHES HERE ARE THE CHANNELS THERE, one for one, and that correspondence
+  # is the contract. A branch for a channel the decision no longer consults would
+  # let the gate refuse for one reason and blame another; the board-progress branch
+  # left with the channel for exactly that reason. The trailing fallback is the
+  # honest residue — "could not be shown abandoned" rather than a confident lie
+  # about which channel spoke. It is unreachable while the four branches above cover
+  # the four early returns `abandonable?` can take (nil desk, touched desk, gate,
+  # approval), and it stays because the next channel added will land there before
+  # anyone remembers to write its sentence.
   def working_channel(channels)
     window = ClaimLease.humanize_age(ClaimLease::DESK_IDLE_SECONDS)
     touched = channels[:desk_touched]
@@ -274,12 +399,6 @@ module ArchiveHolderGuard
              "to #{cert_p99}, so a quiet desk mid-cert is a working one"
     end
     return "the task is waiting on the operator's approval, so its agent is right to be doing nothing" if channels[:awaiting_approval]
-
-    progress = channels[:progress_age]
-    if !progress.nil? && progress <= ClaimLease::DESK_IDLE_SECONDS
-      return "the holder landed a durable artifact #{ClaimLease.humanize_age(progress)} ago, inside " \
-             "the #{window} idle window"
-    end
 
     "it could not be shown abandoned, and a task we cannot prove abandoned is never archived"
   end

@@ -118,7 +118,10 @@
 #       expired / dead-session lease is reclaimed automatically. )
 #     ( the move to `archived` is TERMINAL and destroys UNCOMMITTED work no gate,
 #       review, or CI would ever surface — so it REFUSES (exit 1, no board write)
-#       any task it cannot prove is free, and NAMES what it could not verify. A
+#       any task it cannot prove holds NO WORK AT RISK, and NAMES what it could not
+#       verify. Work at risk is uncommitted state, which lives in a DESK: a desk
+#       being written into, a cert running against one, or an operator parked in
+#       front of one. Board activity is already durable and never holds the gate. A
 #       record carrying only an app and a mascot names no session to ask, and that
 #       is a REFUSAL, not a free task: on 2026-09-01 exactly such a record was
 #       resolved only by messaging the peer session. `shipped`/`archived` tasks and
@@ -471,6 +474,16 @@ end
 # arithmetic, so the unit tier can drive every combination without a board or a
 # filesystem.
 #
+# THE CHANNELS ARE THE THREE THAT ATTEST WORK AT RISK, and the board-progress
+# channel this function used to gather is deliberately absent. Graded against the
+# live board on 2026-09-02 it held 31 of 34 tasks — 16 of them with no desk at all —
+# because Task#holder_liveness_seconds_ago degrades to the age of the task's own
+# CREATE where no holder owns an artifact, and because every `bin/task` write resets
+# it, so triaging a task armed this gate against archiving that same task. See
+# lib/archive_holder_guard.rb, "WHY BOARD PROGRESS IS NOT A CHANNEL HERE".
+# `heartbeat_abandoned?` below still gathers it: that consumer asks whether a LEASE
+# may lapse, which is a recoverable answer to a different question.
+#
 # A CHECK THAT BLEW UP HAS TOLD US NOTHING, and nothing must never authorize a
 # destructive act. So the rescue resolves to the PROTECTIVE direction — claim
 # assumed live, not abandoned, desk unknown — and the resulting refusal says
@@ -481,13 +494,12 @@ end
 def archive_holder_facts(slug, task, devops, claim)
   channels = {
     desk_touched: archive_desk_touched(devops),
-    progress_age: holder_scoped(task, "holder_liveness_seconds_ago", "progress_seconds_ago"),
     gate_in_flight: holder_scoped(task, "holder_gate_in_flight", "gate_in_flight") ? true : false,
     awaiting_approval: devops["approval_status"].to_s.strip == "waiting"
   }
   {
     claim_live: ClaimLease.live?(claim),
-    abandoned: ClaimLease.abandoned?(**channels),
+    abandoned: ArchiveHolderGuard.abandonable?(**channels),
     channels: channels
   }
 rescue StandardError => e

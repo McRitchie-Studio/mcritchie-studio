@@ -73,16 +73,56 @@ class ArchiveHolderGuardTest < Minitest::Test
     end
   end
 
-  # And each paint key alone must trip the refusal. `built_by` is a LIST, which is
-  # why `present?` has an Array branch — a naive `.to_s.empty?` reads `[]` as present
-  # and would refuse every archive.
+  # And each paint key alone must trip the refusal. Two shapes are exercised because
+  # the board stores both: `builders` is a LIST, which is why `present?` has an Array
+  # branch — a naive `.to_s.empty?` reads `[]` as present and would refuse every
+  # archive.
+  PAINT_VALUES = {
+    "mascot" => "omanyte",
+    "built_by" => "carl",
+    "builders" => %w[carl steffon],
+    "builders_unattributed" => "1",
+    "persona" => "carl"
+  }.freeze
+
   def test_every_paint_key_alone_is_unverifiable
     ArchiveHolderGuard::PAINT_KEYS.each do |key|
-      value = key == "built_by" ? ["carl"] : "omanyte"
+      value = PAINT_VALUES.fetch(key) { flunk("PAINT_KEYS gained #{key} with no fixture value") }
       grade = decide(stage: "building", devops: { key => value })
 
       assert_equal :unverifiable, grade, "#{key} shows somebody was here while naming no session"
     end
+  end
+
+  # EVERY PAINT KEY MUST BE A KEY THE BOARD CAN ACTUALLY STORE, or the refusal it is
+  # meant to trigger can never fire and the gate promises coverage it cannot deliver.
+  # `agent_slug` sat in this list for one review while being a top-level `tasks`
+  # COLUMN that Task.normalize_devops_metadata drops — nil on all 1,575 board tasks.
+  # This test is what stops the next column name sneaking back in.
+  def test_no_paint_key_shadows_a_top_level_column
+    column_names = %w[agent_slug stage slug title priority release_slug block_kind
+                      po_size dev_size actual_size merged]
+
+    (ArchiveHolderGuard::PAINT_KEYS & column_names).each do |key|
+      flunk("PAINT_KEYS carries #{key}, which is a top-level Task column and never " \
+            "survives into metadata.devops — a paint key nothing can populate is a " \
+            "refusal that can never fire")
+    end
+  end
+
+  # The near-miss's own shape, spelled by a different subsystem. ReviewerSelector
+  # writes `builders_unattributed` to mean "a session worked this while naming no
+  # soul", which is word-for-word this file's definition of :unverifiable — and it
+  # graded :unheld, the "nobody was ever here" verdict, until this cut.
+  def test_an_unattributed_builder_is_unverifiable_not_unheld
+    grade = decide(stage: "building", devops: {
+                     "repositories" => ["mcritchie-studio"], "builders_unattributed" => "1"
+                   })
+
+    assert_equal :unverifiable, grade,
+                 "a session worked this and named no soul — that is the unknown holder " \
+                 "this gate exists for, not an unclaimed task"
+    refute ArchiveHolderGuard.permitted?(grade)
   end
 
   def test_an_empty_builder_list_is_not_a_holder_signal
@@ -238,10 +278,89 @@ class ArchiveHolderGuardTest < Minitest::Test
   # The two desk answers must reach the decision through ClaimLease unchanged, or the
   # distinction above is real in this file and lost in the wiring.
   def test_the_desk_answers_drive_the_abandoned_verdict
-    assert ClaimLease.abandoned?(desk_touched: false),
+    assert ArchiveHolderGuard.abandonable?(desk_touched: false),
            "an absent desk plus silence everywhere else is abandonment"
-    refute ClaimLease.abandoned?(desk_touched: nil),
+    refute ArchiveHolderGuard.abandonable?(desk_touched: nil),
            "an unreadable desk is no evidence, and no evidence never frees a task"
+  end
+
+  # ── WORK AT RISK, NOT BOARD ACTIVITY ────────────────────────────────────────
+  #
+  # THE MEASURED DEFECT this section pins. Graded against the live board on
+  # 2026-09-02, the first cut of the gate refused 31 of 34 live tasks; all 31 were
+  # `:working`, all 31 were held by board progress, and 16 had NO DESK AT ALL.
+  # `progress_age` there is Task#holder_liveness_seconds_ago, which degrades to the
+  # age of the task's own CREATE when no holder owns an artifact — so a task created
+  # 72 seconds ago read as somebody working.
+
+  # The exact shape of the 16: identifiable holder, no desk, and a board write so
+  # fresh it is inside the idle window. Nothing uncommitted exists to protect.
+  def test_a_task_with_no_desk_archives_however_fresh_its_board_activity
+    grade = decide(stage: "designed", devops: { "session_id" => SESSION },
+                   abandoned: ArchiveHolderGuard.abandonable?(desk_touched: false))
+
+    assert_equal :abandoned, grade,
+                 "no desk means no uncommitted work for the archive to destroy — holding " \
+                 "this on a board timestamp is what refused 16 of 34 live tasks"
+    assert ArchiveHolderGuard.permitted?(grade)
+  end
+
+  # THE SELF-POISONING, as an A/B rather than an anecdote. Every `bin/task` write
+  # lands a TaskEvent and resets the board clock, so a gate that reads it refuses to
+  # archive whatever it has just triaged — the trap archive-shipped.md already
+  # documents for the reclaim gate ("⛔ Step 7 BLOCKS step 8"). A gate must not
+  # consult a signal its own verb writes.
+  #
+  # Both halves are asserted in one test ON PURPOSE. The first is what makes the
+  # second mean anything: it shows the board clock is a LIVE channel that really does
+  # flip ClaimLease's answer on identical desk facts, so the archive gate's differing
+  # verdict is a deliberate divergence and not two calls that never disagreed. Drop
+  # the first assertion and the second passes against a gate that reads the clock in
+  # a code path this fixture happens not to reach.
+  def test_the_board_clock_moves_the_lease_verdict_and_never_the_archive_verdict
+    fresh = 60 # a board write a minute ago — well inside the 1h29m idle window
+
+    refute ClaimLease.abandoned?(desk_touched: false, progress_age: fresh),
+           "the LEASE question still consults the board clock — this is the false " \
+           "'still working' the archive gate used to inherit for 31 of 34 live tasks"
+    assert ArchiveHolderGuard.abandonable?(desk_touched: false),
+           "the ARCHIVE question does not: a durable board artifact survives the " \
+           "archive, so it is not work the archive can destroy"
+  end
+
+  # The channel is not merely defaulted away, it is GONE — a caller who passes it in
+  # good faith is told so at the call site rather than silently getting nothing.
+  def test_board_progress_cannot_be_passed_back_in_by_accident
+    error = assert_raises(ArgumentError) do
+      ArchiveHolderGuard.abandonable?(desk_touched: false, progress_age: 60)
+    end
+
+    assert_match(/progress_age/, error.message,
+                 "re-wiring the board clock into the archive gate must be a decision " \
+                 "somebody makes on purpose, not a keyword that quietly does nothing")
+  end
+
+  # THE OTHER HALF OF THE FAILURE, and the reason this is a narrowing rather than a
+  # gutting. Refusing everything and archiving everything are the same bug wearing
+  # different clothes; a desk being written into still stops the archive cold, and a
+  # board that has been silent for eleven days does not change that.
+  def test_a_desk_being_worked_in_still_refuses_however_stale_the_board
+    grade = decide(stage: "building", devops: { "session_id" => SESSION },
+                   abandoned: ArchiveHolderGuard.abandonable?(desk_touched: true))
+
+    assert_equal :working, grade,
+                 "uncommitted work in a live desk is exactly what this gate protects"
+    refute ArchiveHolderGuard.permitted?(grade)
+  end
+
+  # The two channels that keep a QUIET desk. Both attest work at risk: a cert writes
+  # nothing into its desk for up to the measured 94-minute p99, and a task parked on
+  # the operator has work sitting in front of a human.
+  def test_the_channels_that_keep_a_quiet_desk_survive_the_narrowing
+    refute ArchiveHolderGuard.abandonable?(desk_touched: false, gate_in_flight: true),
+           "a cert writes nothing into its desk while it runs, so a quiet desk mid-cert is a working one"
+    refute ArchiveHolderGuard.abandonable?(desk_touched: false, awaiting_approval: true),
+           "a task waiting on Mr. McRitchie is blocked on a human, not abandoned"
   end
 
   # ── THE CHANNEL NAMED IN A :working REFUSAL ─────────────────────────────────
@@ -251,7 +370,6 @@ class ArchiveHolderGuardTest < Minitest::Test
       { desk_touched: true } => "written to",
       { desk_touched: false, gate_in_flight: true } => "gate",
       { desk_touched: false, awaiting_approval: true } => "approval",
-      { desk_touched: false, progress_age: 60 } => "durable artifact",
       { desk_touched: nil } => "could not be read"
     }.each do |channels, expected|
       assert_includes ArchiveHolderGuard.working_channel(channels), expected,
@@ -259,8 +377,23 @@ class ArchiveHolderGuardTest < Minitest::Test
     end
   end
 
+  # THE BRANCHES MUST MATCH THE CHANNELS ONE FOR ONE. A renderer that still knew how
+  # to blame the board clock would let the gate refuse for one reason and report
+  # another — the refusal's whole job is to name what actually held it, and the
+  # acceptance criterion here is that it does.
+  def test_the_refusal_never_blames_the_board_clock
+    message = ArchiveHolderGuard.working_channel(desk_touched: false, progress_age: 60)
+
+    refute_includes message, "durable artifact",
+                     "board progress is not a channel of this gate, so it must never be " \
+                     "offered as the reason a task was kept"
+    assert_includes message, "could not be shown abandoned",
+                     "an unrecognised channel combination must produce the honest fallback, " \
+                     "never a confident lie about which channel spoke"
+  end
+
   def test_the_working_channel_degrades_honestly
-    message = ArchiveHolderGuard.working_channel(desk_touched: false, progress_age: 10**9)
+    message = ArchiveHolderGuard.working_channel(desk_touched: false)
 
     assert_includes message, "could not be shown abandoned",
                      "a channel combination that fits no branch must produce an honest fallback, " \

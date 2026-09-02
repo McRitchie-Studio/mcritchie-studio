@@ -116,9 +116,17 @@ class TaskArchiveGateTest < ActiveSupport::TestCase
     refute_empty result[:writes]
   end
 
+  # THE REGRESSION FOR THE MEASURED DEFECT (review send-back 1, 2026-09-02). Graded
+  # against the live board, the first cut of this gate refused 31 of 34 live tasks;
+  # all 31 `:working` refusals were held by the board clock, and 16 of them had NO
+  # DESK — provably nothing uncommitted to protect. The fixture serves a board write
+  # 12 seconds old, which is the ordinary state of any task Alex's clean-up has just
+  # triaged, and is what `holder_liveness_seconds_ago` reports for a task whose only
+  # artifact is its own CREATE.
   test "[integration] an identifiable, provably-abandoned holder archives" do
-    # A session we CAN check: named, its lease long lapsed, no desk on this machine,
-    # and no recent progress. Every channel silent — checked, and found gone.
+    # A session we CAN check: named, its lease long lapsed, and no desk on this
+    # machine. Every channel that attests WORK AT RISK is silent — checked, and found
+    # gone — while the board clock reads fresh, as the board's does for every task.
     devops = UNIDENTIFIABLE.merge(
       session_id: HOLDER_SESSION,
       claimed_session: HOLDER_SESSION,
@@ -129,8 +137,42 @@ class TaskArchiveGateTest < ActiveSupport::TestCase
 
     assert_equal 0, result[:status].exitstatus,
                  "this is exactly what the gate is supposed to let through: a holder we could " \
-                 "identify, went and checked, and proved had walked away"
+                 "identify, went and checked, and proved had walked away. A fresh board " \
+                 "timestamp is not evidence of work at risk — it is the signal this very " \
+                 "verb writes, and holding on it refused 16 desk-less tasks"
     refute_empty result[:writes]
+  end
+
+  # THE NARROWING IS NOT A GUTTING. The gate's remaining channels must still stop the
+  # archive cold, or this rework has traded one fatal failure for its twin.
+  test "[integration] a task whose gate is in flight is still refused" do
+    devops = UNIDENTIFIABLE.merge(
+      session_id: HOLDER_SESSION, claimed_session: HOLDER_SESSION,
+      claim_expires_at: (Time.now - 7200).utc.iso8601,
+      worktree_slug: "probe-task-no-such-desk"
+    )
+    result = archive(devops: devops, gate_in_flight: true)
+
+    assert_equal 1, result[:status].exitstatus,
+                 "a cert writes nothing into its desk for up to the measured 94-minute p99, " \
+                 "so a quiet desk mid-cert is a working one"
+    assert_empty result[:writes]
+    assert_includes result[:err], "gate", "and the refusal must name the channel that kept it"
+  end
+
+  test "[integration] a task parked on the operator is still refused" do
+    devops = UNIDENTIFIABLE.merge(
+      session_id: HOLDER_SESSION, claimed_session: HOLDER_SESSION,
+      claim_expires_at: (Time.now - 7200).utc.iso8601,
+      worktree_slug: "probe-task-no-such-desk", approval_status: "waiting"
+    )
+    result = archive(devops: devops)
+
+    assert_equal 1, result[:status].exitstatus,
+                 "a task waiting on Mr. McRitchie's local validation is blocked on a human, " \
+                 "not abandoned — and its work is sitting in front of him"
+    assert_empty result[:writes]
+    assert_includes result[:err], "approval"
   end
 
   # ── AND THE GATE MUST NOT LEAK ONTO OTHER TRANSITIONS ───────────────────────
@@ -175,7 +217,7 @@ class TaskArchiveGateTest < ActiveSupport::TestCase
   # resolves against an empty projects root rather than the developer's real one — a
   # test that read the operator's live .worktrees/ would answer differently on every
   # machine and every day.
-  def archive(devops:, stage: "designed", to: "archived", flags: [])
+  def archive(devops:, stage: "designed", to: "archived", flags: [], gate_in_flight: false)
     Dir.mktmpdir do |dir|
       writes = []
       err = status = nil
@@ -187,7 +229,7 @@ class TaskArchiveGateTest < ActiveSupport::TestCase
         )
       )
 
-      with_board_sink(writes, stage: stage, to: to, devops: devops) do |base|
+      with_board_sink(writes, stage: stage, to: to, devops: devops, gate: gate_in_flight) do |base|
         _out, err, status = Open3.capture3(env.merge("TASK_API_BASE" => base),
                                            BIN, "move", SLUG, to, *flags)
       end
@@ -208,7 +250,7 @@ class TaskArchiveGateTest < ActiveSupport::TestCase
   #
   # ONLY PATCH BODIES ARE RECORDED. The auth POST happens on every run, refused or not,
   # so counting it would make the "no write" assertion unfalsifiable.
-  def with_board_sink(writes, stage:, to:, devops:)
+  def with_board_sink(writes, stage:, to:, devops:, gate: false)
     server = TCPServer.new("127.0.0.1", 0)
     auth = { token: "sink-bearer" }.to_json
     moved = false
@@ -228,7 +270,7 @@ class TaskArchiveGateTest < ActiveSupport::TestCase
           if request.include?("/api/v1/auth")
             auth
           else
-            task_body(moved ? to : stage, devops)
+            task_body(moved ? to : stage, devops, gate: gate)
           end
         client.write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n" \
                      "Content-Length: #{body.bytesize}\r\n\r\n#{body}")
@@ -243,8 +285,22 @@ class TaskArchiveGateTest < ActiveSupport::TestCase
     thread&.kill
   end
 
-  def task_body(stage, devops)
+  # THE FIXTURE MUST SERVE WHAT THE REAL BOARD SERVES, or the suite is blind to the
+  # bug in exactly the way this one was. Api::V1::TasksController always sends
+  # `holder_liveness_seconds_ago` and `holder_gate_in_flight`; this sink used to omit
+  # both, so every run reached the gate with the board clock reading nil — the ONE
+  # value at which the old, over-wide gate behaved correctly. Nine integration tests
+  # passed against a gate that refused 31 of 34 real tasks, because the fixture could
+  # not express the defect.
+  #
+  # So the default is FRESH (a board write seconds ago), which is what the board
+  # returns for any task that has just been created, moved, noted, or triaged — the
+  # ordinary state of everything Alex's clean-up sweeps. A test wanting the old blind
+  # reading has to ask for it by name.
+  def task_body(stage, devops, liveness: 12, gate: false)
     { data: { slug: SLUG, stage: stage, title: "Probe Task",
+              holder_liveness_seconds_ago: liveness, progress_seconds_ago: liveness,
+              holder_gate_in_flight: gate, gate_in_flight: gate,
               metadata: { devops: devops } } }.to_json
   end
 end
