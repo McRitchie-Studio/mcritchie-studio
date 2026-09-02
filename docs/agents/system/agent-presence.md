@@ -145,7 +145,7 @@ That namespace already has a single owner (`bin/lib/session_markers.rb`), a
 sandbox choke point every mutation passes, a private path builder, and a
 containment test. Adding a store means re-earning all four. It also keys every
 workload to the session that launched it, which is what makes fact (a) fall out
-of the same glob rather than needing a seventh surface.
+of the same glob rather than needing another state surface.
 
 ```json
 {
@@ -169,8 +169,8 @@ proof, and the only field that decides whether any of the others may be believed
 `TaskUsageSandbox.enforce!(..., store: "session-marker")`.** This is enforced,
 not advised: `test/lib/state_store_containment_test.rb` re-derives the mutation
 set from source and refuses any method that so much as *holds* a raw marker path,
-in any spelling. It is the reason the namespace has one owner, and it is why a
-seventh store would have to re-earn a guarantee this one already has.
+in any spelling. It is the reason the namespace has one owner, and it is why another
+store would have to re-earn a guarantee this one already has.
 
 **`SessionMarkers` writes are not atomic today.** They are plain `File.write`,
 which is exactly the torn-read the runlock measured at 4.6%. Giving that store
@@ -395,7 +395,7 @@ Scope discipline is the point of this document.
 
 1. **No daemon, no central broker.** Nothing to start, supervise, or restart. A
    daemon is one more process that can die and lie; truth is computed on read.
-2. **No new heartbeat and no fifth TTL lease.** See §3 — that is the defect, not
+2. **No new heartbeat and no sixth TTL lease.** See §3 — that is the defect, not
    the fix.
 3. **No migration of the existing board claims.** Build, review, shift, and
    release claims answer ownership questions *across sessions and machines* and
