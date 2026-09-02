@@ -109,6 +109,26 @@ class DeskContextTest < Minitest::Test
     assert_nil fields["anchor_pid"], "we did not find the anchor, so we do not invent one"
   end
 
+  # THE FABRICATED-PROOF CASE. A new occupant that could not resolve its own anchor
+  # must not INHERIT the previous occupant's. The caller merges these fields over the
+  # existing marker, so leaving the anchor keys out would leave a stale pid and start
+  # time sitting beside a NEW session id — a claim that grades `live` on somebody
+  # else's process. Nulling them is what makes the resulting claim honestly
+  # ungradeable instead of falsely proven.
+  def test_a_new_occupant_without_an_anchor_does_not_inherit_the_old_one
+    existing = {
+      "session_id" => "sess-old", "anchor_pid" => 4242,
+      "anchor_started_at" => "Mon Sep  1 09:00:00 2026"
+    }
+    fields = DeskContext.stamp(existing: existing, session: %w[sess-new claude], anchor: nil, claiming: true)
+
+    assert_equal "sess-new", fields["session_id"], "the desk changed hands"
+    assert_nil fields["anchor_pid"], "and the old occupant's proof did not come with it"
+    assert_nil fields["anchor_started_at"]
+    assert_includes fields.keys, "anchor_pid",
+                    "the key must be SENT as nil — omitting it lets the stale value survive the merge"
+  end
+
   def test_stamp_returns_only_the_session_fields_so_the_caller_merges
     fields = DeskContext.stamp(
       existing: nil, session: %w[sess-a claude],

@@ -156,15 +156,17 @@ module DeskContext
   # +parent+    the fan-out root session id, or nil
   # +claiming+  the verdict from `claiming?`
   #
-  # PRESERVE IS THE DEFAULT, and there are three separate roads to it:
+  # PRESERVE IS THE DEFAULT, and there are exactly two roads to it:
   #   1. not claiming    — a peer is inspecting this desk; the occupant's claim stands
   #   2. no session id   — a plain shell or CI run; it is nobody, and nobody must
   #                        not erase somebody
-  #   3. no anchor       — the session named itself but we could not find the
-  #                        long-lived process behind it, so the claim would be
-  #                        ungradeable. Recorded WITHOUT the anchor rather than
-  #                        dropped: the reader grades that `unverifiable` and says
-  #                        so out loud, which is the honest report.
+  #
+  # A MISSING ANCHOR IS NOT ONE OF THEM. When the session names itself but we cannot
+  # find the long-lived process behind it, the claim is still WRITTEN — just without
+  # the two anchor fields. Preserving instead would leave the previous occupant's
+  # name on a desk this session has actually taken, which is the worse error; the
+  # reader grades an anchor-less claim `unverifiable` and says so out loud, which is
+  # the honest report.
   #
   # Returns only the keys it means to change, so the caller merges rather than
   # replaces. A whole-hash write here would drop app_color, mascot and every other
