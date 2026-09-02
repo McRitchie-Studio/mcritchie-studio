@@ -131,33 +131,44 @@ launch a suite. That gap cost a measured 45-minute full-suite run — SIGTERMed
 at its 2700s ceiling, 11% complete, killed by a sweep no status command
 reported (`docs/agents/system/agent-presence.md`, cost #3).
 
-So `bin/release ship` now also publishes a **local** claim beside the board one, at
-`<projects>/<repo>/.git/cert-run.json` — the runlock slot, in the runlock's
-shape, carrying `kind: ship`, `lane: release:ship`, a phase, a weight, and the
-OS's `(pid, lstart)` identity for this process. (It records its OWN pid as
-the group it speaks for, never the group it was launched in — a conductor
-does not own the shell's group and must never point a reaper at it.) A peer
-reads it with `bin/agent-presence`. Nothing here needs running by hand:
+So `bin/release ship` now also publishes a **local** claim beside the board one, in
+the session-marker namespace at
+`<projects>/.agents/sessions/<key>.presence-ship-<pid>`, carrying `kind: ship`,
+`lane: release:ship`, a phase, a weight, and the OS's `(pid, lstart)` identity for
+this process. (It records its OWN pid as the group it speaks for, never the
+group it was launched in — a conductor inherits the launching shell's group,
+and a claim naming that group reads as alive long after the conductor is
+dead.) A peer reads it with `bin/agent-presence`. Nothing here needs running
+by hand:
 
 | | |
 |---|---|
 | Opened | at the top of `bin/release ship`, before the first `git`/`gh`/board call |
-| Weight | `light` while the conductor works; `suite` inside any test scope; `idle` while parked on a GitHub Actions poll |
+| Weight | `light` while the conductor works; `suite` inside work THIS box runs; `idle` while parked on a GitHub Actions poll |
 | Cleared | on graceful exit — **an optimization only** |
 | On a kill | the file stays, by design, and the reader grades it a corpse on the very next read. No TTL to wait out |
 | Disarm | `RELEASE_PRESENCE=off` |
 
-A second conductor that finds a **live** claim in that slot publishes nothing
-rather than overwrite it, and stays visible through the reader's backstop.
+**What counts as a `suite` is read from the registry, not hardcoded.**
+`config/devops_test_suites.yml` already gives every release scope a `host:` and
+a `tier:`, and the weight derives from them: a scope is `light` only when its
+host is not `local` **and** its tier executes elsewhere (`smoke`, a curl poll;
+`hook`, a `heroku run`). Everything else costs a full suite, including anything
+unrecognised. So the `/up` polls and the post-deploy hooks no longer claim this
+box is busy while a Heroku dyno does the work, and a scope added later declares
+its cost by declaring the metadata it must declare anyway.
 
-**It also refuses a cert rooted at that primary while it runs.** The claim sits
-in the runlock slot, so `CertOrphanGuard.preflight` grades a live conductor
-`:concurrent` and a `bin/fast-check` / `bin/full-suite-check` run from the
-PRIMARY checkout is turned back until the sweep finishes. That is intended — a
-suite launched beside a live sweep is the saturation this claim exists to
-prevent — but it is a real behaviour change: certify from your **desk**, which
-roots at the worktree and is unaffected, or wait. `RELEASE_PRESENCE=off`
-disarms the writer and with it the refusal.
+**Two conductors do not fight.** A `prepare` and a `ship` may legitimately run
+at once; the marker is keyed per process, so both publish and a peer sees the
+machine's real combined cost.
+
+**It changes nothing about certs.** The claim lives in the session-marker
+namespace, which `bin/agent-presence` reads and `CertOrphanGuard.preflight`
+never touches — *read here, reaped nowhere*. So a live conductor cannot refuse
+a `bin/fast-check` / `bin/full-suite-check`, cannot have a reaper pointed at
+its process group, and cannot make a cert print a `kill -TERM` line naming a
+production deploy. Certifying from a primary checkout during a sweep behaves
+exactly as it did before this existed.
 
 ## Preconditions
 

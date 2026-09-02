@@ -14,31 +14,47 @@
 #
 # WHAT THESE TESTS PIN, and why each is a property rather than a spelling:
 #
-#   1. The claim lands where the slice-1 reader ALREADY globs and in the shape it already
-#      grades — a claim the reader cannot see closes nothing.
-#   2. It carries the OS's (pid, lstart) identity for BOTH subjects, so the READER decides
-#      liveness and the claim gets no vote.
+#   1. The claim lands where the slice-1 reader ALREADY globs — asserted by calling that
+#      reader, not by restating its glob. A claim the reader cannot see closes nothing.
+#   2. It carries the OS's (pid, lstart) identity for BOTH subjects, and BOTH name a
+#      process this writer IS. `bin/release` inherits its process group, so recording
+#      that group makes a killed sweep read `:live` forever.
 #   3. A KILLED writer's claim grades DEAD on the very next read — no timeout to elapse,
 #      no renewal to miss, so the wedge window is zero rather than one TTL.
-#   4. `open!` REFUSES a live foreign claim instead of clobbering it, and `close!` deletes
-#      only a file that still names us. One file per root, two conductors possible.
-#   5. `write_lock`'s new `extra:` is byte-identical when empty — the shared atomic writer
-#      must not change under every existing cert.
+#   4. Two conductors at once BOTH publish and are BOTH counted. This REPLACED an
+#      earlier never-clobber rule: the claim used to share one runlock slot per root, so
+#      a second conductor had to refuse and publish nothing. In the marker namespace
+#      there is no shared slot, and counting both is the accurate answer.
+#   5. A scope's presence weight comes from the REGISTRY, so a scope added later cannot
+#      silently inherit `suite` from a call site nobody revisits.
+#
+# The tier boundary: everything here grades hand-built claims or claims this process
+# wrote. The property the whole design rests on — that a REAL SIGKILL leaves a corpse the
+# REAL reader recognises — is not provable at this tier and lives in
+# test/lib/release_presence_integration_test.rb.
 #
 # Run directly:
 #   ruby -Itest test/lib/release_presence_test.rb
 
 require "minitest/autorun"
 require "json"
+require "yaml"
 require "tmpdir"
 require "fileutils"
+require_relative "../support/session_env"
 require_relative "../../bin/lib/release_presence"
 require_relative "../../bin/lib/cert_orphan_guard"
+require_relative "../../bin/lib/agent_presence"
 
 class ReleasePresenceClaimTest < Minitest::Test
   # A pid that is not running. 999_999 exceeds every default pid_max in this house, and
   # it is the same stand-in the cert guard's own reaper tests use.
   DEAD_PID = 999_999
+
+  SESSION = "c51e8d13-0000-4000-8000-0123456789ab"
+  # The marker store's sandbox is OFF here and the store is PINNED to a tmpdir on every
+  # call, which is what keeps a test run out of the operator's live `.agents`.
+  SANDBOX_OFF = { "TASK_USAGE_SANDBOX" => "0" }.freeze
 
   def setup
     ReleasePresence.forget!
@@ -48,61 +64,81 @@ class ReleasePresenceClaimTest < Minitest::Test
     ReleasePresence.forget!
   end
 
-  def with_root
-    Dir.mktmpdir { |dir| yield dir }
+  # Both roots a claim needs, and they are DIFFERENT things: `store` is the projects dir
+  # the marker is written under (what the reader globs), `root` is the repo path the claim
+  # REPORTS. Conflating them is how a test can pass while the reader sees nothing.
+  def with_store
+    Dir.mktmpdir { |store| yield(store, File.join(store, "mcritchie-studio")) }
   end
 
-  def read_claim(root)
-    JSON.parse(File.read(CertOrphanGuard.lock_path(root)))
+  def open!(store, kind: ReleasePresence::SWEEP, root: nil, **kwargs)
+    ReleasePresence.open!(kind: kind, root: root || File.join(store, "mcritchie-studio"),
+                          projects_dir: store, session_id: SESSION, env: SANDBOX_OFF, **kwargs)
   end
 
-  # The reader's own liveness rule, expressed in the guard's primitives so this test
-  # grades a claim EXACTLY as bin/lib/agent_presence.rb#grade does — not with a
-  # look-alike of it.
-  def grade_subject(claim, pid_key, start_key, table: CertOrphanGuard.process_table)
-    pid = CertOrphanGuard.coerce_pid(claim[pid_key])
-    process = CertOrphanGuard.live_process(table, pid)
-    return :dead if process.nil?
-
-    CertOrphanGuard.identity_of(process, claim[start_key])
+  def claim_files(store)
+    Dir.glob(File.join(store, ".agents", "sessions", "*.presence-*")).sort
   end
 
-  # --- [unit] the claim is READABLE: right slot, right shape -------------------------
+  def read_claim(store)
+    JSON.parse(File.read(claim_files(store).fetch(0)))
+  end
 
-  def test_claim_is_written_to_the_runlock_slot_the_reader_globs
-    with_root do |root|
-      path = ReleasePresence.open!(kind: ReleasePresence::SWEEP, root: root, lane: "release:prepare")
+  # THE SHIPPED READER, not a restatement of it. `AgentPresence.claims` performs the glob,
+  # the parse and the grade exactly as `bin/agent-presence` does, so a claim that fails to
+  # appear here is a claim that closes nothing — which is the failure mode that put the
+  # first revision of this module in the wrong namespace.
+  def reader_claims(store, table: CertOrphanGuard.process_table)
+    AgentPresence.claims(root: store, table: table)
+  end
 
-      assert_equal CertOrphanGuard.lock_path(root), path,
-                   "the claim must land in the runlock slot — bin/lib/agent_presence.rb globs " \
-                   "*/.git/cert-run.json and */.git/worktrees/*/cert-run.json and NOTHING else, so a " \
-                   "claim written anywhere else leaves the sweep in the reader's `backstop` as " \
-                   "unattributed heavy work, which is the exact gap this slice closes"
-      assert_path_exists path
+  # --- [unit] the claim is READABLE: right namespace, right shape --------------------
+
+  def test_claim_lands_where_the_shipped_reader_globs_and_not_in_a_runlock_slot
+    with_store do |store, root|
+      path = open!(store, lane: "release:prepare")
+
+      assert_equal [path], claim_files(store),
+                   "the claim belongs in the session-marker namespace — " \
+                   ".agents/sessions/<key>.presence-<kind>-<pid>, which is §4's own nomination"
+      refute_path_exists CertOrphanGuard.lock_path(root),
+                         "and NOT in the cert runlock slot. CertOrphanGuard.preflight REAPS " \
+                         "whatever a cert-run.json names — it SIGKILLs that process group — so a " \
+                         "release-lane claim there points a reaper at a production deploy. The " \
+                         "namespace separation is the safety property (agent_presence.rb: 'Read " \
+                         "here, reaped nowhere'), not a filing preference"
+
+      found = reader_claims(store)
+
+      assert_equal 1, found.size, "the shipped reader must FIND it — a claim it cannot see " \
+                                  "leaves the sweep in the reader's `backstop` as unattributed " \
+                                  "heavy work, closing none of cost #3"
+      assert_equal "sweep", found.first[:kind],
+                   "and must recognise its kind: AgentPresence::SUPERVISOR_KINDS already holds " \
+                   "'sweep', so no reader change was needed for this at all"
     end
   end
 
   def test_claim_carries_identity_for_both_subjects_and_the_presence_fields
-    with_root do |root|
-      ReleasePresence.open!(kind: ReleasePresence::SWEEP, root: root, lane: "release:prepare",
-                            session_id: "sess-1", agent: "avi", command: "bin/release prepare")
-      claim = read_claim(root)
+    with_store do |store, _root|
+      open!(store, lane: "release:prepare")
+      claim = read_claim(store)
 
       # The identity half — the ONLY fields that decide whether any of the others may be
       # believed. BOTH SUBJECTS MUST NAME A PROCESS THIS WRITER IS. `bin/release` never
-      # calls setpgrp, so `Process.getpgrp` would name the group it INHERITED from the
-      # shell that launched it — a group it does not own, cannot speak for, and must never
-      # aim a reaper at. This assertion used to demand exactly that inherited value and so
-      # PINNED the defect in place (review, 2026-09-02); it now pins the invariant instead.
-      assert_equal Process.pid, claim["cert_pid"]
-      assert_equal Process.pid, claim["pgid"],
-                   "the group subject must be the writer's OWN pid, not its inherited group"
-      refute_equal Process.getpgrp, claim["pgid"],
-                   "and specifically NOT Process.getpgrp: under the agent harness that is a " \
-                   "/bin/zsh -c wrapper shared with the rest of the session, which outlives " \
-                   "this process and would keep a dead claim reading as :live forever"
-      refute_nil claim["cert_started_at"], "a claim with no start time can prove nothing and " \
-                                          "is graded `unverifiable` rather than trusted"
+      # calls setpgrp, so `PresenceClaim`'s own `Process.getpgid` default would name the
+      # group it INHERITED from the shell that launched it — a group it does not own and
+      # cannot speak for, whose leader OUTLIVES it. An earlier assertion here demanded
+      # exactly that inherited value and so PINNED the defect in place (review 2026-09-02).
+      assert_equal Process.pid, claim["pid"]
+      assert_equal claim["pid"], claim["pgid"],
+                   "the group subject must collapse onto the writer's own pid. If it names " \
+                   "the INHERITED group instead, a SIGKILLed sweep grades :live forever — the " \
+                   "wrapper's leader is still alive and its (pid, lstart) still matches — which " \
+                   "is an UNBOUNDED wedge, the exact inversion of the killed-writer rule"
+      assert_equal Process.pid, claim["pgid"]
+      refute_nil claim["pid_started_at"], "a claim with no start time can prove nothing and is " \
+                                         "graded `unverifiable` rather than trusted"
       refute_nil claim["pgid_started_at"]
 
       # The presence half — what it costs, and who is holding it.
@@ -110,51 +146,55 @@ class ReleasePresenceClaimTest < Minitest::Test
       assert_equal ReleasePresence::PHASE_WORKING, claim["phase"]
       assert_equal ReleasePresence::WEIGHT_LIGHT, claim["weight"]
       assert_equal "release:prepare", claim["lane"]
-      assert_equal "sess-1", claim["session_id"]
-      assert_equal "avi", claim["agent"]
+      assert_equal SESSION, claim["session_id"]
     end
   end
 
-  def test_a_live_claim_grades_ours_through_the_readers_own_rule
-    with_root do |root|
-      ReleasePresence.open!(kind: ReleasePresence::SWEEP, root: root)
-      claim = read_claim(root)
+  def test_a_live_claim_is_graded_live_and_consumes_capacity
+    with_store do |store, _root|
+      open!(store)
+      found = reader_claims(store)
 
-      assert_equal :ours, grade_subject(claim, "cert_pid", "cert_started_at"),
+      assert_equal :live, found.first[:grade],
                    "the reader must be able to PROVE the claim is the process it names; " \
-                   ":unprovable would be counted conservatively but named as unproven"
+                   ":unverifiable would be counted conservatively but named as unproven"
+      assert_operator AgentPresence.consumed(found), :>, 0.0,
+                      "a working conductor is not free — it must show up in the arithmetic a " \
+                      "peer uses to decide whether to launch"
     end
   end
 
   # --- [unit] THE KILLED-WRITER RULE -------------------------------------------------
 
-  def test_killed_sweep_claim_grades_dead_with_no_timeout
-    with_root do |root|
-      # What a SIGKILLed sweep leaves: its file, naming a pid the OS no longer knows.
-      # No handler ran, so nothing was cleared — by design.
-      CertOrphanGuard.write_lock(root, cert_pid: DEAD_PID, pgid: DEAD_PID,
-                                 cert_started_at: "Tue Sep  1 11:05:12 2026",
-                                 pgid_started_at: "Tue Sep  1 11:05:12 2026",
-                                 lane: "release:prepare",
-                                 extra: { "kind" => "sweep", "phase" => "working", "weight" => "suite" })
-      claim = read_claim(root)
+  def test_killed_sweep_claim_survives_its_writer_and_grades_dead_with_no_timeout
+    with_store do |store, _root|
+      # What a SIGKILLed sweep leaves: its file, naming a pid the OS no longer knows. No
+      # handler ran, so nothing was cleared — by design.
+      open!(store)
+      path = claim_files(store).fetch(0)
+      corpse = JSON.parse(File.read(path)).merge("pid" => DEAD_PID, "pgid" => DEAD_PID)
+      File.write(path, "#{JSON.generate(corpse)}\n")
 
-      assert_path_exists CertOrphanGuard.lock_path(root),
+      found = reader_claims(store)
+
+      assert_path_exists path,
                          "the file MUST survive the writer — it is the only local record naming " \
                          "the workload, and a writer that could clear it on death would not need it"
-      assert_equal :dead, grade_subject(claim, "cert_pid", "cert_started_at"),
+      assert_equal :dead, found.first[:grade],
                    "a corpse must be graded on the VERY NEXT read. This is the property a " \
                    "heartbeat cannot offer: a stale heartbeat is indistinguishable from a slow " \
                    "one until its TTL expires, so the wedge window here is ZERO, not one TTL"
+      assert_in_delta 0.0, AgentPresence.consumed(found), 0.0001,
+                      "and it must free the capacity it was holding, immediately"
     end
   end
 
   def test_forget_leaves_the_claim_on_disk_exactly_as_a_kill_would
-    with_root do |root|
-      ReleasePresence.open!(kind: ReleasePresence::SWEEP, root: root)
+    with_store do |store, _root|
+      open!(store)
       ReleasePresence.forget!
 
-      assert_path_exists CertOrphanGuard.lock_path(root)
+      refute_empty claim_files(store)
       refute_predicate ReleasePresence, :open?
     end
   end
@@ -162,18 +202,21 @@ class ReleasePresenceClaimTest < Minitest::Test
   # --- [unit] phase transitions ------------------------------------------------------
 
   def test_phase_rewrites_cost_and_preserves_identity
-    with_root do |root|
-      ReleasePresence.open!(kind: ReleasePresence::SHIP, root: root, lane: "release:ship")
-      before = read_claim(root)
+    with_store do |store, _root|
+      open!(store, kind: ReleasePresence::SHIP, lane: "release:ship")
+      before = read_claim(store)
 
       ReleasePresence.phase!(phase: ReleasePresence::PHASE_WORKING,
                              weight: ReleasePresence::WEIGHT_SUITE)
-      after = read_claim(root)
+      after = read_claim(store)
 
       assert_equal ReleasePresence::WEIGHT_SUITE, after["weight"],
-                   "inside a test scope the conductor costs a FULL suite — that is the weight " \
-                   "that stops a peer launching one beside it"
-      %w[cert_pid pgid cert_started_at pgid_started_at].each do |key|
+                   "inside a local test scope the conductor costs a FULL suite — that is the " \
+                   "weight that stops a peer launching one beside it"
+      assert_equal 1, claim_files(store).size,
+                   "a phase change REWRITES the one claim rather than leaving a trail of " \
+                   "contradicting ones — the marker is keyed by pid, not by phase"
+      %w[pid pgid pid_started_at pgid_started_at began_at].each do |key|
         assert_equal before[key], after[key],
                      "#{key} must survive a phase change: it is the SAME claim, and only what " \
                      "it costs has changed"
@@ -182,15 +225,15 @@ class ReleasePresenceClaimTest < Minitest::Test
   end
 
   def test_with_phase_restores_the_previous_phase_even_when_the_block_raises
-    with_root do |root|
-      ReleasePresence.open!(kind: ReleasePresence::SWEEP, root: root)
+    with_store do |store, _root|
+      open!(store)
 
       assert_raises(RuntimeError) do
         ReleasePresence.with_phase(phase: ReleasePresence::PHASE_WORKING,
                                    weight: ReleasePresence::WEIGHT_SUITE) { raise "gate exploded" }
       end
 
-      assert_equal ReleasePresence::WEIGHT_LIGHT, read_claim(root)["weight"],
+      assert_equal ReleasePresence::WEIGHT_LIGHT, read_claim(store)["weight"],
                    "a failed gate must not strand the claim at suite weight. The residual " \
                    "staleness this design tolerates is a DEAD writer's, bounded by its own " \
                    "lifetime — never a LIVE writer's bookkeeping"
@@ -198,32 +241,31 @@ class ReleasePresenceClaimTest < Minitest::Test
   end
 
   def test_waiting_phase_is_published_so_a_parked_conductor_costs_a_peer_nothing
-    with_root do |root|
-      ReleasePresence.open!(kind: ReleasePresence::SHIP, root: root)
+    with_store do |store, _root|
+      open!(store, kind: ReleasePresence::SHIP)
       ReleasePresence.with_phase(phase: ReleasePresence::PHASE_WAITING,
                                  weight: ReleasePresence::WEIGHT_IDLE) do
-        claim = read_claim(root)
-
-        assert_equal ReleasePresence::PHASE_WAITING, claim["phase"],
+        assert_equal ReleasePresence::PHASE_WAITING, read_claim(store)["phase"],
                      "a conductor parked on a GitHub Actions poll consumes nothing — cost #4 of " \
                      "the design is two idle processes read as competing certs. The reader " \
                      "short-circuits `phase == waiting` to weight 0 while still COUNTING the " \
-                     "claim, so the process group stays attributed instead of falling back into " \
-                     "the backstop"
+                     "claim, so the process group stays attributed instead of falling into the " \
+                     "backstop"
+        assert_in_delta 0.0, AgentPresence.consumed(reader_claims(store)), 0.0001,
+                        "and the READER must agree — this is the whole point of publishing it"
       end
-      assert_equal ReleasePresence::PHASE_WORKING, read_claim(root)["phase"]
+      assert_equal ReleasePresence::PHASE_WORKING, read_claim(store)["phase"]
     end
   end
 
-
   # The failure this module must never cause: replacing a deploy's real exception with one
-  # from its own bookkeeping. `close!` under the block nils `@state`, and the `ensure` then
-  # touched `@state[:stack]` — a NoMethodError raised FROM an ensure, which supersedes the
-  # exception already in flight (review, 2026-09-02). The release would have reported a
-  # presence bug instead of the deploy failure the operator needs to see.
+  # from its own bookkeeping. `close!` under the block drops the claim, and the `ensure`
+  # then touched it — a NoMethodError raised FROM an ensure, which supersedes the exception
+  # already in flight (review, 2026-09-02). The release would have reported a presence bug
+  # instead of the deploy failure the operator needs to see.
   def test_with_phase_never_replaces_the_blocks_exception_with_its_own_bookkeeping
-    with_root do |root|
-      ReleasePresence.open!(kind: ReleasePresence::SWEEP, root: root)
+    with_store do |store, _root|
+      open!(store)
 
       error = assert_raises(RuntimeError) do
         ReleasePresence.with_phase(phase: ReleasePresence::PHASE_WORKING,
@@ -238,160 +280,168 @@ class ReleasePresenceClaimTest < Minitest::Test
                    "best-effort and must never be the thing a release dies reporting"
     end
   end
+
   def test_with_phase_yields_and_returns_the_block_value_when_no_claim_is_open
-    with_root do |_root|
+    refute_predicate ReleasePresence, :open?
+    result = ReleasePresence.with_phase(phase: ReleasePresence::PHASE_WAITING,
+                                        weight: ReleasePresence::WEIGHT_IDLE) { [:out, true] }
+
+    assert_equal [:out, true], result,
+                 "run_test_scope, the CI poll and the repo_script deploy all wrap their real " \
+                 "work in this — a disarmed or unopened claim must be transparent, never a " \
+                 "behaviour change in the release"
+  end
+
+  # --- [unit] two conductors, two claims, both counted --------------------------------
+
+  # THE PROPERTY THAT CHANGED WITH THE NAMESPACE, pinned so nobody restores the old one.
+  #
+  # While the claim lived in `CertOrphanGuard.lock_path(root)` there was ONE slot per root,
+  # so a `prepare` and a `ship` running at once contended for it: the writer had to refuse
+  # rather than clobber, and the loser published NOTHING (it stayed visible only through
+  # the reader's backstop, as unattributed load). The marker namespace is keyed by session
+  # and pid, so two conductors are two files and there is nothing to contend for. Both
+  # publish, and a peer sees the machine's REAL cost instead of one conductor's half of it.
+  def test_two_concurrent_conductors_both_publish_and_are_both_counted
+    with_store do |store, _root|
+      # A live peer, written as another process would write it: same store, a different
+      # pid, and honest identity so the reader grades it live.
+      peer_pid = spawn_sleeper
+      PresenceClaim.open(kind: ReleasePresence::SHIP, root: File.join(store, "mcritchie-studio"),
+                         projects_dir: store, session_id: "peer-session",
+                         pid: peer_pid, pgid: peer_pid, env: SANDBOX_OFF)
+                   .publish(phase: ReleasePresence::PHASE_WORKING,
+                            weight: ReleasePresence::WEIGHT_LIGHT, lane: "release:ship")
+
+      mine = open!(store, lane: "release:prepare")
+
+      assert_equal 2, claim_files(store).size,
+                   "a prepare and a ship may legitimately run at once. One file per PROCESS " \
+                   "means neither has to lose — the old one-slot-per-root shape made the second " \
+                   "conductor publish nothing at all"
+      refute_nil mine, "and this conductor must know that it published"
+
+      found = reader_claims(store)
+      kinds = found.select { |c| AgentPresence::COUNTED_GRADES.include?(c[:grade]) }.map { |c| c[:kind] }
+
+      assert_equal %w[ship sweep], kinds.sort,
+                   "BOTH must be counted. Under-reporting is the expensive direction: it is what " \
+                   "lets a peer launch a suite into a box two conductors are already using"
+    ensure
+      kill_sleeper(peer_pid)
+    end
+  end
+
+  def test_close_clears_this_conductors_own_claim
+    with_store do |store, _root|
+      open!(store)
+      refute_nil ReleasePresence.close!
+      assert_empty claim_files(store),
+                   "clearing on graceful exit is an OPTIMIZATION — correctness is the reader " \
+                   "grading a corpse — but the tidy path must still work"
       refute_predicate ReleasePresence, :open?
-      result = ReleasePresence.with_phase(phase: ReleasePresence::PHASE_WAITING,
-                                          weight: ReleasePresence::WEIGHT_IDLE) { [:out, true] }
-
-      assert_equal [:out, true], result,
-                   "run_test_scope and the CI poll wrap their real work in this — a disarmed or " \
-                   "unopened claim must be transparent, never a behaviour change in the release"
     end
   end
 
-  # --- [unit] never clobber a live peer ----------------------------------------------
-
-  def test_open_refuses_to_clobber_a_live_foreign_claim
-    with_root do |root|
-      # A live incumbent: our own group, recorded honestly, under a DIFFERENT pid so the
-      # writer cannot mistake it for its own.
-      alive = CertOrphanGuard.process_started_at(Process.getpgrp)
-      CertOrphanGuard.write_lock(root, cert_pid: DEAD_PID, pgid: Process.getpgrp,
-                                 pgid_started_at: alive, lane: "release:ship",
-                                 extra: { "kind" => "ship" })
-
-      assert_nil ReleasePresence.open!(kind: ReleasePresence::SWEEP, root: root),
-                 "a prepare and a ship may legitimately run at once and both root at the same " \
-                 "primary. Overwriting the incumbent destroys a live peer's ONLY local record — " \
-                 "the same reason CertOrphanGuard KEEPS a lock when a reap is refused"
-      assert_equal "ship", read_claim(root)["kind"], "the incumbent must be left exactly as found"
-      refute_predicate ReleasePresence, :open?, "and this conductor must know it published nothing"
-    end
-  end
-
-  def test_open_takes_a_slot_whose_holder_is_a_corpse
-    with_root do |root|
-      # cert_pid == pgid is EXACTLY the shape `open!` writes (it records its own pid as the
-      # group it speaks for), so this fixture is a claim the writer can actually produce.
-      # Under the pre-fix writer, which recorded the INHERITED Process.getpgrp, it was not:
-      # those two numbers always differed, and equalising them here quietly excluded the
-      # `:lane` subject — which is where the defect lived (review, 2026-09-02).
-      CertOrphanGuard.write_lock(root, cert_pid: DEAD_PID, pgid: DEAD_PID,
-                                 cert_started_at: "Tue Sep  1 11:05:12 2026",
-                                 pgid_started_at: "Tue Sep  1 11:05:12 2026",
-                                 extra: { "kind" => "sweep" })
-
-      refute_nil ReleasePresence.open!(kind: ReleasePresence::SHIP, root: root),
-                 "refusing forever on a dead predecessor would make one killed sweep hide every " \
-                 "later one — the file is evidence, not a lock"
-      assert_equal Process.pid, read_claim(root)["cert_pid"]
-    end
-  end
-
-  def test_close_clears_only_a_claim_that_still_names_us
-    with_root do |root|
-      ReleasePresence.open!(kind: ReleasePresence::SWEEP, root: root)
-      assert_equal root, ReleasePresence.close!
-      refute_path_exists CertOrphanGuard.lock_path(root)
-    end
-  end
-
-  def test_close_leaves_a_claim_another_conductor_has_taken
-    with_root do |root|
-      ReleasePresence.open!(kind: ReleasePresence::SWEEP, root: root)
-      # A peer took the slot after ours was graded a corpse (or we were re-nice'd out of
-      # it). Deleting its record on our way out is the clobber `open!` refuses.
-      CertOrphanGuard.write_lock(root, cert_pid: DEAD_PID, pgid: DEAD_PID,
-                                 extra: { "kind" => "ship" })
-
-      assert_nil ReleasePresence.close!
-      assert_equal "ship", read_claim(root)["kind"]
-    end
-  end
-
-  # --- [unit] the collision-safety property -------------------------------------------
+  # --- [unit] reporting + the disarm ---------------------------------------------------
 
   def test_claim_root_normalizes_a_desk_path_to_its_primary_checkout
     desk = "/Users/alex/projects/mcritchie-studio/.worktrees/some-task"
 
     assert_equal "/Users/alex/projects/mcritchie-studio", ReleasePresence.claim_root(desk),
-                 "a DESK's runlock slot is read by CertOrphanGuard.preflight, which REAPS — it " \
-                 "SIGKILLs a process group a runlock names once it can prove the group is ours. " \
-                 "A sweep claim sitting there would be a sweep-killing landmine. A PRIMARY is " \
-                 "NOT out of that reach — CertRootGuard.refusal is gated on a slug while the " \
-                 "orphan preflight is unconditional, so a slug-less cert (what --install-hook " \
-                 "writes into .git/hooks/pre-push) preflights a primary anyway. Safety comes " \
-                 "from the claim naming only its own writer, not from where it sits"
+                 "the root is a REPORTING field: it should name the repo, not whichever " \
+                 "workspace the conductor stood in (a ship works out of a .worktrees/_ship " \
+                 "desk). It is no longer a safety mechanism — an earlier revision justified it " \
+                 "as keeping the claim out of a reaped slot, which was false even then, and is " \
+                 "now moot because the claim is not in a runlock namespace at all"
     assert_equal "/Users/alex/projects/mcritchie-studio",
                  ReleasePresence.claim_root("/Users/alex/projects/mcritchie-studio")
   end
 
   def test_disarmed_by_env_publishes_nothing
-    with_root do |root|
-      begin
-        ENV["RELEASE_PRESENCE"] = "off"
-
-        assert_nil ReleasePresence.open!(kind: ReleasePresence::SWEEP, root: root)
-        refute_path_exists CertOrphanGuard.lock_path(root)
-      ensure
-        ENV.delete("RELEASE_PRESENCE")
-      end
+    with_store do |store, _root|
+      assert_nil ReleasePresence.open!(kind: ReleasePresence::SWEEP,
+                                       root: File.join(store, "mcritchie-studio"),
+                                       projects_dir: store, session_id: SESSION,
+                                       env: SANDBOX_OFF.merge("RELEASE_PRESENCE" => "off"))
+      assert_empty claim_files(store),
+                   "RELEASE_PRESENCE=off is the escape hatch a deploy tool owes any new file it " \
+                   "creates on the operator's machine"
     end
   end
 
-  # --- [unit] the shared writer must not change under existing certs -------------------
+  # --- [unit] a scope's cost comes from the registry, not from a call site --------------
 
-  def test_write_lock_with_no_extra_is_byte_identical_to_the_original_record
-    with_root do |root|
-      now = Time.now
-      CertOrphanGuard.write_lock(root, cert_pid: 4321, pgid: 4300, cert_started_at: "a",
-                                 pgid_started_at: "b", lane: "spine", db: "x_test", now: now)
-      body = File.read(CertOrphanGuard.lock_path(root))
+  # WHY THIS IS DERIVED RATHER THAN PASSED. The rejected alternative was a `weight:` keyword
+  # on `run_test_scope` with the four remote scopes passing `light`. It fixes today's table
+  # and re-breaks tomorrow's: a scope added later does not visit those call sites, so it
+  # inherits `suite` in silence and the over-reporting returns. Deriving it from `host`/`tier`
+  # puts the fact where a new scope must already write its metadata.
+  def test_scope_weight_is_light_only_when_the_work_executes_on_another_host
+    assert_equal ReleasePresence::WEIGHT_LIGHT,
+                 ReleasePresence.scope_weight("host" => "qa", "tier" => "smoke"),
+                 "a /up curl poll costs this box a socket; the QA dyno does the booting"
+    assert_equal ReleasePresence::WEIGHT_LIGHT,
+                 ReleasePresence.scope_weight("host" => "production", "tier" => "hook"),
+                 "`heroku run` executes on a remote one-off dyno, not here"
+    assert_equal ReleasePresence::WEIGHT_SUITE,
+                 ReleasePresence.scope_weight("host" => "local", "tier" => "full"),
+                 "a local suite is the whole reason this weight exists"
+    assert_equal ReleasePresence::WEIGHT_SUITE,
+                 ReleasePresence.scope_weight("host" => "production", "tier" => "e2e"),
+                 "`host` names the TARGET, not the payer: bin/prod-smoke drives playwright " \
+                 "LOCALLY against a production URL, so this box pays in full"
+  end
 
-      assert_equal JSON.generate("cert_pid" => 4321, "cert_started_at" => "a",
-                                 "pgid" => 4300, "pgid_started_at" => "b",
-                                 "lane" => "spine", "db" => "x_test",
-                                 "started_at" => now.utc.iso8601),
-                   body,
-                   "every cert in the house writes through this method. An empty `extra:` must " \
-                   "produce exactly the record it always did, key order included"
+  def test_an_unreadable_scope_row_costs_a_full_suite
+    [nil, {}, { "host" => "qa" }, { "tier" => "smoke" }, { "host" => "qa", "tier" => "wat" }].each do |row|
+      assert_equal ReleasePresence::WEIGHT_SUITE, ReleasePresence.scope_weight(row),
+                   "an unrecognised row (#{row.inspect}) must cost a FULL suite. Over-reporting " \
+                   "makes a peer wait for a machine that was free; under-reporting lets it " \
+                   "launch into a saturated one, which is cost #3 all over again — the same " \
+                   "asymmetry AgentPresence::UNKNOWN_WEIGHT encodes"
     end
   end
 
+  # The registry is the source of truth, so read it and state the whole table. This is a
+  # DOCUMENTATION assertion — it would follow the code if both were changed together, which
+  # is exactly why the load-bearing weight test is the headroom one in the integration tier.
+  def test_every_registered_release_scope_resolves_to_the_weight_its_payer_implies
+    scopes = YAML.load_file(File.expand_path("../../config/devops_test_suites.yml", __dir__))
+                 .fetch("release_scopes")
+    expected = {
+      "pre_qa_gate" => "suite",       # local integration tier
+      "qa_up_smoke" => "light",       # curl poll, QA dyno boots
+      "qa_post_deploy" => "light",    # heroku run, remote
+      "ship_test_gate" => "suite",    # the full local suite
+      "gem_release_check" => "suite", # syntax + unit + build, local
+      "prod_up_smoke" => "light",     # curl poll
+      "prod_post_deploy" => "light",  # heroku run, remote
+      "prod_smoke_seal" => "suite"    # playwright, driven LOCALLY against prod
+    }
 
-  # The `extra:` overlay may ENRICH a lock; it may never restate WHO the lock names. Every
-  # reader in this house trusts the identity block unconditionally — it is the whole basis
-  # on which a claim is graded live or dead — so a caller able to forge `cert_pid` could
-  # make the grader vouch for a process the writer is not (review, 2026-09-02).
-  def test_extra_cannot_forge_the_identity_the_readers_trust
-    with_root do |root|
-      CertOrphanGuard.write_lock(root, cert_pid: 4321, pgid: 4321,
-                                 cert_started_at: "real", pgid_started_at: "real",
-                                 extra: { "cert_pid" => 9999, "pgid" => 9999,
-                                          "cert_started_at" => "forged",
-                                          "pgid_started_at" => "forged",
-                                          "kind" => "sweep" })
-      claim = JSON.parse(File.read(CertOrphanGuard.lock_path(root)))
-
-      assert_equal 4321, claim["cert_pid"], "the overlay must not be able to rename the writer"
-      assert_equal 4321, claim["pgid"]
-      assert_equal "real", claim["cert_started_at"],
-                   "nor restate the start time that PROVES the pid is not a recycled stranger"
-      assert_equal "real", claim["pgid_started_at"]
-      assert_equal "sweep", claim["kind"],
-                   "while everything the overlay legitimately carries still lands"
+    assert_equal expected.keys.sort, scopes.keys.sort,
+                 "a scope was added or renamed — give it a row here so its local cost is a " \
+                 "decision somebody made rather than a default nobody saw"
+    scopes.each do |key, meta|
+      assert_equal expected.fetch(key), ReleasePresence.scope_weight(meta),
+                   "#{key} (host=#{meta['host']}, tier=#{meta['tier']}) must weigh " \
+                   "#{expected.fetch(key)}"
     end
   end
-  def test_write_lock_drops_nil_extras_rather_than_recording_absent_facts
-    with_root do |root|
-      CertOrphanGuard.write_lock(root, cert_pid: 1, pgid: 2,
-                                 extra: { "kind" => "sweep", "agent" => nil })
-      claim = JSON.parse(File.read(CertOrphanGuard.lock_path(root)))
 
-      assert_equal "sweep", claim["kind"]
-      refute_includes claim.keys, "agent",
-                      "a null field invites a reader to print `agent: ` — absence should be absent"
-    end
+  private
+
+  # A real, live, unrelated process to stand in for a peer conductor. It must be a pid the
+  # OS actually knows, or the reader grades it dead and the test proves nothing.
+  def spawn_sleeper = Process.spawn("/bin/sleep", "30", out: File::NULL, err: File::NULL)
+
+  def kill_sleeper(pid)
+    return if pid.nil?
+
+    Process.kill("KILL", pid)
+    Process.wait(pid)
+  rescue Errno::ESRCH, Errno::ECHILD
+    nil
   end
 end

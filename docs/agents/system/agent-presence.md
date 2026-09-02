@@ -164,8 +164,9 @@ of the same glob rather than needing another state surface.
 `phase` carries the distinction cost #4 is about: **`waiting` consumes nothing.**
 
 **Correction, from building it (slice 3).** The sketch above spelled `started_at`
-as the OS start time, and §5(c) says these claims are read by *the same glob and
-the same GRADER* as the runlock. Those two cannot both hold: the grader reads
+as the OS start time, and §5(c) says these claims are read by *the same GRADER*
+as the runlock (its "same glob" half was corrected by this very slice — see the
+row above). Those two cannot both hold: the grader reads
 `started_at` as the ISO stamp of when the record was written and takes its
 identity proof from `<subject>_started_at`. **§5(c) wins** — a record that spelled
 one field two ways would put two truths on one screen and neither call site would
@@ -260,69 +261,70 @@ sweep saturating this machine."*
 | **Written** | a claim with `kind: ship\|sweep`, `phase`, `weight`, identity |
 | **By whom** | the process itself, at each phase boundary it already prints |
 | **Cleared** | by the writer on graceful exit — an optimization only; by the reader on any proven corpse |
-| **Read** | the same glob and the same grader as (b) |
+| **Read** | the same GRADER as (b), plus its own glob — `.agents/sessions/*.presence-*`, added by slice 3. An earlier revision of this row said "the same glob", which was true when written, became false when slice 3 landed, and in the meantime argued slice 4's claim into the runlock slot |
 | **On death** | identical: a corpse the reader recognizes with no timeout |
 
-**AS BUILT (slice 4, steffon, 2026-09-02) — the claim is a RUNLOCK, in the
-runlock's own slot.** §4 above sketches
-`.agents/sessions/<id>.presence-<kind>-<pid>`. The shipped writer
-(`bin/lib/release_presence.rb`) publishes to `CertOrphanGuard.lock_path(root)`
-instead, and this row is why: the design specifies sweeps are read by *the same
-glob and the same grader as (b)*, and (b)'s glob is the runlock's —
-`*/.git/cert-run.json` and `*/.git/worktrees/*/cert-run.json`, the only two
-patterns the slice-1 reader holds. A claim written anywhere else is invisible to
-it, which would leave the sweep in the reader's `backstop` as unattributed heavy
-work — i.e. would not close cost #3 at all. Measured on this machine before and
-after: the same live sweep read as `backstop: sweep pgid 57266 … UNATTRIBUTED`,
-then as `LIVE mcritchie-studio/primary release:prepare pid 57266 pgid 57266`.
+**AS BUILT (slice 4, steffon, 2026-09-02).** `bin/lib/release_presence.rb` — the
+release CLI's phase vocabulary wrapped around slice 3's `PresenceClaim`. It owns
+no file format and no writer, and it publishes to §4's own path,
+`.agents/sessions/<key>.presence-<kind>-<pid>`. Measured on this machine: a live
+sweep that read as `backstop: sweep pgid 57266 … UNATTRIBUTED` now reads as
+`LIVE mcritchie-studio/primary release:prepare`.
 
-Three consequences, stated because each is load-bearing:
+Two things it decides for itself, both load-bearing:
 
-- **The writer is `CertOrphanGuard.write_lock`, not a second writer.** Its
-  atomic tmp+rename is the whole reason a runlock can be trusted (a plain
-  `File.write` was measured returning nil on 4.6% of reads taken inside its
-  zero-byte window), so the claim rides it and gains an `extra:` passthrough for
-  `kind`/`phase`/`weight`. An empty `extra` is byte-identical to what every cert
-  has always written.
-- **The claim names only the process that wrote it.** `pgid` records the writer's
-  own pid, not `Process.getpgrp`. `bin/release` never calls `setpgrp`, so its
-  group is the one it *inherited* from the shell that launched it — under the
-  agent harness a `/bin/zsh -c …` wrapper shared with the rest of the session
-  (measured: `bin/release.rb ship --yes` at pid 61666 in pgid 61388). Recording
-  that inherited group made a **killed** sweep grade `:live` through the `:lane`
-  subject — the wrapper outlives the conductor and its `(pid, lstart)` still
-  matches — so the corpse counted against capacity forever, `foreign_live?`
-  suppressed every later sweep, and `decide` graded it `:orphan`, pointing
-  `reap_group` at a bystander group. The cost of naming only ourselves is the
-  two-subject walk: a conductor killed while its suite survives is no longer
-  attributed to *this* claim. The `backstop` covers exactly that gap —
-  `HEAVY_PATTERNS` matches `bin/rails test` — so the orphan is still reported,
-  as unattributed load. `Process.setpgrp` would have kept the walk, and was
-  rejected: it detaches a **production deploy** from the signals that stop it,
-  so a killed session would leave Heroku pushes and `release → main`
-  fast-forwards running unsupervised.
-- **The claim roots at the PRIMARY checkout, never a desk.** A desk's runlock
-  slot is read by `CertOrphanGuard.preflight`, which *reaps* — it SIGKILLs a
-  process group the lock names once it can prove the group is ours — so a sweep
-  claim sitting there would be a sweep-killing landmine. A primary is **not**
-  unreachable, and an earlier version of this section said it was:
-  `CertRootGuard.refusal` is gated on a slug, while the orphan preflight is
-  unconditional, so any slug-less cert skips the root guard and preflights
-  anyway — including the `bin/full-suite-check --print` that `--install-hook`
-  writes into `.git/hooks/pre-push`. Safety comes from the bullet above: a dead
-  conductor's claim names nothing alive, so `decide` returns `:stale`, clears
-  the file, and proceeds.
-- **One file per root, so a second conductor REFUSES rather than clobbers.** A
-  `prepare` and a `ship` may legitimately run at once and both root at the same
-  primary. The loser publishes nothing and stays visible through the backstop,
-  which degrades to today; overwriting would destroy a live peer's only local
-  record — the same reasoning that makes the guard keep a lock when a reap is
-  refused.
+- **`pgid` records the writer's own pid, not the group it runs in.**
+  `PresenceClaim`'s default is `Process.getpgid`, which is right for `bin/ship` —
+  ship spawns `bin/fast-check` into its own group, so the group is a true second
+  subject. `bin/release` is not shaped that way: it never calls `setpgrp`, so its
+  group is the one it *inherited* from the launching shell (measured:
+  `bin/release.rb ship --yes` at pid 61666 in pgid 61388, a `/bin/zsh -c …`
+  wrapper shared with the session). Recording that group makes a **killed** sweep
+  grade `:live` forever — the wrapper outlives the conductor and its
+  `(pid, lstart)` still matches — an unbounded wedge, and the exact inversion of
+  the killed-writer rule. The price is the two-subject walk: a conductor killed
+  while its suite survives is no longer attributed to *this* claim, and the
+  `backstop` covers that gap (`HEAVY_PATTERNS` matches `bin/rails test`).
+  `Process.setpgrp` would restore the walk and was rejected: it detaches a
+  **production deploy** from the signals that stop it, so a killed session would
+  leave Heroku pushes and a `release → main` fast-forward running unsupervised.
+- **Weight is derived from `config/devops_test_suites.yml`, not passed at the call
+  site.** A scope is `light` only when its `host` is not `local` **and** its
+  `tier` executes elsewhere — `smoke` (a curl poll) or `hook` (`heroku run`);
+  everything else, including anything unrecognised, is `suite`. Four of the eight
+  registered scopes were publishing `suite` for work a Heroku dyno performs. The
+  `repo_script` production deploy needed its own explicit wrap, because it never
+  passes through `run_test_scope` and no registry row can reach it —
+  turf-monster's `bin/deploy` runs `bin/rails test` inside it, so the heaviest
+  local workload the ship creates was reporting the conductor's ambient `light`.
 
-`RELEASE_PRESENCE=off` disarms the writer. **When the reader gains a glob for the
-session-marker namespace, this claim should move there** and the `extra:`
-passthrough retires with it; until then §4's path and this row disagree, and this
-row is what runs.
+**FIRST BUILT IN THE RUNLOCK SLOT, AND MOVED — the reasoning, because it is a
+reasoning this document caused.** The first revision published to
+`CertOrphanGuard.lock_path(root)`. It was not arbitrary: §5(c) above said sweeps
+are read by *"the same glob and the same grader"* as certs, and at that moment
+`CLAIM_GLOBS` held two `cert-run.json` patterns and nothing else — so a claim at
+§4's path was invisible to the reader and would have closed none of cost #3. That
+premise died when slice 3 (`certs-publish-no-phase`) taught the reader the marker
+namespace directly, under the comment that names the property: **read here, reaped
+nowhere.**
+
+The move matters because `CertOrphanGuard.preflight` **reaps** — it SIGKILLs the
+process group a `cert-run.json` names — so a release-lane claim in that slot points
+a reaper at a production deploy, and makes a concurrent cert print a `kill -TERM`
+line naming it. **Rooting at a primary checkout does not make that safe, and an
+earlier version of this section said it did.** `CertRootGuard.refusal` is gated on
+a slug (`bin/fast-check:180`, `bin/full-suite-check:204`) while the orphan preflight
+is unconditional (`:372`, `:448`), so every slug-less cert skips the root guard and
+preflights anyway — including the `bin/full-suite-check --print` that
+`--install-hook` writes into `.git/hooks/pre-push`. The defence is the namespace,
+not the path within it.
+
+**What the move retired, recorded so nobody restores it.** The runlock is one file
+per ROOT, so the old writer had to refuse rather than clobber when a `prepare` and a
+`ship` ran together, and the loser published nothing. The marker namespace is one
+file per PROCESS: there is no shared slot, both conductors publish, and both are
+counted — the accurate answer to "how saturated is this machine", not merely the
+simpler one. `RELEASE_PRESENCE=off` disarms the writer.
 
 ### (d) Machine headroom — a derivation, not a mechanism
 

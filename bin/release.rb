@@ -921,14 +921,22 @@ def run_test_scope(key, *cmd, capture: false, chdir: nil, repo: nil, label: nil,
     # stub (or any caller that predates env:) is untouched.
     kw = { capture: capture, chdir: chdir }
     kw[:env] = env if env && !env.empty?
-    # THE SUITE PHASE, published locally for its exact duration. This is the choke point
-    # every conductor-run test scope passes through — the G3 pre-QA gate and the ship's
-    # frozen-SHA test gate alike — so one wrap covers all of them, and a scope added
-    # later is covered without anyone remembering to. Outside this block the sweep is
-    # still working (git, gh, deploys) but at a QUARTER of a suite's weight; inside it,
-    # it costs a full suite, which is what stops a peer launching one beside it.
+    # THE WORKING PHASE, published locally for this scope's exact duration, AT THE COST
+    # THE REGISTRY DECLARES. This is the choke point every conductor-run test scope
+    # passes through — the G3 pre-QA gate and the ship's frozen-SHA test gate alike — so
+    # one wrap covers all of them, and a scope added later is covered without anyone
+    # remembering to.
+    #
+    # THE WEIGHT COMES FROM `meta`, NOT FROM A CONSTANT HERE. Half of these scopes do not
+    # run on this machine at all: `qa_up_smoke` and `prod_up_smoke` are curl polls, and
+    # `qa_post_deploy`/`prod_post_deploy` are `heroku run` — a remote dyno does the work
+    # while this process holds a socket. Publishing `suite` for them told a peer the box
+    # was saturated by a `curl`, which is the same class of wrong answer, in the opposite
+    # direction, as the silence that made this module necessary. `scope_weight` reads
+    # `host`/`tier` off the registry row so the fact lives beside the scope's other
+    # metadata; see its comment for why it is not a keyword at this call site.
     out, ok = ReleasePresence.with_phase(phase: ReleasePresence::PHASE_WORKING,
-                                         weight: ReleasePresence::WEIGHT_SUITE) do
+                                         weight: ReleasePresence.scope_weight(meta)) do
       block ? block.call : sh(*cmd, **kw)
     end
   rescue StandardError => e
@@ -2818,8 +2826,7 @@ def prepare
   # status command reported. Opened HERE — before the first gh/git/board call — so the
   # claim covers the WHOLE run, not just its suite. Best-effort and non-fatal.
   ReleasePresence.open!(kind: ReleasePresence::SWEEP, root: File.expand_path("..", __dir__),
-                        lane: "release:prepare", session_id: conductor_session_id,
-                        agent: "avi", command: "bin/release prepare")
+                        lane: "release:prepare", session_id: conductor_session_id)
   # On the prod default a non-dry prepare fires a REAL accepted→release batch merge +
   # a REAL `bin/qa-server deploy`, so gate it like `ship` does. confirm returns true
   # under --yes (hands-off) and --dry-run (previews nothing-executed).
@@ -6330,7 +6337,18 @@ def deploy_app(group, frozen)
       sh("git", "-C", workspace, "update-index", "-q", "--refresh", capture: true)
       # ship_deploy_env, NOT gate_env: a production deploy script gets its private
       # test DB and nothing else — no RAILS_ENV=test, no ruby pin. See ship_deploy_env.
-      _, ok = sh(command, *args, chdir: workspace, env: ship_deploy_env(repo))
+      #
+      # WRAPPED AT SUITE WEIGHT, EXPLICITLY, because this call does NOT pass through
+      # `run_test_scope` — it is a deploy, not a registered test scope, so no registry
+      # row can reach it and it published only the conductor's ambient `light` for its
+      # entire duration. That is the single worst place in this CLI to under-report:
+      # turf-monster's `bin/deploy` runs `bin/rails test` INSIDE this call, so the
+      # heaviest local workload the ship ever creates was the one telling peers the
+      # machine was three-quarters free.
+      _, ok = ReleasePresence.with_phase(phase: ReleasePresence::PHASE_WORKING,
+                                         weight: ReleasePresence::WEIGHT_SUITE) do
+        sh(command, *args, chdir: workspace, env: ship_deploy_env(repo))
+      end
     end
     # The G4 gate's per-app deploy SOP (see the git_push_heroku twin above).
     gate_sop("deploy:#{repo}", "#{command} #{args.join(' ')}".strip, ok,
@@ -6567,8 +6585,7 @@ def ship
   # publishes the same claim. Opened before the first read so it covers the whole run.
   # Best-effort and non-fatal.
   ReleasePresence.open!(kind: ReleasePresence::SHIP, root: File.expand_path("..", __dir__),
-                        lane: "release:ship", session_id: conductor_session_id,
-                        agent: "steffon", command: "bin/release ship")
+                        lane: "release:ship", session_id: conductor_session_id)
 
   # 1a. MINIMAL, STABLE read — resolve WHICH release ships + its slug, BEFORE the claim.
   #     If the prior run already promoted the release card but did not finish member flips,

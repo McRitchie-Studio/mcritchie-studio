@@ -224,37 +224,14 @@ module CertOrphanGuard
   # later cert able to prove — not assume — that the pid it is looking at is the same
   # process this lock created. A lock without them can prove nothing, and a guard that
   # can prove nothing must not kill (see `decide`: it grades :unverifiable and refuses).
-  # `extra:` — ADDITIONAL keys merged after the identity block, nils dropped. It exists
-  # for bin/lib/release_presence.rb, which publishes a SWEEP or a SHIP through this same
-  # writer rather than growing a second one: the atomic tmp+rename below is the whole
-  # reason the runlock can be trusted, and a second hand-rolled writer would be a second
-  # chance to get it wrong. The identity block still comes from THIS method, so a
-  # presence claim carries exactly the proof a cert runlock does and the reader
-  # (bin/lib/agent_presence.rb) needs no special case for it.
-  #
-  # An EMPTY `extra` is byte-identical to what this method has always written, which is
-  # what keeps every existing caller and every runlock assertion untouched.
   def self.write_lock(root, cert_pid:, pgid:, cert_started_at: nil, pgid_started_at: nil,
-                      lane: nil, db: nil, now: Time.now, extra: {})
+                      lane: nil, db: nil, now: Time.now)
     path = lock_path(root)
     FileUtils.mkdir_p(File.dirname(path))
-    # THE IDENTITY BLOCK IS NOT OVERRIDABLE BY `extra:`. Re-merging it AFTER the overlay
-    # means a caller can enrich the lock (kind, phase, weight, agent…) but can never
-    # restate WHO the lock names — a forged `cert_pid` would make the grader vouch for a
-    # process the writer is not, which is the one thing every reader here trusts
-    # unconditionally (review, 2026-09-02). Key ORDER is unchanged: these four keys already
-    # exist in the base hash, so re-merging overwrites in place and appends nothing, which
-    # keeps the empty-`extra` output byte-identical to the pre-`extra` writer.
-    identity = {
-      "cert_pid" => cert_pid, "cert_started_at" => cert_started_at,
-      "pgid" => pgid, "pgid_started_at" => pgid_started_at
-    }
     body = JSON.generate(
-      {
-        "cert_pid" => cert_pid, "cert_started_at" => cert_started_at,
-        "pgid" => pgid, "pgid_started_at" => pgid_started_at,
-        "lane" => lane, "db" => db, "started_at" => now.utc.iso8601
-      }.merge((extra || {}).reject { |_, v| v.nil? }).merge(identity)
+      "cert_pid" => cert_pid, "cert_started_at" => cert_started_at,
+      "pgid" => pgid, "pgid_started_at" => pgid_started_at,
+      "lane" => lane, "db" => db, "started_at" => now.utc.iso8601
     )
 
     # ATOMIC: write a sibling, then rename over. A plain `File.write` is
