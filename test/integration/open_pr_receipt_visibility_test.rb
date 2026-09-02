@@ -169,10 +169,34 @@ class OpenPrReceiptVisibilityTest < ActionDispatch::IntegrationTest
   # Present only when there IS a decision to report — this page, unlike the CLI
   # line, is not where anybody confirms a write, so an empty card would be noise on
   # every task on the board.
+  #
+  # THE FIXTURE MUST CARRY A devops HASH, AND THAT IS THE WHOLE TEST. As first
+  # shipped this assertion was INERT: `tasks(:done_task)` has no metadata, so
+  # Task#devops? is false and show.html.erb suppresses the ENTIRE DevOps card —
+  # the receipt card among it. The assertion passed because the card was ABSENT,
+  # never because the `.any?` guard held. Measured 2026-09-02 by rendering the
+  # card unconditionally (`<% if true %>`) and watching this file stay green at
+  # 8 runs / 22 assertions / 0 failures. A test that agrees with the fix and the
+  # defect alike measures nothing, which is this family's recurring defect (see
+  # "the fixture really does contain the colliding substring" above, the control
+  # that exists for the same reason).
+  #
+  # So the task gets a devops hash WITHOUT `abandoned_prs` — the real state of a
+  # task archived with nothing left open — and the DevOps card is asserted
+  # PRESENT first. That control is what keeps the refutation honest: without it,
+  # any future change that stops the card rendering makes this pass again for the
+  # wrong reason.
   test "the task page shows no receipt card when nothing was abandoned" do
-    get task_path(tasks(:done_task))
+    record = tasks(:done_task)
+    record.update!(metadata: record.metadata.merge("devops" => { "kind" => "chore" }))
+
+    get task_path(record)
 
     assert_response :success
-    assert_select "p", text: "Abandoned PRs", count: 0
+    assert_select "p", { text: "DevOps handoff", count: 1 },
+                  "control: the DevOps card must RENDER, or the refutation below passes " \
+                  "because the whole card is missing rather than because the guard held"
+    assert_select "p", { text: "Abandoned PRs", count: 0 },
+                  "nothing was abandoned, so an empty receipt card would be noise on every task"
   end
 end

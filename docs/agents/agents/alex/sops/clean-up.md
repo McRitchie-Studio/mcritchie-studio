@@ -371,7 +371,19 @@ bin/task orphan-prs          # PRs still OPEN whose task is already archived
 Read-only, never blocks, and one `gh pr list` per repo rather than one call per PR.
 A PR carrying an abandonment receipt reports as *abandoned on purpose*; anything else
 reports as **ORPHANED** and needs a decision. A repo it could not read is named as
-unchecked rather than counted as clean.
+unchecked rather than counted as clean — **report it by name.** A run that prints
+`0 orphaned PR(s)` while warning about a repo has said nothing about that repo, and
+reporting that as clean converts an unknown into a false all-clear.
+
+**This same sweep now also runs on the beat**, as the closing step of Steffon's
+[`archive-shipped`](../../steffon/sops/archive-shipped.md#the-orphan-sweep--the-coverage-for-the-model-path),
+which rides the end of every production release. The two occurrences are
+deliberate and not redundant: that one is the **beat** — it fires on every
+archive, so an orphan surfaces within a release cycle instead of waiting for a
+human to ask for a backlog audit. This one is the **episodic deep clean** an
+operator invokes when the board has already fogged, and it sits beside the
+no-task-at-all triage below, which the beat does not do. Keep both saying the
+same thing about an unchecked repo.
 
 ---
 

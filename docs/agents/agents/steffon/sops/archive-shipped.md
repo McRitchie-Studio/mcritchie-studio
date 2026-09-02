@@ -48,7 +48,12 @@ Use the production board by default. Do not add `--local`.
 - The worktree cleanup candidate is merged or main-equivalent.
 - No feature worktree with unmerged or dirty work is reclaimed.
 
-If there is nothing to archive, report "nothing to archive" and stop.
+If there is nothing to archive, **still run the orphan sweep** below, then report
+"nothing to archive" alongside its result and stop. The sweep reports orphans
+**already on the board** — they do not depend on this run archiving anything, and
+skipping it on a quiet run is exactly how one sits for a month. That is not
+hypothetical: studio-engine #245 sat open under an archived task for a month and
+surfaced only because a human finally asked for a backlog audit.
 
 ## Procedure
 
@@ -64,6 +69,11 @@ and Redis slots) over many minutes. Run it in the conductor session itself.
   **mutating vs reading**, not *parallel vs serial*.
 - **Recovery.** `bin/release archive` is idempotent — a re-run archives nothing
   twice. If a run is interrupted, re-run it.
+- **Then sweep for orphaned PRs, unconditionally.** `bin/task orphan-prs` is
+  read-only, never blocks, and always exits 0, so it closes every run of this act
+  — including one that archived nothing, and including one that ended in a
+  refusal. See [the orphan sweep](#the-orphan-sweep--the-coverage-for-the-model-path)
+  below for why it belongs to THIS act and how to read it.
 
 Preview first:
 
@@ -95,6 +105,14 @@ cleanup guards.
    reclaim, so worktrees that just went away are not swept and counted twice.
 10. Retires frozen docs + rolls the ledger (`bin/archive-docs`), then commits
     that and the ledger to `release` in ONE artifact commit.
+
+**`bin/release archive` ends at step 10. The ACT does not.** One step remains, and
+it is a separate command you run yourself:
+
+11. Sweeps for orphaned PRs (`bin/task orphan-prs`) and reports them — read-only,
+    never blocks, and run on **every** pass of this act including a no-op archive
+    and an aborted one. It is the coverage for the model archive path; see
+    [the orphan sweep](#the-orphan-sweep--the-coverage-for-the-model-path).
 
 > ### ⛔ Step 7 BLOCKS step 8 — the run under-reclaims by design
 > Archiving a task **lands a durable artifact on it**, and the reclaim's idle gate
@@ -231,6 +249,74 @@ real, because only the BARE form fell through to usage; `test/lib/bin_help_flag_
 a new `bin/` script is added without deciding what it does with an unrecognised
 argument.
 
+### The orphan sweep — the coverage for the model path
+
+This step is not a nicety bolted onto the end of the run. It is the other half of
+a design that deliberately chose **not** to gate the bulk archive.
+
+`bin/release archive` archives through `Release::Conductor.archive_completed!`,
+which calls `task.archive!` on the **model**. That path **bypasses the CLI's
+open-PR gate on purpose** (`lib/archive_holder_guard.rb`, "THIS GATE IS THE CLI
+PATH, DELIBERATELY"), and it must keep bypassing it: the gate reads GitHub, the
+App installation token expires about hourly **by design**, and a gate there could
+refuse an entire release closeout on one stale read. **Refusing a closeout is
+worse than a late orphan report** — and a gate that refuses most days gets
+`--force`d until it protects nothing, which the holder guard already measured (31
+of 34 refusals, then `--force` as muscle memory).
+
+So the model path is ungated on purpose, and **this sweep is its coverage.** Do
+not "improve" the model path while you are in here; improving it is how a
+closeout starts failing on a credential.
+
+Run it after every archive:
+
+```bash
+bin/task orphan-prs          # PRs still OPEN whose task is already archived
+bin/task orphan-prs --json   # same finding set, machine-readable
+```
+
+One `gh pr list` per repo the archived tasks actually name — not one call per PR,
+so it stays seven calls however large the board.
+
+**How to read the output:**
+
+| Line | What it means | What you owe |
+|---|---|---|
+| `ORPHANED  <repo>#<n>` | neither merged nor closed, and no board state describes it | name it in the report, and decide: merge it, close it, or revive the task |
+| `abandoned on purpose  <repo>#<n>` | an abandonment receipt names that exact PR | nothing — the decision was made and recorded; it only needs to stay visible |
+| `warning: <repo>: could not list open PRs — NOT checked` | that repo **was not swept at all** | refresh the token and re-run; if it still fails, report the repo BY NAME as unchecked |
+
+`archived` is not a lock. **Reviving the task is a legitimate outcome** — often
+the right one when the PR still carries work nobody re-derived.
+
+> ### ⛔ An UNCHECKED repo is not a CLEAN repo
+> The summary line — `(N orphaned PR(s), M deliberately abandoned, across K
+> archived task(s))` — counts only the repos it could read. A repo whose
+> `gh pr list` failed is named in a warning on **stderr** and is simply absent
+> from that count, so a run printing `0 orphaned PR(s)` **while warning about a
+> repo has told you nothing about that repo**. Almost always a stale token:
+>
+> ```bash
+> eval "$(bin/gh-auth-refresh --export)"
+> bin/task orphan-prs
+> ```
+>
+> **Report every unchecked repo by name.** A scheduled report that quietly counts
+> unchecked repos as clean is worse than no report: it converts an unknown into a
+> false all-clear. That is the same species as the two false all-clears already
+> measured in this exact surface — a substring prefix collision that read a live
+> `/pull/24` as "abandoned on purpose" because a receipt for `/pull/245` contained
+> its url, and the summary line that therefore reported `0 orphaned PR(s)` while a
+> real orphan sat open. Both are fixed; the posture that caught them is what this
+> callout preserves.
+>
+> **Two more silences the sweep can carry, so read stderr, not just the summary:**
+> `warning: stopped after 40 pages` means the archived-task scan itself was
+> truncated, and `gh_open_pr_numbers` truncates at `--limit 200` open PRs per repo
+> **without saying so** (latent — no repo is near it; recorded on
+> `/tasks/harden-open-pr-guard` as `activity-6499`. The fix is to PAGE, never to
+> raise the number — a bigger limit is the same defect with a later trigger).
+
 ## Exit Seam
 
 Shipped tasks and completed releases are archived, safe completed worktrees are
@@ -247,6 +333,11 @@ reclaimed, and regenerable disk is swept. Report:
 - **retired-doc count** and the ledger rows rolled over
 - **any doc skipped for being still referenced** — name the file AND its
   referrer, so the citation can be fixed deliberately rather than orphaned
+- **orphaned PRs** from `bin/task orphan-prs` — every `ORPHANED` line as
+  `<repo>#<n>` plus the archived task that stranded it, and the decision you took
+  or are handing on. Report `0 orphaned PR(s)` only when every repo was checked
+- **any repo the sweep could NOT check**, by name — never folded into the clean
+  count, and never omitted because the summary line already reads zero
 
 On a clean no-op, report "nothing to archive." Note that a no-op archive can
 still sweep real disk, and a fresh machine can sweep nothing while archiving
@@ -259,3 +350,8 @@ plenty — the two halves are independent.
 - [`production-deploy.md`](production-deploy.md) - the ship this act closes out;
   it runs `archive-shipped` as its final step.
 - [`../../avi/sops/qa-release.md`](../../avi/sops/qa-release.md) - Avi's release prepare (assembler) SOP.
+- [`../../alex/sops/clean-up.md`](../../alex/sops/clean-up.md) - Alex's board-to-zero
+  act, which runs the same orphan sweep at its Phase 5. That one is the EPISODIC
+  deep clean an operator invokes when the board has fogged; this one is the BEAT,
+  riding every archive. Two occurrences on purpose — keep them saying the same
+  thing about how to read an unchecked repo.

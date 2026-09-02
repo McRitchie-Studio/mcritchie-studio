@@ -11,16 +11,20 @@ routes to three independent act SOPs:
 - [`clean-infra`](sops/clean-infra.md) - reclaim this machine's local
   infrastructure: finished desks, the Redis band, regenerable disk, orphaned
   per-desk databases. The catch-all when an agent reports there is no space.
-- [`archive-shipped`](sops/archive-shipped.md) - archive shipped work and retire
-  frozen docs. Chained by `production-deploy`; still invocable on its own.
+- [`archive-shipped`](sops/archive-shipped.md) - archive shipped work, retire
+  frozen docs, and **sweep for orphaned PRs**. Chained by `production-deploy`;
+  still invocable on its own.
 
 Use this file when Mr. McRitchie invokes `Steffon Heartbeat`. When he invokes a
 single Steffon act directly, read that act's SOP file.
 
 **Two kinds of cleaning, on purpose.** `archive-shipped` is the NATURAL beat — it
 rides the end of every production release and closes out what that release
-shipped. `clean-infra` is the DELIBERATE one — invoked when the machine is in
-the way, whatever the symptom looked like. The `/deployments` Workflows card
+shipped, and it is therefore where the orphaned-PR sweep lives: `bin/release
+archive` archives through the MODEL path, which bypasses the CLI's open-PR gate
+by design, so the alarm rings on the same beat as the act that can create one.
+`clean-infra` is the DELIBERATE one — invoked when the machine is in the way,
+whatever the symptom looked like. The `/deployments` Workflows card
 carries `production-deploy` + `clean-infra`; `archive-shipped` is off it because
 the release already runs it, and it stays invocable by name.
 
@@ -31,7 +35,8 @@ Steffon is the downstream bookend — the ship + archive end of the pipeline:
 - Ship a QA-green release that Avi already brought to `assembled` (stages 4-5):
   run the frozen-SHA gate, fast-forward `release → main`, deploy prod, smoke,
   post release notes.
-- Archive shipped work and reclaim completed worktrees.
+- Archive shipped work, reclaim completed worktrees, and sweep for PRs left open
+  under an archived task.
 - Stop before merge and QA assembly.
 
 Avi's `qa-release` sweep owns merging reviewed PRs onto `release`, deploying QA,
@@ -91,6 +96,11 @@ End every Steffon heartbeat with a short report:
 
 - production ship result, or "nothing to ship"
 - archive result, or "nothing to archive"
+- **orphaned PRs** found by `archive-shipped`'s closing sweep — each as
+  `<repo>#<n>` with the archived task that stranded it — and **any repo the sweep
+  could not check, by name**. An unchecked repo is never reported as clean; that
+  turns an unknown into a false all-clear. On a fully-checked clean pass, say "no
+  orphaned PRs, all N repos checked"
 - release slug and production URL when a release shipped
 - infra swept: desks reclaimed, band before → after, reclaimed bytes
   (**this machine only**), and any app the logger audit named `LOOSE` or `NONE`
