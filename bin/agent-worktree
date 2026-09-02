@@ -58,6 +58,12 @@ require_relative "lib/desk_ledger"
 require_relative "lib/projects_root"
 require_relative "lib/cli_arg_guard"
 require_relative "lib/agent_worktree_cli"
+# The SESSION half of the context marker, and the reverse lookup it enables. The
+# marker knew the task and not the session; the session record knows the session
+# and stops recording the task the moment it moves to a desk. Neither could say
+# who holds what. See bin/lib/desk_context.rb for why a backfill was the wrong fix.
+require_relative "lib/session_identity"
+require_relative "lib/desk_context"
 
 PROJECTS_DIR = File.expand_path(ENV.fetch("PROJECTS_DIR") { ProjectsRoot.default_projects_dir })
 HUB_DIR = File.join(PROJECTS_DIR, "mcritchie-studio")
@@ -1710,7 +1716,20 @@ rescue JSON::ParserError
   nil
 end
 
-def context_payload(app, task, values, dir, record: nil, stage: nil)
+# The marker as it stands on disk, or nil. Read so a refresh can CARRY FORWARD the
+# fields it is not entitled to rewrite — the occupant's session survives a peer's
+# `status` sweep. Never raises: an unreadable marker is treated as no marker.
+def read_existing_context(dir)
+  path = context_path(dir)
+  return nil unless File.exist?(path)
+
+  data = JSON.parse(File.read(path))
+  data.is_a?(Hash) ? data : nil
+rescue JSON::ParserError, SystemCallError
+  nil
+end
+
+def context_payload(app, task, values, dir, record: nil, stage: nil, creating: false)
   port = values["APP_PORT"].to_s
   redis_db = redis_db_from_url(values["REDIS_URL"])
   database = db_name_from_url(values["DATABASE_URL"])
@@ -1725,7 +1744,13 @@ def context_payload(app, task, values, dir, record: nil, stage: nil)
   mascot_shiny = resolve_mascot_shiny(values, dir, task, mascot)
 
   {
-    "schema_version" => 1,
+    # 2 adds the session fields (see session_fields_for). The bump is load-bearing
+    # rather than ceremonial: it is what lets a reader tell a marker whose writer
+    # PREDATES the session join — where no answer was ever possible — from one
+    # written by a session-aware writer where nobody claimed the desk. Reporting
+    # honest silence as a missing holder is the same class of lie a backfill would
+    # have told, one layer up.
+    "schema_version" => DeskContext::SCHEMA_VERSION,
     "generated_at" => Time.now.utc.iso8601,
     "app" => app.fetch("slug"),
     "app_name" => app.fetch("display_name", app.fetch("slug")),
@@ -1754,12 +1779,58 @@ def context_payload(app, task, values, dir, record: nil, stage: nil)
     "stage" => stage,
     "terminal_title" => title,
     "prompt_badge" => badge
-  }
+  }.merge(session_fields_for(dir, creating: creating))
 end
 
-def write_context_marker(app, task, values, dir, record: nil, stage: nil)
+# The session half of the marker: who is at this desk, and the anchor that proves
+# it is still here.
+#
+# THE OCCUPANCY RULE. `status`, `whereami` and `bind-task` all take an explicit
+# <app> <task-slug> and can be run from anywhere — the primary, or another agent's
+# desk. Stamping unconditionally would let one conductor sweep write its own
+# session id onto every desk in the tree, and each of those rows would then grade
+# `live`, because the conductor is alive. DeskContext.claiming? refuses that, and
+# DeskContext.stamp carries the occupant's existing claim forward untouched.
+#
+# `new` is the exception, and an honest one: the desk did not exist a moment ago,
+# so nobody else can be at it. That is the claim `bin/task begin` needs, since it
+# creates the desk from the primary and only then prints the path the builder
+# walks into.
+def session_fields_for(dir, creating: false)
+  DeskContext.stamp(
+    existing: read_existing_context(dir),
+    session: SessionIdentity.identity,
+    anchor: SessionIdentity.agent_process,
+    parent: parent_session_id,
+    claiming: DeskContext.claiming?(dir, creating: creating)
+  )
+rescue StandardError
+  # The marker is worth writing even when the session cannot be resolved. A desk
+  # with no session line is the pre-existing behaviour; a desk with no marker is a
+  # regression.
+  {}
+end
+
+# The fan-out root, when this session is a subagent. Same env chain bin/task reads
+# when it stamps parent_session_id on the board's session_mascots — recorded here
+# so five subagent desks read as ONE operator's fan-out rather than five
+# independent claimants competing for the machine.
+def parent_session_id
+  %w[
+    MCRITCHIE_PARENT_SESSION_ID
+    AGENT_PARENT_SESSION_ID
+    CODEX_PARENT_THREAD_ID
+    CLAUDE_PARENT_SESSION_ID
+  ].each do |key|
+    value = ENV[key].to_s.strip
+    return value unless value.empty?
+  end
+  nil
+end
+
+def write_context_marker(app, task, values, dir, record: nil, stage: nil, creating: false)
   ensure_context_file_excluded(dir)
-  payload = context_payload(app, task, values, dir, record: record, stage: stage)
+  payload = context_payload(app, task, values, dir, record: record, stage: stage, creating: creating)
   File.write(context_path(dir), "#{JSON.pretty_generate(payload)}\n")
   refresh_codex_session_title(dir)
   payload
@@ -1832,6 +1903,99 @@ def run_whereami(app = nil, task = nil, json: false, shell: false)
     puts shell_context.fetch("title_command")
   else
     print_context(context)
+  end
+end
+
+# --- the reverse lookup ------------------------------------------------------------
+#
+# `holder <task-slug>` — which live session holds this task?
+# `holder --session <id>` — what is this session doing?
+#
+# Both questions cost a real operator real time on 2026-09-01, in the same hour and
+# from opposite directions. A session's work had to be held and could not be
+# identified from disk, because its record carried only app and mascot; it was
+# resolved by messaging peer sessions one at a time. And a task blocked a ship whose
+# agent could name the holding session id but could not learn whether it was a
+# builder or a reviewer without asking two peers. Neither is a hard question — the
+# facts were on disk the whole time, in two files that did not name each other.
+def run_holder(task_slug, session_id: nil, json: false)
+  table = CertOrphanGuard.process_table
+  desks = DeskContext.desks(root: PROJECTS_DIR, table: table)
+  matches =
+    if session_id
+      DeskContext.desks_of_session(session_id, desks: desks)
+    else
+      DeskContext.holders_of(task_slug, desks: desks)
+    end
+
+  if json
+    puts JSON.pretty_generate(
+      query: session_id ? { session_id: session_id } : { task_slug: task_slug },
+      desks_scanned: desks.length,
+      matches: matches
+    )
+  else
+    print_holders(task_slug, session_id, matches, desks.length)
+  end
+
+  # 0 only when somebody is actually there. A script asking "is this task held?"
+  # must not read "I found a desk" as "I found a holder" — a dead anchor is a desk
+  # whose holder is gone, which is the answer that unblocks the caller.
+  matches.any? { |d| DeskContext.live?(d[:grade]) } ? 0 : 1
+end
+
+def print_holders(task_slug, session_id, matches, scanned)
+  subject = session_id ? "session #{session_id}" : "task #{task_slug}"
+  if matches.empty?
+    puts "no desk holds #{subject} (#{scanned} desk(s) scanned)"
+    puts "  a desk written before the session join reports schema 1 — refresh it with:"
+    puts "    bin/agent-worktree status <app> <task-slug>"
+    return
+  end
+
+  puts "#{subject} — #{matches.length} desk(s) of #{scanned} scanned"
+  matches.each do |desk|
+    detail = desk[:detail]
+    puts
+    puts "  #{desk[:grade].to_s.upcase}  #{desk[:repo] || "?"}/#{desk[:desk]}"
+    puts "    task:    #{desk[:task_slug] || "not bound"}"
+    puts "    session: #{detail[:session_id] || "none recorded"}#{detail[:session_provider] ? " (#{detail[:session_provider]})" : ""}"
+    puts "    parent:  #{detail[:parent_session_id]}" if detail[:parent_session_id]
+    puts "    anchor:  #{anchor_line(detail)}"
+    puts "    branch:  #{desk[:branch]}" if desk[:branch]
+    puts "    url:     #{desk[:local_url]}" if desk[:local_url]
+    puts "    path:    #{desk[:worktree] || File.dirname(desk[:path])}"
+    puts "    #{holder_note(desk[:grade], detail)}"
+  end
+end
+
+def anchor_line(detail)
+  return "none recorded" unless detail[:anchor_pid]
+
+  "pid #{detail[:anchor_pid]} started #{detail[:anchor_started_at] || "unrecorded"}"
+end
+
+# Say what the grade MEANS for the reader's next move. A bare grade word makes the
+# reader guess, and the whole point of this surface is that nobody should have to.
+def holder_note(grade, detail)
+  case grade
+  # "may still be" and not "is": the anchor is the CLI process HOSTING the session,
+  # and one process hosts several at once (measured 2026-09-01 — see DeskContext's
+  # SESSION_FIELDS). A live anchor can outlast the session that recorded it. The
+  # actionable half is unchanged, and it is the half that matters: ask before you
+  # touch this desk.
+  when :live then "the holder may still be here — message it before touching this desk"
+  when :dead then "the holder is gone — this desk is reclaimable"
+  when :recycled then "that pid belongs to a stranger now — the holder is gone, and we never signal it"
+  when :unverifiable then "alive but UNPROVABLE — treated as held; never silently discarded"
+  when :unclaimed
+    if detail[:stale_schema]
+      "no session recorded, and this marker PREDATES the session join (schema " \
+        "#{detail[:schema_version]}) — refresh the desk before concluding it is free"
+    else
+      "no session at this desk — honest silence, not a missing write"
+    end
+  else "unreadable marker — it identifies nobody"
   end
 end
 
@@ -4794,7 +4958,14 @@ if $PROGRAM_NAME == __FILE__
           !File.exist?(context_path(dir))
         end
       end
-      write_context_marker(app, task, values, dir)
+      # `creating:` is the ONE place a session may claim a desk it is not standing
+      # in — and only when this call is what brings the marker into existence.
+      # `bin/task begin` runs `new` from the primary and prints the path the
+      # builder then walks into, so without this the desk that most needs a holder
+      # would never record one. Re-running `new` over an existing marker is NOT a
+      # claim: someone may already be at that desk, and overwriting their session
+      # with ours is the confident lie the occupancy rule exists to refuse.
+      write_context_marker(app, task, values, dir, creating: !marker_pre_existing)
     rescue StandardError, SystemExit, Interrupt => e
       warn "new: bringup failed (#{e.class}: #{e.message}) — unwinding"
       unwinder.unwind!
@@ -4903,6 +5074,19 @@ if $PROGRAM_NAME == __FILE__
     else
       usage
     end
+  when "holder"
+    json = ARGV.delete("--json")
+    session_id = nil
+    if (idx = ARGV.index("--session"))
+      ARGV.delete_at(idx)
+      session_id = ARGV.delete_at(idx)
+      usage unless session_id
+    end
+    task_slug = ARGV.shift
+    usage unless ARGV.empty?
+    usage unless task_slug || session_id
+    usage if task_slug && session_id
+    exit run_holder(task_slug, session_id: session_id, json: !!json)
   when "shell-hook"
     shell = ARGV.shift
     usage unless shell && ARGV.empty?

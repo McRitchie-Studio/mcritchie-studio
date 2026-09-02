@@ -459,11 +459,27 @@ Why this one pays for itself alone:
   derived from the process table by construction.
 - **Measured cost: ~50 ms, no network.**
 
-### Slice 2 — complete the session ↔ task join
+### Slice 2 — complete the session ↔ task join — **LANDED**
 
 Add `session_id`, `anchor_pid`, and `anchor_started_at` to the desk context
 `write_context_marker` already writes on every refresh. The reader gains reverse
 lookup: *which live session holds task X.* Closes cost #1.
+
+Shipped as `bin/lib/desk_context.rb` (the pure occupancy rule, the grader, and the
+join) plus `bin/agent-worktree holder <task-slug> | --session <id>`. Two things the
+plan above did not anticipate, both load-bearing:
+
+- **A refresh from OUTSIDE the desk must not stamp.** `status`, `whereami` and
+  `bind-task` all take an explicit `<app> <task-slug>` and run from anywhere, so an
+  unconditional write would let one conductor sweep put its own session id on every
+  desk — and each row would grade `live`, because the conductor is alive. Occupancy
+  (`Dir.pwd` inside the desk, or `new` creating it) gates the stamp; every other
+  refresh carries the occupant's claim forward untouched.
+- **`schema_version` went to 2, and the bump is not ceremonial.** It is the only
+  way a reader can tell a marker whose writer *predated* the join — where no answer
+  was ever recorded — from one where a session-aware writer found nobody at the
+  desk. Collapsing those two would report honest silence as a missing holder: the
+  same lie a backfill would have told, moved one layer up into the reader.
 
 **This slice shrank as the evidence came in**, and that is why it moved ahead of
 the two below. Scoped from the task's framing it was the largest item — a new
@@ -511,7 +527,28 @@ because it is arithmetic over what they publish.
   table carries an indexed `parent_session_id`, populated by `bin/task
   session-mascot`, but it is never persisted locally. It is the cheapest existing
   hook for showing that five "sessions" are one operator's fan-out rather than
-  five independent claimants — worth folding into slice 2 if it is free there.
+  five independent claimants. Slice 2 folded it in: the desk marker now records
+  `parent_session_id` beside `session_id`, and `holder --session <id>` matches on
+  either, so a fan-out root finds its children.
+- **The session anchor CANNOT attribute load — measured, and it is a negative
+  result worth keeping.** Slice 2 records `anchor_pid` + `anchor_started_at` on
+  each desk, and the obvious next step is to walk a heavy process's ancestry to
+  an anchor and thereby name the session burning the CPU. **It does not work, and
+  it fails in the confident direction.** One `claude` CLI process hosts MANY
+  concurrent sessions: on 2026-09-01 pid 60790 anchored four at once — three of
+  them mid-`bin/ship` on unrelated tasks — out of eight distinct CLI processes on
+  the box. A probe built exactly that way attributed three foreign ships to one
+  desk with full confidence. So the anchor is one-to-**many** with sessions, and:
+  - a **dead** anchor still proves the session is gone (its host is gone) — the
+    direction the corpse grade depends on, and it is sound;
+  - a **live** anchor proves only that the session's *host* is alive, so `live`
+    means "may still be there" — over-reporting, which is the safe tie-break;
+  - `session_id` is the only unique key on disk, and **nothing today maps a heavy
+    pid to one**. That is the real gap behind the `SUITE_CAPACITY` question
+    above: the unattributed consumers slice 1 sees are largely sibling sessions
+    inside one CLI process, which no per-process anchor can separate. Attributing
+    them needs a per-session marker written by the heavy lane itself — which is
+    what slices 3 and 4 already propose, and is now their strongest argument.
 - **A fossil to clear.** `.agents/locks/gate-in-progress-rel-20260709-38f895`
   (2026-07-09) has **no writer anywhere in the tree** — a residue of a removed
   implementation. A marker no code writes is exactly the confusion this design
