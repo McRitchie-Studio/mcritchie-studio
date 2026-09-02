@@ -159,7 +159,18 @@
 # board, a dev database and production.
 # MEASURED with the lister: `npx playwright test --list` => 140.
 # Coverage ADDED; `quarantined` is untouched.
-total_specs: 144
+#
+# 144 -> 146 on 2026-09-02: two more in e2e/two_part_blocker.spec.js for the
+# RESUBMISSION signal — a `--kind rework` block lands the task back on `building`, so a
+# bounced task and a never-reviewed one drew the same card, and the board could not say
+# "this carries feedback nobody has answered" (/tasks/rework-resubmission-looks-like-build).
+# The pair asserts the DISTINCTION rather than either state alone: an unmoved head and a
+# moved one must not render the same text, which is the acceptance criterion itself.
+# EXTENDING an existing spec file counts here exactly as a new file does — this guard
+# counts SPECS, not files, and that is the trap this bump exists to record.
+# MEASURED with the lister, not added by hand: `npx playwright test --list` => 146.
+# Coverage ADDED; `quarantined` is untouched.
+total_specs: 146
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
@@ -258,7 +269,13 @@ quarantined: 10
 # Re-derived after the wallet-auth removal landed:
 #   npx playwright test --list                           => 141
 #   npx playwright test --list --grep-invert @quarantine => 131
-executed: 134
+#
+# 134 -> 136 on 2026-09-02: the two resubmission specs above. Coverage ADDED;
+# `quarantined` untouched.
+# Re-derived after the resubmission signal landed:
+#   npx playwright test --list                           => 146
+#   npx playwright test --list --grep-invert @quarantine => 136
+executed: 136
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to
