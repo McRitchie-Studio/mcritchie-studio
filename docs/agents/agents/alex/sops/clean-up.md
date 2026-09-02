@@ -251,6 +251,7 @@ risk**, and names what it could not verify:
 | Grade | What it means | Archive |
 |---|---|---|
 | `concluded` | `shipped`/`archived` — the code is on `main` | proceeds |
+| | *(the open-PR gate below reads `shipped` differently — see it)* | |
 | `unheld` | no session, no mascot, no claim: nobody picked it up | proceeds |
 | `abandoned` | a session we could check, checked, and found gone | proceeds |
 | `held` | a live claim lease | **REFUSES**, names the session |
@@ -305,10 +306,21 @@ map — and refuses, naming each PR and its state.
 
 | PR states | Archive |
 |---|---|
+| the task is already `archived` | proceeds — a re-archive is idempotent |
 | no PR recorded | proceeds |
 | all merged / closed | proceeds |
 | **any still OPEN** | **REFUSES**, names every PR and its state |
 | a state that could not be read | proceeds, with a **warning** naming the PR |
+
+**`shipped` IS NOT EXEMPT HERE**, and that is the one row that differs from the
+holder gate's table above. That gate reads `shipped`/`archived` as `concluded`
+because merged code leaves nothing uncommitted to destroy — true, and about a
+different question. It says nothing about whether **every** PR the task named
+actually landed: the `merged` stamp is per-**TASK** while PRs are per-**REPO**, so a
+multi-repo task reaches `shipped` on its primary while a sibling repo's PR is still
+open. That is the population this gate most exists for — `move-web3-modals-to-solana`
+below is exactly it — so inheriting the skip would exempt the shape most likely to
+strand. `OpenPrGuard::CONCLUDED_STAGES` is `%w[archived]` alone, deliberately.
 
 **This is not the holder gate's question.** That one guards UNCOMMITTED work an
 archive would destroy, and a PR is durable so it never holds that gate. But *survives*
@@ -332,7 +344,14 @@ bin/task move <slug> archived --force  # archive AND abandon the PR — recorded
 
 `--force` here records the abandonment in `devops.abandoned_prs`, so a later reader
 can tell a PR that was dropped **on purpose** from one that was **forgotten**. That
-distinction is the whole reason the override records rather than merely warning.
+distinction is the whole reason the override records rather than merely warning. It
+covers **every** PR the override drops — the open ones and any whose state could not
+be read, since one keystroke abandoned both — and `bin/task show <slug> --verbose`
+prints it back under `abandoned_prs`, which is how you confirm the receipt landed:
+
+```bash
+bin/task show <slug> --verbose        # abandoned_prs: the receipt, or "-" for none
+```
 
 **An unreadable PR state warns rather than refusing**, deliberately: the GitHub App
 token expires about hourly by design, so refusing on it would refuse most archives on

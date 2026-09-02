@@ -297,6 +297,25 @@
             <p class="text-sm text-body whitespace-pre-wrap break-words"><%= @task.devops_agent_context %></p>
           </div>
         <% end %>
+
+        <%# The open-PR archive gate's receipt (lib/open_pr_guard.rb). It exists so a %>
+        <%# later reader can tell a PR dropped ON PURPOSE from one that was forgotten, %>
+        <%# and this page is one of the two surfaces that reader opens by default. %>
+        <%# Rendered only when present: unlike the CLI's line, nothing here is %>
+        <%# confirming a write, so an always-on empty card would be noise on every task. %>
+        <% if @task.devops_abandoned_prs.any? %>
+          <div class="bg-surface rounded p-3 mt-3">
+            <p class="text-[10px] text-muted uppercase tracking-wide mb-2">Abandoned PRs</p>
+            <p class="text-xs text-muted mb-2">
+              Archived with these pull requests still unresolved — dropped deliberately, not forgotten.
+            </p>
+            <ul class="space-y-1 text-sm text-body list-disc pl-4">
+              <% @task.devops_abandoned_prs.each do |entry| %>
+                <li class="break-words"><%= entry %></li>
+              <% end %>
+            </ul>
+          </div>
+        <% end %>
       </div>
     <% end %>
 
