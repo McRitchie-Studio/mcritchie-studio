@@ -178,6 +178,19 @@ class DeskContextTest < Minitest::Test
     assert DeskContext.live?(:unverifiable), "and it counts as held — ties break toward protecting live work"
   end
 
+  # A FAILED `ps` MUST NOT BURY THE WHOLE FLOOR. process_table returns [] on a
+  # non-zero exit, ENOENT, or a fork failure under load — the exact machine state in
+  # which somebody goes looking for desks to reclaim. Graded against an empty table
+  # every live claim would find no process and read `dead`, so the reader would be
+  # told EVERY desk is reclaimable at the moment that is most expensive to believe.
+  def test_an_empty_process_table_grades_unverifiable_not_dead
+    verdict, detail = DeskContext.grade(context: context, table: [])
+
+    assert_equal :unverifiable, verdict, "no process table, no verdict — never a corpse"
+    assert DeskContext.live?(verdict), "an ungradeable claim is held, not buried"
+    assert detail[:degraded], "and the reader is told WHY it could not be graded"
+  end
+
   def test_a_claim_naming_no_pid_grades_unverifiable_not_dead
     verdict, = DeskContext.grade(context: context("anchor_pid" => nil), table: table)
     assert_equal :unverifiable, verdict,

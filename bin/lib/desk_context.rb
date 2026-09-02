@@ -278,12 +278,21 @@ module DeskContext
       schema_version: schema,
       # "nobody is here" vs "this marker could never have said". The row renders
       # differently for each, and the second one has a remedy: refresh the desk.
-      stale_schema: schema < SESSION_AWARE_SCHEMA
+      stale_schema: schema < SESSION_AWARE_SCHEMA,
+      # NO PROCESS TABLE, NO VERDICT. CertOrphanGuard.process_table returns [] when
+      # `ps` fails — a non-zero exit, ENOENT, or a fork failure on a loaded box, which
+      # is exactly when somebody is hunting for desks to reclaim. Without this every
+      # claim would find no process and grade `dead`, flipping EVERY live desk to
+      # "reclaimable" at once: under-reporting, the one direction this file forbids.
+      # AgentPresence, whose vocabulary COUNTED_GRADES mirrors, already carries the
+      # same guard and publishes the same flag.
+      degraded: table.empty?
     }
 
     return [:unclaimed, detail] if session.nil?
-    # A session id with no anchor is a claim we cannot grade. It is still a claim.
-    return [:unverifiable, detail] if pid.nil?
+    # A claim we cannot grade — no anchor recorded, or no table to grade it against.
+    # It is still a claim, and an ungradeable claim is held, never buried.
+    return [:unverifiable, detail] if pid.nil? || table.empty?
 
     process = CertOrphanGuard.live_process(table, pid)
     detail = detail.merge(found: process)
