@@ -448,4 +448,78 @@ class FeatureShapeTiersTest < Minitest::Test
                  "checkout when this guard was written, having gone unrun long enough for a " \
                  "quarter of it to decay."
   end
+
+  # ==== [unit] EVERY `claimable_when` IS A RULE THE GATE ACTUALLY IMPLEMENTS ==========
+  #
+  # `claimable_when` is what makes a zero-tier shape safe: it says the lighter
+  # contract must be EARNED from the observed diff rather than unlocked by typing the
+  # shape's name. That protection is worth exactly nothing if bin/dor-check does not
+  # implement the rule the config names — a shape would then carry a guard that reads
+  # as protection and enforces nothing, which is a WORSE state than declaring no
+  # guard at all, because the reviewer stops looking.
+  #
+  # This is the same class of drift test_integration_the_canonical_spec_matches_the_
+  # shipped_config catches between the config and the design doc: two files, one
+  # truth. Here the second copy is CODE.
+  #
+  # dor-check also refuses an unrecognized rule at RUNTIME (its `else` branch), so a
+  # typo fails closed rather than granting the claim. This guard is the earlier half:
+  # it catches the typo in CI, on the commit that introduces it, instead of on some
+  # future task that happens to claim the shape.
+  #
+  # STRUCTURAL, NOT A GREP FOR THE NAME. Both rule names appear in prose comments in
+  # that file (and in this one), so a substring search would match the DOCUMENTATION
+  # of a rule that was never wired up — the exact "assertion matches the comment"
+  # failure this repo has been bitten by. So it parses the `case claim_rule`
+  # dispatch and reads its `when` literals: the only place a rule is actually
+  # implemented.
+  DOR_CHECK = File.join(ROOT, "bin/dor-check")
+
+  def implemented_claim_rules(source)
+    body = source[/^\s*case claim_rule\s*$(.*?)^\s*else\s*$/m, 1]
+    return [] if body.nil?
+
+    body.scan(/^\s*when\s+"([a-z0-9_]+)"/).flatten
+  end
+
+  def test_unit_every_claimable_when_in_the_config_is_implemented_by_dor_check
+    source = File.read(DOR_CHECK)
+    implemented = implemented_claim_rules(source)
+
+    refute_empty implemented,
+                 "found NO `when \"<rule>\"` arms in bin/dor-check's `case claim_rule` dispatch. Either the " \
+                 "dispatch moved or its shape changed — and a guard that silently matches nothing is worse " \
+                 "than no guard. Re-point implemented_claim_rules; do not delete this."
+
+    declared = YAML.safe_load(File.read(FEATURE_SHAPES)).fetch("shapes")
+                   .filter_map { |name, shape| [name, shape["claimable_when"]] if shape["claimable_when"] }
+
+    declared.each do |name, rule|
+      assert_includes implemented, rule,
+                      "shape #{name.inspect} declares `claimable_when: #{rule}`, which bin/dor-check does " \
+                      "NOT implement (it dispatches on #{implemented.inspect}). The shape would carry a " \
+                      "claim guard that reads as protection and enforces nothing — worse than declaring no " \
+                      "guard, because the reviewer stops looking. Implement the rule in bin/dor-check's " \
+                      "`case claim_rule` block, or fix the value here."
+    end
+  end
+
+  # The zero-tier shapes are the ones whose contract is light enough that a wrong
+  # claim costs real coverage, so each must say what earns it. Asserted about the
+  # PROPERTY (no tiers) rather than today's two shapes, so the next zero-tier shape
+  # is caught the day it is written — the same reasoning as the full_suite_gate
+  # guard above, and the reason `docs` went five weeks unguarded: it predated the
+  # rule and nothing asked it to catch up.
+  def test_unit_a_shape_with_no_tiers_declares_what_earns_its_claim
+    YAML.safe_load(File.read(FEATURE_SHAPES)).fetch("shapes").each do |name, shape|
+      next unless Array(shape["dor_tiers"]).empty?
+
+      assert shape["claimable_when"],
+             "shape #{name.inspect} demands NO tiers and declares no `claimable_when`, so its lighter " \
+             "contract is unlocked by TYPING its name — the declaration-over-evidence bug this taxonomy " \
+             "exists to kill. MEASURED on `docs` (PR #1172, 2026-09-02): a docs-claimed diff carrying a " \
+             "test file was told 'DoR-to-Merge met' with no tier and no cert demanded. Name the diff rule " \
+             "that earns this shape (doc_only_diff / test_only_diff), and implement it in bin/dor-check."
+    end
+  end
 end
