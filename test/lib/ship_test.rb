@@ -246,6 +246,44 @@ class ShipTest < Minitest::Test
     end
   end
 
+  def test_a_CI_READ_THAT_FAILS_is_not_reported_as_the_PR_having_no_CI
+    with_repo do |dir|
+      # The integration half of task ship-waiter-misreports-ci. On PR #1143 this
+      # step printed "no CI run appeared ... treating this PR as having none" while
+      # `gh pr checks` showed 12/12 GREEN — because :unverified (a gh/network fault)
+      # was rendered with :none's sentence. The wording lives in ci_wait.rb; THIS
+      # proves the honest wording is on the path a builder actually reads.
+      out, err, status, lines = run_ship(dir, extra_env: {
+        "SHIP_CI_STATE" => "state:unverified", "SHIP_CI_WAIT_APPEARANCE" => "1"
+      })
+      combined = "#{err}\n#{out}"
+
+      refute_match(/no CI run appeared/, combined, "the read failed; GitHub never said this")
+      refute_match(/having none/, combined, "and ship must not invite treating a green PR as CI-less")
+      assert_match(%r{6/8 ci — could not read CI}, combined, "it must say the READ failed")
+      assert_includes markers(lines), "DOR #{SLUG}", "and the gate still owns the verdict"
+    end
+  end
+
+  def test_a_read_THE_TOKEN_WAS_REFUSED_points_at_the_token_not_at_the_repo
+    with_repo do |dir|
+      # F2, found reviewing task ship-waiter-misreports-ci. :unreadable is
+      # ci_status.rb's own name for a 401/403 — the TOKEN could not read CI. It
+      # SETTLES, because waiting cannot mend a credential, and that is exactly why it
+      # needs its own line: the token-refresh advisory fired on :unverified (a
+      # gh/network fault, which a re-run may clear by itself) and said NOTHING on the
+      # one state whose remedy IS the token. A blind read that settles quietly is how
+      # a reader mistakes it for a verdict.
+      out, err, status, lines = run_ship(dir, extra_env: { "SHIP_CI_STATE" => "state:unreadable" })
+      combined = "#{err}\n#{out}"
+
+      assert_match(%r{6/8 ci — that read was REFUSED}, combined, "the refusal must be named, not settled quietly")
+      assert_match(/gh-auth-refresh/, combined, "beside the remedy that actually applies to a 401/403")
+      assert_includes markers(lines), "DOR #{SLUG}", "and the gate still owns the verdict"
+      assert status.success?, "the advisory is a note, not a refusal:\n#{combined}"
+    end
+  end
+
   def test_the_wait_can_be_disarmed_and_says_so
     with_repo do |dir|
       out, err, status, lines = run_ship(dir, extra_env: { "SHIP_CI_WAIT" => "off" })

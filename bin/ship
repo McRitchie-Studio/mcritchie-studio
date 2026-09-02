@@ -547,8 +547,10 @@ end
 # worktree warm instead of bouncing into a cold one.
 #
 # It is bounded on BOTH ends and degrades to the old behaviour: a run that never
-# appears (`:absent`) or never finishes (`:timeout`) falls through to dor-check,
-# which then applies precisely the rules it applied before this step existed.
+# appears (`:absent`), one that never finishes (`:timeout`), and a CI we could never
+# READ (`:unread`) all fall through to dor-check, which then applies precisely the
+# rules it applied before this step existed. The three are REPORTED separately —
+# see ci_wait.rb: a failed read is not evidence that the PR has no CI.
 
 if CiWait.enabled?(ENV)
   cfg = CiWait.config(ENV)
@@ -559,9 +561,28 @@ if CiWait.enabled?(ENV)
     reporter: ->(state, polls, left) { say "6/8 ci — #{state}; #{left.round}s left (poll #{polls})" }
   )
   say "6/8 ci — #{CiWait.summary(wait)}"
-  # Named, not silent: both give-up paths hand a NON-green state to dor-check, and
-  # the operator must be able to tell "CI said no" from "we stopped asking".
-  say "6/8 ci — the DoR verdict below decides; re-run bin/ship #{slug} once CI reports." if wait.timed_out?
+  # Named, not silent: every give-up path hands a NON-green state to dor-check, and
+  # the operator must be able to tell "CI said no" from "we stopped asking" from
+  # "we never got through" — three different facts with three different remedies.
+  if wait.timed_out?
+    say "6/8 ci — the DoR verdict below decides; re-run bin/ship #{slug} once CI reports."
+  elsif wait.unread?
+    # A failed READ, not an absent run — so the remedy is the credential/network, not
+    # the repo. Named separately because "re-run once CI reports" is useless advice
+    # when the problem is that nobody could ask.
+    say "6/8 ci — the DoR verdict below decides; if it cannot read CI either, refresh the " \
+        "token (eval \"$(bin/gh-auth-refresh --export)\") and re-run bin/ship #{slug}."
+  elsif wait.token_refused?
+    # THE INVERSION this branch closes (review of ship-waiter-misreports-ci): the
+    # advisory above fires on :unverified — a gh/network fault, which a re-run may
+    # well clear on its own — while :unreadable, ci_status.rb's name for a 401/403
+    # where the token IS the remedy, got no line at all. It settles rather than
+    # waiting because no amount of waiting mends a credential, and settling quietly
+    # is exactly how a blind read gets mistaken for a verdict.
+    say "6/8 ci — that read was REFUSED (401/403), which is the TOKEN and not a CI verdict: " \
+        "refresh it (eval \"$(bin/gh-auth-refresh --export)\") and re-run bin/ship #{slug} " \
+        "if the DoR verdict below is blind too."
+  end
 else
   say "6/8 ci — wait disabled (SHIP_CI_WAIT=off); the DoR verdict grades whatever CI it finds."
 end
