@@ -1,0 +1,58 @@
+<%# /admin/desk — arrivals at the knowledge-capture front door. %>
+<style>
+  .desk-status { font-size: .7rem; padding: 0 .45rem; border-radius: .25rem; border: 1px solid rgb(148 163 184 / .5); white-space: nowrap; }
+  .desk-status-received    { border-color: rgb(245 158 11 / .6); color: rgb(180 83 9); }
+  .desk-status-filed       { border-color: rgb(16 185 129 / .5); color: rgb(5 150 105); }
+  .desk-status-quarantined { border-color: rgb(220 38 38 / .6); color: rgb(220 38 38); }
+  .desk-status-ignored     { opacity: .6; }
+</style>
+
+<div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+  <h1 class="text-xl font-semibold">Desk</h1>
+  <div id="desk-filters" class="flex items-center gap-2 text-sm">
+    <%= link_to "All", admin_desk_path, class: @status ? "" : "font-semibold underline" %>
+    <% DeskCaptureItem::STATUSES.each do |s| %>
+      <%= link_to "#{s} (#{@counts.fetch(s, 0)})", admin_desk_path(status: s),
+                  class: s == @status ? "font-semibold underline" : "" %>
+    <% end %>
+  </div>
+</div>
+
+<p class="text-sm opacity-70 mb-4">
+  Mail forwarded to <code>desk@mcritchie.studio</code> lands here for the
+  knowledge-capture sweep. Quarantined rows came from senders outside the
+  allowlist — raw kept, attachments never extracted.
+</p>
+
+<% if @items.any? %>
+  <div class="overflow-x-auto">
+    <table id="desk-items" class="w-full text-sm">
+      <thead>
+        <tr class="text-left border-b">
+          <th class="py-2 pr-3">Received</th>
+          <th class="py-2 pr-3">From</th>
+          <th class="py-2 pr-3">Subject</th>
+          <th class="py-2 pr-3">Entity hint</th>
+          <th class="py-2 pr-3">Att.</th>
+          <th class="py-2 pr-3">Status</th>
+          <th class="py-2 pr-3">Outcome</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% @items.each do |item| %>
+          <tr id="desk-item-<%= item.id %>" class="border-b align-top">
+            <td class="py-2 pr-3 whitespace-nowrap"><%= item.received_at&.strftime("%b %-d %H:%M") %></td>
+            <td class="py-2 pr-3"><%= item.from_addr %></td>
+            <td class="py-2 pr-3 max-w-md truncate"><%= item.subject %></td>
+            <td class="py-2 pr-3"><%= item.entity_hint || "—" %></td>
+            <td class="py-2 pr-3"><%= item.attachment_count %></td>
+            <td class="py-2 pr-3"><span class="desk-status desk-status-<%= item.status %>"><%= item.status %></span></td>
+            <td class="py-2 pr-3 max-w-xs truncate text-xs opacity-80"><%= item.filed_note %></td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  </div>
+<% else %>
+  <p id="desk-empty" class="text-sm opacity-70">Nothing has arrived<%= " with status #{@status}" if @status %> — the desk is clear.</p>
+<% end %>

@@ -1,4 +1,7 @@
 production:
+  desk_capture_poll:
+    class: DeskCapturePollJob
+    schedule: every 5 minutes
   error_log_cleanup:
     class: ErrorLogCleanupJob
     schedule: "0 3 * * * America/Los_Angeles"

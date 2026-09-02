@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_02_163623) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_02_200001) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -499,6 +499,23 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_02_163623) do
     t.datetime "updated_at", null: false
     t.index ["slug"], name: "index_depth_charts_on_slug", unique: true
     t.index ["team_slug"], name: "index_depth_charts_on_team_slug", unique: true
+  end
+
+  create_table "desk_capture_items", force: :cascade do |t|
+    t.jsonb "attachments", default: [], null: false
+    t.text "body_text"
+    t.datetime "created_at", null: false
+    t.string "entity_hint"
+    t.text "filed_note"
+    t.string "from_addr"
+    t.string "message_id"
+    t.datetime "received_at"
+    t.string "s3_key", null: false
+    t.string "status", default: "received", null: false
+    t.string "subject"
+    t.datetime "updated_at", null: false
+    t.index ["s3_key"], name: "index_desk_capture_items_on_s3_key", unique: true
+    t.index ["status", "received_at"], name: "index_desk_capture_items_on_status_and_received_at"
   end
 
   create_table "desk_records", force: :cascade do |t|
