@@ -539,11 +539,22 @@ point:
 - **It is bounded at BOTH ends, and names which end it hit.** `:pending` gets the
   full budget (`SHIP_CI_WAIT_TIMEOUT`, default 900s). But `gh pr checks` reports
   `none` in the window between the push and GitHub creating the run, and
-  `unverified` while mergeability is still computing — treat either as settled and
-  the wait exits within a second of every push, silently doing nothing while the
-  handoff still succeeds. So those get a **shorter** appearance budget
-  (`SHIP_CI_WAIT_APPEARANCE`, default 120s), after which a run is treated as never
-  coming. "CI said no" and "we stopped asking" print as different sentences.
+  `unverified` when the read ITSELF fails (a gh/network fault) — treat either as
+  settled and the wait exits within a second of every push, silently doing nothing
+  while the handoff still succeeds. So those get a **shorter** appearance budget
+  (`SHIP_CI_WAIT_APPEARANCE`, default 120s). They WAIT alike and REPORT
+  differently: `none` expires to `:absent` ("GitHub answered and reported no
+  checks"), `unverified` to `:unread` ("could not read CI … whether this PR has CI
+  is UNKNOWN"). "CI said no", "we stopped asking", and "we never got through" are
+  three facts with three remedies, so they print as three sentences.
+- **It reports the READ, never the repo.** A query that FAILED is not evidence
+  about GitHub. Task `ship-waiter-misreports-ci` (2026-09-01) fixed a wait that
+  printed "no CI run appeared within 2277s — treating this PR as having none"
+  while `gh pr checks` showed 12/12 GREEN and dor-check said "GitHub CI green": it
+  had rendered a network fault with `none`'s sentence. Elapsed figures are
+  reconciled against the budget they were judged against, too — budgets are tested
+  BETWEEN polls, so one slow read can overrun one, and the summary says so instead
+  of printing a number that cannot come from the configured timeout.
 - **An unknown state settles.** `CiStatus`'s state list may grow; a state the wait
   has never heard of degrades to the behaviour that predates it, never to an
   unbounded wait on an unrecognised symbol.
