@@ -40,7 +40,7 @@ which is why this ranks above any single-fix finding on the board.
 ## 2. The finding that reframes the problem
 
 The premise "agents cannot see each other" is true in effect. It is not true in
-the way it sounds. **There are already eight state surfaces. None of them compose,
+the way it sounds. **There are already nine state surfaces. None of them compose,
 and each answers a question adjacent to the one an agent actually asks.**
 
 | Surface | Where | Answers | Liveness model |
@@ -50,6 +50,7 @@ and each answers a question adjacent to the one an agent actually asks.**
 | Devops shift lease | board | who holds this *role lane* | TTL + anchor renewer |
 | Review claim | board | who is reviewing this task | TTL + anchor renewer |
 | Release conductor claim (`assembler`/`deployer`) | board | is a release live | TTL + anchor renewer |
+| Migration lane claim | board | who holds the migration lane | TTL + anchor renewer |
 | Session markers `.agents/sessions/<id>.*` | local | what the statusline should display — **stops naming the task once the session moves to a desk** | **none** |
 | Desk context `<desk>/.agent-context.json` | local, per-desk | what this desk holds — **but never whose session it is** | none |
 | Worktree registry | local | what desks exist | none — a manual snapshot |
@@ -88,7 +89,9 @@ This is `bin/lib/cert_orphan_guard.rb`'s rule, promoted from one file to a
 surface. It is the entire answer to the constraint that makes or breaks this
 design, and it is why the design is not a heartbeat.
 
-**Why not a heartbeat or a TTL lease.** The house already has four TTL leases,
+**Why not a heartbeat or a TTL lease.** The house already has five TTL leases
+(`Task`, `DevopsShift`, `TaskReviewClaim`, `ReleaseConductorClaim`,
+`MigrationLaneClaim`),
 and they have already demonstrated the failure mode twice:
 
 - The shift lease was renewed by `bin/statusline` — i.e. by a *UI paint*, not by
@@ -186,9 +189,9 @@ writer dies.
 ### (b) Cert phase — *already published; nobody reads it*
 
 The most important finding in this document. `CertProcess.run_bounded` writes the
-runlock at the instant a lane is **spawned** (`bin/lib/cert_process.rb:183`) and
-clears it in `settle` once that lane's process group is gone. A clean lane's
-group is already gone, which grades `:absent`, which clears the lock.
+runlock at the instant a lane is **spawned**, and clears it in `settle` once
+that lane's process group is gone. A clean lane's group is already gone, which
+grades `:absent`, which clears the lock.
 
 **So the runlock's lifetime already equals the window in which a suite is
 actually consuming the machine.** That *is* fact (b). It is written per desk, it
@@ -462,7 +465,7 @@ size was, and the size was wrong.
 ### Slice 3 — `bin/ship` publishes its phase
 
 The one place the runlock genuinely cannot answer, because a ship *spans* both
-states: cert (`bin/ship:285`) and CI wait (`bin/ship:536`). Today it writes
+states: cert (`bin/ship`'s `2/8 G1 cert`) and CI wait (`6/8 CI settle wait`). Today it writes
 nothing locally for its entire ~12-minute run. This is what remains of
 `/tasks/certs-publish-no-phase` once §5(b) is accounted for. Requires the atomic
 write path in `SessionMarkers` (§4). Closes cost #4.
