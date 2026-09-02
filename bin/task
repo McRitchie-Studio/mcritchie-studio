@@ -104,7 +104,7 @@
 #       handoff twin. )
 #   bin/task update <slug> [same flags as create]   # merges into existing devops
 #   bin/task move <slug> <stage>                     # designed|building|submitted|reviewed|assembled|shipped|blocked|archived
-#     [--model M] [--tokens-in N] [--tokens-out N] [--cost D] [--actor A] [--dev-size S] [--steal]
+#     [--model M] [--tokens-in N] [--tokens-out N] [--cost D] [--actor A] [--dev-size S] [--steal] [--force]
 #     ( --dev-size (small|medium|large|xl) records the builder's own estimate as it
 #       claims the task at `building` — optional; absent is fine. )
 #     ( best-effort per-transition usage the agent burned in the stage it's
@@ -116,6 +116,14 @@
 #       a per-process nonce) under a TTL lease. It REFUSES (loudly) if a DIFFERENT,
 #       non-expired instance already holds it — pass --steal to take it over. An
 #       expired / dead-session lease is reclaimed automatically. )
+#     ( the move to `archived` is TERMINAL and destroys UNCOMMITTED work no gate,
+#       review, or CI would ever surface — so it REFUSES (exit 1, no board write)
+#       any task it cannot prove is free, and NAMES what it could not verify. A
+#       record carrying only an app and a mascot names no session to ask, and that
+#       is a REFUSAL, not a free task: on 2026-09-01 exactly such a record was
+#       resolved only by messaging the peer session. `shipped`/`archived` tasks and
+#       tasks nobody ever picked up archive freely. --force is the human decision
+#       seam and names the grade it waived. See lib/archive_holder_guard.rb. )
 #   bin/task merged <slug> <accepted|release|main>
 #     ( set the git-location crash-recovery signal (Task::MERGED_STATES) — where the
 #       task's code physically is. Review stamps `accepted` when it lands a feat PR
@@ -220,6 +228,7 @@ require_relative "../lib/task_usage_sandbox"
 require_relative "../lib/task_usage_audit"
 require_relative "../lib/claim_lease"
 require_relative "../lib/desk_activity"
+require_relative "../lib/archive_holder_guard"
 require_relative "../lib/cert_evidence"
 require_relative "../lib/stale_check"
 require_relative "../lib/feature_marker"
@@ -416,6 +425,112 @@ def enforce_claim_gate!(slug, devops, mover_session, steal:, task: nil, steal_hi
   # the operator re-runs the path they were on, not a different one.
   warn!("     #{steal_hint || "bin/task move #{slug} building --steal"}")
   exit 1
+end
+
+# --- the ARCHIVE holder gate ---------------------------------------------------
+#
+# `archived` is TERMINAL, and what it destroys is UNCOMMITTED work no gate, review,
+# or CI would ever surface. So this path REFUSES what it cannot prove is free and
+# NAMES what it could not verify, rather than proceeding on a guess — the posture
+# bin/lib/cert_orphan_guard.rb already applies to the far less destructive act of
+# reaping a process. The decision table and every message live in
+# lib/archive_holder_guard.rb; this function is only the I/O around them.
+#
+# It reads the task FRESH rather than trusting anything already in hand: the whole
+# question is whether somebody is working RIGHT NOW, and a stale record answers a
+# different one.
+def enforce_archive_holder_gate!(slug, force:)
+  task = api(:get, "/api/v1/tasks/#{slug}")["data"]
+  devops = task.dig("metadata", "devops") || {}
+  claim = ClaimLease.from_devops(devops)
+  facts = archive_holder_facts(slug, task, devops, claim)
+
+  grade = ArchiveHolderGuard.decide(
+    stage: task["stage"], devops: devops,
+    claim_live: facts[:claim_live], abandoned: facts[:abandoned]
+  )
+  return if ArchiveHolderGuard.permitted?(grade)
+
+  # NAME WHAT IS BEING OVERRIDDEN. A --force that prints nothing turns the gate
+  # into a speed bump nobody remembers clearing; the operator (or the next reader
+  # of the log) must be able to see which proof was waived.
+  if force
+    warn!("--force: archiving #{slug} anyway — the holder gate graded it #{grade.to_s.upcase} " \
+          "and could not prove the task free.")
+    return
+  end
+
+  warn!(ArchiveHolderGuard.refusal(
+          grade, slug: slug, stage: task["stage"], devops: devops, claim: claim,
+          channel: ArchiveHolderGuard.working_channel(facts[:channels])
+        ))
+  exit 1
+end
+
+# The liveness facts the gate decides on. I/O only — ClaimLease owns the
+# arithmetic, so the unit tier can drive every combination without a board or a
+# filesystem.
+#
+# A CHECK THAT BLEW UP HAS TOLD US NOTHING, and nothing must never authorize a
+# destructive act. So the rescue resolves to the PROTECTIVE direction — claim
+# assumed live, not abandoned, desk unknown — and the resulting refusal says
+# plainly that the check could not be completed. This is the SAME direction
+# heartbeat_abandoned? rescues in, for the same reason: in both, the unknown
+# protects the holder. The two differ only in what is at stake, which is why this
+# one also assumes the claim is live rather than merely declining to free it.
+def archive_holder_facts(slug, task, devops, claim)
+  channels = {
+    desk_touched: archive_desk_touched(devops),
+    progress_age: holder_scoped(task, "holder_liveness_seconds_ago", "progress_seconds_ago"),
+    gate_in_flight: holder_scoped(task, "holder_gate_in_flight", "gate_in_flight") ? true : false,
+    awaiting_approval: devops["approval_status"].to_s.strip == "waiting"
+  }
+  {
+    claim_live: ClaimLease.live?(claim),
+    abandoned: ClaimLease.abandoned?(**channels),
+    channels: channels
+  }
+rescue StandardError => e
+  warn "warning: #{slug}: the holder check could not be completed (#{e.class}: #{e.message}) — withholding"
+  { claim_live: true, abandoned: false, channels: { desk_touched: nil } }
+end
+
+# Has anyone written into this task's desk lately? true / false / nil.
+#
+# THE DESK IS ASKED WHERE THE TASK SAYS IT IS, never where we happen to be standing.
+# bin/task's heartbeat resolves the desk from its own cwd (correct there — it runs
+# INSIDE the desk it judges), but an archive runs from the primary checkout, and
+# DeskActivity.desk_root refuses any directory not bound to the task, so a cwd-based
+# resolution here would answer nil every single time and the gate would refuse every
+# archive on the machine. A guard that refuses everything gets switched off, and then
+# it protects nothing.
+#
+# A task may name several repos, so every candidate desk is asked and the answers are
+# folded PROTECTIVELY: any desk being worked in wins, then any desk we could not read,
+# and only an all-quiet reading returns false.
+def archive_desk_touched(devops)
+  answers = archive_desk_dirs(devops).map do |dir|
+    ArchiveHolderGuard.desk_touched_for(
+      dir,
+      exists: File.directory?(dir),
+      reader: ->(root) { DeskActivity.touched_since?(root, Time.now - ClaimLease::DESK_IDLE_SECONDS) }
+    )
+  end
+  # No desk recorded at all is a REAL answer, not an unknown: a task with no worktree
+  # has no uncommitted work in one for an archive to destroy.
+  return false if answers.empty?
+  return true if answers.include?(true)
+
+  answers.include?(nil) ? nil : false
+end
+
+def archive_desk_dirs(devops)
+  worktree = devops["worktree_slug"].to_s.strip
+  return [] if worktree.empty?
+
+  Array(devops["repositories"]).map { |repo| repo.to_s.strip }.reject(&:empty?).map do |repo|
+    File.join(PROJECTS_DIR, repo, ".worktrees", worktree)
+  end
 end
 
 # "last durable progress ~28m ago (cert failed)" — or an honest "unknown" when the
@@ -1990,6 +2105,13 @@ when "move"
   mover_session = session_identity.first
   event["actor"] = mover_session unless mover_session.nil?
   steal = false
+  # The operator's explicit "I have established that nobody holds this" on the
+  # ARCHIVE path. `archived` is terminal and destroys UNCOMMITTED work, so that
+  # path refuses what it cannot prove free rather than guessing — the same posture
+  # bin/lib/cert_orphan_guard.rb takes toward a process it cannot prove is its own.
+  # This flag is the human decision seam, exactly as `remove <app> <task> --yes` is
+  # for a desk: it warns, names what it is overriding, and proceeds.
+  force = false
   # The builder Pokémon's own size estimate, stamped as it CLAIMS the task at
   # `building` (optional — absent is fine). Set as a top-level Task column.
   dev_size = nil
@@ -2002,13 +2124,18 @@ when "move"
     when "--actor"      then event["actor"]      = ARGV.shift || die!("--actor needs a value")
     when "--dev-size"   then dev_size = ARGV.shift || die!("--dev-size needs a value"); validate_size!("--dev-size", dev_size)
     when "--steal"      then steal = true # override the build-claim gate (take a live foreign claim)
-    else unknown_flag!(flag, valid: %w[--model --tokens-in --tokens-out --cost --actor --dev-size --steal], context: "move")
+    when "--force"      then force = true # override the ARCHIVE holder gate (see lib/archive_holder_guard.rb)
+    else unknown_flag!(flag, valid: %w[--model --tokens-in --tokens-out --cost --actor --dev-size --steal --force], context: "move")
     end
   end
   # No explicit usage flags → auto-capture the per-transition delta (model +
   # tokens + cost) from the session transcript so a bare move still leaves a full
   # paper trail. Best-effort; a missing transcript leaves the event spine-only.
   autofill_move_usage(event, slug) unless %w[model tokens_in tokens_out cost].any? { |k| event.key?(k) }
+  # ARCHIVE REFUSES WHAT IT CANNOT PROVE FREE. Runs BEFORE the PATCH, so a refusal
+  # leaves the task exactly where it was. lib/archive_holder_guard.rb owns the
+  # decision table and every refusal message.
+  enforce_archive_holder_gate!(slug, force: force) if stage == "archived"
   body = { "stage" => stage, "event" => event }
   body["dev_size"] = dev_size if dev_size # the builder's estimate, set alongside the stage move
   # Claim the task on the move to building. The gate refuses (loudly, overridable

@@ -235,9 +235,44 @@ below). Each returns exactly one disposition:
   about to make a newly-lit CI lane flaky.
 - **A companion change just shipped and this is the mechanical port of it.** The
   context is hot. It will never be cheaper than today.
+- **You cannot identify who holds it.** `bin/task move <slug> archived` now
+  refuses this case itself (see below) — but the refusal is a backstop for the
+  judgement, not a replacement for it.
 
 Put every judgement to Mr. McRitchie as a table with a recommendation per row. He
 overrides freely; his overrides are the point.
+
+### The archive verb refuses what it cannot prove free
+
+`bin/task move <slug> archived` runs a holder gate before the write. It exits 1
+**without touching the board** when it cannot prove the task is not live work, and
+names what it could not verify:
+
+| Grade | What it means | Archive |
+|---|---|---|
+| `concluded` | `shipped`/`archived` — the code is on `main` | proceeds |
+| `unheld` | no session, no mascot, no claim: nobody picked it up | proceeds |
+| `abandoned` | a session we could check, checked, and found gone | proceeds |
+| `held` | a live claim lease | **REFUSES**, names the session |
+| `working` | a channel still speaks (desk, gate, approval, progress) | **REFUSES**, names the channel |
+| `unverifiable` | a mascot or agent slug, but **no session to ask** | **REFUSES**, names the paint it has |
+
+`unverifiable` is the one worth knowing by name, because it is the carve-out's
+failure mode made mechanical. On 2026-09-01 Mr. McRitchie asked that one session's
+work be held; the record carried an app and a mascot and nothing else, and the
+holder was found only by messaging the peer session. Had that session been idle or
+unreachable, live work would have been archived and the exception would have
+protected nothing. A mascot means *somebody was here and we cannot tell who* —
+which is the opposite of *nobody was here*, not a synonym for it.
+
+`--force` is the override, and it names the grade it waived:
+
+```bash
+bin/agent-presence                       # who is live on this machine right now
+bin/task move <slug> archived --force    # only after you have established the holder
+```
+
+Reach for `bin/agent-presence` before `--force`, not after.
 
 ---
 
