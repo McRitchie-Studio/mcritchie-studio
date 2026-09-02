@@ -1,0 +1,159 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/scratch-backup — park a pristine copy of a file where nobody else can
+# overwrite it, and PROVE at restore that you got your own copy back.
+#
+#   bin/scratch-backup save    bin/agent-worktree     # before you mutate it
+#   ...mutate, run the suite, read the result...
+#   bin/scratch-backup restore bin/agent-worktree     # refuses if it is not yours
+#
+# WHY THIS EXISTS. `cp bin/agent-worktree $SCRATCHPAD/backup/agent-worktree` is
+# what agents do today, and the scratchpad is keyed by SESSION, not by agent — so
+# every sibling a session spawns writes into the same `backup/`. Two agents saving
+# `manifest.good` write sequentially: no hole, no truncation, nothing to notice.
+# The loser's restore point is simply gone, and the loser finds out by restoring
+# and getting someone else's file. See bin/lib/scratch_backup.rb's header for the
+# measurement, and docs/agents/modules/worktrees.md § "The session scratchpad is
+# shared" for the sibling incident that made this one visible.
+#
+# The two properties: entries are NAMESPACED by their writer (collision
+# impossible), and restore VERIFIES the blob against a SHA-256 receipt taken at
+# save (collision detectable if the namespace is ever defeated).
+#
+# --help EXITS 1, ON PURPOSE. `verify` makes exit 0 an ASSERTION — "this backup is
+# the one you saved" — so a probe must not answer with it. Same reasoning as
+# bin/harvest-desk-ledger and bin/qa-server.
+
+require_relative "lib/cli_arg_guard"
+require_relative "lib/scratch_backup"
+
+PROGRAM = "bin/scratch-backup"
+
+USAGE = <<~TEXT
+  #{PROGRAM} <command> [options] — namespaced, receipt-verified file backups.
+
+  COMMANDS
+    save <file>       copy <file> into your namespace and record a SHA-256 receipt
+    restore <file>    write the saved copy back, ONLY if it verifies against its receipt
+    verify <file>     re-hash the saved copy against its receipt; writes nothing
+    list              every entry in your namespace, with its verify status
+
+  OPTIONS
+    --owner <slug>    namespace segment (default: the desk's task slug, else the session id)
+    --root <dir>      where namespaces live (default: this session's scratchpad, else tmp)
+    --force           save only: overwrite a backup whose content differs from the file now
+    --help, -h        print this and EXIT 1 — BACKS UP NOTHING, RESTORES NOTHING
+
+  EXIT
+    0  the command did what it says (for verify: the backup IS the one you saved)
+    1  usage, or a refusal — nothing was written
+    3  verify only: the backup is missing, moved, or NOT what was saved
+TEXT
+
+# Per-subcommand flag dictionary, fed to ONE guard call ahead of the dispatcher —
+# the shape bin/release.rb and bin/qa-server use. A dispatcher that shifts the
+# subcommand and never validates the REST is the defect bin/lib/cli_arg_guard.rb
+# was written to close, and `restore` overwrites a file in your working tree.
+COMMANDS = {
+  "save"    => { bool: %w[--force], value: %w[--owner --root] },
+  "restore" => { bool: [],          value: %w[--owner --root] },
+  "verify"  => { bool: [],          value: %w[--owner --root] },
+  "list"    => { bool: [],          value: %w[--owner --root] }
+}.freeze
+
+REFUSAL_CONSEQUENCE = "nothing was backed up, restored or overwritten"
+
+# When the command is unknown the guard is fed the UNION of every arm's flags
+# rather than an empty dictionary. Both lines refuse either way, but only this one
+# refuses for the right reason: with an empty dictionary, `scratch-backup backup
+# f --root /tmp` blames `--root` — a flag that is perfectly valid — and the reader
+# goes looking for a typo in the option instead of in the command. The union lets
+# the line parse so the NEXT check can name what is actually wrong.
+spec = COMMANDS.fetch(ARGV.first) do
+  { bool: COMMANDS.values.flat_map { |arm| arm[:bool] }.uniq,
+    value: COMMANDS.values.flat_map { |arm| arm[:value] }.uniq }
+end
+
+parsed = CliArgGuard.guard!(
+  ARGV,
+  program: PROGRAM,
+  usage: USAGE,
+  consequence: REFUSAL_CONSEQUENCE,
+  bool: spec[:bool],
+  value: spec[:value],
+  allow_positional: true,
+  help_exit: 1
+)
+
+command, *rest = parsed.positionals
+
+unless COMMANDS.key?(command)
+  warn("#{PROGRAM}: unknown command #{command.inspect} — #{REFUSAL_CONSEQUENCE}") if command
+  warn(USAGE)
+  exit 1
+end
+
+def resolve(parsed, expects_file:, rest:)
+  root = ScratchBackup.resolve_root(explicit: parsed.first("--root"))
+  owner = ScratchBackup.resolve_owner(explicit: parsed.first("--owner"))
+
+  if expects_file && rest.length != 1
+    raise ScratchBackup::Refusal, "expects exactly one file, got #{rest.length}"
+  end
+  if !expects_file && !rest.empty?
+    raise ScratchBackup::Refusal, "takes no file argument, got #{rest.inspect}"
+  end
+
+  [root, owner, rest.first]
+end
+
+def print_entry(entry)
+  receipt = entry["receipt"]
+  mark = entry["status"] == :ok ? "ok      " : entry["status"].to_s.upcase.ljust(8)
+  puts "#{mark} #{receipt['sha256'][0, 12]}  #{receipt['saved_at']}  #{receipt['source']}"
+  puts "         #{entry['detail']}" if entry["detail"]
+end
+
+begin
+  case command
+  when "save"
+    root, owner, file = resolve(parsed, expects_file: true, rest: rest)
+    receipt = ScratchBackup.save(source: file, root: root, owner: owner,
+                                 force: parsed.bool?("--force"))
+    puts "saved    #{receipt['source']}"
+    puts "  as     #{ScratchBackup.blob_path(root: root, owner: owner, source: receipt['source'])}"
+    puts "  sha256 #{receipt['sha256']}"
+    puts "  owner  #{owner}"
+
+  when "restore"
+    root, owner, file = resolve(parsed, expects_file: true, rest: rest)
+    receipt = ScratchBackup.restore(source: file, root: root, owner: owner)
+    puts "restored #{receipt['source']}"
+    puts "  sha256 #{receipt['sha256']}  (verified against the receipt written #{receipt['saved_at']})"
+
+  when "verify"
+    root, owner, file = resolve(parsed, expects_file: true, rest: rest)
+    status, detail = ScratchBackup.verify(source: file, root: root, owner: owner)
+    if status == :ok
+      puts "ok       #{detail['source']}"
+      puts "  sha256 #{detail['sha256']}"
+    else
+      warn("#{status.to_s.upcase}: #{detail}")
+      exit 3
+    end
+
+  when "list"
+    root, owner, = resolve(parsed, expects_file: false, rest: rest)
+    entries = ScratchBackup.entries(root: root, owner: owner)
+    puts "owner #{owner} — #{ScratchBackup.entry_dir(root: root, owner: owner)}"
+    if entries.empty?
+      puts "(no entries)"
+    else
+      entries.each { |entry| print_entry(entry) }
+    end
+  end
+rescue ScratchBackup::Refusal => e
+  warn("#{PROGRAM} #{command}: #{e.message}")
+  exit 1
+end
