@@ -230,6 +230,7 @@ require_relative "../lib/task_usage_baseline"
 require_relative "../lib/task_usage_sandbox"
 require_relative "../lib/task_usage_audit"
 require_relative "../lib/claim_lease"
+require_relative "../lib/claim_holder"
 require_relative "../lib/desk_activity"
 require_relative "../lib/archive_holder_guard"
 require_relative "../lib/cert_evidence"
@@ -386,9 +387,23 @@ end
 # already claimed by a DIFFERENT, still-live instance. Unclaimed / expired /
 # corrupt / same-instance claim freely. `--steal` is the ONLY way past it.
 #
-# It is LOUD about that refusal: it names WHO holds the task, the heartbeat age,
-# the holder's last durable progress, and the exact --steal command to re-run.
-# Loud is HOW it refuses, not INSTEAD of refusing.
+# It is LOUD about that refusal: it names WHO holds the task, IN WHAT ROLE, how
+# fresh their lease is, the holder's last durable progress, and the exact command
+# to re-run. Loud is HOW it refuses, not INSTEAD of refusing.
+#
+# THE ROLE IS PART OF THE REFUSAL, not decoration. This gate used to describe every
+# holder as a rival BUILDER and offer `--steal`, which is the correct remedy for
+# exactly one of the two holders it can meet. A REVIEWER's claim looks identical
+# from here, and stealing a task mid-review VOIDS THE NO-SELF-REVIEW GUARANTEE for
+# that review and STRANDS its verdict — neither recoverable, neither visible
+# afterwards. So a live review routes to "ask them to release", an unknown routes
+# the same way, and only a positively-established absence of review routes to
+# `--steal`. lib/claim_holder.rb owns that table and every word of the message.
+#
+# `--steal` ITSELF IS UNCHANGED and still the only way past the gate. Over a live
+# review it now prints what it is waiving before it proceeds — the posture
+# enforce_archive_holder_gate! takes with --force — because a guarantee waived in
+# silence is one nobody can audit later.
 #
 # WHY THAT SENTENCE IS SPELLED OUT. This comment used to read "Loud (not a hard
 # block)", meaning "overridable by --steal" — and it READ as warns-and-proceeds.
@@ -412,22 +427,65 @@ end
 def enforce_claim_gate!(slug, devops, mover_session, steal:, task: nil, steal_hint: nil)
   claim = ClaimLease.from_devops(devops)
   decision = ClaimLease.evaluate(claim, session: mover_session, nonce: claim_nonce)
-  return if decision != :held_by_other || steal
+  return if decision != :held_by_other
 
-  held = claim["claimed_session"].to_s
-  age = ClaimLease.heartbeat_age(claim)
-  warn!("⚠  task #{slug} is already claimed by a DIFFERENT live instance:")
-  warn!("     session …#{held[-4..] || held}  instance #{claim["claim_nonce"]}  ·  last heartbeat ~#{age}s ago " \
-        "(lease TTL #{ClaimLease::DEFAULT_TTL_SECONDS}s)")
-  # The heartbeat above only proves a TERMINAL IS PAINTING — it says nothing about
-  # whether the holder is advancing. Name the progress fact too, so the decision to
-  # --steal is made on evidence instead of on a green dot.
+  # WHAT ROLE THE HOLDER IS IN, before either branch below speaks. The refusal used
+  # to describe every holder as a rival BUILDER and offer --steal, which is the
+  # right remedy for exactly one of the two cases; see lib/claim_holder.rb for the
+  # 2026-09-01 near-miss and why stealing mid-review is unrecoverable rather than
+  # merely rude.
+  reviewer = review_holder(slug)
+  role = ClaimHolder.role(review_in_progress: (task || {})["review_in_progress"],
+                          review_claim_live: reviewer["live"])
+  takeover = steal_hint || "bin/task move #{slug} building --steal"
+
+  # --steal STAYS AVAILABLE — it is the correct remedy for the builder case it was
+  # written for, and an operator who has already asked the reviewer must be able to
+  # proceed. What it must never do is proceed SILENTLY over a live review, so this
+  # names the guarantee being waived, the same posture the archive gate takes with
+  # --force. NOT a refusal: the flag is the operator's decision, and this is the log
+  # entry that lets the next reader see which proof was skipped.
+  if steal
+    if role == ClaimHolder::REVIEWING
+      ClaimHolder.steal_override_warning(
+        slug, reviewer: reviewer["agent"], reviewer_session: reviewer["session"]
+      ).each { |line| warn!(line) }
+    end
+    return
+  end
+
+  warn!("⚠  #{ClaimHolder.refusal(
+    slug: slug, claim: claim, role: role,
+    steal_command: takeover, retry_command: takeover.sub(" --steal", ""),
+    reviewer: reviewer["agent"], reviewer_session: reviewer["session"]
+  ).join("\n")}")
+  # The heartbeat in that message only proves a TERMINAL IS PAINTING — it says
+  # nothing about whether the holder is advancing. Name the progress fact too, so a
+  # decision to --steal is made on evidence instead of on a green dot.
   warn!("     #{progress_line(task, challenger: mover_session)}") if task
-  warn!("   Another terminal looks active on this task. To take it over anyway, re-run with --steal:")
-  # The hint names the caller's OWN command (`begin` passes its resume form) so
-  # the operator re-runs the path they were on, not a different one.
-  warn!("     #{steal_hint || "bin/task move #{slug} building --steal"}")
   exit 1
+end
+
+# WHETHER A REVIEW LEASE IS HELD on this task, and by whom. Read only on the
+# refusal/override paths, where one extra call is free and a name is what turns
+# "ask them to release" into something actionable.
+#
+# TRI-STATE, deliberately: `{"live" => true, …}` a reviewer holds it, `{"live" =>
+# false}` the board says nobody does, `{}` WE DID NOT GET AN ANSWER. Collapsing the
+# last two would turn a board hiccup into "no review" and route it to --steal, which
+# is the fail-open this gate exists to close; an empty hash reaches
+# ClaimHolder.role as nil and lands on the UNKNOWN route instead.
+def review_holder(slug)
+  # NOT `api` — that helper die!s on any non-2xx, and a diagnostic read must never
+  # be able to kill the gate it is informing. A board that answers 500 here has told
+  # us nothing, and "nothing" is a route (UNKNOWN), not a crash.
+  res = TaskBoard.request(:get, "/api/v1/tasks/#{slug}/review_claim", base_url: BASE_URL, token: token)
+  return {} unless res.code.to_i.between?(200, 299)
+
+  holder = TaskBoard.parse_body(res).dig("data", "holder")
+  holder.is_a?(Hash) ? holder.merge("live" => holder["live"] ? true : false) : { "live" => false }
+rescue StandardError
+  {}
 end
 
 # --- the ARCHIVE holder gate ---------------------------------------------------
@@ -1199,7 +1257,15 @@ def print_task_verbose(task)
   puts "  agent_context: #{dv["agent_context"] || "-"}"
   print_bullets("test_plan", dv["test_plan"])
   print_bullets("checks_run", dv["checks_run"])
-  puts "  claim: session #{dv["claimed_session"] || "-"} · expires #{dv["claim_expires_at"] || "-"}"
+  # THE LEASE IS RENDERED WITH ITS VERDICT, never as a bare timestamp. This line
+  # used to read `claim: session <id> · expires <ts>` with no mark when <ts> was in
+  # the PAST — measured 2026-09-02, it printed `expires 04:12:26Z` at 04:14:28Z, so
+  # an expired lease and a live one were the same picture. The reader sampled it
+  # twice, saw the two samples agree, and concluded "live" about a claim that was
+  # already dead. ClaimHolder.render_lease is the one rendering every surface uses
+  # (this line and the claim gate's refusal), so the display and the refusal cannot
+  # drift into disagreeing about the same lease.
+  puts "  claim: session #{dv["claimed_session"] || "-"} · #{ClaimHolder.render_lease(ClaimLease.from_devops(dv))}"
   print_author_fields(task)
   puts "  approval_status: #{dv["approval_status"] || "-"}"
   puts "  pr_url: #{dv["pr_url"] || "-"}   local_url: #{dv["local_url"] || "-"}"

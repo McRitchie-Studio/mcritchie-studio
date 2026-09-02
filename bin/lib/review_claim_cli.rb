@@ -13,7 +13,9 @@
 #                                                            # next reviewable GREEN-CI task
 #   bin/task review-claim renew   <slug>                     # one heartbeat (internal)
 #   bin/task review-claim release <slug>                     # clean drop when the review lands
-#   bin/task review-claim status  <slug>                     # who (if anyone) is reviewing it
+#   bin/task review-claim status  <slug> [--observe-for <s>] [--no-observe] [--json]
+#                                                            # who is reviewing it, and whether
+#                                                            # their lease is RENEWING or DYING
 #   bin/task review-claim renew-loop <slug> --anchor-pid <p> --anchor-start <s>  # internal
 #   bin/task claim-next-review --help | -h                   # usage; claims NOTHING
 #
@@ -53,6 +55,7 @@ require_relative "agent_api"
 require_relative "session_identity"
 require_relative "session_markers"
 require_relative "shift_renewer"
+require_relative "../../lib/claim_holder"
 
 class ReviewClaimCli
   OPEN_TIMEOUT = 2
@@ -83,7 +86,7 @@ class ReviewClaimCli
     "renew"      => [],
     "renew-loop" => %w[--anchor-pid --anchor-start],
     "release"    => [],
-    "status"     => []
+    "status"     => %w[--json --no-observe --observe-for]
   }.freeze
 
   # The stages at which a REVIEW CLAIM has nothing left to protect. A claim exists to
@@ -103,6 +106,20 @@ class ReviewClaimCli
   # defect as the dropped flag, one seam over.
   SLUG_COMMANDS = %w[acquire renew renew-loop release status].freeze
 
+  # `status`'s observation window. The DEFAULT clears one full renewal cycle
+  # (#{ShiftRenewer::INTERVAL_SECONDS}s) with half again on top, so an "unchanged
+  # expiry" verdict rests on having watched longer than the cadence it is judging —
+  # the same derive-then-margin shape ClaimLease uses for its own thresholds, rather
+  # than a round number typed next to a constant it has to outlast.
+  #
+  # The CEILING exists because an unbounded --observe-for turns a diagnostic into a
+  # hang, and the POLL is what lets an actively-renewing lease answer the moment its
+  # expiry moves instead of at the end of the budget.
+  OBSERVE_SAFETY_FACTOR = 1.5
+  DEFAULT_OBSERVE_SECONDS = (ShiftRenewer::INTERVAL_SECONDS * OBSERVE_SAFETY_FACTOR).ceil
+  MAX_OBSERVE_SECONDS = ClaimLease::DEFAULT_TTL_SECONDS + 5
+  POLL_SECONDS = 5
+
   def initialize(env: ENV, out: $stdout, err: $stderr)
     @env = env
     @out = out
@@ -111,6 +128,10 @@ class ReviewClaimCli
     # Injected in tests so no test ever forks a real renewer or signals a real pid.
     @spawner = method(:spawn_detached)
     @killer  = method(:terminate)
+    # The observation's clock and sleeper, injected for the same reason: the unit
+    # tier drives `status` as arithmetic instead of waiting on wall time.
+    @sleeper = ->(seconds) { sleep(seconds) }
+    @clock   = -> { Time.now }
   end
 
   # Entry point. Returns the process exit code.
@@ -143,7 +164,7 @@ class ReviewClaimCli
     when "renew"      then renew(slug)
     when "renew-loop" then renew_loop(slug, flags)
     when "release"    then release(slug)
-    when "status"     then status(slug)
+    when "status"     then status(slug, flags)
     else usage(CANT_RUN) # drift guard: a COMMAND_FLAGS key with no arm here
     end
   rescue StandardError => e
@@ -271,19 +292,162 @@ class ReviewClaimCli
     OK
   end
 
-  def status(slug)
+  # `status` OBSERVES the lease. It does not print a timestamp and leave the reader
+  # to difference it by hand.
+  #
+  # WHY, measured 2026-09-01. Two independent sessions were told to "sample the
+  # lease twice" before deciding whether a holder was alive. Both sampled twice,
+  # both concluded the question was unanswerable, and both were looking at a claim
+  # that had ALREADY EXPIRED. Sampling twice makes a reader look for AGREEMENT, and
+  # two reads of a live lease agree about the STATE every time — the interesting
+  # fact is that they disagree about the NUMBER. Differencing `claim_expires_at`
+  # answers it outright: MOVED means something is renewing, UNCHANGED means nothing
+  # is, PAST means it is dead.
+  #
+  # A single read cannot substitute, however carefully it is read: 74s into a 120s
+  # TTL looks identical whether the holder renews at 90s or never again. So the
+  # arithmetic lives in the COMMAND rather than in a tired reader's discipline —
+  # that is the whole point of this change, and it is worth more here than any
+  # rewording of the messages around it.
+  #
+  # THE WAIT IS BOUNDED AT BOTH ENDS AND USUALLY FREE. A lease that is absent or
+  # already lapsed answers from the FIRST read with no wait at all — which is the
+  # common case a caller checking on a suspected-dead holder is in. An actively
+  # renewing holder answers as soon as its expiry moves (a renewal cycle,
+  # #{ShiftRenewer::INTERVAL_SECONDS}s). Only the genuinely dying case spends the
+  # whole budget, and that is precisely the case where guessing costs the most.
+  #
+  # Every grade reports EVIDENCE, and `:inconclusive` is a first-class answer: a
+  # window too short to conclude anything is reported as ignorance, never as
+  # absence. lib/claim_holder.rb owns the arithmetic and the wording.
+  def status(slug, flags = {})
     return usage_slug("status") unless present?(slug)
 
+    first = read_holder(slug)
+    return cant_run("could not read review status") if first == :unreadable
+
+    started = @clock.call
+    grade, holder, watched = resolve(slug, first, started, flags)
+    flags["json"] ? emit_status_json(slug, grade, holder, watched) : emit_status_text(slug, grade, holder, watched)
+    OK
+  end
+
+  # Take the observation, unless the caller opted out. `--no-observe` is honest
+  # rather than silent: it reports `:unobserved`, which says in as many words that a
+  # single read cannot tell renewing from dying. bin/ship uses it deliberately — it
+  # wants the holder's NAME for a refusal, and a refusal is no place to spend a
+  # renewal cycle waiting.
+  def resolve(slug, first, started, flags)
+    # ANSWERABLE FROM THE FIRST READ ALONE — nothing held it, or its lease had
+    # already lapsed when we looked. Asked BEFORE the --no-observe branch on
+    # purpose: `free` is a fact one read establishes, so reporting it as
+    # "unobserved" would be a command hedging about something it knows. Only a
+    # lease that still looks live needs watching, and only that case degrades to
+    # UNOBSERVED when the caller declines to wait.
+    settled = ClaimHolder.observe(
+      first_expires_at: expiry_of(first), second_expires_at: expiry_of(first),
+      first_read_at: started, renew_interval: ShiftRenewer::INTERVAL_SECONDS, now: started
+    )
+    return [ClaimHolder::FREE, first, 0] if settled == ClaimHolder::FREE
+    return [ClaimHolder::UNOBSERVED, first, 0] if flags["no-observe"]
+
+    observe_lease(slug, first, started, observe_budget(flags))
+  end
+
+  # Poll until the lease resolves or the budget runs out. Returns the grade, the
+  # LAST holder read, and the seconds actually watched.
+  #
+  # AN UNREADABLE POLL IS NOT EVIDENCE and must not end the observation: a network
+  # blip that returned `:not_renewing` would report a live reviewer as dead, which is
+  # the direction this whole change exists to avoid failing in. It keeps watching,
+  # and a board that never answers simply runs out the budget and reports the
+  # ignorance it has.
+  def observe_lease(slug, first, started, budget)
+    latest = first
+    loop do
+      remaining = budget - (@clock.call - started)
+      break if remaining <= 0
+
+      @sleeper.call([POLL_SECONDS, remaining].min)
+      sample = read_holder(slug)
+      latest = sample unless sample == :unreadable
+      grade = grade_for(first, latest, started)
+      return [grade, latest, watched_since(started)] unless grade == ClaimHolder::INCONCLUSIVE
+    end
+    [grade_for(first, latest, started), latest, watched_since(started)]
+  end
+
+  def grade_for(first, latest, started)
+    ClaimHolder.observe(
+      first_expires_at: expiry_of(first), second_expires_at: expiry_of(latest),
+      first_read_at: started, renew_interval: ShiftRenewer::INTERVAL_SECONDS, now: @clock.call
+    )
+  end
+
+  def watched_since(started) = (@clock.call - started).round
+
+  # The observation budget in seconds. Clamped to a ceiling because an unbounded
+  # `--observe-for` turns a diagnostic into a hang, and floored at 0 because a
+  # negative window is a typo, not a request.
+  def observe_budget(flags)
+    raw = flags["observe-for"]
+    return DEFAULT_OBSERVE_SECONDS if raw.nil? || raw == true
+
+    [[raw.to_i, 0].max, MAX_OBSERVE_SECONDS].min
+  end
+
+  # One read of the holder. `:unreadable` is DISTINCT from nil (no claim row): the
+  # first tells the caller nothing, the second is a real answer, and collapsing them
+  # is how "we could not check" renders as "nobody holds it" — the exact defect this
+  # command was rewritten to stop making.
+  def read_holder(slug)
     res = get("#{base(slug)}/review_claim")
-    return cant_run("could not read review status") unless ok?(res)
+    return :unreadable unless ok?(res)
 
     holder = parse_data(res)["holder"]
-    if holder.is_a?(Hash) && holder["live"]
-      @out.puts("review-claim: #{slug} is under review — #{holder_line(holder)}")
-    else
-      @out.puts("review-claim: #{slug} is not under review — free to claim.")
-    end
-    OK
+    holder.is_a?(Hash) ? holder : nil
+  end
+
+  def expiry_of(holder) = holder.is_a?(Hash) ? holder["expires_at"] : nil
+
+  def emit_status_text(slug, grade, holder, watched)
+    @out.puts("review-claim: #{slug} — " +
+              ClaimHolder.render_observation(grade, expires_at: expiry_of(holder),
+                                                    watched_seconds: watched,
+                                                    renew_interval: ShiftRenewer::INTERVAL_SECONDS))
+    @out.puts("  holder: #{holder_line(holder)}") if holder.is_a?(Hash) && present?(holder["session"])
+    @out.puts("  #{next_move(slug, grade)}")
+  end
+
+  # The next move, stated for the reader who has just been told a lease is alive.
+  # A LIVE review is released by ITS OWN SESSION — `release` refuses anyone else, by
+  # design — so the remedy is to ASK, and saying so here is what keeps a caller from
+  # reaching for a takeover instead.
+  def next_move(slug, grade)
+    return "→ free to claim: bin/task review-claim acquire #{slug}" if ClaimHolder.observed_free?(grade)
+    return "→ watch longer: bin/task review-claim status #{slug} --observe-for 90" if
+      [ClaimHolder::INCONCLUSIVE, ClaimHolder::UNOBSERVED].include?(grade)
+    return "→ it lapses on its own; wait it out, or ask the holder to release it now: " \
+           "bin/task review-claim release #{slug}" if grade == ClaimHolder::NOT_RENEWING
+
+    "→ ASK THE HOLDER TO RELEASE IT (only their session can): bin/task review-claim release #{slug}. " \
+      "Do NOT take this task over — a steal mid-review voids the no-self-review guarantee and " \
+      "strands the reviewer's verdict."
+  end
+
+  def emit_status_json(slug, grade, holder, watched)
+    @out.puts(JSON.generate({
+                              "slug" => slug,
+                              "observed" => grade.to_s,
+                              "observed_note" => ClaimHolder.render_observation(
+                                grade, expires_at: expiry_of(holder), watched_seconds: watched,
+                                       renew_interval: ShiftRenewer::INTERVAL_SECONDS
+                              ),
+                              "free" => ClaimHolder.observed_free?(grade),
+                              "watched_seconds" => watched,
+                              "renew_interval" => ShiftRenewer::INTERVAL_SECONDS,
+                              "holder" => holder.is_a?(Hash) ? holder : nil
+                            }))
   end
 
   # ── The detached renewer ─────────────────────────────────────────────────────
@@ -467,9 +631,12 @@ class ReviewClaimCli
     @out.puts("  bin/task move #{slug} building --actor <the-real-builder> and re-run.")
   end
 
+  # The reviewing SOUL leads when the board knows it. A skip or a refusal that says
+  # "ask them to release" has to name a them, and a mascot label paints a card
+  # without identifying a reviewer.
   def holder_line(holder)
-    label = holder["label"].to_s.strip
-    who = label.empty? ? "session #{short(holder['session'])}" : "#{label} · session #{short(holder['session'])}"
+    who = [holder["agent"].to_s.strip, holder["label"].to_s.strip].reject(&:empty?)
+    who = (who + ["session #{short(holder['session'])}"]).join(" · ")
     age = holder["heartbeat_age"]
     since = holder["acquired_at"].to_s
     age_txt = age.nil? ? "" : ", last heartbeat ~#{age}s ago"
@@ -619,8 +786,13 @@ class ReviewClaimCli
   def usage(code)
     @err.puts(<<~TEXT)
       usage: bin/task review-claim acquire <slug> [--label <text>] [--agent <soul>]
-             bin/task review-claim release <slug> | status <slug> | renew <slug>
+             bin/task review-claim release <slug> | renew <slug>
+             bin/task review-claim status <slug> [--observe-for <s>] [--no-observe] [--json]
              bin/task claim-next-review [--label <text>] [--agent <soul>]
+      `status` OBSERVES the lease rather than printing a timestamp to difference by
+      hand: it watches whether the expiry MOVES (renewing), never moves (dying), or
+      has already passed (free). Absent/lapsed answers instantly; a live holder
+      answers within a renewal cycle; --observe-for raises the ~#{DEFAULT_OBSERVE_SECONDS}s budget.
       `acquire` and `claim-next-review` are WRITES, not reads: each takes a real
       ~#{lease_ttl_seconds}s review lease on a real task. claim-next-review asks the BOARD for the
       next reviewable green-CI task, claims it, and prints its slug on stdout.

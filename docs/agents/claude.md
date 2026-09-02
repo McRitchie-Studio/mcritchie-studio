@@ -101,7 +101,9 @@ the clock at the last proof of life.
 
 Their limits, stated plainly: they change **no gate semantics**; `bin/ship`
 stops at `submitted` and never merges or deploys; `bin/ship` has no `--steal`
-(take a held task over with `bin/task begin <task-slug> --steal`, then ship);
+(take a BUILDER-held task over with `bin/task begin <task-slug> --steal`, then
+ship — a REVIEWER-held task is asked to release, `bin/task review-claim release
+<task-slug>`, never stolen; the refusal names which holder you have);
 you still write the tests in step 3; and `bin/ship` is **not** `bin/release
 ship`, which is the G4 **production** deploy (`release → main`,
 ship-authority only). `begin` passes `--root <worktree>` to

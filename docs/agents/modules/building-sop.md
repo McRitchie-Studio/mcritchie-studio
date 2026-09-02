@@ -356,8 +356,10 @@ bin/ship <slug> -m "<commit message>"
 - Running the long form by hand (`bin/task move <slug> submitted`) still does
   **not** wait — the wait lives in `bin/ship`, not in the gate.
 - Re-run `bin/ship` after a failure and it **resumes** (each step already durably
-  recorded is skipped). It has no `--steal`; take a held task with `bin/task begin
-  <slug> --steal`, then ship.
+  recorded is skipped). It has no `--steal`; take a **builder**-held task with
+  `bin/task begin <slug> --steal`, then ship. A **reviewer**-held task is asked to
+  release (`bin/task review-claim release <slug>`, run by them), never stolen —
+  ship's refusal names which of the two you are looking at.
 
 Keep the worktree and branch until review confirms the PR merged or was
 intentionally abandoned. A pushed branch preserves code; `main` is for shipped
