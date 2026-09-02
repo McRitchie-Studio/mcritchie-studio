@@ -94,6 +94,54 @@ ghost claim can never strand the whole qa-release lane again — the failure the
 `steffon` shift lease could suffer. (Background — not needed to execute: the design is
 `docs/agents/system/devops-shift-lease.md`, section B.)
 
+### And a LOCAL presence claim, automatic, on THIS MACHINE
+
+The assembler claim above is a **board** claim: it answers *"is a release live"*
+to every machine, on a TTL. It does not answer *"is this machine saturated"*,
+and only the second question decides whether the agent at the next desk may
+launch a suite. That gap cost a measured 45-minute full-suite run — SIGTERMed
+at its 2700s ceiling, 11% complete, killed by a sweep no status command
+reported (`docs/agents/system/agent-presence.md`, cost #3).
+
+So `bin/release prepare` now also publishes a **local** claim beside the board one, in
+the session-marker namespace at
+`<projects>/.agents/sessions/<key>.presence-sweep-<pid>`, carrying `kind: sweep`,
+`lane: release:prepare`, a phase, a weight, and the OS's `(pid, lstart)` identity for
+this process. (It records its OWN pid as the group it speaks for, never the
+group it was launched in — a conductor inherits the launching shell's group,
+and a claim naming that group reads as alive long after the conductor is
+dead.) A peer reads it with `bin/agent-presence`. Nothing here needs running
+by hand:
+
+| | |
+|---|---|
+| Opened | at the top of `bin/release prepare`, before the first `git`/`gh`/board call |
+| Weight | `light` while the conductor works; `suite` inside work THIS box runs; `idle` while parked on a GitHub Actions poll |
+| Cleared | on graceful exit — **an optimization only** |
+| On a kill | the file stays, by design, and the reader grades it a corpse on the very next read. No TTL to wait out |
+| Disarm | `RELEASE_PRESENCE=off` |
+
+**What counts as a `suite` is read from the registry, not hardcoded.**
+`config/devops_test_suites.yml` already gives every release scope a `host:` and
+a `tier:`, and the weight derives from them: a scope is `light` only when its
+host is not `local` **and** its tier executes elsewhere (`smoke`, a curl poll;
+`hook`, a `heroku run`). Everything else costs a full suite, including anything
+unrecognised. So the `/up` polls and the post-deploy hooks no longer claim this
+box is busy while a Heroku dyno does the work, and a scope added later declares
+its cost by declaring the metadata it must declare anyway.
+
+**Two conductors do not fight.** A `prepare` and a `ship` may legitimately run
+at once; the marker is keyed per process, so both publish and a peer sees the
+machine's real combined cost.
+
+**It changes nothing about certs.** The claim lives in the session-marker
+namespace, which `bin/agent-presence` reads and `CertOrphanGuard.preflight`
+never touches — *read here, reaped nowhere*. So a live conductor cannot refuse
+a `bin/fast-check` / `bin/full-suite-check`, cannot have a reaper pointed at
+its process group, and cannot make a cert print a `kill -TERM` line naming a
+production deploy. Certifying from a primary checkout during a sweep behaves
+exactly as it did before this existed.
+
 ## Preconditions
 
 There is work to prepare:

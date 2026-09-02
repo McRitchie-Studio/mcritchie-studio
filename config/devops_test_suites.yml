@@ -213,6 +213,21 @@ apps:
 # scope key; the wrapper stamps this metadata into every START/COMPLETED/FAILED
 # AgentAction it emits. `blocks: blocking` scopes abort! their pipeline exactly
 # as before — the registry describes, it never overrides gate semantics.
+#
+# `host:` AND `tier:` ALSO DECIDE THE SCOPE'S LOCAL PRESENCE WEIGHT — what a peer
+# reading `bin/agent-presence` is told this conductor is costing THIS machine while
+# the scope runs (ReleasePresence.scope_weight, bin/lib/release_presence.rb). The
+# rule: a scope is `light` only when its host is not `local` AND its tier is one
+# that EXECUTES elsewhere — `smoke` (a curl poll) or `hook` (`heroku run`). Every
+# other combination is `suite`, including anything unrecognised, because
+# under-reporting cost is what lets a peer launch a suite into a saturated box.
+#
+# So a NEW SCOPE DECLARES ITS COST BY DECLARING `host`/`tier` — there is nothing
+# extra to remember, and nothing at the call site to keep in sync.
+#
+# Note `host:` names the TARGET, not the payer. `prod_smoke_seal` is
+# `host: production` and weighs `suite`, correctly: `bin/prod-smoke` runs
+# `npx playwright test` on THIS box against a production URL.
 release_scopes:
   pre_qa_gate:
     description: Per-app integration tier on origin/release before any QA deploy (release_repos.yml qa_test_cmd)
@@ -222,6 +237,7 @@ release_scopes:
     blocks: blocking
     mutates: false
   qa_up_smoke:
+    # Presence: light — a curl poll. The QA dyno boots; this box holds a socket.
     description: Post-QA-deploy /up boot poll (wait_for_boot) — QA is not green until every app serves 200
     phase: qa
     tier: smoke
@@ -229,6 +245,7 @@ release_scopes:
     blocks: blocking
     mutates: false
   qa_post_deploy:
+    # Presence: light — `heroku run` executes on a remote one-off dyno, not here.
     description: Member-declared post_deploy_cmd on the QA app (heroku run --exit-code)
     phase: qa
     tier: hook
@@ -250,6 +267,7 @@ release_scopes:
     blocks: blocking
     mutates: false
   prod_up_smoke:
+    # Presence: light — a curl poll, same as qa_up_smoke.
     description: Post-prod-deploy /up hard-gate (deploy_app, git_push_heroku adapter smoke_url)
     phase: ship
     tier: smoke
@@ -257,6 +275,7 @@ release_scopes:
     blocks: blocking
     mutates: false
   prod_post_deploy:
+    # Presence: light — `heroku run`, remote. Twin of qa_post_deploy.
     description: Member-declared post_deploy_cmd on the production app (heroku run --exit-code)
     phase: ship
     tier: hook
@@ -264,6 +283,9 @@ release_scopes:
     blocks: blocking
     mutates: true
   prod_smoke_seal:
+    # Presence: suite — `host: production` is the TARGET. bin/prod-smoke drives
+    # `npx playwright test` LOCALLY, so this box pays in full. The tier keeps it
+    # honest: `e2e` is not in ReleasePresence::REMOTE_TIERS.
     description: Post-ship @qa-readonly suite vs prod (bin/prod-smoke) — records a seal, never aborts
     phase: ship
     tier: e2e
