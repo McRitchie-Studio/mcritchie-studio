@@ -24,7 +24,7 @@ Everything converges on the same protocol below. Email specifics:
 
 - **Allowlist or quarantine.** Only Mr. McRitchie's addresses
   (`DESK_ALLOWED_SENDERS`) are parsed. Anything else lands `quarantined` —
-  raw kept sealed in `incoming/`, attachments never extracted. The desk
+  raw kept sealed in the desk bucket, attachments never extracted. The desk
   address is guessable; treat unexpected mail as untrusted input, always.
 - **Entity routing hints:** a `[welding]` / `[industries]` subject tag, or a
   plus-address (`desk+welding@…`). A hint is advice for the sweep — never
