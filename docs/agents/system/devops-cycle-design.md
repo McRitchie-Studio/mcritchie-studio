@@ -1326,7 +1326,7 @@ tiers that must be green by the time the task is `submitted` for review:
 | **library** | studio-engine change | `unit` `integration` — in the engine, plus consumer-CI in *both* apps |
 | **onchain** | new turf-vault instruction | `unit` `integration` — Anchor unit, Anchor lifecycle, Ruby decoder unit |
 | **onchain-vertical** | new workflow w/ wallet + DB + UI + program | `unit` `component` `integration` `e2e` — almost always its own `release` |
-| **docs** | SOP / runbook / README edit | none — no code tiers; routes to the documentation seat (Alex) and certifies by review, not a test lane |
+| **docs** | SOP / runbook / README edit | none — no code tiers; routes to the documentation seat (Alex) and certifies by review, not a test lane. **Claimable only on a diff observed to be prose** (`claimable_when: doc_only_diff`), which is what makes the empty column safe |
 | **test-only** | delete a stale assertion; fix a flaky spec | none — a diff with no behavior has nothing for a tier to be evidence of; it owes a **control** instead (below), and still owes the full-suite cert |
 
 **The backticked tier names are load-bearing, not formatting.** They are the
@@ -1347,6 +1347,42 @@ a tier here that no runner runs is a RED test, not a documentation opinion.
 
 Devnet verification of on-chain work is real and still expected — as an
 **operator/QA stop**, not as a DoR tier a builder can satisfy by typing.
+
+**A zero-tier shape is only safe while it cannot be claimed by a diff that does
+not match it**, and both zero-tier shapes now say what earns them:
+`claimable_when: doc_only_diff` on `docs`, `test_only_diff` on `test-only`.
+`bin/dor-check` checks the claim against the **observed diff**, never the label,
+and fails closed on a diff it cannot observe.
+
+`docs` gained that guard on 2026-09-02, after shipping without one. Measured on
+PR #1172: a task shaped `docs` whose diff carried
+`test/integration/open_pr_receipt_visibility_test.rb` was told **"DoR-to-Merge
+met"** with no tier demanded and no full-suite cert demanded — and the verdict
+named neither waiver, so it read as a clean pass. Production code rode it just as
+easily. The hole was a **fall-through**: the exempt-`kind` gate asks this exact
+question on this exact diff and already refuses, then hands off to the shape
+contract, which granted the same exemption one step later. One observation, asked
+twice, answered two opposite ways — so the claim guard reuses `CodeDiff`, the
+classifier the kind gate runs, rather than a second prose list that could drift
+back apart.
+
+**Doc-only means the file's TYPE is non-behavioral** (`.md`/`.markdown`/`.mdx`/
+`.rdoc`, inert media, LICENSE-class basenames). A test file is not doc-only; a
+comment-only edit to a `.yml` or an `.rb` is not doc-only (the granularity is the
+FILE, never the hunk); and location buys nothing (`docs/agents/setup.sh` is mode
+100755). The fix deliberately did **not** set `full_suite_gate: true` on `docs` —
+making every prose correction pay a full suite would undo the cheap single-pass
+doc change and push people to mislabel shapes, which is worse than the hole.
+**Gate the claim, not the cost.**
+
+**A waived requirement now names itself.** When a shape skips a tier or the
+full-suite cert, the verdict says so and says what earned it —
+`ⓘ shape docs: no test tier required · full-suite cert waived — claim verified
+against the OBSERVED diff (doc_only_diff, 2 file(s) [source: pr])`. Silence was
+the other half of the defect: a gate that skips a requirement without saying so
+reads exactly like a gate that enforced one and passed, which is why #1172's
+output was seen by several readers before anyone noticed what it had not asked
+for.
 
 **`test-only` is the one shape whose contract is not a tier list, and reading its
 empty column as a discount gets it exactly backwards.** A diff made entirely of
