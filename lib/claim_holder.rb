@@ -294,7 +294,12 @@ module ClaimHolder
 
   # One sentence per observed grade, stating THE EVIDENCE rather than a conclusion
   # the caller must trust. `expires_at` is the stamp the lease will (or did) lapse at.
-  def render_observation(grade, expires_at: nil, watched_seconds: nil, renew_interval: nil)
+  # `differenced` says whether a SECOND reading was ever obtained. It defaults true
+  # because every caller that reaches a conclusion has one; the outage path is the
+  # only place it is false, and there the INCONCLUSIVE sentence must not cite a
+  # movement nobody looked at twice.
+  def render_observation(grade, expires_at: nil, watched_seconds: nil, renew_interval: nil,
+                         differenced: true)
     stamp = expires_at.to_s.strip
     watched = watched_seconds.nil? ? nil : ClaimLease.humanize_age(watched_seconds)
     case grade
@@ -311,6 +316,15 @@ module ClaimHolder
         "the #{renew_interval}s renewal cycle. Nothing is heartbeating this; it lapses on its own" \
         "#{stamp.empty? ? "" : " at #{stamp}"}."
     when INCONCLUSIVE
+      unless differenced
+        next_line = "INCONCLUSIVE — the board could not be read again after the first look"
+        next_line += " (#{watched} watched)" if watched
+        next_line += ". The expiry was never observed a SECOND time, so nothing was learned " \
+                     "about whether it is renewing — this is ignorance, not a finding about " \
+                     "the holder. Retry when the board answers."
+        return next_line
+      end
+
       "INCONCLUSIVE — the expiry did not move in #{watched || "the window watched"}, which is not " \
         "longer than the #{renew_interval}s renewal cycle, so that proves nothing either way. " \
         "Watch longer (--observe-for) to get an answer."

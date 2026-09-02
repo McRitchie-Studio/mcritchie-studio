@@ -153,6 +153,40 @@ class ReviewClaimStatusObservationTest < Minitest::Test
                      "must never be allowed to resolve as 'not renewing'"
   end
 
+  # A SUSTAINED outage is not a blip, and it is not evidence either. If the board
+  # answers once and then fails for the WHOLE window, there is no second reading to
+  # difference — `latest` stays pinned to `first`, and differencing a value against
+  # ITSELF says "it did not move" about something that was never looked at twice.
+  #
+  # MEASURED pre-fix: a live holder with 300s of lease left plus a board that 500s
+  # for the entire window printed CHARACTER-FOR-CHARACTER the same line as a
+  # genuinely dying holder. The grade is the smaller half of the defect; the line
+  # asserting an observation that never happened is the honesty failure.
+  def test_a_board_unreadable_for_the_whole_window_reports_ignorance_not_a_dead_holder
+    # ScriptedApi repeats its last entry, so this is: one good read, then 500s forever.
+    out, = run_status([holder(300), :unreadable])
+
+    refute_includes out, "NOT RENEWING",
+                    "no poll after the first ever succeeded — calling a live holder " \
+                    "'not renewing' is the one direction this command must never fail in"
+    assert_includes out, "INCONCLUSIVE",
+                    "an unobservable window is ignorance, and ignorance has a grade already"
+    refute_includes out, "the expiry did not move",
+                     "the expiry was never READ a second time, so nothing may be asserted " \
+                     "about whether it moved — that is the evidence this command never had"
+  end
+
+  # The other half of the same contract: the fix must not buy honesty under outage
+  # by making a REAL not-renewing holder unreportable. A board that answers every
+  # time and shows a frozen expiry is still a definite finding.
+  def test_a_readable_board_with_a_frozen_expiry_still_reports_not_renewing
+    out, = run_status([holder(300)] * 20)
+
+    assert_includes out, "NOT RENEWING",
+                    "every poll succeeded and the expiry never moved — that is observed, " \
+                    "and the outage fix must not blunt it"
+  end
+
   def test_a_board_that_cannot_be_read_at_all_refuses_rather_than_answering
     out, cli = run_status([:unreadable])
 
