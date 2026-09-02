@@ -153,8 +153,24 @@ module AgentPresence
     base = root.to_s
     return [] if base.empty?
 
-    CLAIM_GLOBS.flat_map { |pattern| Dir.glob(File.join(base, pattern)) }.sort
+    # AND the SUPERVISOR claims (bin/lib/presence_claim.rb), which live in the
+    # session-marker namespace rather than in a runlock slot. That separation is
+    # load-bearing, not filing preference: CertOrphanGuard.preflight REAPS — it
+    # SIGKILLs the group a `cert-run.json` names — so a non-cert claim written into
+    # one would be a loaded gun aimed at a process no cert spawned. Read here,
+    # reaped nowhere.
+    #
+    # The store name is spelled HERE, inside this one private method, rather than in
+    # a top-level constant, and that is the shape SessionMarkers#marker_path already
+    # has: a shared lib that EXPORTS anything naming <projects>/.agents lets a caller
+    # reach the store without ever typing its name, which no source scan can see
+    # (test/lib/state_store_containment_test.rb, LAYER 2a). This file only ever
+    # READS — no write, no delete, no signal — and now it cannot hand the path to
+    # anyone who would.
+    supervisors = File.join(".agents", "sessions", "*.presence-*")
+    (CLAIM_GLOBS + [supervisors]).flat_map { |pattern| Dir.glob(File.join(base, pattern)) }.sort
   end
+  private_class_method :claim_paths
 
   # nil  — the file vanished between the glob and the read. A race, not a defect;
   #        it is simply not a claim any more and nothing should be reported for it.
@@ -203,20 +219,29 @@ module AgentPresence
   # on purpose: proof of life wins over inability to prove, which wins over proof of
   # innocence. Every tie is broken toward over-reporting cost, because over-reporting
   # buys delay and under-reporting buys a saturated machine and a lost 45-minute run.
+  # THE SUPERVISOR SUBJECT, under either vocabulary. A cert runlock spells it
+  # `cert_pid`; a supervisor claim spells it `pid`, because a ship is not a cert and
+  # a record that borrowed the other's name would be stating something false about
+  # itself. Everything else — `pgid`, `pgid_started_at`, `started_at` — is already
+  # spelled the same in both, so this pair is the whole translation, and it happens
+  # at the reader's boundary rather than in anybody's file.
+  def supervisor_pid(lock) = CertOrphanGuard.coerce_pid(lock["cert_pid"] || lock["pid"])
+  def supervisor_started_at(lock) = lock["cert_started_at"] || lock["pid_started_at"]
+
   def grade(lock:, table:)
-    cert_pid = CertOrphanGuard.coerce_pid(lock["cert_pid"])
+    cert_pid = supervisor_pid(lock)
     pgid     = CertOrphanGuard.coerce_pid(lock["pgid"])
 
     detail = {
       cert_pid: cert_pid, pgid: pgid, lane: lock["lane"], db: lock["db"],
-      started_at: lock["started_at"], cert_started_at: lock["cert_started_at"],
+      started_at: lock["started_at"], cert_started_at: supervisor_started_at(lock),
       pgid_started_at: lock["pgid_started_at"]
     }
     return [:malformed, detail] if cert_pid.nil? && pgid.nil?
 
     members = pgid ? CertOrphanGuard.group_members(table, pgid) : []
     subjects = []
-    subjects << [:cert, cert_pid, lock["cert_started_at"], false] if cert_pid
+    subjects << [:cert, cert_pid, supervisor_started_at(lock), false] if cert_pid
     subjects << [:lane, pgid, lock["pgid_started_at"], members.any?] if pgid
 
     graded = subjects.map do |name, pid, recorded, group_alive|
@@ -272,6 +297,19 @@ module AgentPresence
     { repo: repo, desk: desk }
   end
 
+  # A supervisor claim's path locates the SESSION STORE, not the work — every one of
+  # them sits in `<root>/.agents/sessions/`, so the path-derived answer would read
+  # ".agents/sessions" for all of them. It carries the repo and the working root it
+  # is actually about, so ask the record.
+  def locate_claim(lock, path, root)
+    return locate(path, root) unless lock["root"] || lock["repo"]
+
+    work = lock["root"].to_s
+    parent = File.basename(File.dirname(work))
+    { repo: lock["repo"] || File.basename(work),
+      desk: parent == ".worktrees" ? File.basename(work) : "primary" }
+  end
+
   def age_seconds(started_at, now)
     return nil if started_at.to_s.empty?
 
@@ -291,16 +329,77 @@ module AgentPresence
       verdict, detail = status == :malformed ? [:malformed, {}] : grade(lock: lock, table: table)
 
       {
-        path: path, kind: "cert", grade: verdict,
+        # A runlock names no kind and never will — it IS a cert. A supervisor claim
+        # says what it is, because "ship" and "sweep" are the distinction the whole
+        # surface exists to draw.
+        path: path, kind: lock["kind"].to_s.empty? ? "cert" : lock["kind"].to_s, grade: verdict,
         phase: status == :malformed ? nil : phase_of(lock),
         weight: status == :malformed ? 0.0 : weight_of(lock),
+        agent: lock["agent"], task_slug: lock["task_slug"],
         age_seconds: age_seconds(lock["started_at"], now)
-      }.merge(locate(path, root)).merge(detail)
+      }.merge(locate_claim(lock, path, root)).merge(detail)
     end
   end
 
-  def consumed(claims)
-    claims.select { |c| COUNTED_GRADES.include?(c[:grade]) }.sum { |c| c[:weight].to_f }
+  # Kinds that SUPERVISE work rather than being the work. They spawn a runner and
+  # wait on it, so their cost is whatever they are currently supervising.
+  SUPERVISOR_KINDS = %w[ship sweep].freeze
+
+  # Capacity consumed, with ONE workload counted ONCE.
+  #
+  # THE DOUBLE COUNT this exists to prevent: `bin/ship` publishes `weight: suite`
+  # while it certifies, and moments later the bin/fast-check it spawned writes a
+  # runlock of its own. Two claims, two units, one suite — and a headroom number
+  # that double counts is a number somebody will eventually calibrate
+  # SUITE_CAPACITY against.
+  #
+  # The rule, stated exactly: A SUPERVISOR CLAIM ADDS NO COST ON TOP OF A RUNNER
+  # ALREADY COUNTED INSIDE ITS OWN PROCESS GROUP. `bin/ship` spawns bin/fast-check
+  # with `system` and no `pgroup:`, so the runner lives in the ship's group — which
+  # is precisely how the two are recognised as one workload, using the resolution
+  # the backstop already performs and needing no new field.
+  #
+  # NOT "collapse claims sharing a pgid", which is a different and WORSE rule: two
+  # independent certs launched from one shell would share a group and one of them
+  # would vanish from the arithmetic. Under-reporting cost is the expensive
+  # direction, so the collapse is restricted to the case that is actually one
+  # workload — a supervisor and something running inside it.
+  #
+  # And a supervisor whose runner has NOT yet appeared keeps its full weight. That
+  # window is real (~11s measured between `bin/ship`'s 2/8 and the lane's runlock),
+  # and it is the one moment where the supervisor's claim is the ONLY thing saying
+  # a suite is starting.
+  def consumed(claims, table: nil)
+    counted = claims.select { |c| COUNTED_GRADES.include?(c[:grade]) }
+    covered = covered_supervisors(counted, table)
+    counted.sum { |c| covered.include?(c[:path]) ? 0.0 : c[:weight].to_f }
+  end
+
+  # The supervisor claims whose cost is already counted by another claim running in
+  # their group. Without a process table we cannot resolve a pid to its group, so
+  # nothing is collapsed — the safe direction.
+  def covered_supervisors(counted, table)
+    return [] if table.nil?
+
+    groups = counted.to_h { |c| [c[:path], resolved_group(c, table)] }
+    counted.filter_map do |c|
+      next nil unless SUPERVISOR_KINDS.include?(c[:kind])
+
+      mine = groups[c[:path]]
+      next nil if mine.nil?
+
+      other = counted.any? { |o| !o.equal?(c) && !SUPERVISOR_KINDS.include?(o[:kind]) && groups[o[:path]] == mine }
+      other ? c[:path] : nil
+    end
+  end
+
+  # The process group a claim's work is ACTUALLY running in — resolved from the live
+  # table, never from the recorded pgid alone. A cert spawns each lane into a NEW
+  # group, so a runlock's own `pgid` names the lane and says nothing about the group
+  # its supervisor (and therefore the ship around it) runs in.
+  def resolved_group(claim, table)
+    process = CertOrphanGuard.live_process(table, claim[:cert_pid])
+    process ? process[:pgid] : nil
   end
 
   # --- the backstop -----------------------------------------------------------------
@@ -398,7 +497,7 @@ module AgentPresence
 
     found = claims(root: root, table: table, now: now)
     capacity = suite_capacity(env)
-    used = consumed(found)
+    used = consumed(found, table: table)
     unattributed = degraded ? [] : backstop(table: table, claims: found)
     averages = load == :read ? load_average : load
 
@@ -478,10 +577,10 @@ module AgentPresence
 
     shown, hidden = partition_for_display(snapshot[:claims], cutoff)
 
-    lines << "cert claims (#{snapshot[:claims].size} on disk, #{snapshot[:counts]['live'] || 0} live)"
+    lines << "claims (#{snapshot[:claims].size} on disk, #{snapshot[:counts]['live'] || 0} live)"
     if shown.empty?
       # NEVER "idle". An empty directory is an absence of claims, not a fact about load.
-      lines << "  none live — no cert runlock on this machine grades live or unverifiable."
+      lines << "  none live — no claim on this machine grades live or unverifiable."
     else
       shown.each { |c| lines << "  #{claim_row(c)}" }
     end

@@ -29,6 +29,7 @@ require "fileutils"
 require "tmpdir"
 require_relative "../../bin/lib/agent_presence"
 require_relative "../../bin/lib/cert_orphan_guard"
+require_relative "../../bin/lib/presence_claim"
 
 class AgentPresenceIntegrationTest < Minitest::Test
   BIN = File.expand_path("../../bin/agent-presence", __dir__)
@@ -282,4 +283,76 @@ class AgentPresenceIntegrationTest < Minitest::Test
     assert_match(/unrecognized argument/, out)
     assert_match(/NOTHING was read/, out)
   end
+  # --- the supervisor claim, end to end through the REAL writer -------------------
+  #
+  # WHY THIS TIER AND NOT A STRING ASSERTION. A unit test that asserts the glob
+  # PATTERN proves the pattern is present, not that it matches anything — and the
+  # whole defect this slice fixes was a reader one glob short. So these write a real
+  # claim with the real writer, glob it off a real disk, and grade it against a real
+  # `ps`. If the writer's filename and the reader's glob ever disagree, nothing here
+  # can stay green.
+  #
+  # Measured live on 2026-09-01 BEFORE this hop existed: a `bin/ship` parked in its
+  # CI wait, publishing `waiting/idle` on disk, was still reported by this reader
+  # under `backstop:` as UNATTRIBUTED — and the machine called BUSY on the strength
+  # of it. The claim was correct; nothing read it.
+
+  def publish_claim(root, pid:, phase:, weight:, kind: "ship", lane: nil)
+    claim = PresenceClaim.open(
+      kind: kind, root: File.join(root, "mcritchie-studio", ".worktrees", "demo-desk"),
+      projects_dir: root, session_id: "11111111-2222-4333-8444-555555555555",
+      task_slug: "demo-task", pid: pid, env: { "TASK_USAGE_SANDBOX" => "0" }
+    )
+    claim.publish(phase: phase, weight: weight, lane: lane)
+    claim
+  end
+
+  def test_a_live_supervisor_claim_is_globbed_graded_and_named_by_the_reader
+    Dir.mktmpdir do |root|
+      pid = spawn_idle
+      publish_claim(root, pid: pid, phase: "waiting", weight: "idle", lane: "6/8 ci")
+
+      snapshot = AgentPresence.snapshot(root: root, load: nil)
+      claim = snapshot[:claims].find { |c| c[:kind] == "ship" }
+
+      refute_nil claim, "the reader must SEE the claim the writer publishes — one glob short is no surface"
+      assert_equal :live, claim[:grade]
+      assert_equal "waiting", claim[:phase]
+      assert_equal "6/8 ci", claim[:lane]
+      assert_equal "mcritchie-studio", claim[:repo], "the claim names its own repo, not .agents"
+      assert_equal "demo-desk", claim[:desk]
+      assert_in_delta 0.0, claim[:weight], 0.001, "a CI wait consumes nothing"
+    end
+  end
+
+  # The killed-writer rule, for THIS writer, through the real filesystem.
+  def test_a_killed_supervisors_claim_survives_and_grades_dead_immediately
+    Dir.mktmpdir do |root|
+      pid = spawn_idle
+      publish_claim(root, pid: pid, phase: "working", weight: "suite", lane: "2/8 cert")
+      assert_equal :live, AgentPresence.snapshot(root: root, load: nil)[:claims].first[:grade]
+
+      kill_and_reap(pid)
+
+      claim = AgentPresence.snapshot(root: root, load: nil)[:claims].first
+      refute_nil claim, "the file STAYS — it is the only record naming what the killed run was doing"
+      assert_equal :dead, claim[:grade], "and it is a corpse on the very next read, with no TTL to wait out"
+    end
+  end
+
+  # A CI-waiting ship must stop appearing as unattributed load. That row, and the
+  # BUSY verdict it forces, is cost #4 in the design.
+  def test_a_waiting_supervisor_leaves_headroom_intact
+    Dir.mktmpdir do |root|
+      pid = spawn_idle
+      publish_claim(root, pid: pid, phase: "waiting", weight: "idle", lane: "6/8 ci")
+
+      snapshot = AgentPresence.snapshot(root: root, load: nil)
+
+      assert_in_delta 0.0, snapshot[:consumed], 0.001,
+                      "an idle waiter consumes nothing, and the surface must say so"
+      assert_equal snapshot[:capacity], snapshot[:headroom]
+    end
+  end
+
 end

@@ -162,8 +162,39 @@ of the same glob rather than needing another state surface.
 ```
 
 `phase` carries the distinction cost #4 is about: **`waiting` consumes nothing.**
-`started_at` is the OS's rendering of the process start time — the identity
-proof, and the only field that decides whether any of the others may be believed.
+
+**Correction, from building it (slice 3).** The sketch above spelled `started_at`
+as the OS start time, and §5(c) says these claims are read by *the same glob and
+the same GRADER* as the runlock. Those two cannot both hold: the grader reads
+`started_at` as the ISO stamp of when the record was written and takes its
+identity proof from `<subject>_started_at`. **§5(c) wins** — a record that spelled
+one field two ways would put two truths on one screen and neither call site would
+look wrong. The shipped record therefore uses the runlock's vocabulary exactly:
+
+```
+started_at        ISO — when this record was written (what the grader ages)
+pid  / pid_started_at    the SUPERVISOR subject (a runlock spells it cert_pid)
+pgid / pgid_started_at   the GROUP subject — same spelling as the runlock's
+began_at          ISO — when the RUN began; fixed across every republish
+```
+
+**Two subjects, not one**, for the reason the runlock has always carried two: a
+supervisor can be killed while the work it spawned SURVIVES — reparented, still
+burning the machine, still holding a test DB — and a claim naming only the
+supervisor reports that worst case as `dead`. `bin/ship` spawns its cert with
+`system` and no `pgroup:`, so the runner lives in the ship's own group, which
+makes the group the subject that stays true after the ship dies.
+
+The supervisor subject keeps an honest name rather than borrowing `cert_pid`: a
+ship is not a cert, and the reader translates that one pair of names at its
+boundary (`AgentPresence.supervisor_pid`) instead of the record lying about what
+it holds.
+
+**And the claim stays OUT of the runlock slot**, which is a safety property rather
+than a filing preference. `CertOrphanGuard.preflight` REAPS — it SIGKILLs the
+group a `cert-run.json` names — and it reads only `<root>/.git/cert-run.json`. A
+claim in the session-marker namespace is invisible to it by construction, so the
+reaper can never be aimed at a process no cert spawned.
 
 **Any new writer must launder its path through
 `TaskUsageSandbox.enforce!(..., store: "session-marker")`.** This is enforced,
@@ -172,11 +203,13 @@ set from source and refuses any method that so much as *holds* a raw marker path
 in any spelling. It is the reason the namespace has one owner, and it is why another
 store would have to re-earn a guarantee this one already has.
 
-**`SessionMarkers` writes are not atomic today.** They are plain `File.write`,
-which is exactly the torn-read the runlock measured at 4.6%. Giving that store
-an atomic write path is a prerequisite of the first slice that *writes* — and it
-retroactively fixes every existing marker. It is not needed by slice 1, which
-writes nothing.
+**`SessionMarkers` writes are atomic as of slice 3.** They were plain
+`File.write` — exactly the torn-read the runlock measured at 4.6% — and the store
+now publishes through the same write-tmp-then-rename the runlock uses, which
+retroactively fixes every existing marker. The property is asserted by re-running
+the original measurement rather than by argument: a reader thread watching a
+200 KB marker under a rewriting writer observed it at ZERO BYTES under the old
+write and never under the new one (`test/lib/session_markers_test.rb`).
 
 ---
 
@@ -215,12 +248,12 @@ states — which is `bin/ship`, not the cert.
 
 ### (c) Sweeps and ships
 
-`bin/ship` writes **nothing locally for its entire ~12-minute run**. Its eight
-phases exist only as stderr strings and header comments; the boundary that
-matters is cert (line 285) → CI wait (line 536). `bin/release prepare` takes
-flocks — invisible to anything not itself contending for them — plus a board
-claim that answers *"is a release live"*, not *"is a sweep saturating this
-machine."*
+`bin/ship` wrote **nothing locally for its entire ~12-minute run**. Its eight
+phases existed only as stderr strings and header comments; the boundary that
+matters is cert → CI wait. Slice 3 landed the ship half (`bin/lib/presence_claim.rb`).
+`bin/release prepare` takes flocks — invisible to anything not itself contending
+for them — plus a board claim that answers *"is a release live"*, not *"is a
+sweep saturating this machine."*
 
 | | |
 |---|---|
@@ -493,10 +526,34 @@ size was, and the size was wrong.
 ### Slice 3 — `bin/ship` publishes its phase
 
 The one place the runlock genuinely cannot answer, because a ship *spans* both
-states: cert (`bin/ship`'s `2/8 G1 cert`) and CI wait (`6/8 CI settle wait`). Today it writes
+states: cert (`bin/ship`'s `2/8 G1 cert`) and CI wait (`6/8 CI settle wait`). It wrote
 nothing locally for its entire ~12-minute run. This is what remains of
-`/tasks/certs-publish-no-phase` once §5(b) is accounted for. Requires the atomic
-write path in `SessionMarkers` (§4). Closes cost #4.
+`/tasks/certs-publish-no-phase` once §5(b) is accounted for.
+
+**Landed — the WRITER half.** `bin/lib/presence_claim.rb` publishes the §4 record
+through `SessionMarkers` (so no new store, and `bin/ship` never names `.agents`),
+and `bin/ship` republishes it at each of the eight boundaries it already prints.
+The atomic write path in §4 landed with it.
+
+**The READER hop landed with it, and it had to.** A first cut shipped the writer
+alone, on the reasoning that slice 1 owned the reader — and the claims went
+somewhere nothing looked. Measured on the live machine: a `bin/ship` parked in its
+CI wait, publishing `waiting/idle` correctly on disk, was STILL reported under
+`backstop:` as unattributed and the machine still called BUSY. A claim the reader
+cannot see closes no cost. So the reader gained three things:
+
+1. the `.agents/sessions/*.presence-*` glob;
+2. the supervisor-subject normalizer, so one grader reads both vocabularies;
+3. **the dedupe**, without which headroom double counts. A ship publishes
+   `weight: suite` while it certifies and the bin/fast-check it spawned writes a
+   runlock moments later: two claims, one suite. The rule is *a supervisor claim
+   adds no cost on top of a runner already counted inside its own process group*
+   — resolved from the live table, reusing what the backstop already does, no new
+   field. Deliberately **not** "collapse claims sharing a pgid": two independent
+   certs launched from one shell share a group, and deleting one of them from the
+   arithmetic is the expensive direction. A supervisor whose runner has not
+   appeared yet keeps its full weight, which covers the real ~11s window between
+   `bin/ship`'s 2/8 and the lane's runlock.
 
 ### Slice 4 — sweeps publish locally
 

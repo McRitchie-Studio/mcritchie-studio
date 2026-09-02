@@ -167,6 +167,14 @@ class CertFailureExitContractTest < Minitest::Test
           "SHIP_FAST_CHECK_BIN" => File.join(bin, "fast-check"),
           "SHIP_GH_BIN" => File.join(bin, "gh"),
           "SHIP_ROOT" => repo, "SHIP_CI_WAIT" => "off",
+          # bin/ship publishes a presence claim into the session-marker store
+          # (bin/lib/presence_claim.rb), so this harness must PIN that store like
+          # any other writer. Unpinned it is refused outright under the suite's
+          # sandbox — which is the guard working — and, run standalone with the
+          # sandbox off, it would write the operator's live .agents instead.
+          # Pinned OUTSIDE `repo` on purpose: a marker inside the working tree
+          # would be swept into ship's own 1/8 commit.
+          "CLAUDE_PROJECTS_DIR" => File.join(tmp, "projects"),
           "CLAUDE_CODE_SESSION_ID" => nil, "CODEX_THREAD_ID" => nil },
         [SHIP, "probe-slug", "-m", "probe"], chdir: tmp
       )

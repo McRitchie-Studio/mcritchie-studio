@@ -20,6 +20,9 @@
 #   ruby -Itest test/lib/agent_presence_test.rb
 
 require "minitest/autorun"
+require "json"
+require "tmpdir"
+require "fileutils"
 require_relative "../../bin/lib/agent_presence"
 
 class AgentPresenceTest < Minitest::Test
@@ -326,4 +329,148 @@ class AgentPresenceTest < Minitest::Test
     assert_match(/UNPROVABLE/, row)
     assert_match(/counted/, row)
   end
+  # --- supervisor claims: the OTHER writer, and the arithmetic that keeps one -------
+  # --- workload counted ONCE -------------------------------------------------------
+  #
+  # `bin/ship` publishes a claim of its own (bin/lib/presence_claim.rb) because it
+  # SPANS both states — it certifies, then it waits on CI — and the process name is
+  # identical in both. Measured live on 2026-09-01: five ship groups, all at 0.0%
+  # CPU, all reported UNATTRIBUTED and the machine called BUSY; four were parked in
+  # a CI wait costing nothing and the fifth was eleven seconds into a real suite.
+
+  def supervisor(pid: 300, pgid: 300, kind: "ship", phase: "waiting", weight: "idle",
+                 pid_started_at: START_A, pgid_started_at: START_A, **rest)
+    {
+      "schema_version" => 1, "kind" => kind, "phase" => phase, "weight" => weight,
+      "pid" => pid, "pid_started_at" => pid_started_at,
+      "pgid" => pgid, "pgid_started_at" => pgid_started_at,
+      "started_at" => "2026-09-01T17:05:12Z", "root" => "/p/mcritchie-studio/.worktrees/d",
+      "repo" => "mcritchie-studio"
+    }.merge(rest)
+  end
+
+  # THE NORMALIZER. A runlock spells the supervisor subject `cert_pid`; a ship claim
+  # spells it `pid`, because a ship is not a cert and a record that borrowed the
+  # other's name would state something false about itself. The grader must read both.
+  def test_a_supervisor_claim_grades_live_under_its_own_vocabulary
+    table = [proc_row(pid: 300, pgid: 300)]
+    verdict, detail = AgentPresence.grade(lock: supervisor, table: table)
+
+    assert_equal :live, verdict, "a ship claim names its subject `pid`, and the grader must see it"
+    assert_equal 300, detail[:cert_pid]
+    assert_equal START_A, detail[:cert_started_at]
+  end
+
+  def test_a_supervisor_claim_whose_pid_is_gone_grades_dead_with_no_timeout
+    assert_equal :dead, AgentPresence.grade(lock: supervisor(pgid: nil), table: [])[0]
+  end
+
+  # The second subject earning its place: the ship is gone, the cert it spawned is
+  # still in its group holding the test DB. A single-subject claim would report the
+  # WORST case as dead.
+  def test_a_killed_supervisor_whose_group_survives_is_still_counted
+    table = [proc_row(pid: 301, pgid: 300, command: "ruby bin/fast-check x")]
+    verdict, = AgentPresence.grade(lock: supervisor(pid: 300, pgid: 300), table: table)
+
+    refute_equal :dead, verdict,
+                 "the supervisor died but its suite lives on in the group — reporting that dead " \
+                 "is the one direction this design may never fail in"
+  end
+
+  # --- the dedupe ------------------------------------------------------------------
+
+  def counted(kind:, weight:, cert_pid:, path:)
+    { path: path, kind: kind, grade: :live, weight: AgentPresence::WEIGHTS.fetch(weight),
+      cert_pid: cert_pid }
+  end
+
+  def test_a_ship_and_the_runlock_inside_its_group_are_ONE_workload
+    table = [proc_row(pid: 300, pgid: 300), proc_row(pid: 400, pgid: 300)]
+    claims = [
+      counted(kind: "ship", weight: "suite", cert_pid: 300, path: "/p/.agents/sessions/s.presence-ship-300"),
+      counted(kind: "cert", weight: "suite", cert_pid: 400, path: "/p/ms/.git/cert-run.json")
+    ]
+
+    assert_in_delta 1.0, AgentPresence.consumed(claims, table: table), 0.001,
+                    "one suite is running; counting the ship AND its own child's runlock is a " \
+                    "double count, and a headroom number somebody will calibrate against"
+  end
+
+  # The window the over-report exists for: 2/8 has fired, the lane's runlock has not
+  # appeared yet (~11s measured), and the ship's claim is the ONLY thing on disk
+  # saying a suite is starting.
+  def test_a_ship_whose_runner_has_not_appeared_keeps_its_full_weight
+    table = [proc_row(pid: 300, pgid: 300)]
+    claims = [counted(kind: "ship", weight: "suite", cert_pid: 300,
+                      path: "/p/.agents/sessions/s.presence-ship-300")]
+
+    assert_in_delta 1.0, AgentPresence.consumed(claims, table: table), 0.001,
+                    "nothing else is counting this suite yet, so the supervisor must"
+  end
+
+  # THE RULE IS NOT "collapse claims sharing a pgid", and this is why. Two independent
+  # certs launched from one shell share a group; collapsing them would delete a real
+  # suite from the arithmetic, which is the expensive direction.
+  def test_two_independent_certs_in_one_group_are_NOT_collapsed
+    table = [proc_row(pid: 400, pgid: 300), proc_row(pid: 500, pgid: 300)]
+    claims = [
+      counted(kind: "cert", weight: "suite", cert_pid: 400, path: "/p/a/.git/cert-run.json"),
+      counted(kind: "cert", weight: "suite", cert_pid: 500, path: "/p/b/.git/cert-run.json")
+    ]
+
+    assert_in_delta 2.0, AgentPresence.consumed(claims, table: table), 0.001,
+                    "two suites are two suites — the collapse is only ever supervisor-over-runner"
+  end
+
+  def test_a_ship_and_a_cert_in_DIFFERENT_groups_both_count
+    table = [proc_row(pid: 300, pgid: 300), proc_row(pid: 400, pgid: 900)]
+    claims = [
+      counted(kind: "ship", weight: "suite", cert_pid: 300, path: "/p/.agents/sessions/s.presence-ship-300"),
+      counted(kind: "cert", weight: "suite", cert_pid: 400, path: "/p/ms/.git/cert-run.json")
+    ]
+
+    assert_in_delta 2.0, AgentPresence.consumed(claims, table: table), 0.001,
+                    "a ship certifying here and someone else's suite over there are two workloads"
+  end
+
+  # Without a table nothing can be resolved to a group, so nothing is collapsed —
+  # the over-reporting side, which is the side every error here is arranged to land on.
+  def test_with_no_process_table_nothing_is_collapsed
+    claims = [
+      counted(kind: "ship", weight: "suite", cert_pid: 300, path: "/p/.agents/sessions/s.presence-ship-300"),
+      counted(kind: "cert", weight: "suite", cert_pid: 400, path: "/p/ms/.git/cert-run.json")
+    ]
+
+    assert_in_delta 2.0, AgentPresence.consumed(claims), 0.001
+  end
+
+  # --- the phase, which is what the whole slice is for ------------------------------
+
+  def test_a_waiting_supervisor_consumes_nothing
+    table = [proc_row(pid: 300, pgid: 300)]
+    claims = [counted(kind: "ship", weight: "idle", cert_pid: 300,
+                      path: "/p/.agents/sessions/s.presence-ship-300").merge(phase: "waiting")]
+
+    assert_in_delta 0.0, AgentPresence.consumed(claims, table: table), 0.001,
+                    "a ship parked in its CI wait costs NOTHING — reading it as a competing cert " \
+                    "is the defect this slice removes"
+  end
+
+  # BEHAVIOURAL, not a string match on the pattern. Asserting the glob TEXT proves
+  # the text is present, not that it matches a real filename — and "the reader was
+  # one glob short" is exactly the defect this hop repairs, so the assertion has to
+  # be that a file on disk is FOUND. (The full end-to-end read, through the real
+  # writer and a real `ps`, is in agent_presence_integration_test.rb.)
+  def test_the_reader_globs_the_session_marker_namespace
+    Dir.mktmpdir do |root|
+      dir = File.join(root, ".agents", "sessions")
+      FileUtils.mkdir_p(dir)
+      path = File.join(dir, "sess.presence-ship-300")
+      File.write(path, JSON.generate(supervisor))
+
+      assert_includes AgentPresence.send(:claim_paths, root), path,
+                      "a claim the reader cannot see closes no cost"
+    end
+  end
+
 end
