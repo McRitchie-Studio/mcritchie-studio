@@ -8,6 +8,12 @@ class DeskCaptureResendIngestJobTest < ActiveSupport::TestCase
     File.read(Rails.root.join("test/fixtures/files/desk_sample.eml"))
   end
 
+  # Shaped like Resend's GET /emails/receiving/{id} response: the signed
+  # download URL is NESTED under "raw" (raw.download_url), never top-level.
+  def resend_record
+    { "raw" => { "download_url" => "https://signed.example/raw", "expires_at" => 1.hour.from_now.iso8601 } }
+  end
+
   def with_stubs(record:, raw:, stored: [])
     originals = {
       fetch_received: DeskCapture::ResendClient.method(:fetch_received),
@@ -26,7 +32,7 @@ class DeskCaptureResendIngestJobTest < ActiveSupport::TestCase
 
   test "ingests a received email end to end: raw stored, item created, attachments extracted" do
     stored = []
-    with_stubs(record: { "download_url" => "https://signed.example/raw" }, raw: raw_fixture, stored: stored) do
+    with_stubs(record: resend_record, raw: raw_fixture, stored: stored) do
       DeskCaptureResendIngestJob.perform_now("re_test1")
     end
 
@@ -40,7 +46,7 @@ class DeskCaptureResendIngestJobTest < ActiveSupport::TestCase
   end
 
   test "re-delivery of the same email id creates nothing twice" do
-    with_stubs(record: { "download_url" => "https://signed.example/raw" }, raw: raw_fixture) do
+    with_stubs(record: resend_record, raw: raw_fixture) do
       DeskCaptureResendIngestJob.perform_now("re_test2")
       assert_no_difference -> { DeskCaptureItem.count } do
         DeskCaptureResendIngestJob.perform_now("re_test2")
@@ -52,7 +58,7 @@ class DeskCaptureResendIngestJobTest < ActiveSupport::TestCase
     stranger_raw = raw_fixture.sub("From: Alex McRitchie <amcritchie@gmail.com>",
                                    "From: Broker <broker@clearlyacquired.com>")
     stored = []
-    with_stubs(record: { "download_url" => "https://signed.example/raw" }, raw: stranger_raw, stored: stored) do
+    with_stubs(record: resend_record, raw: stranger_raw, stored: stored) do
       DeskCaptureResendIngestJob.perform_now("re_test3")
     end
 

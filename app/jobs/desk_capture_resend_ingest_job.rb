@@ -11,7 +11,7 @@ class DeskCaptureResendIngestJob < ApplicationJob
     return if DeskCaptureItem.exists?(s3_key: key)
 
     record = DeskCapture::ResendClient.fetch_received(email_id)
-    download_url = record["download_url"] or raise "Resend record #{email_id} carries no download_url"
+    download_url = record.dig("raw", "download_url") or raise "Resend record #{email_id} carries no raw.download_url"
     raw = DeskCapture::ResendClient.fetch_url(download_url)
 
     DeskCapture.store(key, raw, content_type: "message/rfc822")
