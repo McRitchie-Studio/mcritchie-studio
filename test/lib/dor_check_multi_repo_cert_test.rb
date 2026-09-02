@@ -371,4 +371,131 @@ class DorCheckMultiRepoCertTest < Minitest::Test
              "the refusal must name the repo it could not grade: #{verdict['errors']}")
     end
   end
+
+  # ── [integration] A LINT-WAIVED SECONDARY REPO: refused, WITHOUT naming rubocop ──
+  #
+  # THE DEFECT (2026-09-01, found by alex shipping /tasks/refusal-hides-recorded-fast-cert
+  # — the sibling clause of this same sentence): the refusal's `state` phrase was built
+  # from FullSuiteGate::LANES, while the VERDICT it describes is computed over
+  # FullSuiteGate.required_lanes(repo), which SUBTRACTS the rubocop lane for a repo
+  # declaring `lint_lane: none`. config/release_repos.yml declares exactly that for
+  # studio-engine and solana-studio. So a lint-waived secondary repo was refused with
+  # `rubocop: missing` printed for a lane the gate had ALREADY waived and would never
+  # grade — the message and the verdict reading two different lists.
+  #
+  # ITS COST is the sibling defect's cost one door down: the reader acts. Told
+  # `rubocop: missing` for studio-engine, a builder goes looking for the rubocop to
+  # run and finds none — not in the Gemfile, not in the gemspec, no .rubocop.yml, and
+  # `bundle exec rubocop` fails outright. From there it is conclude the gate is broken
+  # and escalate, or reach for FULL_SUITE_RUBOCOP_CMD pointed at a no-op — recording a
+  # rubocop pass for a lint that never ran, which is the manufactured evidence the
+  # waiver exists to make unnecessary (refused once already, 2026-08-24).
+  #
+  # BOTH HALVES ARE THE TEST, AND THE REFUSAL COMES FIRST. The fix is a STRING, so a
+  # test pinning only the wording would keep passing on a gate someone had loosened
+  # into waiving the SUITE lane too. The order below is the guard.
+  WAIVED_REPO = "studio-engine"
+
+  # The two-repo world whose SECOND repo is lint-waived. The waiver is the PRODUCTION
+  # one: FullSuiteGate.repo_registry reads the real config/release_repos.yml, so this
+  # exercises the shipped declaration rather than a fixture of one.
+  def with_waived_repo_world
+    Dir.mktmpdir do |raw|
+      projects = File.realpath(raw)
+      hub = make_desk(projects, "mcritchie-studio", "class HubPatch; end\n")
+      engine = make_desk(projects, WAIVED_REPO, "class EnginePatch; end\n")
+      yield projects, hub, engine
+    end
+  end
+
+  def waived_task_json(checks)
+    task = task_json(checks)
+    devops = task["metadata"]["devops"]
+    devops["repositories"] = ["mcritchie-studio", WAIVED_REPO]
+    devops["pr_urls"] = { WAIVED_REPO => "https://github.com/x/#{WAIVED_REPO}/pull/9" }
+    task
+  end
+
+  def test_a_lint_waived_secondary_repo_is_still_refused_and_the_refusal_omits_rubocop
+    with_waived_repo_world do |projects, hub, _engine|
+      # The waiver is REAL. Asserted here so a future edit to config/release_repos.yml
+      # cannot leave this test quietly grading an UNWAIVED repo and passing for the
+      # wrong reason — the premise is checked before the property.
+      assert_equal [FullSuiteGate::TEST_LANE], FullSuiteGate.required_lanes(WAIVED_REPO),
+                   "#{WAIVED_REPO} must declare lint_lane: none for this test to mean anything"
+
+      # The hub is certified; the engine — a repo this task NAMES and has a PR in —
+      # carries no cert in any lane.
+      checks = full_cert("mcritchie-studio", FullSuiteGate.fingerprint(hub))
+
+      verdict, code = dor_check(waived_task_json(checks), hub, projects)
+
+      # HALF ONE — THE GATE IS UNCHANGED. A waived repo owes one FEWER lane, not zero:
+      # it still owes its FULL SUITE, and lacking it must still REFUSE. This half fails
+      # if the waiver is ever widened into "this repo owes nothing", or if a fix to the
+      # message reaches past it into required_lanes or repo_eval[:ok].
+      refute verdict["ready"],
+             "a lint-waived repo still owes its FULL-SUITE cert — missing it must refuse"
+      assert_equal 1, code
+      engine_entry = Array(verdict.dig("full_suite", "repos")).find { |e| e["repo"] == WAIVED_REPO }
+      refute_nil engine_entry, "the verdict must name the repo it graded: #{verdict.dig('full_suite', 'repos')}"
+      refute engine_entry["ok"], "a waived repo with no suite cert is NOT certified: #{engine_entry}"
+
+      # HALF TWO — the refusal names the lanes this repo OWES, and only those.
+      refusal = Array(verdict["errors"]).find { |e| e.include?("cert gate:") && e.include?(WAIVED_REPO) }
+      refute_nil refusal, "expected a cert-gate refusal naming #{WAIVED_REPO}: #{verdict['errors']}"
+      assert_includes refusal, "#{FullSuiteGate::TEST_LANE}: missing",
+                      "the refusal must still name the lane the repo DOES owe: #{refusal}"
+      refute_includes refusal, FullSuiteGate::RUBOCOP_LANE,
+                      "#{WAIVED_REPO} declares lint_lane: none, so the gate has ALREADY waived this lane and " \
+                      "will never grade it. Printing it as `missing` sends the reader after a rubocop that " \
+                      "repo does not ship, and the only way to 'satisfy' it is evidence for a lint that never " \
+                      "ran: #{refusal}"
+    end
+  end
+
+  # THE CONTRAST, and the guard on the obvious wrong fix. The waiver is PER REPO and
+  # DECLARED — it is not a decision to stop mentioning rubocop. A repo that has
+  # declared nothing owes BOTH lanes and its refusal must still say so, so dropping
+  # RUBOCOP_LANE from FullSuiteGate::LANES, or filtering the lane out of the message
+  # unconditionally, fails HERE even though either would make the test above pass.
+  def test_a_repo_with_no_waiver_is_still_told_its_rubocop_lane_is_missing
+    with_two_repo_world do |projects, hub, _turf|
+      assert_equal FullSuiteGate::LANES, FullSuiteGate.required_lanes("turf-monster"),
+                   "turf-monster declares no waiver and must owe BOTH lanes"
+
+      checks = full_cert("mcritchie-studio", FullSuiteGate.fingerprint(hub))
+
+      verdict, code = dor_check(task_json(checks), hub, projects)
+
+      refute verdict["ready"], "an uncertified second repo must refuse"
+      assert_equal 1, code
+      refusal = Array(verdict["errors"]).find { |e| e.include?("cert gate:") && e.include?("turf-monster") }
+      refute_nil refusal, "expected a cert-gate refusal naming turf-monster: #{verdict['errors']}"
+      assert_includes refusal, "#{FullSuiteGate::RUBOCOP_LANE}: missing",
+                      "an UNWAIVED repo owes its lint lane, and the refusal must still name it: #{refusal}"
+      assert_includes refusal, "#{FullSuiteGate::TEST_LANE}: missing",
+                      "and its suite lane alongside it: #{refusal}"
+    end
+  end
+
+  # The positive side of the same waiver, and what makes the refusal above HONEST: a
+  # lint-waived secondary repo carrying only its FULL-SUITE cert IS certified. So the
+  # rewritten message describes a bar the repo can actually clear. Before this, the
+  # refusal asked for a rubocop cert that — had the reader somehow manufactured one —
+  # `ok` would not even have read.
+  def test_a_lint_waived_secondary_repo_is_certified_by_its_suite_cert_alone
+    with_waived_repo_world do |projects, hub, engine|
+      checks = full_cert("mcritchie-studio", FullSuiteGate.fingerprint(hub)) +
+               [FullSuiteGate.evidence_line(FullSuiteGate::TEST_LANE, FullSuiteGate.fingerprint(engine),
+                                            "bin/release-check green", repo: WAIVED_REPO)]
+
+      verdict, code = dor_check(waived_task_json(checks), hub, projects)
+
+      assert_equal 0, code, "a waived repo owes only its suite cert; errors: #{verdict['errors']}"
+      assert verdict["ready"], "errors: #{verdict['errors']}"
+      engine_entry = Array(verdict.dig("full_suite", "repos")).find { |e| e["repo"] == WAIVED_REPO }
+      assert engine_entry["ok"], "the waived repo must be certified by its suite cert alone: #{engine_entry}"
+    end
+  end
 end

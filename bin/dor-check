@@ -1259,6 +1259,50 @@ def secondary_fast_cert_reason(eval)
     "state clears it; the full cert does"
 end
 
+# WHICH LANES a refusing secondary repo's state phrase names — the ones that repo
+# actually OWES, read from the SAME list the verdict is computed over.
+#
+# THE DEFECT (2026-09-01, found by alex shipping /tasks/refusal-hides-recorded-fast-cert,
+# whose fix is the sibling clause of this very sentence): this phrase was built from
+# FullSuiteGate::LANES, while `ok` is computed over FullSuiteGate.required_lanes(repo)
+# — which SUBTRACTS the rubocop lane for a repo declaring `lint_lane: none` in
+# config/release_repos.yml, as studio-engine and solana-studio both do. The message and
+# the verdict therefore read two different lists, and a lint-waived repo was refused
+# with `rubocop: missing` printed for a lane the gate had ALREADY waived and would
+# never grade.
+#
+# THE READER ACTS ON IT, which is what makes it worth a fix rather than a shrug. Sent
+# after studio-engine's rubocop they find none — not in the Gemfile, not in the
+# gemspec, no .rubocop.yml, and `bundle exec rubocop` fails outright — so the ways out
+# are to conclude the gate is broken and escalate, or to point FULL_SUITE_RUBOCOP_CMD
+# at a no-op, recording a rubocop pass for a lint that never ran. That is precisely the
+# manufactured evidence the waiver exists to make unnecessary, and it was refused once
+# already (2026-08-24, /tasks/brand-the-current-wallet).
+#
+# WHY THE WAIVED LANE IS OMITTED RATHER THAN NAMED AS WAIVED. The sibling fix ADDED a
+# reason, because a reader holding a fast-cert was told it did not count and would go
+# hunting for a threshold to nudge that does not exist. There is no such dangling
+# thread here: this reader holds no rubocop evidence, and the remedy the sentence ends
+# with — `bin/full-suite-check <slug>` — is already the complete and correct
+# instruction for a waived repo. Naming a lane only to un-name it would add length
+# without closing a question. The waiver's own provenance is documented where it is
+# declared (config/release_repos.yml) and where it is read
+# (FullSuiteGate#required_lanes), which is where a reader checks it and where it gets
+# deleted if that repo ever gains a lint.
+#
+# THE GATE IS UNCHANGED — this builds a STRING and grades nothing. LANES is untouched,
+# required_lanes is untouched, `ok` is still computed exactly where it always was, and
+# a lint-waived repo lacking its FULL-SUITE cert still REFUSES.
+# test/lib/dor_check_multi_repo_cert_test.rb asserts that refusal FIRST and the wording
+# second — a test pinning only the wording would keep passing on a gate someone had
+# loosened into waiving the suite lane too — and a companion case asserts an UNWAIVED
+# repo is still told `rubocop: missing`, so dropping the lane globally fails there.
+def secondary_cert_lane_state(eval, repo)
+  FullSuiteGate.required_lanes(repo)
+               .map { |lane| "#{lane}: #{eval.dig(:lanes, lane) || :missing}" }
+               .join(", ")
+end
+
 def suite_evidence_error(eval, slug, ci, review_role)
   unless eval[:verifiable]
     return "FULL-suite gate unverifiable — couldn't fingerprint the working tree (no git repo / git identity?). " \
@@ -2360,7 +2404,7 @@ if suite_eval && gate != "build" && !suite_eval[:bypass] && suite_eval[:verifiab
                             fingerprint_source: repo_eval[:fingerprint_source] }
     next if repo_eval[:ok]
 
-    state = FullSuiteGate::LANES.map { |lane| "#{lane}: #{repo_eval.dig(:lanes, lane) || :missing}" }.join(", ")
+    state = secondary_cert_lane_state(repo_eval, repo)
     errors << "cert gate: #{repo} is not certified for the code under review (#{state}). Its tree is " \
               "#{tree[:root]}#{tree[:override] ? " at #{tree[:override][:ref]}" : ""} = " \
               "@#{repo_eval[:fingerprint].to_s[0, 12]}#{secondary_cert_evidence(repo_eval)}. A task that names " \
