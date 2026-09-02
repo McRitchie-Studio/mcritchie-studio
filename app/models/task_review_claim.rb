@@ -201,11 +201,19 @@ class TaskReviewClaim < ApplicationRecord
   end
 
   # The holder descriptor the CLI skip message + the status read render.
+  #
+  # `agent` is the reviewing SOUL, and it is here because a refusal has to name
+  # somebody to ASK. bin/ship's held-task refusal routes a live review to "ask them
+  # to release" rather than to `--steal`, and "ask them" is useless without a them:
+  # the row has carried `holder_agent` since the crew seat rode the claim, and it
+  # simply was not published. `label` is the session's mascot, which paints a card
+  # but does not name a reviewer.
   def holder_info(now: Time.current)
     {
       "task_slug"     => task_slug,
       "session"       => claimed_session,
       "label"         => holder_label,
+      "agent"         => holder_agent,
       "acquired_at"   => acquired_at&.utc&.iso8601,
       "expires_at"    => claim_expires_at&.utc&.iso8601,
       "heartbeat_age" => heartbeat_age(now: now),

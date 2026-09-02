@@ -27,10 +27,14 @@
 #   * the BUILD-STAGE SEAM — the task must be [building] (or [submitted], a
 #     resume). Ship hands off a build; it never teleports a `designed` task
 #     past the claim/dev-size/baseline stamps the building move records.
-#   * BUILDER OWNERSHIP — the same ClaimLease the build gate enforces: a task a
-#     DIFFERENT live instance holds refuses loudly; take it over first with
-#     `bin/task begin <slug> --steal`, then re-run ship. Session-less runs
-#     degrade claim-free, exactly as `move`/`begin` do.
+#   * HOLDER OWNERSHIP — the same ClaimLease the build gate enforces: a task a
+#     DIFFERENT live instance holds refuses loudly. The refusal NAMES THE HOLDER'S
+#     ROLE and routes on it: a BUILDER is taken over with `bin/task begin <slug>
+#     --steal`, a REVIEWER is ASKED to release (`bin/task review-claim release
+#     <slug>`) — never stolen, because a steal mid-review voids the no-self-review
+#     guarantee and strands the verdict — and a role the board could not report
+#     routes to "find out first". lib/claim_holder.rb owns that table. Session-less
+#     runs degrade claim-free, exactly as `move`/`begin` do.
 #
 # Ship sequences the rest, and skips a step whose OUTCOME is already durably
 # recorded — which is exactly what makes a rerun after a partial failure
@@ -88,6 +92,7 @@ require_relative "lib/presence_claim"
 require_relative "lib/ci_status"
 require_relative "lib/ci_wait"
 require_relative "../lib/claim_lease"
+require_relative "../lib/claim_holder"
 
 ROOT = File.expand_path("..", __dir__)
 TASK_BIN = ENV.fetch("SHIP_TASK_BIN", File.expand_path("task", __dir__))
@@ -182,26 +187,75 @@ unless %w[building submitted].include?(stage)
        "Claim it first: bin/task begin #{slug} (or bin/task move #{slug} building), then re-run bin/ship #{slug}.")
 end
 
+# WHETHER A REVIEW LEASE IS HELD ON THIS TASK, and by whom — the second of the two
+# facts ClaimHolder.role folds. Read through the board CLI (never a hand-rolled HTTP
+# call — the CLI owns auth and the exit-code contract), with `--no-observe` because
+# a refusal wants a fact and a name, not a verdict: the observing read waits out a
+# renewal cycle, and forty seconds is no way to answer a refusal.
+#
+# THE RETURN IS TRI-STATE, and that is the whole reason it is not a boolean:
+#
+#   { "live" => true,  "agent" =>, "session" => }  a reviewer holds it
+#   { "live" => false }                            the board answered: nobody does
+#   { }                                            WE DID NOT GET AN ANSWER
+#
+# Collapsing the last two would turn every board hiccup into "no review", which is
+# precisely the fail-open this whole change exists to close. An empty hash reaches
+# `role` as nil and lands on the UNKNOWN route, which asks before it steals.
+def ship_review_holder(slug)
+  out = IO.popen([TASK_BIN, "review-claim", "status", slug, "--json", "--no-observe"],
+                 err: File::NULL, &:read)
+  return {} unless $?.success?
+
+  holder = JSON.parse(out)["holder"]
+  holder.is_a?(Hash) ? holder.merge("live" => holder["live"] ? true : false) : { "live" => false }
+rescue StandardError
+  {}
+end
+
 # --- builder ownership -------------------------------------------------------
 # The same claim lease the build gate enforces, asked BEFORE the first side
 # effect (commit/push/PR/move): the move-to-submitted path has no claim gate of
 # its own, so without this a second session could hand off — and commit into —
 # a task another live instance is building. Only :held_by_other refuses
 # (unclaimed/expired/corrupt stay fail-open, the build gate's posture); a
-# session-less run degrades claim-free, exactly as `move`/`begin` do. The
-# takeover path is `bin/task begin <slug> --steal`, which durably TRANSFERS the
-# claim — ship deliberately has no --steal of its own: handing off work is
-# never the moment to seize it.
+# session-less run degrades claim-free, exactly as `move`/`begin` do.
+#
+# THE REFUSAL NAMES THE HOLDER'S ROLE, and that is not cosmetic. This message used
+# to say "Ship must not hand off another builder's work — take the task over first
+# (--steal)" on EVERY held task, a sentence that describes a rival BUILDER and
+# offers the remedy written for that case. On 2026-09-01 the actual holder was a
+# REVIEWER, and stealing a task mid-review voids the no-self-review guarantee for
+# that review and strands its verdict — neither recoverable, neither visible
+# afterwards. So the role is looked up (the board's own `review_in_progress`, which
+# is already on the payload ship read above) and the remedy routes on it:
+# `--steal` for a builder, "ask them to release" for a reviewer, and "find out
+# first" when the board could not answer. lib/claim_holder.rb owns that decision
+# table and every word of the message.
+#
+# Ship still has no --steal of its own — handing off work is never the moment to
+# seize it — so the takeover line names `bin/task begin <slug> --steal`, the path
+# that durably TRANSFERS the claim.
 mover_session = SessionIdentity.identity.first
 unless mover_session.nil?
   claim = ClaimLease.from_devops(devops)
   if ClaimLease.evaluate(claim, session: mover_session, nonce: SessionIdentity.nonce(ENV)) == :held_by_other
-    held = claim["claimed_session"].to_s
-    age = ClaimLease.heartbeat_age(claim)
-    die!("task #{slug} is claimed by a DIFFERENT live instance " \
-         "(session …#{held[-4..] || held}, instance #{claim["claim_nonce"]}, last heartbeat ~#{age}s ago, " \
-         "lease TTL #{ClaimLease::DEFAULT_TTL_SECONDS}s). Ship must not hand off another builder's work — " \
-         "take the task over first (bin/task begin #{slug} --steal), then re-run bin/ship #{slug}.")
+    # ONE extra read, on an already-fatal path, to answer "is a reviewer holding
+    # this?" from the review LEASE as well as from the board's stage-scoped
+    # `review_in_progress` column. Both are consulted because neither is sufficient:
+    # the column is false for a task bounced back to `building` under a live review
+    # lease, and the lease read can fail. ClaimHolder.role folds them lopsidedly —
+    # either yes is a review, only both no is a build.
+    reviewer = ship_review_holder(slug)
+    role = ClaimHolder.role(review_in_progress: task["review_in_progress"],
+                            review_claim_live: reviewer["live"])
+    warn "ship: " + ClaimHolder.refusal(
+      slug: slug, claim: claim, role: role,
+      steal_command: "bin/task begin #{slug} --steal",
+      retry_command: "bin/ship #{slug}",
+      reviewer: reviewer["agent"], reviewer_session: reviewer["session"]
+    ).join("\n")
+    exit 1
   end
 end
 

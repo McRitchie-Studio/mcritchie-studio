@@ -514,8 +514,15 @@ Run `bin/ship` from the task worktree (elsewhere it re-roots at the worktree,
 loudly). Before its first side effect it enforces the two handoff-seam guards
 the child gates don't own: the task must be `building` (or `submitted` — a
 resume; a `designed` task is sent back through `bin/task begin`), and the
-build claim must not belong to a **different live instance** — take a held
-task over with `bin/task begin <task-slug> --steal` first, then ship. Its
+build claim must not belong to a **different live instance**. That refusal
+**names the holder's ROLE and routes on it**: a **builder** is taken over with
+`bin/task begin <task-slug> --steal` first, then ship; a **reviewer** is
+**asked to release** (`bin/task review-claim release <task-slug>`, run by
+them) and never stolen, because a takeover mid-review voids the no-self-review
+guarantee for that review and strands its verdict. When the board cannot
+establish the role it says so and sends you to `bin/task review-claim status
+<task-slug>`, which OBSERVES the lease rather than printing a timestamp to
+difference by hand. Its
 read-back pins the exact `pr_url` it recorded — a stale/foreign URL on the
 board fails the verify. It repairs an existing PR in place — `gh pr ready` for
 a draft, `gh pr edit --base accepted` for a mis-based one — and never
@@ -586,7 +593,8 @@ migration one adds a local leg (the base ref) that needs no GitHub at all.
 
 **Limits, stated plainly.** `bin/ship` stops at the `submitted` seam — it never
 merges, never deploys, never touches `release`/`main`. It has **no `--steal` of
-its own**; takeover is `bin/task begin <task-slug> --steal`, then ship. Neither
+its own**; takeover is `bin/task begin <task-slug> --steal`, then ship — and
+only against a **builder**, never against a live review. Neither
 wrapper writes your tests. And `bin/ship` is **not** `bin/release ship`: despite
 the name collision, `bin/release ship` is the **G4 production deploy**
 (`release → main`, ship-authority only), while `bin/ship:79` pins
