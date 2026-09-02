@@ -951,10 +951,13 @@ the mixed stream, carl killed his own ship believing he had shipped steffon's
 task. Nothing was lost, but only by luck: steffon's ship completed regardless and
 carl's branch was still unpushed.
 
-**How to recognise it.** The NUL hole makes the file **binary**, so `grep` prints
-nothing and exits 1 — the log does not look corrupt, it looks like it never
-mentioned what you searched for. The tell is `file <log>` reporting `data`
-instead of `ASCII text`:
+**How to recognise it.** The NUL hole makes the file **binary**, so a plain
+`grep` stops reporting matches. Measured on the collided file: `grep
+state-names-waived-lane ship.log` printed nothing and exited 1, while `grep -a`
+found the line and exited 0 (ugrep 7.8.4; GNU grep instead prints `Binary file
+… matches`). Either way the log does not look corrupt — it looks like it never
+mentioned what you searched for. The implementation-independent tell is `file
+<log>` reporting `data` instead of `ASCII text`:
 
 ```bash
 file scratchpad/ship.log                 # => "data" means holed, not text
