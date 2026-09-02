@@ -1,6 +1,7 @@
 # Polls the private desk bucket for SES drops and turns each new object into a
 # DeskCaptureItem. Idempotent on s3_key — a re-poll of the same object creates
-# nothing. Runs every 5 minutes via config/recurring.yml.
+# nothing. No cron entry — the Resend webhook is the primary transport; run
+# this manually (DeskCapturePollJob.perform_now) as the SES fallback.
 #
 # Failure posture: NO silent rescues (the QA-shared-bucket scar). A missing
 # credential in dev skips politely via DeskCapture.configured?; anything else

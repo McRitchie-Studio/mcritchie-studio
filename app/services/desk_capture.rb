@@ -55,8 +55,9 @@ module DeskCapture
     end
 
     # Shared ingestion core — raw MIME + a durable key in, one DeskCaptureItem
-    # out. Both transports converge here: the Resend webhook leg (primary) and
-    # the SES poller (kept as a manual fallback). Idempotent on s3_key.
+    # out. The Resend webhook leg (primary) runs through here; the SES poll
+    # fallback predates it and still carries its own inline copy of this
+    # logic. Idempotent on s3_key.
     def ingest_raw(raw:, s3_key:)
       return DeskCaptureItem.find_by(s3_key: s3_key) if DeskCaptureItem.exists?(s3_key: s3_key)
 
