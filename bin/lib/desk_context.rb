@@ -103,8 +103,19 @@ module DeskContext
   # burning the CPU, and it does not — every sibling session in the same CLI
   # process resolves to whichever desk happens to record that anchor. Measured
   # directly: a probe attributed three foreign `bin/ship` runs to this desk with
-  # full confidence. `session_id` is the only unique key here, and nothing on
-  # disk currently maps a heavy pid to one.
+  # full confidence. Nothing on disk currently maps a heavy pid to a session.
+  #
+  # AND `session_id` IS NOT UNIQUE PER AGENT EITHER — measured 2026-09-01 during
+  # this file's own review, and it is the same negative result one field over.
+  # Every subagent in a Claude Code fan-out INHERITS the parent's
+  # CLAUDE_CODE_SESSION_ID; the only thing distinguishing a child is the boolean
+  # CLAUDE_CODE_CHILD_SESSION. So one recorded session id can name an orchestrator
+  # and each of its subagents at once. `parent_session_id` was meant to fold those
+  # into one operator, and under Claude Code it never fires: none of the four env
+  # vars parent_session_id reads is set, and the marker on disk carries null. The
+  # fold still LOOKS right only because the shared id collapses them by accident.
+  # Naming the individual agent needs a per-agent marker written by the agent
+  # itself — the same conclusion the anchor reached, and slices 3-4's argument.
   SESSION_FIELDS = %w[session_id session_provider parent_session_id anchor_pid anchor_started_at].freeze
 
   # Grades that mean the holder is still there. Deliberately identical to

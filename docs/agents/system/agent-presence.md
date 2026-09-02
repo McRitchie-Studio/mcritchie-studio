@@ -543,8 +543,13 @@ because it is arithmetic over what they publish.
     direction the corpse grade depends on, and it is sound;
   - a **live** anchor proves only that the session's *host* is alive, so `live`
     means "may still be there" — over-reporting, which is the safe tie-break;
-  - `session_id` is the only unique key on disk, and **nothing today maps a heavy
-    pid to one**. That is the real gap behind the `SUITE_CAPACITY` question
+  - **nothing today maps a heavy pid to a session** — and `session_id` is not a
+    per-agent key either: measured during slice 2's review, every subagent in a
+    Claude Code fan-out inherits the parent's `CLAUDE_CODE_SESSION_ID` (only the
+    boolean `CLAUDE_CODE_CHILD_SESSION` marks a child), and none of the four env
+    vars `parent_session_id` reads is ever set, so the marker records `null`. The
+    fan-out fold above works by that shared id, not by the designed mechanism.
+    That is the real gap behind the `SUITE_CAPACITY` question
     above: the unattributed consumers slice 1 sees are largely sibling sessions
     inside one CLI process, which no per-process anchor can separate. Attributing
     them needs a per-session marker written by the heavy lane itself — which is
