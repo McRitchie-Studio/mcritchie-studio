@@ -116,9 +116,11 @@ require_relative "claim_lease"
 #      #holder_liveness_seconds_ago — "seconds since the newest artifact not
 #      DEMONSTRABLY someone else's". That predicate is defined relative to a holder.
 #      Where there is no holder, nothing is demonstrably anyone else's, so it
-#      degrades to the age of the task's own creation event. Measured:
-#      `document-credential-slot-engine-floor`, `designed`, no desk, progress_age
-#      72s — the age of its CREATE, read by the gate as somebody working.
+#      degrades to the age of the task's own creation event. Measured on
+#      `document-credential-slot-engine-floor` (`designed`, no desk): created
+#      04:53:51.647Z, `last_progress_at` 04:53:51.650Z — THREE MILLISECONDS later,
+#      labelled "moved to designed", `last_progress_actor` NULL. The gate read a
+#      row nobody wrote, about work nobody had started, as somebody working.
 #
 #   2. IT IS A SIGNAL THIS VERB WRITES. Every `bin/task` write — a note, a block, a
 #      stage move, an update — lands a TaskEvent and resets it, so triaging a task
@@ -207,8 +209,10 @@ module ArchiveHolderGuard
   #   stage:        the task's CURRENT stage, as a string.
   #   devops:       the task's metadata["devops"] hash.
   #   claim_live:   ClaimLease.live?(claim) — a lease we could not rule lapsed.
-  #   abandoned:    ClaimLease.abandoned?(...) — every channel silent past the
-  #                 idle window. Only consulted when a holder is identifiable.
+  #   abandoned:    `abandonable?` (below) — every channel that attests WORK AT RISK
+  #                 silent past the idle window. NOT ClaimLease.abandoned? directly:
+  #                 that one also weighs board progress, which this gate must not.
+  #                 Only consulted when a holder is identifiable.
   def decide(stage:, devops:, claim_live:, abandoned:)
     return :concluded if CONCLUDED_STAGES.include?(stage.to_s.strip)
 
