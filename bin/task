@@ -608,13 +608,19 @@ def enforce_archive_open_pr_gate!(slug, force:)
   # it. NOT a full read-merge-write echo of `devops`, which is what the `move building`
   # claim path does — and which would BREAK HERE.
   #
-  # MEASURED 2026-09-02 against the live board: of 1,585 tasks, 128 carry `block_kind`
-  # and 29 carry `release_train` INSIDE metadata.devops. Both are Task::DEVOPS_COLUMN_KEYS,
-  # and normalize_devops_metadata RAISES on a non-blank one ("devops.block_kind is not
-  # writable") which both controllers turn into a 422. So echoing a task's stored devops
-  # back at the board fails outright on ~10% of the board — and it would fail at the
-  # WORST moment: after an operator deliberately chose to abandon a PR, losing exactly
-  # the receipt this path exists to write.
+  # MEASURED 2026-09-02 against the live board: 156 of 1,586 tasks carry `block_kind` or
+  # `release_train` INSIDE metadata.devops — legacy rows from before those names moved to
+  # columns. Both are Task::DEVOPS_COLUMN_KEYS, and normalize_devops_metadata RAISES on a
+  # non-blank one ("devops.block_kind is not writable"), which both controllers turn into
+  # a 422. So echoing a task's stored devops back breaks on exactly that population.
+  #
+  # STATED PRECISELY, because the number alone overstates it: every one of those 156 is
+  # ALREADY `archived`, and this gate returns :concluded for an archived task without
+  # writing anything. So the 422 needs a REVIVAL first — and `archived` is not a lock; a
+  # task an operator dropped has been un-archived and shipped since. The failure is
+  # therefore narrow but real, and it would land at the worst possible moment: after an
+  # operator deliberately chose to abandon a PR, destroying the receipt this path exists
+  # to write. Not depending on that revival never happening is cheaper than the receipt.
   #
   # Sending one key is safe because the board MERGES a devops PATCH onto what is stored
   # (Task.merge_devops_into_metadata, shared by both controllers since

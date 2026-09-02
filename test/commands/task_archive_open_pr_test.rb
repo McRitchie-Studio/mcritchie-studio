@@ -218,12 +218,15 @@ class TaskArchiveOpenPrTest < ActiveSupport::TestCase
 
   # THE 422 REGRESSION. The obvious implementation echoes the task's whole stored
   # devops back (belt-and-braces read-merge-write, which is what the `move building`
-  # claim path does). It BREAKS HERE. Measured 2026-09-02 against the live board: of
-  # 1,585 tasks, 128 carry `block_kind` and 29 carry `release_train` INSIDE
-  # metadata.devops, and both are Task::DEVOPS_COLUMN_KEYS — normalize_devops_metadata
-  # RAISES on a non-blank one and both controllers turn that into a 422. So a full echo
-  # fails on ~10% of the board, at the worst possible moment: right after an operator
-  # deliberately chose to abandon a PR, destroying the very receipt this path writes.
+  # claim path does). It BREAKS HERE. Measured 2026-09-02 against the live board: 156 of
+  # 1,586 tasks carry `block_kind` or `release_train` INSIDE metadata.devops — legacy
+  # rows from before those names moved to columns — and both are
+  # Task::DEVOPS_COLUMN_KEYS, so normalize_devops_metadata RAISES and both controllers
+  # turn that into a 422.
+  #
+  # All 156 are already `archived`, which this gate skips, so the failure needs the task
+  # REVIVED first — and `archived` is not a lock. Narrow, but it lands right after an
+  # operator deliberately chose to abandon a PR, destroying the receipt this path writes.
   #
   # The board merges a devops PATCH onto what is stored, so sending one key is both
   # sufficient and the only safe option.
