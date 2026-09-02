@@ -30,11 +30,20 @@
 # THREE STATES ARE TRANSIENT, NOT TWO — this is the bug the first cut would have had.
 # `:pending` is the obvious one. But `gh pr checks` reports `:none` in the window
 # between `git push` and GitHub actually CREATING the workflow run, and `:unverified`
-# while GitHub is still computing mergeability. A wait that treats either as settled
-# exits within a second of the push, every time, and the feature silently does
-# nothing — which is indistinguishable from working, because the handoff still
-# succeeds. So they wait too, on a SHORTER budget: `:none` that persists means no CI
-# is ever coming (a repo with no workflow), and that must not burn the full timeout.
+# when the READ ITSELF fails and a later poll may still get through. A wait that
+# treats either as settled exits within a second of the push, every time, and the
+# feature silently does nothing — which is indistinguishable from working, because
+# the handoff still succeeds. So they wait too, on a SHORTER budget: `:none` that
+# persists means no CI is ever coming (a repo with no workflow), and that must not
+# burn the full timeout.
+#
+# (`:unverified` is NOT "GitHub still computing mergeability", which is how this
+# paragraph read until the review of task ship-waiter-misreports-ci: ci_status.rb's
+# view_verdict resolves an UNKNOWN mergeStateStatus to NO verdict and never to
+# `:unverified`. Reading a failed read as a benign transient of GitHub's own making is
+# the exact misconception this task was filed to fix — it cannot stand six lines above
+# the note that fixes it. The same sentence in docs/agents/modules/devops-task-board.md
+# was corrected on this branch; this copy was missed.)
 #
 # WAITING ALIKE IS NOT REPORTING ALIKE (task ship-waiter-misreports-ci, 2026-09-01).
 # Those two transient states share a BUDGET and nothing else. `:none` is GitHub
