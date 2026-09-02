@@ -6334,17 +6334,22 @@ def deploy_app(group, frozen)
       # --refresh` re-hashes ONLY the stat-dirty entries and clears those whose content
       # is unchanged — a genuine content diff stays dirty (and is reported), so this
       # corrects the false positive without hiding real dirt. Never reset/checkout here.
+      #
+      # THE DEPLOY BELOW IS WRAPPED AT SUITE WEIGHT, EXPLICITLY, because it does NOT pass
+      # through `run_test_scope` — it is a deploy, not a registered test scope, so no
+      # registry row can reach it and it published only the conductor's ambient `light`
+      # for its entire duration. That is the single worst place in this CLI to
+      # under-report: turf-monster's `bin/deploy` runs `bin/rails test` INSIDE this call,
+      # so the heaviest local workload the ship ever creates was the one telling peers the
+      # machine was three-quarters free.
+      #
+      # The rationale sits HERE, above the refresh, rather than beside the wrap: the
+      # refresh must stay within a few lines of the deploy it protects (pinned by
+      # test/models/release/ship_index_refresh_test.rb), and a long comment between them
+      # is exactly the drift that guard exists to catch. It caught this one.
       sh("git", "-C", workspace, "update-index", "-q", "--refresh", capture: true)
       # ship_deploy_env, NOT gate_env: a production deploy script gets its private
       # test DB and nothing else — no RAILS_ENV=test, no ruby pin. See ship_deploy_env.
-      #
-      # WRAPPED AT SUITE WEIGHT, EXPLICITLY, because this call does NOT pass through
-      # `run_test_scope` — it is a deploy, not a registered test scope, so no registry
-      # row can reach it and it published only the conductor's ambient `light` for its
-      # entire duration. That is the single worst place in this CLI to under-report:
-      # turf-monster's `bin/deploy` runs `bin/rails test` INSIDE this call, so the
-      # heaviest local workload the ship ever creates was the one telling peers the
-      # machine was three-quarters free.
       _, ok = ReleasePresence.with_phase(phase: ReleasePresence::PHASE_WORKING,
                                          weight: ReleasePresence::WEIGHT_SUITE) do
         sh(command, *args, chdir: workspace, env: ship_deploy_env(repo))
