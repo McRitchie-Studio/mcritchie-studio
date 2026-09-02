@@ -1,4 +1,4 @@
-<%# locals: (task:, agents:, crew_board: :deploy, mascot: nil, type_enumerals: nil, latest_activity: nil, activity_count: 0, unresolved_feedback: nil, ever_blocked: nil, review_in_progress: nil, ci_progress: nil, local_check: nil) %>
+<%# locals: (task:, agents:, crew_board: :deploy, mascot: nil, type_enumerals: nil, latest_activity: nil, activity_count: 0, unresolved_feedback: nil, ever_blocked: nil, review_in_progress: nil, ci_progress: nil, local_check: nil, resubmission: nil) %>
 <%#
   ONE board card. Extracted from _board so a single card can be re-rendered
   server-side and pushed over Turbo Streams (the "deployments" stream) for live
@@ -14,6 +14,11 @@
 <% unresolved_feedback = local_assigns.key?(:unresolved_feedback) ? local_assigns[:unresolved_feedback] : task.unresolved_feedback_activity %>
 <% review_in_progress = local_assigns.key?(:review_in_progress) ? local_assigns[:review_in_progress] : task.review_in_progress? %>
 <% ever_blocked = local_assigns.key?(:ever_blocked) ? local_assigns[:ever_blocked] : nil %>
+<%# FRESH BUILD OR RESUBMISSION? A `--kind rework` block lands the task back on
+    `building`, so without this a bounced task and a never-reviewed one are the same
+    card. Preloaded by the board (Task::Resubmission.for_tasks); a single-card Turbo
+    render and the show page self-query. %>
+<% resubmission = local_assigns[:resubmission] || task.resubmission %>
 <% block_state = task.block_state(unresolved: unresolved_feedback.present?, ever_blocked: ever_blocked) %>
 <%# BLOCKED PAST THE SEAM WEARS ITS OWN LANE'S BORDER. A blocker on a task already
     in the deploy flow (submitted → shipped) is a note to act on, not a reason to hide
@@ -253,7 +258,7 @@
       block-lifecycle card tone (Task#block_state) already carries blocked (red)
       and cleared/re-review (amber), and the review-lane crew avatar shows a
       reviewer face only while review is LIVE. %>
-  <% if waiting_for_approval || unresolved_feedback %>
+  <% if waiting_for_approval || unresolved_feedback || resubmission&.surfaced? %>
     <%# gap-1 here + the same gap to the CI meter below (mb-1) so the approval CTA,
         the blocker-summary bar and the CI card read as ONE evenly-stacked set of
         card-width bars (all three build on the shared components/_card_bar shell). %>
@@ -270,6 +275,27 @@
               new_tab: true,
               test_id: "operator-approval-waiting",
               title: "Waiting for Mr. McRitchie's local demo approval — sign in and open it." %>
+      <% end %>
+      <%# THE RESUBMISSION BAR — the distinction the board could not previously draw.
+          Red when the PR head has NOT moved since the send-back (the reviewer would
+          be re-reading the tree they bounced, and a correct verdict is send-back 2 of
+          2, which escalates to Mr. McRitchie). Amber when the head DID move, or when
+          no ingested run resolves it — a resubmission is not a problem, but the armed
+          circuit breaker means the next send-back escalates, and a reader deciding
+          whether to reship or review should know that BEFORE they act. It sits above
+          the blocker-summary bar so the pair reads as state-then-content. %>
+      <% if resubmission&.surfaced? %>
+        <%# Deliberately NOT flashing. The seeded pulse is reserved for the WAITING
+            APPROVAL bar — the one thing on this board that needs Mr. McRitchie
+            personally — and a second flashing bar competes with it for the same
+            attention. Red already outranks everything else here, and the
+            blocker-summary bar below sets the precedent: red, steady. %>
+        <%= render "components/card_status_bar",
+              scheme: resubmission.scheme,
+              label: resubmission.label,
+              href: task_path(task.slug), new_tab: false,
+              test_id: "resubmission-state",
+              title: resubmission.title %>
       <% end %>
       <% if unresolved_feedback %>
         <%# The blocker's OWN WORDS on the card — its 4-6 word summary

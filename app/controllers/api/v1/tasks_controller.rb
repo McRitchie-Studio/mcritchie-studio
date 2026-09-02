@@ -130,6 +130,15 @@ module Api
           "gates" => Task::GatesProjection.cached_or_built(task),
           "latest_activity" => latest_activity_json(task),
           "unresolved_feedback" => activity_json(task.unresolved_feedback_activity),
+          # FRESH BUILD OR RESUBMISSION — beside `unresolved_feedback`, deliberately,
+          # because that field is what a reader reaches for and it answers a DIFFERENT
+          # question: it holds the TEXT of a send-back and is cleared only by an
+          # explicit `--resolves-feedback` handoff, never by the work landing. A task
+          # re-promoted on `unresolved_feedback: null` + `blocked_at: null` was
+          # measured going to review on the very tree a reviewer had bounced. This
+          # answers "did the code move since the send-back?", so an agent reading
+          # `bin/task show --json` sees it without knowing to run `bin/task bounces`.
+          "resubmission" => resubmission_json(task),
           "review_in_progress" => task.review_in_progress?,
           # The progress fact, beside the liveness fact. The claim gate in bin/task
           # reads these to tell a second agent what the holder has actually DONE
@@ -174,6 +183,30 @@ module Api
 
       def activity_json(activity)
         activity&.as_json
+      end
+
+      # The resubmission verdict, flat. `state` is the whole answer:
+      #   fresh       — no send-back on the ledger; an ordinary build
+      #   unaddressed — sent back, and the PR head has NOT moved since
+      #   addressed   — sent back, and the head moved after the bounce
+      #   unknown     — sent back, but no ingested run resolves the head; NEVER
+      #                 read this as addressed
+      # `breaker_tripped` is `bin/task bounces`'s verdict, served rather than
+      # re-derived by every caller, so a reader who never runs that command still
+      # learns that the next send-back escalates to Mr. McRitchie.
+      def resubmission_json(task)
+        state = task.resubmission
+        {
+          "state" => state.state.to_s,
+          "resubmission" => state.resubmission?,
+          "surfaced" => state.surfaced?,
+          "bounce_count" => state.bounce_count,
+          "breaker_tripped" => state.breaker_tripped?,
+          "last_bounce_at" => state.last_bounce_at,
+          "head_at_bounce" => state.head_at_bounce,
+          "head_now" => state.head_now,
+          "summary" => state.title
+        }
       end
 
       # Reject query params the index doesn't support instead of silently ignoring

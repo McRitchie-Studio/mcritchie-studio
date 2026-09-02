@@ -61,6 +61,41 @@
       </div>
     <% end %>
 
+    <%# RESUBMISSION BANNER — the board's answer to "fresh build, or work a reviewer
+        already sent back?". A `--kind rework` block leaves the task on `building`,
+        so blocked_at / block_kind / `list --stage blocked` all read empty BY DESIGN
+        and a reader who asks them concludes "no block". This says it outright, and
+        carries the two-bounce circuit breaker's state — TRIPPED plus the prior
+        send-back count — where a reader actually looks, instead of only in
+        `bin/task bounces`, which was the one source that stayed correct while every
+        field on this page read clear. See Task::Resubmission. %>
+    <% if @resubmission&.surfaced? %>
+      <% unaddressed = @resubmission.unaddressed? %>
+      <%# Theme-aware tint, mirroring _task_card's blocked/cleared tones (bg-red-50 /
+          dark:bg-red-950-40) — a dark-only palette here would be unreadable in light
+          mode. The BADGES below carry their own dark chip background, so they read in
+          both themes exactly as the neighbouring block banner's badges do. %>
+      <div class="mb-4 rounded-lg border p-3 <%= unaddressed ? "border-red-300 bg-red-50 dark:border-red-700/60 dark:bg-red-950/40" : "border-amber-300 bg-amber-50 dark:border-amber-700/60 dark:bg-amber-950/30" %>"
+           data-test="task-resubmission" data-state="<%= @resubmission.state %>">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="px-2 py-1 rounded text-[11px] font-bold <%= unaddressed ? "bg-red-900/60 text-red-200 border border-red-700/60" : "bg-amber-900/60 text-amber-200 border border-amber-700/60" %>"
+                data-test="task-resubmission-label"><%= @resubmission.label %></span>
+          <% if @resubmission.breaker_tripped? %>
+            <span class="px-2 py-1 rounded text-[11px] font-bold bg-red-900/60 text-red-200 border border-red-700/60"
+                  data-test="task-breaker-state"
+                  title="A repeat send-back is a review deadlock, and a deadlock is the operator's call.">BREAKER ARMED · <%= @resubmission.send_back_phrase %></span>
+          <% end %>
+        </div>
+        <p class="mt-2 text-sm text-body" data-test="task-resubmission-detail"><%= @resubmission.title %></p>
+        <% if @resubmission.head_at_bounce || @resubmission.head_now %>
+          <p class="mt-1 text-xs text-secondary" data-test="task-resubmission-heads">
+            head at send-back <code><%= @resubmission.short_sha(@resubmission.head_at_bounce) %></code>
+            · head now <code><%= @resubmission.short_sha(@resubmission.head_now) %></code>
+          </p>
+        <% end %>
+      </div>
+    <% end %>
+
     <% if @task.review_in_progress? || @unresolved_feedback_activity %>
       <div class="mb-4 rounded-lg border border-subtle bg-surface-alt p-3">
         <div class="flex flex-wrap items-center gap-2">

@@ -297,6 +297,45 @@ The board stages should mirror the release path, not generic activity buckets:
 /api/v1/tasks/:slug/block`). A blocked task rides the Building column with a red
 glow until it's resumed or advances.
 
+### "Was this task sent back?" — do NOT ask the block fields
+
+A `--kind rework` block returns the task to **`building`**, deliberately: `blocked`
+reads as *not in the pipeline's court* (an env blocker, a dependency, QA waiting on
+someone else), and a rework is squarely in the **builder's**. The cost is that a
+resubmission and a fresh build are the same shape, and three fields will confidently
+tell you nothing is wrong:
+
+| Field | What it actually answers | What it CANNOT answer |
+|-------|--------------------------|------------------------|
+| `blocked_at` / `block_kind` / `blocked_from` | Is there a LIVE block right now? | Was this task ever sent back? They are null after a rework block, **by design**, and `Task#clear_block_on_forward_move` NULLs them on any forward move. |
+| `unresolved_feedback` | The TEXT of an open send-back | Whether the work answering it landed. It is cleared only by an explicit `bin/task note <slug> --handoff "…" --resolves-feedback`, never by the fix landing — so it reads blocked forever after an un-ceremonied fix, and reads clear after a ceremony with no fix behind it. |
+| `bin/task list --stage blocked` | Tasks in the `blocked` STAGE | Bounced tasks. It returns **zero** for every rework block. |
+
+**Measured, 2026-09-01→02** (`stale-engine-web3-comments` / turf PR #513): all three
+answered "no block" while `bin/task bounces` read `BREAKER: TRIPPED` and the PR head
+had not moved since the send-back. The task was promoted to `submitted` and a
+reviewer briefed that a merge-ready verdict was on record — one step from a correct
+verdict becoming send-back 2 of 2, which escalates to Mr. McRitchie over a
+resubmission that never happened.
+
+**Ask the tree instead.** The board now serves a `resubmission` verdict on every task
+(`Task::Resubmission`), rendered as a card bar plus a task-page banner, and carried in
+the API record — so `bin/task show <slug> --json | jq .resubmission` answers it with no
+new command to learn:
+
+| `state` | Meaning |
+|---------|---------|
+| `fresh` | No send-back on the ledger — an ordinary build |
+| `unaddressed` | Sent back, and the PR head has **not moved** since. Reviewing this re-reads the tree that was already bounced |
+| `addressed` | Sent back, and the head moved after the bounce |
+| `unknown` | Sent back, but no ingested CI run resolves the head on one side. **Never read this as `addressed`** |
+
+It counts a send-back exactly as `bin/task bounces` does (both read
+`BounceLedger::COUNTABLE_KINDS`, so they cannot drift), and carries
+`breaker_tripped` + `bounce_count` so the circuit-breaker state is visible where a
+reader already is. A `resolves_feedback` handoff deliberately does **not** override an
+unmoved head — that claim is precisely what lied in the measured case.
+
 Do not skip `assembled` for user-facing app changes. Do not move a task to
 `shipped` for production work until production has actually deployed and the
 post-deploy check has passed.

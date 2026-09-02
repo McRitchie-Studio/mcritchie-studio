@@ -800,4 +800,97 @@ class TaskCardTest < ActionView::TestCase
 
     assert_select "[data-test='task-card-claim-progress']", count: 0
   end
+
+  # ── RESUBMISSION BAR ─────────────────────────────────────────────────────────
+  #
+  # The distinction the card could not previously draw: a `--kind rework` block
+  # lands the task back on `building`, so a bounced task and a never-reviewed one
+  # rendered identically. These drive the REAL model off REAL rows (no injected
+  # state object) so a regression in the head oracle, the card wiring, or the
+  # locals fallback fails here rather than passing on a hand-fed verdict.
+
+  BOUNCE_AT = Time.utc(2026, 9, 2, 14, 3, 57)
+
+  def bounced_task(title, head_at_bounce:, head_now: nil, stage: "building")
+    task = Task.create!(
+      title: title, stage: stage,
+      metadata: { "devops" => {
+        "branch" => "feat/#{title.parameterize}",
+        "repositories" => ["mcritchie-studio"],
+        "pr_url" => "https://github.com/McRitchie-Studio/mcritchie-studio/pull/513"
+      } }
+    )
+    seed_run(task, sha: head_at_bounce, at: BOUNCE_AT - 10.minutes)
+    Activity.create!(task_slug: task.slug, activity_type: "qa_feedback",
+                     description: "The sibling's both-copies claims survive the change.",
+                     metadata: { "kind" => "rework", "summary" => "Sibling both-copies claims survive" },
+                     created_at: BOUNCE_AT, updated_at: BOUNCE_AT)
+    seed_run(task, sha: head_now, at: BOUNCE_AT + 20.minutes) if head_now
+    task.reload
+  end
+
+  def seed_run(task, sha:, at:)
+    GithubWorkflowRun.create!(
+      repo: "McRitchie-Studio/mcritchie-studio", workflow_name: GithubWorkflowRun::CI_WORKFLOW,
+      run_id: SecureRandom.random_number(10**12), status: "completed", conclusion: "success",
+      head_branch: task.devops_field("branch"), head_sha: sha, run_started_at: at, created_at: at
+    )
+  end
+
+  test "[component] a FRESH build card carries no resubmission bar" do
+    task = Task.create!(title: "Fresh build card bar", stage: "building")
+
+    render_card(task.reload)
+
+    assert_select "[data-test='resubmission-state']", count: 0,
+                  message: "a never-bounced build must look like an ordinary build"
+  end
+
+  test "[component] a resubmission with an UNMOVED head is called out in red" do
+    task = bounced_task("Unmoved head card bar", head_at_bounce: "029a945b")
+
+    st = task.resubmission
+    render_card(task)
+
+    bar = css_select("[data-test='resubmission-state']").first
+    assert bar, "a bounced task whose head has not moved must say so on the card"
+    assert_includes bar.text, "FEEDBACK NOT ADDRESSED"
+    assert_includes bar.to_s, "bg-red-500"
+    assert_includes bar["title"], "has not moved"
+  end
+
+  test "[component] a resubmission whose head MOVED reads amber, not red" do
+    task = bounced_task("Moved head card bar", head_at_bounce: "029a945b", head_now: "bbbb2222")
+
+    render_card(task)
+
+    bar = css_select("[data-test='resubmission-state']").first
+    assert bar
+    assert_includes bar.text, "ADDRESSED"
+    assert_not_includes bar.text, "NOT ADDRESSED"
+    assert_includes bar.to_s, "bg-amber-500", "an addressed resubmission is a heads-up, not an alarm"
+  end
+
+  test "[component] the resubmission bar links to the task detail" do
+    task = bounced_task("Linked head card bar", head_at_bounce: "029a945b")
+
+    render_card(task)
+
+    assert_select "[data-test='resubmission-state'][href='/tasks/#{task.slug}']"
+  end
+
+  # The bar and the blocker-summary bar answer DIFFERENT questions — state, then
+  # content — so an open block shows both.
+  test "[component] the resubmission bar sits above the blocker summary bar" do
+    task = bounced_task("Both bars card render", head_at_bounce: "029a945b")
+
+    render_card(task)
+
+    state_at = rendered.index("resubmission-state")
+    summary_at = rendered.index("blocker-summary")
+    assert state_at, "expected the resubmission bar"
+    assert summary_at, "expected the blocker summary bar"
+    assert state_at < summary_at, "state reads before the blocker's words"
+  end
+
 end

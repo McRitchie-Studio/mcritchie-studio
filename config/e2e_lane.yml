@@ -159,7 +159,23 @@
 # board, a dev database and production.
 # MEASURED with the lister: `npx playwright test --list` => 140.
 # Coverage ADDED; `quarantined` is untouched.
-total_specs: 144
+#
+# 144 -> 145 on 2026-09-02: one more in e2e/two_part_blocker.spec.js for the
+# RESUBMISSION signal — a `--kind rework` block lands the task back on `building`, so a
+# bounced task and a never-reviewed one drew the same card, and the board could not say
+# "this carries feedback nobody has answered" (/tasks/rework-resubmission-looks-like-build).
+# EXTENDING an existing spec file counts here exactly as a new file does — this guard
+# counts SPECS, not files, and that is the first trap this bump records.
+#
+# THE SECOND TRAP, measured the same day and worth more than the number: the spec SEEDS
+# NOTHING. A first cut added two demo cards to /tasks and turned e2e/overflow_fade.spec.js
+# RED on CI while staying green locally — two extra cards is four extra fade components,
+# and that no longer fit inside that spec's fixed settle window on a CI runner. Adding a
+# board fixture is not free: it is paid for by every other spec that measures the board.
+# Read an EXISTING fixture where you can.
+# MEASURED with the lister, not added by hand: `npx playwright test --list` => 145.
+# Coverage ADDED; `quarantined` is untouched.
+total_specs: 145
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
@@ -258,7 +274,13 @@ quarantined: 10
 # Re-derived after the wallet-auth removal landed:
 #   npx playwright test --list                           => 141
 #   npx playwright test --list --grep-invert @quarantine => 131
-executed: 134
+#
+# 134 -> 135 on 2026-09-02: the resubmission spec above. Coverage ADDED;
+# `quarantined` untouched.
+# Re-derived after the resubmission signal landed:
+#   npx playwright test --list                           => 145
+#   npx playwright test --list --grep-invert @quarantine => 135
+executed: 135
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to
