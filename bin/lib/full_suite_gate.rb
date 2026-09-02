@@ -3,7 +3,9 @@
 # bin/lib/full_suite_gate.rb — the fingerprint-bound certification evidence contract.
 #
 # Shared by the writers and the reader so the format lives in ONE place:
-#   * bin/full-suite-check WRITES full-cert evidence (FULL suite + FULL rubocop).
+#   * bin/full-suite-check WRITES full-cert evidence (FULL suite + FULL rubocop —
+#                          minus the lint lane in a repo declaring `lint_lane: none`,
+#                          which it SKIPS rather than fakes; see #required_lanes).
 #   * bin/fast-check       WRITES fast-cert evidence (diff-mapped tests + core
 #                          spine + rubocop on changed files — the G1 fast cert;
 #                          bin/dor-check accepts it only alongside a GREEN GitHub

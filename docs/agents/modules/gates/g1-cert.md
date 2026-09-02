@@ -30,9 +30,14 @@ The gate flow order: **G1 Cert** (this doc) → [DoR](dor.md) →
   - **full** — fresh `[full-suite@<fp>]` + `[rubocop@<fp>]` lines from
     `bin/full-suite-check`. Accepted on its own, CI-independent.
     A repo that DECLARES `lint_lane: none` in `config/release_repos.yml`
-    (today: `studio-engine`, which ships no rubocop at all) owes only the
-    `[full-suite@<fp>]` line — the waiver is declared, never inferred from
-    a missing binary. See `FullSuiteGate.required_lanes`.
+    (today: `studio-engine` and `solana-studio`, neither of which ships
+    rubocop at all) owes only the `[full-suite@<fp>]` line — the waiver is
+    declared, never inferred from a missing binary. See
+    `FullSuiteGate.required_lanes`. The REFUSAL names only the lanes that
+    repo owes: it is built from `required_lanes`, not the full `LANES`, in
+    both the primary refusal (`suite_evidence_error`) and the secondary one
+    (`secondary_cert_lane_state`), so a waived repo is never sent after a
+    rubocop it does not ship.
   - **bypass** — a `[full-suite-bypass] <reason>` checks_run line. Honored but
     flagged loudly; a conscious, justified skip only.
 
