@@ -351,7 +351,7 @@ plenty — the two halves are independent.
   it runs `archive-shipped` as its final step.
 - [`../../avi/sops/qa-release.md`](../../avi/sops/qa-release.md) - Avi's release prepare (assembler) SOP.
 - [`../../alex/sops/clean-up.md`](../../alex/sops/clean-up.md) - Alex's board-to-zero
-  act, which runs the same orphan sweep at its Phase 5. That one is the EPISODIC
+  act, which runs the same orphan sweep in its Phase 2 triage. That one is the EPISODIC
   deep clean an operator invokes when the board has fogged; this one is the BEAT,
   riding every archive. Two occurrences on purpose — keep them saying the same
   thing about how to read an unchecked repo.

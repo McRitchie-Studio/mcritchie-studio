@@ -362,7 +362,7 @@ nothing. The warning says the check did not complete; it never claims the PR is 
 
 The gate only stops **new** orphans, and `bin/release archive` flips shipped tasks
 through the model path, which bypasses the CLI gate entirely. So sweep for the ones
-already on the board — this is a good Phase 5 closer:
+already on the board:
 
 ```bash
 bin/task orphan-prs          # PRs still OPEN whose task is already archived
@@ -381,9 +381,9 @@ which rides the end of every production release. The two occurrences are
 deliberate and not redundant: that one is the **beat** — it fires on every
 archive, so an orphan surfaces within a release cycle instead of waiting for a
 human to ask for a backlog audit. This one is the **episodic deep clean** an
-operator invokes when the board has already fogged, and it sits beside the
-no-task-at-all triage below, which the beat does not do. Keep both saying the
-same thing about an unchecked repo.
+operator invokes when the board has already fogged, and it pairs with Phase 4's
+no-task-at-all triage, which the beat does not do. Keep both saying the same
+thing about an unchecked repo.
 
 ---
 
