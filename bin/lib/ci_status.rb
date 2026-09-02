@@ -87,7 +87,10 @@ module CiStatus
   # state+mergeStateStatus for the THIRD STATE below: mergeStateStatus alone cannot
   # separate "GitHub is still computing" from "GitHub gave up", and the remedy has to
   # NAME the branch to rebase onto or the reader must go derive it.
-  VIEW_FIELDS = "state,mergeStateStatus,mergeable,baseRefName"
+  # headRefOid rides along for ReviewTreeGuard's seam-1 check (is the tree this review
+  # grades the tree that will merge?). It is a FIELD ON A CALL THIS GATE ALREADY MAKES,
+  # not a second round-trip — the read is `gh pr view --json <these>` either way.
+  VIEW_FIELDS = "state,mergeStateStatus,mergeable,baseRefName,headRefOid"
 
   # --- THE THIRD STATE: a PR that will NEVER get CI ---------------------------
   #
@@ -241,13 +244,25 @@ module CiStatus
     end
   end
 
+  # PURE. The PR's head commit, as GitHub sees it RIGHT NOW. Carried so a caller can
+  # ask whether the tree it is about to grade is that commit — the question the cert
+  # fingerprint cannot answer on its own, because it hashes a LOCAL ref that a zap
+  # pushed from another checkout never touched. "" when GitHub sent nothing: an absent
+  # head is not a matching head, and ReviewTreeGuard treats it as unobservable.
+  def self.head_oid(view_raw)
+    data = parse_view(view_raw)
+    return "" unless data
+
+    data["headRefOid"].to_s
+  end
+
   def self.combine(view_raw, checks_raw)
     early = view_verdict(view_raw)
     return early if early
 
     # Carried on EVERY checks-derived verdict, green included — especially green,
     # since that is the only state a gate credits.
-    verdict = parse(checks_raw).merge(base_drift: base_drift(view_raw))
+    verdict = parse(checks_raw).merge(base_drift: base_drift(view_raw), head_oid: head_oid(view_raw))
     return verdict unless verdict[:state] == :none
 
     case mergeability(view_raw)

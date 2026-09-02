@@ -156,6 +156,7 @@ require_relative "lib/client_surface_diff"
 require_relative "lib/control_replay"
 require_relative "lib/task_board"
 require_relative "lib/cert_root_guard"
+require_relative "lib/review_tree_guard"
 require_relative "lib/dor/checks"
 require_relative "lib/dor/check_context"
 Dor::Checks.load!
@@ -2267,6 +2268,88 @@ if gate != "build"
       "base WITHOUT re-running anything. The green describes a tree that is no longer the tree this merge " \
       "would produce, and the review gate-zero is the authoritative CI verdict. Update the branch from its " \
       "base (`git rebase origin/accepted` or the PR's Update-branch button) and let CI re-run, then re-check."
+  end
+
+
+  # ==== THE REVIEWER-ZAP SEAMS (/tasks/reviewer-zap-has-unmapped-seams) ============
+  #
+  # A ZAP — a reviewer fixing a small defect forward on the PR branch instead of
+  # spending a bounce — is an ENCOURAGED act, bounded by the zap protocol at 25 lines
+  # and 2 files. Nothing below discourages one. The problem being fixed is the
+  # opposite: the machinery AROUND a zap assumed nobody pushed, which made zapping
+  # quietly riskier than bouncing and pushed reviewers toward the expensive action.
+  #
+  # Both checks are LOCAL-REF reads (this gate never fetches — deliberately: a fetch
+  # inside a verdict would mutate the tree it is grading). ReviewTreeGuard's header
+  # carries the error-direction argument for each; the two severities below follow
+  # from it and are NOT interchangeable.
+  zap_branch = review_branch(devops, task["slug"] || slug)
+
+  # SEAM 1 — REFUSES, because the gate would otherwise describe a tree that is not
+  # the one merging. `--gate-role review` re-roots to the BUILDER'S DESK, which sits
+  # wherever the builder left it; measured on turf #519, that was 262059b while the
+  # merged commit was 9137d57. The cert fingerprint catches this ONLY when the desk's
+  # ref has seen the push, and a zap pushed from any other checkout leaves that ref
+  # pre-zap — so the cert reads FRESH and nothing else asks the question.
+  #
+  # A mismatch can only ever be a FALSE REFUSAL (an unfetched desk), never a false
+  # pass, and the remedy for the harmless case is the same `git fetch` that fixes the
+  # real one. That is why this one is allowed to block.
+  head_check = ReviewTreeGuard.head_assessment(
+    root: diff_root, branch: zap_branch,
+    pr_head: ENV["DOR_CHECK_PR_HEAD"] || (ci && ci[:head_oid])
+  )
+  if review_role && head_check[:state] == :mismatch
+    errors << "the tree this review gate graded is NOT the PR head — #{head_check[:ref]} in #{diff_root} is at " \
+      "#{head_check[:local_sha][0, 12]} while the PR head is #{head_check[:pr_head][0, 12]}. Somebody pushed " \
+      "(a reviewer zap is the usual cause) and this checkout has not seen it, so the DIFF, the file contents " \
+      "and the cert fingerprint all describe a tree that is not the one merging — while the CI verdict beside " \
+      "them describes the PR head. The fingerprint does NOT reliably catch this on its own: it hashes " \
+      "#{head_check[:ref]}, which a push from another checkout never touched. Fetch the branch " \
+      "(git fetch origin #{zap_branch}) and re-run; if the zap was yours, re-certify it " \
+      "(bin/full-suite-check #{task["slug"] || slug}) so the cert describes what will merge."
+  elsif review_role && head_check[:state] == :unobservable && head_check[:reason] == :no_pr_head
+    # NOT a refusal: with no head from GitHub the question could not be asked, and the
+    # CI gate above already owns "we could not read this PR". Say which check went
+    # unmade rather than letting its silence read as a pass.
+    suggestions << "could not confirm the graded tree IS the PR head — GitHub returned no headRefOid, so the " \
+      "zap check (is this verdict about the commit that will merge?) did not run. The cert fingerprint is the " \
+      "only thing still standing between a post-zap push and this verdict, and it catches one only when this " \
+      "checkout has fetched the push."
+  end
+
+  # SEAM 2 — REPORTS, and deliberately does not refuse. `accepted` moves constantly;
+  # refusing every review whose base gained a commit would wedge the lane for a fact
+  # that is usually harmless, and a gate that refuses correct work is one people learn
+  # to route around. Measured case: turf #517 merged 97 SECONDS after #519's e2e
+  # declared-set check finished, touching BOTH e2e/auth_modal.spec.js and
+  # config/e2e_lane.yml — the spec set and the contract that counts it. That review
+  # came out right only because the reviewer re-derived by hand.
+  #
+  # GitHub's own answer is not enough, which is why this re-derives from refs: the
+  # BEHIND check above fires only where branch protection demands an up-to-date
+  # branch, and CiStatus.base_drift maps ""/UNKNOWN to :unknown, which that check
+  # passes over in silence. So the one signal in hand says nothing precisely when
+  # nothing is configured to make it speak.
+  #
+  # :no_movement_seen is NEVER rendered as "the base is current" — with an unfetched
+  # ref this can only UNDERSTATE movement, so the absence of a finding is not a
+  # freshness certificate. Reporting it as one would be this task's own defect, one
+  # level down.
+  # No ActiveSupport in this script, so no `.presence` — spell the fallback out.
+  ci_base = ci ? ci[:base].to_s.strip : ""
+  base_branch = ci_base.empty? ? ENV.fetch("DOR_BASE_BRANCH", "accepted") : ci_base
+  base_check = ReviewTreeGuard.base_assessment(root: diff_root, branch: zap_branch, base: base_branch)
+  if review_role && base_check[:state] == :moved && ci_error.nil?
+    behind = base_check[:behind_by]
+    suggestions << "the base has MOVED since this branch last took it — origin/#{base_branch} is at " \
+      "#{base_check[:base_sha][0, 12]}#{behind ? " (#{behind} commit(s) ahead of this branch)" : ""}, and it " \
+      "is not an ancestor of #{base_check[:branch_ref]}. Every check that ran against the old merge describes " \
+      "a tree this merge will not produce — including the e2e DECLARED-vs-EXECUTED set, whose expected count " \
+      "lives in config/e2e_lane.yml and can be changed by the very merge that moved the base. Re-derive it " \
+      "before trusting the spec counts, or update the branch (git rebase origin/#{base_branch}) and let CI " \
+      "re-run. Re-derived from LOCAL refs, which this gate never fetches, so this is a floor on the movement, " \
+      "not a measure of it."
   end
 
   # A refusal a cert can clear is DEFERRED past the suite gate below, which is
