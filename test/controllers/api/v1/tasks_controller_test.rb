@@ -824,6 +824,39 @@ module Api
         assert(items.all? { |item| item["stage"] == "building" })
       end
 
+      # [integration] The END-TO-END path `bin/task list --stage blocked` walks:
+      # it sends stage=blocked here, and this index answers through Task.by_stage.
+      # `blocked` is not a value the stage column ever holds, so before the
+      # by_stage fix this returned 200 with an EMPTY list — an operator asking
+      # "what is blocked?" was told "nothing" while a blocked task sat on the board.
+      test "index stage=blocked returns live-blocked tasks, not an empty list" do
+        blocked = tasks(:in_progress_task)
+        blocked.block!(by: "avi", kind: "rework")
+
+        get api_v1_tasks_path(stage: "blocked"), headers: @headers, as: :json
+
+        assert_response :success
+        items = JSON.parse(response.body)["data"]
+        slugs = items.map { |item| item["slug"] }
+        assert_includes slugs, blocked.slug,
+                        "the blocked task must appear in a stage=blocked listing"
+        assert items.any?, "stage=blocked must not answer an empty list while a task is blocked"
+      end
+
+      # The other half of the same contract: a task that is merely `building`
+      # must NOT be swept in by the blocked filter.
+      test "index stage=blocked excludes a building task with no block" do
+        plain = tasks(:in_progress_task)
+        plain.unblock! if plain.blocked?
+
+        get api_v1_tasks_path(stage: "blocked"), headers: @headers, as: :json
+
+        assert_response :success
+        slugs = JSON.parse(response.body)["data"].map { |item| item["slug"] }
+        refute_includes slugs, plain.slug,
+                        "an unblocked building task is not part of the blocked set"
+      end
+
       test "index rejects an unsupported filter param instead of returning all" do
         get api_v1_tasks_path(status: "submitted"), headers: @headers, as: :json
 

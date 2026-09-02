@@ -87,10 +87,13 @@ for s in designed building submitted reviewed assembled blocked; do
 done
 ```
 
-> The board UI's **"blocked" column is not the `blocked` stage.** In the founding
-> run it read "8 designed · 6 blocked · 2 reviewed", and `--stage blocked` returned
-> **zero** — the six were `building`. Triaging from the UI would have hunted for
-> blockers that did not exist.
+> The board UI's **"blocked" column is not the `blocked` stage** — there is no such
+> stage. A block is an ATTRIBUTE of a `building` task. In the founding run the UI
+> read "8 designed · 6 blocked · 2 reviewed" while `--stage blocked` returned
+> **zero**, because the listing filtered the stage column for a value it never
+> holds. That is fixed: `--stage blocked` now resolves through `Task.blocked` and
+> returns the tasks carrying a live block. Still measure from the loop above, not
+> from the UI counts.
 
 > ### ⛔ `bin/task list` TRUNCATES AT 20 — and says nothing
 > The loop above prints the **first 20 rows of each stage only**: no total, no

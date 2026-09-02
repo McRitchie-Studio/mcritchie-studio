@@ -109,7 +109,11 @@
 #       `bin/task update <slug>`, never dropped in silence. bin/ship is the
 #       handoff twin. )
 #   bin/task update <slug> [same flags as create]   # merges into existing devops
-#   bin/task move <slug> <stage>                     # designed|building|submitted|reviewed|assembled|shipped|blocked|archived
+#   bin/task move <slug> <stage>                     # designed|building|submitted|reviewed|assembled|shipped|archived
+#     ( `blocked` is NOT in that list — it is an ATTRIBUTE of a `building` task,
+#       set with `bin/task block <slug>` and cleared by moving on. To LIST blocked
+#       work use `bin/task list --stage blocked`, which resolves through the
+#       Task.blocked scope rather than the stage column. )
 #     [--model M] [--tokens-in N] [--tokens-out N] [--cost D] [--actor A] [--dev-size S] [--steal] [--force]
 #     ( --dev-size (small|medium|large|xl) records the builder's own estimate as it
 #       claims the task at `building` — optional; absent is fine. )
