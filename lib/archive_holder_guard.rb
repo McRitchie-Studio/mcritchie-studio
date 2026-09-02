@@ -41,6 +41,17 @@ require_relative "claim_lease"
 # not hold the gate. See the board-progress section below for the measured cost of
 # getting that distinction wrong.
 #
+# "SURVIVES" IS NOT "IS RESOLVED", and that gap is a SECOND gate, not this one. An
+# open PR survives the archive OPEN and UNWATCHED — neither merged nor closed, with
+# no board state describing it — which is a real harm this file must stay silent
+# about, because it is not the harm this file measures. lib/open_pr_guard.rb owns
+# it, runs immediately after this gate on the same CLI path, and refuses in the same
+# posture. Measured 2026-09-01: `move-web3-modals-to-solana` archived with
+# studio-engine #245 still open; a human backlog audit found it a month later.
+# Do not "fix" that omission here — a PR is still not work an archive can destroy,
+# and folding the two questions together would put this gate's irreversible-loss
+# reasoning behind a recoverable fact.
+#
 # Proof comes in exactly three forms, and everything else is a refusal:
 #
 #   stage is shipped/archived     → :concluded    The pipeline's own conclusion —

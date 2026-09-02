@@ -224,7 +224,13 @@ class Task < ApplicationRecord
   # glance); agents put their verbose detail in `agent_context`.
   TITLE_WORD_RANGE = (3..5).freeze
   ACCEPTANCE_WORD_RANGE = (5..12).freeze
-  DEVOPS_LIST_KEYS = %w[repositories risk_tags acceptance test_plan checks_run].freeze
+  # `abandoned_prs` is the ARCHIVE override's receipt: one entry per PR that was
+  # still OPEN when an operator archived the task anyway with `bin/task move <slug>
+  # archived --force`. Written only by that path (lib/open_pr_guard.rb), never by a
+  # form, and never cleared — it is the difference a later reader needs between a PR
+  # that was DROPPED DELIBERATELY and one that was simply forgotten, which is the
+  # whole defect the open-PR gate closes.
+  DEVOPS_LIST_KEYS = %w[repositories risk_tags acceptance test_plan checks_run abandoned_prs].freeze
   # Repo-keyed MAPS: { "<repo>" => "<value>" }. `pr_urls` is the per-repo PR url
   # register — the multi-repo answer to the single-valued `pr_url`.
   #
