@@ -93,7 +93,10 @@ Imported lessons from the first cleanup pass:
 - Give Mr. McRitchie something inspectable, usually a local URL, screenshot, or test result summary.
 - Leave documentation cleaner than you found it.
 - Use targeted 1Password reads; never print secrets.
-- Treat old `3001` and `turf.mcritchie.studio` references as stale unless the file is explicitly historical.
+- Treat old `3001` and `turf.mcritchie.studio` references as stale unless the
+  file is explicitly historical. `turf.mcritchie.studio` is not merely old, it
+  is dead — it answers HTTP 000 — while Turf Monster serves at
+  `turfmonster.media`. See `docs/agents/modules/deployment.md` § Retired Host.
 - Route backend failures through `ErrorLog` when the app supports it.
 - Validate before irreversible external effects.
 - Keep reusable local maintenance scripts in a tracked repo, preferably McRitchie Studio, so a fresh machine can rebuild them.
