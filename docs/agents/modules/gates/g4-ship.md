@@ -158,7 +158,7 @@ The push output is now captured, echoed, and CLASSIFIED, the same way
 
 | Outcome | What git said | What you do |
 |---|---|---|
-| **AUTH** | `Invalid username or token`, `Authentication failed`, `could not read Username`, `Permission denied (publickey)`, a 401/403 | `bin/gh-auth-refresh --identity deployer` — the ship pushes as the **deployer**, whose credential lives in `agents-admin` and needs `OP_ADMIN_SERVICE_ACCOUNT_TOKEN` (`~/.zprofile.admin`). Then re-run `bin/release ship`; it resumes. **Do NOT re-run `prepare`** — the freeze is still good. |
+| **AUTH** | `Invalid username or token`, `Authentication failed`, `could not read Username`, `Permission denied (publickey)`, a 401/403 | `bin/gh-auth-refresh --identity deployer` — the ship pushes as the **deployer**, whose credential lives in `studio-agents-admin` and needs `OP_ADMIN_SERVICE_ACCOUNT_TOKEN` (`~/.zprofile.admin`). Then re-run `bin/release ship`; it resumes. **Do NOT re-run `prepare`** — the freeze is still good. |
 | **DIVERGED** | `non-fast-forward`, `[rejected] … (fetch first)`, `Updates were rejected because…` | Reconcile `main`, re-run `bin/release prepare` to re-freeze, then re-run `bin/release ship`. |
 | **UNRECOGNISED** | anything else | Read git's output above before acting — **both** standard remedies may be the wrong errand. The ship says so rather than guessing. |
 

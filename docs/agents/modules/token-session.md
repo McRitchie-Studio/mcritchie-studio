@@ -30,7 +30,7 @@ so it mints on **every** call, by design.
 | | `agent` | `deployer` |
 |---|---|---|
 | 1Password item | `github.mcritchie-agent` | `github.mcritchie-deployer` |
-| Vault | `agents-studio` | `agents-admin` |
+| Vault | `studio-agents` | `studio-agents-admin` |
 | Token env | `OP_SERVICE_ACCOUNT_TOKEN` | `OP_ADMIN_SERVICE_ACCOUNT_TOKEN` |
 | May | build, review, open + merge PRs | push `main`, deploy, read secrets |
 | May **not** | push `main` | touch pull requests at all |

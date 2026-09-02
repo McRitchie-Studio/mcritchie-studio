@@ -107,14 +107,14 @@ command -v op_metered >/dev/null 2>&1 || op_metered() { local __b="$1"; shift; "
 # bin/lib/op_vaults.rb — at three sites within it, enumerated there), and a
 # guard that is a function can be EXECUTED by a test. The version this replaces
 # could only ever be read, and reading it is what missed the bug: `op vault list | grep -qw agents` PASSED against
-# `agents-studio`, because -w treats the hyphen as a word boundary. The guard
+# `studio-agents`, because -w treats the hyphen as a word boundary. The guard
 # reported the credential lane healthy for as long as the vault it guarded had
 # been gone. Exercised by test/lib/ecosystem_build_vault_guard_test.rb against a
 # synthetic `op`, since the real one costs a 1Password API call.
 #
 # EXACT NAME, NEVER A SUBSTRING. The 1Password ACCOUNT holds four vaults whose
-# names begin `agents` — agents-studio, agents-admin, agents-industries and
-# agents-mcritchie-family — so "contains the word agents" was never the
+# names begin `agents` — studio-agents, studio-agents-admin, industries-agents and
+# family-agents — so "contains the word agents" was never the
 # question being asked.
 #
 # FAILS CLOSED, and that is the whole contract. Absent, empty, non-JSON, or
@@ -324,7 +324,7 @@ phase_secrets() {
     echo "  To set it up:"
     echo "    1. Sign in to https://start.1password.com as alex@mcritchie.studio"
     echo "    2. Developer Tools → Service Accounts → New (grant read on the agent vault,"
-    echo "       default 'agents-studio' — see bin/lib/op_vaults.rb)"
+    echo "       default 'studio-agents' — see bin/lib/op_vaults.rb)"
     echo "    3. Copy the token (ops_...) to your clipboard"
     echo "    4. Run: ${BOLD}bin/setup-1pass-token${RESET}"
     echo "    5. Re-run: ${BOLD}bin/ecosystem-build${RESET}"
@@ -339,7 +339,7 @@ phase_secrets() {
   # IT RESOLVES AT THREE SITES IN THIS FUNCTION, and only this one binds a
   # variable: here; the Heroku item read below; and the SOLANA_ADMIN_KEY entry in
   # the op_secrets map. The other two expand
-  # ${MCR_OP_VAULT_AGENT:-agents-studio} again instead of reading $agent_vault,
+  # ${MCR_OP_VAULT_AGENT:-studio-agents} again instead of reading $agent_vault,
   # so changing the default HERE alone leaves them pointed at the old vault — the
   # guard would then report the new vault visible while the real reads went
   # somewhere else, which is the defect class this guard exists to catch. Change
@@ -349,7 +349,7 @@ phase_secrets() {
   # visible" is the point of the case below: the old single else-branch sent
   # every failure to "check the token's vault grants", which is the wrong
   # errand for a machine that has simply not finished Phase 1.
-  local agent_vault="${MCR_OP_VAULT_AGENT:-agents-studio}"
+  local agent_vault="${MCR_OP_VAULT_AGENT:-studio-agents}"
   agent_vault_visible "$agent_vault"
   case $? in
     0)
@@ -367,14 +367,16 @@ phase_secrets() {
       ;;
   esac
 
-  # Heroku API key (auto-pull from 1P if not set)
+  # Heroku API key (auto-pull from 1P if not set). The item's `legacy-personal-api-key`
+  # field operates the fleet until the app transfers land and is deleted at cutover,
+  # after which the lane's own `credential` takes over — so prefer legacy when present.
   if [ -z "${HEROKU_API_KEY:-}" ]; then
-    log_act "fetching agent.heroku from 1Password"
-    HEROKU_API_KEY=$(op_metered op item get "agent.heroku" --vault "${MCR_OP_VAULT_AGENT:-agents-studio}" --format json 2>/dev/null \
-      | jq -r '.urls[]? | select(.label == "api key") | .href')
+    log_act "fetching heroku.studio.agents from 1Password"
+    HEROKU_API_KEY=$(op_metered op item get "heroku.studio.agents" --vault "${MCR_OP_VAULT_AGENT:-studio-agents}" --format json 2>/dev/null \
+      | jq -r 'first((.fields[]? | select(.label == "legacy-personal-api-key") | .value), (.fields[]? | select(.label == "credential") | .value) | select(. != null and . != "")) // empty')
     if [ -z "$HEROKU_API_KEY" ]; then
-      log_fail "agent.heroku item missing or 'api key' URL field empty"
-      echo "    Expected: $agent_vault/agent.heroku with a URL labeled 'api key' = HRKU-..."
+      log_fail "heroku.studio.agents item missing or both key fields empty"
+      echo "    Expected: $agent_vault/heroku.studio.agents with 'legacy-personal-api-key' (pre-cutover) or 'credential' (post-cutover)"
       return 1
     fi
     export HEROKU_API_KEY
@@ -428,7 +430,7 @@ phase_secrets() {
   # functionality. Mapping: env_var_name -> "vault/item/field". Always re-fetched
   # (cheap) so rotated tokens propagate without manual intervention.
   local op_secrets=(
-    "turf-monster|SOLANA_ADMIN_KEY|${MCR_OP_VAULT_AGENT:-agents-studio}/agent.alex.solana/private key"
+    "turf-monster|SOLANA_ADMIN_KEY|${MCR_OP_VAULT_AGENT:-studio-agents}/agent.alex.solana/private key"
   )
   for entry in "${op_secrets[@]}"; do
     IFS='|' read -r app var ref <<< "$entry"

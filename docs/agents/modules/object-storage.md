@@ -31,7 +31,7 @@ is the act that applies them to a new app.
 | Tier | Identity | Holds | Store |
 |---|---|---|---|
 | 1 | `alex-admin` / root | Mr. McRitchie only | his private vault |
-| 2 | `agents-admin` | Steffon's provisioning lane: `s3:*`, mint/rotate `/mcr/*` users, account read-only | item `AWS`, vault `agents-admin` (admin op lane only) |
+| 2 | `studio-agents-admin` | Steffon's provisioning lane: `s3:*`, mint/rotate `/mcr/*` users, account read-only | item `AWS`, vault `studio-agents-admin` (admin op lane only) |
 | 3 | `agent-studio` | day-to-day agent object surgery across the fleet; no IAM, no bucket create/delete | **design pending** — nothing mints it yet, `bucket-provision` included; until it exists, use tier 2 or the app's tier-4 key |
 | 4 | `mcr-<app>-prod` / `mcr-<app>-dev` | one app's buckets, exactly | Heroku config vars + 1Password record |
 
@@ -43,17 +43,17 @@ Reading tier 2 (the only lane this module's procedures need):
 ```bash
 source ~/.zprofile.admin
 export OP_SERVICE_ACCOUNT_TOKEN="$OP_ADMIN_SERVICE_ACCOUNT_TOKEN"
-export AWS_ACCESS_KEY_ID=$(op item get AWS --vault agents-admin --fields label=access-key --reveal)
-export AWS_SECRET_ACCESS_KEY=$(op item get AWS --vault agents-admin --fields label=secret-access-key --reveal)
+export AWS_ACCESS_KEY_ID=$(op item get AWS --vault studio-agents-admin --fields label=access-key --reveal)
+export AWS_SECRET_ACCESS_KEY=$(op item get AWS --vault studio-agents-admin --fields label=secret-access-key --reveal)
 export AWS_DEFAULT_REGION=us-east-2
 ```
 
-The ordinary agent token cannot list the `agents-admin` vault — that
+The ordinary agent token cannot list the `studio-agents-admin` vault — that
 invisibility is the design
 ([`credential-inventory.md`](credential-inventory.md)). The admin service
 account's grant is read-only: `op item get` works, `op item edit` is refused.
 
-**Guards, stated honestly.** `agents-admin` sits outside the `/mcr/` IAM path,
+**Guards, stated honestly.** `studio-agents-admin` sits outside the `/mcr/` IAM path,
 so it cannot edit its own policy — policy changes are an operator console
 paste. It CAN write arbitrary inline policies onto the `/mcr/*` users it
 mints, so a compromised tier 2 could mint an over-privileged user; the sealed
@@ -99,6 +99,6 @@ only true for the day it was taken.
   `mcritchie-industries-qa`, so its `storage.yml` resolves the PRODUCTION
   bucket — which its dev key cannot write (the same routing law, now refusing
   QA's own uploads). Tracked at `/tasks/industries-qa-bucket-cutover`. The
-  1Password record (`agent.mcritchie-industries.aws`, `agents-industries`
+  1Password record (`agent.mcritchie-industries.aws`, `industries-agents`
   vault) is owed by a write-capable lane — values live in Heroku config until
   it lands.

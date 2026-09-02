@@ -77,7 +77,7 @@ all, which the CI gates read.
 |---|---|
 | **Org** | `McRitchie-Studio` (was the `amcritchie` personal account until 2026-07-29) |
 | **Credential** | GitHub **App installation token**, ~**1 hour** lifetime |
-| **Where it comes from** | 1Password (`agents-studio` for the agent lane, `agents-admin` for the deployer — `bin/lib/op_vaults.rb` is the map) → `bin/gh-app-mint-token`, brokered by `bin/gh-token` |
+| **Where it comes from** | 1Password (`studio-agents` for the agent lane, `studio-agents-admin` for the deployer — `bin/lib/op_vaults.rb` is the map) → `bin/gh-app-mint-token`, brokered by `bin/gh-token` |
 | **Refresh** | `eval "$(bin/gh-auth-refresh --export)"` |
 | **Liveness probe** | `gh api rate_limit` — **never** `gh api user` |
 | **PR base** | `accepted` — never `release`, never `main` |
@@ -93,8 +93,8 @@ The lane picks the identity through **`GH_APP_ITEM`**; precedence is
 | `github.mcritchie-deployer` (`export GH_APP_ITEM=github.mcritchie-deployer`) | ship | **No `pull_requests` grant at all** — the deployer cannot open or merge PRs, by design. Contents + Actions + Checks read + Secrets + Administration |
 
 The two items live in different vaults, read by different tokens: the agent's in
-`agents-studio` (`OP_SERVICE_ACCOUNT_TOKEN`, every shell), the deployer's in
-`agents-admin` (`OP_ADMIN_SERVICE_ACCOUNT_TOKEN`, loaded only by `source
+`studio-agents` (`OP_SERVICE_ACCOUNT_TOKEN`, every shell), the deployer's in
+`studio-agents-admin` (`OP_ADMIN_SERVICE_ACCOUNT_TOKEN`, loaded only by `source
 ~/.zprofile.admin`). A ship session sources that profile **before** exporting
 `GH_APP_ITEM`; an ordinary agent shell cannot read the deployer at all.
 

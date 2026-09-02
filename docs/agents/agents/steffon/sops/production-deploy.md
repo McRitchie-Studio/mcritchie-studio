@@ -24,7 +24,7 @@ GitHub App identity**:
 
 ```bash
 cd /Users/alex/projects/mcritchie-studio
-source ~/.zprofile.admin          # the deployer item lives in agents-admin; only the admin token reads it
+source ~/.zprofile.admin          # the deployer item lives in studio-agents-admin; only the admin token reads it
 export GH_APP_ITEM=github.mcritchie-deployer
 export GH_TOKEN=$(printf 'protocol=https\nhost=github.com\n\n' | \
   /Users/alex/projects/mcritchie-studio/bin/gh-app-git-credential get | \
@@ -34,7 +34,7 @@ export GH_TOKEN=$(printf 'protocol=https\nhost=github.com\n\n' | \
 Order matters: the helper reads `GH_APP_ITEM`, so the first export is what makes
 the second one mint the **deployer** token rather than the default agent one —
 and the `source` comes first because `github.mcritchie-deployer` lives in the
-`agents-admin` vault, which only `OP_ADMIN_SERVICE_ACCOUNT_TOKEN` can read. Without
+`studio-agents-admin` vault, which only `OP_ADMIN_SERVICE_ACCOUNT_TOKEN` can read. Without
 it the mint refuses and names that variable; that refusal is the isolation working
 (`bin/setup-1pass-token --admin` installs the token once per machine).
 
@@ -339,7 +339,7 @@ captures git's output and classifies it before advising:
 
 | Outcome | What you do |
 |---|---|
-| **AUTH** (`Invalid username or token`, `Authentication failed`, a 401/403) | `bin/gh-auth-refresh --identity deployer`, then re-run `bin/release ship` — it resumes. **Do NOT re-run `prepare`**: nothing diverged and the freeze is still good. Minting a deployer token reads `github.mcritchie-deployer` from `agents-admin`, so the shell needs `OP_ADMIN_SERVICE_ACCOUNT_TOKEN` (`~/.zprofile.admin`, from `bin/setup-1pass-token --admin`). |
+| **AUTH** (`Invalid username or token`, `Authentication failed`, a 401/403) | `bin/gh-auth-refresh --identity deployer`, then re-run `bin/release ship` — it resumes. **Do NOT re-run `prepare`**: nothing diverged and the freeze is still good. Minting a deployer token reads `github.mcritchie-deployer` from `studio-agents-admin`, so the shell needs `OP_ADMIN_SERVICE_ACCOUNT_TOKEN` (`~/.zprofile.admin`, from `bin/setup-1pass-token --admin`). |
 | **NON-FAST-FORWARD** | Reconcile `main`, re-run `bin/release prepare` to re-freeze, then re-run `bin/release ship`. |
 | **UNRECOGNISED** | Read git's output, printed just above the verdict, before doing either. |
 

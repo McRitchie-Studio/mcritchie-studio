@@ -87,7 +87,7 @@ class OpMeterTest < Minitest::Test
   def test_unit_two_word_subcommands_are_recorded_whole
     with_log do |log, env, dir|
       op, = stub_op(dir)
-      OpMeter.popen({}, [op, "item", "get", "agent.heroku", "--vault", "agents-studio"], via: "x", env: env)
+      OpMeter.popen({}, [op, "item", "get", "agent.heroku", "--vault", "studio-agents"], via: "x", env: env)
       OpMeter.popen({}, [op, "vault", "list", "--format=json"], via: "x", env: env)
       OpMeter.popen({}, [op, "whoami"], via: "x", env: env)
 
@@ -101,7 +101,7 @@ class OpMeterTest < Minitest::Test
   def test_unit_the_reference_operand_is_never_recorded
     with_log do |log, env, dir|
       op, = stub_op(dir)
-      OpMeter.popen({}, [op, "read", "op://agents-studio/github.mcritchie-agent/app-id"], via: "x", env: env)
+      OpMeter.popen({}, [op, "read", "op://studio-agents/github.mcritchie-agent/app-id"], via: "x", env: env)
 
       refute_includes File.read(log), "github.mcritchie-agent",
                       "the log records WHICH KIND of call, never which secret"

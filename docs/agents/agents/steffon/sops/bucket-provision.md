@@ -36,10 +36,10 @@ ask).
 ```bash
 source ~/.zprofile.admin
 export OP_SERVICE_ACCOUNT_TOKEN="$OP_ADMIN_SERVICE_ACCOUNT_TOKEN"
-export AWS_ACCESS_KEY_ID=$(op item get AWS --vault agents-admin --fields label=access-key --reveal)
-export AWS_SECRET_ACCESS_KEY=$(op item get AWS --vault agents-admin --fields label=secret-access-key --reveal)
+export AWS_ACCESS_KEY_ID=$(op item get AWS --vault studio-agents-admin --fields label=access-key --reveal)
+export AWS_SECRET_ACCESS_KEY=$(op item get AWS --vault studio-agents-admin --fields label=secret-access-key --reveal)
 export AWS_DEFAULT_REGION=us-east-2
-aws sts get-caller-identity   # must answer arn:...:user/agents-admin
+aws sts get-caller-identity   # must answer arn:...:user/studio-agents-admin
 ```
 
 A refused `op` read here usually means the shell skipped
@@ -70,7 +70,7 @@ default (SSE-S3); ACLs are disabled fleet-wide, so grant nothing per-object.
 ## 3. Mint the per-app users
 
 Each app gets two IAM users under path `/mcr/` — the path is what keeps them
-inside `agents-admin`'s reach and outside everything else's. The dev user's
+inside `studio-agents-admin`'s reach and outside everything else's. The dev user's
 read-only-prod grant is what makes "QA reads prod, never writes it" a law of
 IAM instead of a hope.
 
@@ -112,7 +112,7 @@ write 1Password items. Each pair is in `$HOME/.mcr-$APP-<env>.key` from step 3
 - **Deployed app:** set `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` on the
   Heroku app directly (`heroku config:set`, deployer lane) — prod key on the
   production app, dev key on QA.
-- **1Password record:** item `agent.<app>.aws` in `agents-studio` (fields
+- **1Password record:** item `agent.<app>.aws` in `studio-agents` (fields
   `access-key-id-prod`, `secret-access-key-prod`, `access-key-id-dev`,
   `secret-access-key-dev`) — created by the operator or any lane whose vault
   grant can write; hand over the values through a private channel, never chat.

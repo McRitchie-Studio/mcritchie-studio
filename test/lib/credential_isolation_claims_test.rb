@@ -243,7 +243,7 @@ class CredentialIsolationClaimsTest < Minitest::Test
   # bin/ecosystem-build's `op read "op://agents/agent.alex.solana/private key"`
   # (verified failing against the real service account on 2026-08-29) and its
   # `grep -qw agents` vault guard, which passed only because -w treats the hyphen
-  # in `agents-studio` as a word boundary — it would have gone red on
+  # in `studio-agents` as a word boundary — it would have gone red on
   # `agents_studio` and never consulted MCR_OP_VAULT_AGENT at all.
   #
   # A literal is the defect whether it names the OLD vault or the NEW one, so this
@@ -261,7 +261,7 @@ class CredentialIsolationClaimsTest < Minitest::Test
     end
 
     assert_empty offenders.uniq,
-                 "resolve the vault through ${MCR_OP_VAULT_AGENT:-agents-studio} (shell) or " \
+                 "resolve the vault through ${MCR_OP_VAULT_AGENT:-studio-agents} (shell) or " \
                  "OpVaults.ref/vault (ruby). bin/lib/op_vaults.rb is the single source; a second " \
                  "literal only re-arms the 2026-08-28 outage for the next rename."
   end
@@ -278,15 +278,15 @@ class CredentialIsolationClaimsTest < Minitest::Test
     end
 
     assert_empty offenders,
-                 "the vault `agents` does not exist — the account holds agents-studio, " \
-                 "agents-admin, agents-industries and agents-mcritchie-family. Verified " \
+                 "the vault `agents` does not exist — the account holds studio-agents, " \
+                 "studio-agents-admin, industries-agents and family-agents. Verified " \
                  "2026-08-29: `op read 'op://agents/...'` answers \"agents\" isn't a vault " \
                  "in this account."
   end
 
   # The literal-vault scan above cannot see this one: the old guard was
   # `op vault list | grep -qw agents`, which carries no op:// and no --vault. It
-  # passed against `agents-studio` ONLY because -w treats the hyphen as a word
+  # passed against `studio-agents` ONLY because -w treats the hyphen as a word
   # boundary — an accident, not a check — and it never read MCR_OP_VAULT_AGENT.
   # bin/ecosystem-build is the first thing a fresh Mac runs, so its verdict on the
   # credential lane has to be a real one.
@@ -301,7 +301,7 @@ class CredentialIsolationClaimsTest < Minitest::Test
     refute_match(/grep\s+-\S*[wx]\S*\s+agents\b/, code,
                  "a word/substring match on a bare vault literal is not a vault check — " \
                  "this account holds four vaults whose names begin `agents`")
-    assert_includes code, 'local agent_vault="${MCR_OP_VAULT_AGENT:-agents-studio}"',
+    assert_includes code, 'local agent_vault="${MCR_OP_VAULT_AGENT:-studio-agents}"',
                     "the guard must resolve the vault the way bin/lib/op_vaults.rb does"
 
     # "agent vault", not just "vault" — the op_secrets loop one function-block down
@@ -339,7 +339,7 @@ class CredentialIsolationClaimsTest < Minitest::Test
     entries.each do |entry|
       ref = entry.delete('"').split("|")[2].to_s
 
-      assert ref.start_with?("${MCR_OP_VAULT_AGENT:-agents-studio}/"),
+      assert ref.start_with?("${MCR_OP_VAULT_AGENT:-studio-agents}/"),
              "every op_secrets ref must resolve its vault through the override — it is fed " \
              "straight into `op read \"op://$ref\"`. Found: #{ref.inspect}"
     end

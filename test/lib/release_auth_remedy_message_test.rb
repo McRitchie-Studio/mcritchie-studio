@@ -83,7 +83,7 @@ class ReleaseAuthRemedyMessageTest < Minitest::Test
                     "prescribing a refresh here leaks a live token AND cannot fix the caller's " \
                     "shell; the deployer is never cached, so the next push mints on its own"
     assert_includes msg, "OP_ADMIN_SERVICE_ACCOUNT_TOKEN",
-                     "minting a deployer token reads agents-admin, which an ordinary agent shell cannot"
+                     "minting a deployer token reads studio-agents-admin, which an ordinary agent shell cannot"
     assert_includes msg, "has NOT diverged"
     refute_match(/re-run `bin\/release prepare`/, msg,
                  "the freeze is still good — sending the operator back through prepare is the exact " \
