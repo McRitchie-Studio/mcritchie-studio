@@ -322,10 +322,21 @@ claim is graded against a consistent world, then grades each claim:
 | Grade | Condition | Reader's action |
 |-------|-----------|-----------------|
 | `live` | pid alive **and** start time matches exactly | **count it**; report kind, phase, weight, task, agent |
-| `dead` | nothing alive at that pid | ignore for capacity; unlink — a proven corpse |
-| `recycled` | pid alive, start time differs | ignore; unlink. Provably not ours — and we never signal it |
+| `dead` | nothing alive at that pid | ignore for capacity. A proven corpse — reclaimable, but see below |
+| `recycled` | pid alive, start time differs | ignore for capacity. Provably not ours — and we never signal it |
 | `unverifiable` | pid alive, no start time recorded | **count it conservatively and NAME it.** Never silently trust, never silently discard |
 | `malformed` | unparseable, or names no pid | discard loudly; the backstop scan speaks for any real load |
+
+**Unlinking is a LATER slice's verb, and never the cert runlock's.** §3 gives the
+reader two verbs, report and unlink — but only the first belongs to slice 1,
+which touches nothing on disk (§9). And when a writing slice does reclaim
+corpses, the cert runlock stays exempt: `CertProcess.settle` KEEPS that lock
+whenever `reap_group` returns `:refused`, and `:refused` is *precisely* the
+`recycled` row above — "a stranger holds the recycled number." The lock is then
+the only record naming a process the cert declined to kill, so deleting it turns
+a detectable orphan into an unnameable one. §5(b) says the same from the other
+side. A reader that unlinks it has not narrowed the guard's power; it has
+destroyed the guard's evidence.
 
 **Why a killed writer cannot wedge anyone.** A killed process leaves its file
 behind — by design, exactly as the runlock does. But that file's only claim to
@@ -425,8 +436,9 @@ Over claims that already exist. **It writes nothing.**
 
 Enumerate runlocks by direct glob (`*/.git/cert-run.json` and
 `*/.git/worktrees/*/cert-run.json` — no registry, no `git` invocation); take one
-`ps`; grade with the rule in §6; print a table, a `headroom` line, and the
-backstop's unattributed processes. `--json` for agents; exit codes for scripts.
+`ps`; apply §6's **grades** — and only the grades: it unlinks nothing and
+signals nothing; print a table, a `headroom` line, and the backstop's
+unattributed processes. `--json` for agents; exit codes for scripts.
 
 Why this one pays for itself alone:
 
