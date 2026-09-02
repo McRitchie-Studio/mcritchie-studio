@@ -677,6 +677,7 @@ document.addEventListener('turbo:before-cache', function() {
                   latest_activity: @latest_task_activities[task.slug],
                   activity_count: @task_activity_counts[task.slug].to_i,
                   unresolved_feedback: @unresolved_feedback_activities[task.slug],
+                  resubmission: @resubmissions&.fetch(task.slug, nil),
                   ever_blocked: @ever_blocked_slugs&.include?(task.slug),
                   ci_progress: @ci_progress_by_slug&.fetch(task.slug, nil),
                   local_check: @local_check_by_slug&.fetch(task.slug, nil),

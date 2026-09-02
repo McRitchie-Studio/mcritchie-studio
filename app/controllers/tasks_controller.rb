@@ -79,6 +79,7 @@ class TasksController < ApplicationController
   def show
     load_task_conversation
     @unresolved_feedback_activity = @task.unresolved_feedback_activity
+    @resubmission = @task.resubmission
     @task_events = @task.task_events.chronological.to_a
     @agents = Agent.order(:position)
     @active_review_intent = @task.open_intent_for("reviewed")
@@ -376,6 +377,11 @@ class TasksController < ApplicationController
     # @unresolved_feedback_activities).
     @ever_blocked_slugs = Activity.where(task_slug: task_slugs, activity_type: "qa_feedback")
                                   .distinct.pluck(:task_slug).to_set
+    # FRESH BUILD OR RESUBMISSION, per card. Batched for the same reason as the two
+    # reads above, and it costs the board almost nothing: the head oracle is only
+    # asked about tasks that ACTUALLY carry a send-back, so a board with none pays
+    # one activities query and no more. See Task::Resubmission.
+    @resubmissions = Task::Resubmission.for_tasks(tasks)
   end
 
   def load_review_process_context
