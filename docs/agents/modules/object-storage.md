@@ -89,16 +89,24 @@ only true for the day it was taken.
   Removing it is app work (CDN or public-prefix migration — see
   [`../system/cdn-rollout.md`](../system/cdn-rollout.md)), not a console flip;
   on those buckets `public: false` in `storage.yml` is NOT a privacy control.
-- **Industries QA — credentials RESOLVED 2026-09-02; bucket cutover OPEN.**
+- **Industries QA — Active Storage CUT OVER 2026-09-02; `Studio::S3` was NOT.**
   Industries became the first app on tier-4 credentials:
   `mcr-mcritchie-industries-{prod,dev}` were minted under `/mcr/` by
   `bucket-provision`'s first live run, the routing law was proven by refusal
   (the dev key's write to the production bucket was rejected by IAM), and both
   Heroku apps carry their vars (prod key on `mcritchie-industries`, dev key on
-  `mcritchie-industries-qa`). Still open: `QA_ENV` is unset on
-  `mcritchie-industries-qa`, so its `storage.yml` resolves the PRODUCTION
-  bucket — which its dev key cannot write (the same routing law, now refusing
-  QA's own uploads). Tracked at `/tasks/industries-qa-bucket-cutover`. The
+  `mcritchie-industries-qa`). `QA_ENV=true` now ships on the QA app and is
+  declared in `config/qa_environments.yml`, so `storage.yml` resolves
+  `mcritchie-industries-dev` (`/tasks/industries-qa-bucket-cutover`) — **but
+  that marker fixes only ONE of the app's TWO S3 writers.** Measured on a QA
+  dyno 2026-09-02, post-cutover: `ActiveStorage_bucket` =
+  `mcritchie-industries-dev`, `Studio::S3.bucket` =
+  `mcritchie-industries-production`. `Studio::S3` suffixes off `Rails.env`
+  alone (`studio-engine lib/studio/s3.rb:103-105`), never `QA_ENV`, and no QA
+  app sets `RAILS_ENV` — so `/admin/emails` and `/admin/knowledge` (the
+  60-document data room) still hand the dev key the production bucket and
+  still take the refusal. Engine fix: teach `Studio::S3.environment` about
+  `Studio.qa_environment?`. The
   1Password record (`agent.mcritchie-industries.aws`, `industries-agents`
   vault) is owed by a write-capable lane — values live in Heroku config until
   it lands.
