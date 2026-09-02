@@ -32,7 +32,7 @@ humans; when the two disagree, fix both in the same pass.
 |------|-------|---------|------------------|
 | `heroku.studio.agents` | `studio-agents` | Heroku **agent lane** OAuth authorization (`dec169b0…`), scope `identity,read-protected,write-protected` — deploys, config vars, one-off dynos, logs, app creates; CANNOT transfer apps or manage authorization lanes (and could technically delete an app — SOP forbids). Item notes carry this permission matrix — the Heroku items follow `heroku.studio.<lane>` with the lane named after its vault. Staged as `HEROKU_STUDIO_AGENTS_API_KEY` in `~/.zprofile.admin`; at the account cutover it becomes `HEROKU_API_KEY` in `~/.zprofile`. Replaced `agent.heroku` (global-scope lane `b6697b95…`, revoked 2026-09-02). | `bin/ecosystem-build`, agent sessions (`heroku run`, ship git-pushes), Avi QA deploys, Steffon prod deploys |
 | `Heroku` | `studio-agents-admin` | The MASTER account login for alex@mcritchie.studio: password, TOTP, recovery codes. The dashboard's master API key is deliberately NOT stored anywhere — break-glass = reveal it in the dashboard behind MFA. | Operator only |
-| `heroku.studio.admin` | `studio-agents-admin` | **OWED — pending the admin service account's write grant on this vault** (design changed 2026-09-02: Mr. McRitchie is flipping the vault admin-lane-writable so Steffon files it). Heroku **admin lane** OAuth authorization (`66cd4db9…`), scope `global` — the only lane that can transfer apps, grant access, and manage the authorization lanes; "never delete an app" is SOP, not scope (Heroku cannot separate delete from write). Staged as `HEROKU_STUDIO_ADMIN_API_KEY` in `~/.zprofile.admin`. | Steffon provisioning acts, via the admin profile |
+| `heroku.studio.admin` | `studio-agents-admin` | Filed 2026-09-02 by the admin lane (the vault became admin-lane-writable that day — a new admin service account with read+write; before that, agent writes were refused by design). Heroku **admin lane** OAuth authorization (`66cd4db9…`), scope `global` — the only lane that can transfer apps, grant access, and manage the authorization lanes; "never delete an app" is SOP, not scope (Heroku cannot separate delete from write). Staged as `HEROKU_STUDIO_ADMIN_API_KEY` in `~/.zprofile.admin`. | Steffon provisioning acts, via the admin profile |
 | `heroku.studio.applications` | `studio-applications` | Heroku **CI lane** OAuth authorization (`d976c7b8…`), scope `identity,read-protected,write-protected` (same matrix as the agents lane; in the item notes). Runtime home is the Actions `HEROKU_API_KEY` secret at cutover; staged as `HEROKU_STUDIO_APPLICATIONS_API_KEY` in `~/.zprofile.admin`. Replaced `mcritchie-studio.github-actions-heroku` (global-scope lane `1f468f88…`, revoked 2026-09-02). | GitHub Actions deploys |
 | `mcritchie-industries.aws` | `studio-applications` | Filed 2026-09-02. The AWS pair the mcritchie-industries Heroku app runs with (S3 knowledge-layer buckets; IAM under `/mcr/`); mirrors the app's `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` config vars — rotate both together. | Industries app + QA |
 | `github.mcritchie-agent` | `studio-agents` | GitHub App for the **build/review** lanes (the default identity): Contents + Pull requests + Checks read + Actions + Workflows across the McRitchie-Studio org. Fields: `app-id` = **`4431410`** (recorded here on purpose — see **GitHub App IDs** below), `client-id`; the private key is the **`.pem` FILE attachment** — the concealed `private key` field is NOT the key. | Two legs: `git push` via the global helper `bin/gh-app-git-credential`; `gh` PR create/merge + CI-status reads via a per-session minted `GH_TOKEN` (`bin/gh-app-mint-token`) — `gh` never consults git credential helpers (see `credentials.md` → GitHub). |
@@ -187,11 +187,13 @@ and tiers: `modules/object-storage.md`.
 
 **First migration landed 2026-09-02:** Industries' deployed apps now run
 `mcr-mcritchie-industries-{prod,dev}` via Heroku config vars and are OFF this
-shared identity's rotation list. The 1Password item
-`agent.mcritchie-industries.aws` (vault `industries-agents`; four fields:
-prod/dev key id + secret) is **owed** — the admin service account's vault grant
-is read-only, so an agent could not write it; copy the values from
-`heroku config` until a write-capable lane or the operator lands the item.
+shared identity's rotation list. The prod pair is filed as
+`mcritchie-industries.aws` in `studio-applications` (the applications vault
+superseded the earlier plan of `agent.mcritchie-industries.aws` in
+`industries-agents`). The **dev pair is still owed** — QA carries no AWS config
+vars, so its values live only in local `.env` files; file them into the same
+item as `dev-access-key`/`dev-secret-access-key` when next at a desk that has
+them.
 
 ## Convention
 
