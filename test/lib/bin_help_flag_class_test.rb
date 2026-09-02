@@ -168,6 +168,17 @@ class BinHelpFlagClassTest < Minitest::Test
     # test/integration/agent_worktree_argv_guard_test.rb, because a green manifest
     # cannot tell a guard that is CALLED from one merely DEFINED.
     "agent-worktree"         => :cli_arg_guard,
+    # --- NEW SCRIPT, guarded at birth (/tasks/backup-collisions-are-silent) ---
+    # Not a retrofit — the first entry here added by an author rather than by a sweep,
+    # which is the whole point of test_every_bin_script_is_classified: it failed the
+    # moment the file landed in bin/ and was answered before the script ever ran.
+    # `restore` OVERWRITES A FILE IN THE WORKING TREE and `save` can overwrite a
+    # restore point, so both are real mutations. Its per-subcommand dictionary is
+    # COMMANDS in the script itself (four arms, all four taking the same --owner/--root
+    # pair), fed to one guard call ahead of the dispatcher. Help exits 1: `verify`
+    # makes exit 0 an ASSERTION — "this backup IS the one you saved" — and a probe must
+    # never answer with an assertion, the same reasoning as bin/harvest-desk-ledger.
+    "scratch-backup"         => :cli_arg_guard,
     # --- shell scripts, same sweep, same defect, different idiom --------------
     "setup-1pass-token"      => :own_guard,
     "ecosystem-build"        => :own_guard,
@@ -464,7 +475,13 @@ class BinHelpFlagClassTest < Minitest::Test
     # than a static index either way — test/lib/atomic_event_cli_test.rb runs the real
     # script against a recording stub server and asserts a POST RECEIPT, each probe
     # paired with a control that fires.
-    "atomic-event"        => "case command"
+    "atomic-event"        => "case command",
+    # The newest member, and the only one here that was never a defect. Its mutations —
+    # ScratchBackup.save writing a blob, ScratchBackup.restore overwriting a file in the
+    # working tree — are all reached through `case command`, so that dispatcher is the
+    # seam. Anchored on it rather than on either call so a fifth subcommand cannot be
+    # added below the guard without this staying true.
+    "scratch-backup"      => "case command"
   }.freeze
 
   def test_the_guard_runs_before_the_first_mutation

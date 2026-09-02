@@ -1350,8 +1350,22 @@ def suite_evidence_error(eval, slug, ci, review_role)
       "in full: bin/full-suite-check #{slug}."
   end
 
+  # THE LANES THIS REPO OWES, read from the SAME list the verdict is computed over.
+  # Built from FullSuiteGate::LANES, this printed `rubocop: MISSING` at a repo
+  # declaring `lint_lane: none` — a lane `ok` had already waived and would never
+  # grade. The sibling fix (#1150, secondary_cert_lane_state) closed the SECONDARY
+  # repo's half of this sentence; this is the PRIMARY half, and it is the refusal
+  # every builder in every repo reads. Detail on the waiver and why the lane is
+  # OMITTED rather than named-as-waived: secondary_cert_lane_state above.
+  #
+  # THE GATE IS UNCHANGED — this builds a STRING and grades nothing. LANES,
+  # required_lanes and eval[:ok] are all untouched, and a lint-waived repo lacking
+  # its FULL-SUITE cert still REFUSES.
+  owed = FullSuiteGate.required_lanes(eval[:repo])
+  lint_owed = owed.include?(FullSuiteGate::RUBOCOP_LANE)
+
   parts = []
-  FullSuiteGate::LANES.each do |lane|
+  owed.each do |lane|
     case lanes[lane]
     when :stale
       parts << "#{lane}: STALE (#{stale_delta(eval, lane)} — re-run after your latest edits, " \
@@ -1368,10 +1382,24 @@ def suite_evidence_error(eval, slug, ci, review_role)
   # NAMED, so a multi-repo verdict is legible repo by repo: this message is the
   # PRIMARY repo's refusal, and its secondary siblings are raised beside it. Silent
   # about which repo is exactly how one graded tree read as "the task".
-  "the FULL suite + FULL rubocop are not certified green for this code" \
-    "#{eval[:repo].to_s.strip.empty? ? "" : " in #{eval[:repo]}"} — #{parts.join("; ")}. " \
-    "Run `bin/full-suite-check #{slug}` (runs `bin/rails test` + `bin/rubocop` IN FULL and records " \
-    "fingerprint-bound evidence) — it REFUSES a touched-files subset or a lint-red tree. Or take the FAST " \
+  # The SUBJECT, the REMEDY's command list and its REFUSES clause all describe
+  # `bin/full-suite-check`, which SKIPS the rubocop lane for a declaring repo and
+  # records no rubocop evidence — so all three follow `owed` or they promise a
+  # reader evidence the writer will never produce.
+  #
+  # THE FAST ROUTE BELOW IS DELIBERATELY NOT CONDITIONED. It describes
+  # `bin/fast-check`, which carries NO lint-waiver branch: it omits rubocop on the
+  # GEM branch instead, and both declaring repos are gems today, so the two axes
+  # merely coincide. Keying this clause off the LINT waiver would describe that
+  # script by a predicate it does not read, and would go WRONG the day a non-gem
+  # repo declares `lint_lane: none` — the exact case bin/fast-check's own comment
+  # ("NO LINT-WAIVER BRANCH HERE, deliberately") reserves. That clause is a
+  # separate defect on the GEM axis, filed rather than folded in.
+  "#{lint_owed ? "the FULL suite + FULL rubocop are" : "the FULL suite is"} not certified green for " \
+    "this code#{eval[:repo].to_s.strip.empty? ? "" : " in #{eval[:repo]}"} — #{parts.join("; ")}. " \
+    "Run `bin/full-suite-check #{slug}` (runs `bin/rails test`#{lint_owed ? " + `bin/rubocop`" : ""} " \
+    "IN FULL and records fingerprint-bound evidence) — it REFUSES a touched-files subset" \
+    "#{lint_owed ? " or a lint-red tree" : ""}. Or take the FAST " \
     "route: `bin/fast-check #{slug}` (diff-mapped tests + core spine + rubocop on changed files, ~1 min), " \
     "accepted once the PR's GitHub CI is green. " \
     "Conscious, justified skip? Record a bypass: bin/task update #{slug} --checks \"[full-suite-bypass] <why>\"."

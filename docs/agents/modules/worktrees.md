@@ -971,6 +971,32 @@ Two agents backing up to the same name — `backup/agent-worktree`,
 hole, and destroy the earlier restore point in silence. You learn about it when
 you restore and get someone else's file.
 
+**For a pristine copy you intend to restore, use `bin/scratch-backup`** rather
+than `cp`. A convention only protects the agents who read it, and this is the one
+violation nobody can see:
+
+```bash
+bin/scratch-backup save    bin/agent-worktree   # before you mutate it
+bin/scratch-backup restore bin/agent-worktree   # refuses if it is not your copy
+bin/scratch-backup verify  bin/agent-worktree   # exit 0 = intact, 3 = not
+bin/scratch-backup list                         # your namespace, with statuses
+```
+
+It gives you both halves. **Namespaced** — every entry lives under
+`<root>/<owner>/backup/`, `owner` being your task slug (from the desk's
+`.agent-context.json`) or your session id, so two agents cannot reach one path;
+an owner it cannot resolve REFUSES rather than defaulting to a shared directory.
+**Verified** — `save` records a SHA-256 receipt beside the copy and `restore`
+re-hashes before it writes, so if the namespace is ever defeated you get a
+refusal instead of someone else's file. `save` also refuses to overwrite a backup
+whose content differs from the file as it stands now, which is the
+mutation-testing footgun: save pristine, mutate, re-run save, and the copy you
+were about to restore is gone.
+
+`--root` and `--owner` override both; `--force` overrides only the save guard.
+There is deliberately no `--force` on `restore` — that switch would read "restore
+a file you have just been told is not yours".
+
 Measured 2026-09-01 on the session that collided: 873 top-level entries, 9 of
 them (~1%) carrying an agent id; `ship.log` the only one bearing the NUL-hole
 fingerprint; a shared un-namespaced `backup/` holding `atomic-event.good`,

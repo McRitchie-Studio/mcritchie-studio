@@ -235,9 +235,66 @@ below). Each returns exactly one disposition:
   about to make a newly-lit CI lane flaky.
 - **A companion change just shipped and this is the mechanical port of it.** The
   context is hot. It will never be cheaper than today.
+- **You cannot identify who holds it.** `bin/task move <slug> archived` now
+  refuses this case itself (see below) — but the refusal is a backstop for the
+  judgement, not a replacement for it.
 
 Put every judgement to Mr. McRitchie as a table with a recommendation per row. He
 overrides freely; his overrides are the point.
+
+### The archive verb refuses what it cannot prove free
+
+`bin/task move <slug> archived` runs a holder gate before the write. It exits 1
+**without touching the board** when it cannot prove the task holds no **work at
+risk**, and names what it could not verify:
+
+| Grade | What it means | Archive |
+|---|---|---|
+| `concluded` | `shipped`/`archived` — the code is on `main` | proceeds |
+| `unheld` | no session, no mascot, no claim: nobody picked it up | proceeds |
+| `abandoned` | a session we could check, checked, and found gone | proceeds |
+| `held` | a live claim lease | **REFUSES**, names the session |
+| `working` | a desk written into, a cert running, or an operator parked | **REFUSES**, names the channel |
+| `unverifiable` | a mascot or a builder, but **no session to ask** | **REFUSES**, names the paint it has |
+
+**Work at risk is UNCOMMITTED state, which lives in a DESK.** Board activity is not
+work at risk — a commit, a PR, a task note, a stage move all survive the archive and
+read back afterwards — so a fresh board timestamp never holds this gate. That is
+deliberate and it was measured: an earlier cut counted board activity as a channel
+and refused **31 of 34** live tasks, 16 of them with no desk at all, because
+`holder_liveness_seconds_ago` reports the age of a task's own CREATE when no holder
+owns an artifact — and because every `bin/task` write resets it, so **triaging a task
+in Phase 2 would arm the gate against archiving it in Phase 5**. Steffon's
+`archive-shipped` SOP documents the same trap for the worktree reclaim.
+
+So expect `working` refusals to name a **desk**. If one names something else, read it
+— it is telling you a cert is running or Mr. McRitchie is parked in front of the work.
+
+`unverifiable` is the one worth knowing by name, because it is the carve-out's
+failure mode made mechanical. On 2026-09-01 Mr. McRitchie asked that one session's
+work be held; the record carried an app and a mascot and nothing else, and the
+holder was found only by messaging the peer session. Had that session been idle or
+unreachable, live work would have been archived and the exception would have
+protected nothing. A mascot means *somebody was here and we cannot tell who* —
+which is the opposite of *nobody was here*, not a synonym for it.
+
+`--force` is the override, and it names the grade it waived:
+
+```bash
+bin/agent-presence                       # who is live on this machine right now
+bin/agent-worktree list                  # which desk carries the task, and whose
+bin/task move <slug> archived --force    # only after you have established the holder
+```
+
+Reach for those two readers before `--force`, not after. **A run that needs `--force`
+on more than a task or two is reporting a gate defect, not a busy machine** — say so
+rather than working around it, because a `--force` that becomes routine is a gate that
+protects nothing.
+
+The gate is the **CLI path** by design. `Task#archive!`, the board's Archive buttons,
+and a raw API PATCH all bypass it: it exists to stop an *agent* archiving work it
+never looked at, and Mr. McRitchie clicking Archive on a task page he is reading is
+already the deliberate decision `--force` represents.
 
 ---
 

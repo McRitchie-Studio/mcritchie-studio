@@ -539,11 +539,31 @@ point:
 - **It is bounded at BOTH ends, and names which end it hit.** `:pending` gets the
   full budget (`SHIP_CI_WAIT_TIMEOUT`, default 900s). But `gh pr checks` reports
   `none` in the window between the push and GitHub creating the run, and
-  `unverified` while mergeability is still computing — treat either as settled and
-  the wait exits within a second of every push, silently doing nothing while the
-  handoff still succeeds. So those get a **shorter** appearance budget
-  (`SHIP_CI_WAIT_APPEARANCE`, default 120s), after which a run is treated as never
-  coming. "CI said no" and "we stopped asking" print as different sentences.
+  `unverified` when the read ITSELF fails (a gh/network fault) — treat either as
+  settled and the wait exits within a second of every push, silently doing nothing
+  while the handoff still succeeds. So those get a **shorter** appearance budget
+  (`SHIP_CI_WAIT_APPEARANCE`, default 120s). They WAIT alike and REPORT
+  differently: `none` expires to `:absent` ("GitHub answered and reported no
+  checks"), `unverified` to `:unread` ("could not read CI … whether this PR has CI
+  is UNKNOWN"). "CI said no", "we stopped asking", and "we never got through" are
+  three facts with three remedies, so they print as three sentences.
+- **It reports the READ, never the repo.** A query that FAILED is not evidence
+  about GitHub. Task `ship-waiter-misreports-ci` (2026-09-01) fixed a wait that
+  printed "no CI run appeared within 2277s — treating this PR as having none"
+  while `gh pr checks` showed 12/12 GREEN and dor-check said "GitHub CI green": it
+  had rendered a network fault with `none`'s sentence. Elapsed figures are
+  reconciled against the budget they were judged against, too — budgets are tested
+  BETWEEN polls, so the elapsed CAN overrun one, and the summary says so instead of
+  printing a number that cannot come from the configured timeout. **It reports the
+  read's MEASURED duration and never infers it.** The first cut of that note charged
+  the whole excess to the final read, reasoning that a nap is capped at the remaining
+  budget — but the cap is on the nap the loop *computes*, `Kernel#sleep` is only
+  lower-bounded, and the default clock counts host suspend on macOS, so an overrun
+  can be 100% sleep and 0% read. `settle` times the probe; whatever the measured read
+  does not account for is named as unbounded wall-clock rather than blamed on `gh`.
+  A read the TOKEN was refused (`unreadable`, a 401/403) settles at once — waiting
+  cannot mend a credential — and `bin/ship` points at `bin/gh-auth-refresh` for it,
+  not only for the gh/network fault a re-run may clear on its own.
 - **An unknown state settles.** `CiStatus`'s state list may grow; a state the wait
   has never heard of degrades to the behaviour that predates it, never to an
   unbounded wait on an unrecognised symbol.

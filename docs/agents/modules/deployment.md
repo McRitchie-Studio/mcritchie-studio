@@ -125,8 +125,38 @@ Production app: `turf-monster-mainnet`
 Canonical URL: `https://turfmonster.media`
 Legacy app URL: `https://app.turfmonster.media`
 Archive URL: `https://v1.turfmonster.media`
+Retired URL: `https://turf.mcritchie.studio` — dead; never smoke-test it (below)
 
 Use `turf-monster/bin/deploy`; do not hand-push around its preflight checks for real-money flows.
+
+### Retired Host: `turf.mcritchie.studio`
+
+`turf.mcritchie.studio` no longer serves Turf Monster. It is a Heroku CNAME
+pointing at `primal-rosemallows-ok21wsy2yfumngfxgr1gvbeh.herokudns.com`, a target
+that resolves to no address, so every request returns HTTP 000. There is likewise
+no Heroku app named `turf-monster`; production is `turf-monster-mainnet`.
+
+Measured 2026-09-01:
+
+| Host | Result |
+|------|--------|
+| `https://turf.mcritchie.studio/up` | HTTP 000 — dead CNAME, no A record |
+| `https://turfmonster.media/up` | HTTP 200 — canonical |
+| `https://app.turfmonster.media/up` | HTTP 200 — legacy alias |
+| `https://qa.turfmonster.media/up` | HTTP 200 — QA |
+
+**Why this matters during an incident.** An operator who smoke-tests the retired
+host reads HTTP 000 and concludes Turf Monster is down, or that a deploy failed,
+while the app is healthy — and may roll back a good release on that reading. A
+result from this host is evidence about DNS, never about Turf Monster. Smoke-test
+the canonical host, which is what `config/qa_environments.yml`, `bin/prod-smoke`,
+and `config/satellites.yml` already record.
+
+**Open decision — do not assume either way.** Whether `turf.mcritchie.studio` is
+repointed at the live app or formally retired is Mr. McRitchie's call, and it is
+unresolved: https://mcritchie.studio/tasks/runbook-names-dead-host. Until he
+decides, create, change, and delete no DNS record for it. This section names the
+host that serves the app today, not the intended vanity host.
 
 ### Root-Domain Launch
 
