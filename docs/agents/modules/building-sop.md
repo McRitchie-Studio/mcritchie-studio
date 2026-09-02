@@ -345,6 +345,11 @@ bin/ship <slug> -m "<commit message>"
   **run it in the background** (or with the longest foreground timeout you have),
   and if it is cut short, **re-run it** — ship resumes, skips the cert on the
   unchanged tree, and finishes in seconds once CI has settled.
+  Send its output to a **namespaced** path — `scratchpad/ship-<task-slug>.log`,
+  never the bare `ship.log`. Sibling agents share one scratchpad directory, and
+  on 2026-09-01 two ships on that exact path truncated each other; the agent
+  reading the mixed stream killed his own run. See
+  [`worktrees.md`](worktrees.md#the-desk-writer-convention).
 - Review's gate-zero still holds the **authoritative** CI verdict — `pr-review`
   bounces a red-CI task back with the failing checks named before any reviewer
   spawns. Waiting at ship makes that bounce rarer; it does not replace it.

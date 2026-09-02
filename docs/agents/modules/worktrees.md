@@ -915,6 +915,69 @@ so it would need refreshing or it goes stale and lies; and it is an unsigned
 local file any agent can edit, so it can advise but never enforce. The rules
 above hold without it.
 
+### The session scratchpad is shared — namespace every write
+
+Every rule above isolates a **desk**. The agent harness also hands each session a
+**scratchpad** — `/private/tmp/claude-501/<project>/<session-id>/scratchpad` —
+and that directory is keyed by **session, not by agent**. Every sibling a session
+spawns writes to the same one. It is not a desk, nothing leases it, and none of
+the checks in the table above look at it. The harness namespaces its *own*
+per-agent files (`tasks/<agent-id>.output`) and hands agents the scratchpad with
+no naming guidance at all.
+
+**Rule: namespace every scratchpad write with the task slug or your agent id.**
+
+| Instead of | Write |
+|---|---|
+| `ship.log` | `ship-<task-slug>.log` |
+| `probe.json`, `out.txt` | `<task-slug>/probe.json` |
+| `backup/agent-worktree` | `<task-slug>/backup/agent-worktree` |
+| `shots/desktop-dark.png` | `<task-slug>/shots/desktop-dark.png` |
+
+For anything past a single file, create `scratchpad/<task-slug>/` once and stop
+thinking about it.
+
+**`>>` is not the fix.** Appending to a shared log interleaves two runs, which is
+what did the damage below: the reader took another agent's success lines for his
+own. Separate files, not a shared one.
+
+**The 2026-09-01 incident.** Carl redirected his ship to `scratchpad/ship.log`
+while steffon's ship was writing that exact path. Carl's `>` truncated the file;
+steffon's writer still held an fd at offset 5407 and kept writing there. The
+result is one 9,132-byte file holding carl's run (`fast-check
+state-names-waived-lane`, PR #1150) in bytes 0-2820, a 2,586-byte NUL hole, and
+steffon's run (`ship-waiter-misreports-ci`, PR #1148) from byte 5407 on. Reading
+the mixed stream, carl killed his own ship believing he had shipped steffon's
+task. Nothing was lost, but only by luck: steffon's ship completed regardless and
+carl's branch was still unpushed.
+
+**How to recognise it.** The NUL hole makes the file **binary**, so `grep` prints
+nothing and exits 1 — the log does not look corrupt, it looks like it never
+mentioned what you searched for. The tell is `file <log>` reporting `data`
+instead of `ASCII text`:
+
+```bash
+file scratchpad/ship.log                 # => "data" means holed, not text
+tr -dc '\000' < scratchpad/ship.log | wc -c   # NUL bytes = truncation hole
+grep -a 'feat/' scratchpad/ship.log      # -a reads a holed file as text
+```
+
+**The silent case is worse.** A collided log at least leaves a hole you can find.
+Two agents backing up to the same name — `backup/agent-worktree`,
+`hub-git-config-backup.txt`, `index.md.orig` — write *sequentially*, leave no
+hole, and destroy the earlier restore point in silence. You learn about it when
+you restore and get someone else's file.
+
+Measured 2026-09-01 on the session that collided: 873 top-level entries, 9 of
+them (~1%) carrying an agent id; `ship.log` the only one bearing the NUL-hole
+fingerprint; a shared un-namespaced `backup/` holding `atomic-event.good`,
+`manifest.good`, `test.good`, and `BASELINE.sha`; and 24 of 56 files in `shots/`
+on generic `desktop-*`/`phone-*` names. Agents already feel the pressure and
+improvise privately — `probe` ×17, `mut` ×10, `ship` ×9, `mutate` ×8 base names
+carrying numeric or letter variants (`ship2`, `ship-a`, `testserver3`). A private
+dodge is no defence against a sibling who also starts at the obvious name.
+
+
 ## Multi-Agent Safety & Merge Patterns
 
 When several agents build in parallel and their work converges on **one branch**
