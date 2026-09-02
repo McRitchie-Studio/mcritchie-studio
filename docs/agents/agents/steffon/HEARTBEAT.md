@@ -77,8 +77,17 @@ When an act is invoked directly, run only that act.
 
 **Nothing ready to ship?** `production-deploy` is an idempotent no-op that reports
 "nothing to ship" — and because the archive rides inside it, nothing gets archived
-either. Run [`archive-shipped`](sops/archive-shipped.md) directly when a prior
-cycle still needs closing out, then continue to `clean-infra`.
+either. Run [`archive-shipped`](sops/archive-shipped.md) directly anyway, then
+continue to `clean-infra`.
+
+**Run it even when no prior cycle needs closing out.** Its closing orphan sweep
+reports PRs already stranded on the board, so it owes a result whether or not this
+beat has anything to archive — and the quiet beat is the one where it earns its
+keep, because that is where an orphan sits unnoticed. "Nothing to archive" is a
+result the act reports, never a reason to skip the act. The act's own
+[Preconditions](sops/archive-shipped.md#preconditions) say the same thing one level
+down; this is that rule at the launcher, so a quiet heartbeat cannot skip the sweep
+by never entering the act.
 
 `clean-infra` covers what the release-driven archive does not: the hand-triage of
 stale UNMERGED desks and the Redis band contraction. `bin/release archive` sweeps
