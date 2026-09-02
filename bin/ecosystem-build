@@ -367,14 +367,16 @@ phase_secrets() {
       ;;
   esac
 
-  # Heroku API key (auto-pull from 1P if not set)
+  # Heroku API key (auto-pull from 1P if not set). The item's `legacy-personal-api-key`
+  # field operates the fleet until the app transfers land and is deleted at cutover,
+  # after which the lane's own `credential` takes over — so prefer legacy when present.
   if [ -z "${HEROKU_API_KEY:-}" ]; then
-    log_act "fetching agent.heroku from 1Password"
-    HEROKU_API_KEY=$(op_metered op item get "agent.heroku" --vault "${MCR_OP_VAULT_AGENT:-studio-agents}" --format json 2>/dev/null \
-      | jq -r '.urls[]? | select(.label == "api key") | .href')
+    log_act "fetching heroku.studio.agents from 1Password"
+    HEROKU_API_KEY=$(op_metered op item get "heroku.studio.agents" --vault "${MCR_OP_VAULT_AGENT:-studio-agents}" --format json 2>/dev/null \
+      | jq -r 'first((.fields[]? | select(.label == "legacy-personal-api-key") | .value), (.fields[]? | select(.label == "credential") | .value) | select(. != null and . != "")) // empty')
     if [ -z "$HEROKU_API_KEY" ]; then
-      log_fail "agent.heroku item missing or 'api key' URL field empty"
-      echo "    Expected: $agent_vault/agent.heroku with a URL labeled 'api key' = HRKU-..."
+      log_fail "heroku.studio.agents item missing or both key fields empty"
+      echo "    Expected: $agent_vault/heroku.studio.agents with 'legacy-personal-api-key' (pre-cutover) or 'credential' (post-cutover)"
       return 1
     fi
     export HEROKU_API_KEY

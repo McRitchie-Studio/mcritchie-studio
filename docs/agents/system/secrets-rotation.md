@@ -25,15 +25,15 @@ The 1Password account is `alex@mcritchie.studio` (account ID `MWOV5OT5BRHATI4EGM
 
 ## Heroku API key (`HEROKU_API_KEY`)
 
-**Store:** 1Password item `agent.heroku` (URL field labelled `api key`) + `~/.zprofile` after `bin/ecosystem-build` runs Phase 4.
+**Store:** 1Password item `heroku.studio.agents` in `studio-agents`. Pre-cutover the fleet key is the `legacy-personal-api-key` field (delete it at the app-transfer cutover); after, the lane's `credential` field. `bin/ecosystem-build` Phase 4 reads legacy-first with the same fallback, then writes `~/.zprofile`.
 
 **Symptoms of rotation needed:** `heroku auth:whoami` returns 401. Heroku-side suspicion of compromise.
 
 **Procedure:**
-1. `heroku authorizations:create -d "alex@mac"` → copy the resulting `HRKU-...` token.
-2. Open 1Password → `agent.heroku` → edit the URL labelled `api key` → paste the new token. Save.
+1. Mint the replacement lane (admin profile): `heroku authorizations:create -s identity,read-protected,write-protected -d "heroku.studio.agents" -S` → the `HRKU-...` token.
+2. Update 1Password → `heroku.studio.agents` → the active key field (`legacy-personal-api-key` pre-cutover, `credential` after) → paste the new token; update `authorization-id`. Save.
 3. Remove the old `HEROKU_API_KEY` line from `~/.zprofile`: `sed -i '' '/HEROKU_API_KEY/d' ~/.zprofile`.
-4. Re-run `bin/ecosystem-build` — Phase 4 will re-fetch `agent.heroku` from 1P, write the new key to `~/.zprofile`, and `heroku auth:whoami` against it.
+4. Re-run `bin/ecosystem-build` — Phase 4 re-fetches `heroku.studio.agents` from 1P, writes the new key to `~/.zprofile`, and `heroku auth:whoami` against it.
 5. Revoke the old token: `heroku authorizations` to list, then `heroku authorizations:revoke <id>` for the old one.
 
 **Verify:** `heroku auth:whoami` returns `alex@mcritchie.studio`. `heroku apps` lists both apps.

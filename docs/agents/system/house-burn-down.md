@@ -522,7 +522,7 @@ Phases execute in order. Each phase: detect current state → install/configure 
 | 1. System tools | Homebrew packages (ruby@3.3, postgres@14, redis, mise, gh, heroku, etc.), starts Postgres + Redis services, verifies ruby socket extension |
 | 2. Languages | Node 22 + yarn (via mise), Rust 1.89.0 (via rustup), Solana CLI (via Anza), Anchor 0.32.1 (via cargo), local Solana devnet keypair |
 | 3. Shell config | `~/.zshrc` PATH lines (brew Ruby, mise activation, Solana, Cargo), `~/.zprofile` chmod 600 |
-| 4. Secrets | Verifies `OP_SERVICE_ACCOUNT_TOKEN` works; pulls `agent.heroku` from 1Password into `HEROKU_API_KEY`; restores `.env` for active Rails apps from provider config |
+| 4. Secrets | Verifies `OP_SERVICE_ACCOUNT_TOKEN` works; pulls `heroku.studio.agents` from 1Password into `HEROKU_API_KEY` (`legacy-personal-api-key` field until the app-transfer cutover, then `credential`); restores `.env` for active Rails apps from provider config |
 | 5. Sibling repos | `gh repo clone` for `turf-monster`, `studio-engine`, `solana-studio`, `turf-vault` (skips ones already present) |
 | 5b. Agent runtime | Runs `bin/agent-runtime install`, which installs `/Users/alex/projects/AGENTS.md` + `CLAUDE.md` from `mcritchie-studio/docs/agents/{index,claude}.md` (Claude Code reads CLAUDE.md, not AGENTS.md), mirrors the shared user-global agent skills `docs/agents/skills/*` → `~/.claude/skills/*` + `~/.codex/skills/*`, and configures Codex marker hooks. The lower-level `bin/install-agent-docs` remains the implementation, and `bin/agent-runtime doctor` verifies drift plus marker/runtime state. |
 | 5c. Secrets replay | Re-runs Phase 4 after sibling repos exist so newly-cloned active satellites get `.env` before DB setup |
