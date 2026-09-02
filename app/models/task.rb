@@ -224,7 +224,13 @@ class Task < ApplicationRecord
   # glance); agents put their verbose detail in `agent_context`.
   TITLE_WORD_RANGE = (3..5).freeze
   ACCEPTANCE_WORD_RANGE = (5..12).freeze
-  DEVOPS_LIST_KEYS = %w[repositories risk_tags acceptance test_plan checks_run].freeze
+  # `abandoned_prs` is the ARCHIVE override's receipt: one entry per PR that was
+  # still OPEN when an operator archived the task anyway with `bin/task move <slug>
+  # archived --force`. Written only by that path (lib/open_pr_guard.rb), never by a
+  # form, and never cleared — it is the difference a later reader needs between a PR
+  # that was DROPPED DELIBERATELY and one that was simply forgotten, which is the
+  # whole defect the open-PR gate closes.
+  DEVOPS_LIST_KEYS = %w[repositories risk_tags acceptance test_plan checks_run abandoned_prs].freeze
   # Repo-keyed MAPS: { "<repo>" => "<value>" }. `pr_urls` is the per-repo PR url
   # register — the multi-repo answer to the single-valued `pr_url`.
   #
@@ -1135,6 +1141,31 @@ class Task < ApplicationRecord
 
   def unresolved_feedback?
     unresolved_feedback_activity.present?
+  end
+
+  # FRESH BUILD OR RESUBMISSION? A `--kind rework` block leaves the task on
+  # `building` (Task#block!), so a bounced task and a never-reviewed one are the same
+  # shape on the board. This is the distinction, and it is answered by the TREE (has
+  # the PR head moved since the bounce?) rather than by #unresolved_feedback?, which
+  # is cleared by an explicit ceremony and not by the work landing. Full rationale and
+  # the three measured instances: Task::Resubmission.
+  #
+  # Board rendering preloads the batch (Task::Resubmission.for_tasks) and passes it in;
+  # a single-card Turbo render, the show page and tests self-query.
+  #
+  # DELIBERATELY NOT MEMOIZED, and that is a correctness rule rather than a
+  # preference. Task broadcasts its card on commit (#broadcast_block_change and the
+  # other after_*_commit hooks render DeploymentsBroadcaster#card_locals), so a
+  # `||=` here is evaluated on the LIVE instance at create/update time — before the
+  # qa_feedback row that makes the task a resubmission exists. That froze `:fresh`
+  # onto the instance, and every later read on it, including the card render, served
+  # the stale verdict. Measured while building this: the model answered :unaddressed
+  # and the instance answered :fresh, in the same test, one line apart. A signal
+  # whose whole job is to stop a reader trusting a stale field must not itself be a
+  # stale field. Callers that need it more than once hold the value (the controller
+  # assigns @resubmission; the boards pass the batch as a local).
+  def resubmission
+    Task::Resubmission.for(self)
   end
 
   # Has this task ever carried a blocking qa_feedback (a QA block), resolved or

@@ -33,6 +33,7 @@ require "optparse"
 require "open3"
 
 require_relative "../lib/seam_reconcile"
+require_relative "../lib/open_pr_guard"
 require_relative "lib/task_board"
 require_relative "lib/task_column_fields"
 
@@ -123,13 +124,14 @@ end
 # EVERY PR the task names, not just the primary. A multi-repo task records one
 # PR per repo in devops.pr_urls; reading only devops.pr_url dropped the siblings
 # silently, so an unread fact became a heal.
+#
+# DELEGATED to OpenPrGuard so this tool and the archive gate share ONE notion of
+# "which PRs does this task name" and one of "is this PR open". They are asking the
+# same question of the same field, and two copies of that fold is how the two
+# answers drift — the archive gate exists precisely because a PR nothing was reading
+# went unnoticed for a month.
 def pr_refs(task)
-  devops = task.dig("metadata", "devops") || {}
-  urls = [devops["pr_url"]] + Array(devops["pr_urls"].is_a?(Hash) ? devops["pr_urls"].values : nil)
-  urls.filter_map do |url|
-    m = url.to_s.match(%r{github\.com/([^/]+/[^/]+)/pull/(\d+)})
-    m && [m[1], m[2]]
-  end.uniq
+  OpenPrGuard.refs(task.dig("metadata", "devops")).map { |ref| [ref[:repo], ref[:number]] }
 end
 
 # PR state + CI verdict in ONE gh call. Anything unreadable stays :unknown, which
@@ -167,13 +169,11 @@ def aggregate_ci(list)
   list.all? { |c| c == :none } ? :none : :green
 end
 
+# The same allowlist the archive gate reads GitHub's `state` with — one vocabulary,
+# so a value neither of them recognises can never read as :merged on one side and
+# :unknown on the other.
 def pr_state_of(state)
-  case state.to_s.upcase
-  when "MERGED" then :merged
-  when "OPEN" then :open
-  when "CLOSED" then :closed
-  else :unknown
-  end
+  OpenPrGuard.state_of(state)
 end
 
 # ALLOW-LIST, deliberately — the same policy bin/dor-check uses. A deny-list

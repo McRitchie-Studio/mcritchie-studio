@@ -733,7 +733,8 @@ Three cheap reads, in the order worth trying. None of them requires new
 machinery.
 
 ```bash
-bin/task show <slug> --verbose             # prints `claim: session <id> · expires <ts>`
+bin/task show <slug> --verbose             # `claim: session <id> · LIVE · lapses in 47s (<ts>)`
+bin/task review-claim status <slug>        # OBSERVES the review lease: renewing, dying, or free
 bin/agent-worktree list | grep -A1 <slug>  # the desk's `dirty` flag and live pid
 
 # Has anyone touched the files in the last 10 minutes? (mtime walk, .git and tmp pruned)
@@ -745,12 +746,37 @@ ruby -I lib -r desk_activity \
 What each one is worth:
 
 - **The claim** is authoritative for the *task* and renews on a ~5s statusline
-  cadence with a 120s TTL, so a live holder is unambiguous. `bin/task move …
-  building` on a task another live instance holds **refuses** — `exit 1`, naming
-  the holder, its heartbeat age, and its last durable progress
-  (`enforce_claim_gate!` in `bin/task`, wired at both the `move` and the
-  `begin`-resume call site). `--steal` is the only override. You do not have to
-  remember this rule; the tooling enforces it.
+  cadence with a 120s TTL, so a live holder is unambiguous. It prints with its
+  **verdict already worked out** — `LIVE · lapses in 47s` or `EXPIRED · lapsed 2m
+  ago … free to claim` — because the line used to print a bare `expires <ts>` and
+  a lapsed lease looked exactly like a live one (measured 2026-09-02: `expires
+  04:12:26Z` shown at 04:14:28Z, read as live twice in a row).
+  `bin/task move … building` on a task another live instance holds **refuses** —
+  `exit 1`, naming the holder, **the holder's ROLE**, the lease freshness, and the
+  last durable progress (`enforce_claim_gate!` in `bin/task`, wired at both the
+  `move` and the `begin`-resume call site; the decision table is
+  `lib/claim_holder.rb`).
+- **The refusal routes on the ROLE, and so should you.** A **builder** is taken
+  over with `--steal`, which is what that flag was written for. A **reviewer** is
+  **asked to release** (`bin/task review-claim release <slug>`, run by *them*) —
+  never stolen: taking a task over mid-review voids the no-self-review guarantee
+  for that review and strands the reviewer's verdict, neither recoverable nor
+  visible afterwards. When the board cannot establish the role, the refusal says
+  so and sends you to `review-claim status` first. `--steal` still overrides
+  everything, and over a live review it prints what it is waiving before it
+  proceeds.
+- **`bin/task review-claim status <slug>` OBSERVES the lease**; it does not print
+  a timestamp for you to difference by hand. It watches whether
+  `claim_expires_at` **moves** (a holder is renewing → alive), **never moves**
+  across a full renewal cycle (nothing is heartbeating it → dying), or has
+  **already passed** (free). An absent or lapsed lease answers instantly; a live
+  holder answers within a renewal cycle; `--observe-for <s>` widens the window and
+  `--json` is the machine face. **Do not substitute two reads of your own:**
+  sampling twice makes you look for *agreement*, and two reads of one lease agree
+  about the state every time — two sessions independently did exactly that on
+  2026-09-01 and both declared the question unanswerable. A single read cannot
+  help either: 74s into a 120s TTL looks identical whether the holder renews at
+  90s or never again.
 - **The `dirty` flag** is the only desk-side occupancy signal that exists today,
   and it is a symptom, not an identity — it says work is present, never whose.
 - **`DeskActivity.touched_since?`** is the same filesystem-mtime probe the

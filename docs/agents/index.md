@@ -348,8 +348,11 @@ the clock at the last proof of life.
   verdict; the wrappers only sequence the steps.
 - `bin/ship` **stops at `submitted`**. It never merges, never deploys, never
   touches `release`/`main`.
-- `bin/ship` has **no `--steal`**. Take a held task over with `bin/task begin
-  <task-slug> --steal`, then ship.
+- `bin/ship` has **no `--steal`**. Take a **builder**-held task over with
+  `bin/task begin <task-slug> --steal`, then ship. A **reviewer**-held task is
+  ASKED to release (`bin/task review-claim release <task-slug>`, run by them) and
+  never stolen — a takeover mid-review voids the no-self-review guarantee for that
+  review and strands its verdict. The refusal names which holder you have.
 - **You still write the tests** (step 4). Neither wrapper invents test tiers.
 - `bin/ship` is **not** `bin/release ship`. `bin/release ship` is the **G4
   production deploy** (`release → main`, ship-authority only); `bin/ship` pins

@@ -42,6 +42,12 @@
 #       --actor <soul>` stamps the author and sets no assignee — so an unassigned
 #       task reads "unassigned" and an unstamped one reads "NOT STAMPED", never
 #       the same "-". --verbose adds the raw fields behind the set. )
+#   bin/task orphan-prs [--json]
+#     ( READ-ONLY inverse alarm: PRs still OPEN whose task is already ARCHIVED —
+#       work that is neither merged nor closed with no board state describing it.
+#       One `gh pr list` per repo the archived tasks name, so it stays cheap. A PR
+#       carrying an abandonment receipt (devops.abandoned_prs) reports as
+#       "abandoned on purpose" rather than orphaned. Never blocks; always exits 0. )
 #   bin/task stale [<slug>]
 #     ( flags a task whose work is already on origin/main (fixed out-of-band) while
 #       the task isn't shipped/archived. Resolves the branch (devops.branch or
@@ -127,6 +133,17 @@
 #       resolved only by messaging the peer session. `shipped`/`archived` tasks and
 #       tasks nobody ever picked up archive freely. --force is the human decision
 #       seam and names the grade it waived. See lib/archive_holder_guard.rb. )
+#     ( the move to `archived` ALSO refuses when the task still has an OPEN PR, and
+#       names each PR and its state. That is a DIFFERENT question from the holder
+#       gate above: the PR is durable and survives the archive, but it survives OPEN
+#       and UNWATCHED — neither merged nor closed, with no board state describing it.
+#       It reads devops.pr_url AND every devops.pr_urls entry, because a multi-repo
+#       task records its second repo's PR only in the map. A PR state that cannot be
+#       read WARNS rather than refusing (the GitHub token expires hourly by design),
+#       and `bin/task orphan-prs` is where anything that slips through stays
+#       findable. --force archives anyway and RECORDS the abandonment in
+#       devops.abandoned_prs, so a later reader can tell a PR that was dropped on
+#       purpose from one that was forgotten. See lib/open_pr_guard.rb. )
 #   bin/task merged <slug> <accepted|release|main>
 #     ( set the git-location crash-recovery signal (Task::MERGED_STATES) — where the
 #       task's code physically is. Review stamps `accepted` when it lands a feat PR
@@ -230,8 +247,10 @@ require_relative "../lib/task_usage_baseline"
 require_relative "../lib/task_usage_sandbox"
 require_relative "../lib/task_usage_audit"
 require_relative "../lib/claim_lease"
+require_relative "../lib/claim_holder"
 require_relative "../lib/desk_activity"
 require_relative "../lib/archive_holder_guard"
+require_relative "../lib/open_pr_guard"
 require_relative "../lib/cert_evidence"
 require_relative "../lib/stale_check"
 require_relative "../lib/feature_marker"
@@ -386,9 +405,23 @@ end
 # already claimed by a DIFFERENT, still-live instance. Unclaimed / expired /
 # corrupt / same-instance claim freely. `--steal` is the ONLY way past it.
 #
-# It is LOUD about that refusal: it names WHO holds the task, the heartbeat age,
-# the holder's last durable progress, and the exact --steal command to re-run.
-# Loud is HOW it refuses, not INSTEAD of refusing.
+# It is LOUD about that refusal: it names WHO holds the task, IN WHAT ROLE, how
+# fresh their lease is, the holder's last durable progress, and the exact command
+# to re-run. Loud is HOW it refuses, not INSTEAD of refusing.
+#
+# THE ROLE IS PART OF THE REFUSAL, not decoration. This gate used to describe every
+# holder as a rival BUILDER and offer `--steal`, which is the correct remedy for
+# exactly one of the two holders it can meet. A REVIEWER's claim looks identical
+# from here, and stealing a task mid-review VOIDS THE NO-SELF-REVIEW GUARANTEE for
+# that review and STRANDS its verdict — neither recoverable, neither visible
+# afterwards. So a live review routes to "ask them to release", an unknown routes
+# the same way, and only a positively-established absence of review routes to
+# `--steal`. lib/claim_holder.rb owns that table and every word of the message.
+#
+# `--steal` ITSELF IS UNCHANGED and still the only way past the gate. Over a live
+# review it now prints what it is waiving before it proceeds — the posture
+# enforce_archive_holder_gate! takes with --force — because a guarantee waived in
+# silence is one nobody can audit later.
 #
 # WHY THAT SENTENCE IS SPELLED OUT. This comment used to read "Loud (not a hard
 # block)", meaning "overridable by --steal" — and it READ as warns-and-proceeds.
@@ -412,22 +445,65 @@ end
 def enforce_claim_gate!(slug, devops, mover_session, steal:, task: nil, steal_hint: nil)
   claim = ClaimLease.from_devops(devops)
   decision = ClaimLease.evaluate(claim, session: mover_session, nonce: claim_nonce)
-  return if decision != :held_by_other || steal
+  return if decision != :held_by_other
 
-  held = claim["claimed_session"].to_s
-  age = ClaimLease.heartbeat_age(claim)
-  warn!("⚠  task #{slug} is already claimed by a DIFFERENT live instance:")
-  warn!("     session …#{held[-4..] || held}  instance #{claim["claim_nonce"]}  ·  last heartbeat ~#{age}s ago " \
-        "(lease TTL #{ClaimLease::DEFAULT_TTL_SECONDS}s)")
-  # The heartbeat above only proves a TERMINAL IS PAINTING — it says nothing about
-  # whether the holder is advancing. Name the progress fact too, so the decision to
-  # --steal is made on evidence instead of on a green dot.
+  # WHAT ROLE THE HOLDER IS IN, before either branch below speaks. The refusal used
+  # to describe every holder as a rival BUILDER and offer --steal, which is the
+  # right remedy for exactly one of the two cases; see lib/claim_holder.rb for the
+  # 2026-09-01 near-miss and why stealing mid-review is unrecoverable rather than
+  # merely rude.
+  reviewer = review_holder(slug)
+  role = ClaimHolder.role(review_in_progress: (task || {})["review_in_progress"],
+                          review_claim_live: reviewer["live"])
+  takeover = steal_hint || "bin/task move #{slug} building --steal"
+
+  # --steal STAYS AVAILABLE — it is the correct remedy for the builder case it was
+  # written for, and an operator who has already asked the reviewer must be able to
+  # proceed. What it must never do is proceed SILENTLY over a live review, so this
+  # names the guarantee being waived, the same posture the archive gate takes with
+  # --force. NOT a refusal: the flag is the operator's decision, and this is the log
+  # entry that lets the next reader see which proof was skipped.
+  if steal
+    if role == ClaimHolder::REVIEWING
+      ClaimHolder.steal_override_warning(
+        slug, reviewer: reviewer["agent"], reviewer_session: reviewer["session"]
+      ).each { |line| warn!(line) }
+    end
+    return
+  end
+
+  warn!("⚠  #{ClaimHolder.refusal(
+    slug: slug, claim: claim, role: role,
+    steal_command: takeover, retry_command: takeover.sub(" --steal", ""),
+    reviewer: reviewer["agent"], reviewer_session: reviewer["session"]
+  ).join("\n")}")
+  # The heartbeat in that message only proves a TERMINAL IS PAINTING — it says
+  # nothing about whether the holder is advancing. Name the progress fact too, so a
+  # decision to --steal is made on evidence instead of on a green dot.
   warn!("     #{progress_line(task, challenger: mover_session)}") if task
-  warn!("   Another terminal looks active on this task. To take it over anyway, re-run with --steal:")
-  # The hint names the caller's OWN command (`begin` passes its resume form) so
-  # the operator re-runs the path they were on, not a different one.
-  warn!("     #{steal_hint || "bin/task move #{slug} building --steal"}")
   exit 1
+end
+
+# WHETHER A REVIEW LEASE IS HELD on this task, and by whom. Read only on the
+# refusal/override paths, where one extra call is free and a name is what turns
+# "ask them to release" into something actionable.
+#
+# TRI-STATE, deliberately: `{"live" => true, …}` a reviewer holds it, `{"live" =>
+# false}` the board says nobody does, `{}` WE DID NOT GET AN ANSWER. Collapsing the
+# last two would turn a board hiccup into "no review" and route it to --steal, which
+# is the fail-open this gate exists to close; an empty hash reaches
+# ClaimHolder.role as nil and lands on the UNKNOWN route instead.
+def review_holder(slug)
+  # NOT `api` — that helper die!s on any non-2xx, and a diagnostic read must never
+  # be able to kill the gate it is informing. A board that answers 500 here has told
+  # us nothing, and "nothing" is a route (UNKNOWN), not a crash.
+  res = TaskBoard.request(:get, "/api/v1/tasks/#{slug}/review_claim", base_url: BASE_URL, token: token)
+  return {} unless res.code.to_i.between?(200, 299)
+
+  holder = TaskBoard.parse_body(res).dig("data", "holder")
+  holder.is_a?(Hash) ? holder.merge("live" => holder["live"] ? true : false) : { "live" => false }
+rescue StandardError
+  {}
 end
 
 # --- the ARCHIVE holder gate ---------------------------------------------------
@@ -542,6 +618,171 @@ def archive_desk_dirs(devops)
 
   Array(devops["repositories"]).map { |repo| repo.to_s.strip }.reject(&:empty?).map do |repo|
     File.join(PROJECTS_DIR, repo, ".worktrees", worktree)
+  end
+end
+
+# --- the ARCHIVE open-PR gate --------------------------------------------------
+#
+# THE OTHER HALF OF THE ARCHIVE QUESTION. `enforce_archive_holder_gate!` above asks
+# whether a live session's UNCOMMITTED work is at risk, and by design says nothing
+# about durable artifacts. This one asks whether the archive would leave a PR OPEN
+# and UNWATCHED — neither merged nor closed, with no board state describing it.
+# Different harms, different evidence, and neither covered the other: on 2026-09-01
+# `move-web3-modals-to-solana` was archived with studio-engine #245 still open, and
+# it took a human backlog audit a month later to notice.
+#
+# Returns nil when there is nothing to record, or the FULL devops hash the caller
+# must PATCH when `--force` abandoned open PRs. The decision table and every message
+# live in lib/open_pr_guard.rb; this function is only the I/O around them.
+#
+# It reads the task FRESH for the same reason the holder gate does: the question is
+# what is open RIGHT NOW, and a stale record answers a different one.
+def enforce_archive_open_pr_gate!(slug, force:)
+  task = api(:get, "/api/v1/tasks/#{slug}")["data"]
+  devops = task.dig("metadata", "devops") || {}
+  prs = archive_pr_states(OpenPrGuard.refs(devops))
+  grade = OpenPrGuard.decide(prs: prs, stage: task["stage"])
+
+  # A check that did not complete has established NOTHING, and says so. It must not
+  # borrow the refusal's voice — see "WHY AN UNREADABLE PR STATE WARNS" in the guard.
+  warn!(OpenPrGuard.unreadable_warning(slug: slug, prs: prs)) if grade == :unreadable
+  return nil if OpenPrGuard.permitted?(grade)
+
+  unless force
+    warn!(OpenPrGuard.refusal(slug: slug, stage: task["stage"], prs: prs))
+    exit 1
+  end
+
+  # NAME WHAT IS BEING OVERRIDDEN, then RECORD it. A --force that prints nothing
+  # turns the gate into a speed bump nobody remembers clearing; a --force that
+  # records nothing leaves a board state indistinguishable from the bug itself.
+  open = OpenPrGuard.open_prs(prs)
+  named = open.map { |pr| "#{pr[:repo]}##{pr[:number]}" }.join(", ")
+  warn!("--force: archiving #{slug} anyway — ABANDONING #{open.size} open PR(s): #{named}. " \
+        "Recording the choice on the task so a later reader knows they were dropped deliberately.")
+
+  entries = OpenPrGuard.record(prs: prs, at: Time.now.utc.iso8601, by: session_identity.first)
+  # SEND ONLY THE KEY THIS GATE OWNS, merged onto whatever the task already carried in
+  # it. NOT a full read-merge-write echo of `devops`, which is what the `move building`
+  # claim path does — and which would BREAK HERE.
+  #
+  # MEASURED 2026-09-02 against the live board: 156 of 1,586 tasks carry `block_kind` or
+  # `release_train` INSIDE metadata.devops — legacy rows from before those names moved to
+  # columns. Both are Task::DEVOPS_COLUMN_KEYS, and normalize_devops_metadata RAISES on a
+  # non-blank one ("devops.block_kind is not writable"), which both controllers turn into
+  # a 422. So echoing a task's stored devops back breaks on exactly that population.
+  #
+  # STATED PRECISELY, because the number alone overstates it: every one of those 156 is
+  # ALREADY `archived`, and this gate returns :concluded for an archived task without
+  # writing anything. So the 422 needs a REVIVAL first — and `archived` is not a lock; a
+  # task an operator dropped has been un-archived and shipped since. The failure is
+  # therefore narrow but real, and it would land at the worst possible moment: after an
+  # operator deliberately chose to abandon a PR, destroying the receipt this path exists
+  # to write. Not depending on that revival never happening is cheaper than the receipt.
+  #
+  # Sending one key is safe because the board MERGES a devops PATCH onto what is stored
+  # (Task.merge_devops_into_metadata, shared by both controllers since
+  # `api-devops-patch-replaces`) — verified live on this task, whose `kind`, `branch`,
+  # `repositories` and `acceptance` all survived two partial `bin/task update` writes.
+  { OpenPrGuard::RECORD_KEY => OpenPrGuard.merged_record(devops[OpenPrGuard::RECORD_KEY], entries) }
+end
+
+# Each ref enriched with its live PR state. I/O only — OpenPrGuard owns the
+# vocabulary, so one notion of "is this PR open" serves both this gate and
+# bin/devops-reconcile.
+#
+# EVERY FAILURE RESOLVES TO :unknown, never to a state. A `gh` that could not run,
+# a non-zero exit, unparseable output, or a payload with no `state` are all facts we
+# did not read — and reading an unread fact as "merged" is the direction that
+# strands work silently.
+def archive_pr_states(refs)
+  refs.map { |ref| ref.merge(state: archive_pr_state(ref)) }
+end
+
+def archive_pr_state(ref)
+  raw = IO.popen(["gh", "pr", "view", ref[:number], "--repo", ref[:repo], "--json", "state"],
+                 err: File::NULL, &:read)
+  return :unknown unless $?.success?
+
+  OpenPrGuard.state_of(JSON.parse(raw.to_s)["state"])
+rescue StandardError
+  :unknown
+end
+
+# The abandonment record has to SURVIVE the write. `abandoned_prs` must be a
+# storable name in Task::DEVOPS_LIST_KEYS; anything outside DEVOPS_KEYS is dropped
+# by normalize_devops_metadata and the caller still gets a 200. That silent
+# evaporation is exactly what `release_slug` cost and what `agent_slug` cost inside
+# ArchiveHolderGuard::PAINT_KEYS, so this reads the record back and fails LOUDLY
+# rather than reporting an override that recorded nothing.
+#
+# The archive has ALREADY LANDED by the time this runs — the stage move and the
+# record ride one PATCH, so there is no ordering that could verify first. The honest
+# response to a dropped record is therefore a loud non-zero telling the operator the
+# archive stands and the receipt does not.
+def verify_abandonment_recorded!(slug, expected)
+  stored = Array(api(:get, "/api/v1/tasks/#{slug}")["data"].dig("metadata", "devops",
+                                                               OpenPrGuard::RECORD_KEY)).map(&:to_s)
+  missing = Array(expected).map(&:to_s) - stored
+  return if missing.empty?
+
+  die!("#{slug}: ARCHIVED, but devops.#{OpenPrGuard::RECORD_KEY} did not persist — the board " \
+       "dropped #{missing.size} of #{Array(expected).size} entr(ies). The archive stands and the " \
+       "receipt does not, so the abandoned PR now reads as forgotten rather than dropped on " \
+       "purpose. Most likely this board predates #{OpenPrGuard::RECORD_KEY} in Task::DEVOPS_LIST_KEYS; " \
+       "deploy it, then re-record: #{missing.join(" | ")}")
+end
+
+# --- the INVERSE ALARM: open PRs whose task is archived ---------------------------
+#
+# The gate above stops a NEW orphan. This finds the ones that already exist, and it
+# is the reason an unreadable PR state is allowed to warn rather than refuse: every
+# archive the gate lets through wrongly stays findable here.
+#
+# IT ASKS THE QUESTION FROM THE PR SIDE, which is what makes it cheap. Resolving one
+# `gh pr view` per recorded PR would be hundreds of calls across the archived board;
+# `gh pr list --state open` is ONE call per repo, and the repos are only those the
+# archived tasks actually name. Seven repos, seven calls, however large the board.
+def fetch_archived_tasks(per_page: 100, max_pages: 40)
+  rows = []
+  (1..max_pages).each do |page|
+    batch = api(:get, "/api/v1/tasks?stage=archived&per_page=#{per_page}&page=#{page}")["data"] || []
+    rows.concat(batch)
+    return rows if batch.size < per_page
+  end
+  # Hitting the cap means the scan is TRUNCATED, and a truncated scan that prints
+  # "nothing found" is the false all-clear this alarm exists to remove.
+  warn "warning: stopped after #{max_pages} pages (#{rows.size} tasks) — results may be incomplete"
+  rows
+end
+
+# Every OPEN PR number in one repo, or nil when the listing could not be read. nil is
+# NOT an empty list: an empty list means "this repo has no open PRs", and reporting a
+# failed read as a clean one is how an alarm goes quiet while the thing it watches
+# for is still there.
+def gh_open_pr_numbers(repo)
+  raw = IO.popen(["gh", "pr", "list", "--repo", repo, "--state", "open",
+                  "--limit", "200", "--json", "number"], err: File::NULL, &:read)
+  return nil unless $?.success?
+
+  JSON.parse(raw.to_s).map { |row| row["number"].to_s }
+rescue StandardError
+  nil
+end
+
+# { "owner/repo#number" => {slug:, url:, repo:, number:, deliberate:} } for every PR
+# named by an archived task. `deliberate` reads the abandonment receipt --force
+# writes, so a PR an operator DROPPED ON PURPOSE is reported differently from one
+# that was simply forgotten — which is the entire point of recording it.
+def archived_pr_index(tasks)
+  tasks.each_with_object({}) do |task, index|
+    devops = task.dig("metadata", "devops") || {}
+    recorded = Array(devops[OpenPrGuard::RECORD_KEY]).map(&:to_s)
+    OpenPrGuard.refs(devops).each do |ref|
+      key = "#{ref[:repo]}##{ref[:number]}"
+      index[key] ||= ref.merge(slug: task["slug"],
+                               deliberate: recorded.any? { |entry| entry.include?(ref[:url]) })
+    end
   end
 end
 
@@ -1199,7 +1440,15 @@ def print_task_verbose(task)
   puts "  agent_context: #{dv["agent_context"] || "-"}"
   print_bullets("test_plan", dv["test_plan"])
   print_bullets("checks_run", dv["checks_run"])
-  puts "  claim: session #{dv["claimed_session"] || "-"} · expires #{dv["claim_expires_at"] || "-"}"
+  # THE LEASE IS RENDERED WITH ITS VERDICT, never as a bare timestamp. This line
+  # used to read `claim: session <id> · expires <ts>` with no mark when <ts> was in
+  # the PAST — measured 2026-09-02, it printed `expires 04:12:26Z` at 04:14:28Z, so
+  # an expired lease and a live one were the same picture. The reader sampled it
+  # twice, saw the two samples agree, and concluded "live" about a claim that was
+  # already dead. ClaimHolder.render_lease is the one rendering every surface uses
+  # (this line and the claim gate's refusal), so the display and the refusal cannot
+  # drift into disagreeing about the same lease.
+  puts "  claim: session #{dv["claimed_session"] || "-"} · #{ClaimHolder.render_lease(ClaimLease.from_devops(dv))}"
   print_author_fields(task)
   puts "  approval_status: #{dv["approval_status"] || "-"}"
   puts "  pr_url: #{dv["pr_url"] || "-"}   local_url: #{dv["local_url"] || "-"}"
@@ -1858,6 +2107,60 @@ when "stale"
     stale.each { |r| render_stale(r) }
     puts "(#{stale.size} stale task(s) — work on main but not shipped/archived)"
   end
+when "orphan-prs"
+  # READ-ONLY. The inverse of the archive gate: a PR still OPEN whose task is already
+  # ARCHIVED. The work is neither merged nor closed and no board state describes it,
+  # so nothing downstream will ever raise its hand about it again.
+  #
+  # WHY IT EXISTS SEPARATELY FROM THE GATE. `bin/release archive` flips shipped tasks
+  # through Release::Conductor.archive_completed! — the MODEL path — which by design
+  # bypasses the CLI gate entirely (see lib/archive_holder_guard.rb, "THIS GATE IS
+  # THE CLI PATH, DELIBERATELY"). So the gate cannot be the only answer even in
+  # principle, and it says nothing at all about the orphans already on the board:
+  # studio-engine #245 sat open under an archived task for a month and surfaced only
+  # because a human asked for a backlog audit.
+  #
+  # NEVER BLOCKS — it exits 0 whether or not it found anything, the same policy
+  # bin/devops-reconcile fixes for the same reason.
+  as_json = false
+  while ARGV.any?
+    case (flag = ARGV.shift)
+    when "--json" then as_json = true
+    else unknown_flag!(flag, valid: %w[--json], context: "orphan-prs")
+    end
+  end
+  tasks = fetch_archived_tasks
+  index = archived_pr_index(tasks)
+  findings = []
+  index.values.map { |entry| entry[:repo] }.uniq.sort.each do |repo|
+    numbers = gh_open_pr_numbers(repo)
+    if numbers.nil?
+      # A failed read is not a clean read. Say which repo went unchecked, or the
+      # summary line below silently understates the board.
+      warn "warning: #{repo}: could not list open PRs — NOT checked. " \
+           "Usually a stale token: eval \"$(bin/gh-auth-refresh --export)\""
+      next
+    end
+    numbers.each { |number| findings << index["#{repo}##{number}"] if index["#{repo}##{number}"] }
+  end
+  # Forgotten first — those are the ones needing a decision. A deliberate
+  # abandonment is already decided and only needs to stay visible.
+  findings.sort_by! { |f| [f[:deliberate] ? 1 : 0, f[:repo], f[:number].to_i] }
+  if as_json
+    puts JSON.pretty_generate(findings.map { |f| f.transform_keys(&:to_s) })
+  else
+    findings.each do |finding|
+      mark = finding[:deliberate] ? "abandoned on purpose" : "ORPHANED"
+      puts "#{mark}  #{finding[:repo]}##{finding[:number]}  #{finding[:url]}"
+      puts "   task /tasks/#{finding[:slug]} is archived while this PR is still open"
+      unless finding[:deliberate]
+        puts "   decide: gh pr merge/close it, or revive the task (`archived` is not a lock)"
+      end
+    end
+    forgotten = findings.count { |f| !f[:deliberate] }
+    puts "(#{forgotten} orphaned PR(s), #{findings.size - forgotten} deliberately abandoned, " \
+         "across #{tasks.size} archived task(s))"
+  end
 when "create"
   # --no-claim: file the task WITHOUT repointing this session's active-feature
   # marker at it. Filing a task is not building it — a conductor (bin/release)
@@ -2147,8 +2450,19 @@ when "move"
   # ARCHIVE REFUSES WHAT IT CANNOT PROVE FREE. Runs BEFORE the PATCH, so a refusal
   # leaves the task exactly where it was. lib/archive_holder_guard.rb owns the
   # decision table and every refusal message.
-  enforce_archive_holder_gate!(slug, force: force) if stage == "archived"
+  # BOTH ARCHIVE GATES, in order of what they protect. The holder gate guards
+  # UNCOMMITTED work (irreversible if wrong); the open-PR gate guards a DURABLE PR
+  # from going unwatched (recoverable, and bin/task orphan-prs is the recovery).
+  # Both run BEFORE the PATCH, so a refusal leaves the task exactly where it was.
+  archive_devops = nil
+  if stage == "archived"
+    enforce_archive_holder_gate!(slug, force: force)
+    archive_devops = enforce_archive_open_pr_gate!(slug, force: force)
+  end
   body = { "stage" => stage, "event" => event }
+  # The abandonment receipt rides the SAME PATCH as the stage move, so there is no
+  # window in which a task is archived without the record of why its PR was dropped.
+  body["devops"] = archive_devops if archive_devops
   body["dev_size"] = dev_size if dev_size # the builder's estimate, set alongside the stage move
   # Claim the task on the move to building. The gate refuses (loudly, overridable
   # with --steal) when a DIFFERENT live instance already holds it; otherwise it
@@ -2176,6 +2490,7 @@ when "move"
   # silently-non-persisting write exits nonzero + loud instead of stranding the
   # task while the handoff claims it advanced.
   verify_move_persisted!(slug, stage)
+  verify_abandonment_recorded!(slug, archive_devops[OpenPrGuard::RECORD_KEY]) if archive_devops
   write_feature_marker(task)
   print_task(task)
 when "merged"

@@ -296,6 +296,64 @@ and a raw API PATCH all bypass it: it exists to stop an *agent* archiving work i
 never looked at, and Mr. McRitchie clicking Archive on a task page he is reading is
 already the deliberate decision `--force` represents.
 
+### And it refuses what would leave a PR open
+
+A **second** gate runs right after the holder gate, and it asks a different question:
+would this archive leave an **OPEN PR** behind? It reads `devops.pr_url` **and** every
+`devops.pr_urls` entry — a multi-repo task records its second repo's PR only in the
+map — and refuses, naming each PR and its state.
+
+| PR states | Archive |
+|---|---|
+| no PR recorded | proceeds |
+| all merged / closed | proceeds |
+| **any still OPEN** | **REFUSES**, names every PR and its state |
+| a state that could not be read | proceeds, with a **warning** naming the PR |
+
+**This is not the holder gate's question.** That one guards UNCOMMITTED work an
+archive would destroy, and a PR is durable so it never holds that gate. But *survives*
+is not *resolved*: an archived task's open PR is neither merged nor closed, no board
+state describes it, and nothing downstream will raise its hand about it again.
+Measured 2026-09-01 — `move-web3-modals-to-solana` was archived while studio-engine
+**#245** stayed open, carrying 169 lines of tests, and the PR's own stated blocker was
+discharged the next day. It surfaced a **month** later, only because a human asked for
+a backlog audit.
+
+**Do not close the PR to clear the refusal on autopilot.** Archiving is how you drop
+work, and a dropped branch may hold the only copy of a design; `archived` is also not
+a lock — a task an operator dropped has been un-archived and shipped since. Decide:
+
+```bash
+gh pr view <n> --repo <owner/repo>     # is the work still wanted?
+gh pr merge <n> --repo <owner/repo>    # land it
+gh pr close <n> --repo <owner/repo>    # drop it deliberately
+bin/task move <slug> archived --force  # archive AND abandon the PR — recorded
+```
+
+`--force` here records the abandonment in `devops.abandoned_prs`, so a later reader
+can tell a PR that was dropped **on purpose** from one that was **forgotten**. That
+distinction is the whole reason the override records rather than merely warning.
+
+**An unreadable PR state warns rather than refusing**, deliberately: the GitHub App
+token expires about hourly by design, so refusing on it would refuse most archives on
+most days — and a gate that refuses everything gets `--force`d until it protects
+nothing. The warning says the check did not complete; it never claims the PR is open.
+
+### Find the orphans that already exist
+
+The gate only stops **new** orphans, and `bin/release archive` flips shipped tasks
+through the model path, which bypasses the CLI gate entirely. So sweep for the ones
+already on the board — this is a good Phase 5 closer:
+
+```bash
+bin/task orphan-prs          # PRs still OPEN whose task is already archived
+```
+
+Read-only, never blocks, and one `gh pr list` per repo rather than one call per PR.
+A PR carrying an abandonment receipt reports as *abandoned on purpose*; anything else
+reports as **ORPHANED** and needs a decision. A repo it could not read is named as
+unchecked rather than counted as clean.
+
 ---
 
 ## Phase 3 — Drain (ship everything shippable)

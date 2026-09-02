@@ -97,6 +97,12 @@ class ShipTest < Minitest::Test
         claims = Dir.glob(File.join(ENV.fetch("CLAUDE_PROJECTS_DIR"), ".agents", "sessions", "*.presence-*"))
         File.write(File.join(snap, "#{marker}.json"), claims.map { |c| File.read(c) }.join)
       end
+      # The review-lease read ship's holder refusal makes. TASK_REVIEW_CLAIM_JSON is
+      # the board's answer; unset means "no claim row", which is a real answer.
+      if "#{marker}" == "TASK" && ARGV[0, 2] == %w[review-claim status]
+        exit 1 if ENV["FAIL_REVIEW_CLAIM"] == "1"
+        puts ENV.fetch("TASK_REVIEW_CLAIM_JSON", '{"holder":null}')
+      end
       if "#{marker}" == "TASK" && ARGV.first == "show"
         moved = File.readlines(log).any? { |l| l.split("\\t")[0, 2] == %w[TASK move] }
         puts(moved && ENV["TASK_SHOW_JSON_MOVED"] ? ENV["TASK_SHOW_JSON_MOVED"] : ENV["TASK_SHOW_JSON"])
@@ -113,14 +119,19 @@ class ShipTest < Minitest::Test
     stub
   end
 
-  def task_record(stage: "building", pr_url: nil, checks_run: [], claim: nil)
-    JSON.generate(
+  # `review: :absent` omits the review_in_progress column entirely — the older-board
+  # case the holder refusal's UNKNOWN route exists for, and the default here so
+  # every pre-existing test keeps the payload it was written against.
+  def task_record(stage: "building", pr_url: nil, checks_run: [], claim: nil, review: :absent)
+    record = {
       "slug" => SLUG, "stage" => stage, "title" => "Fast lane demo",
       "metadata" => { "devops" => {
         "branch" => BRANCH, "worktree_slug" => SLUG, "pr_url" => pr_url,
         "acceptance" => ["ship collapses the handoff"], "checks_run" => checks_run
       }.merge(claim || {}).compact }
-    )
+    }
+    record["review_in_progress"] = review unless review == :absent
+    JSON.generate(record)
   end
 
   # A build-claim devops slice with a lease `expires_in` seconds out — the shape
@@ -645,7 +656,7 @@ class ShipTest < Minitest::Test
 
   def test_ship_refuses_a_task_a_different_live_instance_holds
     with_repo do |dir|
-      foreign = task_record(claim: claim_of(session: "sess-rival-9999", nonce: "inst-A"))
+      foreign = task_record(claim: claim_of(session: "sess-rival-9999", nonce: "inst-A"), review: false)
       _out, err, status, lines = run_ship(
         dir, show_json: foreign,
         extra_env: { "CLAUDE_CODE_SESSION_ID" => "sess-shipper-1111", "TASK_CLAIM_NONCE" => "inst-default" }
@@ -655,8 +666,86 @@ class ShipTest < Minitest::Test
       assert_match(/different live instance/i, err, "the refusal must say who holds it")
       assert_match(/…9999/, err, "the refusal must name the holder")
       assert_includes err, "bin/task begin #{SLUG} --steal", "the refusal must name the takeover path"
-      assert_equal [%w[TASK show]], lines.map { |l| l[0, 2] }, "no step may run past the ownership refusal"
+      # THE ASSERTION IS "NO SIDE EFFECT", not "no subprocess". It used to be spelled
+      # as the latter (`[%w[TASK show]]` exactly), which was the same thing until the
+      # refusal started asking the board WHO holds the task — a READ, on a path that
+      # was already fatal. Spelled as a whitelist of one call, a diagnostic read
+      # reddens a test whose subject is that nothing was WRITTEN, so it is spelled as
+      # its own concern: no cert, no push, no PR, no move.
+      assert_empty(lines.map { |l| l[0, 2] } - [%w[TASK show], %w[TASK review-claim]],
+                   "the refusal may READ, but no step that writes may run past it")
       refute_equal "", `git -C #{dir} status --porcelain`.strip, "no commit may land on a foreign-held task"
+    end
+  end
+
+  # ── THE REFUSAL NAMES THE HOLDER'S ROLE ─────────────────────────────────────
+  #
+  # THE NEAR-MISS (2026-09-01) that produced this pair. Ship refused a held task
+  # with "Ship must not hand off another builder's work — take the task over first
+  # (--steal)". Every fact was true and the sentence still misrouted: it describes a
+  # rival BUILDER, and the holder was a REVIEWER. Stealing a task mid-review VOIDS
+  # the no-self-review guarantee for that review and STRANDS its verdict — neither
+  # recoverable, neither visible afterwards — so the two holders cannot share one
+  # remedy line. test/lib/claim_holder_test.rb pins the decision table; these pin
+  # that bin/ship is wired to it and that each route reaches the right message.
+
+  def test_ship_routes_a_reviewer_held_task_to_ask_not_steal
+    with_repo do |dir|
+      held = task_record(claim: claim_of(session: "sess-rival-9999", nonce: "inst-A"), review: true)
+      _out, err, status, = run_ship(
+        dir, show_json: held,
+        extra_env: {
+          "CLAUDE_CODE_SESSION_ID" => "sess-shipper-1111", "TASK_CLAIM_NONCE" => "inst-default",
+          "TASK_REVIEW_CLAIM_JSON" => JSON.generate(
+            { "holder" => { "session" => "sess-rival-9999", "agent" => "carl", "live" => true } }
+          )
+        }
+      )
+
+      refute status.success?
+      assert_includes err, "REVIEWING it", "the refusal must NAME the role it refuses on"
+      assert_includes err, "bin/task review-claim release #{SLUG}",
+                      "a live review is ASKED to release; that is the remedy the near-miss took " \
+                      "by hand, against the message's own advice"
+      assert_includes err, "carl", "and it must name who to ask"
+      refute_includes err, "--steal",
+                      "the steal path must not appear at all here — the reader who hit this acted " \
+                      "on the remedy line, and any --steal in it is the line they would have taken"
+    end
+  end
+
+  def test_ship_keeps_the_steal_remedy_for_a_builder_held_task
+    with_repo do |dir|
+      held = task_record(claim: claim_of(session: "sess-rival-9999", nonce: "inst-A"), review: false)
+      _out, err, = run_ship(
+        dir, show_json: held,
+        extra_env: { "CLAUDE_CODE_SESSION_ID" => "sess-shipper-1111", "TASK_CLAIM_NONCE" => "inst-default" }
+      )
+
+      assert_includes err, "BUILDING it"
+      assert_includes err, "bin/task begin #{SLUG} --steal",
+                      "--steal is the correct remedy for the case it was written for and must " \
+                      "stay pasteable"
+      refute_includes err, "review-claim release",
+                      "there is no review to ask about; offering one sends the reader nowhere"
+    end
+  end
+
+  # A board that could not answer must not be read as a board that said "no review".
+  def test_ship_refuses_both_ways_when_the_role_cannot_be_established
+    with_repo do |dir|
+      held = task_record(claim: claim_of(session: "sess-rival-9999", nonce: "inst-A"), review: false)
+      _out, err, = run_ship(
+        dir, show_json: held,
+        extra_env: { "CLAUDE_CODE_SESSION_ID" => "sess-shipper-1111", "TASK_CLAIM_NONCE" => "inst-default",
+                     "FAIL_REVIEW_CLAIM" => "1" }
+      )
+
+      assert_includes err, "DO NOT STEAL UNTIL YOU KNOW",
+                      "the lease read failed, so one of the two role facts is simply unknown — " \
+                      "collapsing that into 'no review' is the fail-open this change closes"
+      assert_includes err, "bin/task review-claim status #{SLUG}",
+                      "and the refusal must hand over the command that OBSERVES the lease"
     end
   end
 

@@ -346,6 +346,9 @@ class DeploymentsBroadcaster
       activity_count: activities.size,
       ever_blocked: activities.any?(&:blocking_feedback?),
       unresolved_feedback: @task.unresolved_feedback_activity,
+      # Explicit rather than left to the card's self-query fallback: a live board
+      # update must show the same resubmission state a full render does.
+      resubmission: @task.resubmission,
       review_in_progress: @task.review_in_progress?
     }
   end
