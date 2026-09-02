@@ -194,6 +194,79 @@ class ReviewClaimStatusObservationTest < Minitest::Test
     assert_equal ReviewClaimCli::CANT_RUN, cli.code
   end
 
+  # ── THE STEAL ROUTE AN OUTAGE CAN STILL REACH ───────────────────────────────
+  #
+  # LAPSED is inside OBSERVED_FREE (claim_holder.rb:126), so it is not merely a
+  # diagnostic — it is the grade that tells a caller the task is FREE TO TAKE.
+  #
+  # `observe` decides it with `now >= second`, where `now` is the LOOP-EXIT time
+  # and `second` is the expiry from the last SUCCESSFUL read. Nothing in that
+  # comparison knows the observation ended. So: one good poll, then the board goes
+  # dark for the rest of a window longer than the remaining lease, and the command
+  # concludes it "outlasted" a lease it stopped watching.
+  #
+  # The previous fix (observation-lies-under-outage) guarded the case where NO poll
+  # after the first succeeded. This has exactly ONE, so `differenced` is true and
+  # that guard does not fire. The guard was keyed on "did we ever difference a
+  # pair" when the question is "was the observation still LIVE when the deadline
+  # passed".
+  def test_a_window_that_goes_dark_before_the_deadline_cannot_report_the_lease_free
+    # first read + one good poll at the same expiry, then 500s forever.
+    out, = run_status([holder(10), holder(10), :unreadable])
+
+    refute_includes out, "LAPSED",
+                    "the observation died at the second read; a lease cannot be declared " \
+                    "dead on a deadline nobody was watching when it passed"
+    refute_includes out, "free to claim",
+                    "this is the steal route — LAPSED sits inside OBSERVED_FREE, so a wrong " \
+                    "LAPSED does not merely misinform, it authorises taking a live review"
+  end
+
+  # Same shape, asserted on the MACHINE face, because that is what a caller
+  # branches on rather than the prose.
+  def test_a_dark_window_does_not_report_free_true_in_json
+    out, = run_status([holder(10), holder(10), :unreadable], flags: ["--json"])
+    payload = JSON.parse(out)
+
+    assert_equal false, payload["free"],
+                 "free=true here is the whole defect: bin/ship and any claim gate reading " \
+                 "this field would treat a live holder's task as available"
+    refute_equal "lapsed", payload["observed"]
+  end
+
+  # The other direction, so the fix cannot buy safety by refusing to conclude:
+  # a board readable for the WHOLE window that genuinely outlasts the lease must
+  # still report LAPSED and still offer the acquire.
+  def test_a_readable_window_that_outlasts_the_lease_still_reports_lapsed
+    out, = run_status([holder(10), holder(10)])
+
+    assert_includes out, "LAPSED",
+                    "every poll succeeded and we watched the expiry pass — that is observed"
+    assert_includes out, "review-claim acquire",
+                    "a genuinely dead lease must still hand over the acquire"
+  end
+
+  # LAPSED is the STEAL route and the tests above pin it. NOT_RENEWING is the same
+  # lie in the other grade — "nothing is heartbeating this" is a claim about
+  # WATCHING, and an outage can manufacture it the same way, by letting the window
+  # accrue time nobody spent reading.
+  #
+  # This case cannot reach LAPSED (the lease outlives the window by minutes), so it
+  # isolates the `watched` half of the fix: wall time is longer than the renewal
+  # cycle, OBSERVED time is not. Without it, reverting `watched` to `now -
+  # first_read_at` passes every other test in this file — measured.
+  def test_a_dark_window_cannot_manufacture_not_renewing_from_time_it_did_not_watch
+    # Lease with 300s left, so no deadline is reached. One good poll, then dark for
+    # a window LONGER than the 30s renewal cycle.
+    out, = run_status([holder(300), holder(300), :unreadable])
+
+    refute_includes out, "NOT RENEWING",
+                    "the window outlasted the renewal cycle but the OBSERVATION did not — " \
+                    "a heartbeat cannot be reported absent over a stretch nobody was reading"
+    assert_includes out, "INCONCLUSIVE",
+                    "one good poll then darkness is ignorance, whatever the wall clock says"
+  end
+
   # ── THE MACHINE FACE ────────────────────────────────────────────────────────
 
   def test_json_carries_the_observed_state_and_the_holder
