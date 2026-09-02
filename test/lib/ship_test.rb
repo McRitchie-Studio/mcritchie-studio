@@ -246,6 +246,25 @@ class ShipTest < Minitest::Test
     end
   end
 
+  def test_a_CI_READ_THAT_FAILS_is_not_reported_as_the_PR_having_no_CI
+    with_repo do |dir|
+      # The integration half of task ship-waiter-misreports-ci. On PR #1143 this
+      # step printed "no CI run appeared ... treating this PR as having none" while
+      # `gh pr checks` showed 12/12 GREEN — because :unverified (a gh/network fault)
+      # was rendered with :none's sentence. The wording lives in ci_wait.rb; THIS
+      # proves the honest wording is on the path a builder actually reads.
+      out, err, status, lines = run_ship(dir, extra_env: {
+        "SHIP_CI_STATE" => "state:unverified", "SHIP_CI_WAIT_APPEARANCE" => "1"
+      })
+      combined = "#{err}\n#{out}"
+
+      refute_match(/no CI run appeared/, combined, "the read failed; GitHub never said this")
+      refute_match(/having none/, combined, "and ship must not invite treating a green PR as CI-less")
+      assert_match(%r{6/8 ci — could not read CI}, combined, "it must say the READ failed")
+      assert_includes markers(lines), "DOR #{SLUG}", "and the gate still owns the verdict"
+    end
+  end
+
   def test_the_wait_can_be_disarmed_and_says_so
     with_repo do |dir|
       out, err, status, lines = run_ship(dir, extra_env: { "SHIP_CI_WAIT" => "off" })

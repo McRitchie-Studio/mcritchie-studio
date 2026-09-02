@@ -180,4 +180,137 @@ class CiWaitTest < Minitest::Test
     assert_match(/settled on green/, CiWait.summary(green))
     refute_equal CiWait.summary(timed_out), CiWait.summary(absent)
   end
+
+  # ── what the waiter is ENTITLED to claim (task ship-waiter-misreports-ci) ───
+  #
+  # A wait reports on a READ. "No CI run appeared" is a statement about GITHUB, and
+  # the waiter is only ever in a position to make it when GitHub actually answered.
+  # These pin the difference, in both directions, because a fix for either half
+  # alone is a new bug: silence the false claim only, and the waiter goes blind;
+  # keep the claim only, and it keeps lying.
+
+  def test_a_failed_read_is_never_reported_as_the_PR_having_no_CI
+    # THE BUG, measured on PR #1143: `gh pr checks` said 12/12 GREEN and dor-check
+    # said "GitHub CI green (12 checks)" at the same moment the waiter printed
+    # "no CI run appeared within 2277s — treating this PR as having none".
+    # :unverified is CiStatus's OWN name for a gh/network error — the read failed,
+    # and the waiter converted that into a verdict about the repo. Reproduced on
+    # demand against real green PR #1099 by breaking only the network.
+    result = settle(probe_over(:unverified), step: 30, timeout_s: 900, appearance_s: 60)
+
+    refute_equal :absent, result.outcome, "a failed READ cannot conclude the PR has no CI"
+    line = CiWait.summary(result)
+    refute_match(/no CI run appeared/, line, "that is a claim about GitHub, which never answered")
+    refute_match(/having none/, line, "and it must not prescribe treating a possibly-green PR as CI-less")
+    assert_match(/could not read/i, line, "it must report what actually happened: the read failed")
+    assert_match(/unverified/, line, "and name the state the read actually returned")
+  end
+
+  def test_a_genuine_absence_is_still_reported_as_one
+    # THE OTHER HALF, and the reason the test above is not sufficient on its own:
+    # a waiter made silently optimistic — one that simply never reports absence —
+    # passes that test while telling a reader nothing. :none is GitHub ANSWERING
+    # and reporting no checks, which the waiter IS entitled to relay.
+    result = settle(probe_over(:none), step: 30, timeout_s: 900, appearance_s: 60)
+
+    assert_equal :absent, result.outcome, "GitHub answered; absence is a fair report"
+    assert_match(/no CI run appeared/, CiWait.summary(result))
+  end
+
+  def test_an_unread_CI_is_not_quietly_treated_as_a_verdict
+    # The other way to fail this task: trade the false claim for a false pass. A
+    # read that failed is not a settled verdict, and must never render as one.
+    result = settle(probe_over(:unverified), step: 30, timeout_s: 900, appearance_s: 60)
+
+    refute_predicate result, :settled?
+    refute_match(/settled on/, CiWait.summary(result))
+    assert_predicate result, :unread?
+  end
+
+  def test_an_unread_CI_and_a_genuinely_absent_one_never_read_the_same
+    # "GitHub says there is no CI" and "we could not hear GitHub" demand different
+    # actions — the first is a repo fact, the second is a credential/network fault
+    # that re-running fixes. Collapsing them is the bug ci_status.rb already paid
+    # for once (:unreadable vs :unverified) and this module repeated a layer up.
+    unread = settle(probe_over(:unverified), step: 30, timeout_s: 900, appearance_s: 60)
+    absent = settle(probe_over(:none), step: 30, timeout_s: 900, appearance_s: 60)
+
+    refute_equal CiWait.summary(unread), CiWait.summary(absent)
+  end
+
+  def test_a_transient_none_at_the_first_poll_is_still_correct_behaviour
+    # SCOPE GUARD, not a new rule. On PR #252 the waiter reported `none` at poll 1
+    # — before GitHub had registered the run — and self-corrected to pending from
+    # poll 2. That is CORRECT: a run genuinely does not exist for a second or two
+    # after a push. Making :none settle on sight would disarm the whole feature.
+    result = settle(probe_over(:none, :pending, :green), step: 10, timeout_s: 900, appearance_s: 120)
+
+    assert_equal :green, result.state
+    assert_predicate result, :settled?
+  end
+
+  # ── the elapsed figure must reconcile with the budget ──────────────────────
+
+  def test_an_elapsed_figure_that_overran_its_budget_names_the_budget
+    # THE SECOND DEFECT in that one line: "within 2277s" printed under a 900s
+    # timeout and a 120s appearance budget. 2277 cannot come from either, so the
+    # figure reads as an arithmetic error — and a reader who concludes the waiter
+    # cannot count stops believing the next thing it says, including a real red.
+    #
+    # The elapsed is in fact TRUE wall-clock. Budgets are only tested BETWEEN
+    # polls, so ONE read that blocks for 2277s overruns every budget. This is the
+    # exact reported line, reproduced from a single blocking probe.
+    now = 0.0
+    clock = lambda do
+      value = now
+      now += 2277
+      value
+    end
+    result = CiWait.settle(probe: -> { :unverified }, timeout_s: 900, appearance_s: 120,
+                           interval_s: 20, sleeper: ->(_s) { }, clock: clock)
+
+    assert_equal 1, result.polls, "one read, which is what makes the figure explicable"
+    assert_equal 2277, result.waited_s.round
+    line = CiWait.summary(result)
+    assert_match(/2277s/, line, "the true elapsed still gets reported")
+    assert_match(/120s/, line, "beside the budget it overran, or the number looks impossible")
+    assert_match(/final read/i, line, "and the reason the two differ")
+  end
+
+  def test_a_give_up_inside_its_budget_carries_no_overrun_note
+    # The reconciliation must be EARNED, not boilerplate. A wait that respected its
+    # budget has two numbers that already agree, and explaining a discrepancy that
+    # does not exist is its own small false claim.
+    result = settle(probe_over(:none), step: 30, timeout_s: 900, appearance_s: 60)
+
+    refute_match(/past the|final read/i, CiWait.summary(result))
+  end
+
+  def test_a_sub_second_overrun_is_not_dressed_up_as_a_slow_read
+    # Found by running the fix against real PR #1099: a 6.2s wait on a 6s budget
+    # printed a note about "a read that did not return", when four reads had all
+    # returned promptly. The elapsed only ever exceeds a budget by the final read's
+    # duration, and a fraction of a second is ordinary poll granularity — reporting
+    # it as a fault is the same over-claim in miniature.
+    now = 0.0
+    clock = lambda do
+      value = now
+      now += 3.1
+      value
+    end
+    result = CiWait.settle(probe: -> { :none }, timeout_s: 900, appearance_s: 6,
+                           interval_s: 2, sleeper: ->(_s) { }, clock: clock)
+
+    assert_predicate result, :absent?
+    assert_operator result.waited_s, :>, result.budget_s, "it did overrun, fractionally"
+    refute_match(/past the|final read/i, CiWait.summary(result),
+                 "but no reader sees a discrepancy, so there is nothing to explain")
+  end
+
+  def test_the_timeout_path_reports_the_budget_it_was_given
+    result = settle(probe_over(:pending), step: 100, timeout_s: 250, appearance_s: 120)
+
+    assert_predicate result, :timed_out?
+    assert_equal 250, result.budget_s, "the timeout path is judged against the timeout"
+  end
 end

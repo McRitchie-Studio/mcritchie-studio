@@ -36,6 +36,14 @@
 # succeeds. So they wait too, on a SHORTER budget: `:none` that persists means no CI
 # is ever coming (a repo with no workflow), and that must not burn the full timeout.
 #
+# WAITING ALIKE IS NOT REPORTING ALIKE (task ship-waiter-misreports-ci, 2026-09-01).
+# Those two transient states share a BUDGET and nothing else. `:none` is GitHub
+# answering; `:unverified` is the read failing. They expire into different outcomes
+# (`:absent` vs `:unread`) and different sentences, because the remedy differs: an
+# absent run means judge the repo as it stands, an unread one means fix the read and
+# ask again. This module is entitled to relay what GitHub said and NOTHING MORE — it
+# never asserts what a repo holds on the strength of a query that failed.
+#
 # EVERY UNKNOWN STATE SETTLES, DELIBERATELY. CiStatus::TOKENS may grow. A state this
 # module has never heard of resolves to STOP WAITING, so the failure mode of an
 # un-taught state is "behaves exactly as it did before this file existed" — never an
@@ -62,7 +70,28 @@ module CiWait
   RUNNING = %i[pending].freeze
 
   # Not running YET — or never will. Worth only the appearance budget.
-  EMERGING = %i[none unverified].freeze
+  #
+  # SPLIT BY WHAT THE READ MEANS, not merely by "we have no verdict yet". Both wait
+  # on the same short budget — that part was right — but they EXPIRE INTO DIFFERENT
+  # REPORTS, and that distinction is the whole of task ship-waiter-misreports-ci:
+  #
+  #   :none       — GitHub ANSWERED and reported no checks. "No CI run appeared" is a
+  #                 fair relay of something GitHub actually said.
+  #   :unverified — the READ FAILED. This is CiStatus's own name for a gh/network
+  #                 error: GitHub said NOTHING, so any claim about what the repo holds
+  #                 is invented. Measured on PR #1143 — `gh pr checks` 12/12 GREEN and
+  #                 dor-check "GitHub CI green (12 checks)" at the same moment this
+  #                 module printed "treating this PR as having none".
+  #
+  # ci_status.rb already paid for this exact collapse once, between :unreadable and
+  # :unverified ("A BLIND GATE MUST SAY WHY IT IS BLIND"). This module repeated it a
+  # layer up — on the one line a builder reads while deciding whether to trust a ship.
+  # The cost is not the wrong word: "treating this PR as having none" invites shipping
+  # past a green CI, and teaches a reader that this output is unreliable, which is how
+  # a genuinely RED CI later gets waved through as "probably the waiter again".
+  AWAITING = %i[none].freeze
+  UNREAD = %i[unverified].freeze
+  EMERGING = (AWAITING + UNREAD).freeze
 
   # PURE. A CiStatus state → :wait or :settle, given how long we have been waiting.
   # `emerging_expired` is the caller's answer to "has the appearance budget run
@@ -101,11 +130,17 @@ module CiWait
     }
   end
 
-  Result = Struct.new(:state, :outcome, :polls, :waited_s, keyword_init: true) do
+  # `budget_s` is the budget THIS outcome was judged against (nil when none applied),
+  # carried so the summary can reconcile the elapsed figure against it instead of
+  # printing a number that looks impossible next to the configured timeout.
+  Result = Struct.new(:state, :outcome, :polls, :waited_s, :budget_s, keyword_init: true) do
     # The wait SETTLED on a real verdict (`:settled`) or gave up (`:timeout` /
-    # `:absent`). None of these is a pass or a fail — dor-check decides that.
+    # `:absent` / `:unread`). None of these is a pass or a fail — dor-check decides.
     def timed_out? = outcome == :timeout
+    # GitHub answered and reported no checks.
     def absent? = outcome == :absent
+    # We never heard from GitHub. NOT the same fact, and never reported as one.
+    def unread? = outcome == :unread
     def settled? = outcome == :settled
   end
 
@@ -131,14 +166,20 @@ module CiWait
 
       emerging_expired = waited >= appearance_s
       if action_for(state, emerging_expired: emerging_expired) == :settle
-        outcome = if EMERGING.include?(state) && emerging_expired then :absent
-                  else :settled
-                  end
-        return Result.new(state: state, outcome: outcome, polls: polls, waited_s: waited)
+        # An expired EMERGING state reports by WHAT WAS READ: a failed read cannot
+        # conclude anything about the repo, so it never borrows :absent's sentence.
+        outcome, budget = if EMERGING.include?(state) && emerging_expired
+                            [UNREAD.include?(state) ? :unread : :absent, appearance_s]
+                          else
+                            [:settled, nil]
+                          end
+        return Result.new(state: state, outcome: outcome, polls: polls, waited_s: waited, budget_s: budget)
       end
 
       remaining = timeout_s - waited
-      return Result.new(state: state, outcome: :timeout, polls: polls, waited_s: waited) if remaining <= 0
+      if remaining <= 0
+        return Result.new(state: state, outcome: :timeout, polls: polls, waited_s: waited, budget_s: timeout_s)
+      end
 
       # Never sleep past either budget — an emerging state must be re-judged the
       # moment its shorter window closes, not one full interval later.
@@ -150,11 +191,58 @@ module CiWait
 
   # The line bin/ship prints for a finished wait. Kept here so the wording lives
   # beside the semantics it describes.
+  #
+  # THE RULE: REPORT THE READ, NEVER THE REPO. This module observes exactly one thing
+  # — what a CI query returned — and every sentence below stays inside that. It may
+  # relay what GitHub said. It may not assert what GitHub HOLDS when GitHub never
+  # answered, because "no CI run appeared" is a claim about GitHub and a failed read
+  # is not evidence for it. Same discipline as cert_process.rb's diagnosis: say what
+  # was seen, name what it cannot distinguish, and put the numbers in the same breath.
   def self.summary(result)
+    elapsed = "#{result.waited_s.round}s#{overrun(result)}"
+
     case result.outcome
-    when :settled then "CI settled on #{result.state} after #{result.waited_s.round}s (#{result.polls} poll(s))"
-    when :absent then "no CI run appeared within #{result.waited_s.round}s — treating this PR as having none"
-    when :timeout then "CI still #{result.state} after #{result.waited_s.round}s — giving up the wait"
+    when :settled
+      "CI settled on #{result.state} after #{elapsed} (#{result.polls} poll(s))"
+    when :absent
+      "no CI run appeared within #{elapsed} — GitHub answered and reported no checks, " \
+        "so dor-check judges the PR as it stands"
+    when :unread
+      "could not read CI within #{elapsed} — the last read returned #{result.state}, which is a " \
+        "gh/network fault rather than an answer from GitHub, so whether this PR has CI is UNKNOWN. " \
+        "This is NOT a report that the PR has no CI; dor-check re-reads it next and owns the verdict"
+    when :timeout
+      "CI still #{result.state} after #{elapsed} — giving up the wait"
     end
+  end
+
+  # Reconcile the elapsed figure with the budget it was judged against.
+  #
+  # THE SECOND DEFECT on PR #1143: "no CI run appeared within 2277s" printed under a
+  # 900s timeout and a 120s appearance budget. 2277 cannot come from either, so the
+  # figure reads as an arithmetic error — and a reader who decides this module cannot
+  # count stops believing the next thing it says, including a genuinely red CI.
+  #
+  # The elapsed is TRUE wall-clock; nothing is miscomputed. The budgets are tested
+  # BETWEEN polls and never during one, and naps are already capped so a sleep can
+  # never cross a budget — so the ONLY way elapsed can exceed it is a single read that
+  # did not return within it. That is a fact worth printing, not hiding: it points at
+  # a hung `gh` call, which is also the likeliest producer of the :unverified above.
+  # WHY THE ATTRIBUTION IS SOUND, and not another guess: `nap` is already capped at
+  # the remaining budget on every branch, so a sleep can never carry `waited` past
+  # one. Whatever excess exists therefore accrued inside the FINAL read — the only
+  # unbounded step in the loop. That is a measurement, not an inference about GitHub.
+  #
+  # It fires only when a READER would see two numbers that disagree. Sub-second
+  # slippage is ordinary poll granularity, and explaining a discrepancy nobody can
+  # see would be its own small over-claim — the very habit this task exists to break.
+  # (Measured while fixing this: a 6.2s wait on a 6s budget printed a dire note about
+  # a read that had not returned, when four reads had returned promptly.)
+  def self.overrun(result)
+    budget = result.budget_s
+    return "" unless budget && result.waited_s.round > budget
+
+    " (past the #{budget}s budget — budgets are tested BETWEEN polls and a nap never " \
+      "crosses one, so the final read alone ran ~#{(result.waited_s - budget).round}s long)"
   end
 end
