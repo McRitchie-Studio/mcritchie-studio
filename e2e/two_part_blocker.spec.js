@@ -35,61 +35,51 @@ test("a split blocker shows the summary on the card + task header, expanding to 
   await expect(body).toContainText("Re-gate it on the server");
 });
 
-// [e2e] The resubmission distinction. A `--kind rework` block leaves the task on
-// `building`, so a bounced task and a never-reviewed one drew the same card and the
-// board could not say "this is a resubmission carrying unaddressed feedback". These
-// two fixtures differ ONLY in whether the PR head moved after the send-back — the
-// honest signal, since unresolved_feedback holds prose and is cleared by ceremony
-// rather than by the work landing. Read-only against the seeded pair.
-test("the board distinguishes a resubmission with an unmoved head from one that addressed it", async ({ page }) => {
-  const res = await page.goto("/tasks");
-  expect(res.ok()).toBe(true);
+// [e2e] The RESUBMISSION signal, on the real board and the real task page.
+//
+// A `--kind rework` block returns the task to `building` rather than `blocked`, so
+// blocked_at / block_kind / `list --stage blocked` all read empty BY DESIGN and a
+// bounced task drew exactly the same card as a never-reviewed one. This proves the
+// distinction actually reaches a browser.
+//
+// DELIBERATELY SEEDS NOTHING. It reads two fixtures that already exist, because
+// adding cards to /tasks makes the shared board heavier for every other spec on it —
+// measured: two extra cards turned e2e/overflow_fade.spec.js red on CI (a fixed
+// settle window that the extra Alpine work no longer fit inside) while staying green
+// locally. A board-legibility feature must not pay for its own test by degrading the
+// board everyone else measures. The full state matrix — unaddressed vs addressed vs
+// unknown vs fresh, and the head comparison behind them — is pinned at the unit,
+// component and integration tiers, where it costs the board nothing.
+test("the board and task page call out a resubmission, and leave a fresh build alone", async ({ page }) => {
+  const boardRes = await page.goto("/tasks");
+  expect(boardRes.ok()).toBe(true);
 
-  const unmoved = page.locator("#card-e2e-resubmission-unmoved [data-test='resubmission-state']");
-  const addressed = page.locator("#card-e2e-resubmission-addressed [data-test='resubmission-state']");
-
-  await expect(unmoved).toBeVisible();
-  await expect(addressed).toBeVisible();
-
-  // The unmoved head is the one a reviewer must not re-read: called out, in red.
-  await expect(unmoved).toContainText("FEEDBACK NOT ADDRESSED");
-  await expect(unmoved).toHaveClass(/bg-red-500/);
-
-  // The addressed one is a heads-up, not an alarm — and it must NOT read the same.
-  await expect(addressed).toContainText("ADDRESSED");
-  await expect(addressed).not.toContainText("NOT ADDRESSED");
-  await expect(addressed).toHaveClass(/bg-amber-500/);
-
-  const unmovedText = (await unmoved.textContent()).trim();
-  const addressedText = (await addressed.textContent()).trim();
-  expect(unmovedText).not.toBe(addressedText);
-});
-
-test("a fresh build carries no resubmission bar, and the task page states the breaker", async ({ page }) => {
   // A never-bounced task must still look like an ordinary build — the signal is
   // worthless if it fires on everything. e2e-ci-progress-demo carries no qa_feedback.
-  await page.goto("/tasks");
   await expect(
     page.locator("#card-e2e-ci-progress-demo [data-test='resubmission-state']")
   ).toHaveCount(0);
 
-  // The split-blocker fixture, by contrast, DOES carry a qa_feedback row — an
-  // unclassified one, which counts as a possible send-back exactly as bin/task
-  // bounces counts it. It records no PR branch, so there is no head to compare, and
-  // the bar must say that rather than claim HEAD UNKNOWN (which would read as broken
-  // instrumentation instead of the plain absence of a PR).
-  const noPr = page.locator("#card-e2e-split-blocker-demo [data-test='resubmission-state']");
-  await expect(noPr).toContainText("RESUBMISSION");
-  await expect(noPr).not.toContainText("HEAD UNKNOWN");
+  // The split-blocker fixture DOES carry a qa_feedback row — an unclassified one,
+  // which counts as a possible send-back exactly as `bin/task bounces` counts it
+  // (missing a real bounce is the failure the whole circuit breaker exists to stop).
+  // It records no PR branch, so there is no head to compare, and the bar must say
+  // that rather than claim HEAD UNKNOWN — which would read as broken instrumentation
+  // instead of the plain absence of a PR.
+  const bar = page.locator("#card-e2e-split-blocker-demo [data-test='resubmission-state']");
+  await expect(bar).toBeVisible();
+  await expect(bar).toContainText("RESUBMISSION");
+  await expect(bar).not.toContainText("HEAD UNKNOWN");
+  await expect(bar).toHaveAttribute("href", "/tasks/e2e-split-blocker-demo");
 
-  // The task page carries what `bin/task bounces` knows — TRIPPED plus the prior
-  // send-back count — where a reader actually looks.
-  const res = await page.goto("/tasks/e2e-resubmission-unmoved");
+  // The task page states it outright AND carries what `bin/task bounces` knows —
+  // the circuit breaker's armed state — where a reader actually looks.
+  const res = await page.goto("/tasks/e2e-split-blocker-demo");
   expect(res.ok()).toBe(true);
 
-  await expect(page.locator("[data-test='task-resubmission']")).toHaveAttribute("data-state", "unaddressed");
-  await expect(page.locator("[data-test='task-resubmission-label']")).toContainText("FEEDBACK NOT ADDRESSED");
+  await expect(page.locator("[data-test='task-resubmission']")).toHaveAttribute("data-state", "unknown");
+  await expect(page.locator("[data-test='task-resubmission-label']")).toContainText("RESUBMISSION");
   await expect(page.locator("[data-test='task-breaker-state']")).toContainText("BREAKER ARMED");
   await expect(page.locator("[data-test='task-breaker-state']")).toContainText("1 send-back");
-  await expect(page.locator("[data-test='task-resubmission-heads']")).toContainText("029a945b");
+  await expect(page.locator("[data-test='task-resubmission-detail']")).toContainText("records no PR branch");
 });
