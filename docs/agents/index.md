@@ -111,6 +111,14 @@ promotes `accepted → release` plus QA, and Steffon's `production-deploy` ships
   code or app docs, create or enter an isolated worktree with an allocated port
   before making changes unless Mr. McRitchie explicitly assigns you as the
   deploy owner for that repo.
+- **The session scratchpad is shared — namespace every write.** Sibling agents
+  spawned from one session get the *same* scratch directory, so the obvious
+  filename is the dangerous one. Write `ship-<task-slug>.log`, never `ship.log`,
+  and put multi-file work under `scratchpad/<task-slug>/`. On 2026-09-01 two
+  ships shared `ship.log`, one truncated the other, and the agent reading the
+  mixed stream killed his own run believing it was his sibling's. Appending
+  (`>>`) is not the fix — it interleaves. Full rule:
+  `mcritchie-studio/docs/agents/modules/worktrees.md`.
 - A pushed feature branch preserves code. `main` is for shipped integration,
   not backup. Feature agents push their own branch and open a PR into `accepted`;
   review merges it onto `accepted`, and Avi's `qa-release` sweep promotes

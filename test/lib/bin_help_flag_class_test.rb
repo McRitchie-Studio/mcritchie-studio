@@ -94,6 +94,14 @@ class BinHelpFlagClassTest < Minitest::Test
     "qa-server"              => :cli_arg_guard,
     "control-check"          => :cli_arg_guard,
     "reap-cert-databases"    => :cli_arg_guard,
+    # THE READ-ONLY ONE, and the only :cli_arg_guard entry with no FIRST_MUTATION
+    # row — deliberately, because it has no mutation to precede. bin/agent-presence
+    # writes no file, signals no process and takes no lock. It is guarded anyway, and
+    # its help exits 3 rather than 0, because THIS script's 0 is a VERDICT ("clear to
+    # start") rather than "the command ran". Answering the universal safe probe with
+    # a green light is the same defect one meaning over: the operator asked what the
+    # command does and would be told the machine is free.
+    "agent-presence"         => :cli_arg_guard,
     # The harvest WRITES desk records to the board, so it is guarded like the rest of
     # the mutating flat scripts. Its help exits 1: exit 0 from it asserts "the stranded
     # rows are recorded", which a probe never established.
