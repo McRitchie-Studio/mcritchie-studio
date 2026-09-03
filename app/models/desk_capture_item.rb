@@ -1,4 +1,4 @@
-# One arrival at desk@mcritchie.studio — the knowledge-capture front door.
+# One arrival at team@mcritchie.studio — the knowledge-capture front door.
 # The poller creates these from SES's S3 drops; the capture sweep (an agent
 # running the knowledge-capture SOP) files them onward into an entity's
 # knowledge layer and stamps the outcome.

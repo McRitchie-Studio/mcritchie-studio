@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# The desk@mcritchie.studio capture pipe's S3 side. Deliberately NOT
+# The team@mcritchie.studio capture pipe's S3 side. Deliberately NOT
 # Studio::S3: that facade owns the app's public asset bucket pair
 # (mcritchie-studio-{dev,production}, world-readable by policy), and raw
 # forwarded mail with deal attachments must never land there. The desk bucket

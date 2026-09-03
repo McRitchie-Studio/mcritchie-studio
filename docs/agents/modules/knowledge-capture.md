@@ -15,7 +15,7 @@ live in [`object-storage.md`](object-storage.md); this module owns the FLOW.
 
 | Source | How it arrives |
 |---|---|
-| **Email** | forward to **`desk@mcritchie.studio`** (Google account → forward to `desk@in.mcritchie.studio` → Resend inbound → svix-signed `email.received` webhook → hub ingest job re-stores the raw in the private `mcritchie-studio-desk` bucket → `/admin/desk`) |
+| **Email** | forward to **`team@mcritchie.studio`** — the Google group that is ALSO the fleet's transactional From, so replies to app mail enter the same funnel (group member `team@in.mcritchie.studio` → Resend inbound → svix-signed `email.received` webhook → hub ingest job re-stores the raw in the private `mcritchie-studio-desk` bucket → `/admin/desk`) |
 | **File drop** | `mcritchie-industries/business-data/_inbox/` — folders, zips, anything; do not pre-sort |
 | **Chat** | hand a path or paste content to a session and say what it is |
 | **UI upload** | the entity app's `/admin/knowledge` intake form |
@@ -24,10 +24,10 @@ Everything converges on the same protocol below. Email specifics:
 
 - **Allowlist or quarantine.** Only Mr. McRitchie's addresses
   (`DESK_ALLOWED_SENDERS`) are parsed. Anything else lands `quarantined` —
-  raw kept sealed in the desk bucket, attachments never extracted. The desk
-  address is guessable; treat unexpected mail as untrusted input, always.
+  raw kept sealed in the desk bucket, attachments never extracted. The team
+  address is public-facing by design; treat unexpected mail as untrusted input, always.
 - **Entity routing hints:** a `[welding]` / `[industries]` subject tag, or a
-  plus-address (`desk+welding@…`). A hint is advice for the sweep — never
+  plus-address (`team+welding@…`). A hint is advice for the sweep — never
   trusted blindly.
 - The arrivals queue is `/admin/desk` on the hub; the model is
   `DeskCaptureItem` (`awaiting_sweep` scope).
