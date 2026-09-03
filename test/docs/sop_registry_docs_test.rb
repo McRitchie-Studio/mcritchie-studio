@@ -184,7 +184,9 @@ class SopRegistryDocsTest < ActiveSupport::TestCase
     ],
     "work-backlog" => [
       [/mascot_session/,                    "the own-session task filter"],
-      [/two or three/i,                     "its two-to-three parallel ceiling"],
+      # NOT /two or three/: that phrase is the file's H1 title and its Step 3 heading,
+      # so it holds green even with the ceiling rule deleted outright. Pin the rule.
+      [/three is the ceiling/,              "its two-to-three parallel ceiling"],
       [/5 − \(builders still in flight\)/,  "the review-wave subtraction rule"]
     ]
   }.freeze
