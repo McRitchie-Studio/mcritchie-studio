@@ -97,7 +97,10 @@ module CodeDiff
   end
 
   # May this file list claim a doc-only contract? The positive form of code_files,
-  # and the predicate behind `claimable_when: doc_only_diff` (the `docs` shape).
+  # and the predicate behind `claimable_when: doc_only_diff` — which no shape
+  # declares any more (the `docs` shape moved to `docs_with_guards_diff` on
+  # 2026-09-03). The rule and its dor-check arm are KEPT deliberately: doc_only?
+  # is still what the exempt-KIND gate runs, and docs_with_guards? builds on it.
   #
   # AN EMPTY LIST IS FALSE, exactly as in TestOnlyDiff.test_only?. "We observed
   # nothing" and "there is nothing but prose" are different facts, and collapsing

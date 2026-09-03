@@ -1945,8 +1945,10 @@ missing_tiers = dor_tiers.reject { |tier| tier_satisfied?(checks, tier) }
 #
 #   test-only  claimable_when: test_only_diff — a diff made entirely of test code
 #              has no behavior for a tier to be evidence OF.
-#   docs       claimable_when: doc_only_diff  — prose certifies by REVIEW, and
-#              there is no suite to certify.
+#   docs       claimable_when: docs_with_guards_diff — prose (which certifies by
+#              REVIEW, with no suite to certify) plus, since 2026-09-03, the
+#              registry-guard tests that pin it: *_test.rb under test/docs/,
+#              type AND location together, with at least one prose file.
 #
 # Without the guard, the lightest contracts in config/feature_shapes.yml are
 # unlocked by TYPING their name, which is `kind: chore`'s bug (PR #512) rebuilt one
@@ -2061,7 +2063,7 @@ if claim_rule
     proven_label = nil
     errors << "shape #{shape.inspect} declares claimable_when: #{claim_rule.inspect}, a claim rule bin/dor-check " \
       "does not implement — so the shape's lighter contract is REFUSED rather than granted by an unrecognized " \
-      "guard. Implement the rule in bin/dor-check's claimable_when block (beside test_only_diff / doc_only_diff), " \
+      "guard. Implement the rule in bin/dor-check's claimable_when block (beside test_only_diff / doc_only_diff / docs_with_guards_diff), " \
       "or fix the value in config/feature_shapes.yml"
   end
 
