@@ -443,7 +443,9 @@ QA servers should use Resend fallback through `team@mcritchie.studio` for
 low-volume magic-link/auth proof until `studio-engine` supports production-safe
 email capture on Heroku QA. Do not copy production payment or mainnet Solana
 settings into Turf Monster QA. Turf Monster QA runs on devnet and derives
-`EXPECTED_IDL_HASH` from `config/turf_vault.idl.json` during provisioning.
+`EXPECTED_IDL_HASH` from `config/turf_vault.idl.json` — at provision time, and
+re-applied by every QA deploy's config heal along with the rest of the
+registry's declared config (`bin/qa-server` `heal_registry_config`).
 Turf Monster QA uses `heroku-redis:mini`; Redis data is intentionally
 non-persistent because QA can be rebooted and reseeded often. Rolio uses SQLite
 for the hosted demo runtime; data is intentionally ephemeral on Heroku until a
