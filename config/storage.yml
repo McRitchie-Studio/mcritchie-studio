@@ -11,7 +11,10 @@ amazon:
   access_key_id: <%= ENV["AWS_ACCESS_KEY_ID"] %>
   secret_access_key: <%= ENV["AWS_SECRET_ACCESS_KEY"] %>
   region: us-east-2
-  bucket: mcritchie-studio-production
+  # QA apps boot RAILS_ENV=production, so they load this service; QA_ENV is the
+  # one signal separating them from production (Studio.qa_environment?, the same
+  # read Studio::S3 keys on). Unset or unrecognised resolves PRODUCTION.
+  bucket: <%= Studio.qa_environment? ? "mcritchie-studio-dev" : "mcritchie-studio-production" %>
 
 amazon_dev:
   service: S3

@@ -116,6 +116,48 @@ module CodeDiff
     code_files(list).empty?
   end
 
+  # ── The docs+guard pattern (/tasks/docs-shape-rejects-guard-test) ──────────
+  #
+  # Every SOP added to this repo wants the registry-guard test that pins its
+  # rows (test/docs/sop_registry_docs_test.rb), and doc_only? correctly refuses
+  # a diff that ships one — a test file is behavior. That left an author two
+  # exits, both worse than the gate's purpose: delete a good test, or mislabel
+  # the shape. These predicates give that PAIRED change an honest home.
+  #
+  # THE RULE IS TYPE **AND** LOCATION TOGETHER, deliberately — not the
+  # directory allowlist the header above forbids. `test/docs/anything` alone
+  # earns nothing (a helper.rb there is still unclassified behavior); the file
+  # must ALSO be a test by type (`*_test.rb`). What location contributes is
+  # SUBJECT: a test under test/docs/ asserts about documentation, which is the
+  # one kind of behavior a docs claim can carry without becoming a code claim.
+  DOCS_GUARD_DIR = "test/docs/"
+
+  def self.docs_guard_test?(path)
+    file = path.to_s.strip.delete_prefix("./")
+    file.start_with?(DOCS_GUARD_DIR) && file.end_with?("_test.rb")
+  end
+
+  # The offender list for a docs-with-guards claim: behavioral files that are
+  # not docs-guard tests. Used to NAME what disqualified the claim.
+  def self.non_guard_code_files(files)
+    code_files(files).reject { |f| docs_guard_test?(f) }
+  end
+
+  # May this file list claim the docs shape? Prose (plus inert media) with any
+  # number of docs-guard tests riding along. Two refusals stated on purpose:
+  #   * an EMPTY list refuses — "we observed nothing" is not "nothing but prose"
+  #     (same line doc_only? draws);
+  #   * a diff with NO prose refuses — guard tests alone are a test-only change,
+  #     and test-only's STRICTER contract (full-suite cert + [control] line)
+  #     must not be dodged by filing pure test code under a tierless docs claim.
+  def self.docs_with_guards?(files)
+    list = Array(files).map { |f| f.to_s.strip }.reject(&:empty?)
+    return false if list.empty?
+    return false if list.all? { |f| behavioral?(f) }
+
+    non_guard_code_files(list).empty?
+  end
+
   # BOTH SIDES OF A RENAME. A rename has two paths, and every path-list view of a
   # diff shows you only ONE — the destination. `git diff --name-only` collapses
   # `R100 bin/deploy.sh docs/deploy-notes.md` to `docs/deploy-notes.md`, and

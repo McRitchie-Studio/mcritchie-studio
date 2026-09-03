@@ -350,7 +350,8 @@ class ReviewClaimCli
     # UNOBSERVED when the caller declines to wait.
     settled = ClaimHolder.observe(
       first_expires_at: expiry_of(first), second_expires_at: expiry_of(first),
-      first_read_at: started, renew_interval: ShiftRenewer::INTERVAL_SECONDS, now: started
+      first_read_at: started, renew_interval: ShiftRenewer::INTERVAL_SECONDS, now: started,
+      first_holder_present: holder_present?(first), second_holder_present: holder_present?(first)
     )
     # FREE and UNOBSERVED never speak about a pair, so the differenced flag is inert
     # for them; pass `true` so only the outage path can reach the ignorance wording.
@@ -406,12 +407,31 @@ class ReviewClaimCli
      observed_span(started, last_read_at), true]
   end
 
-  def grade_for(first, latest, started, last_read_at = nil)
+  # `last_read_at` has NO default on purpose. It used to default to nil, and a nil
+  # there silently relaunders the loop-exit grading this command was fixed to stop
+  # doing — a caller that forgets the argument gets the old defect back with no
+  # error. Both call sites pass it; a third must too.
+  def grade_for(first, latest, started, last_read_at)
     ClaimHolder.observe(
       first_expires_at: expiry_of(first), second_expires_at: expiry_of(latest),
       first_read_at: started, renew_interval: ShiftRenewer::INTERVAL_SECONDS, now: @clock.call,
-      last_read_at: last_read_at
+      last_read_at: last_read_at,
+      first_holder_present: holder_present?(first), second_holder_present: holder_present?(latest)
     )
+  end
+
+  # A read produced a record of SOMEBODY HOLDING the claim — as opposed to nil
+  # (no claim row) or a RELEASED row. TaskReviewClaim.release nulls the fields
+  # but KEEPS the row, and holder_info always returns its full 8-key Hash, so
+  # "is_a?(Hash)" alone graded every released claim as held-by-somebody-
+  # unreadable: the terminal step of EVERY review (the primary releases in step
+  # 7) read as `inconclusive` over a 45s poll instead of `free` in one read. A
+  # NAMED session is the line — the same line ClaimHolder.lease_state draws
+  # ("return NONE if claim[claimed_session] is blank"). An unreadable-but-named
+  # holder still grades present, which is the malformed-shape protection this
+  # task exists for.
+  def holder_present?(holder)
+    holder.is_a?(Hash) && !(holder["session"].to_s.strip.empty? && holder["live"] == false)
   end
 
   # The span we OBSERVED, not the span we waited. These diverge under an outage,
@@ -419,7 +439,6 @@ class ReviewClaimCli
   # about what the expiry did — over a stretch nobody was reading it.
   def observed_span(started, last_read_at) = ((last_read_at || @clock.call) - started).round
 
-  def watched_since(started) = (@clock.call - started).round
 
   # The observation budget in seconds. Clamped to a ceiling because an unbounded
   # `--observe-for` turns a diagnostic into a hang, and floored at 0 because a

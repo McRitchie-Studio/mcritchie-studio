@@ -28,6 +28,15 @@
 # The shelled end-to-end refusals live in test/lib/fast_check_test.rb and
 # test/lib/full_suite_check_test.rb.
 
+# Under `bin/rails test`, boot the app BEFORE desk_guard's path-load of
+# app/models/release/gate_workspace.rb. That file opens `class Release` with no
+# superclass (so bin scripts load it Rails-free); if it runs before Zeitwerk
+# has defined the real AR Release, the plain class takes the constant, Zeitwerk
+# cannot replace it, and every later Task#release reflection in the SAME test
+# process raises "not an ActiveRecord::Base subclass" — an order-dependent
+# poisoning of unrelated tests (test_database_purge_test was the victim).
+# Standalone `ruby -Itest` runs have no Rails constant and skip this entirely.
+require "test_helper" if defined?(Rails)
 require "minitest/autorun"
 require "tmpdir"
 require "fileutils"

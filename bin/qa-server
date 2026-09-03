@@ -193,10 +193,17 @@ def config_vars_from_registry(config)
   end.merge(derived_config_vars(config))
 end
 
+# Placeholder expansion is LAZY on purpose: heroku_host reaches the Heroku API
+# (heroku_app_info — one CACHED call per app, not one per var), so a
+# placeholder-free value never touches the API at all. The concrete payoff is on
+# the declared-side reads: a registry entry with no placeholders (rolio's)
+# renders with zero network, which is also what lets the heal wiring test drive
+# this file for real with only the two Heroku seams stubbed.
 def render_config_value(config, value)
-  value.to_s
-       .gsub("${HEROKU_HOST}", heroku_host(config))
-       .gsub("${QA_HOST}", qa_host(config))
+  rendered = value.to_s
+  rendered = rendered.gsub("${HEROKU_HOST}", heroku_host(config)) if rendered.include?("${HEROKU_HOST}")
+  rendered = rendered.gsub("${QA_HOST}", qa_host(config)) if rendered.include?("${QA_HOST}")
+  rendered
 end
 
 def derived_config_vars(config)
@@ -235,6 +242,31 @@ def heroku_token
   token
 end
 
+# The READ half of config-vars. `heroku_patch_config_vars` has existed since
+# provisioning was written; nothing ever read them back, which is precisely how a
+# registry that disagrees with its app stays undetected. Returns nil (not {}) when
+# the read fails, so "could not check" never renders as "no drift".
+def heroku_get_config_vars(app)
+  uri = URI("https://api.heroku.com/apps/#{app}/config-vars")
+  request = Net::HTTP::Get.new(uri)
+  request["Accept"] = "application/vnd.heroku+json; version=3"
+  request["Authorization"] = "Bearer #{heroku_token}"
+
+  response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) { |http| http.request(request) }
+  return nil unless response.is_a?(Net::HTTPSuccess)
+
+  JSON.parse(response.body)
+rescue StandardError
+  nil
+end
+
+# Declared-vs-live, reported BY NAME and STATE only. The values are deliberately
+# never printed: required_config is not a secret store, but a status command that
+# echoes config values becomes one the first time somebody adds a key that is.
+#
+# Two states, because they need different fixes: a var the app has never been
+# given (provision it) and one whose value has diverged (decide which side is
+# right — provision would silently overwrite the live value with the declared one).
 def heroku_patch_config_vars(app, vars)
   uri = URI("https://api.heroku.com/apps/#{app}/config-vars")
   request = Net::HTTP::Patch.new(uri)
@@ -451,6 +483,35 @@ def run_plan(app_name = nil)
   end
 end
 
+# What `status` was missing. required_config used to be applied ONLY by
+# provision — `deploy` and the recurring release sweep never called it — so an
+# unset var, or one edited by hand on the dashboard, stayed invisible forever.
+# This is the read that makes the registry a claim somebody checks; since
+# /tasks/rolio-qa-marker-missing, run_deploy also ACTS on the same verdict
+# (heal_registry_config below), so a drift line here is one sweep from healed.
+def report_config_drift(config, app)
+  live = heroku_get_config_vars(app)
+  if live.nil?
+    puts "  config: COULD NOT READ config vars — no drift verdict (this is not 'no drift')"
+    return
+  end
+
+  drift = QaServerCli.config_drift(config_vars_from_registry(config), live)
+  if drift.empty?
+    puts "  config: #{config_vars_from_registry(config).size} declared var(s) match the live app"
+    return
+  end
+
+  drift.each { |key, why| puts "  config DRIFT: #{key} — #{why}" }
+  puts "  (values are never printed; `bin/qa-server provision #{app_slug_for(config)} --yes` would " \
+       "PATCH the DECLARED value over the live one, so fix the registry first if live is right)"
+end
+
+# The registry key for an entry, for a remedy line that can be copied.
+def app_slug_for(config)
+  qa_environments.find { |_slug, entry| entry.equal?(config) }&.first || config.fetch("heroku_app")
+end
+
 def run_status(app_name = nil)
   selected = app_name ? { app_name => qa_for(app_name) } : qa_environments
   selected.each do |slug, config|
@@ -468,8 +529,43 @@ def run_status(app_name = nil)
 
       puts "  domain #{domain_hostname(domain)} -> #{domain_dns_target(domain)} (#{domain_status(domain)})"
     end
+    report_config_drift(config, app)
     system("heroku", "ps", "--app", app)
   end
+end
+
+# Deploy SELF-HEALS declared config (operator decision 2026-09-03, on
+# /tasks/rolio-qa-marker-missing): required_config used to be applied only by
+# provision, and the recurring release sweep calls deploy — so a declared var
+# that never reached its app (rolio-qa's QA_ENV, for weeks) stayed broken while
+# the drift report re-announced it every run. Now every deploy PATCHes the
+# drifted DECLARED subset before pushing. Boundaries, stated:
+#   * declared registry config ONLY — secrets remain provision's job;
+#   * values are never printed, only key names (the report's own contract);
+#   * an unreadable side skips healing with a say-so, never a die: a missing
+#     derived source aborts via SystemExit inside derive_config_value, and a
+#     deploy that cannot KNOW the drift must still deploy;
+#   * a PATCH Heroku REFUSES is the opposite case and fails CLOSED — the abort
+#     in heroku_patch_config_vars stops the deploy pre-push, because pushing
+#     new code onto drift we could see and could not fix is the incident this
+#     heal exists to prevent.
+def heal_registry_config(app, config)
+  declared = begin
+    config_vars_from_registry(config)
+  rescue StandardError, SystemExit => e
+    puts "config heal skipped: declared side unreadable (#{e.message.to_s.lines.first&.strip})"
+    return
+  end
+  live = heroku_get_config_vars(app)
+  if live.nil?
+    puts "config heal skipped: could not read live vars (no verdict is not 'no drift')"
+    return
+  end
+  plan = QaServerCli.heal_plan(declared, live)
+  return if plan.empty?
+
+  puts "config heal: PATCHing #{plan.size} drifted declared var(s): #{plan.keys.sort.join(", ")}"
+  heroku_patch_config_vars(app, plan)
 end
 
 def run_deploy(app_name, ref, assume_yes:)
@@ -488,6 +584,7 @@ def run_deploy(app_name, ref, assume_yes:)
     abort "QA deploy is an external write. Re-run with --yes after reviewing: #{app_name} #{sha}"
   end
 
+  heal_registry_config(app, config)
   puts "Deploying #{app_name} #{sha} to #{app}"
   sh("git", "push", "https://git.heroku.com/#{app}.git", "+#{sha}:refs/heads/main", chdir: repo)
   config.fetch("dynos", {}).each do |process, count|

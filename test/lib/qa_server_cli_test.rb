@@ -216,4 +216,89 @@ class QaServerCliTest < Minitest::Test
       refute_empty spec[:consequence].to_s, "#{cmd} must say what did NOT happen on a refusal"
     end
   end
+  # ---- config drift ------------------------------------------------------------
+  #
+  # The registry could disagree with the live app and NOTHING read it back:
+  # required_config is applied only by `provision`, and neither `deploy` nor the
+  # recurring release sweep calls that. So `heroku config:unset QA_ENV` would have
+  # gone unnoticed forever. These pin the comparison itself.
+
+  def test_a_var_the_app_never_received_is_reported_missing
+    drift = QaServerCli.config_drift({ "QA_ENV" => "true" }, {})
+
+    assert_equal [["QA_ENV", QaServerCli::MISSING]], drift
+  end
+
+  def test_a_var_whose_value_diverged_is_reported_as_differing_not_missing
+    drift = QaServerCli.config_drift(
+      { "RESEND_MAILER_FROM" => "McRitchie Industries QA <t@x>" },
+      { "RESEND_MAILER_FROM" => "McRitchie Industries <t@x>" }
+    )
+
+    assert_equal [["RESEND_MAILER_FROM", QaServerCli::DIFFERS]], drift,
+                 "MISSING and DIFFERS need different fixes — provision repairs the first " \
+                 "and OVERWRITES the second, so collapsing them hides which one you have"
+  end
+
+  def test_matching_config_reports_no_drift
+    vars = { "QA_ENV" => "true", "APP_HOST" => "qa.example.com" }
+
+    assert_empty QaServerCli.config_drift(vars, vars.dup)
+  end
+
+  # The live app carrying EXTRA vars the registry never declared is not drift.
+  # QA apps legitimately hold DATABASE_URL, REDIS_URL and add-on vars nobody
+  # declares; reporting those would bury the two lines that matter.
+  def test_undeclared_live_vars_are_not_drift
+    drift = QaServerCli.config_drift({ "QA_ENV" => "true" },
+                                     { "QA_ENV" => "true", "DATABASE_URL" => "postgres://x" })
+
+    assert_empty drift
+  end
+
+  # Heroku returns every value as a STRING. A registry that declares a bare YAML
+  # `true` or an integer must not read as drift against its own applied value.
+  def test_a_non_string_declared_value_compares_by_string
+    assert_empty QaServerCli.config_drift({ "WEB_CONCURRENCY" => 1 }, { "WEB_CONCURRENCY" => "1" })
+    assert_empty QaServerCli.config_drift({ "QA_ENV" => true }, { "QA_ENV" => "true" })
+  end
+
+  # ── heal_plan: the WRITE half of the drift verdict ─────────────────────────
+  # (/tasks/rolio-qa-marker-missing: declared config used to be applied only by
+  # provision, so a declared-but-missing var stayed broken through every deploy.)
+
+  def test_heal_plan_patches_a_missing_declared_var_with_the_declared_value
+    plan = QaServerCli.heal_plan({ "QA_ENV" => "true", "MAILER_HOST" => "qa.x" },
+                                 { "MAILER_HOST" => "qa.x" })
+
+    assert_equal({ "QA_ENV" => "true" }, plan)
+  end
+
+  def test_heal_plan_patches_a_diverged_var_back_to_the_declared_value
+    plan = QaServerCli.heal_plan({ "QA_ENV" => "true" }, { "QA_ENV" => "hand-edited" })
+
+    assert_equal({ "QA_ENV" => "true" }, plan)
+  end
+
+  def test_heal_plan_is_empty_when_nothing_drifts
+    assert_empty QaServerCli.heal_plan({ "QA_ENV" => "true" }, { "QA_ENV" => "true" })
+  end
+
+  def test_heal_plan_never_touches_undeclared_live_vars
+    plan = QaServerCli.heal_plan({ "QA_ENV" => "true" },
+                                 { "QA_ENV" => "wrong", "DATABASE_URL" => "postgres://x" })
+
+    assert_equal %w[QA_ENV], plan.keys, "secrets and app-owned vars are not the registry's to heal"
+  end
+
+  # The healer is DERIVED from config_drift, and this pins that: whatever the
+  # report calls drift is exactly what the healer patches — the two answering
+  # differently is how a detector re-announces a break nothing fixes.
+  def test_heal_plan_keys_are_exactly_the_drift_keys
+    declared = { "A" => "1", "B" => "2", "C" => "3" }
+    live = { "A" => "1", "B" => "wrong" }
+
+    assert_equal QaServerCli.config_drift(declared, live).map(&:first).sort,
+                 QaServerCli.heal_plan(declared, live).keys.sort
+  end
 end

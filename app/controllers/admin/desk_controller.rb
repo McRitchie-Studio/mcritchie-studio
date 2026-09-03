@@ -1,6 +1,6 @@
 module Admin
   # /admin/desk — the mail side of the knowledge-capture front door
-  # (desk@mcritchie.studio). Lists what has arrived and what the capture sweep
+  # (team@mcritchie.studio). Lists what has arrived and what the capture sweep
   # did with it. Read-only for now: filing happens through the
   # knowledge-capture SOP, not through buttons.
   class DeskController < ApplicationController
