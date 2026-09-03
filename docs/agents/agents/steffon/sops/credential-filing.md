@@ -64,11 +64,17 @@ CANNOT: <the acts the scope refuses, one line>
 
 ## 4. Activate the writing lane
 
-`op` reads exactly ONE variable — `OP_SERVICE_ACCOUNT_TOKEN`
-(`bin/lib/op_vaults.rb`; its `LANES` model knows only agent + deployer, and
-the lane tokens below are plain exports it has never heard of). Sourcing
-`~/.zprofile.admin` puts them in the environment under names `op` never
-looks at, so the lane does nothing until you ASSIGN it:
+`op` reads exactly ONE variable — `OP_SERVICE_ACCOUNT_TOKEN`. Sourcing
+`~/.zprofile.admin` puts the lane tokens in the environment under OTHER names,
+so a lane does nothing until you ASSIGN it into that one variable.
+
+`LANES` (`bin/lib/op_vaults.rb`) models two lanes and DOES know one of these
+names: `LANES[:deployer][:token_env]` is `OP_ADMIN_SERVICE_ACCOUNT_TOKEN`
+(:65), which is how `bin/gh-app-git-credential` reaches the admin vault. The
+rest — `OP_APPLICATIONS_`, `OP_INDUSTRIES_`, `OP_FAMILY_` — are plain exports
+`LANES` has never heard of. An earlier version of this line said that of ALL of
+them, which reads as "nothing here is wired up" and is wrong about the one that
+is:
 
 ```bash
 source ~/.zprofile.admin
@@ -80,7 +86,23 @@ export OP_SERVICE_ACCOUNT_TOKEN="$OP_ADMIN_SERVICE_ACCOUNT_TOKEN"        # admin
 |---------------------------|-----------|
 | `OP_ADMIN_SERVICE_ACCOUNT_TOKEN` | every vault, `studio-agents-admin` included (read+write since 2026-09-02) — the default writer for this SOP |
 | `OP_APPLICATIONS_SERVICE_ACCOUNT_TOKEN` | `studio-applications` |
+| `OP_INDUSTRIES_SERVICE_ACCOUNT_TOKEN` | `industries-agents` — mapping INFERRED, see below |
+| `OP_FAMILY_SERVICE_ACCOUNT_TOKEN` | `family-agents` — mapping INFERRED, see below |
 | ambient `OP_SERVICE_ACCOUNT_TOKEN` (day-to-day agent, `~/.zprofile`) | nothing — read-only lane |
+
+The last two rows are recorded from evidence that costs nothing: `~/.zprofile.admin`
+exports both token names, and `op vault list` under the admin lane returns both
+`industries-agents` and `family-agents`. What is NOT verified is that each token
+opens the vault its NAME suggests — confirming that needs a read per token, and the
+1Password daily cap is account-wide and shared by every lane, so a census is not
+worth spending it on. If you are about to USE one, spend one read first:
+
+```bash
+OP_SERVICE_ACCOUNT_TOKEN="$OP_INDUSTRIES_SERVICE_ACCOUNT_TOKEN" op vault list
+```
+
+and correct the row if it disagrees. Rows marked INFERRED are a starting point, not
+a fact — which is the distinction this SOP exists to keep.
 
 On a `(101) You do not have permission`, in order: first check the
 account-wide 1Password quota — `op service-account ratelimit` — because the
@@ -94,14 +116,18 @@ vault and the missing grant.
 
 A secret that starts in Mr. McRitchie's hands (a fresh service-account
 token, a console-only key) must not be pasted into a session transcript —
-transcripts are durable. Hand him this three-step for HIS terminal:
+transcripts are durable. Hand him this two-step for HIS terminal:
 
 ```bash
 read -rs T       # he pastes the secret, screen stays blank (-r: a backslash
                  # in the token survives; without it read corrupts silently)
 # then the apply command, interpolating $T where the value goes
-unset T          # the shell forgets the secret once applied
 ```
+
+**Keep `T` set until section 6.** The read-back there digests what he pasted
+against what the vault now returns, and a shell that has already forgotten it
+digests the EMPTY STRING — which false-mismatches a credential that was filed
+correctly. Section 6 says where the `unset` belongs.
 
 The apply command still passes `$T` through argv (see step 3's note); the
 protections here are against the durable copies — transcript and shell
@@ -123,10 +149,20 @@ clipboard — `printf '%s' "$VALUE" | pbcopy` — and clear the clipboard after
    printf '%s' "$VALUE" | shasum -a 256    # the two digests must match
    ```
 
-   For an operator-supplied secret the agent never held, Mr. McRitchie runs
-   the same digest pair in HIS terminal, or simply reopens the item in the
-   1Password UI and eyeballs it. `--reveal` piped straight to a digest never
-   lands plaintext in a transcript; `--reveal` alone does — that is the line.
+   For an operator-supplied secret the agent never held, Mr. McRitchie runs the
+   pair in HIS terminal against the variable HE has — section 5 had him
+   `read -rs T`, so it is `$T`, not the agent's `$VALUE`:
+
+   ```bash
+   op item get <title> --vault <vault> --fields label=credential --reveal \
+     | tr -d '\n' | shasum -a 256
+   printf '%s' "$T" | shasum -a 256        # the two digests must match
+   unset T                                 # now — not before this check
+   ```
+
+   Or he simply reopens the item in the 1Password UI and eyeballs it.
+   `--reveal` piped straight to a digest never lands plaintext in a transcript;
+   `--reveal` alone does — that is the line.
 2. **Proof by refusal**: where the design says a lane must NOT reach the
    item, run that read and confirm it fails. A wall nobody has probed is a
    hope, not a wall.
