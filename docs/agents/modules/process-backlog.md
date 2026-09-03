@@ -124,16 +124,24 @@ two tasks overlap, **fold first, then archive** — and fold by READ-MODIFY-WRIT
 fragment silently wipes the survivor's context, and then you archive the victim.
 Both halves are gone, inside the one step whose entire purpose is losing neither.
 
+**Read it with `bin/task field`, never by eye.** `bin/task show -v` RENDERS the
+value into a report — the label is glued to line 1, and nothing marks where the
+value ends — so "copy it out verbatim" means hand-parsing a decorated block and
+retyping it into a shell argument. Real contexts run to thousands of characters
+across many lines. `bin/task field <slug> agent_context` prints the raw String
+and nothing else, and `"$CTX"` carries it through untouched:
+
 ```bash
-bin/task show <survivor> -v      # 1. READ the existing agent_context and copy it out IN FULL
-bin/task update <survivor> --agent-context "<the existing context, verbatim> ; folded from <victim>: <its unique detail>"
-bin/task show <survivor> -v      # 2. READ IT BACK — the old text must still be there
+CTX="$(bin/task field <survivor> agent_context)"   # 1. READ it raw — never retype it
+bin/task update <survivor> --agent-context "$CTX ; folded from <victim>: <its unique detail>"
+bin/task field <survivor> agent_context            # 2. READ IT BACK and COMPARE to $CTX
 bin/task note <victim> --comment "archived: superseded by <survivor> — detail folded into that task's agent_context"
 bin/task move <victim> archived
 ```
 
-The read-back is what catches the clobber while it is still free. Once the victim
-is archived there is no second copy of either half anywhere.
+The read-back only catches a clobber if you **compare** it to what you read —
+presence is not equality, and a truncated copy still contains "the old text".
+Once the victim is archived there is no second copy of either half anywhere.
 
 Post the reason **before** the move. `archived` is terminal, and a reason that
 lives only in this session's chat is a reason nobody will ever find.
