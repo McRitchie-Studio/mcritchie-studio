@@ -138,7 +138,7 @@ Rails.application.routes.draw do
 
   namespace :admin do
     get "dashboard", to: "dashboard#show", as: :dashboard
-    # The knowledge-capture front door's mail queue (desk@mcritchie.studio).
+    # The knowledge-capture front door's mail queue (team@mcritchie.studio).
     get "desk", to: "desk#index", as: :desk
     get "models", to: "models#index", as: :models
     get "models/:key", to: "models#show", as: :model

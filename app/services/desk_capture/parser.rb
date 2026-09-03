@@ -50,7 +50,7 @@ module DeskCapture
     end
 
     # Subject tag wins ("[welding] site visit notes"), then a plus-address on
-    # any recipient (desk+welding@...). A hint is routing ADVICE for the sweep,
+    # any recipient (team+welding@...). A hint is routing ADVICE for the sweep,
     # never trusted blindly.
     def self.extract_entity_hint(mail)
       if (m = mail.subject.to_s.match(/\[([a-z-]+)\]/i))
@@ -60,7 +60,7 @@ module DeskCapture
 
       recipients = [mail.to, mail.cc, mail["Delivered-To"]&.value].flatten.compact.map(&:to_s)
       recipients.each do |addr|
-        if (m = addr.downcase.match(/desk\+([a-z-]+)@/))
+        if (m = addr.downcase.match(/team\+([a-z-]+)@/))
           return ENTITY_TAGS.fetch(m[1], m[1])
         end
       end

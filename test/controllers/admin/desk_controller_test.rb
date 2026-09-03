@@ -49,4 +49,12 @@ class Admin::DeskControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_includes response.body, "desk-empty"
   end
+
+  test "the page names team@ as the front door, never desk@" do
+    log_in_as(admin)
+    get admin_desk_path
+    assert_response :success
+    assert_includes response.body, "team@mcritchie.studio"
+    refute_includes response.body, "desk@mcritchie.studio"
+  end
 end
