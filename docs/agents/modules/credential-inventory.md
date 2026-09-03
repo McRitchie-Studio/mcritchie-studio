@@ -6,12 +6,21 @@ This file names credential locations so agents can ask for or reference the righ
 
 | Vault | Purpose |
 |-------|---------|
-| `agents-studio` | The **agent** vault — every build, review, and QA lane reads it through `OP_SERVICE_ACCOUNT_TOKEN`. It is the vault formerly named `agents` (renamed 2026-08-28; same vault id `txqp6ijdo3ujsfhsfzdj5h5dzq`). |
-| `agents-admin` | The **admin** vault — `github.mcritchie-deployer` and other ship-lane credentials. Read only by a SEPARATE service account (`OP_ADMIN_SERVICE_ACCOUNT_TOKEN`, sourced from `~/.zprofile.admin`); the agent token is never granted it, so an ordinary agent shell cannot even list it. That invisibility is the design, not a fault. |
-| `agents-industries` | Industries-brand agent credentials. Created 2026-08-28. **Not visible to the agent service account** — on 2026-08-29 `op vault list` returned `agents-studio` alone. Grant it before a lane depends on it. |
-| `agents-mcritchie-family` | Family-brand agent credentials. Created 2026-08-28. **Not visible to the agent service account** — same as above. Grant it before a lane depends on it. |
+| `studio-agents` | The **agent** vault — every build, review, and QA lane reads it through `OP_SERVICE_ACCOUNT_TOKEN`. It is the vault formerly named `agents` (renamed 2026-08-28; same vault id `txqp6ijdo3ujsfhsfzdj5h5dzq`). |
+| `studio-agents-admin` | The **admin** vault — `github.mcritchie-deployer` and other ship-lane credentials. Read only by a SEPARATE service account (`OP_ADMIN_SERVICE_ACCOUNT_TOKEN`, sourced from `~/.zprofile.admin`); the agent token is never granted it, so an ordinary agent shell cannot even list it. That invisibility is the design, not a fault. |
+| `industries-agents` | Industries-brand agent credentials. Created 2026-08-28. **Not visible to the agent service account** — on 2026-08-29 `op vault list` returned `studio-agents` alone. Grant it before a lane depends on it. |
+| `family-agents` | Family-brand agent credentials. Created 2026-08-28. **Not visible to the agent service account** — same as above. Grant it before a lane depends on it. |
 | `Commercial Welding` | Reserved for the Commercial Welding initiative. Created 2026-08-28. **Not visible to the agent service account** — same as above. Grant it before a lane depends on it. |
+| `studio-applications` | **Deterministic application/CI credentials** — consumed by deployed software, never by agent judgment: the durable copies of Heroku config vars and GitHub Actions secrets. Created 2026-09-02. Admin service account WRITES here (the provisioning lane files fleet credentials — this is the one vault where agent-side write is by design); agent service account reads. Grants pending as of 2026-09-02. |
 | `Blockchain` / `🧱 Blockchain` | Human-controlled blockchain credentials, if granted. |
+
+**Vault naming is entity-first** (`<entity>-<consumer>`), renamed 2026-09-02 from
+the older `agents-<entity>` shape — same vault ids, so ID-pinned tooling never
+noticed. The rule that picks a vault is the CONSUMER: a credential wielded by a
+session's judgment lives in an `-agents` vault (tiered `-agents-admin` for
+provisioning/ship lanes); one consumed deterministically by software lives in
+`-applications`. The rotation runbook follows the vault: application credentials
+rotate by redeploying config, agent credentials by re-minting lanes.
 
 `bin/lib/op_vaults.rb` is the one place code names a vault (`MCR_OP_VAULT_AGENT` /
 `MCR_OP_VAULT_ADMIN` override it per machine). The names in this table are for
@@ -21,26 +30,30 @@ humans; when the two disagree, fix both in the same pass.
 
 | Item | Vault | Purpose | Typical consumer |
 |------|-------|---------|------------------|
-| `agent.heroku` | `agents-studio` | Heroku API key | `bin/ecosystem-build` |
-| `github.mcritchie-agent` | `agents-studio` | GitHub App for the **build/review** lanes (the default identity): Contents + Pull requests + Checks read + Actions + Workflows across the McRitchie-Studio org. Fields: `app-id` = **`4431410`** (recorded here on purpose — see **GitHub App IDs** below), `client-id`; the private key is the **`.pem` FILE attachment** — the concealed `private key` field is NOT the key. | Two legs: `git push` via the global helper `bin/gh-app-git-credential`; `gh` PR create/merge + CI-status reads via a per-session minted `GH_TOKEN` (`bin/gh-app-mint-token`) — `gh` never consults git credential helpers (see `credentials.md` → GitHub). |
-| `github.mcritchie-deployer` | `agents-admin` | GitHub App for the **ship** lane: Contents + Actions + Checks read + Secrets — **no pull-request scope by design** (the deployer cannot open or merge PRs). Fields: `app-id` = **`4431542`** (recorded here on purpose — see **GitHub App IDs** below), `client-id`; key is the **`.pem` FILE attachment**. | `production-deploy` / `bin/release ship` sessions, via `export GH_APP_ITEM=github.mcritchie-deployer` — in a shell that has run `source ~/.zprofile.admin` first, because only the admin token can read this vault. |
-| `agent.github` | — (deleted) | **DELETED from 1Password** — verified absent from `agents-studio` on 2026-08-29, after both auth legs were proven on the App identities. It was the old `amcritchie` fine-grained PAT; fine-grained PATs cannot call the check-runs API, so the two GitHub Apps above replaced it. If a `gh` keyring still lists an `amcritchie` account, that is this PAT lingering: `gh auth logout -h github.com -u amcritchie`, then revoke it on GitHub. | Historical reference only. |
-| `Agent API Secret` | `agents-studio` | Task-board API secret (`AGENT_API_SECRET`); auth for the agent task API. Also in app `.env` + Heroku config | McRitchie Studio task board (`POST /api/v1/auth`); see `task-board-api.md` |
-| `agent.solana` | `agents-studio` | Legacy Alex Bot Solana wallet; retired after key rotation | Historical reference only |
-| `agent.alex.solana` | `agents-studio` | Rotated Alex Bot/admin wallet | turf-vault and Turf Monster ops |
-| `agent.mason.solana` | `agents-studio` | Mason wallet | multisig / agent wallet |
-| `agent.mack.solana` | `agents-studio` | Mack wallet | agent wallet |
-| `agent.turf.solana` | `agents-studio` | Turf Monster wallet | agent wallet |
-| `agent.managed_wallet` | `agents-studio` | Managed wallet encryption key | Turf Monster managed-wallet flows |
-| `agent.helius` | `agents-studio` | Devnet/mainnet Helius RPC URLs | Solana apps |
-| `agent.aws.mcritchie-ses` | `agents-studio` | Shared SES-scoped AWS API credentials, region `us-east-2`; runtime SMTP credentials are derived/stored separately | McRitchie, Turf Monster, and future app email delivery |
-| `agent.aws` | `agents-studio` | General AWS API credentials (S3 read/write, `us-east-2`); fields `access key` + `access secret key`. One IAM user, `mcritchie-s3`, backs **every** McRitchie app — read **Shared AWS identity** below before rotating or reusing it. Ignore the decoy `dont.use.agent.aws`. | Active Storage + reference-image (e.g. Pokémon) uploads, across hub, Turf Monster, Industries, and moms-app |
-| `AWS` | `agents-admin` | IAM user `agents-admin` (account `534727954137`), created 2026-09-01. Fields `access-key` + `secret-access-key` (+ `account-id`, `region` = `us-east-2`). Policy `agents-admin-provisioning`: `s3:*`, mint/rotate IAM users under path `/mcr/*`, account read-only. It sits outside `/mcr/`, so it cannot edit its own policy; the admin service account's vault grant is READ-ONLY (`op item get` works, `op item edit` is refused — expected). | Steffon's `bucket-provision` sessions and fleet audits, via `source ~/.zprofile.admin` + the admin op token. Conventions: `modules/object-storage.md` |
-| `Coinbase Developer Platform` | `agents-studio` | CDP API key | Turf Monster CDP ramp |
-| `agent.higgesfield` | `agents-studio` | Higgsfield media generation API | McRitchie Studio content pipeline |
-| `x.api` | `agents-studio` — **absent on 2026-08-29**; the X credentials present there are `agent.turf.x` | X/Twitter API credentials | McRitchie Studio news/content |
+| `heroku.studio.agents` | `studio-agents` | Heroku **agent lane** OAuth authorization (`dec169b0…`), scope `identity,read-protected,write-protected` — deploys, config vars, one-off dynos, logs, app creates; CANNOT transfer apps or manage authorization lanes (and could technically delete an app — SOP forbids). Item notes carry this permission matrix — the Heroku items follow `heroku.studio.<lane>` with the lane named after its vault. Staged as `HEROKU_STUDIO_AGENTS_API_KEY` in `~/.zprofile.admin`; at the account cutover it becomes `HEROKU_API_KEY` in `~/.zprofile`. Replaced `agent.heroku` (global-scope lane `b6697b95…`, revoked 2026-09-02). | `bin/ecosystem-build`, agent sessions (`heroku run`, ship git-pushes), Avi QA deploys, Steffon prod deploys |
+| `Heroku` | `studio-agents-admin` | The MASTER account login for alex@mcritchie.studio: password, TOTP, recovery codes. The dashboard's master API key is deliberately NOT stored anywhere — break-glass = reveal it in the dashboard behind MFA. | Operator only |
+| `heroku.studio.admin` | `studio-agents-admin` | Filed 2026-09-02 by the admin lane (the vault became admin-lane-writable that day — a new admin service account with read+write; before that, agent writes were refused by design). Heroku **admin lane** OAuth authorization (`66cd4db9…`), scope `global` — the only lane that can transfer apps, grant access, and manage the authorization lanes; "never delete an app" is SOP, not scope (Heroku cannot separate delete from write). Staged as `HEROKU_STUDIO_ADMIN_API_KEY` in `~/.zprofile.admin`. | Steffon provisioning acts, via the admin profile |
+| `heroku.studio.applications` | `studio-applications` | Heroku **CI lane** OAuth authorization (`d976c7b8…`), scope `identity,read-protected,write-protected` (same matrix as the agents lane; in the item notes). Runtime home is the Actions `HEROKU_API_KEY` secret at cutover; staged as `HEROKU_STUDIO_APPLICATIONS_API_KEY` in `~/.zprofile.admin`. Replaced `mcritchie-studio.github-actions-heroku` (global-scope lane `1f468f88…`, revoked 2026-09-02). | GitHub Actions deploys |
+| `mcritchie-industries.aws` | `studio-applications` | Filed 2026-09-02. The AWS pair the mcritchie-industries Heroku app runs with (S3 knowledge-layer buckets; IAM under `/mcr/`); mirrors the app's `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` config vars — rotate both together. | Industries app + QA |
+| `github.mcritchie-agent` | `studio-agents` | GitHub App for the **build/review** lanes (the default identity): Contents + Pull requests + Checks read + Actions + Workflows across the McRitchie-Studio org. Fields: `app-id` = **`4431410`** (recorded here on purpose — see **GitHub App IDs** below), `client-id`; the private key is the **`.pem` FILE attachment** — the concealed `private key` field is NOT the key. | Two legs: `git push` via the global helper `bin/gh-app-git-credential`; `gh` PR create/merge + CI-status reads via a per-session minted `GH_TOKEN` (`bin/gh-app-mint-token`) — `gh` never consults git credential helpers (see `credentials.md` → GitHub). |
+| `github.mcritchie-deployer` | `studio-agents-admin` | GitHub App for the **ship** lane: Contents + Actions + Checks read + Secrets — **no pull-request scope by design** (the deployer cannot open or merge PRs). Fields: `app-id` = **`4431542`** (recorded here on purpose — see **GitHub App IDs** below), `client-id`; key is the **`.pem` FILE attachment**. | `production-deploy` / `bin/release ship` sessions, via `export GH_APP_ITEM=github.mcritchie-deployer` — in a shell that has run `source ~/.zprofile.admin` first, because only the admin token can read this vault. |
+| `agent.github` | — (deleted) | **DELETED from 1Password** — verified absent from `studio-agents` on 2026-08-29, after both auth legs were proven on the App identities. It was the old `amcritchie` fine-grained PAT; fine-grained PATs cannot call the check-runs API, so the two GitHub Apps above replaced it. If a `gh` keyring still lists an `amcritchie` account, that is this PAT lingering: `gh auth logout -h github.com -u amcritchie`, then revoke it on GitHub. | Historical reference only. |
+| `Agent API Secret` | `studio-agents` | Task-board API secret (`AGENT_API_SECRET`); auth for the agent task API. Also in app `.env` + Heroku config | McRitchie Studio task board (`POST /api/v1/auth`); see `task-board-api.md` |
+| `agent.solana` | `studio-agents` | Legacy Alex Bot Solana wallet; retired after key rotation | Historical reference only |
+| `agent.alex.solana` | `studio-agents` | Rotated Alex Bot/admin wallet | turf-vault and Turf Monster ops |
+| `agent.mason.solana` | `studio-agents` | Mason wallet | multisig / agent wallet |
+| `agent.mack.solana` | `studio-agents` | Mack wallet | agent wallet |
+| `agent.turf.solana` | `studio-agents` | Turf Monster wallet | agent wallet |
+| `agent.managed_wallet` | `studio-agents` | Managed wallet encryption key | Turf Monster managed-wallet flows |
+| `agent.helius` | `studio-agents` | Devnet/mainnet Helius RPC URLs | Solana apps |
+| `agent.aws.mcritchie-ses` | `studio-agents` | Shared SES-scoped AWS API credentials, region `us-east-2`; runtime SMTP credentials are derived/stored separately | McRitchie, Turf Monster, and future app email delivery |
+| `agent.aws` | `studio-agents` | General AWS API credentials (S3 read/write, `us-east-2`); fields `access key` + `access secret key`. One IAM user, `mcritchie-s3`, backs **every** McRitchie app — read **Shared AWS identity** below before rotating or reusing it. Ignore the decoy `dont.use.agent.aws`. | Active Storage + reference-image (e.g. Pokémon) uploads, across hub, Turf Monster, Industries, and moms-app |
+| `AWS` | `studio-agents-admin` | IAM user `studio-agents-admin` (account `534727954137`), created 2026-09-01. Fields `access-key` + `secret-access-key` (+ `account-id`, `region` = `us-east-2`). Policy `studio-agents-admin-provisioning`: `s3:*`, mint/rotate IAM users under path `/mcr/*`, account read-only. It sits outside `/mcr/`, so it cannot edit its own policy; the admin service account's vault grant is READ-ONLY (`op item get` works, `op item edit` is refused — expected). | Steffon's `bucket-provision` sessions and fleet audits, via `source ~/.zprofile.admin` + the admin op token. Conventions: `modules/object-storage.md` |
+| `Coinbase Developer Platform` | `studio-agents` | CDP API key | Turf Monster CDP ramp |
+| `agent.higgesfield` | `studio-agents` | Higgsfield media generation API | McRitchie Studio content pipeline |
+| `x.api` | `studio-agents` — **absent on 2026-08-29**; the X credentials present there are `agent.turf.x` | X/Twitter API credentials | McRitchie Studio news/content |
 
-### Also present in `agents-studio` (listed 2026-08-29, not yet described)
+### Also present in `studio-agents` (listed 2026-08-29, not yet described)
 
 Beyond the rows above: `agent.1password` (holds the
 service-account token install recipe), `agent.rails_master_key`,
@@ -55,8 +68,8 @@ in the table above the first time a doc or script depends on it.
 
 | App | 1Password item | Vault | `app-id` |
 |-----|----------------|-------|----------|
-| agent (build/review) | `github.mcritchie-agent` | `agents-studio` | **`4431410`** |
-| deployer (ship) | `github.mcritchie-deployer` | `agents-admin` | **`4431542`** |
+| agent (build/review) | `github.mcritchie-agent` | `studio-agents` | **`4431410`** |
+| deployer (ship) | `github.mcritchie-deployer` | `studio-agents-admin` | **`4431542`** |
 
 A convenience copy sits at `~/.config/mcritchie/app-ids.json` on Mr.
 McRitchie's Mac. Nothing generates that file, so a rebuilt machine will not
@@ -131,7 +144,7 @@ behind fail on their next upload.
 | `mcritchie-studio-dev` | hub `amazon_dev` service | Yes |
 | `turf-monster-production` | `turf-monster-mainnet` (live) | Yes |
 | `turf-monster-dev` | Turf Monster dev | Yes |
-| `mcritchie-industries-production` | `mcritchie-industries` (per-app key since 2026-09-02); `mcritchie-industries-qa` still RESOLVES this bucket but its dev key is refused here — cutover: `/tasks/industries-qa-bucket-cutover` | **No** — flipped private 2026-09-01 while still empty |
+| `mcritchie-industries-production` | `mcritchie-industries` (per-app key since 2026-09-02); `mcritchie-industries-qa` Active Storage was CUT OVER to the dev bucket 2026-09-02 (`/tasks/industries-qa-bucket-cutover`), but its `Studio::S3` writers (`/admin/emails`, `/admin/knowledge`) STILL resolve this bucket and are still refused here — `Studio::S3.environment` reads `Rails.env`, not `QA_ENV` | **No** — flipped private 2026-09-01 while still empty |
 | `mcritchie-industries-dev` | Industries dev | **No** — flipped private 2026-09-01 while still empty |
 | `moms-app-production` | moms-app (deployed off the hub Heroku account) | **No** — the one private bucket |
 
@@ -174,11 +187,13 @@ and tiers: `modules/object-storage.md`.
 
 **First migration landed 2026-09-02:** Industries' deployed apps now run
 `mcr-mcritchie-industries-{prod,dev}` via Heroku config vars and are OFF this
-shared identity's rotation list. The 1Password item
-`agent.mcritchie-industries.aws` (vault `agents-industries`; four fields:
-prod/dev key id + secret) is **owed** — the admin service account's vault grant
-is read-only, so an agent could not write it; copy the values from
-`heroku config` until a write-capable lane or the operator lands the item.
+shared identity's rotation list. The prod pair is filed as
+`mcritchie-industries.aws` in `studio-applications` (the applications vault
+superseded the earlier plan of `agent.mcritchie-industries.aws` in
+`industries-agents`). The **dev pair is still owed** — QA carries no AWS config
+vars, so its values live only in local `.env` files; file them into the same
+item as `dev-access-key`/`dev-secret-access-key` when next at a desk that has
+them.
 
 ## Convention
 

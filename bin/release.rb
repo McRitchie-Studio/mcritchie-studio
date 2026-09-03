@@ -4258,7 +4258,7 @@ def push_failure_message(repo, sha, cause)
     "could not push #{repo} origin/main to #{short(sha)} — git was REFUSED ON CREDENTIALS, not on the ref. " \
       "main has NOT diverged and nothing needs reconciling; the push never got far enough to find out. " \
       "This is the SHIP lane, which pushes as the DEPLOYER identity, so it needs " \
-      "OP_ADMIN_SERVICE_ACCOUNT_TOKEN to read github.mcritchie-deployer from the agents-admin vault. " \
+      "OP_ADMIN_SERVICE_ACCOUNT_TOKEN to read github.mcritchie-deployer from the studio-agents-admin vault. " \
       "On a provisioned machine that is SELF-SERVICE — the token is already on disk, just not in " \
       "this shell:\n" \
       "    source ~/.zprofile.admin\n" \

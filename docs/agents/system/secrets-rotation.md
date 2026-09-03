@@ -2,7 +2,7 @@
 
 > **When to read this:** A token/key/secret needs to be rotated — scheduled, compromised, or expiring. Each section is a self-contained procedure: where the secret is stored, how to regenerate it at the source, how to push the new value to every consumer, how to verify the rotation succeeded.
 
-The 1Password account is `alex@mcritchie.studio` (account ID `MWOV5OT5BRHATI4EGMN26C5DPA`), vaults `agents-studio` (agent lane) and `agents-admin` (ship lane — separate service account, `bin/setup-1pass-token --admin`). Heroku apps are `mcritchie-studio` and `turf-monster-mainnet`. After every rotation, re-run `bin/ecosystem-build` so the dev `.env` files refresh from Heroku's new config.
+The 1Password account is `alex@mcritchie.studio` (account ID `MWOV5OT5BRHATI4EGMN26C5DPA`), vaults `studio-agents` (agent lane) and `studio-agents-admin` (ship lane — separate service account, `bin/setup-1pass-token --admin`). Heroku apps are `mcritchie-studio` and `turf-monster-mainnet`. After every rotation, re-run `bin/ecosystem-build` so the dev `.env` files refresh from Heroku's new config.
 
 ---
 
@@ -14,26 +14,26 @@ The 1Password account is `alex@mcritchie.studio` (account ID `MWOV5OT5BRHATI4EGM
 
 **Procedure:**
 1. https://start.1password.com → Developer Tools → Service Accounts.
-2. Find the existing service account row. Click "Rotate token" (or delete + recreate with read on `agents-studio`). The admin token is a second, separate service account with read on `agents-admin` — rotate it the same way and install it with `bin/setup-1pass-token --admin`.
+2. Find the existing service account row. Click "Rotate token" (or delete + recreate with read on `studio-agents`). The admin token is a second, separate service account with read on `studio-agents-admin` — rotate it the same way and install it with `bin/setup-1pass-token --admin`.
 3. Copy the new `ops_...` token to clipboard.
 4. From `~/projects/mcritchie-studio`: `bin/setup-1pass-token`. The script reads from `pbpaste`, validates the prefix, replaces the existing line in `~/.zprofile`, chmods 600, and verifies with `op vault list`.
 5. `source ~/.zprofile` (or open a new terminal).
 
-**Verify:** `op vault list` lists `agents-studio`. `bin/ecosystem-build` reaches Phase 4 cleanly.
+**Verify:** `op vault list` lists `studio-agents`. `bin/ecosystem-build` reaches Phase 4 cleanly.
 
 ---
 
 ## Heroku API key (`HEROKU_API_KEY`)
 
-**Store:** 1Password item `agent.heroku` (URL field labelled `api key`) + `~/.zprofile` after `bin/ecosystem-build` runs Phase 4.
+**Store:** 1Password item `heroku.studio.agents` in `studio-agents`. Pre-cutover the fleet key is the `legacy-personal-api-key` field (delete it at the app-transfer cutover); after, the lane's `credential` field. `bin/ecosystem-build` Phase 4 reads legacy-first with the same fallback, then writes `~/.zprofile`.
 
 **Symptoms of rotation needed:** `heroku auth:whoami` returns 401. Heroku-side suspicion of compromise.
 
 **Procedure:**
-1. `heroku authorizations:create -d "alex@mac"` → copy the resulting `HRKU-...` token.
-2. Open 1Password → `agent.heroku` → edit the URL labelled `api key` → paste the new token. Save.
+1. Mint the replacement lane (admin profile): `heroku authorizations:create -s identity,read-protected,write-protected -d "heroku.studio.agents" -S` → the `HRKU-...` token.
+2. Update 1Password → `heroku.studio.agents` → the active key field (`legacy-personal-api-key` pre-cutover, `credential` after) → paste the new token; update `authorization-id`. Save.
 3. Remove the old `HEROKU_API_KEY` line from `~/.zprofile`: `sed -i '' '/HEROKU_API_KEY/d' ~/.zprofile`.
-4. Re-run `bin/ecosystem-build` — Phase 4 will re-fetch `agent.heroku` from 1P, write the new key to `~/.zprofile`, and `heroku auth:whoami` against it.
+4. Re-run `bin/ecosystem-build` — Phase 4 re-fetches `heroku.studio.agents` from 1P, writes the new key to `~/.zprofile`, and `heroku auth:whoami` against it.
 5. Revoke the old token: `heroku authorizations` to list, then `heroku authorizations:revoke <id>` for the old one.
 
 **Verify:** `heroku auth:whoami` returns `alex@mcritchie.studio`. `heroku apps` lists both apps.

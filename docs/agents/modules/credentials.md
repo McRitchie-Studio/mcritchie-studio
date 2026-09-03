@@ -28,8 +28,8 @@ that maps a lane to its vault and token; no other file should name a vault.
 
 | Lane | Vault (default) | Token variable | Loaded where |
 |------|-----------------|----------------|--------------|
-| `agent` — build, review, merge | `agents-studio` | `OP_SERVICE_ACCOUNT_TOKEN` | `~/.zprofile` — every shell |
-| `deployer` — ship, deploy | `agents-admin` | `OP_ADMIN_SERVICE_ACCOUNT_TOKEN` | `~/.zprofile.admin` — opt-in |
+| `agent` — build, review, merge | `studio-agents` | `OP_SERVICE_ACCOUNT_TOKEN` | `~/.zprofile` — every shell |
+| `deployer` — ship, deploy | `studio-agents-admin` | `OP_ADMIN_SERVICE_ACCOUNT_TOKEN` | `~/.zprofile.admin` — opt-in |
 
 Install the admin one with `bin/setup-1pass-token --admin`; ship lanes then
 `source ~/.zprofile.admin`. It is deliberately NOT auto-loaded, so an ordinary
@@ -84,7 +84,7 @@ Verify:
 
 Expected user type: `SERVICE_ACCOUNT`.
 
-Default access is the AGENT vault (`agents-studio`). The ADMIN vault (`agents-admin`) is granted to a SEPARATE service account, never added to this one — that separation is what stops a build lane MINTING an admin credential; the 1Password read is the step it blocks, which is narrower than the claim that a build lane can never hold one (see above). Additional vaults should be granted deliberately for a role or task, such as a DevOps-specific vault for AWS credentials.
+Default access is the AGENT vault (`studio-agents`). The ADMIN vault (`studio-agents-admin`) is granted to a SEPARATE service account, never added to this one — that separation is what stops a build lane MINTING an admin credential; the 1Password read is the step it blocks, which is narrower than the claim that a build lane can never hold one (see above). Additional vaults should be granted deliberately for a role or task, such as a DevOps-specific vault for AWS credentials.
 
 ## GitHub (`gh` / `git`)
 
@@ -102,7 +102,7 @@ rather than a personal token.
 
 ### The items
 
-The two GitHub App items are split across the two vaults — `github.mcritchie-agent` in `agents-studio`, `github.mcritchie-deployer` in `agents-admin` — see the two-lane table above. A ship session therefore runs `source ~/.zprofile.admin` BEFORE `export GH_APP_ITEM=github.mcritchie-deployer`; without the admin token the deployer read refuses, by design.
+The two GitHub App items are split across the two vaults — `github.mcritchie-agent` in `studio-agents`, `github.mcritchie-deployer` in `studio-agents-admin` — see the two-lane table above. A ship session therefore runs `source ~/.zprofile.admin` BEFORE `export GH_APP_ITEM=github.mcritchie-deployer`; without the admin token the deployer read refuses, by design.
 
 | Identity (1Password item) | Lane | Grants |
 |---------------------------|------|--------|

@@ -327,8 +327,12 @@ class ReviewClaimCli
     return cant_run("could not read review status") if first == :unreadable
 
     started = @clock.call
-    grade, holder, watched = resolve(slug, first, started, flags)
-    flags["json"] ? emit_status_json(slug, grade, holder, watched) : emit_status_text(slug, grade, holder, watched)
+    grade, holder, watched, differenced = resolve(slug, first, started, flags)
+    if flags["json"]
+      emit_status_json(slug, grade, holder, watched, differenced)
+    else
+      emit_status_text(slug, grade, holder, watched, differenced)
+    end
     OK
   end
 
@@ -348,8 +352,10 @@ class ReviewClaimCli
       first_expires_at: expiry_of(first), second_expires_at: expiry_of(first),
       first_read_at: started, renew_interval: ShiftRenewer::INTERVAL_SECONDS, now: started
     )
-    return [ClaimHolder::FREE, first, 0] if settled == ClaimHolder::FREE
-    return [ClaimHolder::UNOBSERVED, first, 0] if flags["no-observe"]
+    # FREE and UNOBSERVED never speak about a pair, so the differenced flag is inert
+    # for them; pass `true` so only the outage path can reach the ignorance wording.
+    return [ClaimHolder::FREE, first, 0, true] if settled == ClaimHolder::FREE
+    return [ClaimHolder::UNOBSERVED, first, 0, true] if flags["no-observe"]
 
     observe_lease(slug, first, started, observe_budget(flags))
   end
@@ -364,25 +370,54 @@ class ReviewClaimCli
   # ignorance it has.
   def observe_lease(slug, first, started, budget)
     latest = first
+    differenced = false
+    # WHEN the observation last succeeded. `started` seeds it because the first
+    # read happened then; every later successful poll moves it, and a failed one
+    # does not. ClaimHolder.observe grades against THIS, not against loop-exit
+    # time, so an outage can no longer manufacture LAPSED or NOT_RENEWING.
+    last_read_at = started
     loop do
       remaining = budget - (@clock.call - started)
       break if remaining <= 0
 
       @sleeper.call([POLL_SECONDS, remaining].min)
       sample = read_holder(slug)
-      latest = sample unless sample == :unreadable
-      grade = grade_for(first, latest, started)
-      return [grade, latest, watched_since(started)] unless grade == ClaimHolder::INCONCLUSIVE
+      # An unreadable poll is not evidence, so it must not be GRADED either. With
+      # `latest` still pinned to `first`, grade_for would difference the first read
+      # against ITSELF and read "the expiry did not move" off a value nobody ever
+      # looked at twice — which past a full renew cycle grades NOT_RENEWING and
+      # prints, character for character, what a genuinely dying holder prints.
+      next if sample == :unreadable
+
+      latest = sample
+      differenced = true
+      last_read_at = @clock.call
+      grade = grade_for(first, latest, started, last_read_at)
+      return [grade, latest, observed_span(started, last_read_at), true] unless
+        grade == ClaimHolder::INCONCLUSIVE
     end
-    [grade_for(first, latest, started), latest, watched_since(started)]
+    # No poll after the first ever succeeded, so no PAIR was ever differenced. Report
+    # the ignorance this command promised to report, rather than a verdict assembled
+    # from one read pretending to be two.
+    return [ClaimHolder::INCONCLUSIVE, latest, observed_span(started, last_read_at), false] unless
+      differenced
+
+    [grade_for(first, latest, started, last_read_at), latest,
+     observed_span(started, last_read_at), true]
   end
 
-  def grade_for(first, latest, started)
+  def grade_for(first, latest, started, last_read_at = nil)
     ClaimHolder.observe(
       first_expires_at: expiry_of(first), second_expires_at: expiry_of(latest),
-      first_read_at: started, renew_interval: ShiftRenewer::INTERVAL_SECONDS, now: @clock.call
+      first_read_at: started, renew_interval: ShiftRenewer::INTERVAL_SECONDS, now: @clock.call,
+      last_read_at: last_read_at
     )
   end
+
+  # The span we OBSERVED, not the span we waited. These diverge under an outage,
+  # and reporting the wait as the watch is how "35s" ends up beside a sentence
+  # about what the expiry did — over a stretch nobody was reading it.
+  def observed_span(started, last_read_at) = ((last_read_at || @clock.call) - started).round
 
   def watched_since(started) = (@clock.call - started).round
 
@@ -410,11 +445,12 @@ class ReviewClaimCli
 
   def expiry_of(holder) = holder.is_a?(Hash) ? holder["expires_at"] : nil
 
-  def emit_status_text(slug, grade, holder, watched)
+  def emit_status_text(slug, grade, holder, watched, differenced = true)
     @out.puts("review-claim: #{slug} — " +
               ClaimHolder.render_observation(grade, expires_at: expiry_of(holder),
                                                     watched_seconds: watched,
-                                                    renew_interval: ShiftRenewer::INTERVAL_SECONDS))
+                                                    renew_interval: ShiftRenewer::INTERVAL_SECONDS,
+                                                    differenced: differenced))
     @out.puts("  holder: #{holder_line(holder)}") if holder.is_a?(Hash) && present?(holder["session"])
     @out.puts("  #{next_move(slug, grade)}")
   end
@@ -435,14 +471,18 @@ class ReviewClaimCli
       "strands the reviewer's verdict."
   end
 
-  def emit_status_json(slug, grade, holder, watched)
+  def emit_status_json(slug, grade, holder, watched, differenced = true)
     @out.puts(JSON.generate({
                               "slug" => slug,
                               "observed" => grade.to_s,
                               "observed_note" => ClaimHolder.render_observation(
                                 grade, expires_at: expiry_of(holder), watched_seconds: watched,
-                                       renew_interval: ShiftRenewer::INTERVAL_SECONDS
+                                       renew_interval: ShiftRenewer::INTERVAL_SECONDS,
+                                       differenced: differenced
                               ),
+                              # A machine consumer must be able to tell "watched and saw
+                              # nothing move" from "never got a second look at all".
+                              "differenced" => differenced,
                               "free" => ClaimHolder.observed_free?(grade),
                               "watched_seconds" => watched,
                               "renew_interval" => ShiftRenewer::INTERVAL_SECONDS,

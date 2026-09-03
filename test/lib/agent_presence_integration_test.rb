@@ -123,8 +123,23 @@ class AgentPresenceIntegrationTest < Minitest::Test
 
     table = CertOrphanGuard.process_table
     row = table.find { |p| p[:pid] == pid }
-    refute_nil row
-    assert_match(/\AS/, row[:state].to_s, "sleep(1) is a SLEEPING process — the CI-wait shape")
+    refute_nil row, "a GONE process leaves no row — this test needs a process that exists"
+    # This precondition means "the process is ALIVE" — present in the table and not a
+    # zombie. It used to read `assert_match(/\AS/, row[:state])`: a one-letter prefix
+    # test for SLEEPING, standing in for liveness by accident.
+    #
+    # SLEEPING is not a property this process guarantees. On 2026-09-02 it sampled as
+    # "D" — uninterruptible I/O: alive, but blocked in the kernel — and reddened
+    # studio-engine PR #265 on hub shard 3 (Consumer CI run 33672861848, attempt 1); a
+    # re-run of the same head passed. Any non-S state does it. Liveness is the property
+    # under test, and it does not flicker.
+    #
+    # So exclude what is NOT alive rather than name what is: GONE by the refute_nil
+    # above, ZOMBIE by the check below. Both are preconditions for legibility, not
+    # coverage — either also fails the grade assertion that follows, the real subject.
+    # Injecting a table here would assert that conclusion, so the process stays REAL.
+    refute_match(/\AZ/, row[:state].to_s,
+                 "a zombie holds no DB connection and is not the live process this test needs")
 
     assert_equal :live, AgentPresence.grade(lock: lock, table: table)[0],
                  "a process consuming no CPU is still holding its slot; conflating the two starves peers"

@@ -10,7 +10,7 @@
 # call sites broken, including bin/task.
 #
 # THE SHARPER DEFECT, and why `test_a_build_lane_cannot_reach_admin_credentials`
-# is the most important test in this file: `agents-studio` holds the AGENT app
+# is the most important test in this file: `studio-agents` holds the AGENT app
 # item but not the DEPLOYER one. Repointing everything at the reachable vault
 # turns the build lane green immediately and breaks PRODUCTION DEPLOYS hours
 # later. The lanes must resolve to DIFFERENT vaults, and the admin lane must be
@@ -36,7 +36,7 @@ class OpVaultsTest < Minitest::Test
 
   def test_the_two_lanes_resolve_to_different_vaults
     refute_equal OpVaults.vault(:agent), OpVaults.vault(:deployer),
-                 "agent and deployer MUST NOT share a vault — agents-studio carries the " \
+                 "agent and deployer MUST NOT share a vault — studio-agents carries the " \
                  "agent app item and not the deployer's, so collapsing them turns the " \
                  "build lane green while breaking production deploys silently"
   end

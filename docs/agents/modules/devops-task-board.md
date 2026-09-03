@@ -309,7 +309,7 @@ tell you nothing is wrong:
 |-------|--------------------------|------------------------|
 | `blocked_at` / `block_kind` / `blocked_from` | Is there a LIVE block right now? | Was this task ever sent back? They are null after a rework block, **by design**, and `Task#clear_block_on_forward_move` NULLs them on any forward move. |
 | `unresolved_feedback` | The TEXT of an open send-back | Whether the work answering it landed. It is cleared only by an explicit `bin/task note <slug> --handoff "…" --resolves-feedback`, never by the fix landing — so it reads blocked forever after an un-ceremonied fix, and reads clear after a ceremony with no fix behind it. |
-| `bin/task list --stage blocked` | Tasks in the `blocked` STAGE | Bounced tasks. It returns **zero** for every rework block. |
+| `bin/task list --stage blocked` | Tasks carrying a LIVE block right now. It resolves through the `Task.blocked` scope — a `building` task with `blocked_at` set — not the stage column. | Whether this task was ever sent back. A resubmission moves the task forward, which NULLs `blocked_at`, so a bounced-then-resubmitted task drops out of this listing exactly like one that was never blocked. |
 
 **Measured, 2026-09-01→02** (`stale-engine-web3-comments` / turf PR #513): all three
 answered "no block" while `bin/task bounces` read `BREAKER: TRIPPED` and the PR head

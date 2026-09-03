@@ -22,7 +22,7 @@ Use this when standing up a brand new machine, or anytime you want to confirm "e
 **One-time prereqs** (NOT auto-installed):
 - macOS with Xcode Command Line Tools (`xcode-select --install`)
 - [Homebrew](https://brew.sh)
-- A 1Password service account token with **read** access to the `agents-studio` vault — the agent vault (account `alex@mcritchie.studio`). Generate at https://start.1password.com → Developer Tools → Service Accounts. Ship lanes need a SEPARATE token with read on `agents-admin`, installed with `bin/setup-1pass-token --admin`.
+- A 1Password service account token with **read** access to the `studio-agents` vault — the agent vault (account `alex@mcritchie.studio`). Generate at https://start.1password.com → Developer Tools → Service Accounts. Ship lanes need a SEPARATE token with read on `studio-agents-admin`, installed with `bin/setup-1pass-token --admin`.
 
 ```bash
 # 1. Clone the flagship — every other repo + script lives downstream of this one.

@@ -431,7 +431,13 @@ class Task < ApplicationRecord
     slug
   end
 
-  scope :by_stage, ->(stage) { where(stage: stage) }
+  # `blocked` is NOT a stage — it is an ATTRIBUTE of a `building` task — so a
+  # column-equality filter on it can only ever return zero rows. Route that one
+  # name through the `blocked` scope instead, and keep every real stage on the
+  # column. Without this, `bin/task list --stage blocked` and
+  # `GET /api/v1/tasks?stage=blocked` answered "nothing is blocked" instead of
+  # "that is not a stage" — the query an operator runs to find blocked work.
+  scope :by_stage, ->(stage) { stage.to_s == "blocked" ? blocked : where(stage: stage) }
   # A LIVE block is a `building` task carrying an unresolved block marker
   # (blocked_at set). blocked_at persists as history after the task advances, so
   # the `building` guard is what keeps the scope to CURRENTLY-blocked tasks.

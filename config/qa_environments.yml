@@ -97,10 +97,24 @@ qa_environments:
       web: 1
     safety_profile: auth-gated-confidential-deal-data
     required_config:
-      # production.rb defaults APP_HOST to www.mcritchie.industries — the QA
-      # app MUST override it or QA mints www links (unset as of 2026-07-29;
-      # set it before the canonical-host change deploys here).
+      # production.rb defaults APP_HOST to www.mcritchie.industries — the QA app
+      # MUST override it or QA mints www links. VERIFIED LIVE 2026-09-02:
+      # `heroku config:get APP_HOST -a mcritchie-industries-qa` returns
+      # qa.mcritchie.industries, so the 2026-07-29 "unset" note this replaced is
+      # stale.
       APP_HOST: qa.mcritchie.industries
+      # Neither Heroku app sets RAILS_ENV, so mcritchie-industries-qa boots as
+      # RAILS_ENV=production exactly like real production. QA_ENV is the ONLY
+      # signal that separates them, and mcritchie-industries' config/storage.yml
+      # keys its bucket choice off it.
+      #
+      # WITHOUT THIS MARKER, QA resolved bucket mcritchie-industries-production
+      # while carrying the mcr-mcritchie-industries-dev key — whose PutObject
+      # there is AccessDenied. Active Storage uploads from QA failed SILENTLY.
+      # Verified 2026-09-02: QA_ENV was empty on the live app, and this was the
+      # ONLY qa_environments entry missing it (mcritchie-studio, turf-monster
+      # and rolio all declare it).
+      QA_ENV: "true"
       RESEND_MAILER_FROM: "McRitchie Studio <team@mcritchie.studio>"
     required_secrets:
       - RAILS_MASTER_KEY

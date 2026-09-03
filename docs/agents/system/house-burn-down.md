@@ -74,7 +74,7 @@ You need these *already installed* before this protocol can start:
 - `git` (ships with Xcode CLT)
 - The GitHub repos accessible to your account (HTTPS clone works)
 - TWO 1Password service account tokens: one with read on the AGENT vault
-  (`agents-studio`), one with read on the ADMIN vault (`agents-admin`) — see 5a (account `alex@mcritchie.studio` / `MWOV5OT5BRHATI4EGMN26C5DPA`)
+  (`studio-agents`), one with read on the ADMIN vault (`studio-agents-admin`) — see 5a (account `alex@mcritchie.studio` / `MWOV5OT5BRHATI4EGMN26C5DPA`)
 
 `bin/ecosystem-build` handles everything else.
 
@@ -243,8 +243,8 @@ one place that maps lane → vault → token; nothing else should ever name a va
 
 | Lane | Vault (default) | Token variable | Loaded where |
 |------|-----------------|----------------|--------------|
-| `agent` — build, review, merge | `agents-studio` | `OP_SERVICE_ACCOUNT_TOKEN` | `~/.zprofile` — every shell |
-| `deployer` — ship, deploy | `agents-admin` | `OP_ADMIN_SERVICE_ACCOUNT_TOKEN` | `~/.zprofile.admin` — **opt-in only** |
+| `agent` — build, review, merge | `studio-agents` | `OP_SERVICE_ACCOUNT_TOKEN` | `~/.zprofile` — every shell |
+| `deployer` — ship, deploy | `studio-agents-admin` | `OP_ADMIN_SERVICE_ACCOUNT_TOKEN` | `~/.zprofile.admin` — **opt-in only** |
 
 A machine whose vaults are named differently overrides with `MCR_OP_VAULT_AGENT` /
 `MCR_OP_VAULT_ADMIN` rather than editing any script.
@@ -252,7 +252,7 @@ A machine whose vaults are named differently overrides with `MCR_OP_VAULT_AGENT`
 #### 5a-i. The AGENT token (required — nothing works without it)
 
 2. **Developer Tools → Service Accounts → Create Service Account**
-3. Grant **read** on the **agent** vault (`agents-studio`), plus `🧱 Blockchain` if you'll need it
+3. Grant **read** on the **agent** vault (`studio-agents`), plus `🧱 Blockchain` if you'll need it
 4. Copy the token (`ops_...` — shown only once), then:
 
 ```bash
@@ -264,10 +264,10 @@ verifies with `op vault list`. Then `source ~/.zprofile`, or open a new terminal
 
 #### 5a-ii. The ADMIN token (required before any production deploy)
 
-5. Create a **SECOND, SEPARATE** service account granted **read** on `agents-admin`.
-   Do **not** simply add `agents-admin` to the agent's service account: one token
+5. Create a **SECOND, SEPARATE** service account granted **read** on `studio-agents-admin`.
+   Do **not** simply add `studio-agents-admin` to the agent's service account: one token
    that sees both vaults still works, but the isolation above is then gone.
-6. Confirm `github.mcritchie-deployer` actually lives in `agents-admin` — the
+6. Confirm `github.mcritchie-deployer` actually lives in `studio-agents-admin` — the
    deployer App item, `app-id` field plus the `.pem` **file attachment**.
 7. Copy that token, then:
 
@@ -336,7 +336,7 @@ The Rails apps read `.env` via Rails' default dotenv (or the `dotenv-rails` gem)
 RAILS_MASTER_KEY=$(heroku config:get RAILS_MASTER_KEY --app mcritchie-studio)
 GOOGLE_CLIENT_ID=...                  # Google Cloud Console
 GOOGLE_CLIENT_SECRET=...
-ANTHROPIC_API_KEY=...                 # heroku config:get — agents-studio held no "anthropic" item on 2026-08-29
+ANTHROPIC_API_KEY=...                 # heroku config:get — studio-agents held no "anthropic" item on 2026-08-29
 X_BEARER_TOKEN=...                    # 1Password: "x.api" (read)
 X_API_KEY=...                         # 1Password: "x.api" (write — Read+Write app)
 X_API_SECRET=...
@@ -361,7 +361,7 @@ SES_REGION=us-east-2
 RAILS_MASTER_KEY=$(heroku config:get RAILS_MASTER_KEY --app turf-monster-mainnet)
 GOOGLE_CLIENT_ID=...                  # may differ from mcritchie-studio
 GOOGLE_CLIENT_SECRET=...
-SOLANA_ADMIN_KEY=$(op item get "agent.alex.solana" --vault agents-studio --fields "private key")
+SOLANA_ADMIN_KEY=$(op item get "agent.alex.solana" --vault studio-agents --fields "private key")
 SOLANA_RPC_URL=https://api.devnet.solana.com   # or paid provider if rate-limited
 AWS_ACCESS_KEY_ID=...
 AWS_SECRET_ACCESS_KEY=...
@@ -522,7 +522,7 @@ Phases execute in order. Each phase: detect current state → install/configure 
 | 1. System tools | Homebrew packages (ruby@3.3, postgres@14, redis, mise, gh, heroku, etc.), starts Postgres + Redis services, verifies ruby socket extension |
 | 2. Languages | Node 22 + yarn (via mise), Rust 1.89.0 (via rustup), Solana CLI (via Anza), Anchor 0.32.1 (via cargo), local Solana devnet keypair |
 | 3. Shell config | `~/.zshrc` PATH lines (brew Ruby, mise activation, Solana, Cargo), `~/.zprofile` chmod 600 |
-| 4. Secrets | Verifies `OP_SERVICE_ACCOUNT_TOKEN` works; pulls `agent.heroku` from 1Password into `HEROKU_API_KEY`; restores `.env` for active Rails apps from provider config |
+| 4. Secrets | Verifies `OP_SERVICE_ACCOUNT_TOKEN` works; pulls `heroku.studio.agents` from 1Password into `HEROKU_API_KEY` (`legacy-personal-api-key` field until the app-transfer cutover, then `credential`); restores `.env` for active Rails apps from provider config |
 | 5. Sibling repos | `gh repo clone` for `turf-monster`, `studio-engine`, `solana-studio`, `turf-vault` (skips ones already present) |
 | 5b. Agent runtime | Runs `bin/agent-runtime install`, which installs `/Users/alex/projects/AGENTS.md` + `CLAUDE.md` from `mcritchie-studio/docs/agents/{index,claude}.md` (Claude Code reads CLAUDE.md, not AGENTS.md), mirrors the shared user-global agent skills `docs/agents/skills/*` → `~/.claude/skills/*` + `~/.codex/skills/*`, and configures Codex marker hooks. The lower-level `bin/install-agent-docs` remains the implementation, and `bin/agent-runtime doctor` verifies drift plus marker/runtime state. |
 | 5c. Secrets replay | Re-runs Phase 4 after sibling repos exist so newly-cloned active satellites get `.env` before DB setup |
