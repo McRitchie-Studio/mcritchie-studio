@@ -13,8 +13,9 @@ name as ordinary prose, generic GitHub triage, or a broad workflow request.
 
 McRitchie operating procedures are normal repo docs, not installed skills. When
 Mr. McRitchie names an SOP or heartbeat act such as `pr-review`, `qa-release`,
-`production-deploy`, `clean-up`, or `full-cycle`, resolve that phrase through the
-SOP registry and directory convention here, read the mapped SOP, then execute it.
+`production-deploy`, `clean-up`, `process-backlog`, `work-backlog`, or
+`full-cycle`, resolve that phrase through the SOP registry and directory
+convention here, read the mapped SOP, then execute it.
 
 SOP locations:
 
@@ -68,6 +69,8 @@ required execution path. Do not follow a Background reference to run an SOP.
 | `Alex Heartbeat` | Alex | `mcritchie-studio/docs/agents/agents/alex/HEARTBEAT.md` |
 | `address-blocker` | Shared | `mcritchie-studio/docs/agents/modules/address-blocker.md` |
 | `building-sop` | Shared | `mcritchie-studio/docs/agents/modules/building-sop.md` |
+| `process-backlog` | Shared | `mcritchie-studio/docs/agents/modules/process-backlog.md` |
+| `work-backlog` | Shared | `mcritchie-studio/docs/agents/modules/work-backlog.md` |
 | `token-session` | Shared | `mcritchie-studio/docs/agents/modules/token-session.md` |
 | `knowledge-capture` | Shared | `mcritchie-studio/docs/agents/modules/knowledge-capture.md` |
 
@@ -587,6 +590,8 @@ Do not merge or deploy unless I explicitly assigned that lane.
 | Modular PR review SOP | `mcritchie-studio/docs/agents/modules/pr-review-sop.md` |
 | Zap protocol (small mid-cycle fixes, no new task) | `mcritchie-studio/docs/agents/modules/zap-protocol.md` |
 | Building SOP (feature-agent build flow + local-review decision) | `mcritchie-studio/docs/agents/modules/building-sop.md` |
+| Process backlog (groom designed, build four wide) | `mcritchie-studio/docs/agents/modules/process-backlog.md` |
+| Work backlog (your own tasks, two-three wide) | `mcritchie-studio/docs/agents/modules/work-backlog.md` |
 | Workflows (five soul launchers) | `mcritchie-studio/docs/agents/modules/heartbeats.md` |
 | Carl heartbeat launcher | `mcritchie-studio/docs/agents/agents/carl/HEARTBEAT.md` |
 | Carl PR review SOP (orchestrator) | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review.md` |
@@ -676,6 +681,8 @@ depend on the heartbeat.
 | `clean-up` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/clean-up.md` |
 | `address-blocker` | Shared | `mcritchie-studio/docs/agents/modules/address-blocker.md` |
 | `building-sop` | Shared | `mcritchie-studio/docs/agents/modules/building-sop.md` |
+| `process-backlog` | Shared | `mcritchie-studio/docs/agents/modules/process-backlog.md` |
+| `work-backlog` | Shared | `mcritchie-studio/docs/agents/modules/work-backlog.md` |
 | `token-session` | Shared | `mcritchie-studio/docs/agents/modules/token-session.md` |
 | `knowledge-capture` | Shared | `mcritchie-studio/docs/agents/modules/knowledge-capture.md` |
 
