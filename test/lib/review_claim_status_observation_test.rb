@@ -107,6 +107,32 @@ class ReviewClaimStatusObservationTest < Minitest::Test
     assert_empty cli.naps
   end
 
+  # TaskReviewClaim.release NULLS the fields but KEEPS the row, and holder_info
+  # always returns its full 8-key Hash — so "any Hash means somebody" graded the
+  # terminal step of EVERY review (the primary releases in step 7) as a 45-second
+  # INCONCLUSIVE. A row with no named session is nobody; nobody is FREE, from one
+  # read, at no cost. Measured live against three released production claims
+  # before this test existed (2026-09-03 review).
+  def test_a_released_claim_row_grades_free_from_one_read
+    out, cli = run_status([released_row])
+
+    assert_includes out, "FREE"
+    assert_equal 1, cli.api.reads, "a released row is answerable from ONE read"
+    assert_empty cli.naps, "and must cost the caller no wall time"
+  end
+
+  # The class of the regression, as its own case: a claim released BETWEEN the
+  # two reads must grade FREE — the second read's empty row is the release
+  # happening, not a holder going unreadable. (Two mutants survived precisely
+  # because nothing asserted this.)
+  def test_a_claim_released_between_the_two_reads_grades_free
+    out, = run_status([holder(300), released_row])
+
+    assert_includes out, "FREE",
+                    "the holder we watched let go mid-observation; reporting anything but " \
+                    "free tells the next reviewer a vacated claim is still contested"
+  end
+
   # ── HONEST IGNORANCE ────────────────────────────────────────────────────────
 
   def test_a_window_too_short_to_conclude_reports_inconclusive
@@ -302,6 +328,26 @@ class ReviewClaimStatusObservationTest < Minitest::Test
     end
   end
 
+  # holder_present?'s full input taxonomy in ONE place, so nobody again reasons
+  # about two of the classes and ships a predicate wrong on the third (which is
+  # exactly how the released-row regression happened):
+  #   ABSENT     (nil — no claim row)            → FREE, one read
+  #   RELEASED   (row kept, session nulled)      → FREE, one read
+  #   UNREADABLE but NAMED (expiry unparseable)  → never free; ignorance
+  def test_the_three_holder_input_classes_grade_distinctly
+    absent_out, = run_status([nil], flags: ["--json"])
+    assert_equal true, JSON.parse(absent_out)["free"], "ABSENT: no row is nobody"
+
+    released_out, = run_status([released_row], flags: ["--json"])
+    assert_equal true, JSON.parse(released_out)["free"], "RELEASED: a nulled row is nobody"
+
+    named = holder(60).merge("expires_at" => "soon-ish")
+    named_out, = run_status([named], flags: ["--json"])
+    assert_equal false, JSON.parse(named_out)["free"],
+                 "NAMED-UNREADABLE: a named session with an expiry we cannot read is " \
+                 "ignorance, never an invitation to steal"
+  end
+
   # THE SECOND READ CAN DEGRADE TOO. The first read is clean — a live lease with
   # ample time — and the board then answers 200 OK with a holder whose expiry
   # cannot be parsed. `observe` reads that nil as "released outright between the
@@ -409,6 +455,13 @@ class ReviewClaimStatusObservationTest < Minitest::Test
     { "task_slug" => SLUG, "session" => REVIEWER_SESSION, "label" => "Gastly", "agent" => agent,
       "acquired_at" => START.utc.iso8601, "expires_at" => (START + expires_in).utc.iso8601,
       "heartbeat_age" => 30, "live" => expires_in.positive? }
+  end
+
+  # Exactly what holder_info returns after TaskReviewClaim.release: the row
+  # kept, every identifying field nulled, live false.
+  def released_row
+    { "task_slug" => SLUG, "session" => nil, "label" => nil, "agent" => nil,
+      "acquired_at" => nil, "expires_at" => nil, "heartbeat_age" => nil, "live" => false }
   end
 
   # Drive the REAL `status` path with a scripted board, a virtual clock, and a

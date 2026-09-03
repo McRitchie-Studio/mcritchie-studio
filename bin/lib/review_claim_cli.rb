@@ -420,10 +420,19 @@ class ReviewClaimCli
     )
   end
 
-  # A read produced a HOLDER RECORD (as opposed to nil, meaning no claim row).
-  # `expiry_of` cannot express the difference — it answers nil for "no holder" and
-  # for "holder with an unreadable expiry" alike — and only the first is a fact.
-  def holder_present?(holder) = holder.is_a?(Hash)
+  # A read produced a record of SOMEBODY HOLDING the claim — as opposed to nil
+  # (no claim row) or a RELEASED row. TaskReviewClaim.release nulls the fields
+  # but KEEPS the row, and holder_info always returns its full 8-key Hash, so
+  # "is_a?(Hash)" alone graded every released claim as held-by-somebody-
+  # unreadable: the terminal step of EVERY review (the primary releases in step
+  # 7) read as `inconclusive` over a 45s poll instead of `free` in one read. A
+  # NAMED session is the line — the same line ClaimHolder.lease_state draws
+  # ("return NONE if claim[claimed_session] is blank"). An unreadable-but-named
+  # holder still grades present, which is the malformed-shape protection this
+  # task exists for.
+  def holder_present?(holder)
+    holder.is_a?(Hash) && !(holder["session"].to_s.strip.empty? && holder["live"] == false)
+  end
 
   # The span we OBSERVED, not the span we waited. These diverge under an outage,
   # and reporting the wait as the watch is how "35s" ends up beside a sentence
