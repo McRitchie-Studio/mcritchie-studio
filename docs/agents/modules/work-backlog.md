@@ -173,6 +173,12 @@ The `pr-review` SOP is self-contained — read it and run it. It claims green-CI
 PRs one at a time (`bin/task claim-next-review`), so a review you start is a
 review nobody else is duplicating, and it is safe to stop after one PR.
 
+**Count the reviewer against your builders.** The 5-concurrent cap is per
+SESSION, not per act, and a builder waiting on CI still holds its slot — so
+`review agents = 5 − (builders still in flight)`. At three builders that is two
+agents: one Carl and at most one light. The cap exists because a fan-out once
+exhausted the prod board's Postgres connections and 500'd the board.
+
 **The one case where it stops being your call:** if `bin/task list --stage
 submitted` reaches **10 or more**, stop launching builders and review until it
 drains to 3 or fewer. That is [`process-backlog`](process-backlog.md)'s hard

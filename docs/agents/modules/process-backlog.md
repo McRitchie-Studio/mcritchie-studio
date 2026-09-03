@@ -117,13 +117,23 @@ state of a backlog.
 ### Carry the detail before you delete the task
 
 Archiving a duplicate destroys the half of it the survivor does not have. So when
-two tasks overlap, **fold first, then archive**:
+two tasks overlap, **fold first, then archive** — and fold by READ-MODIFY-WRITE.
+
+**`--agent-context` REPLACES; it does not append.** It is a plain String, and
+`bin/task`'s devops write merges only Hash values — so passing just your new
+fragment silently wipes the survivor's context, and then you archive the victim.
+Both halves are gone, inside the one step whose entire purpose is losing neither.
 
 ```bash
-bin/task update <survivor> --agent-context "…existing context… ; folded from <victim>: <its unique detail>"
+bin/task show <survivor> -v      # 1. READ the existing agent_context and copy it out IN FULL
+bin/task update <survivor> --agent-context "<the existing context, verbatim> ; folded from <victim>: <its unique detail>"
+bin/task show <survivor> -v      # 2. READ IT BACK — the old text must still be there
 bin/task note <victim> --comment "archived: superseded by <survivor> — detail folded into that task's agent_context"
 bin/task move <victim> archived
 ```
+
+The read-back is what catches the clobber while it is still free. Once the victim
+is archived there is no second copy of either half anywhere.
 
 Post the reason **before** the move. `archived` is terminal, and a reason that
 lives only in this session's chat is a reason nobody will ever find.
@@ -298,10 +308,26 @@ The pivot, exactly:
 1. **Stop launching builders.** Do not kill the ones in flight — a killed
    `bin/ship` leaves a task in `building` with its PR already open, which the
    review sweep does not pop. Let them finish and land.
-2. **Run [`pr-review`](../agents/carl/sops/pr-review.md)** — read that SOP and
-   run it. It claims reviewable green-CI PRs with `bin/task claim-next-review`,
-   spins one Carl per PR in waves of five or fewer, and merges approved work onto
-   `accepted`.
+2. **Run [`pr-review`](../agents/carl/sops/pr-review.md) — sized against what is
+   still building.** Read that SOP and run it: it claims reviewable green-CI PRs
+   with `bin/task claim-next-review`, spins one Carl per PR, and merges approved
+   work onto `accepted`. Its wave cap is **five or fewer AGENTS**, not five PRs —
+   a Carl who summons a light is TWO agents, so five agents is roughly two-to-five
+   PRs.
+
+   **Subtract the builders you just let finish.** The cap is five concurrent
+   operations for the whole SESSION, not five per act, and the Phase 3 builders
+   are still holding their slots while they ship:
+
+   ```text
+   review agents this wave = 5 − (builders still in flight)
+   ```
+
+   Four builders still shipping leaves room for **one** review agent — a single
+   Carl, no light. Wait for builders to land before widening. This is not
+   bookkeeping: the cap exists because a fan-out once exhausted the prod board's
+   Postgres connections (`FATAL: too many connections`) and 500'd the board for
+   everyone.
 3. **Drain to 3 or fewer**, then return to Phase 2 and resume building. If the
    queue will not drain — every remaining PR is red, conflicted, or blocked —
    that is the report, not a reason to go build something else.

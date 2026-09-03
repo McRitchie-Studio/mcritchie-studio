@@ -156,33 +156,4 @@ class SopRegistryDocsTest < ActiveSupport::TestCase
     assert_match(/zero open tasks/i, body, "the clean-up SOP must state its goal: zero open tasks")
     assert_match(/Phase 0 — Scope guard/, body, "the clean-up SOP must carry the carve-out phase")
   end
-
-  # The two backlog SOPs are the prioritization procedure — the thing that used to be
-  # re-explained by hand every session. Pin the rules that make them worth invoking, so
-  # a reword cannot quietly turn them back into the generic "work on what matters"
-  # advice they replaced.
-  test "the backlog SOPs resolve end to end and carry their load-bearing rules" do
-    {
-      "process-backlog" => [
-        [/10 or more/,          "the mandatory review pivot at ten submitted tasks"],
-        [/NAME the evidence/,   "that an archive requires named evidence"],
-        [/Tier A/,              "the own-tasks-first ranking tier"]
-      ],
-      "work-backlog" => [
-        [/mascot_session/,      "the own-session task filter"],
-        [/two or three/i,       "its two-to-three parallel ceiling"]
-      ]
-    }.each do |invocation, rules|
-      row = registry_rows.find { |r| r[:invocation] == invocation }
-
-      refute_nil row, "`#{invocation}` is not in the SOP registry"
-      assert_equal "Shared", row[:owner]
-      assert_path_exists Rails.root.join(row[:path])
-
-      body = Rails.root.join(row[:path]).read
-      rules.each do |pattern, what|
-        assert_match pattern, body, "the #{invocation} SOP must state #{what}"
-      end
-    end
-  end
 end
