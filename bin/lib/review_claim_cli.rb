@@ -371,6 +371,11 @@ class ReviewClaimCli
   def observe_lease(slug, first, started, budget)
     latest = first
     differenced = false
+    # WHEN the observation last succeeded. `started` seeds it because the first
+    # read happened then; every later successful poll moves it, and a failed one
+    # does not. ClaimHolder.observe grades against THIS, not against loop-exit
+    # time, so an outage can no longer manufacture LAPSED or NOT_RENEWING.
+    last_read_at = started
     loop do
       remaining = budget - (@clock.call - started)
       break if remaining <= 0
@@ -386,23 +391,33 @@ class ReviewClaimCli
 
       latest = sample
       differenced = true
-      grade = grade_for(first, latest, started)
-      return [grade, latest, watched_since(started), true] unless grade == ClaimHolder::INCONCLUSIVE
+      last_read_at = @clock.call
+      grade = grade_for(first, latest, started, last_read_at)
+      return [grade, latest, observed_span(started, last_read_at), true] unless
+        grade == ClaimHolder::INCONCLUSIVE
     end
     # No poll after the first ever succeeded, so no PAIR was ever differenced. Report
     # the ignorance this command promised to report, rather than a verdict assembled
     # from one read pretending to be two.
-    return [ClaimHolder::INCONCLUSIVE, latest, watched_since(started), false] unless differenced
+    return [ClaimHolder::INCONCLUSIVE, latest, observed_span(started, last_read_at), false] unless
+      differenced
 
-    [grade_for(first, latest, started), latest, watched_since(started), true]
+    [grade_for(first, latest, started, last_read_at), latest,
+     observed_span(started, last_read_at), true]
   end
 
-  def grade_for(first, latest, started)
+  def grade_for(first, latest, started, last_read_at = nil)
     ClaimHolder.observe(
       first_expires_at: expiry_of(first), second_expires_at: expiry_of(latest),
-      first_read_at: started, renew_interval: ShiftRenewer::INTERVAL_SECONDS, now: @clock.call
+      first_read_at: started, renew_interval: ShiftRenewer::INTERVAL_SECONDS, now: @clock.call,
+      last_read_at: last_read_at
     )
   end
+
+  # The span we OBSERVED, not the span we waited. These diverge under an outage,
+  # and reporting the wait as the watch is how "35s" ends up beside a sentence
+  # about what the expiry did — over a stretch nobody was reading it.
+  def observed_span(started, last_read_at) = ((last_read_at || @clock.call) - started).round
 
   def watched_since(started) = (@clock.call - started).round
 

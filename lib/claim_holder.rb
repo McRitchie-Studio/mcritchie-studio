@@ -272,7 +272,12 @@ module ClaimHolder
   # is a change of hands and not evidence that THIS holder is renewing — and the
   # conservative reading (do not report a live holder we did not see renew) is the
   # one that keeps a reader asking instead of stealing.
-  def observe(first_expires_at:, second_expires_at:, first_read_at:, renew_interval:, now: Time.now)
+  # `last_read_at` is WHEN THE OBSERVATION LAST SUCCEEDED — not when the loop
+  # exited. They differ exactly when the board went dark mid-window, and every
+  # conclusion below is about a deadline someone had to be WATCHING to see pass.
+  # Defaults to `now` so a caller with no outage is unchanged.
+  def observe(first_expires_at:, second_expires_at:, first_read_at:, renew_interval:,
+              now: Time.now, last_read_at: nil)
     first = ClaimLease.parse_time(first_expires_at)
     # Nothing held it, or it had ALREADY LAPSED when we looked. Both are free, and
     # both are answerable from the first read alone — which is why the caller never
@@ -283,9 +288,22 @@ module ClaimHolder
     return FREE if second.nil? # released outright between the two reads
 
     return RENEWING if second > first
-    return LAPSED if now >= second # we outlasted the lease and it never moved
 
-    watched = now - first_read_at
+    # THE WINDOW WE ACTUALLY OBSERVED, which is not the window we waited out. A
+    # poll that failed is not evidence, so time spent failing to read the board
+    # cannot be spent concluding things about the lease.
+    #
+    # Both remaining grades are claims about watching:
+    #   LAPSED       — "we outlasted it"      → requires we were READING when it passed
+    #   NOT_RENEWING — "nothing heartbeat it" → requires we were READING to see no beat
+    #
+    # Using `now` for either lets an OUTAGE manufacture them. LAPSED is the sharp
+    # one: it sits inside OBSERVED_FREE, so a wrong LAPSED does not just misinform,
+    # it tells the caller a LIVE reviewer's task is free to take.
+    observed_until = last_read_at || now
+    return LAPSED if observed_until >= second
+
+    watched = observed_until - first_read_at
     watched > renew_interval ? NOT_RENEWING : INCONCLUSIVE
   end
 
