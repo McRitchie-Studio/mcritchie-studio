@@ -1,6 +1,14 @@
 # frozen_string_literal: true
 
 require "open3"
+# gate_workspace.rb opens `class Release` with no superclass so bin scripts can
+# load it without Rails. Inside a booted Rails process that same line PLANTS a
+# plain Release if the autoloader has not defined the real AR model yet —
+# Zeitwerk cannot replace a taken constant, and every Task#release reflection
+# after that raises "not an ActiveRecord::Base subclass" (load-order dependent:
+# it bit whenever desk_guard_test loaded before anything touching the model).
+# Referencing ::Release first makes the path-load below a harmless reopen.
+::Release if defined?(Rails) && Rails.respond_to?(:application) && Rails.application
 require_relative "../../app/models/release/gate_workspace"
 
 # DeskGuard — refuse a CERT lane in a worktree DESK whose test database is not its own.
