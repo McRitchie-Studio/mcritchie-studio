@@ -350,7 +350,8 @@ class ReviewClaimCli
     # UNOBSERVED when the caller declines to wait.
     settled = ClaimHolder.observe(
       first_expires_at: expiry_of(first), second_expires_at: expiry_of(first),
-      first_read_at: started, renew_interval: ShiftRenewer::INTERVAL_SECONDS, now: started
+      first_read_at: started, renew_interval: ShiftRenewer::INTERVAL_SECONDS, now: started,
+      first_holder_present: holder_present?(first), second_holder_present: holder_present?(first)
     )
     # FREE and UNOBSERVED never speak about a pair, so the differenced flag is inert
     # for them; pass `true` so only the outage path can reach the ignorance wording.
@@ -406,20 +407,29 @@ class ReviewClaimCli
      observed_span(started, last_read_at), true]
   end
 
-  def grade_for(first, latest, started, last_read_at = nil)
+  # `last_read_at` has NO default on purpose. It used to default to nil, and a nil
+  # there silently relaunders the loop-exit grading this command was fixed to stop
+  # doing — a caller that forgets the argument gets the old defect back with no
+  # error. Both call sites pass it; a third must too.
+  def grade_for(first, latest, started, last_read_at)
     ClaimHolder.observe(
       first_expires_at: expiry_of(first), second_expires_at: expiry_of(latest),
       first_read_at: started, renew_interval: ShiftRenewer::INTERVAL_SECONDS, now: @clock.call,
-      last_read_at: last_read_at
+      last_read_at: last_read_at,
+      first_holder_present: holder_present?(first), second_holder_present: holder_present?(latest)
     )
   end
+
+  # A read produced a HOLDER RECORD (as opposed to nil, meaning no claim row).
+  # `expiry_of` cannot express the difference — it answers nil for "no holder" and
+  # for "holder with an unreadable expiry" alike — and only the first is a fact.
+  def holder_present?(holder) = holder.is_a?(Hash)
 
   # The span we OBSERVED, not the span we waited. These diverge under an outage,
   # and reporting the wait as the watch is how "35s" ends up beside a sentence
   # about what the expiry did — over a stretch nobody was reading it.
   def observed_span(started, last_read_at) = ((last_read_at || @clock.call) - started).round
 
-  def watched_since(started) = (@clock.call - started).round
 
   # The observation budget in seconds. Clamped to a ceiling because an unbounded
   # `--observe-for` turns a diagnostic into a hang, and floored at 0 because a

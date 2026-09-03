@@ -276,15 +276,32 @@ module ClaimHolder
   # exited. They differ exactly when the board went dark mid-window, and every
   # conclusion below is about a deadline someone had to be WATCHING to see pass.
   # Defaults to `now` so a caller with no outage is unchanged.
+  # `first_holder_present` / `second_holder_present` say whether that read returned a
+  # HOLDER RECORD at all. They exist because `parse_time` collapses three different
+  # inputs to nil — absent, empty, and unparseable — and only the first is a fact.
+  # A board that answers 200 OK with a holder whose expiry cannot be read has told
+  # us NOTHING about that lease; reading its nil as "nobody holds it" is how an
+  # unreadable field reaches FREE, which is inside OBSERVED_FREE and hands over the
+  # acquire. Same rule as a failed poll: ignorance is not absence.
   def observe(first_expires_at:, second_expires_at:, first_read_at:, renew_interval:,
-              now: Time.now, last_read_at: nil)
+              now: Time.now, last_read_at: nil,
+              first_holder_present: false, second_holder_present: false)
     first = ClaimLease.parse_time(first_expires_at)
+
+    # A HOLDER EXISTS AND WE CANNOT READ ITS EXPIRY. Not free, not lapsed, not
+    # anything — we have no reading to reason from. This is the line claim_holder's
+    # own comment already asked for: "an unknown must never inherit the steal route."
+    return INCONCLUSIVE if first.nil? && first_holder_present
+
     # Nothing held it, or it had ALREADY LAPSED when we looked. Both are free, and
     # both are answerable from the first read alone — which is why the caller never
     # has to wait for them.
     return FREE if first.nil? || first <= first_read_at
 
     second = ClaimLease.parse_time(second_expires_at)
+    # Same distinction on the SECOND read: a holder we cannot parse is ignorance,
+    # where an ABSENT holder is a genuine release between the two reads.
+    return INCONCLUSIVE if second.nil? && second_holder_present
     return FREE if second.nil? # released outright between the two reads
 
     return RENEWING if second > first

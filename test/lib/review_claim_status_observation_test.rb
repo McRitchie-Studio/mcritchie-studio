@@ -267,6 +267,104 @@ class ReviewClaimStatusObservationTest < Minitest::Test
                     "one good poll then darkness is ignorance, whatever the wall clock says"
   end
 
+  # ── THE THIRD ROUTE: A 200-OK BOARD WE CANNOT READ ──────────────────────────
+  #
+  # `parse_time` returns nil for an EMPTY string and for an UNPARSEABLE one, and
+  # `observe` reads that nil as "nothing held it" — so a holder whose expiry cannot
+  # be read grades FREE, which is inside OBSERVED_FREE and hands over the acquire.
+  # The payload says `live: true` at the same time.
+  #
+  # Same shape as the two routes already closed: the command concludes from
+  # evidence it does not have. A failed poll is not evidence (fixed); a field it
+  # cannot parse is not evidence either. Ignorance is INCONCLUSIVE, never FREE.
+  # claim_holder.rb:141 already states the rule — "an unknown must never inherit
+  # the steal route" — it was simply not enforced for this input class.
+  #
+  # Asserted on the JSON `free` flag rather than prose: prose can match both the
+  # honest and the dishonest wording, and `free` is what a caller branches on.
+  MALFORMED_HOLDERS = {
+    "expires_at missing"     => { "session" => REVIEWER_SESSION, "live" => true },
+    "expires_at empty"       => { "session" => REVIEWER_SESSION, "expires_at" => "", "live" => true },
+    "expires_at unparseable" => { "session" => REVIEWER_SESSION, "expires_at" => "soon-ish", "live" => true },
+    "holder is empty hash"   => {}
+  }.freeze
+
+  MALFORMED_HOLDERS.each do |label, holder|
+    define_method(:"test_a_malformed_holder_#{label.tr(' ', '_')}_never_grades_free") do
+      out, = run_status([holder], flags: ["--json"])
+      payload = JSON.parse(out)
+
+      assert_equal false, payload["free"],
+                   "#{label}: an unreadable holder is IGNORANCE, not an absent claim — " \
+                   "free=true here tells the reader to steal a claim the same payload " \
+                   "may be calling live"
+      refute_equal "free", payload["observed"], "#{label}: must not grade FREE"
+    end
+  end
+
+  # THE SECOND READ CAN DEGRADE TOO. The first read is clean — a live lease with
+  # ample time — and the board then answers 200 OK with a holder whose expiry
+  # cannot be parsed. `observe` reads that nil as "released outright between the
+  # two reads" and grades FREE, which is the steal route again, one read later.
+  #
+  # This path is NOT reachable through the four first-read shapes above: those all
+  # settle before the second read is ever graded. It needed its own case, and
+  # without it the second guard is inert — measured, by removing the guard and
+  # watching all 26 tests stay green.
+  def test_a_second_read_we_cannot_parse_is_ignorance_not_a_release
+    good = { "task_slug" => SLUG, "session" => REVIEWER_SESSION, "label" => "Gastly",
+             "acquired_at" => START.utc.iso8601, "expires_at" => (START + 300).utc.iso8601,
+             "heartbeat_age" => 30, "live" => true }
+    degraded = good.merge("expires_at" => "not-a-timestamp")
+
+    out, = run_status([good, degraded], flags: ["--json"])
+    payload = JSON.parse(out)
+
+    assert_equal false, payload["free"],
+                 "a second read we cannot parse says NOTHING about the lease — treating it " \
+                 "as a release hands over the acquire on a holder still reporting live=true"
+    refute_equal "free", payload["observed"]
+  end
+
+  def test_a_malformed_holder_offers_watching_not_acquiring
+    out, = run_status([MALFORMED_HOLDERS.fetch("expires_at unparseable")])
+
+    refute_includes out, "review-claim acquire",
+                    "the acquire is the steal route; an unreadable board must never offer it"
+  end
+
+  # The other direction, so the fix cannot buy safety by refusing to answer: a
+  # genuinely ABSENT claim (nil holder, not a malformed one) is still FREE from one
+  # read, and must still cost the caller no wall time.
+  def test_an_absent_claim_is_still_free_from_the_first_read
+    out, cli = run_status([nil], flags: ["--json"])
+    payload = JSON.parse(out)
+
+    assert_equal true, payload["free"],
+                 "nil holder means NO CLAIM — that is a fact one read establishes, and " \
+                 "hedging about it would be the command refusing to answer what it knows"
+    assert_equal 1, cli.api.reads
+    assert_empty cli.naps
+  end
+
+  # The DISPLAYED span, pinned. `watched_seconds` is what the caller sees beside a
+  # sentence about what the expiry did, so it must be the window OBSERVED, not the
+  # window waited out. Under an outage those diverge, and reporting the wait as the
+  # watch puts a number next to a claim nobody was in a position to make.
+  #
+  # This was left unpinned by the PR that introduced observed_span — named there,
+  # not tested, and two mutations survived on it.
+  def test_the_displayed_span_is_the_window_observed_not_the_window_waited
+    # One good poll ~5s in, then dark for the rest of a ~45s window.
+    out, = run_status([holder(300), holder(300), :unreadable], flags: ["--json"])
+    payload = JSON.parse(out)
+
+    assert_operator payload["watched_seconds"], :<, 30,
+                    "the observation ended at the second read; a span that keeps growing " \
+                    "through the dark stretch is reporting the WAIT as the WATCH"
+    assert_operator payload["watched_seconds"], :>=, 0
+  end
+
   # ── THE MACHINE FACE ────────────────────────────────────────────────────────
 
   def test_json_carries_the_observed_state_and_the_holder
