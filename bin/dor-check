@@ -2023,6 +2023,31 @@ if claim_rule
       "workflow, a .yml or an app/ file ships behavior. This is the SAME classifier that already denies an " \
       "exempt kind (chore/cleanup/docs) its doc-only exemption on this very diff, so a shape that could still " \
       "claim it here would be one observation answered two ways."
+  when "docs_with_guards_diff"
+    # docs + the registry-guard test that pins them (/tasks/docs-shape-rejects-
+    # guard-test): the pattern this repo's culture rewards finally has a shape
+    # that neither deletes the test nor mislabels the diff. The guard-test rule
+    # is TYPE AND LOCATION together (a `*_test.rb` under test/docs/); prose must
+    # still be present, or the diff is test-only's stricter business.
+    offenders = CodeDiff.non_guard_code_files(observed)
+    proven = CodeDiff.docs_with_guards?(observed)
+    must_be = "prose plus docs-guard tests (test/docs/*_test.rb) ONLY, with at least one prose file"
+    proven_label = "docs-with-guards"
+    offender_help = "A docs claim may carry documentation-subject tests — files that are BOTH under test/docs/ " \
+      "AND tests by type (*_test.rb) — beside its prose. Any other behavioral file (app/, bin/, config, a " \
+      "helper.rb even under test/docs/) disqualifies the claim, and a diff of guard tests with NO prose is " \
+      "test-only's stricter contract, not this one."
+    # Guard tests with NO prose refuse with their OWN sentence: the generic
+    # branches below would either name no offender (the guards are allowed
+    # files) or claim no diff was observed (one was). must_be is cleared so
+    # neither generic branch re-answers a question this one already has.
+    observed_present = Array(observed).any? { |f| !f.to_s.strip.empty? }
+    if observed_present && !proven && offenders.empty?
+      errors << "shape #{shape.inspect} was claimed on a diff of docs-guard tests with NO prose — pure test " \
+        "code is the `test-only` shape's STRICTER contract (full-suite cert + a [control] line naming a file " \
+        "in the diff), and a tierless docs claim must not be its cheap door. Re-shape to test-only"
+      must_be = nil
+    end
   else
     # AN UNCLASSIFIED CLAIM RULE REFUSES. A `claimable_when` this gate does not
     # implement used to fall through and GRANT the claim in silence — the shape
