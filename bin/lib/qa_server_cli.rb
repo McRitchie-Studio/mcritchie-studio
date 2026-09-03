@@ -146,4 +146,33 @@ module QaServerCli
       help_exit: HELP_EXIT
     }
   end
+  # ---- config drift ------------------------------------------------------------
+  #
+  # Declared-vs-live, as a PURE comparison so it can be proven without touching
+  # Heroku. `required_config` is applied ONLY by provision — neither `deploy` nor
+  # the recurring release sweep calls it — so nothing ever read these back, and a
+  # registry that disagreed with its app stayed invisible. That is how
+  # mcritchie-industries ran without QA_ENV long enough to resolve the PRODUCTION
+  # bucket while holding the dev key.
+  #
+  # Returns [key, reason] pairs, NEVER values. required_config is not a secret
+  # store today, but a status command that echoes config values becomes one the
+  # first time somebody adds a key that is.
+  #
+  # The two reasons need different fixes, which is why they are not one string:
+  #   MISSING  the app was never given it       -> provision
+  #   DIFFERS  the two sides disagree           -> decide WHICH is right first,
+  #            because provision would PATCH the declared value over the live one
+  MISSING = "declared but MISSING on the app"
+  DIFFERS = "declared value DIFFERS from live"
+
+  def self.config_drift(declared, live)
+    declared.each_with_object([]) do |(key, value), drift|
+      if !live.key?(key)
+        drift << [key, MISSING]
+      elsif live[key].to_s != value.to_s
+        drift << [key, DIFFERS]
+      end
+    end
+  end
 end

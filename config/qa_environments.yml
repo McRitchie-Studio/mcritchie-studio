@@ -115,7 +115,14 @@ qa_environments:
       # ONLY qa_environments entry missing it (mcritchie-studio, turf-monster
       # and rolio all declare it).
       QA_ENV: "true"
-      RESEND_MAILER_FROM: "McRitchie Studio <team@mcritchie.studio>"
+      # DECLARED VALUE CORRECTED 2026-09-03. It read "McRitchie Studio", which was
+      # wrong twice: the wrong PRODUCT (this is Industries), and missing the QA
+      # marker its siblings carry ("McRitchie QA", "Turf Monster QA"). The live app
+      # meanwhile sent as "McRitchie Industries" — unmarked — so provisioning would
+      # have PATCHED the declared value over it and silently re-branded QA email to
+      # the wrong product. Studio.mailer_from reads this (studio-engine
+      # lib/studio.rb:593).
+      RESEND_MAILER_FROM: "McRitchie Industries QA <team@mcritchie.studio>"
     required_secrets:
       - RAILS_MASTER_KEY
       - RESEND_API_KEY
