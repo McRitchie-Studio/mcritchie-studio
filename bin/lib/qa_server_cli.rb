@@ -175,4 +175,14 @@ module QaServerCli
       end
     end
   end
+
+  # The WRITE half of the drift verdict: the declared entries deploy should
+  # PATCH over the live app. Derived FROM config_drift rather than re-deciding,
+  # so the report and the healer cannot disagree about what counts as drift —
+  # rolio-qa ran without its declared QA_ENV for weeks precisely because the
+  # detector reported what nothing applied. Secrets never appear here: the
+  # input is registry-declared config only.
+  def self.heal_plan(declared, live)
+    config_drift(declared, live).map { |key, _why| [key, declared.fetch(key)] }.to_h
+  end
 end
