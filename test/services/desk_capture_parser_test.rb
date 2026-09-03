@@ -27,7 +27,7 @@ class DeskCaptureParserTest < ActiveSupport::TestCase
 
   test "plus-address routes when the subject carries no tag" do
     raw = raw_fixture.sub("Subject: [welding] Site visit transcript", "Subject: Site visit transcript")
-                     .sub("Delivered-To: desk@in.mcritchie.studio", "Delivered-To: desk+industries@in.mcritchie.studio")
+                     .sub("Delivered-To: team@in.mcritchie.studio", "Delivered-To: team+industries@in.mcritchie.studio")
     assert_equal "mcritchie-industries", DeskCapture::Parser.parse(raw).entity_hint
   end
 

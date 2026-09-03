@@ -16,7 +16,7 @@ class CreateDeskCaptureItems < ActiveRecord::Migration[8.1]
       # ignored   — the sweep judged it noise
       t.string :status, null: false, default: "received"
       # Entity routing hint parsed from a [tag] in the subject or a plus-address
-      # (desk+welding@...). The sweep confirms; a hint is never trusted blindly.
+      # (team+welding@...). The sweep confirms; a hint is never trusted blindly.
       t.string :entity_hint
       t.text :body_text
       # [{"filename":, "s3_key":, "content_type":, "byte_size":}, ...]

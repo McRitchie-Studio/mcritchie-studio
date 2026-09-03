@@ -60,7 +60,7 @@ module DeskCapture
 
       recipients = [mail.to, mail.cc, mail["Delivered-To"]&.value].flatten.compact.map(&:to_s)
       recipients.each do |addr|
-        if (m = addr.downcase.match(/desk\+([a-z-]+)@/))
+        if (m = addr.downcase.match(/team\+([a-z-]+)@/))
           return ENTITY_TAGS.fetch(m[1], m[1])
         end
       end

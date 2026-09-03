@@ -1,7 +1,7 @@
 # One arrival at team@mcritchie.studio — the knowledge-capture front door.
-# The poller creates these from SES's S3 drops; the capture sweep (an agent
-# running the knowledge-capture SOP) files them onward into an entity's
-# knowledge layer and stamps the outcome.
+# The Resend inbound webhook's ingest job creates these (the SES poller remains
+# only as a fallback); the capture sweep (an agent running the knowledge-capture
+# SOP) files them onward into an entity's knowledge layer and stamps the outcome.
 class DeskCaptureItem < ApplicationRecord
   STATUSES = %w[received quarantined filed ignored].freeze
 
