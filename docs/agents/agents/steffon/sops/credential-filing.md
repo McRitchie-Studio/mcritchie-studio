@@ -116,7 +116,7 @@ vault and the missing grant.
 
 A secret that starts in Mr. McRitchie's hands (a fresh service-account
 token, a console-only key) must not be pasted into a session transcript —
-transcripts are durable. Hand him this three-step for HIS terminal:
+transcripts are durable. Hand him this two-step for HIS terminal:
 
 ```bash
 read -rs T       # he pastes the secret, screen stays blank (-r: a backslash
