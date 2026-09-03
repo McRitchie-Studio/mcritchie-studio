@@ -168,7 +168,7 @@ class DorCheckDocsShapeTest < Minitest::Test
                  "and the shape's zero tiers plus waived suite cert were granted on a typed label\n#{out}"
     assert_match(%r{test/integration/open_pr_receipt_visibility_test\.rb}, out,
                  "the refusal must NAME the disqualifying file, or the builder is told 'something' was wrong")
-    assert_match(/may only be claimed on a diff that is ENTIRELY prose/, out)
+    assert_match(/may only be claimed on a diff that is prose plus docs-guard tests/, out)
   end
 
   # The filing recorded a test file, but nothing about the hole was specific to
@@ -207,7 +207,7 @@ class DorCheckDocsShapeTest < Minitest::Test
     out, code = with_changed_files("") { check(DOCS_CONTRACT) }
 
     refute_equal 0, code, out
-    assert_match(/could not be proven doc-only/, out)
+    assert_match(/could not be proven docs-with-guards/, out)
     assert_match(/fail-closed/, out)
   end
 
@@ -253,6 +253,44 @@ class DorCheckDocsShapeTest < Minitest::Test
     end
   end
 
+  # ==== [integration] THE DOCS+GUARD PATTERN (/tasks/docs-shape-rejects-guard-test) ===
+  #
+  # Every SOP wants the registry-guard test that pins its rows, and pure
+  # doc_only_diff forced its author to delete the guard or mislabel the shape —
+  # PR #1169 was bounced on exactly this. The claim rule is TYPE AND LOCATION
+  # together: a *_test.rb under test/docs/ may ride a prose diff; nothing else may.
+
+  def test_integration_docs_passes_on_prose_plus_a_registry_guard_test
+    out, code = with_changed_files("docs/agents/agents/steffon/sops/credential-filing.md\ndocs/agents/index.md\ntest/docs/sop_registry_docs_test.rb") do
+      check(DOCS_CONTRACT)
+    end
+
+    assert_equal 0, code,
+                 "an SOP shipping its own registry-guard test is the pattern this repo REWARDS, and the shape " \
+                 "gate still refused it — the author's only exits are deleting the guard or mislabeling\n#{out}"
+    assert_match(/DoR-to-Merge met/, out)
+  end
+
+  def test_integration_docs_is_refused_when_a_non_test_file_hides_under_test_docs
+    out, code = with_changed_files("docs/agents/note.md\ntest/docs/helper.rb") { check(DOCS_CONTRACT) }
+
+    refute_equal 0, code,
+                 "test/docs/helper.rb is LOCATION without TYPE — the bare directory allowlist the classifier's " \
+                 "own doctrine forbids\n#{out}"
+    assert_match(%r{test/docs/helper\.rb}, out)
+  end
+
+  def test_integration_docs_is_refused_on_guard_tests_with_no_prose
+    out, code = with_changed_files("test/docs/sop_registry_docs_test.rb") { check(DOCS_CONTRACT) }
+
+    refute_equal 0, code, out
+    assert_match(/test-only/, out,
+                 "pure guard-test diffs are test-only's stricter contract; the refusal must send the author " \
+                 "there by name, not claim no diff was observed")
+    refute_match(/NO diff could be observed/, out,
+                 "a diff WAS observed — the fail-closed no-observation sentence here would be false")
+  end
+
   # ==== [integration] THE WAIVER SAYS ITS OWN NAME ====================================
   #
   # The second half of the filing, and the half that would have surfaced the bug
@@ -269,7 +307,7 @@ class DorCheckDocsShapeTest < Minitest::Test
                  "a skipped tier requirement must NAME itself; silence is what let the docs hole survive " \
                  "every reader who had already seen this output")
     assert_match(/full-suite cert waived/, out)
-    assert_match(/claim verified against the OBSERVED diff \(doc_only_diff/, out,
+    assert_match(/claim verified against the OBSERVED diff \(docs_with_guards_diff/, out,
                  "the reader's question is 'was this checked?' — only a printed answer distinguishes " \
                  "'verified against the diff' from 'nobody asked'")
   end

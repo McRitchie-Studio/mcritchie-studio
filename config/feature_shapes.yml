@@ -207,10 +207,10 @@ shapes:
       `onchain` above.
 
   docs:
-    description: Documentation-only change — SOP, runbook, agent-operating-model, or README. No code, no persistence.
+    description: Documentation change — SOP, runbook, agent-operating-model, or README — optionally shipping the registry-guard tests that pin it (test/docs/*_test.rb). No other code, no persistence.
     dor_tiers: []
     full_suite_gate: false
-    claimable_when: doc_only_diff
+    claimable_when: docs_with_guards_diff
     required_metadata: [acceptance, repositories, risk_tags]
     notes: >-
       No code tiers: a doc change certifies by REVIEW, not a test lane — so
@@ -223,7 +223,19 @@ shapes:
       acceptance is the reviewer's and the operator's at the QA stop, not a
       pre-submit tier.
 
-      `claimable_when: doc_only_diff` (added 2026-09-02) IS WHAT MAKES THE TWO
+      `claimable_when: docs_with_guards_diff` (widened from doc_only_diff on
+      2026-09-03, /tasks/docs-shape-rejects-guard-test): the diff may ALSO carry
+      documentation-subject tests — files that are BOTH under test/docs/ AND
+      tests by type (*_test.rb) — because every SOP wants the registry-guard
+      test that pins its rows, and pure doc_only_diff forced authors to delete
+      the guard or mislabel the shape. The rule is deliberately type AND
+      location together, never a bare directory allowlist (a helper.rb under
+      test/docs/ still disqualifies), and a diff of guard tests with NO prose
+      still refuses — that is test-only's stricter contract (full-suite cert +
+      [control] line), which must not be dodged through a tierless docs claim.
+      CI's full suite remains the net that actually RUNS the guard.
+
+      The original `doc_only_diff` (added 2026-09-02) IS WHAT MAKES THE TWO
       EXEMPTIONS ABOVE SAFE, and it was added because they were not. Until it
       landed, this shape's zero tiers and waived suite were unlocked by TYPING
       `docs` — the diff was never consulted. MEASURED, live, on PR #1172: a task

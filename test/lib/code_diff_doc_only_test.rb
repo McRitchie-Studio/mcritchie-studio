@@ -116,4 +116,69 @@ class CodeDiffDocOnlyTest < Minitest::Test
                    "answers to one question is the exact defect this guard was written to close"
     end
   end
+
+  # --- docs_with_guards? — the docs+guard-test pattern ------------------------
+  # (/tasks/docs-shape-rejects-guard-test: every SOP wants the registry-guard
+  # test that pins it, and doc_only? forced authors to delete the guard or
+  # mislabel the shape. The claim rule is TYPE AND LOCATION together.)
+
+  # THE PATTERN, verbatim: PR #1169's diff shape — an SOP plus the registry
+  # guard that pins its rows.
+  def test_prose_plus_a_docs_guard_test_claims_docs_with_guards
+    files = ["docs/agents/agents/steffon/sops/credential-filing.md",
+             "docs/agents/index.md",
+             "test/docs/sop_registry_docs_test.rb"]
+
+    assert CodeDiff.docs_with_guards?(files)
+    refute CodeDiff.doc_only?(files), "doc_only? must still refuse — the two predicates differ EXACTLY here"
+    assert_empty CodeDiff.non_guard_code_files(files)
+  end
+
+  # Location without type earns nothing: a helper.rb under test/docs/ is
+  # unclassified behavior, not a guard test — the bare-directory rule the
+  # classifier's own header forbids.
+  def test_a_non_test_file_under_test_docs_disqualifies_the_claim
+    files = ["docs/agents/note.md", "test/docs/helper.rb"]
+
+    refute CodeDiff.docs_with_guards?(files)
+    assert_equal ["test/docs/helper.rb"], CodeDiff.non_guard_code_files(files)
+  end
+
+  # Type without location earns nothing either: an app-subject test riding a
+  # prose diff is the ORIGINAL regression (PR #1172), not the guard pattern.
+  def test_a_test_outside_test_docs_disqualifies_the_claim
+    refute CodeDiff.docs_with_guards?(["docs/agents/note.md",
+                                       "test/integration/open_pr_receipt_visibility_test.rb"])
+  end
+
+  # Guard tests with NO prose are test-only's stricter business (full-suite cert
+  # + [control] line) — a tierless docs claim must not become the cheap door.
+  def test_guard_tests_alone_do_not_claim_docs_with_guards
+    refute CodeDiff.docs_with_guards?(["test/docs/sop_registry_docs_test.rb"])
+  end
+
+  # The doctrine's own counterexample: an executable filed under docs/ still
+  # disqualifies, exactly as it does for doc_only?.
+  def test_an_executable_under_docs_disqualifies_docs_with_guards
+    refute CodeDiff.docs_with_guards?(["docs/agents/setup.sh", "docs/agents/note.md",
+                                       "test/docs/sop_registry_docs_test.rb"])
+  end
+
+  def test_an_empty_diff_is_not_docs_with_guards
+    refute CodeDiff.docs_with_guards?([])
+    refute CodeDiff.docs_with_guards?(["  ", nil])
+  end
+
+  # Pure prose still claims: the widened rule is a superset of doc_only?, so
+  # every previously-claimable docs diff stays claimable.
+  def test_docs_with_guards_is_a_superset_of_doc_only
+    [
+      ["README.md"],
+      ["docs/img/flow.png", "LICENSE"],
+      ["docs/agents/note.md"]
+    ].each do |files|
+      assert CodeDiff.docs_with_guards?(files),
+             "#{files.inspect} claims doc_only? but not docs_with_guards? — the widening must never shrink"
+    end
+  end
 end
