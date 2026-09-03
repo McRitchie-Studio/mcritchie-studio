@@ -6,7 +6,17 @@ class Release
   # review/QA cycle (a leftover `pr-NNN` branch, a stale uncommitted schema.rb).
   # This decides how to FIX one. The two AGREE on what "clean main" means: the
   # restore target is CANONICAL_BRANCH == ShipSequence's `on_main` branch ("main"),
-  # and a dirty tree blocks a restore exactly as it makes a checkout an offender.
+  # a dirty tree blocks a restore exactly as it makes a checkout an offender, and
+  # BOTH ask ShipSequence.generated_artifact? what counts as work in the first
+  # place.
+  #
+  # That last clause is new, and the comment asserted it before it was true. This
+  # class read a raw `git status --porcelain`, so an untracked `.worktrees/` — the
+  # ship's own workspace — refused a restore and printed a rescue that would have
+  # committed three nested worktrees into mcritchie-industries. Two paths asking
+  # "is the primary clean?" must not answer differently, and a comment claiming
+  # they agree is worse than no comment: it is the thing a reader checks instead
+  # of the code.
   #
   # Like ShipSequence this is deliberately IO-free: no git, no fetch, no checkout.
   # It takes a gathered git state in and returns a plan (symbols/strings/arrays)
@@ -45,6 +55,16 @@ class Release
     def decision(state)
       branch   = (state["branch"]      || state[:branch]).to_s.strip
       dirty    = Array(state["dirty_files"] || state[:dirty_files]).map(&:to_s).reject(&:empty?)
+      # DROP THE TOOLING'S OWN OUTPUT before calling any of it "work". The ship
+      # already classifies `.worktrees/` and friends via
+      # ShipSequence.generated_artifact?; reading a raw `git status --porcelain`
+      # here made this class disagree with it, and the disagreement is not a
+      # harmless extra refusal — the refusal PRINTS
+      #   git add -A && git commit -m "rescue: stranded primary work"
+      # which on a primary dirty only with `.worktrees/` commits the workspace
+      # into the repo. Deferring to the ship's predicate (rather than keeping a
+      # second list here) is what makes the two agree BY CONSTRUCTION.
+      dirty = dirty.reject { |path| ShipSequence.generated_artifact?(path) }
       unpushed = Array(state["unpushed"]    || state[:unpushed]).map(&:to_s).reject(&:empty?)
 
       reasons = []

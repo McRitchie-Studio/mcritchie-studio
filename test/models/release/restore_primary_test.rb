@@ -128,4 +128,66 @@ class Release::RestorePrimaryTest < ActiveSupport::TestCase
     msg = R.refusal_message("turf-monster", plan)
     assert_match(/f1\.rb, f2\.rb, f3\.rb, f4\.rb, f5\.rb \(\+3 more\)/, msg)
   end
+  # ---- generated artifacts are not "work" ---------------------------------------
+  #
+  # THE DISAGREEMENT THIS CLOSES. ShipSequence.generated_artifact? already knows a
+  # `.worktrees/` directory is the tooling's OWN output. This class read plain
+  # `git status --porcelain` with no such filter, so the same directory became a
+  # dirty_files entry and the restore REFUSED — while the header three lines up
+  # claimed "The two AGREE on what 'clean main' means."
+  #
+  # The cost is not the refusal, it is the REMEDY the refusal prints:
+  #   git add -A && git commit -m "rescue: stranded primary work"
+  # Measured on mcritchie-industries 2026-09-02: `git status --porcelain` held
+  # exactly one entry, `?? .worktrees/`, and `git diff --stat HEAD` was EMPTY.
+  # Following that advice would have committed THREE nested worktrees into the
+  # repo — the tooling telling an operator to commit its own workspace.
+  #
+  # test/models/release/ship_sequence_test.rb predicted this in writing: "if a
+  # newly-onboarded one forgets, the printed rescue would COMMIT THE WORKSPACE
+  # INTO GIT." It came true on the next repo onboarded.
+
+  test "a primary dirty ONLY with generated artifacts is restorable, not a refusal" do
+    plan = Release::RestorePrimary.decision(
+      "branch" => "main", "dirty_files" => [".worktrees/"], "unpushed" => []
+    )
+
+    assert_not Release::RestorePrimary.refuse?(plan),
+               "`.worktrees/` is the ship's own output — ShipSequence.generated_artifact? " \
+               "says so — and refusing on it prints a rescue that would commit the workspace"
+    assert_equal "restore", plan["action"]
+  end
+
+  test "generated artifacts are filtered but REAL work still refuses" do
+    plan = Release::RestorePrimary.decision(
+      "branch" => "main", "dirty_files" => [".worktrees/", "app/models/user.rb"], "unpushed" => []
+    )
+
+    assert Release::RestorePrimary.refuse?(plan),
+           "a real uncommitted file must still block — filtering artifacts must not " \
+           "become filtering everything"
+    assert_equal ["app/models/user.rb"], plan["dirty_files"],
+                 "and the refusal must name only the REAL work, so the operator is not " \
+                 "sent looking for changes in a directory the tooling created"
+  end
+
+  test "unpushed commits still refuse even with only artifact dirt" do
+    plan = Release::RestorePrimary.decision(
+      "branch" => "main", "dirty_files" => [".worktrees/"], "unpushed" => ["abc123 real work"]
+    )
+
+    assert Release::RestorePrimary.refuse?(plan),
+           "the artifact filter must not reach the unpushed-commits reason"
+  end
+
+  # The two classes must agree BY CONSTRUCTION, not by two lists kept in step.
+  test "the filter defers to ShipSequence rather than keeping its own list" do
+    assert Release::ShipSequence.generated_artifact?(".worktrees/"),
+           "this test's premise: the ship already classifies it"
+    plan = Release::RestorePrimary.decision(
+      "branch" => "main", "dirty_files" => [".worktrees/"], "unpushed" => []
+    )
+    assert_equal "restore", plan["action"],
+                 "so restore-primary must reach the SAME verdict from the SAME predicate"
+  end
 end
