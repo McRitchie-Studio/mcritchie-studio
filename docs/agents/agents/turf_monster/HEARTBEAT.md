@@ -12,12 +12,18 @@ attribution and routes to one act SOP:
 Use this file when Mr. McRitchie invokes `Turf Monster Heartbeat`. When he
 invokes the act directly, read that act's SOP file.
 
-**One act, and that is the point.** The watch occupies the session for the length
-of a game window — up to twelve hours. Under a soul that owns several acts, a
-heartbeat that opened the watch would never reach the rest of them, which is why
-the act sat direct-invoke-only under Avi and stayed off the launcher card. Here
-there is nothing behind it to starve: `Turf Monster Heartbeat` and
-`live-score-watch` launch the same work, and both belong on the card.
+**Two acts, and neither is composed into the other.** Each occupies the session
+for a long stretch — the watch for the length of a game window, up to twelve
+hours; the rehearsal for a full contest cycle. Under a soul that owns several
+acts, a heartbeat that opened the watch would never reach the rest of them,
+which is why the watch sat direct-invoke-only under Avi and stayed off the
+launcher card.
+
+Here they are ALTERNATIVES, not a queue: `Turf Monster Heartbeat` and
+`live-score-watch` launch the same work, and
+[`contest-rehearsal`](sops/contest-rehearsal.md) is the other thing this soul
+can be asked to do. You run one or the other, so nothing is behind either one
+to starve.
 
 ## Scope
 

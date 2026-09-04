@@ -153,6 +153,15 @@ bin/qa-contest-rehearsal close
 
 Reclaims the contest's rent. A run that ends here is asset-positive.
 
+```text
+Contest:      https://qa.turfmonster.media/contests/<slug>
+```
+
+**Look at the contest page one last time.** It should read settled, with the
+final standings and each winner's payout beside their rank. That is the same
+page the operator would open to answer "did this contest actually pay out?" —
+so it is the one worth leaving open.
+
 ## What this does NOT cover
 
 Stated so nobody reads a green rehearsal as more than it is:
