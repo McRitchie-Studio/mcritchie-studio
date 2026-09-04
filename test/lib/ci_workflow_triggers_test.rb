@@ -1652,7 +1652,14 @@ class CiWorkflowTriggersTest < Minitest::Test
   # failure starts masking two others. Both properties are asserted, not trusted.
   STATIC_CHECKS = {
     "brakeman" => %r{\bbin/brakeman\b},
-    "importmap audit" => %r{\bbin/importmap\s+audit\b},
+    # Moved, not deleted (which is what this file's own failure message asks
+    # for). The lane now calls bin/importmap-audit-ci, a wrapper that runs the
+    # SAME audit and only differs in how it reads the result: it tells an
+    # unreachable npm registry apart from a real advisory, because conflating
+    # them let a third-party timeout red-seal release rel-20260904-ef80d0 five
+    # times at the pre-QA gate. Both spellings match, so the check is still
+    # asserted to run whichever form the lane uses.
+    "importmap audit" => %r{\bbin/importmap(?:-audit-ci\b|\s+audit\b)},
     "rubocop" => %r{\bbin/rubocop\b}
   }.freeze
 
