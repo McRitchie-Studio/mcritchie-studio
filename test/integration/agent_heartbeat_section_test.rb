@@ -89,18 +89,25 @@ class AgentHeartbeatSectionTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='action'][data-action='archive-shipped']", count: 0
   end
 
-  test "Turf Monster is a heartbeat soul and renders the live score watch act" do
+  test "Turf Monster is a heartbeat soul and renders both of its acts" do
     get agent_path("turf-monster")
     assert_response :success
 
     assert_select "[data-test='agent-heartbeat-section'][data-agent='turf-monster']", count: 1
     assert_select "[data-test='heartbeat-name'][data-clip='Turf Monster Heartbeat']"
     assert_select "[data-test='heartbeat-name'] code", text: "Turf Monster Heartbeat"
-    # One act — the watch occupies the session for a whole game window, so there is
-    # deliberately nothing behind it to starve.
-    assert_select "[data-test='action']", count: 1
+    # TWO acts since the first watched QA rehearsal. The old comment here read
+    # "one act — the watch occupies the session for a whole game window, so there
+    # is deliberately nothing behind it to starve", and that reasoning still
+    # holds for what it was about: these are ALTERNATIVES the operator picks
+    # between, not a queue. Both occupy a session for a long stretch, so you run
+    # one or the other — which is exactly why they sit side by side rather than
+    # one being composed into the other.
+    assert_select "[data-test='action']", count: 2
     assert_select "[data-test='action'][data-action='live-score-watch'][data-clip='live-score-watch']"
+    assert_select "[data-test='action'][data-action='contest-rehearsal'][data-clip='contest-rehearsal']"
     assert_match "Watch a live NFL slot", response.body
+    assert_match "Rehearse a whole contest on QA", response.body
   end
 
   test "a non-heartbeat agent's page renders no heartbeat section" do
