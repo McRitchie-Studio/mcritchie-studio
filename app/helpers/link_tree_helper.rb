@@ -60,10 +60,6 @@ module LinkTreeHelper
         { label: "TikTok connect", href: admin_tiktok_connect_path, emoji: "🎵", hover_emoji: "🔐", desc: "OAuth handshake" },
         { label: "Activities", href: activities_agents_path, emoji: "🎭", hover_emoji: "🎬", desc: "Cross-session agent activity feed" },
       ] },
-      { title: "On-chain", links: [
-        { label: "Signing Console", href: admin_signing_requests_path, emoji: "⛓️", hover_emoji: "✍️", featured: true,
-          desc: "Keyless multisig — build, sign in your own Phantom, broadcast. Durable-nonce ready." },
-      ] },
       { title: "Data", links: [
         { label: "AI Builder Multiple", href: admin_ai_builder_multiple_path, emoji: "📈", hover_emoji: "🤖", desc: "GitHub public commit pace backtest" },
         { label: "News workflow", href: workflow_news_index_path, emoji: "🛠️", hover_emoji: "🧭", desc: "Intake → conclude board" },

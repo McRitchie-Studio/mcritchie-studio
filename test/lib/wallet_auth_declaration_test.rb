@@ -72,8 +72,13 @@ class WalletAuthDeclarationTest < ActiveSupport::TestCase
     assert_equal "/magic_link", Rails.application.routes.url_helpers.magic_link_request_path
   end
 
-  # Deliberately KEPT (out of scope to remove): the signing console may use it to
-  # identify signers. Pinned so a later sweep does not take it as dead weight.
+  # STILL HERE, but its reason is spent. It was kept because the signing console
+  # identified signers by it; that console was retired on 2026-09-04
+  # (/tasks/retire-signing-console) and nothing reads the column now. The drop is
+  # its own task — /tasks/drop-hub-wallet-column — because it also takes the
+  # parked admin wallets, the nav and admin-table chips, and an irreversible
+  # migration against the live users table. Pinned until then so the column's
+  # removal is a decision rather than a side effect.
   test "User#solana_address is retained" do
     assert_includes User.column_names, "solana_address"
   end

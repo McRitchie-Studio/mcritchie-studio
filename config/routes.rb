@@ -158,19 +158,6 @@ Rails.application.routes.draw do
 
     get "tiktok/connect",  to: "tiktok#connect",  as: :tiktok_connect
     get "tiktok/callback", to: "tiktok#callback", as: :tiktok_callback
-
-    # KEYLESS signing console — server is a pure coordinator (no keys). A
-    # SigningRequest is built unsigned; each member signs in their own browser;
-    # the assembled fully-signed tx is broadcast. Single-signer (initialize) +
-    # multi-signer durable-nonce (update_signers).
-    resources :signing_requests, only: %i[index new create show], param: :slug do
-      member do
-        get  :sign
-        post :submit_signature
-        post :broadcast
-        post :rpc
-      end
-    end
   end
 
   # HTML

@@ -32,9 +32,13 @@ REMOVES those routes rather than hiding a button. Keep the `auth_methods` line
 explicit: the engine's own default still includes `:wallet` (0.65.2), so deleting
 the line would re-enable wallet sign-in silently.
 
-The admin signing console (`/admin/signing_requests`) is unaffected: it is
-`require_admin` only and drives Phantom in the signer's own browser, so it never
-reads a wallet session. `User#solana_address` is retained for signer identity.
+The admin signing console (`/admin/signing_requests`) used to be the exception
+worth naming here — `require_admin` only, driving Phantom in the signer's own
+browser, so it never read a wallet session. It was **deleted on 2026-09-04**
+(/tasks/retire-signing-console): Turf Monster is the hub for all Solana/web3
+logic, so this app has no on-chain surface at all. `User#solana_address` outlives
+it for now and is nothing's consumer; /tasks/drop-hub-wallet-column takes it,
+along with the parked admin wallets and the nav and admin-table chips.
 
 **Routes:** The app defines canonical `GET /signin` first. Legacy `GET /login` and `GET /signup` redirect there, then `Studio.routes(self)` draws the compatibility auth routes, magic-link request/confirm/consume routes, `/logout`, `/sso_continue`, `/sso_login`, OAuth callbacks, `/error_logs`, local email capture, and `/admin/theme`.
 
