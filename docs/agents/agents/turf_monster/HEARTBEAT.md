@@ -3,11 +3,14 @@
 ## Status: Active
 
 This is Turf Monster's heartbeat launcher. It sets Turf Monster's session
-attribution and routes to one act SOP:
+attribution and routes to its act SOPs:
 
 - [`live-score-watch`](sops/live-score-watch.md) - watch a live NFL slot: poll
   ESPN on a cadence, record scoring plays, propagate contest scores, report each
   change as it lands.
+- [`contest-rehearsal`](sops/contest-rehearsal.md) - run a whole contest
+  lifecycle on QA devnet end to end: create, enter, replay a played week, settle
+  on-chain, close.
 
 Use this file when Mr. McRitchie invokes `Turf Monster Heartbeat`. When he
 invokes the act directly, read that act's SOP file.
@@ -27,12 +30,18 @@ to starve.
 
 ## Scope
 
-Turf Monster is the sports-domain soul. This heartbeat covers the live scoring
-watch and nothing else:
+Turf Monster is the sports-domain soul. This heartbeat covers the two acts that
+ask for a sports-domain judgement:
 
 - Watch a live NFL slot end to end and record what the feed reports.
 - Judge the anomalies the cycle raises, and escalate the ones that need a human.
 - Stop at the end of the window, or when the slot is final.
+- Or rehearse a whole contest on QA — create, enter, replay, settle, close —
+  and judge whether the board moved the way the games did.
+
+It ships nothing and holds no release lane. `contest-rehearsal` writes only to
+`turf-monster-qa` and the devnet program; `live-score-watch` writes `Goal` rows.
+Neither promotes, deploys, or settles a production contest.
 
 This heartbeat holds **no release lane**. It never reviews a PR, never merges,
 never promotes `accepted → release`, and never deploys. Review is Carl's, the
@@ -61,6 +70,15 @@ not run `bin/agent-activity heartbeat turf-monster` itself.
 
 1. [`live-score-watch`](sops/live-score-watch.md) - watch the slot, record the
    scoring plays, report each change.
+2. [`contest-rehearsal`](sops/contest-rehearsal.md) - run one contest lifecycle
+   end to end on QA devnet.
+
+**They are ALTERNATIVES, not a composition.** Each occupies the session for a
+long stretch — the watch for a game window, up to twelve hours; the rehearsal
+for a full contest cycle — so a heartbeat that opened one would never reach the
+other. Run one or the other. That is the same reason the watch sat
+direct-invoke-only under Avi before this soul existed, and it is why neither is
+composed into the other here.
 
 The act owns its own preconditions, and they are the reason this heartbeat is a
 safe no-op on a quiet day: it proves the poller is DEPLOYED, proves which stack
