@@ -16,14 +16,15 @@
 # reviewer_selector.rb). Those are not Solana logic and a grep-based guard would
 # flag every one of them.
 #
-# THE HUB IS THE ONE VIOLATION, AND IT IS EXEMPT ON PURPOSE. mcritchie-studio
-# cannot satisfy this today: the admin signing console is its last real use of
-# the gem and stays until the console moves to turf-monster. So the boundary
-# lands enforced-with-one-named-exemption rather than waiting for that move. The
-# exemption is not a mute — test_integration_hub_exemption_is_live below proves
-# it still describes real code, and
-# test_integration_hub_would_fail_without_its_exemption proves the check bites
-# the REAL committed tree, not just fixtures.
+# THE HUB SATISFIES THIS STRUCTURALLY, as of 2026-09-04. It used to be the one
+# named exemption: the admin signing console was its last real use of
+# solana-studio. /tasks/retire-signing-console deleted the console, the gem and
+# the ALLOWLIST entry together — Mr. McRitchie's ruling that Turf Monster is the
+# hub for ALL Solana/web3 logic — so there is now no exemption to keep honest.
+# The allowlist MACHINERY stays fully tested over fixtures below, because the
+# next app to need an exemption inherits those three self-audits; and
+# test_integration_the_check_bites_this_app_if_a_web3_gem_returns proves the
+# rule still bites the REAL committed tree rather than only the fixtures.
 #
 # Run directly:
 #   bin/rails test test/lib/web2_app_boundary_test.rb
@@ -229,18 +230,19 @@ class Web2AppBoundaryTest < ActiveSupport::TestCase
     assert_empty found, found.map(&:message).join("\n")
   end
 
-  # PROOF THE CHECK BITES THE REAL TREE, not merely the fixtures. Run the real
-  # Gemfile and the real Studio.features against an EMPTY allowlist and the hub
-  # fails — which is exactly the state the doc describes and the exemption
-  # covers. If this ever goes quiet, either the gem left (delete the exemption
-  # and this test) or the check stopped reading the Gemfile.
-  test "integration hub would fail without its exemption" do
+  # PROOF THE CHECK BITES THE REAL TREE, not merely the fixtures. This used to be
+  # shown by running the real tree against an EMPTY allowlist; with the gem and
+  # the exemption both gone there is nothing left to withhold, so the bite is
+  # shown the other way round — the REAL booted Studio.features, handed a
+  # dependency list that carries the gem again. It fires on this app's own web2
+  # declaration, not on a fixture's. If this ever goes quiet, the check stopped
+  # reading either the features or the dependencies.
+  test "integration the check bites this app if a web3 gem returns" do
     found = Web2AppBoundary.violations(
       app: "mcritchie-studio",
       features: Studio.features,
-      dependencies: real_dependencies,
-      repo_root: Rails.root,
-      allowlist: {}
+      dependencies: real_dependencies + %w[solana-studio],
+      repo_root: Rails.root
     )
     assert_equal [:undeclared_web3_gem], kinds(found)
     assert_equal "solana-studio", found.first.gem
@@ -254,31 +256,36 @@ class Web2AppBoundaryTest < ActiveSupport::TestCase
            "template says it ships no on-chain component"
   end
 
-  # Bundler's parse, not a grep — the dependency really is declared.
-  test "integration the real Gemfile declares the gem the exemption covers" do
-    assert_includes real_dependencies, "solana-studio"
+  # Bundler's parse, not a grep — the gem really is gone. A comment mentioning
+  # solana cannot fail this, and a re-added dependency cannot hide from it.
+  test "integration the real Gemfile declares no web3 gem" do
+    assert_empty Web2AppBoundary.web3_dependencies(real_dependencies),
+                 "the hub declares a web3-template gem again; Turf Monster is the web3 hub"
   end
 
-  # The exemption is live: its justification still exists on disk, so it has not
-  # silently outlived the console it was written for.
-  test "integration hub exemption is live and well formed" do
-    entry = Web2AppBoundary::ALLOWLIST.fetch("mcritchie-studio")
-    found = Web2AppBoundary.exemption_violations(
-      app: "mcritchie-studio", entry: entry,
-      carried: %w[solana-studio], root: Rails.root
-    )
-    assert_empty found, found.map(&:message).join("\n")
+  # The acceptance criterion, enforced: every exemption says what clears it and
+  # still stands up against the REAL tree.
+  #
+  # The list is EMPTY today — the hub cleared the only entry when the signing
+  # console went (/tasks/retire-signing-console) — so the emptiness is asserted
+  # FIRST and on purpose. A loop over nothing passes without running its body,
+  # which is not a guard; this way the vacuity is the claim rather than an
+  # accident, and the day an entry returns this test starts auditing it instead
+  # of going quietly green.
+  test "integration every allowlist entry is well formed against the real tree" do
+    assert_equal [], Web2AppBoundary::ALLOWLIST.keys,
+                 "an exemption must be argued in lib/web2_app_boundary.rb, never arrive " \
+                 "quietly beside a Gemfile line — the hub satisfies the boundary structurally"
 
-    assert entry[:justified_by].any? { |path| Rails.root.join(path).exist? },
-           "the signing console is gone — drop solana-studio and this ALLOWLIST entry"
-  end
-
-  # The acceptance criterion, enforced: every exemption says what clears it.
-  test "integration every allowlist entry names what clears it" do
     Web2AppBoundary::ALLOWLIST.each do |app, entry|
       named = entry[:clearing_task].to_s.strip.presence ||
               entry[:unfiled_reason].to_s.strip.presence
       assert named, "#{app}'s exemption names neither a clearing task nor an unfiled reason"
+
+      found = Web2AppBoundary.exemption_violations(
+        app: app, entry: entry, carried: [entry[:gem].to_s], root: Rails.root
+      )
+      assert_empty found, found.map(&:message).join("\n")
     end
   end
 

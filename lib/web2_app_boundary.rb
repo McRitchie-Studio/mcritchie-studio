@@ -99,35 +99,14 @@ module Web2AppBoundary
   # is missing. The exemption exists because the gem cannot be REMOVED yet, and
   # it cannot be removed while any consumer remains. A rename going red here is
   # a correct prompt to re-read the exemption, not noise.
-  ALLOWLIST = {
-    "mcritchie-studio" => {
-      gem: "solana-studio",
-      reason: "the admin signing console — the hub's only remaining real use of the gem",
-      justified_by: %w[
-        app/services/signing
-        app/controllers/admin/signing_requests_controller.rb
-        lib/tasks/signing.rake
-      ].freeze,
-      # NO TASK EXISTS FOR THIS YET, and this entry says so rather than pointing
-      # at a slug that resolves to nothing. The signing console move to
-      # turf-monster is one of three pieces of the 2026-08-31 decision with no
-      # board task — the others being signer verification and chain-ops
-      # deprecation — recorded under "Not yet filed" in the doc below.
-      #
-      # Ordering matters and is why filing the move is not simply overdue:
-      # signer verification (§3 of the doc) SEQUENCES BEFORE the move. The
-      # console shows the operator an opaque byte blob, signed via
-      # phantom.signMessage so the wallet's own preview does not apply, and
-      # simulated through the same server that built the message. Filing the
-      # move first would ship the weaker ordering.
-      clearing_task: nil,
-      unfiled_reason: "The signing console move to turf-monster is NOT YET FILED as of " \
-                      "2026-08-31; it sequences after signer verification. See the " \
-                      "\"Not yet filed\" section of the doc below.",
-      doc: "docs/agents/system/app-templates.md",
-      recorded_on: "2026-08-31",
-    }.freeze,
-  }.freeze
+  # EMPTY, and that is the point. mcritchie-studio held the only entry — for
+  # solana-studio, justified by the admin signing console — and both retired on
+  # 2026-09-04 (/tasks/retire-signing-console), when Mr. McRitchie ruled that
+  # Turf Monster is the hub for ALL Solana/web3 logic. The hub now satisfies the
+  # boundary structurally instead of by exemption, which is the state every
+  # entry here is supposed to reach. Keep the machinery below: it is what makes
+  # the NEXT exemption expire rather than rot.
+  ALLOWLIST = {}.freeze
 
   class << self
     # Does this feature set declare an on-chain app?
