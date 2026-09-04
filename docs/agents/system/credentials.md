@@ -32,7 +32,9 @@ All agents share a primary Gmail account and have individual forwarding addresse
 - **1Password**: Credentials stored in the `alex@mcritchie.studio` 1Password account
 
 ### Per-Agent Forwarding Addresses
-Each agent has a dedicated email that forwards to the shared `team@mcritchie.studio` inbox:
+Each agent has a dedicated email that forwards to the shared `team@mcritchie.studio`
+inbox — **except Turf Monster**, which is a real Google user on its own domain (see the
+note under the table):
 
 | Agent | Email | Purpose |
 |-------|-------|---------|
@@ -42,11 +44,25 @@ Each agent has a dedicated email that forwards to the shared `team@mcritchie.stu
 | Shannon | `shannon@mcritchie.studio` | Dev UI Expert — frontend, Tailwind, Alpine, theme |
 | Jasper | `jasper@mcritchie.studio` | Dev Blockchain Expert — turf-vault, solana-studio, Phantom |
 | Steffon | `steffon@mcritchie.studio` | Infrastructure Expert — Heroku, deploys, CI, OPSEC |
-| Turf Monster | `turf@mcritchie.studio` | Sports data, Turf Monster app notifications |
+| Turf Monster | `team@turfmonster.media` | Sports data, Turf Monster app notifications — **own domain, not a forwarder** |
 | Mack | `mack@mcritchie.studio` | Worker agent comms — scraping, processing, bulk ops |
 | Mason | `mason@mcritchie.studio` | Marketing — brand voice, launch comms, social, funnels (was Infrastructure pre 2026-05-23 — see `mission.md`) |
 
-> The 5 new agents (Avi/Carl/Shannon/Jasper/Steffon) were added 2026-05-23 alongside Mason's pivot from Infrastructure to Marketing. Forwarding addresses still need to be created on the `mcritchie.studio` domain — operator action — but the persona definitions live at `docs/agents/agents/<slug>/`.
+> The 5 new agents (Avi/Carl/Shannon/Jasper/Steffon) were added 2026-05-23 alongside Mason's
+> pivot from Infrastructure to Marketing; persona definitions live at `docs/agents/agents/<slug>/`.
+> The forwarding addresses now EXIST as Google Groups on `mcritchie.studio`, each redirecting
+> into the shared `team@mcritchie.studio` inbox — so every soul reads the same mailbox and the
+> per-agent address is an addressing convention, not a separate account to sign in to.
+>
+> **Turf Monster is the exception, as of 2026-09-04.** `turf@mcritchie.studio` was a group with
+> zero members and is being deleted; the soul now uses `team@turfmonster.media`, a real Google
+> user on Turf's own domain (1Password `google.turf.agents`). It is the one agent address that is
+> NOT a redirect into the studio inbox.
+>
+> These addresses are also seeded as app accounts — `User::PARKED_IDENTITIES` in
+> mcritchie-studio and turf-monster is the source of truth for which of them hold `admin`.
+> `admin@mcritchie.studio` is the super-admin seat shared by Alex and Steffon, and carries no
+> Solana wallet on purpose.
 
 ## Solana Wallets
 

@@ -10,7 +10,10 @@ Turf Monster is the sports expert. Owns the Turf Monster pick'em app and special
 - **Rails Development** — Build and maintain the Turf Monster app features
 
 ## Contact
-- **Email**: `turf@mcritchie.studio` (forwards to shared `team@mcritchie.studio` inbox)
+- **Email**: `team@turfmonster.media` — a REAL Google user on Turf's own domain
+  (1Password `google.turf.agents`, vault `studio-agents`), not a forwarder into
+  `team@mcritchie.studio` like the other souls. It replaced `turf@mcritchie.studio`
+  on 2026-09-04; that group had zero members and is being deleted.
 - **Solana wallet**: Keypair stored in 1Password vault
 
 ## Skills

@@ -122,7 +122,11 @@ class UserTest < ActiveSupport::TestCase
     user = User.create!(email: "team@mcritchie.studio")
 
     assert user.admin?
-    assert_equal "McRitchie Studio Team", user.name
+    # DERIVED, not spelled out. This test is about the callback ADOPTING the
+    # canonical identity; pinning the literal made the 2026-09-04 rename
+    # ("McRitchie Studio Team" -> "Team McRitchie") fail here as though adoption
+    # had broken. The name itself is pinned once, in ParkedIdentitiesTest.
+    assert_equal User.parked_identity_for(email: "team@mcritchie.studio").fetch(:name), user.name
     assert_equal "8K81w4e6UcB7TiANhM9N8sAgijJvTxxybRi8AENRaRYd", user.solana_address
   end
 

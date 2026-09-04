@@ -2,6 +2,28 @@
 # wallet is set, via Solana (Phantom) — all resolving to the SAME user. Keep the
 # durable operator list on User::PARKED_IDENTITIES so login, seeds, and future
 # app bootstrap workflows share the same identity contract.
+
+# An identity that CHANGED ADDRESS has to be carried over before anything is
+# created, or the seed simply makes a second account and leaves the first one
+# behind — still holding whatever role it had when the roster last listed it.
+# Deployed rows are moved by the RenameTurfHouseIdentity migration instead (the
+# release phase is db:migrate alone); this is the same move for the databases a
+# re-seed owns: local, test, and a QA reset.
+User::RETIRED_EMAILS.each do |old_email, new_email|
+  stale = User.find_by(email: old_email)
+  next if stale.nil?
+
+  if User.where(email: new_email).where.not(id: stale.id).exists?
+    puts "  ! #{new_email} already exists; leaving #{old_email} for a manual merge"
+    next
+  end
+
+  # update_column, not update!: Sluggable rebuilds the slug on every save, so a
+  # full save here would quietly re-point the URL this account answers on.
+  stale.update_column(:email, new_email)
+  puts "  ↪ moved #{old_email} to #{new_email}"
+end
+
 users_data = User::PARKED_IDENTITIES.map do |identity|
   identity.merge(solana_address: identity[:wallet])
 end
