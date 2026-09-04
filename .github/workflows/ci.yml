@@ -95,9 +95,13 @@ jobs:
       - name: Scan for common Rails security vulnerabilities using static analysis
         run: bin/brakeman --no-pager
 
+      # Wrapped, NOT bare: `bin/importmap audit` exits non-zero both for a real
+      # advisory and for an unreachable npm registry, and this lane feeds the
+      # pre-QA release gate. A 62s network timeout used to arrive there looking
+      # exactly like a vulnerability. See bin/lib/importmap_audit.rb.
       - name: Scan for security vulnerabilities in JavaScript dependencies
         if: always()
-        run: bin/importmap audit
+        run: bin/importmap-audit-ci
 
       - name: Lint code for consistent style
         if: always()

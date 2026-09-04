@@ -1,0 +1,67 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# `bin/importmap audit` for CI, with a registry outage told apart from a finding.
+#
+# See bin/lib/importmap_audit.rb for why this exists. Short version: the audit
+# exits non-zero both when a dependency is vulnerable and when npm cannot be
+# reached, and a release gate that cannot tell those apart lets a third-party
+# network blip red-seal a release.
+#
+#   exit 0  — clean, or the registry was unreachable after every retry (LOUD)
+#   exit 1  — the registry answered and reported vulnerabilities
+#
+# Retries first, because the outage is usually brief: only when EVERY attempt
+# fails to reach the registry does this pass, and it prints a banner saying the
+# audit did not run so an unreachable registry is never silently green.
+
+require "open3"
+require_relative "lib/importmap_audit"
+
+ATTEMPTS = Integer(ENV.fetch("IMPORTMAP_AUDIT_ATTEMPTS", "3"))
+BACKOFF  = Float(ENV.fetch("IMPORTMAP_AUDIT_BACKOFF", "5"))
+COMMAND  = ENV.fetch("IMPORTMAP_AUDIT_COMMAND", "bin/importmap audit")
+
+last_output = ""
+
+ATTEMPTS.times do |i|
+  attempt = i + 1
+  output, status = Open3.capture2e(*COMMAND.split)
+  last_output = output
+
+  case ImportmapAudit.verdict(output: output, status: status.exitstatus)
+  when :pass
+    puts output unless output.strip.empty?
+    puts "importmap audit: clean (attempt #{attempt}/#{ATTEMPTS})"
+    exit 0
+  when :vulnerable
+    # A real finding is reported once and fails immediately — retrying a
+    # verdict the registry actually gave would only delay the same answer.
+    puts output
+    warn "importmap audit: VULNERABILITIES REPORTED — failing the lane."
+    exit 1
+  when :unreachable
+    warn "importmap audit: registry unreachable on attempt #{attempt}/#{ATTEMPTS}."
+    sleep(BACKOFF * attempt) unless attempt == ATTEMPTS
+  end
+end
+
+warn <<~BANNER
+
+  ============================================================
+   importmap audit DID NOT RUN — the npm registry was
+   unreachable on all #{ATTEMPTS} attempts.
+
+   This is NOT a clean audit. No vulnerability check happened.
+   Passing anyway: a transport failure is not a security
+   finding, and letting one red-seal a release means overriding
+   a security gate by hand under time pressure.
+
+   If this recurs on every run, the registry path is broken and
+   the audit is not protecting anything — fix that, do not
+   raise the retry count.
+  ============================================================
+
+BANNER
+warn last_output.to_s.lines.last(10).join
+exit 0
