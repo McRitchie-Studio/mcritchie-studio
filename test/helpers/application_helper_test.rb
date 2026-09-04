@@ -641,7 +641,10 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_equal ["qa-release", "deploy-with-task"], launchers[1][:actions]
     assert_equal ["production-deploy", "clean-infra"], launchers[2][:actions]
     assert_equal ["grade-events", "share-insights", "full-cycle"], launchers[3][:actions]
-    assert_equal ["live-score-watch"], launchers[4][:actions]
+    # Turf Monster gained the rehearsal launcher after the first watched QA run —
+    # an operator asked to be able to kick the whole contest cycle off from the
+    # card rather than remembering a command.
+    assert_equal ["live-score-watch", "qa-contest-rehearsal"], launchers[4][:actions]
 
     # archive-shipped is NOT a launcher act any more: production-deploy runs it as
     # its final step. It stays a registered SOP invocable by name — this asserts the
@@ -657,6 +660,24 @@ class ApplicationHelperTest < ActionView::TestCase
     # review-only contract: Carl's tooltip frames review, not the merge — pr-review
     # stops at reviewed (merged to accepted); Avi's sweep promotes accepted→release.
     refute_match(/merge/i, launchers[0][:title], "Carl's tooltip stays review-framed, not merge-framed")
+  end
+
+  # The launcher is only useful if the act it names is a REGISTERED SOP — a card
+  # button pointing at a phrase no SOP file answers is a dead end the operator
+  # only discovers by pressing it.
+  test "[unit] every launcher act resolves to a registered SOP file" do
+    registry = Rails.root.join("docs/agents/index.md").read
+    docs_root = Rails.root.join("docs/agents")
+
+    heartbeat_launchers.flat_map { |l| l[:actions] }.each do |act|
+      row = registry[/^\|\s*`#{Regexp.escape(act)}`.*$/]
+      assert row.present?, "#{act} is a launcher act but has no row in the SOP registry"
+
+      path = row[%r{`(mcritchie-studio/)?(docs/agents/\S+?\.md)`}, 2]
+      assert path.present?, "#{act}'s registry row names no SOP file"
+      assert docs_root.join(path.sub("docs/agents/", "")).exist?,
+             "#{act} points at #{path}, which does not exist"
+    end
   end
 
   test "[component] _heartbeats_card renders the five soul heartbeat launchers in a responsive grid" do
@@ -750,8 +771,12 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_select "button[data-row='action'][data-clip='share-insights'] [data-test='action-icon']", text: "📡"
     assert_select "button[data-row='action'][data-clip='full-cycle'] [data-test='action-icon']", text: "🌎"
     assert_select "button[data-row='action'][data-clip='deploy-with-task'] [data-test='action-icon']", text: "⚡"
-    # One icon per act row: Carl 2 + Avi 2 + Steffon 2 + Alex 3 + Turf Monster 1 = 10.
-    assert_select "[data-test='action-icon']", count: 10
+    # One icon per act row. DERIVED, not counted by hand: the literal 10 here had
+    # to be edited every time a soul gained an act, and an assertion whose only
+    # failure mode is "someone added a launcher" teaches the next person to bump
+    # the number rather than to look at what changed.
+    assert_select "[data-test='action-icon']",
+                  count: heartbeat_launchers.sum { |l| l[:actions].size }
     # The copy helper (with its execCommand fallback) is present on the page.
     assert_includes rendered, "window.copyText"
   end
