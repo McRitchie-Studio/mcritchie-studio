@@ -1,7 +1,11 @@
 # frozen_string_literal: true
 
-# [unit] CodeDiff.doc_only? — the predicate behind `claimable_when: doc_only_diff`
-# (the `docs` shape's claim guard). Run directly:
+# [unit] CodeDiff.doc_only? and docs_with_guards? — the classifier behind the
+# `docs` shape's claim guard (`claimable_when: docs_with_guards_diff` since
+# 2026-09-03; doc_only? is kept as the deliberate orphan stating the rule the
+# exempt-KIND gate re-derives inline — this suite pins the two against each
+# other, and docs_with_guards? is its behavioural superset, not a caller).
+# Run directly:
 #   ruby -Itest test/lib/code_diff_doc_only_test.rb
 #
 # WHAT IT IS GUARDING. Until 2026-09-02 the `docs` shape's zero tiers and waived
