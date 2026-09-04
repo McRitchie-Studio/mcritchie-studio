@@ -2,7 +2,7 @@
 
 ## Status: Active
 
-This is Turf Monster's `qa-contest-rehearsal` SOP. It runs one whole contest
+This is Turf Monster's `contest-rehearsal` SOP. It runs one whole contest
 lifecycle on QA — create, enter, play, settle, close — against **devnet**, with
 real wallets, real ESPN scores and a real on-chain payout, so the mechanics can
 be watched end to end before the same path runs on mainnet with real money.

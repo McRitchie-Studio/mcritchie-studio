@@ -644,7 +644,7 @@ class ApplicationHelperTest < ActionView::TestCase
     # Turf Monster gained the rehearsal launcher after the first watched QA run —
     # an operator asked to be able to kick the whole contest cycle off from the
     # card rather than remembering a command.
-    assert_equal ["live-score-watch", "qa-contest-rehearsal"], launchers[4][:actions]
+    assert_equal ["live-score-watch", "contest-rehearsal"], launchers[4][:actions]
 
     # archive-shipped is NOT a launcher act any more: production-deploy runs it as
     # its final step. It stays a registered SOP invocable by name — this asserts the
