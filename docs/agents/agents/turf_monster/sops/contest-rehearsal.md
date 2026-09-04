@@ -84,7 +84,8 @@ Live Board:   https://qa.turfmonster.media/contests/<slug>/live
 ### Step 2 — enter the cast
 
 ```bash
-bin/qa-contest-rehearsal enter            # or --cast mason,mack
+bin/qa-contest-rehearsal enter                    # all three, the default
+bin/qa-contest-rehearsal enter --cast mason,mack  # or a subset
 ```
 
 Each player signs in as a wallet (nonce → message → signature → verify), clears
@@ -104,9 +105,14 @@ appear on the leaderboard at 0.
 bin/qa-contest-rehearsal play --pace 4
 ```
 
-Locks the contest (a contest locks at kickoff, THEN the games play — this is
-also what makes the live board render), clears the board, zeroes the
-leaderboard, and replays a real preseason week **one scoring play at a time**.
+Locks the contest (a contest locks at kickoff, THEN the games play), clears the
+board, zeroes the leaderboard, and replays a real preseason week **one scoring
+play at a time**.
+
+The lock used to be what made the live board reachable at all — `#live`
+redirected unless the contest was locked and unsettled. It no longer does; that
+page renders in every state now, so the lock here is about ordering the
+rehearsal the way a real contest runs, not about unlocking a URL.
 
 The plays are real: the ESPN poller has already written them as `Goal` rows, and
 this re-lays them on a clock. Each one fires the same chain the live feed fires —

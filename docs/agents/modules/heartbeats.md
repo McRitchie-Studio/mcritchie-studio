@@ -17,7 +17,7 @@ three ordered release actions, a themed glyph on the rest):
   - **Avi** → `2️⃣ qa-release` · `⚡ deploy-with-task`
   - **Steffon** → `3️⃣ production-deploy` · `🧹 clean-infra`
   - **Alex** → `🧑🏻‍🏫 grade-events` · `📡 share-insights` · `🌎 full-cycle`
-  - **Turf Monster** → `🏈 live-score-watch`
+  - **Turf Monster** → `🏈 live-score-watch` · `🎬 contest-rehearsal`
 
   `archive-shipped` is deliberately NOT a chip: `production-deploy` runs it as its
   final step, so the cleaning rides every release instead of waiting to be
@@ -47,7 +47,7 @@ Each soul's action-level procedure lives with that soul:
 | **Avi** (`avi`) | `Avi Heartbeat` | `qa-release`, `deploy-with-task` (direct-invoke only) | `reviewed` work + `assembled` stragglers to sweep | the RC swept, **live on QA, members `assembled` on QA-green** |
 | **Steffon** (`steffon`) | `Steffon Heartbeat` | `production-deploy`, `clean-infra` | a QA-green (`assembled`) release ready to ship / a machine carrying finished work | the ready release `shipped` (archived on the way out, or no-op); the machine swept |
 | **Alex** (`alex`) | `Alex Heartbeat` | `grade-events`, `share-insights`, `full-cycle` | activities to grade / confirmed insights to share / a full pipeline to run | 10 graded + banked; confirmed insights shared out; or the whole release `shipped` |
-| **Turf Monster** (`turf-monster`) | `Turf Monster Heartbeat` | `live-score-watch` | a live NFL slot with the poller deployed | the slot final or the window elapsed; scores recorded, anomalies judged |
+| **Turf Monster** (`turf-monster`) | `Turf Monster Heartbeat` | `live-score-watch` · `contest-rehearsal` | a live NFL slot with the poller deployed, or QA reachable on devnet | the slot final or the window elapsed; or the rehearsal contest settled and closed |
 
 > **Direct-drive the mutating acts.** `qa-release`, `production-deploy`, and
 > `archive-shipped` MUTATE shared state across many minutes, so the heartbeat

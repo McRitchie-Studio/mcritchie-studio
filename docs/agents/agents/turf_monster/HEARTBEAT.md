@@ -3,41 +3,44 @@
 ## Status: Active
 
 This is Turf Monster's heartbeat launcher. It sets Turf Monster's session
-attribution and routes to one act SOP:
+attribution and routes to its act SOPs:
 
 - [`live-score-watch`](sops/live-score-watch.md) - watch a live NFL slot: poll
   ESPN on a cadence, record scoring plays, propagate contest scores, report each
   change as it lands.
+- [`contest-rehearsal`](sops/contest-rehearsal.md) - run a whole contest
+  lifecycle on QA devnet end to end: create, enter, replay a played week, settle
+  on-chain, close.
 
 Use this file when Mr. McRitchie invokes `Turf Monster Heartbeat`. When he
-invokes the act directly, read that act's SOP file.
+invokes a single act directly, read that act's SOP file.
 
-**Two acts, and neither is composed into the other.** Each occupies the session
-for a long stretch — the watch for the length of a game window, up to twelve
-hours; the rehearsal for a full contest cycle. Under a soul that owns several
-acts, a heartbeat that opened the watch would never reach the rest of them,
-which is why the watch sat direct-invoke-only under Avi and stayed off the
-launcher card.
-
-Here they are ALTERNATIVES, not a queue: `Turf Monster Heartbeat` and
-`live-score-watch` launch the same work, and
-[`contest-rehearsal`](sops/contest-rehearsal.md) is the other thing this soul
-can be asked to do. You run one or the other, so nothing is behind either one
-to starve.
+**The heartbeat itself composes only `live-score-watch`.**
+[`contest-rehearsal`](sops/contest-rehearsal.md) is direct-invocation only,
+which is why the launcher card on the agent profile lists both acts while the
+heartbeat composition runs one. Each act occupies the session for a long stretch
+— the watch for the length of a game window, up to twelve hours; the rehearsal
+for a full contest cycle — so a heartbeat that opened both would never reach the
+second. That is the same reason the watch sat direct-invoke-only under Avi
+before this soul had a heartbeat of its own.
 
 ## Scope
 
-Turf Monster is the sports-domain soul. This heartbeat covers the live scoring
-watch and nothing else:
+Turf Monster is the sports-domain soul. This heartbeat covers the two acts that
+ask for a sports-domain judgement:
 
 - Watch a live NFL slot end to end and record what the feed reports.
 - Judge the anomalies the cycle raises, and escalate the ones that need a human.
 - Stop at the end of the window, or when the slot is final.
+- Or rehearse a whole contest on QA — create, enter, replay, settle, close —
+  and judge whether the board moved the way the games did.
 
-This heartbeat holds **no release lane**. It never reviews a PR, never merges,
-never promotes `accepted → release`, and never deploys. Review is Carl's, the
-sweep is Avi's, the ship is Steffon's. It also never settles or grades a contest
-— it records scores, and settlement is its own act with its own gates.
+It ships nothing and holds **no release lane**. `contest-rehearsal` writes only
+to `turf-monster-qa` and the devnet program; `live-score-watch` writes `Goal`
+rows. Neither promotes, deploys, or settles a production contest, and this
+heartbeat never reviews a PR, never merges, and never promotes
+`accepted → release`. Review is Carl's, the sweep is Avi's, the ship is
+Steffon's.
 
 ## Entry
 
@@ -54,25 +57,38 @@ delegated agent explicitly passes its own `--agent`.
 
 Use the production board by default. Do not add `--local`.
 
-Keep attribution here. The act SOP file below is a standalone procedure and does
-not run `bin/agent-activity heartbeat turf-monster` itself.
+Keep attribution here. Both act SOP files below are standalone procedures, and
+neither runs `bin/agent-activity heartbeat turf-monster` itself.
 
 ## Act SOPs
+
+Run Turf Monster's heartbeat as a live-slot watch:
 
 1. [`live-score-watch`](sops/live-score-watch.md) - watch the slot, record the
    scoring plays, report each change.
 
-The act owns its own preconditions, and they are the reason this heartbeat is a
-safe no-op on a quiet day: it proves the poller is DEPLOYED, proves which stack
-it is pointed at, and checks there is a slot worth watching at all. Any one of
-those failing ends the run with a report and no writes.
+When Mr. McRitchie launches `Turf Monster Heartbeat`, run `live-score-watch`
+until the window closes or the slot is final. When an act is invoked directly,
+run only that act.
+
+[`contest-rehearsal`](sops/contest-rehearsal.md) runs only when invoked directly
+- it takes the session for a whole contest cycle, and is never part of the
+heartbeat composition.
+
+**Each act owns its own preconditions**, which is why this heartbeat is a safe
+no-op on a quiet day. `live-score-watch` proves the poller is DEPLOYED, proves
+which stack it is pointed at, and checks there is a slot worth watching at all
+(`sops/live-score-watch.md` §Preconditions). `contest-rehearsal` runs
+`NetworkGuard` before it loads a single key, refusing any app but
+`turf-monster-qa` and any program but the pinned devnet one. A precondition
+failing ends the run with a report and no writes.
 
 ## Handoff
 
 End every Turf Monster heartbeat with a short report:
 
-- **which environment the totals describe** — a rehearsal's numbers and a
-  production watch's numbers read identically otherwise
+- **which environment the totals describe** — a `contest-rehearsal` run's
+  numbers and a production watch's numbers read identically otherwise
 - games watched and scoring events recorded, or "nothing to watch"
 - contests re-scored
 - anomalies by kind, and any escalated verbatim
@@ -81,7 +97,8 @@ On a clean run with no anomalies, omit the anomaly section entirely.
 
 ## Background — not needed to execute
 
-This heartbeat is a recipe: it routes to the act SOP above, which stands alone.
+This heartbeat is a recipe: it routes to the act SOPs above, each of which
+stands alone.
 These references are context only.
 
 - [`../../modules/heartbeats.md`](../../modules/heartbeats.md) - cross-soul
