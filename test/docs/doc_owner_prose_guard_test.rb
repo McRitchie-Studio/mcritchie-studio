@@ -68,6 +68,7 @@ class DocOwnerProseGuardTest < ActiveSupport::TestCase
     "qa-deploy" => "Avi",           # legacy alias — the spelling bin/release.rb and bin/conductor actually use
     "deploy-with-task" => "Avi",
     "live-score-watch" => "Turf Monster",  # re-homed 2026-08-26: the judgment it asks for is sports-domain
+    "contest-rehearsal" => "Turf Monster",  # registered 2026-09-04 with the second act; the guard is the only thing that keeps a docs claim from drifting
     "pre-QA gate" => "Avi",
     "production-deploy" => "Steffon",
     "archive-shipped" => "Steffon",
