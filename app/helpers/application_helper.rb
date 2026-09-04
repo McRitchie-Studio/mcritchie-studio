@@ -1132,7 +1132,7 @@ module ApplicationHelper
       { agent_slug: "avi",     heartbeat: "Avi Heartbeat",     actions: ["qa-release", "deploy-with-task"],                label: "Assemble + QA", title: "Avi — sweep reviewed work onto release, then QA the candidate" },
       { agent_slug: "steffon", heartbeat: "Steffon Heartbeat", actions: ["production-deploy", "clean-infra"],              label: "Ship + sweep",  title: "Steffon — ship a QA-green release (it archives on the way out), then sweep the machine" },
       { agent_slug: "alex",    heartbeat: "Alex Heartbeat",    actions: ["grade-events", "share-insights", "full-cycle"], label: "Learn + ship",  title: "Alex — grade, share insights, + full DevOps cycle heartbeat" },
-      { agent_slug: "turf-monster", heartbeat: "Turf Monster Heartbeat", actions: ["live-score-watch"],                   label: "Watch scores",  title: "Turf Monster — watch a live NFL slot and record every scoring play" }
+      { agent_slug: "turf-monster", heartbeat: "Turf Monster Heartbeat", actions: ["live-score-watch", "contest-rehearsal"], label: "Watch scores",  title: "Turf Monster — watch a live NFL slot, or rehearse a whole contest on QA" }
     ]
   end
 
@@ -1148,6 +1148,7 @@ module ApplicationHelper
     "qa-release"        => "Prepare + deploy the QA release",
     "clean-infra"       => "Sweep this machine: desks, disk, Redis band",
     "live-score-watch"  => "Watch a live NFL slot and record every score",
+    "contest-rehearsal" => "Rehearse a whole contest on QA, end to end",
     "grade-events"      => "Grade 10 recent events for quality",
     "share-insights"    => "Share confirmed insights into the docs",
     "full-cycle"        => "Full cycle — review, assemble, QA, ship to prod",
@@ -1176,6 +1177,7 @@ module ApplicationHelper
     "production-deploy" => "3️⃣",
     "clean-infra"       => "🧹",
     "live-score-watch"  => "🏈",
+    "contest-rehearsal" => "🎬",
     "pr-review-slow"    => "🐢",
     "grade-events"      => "🧑🏻‍🏫",
     "share-insights"    => "📡",
