@@ -16,7 +16,38 @@
 # audit did not run so an unreachable registry is never silently green.
 
 require "open3"
+require "optparse"
 require_relative "lib/importmap_audit"
+
+# `--help` is the probe every operator tries first, precisely because it is
+# expected to do nothing. A script that hand-parses nothing and ignores ARGV
+# answers it by RUNNING ITS REAL ACTION — the class bin_help_flag_class_test
+# exists to stop. This takes no options, so the parser's whole job is to make
+# an unrecognized argument say so instead of being silently dropped.
+begin
+  OptionParser.new do |o|
+    o.banner = <<~USAGE
+    Usage: bin/importmap-audit-ci
+
+    Runs `bin/importmap audit` and tells a registry outage apart from a
+    vulnerability. Exits 0 when clean OR when npm was unreachable on every
+    attempt (loudly); exits 1 when the registry reported vulnerabilities.
+
+    Environment:
+      IMPORTMAP_AUDIT_ATTEMPTS  retries before giving up  (default 3)
+      IMPORTMAP_AUDIT_BACKOFF   seconds, multiplied by attempt (default 5)
+      IMPORTMAP_AUDIT_COMMAND   the audit command          (default bin/importmap audit)
+  USAGE
+    o.on("-h", "--help", "Print this message and exit without auditing") do
+      puts o
+      exit 0
+    end
+  end.parse!
+rescue OptionParser::ParseError => e
+  warn "bin/importmap-audit-ci: #{e.message}"
+  warn "Try `bin/importmap-audit-ci --help`. Nothing was audited."
+  exit 2
+end
 
 ATTEMPTS = Integer(ENV.fetch("IMPORTMAP_AUDIT_ATTEMPTS", "3"))
 BACKOFF  = Float(ENV.fetch("IMPORTMAP_AUDIT_BACKOFF", "5"))

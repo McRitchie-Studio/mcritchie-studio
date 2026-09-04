@@ -93,6 +93,14 @@ class BinHelpFlagClassTest < Minitest::Test
     # deploy succeeded".
     "qa-server"              => :cli_arg_guard,
     "control-check"          => :cli_arg_guard,
+    # Read-only: it runs the JS dependency audit and reports a verdict; it takes
+    # no options and mutates nothing, so there is no first mutation for --help to
+    # precede. It is classified anyway because it was born ignoring ARGV, which
+    # is exactly the shape this file exists to catch — `--help` would have run a
+    # full network audit instead of printing help. Unknown flags exit 2, distinct
+    # from the 1 that means "vulnerabilities found", so CI cannot read a typo as
+    # a security finding.
+    "importmap-audit-ci"     => :optparse,
     "reap-cert-databases"    => :cli_arg_guard,
     # THE READ-ONLY ONE, and the only :cli_arg_guard entry with no FIRST_MUTATION
     # row — deliberately, because it has no mutation to precede. bin/agent-presence

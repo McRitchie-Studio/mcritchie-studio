@@ -38,6 +38,27 @@ class ImportmapAuditCiTest < ActiveSupport::TestCase
     )
   end
 
+  # `--help` is the probe an operator tries first BECAUSE it is expected to do
+  # nothing. This script was born ignoring ARGV, which would have answered it by
+  # running a full network audit.
+  test "--help prints usage and audits nothing" do
+    out, status = Open3.capture2e({ "IMPORTMAP_AUDIT_COMMAND" => "/bin/false" }, WRAPPER, "--help")
+
+    assert_equal 0, status.exitstatus, out
+    assert_match(/Usage: bin\/importmap-audit-ci/, out)
+    refute_match(/attempt 1\//, out, "help must not have run the audit")
+  end
+
+  # 2 for a bad flag, NOT 1 — CI reads 1 as "vulnerabilities found", so a typo
+  # must not be able to present itself as a security finding.
+  test "an unknown flag exits 2, distinct from the vulnerability exit" do
+    out, status = Open3.capture2e({ "IMPORTMAP_AUDIT_COMMAND" => "/bin/false" }, WRAPPER, "--nope")
+
+    assert_equal 2, status.exitstatus, out
+    assert_match(/invalid option/, out)
+    assert_match(/Nothing was audited/, out)
+  end
+
   test "a clean audit exits 0" do
     Dir.mktmpdir do |dir|
       cmd = fake_audit(dir, output: "No vulnerabilities found", exit_code: 0)
