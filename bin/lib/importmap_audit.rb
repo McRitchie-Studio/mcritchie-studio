@@ -59,13 +59,29 @@ module ImportmapAudit
     TRANSPORT_SIGNATURES.any? { |sig| text.match?(sig) }
   end
 
-  # importmap-rails prints a table of vulnerable packages and a summary line.
-  # Either shape counts — the table header changes between versions, the
-  # "N vulnerabilit(y|ies) found" summary has been stable.
+  # importmap-rails prints a table of vulnerable packages, then a summary line.
+  # BOTH shapes are matched, and the table pattern is written against what the
+  # gem ACTUALLY emits rather than against what a table looks like in the
+  # abstract.
+  #
+  # It used to be `/^\s*Package\s+Severity\b/i`, which was DEAD CODE: the gem's
+  # puts_table writes `"| " + row.join(" | ") + " |"`
+  # (importmap-rails-2.2.3/lib/importmap/commands.rb:164), so every row opens
+  # with a pipe and `^\s*` can never reach the word "Package". The comment above
+  # it claimed "either shape counts" while all of the safety rested on the
+  # summary alone — and it went unnoticed because the unit fixture was INVENTED
+  # (space-delimited) instead of cut from the producer. A fixture shaped from an
+  # assumption certifies the assumption.
+  TABLE_HEADER = /^\s*\|\s*Package\s*\|\s*Severity\b/i
+
+  # `puts "  #{n} #{vulnerabilities} found: #{severities}"` — commands.rb:66.
+  # Two leading spaces, and a trailing ": 1 high" the old pattern never expected
+  # either; `\b\d+` tolerates both.
+  SUMMARY_LINE = /\b\d+\s+vulnerabilit(?:y|ies)\s+found/i
+
   def self.vulnerabilities_reported?(output)
     text = output.to_s
-    text.match?(/\b\d+\s+vulnerabilit(?:y|ies)\s+found/i) ||
-      text.match?(/^\s*Package\s+Severity\b/i)
+    text.match?(SUMMARY_LINE) || text.match?(TABLE_HEADER)
   end
 
   # The verdict for one run of the audit command.

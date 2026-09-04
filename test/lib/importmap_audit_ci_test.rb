@@ -88,6 +88,29 @@ class ImportmapAuditCiTest < ActiveSupport::TestCase
 
   # The other half, and the one that would matter most if it broke: the fix
   # must not have turned the audit off.
+  # An env var may tune the retry count. It must not be able to switch the gate
+  # off — ATTEMPTS=0 used to run the audit zero times, exit 0 with a real
+  # vulnerability present, and blame a network failure that never happened.
+  test "a zero attempt count still runs the audit once, and still fails on a finding" do
+    Dir.mktmpdir do |dir|
+      cmd = fake_audit(dir, output: "| Package | Severity |\n  1 vulnerability found: 1 high", exit_code: 1)
+      out, status = run_wrapper(cmd, attempts: 0)
+
+      assert_equal 1, status.exitstatus, out
+      assert_match(/VULNERABILITIES REPORTED/, out)
+      refute_match(/DID NOT RUN/, out, "it must not claim a network failure that did not happen")
+    end
+  end
+
+  test "an unreachable registry is annotated for the GitHub UI, not just the log" do
+    Dir.mktmpdir do |dir|
+      cmd = fake_audit(dir, output: "Unexpected transport error (Net::ReadTimeout)", exit_code: 1)
+      out, _status = run_wrapper(cmd, attempts: 2)
+
+      assert_match(/::warning title=importmap audit skipped::/, out)
+    end
+  end
+
   test "a real vulnerability still fails the lane" do
     Dir.mktmpdir do |dir|
       cmd = fake_audit(dir, output: "Package Severity\nlodash high\n1 vulnerability found", exit_code: 1)

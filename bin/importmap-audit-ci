@@ -49,7 +49,14 @@ rescue OptionParser::ParseError => e
   exit 2
 end
 
-ATTEMPTS = Integer(ENV.fetch("IMPORTMAP_AUDIT_ATTEMPTS", "3"))
+# AT LEAST ONE ATTEMPT, ALWAYS.
+#
+# `ATTEMPTS.times` with 0 runs the audit ZERO times and falls straight through
+# to the "could not reach the registry" banner — exiting 0 with a real
+# vulnerability sitting in the tree, and a message claiming a network problem
+# that never happened. An env var should be able to tune a retry count; it
+# should not be able to switch a security gate off and then misreport why.
+ATTEMPTS = [Integer(ENV.fetch("IMPORTMAP_AUDIT_ATTEMPTS", "3")), 1].max
 BACKOFF  = Float(ENV.fetch("IMPORTMAP_AUDIT_BACKOFF", "5"))
 COMMAND  = ENV.fetch("IMPORTMAP_AUDIT_COMMAND", "bin/importmap audit")
 
@@ -76,6 +83,12 @@ ATTEMPTS.times do |i|
     sleep(BACKOFF * attempt) unless attempt == ATTEMPTS
   end
 end
+
+# ::warning:: so the line is visible in the GitHub UI without opening the log.
+# A lane that passes shows green either way, and "no audit happened" is exactly
+# the kind of thing nobody scrolls a green job to discover.
+puts "::warning title=importmap audit skipped::The npm registry was unreachable " \
+     "on all #{ATTEMPTS} attempts — no vulnerability check ran."
 
 warn <<~BANNER
 
