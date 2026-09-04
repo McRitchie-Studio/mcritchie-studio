@@ -2,8 +2,19 @@
 # (/tasks/retire-signing-console): Turf Monster is the hub for all Solana/web3
 # logic, so the hub keeps none. Measured against production the same day before
 # this ran — SigningRequest.count => 0, DurableNonce.pluck(:cluster).tally =>
-# {"devnet" => 1} — so the only row lost is one devnet nonce account, whose
-# on-chain pubkey outlives this table and was never referenced by anything else.
+# {"devnet" => 1} — so the only row lost is one devnet nonce account. Read that
+# precisely: the ACCOUNT outlives this table, the recorded ADDRESS does not. It
+# appears nowhere else in any repo, so it is kept here rather than lost —
+#
+#   nonce account 8P2Rf4bLVWwTbNrNTVWESGSDRsruxjJ47dkbsSzXV7kQ (devnet)
+#   authority     CytJS23p1zCM2wvUUngiDePtbMB484ebD7bK4nDqWjrR
+#   balance       0.00144768 SOL, the 80-byte rent exemption
+#
+# Nothing referenced the row (SigningRequest.count was 0), and devnet rent is
+# free to re-airdrop, so nothing is at stake. But withdrawing from a nonce
+# account needs its ADDRESS as well as its authority, and a scan to rediscover
+# one is refused by most RPC providers — so an address nobody wrote down is an
+# account nobody can close.
 #
 # Reversible on purpose: `down` rebuilds both tables exactly as schema.rb
 # declared them, so a rollback restores the shape (never the rows).
