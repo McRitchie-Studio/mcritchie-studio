@@ -1946,9 +1946,10 @@ missing_tiers = dor_tiers.reject { |tier| tier_satisfied?(checks, tier) }
 #   test-only  claimable_when: test_only_diff — a diff made entirely of test code
 #              has no behavior for a tier to be evidence OF.
 #   docs       claimable_when: docs_with_guards_diff — prose (which certifies by
-#              REVIEW, with no suite to certify) plus, since 2026-09-03, the
-#              registry-guard tests that pin it: *_test.rb under test/docs/,
-#              type AND location together, with at least one prose file.
+#              REVIEW, with no suite to certify) plus, optionally since
+#              2026-09-03, the registry-guard tests that pin it: *_test.rb under
+#              test/docs/, type AND location together, with at least one prose
+#              file (guard tests may ride along; prose alone still claims).
 #
 # Without the guard, the lightest contracts in config/feature_shapes.yml are
 # unlocked by TYPING their name, which is `kind: chore`'s bug (PR #512) rebuilt one

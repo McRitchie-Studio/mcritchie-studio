@@ -519,7 +519,7 @@ class FeatureShapeTiersTest < Minitest::Test
              "contract is unlocked by TYPING its name — the declaration-over-evidence bug this taxonomy " \
              "exists to kill. MEASURED on `docs` (PR #1172, 2026-09-02): a docs-claimed diff carrying a " \
              "test file was told 'DoR-to-Merge met' with no tier and no cert demanded. Name the diff rule " \
-             "that earns this shape (doc_only_diff / test_only_diff), and implement it in bin/dor-check."
+             "that earns this shape (test_only_diff / doc_only_diff / docs_with_guards_diff), and implement it in bin/dor-check."
     end
   end
 end

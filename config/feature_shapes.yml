@@ -124,9 +124,9 @@
 #     polarities — and in both, THE UNRECOGNIZED FILE BLOCKS THE CLAIM:
 #       test_only_diff → 100% test files (bin/lib/test_only_diff.rb, an ALLOWLIST:
 #         test/, tests/, e2e/ and nothing else).
-#       docs_with_guards_diff → provable prose plus docs-guard tests only —
-#         *_test.rb under test/docs/, type AND location together — with at least
-#         one prose file (bin/lib/code_diff.rb, a DENYLIST at its core:
+#       docs_with_guards_diff → provable prose plus, optionally, docs-guard tests
+#         (and nothing else) — *_test.rb under test/docs/, type AND location
+#         together — with at least one prose file (bin/lib/code_diff.rb, a DENYLIST at its core:
 #         non-behavioral by file TYPE, so anything unrecognized is behavior; the
 #         guard-test carve-out is the one deliberate, doubly-qualified exception,
 #         widened from plain doc_only_diff on 2026-09-03).
