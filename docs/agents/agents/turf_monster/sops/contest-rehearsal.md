@@ -176,8 +176,19 @@ sum paid, and each winner's balance should rise by exactly their rank's payout.
 That subtraction is the proof the payout landed — not the transaction signature,
 which only proves something was broadcast.
 
-→ **Hand back now.** He signs in Phantom; you cannot do this half. Wait for
-him to confirm the payout landed before step 5.
+→ **Hand back now.** Which halt this is depends on the flag you ran, and step 4
+has three exits, not two:
+
+| Exit | Who acts next |
+|---|---|
+| `--cosign link` | **He does.** He signs in Phantom; you cannot do this half |
+| `--cosign agent` | Nobody — Mason's key already signed it, unattended |
+| nobody was owed | Nobody — the contest graded with no winner to pay |
+
+All three stop. On the two unattended exits he is confirming the arithmetic
+rather than performing the signature, and on `--cosign link` **nothing can
+proceed until he signs**: the settle is 2-of-3 with only the server's half
+signed, so continuing past it closes a contest that never paid.
 
 ### Step 5 — close
 
