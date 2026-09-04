@@ -17,10 +17,24 @@ class ImportmapAuditTest < ActiveSupport::TestCase
     \tfrom vendor/bundle/ruby/3.3.0/gems/net-protocol-0.2.2/lib/net/protocol.rb:229:in `rbuf_fill'
   OUT
 
+  # CUT FROM THE PRODUCER, NOT IMAGINED. Rendered exactly as
+  # importmap-rails-2.2.3 puts_table emits it (commands.rb:155-167): every row
+  # is `"| " + row.join(" | ") + " |"`, columns padded to the widest cell, a
+  # divider under the header, and the summary line carrying TWO leading spaces
+  # plus a severity tally.
+  #
+  # The previous fixture here was space-delimited because that is what a table
+  # looks like if you picture one instead of reading the gem. It passed, and it
+  # let a dead regex sit in the classifier looking live.
+  # The summary line specifically — not "any line mentioning a vulnerability",
+  # which would also match the header's own column name.
+  SUMMARY_PATTERN = /vulnerabilit(?:y|ies)\s+found/i
+
   VULNERABLE_OUTPUT = <<~OUT
-    Package    Severity  Vulnerable versions  Summary
-    lodash     high      < 4.17.21            Prototype pollution
-    1 vulnerability found
+    | Package | Severity | Vulnerable versions | Vulnerability       |
+    |---------|----------|---------------------|---------------------|
+    | lodash  | high     | < 4.17.21           | Prototype pollution |
+      1 vulnerability found: 1 high
   OUT
 
   test "a registry timeout is unreachable, not a finding" do
@@ -52,6 +66,30 @@ class ImportmapAuditTest < ActiveSupport::TestCase
   # contract under us. Fail closed rather than trusting the status alone.
   test "a vulnerability table beats a zero exit status" do
     assert_equal :vulnerable, ImportmapAudit.verdict(output: VULNERABLE_OUTPUT, status: 0)
+  end
+
+  # THE ARM THAT WAS DEAD. Asserted on its own, so it cannot go back to being
+  # decoration behind the summary line: strip the summary and the table alone
+  # must still read as a finding.
+  test "the table header alone is a finding, without the summary line" do
+    # Strip the SUMMARY line only. Rejecting every line matching /vulnerabilit/i
+    # would also delete the header row, whose fourth column is literally
+    # "Vulnerability" — leaving this test asserting on a divider.
+    table_only = VULNERABLE_OUTPUT.lines.reject { |l| l.match?(SUMMARY_PATTERN) }.join
+
+    refute_match(SUMMARY_PATTERN, table_only, "the summary must really be gone for this to mean anything")
+    assert_match(/Package/, table_only, "the header must survive, or this asserts nothing")
+    assert ImportmapAudit.vulnerabilities_reported?(table_only),
+           "the pipe-delimited table the gem actually prints must be recognised on its own"
+    assert_equal :vulnerable, ImportmapAudit.verdict(output: table_only, status: 1)
+  end
+
+  # And the summary alone, for the same reason in the other direction.
+  test "the summary line alone is a finding, without the table" do
+    summary_only = "  1 vulnerability found: 1 high\n"
+
+    assert ImportmapAudit.vulnerabilities_reported?(summary_only)
+    assert_equal :vulnerable, ImportmapAudit.verdict(output: summary_only, status: 1)
   end
 
   test "every transport signature is recognised" do
