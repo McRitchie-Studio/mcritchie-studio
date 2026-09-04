@@ -63,6 +63,25 @@ Two exclusions, and neither is a preference:
 Each step prints the URLs it just made relevant. **Open them** — the driver runs
 in a terminal but the thing being rehearsed is a web app.
 
+### ⛔ ONE STEP PER TURN — this is the whole point of the split
+
+**If you are an agent running this SOP: run ONE step, hand the URLs to Mr.
+McRitchie, and STOP. Do not run the next step until he has answered.** He is
+not reading a log afterwards; he is watching a board while it moves, and a run
+that does all five in one turn gives him nothing to watch. Ending your turn IS
+the step — a message that reports the step and then keeps going has not stopped.
+
+The driver prints a `── STOP ──` block at the end of every step naming what he
+is confirming and what to run next. **When you see it, hand back.** It is there
+because this instruction, living only in this file, was read once at the top of
+a run and lost to momentum: on 2026-09-04 an agent ran create through close in a
+single turn and Mr. McRitchie never saw a board mid-flight. Nothing failed — the
+SOP simply never said to stop.
+
+Step 4 with `--cosign link` is the one that cannot be waved through. The settle
+is 2-of-3 and the server has signed only its own half, so **a run that continues
+past it closes a contest that never paid.**
+
 ### Step 1 — create the contest
 
 ```bash
@@ -81,6 +100,8 @@ Live Board:   https://qa.turfmonster.media/contests/<slug>/live
 **Look at the contest page.** It should read `$500 Prizes`, `$19 Entry`,
 `0/29 Entries`, and show the matchup cards unlocked.
 
+→ **Hand back now.** Wait for his go-ahead before step 2.
+
 ### Step 2 — enter the cast
 
 ```bash
@@ -98,6 +119,8 @@ Contest:      https://qa.turfmonster.media/contests/<slug>
 
 **Look at the contest page.** Entries should read `3/29`, and each player should
 appear on the leaderboard at 0.
+
+→ **Hand back now.** Wait for his go-ahead before step 3.
 
 ### Step 3 — play the preseason
 
@@ -127,6 +150,8 @@ League Board: https://qa.turfmonster.media/live
 zero, games flip to FINAL as their last play lands, and the standings reshuffle.
 At `--pace 4` a 129-play week takes about nine minutes.
 
+→ **Hand back now.** Wait for his go-ahead before step 4.
+
 ### Step 4 — conclude and pay
 
 ```bash
@@ -151,6 +176,9 @@ sum paid, and each winner's balance should rise by exactly their rank's payout.
 That subtraction is the proof the payout landed — not the transaction signature,
 which only proves something was broadcast.
 
+→ **Hand back now.** He signs in Phantom; you cannot do this half. Wait for
+him to confirm the payout landed before step 5.
+
 ### Step 5 — close
 
 ```bash
@@ -167,6 +195,8 @@ Contest:      https://qa.turfmonster.media/contests/<slug>
 final standings and each winner's payout beside their rank. That is the same
 page the operator would open to answer "did this contest actually pay out?" —
 so it is the one worth leaving open.
+
+→ **Hand back.** The rehearsal is done; report what he should see.
 
 ## What this does NOT cover
 
