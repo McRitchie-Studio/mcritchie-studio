@@ -165,6 +165,34 @@ class StartHereLabelGuardTest < ActiveSupport::TestCase
     end
   end
 
+  # The guarded corpus as it exists on DISK. Extracted from the corpus test so
+  # the floor and both reconciliation directions read one roster, and so the
+  # controls can drive the reconciliation with a roster the repo does not have.
+  def guarded_files_on_disk
+    paths = Dir.glob(Rails.root.join("docs/agents/agents/*/sops/*.md"))
+    paths += Dir.glob(Rails.root.join("docs/agents/agents/*/HEARTBEAT.md"))
+    paths.map { |path| Pathname.new(path).relative_path_from(Rails.root).to_s }
+  end
+
+  # The corpus rule, as a pure function of (rows, roster) — split out for the same
+  # reason `label_violation` is, so the controls can prove each direction bites
+  # without deleting a real SOP file.
+  #
+  # It reconciles BOTH ways. The original asserted only `on_disk - seen` (a file
+  # with no row) and never `seen - on_disk` (a row with no file), so deleting a
+  # guarded SOP left the guard green at 9 runs / 32 assertions over a row that
+  # now points into thin air.
+  def corpus_violations(rows, on_disk)
+    seen = rows.map { |row| row[:path] }
+
+    {
+      unrowed: on_disk.sort - seen.sort,
+      dead: rows.reject { |row| on_disk.include?(row[:path]) }
+                .map { |row| "docs/agents/index.md:#{row[:line]}  — #{row[:path]} is not on disk" },
+      duplicated: seen.tally.select { |_, count| count > 1 }
+    }
+  end
+
   # The rule, as a predicate over one row. Returns nil when the label is well
   # formed, or a human sentence naming what it reconstructed to and what the path
   # demanded. Split out so the control below can drive it with text that is NOT
@@ -187,9 +215,17 @@ class StartHereLabelGuardTest < ActiveSupport::TestCase
     if sop.nil?
       return nil if segments.first == "heartbeat"
 
+      # BOTH halves of this sentence derive from the PATH — the anchor the rest of
+      # the guard already uses. Built from `label.split.first` (the OFFENDING
+      # label's first word) the sentence contradicted itself for any two-word
+      # soul: "must read 'Turf Heartbeat …' — the invocation is `Turf Monster
+      # Heartbeat`". Single-word souls read fine, which is why it survived. This
+      # branch is dormant on a clean corpus, so the control below RENDERS it for
+      # `turf_monster` and asserts on the resulting string.
+      soul_name = soul_token(soul).split("-").map(&:capitalize).join(" ")
+
       return "label #{label.inspect} points at #{soul_token(soul)}'s HEARTBEAT.md, so it must " \
-             "read '#{label.split.first} Heartbeat …' — the invocation is " \
-             "`#{soul_token(soul).split('-').map(&:capitalize).join(' ')} Heartbeat`"
+             "read '#{soul_name} Heartbeat …' — the invocation is `#{soul_name} Heartbeat`"
     end
 
     marker = segments.index("sop")
@@ -209,26 +245,41 @@ class StartHereLabelGuardTest < ActiveSupport::TestCase
 
   test "the Start Here scan actually reaches the rows it claims to guard" do
     rows = guarded_rows
+    on_disk = guarded_files_on_disk
 
-    # A guard that reads nothing passes. Pin the corpus to DISK rather than to a
-    # magic number: every SOP and heartbeat file that exists must have been seen
-    # by the scan, so adding an SOP without a Start Here row fails here, and the
-    # guard cannot quietly shrink to zero.
-    on_disk = Dir.glob(Rails.root.join("docs/agents/agents/*/sops/*.md")).map do |path|
-      Pathname.new(path).relative_path_from(Rails.root).to_s
-    end
-    on_disk += Dir.glob(Rails.root.join("docs/agents/agents/*/HEARTBEAT.md")).map do |path|
-      Pathname.new(path).relative_path_from(Rails.root).to_s
-    end
+    # Every assertion below reconciles the scan against this roster, so an EMPTY
+    # roster passes all of them while inspecting nothing — the same defect class
+    # as the gaps this file closes. Assert the derivation produced something
+    # before deriving anything from it.
+    refute_empty on_disk,
+      "no docs/agents/agents/*/sops/*.md or */HEARTBEAT.md files were found under " \
+      "#{Rails.root}. The row-count floor and both reconciliation directions below all derive " \
+      "from this roster, so an empty one makes them pass vacuously. Fix the glob; never lower " \
+      "the floor to match it."
 
-    seen = rows.map { |row| row[:path] }
+    violations = corpus_violations(rows, on_disk)
 
-    assert_operator rows.length, :>=, 20,
-      "the Start Here scan matched only #{rows.length} rows — it has stopped reading the table"
-    assert_empty on_disk.sort - seen.sort,
+    # A guard that reads nothing passes. The floor is DERIVED from disk, never a
+    # literal: a literal falls behind the first SOP added after it was written,
+    # and it goes on reporting green while doing so.
+    assert_operator rows.length, :>=, on_disk.length,
+      "the Start Here scan matched #{rows.length} rows for #{on_disk.length} guarded files on " \
+      "disk. Either the scan has stopped reading the table, or files were added without their " \
+      "rows:\n#{violations[:unrowed].join("\n")}"
+
+    assert_empty violations[:unrowed],
       "These SOP/heartbeat files exist on disk but no Start Here row in docs/agents/index.md " \
       "points at them, so this guard never inspects a label for them. Add the row."
-    assert_empty seen.tally.select { |_, count| count > 1 },
+
+    # The mirror image, and the miss this closes: a row that OUTLIVES its file.
+    # No other test covers it either — sop_registry_docs_test.rb's ROW regex
+    # requires a three-column row, so a two-column Start Here row is invisible
+    # to it.
+    assert_empty violations[:dead],
+      "These Start Here rows point at files that no longer exist, so the table sends an agent " \
+      "to a dead path:\n#{violations[:dead].join("\n")}"
+
+    assert_empty violations[:duplicated],
       "a Start Here path appears on more than one row; the table should index each file once"
   end
 
@@ -325,6 +376,58 @@ class StartHereLabelGuardTest < ActiveSupport::TestCase
 
     assert_not_nil label_violation(label: "Carl heartbeat launcher", soul: "avi", sop: nil),
       "a Start Here row whose label names Carl but whose path is avi/HEARTBEAT.md must be flagged"
+  end
+
+  test "the corpus check flags a Start Here row whose file was deleted" do
+    # Exactly the miss found in review: bucket-provision.md was deleted and the
+    # guard stayed green over the now-dead row.
+    live = "docs/agents/agents/steffon/sops/clean-infra.md"
+    dead = "docs/agents/agents/steffon/sops/bucket-provision.md"
+
+    rows = [
+      { label: "Steffon clean infra SOP", path: live, soul: "steffon", sop: "clean-infra", line: 621 },
+      { label: "Steffon bucket provision SOP", path: dead, soul: "steffon", sop: "bucket-provision", line: 622 }
+    ]
+
+    violations = corpus_violations(rows, [ live ])
+
+    assert_empty violations[:unrowed],
+      "a deleted file must not surface as unrowed — that is the direction already covered, and " \
+      "reading it that way is how the miss stayed invisible"
+    assert_equal [ "docs/agents/index.md:622  — #{dead} is not on disk" ], violations[:dead],
+      "a row outliving its file must be flagged, and the failure must name the row's line"
+  end
+
+  test "the corpus check passes when every row matches a file on disk" do
+    # The other half of the control: the reverse check must not fire on a
+    # legitimate corpus. A guard that flags good rows on day one is worse than
+    # no guard.
+    live = "docs/agents/agents/steffon/sops/clean-infra.md"
+    rows = [ { label: "Steffon clean infra SOP", path: live, soul: "steffon", sop: "clean-infra", line: 621 } ]
+
+    violations = corpus_violations(rows, [ live ])
+
+    assert_empty violations[:unrowed]
+    assert_empty violations[:dead]
+    assert_empty violations[:duplicated]
+  end
+
+  test "the heartbeat failure names ONE soul, and takes it from the path" do
+    # This branch never fires on a clean corpus, so assert on the sentence it
+    # RENDERS, not on the code that builds it. Sourced from the offending
+    # label's first word it answered its own question two ways: "must read
+    # 'Turf Heartbeat …' — the invocation is `Turf Monster Heartbeat`".
+    why = label_violation(
+      label: "Turf Monster live score watch SOP",
+      soul: "turf_monster",
+      sop: nil
+    )
+
+    assert_not_nil why, "a two-word soul's HEARTBEAT row labelled as an SOP must be flagged"
+    assert_includes why, "must read 'Turf Monster Heartbeat …'"
+    assert_includes why, "the invocation is `Turf Monster Heartbeat`"
+    refute_includes why, "'Turf Heartbeat",
+      "the sentence must not name a soul the path does not register"
   end
 
   test "a label with no SOP marker is flagged rather than skipped" do
