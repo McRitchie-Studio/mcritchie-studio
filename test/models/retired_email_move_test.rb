@@ -87,7 +87,7 @@ class RetiredEmailMoveTest < ActiveSupport::TestCase
   end
 
   # BOTH ROWS EXIST. Someone signed in at the new address before the migration
-  # ran. Merging two accounts is a judgment call — wallets, sessions and slugs on
+  # ran. Merging two accounts is a judgment call — sessions and slugs on
   # both sides — so the operator gets to make it, but the stale row must NOT be
   # left holding admin while they decide, which is the whole risk.
   test "the migration demotes rather than collides when the new address is taken" do
@@ -174,7 +174,7 @@ class RetiredEmailMoveTest < ActiveSupport::TestCase
   # --- the display name the roster cannot change on its own ------------------
 
   # `assign_parked_identity` fills a BLANK name and never overwrites one, and the
-  # seed enforces role and wallet but not name. So renaming a seat in the roster
+  # seed enforces role but not name. So renaming a seat in the roster
   # renames the literal and no account at all, unless something finishes the job.
   test "the migration finishes the rename the roster only declared" do
     team = deployed(TEAM, role: "admin", name: "McRitchie Studio Team")

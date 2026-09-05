@@ -31,7 +31,13 @@ Studio.configure do |config|
   # exception worth naming here — `require_admin` only, driving Phantom in the
   # signer's own browser, so it never read a wallet SESSION. It was DELETED on
   # 2026-09-04 (/tasks/retire-signing-console): Turf Monster is the hub for all
-  # Solana/web3 logic, so this app has no on-chain surface left to except.
+  # Solana/web3 logic, so this app has no on-chain surface left to except. The
+  # users.solana_address COLUMN followed it on the same day
+  # (/tasks/drop-hub-wallet-column), which is why there is no
+  # `config.wallet_address_method` below: `Studio.user_wallet_address` walks
+  # [wallet_address_method, :wallet_address, :solana_address] behind a
+  # `respond_to?` guard (studio-engine 0.69.3 lib/studio.rb:719), so with the
+  # column gone every candidate is skipped and it returns nil on its own.
   #
   # EDIT this line, never delete it: studio-engine's own default is still
   # %i[magic_link google wallet] (0.65.2, lib/studio.rb), so an absent line
@@ -57,7 +63,6 @@ Studio.configure do |config|
 
   config.configure_sso_user = ->(user) { user.role = "viewer" }
   config.sso_logo = "/studio-logo.svg"
-  config.wallet_address_method = :solana_address
   config.theme_logos = [
     { file: "favicon.png",      title: "Favicon" },
     { file: "logo-icon.svg",    title: "Navbar Logo" },

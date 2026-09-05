@@ -73,14 +73,18 @@ class WalletAuthDeclarationTest < ActiveSupport::TestCase
     assert_equal "/magic_link", Rails.application.routes.url_helpers.magic_link_request_path
   end
 
-  # STILL HERE, but its reason is spent. It was kept because the signing console
-  # identified signers by it; that console was retired on 2026-09-04
-  # (/tasks/retire-signing-console) and nothing reads the column now. The drop is
-  # its own task — /tasks/drop-hub-wallet-column — because it also takes the
-  # parked admin wallets, the nav and admin-table chips, and an irreversible
-  # migration against the live users table. Pinned until then so the column's
-  # removal is a decision rather than a side effect.
-  test "User#solana_address is retained" do
-    assert_includes User.column_names, "solana_address"
+  # AND NOW THE COLUMN IS GONE TOO. It survived /tasks/retire-signing-console
+  # because the console identified signers by it; /tasks/drop-hub-wallet-column
+  # took it on the same day, along with the parked admin wallets and the nav and
+  # admin-table chips.
+  #
+  # Asserted on `column_names` rather than on a method, because that is the fact
+  # the rest of the app leans on: `Studio.user_wallet_address` walks
+  # [wallet_address_method, :wallet_address, :solana_address] behind a
+  # `respond_to?` guard (studio-engine 0.69.3), so the column's absence — not any
+  # deleted method — is what makes the engine return nil instead of raising.
+  test "User#solana_address is gone" do
+    refute_includes User.column_names, "solana_address"
+    refute_respond_to User.new, :solana_address
   end
 end

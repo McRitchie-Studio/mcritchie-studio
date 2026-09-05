@@ -36,9 +36,16 @@ The admin signing console (`/admin/signing_requests`) used to be the exception
 worth naming here — `require_admin` only, driving Phantom in the signer's own
 browser, so it never read a wallet session. It was **deleted on 2026-09-04**
 (/tasks/retire-signing-console): Turf Monster is the hub for all Solana/web3
-logic, so this app has no on-chain surface at all. `User#solana_address` outlives
-it for now and is nothing's consumer; /tasks/drop-hub-wallet-column takes it,
-along with the parked admin wallets and the nav and admin-table chips.
+logic, so this app has no on-chain surface at all. `User#solana_address` went the
+same day (/tasks/drop-hub-wallet-column), along with the parked admin wallets and
+the nav and admin-table chips.
+
+**Email is now the only key into `User::PARKED_IDENTITIES`.** `parked_identity_for`
+used to match on email OR wallet, so a parked seat could earn its role through
+either; with the wallet arm gone, an identity carrying no `email:` is never found
+at all — no role applied, no name planted, and nothing raised.
+`test/models/parked_identities_test.rb` asserts every seat has one, so that
+silence is a red build rather than a seat that quietly never activates.
 
 **Routes:** The app defines canonical `GET /signin` first. Legacy `GET /login` and `GET /signup` redirect there, then `Studio.routes(self)` draws the compatibility auth routes, magic-link request/confirm/consume routes, `/logout`, `/sso_continue`, `/sso_login`, OAuth callbacks, `/error_logs`, local email capture, and `/admin/theme`.
 

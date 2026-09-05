@@ -1,8 +1,15 @@
 class User < ApplicationRecord
   include Sluggable
 
-  # Stable operator identities whose roles and wallet/email links should survive
-  # fresh DBs, first-login races, QA resets, and new-app clones of this pattern.
+  # Stable operator identities whose roles and email links should survive fresh
+  # DBs, first-login races, QA resets, and new-app clones of this pattern.
+  #
+  # EMAIL IS THE ONLY KEY. It used to be email OR wallet; the wallet half went
+  # with users.solana_address on 2026-09-04 (/tasks/drop-hub-wallet-column), so
+  # an identity that carries no `email:` is now unreachable — `parked_identity_for`
+  # cannot find it and nothing will ever apply its role. ParkedIdentitiesTest
+  # asserts every entry has one, so a future wallet-only row fails loudly here
+  # instead of silently never being recognised.
   #
   # THE ADMIN LINE IS WHAT THIS LIST IS FOR. Three seats hold admin — the
   # operator, the shared team account, and the super-admin lane — and everyone
@@ -10,16 +17,14 @@ class User < ApplicationRecord
   # 2026-09-04; demoting them is what makes admin-only pages, member-facing copy
   # and anything branching on a role have more than one answer available here.
   PARKED_IDENTITIES = [
-    { email: "alex@mcritchie.studio",  name: "Alex McRitchie",  role: "admin",  wallet: "7ZDJp7FUHhuceAqcW9CHe81hCiaMTjgWAXfprBM59Tcr" },
-    { email: "team@mcritchie.studio",  name: "Team McRitchie",  role: "admin",  wallet: "8K81w4e6UcB7TiANhM9N8sAgijJvTxxybRi8AENRaRYd" },
-    # THE SUPER-ADMIN LANE, wallet-less on purpose. admin@mcritchie.studio is the
-    # top-of-stack Google credential the Steffon and Alex agents sign in with
-    # (1Password `google.studio.admin`, vault `studio-agents-admin`). It is an
-    # operator SEAT rather than a person, so it holds no funds and signs nothing
-    # on-chain — giving it a wallet would put the highest-privilege login on the
-    # same key as a spending account.
+    { email: "alex@mcritchie.studio",  name: "Alex McRitchie",  role: "admin" },
+    { email: "team@mcritchie.studio",  name: "Team McRitchie",  role: "admin" },
+    # THE SUPER-ADMIN LANE. admin@mcritchie.studio is the top-of-stack Google
+    # credential the Steffon and Alex agents sign in with (1Password
+    # `google.studio.admin`, vault `studio-agents-admin`). It is an operator SEAT
+    # rather than a person.
     { email: "admin@mcritchie.studio", name: "Admin McRitchie", role: "admin" },
-    { email: "mason@mcritchie.studio", name: "Mason McRitchie", role: "viewer", wallet: "CytJS23p1zCM2wvUUngiDePtbMB484ebD7bK4nDqWjrR" },
+    { email: "mason@mcritchie.studio", name: "Mason McRitchie", role: "viewer" },
     # Mack rather than an invented account: he is already the non-admin in
     # turf-monster and mcritchie-industries, so one person means the same thing
     # in all three apps instead of each growing its own stand-in. (The role
@@ -81,17 +86,15 @@ class User < ApplicationRecord
     "team@mcritchie.studio" => "McRitchie Studio Team"
   }.freeze
 
-  # Passwordless app: email auth is magic-link only, plus Google + Solana wallet.
+  # Passwordless app: email auth is magic-link only, plus Google.
   # has_secure_password stays as a DORMANT fallback (password_digest column) but
-  # `validations: false` is required so wallet/Google/magic-link users — who have
-  # no password — can be created.
+  # `validations: false` is required so Google/magic-link users — who have no
+  # password — can be created.
   has_secure_password validations: false
   has_one_attached :avatar
 
-  # email + solana_address are both nullable (a wallet-only user has no email; an
-  # email/Google user has no wallet) and unique when present.
+  # email is nullable (a Google-only user may have none) and unique when present.
   validates :email, uniqueness: true, allow_nil: true
-  validates :solana_address, uniqueness: true, allow_nil: true
   validate :has_authentication_method
 
   before_create :ensure_session_token
@@ -100,33 +103,11 @@ class User < ApplicationRecord
 
   # --- Lookups / find-or-create ---------------------------------------------
 
-  def self.from_solana_wallet(address)
-    normalized_address = address.to_s.strip
-    user = find_by(solana_address: normalized_address)
-    if user
-      user.claim_parked_identity!
-      return user
-    end
-
-    identity = parked_identity_for(wallet: normalized_address)
-    if identity && (existing = find_by(email: identity[:email]))
-      existing.solana_address = normalized_address if existing.solana_address.blank?
-      existing.claim_parked_identity!
-      return existing if existing.solana_address == normalized_address
-    end
-
-    nil
-  end
-
-  def self.parked_identity_for(email: nil, wallet: nil)
+  def self.parked_identity_for(email: nil)
     normalized_email = email.to_s.strip.downcase.presence
-    normalized_wallet = wallet.to_s.strip.presence
-    return nil if normalized_email.blank? && normalized_wallet.blank?
+    return nil if normalized_email.blank?
 
-    PARKED_IDENTITIES.find do |identity|
-      (normalized_email.present? && identity[:email].to_s.downcase == normalized_email) ||
-        (normalized_wallet.present? && identity[:wallet].to_s == normalized_wallet)
-    end
+    PARKED_IDENTITIES.find { |identity| identity[:email].to_s.downcase == normalized_email }
   end
 
   # OPSEC-005: `email_verified` comes from GoogleOauthValidator's tokeninfo
@@ -180,13 +161,6 @@ class User < ApplicationRecord
     provider.present? && uid.present?
   end
 
-  # In the hub the wallet is identity-only (one address); a connected wallet is
-  # treated as a self-custody/Phantom wallet for SessionContext purposes.
-  def solana_connected?
-    solana_address.present?
-  end
-  alias_method :phantom_wallet?, :solana_connected?
-
   def has_email?
     email.present?
   end
@@ -200,29 +174,24 @@ class User < ApplicationRecord
   # --- Display ---------------------------------------------------------------
 
   def display_name
-    name.presence || email&.split("@")&.first&.capitalize || truncated_solana || "anon"
-  end
-
-  def truncated_solana
-    return nil if solana_address.blank?
-    "#{solana_address[0, 4]}…#{solana_address[-4, 4]}"
+    name.presence || email&.split("@")&.first&.capitalize || "anon"
   end
 
   def avatar_initials
-    (name.presence || email&.split("@")&.first || solana_address || "?").first.upcase
+    (name.presence || email&.split("@")&.first || "?").first.upcase
   end
 
   AVATAR_COLORS = %w[#EF4444 #F97316 #EAB308 #22C55E #06B6D4 #3B82F6 #8B5CF6 #EC4899].freeze
 
   def avatar_color
-    key = name.presence || email || solana_address || id.to_s
+    key = name.presence || email || id.to_s
     AVATAR_COLORS[Digest::MD5.hexdigest(key).hex % AVATAR_COLORS.size]
   end
 
   private
 
   def assign_parked_identity
-    identity = self.class.parked_identity_for(email: email, wallet: solana_address)
+    identity = self.class.parked_identity_for(email: email)
     return false unless identity
 
     changed_identity = false
@@ -239,24 +208,13 @@ class User < ApplicationRecord
       changed_identity = true
     end
 
-    parked_email = identity[:email].presence
-    if parked_email.present? && email.blank? && self.class.where("LOWER(email) = ?", parked_email.downcase).where.not(id: id).none?
-      self.email = parked_email
-      changed_identity = true
-    end
-
-    parked_wallet = identity[:wallet].presence
-    if parked_wallet.present? && solana_address.blank? && self.class.where(solana_address: parked_wallet).where.not(id: id).none?
-      self.solana_address = parked_wallet
-      changed_identity = true
-    end
 
     changed_identity
   end
 
   def has_authentication_method
-    return if email.present? || solana_address.present? || google_connected?
-    errors.add(:base, "must have an email, wallet, or linked Google account")
+    return if email.present? || google_connected?
+    errors.add(:base, "must have an email or linked Google account")
   end
 
   def ensure_session_token
@@ -269,11 +227,14 @@ class User < ApplicationRecord
     self.last_name = parts.last if parts.size > 1
   end
 
-  # Unique URL slug. Keyed on a unique identifier (email or wallet address) so
-  # wallet-only users — who have no email — still get a collision-free slug.
+  # Unique URL slug, keyed on the email so two accounts cannot collide.
+  #
+  # The wallet address used to be the fallback identifier for a wallet-only user.
+  # Dropping it changes no EXISTING slug: every row that had a wallet also had an
+  # email, and email won this expression already.
   def name_slug
-    identifier = email.presence || solana_address.presence || "user"
-    prefix = name.presence || email&.split("@")&.first || truncated_solana || "user"
+    identifier = email.presence || "user"
+    prefix = name.presence || email&.split("@")&.first || "user"
     "#{prefix}-#{identifier}".downcase.gsub(/\s+/, "-")
   end
 end

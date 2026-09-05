@@ -35,8 +35,6 @@ class WalletAuthDroppedTest < ActionDispatch::IntegrationTest
   # have cost the admin surfaces that never depended on it.
   test "the admin dashboard is reachable on a magic-link session" do
     admin = users(:alex)
-    assert_nil admin.solana_address,
-               "fixture must have no wallet, so reachability cannot be credited to one"
 
     log_in_as(admin)
 

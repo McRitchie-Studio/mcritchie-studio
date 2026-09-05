@@ -243,7 +243,7 @@ of these advanced a stage while this file was being written). Follow the link.
 | [`declare-hub-solana-cluster`](https://mcritchie.studio/tasks/declare-hub-solana-cluster) | Archived: its premise died with the decision. Kept as the record of why. |
 | [`ice-the-signing-console`](https://mcritchie.studio/tasks/ice-the-signing-console) | Records the console freeze (§2a) and retires the move (§2) + signer verification (§3) as cancelled, not owed. |
 | [`retire-signing-console`](https://mcritchie.studio/tasks/retire-signing-console) | **Deletes** the console, `solana-studio`, both tables and the allowlist entry (§2b). The hub passes the boundary structurally. |
-| [`drop-hub-wallet-column`](https://mcritchie.studio/tasks/drop-hub-wallet-column) | The residue after §2b: `users.solana_address`, the parked admin wallets and the wallet chips. |
+| [`drop-hub-wallet-column`](https://mcritchie.studio/tasks/drop-hub-wallet-column) | **Landed** the same day as §2b: dropped `users.solana_address` and its unique index, the parked admin wallets, and the nav/table/dashboard chips. Email is now the only key into the parked roster. |
 
 ## Enforced, not observed
 
