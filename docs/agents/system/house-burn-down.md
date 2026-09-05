@@ -453,11 +453,11 @@ anchor build                                 # ~3-5 min on first build
 anchor test                                  # spins up local validator and runs the TS suite
 ```
 
-Current deployment facts drift quickly. Treat `turf-vault/docs/CURRENT_DEPLOYMENT.md` and `turf-monster/docs/SOLANA.md` as the source of truth for program IDs, clusters, and operator keys.
+Current deployment facts drift quickly. Treat `turf-vault/docs/CURRENT_DEPLOYMENT.md` and `turf-monster/docs/SOLANA.md` as the source of truth for program IDs and clusters. They are **not** a source for the mainnet `VaultState` signer set — `CURRENT_DEPLOYMENT.md` records signers only under `## Devnet`; read the live set on-chain.
 
 **Gotcha**: `anchor test` will fail with `ts-mocha: command not found` if you skip `yarn install`. The Anchor scaffold's test runner is JS, not Rust.
 
-To deploy a new version: the program's upgrade authority is a Squads V4 2-of-3 multisig (squad vault PDA `BW13kgfiG2koFn3WRkte21NW9TFygsD1ge2fNJdjH6kC`), so a plain `anchor deploy` no longer works — it would be rejected by the on-chain upgrade-authority check. Build the program, then route the upgrade through the Squads multisig:
+To deploy a new version: the program's upgrade authority is a Squads V4 2-of-3 multisig, and **the vault PDA differs per cluster** — devnet (`EQGFJAcA…`) is `BW13kgfiG2koFn3WRkte21NW9TFygsD1ge2fNJdjH6kC`, mainnet (`DaFv83yo…`) is `Bk9sS7iiSRL18vuo2KVzkeGw7EekKqxMCjrdoyGGdJm`. The first two commands below are the **devnet** path, but the third is not scoped by them: `squad-upgrade.js` reads its cluster from `turf-vault/scripts/squad.json`'s top-level `network`/`programId`/`vaultPda`, which on `main` are the **mainnet** set, so it proposes against that file's cluster no matter what `solana config set` selected. Confirm the authority for the cluster you are on with `solana program show <PROGRAM_ID> --url <cluster>` before proposing anything. Either way a plain `anchor deploy` no longer works — it would be rejected by the on-chain upgrade-authority check. Build the program, then route the upgrade through the Squads multisig:
 ```bash
 solana config set --url devnet
 anchor build
