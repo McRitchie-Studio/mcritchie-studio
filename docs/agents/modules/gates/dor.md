@@ -81,6 +81,54 @@ check — the same failure shape as the G4 registry-string inference (see
 nobody has to be malicious for it to be wrong. It was: PR #512 (`kind: chore`)
 shipped `.github/workflows/ci.yml` and DoR printed "n/a → ready to advance".
 
+## The exemption is from the TIER gate. It was never from CI
+
+An earned doc-only diff skips the **shape/test-tier** gate, and nothing else. It
+does **not** skip the CI verdict, and it does not skip the gate-attempt record.
+
+Until 2026-09-05 it skipped both, silently
+([gate-zero-skips-docs-ci](https://mcritchie.studio/tasks/gate-zero-skips-docs-ci)).
+The exempt branch ended in a bare `exit 0` that sat **above** the CI allow-list and
+above the gate-verdict emit, so `--gate-role review` — the run this page calls the
+authoritative CI verdict — never evaluated CI on a prose diff: `--json` returned
+`ready=true, exempt=true, errors=[]` with **no `ci` key at all**. Three doc-shaped
+PRs cleared gate-zero that way (turf-vault #9 and #10, mcritchie-studio #1204); all
+three were green by luck, not by gate. The `dor_review` attempt reading **null** on
+docs-shaped PRs was the same fact, logged twice and filed as a cosmetic gap in the
+record — the record was not missing, the gate had not run.
+
+Read the two guards separately, because only one of them belongs here:
+
+- **The tier gate — correctly skipped.** A prose diff owes no unit tier, and
+  demanding one is how people learn to mislabel a shape.
+- **The CI allow-list — never had any business being skipped.** This repo's CI
+  **grades prose**: the doc-link check, generated-doc drift, the entry-doc guards
+  and rubocop over `bin/` all run on a docs PR, and every one of them can go red.
+  *Ships no behavior* is not *cannot fail CI*.
+
+So both paths now ask the same function (`bin/lib/ci_gate.rb`), rather than keeping
+two copies of an allow-list — two allow-lists that drift are a deny-list with extra
+steps. `green` advances an exempt review; `red`, `pending`, `conflicted`,
+`ci_less`, `closed`, `merged`, the no-verdict family, a blank `pr_url` and any
+unclassified state all refuse, exactly as they do on the gated path. The verdict
+carries a `ci` field either way, and a `dor_review` attempt is recorded either way.
+
+**The one deliberate divergence: no cert clears an exempt refusal.** On the gated
+path the no-verdict family (`none` / `unreadable` / `unverified`) can be cleared by
+a FULL local cert, because the gate must honour the remedy it prints. That argument
+is a **substitution** of evidence, and an exempt task has none to substitute — it
+ran no suite. An unread CI over a prose diff therefore leaves the merge with no
+verdict from either side, which is the state a gate exists to refuse.
+
+The **build** gate still reads no CI on an exempt task: it resolves no diff and must
+not shell `gh`. Leniency there disarms nothing — at design time no code exists yet
+and the build gate enforces no tiers either way.
+
+Pinned by `test/lib/dor_check_exempt_ci_test.rb`, including the control that keeps
+the split honest: a code-carrying diff under the same exempt kind is still asked for
+its tiers, so "no tier was demanded" cannot quietly become "tiers are waived for
+everyone".
+
 ## The gate grades the TASK's tree — never the one you stand in
 
 **Two** things root here — the suite **fingerprint** and the code **diff** — and
@@ -398,26 +446,55 @@ attempt n+1.
     An allow-list defaults to *refuse*, so a state nobody has classified blocks
     review until somebody does. `test/lib/dor_check_test.rb` asserts this with a
     state that does not exist — the one test a longer deny-list could not pass.
-  - **One escape, and only one: a FULL cert.** For the no-verdict family
-    (`none` / `unreadable` / `unverified`) a fresh `bin/full-suite-check` cert
-    stands in for the CI verdict, and the gate then says so on the ready line
-    (`advancing on the FULL local cert instead … CI itself was NOT read`). Two
-    reasons: the gate must **honour the remedy it prints** — `unreadable_remedy`
-    has always ended by naming that command — and the cert is no longer weaker
-    evidence, because `bin/full-suite-check` now runs `ci.yml`'s verbatim command,
-    `test:system` included. A **fast** cert is not enough, and a
-    `[full-suite-bypass]` is a declared hatch rather than evidence, so neither
-    clears it.
+    **The allow-list covers the exempt (doc-only) path too**, which it did not
+    until 2026-09-05 — see *The exemption is from the TIER gate* above.
+  - **On the GATED path, one escape and only one: a FULL cert.** For the
+    no-verdict family (`none` / `unreadable` / `unverified`) a fresh
+    `bin/full-suite-check` cert stands in for the CI verdict, and the gate then
+    says so on the ready line (`advancing on the FULL local cert instead … CI
+    itself was NOT read`). Two reasons: the gate must **honour the remedy it
+    prints** — `unreadable_remedy` has always ended by naming that command — and
+    the cert is no longer weaker evidence, because `bin/full-suite-check` now runs
+    `ci.yml`'s verbatim command, `test:system` included. A **fast** cert is not
+    enough, and a `[full-suite-bypass]` is a declared hatch rather than evidence,
+    so neither clears it.
+  - **On the EXEMPT (doc-only) path there is NO escape — green, or nothing.** The
+    cert route does not merely fail there, it does not exist: the shape/test-tier
+    gate is already waived, so there is no suite whose result could stand in.
+    Accepting a cert would leave the merge with zero verification from either
+    side, which is the state the gate exists to refuse.
+    **The refusal now says that** (`cert_route: false`, `bin/lib/ci_gate.rb`).
+    Until 2026-09-05 it printed the gated path's text verbatim — *"certify in full
+    instead: `bin/full-suite-check <slug>`"* — while `bin/dor-check` discarded the
+    only flag that could honour it, so adding the cert produced a **byte-identical
+    refusal** and an operator who followed the instruction burned a full-suite run
+    for nothing (`/tasks/exempt-refusal-prints-dead-remedy`). The message and the
+    behaviour now come from that ONE parameter, and
+    `test/lib/dor_check_exempt_ci_test.rb` re-derives the promise from the printed
+    refusal and then executes it in both paths — so a message that outruns its
+    behaviour reddens rather than shipping.
   - **What a cert cannot clear**: `red`, `conflicted`, `ci_less`, `closed`,
     `merged` (a verdict exists, or the PR is not a live review target); `pending`
     (the verdict is genuinely coming — waiting is productive); `no_pr` (what is
-    missing is not the evidence but the PR: review's job is to merge one); and any
-    unclassified state.
-  - Submit-side **none of this applies** — the builder's provisional handoff is
-    untouched (see the state table above). The asymmetry is deliberate: the review
-    gate-zero *is* the authoritative CI verdict, while blocking every submit on a
-    flaky read would trade a flaky CI lane for a flaky gate. Both directions are
-    asserted, so the split cannot quietly collapse either way.
+    missing is not the evidence but the PR: review's job is to merge one); any
+    unclassified state; and — whatever the state — **anything on the exempt
+    path**, per the bullet above.
+  - Submit-side the **strict review semantics** do not apply — the builder's
+    provisional handoff is untouched (see the state table above). The asymmetry is
+    deliberate: the review gate-zero *is* the authoritative CI verdict, while
+    blocking every submit on a flaky read would trade a flaky CI lane for a flaky
+    gate. Both directions are asserted, so the split cannot quietly collapse
+    either way.
+    - **It is not "none of this applies", and on a docs task that difference is
+      now visible.** The role asymmetry covers the *unread* family and `pending`;
+      a **RED** CI has always blocked BOTH roles, and since the exempt path
+      started evaluating CI at all (2026-09-05) that block reaches a doc-only diff
+      too. `bin/ship` runs `bin/dor-check <slug>` at step **7/8** and dies on its
+      exit code, so **a docs task with a red CI now fails `bin/ship` at 7/8**
+      rather than sailing through. That is the correct direction — this repo's CI
+      grades prose — and it was undocumented until now. Measured 2026-09-05
+      against the exempt path in the builder role: `red` → exit 1, `green` and
+      `pending` → exit 0.
   - The **remedies stay distinct**, because the fixes are: `unreadable` names the
     credential and says re-running is futile (a `conductor-review`, not a
     `request-changes` — the builder does not own the token); `none` /
@@ -448,9 +525,15 @@ attempt n+1.
 - The supervisor's **pre-spawn CI-red bounce** opens then closes `dor_review`
   `--failed` with a `ci` SOP (`--meta outcome=ci-red`, actor `avi`) — no reviewer
   runs, but the round-trip is visible on the gates card.
-- **Never emitted:** dor-check with `--json` (read-only monitors), `--file`
-  (offline evaluation), or `--gate build` (no DoR verdict yet). All gate writes
-  are fire-and-forget — a board blip never changes a verdict or an exit code.
+- **Never emitted:** dor-check with `--json` (read-only monitors), `--gate build`
+  (no DoR verdict yet), or a run whose slug resolves empty. All gate writes are
+  fire-and-forget — a board blip never changes a verdict or an exit code.
+  - **`--file` is the conditional one, not an absolute.** Offline evaluation
+    skips the write **unless `DOR_CHECK_GATE_BIN` redirects the gate CLI** — the
+    seam a test uses to observe that the attempt was recorded without a board
+    (`gate_emission_enabled?`, `bin/dor-check`). Production never sets it, so
+    `--file` stays offline for every real caller; a test that sets it gets two
+    invocations (`open` then `close`), verified 2026-09-05.
 
 ## UI surfaces
 

@@ -1,0 +1,275 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/chrome-profiles — restore, inspect and apply the operator's Chrome
+# avatar-menu roster (which Google accounts appear in "Other Chrome Profiles",
+# in what order, under what label).
+#
+#   bin/chrome-profiles status            # what the roster says vs this Mac
+#   bin/chrome-profiles apply             # quit Chrome, write, relaunch, verify
+#   bin/chrome-profiles adopt             # snapshot this Mac back into a roster
+#   bin/chrome-profiles emoji 🪎          # in the system font, or a tofu box?
+#   bin/chrome-profiles install-wrapper   # rebuild the flag-carrying launcher
+#
+# WHY THIS IS IN THE REPO. The arrangement used to live only in Chrome's own
+# `Local State` JSON and two hand-edited scripts under ~/Applications — none of
+# it backed up, none of it restorable, and the FOUR constraints that make it work
+# discoverable only by re-running the experiments. A burn-down took all of it.
+#
+# The durable record is now a 1Password document — the item named by
+# ChromeProfiles::OP_ITEM, in the agent lane's vault — because this repo is
+# PUBLIC and the roster keys on account email, some of them personal. The repo
+# carries this script, the SOP, and config/chrome_profiles.yml.example. The
+# vault is resolved through OpVaults and is deliberately not spelled out here:
+# a reference in a comment is still a second source, and CI enforces that
+# (test/lib/credential_isolation_claims_test.rb).
+#
+# THE ROSTER IS KEYED BY ACCOUNT EMAIL, NEVER BY PROFILE DIRECTORY. Chrome hands
+# out directories in sign-in order, so they differ on a rebuilt Mac. A
+# directory-keyed roster does not fail loudly on a fresh machine — it renames the
+# WRONG PROFILES. See bin/lib/chrome_profiles.rb's header for all four
+# constraints and the evidence behind each.
+#
+# SOP: docs/agents/agents/steffon/sops/chrome-profiles.md
+
+require_relative "lib/cli_arg_guard"
+require_relative "lib/chrome_profiles"
+
+include ChromeProfiles # rubocop:disable Style/MixinUsage
+
+# THE ARGUMENT GUARD — before the dispatcher, always. `apply` quits the
+# operator's browser and rewrites Chrome's own state file, so an unaccounted-for
+# argument must refuse rather than fall on the floor. See bin/lib/cli_arg_guard.rb
+# for the five times that defect has shipped in this bin/.
+def guard_argv!(argv = ARGV, out: $stdout, err: $stderr, exiter: nil)
+  spec = ChromeProfiles::Cli.guard_args(argv.first)
+  return nil unless spec
+
+  CliArgGuard.guard!(argv.drop(1), out: out, err: err, exiter: exiter, **spec)
+end
+
+PARSED = guard_argv!
+
+def opt(flag, default = nil)
+  PARSED&.first(flag) || default
+end
+
+def load_roster = Roster.resolve(config: opt("--config"))
+def load_state  = LocalState.load(opt("--state", DEFAULT_LOCAL_STATE))
+
+# The Dock tile decides which Chrome starts, and therefore whether the order is
+# honoured at all. A reboot on 2026-09-04 put the menu back in alphabetical
+# order for exactly this reason: the stored order was intact, and Chrome had
+# been launched from a Dock tile still pointing at the stock app.
+def dock_line
+  pinned = Dock.pinned
+  return "no Chrome tile pinned — launch from #{WRAPPER_APP}" if pinned.nil?
+  return "#{WRAPPER_APP} — launches with the flag" if pinned == WRAPPER_APP
+
+  "#{pinned} — launches WITHOUT the flag; run: bin/chrome-profiles pin-dock"
+end
+
+def report(plan, state)
+  puts "roster:  #{plan.roster.path} (#{plan.roster.rows.length} accounts)"
+  puts "state:   #{state.path} (#{state.profiles.length} profiles)"
+  puts "wrapper: #{Runtime.wrapper_installed? ? "installed — #{WRAPPER_APP}" : "MISSING — run: bin/chrome-profiles install-wrapper"}"
+  puts "dock:    #{dock_line}"
+  if state.live?
+    running = Runtime.chrome_running?
+    flag = running ? (Runtime.feature_active? ? "#{FEATURE_FLAG} ACTIVE" : "#{FEATURE_FLAG} NOT ACTIVE — order is being ignored; relaunch via the wrapper") : "not running"
+    puts "chrome:  #{running ? "running" : "not running"}#{running ? " · #{flag}" : ""}"
+    if running
+      arch = Runtime.chrome_arch
+      puts "arch:    #{Runtime.chrome_translated? ?
+        "#{arch} UNDER ROSETTA on #{Runtime.host_arch} — the browser will crawl; run: bin/chrome-profiles relaunch" :
+        "#{arch} (native)"}"
+    end
+  else
+    puts "chrome:  (offline — #{state.path} is not the live Local State)"
+  end
+  puts
+
+  puts "menu the roster produces:"
+  plan.menu.each_with_index do |(dir, _label, row), i|
+    puts format("  %2d. %-42s %s", i + 1, row, dir)
+  end
+
+  unless plan.missing.empty?
+    puts
+    puts "NOT SIGNED IN on this Mac (#{plan.missing.length}) — expected mid-rebuild;"
+    puts "sign into each in Chrome, then re-run. Their slots are simply skipped:"
+    plan.missing.each { |a| puts "  · #{a}" }
+  end
+
+  unless plan.refusals.empty?
+    puts
+    puts "REFUSALS (#{plan.refusals.length}) — nothing will be written until these clear:"
+    plan.refusals.each { |r| puts "  ✗ #{r}" }
+  end
+end
+
+def quit_chrome!
+  return unless Runtime.chrome_running?
+
+  puts "quitting Chrome (it rewrites Local State on exit and would clobber the edit)…"
+  system("osascript", "-e", 'tell application "Google Chrome" to quit',
+         out: File::NULL, err: File::NULL)
+  60.times do
+    break unless Runtime.chrome_running?
+
+    sleep 0.5
+  end
+  abort "Chrome would not quit — nothing was written." if Runtime.chrome_running?
+end
+
+def relaunch!
+  unless Runtime.wrapper_installed?
+    abort "wrapper missing, so the order would be IGNORED on relaunch.\n" \
+          "Run: bin/chrome-profiles install-wrapper"
+  end
+
+  puts "relaunching via #{WRAPPER_APP}…"
+  system("open", "-a", WRAPPER_APP, out: File::NULL, err: File::NULL)
+  40.times do
+    break if Runtime.chrome_running?
+
+    sleep 0.5
+  end
+end
+
+# Carl's review, 2026-09-04: `pin-dock` on a fresh Mac with no Chrome tile pinned
+# RAISED, and with no rescue anywhere in this file it surfaced as a Ruby backtrace
+# rather than as one of the clean aborts this script already uses for the same
+# class. Reading the roster from 1Password added more of the same — an absent
+# `op`, a spent quota, an unfiled document — and those messages are long,
+# actionable, and exactly what an operator must be able to read. Every
+# ChromeProfiles::Error now leaves through abort: the message, then exit 1.
+begin
+  case ARGV.first
+  when "status"
+    state = load_state
+    plan = Plan.new(roster: load_roster, state: state)
+    report(plan, state)
+    exit(plan.refuse? ? 1 : 0)
+
+  when "apply"
+    state = load_state
+    plan = Plan.new(roster: load_roster, state: state)
+    if plan.refuse?
+      report(plan, state)
+      warn "\nrefusing to write."
+      exit 1
+    end
+
+    # A non-live --state runs OFFLINE: no quit, no relaunch, no verify against a
+    # browser that was never involved. That is what makes this script testable
+    # without touching the operator's session.
+    if state.live?
+      unless Runtime.wrapper_installed?
+        abort "wrapper missing, so the order would be IGNORED after relaunch.\n" \
+              "Run: bin/chrome-profiles install-wrapper"
+      end
+      quit_chrome!
+    end
+
+    backup = Writer.apply!(state, plan)
+    puts "backup: #{backup}" if backup
+    puts "wrote:  #{state.path}"
+
+    relaunch! if state.live? && !PARSED&.bool?("--no-launch")
+
+    puts
+    puts "=== verify (re-read from disk) ==="
+    after = LocalState.load(state.path)
+    after.current_menu.each_with_index { |(dir, row), i| puts format("  %2d. %-42s %s", i + 1, row, dir) }
+    if state.live? && Runtime.chrome_running?
+      # Asked of the RUNNING PROCESS, not of ChromeFeatureState — Chrome rewrites
+      # that file several seconds after launch, so a read here reports the feature
+      # OFF while it is in fact on. That false alarm was observed on 2026-09-04.
+      puts
+      puts "#{FEATURE_FLAG} active: #{Runtime.feature_active?}"
+    end
+
+  when "relaunch"
+    # The cheap repair for "the menu went alphabetical". It writes NOTHING: the
+    # order in Local State is almost always already correct, and only the running
+    # process is missing --enable-features. Use `apply` when the roster changed.
+    # TWO reasons to relaunch, and checking only the first is how a translated
+    # Chrome sat there for fifteen minutes reporting itself healthy on 2026-09-04.
+    if Runtime.feature_active? && !Runtime.chrome_translated?
+      puts "#{FEATURE_FLAG} is already active and Chrome is running native #{Runtime.host_arch}."
+      puts "If the order still looks wrong, the ROSTER is what changed: bin/chrome-profiles apply"
+      exit 0
+    end
+
+    puts "relaunching because Chrome is running #{Runtime.chrome_arch} UNDER ROSETTA" if Runtime.chrome_translated?
+
+    quit_chrome!
+    relaunch!
+    puts
+    puts "#{FEATURE_FLAG} active: #{Runtime.feature_active?}"
+    puts "architecture:            #{Runtime.chrome_arch}#{Runtime.chrome_translated? ? " — STILL TRANSLATED" : " (native)"}"
+    exit(Runtime.feature_active? && !Runtime.chrome_translated? ? 0 : 1)
+
+  when "pin-dock"
+    pinned = Dock.pin_wrapper!
+    puts "Dock tile now launches: #{pinned}"
+    puts "The Dock was restarted. Its icon is unchanged (the wrapper carries Chrome's own app.icns)."
+
+  when "adopt"
+    state = load_state
+    puts "# Snapshot of #{state.path} taken #{Time.now.strftime('%Y-%m-%d')}."
+    puts "# Paste under `profiles:` in config/chrome_profiles.yml."
+    by_dir = state.profiles.to_h { |p| [ p.dir, p ] }
+    dirs = state.order.select { |d| by_dir.key?(d) } + (by_dir.keys - state.order)
+    dirs.each do |dir|
+      profile = by_dir[dir]
+      account = profile.account.empty? ? "UNKNOWN-not-signed-in # #{dir}" : profile.account
+      puts "  - account: #{account}"
+      puts "    label: #{profile.name.inspect}"
+    end
+
+  when "emoji"
+    args = PARSED&.positionals.to_a
+    if args.empty?
+      warn "usage: #{Cli::COMMANDS['emoji'][:synopsis]}"
+      exit 1
+    end
+
+    missing = false
+    args.each do |arg|
+      codepoints =
+        if arg =~ /\AU\+([0-9A-Fa-f]+)\z/
+          [ Regexp.last_match(1).to_i(16) ]
+        else
+          EmojiFont.suspect_codepoints(arg)
+        end
+
+      if codepoints.empty?
+        puts "#{arg.inspect}: no non-ASCII codepoint to check"
+        next
+      end
+
+      codepoints.each do |cp|
+        present = EmojiFont.covers?(cp)
+        missing ||= !present
+        puts format("U+%04X %s  %s", cp, present ? "present" : "MISSING — renders as tofu", [ cp ].pack("U"))
+      end
+    end
+    puts
+    puts "Presence is not identity. To see WHICH glyph a codepoint draws, render it:"
+    puts "  see docs/agents/agents/steffon/sops/chrome-profiles.md § Verifying an emoji"
+    exit(missing ? 1 : 0)
+
+  when "install-wrapper"
+    dest = Runtime.install_wrapper!
+    puts "installed: #{dest}"
+    puts "Launch Chrome from this app (not the Dock's Chrome) or the custom order is ignored."
+
+  else
+    warn Cli::USAGE
+    exit 1
+  end
+rescue ChromeProfiles::Error => e
+  abort e.message
+end

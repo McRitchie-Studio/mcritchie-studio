@@ -162,11 +162,44 @@ exemption** — the state the whole allowlist mechanism exists to reach.
 
 **The question §2a left open got answered first, and the answer was no.** §2a
 said the console would come off ice if Squads turned out not to cover rotating
-the turf-vault 2-of-3 **signer set**. It does not: the Squads V4 vault PDA
-`BW13kgfi…` is the program's **upgrade** authority, while the signer set is three
-individual wallets — which are the hub's own parked admin identities (Alex Bot
-`8K81w4e6…`, Alex `7ZDJp7FU…`, Mason `CytJS23p…`, per
-`turf-vault/docs/CURRENT_DEPLOYMENT.md`). Two different authorities.
+the turf-vault 2-of-3 **signer set**. It does not: a Squads V4 vault PDA holds
+the program's **upgrade** authority — **per cluster**, and the two are different
+keys. On **mainnet** (program `DaFv83yo…`) it is
+`Bk9sS7iiSRL18vuo2KVzkeGw7EekKqxMCjrdoyGGdJm`; on **devnet** (program
+`EQGFJAcA…`) it is `BW13kgfiG2koFn3WRkte21NW9TFygsD1ge2fNJdjH6kC`. The signer
+set is a different authority entirely: three individual wallets, which are the
+hub's own parked admin identities (Alex Bot `8K81w4e6…`, Alex `7ZDJp7FU…`, Mason
+`CytJS23p…`). Two different authorities, two different transactions.
+
+**Those signer addresses are the MAINNET set, and turf-vault does record them —
+just not where you would look first.** `turf-vault/docs/CURRENT_DEPLOYMENT.md` is
+the wrong citation: its signer rows sit only under `## Devnet`, and its
+`## Mainnet` table carries no signer row and no upgrade-authority row at all. The
+in-repo mainnet record is `turf-vault/scripts/squad.json` — a
+`"network": "mainnet-beta"` block whose `members` holds exactly these three and
+whose `_comment` names them in prose (*"Signer set: 8K81 Alex Bot (rotated), 7ZDJ
+Alex, Cyt Mason; threshold 2"*). `scripts/initialize-mainnet.js`, the script
+that puts a signer set on mainnet, builds `signers` from that record —
+`[members.alex_bot, members.alex, members.mason]`, passed to
+`.initialize(signers, threshold, treasuryAuth)` — so `squad.json` is a
+load-bearing record, not a note. Do **not** cite
+`turf-vault/docs/KEY_ROTATION.md` as an authority for any live signer fact — it
+opens *"HISTORICAL SUPERSEDED PLAN. DO NOT EXECUTE AS CURRENT PROCEDURE"* and
+points readers at `CURRENT_DEPLOYMENT.md` itself. (Describing what that plan
+*contains* — as the §5 note two paragraphs below does — is fine; sourcing a
+current fact from it is not.)
+
+**The chain is the authoritative confirmation, not any file.** `VaultState` is
+`seeds = [b"vault"]` against the cluster's program ID — that derivation comes
+from the program source, which `initialize-mainnet.js` mirrors. Re-read
+2026-09-05: mainnet `GBu44HFJjq61WnS9UV1twcSrCC6SkuXHK8RM6tUKsWzV` (program
+`DaFv83yo…`) and devnet `J7b5g9uS5M2Nog1Ly1UATXTDMtXdpXK3JffRAHXGHkK2` (program
+`EQGFJAcA…`) both carry the same three signers at the same offsets, and
+`threshold = 2`. The sets matching exactly is why matching an address against a
+doc can never tell you which cluster you are on. Only the cluster-scoped heading,
+or a cluster-scoped chain read — `solana program show <PROGRAM_ID> --url
+<mainnet-beta|devnet>` for the upgrade authority, the `VaultState` PDA for the
+signer set — settles it.
 
 **So the console did have one unique property, and it was removed knowingly.**
 Not "coordinates a rotation" but **coordinating a 2-of-3 `update_signers` with no

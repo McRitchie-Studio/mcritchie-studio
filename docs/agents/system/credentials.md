@@ -74,7 +74,7 @@ note under the table):
 
 ## Solana Wallets
 
-Each agent has a dedicated Solana wallet on devnet. Credentials stored in 1Password.
+Each agent has a dedicated Solana wallet. Credentials stored in 1Password. The three vault-admin identities below (Alex Bot, Alex Human, Mason) are **the same keys on devnet and mainnet** — verified 2026-09-05 as the `VaultState.signers` set on both clusters — so a rotation of any of them is a mainnet event, not a devnet one. The other rows were not part of that verification: check the cluster before assuming any of them is devnet-only.
 
 ### Wallet Addresses
 
@@ -82,7 +82,7 @@ Each agent has a dedicated Solana wallet on devnet. Credentials stored in 1Passw
 |-------|---------|------|
 | Alex Bot | `8K81w4e6UcB7TiANhM9N8sAgijJvTxxybRi8AENRaRYd` | Rotated vault admin (signs routine onchain ops) |
 | Alex Human | `7ZDJp7FUHhuceAqcW9CHe81hCiaMTjgWAXfprBM59Tcr` | Backup vault admin (recovery only) |
-| Mason | `CytJS23p1zCM2wvUUngiDePtbMB484ebD7bK4nDqWjrR` | Agent wallet |
+| Mason | `CytJS23p1zCM2wvUUngiDePtbMB484ebD7bK4nDqWjrR` | Vault signer (third 2-of-3 cosigner) |
 | Mack | `foUuRyeibadQoGdKXZ9pBGDqmkb1jY1jYsu8dZ29nds` | Agent wallet |
 | Turf Monster | `BLSBw8fXHzZc5pbaYCKMpMSsrtXBTbWXpUPVzMrXx9oo` | Agent wallet |
 
@@ -142,7 +142,7 @@ export SOLANA_ADMIN_KEY=$(op item get "agent.alex.solana" --vault "studio-agents
 
 ### Onchain Admin
 
-Alex Bot is the primary admin for routine TurfVault operations. Mr. McRitchie is the backup/admin cosigner. Current program IDs and signer set live in `turf-vault/docs/CURRENT_DEPLOYMENT.md`. The `SOLANA_ADMIN_KEY` env var in Turf Monster's `.env` holds the Alex Bot private key from `agent.alex.solana`.
+Alex Bot is the primary admin for routine TurfVault operations. Mr. McRitchie is the backup/admin cosigner. Current program IDs (both clusters) live in `turf-vault/docs/CURRENT_DEPLOYMENT.md`. **That file is not a source for the mainnet signer set** — its signer rows sit only under `## Devnet` and its `## Mainnet` table has none; the in-repo mainnet record is `turf-vault/scripts/squad.json` (`members`), which `scripts/initialize-mainnet.js` builds its `initialize` signer array from. Confirm the live set on-chain from `VaultState` (`seeds = [b"vault"]` against that cluster's program ID) rather than from any file. The `SOLANA_ADMIN_KEY` env var in Turf Monster's `.env` holds the Alex Bot private key from `agent.alex.solana`.
 
 ## AWS — S3 + Amazon SES
 

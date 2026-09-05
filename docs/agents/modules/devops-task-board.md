@@ -775,6 +775,27 @@ the tell for a stamp that never happened. The roster check itself lives in
 `ReviewerSelector` (DB-backed), so this display reports what the record holds and
 never predicts the selector's verdict.
 
+**A REVIEWER IS NOT AN AUTHOR, and a bounce no longer says otherwise.** `bin/task
+block <slug> --kind rework` lands the task back on `building`, and three readers
+used to take that for a build claim by the blocking session:
+
+| Reader | What it recorded | Now |
+|--------|------------------|-----|
+| the build-claim heartbeat (`bin/task heartbeat`, fired by `bin/statusline`) | ADOPTED the free lease, so the reviewer held the desk | renews a lease this session already holds; only a bound DESK may adopt a free one |
+| `devops.builders_unattributed` | the reviewer's SESSION, so the author set read incomplete | a write from the session holding the task's live `TaskReviewClaim` is not a build claim |
+| `ReviewerSelector#builders` | the blocking SOUL, from the block's `→ building` event | a block's transition carries `blocked: true` and is skipped |
+
+Measured 2026-09-04: four bounced tasks in one review sitting, each needing a
+hand-passed `--builder <soul>` before it could be reviewed again — and a hand-pass
+is not a property, because a reviewer who passes it reflexively is exactly how a
+REAL incomplete author set gets waved through. `--agent <soul>` on the block never
+helped: the stamp was written by the throttled heartbeat that FOLLOWED the block,
+which carries no actor at all.
+
+The refusal itself is unchanged and still fails closed. A session that holds no
+review claim and names no soul is an ordinary anonymous handoff, and selection
+still refuses on it.
+
 ## Release Slug — read-only, attached by the sweep
 
 `release_slug` is a **top-level Task column, not a field you set.** It is the
@@ -1022,6 +1043,17 @@ caught.
 Nothing here reclaims a desk. The heartbeat simply stops renewing, the TTL lapses,
 and the ordinary claim gate admits the next claimant — and if the call was wrong,
 the holder's next heartbeat re-claims the task, so the mistake heals itself.
+
+**And a heartbeat never ACQUIRES a lease it does not hold.** Everything above is
+about *keeping* a claim; this is the other end. A claim is made deliberately
+(`bin/task move <slug> building`), never inferred from the fact that a terminal is
+painting — so an `:unclaimed` or `:expired` lease is not adopted just because a
+session's marker points at the task. The one exception is a bound DESK: a worktree
+whose `.agent-context.json` names *this* task is evidence the session is at its
+workbench, which is how a builder whose lease lapsed re-adopts it. A reviewer's
+primary checkout can never produce that evidence, which is the point — `bin/task
+block` repoints the blocking session's marker at the task it just bounced, and the
+heartbeat that followed used to take the desk and the authorship with it.
 
 ## The release owns the gem version — builders never write one
 

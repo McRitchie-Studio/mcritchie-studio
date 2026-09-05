@@ -54,3 +54,8 @@ playwright/.cache/
 # Sharded Rails lane receipts (bin/ci-shard). CI uploads them as artifacts; locally
 # they are scratch, and an untracked file in the repo root trips the cert tree guard.
 /rails-report-shard-*.json
+
+# The real Chrome avatar-menu roster lives in 1Password, never in this PUBLIC
+# repo (it keys on account email, some of them personal). Only the .example is
+# committed. See docs/agents/agents/steffon/sops/chrome-profiles.md.
+config/chrome_profiles.yml

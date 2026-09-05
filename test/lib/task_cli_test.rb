@@ -1117,17 +1117,17 @@ class TaskCliTest < Minitest::Test
 
   # --- Heartbeat (the lease renewal bin/statusline drives) --------------------
 
-  def test_heartbeat_renews_an_unclaimed_task_for_this_instance
+  # A HEARTBEAT RENEWS A LEASE; IT NEVER ACQUIRES ONE. This asserted the opposite
+  # until 2026-09-05, which is how a REVIEWER became a recorded worker on a task it
+  # had only bounced. Story + the bound-desk exception: task_heartbeat_claim_test.rb.
+  def test_heartbeat_does_not_adopt_an_unclaimed_task
     requests, _out, _err, status = run_task(
       ["heartbeat", "demo-task"],
       env: { "CLAUDE_CODE_SESSION_ID" => SESSION, "TASK_CLAIM_NONCE" => "inst-A" },
       stub_devops: { "kind" => "feature" }
     )
-    assert status.success?
-    devops = patch_devops(requests)
-    assert_equal SESSION, devops["claimed_session"]
-    assert_equal "inst-A", devops["claim_nonce"]
-    assert devops["claim_expires_at"], "the heartbeat writes a fresh lease"
+    assert status.success?, "declining is not an error — the heartbeat stays best-effort"
+    assert_nil patch_of(requests), "a claim is made deliberately, never inferred from a painting terminal"
   end
 
   def test_heartbeat_renews_this_instances_own_claim

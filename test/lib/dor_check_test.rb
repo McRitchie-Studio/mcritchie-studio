@@ -1799,10 +1799,10 @@ class DorCheckTest < Minitest::Test
     assert_match(/ready to advance/, out)
   end
 
-  # BLOCKER 1. solana-studio and turf-vault carry ZERO workflows on every branch, so
-  # a clean PR there resolves :none FOREVER — "defer until checks appear" is a wedge,
-  # not a remedy (the PR-#509 shape). A full cert is the only route, so it must work.
-  def test_a_full_cert_clears_the_no_verdict_family_for_a_repo_with_no_ci
+  # BLOCKER 1. An unsettling :none/:unverified WEDGES review (PR-#509), so a full cert must
+  # be a live route out on the GATED path. Same test, corrected reason: its "zero workflows
+  # in solana-studio/turf-vault" premise was a FOURTH false copy (re-derived in ci_gate.rb).
+  def test_a_full_cert_clears_the_no_verdict_family_on_the_gated_path
     %w[none unverified].each do |state|
       out, code = review_ci_check(state, evidence: FULL_CERT)
 

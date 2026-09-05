@@ -466,7 +466,83 @@ module CiStatus
   # the operator the same thing. A gate that cannot see must name (a) that it is a
   # CREDENTIAL fault, (b) the repo, (c) the exact grant, and (d) the verify command —
   # otherwise the reader's only move is to re-run it, which can never help.
-  def self.unreadable_remedy(repo = nil, cause: nil)
+  #
+  # `cert_route:` PICKS THE LAST SENTENCE, and nothing else. The credential half of
+  # this string is identical everywhere; only the ROUTE OUT differs, because only
+  # some callers can honour a cert. It stays ONE string with a parameter rather than
+  # two strings, for the reason the header gives: a second copy is a second thing to
+  # forget, and the halves that must agree are then held apart by nothing.
+  #
+  #   cert_route: true  — the GATED path. A fresh full cert stands in for the unread
+  #                       verdict, so naming bin/full-suite-check is an instruction
+  #                       the gate goes on to honour (bin/dor-check's
+  #                       full_cert_stands_in_for_ci?).
+  #   cert_route: false — the EXEMPT (doc-only) path, where nothing stands in. Saying
+  #                       "certify in full instead" there was a remedy the gate could
+  #                       not honour: adding the cert produced a BYTE-IDENTICAL
+  #                       refusal, so an operator who followed it burned a full-suite
+  #                       run for nothing (/tasks/exempt-refusal-prints-dead-remedy).
+  #
+  # WHY THE DEFAULT IS `true`, SAID ACCURATELY. The parameter was added for the
+  # CI-VERDICT callers, where a full cert has always stood in — so `true` preserves
+  # what every pre-existing caller already printed. It is NOT a claim that every such
+  # caller is on the gated path. The first draft of this comment said "every caller
+  # that predates the parameter is on the gated path", and that was FALSE at two of
+  # them on the day it was typed (bin/dor-check's pr_read_alert, which reached the
+  # exempt path, and bin/release.rb's G3 gate). In a change whose entire subject is a
+  # comment outrunning its behaviour, that was the same defect, newly written — so the
+  # replacement below is a list of FACTS, and it does not hold itself honest:
+  # test/lib/dor_check_exempt_ci_test.rb's CALL-SITE REGISTRY reads the SOURCE of every
+  # production caller and fails when one appears, vanishes, or changes route. Add a
+  # caller and the suite makes you classify it.
+  #
+  # THE CALL SITES AND THE ROUTE EACH IS ACTUALLY ON:
+  #
+  #   bin/lib/ci_gate.rb        FORWARDED — unread_ci_refusal's own cert_route:, which
+  #                                         BOTH CiGate.verdict callers state (neither
+  #                                         rides a default).
+  #   bin/dor-check pr_read_alert
+  #                             FORWARDED — four printing callers, each explicit, none
+  #                                         on the default: the EXEMPT path passes
+  #                                         false (nothing stands in once the tier gate
+  #                                         is waived — this task's fix); the gated
+  #                                         path and the two "could not be proven
+  #                                         doc-only" branches pass true. Those three
+  #                                         `true`s are ACCURATE ABOUT THE SUITE GATE
+  #                                         and stale about themselves: in the REVIEW
+  #                                         role a refused PR read is an ERROR no cert
+  #                                         clears, so the offer is not honoured on
+  #                                         those branches either. Pre-existing,
+  #                                         unchanged here, and not flippable — `false`
+  #                                         prints the doc-only denial, which is untrue
+  #                                         on a code diff. What it wants is a THIRD
+  #                                         route ("this refusal is not the suite
+  #                                         gate's"), shared with the release.rb site
+  #                                         below. Measured and left as a handle in
+  #                                         test/lib/dor_check_exempt_ci_test.rb's
+  #                                         honour-the-remedy property.
+  #   bin/dor-check suite gate  true      — gated path; the cert it names is the cert
+  #                                         full_cert_stands_in_for_ci? then credits.
+  #   bin/dor-check submit note true      — gated path suggestion; suppressed when the
+  #                                         review allow-list already refused.
+  #   bin/pr-review             COMPUTED  — cert_route: !maybe_exempt, so the pre-review
+  #                                         banner promises about the CI VERDICT exactly
+  #                                         what the primary's gate-zero goes on to do
+  #                                         with a cert on that same PR.
+  #   bin/release.rb G3 pre-QA  DEFAULT   — and it SHOULD NOT BE. The local-cert route
+  #                                         was deliberately retired at G3 (CI's verdict
+  #                                         for the release SHA is the gate; there is no
+  #                                         cert to substitute) and the line prints a
+  #                                         literal `<task>` placeholder besides.
+  #                                         Pre-existing, release-grain, unchanged by
+  #                                         this task and out of its scope — named here,
+  #                                         and filed as its own follow-up, so the next
+  #                                         reader inherits the finding instead of
+  #                                         rediscovering it.
+  #
+  # Both branches are pinned — a default that nobody asserts is how the wrong half goes
+  # quietly stale.
+  def self.unreadable_remedy(repo = nil, cause: nil, cert_route: true)
     where = repo.to_s.strip.empty? ? "this repo" : repo.to_s.strip
     fix = case cause&.to_sym
           when :permissions
@@ -504,9 +580,26 @@ module CiStatus
               "answer — App tokens are forbidden from it by design), reproduce the exact check read, and use " \
               "GitHub's response to choose the credential or permission fix."
           end
+    route = if cert_route
+              "certify in full instead: bin/full-suite-check <task>."
+            else
+              # NO ROUTE IS NAMED because none exists here, and inventing one is the
+              # defect. On the exempt path the tier gate is ALREADY waived, so there
+              # is no suite whose result could be substituted for the verdict — the
+              # cert would certify nothing and clear nothing.
+              # "no local cert stands in" is the CONTRACT CLAUSE, spelled the same
+              # here and in ci_gate.rb's :none/:unverified branch, because
+              # test/lib/dor_check_exempt_ci_test.rb reads the printed refusal to
+              # decide what the gate PROMISED and then executes that promise. One
+              # spelling for one meaning is what lets the pin be a property instead
+              # of a list of cases.
+              "and no local cert stands in for it on a doc-only diff either: the shape/test-tier gate is " \
+                "already waived, so there is no suite left to substitute. Fixing the credential is the only " \
+                "route — this gate advances on a GREEN CI and nothing else."
+            end
     "This is a CREDENTIAL fault or API limit, NOT a missing CI — re-running will never clear it. #{fix} " \
       "Until the check read works, the FAST-cert route cannot be credited on this repo (a fast cert needs a " \
-      "GREEN CI it can actually read) — certify in full instead: bin/full-suite-check <task>."
+      "GREEN CI it can actually read) — #{route}"
   end
 
   def self.gate_evidence(verdict, repo: nil)

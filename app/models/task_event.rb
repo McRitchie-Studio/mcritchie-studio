@@ -127,6 +127,42 @@ class TaskEvent < ApplicationRecord
     metadata["backfilled"] == true
   end
 
+  # True when this `→ building` transition was a BLOCK, not a build claim.
+  #
+  # Task#block! lands a bounced task back on `building`, so a rework block writes a
+  # `→ building` transition whose actor is the BLOCKER — and every reader that
+  # equates "moved it to building" with "built it" then counts a reviewer as an
+  # author. ReviewerSelector#builders did exactly that: after a bounce its author
+  # set read ["shannon", "carl"], so the reviewer who sent the work back was
+  # excluded from that task's own reviewer pool and reported in the audit as one of
+  # its authors.
+  #
+  # The event itself is correct and stays — the block DID move the task, and the
+  # trail must say who. What was missing is WHY, so this marker is written beside
+  # the actor (Task#write_stage_event) rather than the actor being dropped.
+  #
+  # Rows written before the marker existed answer false, so a legacy bounce still
+  # counts its blocker as an author. That is the conservative direction on purpose:
+  # over-counting an author only over-EXCLUDES from the reviewer pool, while
+  # inferring a block from `from_stage` alone would drop a genuine builder who
+  # legitimately pulled a submitted task back — a fail-OPEN that could seat an
+  # author on their own diff.
+  #
+  # CONSUMERS (2026-09-05): the author set (ReviewerSelector#builders) plus the two
+  # DURATION readers — Task::TestingPhases#last_build_claim and
+  # Release::DurationCache#stage_fallback_transition, which took a block's
+  # `→ building` as the start of the Build span and as the party who did the
+  # Building stage. The conservative direction above is right for the author set,
+  # where over-counting only over-excludes. It is NOT sufficient for a duration:
+  # an unmarked legacy bounce still inverted 238 of 1,668 production build spans.
+  # So TestingPhases pairs this marker with an ORDERING guard that needs no marker
+  # (an event after the span's finish cannot be its start), and reaches the legacy
+  # rows this predicate cannot see. Release::DurationCache has no such second
+  # signal, so its legacy bounces still name their blocker.
+  def block_transition?
+    metadata["blocked"] == true
+  end
+
   # Build-lane transitions snapshot the mascot that owned that event. Older rows
   # lack it, so readers should fall back to the task's current mascot when needed.
   def mascot_snapshot

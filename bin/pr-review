@@ -72,6 +72,7 @@ require "optparse"
 require "shellwords"
 require "time"
 require_relative "lib/ci_status"
+require_relative "lib/code_diff"
 require_relative "lib/gh_auth_retry"
 require_relative "lib/bin_helpers"
 require_relative "lib/projects_root"
@@ -912,6 +913,24 @@ def start_review(task, review_number)
   # So this supervisor must never tell a reviewer to proceed as though the gate will
   # let them: where it proceeds on an unread verdict it says what the gate will do
   # and what to do when it refuses.
+  #
+  # ...AND THE CERT ROUTE IS NOT UNIVERSAL. On the gate's EXEMPT (doc-only) path no
+  # cert stands in at all — the tier gate is waived, so no suite remains to
+  # substitute — and telling a reviewer otherwise sends the builder to burn a
+  # full-suite run that cannot change the verdict
+  # (/tasks/exempt-refusal-prints-dead-remedy). This supervisor cannot see the DIFF,
+  # so it cannot know the path for certain; it knows the KIND, which is the exempt
+  # path's precondition. So it hedges HONESTLY — "if the diff proves doc-only" —
+  # rather than either promising a cert that may be dead or hiding the one that may
+  # be live. Overclaiming in either direction is the defect this repeats.
+  maybe_exempt = CodeDiff::EXEMPT_KINDS.include?(task.dig("devops", "kind").to_s)
+  cert_caveat = if maybe_exempt
+                  " — but this task's kind is #{task.dig("devops", "kind")}, so IF the observed diff proves " \
+                    "doc-only the gate takes its EXEMPT path, where NO cert stands in and green is the only " \
+                    "thing that advances it; do not send the builder to bin/full-suite-check on that refusal"
+                else
+                  ""
+                end
   ci = supervisor_ci_check(task)
   case ci[:state]
   when :red
@@ -943,7 +962,7 @@ def start_review(task, review_number)
     # is now the only thing standing between a red CI and a merge.
     puts "  ci=UNREADABLE (#{ci[:reason]}) — the token was refused; NOT deferring (CI has reported; we cannot read it)"
     puts "  #{CiStatus.unreadable_remedy(CiStatus.repo_from_pr_url(task.dig("devops", "pr_url")),
-                                        cause: ci[:cause])}"
+                                        cause: ci[:cause], cert_route: !maybe_exempt)}"
     puts "  proceeding to review WITHOUT a CI verdict — review this PR as if CI were unchecked, because it is"
     # And say what their FIRST command will do, because it is no longer "proceed".
     # The gate-zero clears an unread verdict on a FULL cert and refuses on anything
@@ -951,7 +970,7 @@ def start_review(task, review_number)
     # honest — waiting is futile, and the builder does not own the token. Name the
     # one that is, or the reviewer picks a wrong outcome under pressure.
     puts "  their gate-zero (dor-check --gate-role review) CLEARS this only if the task carries a FULL cert " \
-         "(bin/full-suite-check runs ci.yml's own command); with a fast cert it REFUSES"
+         "(bin/full-suite-check runs ci.yml's own command); with a fast cert it REFUSES#{cert_caveat}"
     puts "  if it refuses: record conductor-review — NOT request-changes (a credential is not the builder's to " \
          "fix) and NOT wait-for-ci (CI already reported; we cannot read it)"
   when :green
@@ -968,7 +987,8 @@ def start_review(task, review_number)
     # so it clears an unread verdict only on a FULL cert and refuses a state it does
     # not classify at all.
     puts "  ci=#{ci[:state]}#{ci[:reason] ? " (#{ci[:reason]})" : ""} — proceeding; the primary's gate-zero holds " \
-         "the verdict and REFUSES anything but green (a FULL cert clears an unread one; conductor-review if not)"
+         "the verdict and REFUSES anything but green (a FULL cert clears an unread one; conductor-review if " \
+         "not)#{cert_caveat}"
   end
 
   # Gate-zero (dor_review) opens as the supervisor proceeds past CI — the primary
