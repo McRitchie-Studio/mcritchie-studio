@@ -93,6 +93,18 @@ class ReviewerTurnedBuilderTest < ActiveSupport::TestCase
     task.reload
   end
 
+  # The loud half of "recorded or refused loudly" is a log line, so one test has to
+  # read the log. Swap the logger for the duration and hand back what it wrote.
+  def capture_rails_log
+    buffer   = StringIO.new
+    original = Rails.logger
+    Rails.logger = ActiveSupport::Logger.new(buffer)
+    yield
+    buffer.string
+  ensure
+    Rails.logger = original
+  end
+
   def built_by(task) = task.reload.devops["built_by"]
   def authors(task) = task.reload.devops["builders"]
   def unattributed(task) = task.reload.devops["builders_unattributed"]
@@ -172,6 +184,75 @@ class ReviewerTurnedBuilderTest < ActiveSupport::TestCase
     refute_includes seated, "carl", "he claimed the build; he does not review it"
     refute_includes seated, "shannon"
     assert_equal 2, seated.uniq.size, "and a pair still forms"
+  end
+
+  # --- THE REGRESSION: THE CLAIM THAT NAMES NO REVIEWER ----------------------
+
+  # `holder_agent` is OPTIONAL. `--agent` is optional on both `bin/task review-claim
+  # acquire` and the server-side `claim_next_review` pop (bin/lib/review_claim_cli.rb
+  # :185-187 says so outright), and TaskReviewClaim stores
+  # `reviewer.to_s.strip.presence` with no Task.soul? check — so a live review claim
+  # naming NOBODY is a designed state, not a corner. Keying the seam on a name match
+  # alone reads that blank as "not the reviewer" and re-points built_by to the very
+  # session doing the reviewing: the inversion, reached by the ordinary path.
+
+  test "a review claim that names NOBODY still holds built_by back" do
+    task = submitted_task(builder: "shannon")
+    reviewing!(task, reviewer: nil)
+    block_for_rework!(task)
+
+    claim_build!(task, actor: "carl", session: REVIEWER_SESSION)
+
+    assert_equal "shannon", built_by(task),
+                 "the claim cannot identify its holder, so it cannot clear him to re-point"
+  end
+
+  test "and the soul it names is still RECORDED as an author" do
+    # The other half of "recorded or refused loudly": holding built_by back must not
+    # cost the record. He joins the set, so the refusal the repair was printed for
+    # clears (ReviewerSelector#builder_known? is asked over the SET, not over
+    # built_by) and he is kept out of the seats on his own diff.
+    task = submitted_task(builder: "shannon")
+    reviewing!(task, reviewer: nil)
+    block_for_rework!(task)
+
+    claim_build!(task, actor: "carl", session: REVIEWER_SESSION)
+
+    assert_equal ["shannon", "carl"], authors(task)
+    assert_nil unattributed(task), "he named himself, so nothing here is unattributable"
+    assert_equal true, ReviewerSelector.explain(task.reload)["builder_known"]
+    refute_includes ReviewerSelector.select(task.reload).map { |r| r["slug"] }, "carl"
+  end
+
+  test "and the refusal to re-point is LOUD" do
+    # Criterion 2 is "recorded OR REFUSED LOUDLY". The warning is the whole of the
+    # loud half — it is what the log carries when someone asks why built_by did not
+    # move — and on the blank lane it is the only signal there is. Pin it, or the
+    # guard can go quiet without a single test noticing.
+    task = submitted_task(builder: "shannon")
+    reviewing!(task, reviewer: nil)
+    block_for_rework!(task)
+
+    log = capture_rails_log { claim_build!(task, actor: "carl", session: REVIEWER_SESSION) }
+
+    assert_match(/\[builder-stamp\].*#{Regexp.escape(task.slug)}/, log)
+    assert_match(/names no reviewer/, log,
+                 "the log has to say WHY it could not clear him, not merely that it did not")
+  end
+
+  test "an ANONYMOUS claim under a nameless review is still merely a renewal" do
+    # The fail-closed direction for this lane. Widening the seam to "a nameless review
+    # claim suppresses everything" is not what changed: the unnamed write is still
+    # judged by #reviewing_party_renewal?, which never reaches this guard at all.
+    task = submitted_task(builder: "shannon")
+    reviewing!(task, reviewer: nil)
+    block_for_rework!(task)
+
+    heartbeat!(task, session: REVIEWER_SESSION)
+
+    assert_equal "shannon", built_by(task)
+    assert_equal ["shannon"], authors(task), "a heartbeat names nobody and claims nothing"
+    assert_nil unattributed(task)
   end
 
   # --- THE FAIL-CLOSED DIRECTION ---------------------------------------------

@@ -128,7 +128,7 @@ Avi supervisor. Carl:
    | Refusal | What it means |
    |---------|---------------|
    | AN AUTHOR NAMED NOBODY | a `--builder` entry matches no roster soul — including a PARTIAL typo (`--builder steffon,alexx`), where the list still resolves to someone and the missed soul silently goes un-excluded |
-   | authors unknown | no *soul* is named — `built_by` blank, or holding a name that is not on the roster, and no soul on a `→ building` event |
+   | authors unknown | no *soul* is named — `built_by` blank, or holding a name that is not on the roster, and no soul on a `→ building` **build claim** (a rework bounce lands there too and is deliberately not read as authorship) |
    | author set INCOMPLETE | another session claimed **or shipped** the task and named no soul (`devops.builders_unattributed`) — never YOUR OWN bounce; see below |
    | an author would be SEATED | the pool was too small to drop them all, so one was kept eligible |
 

@@ -120,6 +120,34 @@ class ReviewerRepairStampApiTest < ActionDispatch::IntegrationTest
     refute_includes ReviewerSelector.select(task.reload).map { |r| r["slug"] }, "carl"
   end
 
+  test "a review claim that names NOBODY still cannot re-point built_by" do
+    # THE SAME INVERSION, REACHED BY THE ORDINARY PATH. `--agent` is optional on both
+    # `bin/task review-claim acquire` and the server-side pop, and TaskReviewClaim
+    # stores `reviewer.to_s.strip.presence` with no soul check — so `holder_agent` is
+    # routinely blank. A seam that clears the claimant whenever the holder's name does
+    # not MATCH reads that blank as "not the reviewer" and stamps him. Measured on a
+    # throwaway tree both ways: origin/accepted -> shannon, head 31ba687d -> carl.
+    #
+    # Every other fixture in this file hardcodes `reviewer: "carl"`, which populates
+    # holder_agent — which is precisely why the mutation that lets a reviewer re-point
+    # built_by died at only 3 red. This lane was never exercised.
+    task = Task.create!(title: "Nameless Review Claim Api", stage: "designed",
+                        metadata: { "devops" => { "shape" => "backend" } })
+    claim!(task, actor: "shannon", session: BUILDER_SESSION)
+    submit!(task, actor: BUILDER_SESSION)
+    reviewing!(task.reload, reviewer: "")
+    block!(task, by: "carl")
+
+    repair!(task, actor: "carl")
+
+    devops = task.reload.metadata["devops"]
+    assert_equal "shannon", devops["built_by"],
+                 "the claim names no reviewer, so it cannot clear this soul to re-point"
+    assert_equal ["shannon", "carl"], devops["builders"], "but the claim is on the record"
+    assert_equal true, ReviewerSelector.explain(task.reload)["builder_known"]
+    refute_includes ReviewerSelector.select(task.reload).map { |r| r["slug"] }, "carl"
+  end
+
   test "the reviewer's unnamed heartbeat is still swallowed" do
     # THE FAIL-CLOSED DIRECTION. A fix keyed on the session alone — or one that
     # recorded every write from a reviewing party — passes the two tests above and
