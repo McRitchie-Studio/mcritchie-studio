@@ -1,0 +1,88 @@
+# config/chrome_profiles.yml.example
+#
+# The SHAPE of the Chrome avatar-menu roster: which Google accounts appear in
+# "Other Chrome Profiles", in what order, under what label.
+#
+# ===========================================================================
+# THE REAL ROSTER IS NOT IN THIS REPO. IT LIVES IN 1PASSWORD.
+#
+#     op document get "chrome-profiles.mcritchie.agents" --vault "${MCR_OP_VAULT_AGENT:-studio-agents}"
+#
+# `bin/chrome-profiles` fetches it from there whenever no --config is given.
+# This file is committed so the SHAPE and the rules survive in the repo; the
+# addresses below are illustrative and match no real account.
+#
+# WHY. mcritchie-studio is a PUBLIC repository. The roster keys on account
+# email, and some of those accounts belong to family members rather than to the
+# business — committing it published two personal addresses that had never
+# appeared here before. Caught in review on 2026-09-04, and a public repo's
+# history is scraped and mirrored faster than a later commit can retract it.
+# 1Password is where the real roster belongs: it is already what a rebuilt Mac
+# restores from, so the burn-down guarantee this tool exists for is kept, not
+# traded away.
+#
+# House rule, added in the same pass:
+# docs/agents/modules/credentials.md § Personal data in a public repo.
+# ===========================================================================
+#
+# ---------------------------------------------------------------------------
+# FOUR THINGS TO KNOW BEFORE EDITING
+#
+# 1. ORDER HERE IS MENU ORDER. Top row first.
+#
+# 2. ROWS ARE KEYED BY ACCOUNT EMAIL, NEVER BY CHROME'S PROFILE DIRECTORY.
+#    This is the whole reason the roster is restorable. Chrome hands out
+#    directories ("Default", "Profile 7", "Profile 14") in SIGN-IN ORDER, so a
+#    rebuilt Mac assigns different ones — and the numbering is not even dense:
+#    signing into a twelfth account on 2026-09-04 produced `Profile 14` on a
+#    machine that had eleven profiles. An email address is the same on every
+#    machine; a directory name is an accident of the order you happened to sign
+#    in. `bin/chrome-profiles` resolves email -> directory at run time, against
+#    `profile.info_cache[*].user_name`.
+#
+# 3. THE LABEL IS ONLY THE TEXT INSIDE THE PARENTHESES. Chrome prepends the
+#    account's Google first name and there is no way to stop it (constraint 3 in
+#    the SOP). So a label must NEVER repeat that word — label `Alex studio` on
+#    an account whose Google name is Alex renders as `Alex (Alex studio)`.
+#    `bin/chrome-profiles` REFUSES a label that opens with the account's own
+#    first name rather than letting you discover it in the menu.
+#
+# 4. VERIFY A NEW EMOJI EXISTS IN THE SYSTEM FONT or it renders as a tofu box:
+#
+#        bin/chrome-profiles emoji 🪎
+#
+#    Presence is not identity. This Mac's Ruby and Python carry Unicode 13 name
+#    tables, so they cannot even NAME an Emoji 16/17 addition. To see WHICH
+#    glyph a codepoint draws, render it — the SOP's § Verifying an emoji has the
+#    one-liner.
+# ---------------------------------------------------------------------------
+#
+# EVERY PROFILE SIGNED IN ON THE MACHINE MUST APPEAR HERE. A profile the roster
+# omits is a REFUSAL, not a skip — the guard that stops a roster from silently
+# renaming a profile nobody declared. The reverse is fine: an account listed
+# here that you have not signed into yet is reported and skipped, which is the
+# normal state halfway through a rebuild.
+#
+# The convention the real roster follows: THE EMOJI NAMES THE ORG, and the first
+# name Chrome prepends names the person or role. 🔑 admin is the deliberate
+# exception, where the role matters more than the org.
+
+profiles:
+  - account: alex@example-one.test
+    label: "🧑‍🏭 example-one.test"
+
+  - account: alex@example-two.test
+    label: "🪎 example-two.test"
+
+  - account: admin@example-two.test
+    label: "🔑 example-two.test"
+
+  - account: team@example-two.test
+    label: "🪎 example-two.test"
+
+  # A row whose label EQUALS the Google first name prints with no parentheses at
+  # all — Chrome collapses the two halves when they match. That is how a plain
+  # `Margot` row is expressed. Adding an emoji here would CREATE a parenthetical:
+  # `Margot (🧒 Margot)`.
+  - account: someone@example-personal.test
+    label: "Margot"

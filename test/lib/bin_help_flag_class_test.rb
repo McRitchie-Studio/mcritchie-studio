@@ -187,6 +187,22 @@ class BinHelpFlagClassTest < Minitest::Test
     # makes exit 0 an ASSERTION — "this backup IS the one you saved" — and a probe must
     # never answer with an assertion, the same reasoning as bin/harvest-desk-ledger.
     "scratch-backup"         => :cli_arg_guard,
+    # --- NEW SCRIPT, guarded at birth (/tasks/chrome-profile-order-sop) -------
+    # The second entry added by an author rather than a sweep. Its mutations reach
+    # OUTSIDE this repo entirely, which is new for this file: `apply` QUITS THE
+    # OPERATOR'S BROWSER and rewrites Chrome's own `Local State`, `pin-dock`
+    # rewrites com.apple.dock and restarts the Dock, `install-wrapper` writes an
+    # app bundle into ~/Applications, and `relaunch` quits and restarts Chrome.
+    # None of that is undone by `git checkout`. Its per-subcommand dictionary is
+    # ChromeProfiles::Cli::COMMANDS.
+    #
+    # Help exits 1, for the reason bin/agent-presence and bin/scratch-backup do:
+    # `status` makes exit 0 an ASSERTION — "the roster resolves cleanly against
+    # this Mac, nothing refuses" — and that is what an SOP step gates on. Handing
+    # the universal safe probe a green light would answer a question it never
+    # asked. It also needs the GUARD_HELPER_CALLERS row below, because it wraps
+    # the guard in a helper.
+    "chrome-profiles"        => :cli_arg_guard,
     # --- shell scripts, same sweep, same defect, different idiom --------------
     "setup-1pass-token"      => :own_guard,
     "ecosystem-build"        => :own_guard,
@@ -489,7 +505,12 @@ class BinHelpFlagClassTest < Minitest::Test
     # working tree — are all reached through `case command`, so that dispatcher is the
     # seam. Anchored on it rather than on either call so a fifth subcommand cannot be
     # added below the guard without this staying true.
-    "scratch-backup"      => "case command"
+    "scratch-backup"      => "case command",
+    # The dispatcher again, and the first one whose arms mutate state this repo does
+    # not own: Chrome's Local State, com.apple.dock, ~/Applications, and the running
+    # browser itself. Anchored on `case ARGV.first` rather than on any one call so a
+    # sixth subcommand cannot be added below the guard without this staying true.
+    "chrome-profiles"     => "case ARGV.first"
   }.freeze
 
   def test_the_guard_runs_before_the_first_mutation
@@ -543,11 +564,21 @@ class BinHelpFlagClassTest < Minitest::Test
     end
   end
 
-  # The two scripts big enough to wrap the shared guard in a helper of their own, and
-  # the CALL that helper has to make. Both keep their dispatcher in
-  # `if $PROGRAM_NAME == __FILE__`, so the seam is the `ARGV.shift` that reads the
-  # subcommand.
-  GUARD_HELPER_CALLERS = %w[qa-server agent-worktree].freeze
+  # The scripts big enough to wrap the shared guard in a helper of their own, mapped to
+  # the SEAM that reads the subcommand — the line the helper's call has to precede.
+  #
+  # It was a bare array against a hardcoded `ARGV.shift` until 2026-09-04, which
+  # quietly limited the table to one dispatcher idiom. bin/chrome-profiles reads its
+  # subcommand with `case ARGV.first` and never shifts, so under the old form
+  # `shift_at` was nil, the guard's `refute_nil` fired, and the only way to make this
+  # file green would have been to leave the script OUT of the table — exempting it
+  # from the one assertion here that separates a called guard from a defined one.
+  # A table that can only describe scripts already in it is not a table.
+  GUARD_HELPER_CALLERS = {
+    "qa-server"       => "ARGV.shift",
+    "agent-worktree"  => "ARGV.shift",
+    "chrome-profiles" => "case ARGV.first"
+  }.freeze
 
   # ANCHORED ON THE CALL SITE, NEVER THE DEFINITION — the property
   # test_the_guard_runs_before_the_first_mutation above CANNOT establish on these two.
@@ -561,24 +592,27 @@ class BinHelpFlagClassTest < Minitest::Test
   # was fully unguarded. A guard that is defined and never called is the exact shape
   # of an inert fix, and it is invisible to every assertion in this file but this one.
   #
-  # The regex matches the INVOCATION — a bare `guard_argv!` or `guard_argv!(ARGV)`
-  # alone on its line — and cannot match `def guard_argv!(argv = ARGV, out: …)`.
+  # The regex matches the INVOCATION — a bare `guard_argv!`, `guard_argv!(ARGV)`, or a
+  # constant BOUND to its result (`PARSED = guard_argv!`, which bin/chrome-profiles
+  # needs because its subcommands read the parsed flags back) — and cannot match
+  # `def guard_argv!(argv = ARGV, out: …)`: that line continues past the parameters,
+  # and the anchor requires the call to END there.
   # The behavioural proof that the call is reached at RUNTIME lives one tier up, in
   # test/integration/agent_worktree_argv_guard_test.rb and
   # test/integration/qa_server_argv_guard_test.rb; this is the cheap static half that
   # fails the instant the line is deleted.
   def test_the_dispatcher_calls_its_guard_rather_than_merely_defining_it
-    GUARD_HELPER_CALLERS.each do |name|
+    GUARD_HELPER_CALLERS.each do |name, seam|
       src = code_only(name)
-      call_at = src.index(/^\s*guard_argv!(\(ARGV\))?\s*$/)
-      shift_at = src.index("ARGV.shift")
+      call_at = src.index(/^\s*(?:[A-Z][A-Z0-9_]*\s*=\s*)?guard_argv!(\(ARGV\))?\s*$/)
+      seam_at = src.index(seam)
 
       refute_nil call_at,
                  "bin/#{name} DEFINES guard_argv! but never CALLS it — a defined-and-uncalled " \
                  "guard passes every other assertion in this file on a fully unguarded script"
-      refute_nil shift_at, "bin/#{name} no longer shifts its subcommand — re-anchor this test"
-      assert_operator call_at, :<, shift_at,
-                      "bin/#{name} shifts its subcommand BEFORE calling its guard — the rest of " \
+      refute_nil seam_at, "bin/#{name} no longer reads its subcommand with `#{seam}` — re-anchor this test"
+      assert_operator call_at, :<, seam_at,
+                      "bin/#{name} reads its subcommand BEFORE calling its guard — the rest of " \
                       "the line is then on the floor, which IS the defect this family closes"
     end
   end
