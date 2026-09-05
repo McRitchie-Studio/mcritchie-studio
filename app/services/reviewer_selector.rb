@@ -661,11 +661,19 @@ class ReviewerSelector
   # up both its authors. Persisted tasks only (the CLI's in-memory stand-in carries
   # no events, which is why the accumulator has to live in devops), and any lookup
   # error degrades to empty so selection never depends on the events being readable.
+  # A BLOCK's transition is skipped: Task#block! lands a bounced task back on
+  # `building`, so a rework block writes a `→ building` event whose actor is the
+  # REVIEWER who sent the work back. Counted as a build claim, that read the
+  # reviewer into the author set — after a bounce this returned ["shannon",
+  # "carl"], excluding the reviewer from the task's own pool and naming him in the
+  # audit as an author of a diff he only read. See TaskEvent#block_transition?,
+  # which also explains why legacy rows (written before the marker) still count.
   def building_event_actors
     return [] unless task.respond_to?(:task_events) && task.try(:persisted?)
 
     task.task_events.where(to_stage: "building").where.not(actor: [nil, ""])
-        .order(:occurred_at, :id).pluck(:actor).map { |a| a.to_s.strip }.uniq
+        .order(:occurred_at, :id).reject(&:block_transition?)
+        .map { |e| e.actor.to_s.strip }.uniq
   rescue StandardError
     []
   end

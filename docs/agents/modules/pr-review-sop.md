@@ -128,7 +128,7 @@ Avi supervisor. Carl:
    |---------|---------------|
    | AN AUTHOR NAMED NOBODY | a `--builder` entry matches no roster soul — including a PARTIAL typo (`--builder steffon,alexx`), where the list still resolves to someone and the missed soul silently goes un-excluded |
    | authors unknown | no *soul* is named — `built_by` blank, or holding a name that is not on the roster, and no soul on a `→ building` event |
-   | author set INCOMPLETE | another session claimed **or shipped** the task and named no soul (`devops.builders_unattributed`) |
+   | author set INCOMPLETE | another session claimed **or shipped** the task and named no soul (`devops.builders_unattributed`) — never YOUR OWN bounce; see below |
    | an author would be SEATED | the pool was too small to drop them all, so one was kept eligible |
 
    Say which it is: `--builder <soul>[,<soul>]` names the authors (comma-separated
@@ -144,6 +144,17 @@ Avi supervisor. Carl:
    A typo on the RECORD is reported as one: a `built_by` holding `shanon` refuses
    and quotes the name back, rather than calling the field blank and sending you to
    re-stamp over it.
+
+   **YOUR OWN BOUNCE NO LONGER CAUSES ONE.** `bin/task block <slug> --kind rework`
+   lands the task on `building`, and every reader that took that for a build claim
+   recorded the REVIEWER: the status-line heartbeat adopted the free lease (so you
+   held the builder's desk and the documented repair was refused as
+   `:held_by_other`), `builders_unattributed` got your session, and
+   `ReviewerSelector#builders` got your soul off the block's `→ building` event.
+   Measured 2026-09-04 on four bounced tasks in one sitting. All three now
+   distinguish a review write from a build write, so a bounce leaves the author set
+   exactly as it found it. If a bounced task still refuses, the missing author is a
+   REAL one — do not reach for `--builder` reflexively.
 
    **The SEATED refusal has no widening flag, by construction.** The light pool is
    the specialist pool minus the standing primary, and the default QA owner is not
