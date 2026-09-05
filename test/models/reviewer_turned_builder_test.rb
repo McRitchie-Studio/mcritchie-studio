@@ -196,6 +196,24 @@ class ReviewerTurnedBuilderTest < ActiveSupport::TestCase
   # alone reads that blank as "not the reviewer" and re-points built_by to the very
   # session doing the reviewing: the inversion, reached by the ordinary path.
 
+  # A holder that names nobody ON THE ROSTER is the same state as a blank one. `--agent`
+  # is unvalidated at every door (TaskReviewClaim stores `reviewer.to_s.strip.presence`
+  # with no Task.soul? check), so a typo'd `--agent carll` stores a holder that IS
+  # present and matches NO soul. Keyed on `holder.empty?`, that fell past the guard to
+  # the name comparison, missed, and re-pointed built_by to the reviewer — the very
+  # inversion, reached through a typo instead of an omission.
+  test "a review claim whose holder is OFF-ROSTER holds built_by back too" do
+    task = submitted_task(builder: "shannon")
+    reviewing!(task, reviewer: "carll")
+    block_for_rework!(task)
+
+    claim_build!(task, actor: "carl", session: REVIEWER_SESSION)
+
+    assert_equal "shannon", built_by(task),
+                 "a holder matching no soul cannot clear carl any more than a blank one can"
+    assert_equal ["shannon", "carl"], authors(task), "and he is still RECORDED as an author"
+  end
+
   test "a review claim that names NOBODY still holds built_by back" do
     task = submitted_task(builder: "shannon")
     reviewing!(task, reviewer: nil)

@@ -2946,7 +2946,10 @@ class Task < ApplicationRecord
   #                                              this seam has nothing to say about it.
   #   the holder IS this soul          -> true.  A reviewer taking the build of the PR
   #                                              he is reviewing.
-  #   the claim names NOBODY           -> true.  It cannot say he is NOT that reviewer,
+  #   the claim names NOBODY           -> true.  Blank, OR a value on no roster — a
+  #   (blank or off-roster)                      typo'd --agent names nobody just
+  #                                              as a blank one does, so it cannot
+  #                                              say he is NOT that reviewer,
   #                                              and guessing costs the author already
   #                                              on record.
   #
@@ -3000,7 +3003,7 @@ class Task < ApplicationRecord
     return false if claim.nil?
 
     holder = claim.holder_agent.to_s.strip
-    if holder.empty?
+    unless self.class.soul?(holder)
       Rails.logger.warn(
         "[builder-stamp] #{slug}: this task's live REVIEW claim names no reviewer, so it " \
         "cannot clear #{named}, who claimed the build from the session holding it. " \
