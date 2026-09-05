@@ -80,11 +80,11 @@
            class="relative mt-0.5 min-w-[8rem]" style="height: 14px;">
         <div class="absolute inset-y-0 left-0 rounded z-0" style="background: var(--color-cta); transition: width 1.2s cubic-bezier(0.16, 1, 0.3, 1);" :style="{ width: barWidth + '%' }"></div>
         <div class="absolute inset-0 flex items-center justify-between px-1.5 font-mono text-muted z-[1] nav-bar-text">
-          <span>
-            <% if current_user.respond_to?(:truncated_solana) && current_user.try(:solana_connected?) %>
-              <%= current_user.truncated_solana %>
-            <% end %>
-          </span>
+          <%# LEFT SLOT of a justify-between row — deliberately empty, not dead markup.
+              It carried the truncated wallet address until /tasks/drop-hub-wallet-column
+              dropped users.solana_address. Delete the span and the level indicator (or
+              the log-out link) loses its right edge and slides across the bar. %>
+          <span></span>
           <% if current_user.respond_to?(:level) && current_user.level.present? %>
             <span :class="leveledUp && 'nav-level-pop'" x-text="'Level ' + displayLevel">Level <%= current_user.level %></span>
           <% elsif show_logout_link %>
@@ -92,11 +92,11 @@
           <% end %>
         </div>
         <div class="absolute inset-0 flex items-center justify-between px-1.5 font-mono text-white z-[2] nav-bar-text" :style="{ 'clip-path': 'inset(0 ' + (100 - barWidth) + '% 0 0)' }">
-          <span>
-            <% if current_user.respond_to?(:truncated_solana) && current_user.try(:solana_connected?) %>
-              <%= current_user.truncated_solana %>
-            <% end %>
-          </span>
+          <%# LEFT SLOT of a justify-between row — deliberately empty, not dead markup.
+              It carried the truncated wallet address until /tasks/drop-hub-wallet-column
+              dropped users.solana_address. Delete the span and the level indicator (or
+              the log-out link) loses its right edge and slides across the bar. %>
+          <span></span>
           <% if current_user.respond_to?(:level) && current_user.level.present? %>
             <span :class="leveledUp && 'nav-level-pop'" x-text="'Level ' + displayLevel">Level <%= current_user.level %></span>
           <% elsif show_logout_link %>

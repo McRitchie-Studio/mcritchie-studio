@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_04_210000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_05_040000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1582,12 +1582,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_04_210000) do
     t.string "role", default: "viewer"
     t.string "session_token"
     t.string "slug"
-    t.string "solana_address"
     t.string "uid"
     t.datetime "updated_at", null: false
     t.index ["email"], name: "index_users_on_email", unique: true
     t.index ["slug"], name: "index_users_on_slug", unique: true
-    t.index ["solana_address"], name: "index_users_on_solana_address", unique: true
   end
 
   add_foreign_key "action_grades", "agent_actions"

@@ -11,12 +11,12 @@ require "test_helper"
 class ParkedIdentitiesTest < ActiveSupport::TestCase
   # Set by Mr. McRitchie, 2026-09-04.
   EXPECTED = {
-    "alex@mcritchie.studio"  => { name: "Alex McRitchie",  role: "admin",  wallet: true },
-    "team@mcritchie.studio"  => { name: "Team McRitchie",  role: "admin",  wallet: true },
-    "admin@mcritchie.studio" => { name: "Admin McRitchie", role: "admin",  wallet: false },
-    "mason@mcritchie.studio" => { name: "Mason McRitchie", role: "viewer", wallet: true },
-    "mack@mcritchie.studio"  => { name: "Mack McRitchie",  role: "viewer", wallet: false },
-    "team@turfmonster.media" => { name: "Turf Monster",    role: "viewer", wallet: false }
+    "alex@mcritchie.studio"  => { name: "Alex McRitchie",  role: "admin" },
+    "team@mcritchie.studio"  => { name: "Team McRitchie",  role: "admin" },
+    "admin@mcritchie.studio" => { name: "Admin McRitchie", role: "admin" },
+    "mason@mcritchie.studio" => { name: "Mason McRitchie", role: "viewer" },
+    "mack@mcritchie.studio"  => { name: "Mack McRitchie",  role: "viewer" },
+    "team@turfmonster.media" => { name: "Turf Monster",    role: "viewer" }
   }.freeze
 
   def identity(email) = User::PARKED_IDENTITIES.find { |i| i[:email] == email }
@@ -31,18 +31,6 @@ class ParkedIdentitiesTest < ActiveSupport::TestCase
       refute_nil found, "#{email} is no longer parked"
       assert_equal expected[:name], found[:name], "#{email} is named wrong"
       assert_equal expected[:role], found[:role], "#{email} holds the wrong role"
-    end
-  end
-
-  # THE SUPER-ADMIN SEAT HOLDS NO KEY. admin@mcritchie.studio is the top-of-stack
-  # Google credential the Steffon and Alex agents sign in with. Giving it a wallet
-  # would put the highest-privilege login in the app on the same identity as a
-  # spending account, so the absence is a decision and not an oversight waiting to
-  # be tidied up.
-  test "the wallet-bearing identities are the ones meant to hold funds" do
-    EXPECTED.each do |email, expected|
-      assert_equal expected[:wallet], identity(email)[:wallet].present?,
-        "#{email} #{expected[:wallet] ? 'lost' : 'gained'} a wallet"
     end
   end
 
@@ -64,10 +52,29 @@ class ParkedIdentitiesTest < ActiveSupport::TestCase
     assert_equal emails.uniq, emails
   end
 
-  # The wallets are the same keys in both apps; a typo here silently mints a
-  # second account for a real person on their next wallet sign-in.
-  test "parked wallets are unique across the roster" do
-    wallets = User::PARKED_IDENTITIES.filter_map { |i| i[:wallet] }
-    assert_equal wallets.uniq, wallets
+  # EMAIL IS THE ONLY KEY, and this is the test that says so out loud.
+  #
+  # `parked_identity_for` used to match on email OR wallet, so an entry could earn
+  # its role through either one. /tasks/drop-hub-wallet-column removed the wallet
+  # arm along with users.solana_address, which means an identity with no `email:`
+  # is now simply never found: no role is applied, no name is planted, and nothing
+  # anywhere raises. That silence is the failure mode this test exists to convert
+  # into a red build the moment someone parks a keyed-but-emailless seat.
+  test "every parked identity is reachable, because email is the only key" do
+    User::PARKED_IDENTITIES.each do |parked|
+      refute_predicate parked[:email].to_s.strip, :empty?,
+        "#{parked[:name].inspect} is parked with no email, so parked_identity_for can never find it"
+      assert_equal parked, User.parked_identity_for(email: parked[:email]),
+        "#{parked[:email]} does not resolve through the only lookup key it has left"
+    end
+  end
+
+  # The lookup is case-insensitive on the way in and the roster is stored lowercase;
+  # a capitalised entry would resolve for a lowercase sign-in and not for itself.
+  test "the roster stores addresses in the case the lookup normalises to" do
+    User::PARKED_IDENTITIES.each do |parked|
+      assert_equal parked[:email].downcase, parked[:email],
+        "#{parked[:email]} is not stored lowercase"
+    end
   end
 end

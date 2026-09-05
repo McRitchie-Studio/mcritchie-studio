@@ -62,7 +62,7 @@
                   <div class="min-w-0">
                     <div class="font-semibold text-heading truncate"><%= user.display_name %></div>
                     <div class="text-xs text-muted truncate">
-                      <%= user.email.presence || user.truncated_solana || "No email or wallet" %>
+                      <%= user.email.presence || "No email" %>
                     </div>
                   </div>
                 </div>
@@ -79,9 +79,6 @@
                   <% end %>
                   <% if user.google_connected? %>
                     <span class="px-2 py-0.5 rounded bg-surface-alt text-xs text-secondary">google</span>
-                  <% end %>
-                  <% if user.solana_connected? %>
-                    <span class="px-2 py-0.5 rounded bg-surface-alt text-xs text-secondary">wallet</span>
                   <% end %>
                 </div>
               </td>

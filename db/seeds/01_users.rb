@@ -1,7 +1,7 @@
-# Core users. Each can authenticate via email (magic-link) / Google AND, where a
-# wallet is set, via Solana (Phantom) — all resolving to the SAME user. Keep the
-# durable operator list on User::PARKED_IDENTITIES so login, seeds, and future
-# app bootstrap workflows share the same identity contract.
+# Core users. Each authenticates via email (magic-link) or Google, both resolving
+# to the SAME user. Keep the durable operator list on User::PARKED_IDENTITIES so
+# login, seeds, and future app bootstrap workflows share the same identity
+# contract.
 
 # An identity that CHANGED ADDRESS has to be carried over before anything is
 # created, or the seed simply makes a second account and leaves the first one
@@ -15,7 +15,7 @@ User::RETIRED_EMAILS.each do |old_email, new_email|
 
   if User.where(email: new_email).where.not(id: stale.id).exists?
     # BOTH rows exist — someone signed in at the new address first. Merging two
-    # accounts is the operator's call (wallets, sessions and slugs on both sides),
+    # accounts is the operator's call (sessions and slugs on both sides),
     # but the stale row does not get to sit on admin while they make it. Same move
     # as RenameTurfHouseIdentity, which is the point: the two carriers must not
     # disagree about what a half-moved identity is allowed to keep.
@@ -33,7 +33,7 @@ end
 
 # A NAME the roster planted and has since changed is the other thing the roster
 # cannot fix by itself: `assign_parked_identity` fills a blank name and never
-# overwrites one, and the enforcement below covers role and wallet but not name.
+# overwrites one, and the enforcement below covers role but not name.
 # So rewrite exactly the value the roster put there, and leave any other name
 # alone — it belongs to whoever typed it. Deployed rows are carried by
 # RenameTurfHouseIdentity; this is the same move for the databases a re-seed owns.
@@ -49,14 +49,10 @@ User::RETIRED_NAMES.each do |email, old_name|
   puts "  ↪ renamed #{email} from #{old_name.inspect} to #{identity[:name].inspect}"
 end
 
-users_data = User::PARKED_IDENTITIES.map do |identity|
-  identity.merge(solana_address: identity[:wallet])
-end
-
-users_data.each do |data|
+User::PARKED_IDENTITIES.each do |data|
   user = User.find_or_create_by!(email: data[:email]) do |u|
     u.name = data[:name]
-    # Login is passwordless (magic-link/Google/wallet); the password exists only
+    # Login is passwordless (magic-link/Google); the password exists only
     # as a dev/e2e convenience. NEVER plant the weak literal on prod — a random
     # digest there means a prod re-seed can't introduce a guessable credential.
     u.password = Rails.env.production? ? SecureRandom.hex(24) : "password"
@@ -70,24 +66,5 @@ users_data.each do |data|
   # this, a re-seed would never promote it.)
   user.update!(role: data[:role]) if user.role != data[:role]
 
-  # Link the wallet idempotently — also backfills an existing row so the account
-  # can auth via Solana OR email. Re-runs are no-ops.
-  if data[:solana_address].present? && user.solana_address != data[:solana_address]
-    other = User.where.not(id: user.id).find_by(solana_address: data[:solana_address])
-    if other.nil?
-      user.update!(solana_address: data[:solana_address])
-    elsif other.email.blank? && !other.google_connected?
-      # Thin wallet-only orphan: a Solana login created a fresh account before the
-      # wallet was associated with this person. Transfer the wallet to the
-      # canonical user + remove the orphan (mirrors turf's account-merge on overlap).
-      other.destroy!
-      user.update!(solana_address: data[:solana_address])
-      puts "  ↪ merged orphan wallet-only user ##{other.id} into #{user.email}"
-    else
-      puts "  ! #{data[:solana_address][0, 6]}… already on real account ##{other.id} (#{other.email}); leaving #{user.email} unlinked"
-    end
-  end
-
-  wallet = user.solana_address ? " wallet=#{user.solana_address[0, 4]}…#{user.solana_address[-4, 4]}" : ""
-  puts "User: #{user.email} (#{user.role})#{wallet}"
+  puts "User: #{user.email} (#{user.role})"
 end

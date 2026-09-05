@@ -79,13 +79,19 @@ class StudioLinkTest < ActionDispatch::IntegrationTest
     assert_nil session[Studio.session_key]
   end
 
-  test "consuming a magic link stores the solana address for sso awareness" do
+  # The engine still WRITES this key on every sign-in — error_handling.rb:59 does
+  # `session[:sso_wallet] = Studio.user_wallet_address(user)` unconditionally — so
+  # the drop does not remove the write, it empties it. Asserting nil rather than
+  # deleting the test keeps a guard on the thing that could silently come back:
+  # re-adding `config.wallet_address_method`, or a User growing a `wallet_address`
+  # method, would refill this session key with nothing else complaining.
+  test "consuming a magic link leaves the sso wallet key empty" do
     user = users(:alex)
-    user.update!(solana_address: "Wa11etAddressBase58Example1111111111111111")
 
     post link_consume_path(token: Studio::Link.create_magic_link(email: user.email).token)
 
-    assert_equal user.solana_address, session[:sso_wallet]
+    assert_nil session[:sso_wallet],
+               "the hub holds no wallet address, so sign-in must put none in the session"
   end
 
   test "garbage token is friendly + inert on both verbs" do
