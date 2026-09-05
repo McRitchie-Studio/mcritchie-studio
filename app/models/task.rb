@@ -2621,7 +2621,13 @@ class Task < ApplicationRecord
 
     claim = build_claim_save?
     named = (builder_to_stamp if claim)
-    soul = named || prior_devops["built_by"].to_s.strip.presence
+    # A REVIEWER WHO TAKES THE BUILD IS AN AUTHOR, NEVER THE CURRENT BUILDER. `named`
+    # still joins the author set below (over-counting an author over-EXCLUDES, which
+    # refuses rather than seats) but it must not reach built_by: a reviewer recorded
+    # as the builder of the PR he is reviewing is the same defect fully inverted, and
+    # a confidently-wrong author set is worse than a refusing one.
+    soul = (named unless reviewer_taking_the_build?(named)) ||
+           prior_devops["built_by"].to_s.strip.presence
     authors, unattributed = builder_roll_call(claim, named, soul)
 
     return if soul.nil? && authors.empty? && unattributed.nil?
@@ -2802,16 +2808,42 @@ class Task < ApplicationRecord
   # A block! lands on `building` too but is NOT a build claim: the blocker is not
   # the builder (detected by blocked_at being set in this same save).
   #
-  # Neither is any OTHER write from the session that is REVIEWING this task
-  # (#reviewing_party_claim?). The block itself was always exempt; the writes that
+  # Neither is the AUTOMATIC write from the session that is REVIEWING this task
+  # (#reviewing_party_renewal?). The block itself was always exempt; the writes that
   # FOLLOW it were not, and one of them is automatic — see that method.
   def build_claim_save?
     return false unless stage == "building"
     return false if will_save_change_to_blocked_at? && blocked_at.present?
-    return false if reviewing_party_claim?
+    return false if reviewing_party_renewal?
     return true if will_save_change_to_stage?
 
     claim_lease_rewritten?
+  end
+
+  # The reviewing session's write that CLAIMS NOTHING — the only one this seam may
+  # swallow.
+  #
+  # #reviewing_party_claim? on its own was too wide. It answers "is this write from
+  # the session reviewing this task", and suppressing on that alone also swallowed a
+  # write that NAMES A SOUL — which is never the automatic heartbeat (that PATCH
+  # carries a `devops` slice and no `event` at all, so Current.task_event_actor is
+  # nil) and always a deliberate `bin/task move <slug> building --actor <soul>`.
+  #
+  # THAT WRITE IS ON THE DOCUMENTED PATH, and dropping it was silent. `bin/reviewer-
+  # select` (:441), bin/lib/review_claim_cli.rb (:690) and pr-review-sop.md (:136)
+  # all prescribe exactly that command to a REVIEWER, to repair a wrong or missing
+  # author stamp — and a reviewer runs it while holding the review claim, because
+  # that is the moment he is looking at the refusal. The repair therefore no-op'd at
+  # exit 0 and the next round refused again.
+  #
+  # So the rule is stated over the WRITE, not the writer: a claim that names a soul
+  # is an assertion of authorship and is recorded; one that names nobody is a
+  # liveness ping and is not. The reviewer who names HIMSELF is still recorded — as
+  # an AUTHOR only, never as built_by (see #reviewer_taking_the_build?).
+  def reviewing_party_renewal?
+    return false if self.class.soul?(Current.task_event_actor.to_s.strip)
+
+    reviewing_party_claim?
   end
 
   # THE SEAM BETWEEN A REVIEW WRITE AND A BUILD WRITE — true when the session
@@ -2849,10 +2881,13 @@ class Task < ApplicationRecord
   # reaching the API directly is judged the same way.
   #
   # Suppressing the whole claim — not merely the unattributed branch — is
-  # deliberate. #builder_to_stamp rule 1 re-points `built_by` to an explicit soul
-  # actor, so a reviewer write carrying `--agent carl` would otherwise record CARL
-  # as the builder of a PR he reviewed: the same defect fully inverted, and a
-  # confidently-wrong author set is worse than a refusing one.
+  # deliberate for the write this covers. #builder_to_stamp rule 1 re-points
+  # `built_by` to an explicit soul actor, so a reviewer write carrying `--agent carl`
+  # would otherwise record CARL as the builder of a PR he reviewed: the same defect
+  # fully inverted, and a confidently-wrong author set is worse than a refusing one.
+  # That re-point is now blocked at its OWN seam (#reviewer_taking_the_build?), which
+  # is what let this one narrow to the UNNAMED write (#reviewing_party_renewal?) and
+  # stop swallowing the documented `move building --actor <soul>` repair.
   #
   # Any lookup failure (no table yet, DB trouble) answers false — the pre-existing
   # behaviour, which fails CLOSED for review selection.
@@ -2863,15 +2898,67 @@ class Task < ApplicationRecord
   # writes that happen minutes later. One indexed read (task_slug is unique) per
   # save of a `building` task is the cheaper mistake.
   def reviewing_party_claim?
+    live_reviewing_party_claim.present?
+  end
+
+  # The task's live TaskReviewClaim WHEN the session named in the INCOMING claim is
+  # the one holding it — nil otherwise, and nil on any lookup failure (fails CLOSED
+  # for review selection, the pre-existing posture). The ROW, not a boolean, because
+  # #reviewer_taking_the_build? needs the holder's soul off it.
+  #
+  # Not memoized, for the reason stated above: a review claim is acquired and released
+  # between the many saves one Task instance takes. At most ONE indexed read
+  # (task_slug is unique) per save of a `building` task — #reviewing_party_renewal?
+  # short-circuits on the soul actor BEFORE reaching here, so the two callers never
+  # both pay.
+  def live_reviewing_party_claim
     current = metadata.is_a?(Hash) ? (metadata["devops"] || {}) : {}
     session = current["claimed_session"].to_s.strip
-    return false if session.empty?
+    return nil if session.empty?
 
     review = TaskReviewClaim.find_by(task_slug: slug)
-    review.present? && review.live? && review.claimed_session.to_s.strip == session
+    return nil unless review.present? && review.live? &&
+                      review.claimed_session.to_s.strip == session
+
+    review
   rescue StandardError => e
     Rails.logger.warn("[builder-stamp] review-claim lookup failed for #{slug}: #{e.class}: #{e.message}")
-    false
+    nil
+  end
+
+  # True when the soul this save names as the builder is the very soul holding this
+  # task's LIVE review claim — a reviewer taking the build of the PR he is reviewing.
+  #
+  # It is narrow by construction: the same SESSION must hold the review claim and
+  # claim the build inside ClaimLease::DEFAULT_TTL_SECONDS, which the SOP forbids
+  # outright (reviewers release on the verdict). But narrow is not impossible, and the
+  # previous shape handled it the one way that must never happen — the whole claim was
+  # dropped, so the session was recorded NEITHER as a builder NOR as an unattributed
+  # one, the author set came out confidently short, and nothing anywhere said so.
+  #
+  # It is RECORDED instead: as an AUTHOR (#builder_roll_call folds `named` into
+  # devops.builders) and never as devops.built_by. That direction is the safe one — an
+  # author over-counted is an author over-EXCLUDED, and Carl yields even the standing
+  # primary seat to the no-self-review rule, so the worst outcome is a pool too small
+  # to seat, which refuses loudly, rather than a soul silently seated on his own diff.
+  # TaskReviewClaim.self_review? cannot be leaned on to prevent any of this: it answers
+  # false on a blank reviewer slug or an unstamped task, which is exactly where the
+  # author set is empty.
+  #
+  # The warning is the other half of "loud". The board record is what a human reads;
+  # this is what the log carries when someone asks why built_by did not move.
+  def reviewer_taking_the_build?(named)
+    return false unless self.class.soul?(named)
+
+    holder = live_reviewing_party_claim&.holder_agent.to_s.strip
+    return false unless holder.casecmp?(named.to_s.strip)
+
+    Rails.logger.warn(
+      "[builder-stamp] #{slug}: #{holder} holds this task's live REVIEW claim and claimed " \
+      "the build. Recorded as an AUTHOR (devops.builders); devops.built_by left alone. " \
+      "Release the review first: bin/task review-claim release #{slug}"
+    )
+    true
   end
 
   # True when this save writes a claim lease that differs from the stored one — a

@@ -109,7 +109,8 @@ Avi supervisor. Carl:
    had written every test on the diff — and this command duly seated Alex as the
    light on Alex's own PR (#1081). The exclusion now reads `devops.builders`, the
    server-owned set stamped on every build claim AND on the submit, unioned with
-   `built_by` and every `→ building` event actor.
+   `built_by` and every `→ building` event actor **that is a build claim** — a rework
+   bounce lands the task on `building` too, and that actor is you (see below).
 
    **The author is not always the claimer.** A session limit kills the claimer with
    nothing committed and another soul writes and ships the whole diff — the standard
