@@ -3,27 +3,83 @@ class User < ApplicationRecord
 
   # Stable operator identities whose roles and wallet/email links should survive
   # fresh DBs, first-login races, QA resets, and new-app clones of this pattern.
+  #
+  # THE ADMIN LINE IS WHAT THIS LIST IS FOR. Three seats hold admin — the
+  # operator, the shared team account, and the super-admin lane — and everyone
+  # else is a viewer. Mason and the Turf Monster house account were admins until
+  # 2026-09-04; demoting them is what makes admin-only pages, member-facing copy
+  # and anything branching on a role have more than one answer available here.
   PARKED_IDENTITIES = [
-    { email: "alex@mcritchie.studio",  name: "Alex McRitchie",        role: "admin", wallet: "7ZDJp7FUHhuceAqcW9CHe81hCiaMTjgWAXfprBM59Tcr" },
-    { email: "team@mcritchie.studio",  name: "McRitchie Studio Team", role: "admin", wallet: "8K81w4e6UcB7TiANhM9N8sAgijJvTxxybRi8AENRaRYd" },
-    { email: "mason@mcritchie.studio", name: "Mason McRitchie",       role: "admin", wallet: "CytJS23p1zCM2wvUUngiDePtbMB484ebD7bK4nDqWjrR" },
-    # THE NON-ADMIN. Every other parked identity is an admin, so nothing in this
-    # app could be looked at or tested as an ordinary member — admin-only pages,
-    # member-facing copy and anything branching on a role each had exactly one
-    # answer available locally.
-    #
+    { email: "alex@mcritchie.studio",  name: "Alex McRitchie",  role: "admin",  wallet: "7ZDJp7FUHhuceAqcW9CHe81hCiaMTjgWAXfprBM59Tcr" },
+    { email: "team@mcritchie.studio",  name: "Team McRitchie",  role: "admin",  wallet: "8K81w4e6UcB7TiANhM9N8sAgijJvTxxybRi8AENRaRYd" },
+    # THE SUPER-ADMIN LANE, wallet-less on purpose. admin@mcritchie.studio is the
+    # top-of-stack Google credential the Steffon and Alex agents sign in with
+    # (1Password `google.studio.admin`, vault `studio-agents-admin`). It is an
+    # operator SEAT rather than a person, so it holds no funds and signs nothing
+    # on-chain — giving it a wallet would put the highest-privilege login on the
+    # same key as a spending account.
+    { email: "admin@mcritchie.studio", name: "Admin McRitchie", role: "admin" },
+    { email: "mason@mcritchie.studio", name: "Mason McRitchie", role: "viewer", wallet: "CytJS23p1zCM2wvUUngiDePtbMB484ebD7bK4nDqWjrR" },
     # Mack rather than an invented account: he is already the non-admin in
-    # turf-monster, so one person means the same thing in both apps instead of
-    # each growing its own stand-in. (The role VALUES differ — this app has no
-    # "user" role; its default is "viewer" — so only the meaning is shared.)
+    # turf-monster and mcritchie-industries, so one person means the same thing
+    # in all three apps instead of each growing its own stand-in. (The role
+    # VALUES differ — this app has no "user" role; its default is "viewer" — so
+    # only the meaning is shared.)
     #
     # He keeps his name. An earlier draft of this task wanted a NAMELESS member
     # so the email manager could preview what someone with no name on file
     # receives; stripping a real person's name to serve a preview is the wrong
     # trade, and that preview is now a sample recipient in the engine instead.
-    { email: "mack@mcritchie.studio",  name: "Mack McRitchie",        role: "viewer" },
-    { email: "turf@mcritchie.studio",  name: "Turf Monster",          role: "admin" }
+    { email: "mack@mcritchie.studio",  name: "Mack McRitchie",  role: "viewer" },
+    # THE TURF HOUSE ACCOUNT, now on Turf's own domain. It moved off
+    # turf@mcritchie.studio on 2026-09-04: that address was a forwarding GROUP
+    # with zero members, and team@turfmonster.media is a real Google user
+    # (1Password `google.turf.agents`). A viewer here — Turf Monster is an admin
+    # in its OWN app, and nothing about running that app needs the hub's admin
+    # surface. RETIRED_EMAILS is how the rows already sitting on the old address
+    # follow it.
+    { email: "team@turfmonster.media", name: "Turf Monster",    role: "viewer" }
   ].freeze
+
+  # Addresses a parked identity has MOVED OFF, old => new.
+  #
+  # A role demotion reaches an existing row on its next SAVE, because
+  # `assign_parked_identity` re-reads the roster by email. Do not read that as
+  # "deployed rows converge on their own" — nothing in a release saves them, so
+  # the demotion waits for a sign-in that a shared house account may never get.
+  # (mack@mcritchie.studio sat in production as an admin for twenty-one days after
+  # the roster made him a viewer.) An EMAIL change cannot even do that much:
+  # the old row stops matching any parked identity at all, so it keeps whatever
+  # role it was last saved with — and turf@mcritchie.studio was last saved as an
+  # ADMIN whose Google group is being deleted. That leftover is the whole reason
+  # this map exists: `db/seeds/01_users.rb` renames the old row before it creates
+  # anything, so a local, test or QA database converges on a re-seed instead of
+  # growing a second Turf account.
+  #
+  # Deployed rows are reached by a one-time data migration instead, and that
+  # migration deliberately SPELLS THE PAIR OUT rather than reading this constant.
+  # A migration is a historical record that must still run years from now against
+  # whatever this class has become; a constant is a live fact that gets renamed
+  # and deleted. Coupling the two makes a future rename break `db:migrate` on a
+  # fresh clone.
+  RETIRED_EMAILS = {
+    "turf@mcritchie.studio" => "team@turfmonster.media"
+  }.freeze
+
+  # Display NAMES the roster planted and has since changed, email => old name.
+  #
+  # The roster is authoritative for a name only while the row has none:
+  # `assign_parked_identity` fills a blank or "anon" name and never overwrites one,
+  # because a name someone edited is theirs. So changing a name in
+  # PARKED_IDENTITIES renames the literal and no account — which is how
+  # "McRitchie Studio Team" would have outlived its own rename. This map is the
+  # narrow exception: rewrite the name the ROSTER put there, and only that exact
+  # value. Same division of labour as RETIRED_EMAILS — the seed applies it to the
+  # databases a re-seed owns, and the data migration spells it out for deployed
+  # rows.
+  RETIRED_NAMES = {
+    "team@mcritchie.studio" => "McRitchie Studio Team"
+  }.freeze
 
   # Passwordless app: email auth is magic-link only, plus Google + Solana wallet.
   # has_secure_password stays as a DORMANT fallback (password_digest column) but
