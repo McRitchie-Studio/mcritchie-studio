@@ -9,9 +9,10 @@ require "test_helper"
 # the base template for every app; solana-studio + turf-monster is the web3
 # bolt-on. The hub therefore carries no wallet IDENTITY and no user-facing web3.
 #
-# Config and route-table shape only — no HTTP. The request-level half (the
-# sign-in page, and the admin signing console surviving on a magic-link session)
-# lives in test/integration/wallet_auth_dropped_test.rb.
+# Config and route-table shape only — no HTTP. The request-level half — now the
+# sign-in page alone, since the admin signing console it also covered was
+# deleted on 2026-09-04 (/tasks/retire-signing-console) — lives in
+# test/integration/wallet_auth_dropped_test.rb.
 class WalletAuthDeclarationTest < ActiveSupport::TestCase
   # Two of the three routes studio-engine draws behind
   # `Studio.auth_method?(:wallet)` (lib/studio.rb). The third is asserted apart —
