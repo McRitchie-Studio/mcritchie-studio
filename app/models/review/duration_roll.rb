@@ -83,8 +83,12 @@ module Review
   #     refreshes on a stage change (Task#refresh_testing_phases_after_change), on a
   #     TaskEvent, and — since 2026-09-05 — on a REVIEW GateRun landing
   #     (GateRun#refresh_task_testing_phases), which is what the Review span starts at.
-  #     Before that last trigger existed a gate run arriving after the stage move left
-  #     this reader serving a stale span.
+  #     Before that last trigger existed, a gate run arriving after the stage move left
+  #     this reader serving a stale span until an unrelated stage change rebuilt it.
+  #
+  # Both consequences were live on 2026-09-05: 19 of the 250 rows in the pool below
+  # carried a 0-second review span — an inverted window clamped by #seconds_between —
+  # averaged into the card as though those reviews had taken no time at all.
   #
   # DeploymentsBroadcaster.app_ladder re-renders this row on
   # saved_change_to_merged? || saved_change_to_stage? — precisely the write that lands a

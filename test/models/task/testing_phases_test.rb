@@ -472,9 +472,11 @@ class Task::TestingPhasesTest < ActiveSupport::TestCase
   # REVIEW THAT FOUND IT: recording PR #1220's own G2 lanes wrote a g2a_primary gate run
   # at 07:11:35Z against a `-> reviewed` transition at 07:09:46Z, inverting that task's
   # own review span. MEASURED on production 2026-09-05: 24 of 1,672 stored review spans
-  # were inverted (seconds clamped to 0 by #seconds_between), 20 of them sitting inside
-  # Review::DurationRoll's live 250-row candidate pool, where a 0-second "review" is
-  # averaged into the /deployments card as though it happened.
+  # were inverted (seconds clamped to 0 by #seconds_between), 19 of them sitting inside
+  # Review::DurationRoll's live 250-row candidate pool -- which is entirely version 2, so
+  # a 0-second "review" is being averaged into the /deployments card TODAY, as though it
+  # happened. That pool reads the jsonb directly with no version check, which is why this
+  # fix needs a post-deploy backfill and not just the VERSION bump.
 
   test "[unit] a review gate opened after the reviewed transition does not start the Review span" do
     # The headline regression. reviewed lands at +33m; the gate run opens at +40m.
@@ -579,7 +581,9 @@ class Task::TestingPhasesTest < ActiveSupport::TestCase
   test "[integration] a review gate landing after the stage move refreshes the stored review span" do
     # The staleness half. The projection refreshed on a stage change and on a TaskEvent,
     # but a GateRun is neither -- so a review lane opening after the task had already
-    # moved left the STORED span wrong (381 of 1,672 production rows on 2026-09-05).
+    # moved left the STORED span wrong until an unrelated later stage change rebuilt it
+    # (1 production task standing wrong when measured on 2026-09-05 — small today, and
+    # the hole reopens on every late gate, which is how PR #1220 inverted its own span).
     task = Task.create!(title: "Late Gate Refresh Probe")
     task.update!(stage: "building")
     task.update!(stage: "submitted")

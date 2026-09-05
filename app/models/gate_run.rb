@@ -90,9 +90,12 @@ class GateRun < ApplicationRecord
   # The Review span STARTS at a G2 gate run's started_at, but the projection only
   # refreshed on a stage change (Task#refresh_testing_phases_after_change) and on a
   # TaskEvent write — and a GateRun is neither. So a review lane opening after the task
-  # had already moved never refreshed the phase it feeds, and the stored span stayed a
-  # lie: 381 of 1,672 production review spans disagreed with a fresh recompute on
-  # 2026-09-05. Narrow BY DESIGN — REVIEW_GATE_KEYS are the only gates any phase reads,
+  # had already moved never refreshed the phase it feeds, and the stored span stayed a lie
+  # until some LATER stage change happened to rebuild it. Measured on production
+  # 2026-09-05 that is 1 task standing wrong right now — stated as measured rather than
+  # inflated, because the value here is forward-looking: it is the hole that reopens on
+  # every late gate, and a late gate is what inverted PR #1220's own review span.
+  # Narrow BY DESIGN — REVIEW_GATE_KEYS are the only gates any phase reads,
   # so g1_cert/dor writes must not pay for a recompute that cannot change an answer.
   # Best-effort like its neighbours: a projection failure never breaks the gate write.
   after_save_commit :refresh_task_testing_phases

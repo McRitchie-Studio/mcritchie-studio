@@ -18,25 +18,38 @@ class Task
   # got in VERSION 3, one phase over. #review_phase took the FIRST G2 gate run's
   # started_at as the start and the last `reviewed` transition as the finish with nothing
   # holding them in order, so a gate run opened AFTER the task was already `reviewed`
-  # started a window that had already closed. Measured on production 2026-09-05: 24 of
-  # 1,672 stored review spans were inverted (seconds clamped to 0 by #seconds_between),
-  # and re-resolving the start moves 25.
+  # started a window that had already closed. It was demonstrated by being CAUSED:
+  # recording PR #1220's own G2 lanes wrote a gate run 109s after that task's `reviewed`
+  # transition and inverted its own review span.
   #
-  # THIS BUMP ALONE IS NOT THE REPAIR, and that is the difference from VERSION 3. Every
-  # BUILD-span reader went through #cached_or_built, so the v3 bump invalidated them all.
-  # Review::DurationRoll reads `{phases,review}` DIRECTLY in SQL with no version check,
-  # so it would keep serving the stored lie after this deploy. On 2026-09-05, 20 of the
-  # 250 rows in its LIVE candidate pool were inverted — averaged in as 0-second reviews,
-  # dragging the /deployments review average down — against 0 of the build side's 232.
-  # So `rake tasks:backfill_testing_phases` runs post-deploy and is what actually
-  # rewrites the column; the bump only stops #cached_or_built serving a stale row first.
+  # MEASURED on production 2026-09-05: 24 of 1,672 stored review spans were inverted
+  # (seconds clamped to 0 by #seconds_between); re-resolving the start moves 25.
   #
-  # It also closes the STALENESS that let those rows sit wrong: the projection refreshed
-  # on a stage change (Task#refresh_testing_phases_after_change) and on a TaskEvent, but
-  # a GateRun is neither — so a review gate landing after the stage move never refreshed
-  # the phase it feeds. 381 of 1,672 stored review spans disagreed with a fresh recompute
-  # for that reason. GateRun now refreshes the parent task's phases when a REVIEW gate
-  # lands (GateRun#refresh_task_testing_phases).
+  # THE BUMP ALONE IS NOT THE REPAIR, and that is the difference from VERSION 3. Every
+  # BUILD-span reader went through #cached_or_built, so the v3 bump invalidated them all,
+  # and 0 of that fix's 232 rows were in a live pool. Review::DurationRoll reads
+  # `{phases,review}` DIRECTLY in SQL with no version check, so it would keep serving the
+  # stored lie after this deploy: 19 of the 250 rows in its LIVE candidate pool carry a
+  # 0-second review, averaged into the /deployments card as though it happened. That pool
+  # is ENTIRELY version 2 — this is live corruption of a current number, not old debt. So
+  # `rake tasks:backfill_testing_phases` runs post-deploy and is what actually rewrites
+  # the column; the bump only stops #cached_or_built serving a stale row in the meantime.
+  #
+  # THE SECOND HALF is the staleness that let a wrong span sit there: the projection
+  # refreshed on a stage change (Task#refresh_testing_phases_after_change) and on a
+  # TaskEvent, but a GateRun is NEITHER — so a review gate landing after the stage move
+  # never refreshed the phase it feeds. GateRun now does
+  # (GateRun#refresh_task_testing_phases). Its measured footprint TODAY is 1 row, and the
+  # honest reading of that 1 is forward-looking rather than dismissive: it is the hole
+  # that reopens on every late gate, and a late gate is exactly what produced this defect.
+  #
+  # NOT TO BE CONFUSED WITH THE 380. A separate 380 stored review spans disagree with a
+  # fresh recompute, and 379 of them are stamped testing_phases_version = 1 — rows that
+  # never rode a backfill through the v1→v2 review redefinition (232 read
+  # `transition/completed → intent/completed`, 141 `transition/missing → gate_run/missing`).
+  # That is PRE-EXISTING debt, not this bug, and it currently sits outside DurationRoll's
+  # pool. The post-deploy backfill clears it in the same pass; it is recorded here so the
+  # next reader does not re-attribute those 379 rows to the ordering guard.
   #
   # VERSION 3 (2026-09-05): the Build span no longer starts at a BLOCK. Task#block!
   # bounces a task back onto `building`, and #build_phase took the last such transition
