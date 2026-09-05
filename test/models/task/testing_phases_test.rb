@@ -22,6 +22,15 @@ class Task::TestingPhasesTest < ActiveSupport::TestCase
                              metadata: status ? { "status" => status } : {})
   end
 
+  # A block bounce: Task#block! lands the task back on `building`, so the event is a
+  # `-> building` TRANSITION whose actor is the BLOCKER, carrying the `blocked` marker
+  # TaskEvent#block_transition? reads.
+  def add_block(task, at:, actor: "carl")
+    task.task_events.create!(kind: "transition", from_stage: "submitted", to_stage: "building",
+                             occurred_at: at, seconds_in_from: nil, source: "test",
+                             actor: actor, metadata: { "blocked" => true, "block_kind" => "rework" })
+  end
+
   def add_ci_action(task, event_slug:, at:, duration_ms: 60_000)
     AgentAction.create!(session_id: "sess-ci-probe", kind: "test_scope", event_slug: event_slug,
                         result_slug: "pass", task_slug: task.slug, occurred_at: at,
@@ -292,5 +301,168 @@ class Task::TestingPhasesTest < ActiveSupport::TestCase
     assert_equal Task::TestingPhases::VERSION, reloaded.testing_phases_version
     assert_equal "completed", reloaded.testing_phases.dig("phases", "review", "status"),
                  "the persisted projection round-trips through the DB"
+  end
+
+  # ---- block bounces must not become the Build span's START ---------------------
+  #
+  # MEASURED on production 2026-09-05: 322 tasks carry a post-`designed` `-> building`
+  # transition, and 238 of them (14% of the whole board) had a STORED build span whose
+  # start was AFTER its finish, seconds clamped to 0 by the `[x, 0].max` in
+  # #seconds_between. The remaining 84 are the tasks with no cert checkpoint: those are
+  # not inverted, they are silently WORSE -- the span measures the rework window and
+  # calls it Build. Two damage shapes, and only one of them is visible as an inversion.
+
+  test "[unit] a block bounce does not become the Build span's start" do
+    # The headline: bounce AFTER the cert ran. finish (first cert start) sits BEFORE the
+    # block, so the unfixed reader pairs a later start with an earlier finish.
+    task = probe_task
+    add_block(task, at: @anchor + 40.minutes)
+    add_event(task, kind: "transition", to_stage: "submitted", at: @anchor + 50.minutes)
+
+    build = Task::TestingPhases.build(task).dig("phases", "build")
+
+    assert_equal 600, build["seconds"], "build claim -> first cert start, unchanged by the bounce"
+    assert_equal (@anchor).iso8601, build["started_at"], "the START is the builder's claim, not the block"
+    assert_operator Time.zone.parse(build["started_at"]), :<=, Time.zone.parse(build["completed_at"]),
+                    "a span must never start after it finishes"
+  end
+
+  test "[unit] a block bounce with no cert checkpoint still starts at the build claim" do
+    # The 84-task shape. With no cert, finish falls back to the LAST `-> submitted`,
+    # which sits AFTER the block -- so the span is not inverted and the ordering guard
+    # alone cannot see anything wrong. Only the `blocked` marker separates them.
+    task = Task.create!(title: "Uncertified Bounce Probe")
+    anchor = 60.minutes.ago
+    add_event(task, kind: "transition", to_stage: "building",  at: anchor)
+    add_event(task, kind: "transition", to_stage: "submitted", at: anchor + 20.minutes)
+    add_block(task, at: anchor + 30.minutes)
+    add_event(task, kind: "transition", to_stage: "submitted", at: anchor + 45.minutes)
+
+    build = Task::TestingPhases.build(task).dig("phases", "build")
+
+    assert_equal anchor.iso8601, build["started_at"], "the builder's claim, not the blocker's bounce"
+    assert_equal 45.minutes.to_i, build["seconds"], "claim -> the resubmission that closed the build"
+  end
+
+  test "[unit] an UNMARKED post-finish -> building transition is still not the start" do
+    # Every one of the 238 corrupted rows predates the `blocked` marker (PR #1214), so
+    # block_transition? answers false for all of them and the marker filter alone repairs
+    # NOTHING historical. The ordering guard is what reaches them: an event that lands
+    # after the span already finished cannot be that span's start, whatever wrote it.
+    task = probe_task
+    task.task_events.create!(kind: "transition", from_stage: "submitted", to_stage: "building",
+                             occurred_at: @anchor + 40.minutes, seconds_in_from: nil,
+                             source: "test", actor: "carl", metadata: {})
+    add_event(task, kind: "transition", to_stage: "submitted", at: @anchor + 50.minutes)
+
+    build = Task::TestingPhases.build(task).dig("phases", "build")
+
+    assert_equal 600, build["seconds"], "legacy bounce, no marker -- the ordering guard still holds"
+    assert_equal (@anchor).iso8601, build["started_at"]
+  end
+
+  test "[unit] the ordinary build claim is still the Build span's start" do
+    # The over-broad direction. A filter that rejected EVERY `-> building` event passes
+    # every assertion above and destroys the ordinary path for all 1,668 tasks.
+    build = Task::TestingPhases.build(probe_task).dig("phases", "build")
+
+    assert_equal "completed", build["status"], "no bounce in the trail: the claim still starts the span"
+    assert_equal 600, build["seconds"]
+    assert_equal (@anchor).iso8601, build["started_at"]
+  end
+
+  test "[unit] a builder re-claim after the bounce wins over the earlier claim" do
+    # A genuine `-> building` transition recorded AFTER a block (a second builder taking
+    # the desk while the task sits in the build lane) is a claim, not a block: it carries
+    # no marker and it precedes the finish, so both guards pass it through.
+    task = Task.create!(title: "Reclaim After Bounce Probe")
+    anchor = 90.minutes.ago
+    add_event(task, kind: "transition", to_stage: "building",  at: anchor)
+    add_event(task, kind: "transition", to_stage: "submitted", at: anchor + 10.minutes)
+    add_block(task, at: anchor + 20.minutes)
+    task.task_events.create!(kind: "transition", from_stage: "designed", to_stage: "building",
+                             occurred_at: anchor + 30.minutes, seconds_in_from: nil,
+                             source: "test", actor: "shannon", metadata: {})
+    add_event(task, kind: "checkpoint", to_stage: "cert", status: "started", at: anchor + 50.minutes)
+
+    build = Task::TestingPhases.build(task).dig("phases", "build")
+
+    assert_equal (anchor + 30.minutes).iso8601, build["started_at"], "the LAST real claim before the finish"
+    assert_equal 20.minutes.to_i, build["seconds"]
+  end
+
+  test "[integration] a real Task#block! bounce leaves a non-inverted stored span" do
+    # End to end through the real writers: Task#block! writes the `-> building`
+    # transition and its `blocked` marker, and the TaskEvent after_create_commit
+    # refreshes the stored projection. The COLUMN is what 238 tasks are carrying.
+    base = Time.zone.local(2026, 6, 22, 9, 0, 0)
+    task = travel_to(base) { Task.create!(title: "Bounce Persistence Probe") }
+    travel_to(base + 1.minute)  { task.update!(stage: "building") }
+    travel_to(base + 11.minutes) { task.record_checkpoint_event(name: "cert", status: "started") }
+    travel_to(base + 16.minutes) { task.record_checkpoint_event(name: "cert", status: "completed") }
+    travel_to(base + 20.minutes) { task.update!(stage: "submitted") }
+    travel_to(base + 40.minutes) { task.block!(by: "carl", kind: "rework") }
+
+    bounce = task.task_events.transitions.chronological.last
+    assert_equal "building", bounce.to_stage
+    assert bounce.block_transition?, "Task#block! must stamp the marker this fix reads"
+
+    travel_to(base + 55.minutes) { task.update!(stage: "submitted") }
+    stored = Task.find_by!(slug: task.slug).testing_phases.dig("phases", "build")
+
+    assert_equal "completed", stored["status"]
+    assert_operator Time.zone.parse(stored["started_at"]), :<=, Time.zone.parse(stored["completed_at"]),
+                    "the STORED span is what the board reads; it must not be inverted"
+    refute_equal bounce.occurred_at.iso8601, stored["started_at"], "the blocker's bounce is not the build start"
+    assert_equal 600, stored["seconds"], "build claim -> first cert start, measured across the bounce"
+  end
+
+  test "[integration] a stale stored projection is rebuilt rather than served" do
+    # Criterion 3. Every one of the 238 corrupted rows was written by the OLD reader and
+    # is not repaired by fixing the reader. The VERSION bump is the invalidation: a row
+    # stamped at an older version is ignored on read and rebuilt, and backfill! rewrites
+    # the column so the direct-SQL readers (Review::DurationRoll) see repaired data too.
+    task = probe_task
+    add_block(task, at: @anchor + 40.minutes)
+    add_event(task, kind: "transition", to_stage: "submitted", at: @anchor + 50.minutes)
+    corrupt = { "cache_version" => Task::TestingPhases::VERSION - 1, "cached_at" => @anchor.iso8601,
+                "phases" => { "build" => { "status" => "completed", "seconds" => 0,
+                                           "started_at" => (@anchor + 40.minutes).iso8601,
+                                           "completed_at" => (@anchor + 10.minutes).iso8601,
+                                           "source" => "transition" } } }
+    task.update_columns(testing_phases: corrupt, # rubocop:disable Rails/SkipsModelValidations
+                        testing_phases_version: Task::TestingPhases::VERSION - 1)
+
+    served = Task::TestingPhases.cached_or_built(Task.find_by!(slug: task.slug))
+    assert_equal 600, served.dig("phases", "build", "seconds"), "a stale row is rebuilt, never served"
+
+    Task::TestingPhases.backfill!
+    rewritten = Task.find_by!(slug: task.slug)
+    assert_equal Task::TestingPhases::VERSION, rewritten.testing_phases_version
+    assert_equal 600, rewritten.testing_phases.dig("phases", "build", "seconds"),
+                 "backfill repairs the COLUMN, not just the read"
+  end
+
+  test "[unit] a projection stamped at cache_version 2 is never served" do
+    # The VERSION bump IS criterion 3's invalidation, and nothing else in the diff makes
+    # it load-bearing: all 238 corrupted production rows are stamped cache_version 2 --
+    # written by the reader that took a block as the build claim. Reverting the bump puts
+    # every one of them back on the board, silently, with a fixed reader sitting behind it.
+    task = probe_task
+    add_block(task, at: @anchor + 40.minutes)
+    add_event(task, kind: "transition", to_stage: "submitted", at: @anchor + 50.minutes)
+    task.update_columns( # rubocop:disable Rails/SkipsModelValidations
+      testing_phases: { "cache_version" => 2, "cached_at" => @anchor.iso8601,
+                        "phases" => { "build" => { "status" => "completed", "seconds" => 0,
+                                                   "started_at" => (@anchor + 40.minutes).iso8601,
+                                                   "completed_at" => (@anchor + 10.minutes).iso8601,
+                                                   "source" => "transition" } } },
+      testing_phases_version: 2
+    )
+
+    served = Task::TestingPhases.cached_or_built(Task.find_by!(slug: task.slug))
+
+    assert_operator Task::TestingPhases::VERSION, :>, 2, "the bump is what invalidates the corrupted rows"
+    assert_equal 600, served.dig("phases", "build", "seconds"), "a v2 row is rebuilt, never served"
   end
 end
