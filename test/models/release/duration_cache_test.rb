@@ -122,4 +122,69 @@ class Release::DurationCacheTest < ActiveSupport::TestCase
     assert_equal 20.minutes.to_i, dashboard.dig("averages", "stages", "building", "average_seconds")
     assert_empty newest.reload.duration_metrics, "dashboard fallback builds in memory; refresh task owns writes"
   end
+
+  # ---- a block bounce must not be recorded as WHO did the Building stage ---------
+  #
+  # `building` resolves its start intent-first, then falls back to the last
+  # `-> building` TRANSITION before the completion. MEASURED on production 2026-09-05:
+  # there are ZERO `intent -> building` rows in the entire ecosystem, so the intent
+  # branch never fires and EVERY task's Building stage takes the fallback. The
+  # qualification "only the fallback path is exposed" is true as written and total in
+  # practice -- the fixture above is the only place an intent-to-building has ever
+  # existed. That is why this test builds its trail without one.
+  def bounced_task(actor: "shannon", blocker: "carl")
+    release = Release.create!(slug: "rel-bounce", branch: "release", state: "shipped")
+    task = Task.create!(title: "bounce actor probe", stage: "shipped", release_slug: release.slug)
+    task.task_events.delete_all
+    anchor = Time.zone.parse("2026-06-29 10:00:00")
+    TaskEvent.create!(task_slug: task.slug, from_stage: "designed", to_stage: "building",
+                      occurred_at: anchor, actor: actor)
+    TaskEvent.create!(task_slug: task.slug, from_stage: "building", to_stage: "submitted",
+                      occurred_at: anchor + 20.minutes, actor: actor)
+    TaskEvent.create!(task_slug: task.slug, from_stage: "submitted", to_stage: "building",
+                      occurred_at: anchor + 30.minutes, actor: blocker,
+                      metadata: { "blocked" => true, "block_kind" => "rework" })
+    TaskEvent.create!(task_slug: task.slug, from_stage: "building", to_stage: "submitted",
+                      occurred_at: anchor + 50.minutes, actor: actor)
+    [release.reload, anchor]
+  end
+
+  test "the Building stage names the builder, not the blocker who bounced it" do
+    release, anchor = bounced_task
+
+    row = Release::DurationCache.build(release).dig("tasks", 0, "stages", "building")
+
+    assert_equal "shannon", row["actor"], "the blocker moved the card; the builder did the stage"
+    assert_equal anchor.iso8601, row["started_at"], "the build claim opens the stage"
+    assert_equal 50.minutes.to_i, row["seconds"]
+  end
+
+  test "an ordinary transition-fallback start is still the Building stage's start" do
+    # The over-broad direction: rejecting every `-> building` transition would leave the
+    # stage with no start at all on the majority of real tasks, which have no intent row.
+    release = Release.create!(slug: "rel-no-intent", branch: "release", state: "shipped")
+    task = Task.create!(title: "no intent probe", stage: "shipped", release_slug: release.slug)
+    task.task_events.delete_all
+    anchor = Time.zone.parse("2026-06-29 10:00:00")
+    TaskEvent.create!(task_slug: task.slug, from_stage: "designed", to_stage: "building",
+                      occurred_at: anchor, actor: "shannon")
+    TaskEvent.create!(task_slug: task.slug, from_stage: "building", to_stage: "submitted",
+                      occurred_at: anchor + 12.minutes, actor: "shannon")
+
+    row = Release::DurationCache.build(release.reload).dig("tasks", 0, "stages", "building")
+
+    assert_equal "transition_fallback", row["source"]
+    assert_equal "shannon", row["actor"]
+    assert_equal 12.minutes.to_i, row["seconds"], "the ordinary fallback path is untouched"
+  end
+
+  test "the intent path still outranks the transition fallback" do
+    release = create_release_with_task(slug: "rel-intent-wins", shipped_at: Time.zone.parse("2026-06-29 12:00:00"),
+                                       building_seconds: 20.minutes)
+
+    row = Release::DurationCache.build(release).dig("tasks", 0, "stages", "building")
+
+    assert_equal "intent", row["source"], "an intent, where one exists, still wins"
+    assert_equal "builder", row["actor"]
+  end
 end

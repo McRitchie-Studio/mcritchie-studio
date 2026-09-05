@@ -147,6 +147,18 @@ class TaskEvent < ApplicationRecord
   # inferring a block from `from_stage` alone would drop a genuine builder who
   # legitimately pulled a submitted task back — a fail-OPEN that could seat an
   # author on their own diff.
+  #
+  # CONSUMERS (2026-09-05): the author set (ReviewerSelector#builders) plus the two
+  # DURATION readers — Task::TestingPhases#last_build_claim and
+  # Release::DurationCache#stage_fallback_transition, which took a block's
+  # `→ building` as the start of the Build span and as the party who did the
+  # Building stage. The conservative direction above is right for the author set,
+  # where over-counting only over-excludes. It is NOT sufficient for a duration:
+  # an unmarked legacy bounce still inverted 238 of 1,668 production build spans.
+  # So TestingPhases pairs this marker with an ORDERING guard that needs no marker
+  # (an event after the span's finish cannot be its start), and reaches the legacy
+  # rows this predicate cannot see. Release::DurationCache has no such second
+  # signal, so its legacy bounces still name their blocker.
   def block_transition?
     metadata["blocked"] == true
   end

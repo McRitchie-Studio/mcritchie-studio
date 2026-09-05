@@ -14,6 +14,18 @@ class Task
   # (the devops approval_requested_at/approval_approved_at stamps remain — they just
   # no longer project as a phase window here).
   #
+  # VERSION 3 (2026-09-05): the Build span no longer starts at a BLOCK. Task#block!
+  # bounces a task back onto `building`, and #build_phase took the last such transition
+  # as the build claim — so a bounced task's Build window started after it finished (238
+  # of 1,668 production tasks, seconds clamped to 0) or silently measured the rework
+  # window instead (a further 84, with no cert checkpoint to invert against).
+  #
+  # The bump is deliberate and is the INVALIDATION for those stored rows: #cached_or_built
+  # ignores a row stamped at an older version and rebuilds it, so no reader can serve a
+  # corrupted span after deploy. `rake tasks:backfill_testing_phases` then rewrites the
+  # column itself — needed because Review::DurationRoll reads this jsonb DIRECTLY in SQL
+  # with no version check, so a read-time rebuild alone would leave the column a lie.
+  #
   # VERSION 2 (operator design session 2026-07-09): submitted != review-started — PR
   # submission and PR review are different nodes. Review now starts when review work
   # actually begins (G2 gate run, else review intent), and CI owns the submission
@@ -21,7 +33,7 @@ class Task
   # reviewer picking the task up is deliberately VISIBLE as the gap between the two
   # windows — that gap is the insight, not a bookkeeping hole.
   module TestingPhases
-    VERSION = 2
+    VERSION = 3
 
     PHASE_DEFINITIONS = {
       "build"               => { "label" => "Build" },
@@ -134,11 +146,15 @@ class Task
 
     # ---- per-phase derivations (each returns a span row) ----------------------
 
-    # Build = the `building` transition → the first cert-started checkpoint (else the
-    # `submitted` transition when no cert ran). Implementation + directional testing.
+    # Build = the build CLAIM → the first cert-started checkpoint (else the `submitted`
+    # transition when no cert ran). Implementation + directional testing.
+    #
+    # The finish is resolved FIRST because it bounds the start: #last_build_claim only
+    # considers claims at or before it. A `→ building` event landing after the span has
+    # already finished cannot be that span's start, whatever wrote it.
     def build_phase(events, now:)
-      start = last_transition_to(events, "building")
       finish = first_cert(events, "started") || last_transition_to(events, "submitted")
+      start = last_build_claim(events, before: finish&.occurred_at)
       span(start&.occurred_at, finish&.occurred_at, now: now, source: "transition")
     end
 
@@ -249,6 +265,34 @@ class Task
 
     def last_transition_to(events, stage)
       events.select { |e| e.transition? && e.to_stage == stage }.last
+    end
+
+    # The last `→ building` transition that is a BUILD CLAIM — the event the Build span
+    # actually starts at. Two independent guards, because a bounce damages the span in
+    # two different shapes and neither guard catches both:
+    #
+    #   1. #block_transition? — Task#block! lands a bounced task back on `building`, so a
+    #      rework block writes a `→ building` transition whose actor is the BLOCKER.
+    #      Taking it as the start makes the BLOCKER's bounce open the builder's window.
+    #      This is the only guard that reaches a bounce with NO cert checkpoint, where the
+    #      finish falls back to the LAST `→ submitted` — after the block, so the span is
+    #      not inverted, just silently measuring the rework and calling it Build. 84 tasks
+    #      on production carried exactly that shape on 2026-09-05.
+    #
+    #   2. `before:` — the ordering guard. Every row corrupted before the marker existed
+    #      (PR #1214) answers false to #block_transition?, so guard 1 repairs NOTHING
+    #      historical. 238 of 1,668 production tasks had a stored build span whose start
+    #      was AFTER its finish, seconds clamped to 0 by #seconds_between. Guard 2 reaches
+    #      all of them without having to guess WHY the event exists — and guessing is the
+    #      trap: inferring a block from `from_stage == "submitted"` alone would also drop
+    #      a genuine builder who legitimately pulled a submitted task back.
+    #
+    # A `→ building` transition recorded after a bounce and before the finish stays a
+    # claim: a second builder taking the desk is exactly that, and both guards pass it.
+    def last_build_claim(events, before: nil)
+      claims = events.select { |e| e.transition? && e.to_stage == "building" && !e.block_transition? }
+      claims = claims.select { |e| e.occurred_at <= before } if before
+      claims.last
     end
 
     def first_intent_to(events, stage)

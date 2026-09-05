@@ -212,8 +212,31 @@ class Release
       candidates.last
     end
 
+    # The transition that opens a stage when no intent recorded it. A BLOCK is never
+    # that transition: Task#block! bounces a task back onto `building`, so a rework block
+    # writes a `-> building` transition whose actor is the BLOCKER, and taking it here
+    # recorded the reviewer who sent the work back as the party who did the Building
+    # stage (`span_row(actor: start.actor)`).
+    #
+    # The reject is unconditional rather than scoped to the `building` fallback because
+    # `blocked` can only ever ride a `-> building` transition (Task#block_transition_metadata
+    # is keyed on blocked_at moving, and #block! always lands on `building`), so it is a
+    # no-op on the other three stages and stays correct if the marker's shape widens.
+    #
+    # SCOPE, measured on production 2026-09-05: this fallback is not the narrow path it
+    # reads as. There are ZERO `intent -> building` rows in the entire ecosystem -- an
+    # intent toward `building` is only recordable from `designed` (Task::NEXT_INTENT_STAGE)
+    # and nothing writes one -- so #stage_intent returns nil for EVERY task and the
+    # Building stage ALWAYS lands here. Only the duration-cache test fixture has ever
+    # produced one.
+    #
+    # Rows written before the marker existed (PR #1214) answer false, so a legacy bounce
+    # still names its blocker. Inferring a block from `from_stage` alone would drop a
+    # genuine builder who legitimately pulled a submitted task back, which is the worse
+    # error; see TaskEvent#block_transition?.
     def stage_fallback_transition(transitions, definition, before: nil)
-      candidates = transitions.select { |event| event.to_stage == definition.fetch("fallback_to") }
+      candidates = transitions.reject(&:block_transition?)
+                              .select { |event| event.to_stage == definition.fetch("fallback_to") }
       candidates = candidates.select { |event| event.occurred_at <= before } if before
       candidates.last
     end
