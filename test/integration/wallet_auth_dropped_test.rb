@@ -7,9 +7,12 @@ require "test_helper"
 # test/lib/wallet_auth_declaration_test.rb.
 #
 # The risk of this change was never the config line — it was the assumption that
-# the admin signing console rode on wallet sign-in. It does not: the console is
-# `require_admin` only and drives Phantom in the SIGNER'S OWN BROWSER, so the
-# server holds no key and reads no wallet session. Both halves are pinned here.
+# the admin signing console rode on wallet sign-in. It did not: the console was
+# `require_admin` only and drove Phantom in the SIGNER'S OWN BROWSER, so the
+# server held no key and read no wallet session. That console was DELETED on
+# 2026-09-04 (/tasks/retire-signing-console), so only the sign-in half still has
+# a subject here; the removal itself is pinned by
+# test/integration/signing_console_retired_test.rb.
 class WalletAuthDroppedTest < ActionDispatch::IntegrationTest
   test "the sign-in page paints no wallet CTA" do
     get signin_path

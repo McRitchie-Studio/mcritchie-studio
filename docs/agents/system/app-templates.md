@@ -169,15 +169,25 @@ individual wallets — which are the hub's own parked admin identities (Alex Bot
 `turf-vault/docs/CURRENT_DEPLOYMENT.md`). Two different authorities.
 
 **So the console did have one unique property, and it was removed knowingly.**
-Not "coordinates a rotation" — `turf-vault/docs/KEY_ROTATION.md` §5 already
-documents rotation without it, from a temp CLI keypair exported from Phantom —
-but **coordinating 2-of-3 without exporting a private key to disk at all**. That
-is a real property and the hub no longer has it. It was traded deliberately: the
-console had **zero** production signing requests (re-measured against prod on
-2026-09-04, not inherited from the freeze), and a browser-coordination tool
-belongs in the web3 app under this very decision. If a future signer rotation
-wants it, **build it in turf-monster** — that is not a reversal of this section,
-it is what this section says.
+Not "coordinates a rotation" but **coordinating a 2-of-3 `update_signers` with no
+cosigner exporting a private key to disk at all**. Be exact about what the
+alternative covers, because the obvious citation does not cover this:
+`turf-vault/docs/KEY_ROTATION.md` §5 is `initialize`, **not** `update_signers`.
+It re-inits a **new** program after the §3 redeploy, and it runs from a **single**
+key — the `INIT_AUTHORITY`, Alex's Phantom, exported to a temp CLI keypair.
+`update_signers` is the opposite case: two cosigners, on the program already
+deployed, and it exists precisely so that a signer change needs **no** redeploy.
+Until 2026-09-04 §5 recorded the rotation's continuity rule but not its
+mechanics; turf-vault's `document-signer-rotation-path` then added them, minutes
+after this section was written. §5 now names the signing path and reaches this
+section's conclusion independently: no script builds `update_signers` yet, both
+keys would leave Phantom to run one, and browser coordination is turf-monster's
+to build. The gap is documented at both ends; what the hub gave up is the tool
+that closed it. It was traded deliberately: the console had **zero** production
+signing requests (re-measured against prod on 2026-09-04, not inherited from the
+freeze), and a browser-coordination tool belongs in the web3 app under this very
+decision. If a future signer rotation wants it, **build it in turf-monster** —
+that is not a reversal of this section, it is what this section says.
 
 ### 3. The control that actually matters — and it is missing
 
@@ -319,8 +329,8 @@ browser-coordination tool is turf-monster's to build, not this one's to thaw.
   tier there and a template here.
 - [`../modules/app-registry.md`](../modules/app-registry.md) — the registry
   contract and the promotion lifecycle.
-- `turf-vault/docs/KEY_ROTATION.md` — how a signer rotation is actually
-  executed, now that the console is gone (§2b). Another repo, so no link.
+- `turf-vault/docs/KEY_ROTATION.md` — the compromise redeploy. Read §5 as
+  `initialize`, not `update_signers` (§2b). Another repo, so no link.
 - `docs/SIGNING_CONSOLE_V2.md` — **deleted 2026-09-04** with the console it
   described (§2b). Listed so a reader who finds the name in an older audit knows
   where it went: git history, not a moved path.

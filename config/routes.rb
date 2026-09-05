@@ -150,8 +150,9 @@ Rails.application.routes.draw do
     get   "model_pricing/*model", to: "model_pricing#show", as: :model_pricing_model, format: false
     patch "model_pricing/*model", to: "model_pricing#update", format: false
 
-    # Admin link hub — gathers every admin/operator destination (incl. the
-    # on-chain Signing Console). admin#links, require_admin. /admin/links.
+    # Admin link hub — gathers every admin/operator destination. It lists no
+    # on-chain destination: the signing console was deleted 2026-09-04
+    # (/tasks/retire-signing-console). admin#links, require_admin. /admin/links.
     get "links", to: "links#index", as: :links
     get "ai_builder_multiple", to: "ai_builder_multiple#index"
     get "ai_builder_multiple/commit_history", to: "ai_builder_multiple#commit_history", as: :ai_builder_multiple_commit_history
