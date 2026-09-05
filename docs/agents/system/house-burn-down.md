@@ -453,7 +453,7 @@ anchor build                                 # ~3-5 min on first build
 anchor test                                  # spins up local validator and runs the TS suite
 ```
 
-Current deployment facts drift quickly. Treat `turf-vault/docs/CURRENT_DEPLOYMENT.md` and `turf-monster/docs/SOLANA.md` as the source of truth for program IDs, clusters, and operator keys.
+Current deployment facts drift quickly. Treat `turf-vault/docs/CURRENT_DEPLOYMENT.md` and `turf-monster/docs/SOLANA.md` as the source of truth for program IDs and clusters. They are **not** a source for the mainnet `VaultState` signer set — `CURRENT_DEPLOYMENT.md` records signers only under `## Devnet`; read the live set on-chain.
 
 **Gotcha**: `anchor test` will fail with `ts-mocha: command not found` if you skip `yarn install`. The Anchor scaffold's test runner is JS, not Rust.
 
