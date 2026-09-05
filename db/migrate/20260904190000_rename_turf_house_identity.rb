@@ -117,12 +117,34 @@ class RenameTurfHouseIdentity < ActiveRecord::Migration[8.1]
     end
   end
 
+  # Carries the DERIVED HALVES with the rename. `users.first_name`/`last_name` are
+  # derived from `name` by `before_save :set_name_parts`, and this raw-SQL write
+  # skips it — so without this the row keeps the halves of the name it no longer
+  # has, and nothing self-heals them: the callback is gated on `name_changed?`, and
+  # after a write like this one no later save sees a name change. "McRitchie Studio
+  # Team" derives McRitchie/Team and "Team McRitchie" derives Team/McRitchie, so
+  # the fossil is not merely stale — it is the row's own name backwards.
+  #
+  # Derived INLINE rather than through `User.name_parts`, for the same reason this
+  # file spells the roster out: a migration must still run against whatever `User`
+  # has become years from now. `test/models/renamed_name_parts_test.rb` asserts the
+  # two copies still agree, which is the only day both exist.
   def rename(email, from:, to:)
+    first, last = name_parts(to)
     changed = update_rows(sanitize(
-                            "UPDATE users SET name = ?, updated_at = NOW() WHERE LOWER(email) = ? AND name = ?",
-                            to, email, from
+                            "UPDATE users SET name = ?, first_name = ?, last_name = COALESCE(?, last_name), " \
+                            "updated_at = NOW() WHERE LOWER(email) = ? AND name = ?",
+                            to, first, last, email, from
                           ))
     say "#{email} renamed #{from.inspect} -> #{to.inspect}" if changed.positive?
+  end
+
+  # First and last WORD, and `nil` for a last name a one-word name cannot supply —
+  # which the UPDATE above turns into "leave the column alone", matching what the
+  # callback does there (`self.last_name = parts.last if parts.size > 1`).
+  def name_parts(name)
+    words = name.to_s.strip.split(" ")
+    [words.first, (words.last if words.size > 1)]
   end
 
   def sanitize(sql, *binds) = ActiveRecord::Base.sanitize_sql_array([sql, *binds])
