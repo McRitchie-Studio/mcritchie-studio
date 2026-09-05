@@ -1799,10 +1799,27 @@ class DorCheckTest < Minitest::Test
     assert_match(/ready to advance/, out)
   end
 
-  # BLOCKER 1. solana-studio and turf-vault carry ZERO workflows on every branch, so
-  # a clean PR there resolves :none FOREVER — "defer until checks appear" is a wedge,
-  # not a remedy (the PR-#509 shape). A full cert is the only route, so it must work.
-  def test_a_full_cert_clears_the_no_verdict_family_for_a_repo_with_no_ci
+  # BLOCKER 1. A :none/:unverified verdict that never settles WEDGES the review — the
+  # PR-#509 shape — so a full cert must be a live route out of it on the gated path.
+  #
+  # THE OLD JUSTIFICATION HERE WAS FALSE, and it is the FOURTH copy of one premise:
+  # this comment used to read "solana-studio and turf-vault carry ZERO workflows on
+  # every branch, so a clean PR there resolves :none FOREVER". Re-derived at SOURCE
+  # 2026-09-05 with `gh api` against `origin` (not a local tree), on `accepted` AND
+  # `main`, identical blob SHAs, each a bare `pull_request:` with no path filters:
+  # solana-studio ships .github/workflows/gem-ci.yml and turf-vault ships
+  # .github/workflows/ci.yml. "No check will ever appear" is not a property of any repo
+  # in this ecosystem. When a check genuinely never arrives it is the PR's MERGE STATE,
+  # which ci_status.rb classifies as :conflicted or :ci_less — each with its own remedy
+  # and neither clearable by a cert. The other three copies were corrected in
+  # docs/agents/modules/gates/dor.md, pr-review-primary.md and bin/lib/ci_gate.rb; this
+  # one stayed live at head and is corrected with them
+  # (/tasks/exempt-refusal-prints-dead-remedy).
+  #
+  # THE TEST ITSELF IS UNCHANGED AND STILL RIGHT — only its stated reason was wrong.
+  # What it pins is the gated path's contract: the refusal names bin/full-suite-check,
+  # so the cert must advance it.
+  def test_a_full_cert_clears_the_no_verdict_family_on_the_gated_path
     %w[none unverified].each do |state|
       out, code = review_ci_check(state, evidence: FULL_CERT)
 
