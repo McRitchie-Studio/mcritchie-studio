@@ -494,9 +494,10 @@ class DorCheckExemptCiTest < Minitest::Test
 
         gated_refusal, = refusal(:gated, ci: state, evidence: FAST_CERT_ONLY, pr_files: pr_files)
         assert_includes gated_refusal, OFFERS_CERT,
-                        "the gated refusal must still name the cert it goes on to honour (#{label})"
+                        "the gated refusal must still name the cert that clears its CI verdict (#{label})"
         refute_includes gated_refusal, DENIES_CERT,
-                        "the gated path DOES honour a cert; denying it would be the mirror defect (#{label})"
+                        "a full cert DOES stand in for the gated path's unread CI verdict; denying it " \
+                        "would be the mirror defect (#{label})"
       end
     end
   end
