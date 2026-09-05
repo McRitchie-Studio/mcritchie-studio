@@ -526,8 +526,9 @@ module CiStatus
   #   bin/dor-check submit note true      — gated path suggestion; suppressed when the
   #                                         review allow-list already refused.
   #   bin/pr-review             COMPUTED  — cert_route: !maybe_exempt, so the pre-review
-  #                                         banner promises what the primary's gate-zero
-  #                                         will honour on that same PR.
+  #                                         banner promises about the CI VERDICT exactly
+  #                                         what the primary's gate-zero goes on to do
+  #                                         with a cert on that same PR.
   #   bin/release.rb G3 pre-QA  DEFAULT   — and it SHOULD NOT BE. The local-cert route
   #                                         was deliberately retired at G3 (CI's verdict
   #                                         for the release SHA is the gate; there is no

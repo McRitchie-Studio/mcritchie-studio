@@ -759,8 +759,10 @@ end
 # token refuses the PR file-list read AND the CI read, so :unreadable co-fires on both
 # and the two halves of one verdict disagreed
 # (/tasks/exempt-refusal-prints-dead-remedy, bounce 1). EVERY printing caller now
-# states its route; the parameter has a default only because two callers use this
-# method as a PREDICATE (`pr_read_alert ? …`) and discard the string.
+# states its route; the parameter has a default only because THREE callers use this
+# method as a PREDICATE (`pr_read_alert ? …` / `!pr_read_alert`) and discard the
+# string. Both counts are asserted, not asserted-in-prose:
+# test/lib/dor_check_exempt_ci_test.rb reads this file's source.
 def pr_read_alert(cert_route: true)
   headline = pr_read_headline
   return nil unless headline
@@ -2336,11 +2338,21 @@ end
 #             on an hour-old App token would buy nothing.
 # Not evaluated at the build gate, which resolves no diff and must not shell `gh`.
 #
-# `cert_route: true`, stated rather than defaulted, for the reason the CiGate pair
-# below states: this is the GATED path, where a full cert genuinely does stand in for
-# an unread verdict (full_cert_stands_in_for_ci?), so the alert is allowed to name
-# `bin/full-suite-check` and this path goes on to honour it. The exempt caller passes
-# false. No printing caller of pr_read_alert rides the default.
+# `cert_route: true`, stated rather than defaulted — and stated with its LIMIT, since
+# an over-claiming comment is the defect this whole task is about. What is true: this
+# is the GATED path, where a full cert genuinely stands in for an unread CI verdict
+# (full_cert_stands_in_for_ci?), so the offer is live for the CI half of the run and
+# `false` would be a lie besides — that branch prints the doc-only denial ("the
+# shape/test-tier gate is already waived"), which is untrue on a code diff. What is
+# NOT true: that THIS alert is cleared by the cert it names. In the REVIEW role a
+# refused PR read is an ERROR no cert clears, so the cert duly clears the CI half and
+# the run still exits 1 on this one — measured 2026-09-05. That gap is PRE-EXISTING
+# (before this task the remedy had no cert_route at all and every caller printed the
+# offer), and it is shared with the "could not be proven doc-only" branch above and
+# bin/release.rb's G3 gate. All three want a THIRD route — "this refusal is not the
+# suite gate's at all" — which is its own task; the extension point is written down in
+# test/lib/dor_check_exempt_ci_test.rb's honour-the-remedy property. The exempt caller
+# passes false. No printing caller of pr_read_alert rides the default.
 if gate != "build" && (alert = pr_read_alert(cert_route: true))
   review_role ? errors << alert : suggestions << alert
 end
