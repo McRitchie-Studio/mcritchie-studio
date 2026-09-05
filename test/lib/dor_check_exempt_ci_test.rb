@@ -316,4 +316,375 @@ class DorCheckExemptCiTest < Minitest::Test
     assert_equal 0, code, "the build gate has no CI verdict to give"
     assert_nil verdict["ci"]
   end
+
+  # ══ THE GATE MUST HONOUR THE REMEDY IT PRINTS — ON BOTH PATHS ════════════════
+  #
+  # THE DEFECT (/tasks/exempt-refusal-prints-dead-remedy). The exempt path took the
+  # GATED path's refusal verbatim — "certify in full instead: `bin/full-suite-check
+  # <slug>`" — while bin/dor-check discarded the `cert_clears` flag that was the only
+  # thing able to honour it. Measured before the fix: adding that exact cert produced
+  # a BYTE-IDENTICAL refusal. The gate printed an instruction it could not honour, and
+  # an operator who followed it burned a full-suite run for nothing.
+  #
+  # WHY A TEST AND NOT A CAREFUL COMMENT. This bug is a MESSAGE that outran its
+  # BEHAVIOUR, and the two live in different files. Nothing structural held them
+  # together, so they drifted the moment a second caller appeared — and the same class
+  # of drift produced five false comments in this ecosystem in one day, several
+  # written by people fixing false comments. Prose cannot hold prose honest.
+  #
+  # HOW THIS PIN WORKS, and why it is a PROPERTY rather than a pair of cases: it does
+  # not know which path offers a cert. It READS THE PRINTED REFUSAL, decides from that
+  # text alone what the gate promised, and then EXECUTES the promise:
+  #
+  #   promised a cert     → running with a FULL cert MUST advance (exit 0).
+  #   promised no cert    → running with a FULL cert MUST still refuse, and the
+  #                         refusal must be BYTE-IDENTICAL — which is the defect's own
+  #                         signature, asserted here as the PROOF that the denial is
+  #                         accurate rather than as the bug.
+  #
+  # So neither half can move alone. Re-arm the cert route on the exempt path without
+  # rewording, and the identical-refusal branch fails. Reword either message without
+  # moving the behaviour, and the executed-promise branch fails. Both are mutated
+  # separately in this file's sibling checks (see the task's mutation evidence).
+
+  # THE CONTRACT CLAUSES. Each is spelled ONCE in the source (bin/lib/ci_gate.rb and
+  # bin/lib/ci_status.rb) and read here to classify a refusal. They are deliberately
+  # the wording an operator acts on, not an internal token: the thing under test IS
+  # what the reader is told.
+  OFFERS_CERT = "certify in full instead"
+  DENIES_CERT = "no local cert stands in"
+
+  # The GATED twin of `devops` — a code diff under a shaped bug, which is the path
+  # where a full cert genuinely does stand in. Same states, same binary, opposite
+  # answer; that contrast is what makes the property meaningful rather than a
+  # restatement of the exempt path.
+  GATED_CODE_DIFF = "app/models/thing.rb"
+
+  def gated_devops(overrides = {})
+    {
+      "kind" => "bug", "shape" => "backend", "pr_url" => PR_URL,
+      "acceptance" => ["Gate honours the remedy it prints"],
+      "repositories" => ["myapp"], "risk_tags" => ["gates"],
+      "test_plan" => ["[unit] x", "[integration] y"], "post_deploy_cmd" => "none",
+      "checks_run" => ["[unit] bin/rails test test/x_test.rb",
+                       "[integration] ruby -Itest test/lib/y_test.rb"]
+    }.merge(overrides)
+  end
+
+  # Runs the REAL binary on either path with a stated suite-evidence world, and
+  # returns [stdout, exitcode]. `evidence` is named at every call site with no
+  # default, for the reason dor_check_test.rb states about its own `evidence:`:
+  # accidental coverage of the cert dimension is one refactor from vanishing, and the
+  # cert dimension is the entire subject here.
+  # `pr_files:` IS A SEPARATE DIMENSION FROM `ci:`, AND THAT IS THE WHOLE POINT.
+  # This helper used to pin DOR_CHECK_PR_FILES to the readable diff, which made
+  # pr_read_alert nil in every case the property ever saw — so the property could not
+  # observe the ONE state where the two halves of a verdict disagreed, and the gate
+  # shipped an exempt refusal that DENIED a cert in the CI error and OFFERED one four
+  # lines later in the PR-read suggestion. One stale token refuses BOTH reads, so
+  # :unreadable co-fires on the PR file list and the check list; a fixture that can
+  # only vary one of them cannot express the normal shape of the failure it is pinning
+  # (/tasks/exempt-refusal-prints-dead-remedy, bounce 1).
+  #
+  # DOR_CHECK_CHANGED_FILES stays set: it is what keeps an unreadable PR read on the
+  # EXEMPT branch. Without it a review-role run resolves diff_source :pr_unreadable,
+  # observes nothing, and refuses at the "could not be proven doc-only" branch instead
+  # — a different gate with a different contract, deliberately not this property's
+  # subject.
+  def refusal(path, ci:, evidence:, pr_files: :readable)
+    payload, changed = path == :exempt ? [devops, DOC_DIFF] : [gated_devops, GATED_CODE_DIFF]
+    injected_pr_files = pr_files == :readable ? changed : "unreadable"
+    Dir.mktmpdir do |dir|
+      file = File.join(dir, "task.json")
+      File.write(file, JSON.generate("slug" => "remedy-task", "title" => "R",
+                                     "metadata" => { "devops" => payload }))
+      env = OutboundSeams.env({
+        "DOR_CHECK_DIFF_ROOT" => dir, "DOR_CHECK_DIFF_BASE" => "HEAD",
+        "DOR_CHECK_CHANGED_FILES" => changed, "DOR_CHECK_PR_FILES" => injected_pr_files,
+        "DOR_CHECK_CI_STATUS" => ci, "DOR_CHECK_SUITE_EVIDENCE" => evidence
+      })
+      out = IO.popen(env, "#{BIN} remedy-task --file #{file} --gate-role review 2>/dev/null", &:read)
+      [out, $?.exitstatus]
+    end
+  end
+
+  FULL_CERT = "ok"              # bin/full-suite-check — ci.yml's own command, locally
+  FAST_CERT_ONLY = "fast_fresh" # bin/fast-check — diff-mapped, not a stand-in for CI
+
+  # THE PROPERTY. Read the promise off the printed refusal, then execute it.
+  #
+  # RUN OVER BOTH PR-READ WORLDS ON THE EXEMPT PATH. `:readable` is the isolated case
+  # (only the check read was refused); `:unreadable` is the NORMAL one, where a single
+  # stale token refuses the PR file list and the CI in the same run, so a verdict
+  # carries the CI gate's refusal AND the PR-read alert together. The second world is
+  # what the first cut of this pin could not reach, and it is the world the defect
+  # lived in.
+  #
+  # THE GATED PATH IS RUN ON `:readable` ONLY, AND THE REASON IS A MEASUREMENT, NOT AN
+  # OVERSIGHT. Adding gated×:unreadable to this list fails TODAY, and it failed
+  # identically before this task touched anything: in the REVIEW role the PR-read alert
+  # is an ERROR (grading a substitute for a refused read is the false pass gate-zero
+  # exists to refuse), and no cert clears an error about the DIFF — so the verdict
+  # names `bin/full-suite-check`, the operator runs it, the CI half duly clears, and
+  # the run still exits 1 on the PR-read half. That is a real dead remedy, PRE-EXISTING
+  # and unchanged in exposure by this task, and it is not fixable by flipping this
+  # caller: `cert_route: false` prints the doc-only denial ("the shape/test-tier gate
+  # is already waived"), which is false on a code diff. It wants a THIRD route — "this
+  # refusal is not the suite gate's at all" — shared with bin/dor-check's "could not be
+  # proven doc-only" branch and bin/release.rb's G3 gate. That is its own task; this
+  # comment is the handle, and this line is where the pin extends to when it lands.
+  def test_every_no_verdict_refusal_is_honoured_exactly_as_printed
+    [%i[exempt readable], %i[exempt unreadable], %i[gated readable]].each do |path, pr_files|
+      %w[none unverified unreadable].each do |state|
+        label = "#{path}/#{state}/pr_files:#{pr_files}"
+        refused, code = refusal(path, ci: state, evidence: FAST_CERT_ONLY, pr_files: pr_files)
+        assert_equal 1, code, "#{label} must refuse without a full cert:\n#{refused}"
+
+        offered = refused.include?(OFFERS_CERT)
+        denied  = refused.include?(DENIES_CERT)
+        # THE ASSERTION THAT CAUGHT THIS. A verdict may promise a cert or deny one; a
+        # verdict that does BOTH has two printers disagreeing inside one refusal, and
+        # the operator acts on whichever they read first. That is exactly what an
+        # unreadable PR file list produced on the exempt path.
+        refute_equal offered, denied,
+                     "#{label} must either OFFER a cert or DENY one, never both or neither:\n#{refused}"
+
+        certified, cert_code = refusal(path, ci: state, evidence: FULL_CERT, pr_files: pr_files)
+
+        if offered
+          assert_equal 0, cert_code,
+                       "#{label} PRINTED #{OFFERS_CERT.inspect} — the gate must honour the remedy " \
+                       "it prints:\n#{certified}"
+          assert_match(/ready to advance/, certified)
+        else
+          assert_equal 1, cert_code,
+                       "#{label} PRINTED #{DENIES_CERT.inspect}, so a full cert must NOT advance " \
+                       "it:\n#{certified}"
+          # THE DEFECT'S OWN SIGNATURE, now the proof of honesty. Before the fix this
+          # sameness sat under a refusal that had just recommended the cert; the
+          # denial is only accurate if the cert truly changes nothing.
+          assert_equal refused, certified,
+                       "#{label} says a cert does not stand in — so adding one must change " \
+                       "NOTHING, byte for byte"
+        end
+      end
+    end
+  end
+
+  # THE DIRECTION, asserted separately. The property above would still hold if BOTH
+  # paths flipped together, which would be a deliberate policy change and must not
+  # pass silently. This is the policy: a doc-only diff has no suite left to
+  # substitute, so it gets no cert route; a code diff does.
+  #
+  # ALSO RUN WITH THE PR FILE LIST REFUSED, because that is where the direction was
+  # actually broken: the CI half denied the cert and the PR-read half offered it, in
+  # one verdict. `refute_includes … OFFERS_CERT` over the WHOLE exempt refusal is what
+  # states the property at verdict grain rather than per-printer — a second printer
+  # cannot reintroduce the offer without failing here.
+  def test_the_exempt_path_denies_the_cert_route_and_the_gated_path_offers_it
+    %i[readable unreadable].each do |pr_files|
+      %w[none unverified unreadable].each do |state|
+        label = "#{state}/pr_files:#{pr_files}"
+        exempt_refusal, = refusal(:exempt, ci: state, evidence: FAST_CERT_ONLY, pr_files: pr_files)
+        assert_includes exempt_refusal, DENIES_CERT,
+                        "the exempt refusal must say plainly that no cert stands in (#{label})"
+        refute_includes exempt_refusal, OFFERS_CERT,
+                        "NO printer in an exempt verdict may name a route it cannot honour (#{label}):\n" \
+                        "#{exempt_refusal}"
+
+        gated_refusal, = refusal(:gated, ci: state, evidence: FAST_CERT_ONLY, pr_files: pr_files)
+        assert_includes gated_refusal, OFFERS_CERT,
+                        "the gated refusal must still name the cert that clears its CI verdict (#{label})"
+        refute_includes gated_refusal, DENIES_CERT,
+                        "a full cert DOES stand in for the gated path's unread CI verdict; denying it " \
+                        "would be the mirror defect (#{label})"
+      end
+    end
+  end
+
+  # THE CONTROL FOR THE VARIANT ABOVE: prove the new input actually reaches the path.
+  # A `pr_files: :unreadable` run that silently behaved like a readable one would make
+  # every assertion above pass while testing nothing — the fixture-cannot-express-the-
+  # bug failure. So assert the PR-read alert is PRESENT when the read is refused and
+  # ABSENT when it is not; that alert is the second printer, and its presence is the
+  # precondition for the offer/denial collision this task fixes.
+  ALERT_MARK = "so this verdict did NOT read the PR"
+
+  def test_the_unreadable_pr_file_list_variant_actually_reaches_the_second_printer
+    with_alert, = refusal(:exempt, ci: "unreadable", evidence: FAST_CERT_ONLY, pr_files: :unreadable)
+    assert_includes with_alert, ALERT_MARK,
+                    "the pr_files: :unreadable world must actually fire pr_read_alert:\n#{with_alert}"
+
+    without_alert, = refusal(:exempt, ci: "unreadable", evidence: FAST_CERT_ONLY, pr_files: :readable)
+    refute_includes without_alert, ALERT_MARK,
+                    "the readable world must NOT fire it, or the two worlds are the same test"
+  end
+
+  # ── [unit] the flag and the text come from ONE parameter ────────────────────
+  #
+  # The integration property above proves the two agree through the real binary. This
+  # proves they CANNOT disagree at the source: `cert_route` decides the returned
+  # `cert_clears` AND the wording, so there is no state in which a caller is handed a
+  # clearable refusal whose text denies the cert (or the reverse). That was exactly
+  # the defect's shape — bin/dor-check received `cert_clears = true`, discarded it,
+  # and printed the offer the discarded flag was the only thing able to honour.
+  def test_unit_cert_route_governs_the_flag_and_the_wording_together
+    %i[none unverified unreadable].each do |state|
+      ci = { state: state, reason: "403", cause: :permissions }
+
+      offered, clears = CiGate.verdict(ci, review_role: true, pr_url: PR_URL, slug: "t", cert_route: true)
+      assert clears, "#{state}: the gated path's refusal must be clearable by a full cert"
+      assert_includes offered, OFFERS_CERT, "#{state}: a clearable refusal must name the route"
+      refute_includes offered, DENIES_CERT
+
+      denied, no_clears = CiGate.verdict(ci, review_role: true, pr_url: PR_URL, slug: "t", cert_route: false)
+      refute no_clears, "#{state}: the exempt path's refusal must NOT be clearable"
+      assert_includes denied, DENIES_CERT, "#{state}: an unclearable refusal must say so"
+      refute_includes denied, OFFERS_CERT, "#{state}: it must not name a route it cannot honour"
+    end
+  end
+
+  # The states OUTSIDE the no-verdict family never carried a cert route in either
+  # direction, and must not grow one from this change: `cert_route` is about which
+  # refusals a cert may clear, not about widening the family that may be cleared.
+  def test_unit_cert_route_does_not_widen_the_no_verdict_family
+    %i[red conflicted closed merged no_pr teal].each do |state|
+      _error, clears = CiGate.verdict({ state: state, failing: ["ci"] },
+                                      review_role: true, pr_url: PR_URL, slug: "t", cert_route: true)
+      refute clears, "#{state} is not the no-verdict family — no cert clears it, whatever cert_route says"
+    end
+  end
+
+  # THE THIRD COPY of a sentence corrected twice already (PR #1128 fixed
+  # pr-review-primary.md and dor.md). "No check will ever appear" was justified by
+  # "solana-studio and turf-vault carry zero workflows"; re-derived at source
+  # 2026-09-05 on origin/accepted AND origin/main, solana-studio ships
+  # .github/workflows/gem-ci.yml and turf-vault ships .github/workflows/ci.yml. The
+  # claim is false, so the refusal must not rest on it — when a check genuinely never
+  # arrives that is :conflicted / :ci_less, each with its own remedy.
+  def test_unit_the_no_verdict_refusal_no_longer_blames_a_repo_without_workflows
+    %i[none unverified].each do |state|
+      message, = CiGate.verdict({ state: state }, review_role: true, pr_url: PR_URL, slug: "t",
+                                                  cert_route: true)
+      refute_match(/NO workflows at all/, message,
+                   "#{state}: every repo here ships a pull_request workflow — that premise is false")
+      refute_match(/no check will ever appear/i, message,
+                   "#{state}: 'never' is a property of the PR's merge state (:conflicted/:ci_less), not a repo")
+    end
+  end
+
+  # ── [unit] THE CALL-SITE REGISTRY — a comment that checks itself ────────────
+  #
+  # WHY THIS EXISTS. `CiStatus.unreadable_remedy` carries a comment naming every
+  # production caller and the route each is on. The first version of that comment said
+  # "every caller that predates the parameter is on the gated path", and it was FALSE
+  # at two callers on the day it was written — one of which (bin/dor-check's
+  # pr_read_alert on the exempt path) was the live defect that bounced this PR. Prose
+  # about call sites goes stale the moment someone adds a call site, and nothing in a
+  # code review reliably notices.
+  #
+  # So the list is pinned to the SOURCE. This does not judge whether a route is
+  # correct — that is the property test's job, above, which executes the printed
+  # promise. It judges only that the set of callers is the set the comment describes:
+  # add a caller, delete one, or flip one between "states its route" and "takes the
+  # default", and this fails and hands the author the comment to update.
+  #
+  # NUMBERS, and the reason for each:
+  #   bin/lib/ci_gate.rb  1 stating / 0 default — unread_ci_refusal forwards its own
+  #                       cert_route:, and both CiGate.verdict callers state it.
+  #   bin/dor-check       1 stating / 2 default — the stating one is pr_read_alert,
+  #                       which FORWARDS its callers' route (see below); the two
+  #                       defaults are the suite-gate refusal and the submit-side
+  #                       note, both on the GATED path where a cert genuinely clears.
+  #   bin/pr-review       1 stating / 0 default — cert_route: !maybe_exempt.
+  #   bin/release.rb      0 stating / 1 default — the G3 pre-QA gate, where the
+  #                       local-cert route was retired. Known-wrong, pre-existing,
+  #                       release-grain, filed as its own follow-up; pinned at 1 so
+  #                       that fixing it (or adding a second) has to come back here.
+  UNREADABLE_REMEDY_CALL_SITES = {
+    "bin/lib/ci_gate.rb" => { states_route: 1, takes_default: 0 },
+    "bin/dor-check" => { states_route: 1, takes_default: 2 },
+    "bin/pr-review" => { states_route: 1, takes_default: 0 },
+    "bin/release.rb" => { states_route: 0, takes_default: 1 }
+  }.freeze
+
+  # pr_read_alert's OWN callers, counted by route. It prints from four branches and is
+  # used as a predicate (`pr_read_alert ? …`) in three more where the string is
+  # discarded — the reason the method keeps a default at all.
+  #   3 printing callers pass true  — the gated path, and the two "could not be proven
+  #                                   doc-only" branches, where nothing is waived and
+  #                                   the exempt denial's premise would be false.
+  #   1 printing caller passes false — the EXEMPT path. This is the fix.
+  PR_READ_ALERT_CALL_SITES = { true => 3, false => 1, predicate: 3 }.freeze
+
+  REPO_ROOT = File.expand_path("../..", __dir__)
+
+  # Source with FULL-LINE comments removed, so the registry counts CALLS and never the
+  # prose about them — this file's own subject is prose drifting from behaviour, and a
+  # checker fooled by a comment would be the joke writing itself.
+  def code_of(relative)
+    File.readlines(File.join(REPO_ROOT, relative))
+        .reject { |line| line.strip.start_with?("#") }.join
+  end
+
+  # Every `<marker>(` in `source`, with the argument text of each call. Paren-balanced
+  # rather than line- or regex-bounded: three of these calls already wrap across lines,
+  # and a checker that missed them would under-count silently.
+  def calls_to(source, marker)
+    args = []
+    offset = 0
+    while (index = source.index(marker, offset))
+      open = index + marker.length
+      depth = 1
+      cursor = open
+      while depth.positive? && cursor < source.length
+        depth += 1 if source[cursor] == "("
+        depth -= 1 if source[cursor] == ")"
+        cursor += 1
+      end
+      args << source[open...(cursor - 1)]
+      offset = cursor
+    end
+    args
+  end
+
+  def test_unit_the_unreadable_remedy_call_site_registry_matches_the_source
+    UNREADABLE_REMEDY_CALL_SITES.each do |file, expected|
+      args = calls_to(code_of(file), "CiStatus.unreadable_remedy(")
+      stating, defaulting = args.partition { |arg| arg.include?("cert_route:") }
+
+      assert_equal expected[:states_route], stating.size,
+                   "#{file}: callers STATING cert_route: changed. Update the call-site list in " \
+                   "CiStatus.unreadable_remedy's header, then this registry — the comment is the " \
+                   "deliverable, this test is only what keeps it true.\n#{stating.join("\n---\n")}"
+      assert_equal expected[:takes_default], defaulting.size,
+                   "#{file}: callers TAKING the cert_route: default changed. A new default-taker is a new " \
+                   "promise nobody classified — decide its route, then update ci_status.rb's list and " \
+                   "this registry.\n#{defaulting.join("\n---\n")}"
+    end
+  end
+
+  def test_unit_every_printing_caller_of_pr_read_alert_states_its_route
+    source = code_of("bin/dor-check")
+    # The definition is not a call site. Dropped ENTIRELY, not renamed: a rename that
+    # keeps the identifier as a prefix still matches the bare-use scan below, which is
+    # how the first cut of this counted four predicates where three exist.
+    source = source.sub(/^def pr_read_alert\(cert_route: true\)$/, "def PR_READ_ALERT_DEFINITION")
+
+    printing = calls_to(source, "pr_read_alert(")
+    assert_equal PR_READ_ALERT_CALL_SITES[true], printing.count { |arg| arg.include?("cert_route: true") },
+                 "printing callers on the GATED/enforced branches changed:\n#{printing.join("\n---\n")}"
+    assert_equal PR_READ_ALERT_CALL_SITES[false], printing.count { |arg| arg.include?("cert_route: false") },
+                 "the EXEMPT caller is the one that must pass false — that is this task's whole fix:\n" \
+                 "#{printing.join("\n---\n")}"
+    assert_equal printing.size, printing.count { |arg| arg.include?("cert_route:") },
+                 "a printing caller of pr_read_alert rode the default. That is exactly how the exempt path " \
+                 "came to print an offer it could not honour:\n#{printing.join("\n---\n")}"
+
+    # The predicate uses discard the string, so they are allowed to omit the keyword —
+    # counted, not merely tolerated, so that a printing caller can never hide among them.
+    predicates = source.scan(/pr_read_alert(?!\()/).size
+    assert_equal PR_READ_ALERT_CALL_SITES[:predicate], predicates,
+                 "bare `pr_read_alert` uses (predicate only — the string is discarded) changed to #{predicates}"
+  end
 end

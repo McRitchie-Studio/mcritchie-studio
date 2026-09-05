@@ -448,26 +448,53 @@ attempt n+1.
     state that does not exist — the one test a longer deny-list could not pass.
     **The allow-list covers the exempt (doc-only) path too**, which it did not
     until 2026-09-05 — see *The exemption is from the TIER gate* above.
-  - **One escape, and only one: a FULL cert.** For the no-verdict family
-    (`none` / `unreadable` / `unverified`) a fresh `bin/full-suite-check` cert
-    stands in for the CI verdict, and the gate then says so on the ready line
-    (`advancing on the FULL local cert instead … CI itself was NOT read`). Two
-    reasons: the gate must **honour the remedy it prints** — `unreadable_remedy`
-    has always ended by naming that command — and the cert is no longer weaker
-    evidence, because `bin/full-suite-check` now runs `ci.yml`'s verbatim command,
-    `test:system` included. A **fast** cert is not enough, and a
-    `[full-suite-bypass]` is a declared hatch rather than evidence, so neither
-    clears it.
+  - **On the GATED path, one escape and only one: a FULL cert.** For the
+    no-verdict family (`none` / `unreadable` / `unverified`) a fresh
+    `bin/full-suite-check` cert stands in for the CI verdict, and the gate then
+    says so on the ready line (`advancing on the FULL local cert instead … CI
+    itself was NOT read`). Two reasons: the gate must **honour the remedy it
+    prints** — `unreadable_remedy` has always ended by naming that command — and
+    the cert is no longer weaker evidence, because `bin/full-suite-check` now runs
+    `ci.yml`'s verbatim command, `test:system` included. A **fast** cert is not
+    enough, and a `[full-suite-bypass]` is a declared hatch rather than evidence,
+    so neither clears it.
+  - **On the EXEMPT (doc-only) path there is NO escape — green, or nothing.** The
+    cert route does not merely fail there, it does not exist: the shape/test-tier
+    gate is already waived, so there is no suite whose result could stand in.
+    Accepting a cert would leave the merge with zero verification from either
+    side, which is the state the gate exists to refuse.
+    **The refusal now says that** (`cert_route: false`, `bin/lib/ci_gate.rb`).
+    Until 2026-09-05 it printed the gated path's text verbatim — *"certify in full
+    instead: `bin/full-suite-check <slug>`"* — while `bin/dor-check` discarded the
+    only flag that could honour it, so adding the cert produced a **byte-identical
+    refusal** and an operator who followed the instruction burned a full-suite run
+    for nothing (`/tasks/exempt-refusal-prints-dead-remedy`). The message and the
+    behaviour now come from that ONE parameter, and
+    `test/lib/dor_check_exempt_ci_test.rb` re-derives the promise from the printed
+    refusal and then executes it in both paths — so a message that outruns its
+    behaviour reddens rather than shipping.
   - **What a cert cannot clear**: `red`, `conflicted`, `ci_less`, `closed`,
     `merged` (a verdict exists, or the PR is not a live review target); `pending`
     (the verdict is genuinely coming — waiting is productive); `no_pr` (what is
-    missing is not the evidence but the PR: review's job is to merge one); and any
-    unclassified state.
-  - Submit-side **none of this applies** — the builder's provisional handoff is
-    untouched (see the state table above). The asymmetry is deliberate: the review
-    gate-zero *is* the authoritative CI verdict, while blocking every submit on a
-    flaky read would trade a flaky CI lane for a flaky gate. Both directions are
-    asserted, so the split cannot quietly collapse either way.
+    missing is not the evidence but the PR: review's job is to merge one); any
+    unclassified state; and — whatever the state — **anything on the exempt
+    path**, per the bullet above.
+  - Submit-side the **strict review semantics** do not apply — the builder's
+    provisional handoff is untouched (see the state table above). The asymmetry is
+    deliberate: the review gate-zero *is* the authoritative CI verdict, while
+    blocking every submit on a flaky read would trade a flaky CI lane for a flaky
+    gate. Both directions are asserted, so the split cannot quietly collapse
+    either way.
+    - **It is not "none of this applies", and on a docs task that difference is
+      now visible.** The role asymmetry covers the *unread* family and `pending`;
+      a **RED** CI has always blocked BOTH roles, and since the exempt path
+      started evaluating CI at all (2026-09-05) that block reaches a doc-only diff
+      too. `bin/ship` runs `bin/dor-check <slug>` at step **7/8** and dies on its
+      exit code, so **a docs task with a red CI now fails `bin/ship` at 7/8**
+      rather than sailing through. That is the correct direction — this repo's CI
+      grades prose — and it was undocumented until now. Measured 2026-09-05
+      against the exempt path in the builder role: `red` → exit 1, `green` and
+      `pending` → exit 0.
   - The **remedies stay distinct**, because the fixes are: `unreadable` names the
     credential and says re-running is futile (a `conductor-review`, not a
     `request-changes` — the builder does not own the token); `none` /
@@ -498,9 +525,15 @@ attempt n+1.
 - The supervisor's **pre-spawn CI-red bounce** opens then closes `dor_review`
   `--failed` with a `ci` SOP (`--meta outcome=ci-red`, actor `avi`) — no reviewer
   runs, but the round-trip is visible on the gates card.
-- **Never emitted:** dor-check with `--json` (read-only monitors), `--file`
-  (offline evaluation), or `--gate build` (no DoR verdict yet). All gate writes
-  are fire-and-forget — a board blip never changes a verdict or an exit code.
+- **Never emitted:** dor-check with `--json` (read-only monitors), `--gate build`
+  (no DoR verdict yet), or a run whose slug resolves empty. All gate writes are
+  fire-and-forget — a board blip never changes a verdict or an exit code.
+  - **`--file` is the conditional one, not an absolute.** Offline evaluation
+    skips the write **unless `DOR_CHECK_GATE_BIN` redirects the gate CLI** — the
+    seam a test uses to observe that the attempt was recorded without a board
+    (`gate_emission_enabled?`, `bin/dor-check`). Production never sets it, so
+    `--file` stays offline for every real caller; a test that sets it gets two
+    invocations (`open` then `close`), verified 2026-09-05.
 
 ## UI surfaces
 

@@ -56,9 +56,13 @@
 # verdict is the review side: bin/pr-review's supervisor checks the live CI
 # before spawning reviewers, and the primary's gate-zero (--gate-role review)
 # keeps the strict semantics — an ALLOW-LIST: green advances and every other state
-# refuses, including one it could not read, with a FULL cert the single stand-in
-# (see "THE REVIEW GATE-ZERO IS AN ALLOW-LIST" below); fast evidence needs the
-# settled green. Format + fingerprint live in bin/lib/full_suite_gate.rb.
+# refuses, including one it could not read, with a FULL cert the single stand-in ON
+# THE GATED PATH (see "THE REVIEW GATE-ZERO IS AN ALLOW-LIST" in
+# bin/lib/ci_gate.rb, where that section now lives — it is no longer "below" in this
+# file). On the EXEMPT (doc-only) path there is no stand-in at all: the tier gate is
+# waived, so no suite remains to substitute, and the refusal there says so rather
+# than naming a cert (`cert_route: false`). Fast evidence needs the settled green.
+# Format + fingerprint live in bin/lib/full_suite_gate.rb.
 # ROOTING — the gate must judge the TASK's tree, not the checkout the caller happens
 # to stand in. TWO things root: the suite FINGERPRINT and the code DIFF. Both have
 # been bitten, and they fail in OPPOSITE directions, which is why the diff took a
@@ -747,14 +751,27 @@ end
 
 # The full alert: the headline, what it costs, and the remedy. The caller decides
 # whether it lands as an error (review) or a suggestion (submit-side).
-def pr_read_alert
+#
+# `cert_route:` IS FORWARDED, NOT DECIDED HERE — this alert is printed from four
+# different branches and only the CALLER knows whether a full cert stands in where it
+# lands. It used to take unreadable_remedy's `true` default for all four, which is how
+# the exempt path came to print a denial and an OFFER in the same verdict: one stale
+# token refuses the PR file-list read AND the CI read, so :unreadable co-fires on both
+# and the two halves of one verdict disagreed
+# (/tasks/exempt-refusal-prints-dead-remedy, bounce 1). EVERY printing caller now
+# states its route; the parameter has a default only because THREE callers use this
+# method as a PREDICATE (`pr_read_alert ? …` / `!pr_read_alert`) and discard the
+# string. Both counts are asserted, not asserted-in-prose:
+# test/lib/dor_check_exempt_ci_test.rb reads this file's source.
+def pr_read_alert(cert_route: true)
   headline = pr_read_headline
   return nil unless headline
 
   if pr_file_read[:state] == :unreadable
     "#{headline}. The diff this gate judges (shape tiers, the doc-only exemption, migration detection) is the " \
       "PULL REQUEST's file list, and a refused read must never be quietly replaced by whatever tree this run is " \
-      "standing in. " + CiStatus.unreadable_remedy(CiStatus.repo_from_pr_url(@pr_url), cause: pr_file_read[:cause])
+      "standing in. " + CiStatus.unreadable_remedy(CiStatus.repo_from_pr_url(@pr_url),
+                                                   cause: pr_file_read[:cause], cert_route: cert_route)
   else
     "#{headline} — and this is NOT a credential refusal, so the LOCAL view was graded instead. That is a " \
       "different artifact from the PR: if they differ, this verdict describes the wrong diff. Re-run once " \
@@ -1786,7 +1803,20 @@ if EXEMPT_KINDS.include?(kind)
       # refused to accept a substitute for the one it was denied. Saying "no diff
       # could be observed" here would send the reader to their worktree, which is
       # exactly the wrong place — the fix is a credential.
-      "kind: #{kind} could not be proven doc-only — #{pr_read_alert}"
+      #
+      # `cert_route: true` HERE IS A DELIBERATE, DISCLOSED CHOICE, not a default.
+      # This branch is NOT the exempt path: nothing is waived, the gate refuses on
+      # the DIFF (it could not prove doc-only) and exits before the suite gate is
+      # ever consulted. So `false`'s clause — "the shape/test-tier gate is already
+      # waived, so there is no suite left to substitute" — would be FALSE here, and
+      # swapping one untrue sentence for another is the defect this task is about.
+      # The trailing cert offer is not honoured on this branch either (measured
+      # 2026-09-05: `--gate-role review` + an unreadable PR file list refuses
+      # byte-identically with a FULL cert), but that is PRE-EXISTING and unchanged by
+      # the exempt fix — the same standing as bin/release.rb's G3 remedy. Both want a
+      # route sentence that can say "this refusal is not the suite gate's at all",
+      # which is a third state and its own task.
+      "kind: #{kind} could not be proven doc-only — #{pr_read_alert(cert_route: true)}"
     elsif untrusted_root?
       # The false-PASS case, refused instead of granted. This is the state the old
       # code turned into "✓ n/a — doc-only diff": it stood in a checkout that is not
@@ -1812,7 +1842,8 @@ if EXEMPT_KINDS.include?(kind)
         "(no PR files readable, and the git tree at #{diff_root} is clean or unreadable), " \
         "so the shape/test-tier gate is ENFORCED rather than skipped (fail-closed). Re-run " \
         "this from the task's worktree, or set devops.pr_url, so the gate can see the diff " \
-        "it is meant to judge#{pr_read_alert ? ". The PR half of that: #{pr_read_alert}" : ""}"
+        "it is meant to judge" \
+        "#{pr_read_alert ? ". The PR half of that: #{pr_read_alert(cert_route: true)}" : ""}"
     end
     if options[:json]
       puts JSON.pretty_generate(
@@ -1867,7 +1898,17 @@ if EXEMPT_KINDS.include?(kind)
     # confident exemption whose evidence came from somewhere nobody asked about. The
     # alert rides on the verdict itself, not only in a suggestion, because this line
     # is the part that gets read.
-    exempt_alerts = [pr_read_alert].compact
+    #
+    # `cert_route: false` FOR THE SAME REASON THE CI VERDICT BELOW PASSES IT. This
+    # alert lands on the EXEMPT path, where the tier gate is waived and no suite
+    # remains to substitute — so naming `bin/full-suite-check` here is a remedy this
+    # path cannot honour, exactly the defect the CI half of this branch fixes. And
+    # the two halves co-fire: one stale token refuses the PR file-list read AND the
+    # check read, so an exempt verdict printed the CI gate's correct DENIAL and this
+    # alert's OFFER four lines apart, and adding a full cert left the whole run
+    # byte-identical. Measured on this branch before the fix; the property test's
+    # `refute_equal offered, denied` names that state directly.
+    exempt_alerts = [pr_read_alert(cert_route: false)].compact
 
     # ==== THE EXEMPTION IS FROM THE TIER GATE. IT WAS NEVER FROM CI ============
     #
@@ -1901,13 +1942,36 @@ if EXEMPT_KINDS.include?(kind)
     # judged here — the KIND is. An unread CI over an exempt diff therefore leaves
     # the merge with no verdict from either side, which is the state a gate exists to
     # refuse. Hence: in the review role, GREEN advances and nothing else does.
+    #
+    # `cert_route: false` IS THAT SENTENCE, SAID TO THE REFUSAL ITSELF
+    # (/tasks/exempt-refusal-prints-dead-remedy). The policy above was right from the
+    # first day; the MESSAGE was not. This path used to take the gated path's refusal
+    # verbatim — "certify in full instead: `bin/full-suite-check <slug>`" — and then
+    # DISCARD the cert_clears flag that was the only thing able to honour it. Adding
+    # the cert produced a byte-identical refusal, so the gate printed a remedy it
+    # could not honour and an operator who followed it burned a full-suite run for
+    # nothing. Passing the flag DOWN instead of dropping it on the floor makes the
+    # promise and the behaviour one decision: `exempt_cert_clears` is now false
+    # BECAUSE the text offers no cert, not merely alongside it.
     exempt_ci = gate == "build" ? nil : CiStatus.evaluate(devops["pr_url"], ENV["DOR_CHECK_CI_STATUS"])
-    exempt_ci_error, _exempt_cert_clears, exempt_ci_notes =
+    exempt_ci_error, exempt_cert_clears, exempt_ci_notes =
       if exempt_ci
-        CiGate.verdict(exempt_ci, review_role: review_role, pr_url: devops["pr_url"], slug: task["slug"] || slug)
+        CiGate.verdict(exempt_ci, review_role: review_role, pr_url: devops["pr_url"],
+                                  slug: task["slug"] || slug, cert_route: false)
       else
         [nil, false, []]
       end
+    # NOT a discard and not decoration: this is the one line that would fail loudly if
+    # someone re-armed the cert route here without also re-reading the policy above.
+    # `cert_route: false` must yield a flag this path can honour by ignoring — which is
+    # only true while the flag is false. It FAILS CLOSED (abort → exit 1, so the gate
+    # refuses) because the failure it catches is a gate that has started offering a
+    # remedy it cannot honour, and passing that through is the whole defect.
+    if exempt_cert_clears
+      abort "bin/dor-check: the exempt (doc-only) path received a CLEARABLE CI refusal, which it cannot " \
+            "honour — the tier gate is already waived, so no suite remains to substitute. Whoever armed " \
+            "cert_route here must read the policy note above first (/tasks/exempt-refusal-prints-dead-remedy)."
+    end
     exempt_alerts.concat(exempt_ci_notes)
     exempt_errors = [exempt_ci_error].compact
     exempt_ready = exempt_errors.empty?
@@ -2273,7 +2337,23 @@ end
 #             verdict is provisional, and review re-reads it. Blocking every handoff
 #             on an hour-old App token would buy nothing.
 # Not evaluated at the build gate, which resolves no diff and must not shell `gh`.
-if gate != "build" && (alert = pr_read_alert)
+#
+# `cert_route: true`, stated rather than defaulted — and stated with its LIMIT, since
+# an over-claiming comment is the defect this whole task is about. What is true: this
+# is the GATED path, where a full cert genuinely stands in for an unread CI verdict
+# (full_cert_stands_in_for_ci?), so the offer is live for the CI half of the run and
+# `false` would be a lie besides — that branch prints the doc-only denial ("the
+# shape/test-tier gate is already waived"), which is untrue on a code diff. What is
+# NOT true: that THIS alert is cleared by the cert it names. In the REVIEW role a
+# refused PR read is an ERROR no cert clears, so the cert duly clears the CI half and
+# the run still exits 1 on this one — measured 2026-09-05. That gap is PRE-EXISTING
+# (before this task the remedy had no cert_route at all and every caller printed the
+# offer), and it is shared with the "could not be proven doc-only" branch above and
+# bin/release.rb's G3 gate. All three want a THIRD route — "this refusal is not the
+# suite gate's at all" — which is its own task; the extension point is written down in
+# test/lib/dor_check_exempt_ci_test.rb's honour-the-remedy property. The exempt caller
+# passes false. No printing caller of pr_read_alert rides the default.
+if gate != "build" && (alert = pr_read_alert(cert_route: true))
   review_role ? errors << alert : suggestions << alert
 end
 
@@ -2287,8 +2367,15 @@ if gate != "build"
   # The case + the allow-list, both of them, live in CiGate.verdict — the exempt path
   # above asks the very same function, so neither can advance on a state the other
   # refuses.
+  #
+  # `cert_route: true` is the ONE thing this call says differently, and it is stated
+  # rather than defaulted so the two call sites read as a pair. Here a full cert
+  # genuinely does stand in (full_cert_stands_in_for_ci? below), so the refusal is
+  # allowed to name `bin/full-suite-check` — and this is the path that then HONOURS
+  # it. The exempt caller passes false and gets a refusal that offers nothing instead.
   ci_error, ci_error_cert_clears, ci_notes =
-    CiGate.verdict(ci, review_role: review_role, pr_url: devops["pr_url"], slug: task["slug"] || slug)
+    CiGate.verdict(ci, review_role: review_role, pr_url: devops["pr_url"],
+                       slug: task["slug"] || slug, cert_route: true)
   suggestions.concat(ci_notes)
 
   # ==== TIER 1 HAS A PRECONDITION: THE GREEN MUST STILL BE ABOUT THIS MERGE ====
