@@ -27,7 +27,11 @@ class Task
   #
   # THE BUMP ALONE IS NOT THE REPAIR, and that is the difference from VERSION 3. Every
   # BUILD-span reader went through #cached_or_built, so the v3 bump invalidated them all,
-  # and 0 of that fix's 232 rows were in a live pool. Review::DurationRoll reads
+  # and no LIVE reader ever consumed a build span. 39 of that fix's rows DO sit in the
+  # candidate pool below — an earlier draft of this note said 0 of 232, and both halves
+  # were wrong — but the pool selects on `{phases,review}` and never reads
+  # `{phases,build}`, so the bump alone was a complete repair there. That STRUCTURAL
+  # fact, not a row count, is the asymmetry. Review::DurationRoll reads
   # `{phases,review}` DIRECTLY in SQL with no version check, so it would keep serving the
   # stored lie after this deploy: 19 of the 250 rows in its LIVE candidate pool carry a
   # 0-second review, averaged into the /deployments card as though it happened. That pool
