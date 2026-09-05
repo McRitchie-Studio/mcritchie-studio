@@ -101,6 +101,35 @@ class User < ApplicationRecord
   before_validation :assign_parked_identity
   before_save :set_name_parts, if: -> { name_changed? }
 
+  # --- Derived name halves ---------------------------------------------------
+
+  # The halves `set_name_parts` would derive from `name`, as a hash ready for a
+  # callback-free write.
+  #
+  # PUBLIC AND PURE ON PURPOSE. `set_name_parts` is a `before_save`, so a writer
+  # that deliberately steps around callbacks used to have no way to keep these
+  # columns honest short of a full save it cannot afford. Two such writers exist
+  # and both have a reason worth keeping: `db/seeds/01_users.rb` renames with
+  # `update_column` because Sluggable rebuilds the slug from the NAME, so a full
+  # save re-points the URL the account answers on; the identity migrations rename
+  # with raw SQL because loading `User` would drag `assign_parked_identity` and
+  # that same slug rewrite into a file that must still run years from now. So the
+  # derivation moves to where they can reach it instead of the writers moving to
+  # where the derivation is.
+  #
+  # `last_name` is OMITTED, not nil, for a one-word name. That is not tidiness —
+  # it is parity: the callback has always left an existing last name standing
+  # there (`if parts.size > 1`), and a hash that nulled it would make every
+  # callback-free writer disagree with the callback in the opposite direction.
+  # Whether the carry-over is itself right is a separate question from this one.
+  # test/models/user_name_parts_test.rb pins the parity for every shape of name.
+  def self.name_parts(name)
+    words = name.to_s.strip.split(" ")
+    parts = { first_name: words.first }
+    parts[:last_name] = words.last if words.size > 1
+    parts
+  end
+
   # --- Lookups / find-or-create ---------------------------------------------
 
   def self.parked_identity_for(email: nil)
@@ -222,9 +251,7 @@ class User < ApplicationRecord
   end
 
   def set_name_parts
-    parts = name.to_s.strip.split(" ")
-    self.first_name = parts.first
-    self.last_name = parts.last if parts.size > 1
+    assign_attributes(self.class.name_parts(name))
   end
 
   # Unique URL slug, keyed on the email so two accounts cannot collide.

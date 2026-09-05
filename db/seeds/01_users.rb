@@ -42,10 +42,17 @@ User::RETIRED_NAMES.each do |email, old_name|
   row = identity && User.find_by(email: email)
   next if row.nil? || row.name != old_name
 
-  # update_column for the same reason as the address move above: Sluggable builds
+  # update_columns for the same reason as the address move above: Sluggable builds
   # the slug from the NAME, so a full save would re-point the URL this account
   # answers on as a side effect of a rename nobody asked to be a redirect.
-  row.update_column(:name, identity[:name])
+  #
+  # It carries the DERIVED HALVES with it, because skipping the save also skips
+  # `before_save :set_name_parts`, and that callback is gated on `name_changed?` —
+  # so a rename written around it leaves first_name/last_name derived from the old
+  # name FOREVER. Nothing later notices: the next ordinary save sees no name
+  # change. `User.name_parts` is the same derivation the callback runs, which is
+  # what keeps a renamed row and a freshly seeded one identical.
+  row.update_columns({ name: identity[:name] }.merge(User.name_parts(identity[:name])))
   puts "  ↪ renamed #{email} from #{old_name.inspect} to #{identity[:name].inspect}"
 end
 
