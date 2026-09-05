@@ -14,6 +14,35 @@ Credential docs are split into two layers:
 - Do not edit agent tool permissions or `.claude/settings*.json` to gain credential access.
 - If a permission is missing, report the exact vault, item, and operation needed instead of inventing a workaround.
 
+## Personal data in a public repo
+
+**`mcritchie-studio` and its sibling repos are PUBLIC.** Confirm rather than
+assume — `gh api repos/<owner>/<repo> --jq .visibility` — because the rule below
+only binds for a public one, and the answer is not visible from a working copy.
+
+Before committing a personal email address, phone number, home address, or
+anyone's full name **other than the ecosystem's own public identities**, stop and
+route it to 1Password instead. It is not a secret in the credential sense, which
+is exactly why it slips through: there is nothing to redact, no token to rotate,
+and every existing guard is looking for something that looks like a key.
+
+**The trigger is publication, not merge.** A pushed branch on a public repo is
+already world-readable, and a force-push does not retract it — the orphaned
+commit stays reachable by SHA. So the check belongs BEFORE `git push`, not before
+merge, and "we can strip it in a follow-up" is not a remedy.
+
+Already-public identities are fine and need no ceremony: the git author address,
+a business domain's own contact, an open-source author's address in a vendored
+file. What this rule is about is **third parties who did not choose to be
+published** — most often family.
+
+Measured 2026-09-04 (`/tasks/chrome-profile-order-sop`): a config file keyed on
+account email carried two family members' personal Gmail addresses into PR #1212.
+Neither had ever appeared in the repository before. Review caught it; by then
+the branch had been public for roughly forty minutes. The fix was to move the
+whole file into 1Password and commit only a `.example` — see
+`docs/agents/agents/steffon/sops/chrome-profiles.md`.
+
 ## 1Password Service Account
 
 Agent shells use `OP_SERVICE_ACCOUNT_TOKEN` from `~/.zprofile`, installed by:

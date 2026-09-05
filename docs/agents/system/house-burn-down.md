@@ -94,10 +94,15 @@ brew update && brew install \
   ffmpeg \
   libpq \
   heroku/brew/heroku
+
+brew install --cask google-chrome
 ```
 
 ~5 min. Installs:
 - **ruby@3.3** — Ruby 3.3.11 with the full stdlib for McRitchie Studio and ecosystem bootstrap
+- **google-chrome** (cask) — the operator's browser. Needed before
+  `docs/agents/agents/steffon/sops/chrome-profiles.md` can restore the avatar-menu
+  roster, and nothing else in this protocol installs it.
 - **mise** — version manager for Node (not Ruby — see above)
 - **postgresql@14** — local DB for Rails apps
 - **redis** — Sidekiq queue for Turf Monster and worktree stacks
@@ -564,6 +569,7 @@ What this protocol installed last successful run:
 ## Appendix D — Cross-references
 
 - `docs/agents/system/ecosystem-build.md` — the `bin/ecosystem-build` script reference (phases, when to run, idempotency, reset semantics)
+- `docs/agents/agents/steffon/sops/chrome-profiles.md` — the operator's Chrome avatar-menu roster. NOT restored by `bin/ecosystem-build`: Chrome's profile state lives outside every backup this repo controls, so it is rebuilt from `config/chrome_profiles.yml` after you sign the accounts back in.
 - `docs/agents/system/bootstrap.md` — first-time setup (one app, simpler)
 - `docs/agents/modules/credentials.md` — credential rules and 1Password operating model
 - `docs/agents/modules/credential-inventory.md` — known 1Password item names
