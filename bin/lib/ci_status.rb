@@ -466,7 +466,27 @@ module CiStatus
   # the operator the same thing. A gate that cannot see must name (a) that it is a
   # CREDENTIAL fault, (b) the repo, (c) the exact grant, and (d) the verify command —
   # otherwise the reader's only move is to re-run it, which can never help.
-  def self.unreadable_remedy(repo = nil, cause: nil)
+  #
+  # `cert_route:` PICKS THE LAST SENTENCE, and nothing else. The credential half of
+  # this string is identical everywhere; only the ROUTE OUT differs, because only
+  # some callers can honour a cert. It stays ONE string with a parameter rather than
+  # two strings, for the reason the header gives: a second copy is a second thing to
+  # forget, and the halves that must agree are then held apart by nothing.
+  #
+  #   cert_route: true  — the GATED path. A fresh full cert stands in for the unread
+  #                       verdict, so naming bin/full-suite-check is an instruction
+  #                       the gate goes on to honour (bin/dor-check's
+  #                       full_cert_stands_in_for_ci?).
+  #   cert_route: false — the EXEMPT (doc-only) path, where nothing stands in. Saying
+  #                       "certify in full instead" there was a remedy the gate could
+  #                       not honour: adding the cert produced a BYTE-IDENTICAL
+  #                       refusal, so an operator who followed it burned a full-suite
+  #                       run for nothing (/tasks/exempt-refusal-prints-dead-remedy).
+  #
+  # The default is `true` because every caller that predates the parameter is on the
+  # gated path; the exempt caller passes false EXPLICITLY. Both branches are pinned —
+  # a default that nobody asserts is how the wrong half goes quietly stale.
+  def self.unreadable_remedy(repo = nil, cause: nil, cert_route: true)
     where = repo.to_s.strip.empty? ? "this repo" : repo.to_s.strip
     fix = case cause&.to_sym
           when :permissions
@@ -504,9 +524,26 @@ module CiStatus
               "answer — App tokens are forbidden from it by design), reproduce the exact check read, and use " \
               "GitHub's response to choose the credential or permission fix."
           end
+    route = if cert_route
+              "certify in full instead: bin/full-suite-check <task>."
+            else
+              # NO ROUTE IS NAMED because none exists here, and inventing one is the
+              # defect. On the exempt path the tier gate is ALREADY waived, so there
+              # is no suite whose result could be substituted for the verdict — the
+              # cert would certify nothing and clear nothing.
+              # "no local cert stands in" is the CONTRACT CLAUSE, spelled the same
+              # here and in ci_gate.rb's :none/:unverified branch, because
+              # test/lib/dor_check_exempt_ci_test.rb reads the printed refusal to
+              # decide what the gate PROMISED and then executes that promise. One
+              # spelling for one meaning is what lets the pin be a property instead
+              # of a list of cases.
+              "and no local cert stands in for it on a doc-only diff either: the shape/test-tier gate is " \
+                "already waived, so there is no suite left to substitute. Fixing the credential is the only " \
+                "route — this gate advances on a GREEN CI and nothing else."
+            end
     "This is a CREDENTIAL fault or API limit, NOT a missing CI — re-running will never clear it. #{fix} " \
       "Until the check read works, the FAST-cert route cannot be credited on this repo (a fast cert needs a " \
-      "GREEN CI it can actually read) — certify in full instead: bin/full-suite-check <task>."
+      "GREEN CI it can actually read) — #{route}"
   end
 
   def self.gate_evidence(verdict, repo: nil)

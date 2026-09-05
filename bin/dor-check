@@ -56,9 +56,13 @@
 # verdict is the review side: bin/pr-review's supervisor checks the live CI
 # before spawning reviewers, and the primary's gate-zero (--gate-role review)
 # keeps the strict semantics — an ALLOW-LIST: green advances and every other state
-# refuses, including one it could not read, with a FULL cert the single stand-in
-# (see "THE REVIEW GATE-ZERO IS AN ALLOW-LIST" below); fast evidence needs the
-# settled green. Format + fingerprint live in bin/lib/full_suite_gate.rb.
+# refuses, including one it could not read, with a FULL cert the single stand-in ON
+# THE GATED PATH (see "THE REVIEW GATE-ZERO IS AN ALLOW-LIST" in
+# bin/lib/ci_gate.rb, where that section now lives — it is no longer "below" in this
+# file). On the EXEMPT (doc-only) path there is no stand-in at all: the tier gate is
+# waived, so no suite remains to substitute, and the refusal there says so rather
+# than naming a cert (`cert_route: false`). Fast evidence needs the settled green.
+# Format + fingerprint live in bin/lib/full_suite_gate.rb.
 # ROOTING — the gate must judge the TASK's tree, not the checkout the caller happens
 # to stand in. TWO things root: the suite FINGERPRINT and the code DIFF. Both have
 # been bitten, and they fail in OPPOSITE directions, which is why the diff took a
@@ -1901,13 +1905,36 @@ if EXEMPT_KINDS.include?(kind)
     # judged here — the KIND is. An unread CI over an exempt diff therefore leaves
     # the merge with no verdict from either side, which is the state a gate exists to
     # refuse. Hence: in the review role, GREEN advances and nothing else does.
+    #
+    # `cert_route: false` IS THAT SENTENCE, SAID TO THE REFUSAL ITSELF
+    # (/tasks/exempt-refusal-prints-dead-remedy). The policy above was right from the
+    # first day; the MESSAGE was not. This path used to take the gated path's refusal
+    # verbatim — "certify in full instead: `bin/full-suite-check <slug>`" — and then
+    # DISCARD the cert_clears flag that was the only thing able to honour it. Adding
+    # the cert produced a byte-identical refusal, so the gate printed a remedy it
+    # could not honour and an operator who followed it burned a full-suite run for
+    # nothing. Passing the flag DOWN instead of dropping it on the floor makes the
+    # promise and the behaviour one decision: `exempt_cert_clears` is now false
+    # BECAUSE the text offers no cert, not merely alongside it.
     exempt_ci = gate == "build" ? nil : CiStatus.evaluate(devops["pr_url"], ENV["DOR_CHECK_CI_STATUS"])
-    exempt_ci_error, _exempt_cert_clears, exempt_ci_notes =
+    exempt_ci_error, exempt_cert_clears, exempt_ci_notes =
       if exempt_ci
-        CiGate.verdict(exempt_ci, review_role: review_role, pr_url: devops["pr_url"], slug: task["slug"] || slug)
+        CiGate.verdict(exempt_ci, review_role: review_role, pr_url: devops["pr_url"],
+                                  slug: task["slug"] || slug, cert_route: false)
       else
         [nil, false, []]
       end
+    # NOT a discard and not decoration: this is the one line that would fail loudly if
+    # someone re-armed the cert route here without also re-reading the policy above.
+    # `cert_route: false` must yield a flag this path can honour by ignoring — which is
+    # only true while the flag is false. It FAILS CLOSED (abort → exit 1, so the gate
+    # refuses) because the failure it catches is a gate that has started offering a
+    # remedy it cannot honour, and passing that through is the whole defect.
+    if exempt_cert_clears
+      abort "bin/dor-check: the exempt (doc-only) path received a CLEARABLE CI refusal, which it cannot " \
+            "honour — the tier gate is already waived, so no suite remains to substitute. Whoever armed " \
+            "cert_route here must read the policy note above first (/tasks/exempt-refusal-prints-dead-remedy)."
+    end
     exempt_alerts.concat(exempt_ci_notes)
     exempt_errors = [exempt_ci_error].compact
     exempt_ready = exempt_errors.empty?
@@ -2287,8 +2314,15 @@ if gate != "build"
   # The case + the allow-list, both of them, live in CiGate.verdict — the exempt path
   # above asks the very same function, so neither can advance on a state the other
   # refuses.
+  #
+  # `cert_route: true` is the ONE thing this call says differently, and it is stated
+  # rather than defaulted so the two call sites read as a pair. Here a full cert
+  # genuinely does stand in (full_cert_stands_in_for_ci? below), so the refusal is
+  # allowed to name `bin/full-suite-check` — and this is the path that then HONOURS
+  # it. The exempt caller passes false and gets a refusal that offers nothing instead.
   ci_error, ci_error_cert_clears, ci_notes =
-    CiGate.verdict(ci, review_role: review_role, pr_url: devops["pr_url"], slug: task["slug"] || slug)
+    CiGate.verdict(ci, review_role: review_role, pr_url: devops["pr_url"],
+                       slug: task["slug"] || slug, cert_route: true)
   suggestions.concat(ci_notes)
 
   # ==== TIER 1 HAS A PRECONDITION: THE GREEN MUST STILL BE ABOUT THIS MERGE ====

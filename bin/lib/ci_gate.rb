@@ -26,7 +26,29 @@ module CiGate
   # for :green (the allow-list's only pass) nor for a state `verdict`'s case below
   # already wrote a remedy for. `cert_clears` marks the no-verdict family, whose refusal a FULL
   # local cert clears — resolved after the suite gate, where suite_eval is known.
-  def self.unread_ci_refusal(ci, pr_url, slug)
+  #
+  # ==== THE MESSAGE AND THE FLAG COME FROM ONE PARAMETER =======================
+  #
+  # `cert_route:` decides BOTH what this refusal offers and what the caller is then
+  # allowed to accept. That coupling is the fix, not a convenience: the two used to be
+  # decided in different files, and they drifted the moment the exempt path arrived.
+  #
+  # THE DEFECT (/tasks/exempt-refusal-prints-dead-remedy). The exempt caller asked for
+  # this refusal, was handed `cert_clears = true` with it, and DISCARDED the flag —
+  # correctly, because nothing stands in on that path. But the message it printed had
+  # already promised the route the discarded flag was the only thing that could honour.
+  # So the gate told the operator "certify in full instead: bin/full-suite-check
+  # <slug>", and adding that cert produced a BYTE-IDENTICAL refusal. A remedy the gate
+  # cannot honour is worse than a plain no: it teaches people the gate is noise, and an
+  # ignored gate is how a genuinely RED CI ships.
+  #
+  # It cannot recur silently now. `cert_route: false` makes `cert_clears` false AT THE
+  # SOURCE, so the caller has nothing to discard, and the same false flows into the
+  # text. Changing one without the other means changing this one parameter — and
+  # test/lib/dor_check_exempt_ci_test.rb re-derives the promise from the PRINTED
+  # refusal and then executes it, in both paths, so a message that outruns its
+  # behaviour reddens rather than shipping.
+  def self.unread_ci_refusal(ci, pr_url, slug, cert_route: true)
     case ci[:state]
     when :unreadable
       # ONE remedy string, not one-and-a-half. unreadable_remedy ALREADY opens with
@@ -37,16 +59,46 @@ module CiGate
       # reader told "CREDENTIAL fault" goes and rotates a credential that was fine.
       ["GitHub CI is UNREADABLE (#{ci[:reason]}) — the review gate-zero IS the authoritative CI verdict, and it " \
        "cannot be authoritative about a CI it could not read. " +
-       CiStatus.unreadable_remedy(CiStatus.repo_from_pr_url(pr_url), cause: ci[:cause]), true]
+       CiStatus.unreadable_remedy(CiStatus.repo_from_pr_url(pr_url), cause: ci[:cause], cert_route: cert_route),
+       cert_route]
     when :none, :unverified
-      # "Wait for checks" is the right remedy in a repo that HAS workflows and a wedge
-      # in one that does not: solana-studio and turf-vault carry zero workflows on
-      # every branch, so a clean PR there resolves :none FOREVER. Name both routes.
+      # WAITING IS THE REMEDY, and it is no longer half of one. This branch used to add
+      # "or — if this repo has NO workflows at all, where no check will ever appear —
+      # certify in full instead", on the premise that solana-studio and turf-vault
+      # carried zero workflows. That premise is FALSE and was already corrected in
+      # docs/agents/modules/gates/dor.md and pr-review-primary.md (PR #1128); this was
+      # the third copy. Re-derived at source 2026-09-05 on `origin/accepted` AND
+      # `origin/main`: solana-studio ships .github/workflows/gem-ci.yml, turf-vault
+      # ships .github/workflows/ci.yml. "No check will ever appear" is not a property
+      # of a repo in this ecosystem — when a check genuinely never arrives it is the
+      # PR's MERGE STATE, which ci_status.rb classifies as :conflicted or :ci_less,
+      # each with its own remedy and neither clearable by a cert.
+      #
+      # The cert route survives here only where it is honoured (cert_route), and it is
+      # offered as the escape for a wedged verdict, never justified by a repo that has
+      # no CI.
+      cert_escape = if cert_route
+                      " If checks genuinely cannot settle for this PR, certify in full instead: " \
+                        "`bin/full-suite-check #{slug}`, which runs ci.yml's own command (test:system " \
+                        "included) locally, and the gate advances on that cert."
+                    else
+                      # NAME NO SECOND ROUTE. On the exempt path there is none — see
+                      # the header. Say what does not work, so nobody spends a
+                      # full-suite run discovering it. "no local cert stands in" is
+                      # the CONTRACT CLAUSE, spelled identically in
+                      # CiStatus.unreadable_remedy's cert_route: false branch: the
+                      # regression reads the PRINTED refusal to decide what was
+                      # promised, then executes that promise, so the denial needs one
+                      # spelling across every state that can carry it.
+                      " But no local cert stands in for it here: this is the doc-only path, where the " \
+                        "shape/test-tier gate is already waived, so there is no suite to substitute — " \
+                        "`bin/full-suite-check #{slug}` would leave this refusal unchanged. Green is the " \
+                        "only thing that advances it."
+                    end
       ["GitHub CI has produced no verdict yet (#{ci[:state]}) — the review gate-zero IS the authoritative CI " \
-       "verdict, so it must not advance on a CI it has not read. Either defer this review until checks appear " \
-       "and settle (the supervisor's defer machinery re-queries; a red finish bounces the task back), or — if " \
-       "this repo has NO workflows at all, where no check will ever appear — certify in full instead: " \
-       "`bin/full-suite-check #{slug}`, which runs ci.yml's own command (test:system included) locally.", true]
+       "verdict, so it must not advance on a CI it has not read. Defer this review until checks appear " \
+       "and settle (the supervisor's defer machinery re-queries; a red finish bounces the task back).#{cert_escape}",
+       cert_route]
     when :no_pr
       # NOT the no-verdict family, and a cert cannot stand in for it: the missing thing
       # is not the evidence, it is the SUBJECT. Review's job is to merge a PR; with a
@@ -77,9 +129,17 @@ module CiGate
   # Returns [ci_error, cert_clears, notes]:
   #   ci_error    the refusal, or nil to advance
   #   cert_clears whether a FULL local cert may stand in for it (CI_NO_VERDICT_STATES
-  #               only) — resolved by the caller, which owns the evidence
+  #               only, and only where the caller can honour one) — resolved by the
+  #               caller, which owns the evidence
   #   notes       non-blocking suggestions the caller folds into its own list
-  def self.verdict(ci, review_role:, pr_url:, slug:)
+  #
+  # `cert_route:` is the CALLER'S OWN ANSWER to "can I honour a cert?", and it governs
+  # the refusal TEXT as well as `cert_clears` — see unread_ci_refusal's header. The
+  # gated caller passes true; the exempt caller passes false, and gets a refusal that
+  # promises nothing it will then refuse. It defaults to true so that adding a third
+  # caller cannot silently weaken the gate: `true` is the permissive-message /
+  # strict-enough-anyway side, and a caller that cannot honour a cert must say so.
+  def self.verdict(ci, review_role:, pr_url:, slug:, cert_route: true)
     ci_error = nil
     ci_error_cert_clears = false
     notes = []
@@ -150,10 +210,14 @@ module CiGate
     #
     # THE THREE TIERS:
     #   1. :green                → advance.
-    #   2. CI_NO_VERDICT_STATES  → refuse, UNLESS the task carries a FULL cert.
+    #   2. CI_NO_VERDICT_STATES  → refuse, UNLESS the task carries a FULL cert AND the
+    #                              caller can honour one (`cert_route`). On the exempt
+    #                              path it cannot, so tier 2 collapses into tier 3 —
+    #                              and the refusal SAYS so rather than offering a cert
+    #                              it will not accept.
     #   3. everything else       → refuse, unconditionally.
     if review_role && ci_error.nil? && ci[:state] != :green
-      ci_error, ci_error_cert_clears = unread_ci_refusal(ci, pr_url, slug)
+      ci_error, ci_error_cert_clears = unread_ci_refusal(ci, pr_url, slug, cert_route: cert_route)
     end
 
     [ci_error, ci_error_cert_clears, notes]

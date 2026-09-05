@@ -118,12 +118,28 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
      gate cannot be the authoritative CI verdict for a CI it could not read. It
      also includes a blank `devops.pr_url`, which used to pass silently.
 
-     **One escape, and only one: a FULL cert.** `bin/full-suite-check <task-slug>`
-     runs `ci.yml`'s own command (`test:system` included), so it is not weaker
-     evidence than CI — it is the same suite, run locally. When the task carries a
-     fresh full cert, the gate advances on it and says so; a *fast* cert is not
-     enough, and neither is a `[full-suite-bypass]`. This is why the refusal names
-     that command: the gate honours the remedy it prints.
+     **On a PR that carries CODE, one escape and only one: a FULL cert.**
+     `bin/full-suite-check <task-slug>` runs `ci.yml`'s own command (`test:system`
+     included), so it is not weaker evidence than CI — it is the same suite, run
+     locally. When the task carries a fresh full cert, the gate advances on it and
+     says so; a *fast* cert is not enough, and neither is a `[full-suite-bypass]`.
+     This is why the refusal names that command: the gate honours the remedy it
+     prints.
+
+     **On a DOC-ONLY PR there is no escape at all — green, or nothing.** When the
+     task's kind is `docs` / `chore` / `cleanup` *and* the observed diff ships no
+     behavior, the gate takes its **exempt** path: the shape/test-tier gate is
+     waived, and because it is waived there is no suite left whose result could
+     stand in for the CI verdict. So a full cert changes nothing there, and **the
+     refusal no longer offers one** — it says plainly that a local cert does not
+     stand in, and that green is the only thing that advances it. Do not send the
+     builder to `bin/full-suite-check` on a doc-only refusal; it is a wasted run.
+     Until 2026-09-05 this SOP promised the opposite, and so did the gate: it
+     printed the code-path remedy and then refused the exact cert it had just
+     named (`/tasks/exempt-refusal-prints-dead-remedy`). What to do instead is
+     unchanged from any other unread verdict — **defer** while checks are coming,
+     and `conductor-review` when the cause is a credential the builder does not
+     own.
 
      **In a GEM repo the escape is the same command with a different source.**
      `studio-engine` and `solana-studio` have no `ci.yml` for the resolver to read

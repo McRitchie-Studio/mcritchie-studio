@@ -316,4 +316,189 @@ class DorCheckExemptCiTest < Minitest::Test
     assert_equal 0, code, "the build gate has no CI verdict to give"
     assert_nil verdict["ci"]
   end
+
+  # ══ THE GATE MUST HONOUR THE REMEDY IT PRINTS — ON BOTH PATHS ════════════════
+  #
+  # THE DEFECT (/tasks/exempt-refusal-prints-dead-remedy). The exempt path took the
+  # GATED path's refusal verbatim — "certify in full instead: `bin/full-suite-check
+  # <slug>`" — while bin/dor-check discarded the `cert_clears` flag that was the only
+  # thing able to honour it. Measured before the fix: adding that exact cert produced
+  # a BYTE-IDENTICAL refusal. The gate printed an instruction it could not honour, and
+  # an operator who followed it burned a full-suite run for nothing.
+  #
+  # WHY A TEST AND NOT A CAREFUL COMMENT. This bug is a MESSAGE that outran its
+  # BEHAVIOUR, and the two live in different files. Nothing structural held them
+  # together, so they drifted the moment a second caller appeared — and the same class
+  # of drift produced five false comments in this ecosystem in one day, several
+  # written by people fixing false comments. Prose cannot hold prose honest.
+  #
+  # HOW THIS PIN WORKS, and why it is a PROPERTY rather than a pair of cases: it does
+  # not know which path offers a cert. It READS THE PRINTED REFUSAL, decides from that
+  # text alone what the gate promised, and then EXECUTES the promise:
+  #
+  #   promised a cert     → running with a FULL cert MUST advance (exit 0).
+  #   promised no cert    → running with a FULL cert MUST still refuse, and the
+  #                         refusal must be BYTE-IDENTICAL — which is the defect's own
+  #                         signature, asserted here as the PROOF that the denial is
+  #                         accurate rather than as the bug.
+  #
+  # So neither half can move alone. Re-arm the cert route on the exempt path without
+  # rewording, and the identical-refusal branch fails. Reword either message without
+  # moving the behaviour, and the executed-promise branch fails. Both are mutated
+  # separately in this file's sibling checks (see the task's mutation evidence).
+
+  # THE CONTRACT CLAUSES. Each is spelled ONCE in the source (bin/lib/ci_gate.rb and
+  # bin/lib/ci_status.rb) and read here to classify a refusal. They are deliberately
+  # the wording an operator acts on, not an internal token: the thing under test IS
+  # what the reader is told.
+  OFFERS_CERT = "certify in full instead"
+  DENIES_CERT = "no local cert stands in"
+
+  # The GATED twin of `devops` — a code diff under a shaped bug, which is the path
+  # where a full cert genuinely does stand in. Same states, same binary, opposite
+  # answer; that contrast is what makes the property meaningful rather than a
+  # restatement of the exempt path.
+  GATED_CODE_DIFF = "app/models/thing.rb"
+
+  def gated_devops(overrides = {})
+    {
+      "kind" => "bug", "shape" => "backend", "pr_url" => PR_URL,
+      "acceptance" => ["Gate honours the remedy it prints"],
+      "repositories" => ["myapp"], "risk_tags" => ["gates"],
+      "test_plan" => ["[unit] x", "[integration] y"], "post_deploy_cmd" => "none",
+      "checks_run" => ["[unit] bin/rails test test/x_test.rb",
+                       "[integration] ruby -Itest test/lib/y_test.rb"]
+    }.merge(overrides)
+  end
+
+  # Runs the REAL binary on either path with a stated suite-evidence world, and
+  # returns [stdout, exitcode]. `evidence` is named at every call site with no
+  # default, for the reason dor_check_test.rb states about its own `evidence:`:
+  # accidental coverage of the cert dimension is one refactor from vanishing, and the
+  # cert dimension is the entire subject here.
+  def refusal(path, ci:, evidence:)
+    payload, changed = path == :exempt ? [devops, DOC_DIFF] : [gated_devops, GATED_CODE_DIFF]
+    Dir.mktmpdir do |dir|
+      file = File.join(dir, "task.json")
+      File.write(file, JSON.generate("slug" => "remedy-task", "title" => "R",
+                                     "metadata" => { "devops" => payload }))
+      env = OutboundSeams.env({
+        "DOR_CHECK_DIFF_ROOT" => dir, "DOR_CHECK_DIFF_BASE" => "HEAD",
+        "DOR_CHECK_CHANGED_FILES" => changed, "DOR_CHECK_PR_FILES" => changed,
+        "DOR_CHECK_CI_STATUS" => ci, "DOR_CHECK_SUITE_EVIDENCE" => evidence
+      })
+      out = IO.popen(env, "#{BIN} remedy-task --file #{file} --gate-role review 2>/dev/null", &:read)
+      [out, $?.exitstatus]
+    end
+  end
+
+  FULL_CERT = "ok"              # bin/full-suite-check — ci.yml's own command, locally
+  FAST_CERT_ONLY = "fast_fresh" # bin/fast-check — diff-mapped, not a stand-in for CI
+
+  # THE PROPERTY. Read the promise off the printed refusal, then execute it.
+  def test_every_no_verdict_refusal_is_honoured_exactly_as_printed
+    %i[exempt gated].each do |path|
+      %w[none unverified unreadable].each do |state|
+        refused, code = refusal(path, ci: state, evidence: FAST_CERT_ONLY)
+        assert_equal 1, code, "#{path}/#{state} must refuse without a full cert:\n#{refused}"
+
+        offered = refused.include?(OFFERS_CERT)
+        denied  = refused.include?(DENIES_CERT)
+        refute_equal offered, denied,
+                     "#{path}/#{state} must either OFFER a cert or DENY one, never both or neither:\n#{refused}"
+
+        certified, cert_code = refusal(path, ci: state, evidence: FULL_CERT)
+
+        if offered
+          assert_equal 0, cert_code,
+                       "#{path}/#{state} PRINTED #{OFFERS_CERT.inspect} — the gate must honour the remedy " \
+                       "it prints:\n#{certified}"
+          assert_match(/ready to advance/, certified)
+        else
+          assert_equal 1, cert_code,
+                       "#{path}/#{state} PRINTED #{DENIES_CERT.inspect}, so a full cert must NOT advance " \
+                       "it:\n#{certified}"
+          # THE DEFECT'S OWN SIGNATURE, now the proof of honesty. Before the fix this
+          # sameness sat under a refusal that had just recommended the cert; the
+          # denial is only accurate if the cert truly changes nothing.
+          assert_equal refused, certified,
+                       "#{path}/#{state} says a cert does not stand in — so adding one must change " \
+                       "NOTHING, byte for byte"
+        end
+      end
+    end
+  end
+
+  # THE DIRECTION, asserted separately. The property above would still hold if BOTH
+  # paths flipped together, which would be a deliberate policy change and must not
+  # pass silently. This is the policy: a doc-only diff has no suite left to
+  # substitute, so it gets no cert route; a code diff does.
+  def test_the_exempt_path_denies_the_cert_route_and_the_gated_path_offers_it
+    %w[none unverified unreadable].each do |state|
+      exempt_refusal, = refusal(:exempt, ci: state, evidence: FAST_CERT_ONLY)
+      assert_includes exempt_refusal, DENIES_CERT,
+                      "the exempt refusal must say plainly that no cert stands in (#{state})"
+      refute_includes exempt_refusal, OFFERS_CERT,
+                      "the exempt refusal must not name a route it cannot honour (#{state})"
+
+      gated_refusal, = refusal(:gated, ci: state, evidence: FAST_CERT_ONLY)
+      assert_includes gated_refusal, OFFERS_CERT,
+                      "the gated refusal must still name the cert it goes on to honour (#{state})"
+      refute_includes gated_refusal, DENIES_CERT,
+                      "the gated path DOES honour a cert; denying it would be the mirror defect (#{state})"
+    end
+  end
+
+  # ── [unit] the flag and the text come from ONE parameter ────────────────────
+  #
+  # The integration property above proves the two agree through the real binary. This
+  # proves they CANNOT disagree at the source: `cert_route` decides the returned
+  # `cert_clears` AND the wording, so there is no state in which a caller is handed a
+  # clearable refusal whose text denies the cert (or the reverse). That was exactly
+  # the defect's shape — bin/dor-check received `cert_clears = true`, discarded it,
+  # and printed the offer the discarded flag was the only thing able to honour.
+  def test_unit_cert_route_governs_the_flag_and_the_wording_together
+    %i[none unverified unreadable].each do |state|
+      ci = { state: state, reason: "403", cause: :permissions }
+
+      offered, clears = CiGate.verdict(ci, review_role: true, pr_url: PR_URL, slug: "t", cert_route: true)
+      assert clears, "#{state}: the gated path's refusal must be clearable by a full cert"
+      assert_includes offered, OFFERS_CERT, "#{state}: a clearable refusal must name the route"
+      refute_includes offered, DENIES_CERT
+
+      denied, no_clears = CiGate.verdict(ci, review_role: true, pr_url: PR_URL, slug: "t", cert_route: false)
+      refute no_clears, "#{state}: the exempt path's refusal must NOT be clearable"
+      assert_includes denied, DENIES_CERT, "#{state}: an unclearable refusal must say so"
+      refute_includes denied, OFFERS_CERT, "#{state}: it must not name a route it cannot honour"
+    end
+  end
+
+  # The states OUTSIDE the no-verdict family never carried a cert route in either
+  # direction, and must not grow one from this change: `cert_route` is about which
+  # refusals a cert may clear, not about widening the family that may be cleared.
+  def test_unit_cert_route_does_not_widen_the_no_verdict_family
+    %i[red conflicted closed merged no_pr teal].each do |state|
+      _error, clears = CiGate.verdict({ state: state, failing: ["ci"] },
+                                      review_role: true, pr_url: PR_URL, slug: "t", cert_route: true)
+      refute clears, "#{state} is not the no-verdict family — no cert clears it, whatever cert_route says"
+    end
+  end
+
+  # THE THIRD COPY of a sentence corrected twice already (PR #1128 fixed
+  # pr-review-primary.md and dor.md). "No check will ever appear" was justified by
+  # "solana-studio and turf-vault carry zero workflows"; re-derived at source
+  # 2026-09-05 on origin/accepted AND origin/main, solana-studio ships
+  # .github/workflows/gem-ci.yml and turf-vault ships .github/workflows/ci.yml. The
+  # claim is false, so the refusal must not rest on it — when a check genuinely never
+  # arrives that is :conflicted / :ci_less, each with its own remedy.
+  def test_unit_the_no_verdict_refusal_no_longer_blames_a_repo_without_workflows
+    %i[none unverified].each do |state|
+      message, = CiGate.verdict({ state: state }, review_role: true, pr_url: PR_URL, slug: "t",
+                                                  cert_route: true)
+      refute_match(/NO workflows at all/, message,
+                   "#{state}: every repo here ships a pull_request workflow — that premise is false")
+      refute_match(/no check will ever appear/i, message,
+                   "#{state}: 'never' is a property of the PR's merge state (:conflicted/:ci_less), not a repo")
+    end
+  end
 end
