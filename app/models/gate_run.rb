@@ -86,6 +86,19 @@ class GateRun < ApplicationRecord
   # Best-effort like the broadcaster: a projection failure never breaks the gate
   # write (refresh_gates_safely rescues + logs).
   after_save_commit :refresh_task_gates_projection
+  # Keep the parent task's testing-phase projection (Task::TestingPhases) in step too.
+  # The Review span STARTS at a G2 gate run's started_at, but the projection only
+  # refreshed on a stage change (Task#refresh_testing_phases_after_change) and on a
+  # TaskEvent write — and a GateRun is neither. So a review lane opening after the task
+  # had already moved never refreshed the phase it feeds, and the stored span stayed a lie
+  # until some LATER stage change happened to rebuild it. Measured on production
+  # 2026-09-05 that is 1 task standing wrong right now — stated as measured rather than
+  # inflated, because the value here is forward-looking: it is the hole that reopens on
+  # every late gate, and a late gate is what inverted PR #1220's own review span.
+  # Narrow BY DESIGN — REVIEW_GATE_KEYS are the only gates any phase reads,
+  # so g1_cert/dor writes must not pay for a recompute that cannot change an answer.
+  # Best-effort like its neighbours: a projection failure never breaks the gate write.
+  after_save_commit :refresh_task_testing_phases
 
   # ---- write funnel (the ONLY writers) --------------------------------------
 
@@ -272,6 +285,13 @@ class GateRun < ApplicationRecord
     return unless subject_type == "task"
 
     Task.find_by(slug: subject_slug)&.refresh_gates_safely
+  end
+
+  def refresh_task_testing_phases
+    return unless subject_type == "task"
+    return unless Task::TestingPhases::REVIEW_GATE_KEYS.include?(key)
+
+    Task.find_by(slug: subject_slug)&.refresh_testing_phases_safely
   end
 
   # Mirror the g1_cert testing WINDOW onto three flat tasks columns

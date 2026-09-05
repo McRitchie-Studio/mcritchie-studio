@@ -14,6 +14,47 @@ class Task
   # (the devops approval_requested_at/approval_approved_at stamps remain — they just
   # no longer project as a phase window here).
   #
+  # VERSION 4 (2026-09-05): the Review span gets the same ordering guard the Build span
+  # got in VERSION 3, one phase over. #review_phase took the FIRST G2 gate run's
+  # started_at as the start and the last `reviewed` transition as the finish with nothing
+  # holding them in order, so a gate run opened AFTER the task was already `reviewed`
+  # started a window that had already closed. It was demonstrated by being CAUSED:
+  # recording PR #1220's own G2 lanes wrote a gate run 109s after that task's `reviewed`
+  # transition and inverted its own review span.
+  #
+  # MEASURED on production 2026-09-05: 24 of 1,672 stored review spans were inverted
+  # (seconds clamped to 0 by #seconds_between); re-resolving the start moves 25.
+  #
+  # THE BUMP ALONE IS NOT THE REPAIR, and that is the difference from VERSION 3. Every
+  # BUILD-span reader went through #cached_or_built, so the v3 bump invalidated them all,
+  # and no LIVE reader ever consumed a build span. 39 of that fix's rows DO sit in the
+  # candidate pool below — an earlier draft of this note said 0 of 232, and both halves
+  # were wrong — but the pool selects on `{phases,review}` and never reads
+  # `{phases,build}`, so the bump alone was a complete repair there. That STRUCTURAL
+  # fact, not a row count, is the asymmetry. Review::DurationRoll reads
+  # `{phases,review}` DIRECTLY in SQL with no version check, so it would keep serving the
+  # stored lie after this deploy: 19 of the 250 rows in its LIVE candidate pool carry a
+  # 0-second review, averaged into the /deployments card as though it happened. That pool
+  # is ENTIRELY version 2 — this is live corruption of a current number, not old debt. So
+  # `rake tasks:backfill_testing_phases` runs post-deploy and is what actually rewrites
+  # the column; the bump only stops #cached_or_built serving a stale row in the meantime.
+  #
+  # THE SECOND HALF is the staleness that let a wrong span sit there: the projection
+  # refreshed on a stage change (Task#refresh_testing_phases_after_change) and on a
+  # TaskEvent, but a GateRun is NEITHER — so a review gate landing after the stage move
+  # never refreshed the phase it feeds. GateRun now does
+  # (GateRun#refresh_task_testing_phases). Its measured footprint TODAY is 1 row, and the
+  # honest reading of that 1 is forward-looking rather than dismissive: it is the hole
+  # that reopens on every late gate, and a late gate is exactly what produced this defect.
+  #
+  # NOT TO BE CONFUSED WITH THE 380. A separate 380 stored review spans disagree with a
+  # fresh recompute, and 379 of them are stamped testing_phases_version = 1 — rows that
+  # never rode a backfill through the v1→v2 review redefinition (232 read
+  # `transition/completed → intent/completed`, 141 `transition/missing → gate_run/missing`).
+  # That is PRE-EXISTING debt, not this bug, and it currently sits outside DurationRoll's
+  # pool. The post-deploy backfill clears it in the same pass; it is recorded here so the
+  # next reader does not re-attribute those 379 rows to the ordering guard.
+  #
   # VERSION 3 (2026-09-05): the Build span no longer starts at a BLOCK. Task#block!
   # bounces a task back onto `building`, and #build_phase took the last such transition
   # as the build claim — so a bounced task's Build window started after it finished (238
@@ -33,7 +74,7 @@ class Task
   # reviewer picking the task up is deliberately VISIBLE as the gap between the two
   # windows — that gap is the insight, not a bookkeeping hole.
   module TestingPhases
-    VERSION = 3
+    VERSION = 4
 
     PHASE_DEFINITIONS = {
       "build"               => { "label" => "Build" },
@@ -205,16 +246,34 @@ class Task
     #      completed reviews keep a measured window on the version bump).
     # A submitted task with no review evidence is genuinely MISSING: the queue
     # time shows as the gap after CI, which is exactly the operator's insight.
+    # The finish is resolved FIRST because it BOUNDS the start, the same shape #build_phase
+    # uses: every candidate below is constrained to `before: ceiling`, so evidence recorded
+    # after the review already closed cannot open it. Recording THIS task's own G2 lanes is
+    # how the defect was demonstrated — the gate run opened 109s after the `reviewed`
+    # transition and inverted the span it was supposed to measure.
+    #
+    # The guard is a CEILING, never a requirement: `ceiling` is nil for a review still in
+    # flight (no `reviewed` transition yet), and a nil ceiling admits everything. A guard
+    # that rejected a gate run outright whenever it failed to prove it started early enough
+    # would satisfy "never inverted" by measuring nothing — every in-flight review would go
+    # missing and every ordinary one would fall through to a weaker source.
+    #
+    # A candidate failing the ceiling does not blank the phase; it falls to the next rung of
+    # the same most-durable-evidence cascade, and only an empty cascade yields "missing".
+    # That is the honest answer: a review whose every start marker postdates its own finish
+    # has no measurable window, and "missing" drops it from Review::DurationRoll's pool
+    # instead of averaging in a 0-second review.
     def review_phase(task, events, now:)
       finish = last_transition_to(events, "reviewed")
-      if (gate = first_review_gate_run(task))
-        span(gate.started_at, finish&.occurred_at, now: now, source: "gate_run")
-      elsif (intent = first_intent_to(events, "reviewed"))
-        span(intent.occurred_at, finish&.occurred_at, now: now, source: "intent")
-      elsif finish && (legacy_start = last_transition_to(events, "submitted"))
-        span(legacy_start.occurred_at, finish.occurred_at, now: now, source: "transition")
+      ceiling = finish&.occurred_at
+      if (gate = first_review_gate_run(task, before: ceiling))
+        span(gate.started_at, ceiling, now: now, source: "gate_run")
+      elsif (intent = first_intent_to(events, "reviewed", before: ceiling))
+        span(intent.occurred_at, ceiling, now: now, source: "intent")
+      elsif finish && (legacy_start = last_transition_to(events, "submitted", before: ceiling))
+        span(legacy_start.occurred_at, ceiling, now: now, source: "transition")
       else
-        span(nil, finish&.occurred_at, now: now, source: "gate_run")
+        span(nil, ceiling, now: now, source: "gate_run")
       end
     end
 
@@ -252,19 +311,27 @@ class Task
     end
 
     # The first G2 review-gate attempt for the task — retries and the second lane
-    # come later by definition, so the first started_at IS review start. Best-effort:
-    # a gate-run read must never break the projection.
-    def first_review_gate_run(task)
-      GateRun.for_subject("task", task.slug).where(key: REVIEW_GATE_KEYS)
-             .order(:started_at, :id).first
+    # come later by definition, so the first started_at IS review start. `before:` is the
+    # ordering ceiling from #review_phase: a lane that opened after the task was already
+    # `reviewed` is not this review's start, whatever wrote it. Inclusive (`<=`), matching
+    # #last_build_claim — a gate opened in the same second as the merge is not inverted.
+    # Best-effort: a gate-run read must never break the projection.
+    def first_review_gate_run(task, before: nil)
+      scope = GateRun.for_subject("task", task.slug).where(key: REVIEW_GATE_KEYS)
+      scope = scope.where(started_at: ..before) if before
+      scope.order(:started_at, :id).first
     rescue StandardError
       nil
     end
 
     # ---- event finders --------------------------------------------------------
 
-    def last_transition_to(events, stage)
-      events.select { |e| e.transition? && e.to_stage == stage }.last
+    # `before:` is optional everywhere: only #review_phase's legacy rung passes one, and a
+    # nil ceiling leaves every existing caller (build, ci) reading exactly as before.
+    def last_transition_to(events, stage, before: nil)
+      found = events.select { |e| e.transition? && e.to_stage == stage }
+      found = found.select { |e| e.occurred_at <= before } if before
+      found.last
     end
 
     # The last `→ building` transition that is a BUILD CLAIM — the event the Build span
@@ -295,8 +362,10 @@ class Task
       claims.last
     end
 
-    def first_intent_to(events, stage)
-      events.find { |e| e.intent? && e.to_stage == stage }
+    def first_intent_to(events, stage, before: nil)
+      found = events.select { |e| e.intent? && e.to_stage == stage }
+      found = found.select { |e| e.occurred_at <= before } if before
+      found.first
     end
 
     def first_cert(events, status)
