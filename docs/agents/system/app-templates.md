@@ -177,13 +177,17 @@ It re-inits a **new** program after the §3 redeploy, and it runs from a **singl
 key — the `INIT_AUTHORITY`, Alex's Phantom, exported to a temp CLI keypair.
 `update_signers` is the opposite case: two cosigners, on the program already
 deployed, and it exists precisely so that a signer change needs **no** redeploy.
-§5 says only that it goes live *after* the re-init; it does not give its steps.
-That is a real gap, and the hub no longer has the tool that filled it. It was
-traded deliberately: the console had **zero** production signing requests
-(re-measured against prod on 2026-09-04, not inherited from the freeze), and a
-browser-coordination tool belongs in the web3 app under this very decision. If
-a future signer rotation wants it, **build it in turf-monster** — that is not a
-reversal of this section, it is what this section says.
+Until 2026-09-04 §5 recorded the rotation's continuity rule but not its
+mechanics; turf-vault's `document-signer-rotation-path` then added them, minutes
+after this section was written. §5 now names the signing path and reaches this
+section's conclusion independently: no script builds `update_signers` yet, both
+keys would leave Phantom to run one, and browser coordination is turf-monster's
+to build. The gap is documented at both ends; what the hub gave up is the tool
+that closed it. It was traded deliberately: the console had **zero** production
+signing requests (re-measured against prod on 2026-09-04, not inherited from the
+freeze), and a browser-coordination tool belongs in the web3 app under this very
+decision. If a future signer rotation wants it, **build it in turf-monster** —
+that is not a reversal of this section, it is what this section says.
 
 ### 3. The control that actually matters — and it is missing
 
