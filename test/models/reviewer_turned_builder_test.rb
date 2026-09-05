@@ -12,8 +12,8 @@ require "test_helper"
 # soul — and a claim that names a soul is a deliberate assertion of authorship, not a
 # liveness ping.
 #
-# WHAT THAT COST, on the documented path. `bin/reviewer-select` (:441), the review
-# claim CLI (bin/lib/review_claim_cli.rb:690) and pr-review-sop.md (:136) all send a
+# WHAT THAT COST, on the documented path. `bin/reviewer-select` (:446), the review
+# claim CLI (bin/lib/review_claim_cli.rb:690) and pr-review-sop.md (:137) all send a
 # reviewer to repair a wrong or missing author stamp with
 #
 #     bin/task move <slug> building --actor <the-real-builder>
