@@ -465,4 +465,152 @@ class Task::TestingPhasesTest < ActiveSupport::TestCase
     assert_operator Task::TestingPhases::VERSION, :>, 2, "the bump is what invalidates the corrupted rows"
     assert_equal 600, served.dig("phases", "build", "seconds"), "a v2 row is rebuilt, never served"
   end
+
+  # ---- a review gate cannot open a window that already closed --------------------
+  #
+  # The sibling of the Build-span defect above, one phase over, and DEMONSTRATED BY THE
+  # REVIEW THAT FOUND IT: recording PR #1220's own G2 lanes wrote a g2a_primary gate run
+  # at 07:11:35Z against a `-> reviewed` transition at 07:09:46Z, inverting that task's
+  # own review span. MEASURED on production 2026-09-05: 24 of 1,672 stored review spans
+  # were inverted (seconds clamped to 0 by #seconds_between), 20 of them sitting inside
+  # Review::DurationRoll's live 250-row candidate pool, where a 0-second "review" is
+  # averaged into the /deployments card as though it happened.
+
+  test "[unit] a review gate opened after the reviewed transition does not start the Review span" do
+    # The headline regression. reviewed lands at +33m; the gate run opens at +40m.
+    task = probe_task
+    open_review_gate(task, at: @anchor + 40.minutes)
+
+    review = Task::TestingPhases.build(task).dig("phases", "review")
+
+    assert_operator Time.zone.parse(review["started_at"]), :<=, Time.zone.parse(review["completed_at"]),
+                    "the review span must never start after it finished"
+    refute_equal "gate_run", review["source"], "a gate opened after `reviewed` is not this review's start"
+    assert_equal "transition", review["source"], "it falls to the next rung of the cascade, not to nothing"
+    assert_equal 780, review["seconds"], "submitted -> reviewed, the honest legacy window"
+  end
+
+  test "[unit] the ordinary gate-run start still opens the Review span" do
+    # THE OVER-BROAD DIRECTION. A guard that dropped every gate run would satisfy the
+    # headline criterion above and destroy the measurement this phase exists for.
+    task = probe_task
+    open_review_gate(task, at: @anchor + 22.minutes)
+
+    review = Task::TestingPhases.build(task).dig("phases", "review")
+    assert_equal "gate_run", review["source"], "an on-time gate run is still the start"
+    assert_equal 660, review["seconds"], "gate start -> reviewed, unchanged by the guard"
+  end
+
+  test "[unit] an in-flight review with no reviewed transition still starts at its gate run" do
+    # The ceiling is nil while review is in flight, and a nil ceiling admits everything.
+    # A guard demanding a finish to compare against would blank every live review.
+    task = Task.create!(title: "In Flight Review Probe")
+    add_event(task, kind: "transition", to_stage: "building",  at: 50.minutes.ago)
+    add_event(task, kind: "transition", to_stage: "submitted", at: 40.minutes.ago)
+    task.update_columns(stage: "submitted") # rubocop:disable Rails/SkipsModelValidations
+    open_review_gate(task, at: 30.minutes.ago)
+
+    review = Task::TestingPhases.build(task).dig("phases", "review")
+    assert_equal "in_progress", review["status"], "a live review still measures against now"
+    assert_equal "gate_run", review["source"]
+    assert_in_delta 1800, review["seconds"], 5
+  end
+
+  test "[unit] a gate opened in the same second as the merge is still the start" do
+    # The ceiling is INCLUSIVE (<=), matching #last_build_claim. A strict `<` would drop
+    # the one gate run whose start is exactly the finish -- equal is not inverted.
+    task = probe_task
+    open_review_gate(task, at: @anchor + 33.minutes)
+
+    review = Task::TestingPhases.build(task).dig("phases", "review")
+    assert_equal "gate_run", review["source"], "start == finish is a zero-length window, not an inverted one"
+    assert_equal 0, review["seconds"]
+  end
+
+  test "[unit] a late lane leaves an earlier on-time lane as the Review start" do
+    # The guard filters CANDIDATES, it does not reject the gate_run rung wholesale.
+    task = probe_task
+    open_review_gate(task, key: "g2b_light",   at: @anchor + 22.minutes)
+    open_review_gate(task, key: "g2a_primary", at: @anchor + 40.minutes)
+
+    review = Task::TestingPhases.build(task).dig("phases", "review")
+    assert_equal "gate_run", review["source"]
+    assert_equal 660, review["seconds"], "the on-time lane survives its late sibling"
+  end
+
+  test "[unit] a late gate run falls to the review intent rather than blanking the phase" do
+    task = probe_task
+    add_event(task, kind: "intent", to_stage: "reviewed", at: @anchor + 23.minutes)
+    open_review_gate(task, at: @anchor + 40.minutes)
+
+    review = Task::TestingPhases.build(task).dig("phases", "review")
+    assert_equal "intent", review["source"], "the cascade continues past a rejected gate run"
+    assert_equal 600, review["seconds"]
+  end
+
+  test "[unit] a review intent recorded after the merge is not the Review start either" do
+    # The intent rung carries its OWN ceiling. bin/reviewer-select writes the intent, and
+    # a re-selection after the merge lands one exactly as late as the gate run -- so
+    # guarding only the gate run would move the inversion down a rung instead of fixing it.
+    task = probe_task
+    add_event(task, kind: "intent", to_stage: "reviewed", at: @anchor + 40.minutes)
+    open_review_gate(task, at: @anchor + 45.minutes)
+
+    review = Task::TestingPhases.build(task).dig("phases", "review")
+    assert_equal "transition", review["source"], "both late markers rejected, the cascade continues"
+    assert_equal 780, review["seconds"], "submitted -> reviewed, still not inverted"
+  end
+
+  test "[unit] a review whose every start marker postdates the finish reports missing" do
+    # The honest end of the cascade. `missing` carries no seconds, so Review::DurationRoll
+    # drops the row instead of averaging in a 0-second review.
+    task = Task.create!(title: "All Markers Late Probe")
+    add_event(task, kind: "transition", to_stage: "building",  at: @anchor = 60.minutes.ago)
+    add_event(task, kind: "transition", to_stage: "reviewed",  at: @anchor + 33.minutes)
+    add_event(task, kind: "transition", to_stage: "submitted", at: @anchor + 45.minutes)
+    open_review_gate(task, at: @anchor + 40.minutes)
+
+    review = Task::TestingPhases.build(task).dig("phases", "review")
+    assert_equal "missing", review["status"], "no start marker precedes the finish"
+    assert_nil review["started_at"]
+    assert_nil review["seconds"], "a missing window contributes nothing to the review average"
+  end
+
+  test "[integration] a review gate landing after the stage move refreshes the stored review span" do
+    # The staleness half. The projection refreshed on a stage change and on a TaskEvent,
+    # but a GateRun is neither -- so a review lane opening after the task had already
+    # moved left the STORED span wrong (381 of 1,672 production rows on 2026-09-05).
+    task = Task.create!(title: "Late Gate Refresh Probe")
+    task.update!(stage: "building")
+    task.update!(stage: "submitted")
+    task.update!(stage: "reviewed")
+
+    stored = Task.find_by!(slug: task.slug).testing_phases.dig("phases", "review")
+    assert_equal "transition", stored["source"], "no gate run yet -> the legacy rung"
+
+    reviewed_at = task.task_events.where(to_stage: "reviewed").last.occurred_at
+    GateRun.open!(subject_type: "task", subject_slug: task.slug, key: "g2a_primary",
+                  actor: "carl", now: reviewed_at - 5.minutes)
+
+    refreshed = Task.find_by!(slug: task.slug).testing_phases.dig("phases", "review")
+    assert_equal "gate_run", refreshed["source"], "the gate write refreshed the phase it feeds"
+    assert_equal 300, refreshed["seconds"], "and the STORED column carries the corrected span"
+  end
+
+  test "[integration] a non-review gate does not rebuild the testing-phase projection" do
+    # THE OVER-BROAD DIRECTION on the refresh side. Refreshing on EVERY gate write would
+    # pass the test above while making g1_cert/dor writes pay for a recompute that cannot
+    # change an answer -- REVIEW_GATE_KEYS are the only gates any phase reads.
+    task = Task.create!(title: "Narrow Refresh Probe")
+    task.update!(stage: "building")
+    task.update_columns(testing_phases: { "sentinel" => true }) # rubocop:disable Rails/SkipsModelValidations
+
+    GateRun.open!(subject_type: "task", subject_slug: task.slug, key: "g1_cert", actor: "shannon")
+    assert_equal({ "sentinel" => true }, Task.find_by!(slug: task.slug).testing_phases,
+                 "a cert gate leaves the phase projection alone")
+
+    GateRun.open!(subject_type: "task", subject_slug: task.slug, key: "g2a_primary", actor: "carl")
+    refute_equal({ "sentinel" => true }, Task.find_by!(slug: task.slug).testing_phases,
+                 "a review gate rebuilds it")
+  end
 end

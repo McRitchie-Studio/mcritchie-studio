@@ -66,12 +66,29 @@ module Review
   # same shape as Ci::AppLadder.parked_index and TasksController's
   # @ever_blocked_slugs / @ci_progress_by_slug batches.
   #
-  # LIVE, NOT CACHED AT DEPLOY. Nothing is stored: the projection refreshes on every
-  # stage change and every TaskEvent (Task#refresh_testing_phases_after_change), and
-  # DeploymentsBroadcaster.app_ladder already re-renders this row on
-  # saved_change_to_merged? || saved_change_to_stage? — which is precisely the write
-  # that lands a review. The average moves as reviews land, with no caching pass to
-  # wait for.
+  # WHAT IS ACTUALLY STORED, AND WHY IT MATTERS HERE. This class reads the MATERIALIZED
+  # `testing_phases` jsonb column directly in SQL (see #candidates_by_repo), so it is a
+  # cache reader, not a live derivation — an earlier version of this note claimed
+  # "nothing is stored", and that overstatement is precisely what hid a stale-projection
+  # bug through two reviews.
+  #
+  # Two consequences worth stating plainly, because neither is obvious at the call site:
+  #
+  #   · NO VERSION CHECK. Task::TestingPhases::VERSION self-heals #cached_or_built
+  #     readers — a row stamped at an older version is rebuilt when read. The SQL below
+  #     bypasses that entirely: it reads whatever bytes are in the column. So a
+  #     derivation fix reaches this class ONLY via `rake tasks:backfill_testing_phases`,
+  #     never via the version bump alone.
+  #   · REFRESH IS EVENT-DRIVEN, so the column is only as fresh as its triggers. It
+  #     refreshes on a stage change (Task#refresh_testing_phases_after_change), on a
+  #     TaskEvent, and — since 2026-09-05 — on a REVIEW GateRun landing
+  #     (GateRun#refresh_task_testing_phases), which is what the Review span starts at.
+  #     Before that last trigger existed a gate run arriving after the stage move left
+  #     this reader serving a stale span.
+  #
+  # DeploymentsBroadcaster.app_ladder re-renders this row on
+  # saved_change_to_merged? || saved_change_to_stage? — precisely the write that lands a
+  # review — so the average still moves as reviews land, with no caching pass to wait for.
   class DurationRoll
     # The rolling window: how many usable reviews the average is taken over.
     SAMPLE_SIZE = 10
