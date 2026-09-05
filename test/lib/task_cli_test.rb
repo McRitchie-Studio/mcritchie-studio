@@ -1117,49 +1117,17 @@ class TaskCliTest < Minitest::Test
 
   # --- Heartbeat (the lease renewal bin/statusline drives) --------------------
 
-  # A HEARTBEAT RENEWS A LEASE; IT NEVER ACQUIRES ONE. This case used to assert
-  # the opposite — an unclaimed `building` task was ADOPTED by whichever session
-  # happened to be heartbeating it — and that is precisely how a REVIEWER became a
-  # recorded worker. `bin/task block <slug> --kind rework` lands the bounced task
-  # back on `building` and repoints the BLOCKING session's marker at it; the
-  # claim keys were stripped at `submitted`, so the reviewer's next status-line
-  # render adopted the free lease. The board could not tell that write from a
-  # handoff, stamped `devops.builders_unattributed` with the reviewer's session,
-  # and `bin/reviewer-select` refused every later round (four bounced tasks in one
-  # 2026-09-04 sitting). The reviewer also held the build claim, so the documented
-  # repair was itself refused as :held_by_other.
+  # A HEARTBEAT RENEWS A LEASE; IT NEVER ACQUIRES ONE. This asserted the opposite
+  # until 2026-09-05, which is how a REVIEWER became a recorded worker on a task it
+  # had only bounced. Story + the bound-desk exception: task_heartbeat_claim_test.rb.
   def test_heartbeat_does_not_adopt_an_unclaimed_task
     requests, _out, _err, status = run_task(
       ["heartbeat", "demo-task"],
       env: { "CLAUDE_CODE_SESSION_ID" => SESSION, "TASK_CLAIM_NONCE" => "inst-A" },
       stub_devops: { "kind" => "feature" }
     )
-    assert status.success?, "declining is not an error — the heartbeat stays silent and best-effort"
-    assert_nil patch_of(requests),
-               "a claim is made deliberately (`bin/task move <slug> building`), never inferred " \
-               "from the fact that a terminal is painting"
-  end
-
-  # The other side of that contract, without which the case above would be
-  # satisfied by a heartbeat that renews NOTHING: a bound DESK is evidence that
-  # this session is at the task's workbench, so it may still re-adopt a lapsed
-  # lease. That is the recovery path a builder depends on; a reviewer's primary
-  # checkout can never produce it (DeskActivity.desk_root refuses any directory
-  # not bound to THIS task).
-  def test_heartbeat_adopts_an_unclaimed_task_from_its_bound_desk
-    Dir.mktmpdir do |desk|
-      File.write(File.join(desk, ".agent-context.json"), { "task_slug" => "demo-task" }.to_json)
-      requests, _out, _err, status = run_task(
-        ["heartbeat", "demo-task", "--desk", desk],
-        env: { "CLAUDE_CODE_SESSION_ID" => SESSION, "TASK_CLAIM_NONCE" => "inst-A" },
-        stub_devops: { "kind" => "feature" }
-      )
-      assert status.success?
-      devops = patch_devops(requests)
-      assert_equal SESSION, devops["claimed_session"]
-      assert_equal "inst-A", devops["claim_nonce"]
-      assert devops["claim_expires_at"], "the heartbeat writes a fresh lease"
-    end
+    assert status.success?, "declining is not an error — the heartbeat stays best-effort"
+    assert_nil patch_of(requests), "a claim is made deliberately, never inferred from a painting terminal"
   end
 
   def test_heartbeat_renews_this_instances_own_claim
