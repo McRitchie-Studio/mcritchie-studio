@@ -51,6 +51,14 @@ class UserNamePartsTest < ActiveSupport::TestCase
   # seed and the migrations make. They must land on identical columns, or the
   # second acceptance criterion ("migrated and freshly seeded rows agree") cannot
   # hold for any name at all.
+  #
+  # WHAT IT CANNOT CATCH, stated so nobody over-trusts it: `set_name_parts` now
+  # delegates to `name_parts`, so a change to the DERIVATION moves both sides of
+  # this comparison at once and it stays green. Measured by mutation — nulling
+  # `last_name` for a one-word name left this test passing. What it catches is a
+  # WRITER that stops calling the primitive, which is the defect in hand. The
+  # derivation itself is pinned by the explicit cases below and by the migrations'
+  # inline-copy check in test/models/renamed_name_parts_test.rb.
   test "name_parts writes exactly what the before_save callback writes" do
     NAMES.each do |name|
       via_callback  = user(name: "Placeholder Name")
