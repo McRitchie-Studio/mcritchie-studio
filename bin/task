@@ -887,6 +887,53 @@ end
 # the desk for up to 94 measured minutes, so a holder mid-cert still needs it. A
 # gate opened BY the holder protects the holder; one opened by a challenger does
 # not; one nobody signed is an unknown and still protects.
+# A HEARTBEAT RENEWS A LEASE; IT NEVER ACQUIRES ONE. True only when this
+# renewal is allowed to write the claim.
+#
+# THE DEFECT THIS CLOSES — a reviewer recorded as an author.
+#
+# `bin/task block <slug> --kind rework` lands the task back on `building` and
+# ends with write_feature_marker, which repoints the BLOCKING session's
+# per-session marker at the task it just bounced. bin/statusline then reads that
+# marker, sees `stage: building`, and fires this heartbeat — from a session that
+# never built anything. The task's claim keys were stripped when it moved to
+# `submitted` (#enforce_build_claim_invariant), so the lease read :unclaimed, the
+# heartbeat ADOPTED it, and the PATCH landed a claim naming the reviewer's
+# session. Server-side that write is indistinguishable from a handoff:
+# Task#claim_lease_rewritten? makes it a build claim, it names no soul, and
+# Task#builder_roll_call duly stamped `devops.builders_unattributed` with the
+# reviewer's session id. `bin/reviewer-select` then refuses the NEXT round —
+# "the AUTHORS ARE UNKNOWN" — because the author set now reads incomplete.
+#
+# Measured 2026-09-04: four bounced tasks in one review sitting, each needing a
+# hand-passed `--builder <soul>` before it could be reviewed again. Passing
+# `--agent carl` to the block does not help, because the stamp is not written by
+# the block at all — it is written by the throttled (~45s) heartbeat that follows
+# it, which carries no actor. The same adoption also left the REVIEWER holding
+# the build claim, which is why the documented repair (`bin/task move <slug>
+# building --actor <author>`) was itself refused as :held_by_other.
+#
+# THE RULE. Renewing a lease this session already holds asserts nothing about
+# authorship and stays exactly as it was. ACQUIRING one — an :unclaimed or
+# :expired lease naming somebody else, or nobody — is a claim, and a claim must
+# be made deliberately (`bin/task move <slug> building`), never inferred from the
+# fact that a terminal is painting. The one exception is a bound DESK: a
+# worktree whose .agent-context.json names THIS task is evidence that this
+# session is at the task's workbench, which is the recovery path a builder whose
+# lease lapsed depends on. DeskActivity.desk_root refuses any directory not bound
+# to this task, so a reviewer's primary checkout resolves none.
+#
+# Fail CLOSED (do not acquire) on any error: a heartbeat that declines writes
+# nothing, and the ordinary `move building` still claims the task.
+def heartbeat_may_claim?(slug, devops, session, desk_hint)
+  held = devops["claimed_session"].to_s.strip
+  return true if !held.empty? && held == session.to_s.strip
+
+  !DeskActivity.desk_root(desk_hint || Dir.pwd, slug).nil?
+rescue StandardError
+  false
+end
+
 def heartbeat_abandoned?(slug, task, devops, desk_hint)
   root = DeskActivity.desk_root(desk_hint || Dir.pwd, slug)
   touched = root.nil? ? nil : DeskActivity.touched_since?(root, Time.now - ClaimLease::DESK_IDLE_SECONDS)
@@ -2681,7 +2728,9 @@ when "heartbeat"
         # this call is wrong, the holder's very next heartbeat re-claims the task —
         # the mistake heals itself, which is why declining is safe and expiring
         # eagerly would not be.
-        if decision != :held_by_other && !heartbeat_abandoned?(slug, current, devops, heartbeat_desk)
+        if decision != :held_by_other &&
+           heartbeat_may_claim?(slug, devops, session, heartbeat_desk) &&
+           !heartbeat_abandoned?(slug, current, devops, heartbeat_desk)
           merged = devops.merge(ClaimLease.renewed(session: session, nonce: claim_nonce, prior: devops))
           api(:patch, "/api/v1/tasks/#{slug}", { "devops" => merged })
         end

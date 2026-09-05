@@ -2427,10 +2427,29 @@ class Task < ApplicationRecord
       # skip is recorded on the same spine the move writes — not as a second, orphan
       # event. Absent on every normal move (Current flag nil), so it never widens the
       # default metadata.
-      metadata: stage_event_metadata(from: from).merge(
-        Current.task_event_review_bypass ? { "review_bypassed" => true } : {}
-      )
+      metadata: stage_event_metadata(from: from)
+        .merge(Current.task_event_review_bypass ? { "review_bypassed" => true } : {})
+        # And the BLOCK marker, for the same reason one indirection along: #block!
+        # lands a bounced task on `building`, so a rework block writes a
+        # `→ building` transition whose actor is the BLOCKER. Readers that equate
+        # that transition with a build claim counted the reviewer as an author —
+        # ReviewerSelector#builders read ["shannon", "carl"] after a bounce, so the
+        # reviewer who sent the work back was excluded from the task's own pool and
+        # named in the audit as one of its authors. The actor is right and stays;
+        # what was missing is WHY, and it rides the same event rather than a second
+        # orphan row. See TaskEvent#block_transition?.
+        .merge(block_transition_metadata)
     )
+  end
+
+  # The `blocked` marker for a transition written by #block! — empty on every
+  # ordinary move. Keyed on blocked_at moving to a value in the save that just
+  # landed, the same tell #build_claim_save? and #set_stage_timestamp already use
+  # for "this transition is a block, not a claim".
+  def block_transition_metadata
+    return {} unless saved_change_to_blocked_at? && blocked_at.present?
+
+    { "blocked" => true }.merge(block_kind.present? ? { "block_kind" => block_kind } : {})
   end
 
   # Extra, non-spine event metadata. EVERY staged transition snapshots the mascot
@@ -2782,12 +2801,77 @@ class Task < ApplicationRecord
   # shapes `bin/task move <slug> building` takes, whether or not the stage changes.
   # A block! lands on `building` too but is NOT a build claim: the blocker is not
   # the builder (detected by blocked_at being set in this same save).
+  #
+  # Neither is any OTHER write from the session that is REVIEWING this task
+  # (#reviewing_party_claim?). The block itself was always exempt; the writes that
+  # FOLLOW it were not, and one of them is automatic — see that method.
   def build_claim_save?
     return false unless stage == "building"
     return false if will_save_change_to_blocked_at? && blocked_at.present?
+    return false if reviewing_party_claim?
     return true if will_save_change_to_stage?
 
     claim_lease_rewritten?
+  end
+
+  # THE SEAM BETWEEN A REVIEW WRITE AND A BUILD WRITE — true when the session
+  # named in the INCOMING claim is the one holding this task's LIVE REVIEW claim.
+  #
+  # Nothing used to distinguish the two. A build claim is an assertion of
+  # authorship (`bin/task move <slug> building`); a lease renewal is a liveness
+  # ping. Both arrive as one shape — a devops PATCH that rewrites ClaimLease's
+  # keys — so #claim_lease_rewritten? read them identically, and any session whose
+  # status line happened to be pointed at a `building` task became a recorded
+  # (unnamed) worker on it.
+  #
+  # That is not hypothetical. `bin/task block <slug> --kind rework` lands the task
+  # back on `building` and repoints the BLOCKING session's feature marker at it, so
+  # bin/statusline fires that session's build-claim heartbeat seconds later. The
+  # claim keys were stripped at `submitted` (#enforce_build_claim_invariant), so the
+  # heartbeat adopted the free lease, the write named no soul, and #builder_roll_call
+  # stamped `devops.builders_unattributed` with the REVIEWER's session id. The author
+  # set then reads INCOMPLETE and `bin/reviewer-select` refuses the next round —
+  # measured 2026-09-04 on four bounced tasks in one sitting, each needing a
+  # hand-passed `--builder <soul>`. And a hand-pass is not a property: reviewers
+  # who learn to pass it reflexively are exactly how a REAL incomplete author set
+  # gets waved through.
+  #
+  # The board already recorded who is reviewing — TaskReviewClaim, the per-task
+  # review lease every review path takes (`bin/task review-claim acquire` and the
+  # server-side `claim_next_review` pop both funnel through .acquire). It was simply
+  # never consulted when deciding who BUILT. It is a safe answer to ask: .acquire
+  # refuses a review claim by anyone in the author set (.self_review?), so a live
+  # review holder is by construction not an author of this task.
+  #
+  # The CLI half of this fix (bin/task's #heartbeat_may_claim?) stops the renewal
+  # from being sent at all. This half is what makes it a PROPERTY of the board
+  # rather than of one script: a hand-run PATCH, another client, or a future caller
+  # reaching the API directly is judged the same way.
+  #
+  # Suppressing the whole claim — not merely the unattributed branch — is
+  # deliberate. #builder_to_stamp rule 1 re-points `built_by` to an explicit soul
+  # actor, so a reviewer write carrying `--agent carl` would otherwise record CARL
+  # as the builder of a PR he reviewed: the same defect fully inverted, and a
+  # confidently-wrong author set is worse than a refusing one.
+  #
+  # Any lookup failure (no table yet, DB trouble) answers false — the pre-existing
+  # behaviour, which fails CLOSED for review selection.
+  #
+  # Deliberately NOT memoized: one Task instance is saved many times over its life
+  # (a move, then a notes update, then a renewal), a review claim is acquired and
+  # released between them, and a memo taken on the first save would answer for
+  # writes that happen minutes later. One indexed read (task_slug is unique) per
+  # save of a `building` task is the cheaper mistake.
+  def reviewing_party_claim?
+    current = metadata.is_a?(Hash) ? (metadata["devops"] || {}) : {}
+    session = current["claimed_session"].to_s.strip
+    return false if session.empty?
+
+    review = TaskReviewClaim.find_by(task_slug: slug)
+    review.present? && review.live? && review.claimed_session.to_s.strip == session
+  rescue StandardError => e
+    Rails.logger.warn("[builder-stamp] review-claim lookup failed for #{slug}: #{e.class}: #{e.message}")
+    false
   end
 
   # True when this save writes a claim lease that differs from the stored one — a
