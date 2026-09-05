@@ -111,7 +111,7 @@ The 1Password account is `alex@mcritchie.studio` (account ID `MWOV5OT5BRHATI4EGM
 1. Generate a new keypair: `solana-keygen new --no-bip39-passphrase --silent --outfile /tmp/new-admin.json`.
 2. Get the base58 secret: `cat /tmp/new-admin.json | jq -r '. | map(.) | @json'` (the JSON array IS the secret), then convert with `bin/rails runner "puts Solana::Keypair.from_bytes(JSON.parse(File.read('/tmp/new-admin.json'))).secret_key_base58"`.
 3. Get the public address: `solana-keygen pubkey /tmp/new-admin.json`.
-4. **Before rotating**, run the on-chain `update_signers` instruction to swap the new pubkey into `VaultState.signers`. This requires 2-of-3 cosign. Use `turf-vault/docs/CURRENT_DEPLOYMENT.md` for current authority details and `turf-vault/docs/KEY_ROTATION.md` for the rotation flow.
+4. **Before rotating**, run the on-chain `update_signers` instruction to swap the new pubkey into `VaultState.signers`. This requires 2-of-3 cosign. Use `turf-vault/docs/KEY_ROTATION.md` for the rotation flow. **Confirm the signer set for the cluster you are rotating** — this procedure ends on `turf-monster-mainnet` (step 6), and `turf-vault/docs/CURRENT_DEPLOYMENT.md` records signers only under `## Devnet`; the mainnet set is not in that repo and must be read on-chain from `VaultState` (`seeds = [b"vault"]`).
 5. Update 1Password `agent.alex.solana` -> field `private key` -> paste the new base58 secret. Save.
 6. `heroku config:set SOLANA_ADMIN_KEY=<new_base58> --app turf-monster-mainnet`.
 7. Re-run `bin/ecosystem-build` → Phase 4 re-fetches from 1P and writes to local `.env`.

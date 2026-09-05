@@ -162,11 +162,26 @@ exemption** — the state the whole allowlist mechanism exists to reach.
 
 **The question §2a left open got answered first, and the answer was no.** §2a
 said the console would come off ice if Squads turned out not to cover rotating
-the turf-vault 2-of-3 **signer set**. It does not: the Squads V4 vault PDA
-`BW13kgfi…` is the program's **upgrade** authority, while the signer set is three
-individual wallets — which are the hub's own parked admin identities (Alex Bot
-`8K81w4e6…`, Alex `7ZDJp7FU…`, Mason `CytJS23p…`, per
-`turf-vault/docs/CURRENT_DEPLOYMENT.md`). Two different authorities.
+the turf-vault 2-of-3 **signer set**. It does not: a Squads V4 vault PDA holds
+the program's **upgrade** authority — **per cluster**, and the two are different
+keys. On **mainnet** (program `DaFv83yo…`) it is
+`Bk9sS7iiSRL18vuo2KVzkeGw7EekKqxMCjrdoyGGdJm`; on **devnet** (program
+`EQGFJAcA…`) it is `BW13kgfiG2koFn3WRkte21NW9TFygsD1ge2fNJdjH6kC`. The signer
+set is a different authority entirely: three individual wallets, which are the
+hub's own parked admin identities (Alex Bot `8K81w4e6…`, Alex `7ZDJp7FU…`, Mason
+`CytJS23p…`). Two different authorities, two different transactions.
+
+**Those signer addresses are the MAINNET set, and no repo file is their source.**
+Do not cite `turf-vault/docs/CURRENT_DEPLOYMENT.md` for them: its signer rows sit
+only under `## Devnet`, and its `## Mainnet` table carries none.
+`turf-vault/docs/KEY_ROTATION.md` says so out loud — the mainnet **VaultState**
+signer set is *not recorded in that repo* and must be read on-chain. The three
+above were read from the **mainnet** `VaultState` (PDA `GBu44HFJ…`, `seeds =
+[b"vault"]` against `DaFv83yokwTz8msP9CzJ13eazSGk15NuUTxjkfzJzxMM`) on
+2026-09-04: `threshold = 2`. They happen to match the devnet set exactly — which
+is precisely why matching an address against a doc can never tell you which
+cluster you are on. Only the cluster-scoped heading, or a cluster-scoped chain
+read, settles it.
 
 **So the console did have one unique property, and it was removed knowingly.**
 Not "coordinates a rotation" but **coordinating a 2-of-3 `update_signers` with no

@@ -74,7 +74,7 @@ note under the table):
 
 ## Solana Wallets
 
-Each agent has a dedicated Solana wallet on devnet. Credentials stored in 1Password.
+Each agent has a dedicated Solana wallet. Credentials stored in 1Password. The three vault-admin identities below (Alex Bot, Alex Human, Mason) are **the same keys on devnet and mainnet** — verified 2026-09-04 as the `VaultState.signers` set on both clusters — so a rotation of any of them is a mainnet event, not a devnet one. The remaining agent wallets are devnet-only.
 
 ### Wallet Addresses
 
@@ -142,7 +142,7 @@ export SOLANA_ADMIN_KEY=$(op item get "agent.alex.solana" --vault "studio-agents
 
 ### Onchain Admin
 
-Alex Bot is the primary admin for routine TurfVault operations. Mr. McRitchie is the backup/admin cosigner. Current program IDs and signer set live in `turf-vault/docs/CURRENT_DEPLOYMENT.md`. The `SOLANA_ADMIN_KEY` env var in Turf Monster's `.env` holds the Alex Bot private key from `agent.alex.solana`.
+Alex Bot is the primary admin for routine TurfVault operations. Mr. McRitchie is the backup/admin cosigner. Current program IDs (both clusters) live in `turf-vault/docs/CURRENT_DEPLOYMENT.md`. **That file is not a source for the mainnet signer set** — its signer rows sit only under `## Devnet` and its `## Mainnet` table has none. Read the mainnet set on-chain from `VaultState` (`seeds = [b"vault"]`), as `turf-vault/docs/KEY_ROTATION.md` instructs. The `SOLANA_ADMIN_KEY` env var in Turf Monster's `.env` holds the Alex Bot private key from `agent.alex.solana`.
 
 ## AWS — S3 + Amazon SES
 
