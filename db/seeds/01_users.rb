@@ -14,7 +14,14 @@ User::RETIRED_EMAILS.each do |old_email, new_email|
   next if stale.nil?
 
   if User.where(email: new_email).where.not(id: stale.id).exists?
-    puts "  ! #{new_email} already exists; leaving #{old_email} for a manual merge"
+    # BOTH rows exist — someone signed in at the new address first. Merging two
+    # accounts is the operator's call (wallets, sessions and slugs on both sides),
+    # but the stale row does not get to sit on admin while they make it. Same move
+    # as RenameTurfHouseIdentity, which is the point: the two carriers must not
+    # disagree about what a half-moved identity is allowed to keep.
+    parked = User.parked_identity_for(email: new_email)
+    stale.update_column(:role, parked[:role]) if parked && stale.role != parked[:role]
+    puts "  ! #{new_email} already exists; left #{old_email} as #{stale.role} for a manual merge"
     next
   end
 
@@ -22,6 +29,24 @@ User::RETIRED_EMAILS.each do |old_email, new_email|
   # full save here would quietly re-point the URL this account answers on.
   stale.update_column(:email, new_email)
   puts "  ↪ moved #{old_email} to #{new_email}"
+end
+
+# A NAME the roster planted and has since changed is the other thing the roster
+# cannot fix by itself: `assign_parked_identity` fills a blank name and never
+# overwrites one, and the enforcement below covers role and wallet but not name.
+# So rewrite exactly the value the roster put there, and leave any other name
+# alone — it belongs to whoever typed it. Deployed rows are carried by
+# RenameTurfHouseIdentity; this is the same move for the databases a re-seed owns.
+User::RETIRED_NAMES.each do |email, old_name|
+  identity = User.parked_identity_for(email: email)
+  row = identity && User.find_by(email: email)
+  next if row.nil? || row.name != old_name
+
+  # update_column for the same reason as the address move above: Sluggable builds
+  # the slug from the NAME, so a full save would re-point the URL this account
+  # answers on as a side effect of a rename nobody asked to be a redirect.
+  row.update_column(:name, identity[:name])
+  puts "  ↪ renamed #{email} from #{old_name.inspect} to #{identity[:name].inspect}"
 end
 
 users_data = User::PARKED_IDENTITIES.map do |identity|

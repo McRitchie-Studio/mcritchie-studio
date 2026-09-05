@@ -118,6 +118,37 @@ class UserTest < ActiveSupport::TestCase
     assert_equal "team@mcritchie.studio", User.parked_identity_for(wallet: wallet).fetch(:email)
   end
 
+  # THE SUPER-ADMIN SEAT IS WALLET-LESS, and it now sits AHEAD of every viewer in
+  # the list — so `find` returning the wrong row on a blank wallet no longer costs
+  # a viewer seat, it costs the highest privilege in the app. Two guards stand
+  # between a blank wallet and `identity[:wallet].to_s == ""`: the `.presence` in
+  # normalization and the `normalized_wallet.present?` inside the block. Either
+  # ALONE holds, which is why removing just one is behaviour-preserving; what this
+  # pins is the property, at the call shape that would actually reach the seat —
+  # `assign_parked_identity` passes email AND wallet on every single save, so an
+  # address nobody parked plus no wallet is the everyday case, not a corner one.
+  test "a blank wallet never matches the wallet-less seats" do
+    assert User::PARKED_IDENTITIES.any? { |identity| identity[:wallet].blank? },
+           "this test only bites while some seat is wallet-less"
+
+    [nil, "", "   "].each do |blank|
+      assert_nil User.parked_identity_for(wallet: blank),
+                 "#{blank.inspect} alone matched a parked identity"
+      assert_nil User.parked_identity_for(email: "stranger@example.com", wallet: blank),
+                 "#{blank.inspect} matched a parked identity for an unparked address"
+    end
+  end
+
+  # The same property through the door it is actually reachable by: a real signup.
+  test "a wallet-less stranger does not inherit a parked seat" do
+    user = User.create!(email: "stranger@example.com", password: "password")
+
+    refute user.admin?, "a stranger with no wallet was handed a parked admin seat"
+    assert_equal "viewer", user.role
+    refute_equal User.parked_identity_for(email: "admin@mcritchie.studio").fetch(:name), user.name,
+                 "the stranger was also given the seat's name, so the whole identity was adopted"
+  end
+
   test "parked email signup gets canonical admin identity" do
     user = User.create!(email: "team@mcritchie.studio")
 

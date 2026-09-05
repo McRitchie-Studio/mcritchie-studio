@@ -17,18 +17,54 @@ require Rails.root.join("db/migrate/20260904190000_rename_turf_house_identity.rb
 class RetiredEmailMoveTest < ActiveSupport::TestCase
   OLD = "turf@mcritchie.studio"
   NEW = "team@turfmonster.media"
+  MASON = "mason@mcritchie.studio"
+  MACK = "mack@mcritchie.studio"
+  TEAM = "team@mcritchie.studio"
 
   setup do
-    User.where(email: [OLD, NEW]).delete_all
+    User.where(email: [OLD, NEW, MASON, MACK, TEAM]).delete_all
   end
 
   def stale_admin
     User.create!(name: "Turf Monster", email: OLD, role: "admin", password: "password")
   end
 
+  # A row shaped like one already sitting in production: created under whatever
+  # roster was in force THEN, so the callback cannot be used to put it there.
+  # `update_column` is the only way to make a row the current roster disagrees
+  # with — which is precisely the state this migration exists to find.
+  def deployed(email, role:, name: "Someone")
+    user = User.create!(name: name, email: email, password: "password")
+    user.update_column(:role, role)
+    user
+  end
+
   def run_seed = capture_io { load Rails.root.join("db/seeds/01_users.rb").to_s }
 
   def migrate(direction) = capture_io { RenameTurfHouseIdentity.new.public_send(direction) }
+
+  # --- the two copies of the roster -----------------------------------------
+
+  # The migration SPELLS THE ROSTER OUT instead of reading the constants, so it
+  # still runs years from now against whatever `User` has become. The cost of that
+  # is two copies, and the only day they can be checked against each other is
+  # today. Without this the pair is written in three places with nothing tying
+  # them together, which is how a later roster edit silently stops being deployed.
+  test "the migration's spelled-out roster still agrees with the live one" do
+    assert_equal User::RETIRED_EMAILS,
+                 { RenameTurfHouseIdentity::OLD_EMAIL => RenameTurfHouseIdentity::NEW_EMAIL }
+
+    assert_equal User::PARKED_IDENTITIES.to_h { |identity| [identity[:email], identity[:role]] },
+                 RenameTurfHouseIdentity::ROLES
+
+    assert_equal User::RETIRED_NAMES,
+                 RenameTurfHouseIdentity::RENAMES.transform_values(&:first)
+
+    RenameTurfHouseIdentity::RENAMES.each do |email, (_was, now)|
+      assert_equal User.parked_identity_for(email: email).fetch(:name), now,
+                   "the migration renames #{email} to a name the roster no longer holds"
+    end
+  end
 
   # --- the migration: the only one of the two that reaches production ---------
 
@@ -75,6 +111,87 @@ class RetiredEmailMoveTest < ActiveSupport::TestCase
     assert row.admin?, "rolling back should restore the role that revision's roster gave it"
   end
 
+  # --- the reconciler: the half a release actually performs ------------------
+
+  # THE DEFECT THIS FILE WAS BOUNCED FOR. A demotion in PARKED_IDENTITIES reaches a
+  # deployed row only when something SAVES that row, and a release saves nothing.
+  # So "mason is a viewer now" was true of the roster and false of production, with
+  # no step anywhere in between that would ever have closed the gap.
+  test "the migration demotes a deployed row the roster no longer calls an admin" do
+    mason = deployed(MASON, role: "admin", name: "Mason McRitchie")
+
+    migrate(:up)
+
+    assert_equal "viewer", mason.reload.role, "mason kept admin through the release that demoted him"
+  end
+
+  # THE CONTROL CASE, and why the callback cannot be trusted to converge: mack was
+  # made a viewer in the roster on 2026-08-14 and was still an admin in production
+  # twenty-one days later. Reconciling EVERY seat, not only the ones this task
+  # edits, is what closes drift nobody is watching for.
+  test "the migration closes drift the callback never reached" do
+    mack = deployed(MACK, role: "admin", name: "Mack McRitchie")
+
+    migrate(:up)
+
+    assert_equal "viewer", mack.reload.role
+  end
+
+  test "the migration leaves a row no parked identity claims alone" do
+    stranger = User.create!(name: "Stranger", email: "stranger@example.com", role: "admin", password: "password")
+
+    migrate(:up)
+
+    assert stranger.reload.admin?, "the reconciler reached past the roster it was handed"
+  end
+
+  test "the reconciler re-runs without touching a row it already agrees with" do
+    mason = deployed(MASON, role: "admin", name: "Mason McRitchie")
+    migrate(:up)
+
+    # NOW() inside a transaction is the TRANSACTION's clock, so a second run would
+    # stamp an identical timestamp and this would pass either way. Park the row in
+    # the past so an UPDATE that should not happen has somewhere visible to land.
+    long_ago = 1.year.ago.change(usec: 0)
+    mason.update_column(:updated_at, long_ago)
+
+    migrate(:up)
+
+    assert_equal long_ago, mason.reload.updated_at, "a re-run rewrote a row it already agreed with"
+  end
+
+  test "rolling back restores the role the previous roster declared" do
+    mason = deployed(MASON, role: "admin", name: "Mason McRitchie")
+    mack = deployed(MACK, role: "admin", name: "Mack McRitchie")
+
+    migrate(:up)
+    migrate(:down)
+
+    assert mason.reload.admin?, "the roster before this revision called mason an admin"
+    assert_equal "viewer", mack.reload.role, "mack was a viewer in that roster too; only his row lagged"
+  end
+
+  # --- the display name the roster cannot change on its own ------------------
+
+  # `assign_parked_identity` fills a BLANK name and never overwrites one, and the
+  # seed enforces role and wallet but not name. So renaming a seat in the roster
+  # renames the literal and no account at all, unless something finishes the job.
+  test "the migration finishes the rename the roster only declared" do
+    team = deployed(TEAM, role: "admin", name: "McRitchie Studio Team")
+
+    migrate(:up)
+
+    assert_equal "Team McRitchie", team.reload.name
+  end
+
+  test "the migration leaves a name someone chose alone" do
+    team = deployed(TEAM, role: "admin", name: "Ops Desk")
+
+    migrate(:up)
+
+    assert_equal "Ops Desk", team.reload.name, "the rename overwrote a name the roster never put there"
+  end
+
   # --- the seed: local, test, and a QA reset ---------------------------------
 
   test "the seed moves an existing row instead of creating a second account" do
@@ -97,14 +214,34 @@ class RetiredEmailMoveTest < ActiveSupport::TestCase
     refute User.find_by(email: NEW).admin?
   end
 
-  test "the seed leaves both rows alone when the new address is already taken" do
+  # The seed and the migration must not DISAGREE about what a half-moved identity
+  # is allowed to keep. Both leave the merge to the operator; neither leaves the
+  # stale row holding admin while they decide.
+  test "the seed demotes rather than collides when the new address is taken" do
     row = stale_admin
     User.create!(name: "Turf Monster", email: NEW, role: "viewer", password: "password")
 
     run_seed
 
-    assert_equal OLD, row.reload.email
+    assert_equal OLD, row.reload.email, "the row should be left in place for a manual merge"
+    refute row.admin?, "the seed left the stale row on admin where the migration demotes it"
     assert_equal 1, User.where(email: NEW).count
+  end
+
+  test "the seed finishes the rename the roster only declared" do
+    team = deployed(TEAM, role: "admin", name: "McRitchie Studio Team")
+
+    run_seed
+
+    assert_equal "Team McRitchie", team.reload.name
+  end
+
+  test "the seed leaves a name someone chose alone" do
+    team = deployed(TEAM, role: "admin", name: "Ops Desk")
+
+    run_seed
+
+    assert_equal "Ops Desk", team.reload.name, "the rename overwrote a name the roster never put there"
   end
 
   private

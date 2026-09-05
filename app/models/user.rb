@@ -43,8 +43,12 @@ class User < ApplicationRecord
 
   # Addresses a parked identity has MOVED OFF, old => new.
   #
-  # A role demotion reaches an existing row on its next save, because
-  # `assign_parked_identity` re-reads the roster by email. An EMAIL change cannot:
+  # A role demotion reaches an existing row on its next SAVE, because
+  # `assign_parked_identity` re-reads the roster by email. Do not read that as
+  # "deployed rows converge on their own" — nothing in a release saves them, so
+  # the demotion waits for a sign-in that a shared house account may never get.
+  # (mack@mcritchie.studio sat in production as an admin for twenty-one days after
+  # the roster made him a viewer.) An EMAIL change cannot even do that much:
   # the old row stops matching any parked identity at all, so it keeps whatever
   # role it was last saved with — and turf@mcritchie.studio was last saved as an
   # ADMIN whose Google group is being deleted. That leftover is the whole reason
@@ -60,6 +64,21 @@ class User < ApplicationRecord
   # fresh clone.
   RETIRED_EMAILS = {
     "turf@mcritchie.studio" => "team@turfmonster.media"
+  }.freeze
+
+  # Display NAMES the roster planted and has since changed, email => old name.
+  #
+  # The roster is authoritative for a name only while the row has none:
+  # `assign_parked_identity` fills a blank or "anon" name and never overwrites one,
+  # because a name someone edited is theirs. So changing a name in
+  # PARKED_IDENTITIES renames the literal and no account — which is how
+  # "McRitchie Studio Team" would have outlived its own rename. This map is the
+  # narrow exception: rewrite the name the ROSTER put there, and only that exact
+  # value. Same division of labour as RETIRED_EMAILS — the seed applies it to the
+  # databases a re-seed owns, and the data migration spells it out for deployed
+  # rows.
+  RETIRED_NAMES = {
+    "team@mcritchie.studio" => "McRitchie Studio Team"
   }.freeze
 
   # Passwordless app: email auth is magic-link only, plus Google + Solana wallet.

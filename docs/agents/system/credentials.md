@@ -63,6 +63,14 @@ note under the table):
 > mcritchie-studio and turf-monster is the source of truth for which of them hold `admin`.
 > `admin@mcritchie.studio` is the super-admin seat shared by Alex and Steffon, and carries no
 > Solana wallet on purpose.
+>
+> **Editing that list does not change an account that already exists.** The roster is read
+> on SAVE (`assign_parked_identity`), and a release saves nothing — so a demotion waits for
+> its owner to sign in, which for a shared house account may be never. Measured: mack@ stayed
+> an admin in production for twenty-one days after the roster made him a viewer. A role or
+> name change to a deployed seat rides a data migration (see
+> `db/migrate/20260904190000_rename_turf_house_identity.rb`); the seed carries it for local,
+> test, and QA.
 
 ## Solana Wallets
 
