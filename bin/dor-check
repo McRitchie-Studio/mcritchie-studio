@@ -150,6 +150,7 @@ require "optparse"
 require_relative "lib/full_suite_gate"
 require_relative "lib/repo_root"
 require_relative "lib/ci_status"
+require_relative "lib/ci_gate"
 require_relative "lib/code_diff"
 require_relative "lib/test_only_diff"
 require_relative "lib/client_surface_diff"
@@ -210,7 +211,17 @@ BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
 # The gate-run CLI (GateRun markers). A merge-gate verdict opens+closes the
 # task's DoR gate — `dor` (builder) or `dor_review` (review gate-zero) — see the
 # emit at the bottom; fire-and-forget.
-GATE_BIN = File.expand_path("gate", __dir__)
+#
+# DOR_CHECK_GATE_BIN redirects that CLI — the same seam bin/fast-check and
+# bin/full-suite-check already carry (FAST_CHECK_GATE_BIN / FULL_SUITE_GATE_BIN).
+# It exists because "was an attempt RECORDED?" is otherwise unobservable: --json
+# and --file both skip the board write by design, so a verdict that records
+# NOTHING — which is exactly what an exempt run did until this task — reads
+# identically to one that recorded a pass. Overriding it is also what lets a
+# --file run emit at all (gate_emission_enabled? below); production never sets it,
+# so --file stays offline for every real caller.
+GATE_BIN_OVERRIDDEN = !ENV["DOR_CHECK_GATE_BIN"].to_s.strip.empty?
+GATE_BIN = GATE_BIN_OVERRIDDEN ? ENV["DOR_CHECK_GATE_BIN"] : File.expand_path("gate", __dir__)
 
 def warn!(msg)
   $stderr.puts(msg)
@@ -1406,56 +1417,38 @@ def suite_evidence_error(eval, slug, ci, review_role)
     "Conscious, justified skip? Record a bypass: bin/task update #{slug} --checks \"[full-suite-bypass] <why>\"."
 end
 
-# The states that mean "CI HAS NO VERDICT TO GIVE" — as opposed to a verdict that is
-# bad (:red), settled-negative (:conflicted / :ci_less), still coming (:pending), or
-# not about a live review target (:closed / :merged). This is the ONLY family a full
-# local cert may stand in for, and membership is deliberately explicit: a state that
-# is not listed here cannot be excused by evidence, it can only be classified.
-CI_NO_VERDICT_STATES = %i[none unreadable unverified].freeze
-
-# The review role's refusal for a non-green CI → [message, cert_clears]. Never called
-# for :green (the allow-list's only pass) nor for a state the case above already
-# wrote a remedy for. `cert_clears` marks the no-verdict family, whose refusal a FULL
-# local cert clears — resolved after the suite gate, where suite_eval is known.
-def unread_ci_refusal(ci, pr_url, slug)
-  case ci[:state]
-  when :unreadable
-    # ONE remedy string, not one-and-a-half. unreadable_remedy ALREADY opens with
-    # "This is a CREDENTIAL fault or API limit, NOT a missing CI — re-running will
-    # never clear it", and ci_status.rb calls it THE ONE REMEDY STRING. Hand-writing
-    # that sentence here printed it twice AND dropped the deliberate "or API limit"
-    # hedge — which is not a nicety: :rate_limit also produces :unreadable, and a
-    # reader told "CREDENTIAL fault" goes and rotates a credential that was fine.
-    ["GitHub CI is UNREADABLE (#{ci[:reason]}) — the review gate-zero IS the authoritative CI verdict, and it " \
-     "cannot be authoritative about a CI it could not read. " +
-     CiStatus.unreadable_remedy(CiStatus.repo_from_pr_url(pr_url), cause: ci[:cause]), true]
-  when :none, :unverified
-    # "Wait for checks" is the right remedy in a repo that HAS workflows and a wedge
-    # in one that does not: solana-studio and turf-vault carry zero workflows on
-    # every branch, so a clean PR there resolves :none FOREVER. Name both routes.
-    ["GitHub CI has produced no verdict yet (#{ci[:state]}) — the review gate-zero IS the authoritative CI " \
-     "verdict, so it must not advance on a CI it has not read. Either defer this review until checks appear " \
-     "and settle (the supervisor's defer machinery re-queries; a red finish bounces the task back), or — if " \
-     "this repo has NO workflows at all, where no check will ever appear — certify in full instead: " \
-     "`bin/full-suite-check #{slug}`, which runs ci.yml's own command (test:system included) locally.", true]
-  when :no_pr
-    # NOT the no-verdict family, and a cert cannot stand in for it: the missing thing
-    # is not the evidence, it is the SUBJECT. Review's job is to merge a PR; with a
-    # blank pr_url there is nothing to read a verdict from and nothing to merge.
-    ["devops.pr_url is BLANK, so the review gate-zero has no PR to read a CI verdict from — and review has " \
-     "nothing to merge. Submit-side this is silent on purpose (the gate re-runs after the push); a REVIEW that " \
-     "cannot name its PR must not advance the task, which is why this refuses rather than passing quietly. " \
-     "Record it: `bin/task update #{slug} --pr-url <url>`.", false]
-  else
-    # THE POINT OF THE ALLOW-LIST. A state nobody has classified is not evidence of
-    # health; it is evidence that this gate is out of date with ci_status.rb.
-    ["GitHub CI reported #{ci[:state].to_s.upcase}, a state this gate does not classify — the review gate-zero " \
-     "advances on a GREEN CI and nothing else, so an unclassified verdict REFUSES rather than falling through " \
-     "to `ready`. Falling through is the bug this allow-list exists to prevent: a blank pr_url once exited 0 " \
-     "with no CI line at all. Classify #{ci[:state].inspect} in bin/dor-check's CI gate and in " \
-     "bin/lib/ci_status.rb's header, then re-run.", false]
-  end
+# --- DoR gate-run emit (durable GateRun markers) ----------------------------
+# A REAL merge-gate verdict is the Definition-of-Ready gate — its OWN gate now,
+# distinct from G1 Cert (cert self-closes in full-suite-check). The builder's run
+# opens+closes the `dor` gate; the primary reviewer's gate-zero (--gate-role
+# review) opens+closes `dor_review` (was: a sop appended to G2a — the review
+# supervisor still owns the G2a/G2b review-lane closes). Both carry the verdict
+# evidence as sops. Skipped for --json (the heartbeat monitor polls read-only),
+# --file (offline/test evaluation), and the build gate (no DoR verdict yet).
+# Fire-and-forget: a board blip never changes the verdict or the exit code.
+def emit_gate_verdict(slug, ready, role, sops)
+  key = role == "review" ? "dor_review" : "dor"
+  system(GATE_BIN, "open", "task", slug, key, out: File::NULL, err: File::NULL)
+  close = ["close", "task", slug, key, ready ? "--success" : "--failed"]
+  sops.each { |entry| close += ["--sop-json", JSON.generate(entry)] }
+  system(GATE_BIN, *close, out: File::NULL, err: File::NULL)
+rescue StandardError
+  nil
 end
+
+# May this run write a durable GateRun attempt? Skipped for --json (the heartbeat
+# monitor polls read-only), for the build gate (no DoR verdict yet), and for a
+# task with no slug. --file is offline evaluation and skips too — UNLESS the gate
+# CLI itself has been redirected (DOR_CHECK_GATE_BIN), which is how a test asserts
+# the attempt was recorded without a board.
+def gate_emission_enabled?(options, gate, slug)
+  return false if options[:json]
+  return false if gate == "build"
+  return false if slug.to_s.empty?
+
+  options[:file].nil? || GATE_BIN_OVERRIDDEN
+end
+
 
 # Does the task carry evidence that stands in for a CI verdict nobody could read?
 # Only for CI_NO_VERDICT_STATES; the caller owns that half.
@@ -1856,6 +1849,11 @@ if EXEMPT_KINDS.include?(kind)
       puts "✗ #{gate_label} NOT met for #{title.inspect}"
       puts "  · #{errors_preamble}"
     end
+    if gate_emission_enabled?(options, gate, slug)
+      emit_gate_verdict(slug, false, options[:gate_role],
+                        [{ "sop" => "dor-check", "cmd" => "bin/dor-check #{slug} --gate #{gate}",
+                           "result" => "fail" }])
+    end
     exit 1
   else
     source_label = { injected: "injected diff", pr: "PR files", git: "git working tree",
@@ -1870,7 +1868,55 @@ if EXEMPT_KINDS.include?(kind)
     # alert rides on the verdict itself, not only in a suggestion, because this line
     # is the part that gets read.
     exempt_alerts = [pr_read_alert].compact
-    note = if observed.empty?
+
+    # ==== THE EXEMPTION IS FROM THE TIER GATE. IT WAS NEVER FROM CI ============
+    #
+    # THE DEFECT (/tasks/gate-zero-skips-docs-ci). This branch used to end in a bare
+    # `exit 0`, and that `exit` sat ABOVE the CI allow-list and above the gate-verdict
+    # emit. So for a doc-only diff, `--gate-role review` — the run the pipeline calls
+    # THE AUTHORITATIVE CI VERDICT — never evaluated CI at all: --json returned
+    # ready=true, exempt=true, errors=[] with no `ci` field in the payload, and no
+    # `dor_review` attempt was recorded. The null attempt on docs-shaped PRs was
+    # logged twice and dismissed as a missing record. It was not missing. The gate
+    # had not run. Three doc-shaped PRs cleared gate-zero this way (turf-vault #9 and
+    # #10, mcritchie-studio #1204); all three happened to be green.
+    #
+    # WHY THE FIX IS A SPLIT AND NOT A MOVE. Two unrelated guards live below that
+    # `exit`, and only ONE of them should be skipped here:
+    #   * the shape / TEST-TIER gate — correctly skipped. A prose diff owes no unit
+    #     tier, and demanding one is how people learn to mislabel a shape.
+    #   * the CI allow-list — never had any business being skipped. This repo's CI
+    #     GRADES PROSE: the doc-link check, generated-doc drift, the entry-doc guards
+    #     and rubocop over bin/ all run on a docs PR, and every one of them can go
+    #     red. "Ships no behavior" is not "cannot fail CI".
+    # So the tier gate stays waived and the CI verdict is asked HERE, through the
+    # same CiGate.verdict the gated path calls, rather than by relocating a block.
+    #
+    # NO CERT CLEARANCE ON THIS PATH, deliberately — the one place it diverges from
+    # the gated path. Down there, CI_NO_VERDICT_STATES (:none/:unreadable/:unverified)
+    # can be cleared by a FULL local cert, because the gate must honour its own
+    # printed remedy ("certify in full instead"). That argument is a SUBSTITUTION of
+    # evidence, and an exempt task has none to substitute: it ran no suite, and the
+    # shape whose `full_suite_gate: false` would excuse it is not the thing being
+    # judged here — the KIND is. An unread CI over an exempt diff therefore leaves
+    # the merge with no verdict from either side, which is the state a gate exists to
+    # refuse. Hence: in the review role, GREEN advances and nothing else does.
+    exempt_ci = gate == "build" ? nil : CiStatus.evaluate(devops["pr_url"], ENV["DOR_CHECK_CI_STATUS"])
+    exempt_ci_error, _exempt_cert_clears, exempt_ci_notes =
+      if exempt_ci
+        CiGate.verdict(exempt_ci, review_role: review_role, pr_url: devops["pr_url"], slug: task["slug"] || slug)
+      else
+        [nil, false, []]
+      end
+    exempt_alerts.concat(exempt_ci_notes)
+    exempt_errors = [exempt_ci_error].compact
+    exempt_ready = exempt_errors.empty?
+    exempt_ci_result = CiGate.gate_row(exempt_ci, review_role: review_role,
+                                             review_refused: review_role && !exempt_ready)
+
+    note = if !exempt_ready
+      exempt_errors.first
+    elsif observed.empty?
       "no code written yet (kind: #{kind}); DoR n/a"
     else
       "doc-only diff (kind: #{kind}): #{observed.size} file(s), none behavioral — #{sample} " \
@@ -1883,7 +1929,11 @@ if EXEMPT_KINDS.include?(kind)
         shape: shape.empty? ? nil : shape,
         kind: kind,
         gate: gate,
-        ready: true,
+        # `exempt` is now strictly about the TIER GATE — it says which guard was
+        # waived, never that the run passed. Reading it as the verdict is what made
+        # the missing CI invisible: `ready` is the verdict, and the two can now
+        # disagree (exempt: true, ready: false) exactly when CI refuses.
+        ready: exempt_ready,
         exempt: true,
         diff_source: diff_source.to_s,
         # The doc-only PASS — the exact verdict shape the 08-08 false pass wore. It
@@ -1894,18 +1944,52 @@ if EXEMPT_KINDS.include?(kind)
         changed_files: observed,
         pr_read: exempt_alerts.empty? ? nil : pr_file_read.slice(:state, :cause, :reason).compact,
         note: note,
-        errors: [],
+        errors: exempt_errors,
         suggestions: exempt_alerts,
         missing_metadata: [],
-        missing_tiers: []
+        missing_tiers: [],
+        # THE FIELD WHOSE ABSENCE WAS THE BUG. An exempt verdict used to carry no
+        # `ci` key at all, so "did this gate read CI?" was unanswerable from the
+        # JSON — a monitor could not tell a green from a gate that never looked.
+        # nil only at the build gate, which must not shell `gh`.
+        ci: exempt_ci && { state: exempt_ci[:state], cause: exempt_ci[:cause], reason: exempt_ci[:reason],
+                           failing: exempt_ci[:failing], pending: exempt_ci[:pending],
+                           count: exempt_ci[:count] }.compact,
+        ci_gate_result: exempt_ci_result
       )
     else
       title = task["title"] || task["slug"] || slug || "(task)"
-      puts "✓ #{gate_label} n/a for #{title.inspect} — #{note}"
-      puts "  → ready to advance #{boundary} (shape/test-tier gate skipped: the OBSERVED diff ships no behavior)"
+      if exempt_ready
+        puts "✓ #{gate_label} n/a for #{title.inspect} — #{note}"
+        # SAY BOTH HALVES. The old line said only which gate was skipped, which is
+        # how "no tier was demanded" and "no CI was read" read the same in a
+        # transcript. Name the tier waiver AND the CI verdict that stands behind
+        # this pass, so the reader can tell a graded exemption from a blind one.
+        puts "  → ready to advance #{boundary} (shape/test-tier gate skipped: the OBSERVED diff ships no " \
+             "behavior#{exempt_ci ? "; GitHub CI: #{exempt_ci[:state].to_s.upcase}" : ""})"
+      else
+        puts "✗ #{gate_label} NOT met for #{title.inspect}"
+        exempt_errors.each { |e| puts "  - #{e}" }
+        puts "  → the shape/test-tier gate IS waived (the OBSERVED diff ships no behavior) — this refusal is " \
+             "the CI verdict, which an exempt diff does not escape"
+        puts "  → not ready to advance #{boundary}; resolve the above"
+      end
       exempt_alerts.each { |a| puts "  ⓘ suggestion: #{a}" }
     end
-    exit 0
+    # THE ATTEMPT IS RECORDED IN BOTH DIRECTIONS. The exempt path wrote no GateRun
+    # at all before this — which is why `dor_review` read null on every docs-shaped
+    # PR, and why the gate's own absence was mistaken for a board bug.
+    if gate_emission_enabled?(options, gate, slug)
+      exempt_sops = [{ "sop" => "dor-check", "cmd" => "bin/dor-check #{slug} --gate #{gate}",
+                       "result" => exempt_ready ? "pass" : "fail" },
+                     { "sop" => "tiers", "tier" => "waived", "result" => "pass" }]
+      if exempt_ci
+        exempt_sops << { "sop" => "ci", "result" => exempt_ci_result }
+          .merge(CiStatus.gate_evidence(exempt_ci, repo: CiStatus.repo_from_pr_url(devops["pr_url"])))
+      end
+      emit_gate_verdict(slug, exempt_ready, options[:gate_role], exempt_sops)
+    end
+    exit(exempt_ready ? 0 : 1)
   end
   # else: this kind ships code — fall through and gate it like a feature.
 end
@@ -2200,77 +2284,12 @@ ci_review_refused = false # resolved after the suite gate; feeds the gates-card 
 if gate != "build"
   ci = CiStatus.evaluate(devops["pr_url"], ENV["DOR_CHECK_CI_STATUS"])
 
-  # THE CASE BELOW CHOOSES THE REMEDY. THE ALLOW-LIST AFTER IT CHOOSES THE VERDICT.
-  # Keep that split: it is the whole fix. This case used to do both, and a case that
-  # decides the verdict by naming bad states is a DENY-LIST — unbounded by
-  # construction, because every state added to bin/lib/ci_status.rb afterwards
-  # defaults to PASS, silently. That is not a hypothetical failure mode; it is how
-  # :no_pr got here (see the allow-list's note). So the case now only picks the most
-  # specific remedy text we have for a state, and `ready` is decided in exactly one
-  # place, by asking for GREEN.
-  case ci[:state]
-  when :red
-    ci_error = "GitHub CI is RED for the PR (#{Array(ci[:failing]).join(", ")}) — a red PR handed to review is the " \
-      "#1 blocker class (the local cert doesn't run the browser test:system lane CI does). Fix, push, and re-run " \
-      "dor-check once CI is green."
-  when :conflicted
-    # HARD blocker in BOTH roles, distinct from :pending/:none ("CI still coming",
-    # genuinely deferrable): a conflicted PR's CI is never coming, so anything
-    # softer strands the task in submitted forever (the PR-#509 stall).
-    ci_error = "review's gate-zero would defer this forever while the board looks healthy. " +
-      CiStatus.conflicted_remedy(ci)
-  when :ci_less
-    # The SAME hard-blocker shape as :conflicted, for the case that never reads DIRTY:
-    # zero check-runs plus a merge GitHub will not confirm. Softer treatment strands
-    # the task exactly like the PR-#509 stall — see the THIRD STATE section in
-    # bin/lib/ci_status.rb.
-    ci_error = CiStatus.ci_less_remedy(ci)
-  when :pending
-    if review_role
-      ci_error = "GitHub CI is still RUNNING for the PR (#{Array(ci[:pending]).join(", ")}) — not green YET. The " \
-        "review gate-zero is the authoritative CI verdict, so defer this review until CI settles (the supervisor's " \
-        "defer machinery re-queries); a red finish bounces the task back."
-    else
-      suggestions << "GitHub CI is still RUNNING for the PR (#{Array(ci[:pending]).join(", ")}) — not green YET, " \
-        "but submit-side this NO LONGER blocks: hand off now. The review gate-zero (bin/pr-review's supervisor + " \
-        "the primary's dor-check --gate-role review) holds the authoritative verdict — a red CI bounces the task " \
-        "back with the failing checks named, so expect that round-trip if CI fails."
-    end
-  when :closed, :merged
-    ci_error = "the PR is #{ci[:state].to_s.upcase}, not an OPEN review target — `gh pr checks` returns the head " \
-      "commit's HISTORICAL checks even on a closed/merged PR, so a green here is NOT a live pass. Reconcile " \
-      "devops.pr_url (a stale or already-merged PR?) before advancing to review."
-  when :green
-    nil # THE ONLY PASS. Named explicitly so the allow-list below reads as exhaustive.
-  else
-    nil # Every remaining state — named or not — is the allow-list's to refuse.
-  end
-
-  # ==== THE REVIEW GATE-ZERO IS AN ALLOW-LIST =================================
-  #
-  # :green is the ONLY state that advances a review, and the no-verdict family is
-  # the ONLY state that a full local cert may stand in for. Everything else
-  # refuses — INCLUDING a state this gate has never heard of.
-  #
-  # WHY THE SHAPE AND NOT JUST THE STATES. The gate used to decide `ready` from a
-  # deny-list of spellings (:red, :conflicted, :ci_less, :pending, :closed,
-  # :merged) and let everything else fall through to a pass. A deny-list defaults
-  # to PASS, so it is unbounded: the reader cannot tell "this state was considered
-  # safe" from "nobody updated the list", and each new state silently joins the
-  # safe side. That is exactly how :no_pr got here — a blank devops.pr_url resolves
-  # to :no_pr, which had no branch and no `else`, so --gate-role review exited 0
-  # printing "ready to advance" with NO CI LINE AT ALL: more silent than the
-  # unread-verdict bug this gate was written to close. An allow-list defaults to
-  # REFUSE, which is what a gate is for; adding a state to ci_status.rb now blocks
-  # review until somebody classifies it deliberately.
-  #
-  # THE THREE TIERS:
-  #   1. :green                → advance.
-  #   2. CI_NO_VERDICT_STATES  → refuse, UNLESS the task carries a FULL cert.
-  #   3. everything else       → refuse, unconditionally.
-  if review_role && ci_error.nil? && ci[:state] != :green
-    ci_error, ci_error_cert_clears = unread_ci_refusal(ci, devops["pr_url"], task["slug"] || slug)
-  end
+  # The case + the allow-list, both of them, live in CiGate.verdict — the exempt path
+  # above asks the very same function, so neither can advance on a state the other
+  # refuses.
+  ci_error, ci_error_cert_clears, ci_notes =
+    CiGate.verdict(ci, review_role: review_role, pr_url: devops["pr_url"], slug: task["slug"] || slug)
+  suggestions.concat(ci_notes)
 
   # ==== TIER 1 HAS A PRECONDITION: THE GREEN MUST STILL BE ABOUT THIS MERGE ====
   #
@@ -2668,21 +2687,7 @@ end
 # The CI row the gates card shows, resolved ONCE here so the durable GateRun sop and
 # the --json payload cannot disagree — and so it is observable (and testable) without
 # a board write, which --json and --file both skip by design.
-ci_gate_result =
-  if ci
-    case ci[:state]
-    when :green then "pass"
-    when :pending then review_role ? "fail" : "pending"
-    when :red, :conflicted, :ci_less, :closed, :merged then "fail"
-    else
-      # A FAILED dor_review must name CI as the failing SOP when CI is why it failed.
-      # Leaving the no-verdict family on a flat "unverified" recorded the card's sole
-      # cause as a NOTE — the same asymmetry :pending avoids one line above.
-      # "unverified" stays right where CI genuinely only noted: any builder-side run,
-      # and a review run whose FULL cert stood in for the unread verdict.
-      ci_review_refused ? "fail" : "unverified"
-    end
-  end
+ci_gate_result = CiGate.gate_row(ci, review_role: review_role, review_refused: ci_review_refused)
 
 # ==== `required_evidence: [control]` — the question a tier list cannot ask ======
 #
@@ -2928,26 +2933,7 @@ when :unverified
     "manually before the handoff."
 end
 
-# --- DoR gate-run emit (durable GateRun markers) ----------------------------
-# A REAL merge-gate verdict is the Definition-of-Ready gate — its OWN gate now,
-# distinct from G1 Cert (cert self-closes in full-suite-check). The builder's run
-# opens+closes the `dor` gate; the primary reviewer's gate-zero (--gate-role
-# review) opens+closes `dor_review` (was: a sop appended to G2a — the review
-# supervisor still owns the G2a/G2b review-lane closes). Both carry the verdict
-# evidence as sops. Skipped for --json (the heartbeat monitor polls read-only),
-# --file (offline/test evaluation), and the build gate (no DoR verdict yet).
-# Fire-and-forget: a board blip never changes the verdict or the exit code.
-def emit_gate_verdict(slug, ready, role, sops)
-  key = role == "review" ? "dor_review" : "dor"
-  system(GATE_BIN, "open", "task", slug, key, out: File::NULL, err: File::NULL)
-  close = ["close", "task", slug, key, ready ? "--success" : "--failed"]
-  sops.each { |entry| close += ["--sop-json", JSON.generate(entry)] }
-  system(GATE_BIN, *close, out: File::NULL, err: File::NULL)
-rescue StandardError
-  nil
-end
-
-if !options[:json] && options[:file].nil? && gate != "build" && !slug.to_s.empty?
+if gate_emission_enabled?(options, gate, slug)
   gate_sops = [{ "sop" => "dor-check", "cmd" => "bin/dor-check #{slug} --gate #{gate}", "result" => ready ? "pass" : "fail" }]
   unless dor_tiers.empty?
     gate_sops << { "sop" => "tiers", "tier" => dor_tiers.join("+"), "result" => missing_tiers.empty? ? "pass" : "fail" }
