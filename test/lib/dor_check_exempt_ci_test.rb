@@ -294,6 +294,21 @@ class DorCheckExemptCiTest < Minitest::Test
   # actually read?" of a verdict after the fact, and it used to be keyed off the
   # SUGGESTION list — so promoting the alert to an error would have blanked the field
   # in exactly the role where it matters most. Keyed off the refusal itself now.
+  # THE BUILD GATE STAYS LENIENT, review role or not — the clause that says so must
+  # not be inert. Measured: removing `gate != "build"` from the role split left every
+  # other test in this file green, which is precisely the half-inert guard this task's
+  # own discipline warns about. The build gate resolves no diff and must not shell
+  # `gh`, so a PR read that failed there is not evidence of anything; line 2356's
+  # gated-path twin carries the same clause for the same reason.
+  def test_the_build_gate_never_refuses_on_a_failed_pr_read
+    FAILED_PR_READS.each do |state|
+      verdict, code = check(devops, role: "review", pr_files: state, args: "--json --gate build")
+
+      assert_equal 0, code, "the build gate has no PR to judge (pr_files:#{state}):\n#{verdict}"
+      assert_empty Array(verdict["errors"]), "pr_files:#{state} — nothing is an error at the build gate"
+    end
+  end
+
   def test_the_refused_read_is_recorded_on_the_exempt_payload_in_both_roles
     %w[review builder].each do |role|
       verdict, = check(devops, ci: "green", role: role, pr_files: "unverified")
