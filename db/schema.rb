@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_02_200001) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_05_040000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -586,20 +586,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_02_200001) do
     t.index ["lane"], name: "index_devops_shifts_on_lane", unique: true
   end
 
-  create_table "durable_nonces", force: :cascade do |t|
-    t.string "authority", null: false
-    t.string "cluster", default: "devnet", null: false
-    t.datetime "created_at", null: false
-    t.string "label"
-    t.string "pubkey", null: false
-    t.string "slug", null: false
-    t.string "status", default: "active", null: false
-    t.datetime "updated_at", null: false
-    t.index ["cluster", "status"], name: "index_durable_nonces_on_cluster_and_status"
-    t.index ["pubkey"], name: "index_durable_nonces_on_pubkey", unique: true
-    t.index ["slug"], name: "index_durable_nonces_on_slug", unique: true
-  end
-
   create_table "error_logs", force: :cascade do |t|
     t.text "backtrace"
     t.datetime "created_at", null: false
@@ -1083,33 +1069,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_02_200001) do
     t.datetime "updated_at", null: false
     t.index ["parent_session_id"], name: "index_session_mascots_on_parent_session_id"
     t.index ["session_id"], name: "index_session_mascots_on_session_id", unique: true
-  end
-
-  create_table "signing_requests", force: :cascade do |t|
-    t.jsonb "accounts", default: {}, null: false
-    t.jsonb "args", default: {}, null: false
-    t.string "cluster", default: "devnet", null: false
-    t.jsonb "collected_signatures", default: {}, null: false
-    t.string "coordination", default: "multi", null: false
-    t.datetime "created_at", null: false
-    t.string "durable_nonce_pubkey"
-    t.string "expected_signers", default: [], null: false, array: true
-    t.string "fee_payer"
-    t.string "instruction_name", null: false
-    t.text "last_error"
-    t.string "multisig_pubkey"
-    t.string "nonce_authority"
-    t.string "program", default: "turf_vault", null: false
-    t.string "program_id", null: false
-    t.string "slug", null: false
-    t.string "status", default: "awaiting_signatures", null: false
-    t.integer "threshold", default: 1, null: false
-    t.string "title"
-    t.string "tx_signature"
-    t.text "unsigned_message_base64"
-    t.datetime "updated_at", null: false
-    t.index ["slug"], name: "index_signing_requests_on_slug", unique: true
-    t.index ["status"], name: "index_signing_requests_on_status"
   end
 
   create_table "skill_assignments", force: :cascade do |t|
@@ -1623,12 +1582,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_02_200001) do
     t.string "role", default: "viewer"
     t.string "session_token"
     t.string "slug"
-    t.string "solana_address"
     t.string "uid"
     t.datetime "updated_at", null: false
     t.index ["email"], name: "index_users_on_email", unique: true
     t.index ["slug"], name: "index_users_on_slug", unique: true
-    t.index ["solana_address"], name: "index_users_on_solana_address", unique: true
   end
 
   add_foreign_key "action_grades", "agent_actions"

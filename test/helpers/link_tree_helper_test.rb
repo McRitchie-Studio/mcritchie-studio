@@ -146,7 +146,6 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   def teams_path = "/teams"
   def people_path = "/people"
   def docs_path = "/docs"
-  def admin_signing_requests_path = "/admin/signing_requests"
   def deployments_path = "/deployments"
   def admin_dashboard_path = "/admin"
   def admin_theme_path = "/admin/theme"

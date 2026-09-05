@@ -9,9 +9,10 @@ require "test_helper"
 # the base template for every app; solana-studio + turf-monster is the web3
 # bolt-on. The hub therefore carries no wallet IDENTITY and no user-facing web3.
 #
-# Config and route-table shape only — no HTTP. The request-level half (the
-# sign-in page, and the admin signing console surviving on a magic-link session)
-# lives in test/integration/wallet_auth_dropped_test.rb.
+# Config and route-table shape only — no HTTP. The request-level half — now the
+# sign-in page alone, since the admin signing console it also covered was
+# deleted on 2026-09-04 (/tasks/retire-signing-console) — lives in
+# test/integration/wallet_auth_dropped_test.rb.
 class WalletAuthDeclarationTest < ActiveSupport::TestCase
   # Two of the three routes studio-engine draws behind
   # `Studio.auth_method?(:wallet)` (lib/studio.rb). The third is asserted apart —
@@ -72,9 +73,18 @@ class WalletAuthDeclarationTest < ActiveSupport::TestCase
     assert_equal "/magic_link", Rails.application.routes.url_helpers.magic_link_request_path
   end
 
-  # Deliberately KEPT (out of scope to remove): the signing console may use it to
-  # identify signers. Pinned so a later sweep does not take it as dead weight.
-  test "User#solana_address is retained" do
-    assert_includes User.column_names, "solana_address"
+  # AND NOW THE COLUMN IS GONE TOO. It survived /tasks/retire-signing-console
+  # because the console identified signers by it; /tasks/drop-hub-wallet-column
+  # took it on the same day, along with the parked admin wallets and the nav and
+  # admin-table chips.
+  #
+  # Asserted on `column_names` rather than on a method, because that is the fact
+  # the rest of the app leans on: `Studio.user_wallet_address` walks
+  # [wallet_address_method, :wallet_address, :solana_address] behind a
+  # `respond_to?` guard (studio-engine 0.69.3), so the column's absence — not any
+  # deleted method — is what makes the engine return nil instead of raising.
+  test "User#solana_address is gone" do
+    refute_includes User.column_names, "solana_address"
+    refute_respond_to User.new, :solana_address
   end
 end

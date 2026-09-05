@@ -95,13 +95,21 @@ straight past is not a security control. Splitting the console from the wallet
 app buys a property that reads well on an architecture diagram and stops nothing
 an actual attacker would do. Anything wallet-based belongs in the wallet app.
 
-### 2a. …and then the console went ON ICE — 2026-08-31, and this is the live state
+### 2a. …and then the console went ON ICE — 2026-08-31
 
-**Frozen, not removed.** The code stays exactly where it is, in the hub, and
-keeps working. Nothing about the console is deprecated or scheduled for deletion.
+> **🗑️ SUPERSEDED — 2026-09-04, five days later. The console is GONE.** Not
+> frozen: deleted, with the gem and the exemption
+> ([`retire-signing-console`](https://mcritchie.studio/tasks/retire-signing-console)).
+> Read **§2b** below for the live state. This section is kept because the freeze
+> is what made the removal cheap — it had already established that the console
+> has no unique job and no users, and the removal decided only the one question
+> the freeze left open.
+
+**Frozen, not removed.** The code stayed exactly where it was, in the hub, and
+kept working. Nothing about the console was deprecated or scheduled for deletion.
 Mr. McRitchie: *"if it comes up for a purpose we can pick it up then."* The
-console's own doc carries the full note — `docs/SIGNING_CONSOLE_V2.md` in this
-repo (not linked: the docs route serves only `docs/agents/**`).
+console's own doc, `docs/SIGNING_CONSOLE_V2.md`, carried the full note beside the
+code; it was deleted with the console on 2026-09-04 and survives in git history.
 
 **Two consequences for this file, and they are the whole point of §2a:**
 
@@ -143,11 +151,52 @@ set. **Nobody has confirmed either way.** If it turns out not to be covered, tha
 is the job only the console does and it comes off ice — answer it before the next
 signer-set change, not after.
 
+### 2b. …and then it was REMOVED — 2026-09-04, and this is the live state
+
+**Deleted, not frozen.** Mr. McRitchie: *"Remove it all. Turf Monster should be
+the hub for all our Solana / Web3 logic."* The console, its two tables, the
+`solana-studio` dependency and the boundary exemption all left the hub together
+in [`retire-signing-console`](https://mcritchie.studio/tasks/retire-signing-console).
+**The hub now satisfies the web2 boundary structurally rather than by
+exemption** — the state the whole allowlist mechanism exists to reach.
+
+**The question §2a left open got answered first, and the answer was no.** §2a
+said the console would come off ice if Squads turned out not to cover rotating
+the turf-vault 2-of-3 **signer set**. It does not: the Squads V4 vault PDA
+`BW13kgfi…` is the program's **upgrade** authority, while the signer set is three
+individual wallets — which are the hub's own parked admin identities (Alex Bot
+`8K81w4e6…`, Alex `7ZDJp7FU…`, Mason `CytJS23p…`, per
+`turf-vault/docs/CURRENT_DEPLOYMENT.md`). Two different authorities.
+
+**So the console did have one unique property, and it was removed knowingly.**
+Not "coordinates a rotation" but **coordinating a 2-of-3 `update_signers` with no
+cosigner exporting a private key to disk at all**. Be exact about what the
+alternative covers, because the obvious citation does not cover this:
+`turf-vault/docs/KEY_ROTATION.md` §5 is `initialize`, **not** `update_signers`.
+It re-inits a **new** program after the §3 redeploy, and it runs from a **single**
+key — the `INIT_AUTHORITY`, Alex's Phantom, exported to a temp CLI keypair.
+`update_signers` is the opposite case: two cosigners, on the program already
+deployed, and it exists precisely so that a signer change needs **no** redeploy.
+Until 2026-09-04 §5 recorded the rotation's continuity rule but not its
+mechanics; turf-vault's `document-signer-rotation-path` then added them, minutes
+after this section was written. §5 now names the signing path and reaches this
+section's conclusion independently: no script builds `update_signers` yet, both
+keys would leave Phantom to run one, and browser coordination is turf-monster's
+to build. The gap is documented at both ends; what the hub gave up is the tool
+that closed it. It was traded deliberately: the console had **zero** production
+signing requests (re-measured against prod on 2026-09-04, not inherited from the
+freeze), and a browser-coordination tool belongs in the web3 app under this very
+decision. If a future signer rotation wants it, **build it in turf-monster** —
+that is not a reversal of this section, it is what this section says.
+
 ### 3. The control that actually matters — and it is missing
 
-Recorded as a **known gap on a frozen tool** (see §2a), not as owed work. It used
-to sequence **before** the console move; both are moot now that the console is on
-ice.
+Recorded as a **known gap on a tool that no longer exists** (§2b), not as owed
+work. It used to sequence **before** the console move; the move was cancelled
+(§2a) and the tool was then deleted (§2b), so nothing here is owed. It is kept
+because the reasoning generalises: it is the standing argument against trusting
+any signing surface whose message the same server both composes and simulates —
+including one rebuilt in turf-monster.
 
 The signer page shows the operator an **opaque byte blob**. Three facts compound:
 
@@ -193,6 +242,8 @@ of these advanced a stage while this file was being written). Follow the link.
 | [`lint-web2-app-boundary`](https://mcritchie.studio/tasks/lint-web2-app-boundary) | Makes the boundary **enforced** rather than observed. Landed — see [Enforced, not observed](#enforced-not-observed). |
 | [`declare-hub-solana-cluster`](https://mcritchie.studio/tasks/declare-hub-solana-cluster) | Archived: its premise died with the decision. Kept as the record of why. |
 | [`ice-the-signing-console`](https://mcritchie.studio/tasks/ice-the-signing-console) | Records the console freeze (§2a) and retires the move (§2) + signer verification (§3) as cancelled, not owed. |
+| [`retire-signing-console`](https://mcritchie.studio/tasks/retire-signing-console) | **Deletes** the console, `solana-studio`, both tables and the allowlist entry (§2b). The hub passes the boundary structurally. |
+| [`drop-hub-wallet-column`](https://mcritchie.studio/tasks/drop-hub-wallet-column) | **Landed** the same day as §2b: dropped `users.solana_address` and its unique index, the parked admin wallets, and the nav/table/dashboard chips. Email is now the only key into the parked roster. |
 
 ## Enforced, not observed
 
@@ -225,43 +276,29 @@ disk and pass vacuously in CI — the failure mode
 and `rolio` already satisfy the boundary today; each carries its own copy when
 it wants the guard.
 
-### The hub's exemption, and why it cannot rot
+### The hub's exemption — and the mechanism that retired it
 
-McRitchie Studio **cannot** pass this check today — the admin signing console is
-its last real use of the gem. So the boundary landed **enforced with one named
-exemption** rather than waiting for the console to go somewhere.
+**The allowlist is now EMPTY, and that is the mechanism working, not a hole in
+it.** McRitchie Studio held the only entry: it could not pass the check while the
+admin signing console was its last real use of `solana-studio`, so the boundary
+landed **enforced with one named exemption** rather than waiting. On 2026-09-04
+the console left (§2b) and the entry left with it. The hub passes structurally.
 
-**With the console on ice (§2a), that exemption is now open-ended.** The console
-is frozen in place, so there is no move to wait on and no date by which the hub
-stops carrying `solana-studio`. Read the entry as **permanent until someone
-decides otherwise**, not as a countdown. That is a deliberate outcome, not rot:
-the audits below still bite, and the one that matters — *it must still be
-needed* — retires the entry automatically if the console's files ever do leave.
+**This is the outcome the three audits were designed to force**, and one of them
+did the forcing. The exemption was never a mute — it was an entry in
+`Web2AppBoundary::ALLOWLIST` audited three ways, any of which goes red alone:
 
-The exemption is not a mute. It is an entry in `Web2AppBoundary::ALLOWLIST` that
-the same test audits three ways, any of which goes red on its own:
+| Audit | Fails when | What it did here |
+|---|---|---|
+| **It must still be needed** | Every path in `justified_by` (the signing console) is gone. | **This one bit.** Deleting the console makes the entry report STALE and CI red until the gem and the entry go too — so the removal could not land half-done, with a dead exemption still declaring the hub web3. |
+| **It must name its exit** | It names neither a `clearing_task` slug nor an explicit `unfiled_reason`. | Held the entry honest while it lived: it carried `clearing_task: nil` plus an `unfiled_reason` rather than a slug resolving to nothing. |
+| **It must still describe a real violation** | The app no longer declares the gem, so the entry is obsolete. | The backstop on the other order — drop the gem first and the orphaned entry goes red instead of lingering. |
 
-| Audit | Fails when |
-|---|---|
-| **It must still be needed** | Every path in `justified_by` (the signing console) is gone. The exemption **expires by itself** the moment the console's files leave the hub, telling you to drop the gem and the entry. Freezing the console does not trip this — the files are all still there, which is the point. |
-| **It must name its exit** | It names neither a `clearing_task` slug nor an explicit `unfiled_reason`. An exemption pointing at nothing is itself a violation. |
-| **It must still describe a real violation** | The app no longer declares the gem, so the entry is obsolete and must go. |
-
-**There is no clearing task, and the entry says so** (`clearing_task: nil` plus
-an `unfiled_reason`) rather than pointing at a slug that resolves to nothing.
-That stays correct after §2a, but for a **different reason than the entry gives**:
-the move is not un-filed-and-owed, it is **cancelled**. Do not file it to satisfy
-this entry.
-
-> ⚠️ **Known stale prose, in code, deliberately left for a code-shaped change.**
-> `lib/web2_app_boundary.rb`'s `ALLOWLIST["mcritchie-studio"]` still reads
-> pre-decision: its `unfiled_reason` says the move is *"NOT YET FILED as of
-> 2026-08-31; it sequences after signer verification,"* and the comment above it
-> repeats that ordering. Both are superseded by §2a. **The guard's behaviour is
-> unaffected** — the exit audit is a presence check, so CI is green either way —
-> and the entry's own `doc:` key points here, so a reader who follows it lands on
-> the correction. Rewriting those two Ruby strings is a code diff and belongs to
-> a change that can carry one; this note is the pointer until then.
+**Keep the machinery.** No app needs an exemption today, and the fixture tests in
+`test/lib/web2_app_boundary_test.rb` keep all three audits covered for the next
+app that does. An entry reappearing for `mcritchie-studio` is a decision to be
+argued in `lib/web2_app_boundary.rb`, never something that arrives quietly
+alongside a Gemfile line — pinned by *the hub carries no allowlist exemption*.
 
 ## Not yet filed
 
@@ -279,8 +316,10 @@ only one of them is work someone should pick up:
 | The signing console move to turf-monster (§2) | **Cancelled** | The console is on ice (§2a). A frozen console has nowhere to move to. **Do not file this.** |
 | Signer verification (§3) | **Cancelled** | It existed to precede the move and to make the console trustworthy in use. The console has no users and is frozen, so the gap is recorded (§3) rather than closed. **Do not file this.** |
 
-Either would come back only with the console itself — see the reviving question
-in §2a.
+Neither can come back with the console now: it was deleted on 2026-09-04 (§2b),
+and the reviving question §2a posed was answered first — Squads does **not**
+cover the vault signer set, and the console went anyway, knowingly. A future
+browser-coordination tool is turf-monster's to build, not this one's to thaw.
 
 ## Related
 
@@ -290,6 +329,8 @@ in §2a.
   tier there and a template here.
 - [`../modules/app-registry.md`](../modules/app-registry.md) — the registry
   contract and the promotion lifecycle.
-- `docs/SIGNING_CONSOLE_V2.md` — the admin signing console this file keeps
-  referring to, carrying the full **on ice** note (§2a) beside the code. Written
-  as a path, not a link: the docs route serves only `docs/agents/**`.
+- `turf-vault/docs/KEY_ROTATION.md` — the compromise redeploy. Read §5 as
+  `initialize`, not `update_signers` (§2b). Another repo, so no link.
+- `docs/SIGNING_CONSOLE_V2.md` — **deleted 2026-09-04** with the console it
+  described (§2b). Listed so a reader who finds the name in an older audit knows
+  where it went: git history, not a moved path.

@@ -8,8 +8,6 @@ class LinksHubTest < ActionDispatch::IntegrationTest
     assert_match "Turf Monster", response.body
     # Studio/NFL/Directory links are walled off until sign-in
     assert_select "a[href=?]", dashboard_path, count: 0
-    # general hub must NOT expose the on-chain console
-    assert_no_match "Signing Console", response.body
   end
 
   test "anonymous link sidebar exposes only the public Apps section" do
@@ -18,9 +16,8 @@ class LinksHubTest < ActionDispatch::IntegrationTest
     assert_select "button[data-link-sidebar-trigger][aria-controls=?]", "studio-link-sidebar studio-link-sidebar-mobile"
     # Apps (satellites) stays public; the emoji-swap proves the Turf Monster link rendered
     assert_select "#studio-link-sidebar .studio-emoji-swap"
-    # Studio and the on-chain console are behind the session wall
+    # Studio is behind the session wall
     assert_select "#studio-link-sidebar a[href=?]", dashboard_path, count: 0
-    assert_select "#studio-link-sidebar a[href=?]", admin_signing_requests_path, count: 0
   end
 
   test "link sidebar panel renders the slide-in transition markup" do
@@ -45,14 +42,16 @@ class LinksHubTest < ActionDispatch::IntegrationTest
     assert_redirected_to root_path # require_admin -> root with "Not authorized"
   end
 
-  test "admin sees the admin hub with the on-chain Signing Console link" do
+  test "admin sees the admin hub" do
     log_in_as users(:alex) # role: admin
     get admin_links_path
     assert_response :success
     assert_select "h1", "Admin Links"
     assert_select "a[href=?]", admin_dashboard_path
-    assert_match "Signing Console", response.body
-    assert_select "a[href=?]", admin_signing_requests_path
+    # The hub's only On-chain link was the Signing Console, and the section went
+    # with it (/tasks/retire-signing-console). Turf Monster is the web3 hub, so
+    # this one must not grow back.
+    assert_no_match "Signing Console", response.body
   end
 
   test "logged-in identity controls toggle the admin link sidebar" do
@@ -62,7 +61,6 @@ class LinksHubTest < ActionDispatch::IntegrationTest
     assert_select "button[data-link-sidebar-trigger][aria-controls=?]", "studio-link-sidebar studio-link-sidebar-mobile"
     assert_select "button[data-username-display][aria-controls=?]", "studio-link-sidebar studio-link-sidebar-mobile"
     assert_select "button[data-profile-image-toggle][aria-controls=?]", "studio-link-sidebar studio-link-sidebar-mobile"
-    assert_select "#studio-link-sidebar a[href=?]", admin_signing_requests_path
     assert_select "#studio-link-sidebar .studio-emoji-swap-hover"
   end
 end

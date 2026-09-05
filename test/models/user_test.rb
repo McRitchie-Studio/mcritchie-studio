@@ -104,56 +104,47 @@ class UserTest < ActiveSupport::TestCase
     end
   end
 
-  # --- wallet + auth-method tests ---
+  # --- parked identity + auth-method tests ---
 
-  test "from_solana_wallet finds by solana_address" do
-    user = User.create!(solana_address: "Wa11etAddressBase58Example1111111111111111")
-    assert_equal user.id, User.from_solana_wallet(user.solana_address).id
-    assert_nil User.from_solana_wallet("nope")
+  # A BLANK EMAIL MUST MATCH NOTHING, and the stakes went UP when the wallet arm
+  # was removed (/tasks/drop-hub-wallet-column). Email is now the only key into
+  # the roster, and the roster's FIRST entry is an admin — so a lookup that
+  # degraded to "return the first row" would hand out the top seat rather than a
+  # viewer's. Two guards stand between a blank email and a match: the `.presence`
+  # in normalization and the `return nil if normalized_email.blank?` after it.
+  # Either ALONE holds, which is why deleting just one stays green; what this pins
+  # is the property, at the call shape that actually reaches it —
+  # `assign_parked_identity` passes the email on EVERY save, so a row with no
+  # email yet is the everyday case, not a corner one.
+  test "a blank email never matches a parked seat" do
+    assert_equal "admin", User::PARKED_IDENTITIES.first.fetch(:role),
+                 "this test is calibrated to a roster whose first seat is an admin"
+
+    [nil, "", "   "].each do |blank|
+      assert_nil User.parked_identity_for(email: blank),
+                 "#{blank.inspect} matched a parked identity"
+    end
   end
 
-  test "parked identity can be found by email or wallet" do
-    wallet = User.parked_identity_for(email: "team@mcritchie.studio").fetch(:wallet)
+  # The same property through the door it is actually reachable by: a real signup.
+  test "an unparked stranger does not inherit a parked seat" do
+    user = User.create!(email: "stranger@example.com", password: "password")
 
-    assert_equal "team@mcritchie.studio", User.parked_identity_for(wallet: wallet).fetch(:email)
+    refute user.admin?, "an unparked stranger was handed a parked admin seat"
+    assert_equal "viewer", user.role
+    refute_equal User.parked_identity_for(email: "admin@mcritchie.studio").fetch(:name), user.name,
+                 "the stranger was also given the seat's name, so the whole identity was adopted"
   end
 
   test "parked email signup gets canonical admin identity" do
     user = User.create!(email: "team@mcritchie.studio")
 
     assert user.admin?
-    assert_equal "McRitchie Studio Team", user.name
-    assert_equal "8K81w4e6UcB7TiANhM9N8sAgijJvTxxybRi8AENRaRYd", user.solana_address
-  end
-
-  test "parked wallet signup gets canonical email identity" do
-    wallet = User.parked_identity_for(email: "team@mcritchie.studio").fetch(:wallet)
-    user = User.create!(solana_address: wallet)
-
-    assert_equal "team@mcritchie.studio", user.email
-    assert user.admin?
-  end
-
-  test "from_solana_wallet links parked wallet to existing email user" do
-    user = User.create!(email: "team@mcritchie.studio")
-    user.update_column(:solana_address, nil)
-
-    found = User.from_solana_wallet(User.parked_identity_for(email: user.email).fetch(:wallet))
-
-    assert_equal user.id, found.id
-    assert_equal "admin", found.role
-    assert_equal User.parked_identity_for(email: user.email).fetch(:wallet), found.solana_address
-  end
-
-  test "wallet-only user is valid without email and gets a unique slug" do
-    addr = "Wa11etAddrTwo2222222222222222222222222222"
-    user = User.create!(solana_address: addr)
-    assert user.persisted?
-    assert user.solana_connected?
-    assert user.phantom_wallet?
-    # display falls back to the truncated wallet address
-    assert_equal "#{addr[0, 4]}…#{addr[-4, 4]}", user.display_name
-    assert user.slug.present?
+    # DERIVED, not spelled out. This test is about the callback ADOPTING the
+    # canonical identity; pinning the literal made the 2026-09-04 rename
+    # ("McRitchie Studio Team" -> "Team McRitchie") fail here as though adoption
+    # had broken. The name itself is pinned once, in ParkedIdentitiesTest.
+    assert_equal User.parked_identity_for(email: "team@mcritchie.studio").fetch(:name), user.name
   end
 
   test "user with no auth method is invalid" do

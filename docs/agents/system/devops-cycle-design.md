@@ -698,6 +698,7 @@ or the `review-one` SOP; none is a new command to build):
 | **`archive-shipped`** | archive shipped work and reclaim completed worktrees from prior cycles — **run by `production-deploy` as its final step**, so it is not a card chip; still invocable by name | [`agents/steffon/sops/archive-shipped.md`](../agents/steffon/sops/archive-shipped.md) / `bin/release archive --yes` |
 | **`clean-infra`** | reclaim this machine's local infra: finished desks, the Redis band, regenerable disk, orphaned per-desk DBs. Off-sequence — the catch-all when an agent reports there is no space | [`agents/steffon/sops/clean-infra.md`](../agents/steffon/sops/clean-infra.md) |
 | **`live-score-watch`** | watch a live NFL slot: poll ESPN on a cadence, record scoring plays, propagate contest scores. Holds no release lane | [`agents/turf_monster/sops/live-score-watch.md`](../agents/turf_monster/sops/live-score-watch.md) |
+| **`contest-rehearsal`** | run one contest lifecycle end to end on QA devnet: create, enter, replay a played week, settle on-chain, close. Holds no release lane and refuses any target but QA | [`agents/turf_monster/sops/contest-rehearsal.md`](../agents/turf_monster/sops/contest-rehearsal.md) |
 | **`production-deploy`** | ff each repo `release → main` (members stamp `merged: "main"`), deploy prod, smoke, release notes (members → `shipped`), post-ship agent-docs sync — **ship-authority gated** | [`agents/steffon/sops/production-deploy.md`](../agents/steffon/sops/production-deploy.md) / `bin/release ship` |
 
 **Compositions** (the operator-facing launcher phrases = a sequence of atoms):
@@ -1326,7 +1327,7 @@ tiers that must be green by the time the task is `submitted` for review:
 | **library** | studio-engine change | `unit` `integration` — in the engine, plus consumer-CI in *both* apps |
 | **onchain** | new turf-vault instruction | `unit` `integration` — Anchor unit, Anchor lifecycle, Ruby decoder unit |
 | **onchain-vertical** | new workflow w/ wallet + DB + UI + program | `unit` `component` `integration` `e2e` — almost always its own `release` |
-| **docs** | SOP / runbook / README edit | none — no code tiers; routes to the documentation seat (Alex) and certifies by review, not a test lane. **Claimable only on a diff observed to be prose** (`claimable_when: doc_only_diff`), which is what makes the empty column safe |
+| **docs** | SOP / runbook / README edit | none — no code tiers; routes to the documentation seat (Alex) and certifies by review, not a test lane. **Claimable only on a diff observed to be prose, optionally with its own registry-guard tests** — `*_test.rb` under `test/docs/`, nothing else (`claimable_when: docs_with_guards_diff`) — which is what makes the empty column safe |
 | **test-only** | delete a stale assertion; fix a flaky spec | none — a diff with no behavior has nothing for a tier to be evidence of; it owes a **control** instead (below), and still owes the full-suite cert |
 
 **The backticked tier names are load-bearing, not formatting.** They are the
@@ -1350,7 +1351,7 @@ Devnet verification of on-chain work is real and still expected — as an
 
 **A zero-tier shape is only safe while it cannot be claimed by a diff that does
 not match it**, and both zero-tier shapes now say what earns them:
-`claimable_when: doc_only_diff` on `docs`, `test_only_diff` on `test-only`.
+`claimable_when: docs_with_guards_diff` on `docs` (prose plus docs-guard tests, since 2026-09-03), `test_only_diff` on `test-only`.
 `bin/dor-check` checks the claim against the **observed diff**, never the label,
 and fails closed on a diff it cannot observe.
 
@@ -1378,7 +1379,8 @@ doc change and push people to mislabel shapes, which is worse than the hole.
 **A waived requirement now names itself.** When a shape skips a tier or the
 full-suite cert, the verdict says so and says what earned it —
 `ⓘ shape docs: no test tier required · full-suite cert waived — claim verified
-against the OBSERVED diff (doc_only_diff, 2 file(s) [source: pr])`. Silence was
+against the OBSERVED diff (docs_with_guards_diff, 2 file(s) [source: pr])`
+(the label read `doc_only_diff` before the 2026-09-03 widening). Silence was
 the other half of the defect: a gate that skips a requirement without saying so
 reads exactly like a gate that enforced one and passed, which is why #1172's
 output was seen by several readers before anyone noticed what it had not asked

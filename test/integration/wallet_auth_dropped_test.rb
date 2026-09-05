@@ -7,9 +7,12 @@ require "test_helper"
 # test/lib/wallet_auth_declaration_test.rb.
 #
 # The risk of this change was never the config line — it was the assumption that
-# the admin signing console rode on wallet sign-in. It does not: the console is
-# `require_admin` only and drives Phantom in the SIGNER'S OWN BROWSER, so the
-# server holds no key and reads no wallet session. Both halves are pinned here.
+# the admin signing console rode on wallet sign-in. It did not: the console was
+# `require_admin` only and drove Phantom in the SIGNER'S OWN BROWSER, so the
+# server held no key and read no wallet session. That console was DELETED on
+# 2026-09-04 (/tasks/retire-signing-console), so only the sign-in half still has
+# a subject here; the removal itself is pinned by
+# test/integration/signing_console_retired_test.rb.
 class WalletAuthDroppedTest < ActionDispatch::IntegrationTest
   test "the sign-in page paints no wallet CTA" do
     get signin_path
@@ -21,31 +24,21 @@ class WalletAuthDroppedTest < ActionDispatch::IntegrationTest
     assert_match "Email Link", response.body, "magic-link sign-in must survive"
   end
 
-  # THE point of the task. log_in_as mints a magic link — there is no wallet
-  # anywhere in this flow, and the fixture user carries no solana_address, so a
-  # pass cannot be credited to one.
-  test "the admin signing console is reachable on a magic-link session" do
+  # The admin surface this file used to pin — the signing console surviving on a
+  # magic-link session — is GONE as of 2026-09-04
+  # (/tasks/retire-signing-console): Turf Monster is the hub for all web3, so the
+  # hub keeps no console to reach. Its removal is pinned by
+  # test/integration/signing_console_retired_test.rb. What remains here is the
+  # half that still has a subject: the sign-in page itself.
+  #
+  # An ADMIN session is still worth walking, because dropping :wallet must not
+  # have cost the admin surfaces that never depended on it.
+  test "the admin dashboard is reachable on a magic-link session" do
     admin = users(:alex)
-    assert_nil admin.solana_address,
-               "fixture must have no wallet, so reachability cannot be credited to one"
 
     log_in_as(admin)
 
-    get admin_signing_requests_path
-    assert_response :success, "the console queue must not depend on wallet sign-in"
-
-    get new_admin_signing_request_path
-    assert_response :success, "the console builder must not depend on wallet sign-in"
-  end
-
-  # The console's admin wall is what gates it — not an auth METHOD. Pinned so a
-  # future reader does not conclude the wall came from wallet sign-in.
-  test "the signing console is gated by admin, not by any wallet identity" do
-    get admin_signing_requests_path
-    assert_response :redirect, "signed-out must not reach the console"
-
-    log_in_as(users(:viewer))
-    get admin_signing_requests_path
-    assert_redirected_to root_path, "a non-admin magic-link session must be bounced"
+    get admin_dashboard_path
+    assert_response :success, "admin pages must not depend on wallet sign-in"
   end
 end

@@ -115,7 +115,7 @@
 # THE OTHER TWO CONTRACT KEYS — `dor_tiers` is not the only thing a shape can ask
 # for, and two shapes now ask for something a tier list cannot express:
 #
-#   claimable_when: test_only_diff | doc_only_diff
+#   claimable_when: test_only_diff | docs_with_guards_diff
 #     The shape may be claimed ONLY on a diff bin/dor-check OBSERVES to match it.
 #     Checked against the diff, never against the label. A shape whose lighter
 #     contract is unlocked by TYPING its name is the declaration-over-evidence
@@ -124,9 +124,13 @@
 #     polarities — and in both, THE UNRECOGNIZED FILE BLOCKS THE CLAIM:
 #       test_only_diff → 100% test files (bin/lib/test_only_diff.rb, an ALLOWLIST:
 #         test/, tests/, e2e/ and nothing else).
-#       doc_only_diff  → 100% provable prose (bin/lib/code_diff.rb, a DENYLIST:
-#         non-behavioral by file TYPE, so anything unrecognized is behavior).
-#     `doc_only_diff` reuses CodeDiff — the SAME classifier the exempt-KIND gate
+#       docs_with_guards_diff → provable prose plus, optionally, docs-guard tests
+#         (and nothing else) — *_test.rb under test/docs/, type AND location
+#         together — with at least one prose file (bin/lib/code_diff.rb, a DENYLIST at its core:
+#         non-behavioral by file TYPE, so anything unrecognized is behavior; the
+#         guard-test carve-out is the one deliberate, doubly-qualified exception,
+#         widened from plain doc_only_diff on 2026-09-03).
+#     Both docs-side rules reuse CodeDiff — the SAME classifier the exempt-KIND gate
 #     runs — rather than adding a second "what is prose" list, because two lists
 #     drift and the defect it fixed WAS two answers to one question: the kind gate
 #     refused a behavioral `kind: docs` diff, and the `docs` SHAPE then granted the

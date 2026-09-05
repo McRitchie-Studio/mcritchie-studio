@@ -175,7 +175,7 @@
 # Read an EXISTING fixture where you can.
 # MEASURED with the lister, not added by hand: `npx playwright test --list` => 145.
 # Coverage ADDED; `quarantined` is untouched.
-total_specs: 145
+total_specs: 146
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
@@ -280,7 +280,7 @@ quarantined: 10
 # Re-derived after the resubmission signal landed:
 #   npx playwright test --list                           => 145
 #   npx playwright test --list --grep-invert @quarantine => 135
-executed: 135
+executed: 136
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to
