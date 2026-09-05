@@ -81,6 +81,54 @@ check — the same failure shape as the G4 registry-string inference (see
 nobody has to be malicious for it to be wrong. It was: PR #512 (`kind: chore`)
 shipped `.github/workflows/ci.yml` and DoR printed "n/a → ready to advance".
 
+## The exemption is from the TIER gate. It was never from CI
+
+An earned doc-only diff skips the **shape/test-tier** gate, and nothing else. It
+does **not** skip the CI verdict, and it does not skip the gate-attempt record.
+
+Until 2026-09-05 it skipped both, silently
+([gate-zero-skips-docs-ci](https://mcritchie.studio/tasks/gate-zero-skips-docs-ci)).
+The exempt branch ended in a bare `exit 0` that sat **above** the CI allow-list and
+above the gate-verdict emit, so `--gate-role review` — the run this page calls the
+authoritative CI verdict — never evaluated CI on a prose diff: `--json` returned
+`ready=true, exempt=true, errors=[]` with **no `ci` key at all**. Three doc-shaped
+PRs cleared gate-zero that way (turf-vault #9 and #10, mcritchie-studio #1204); all
+three were green by luck, not by gate. The `dor_review` attempt reading **null** on
+docs-shaped PRs was the same fact, logged twice and filed as a cosmetic gap in the
+record — the record was not missing, the gate had not run.
+
+Read the two guards separately, because only one of them belongs here:
+
+- **The tier gate — correctly skipped.** A prose diff owes no unit tier, and
+  demanding one is how people learn to mislabel a shape.
+- **The CI allow-list — never had any business being skipped.** This repo's CI
+  **grades prose**: the doc-link check, generated-doc drift, the entry-doc guards
+  and rubocop over `bin/` all run on a docs PR, and every one of them can go red.
+  *Ships no behavior* is not *cannot fail CI*.
+
+So both paths now ask the same function (`bin/lib/ci_gate.rb`), rather than keeping
+two copies of an allow-list — two allow-lists that drift are a deny-list with extra
+steps. `green` advances an exempt review; `red`, `pending`, `conflicted`,
+`ci_less`, `closed`, `merged`, the no-verdict family, a blank `pr_url` and any
+unclassified state all refuse, exactly as they do on the gated path. The verdict
+carries a `ci` field either way, and a `dor_review` attempt is recorded either way.
+
+**The one deliberate divergence: no cert clears an exempt refusal.** On the gated
+path the no-verdict family (`none` / `unreadable` / `unverified`) can be cleared by
+a FULL local cert, because the gate must honour the remedy it prints. That argument
+is a **substitution** of evidence, and an exempt task has none to substitute — it
+ran no suite. An unread CI over a prose diff therefore leaves the merge with no
+verdict from either side, which is the state a gate exists to refuse.
+
+The **build** gate still reads no CI on an exempt task: it resolves no diff and must
+not shell `gh`. Leniency there disarms nothing — at design time no code exists yet
+and the build gate enforces no tiers either way.
+
+Pinned by `test/lib/dor_check_exempt_ci_test.rb`, including the control that keeps
+the split honest: a code-carrying diff under the same exempt kind is still asked for
+its tiers, so "no tier was demanded" cannot quietly become "tiers are waived for
+everyone".
+
 ## The gate grades the TASK's tree — never the one you stand in
 
 **Two** things root here — the suite **fingerprint** and the code **diff** — and
@@ -398,6 +446,8 @@ attempt n+1.
     An allow-list defaults to *refuse*, so a state nobody has classified blocks
     review until somebody does. `test/lib/dor_check_test.rb` asserts this with a
     state that does not exist — the one test a longer deny-list could not pass.
+    **The allow-list covers the exempt (doc-only) path too**, which it did not
+    until 2026-09-05 — see *The exemption is from the TIER gate* above.
   - **One escape, and only one: a FULL cert.** For the no-verdict family
     (`none` / `unreadable` / `unverified`) a fresh `bin/full-suite-check` cert
     stands in for the CI verdict, and the gate then says so on the ready line
