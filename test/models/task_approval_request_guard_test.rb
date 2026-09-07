@@ -38,7 +38,7 @@ class TaskApprovalRequestGuardTest < ActiveSupport::TestCase
   SETTLE_STAGES = (Task::STAGES - Task::APPROVAL_REQUEST_STAGES).freeze
 
   def fold(stage:, **devops)
-    Task.merge_devops_into_metadata({ "devops" => { "kind" => "bug" } }, devops.stringify_keys, stage: stage)
+    Task.merge_devops_into_metadata({ "devops" => { "kind" => "bug" } }, devops.stringify_keys, stage)
   end
 
   # --- the ALLOW half of the matrix: where a request IS actionable ---
@@ -123,11 +123,83 @@ class TaskApprovalRequestGuardTest < ActiveSupport::TestCase
       Task.merge_devops_into_metadata(
         task.metadata,
         { "approval_status" => "waiting", "local_url" => "http://localhost:3011/x" },
-        stage: task.stage
+        task.stage
       )
     end
 
     assert_nil task.reload.devops["local_url"], "a refused fold must leave the record untouched"
+  end
+
+  # --- the calling convention the guard must not break ---
+
+  test "[unit] the fold still binds a brace-less trailing hash to raw_devops" do
+    # THE TRAP, paid for on CI shard 4 on 2026-09-07. Callers write
+    # `merge_devops_into_metadata(stored, "branch" => "feat/x")` with no braces. Give
+    # this method ANY keyword and Ruby 3 binds that bare hash to the KEYWORDS instead
+    # of to raw_devops — the call dies with "wrong number of arguments (given 1,
+    # expected 2)" and every such call site breaks at once. `stage` is therefore a
+    # trailing POSITIONAL. bin/task's `api` helper carries the same note, and it was
+    # also a `stage` that blew it up there.
+    merged = Task.merge_devops_into_metadata({ "devops" => { "kind" => "bug" } }, "branch" => "feat/x")
+
+    assert_equal "feat/x", merged.dig("devops", "branch"),
+                 "a bare trailing hash must still land as raw_devops, not as keywords"
+    assert_equal "bug", merged.dig("devops", "kind")
+  end
+
+  test "[unit] the stage argument is positional and still guards" do
+    assert_raises(ArgumentError) do
+      Task.merge_devops_into_metadata({}, { "approval_status" => "waiting" }, "submitted")
+    end
+  end
+
+  # --- the DROP RECEIPT: the transition clear must stop being silent ---
+  #
+  # The sequence the coordinator measured on 2026-09-07, reproduced here in full,
+  # because it is the one that bites on the NORMAL path: set the request while
+  # building, read it back, ship. Steps 1-3 are unchanged behaviour; what is new is
+  # that step 3 now leaves a receipt instead of nothing.
+
+  test "[unit] shipping a task drops its pending request and says so on the record" do
+    task = Task.create!(title: "Approval Drop Receipt Row", stage: "building",
+                        metadata: { "devops" => { "kind" => "bug" } })
+
+    md = task.metadata.deep_dup
+    (md["devops"] ||= {})["approval_status"] = "waiting"
+    (md["devops"] ||= {})["local_url"] = "http://localhost:3011/demo"
+    task.update!(metadata: md)
+    assert_equal "waiting", task.reload.approval_status, "step 2: the request lands at building"
+    assert_nil task.devops["approval_request_dropped_at"], "nothing dropped yet"
+
+    task.submit! # step 3: what bin/ship does
+
+    assert_equal "none", task.reload.approval_status, "the handoff still settles the request"
+    assert task.devops["approval_request_dropped_at"].present?,
+           "but the drop must now be AUDITABLE — this is the silence the operator loop paid for"
+    assert_equal "http://localhost:3011/demo", task.devops["local_url"],
+                 "local_url still survives the move, which is what made the drop look like success"
+  end
+
+  test "[unit] a move that drops nothing leaves no receipt" do
+    # The receipt must mean something. A task with no pending request that crosses
+    # the same seam must not be stamped, or the warning it drives cries wolf.
+    task = Task.create!(title: "Approval No Drop Row", stage: "building",
+                        metadata: { "devops" => { "kind" => "bug" } })
+
+    task.submit!
+
+    assert_nil task.reload.devops["approval_request_dropped_at"]
+  end
+
+  test "[unit] an approved grant crossing the seam is not a drop" do
+    task = Task.create!(title: "Approval Grant Crosses Seam", stage: "building",
+                        metadata: { "devops" => { "approval_status" => "approved" } })
+
+    task.submit!
+
+    task.reload
+    assert_equal "approved", task.approval_status, "a real grant survives the handoff"
+    assert_nil task.devops["approval_request_dropped_at"], "and nothing was discarded"
   end
 
   # --- the settle itself is UNCHANGED: the three leaks stay closed ---

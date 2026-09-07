@@ -268,6 +268,7 @@
 require "net/http"
 require "json"
 require "uri"
+require "time"
 require "fileutils"
 require "shellwords"
 require_relative "../lib/agent_session_usage"
@@ -1194,6 +1195,47 @@ LIST_JSON_PER_PAGE = 100
 def die!(msg, code: 1)
   warn!("error: #{msg}")
   exit code
+end
+
+# A stage move OUT of the approval-request stages SETTLES a pending operator-approval
+# request to "none" (Task#settle_operator_approval_past_submit). That rule is
+# deliberate — past `submitted` the PR review flow owns the work, so a local-preview
+# approval is moot — but it used to happen in SILENCE, and the silence is the defect.
+#
+# Reproduced 2026-09-07: an agent set --approval waiting at `building`, read it back
+# as "waiting", then ran bin/ship. The handoff move cleared it, `local_url` from the
+# same call survived, and nothing was printed. So the agent believed it had asked,
+# the board never pulsed, and Mr. McRitchie was never asked — a human gate that
+# reports success and does nothing.
+#
+# `since` is the instant this move began, so the warning fires only for a request
+# THIS move discarded — never an older stamp already on the record.
+#
+# THE COMPARISON LEANS TOWARD WARNING, deliberately. The stamp is written by the
+# BOARD (Heroku, UTC) and compared against the CLI's own clock on a laptop, so the
+# two are never exactly aligned. A skew of even a few seconds would push a genuine
+# drop under `since` and silence it — which is the exact defect this warning exists
+# to close. So allow generous skew: a spurious extra line costs a reader one
+# sentence, while a missed one costs the operator gate. An hour-old stamp is still
+# comfortably outside the window and stays quiet.
+CLOCK_SKEW_GRACE = 300 # seconds
+
+def warn_dropped_approval_request!(task, slug, since)
+  dropped = task.dig("metadata", "devops", "approval_request_dropped_at")
+  return if dropped.to_s.strip.empty?
+
+  at = begin
+    Time.parse(dropped).utc
+  rescue ArgumentError, TypeError
+    nil
+  end
+  return if at.nil? || at < (since - CLOCK_SKEW_GRACE)
+
+  warn!("warning: this move DISCARDED a pending operator-approval request " \
+        "(approval_status waiting → none). Nobody was asked and the board will not pulse. " \
+        "A request is only actionable in designed or building. If you still need the " \
+        "operator's eyes, get them BEFORE handing off; to record a decision he already " \
+        "gave, run: bin/task update #{slug} --approval approved")
 end
 
 def print_usage!
@@ -2723,12 +2765,16 @@ when "move"
     merged.merge!(ClaimLease.renewed(session: mover_session, nonce: claim_nonce, prior: current_devops))
     body["devops"] = merged
   end
+  move_started_at = Time.now.utc
   task = api(:patch, "/api/v1/tasks/#{slug}", body)["data"]
   # The board answered 2xx — but a 2xx is not persistence. Read the task back and
   # confirm the stage actually moved before printing the success line, so a
   # silently-non-persisting write exits nonzero + loud instead of stranding the
   # task while the handoff claims it advanced.
   verify_move_persisted!(slug, stage)
+  # ...and a move that SETTLED a pending approval request must say so. The move
+  # itself is correct and still succeeds; what must not happen is doing it quietly.
+  warn_dropped_approval_request!(task, slug, move_started_at)
   verify_abandonment_recorded!(slug, archive_devops[OpenPrGuard::RECORD_KEY]) if archive_devops
   write_feature_marker(task)
   print_task(task)

@@ -512,7 +512,7 @@ class TasksController < ApplicationController
   # @task nil.
   def merged_metadata_with_devops(raw_devops, stage: nil)
     Task.merge_devops_into_metadata(
-      @task&.metadata, raw_devops, stage: stage.presence || @task&.stage || Task.new.stage
+      @task&.metadata, raw_devops, stage.presence || @task&.stage || Task.new.stage
     )
   end
 end

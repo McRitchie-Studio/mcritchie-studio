@@ -368,7 +368,7 @@ module Api
         # something the same save would settle away. Falls back to the model default
         # on a create that names no stage.
         effective_stage = attrs["stage"].presence || @task&.stage || Task.new.stage
-        attrs["metadata"] = Task.merge_devops_into_metadata(base, raw_devops_params, stage: effective_stage)
+        attrs["metadata"] = Task.merge_devops_into_metadata(base, raw_devops_params, effective_stage)
         attrs
       end
 

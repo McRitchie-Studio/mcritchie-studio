@@ -230,6 +230,7 @@ class Task < ApplicationRecord
     requires_release_conductor included_in_release agent_context session_id session_provider mascot
     mascot_session claimed_session claim_nonce claim_expires_at post_deploy_cmd built_by gem_bump
     persona approval_status approval_requested_at approval_requested_by approval_approved_at
+    approval_request_dropped_at
   ].freeze
   # Provider → resume-command template (one %s, the session id).
   RESUME_COMMANDS = {
@@ -1903,7 +1904,18 @@ class Task < ApplicationRecord
   # explicitly posted approval REQUEST can be honoured — see
   # .guard_approval_request_stage!. Defaulted to nil so a caller with no stage in
   # hand folds exactly as before; the guard is skipped rather than guessing.
-  def self.merge_devops_into_metadata(metadata, raw_devops, stage: nil)
+  #
+  # ⚠ `stage` IS A TRAILING POSITIONAL, NOT A KEYWORD, AND MUST STAY ONE. Callers
+  # pass raw_devops as a BRACE-LESS trailing hash (`merge_devops_into_metadata(stored,
+  # "branch" => "feat/x")`). The moment this method accepts ANY keyword, Ruby 3 binds
+  # that bare hash to the keywords instead of to raw_devops, and the call dies with
+  # "wrong number of arguments (given 1, expected 2)" — the argument was not dropped,
+  # it was re-routed. Adding `stage:` as a kwarg reddened four tests in
+  # test/models/task_devops_metadata_merge_test.rb on CI (shard 4, 2026-09-07) that
+  # no local diff-mapped lane runs. bin/task's `api` helper carries the identical
+  # note for the identical reason, and it was ALSO a `stage` that blew it up. One
+  # optional positional keeps every existing call site binding exactly as before.
+  def self.merge_devops_into_metadata(metadata, raw_devops, stage = nil)
     guard_approval_request_stage!(raw_devops, stage)
     base = (metadata || {}).to_h.deep_dup
     merged = merge_devops_metadata(base["devops"], raw_devops)
@@ -3209,7 +3221,22 @@ class Task < ApplicationRecord
     return unless approval_status == OPERATOR_APPROVAL_WAITING
 
     merged = metadata.deep_dup
-    (merged["devops"] ||= {})["approval_status"] = OPERATOR_APPROVAL_NONE
+    settled = (merged["devops"] ||= {})
+    settled["approval_status"] = OPERATOR_APPROVAL_NONE
+    # LEAVE A RECEIPT. The settle itself is right, but it used to happen in total
+    # silence, and the silence is what cost the operator loop. Reproduced 2026-09-07:
+    # an agent set --approval waiting at `building`, READ IT BACK as "waiting",
+    # ran bin/ship, and the handoff move cleared it to "none" with nothing said —
+    # so the agent believed it had asked, the board never pulsed, and nobody was
+    # ever asked. `local_url` from the same call survived the move, which is what
+    # made it look like the write had worked.
+    #
+    # This stamp is the durable half of the remedy: it makes the drop auditable on
+    # the record for EVERY caller (CLI, JSON API, board form), and it is what
+    # bin/task's move warning reads to announce the drop to the agent that caused
+    # it. Overwritten on each drop on purpose — the useful fact is the LAST time a
+    # request was discarded, not the first.
+    settled["approval_request_dropped_at"] = Time.current.iso8601
     self.metadata = merged
   end
 
