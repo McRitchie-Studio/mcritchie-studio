@@ -179,7 +179,7 @@ defects. Both are the blanket rule wearing a detector's clothes.
 | **Rewrites the body** of a script that already existed | reports |
 | Adds a declarative binding (`x-data`, `data-controller`, `onclick=`) | reports |
 | Changes a file that **carries** a script without adding one | reports |
-| Adds a program in a repo with **no browser lane** (studio-engine) | reports, loudly |
+| Adds a program in a repo with **no browser lane** (decided at runtime, not by name) | reports, loudly |
 | Mentions the word `<script>` **inside a comment** | **silent** |
 | Server-only, or a template with no client construct | **silent** |
 
@@ -217,11 +217,34 @@ root excludes `vendor/`, `node_modules/`, `tmp/` and the next one nobody thought
 all at once. If you widen `SERVED_ROOTS`, run the mutation harness — the explicit
 test-root exclusion was already removed once it became provably dead code.
 
-**studio-engine has no browser lane** — no `e2e/`, and `engine-ci.yml` installs node
-but runs no browser (`consumer-ci.yml` runs consumers' `rails test` without
-`test:system`). Two of the three motivating defects were there. Blocking would be a
-refusal with no remedy, so the engine gets a loud named hole instead
-(`/tasks/stand-up-engine-browser-lane`).
+**studio-engine HAS a browser lane — and the gate already blocks there.** It was
+stood up 2026-08-12, and this paragraph used to say the opposite. Measured
+2026-09-06: `studio-engine/e2e/` holds **18** Playwright specs with a
+`playwright.config.js` (`testDir: "./e2e"`), and `engine-ci.yml`'s own header
+reads "THREE JOBS, and the second two are the BROWSER LANE" — `playwright` (a real
+Chromium against real engine partials) plus `e2e_executed_set`, which asserts the
+lane RAN what it claims from Playwright's own receipt.
+
+**Nothing in the gate needed changing for that to take effect**, which is the part
+worth knowing: `ClientSurfaceDiff.lane_present?` computes the answer at runtime
+from `File.directory?("e2e")`, so the engine flipped from the REPORT branch to the
+BLOCKING one the day the directory landed. Prose that still calls the engine
+laneless is describing a repo that no longer exists — and it misled a reviewer
+inside the review that produced this correction.
+
+Two of the three motivating defects were in the engine, so this is the lane that
+most needed standing up. Where a repo genuinely has NO lane, the gate still
+reports rather than blocks: demanding evidence a repo cannot produce is a refusal
+with no remedy.
+
+**If you grep, you will still find the old claim in two places** —
+`bin/dor-check`'s report-branch message and comments in
+`bin/lib/client_surface_diff.rb`, both of which still describe the engine as
+laneless and cite `/tasks/stand-up-engine-browser-lane` (a task that is now
+ARCHIVED, because the lane it tracked was built). Neither changes what the gate
+DOES, since the branch they sit in no longer fires for the engine. Re-tensing them
+is filed as `/tasks/refresh-stale-lane-prose`; until it lands, **this paragraph is
+the correct copy.**
 
 **The escape hatch is a record**, like `[full-suite-bypass]`:
 `bin/task update <task> --checks "[browser-bypass] <reason>"` is honored and flagged
