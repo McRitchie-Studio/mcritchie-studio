@@ -163,6 +163,7 @@ require_relative "lib/control_replay"
 require_relative "lib/task_board"
 require_relative "lib/cert_root_guard"
 require_relative "lib/review_tree_guard"
+require_relative "lib/base_movement_audit"
 require_relative "lib/dor/checks"
 require_relative "lib/dor/check_context"
 Dor::Checks.load!
@@ -1599,6 +1600,85 @@ def secondary_fast_cert_reason(eval)
     "state clears it; the full cert does"
 end
 
+# ── THE STALE-GREEN VOCABULARY (/tasks/gate-credits-a-stale-green) ───────────────
+#
+# Two message builders for one finding, split by SEVERITY rather than by subject,
+# because the severity IS the design: naming the movement is what every reviewer gets,
+# refusing is what the one unsettleable shape gets.
+
+# How many of each to name before trailing off. A verdict nobody finishes reading is a
+# verdict nobody acts on, and the point of these lines is that the reviewer can check
+# them by hand.
+BASE_MOVE_NAME_CAP = 4
+
+def base_move_list(items, cap: BASE_MOVE_NAME_CAP)
+  shown = items.first(cap)
+  rest = items.size - shown.size
+  "#{shown.join(', ')}#{rest.positive? ? " (+#{rest} more)" : ''}"
+end
+
+# PART A — NAME WHAT MOVED, always, on every reported movement.
+#
+# The original report gave a tip SHA and a count, which a reviewer can do nothing with
+# except go look. Naming the commits and the files is what lets the FILE-DISJOINTNESS
+# argument be made FROM the verdict instead of by hand — and lets its limits be stated
+# in the same breath, which is the only place a reader will meet them.
+#
+# The clock clause has THREE outcomes and they are not interchangeable. "Covered",
+# "not covered", and "could not ask" are three different sentences, and printing the
+# third as either of the others is this task's own defect one level down.
+def base_movement_detail(movement)
+  return "" unless movement.is_a?(Hash) && movement[:state] == :moved
+
+  named = movement[:commits].map { |c| "#{c[:sha][0, 12]} #{c[:at]} #{c[:subject]}" }
+  detail = +" WHAT MOVED: #{base_move_list(named)}. FILES: #{base_move_list(movement[:files])}."
+
+  case movement[:clock]
+  when :unreadable
+    detail << " COULD NOT compare that against this PR's CI clock — the checks read carry no completedAt, " \
+      "so \"did the run finish BEFORE this landed?\" went UNASKED. That is not a freshness certificate; " \
+      "absence of a finding here means the question was not answerable, not that the answer was yes."
+  else
+    if movement[:late].empty?
+      detail << " All of it predates this PR's CI completion (#{movement[:cutoff].iso8601}), so the run did " \
+        "cover this tree."
+    else
+      detail << " #{movement[:late].size} of those landed AFTER this PR's CI completed " \
+        "(#{movement[:cutoff].iso8601}), and ci.yml runs on pull_request and on pushes to main/release only, " \
+        "so nothing re-ran: the green never saw #{base_move_list(movement[:late_files])}. None of those is a " \
+        "test that grades a file this PR changes, so FILE DISJOINTNESS is available here — but note what it " \
+        "does and does not say: \"the base touched none of my files\" is a DIFFERENT claim from \"the " \
+        "merged tree is green\", and it is the merged tree that ships."
+    end
+  end
+  detail
+end
+
+# PART B — THE REFUSAL, for the one shape disjointness cannot settle.
+#
+# Everything a reviewer needs to re-derive the finding by hand is named: the commit, its
+# clock, the run's clock, the guard file, and the file of THIS PR that the guard grades.
+# A refusal whose evidence the reader cannot check is a refusal they learn to route
+# around, and this gate is gate-zero for every review.
+def stale_green_refusal(movement, base_branch)
+  guards = movement[:guards]
+  pairs = guards.map { |g| "#{g[:test]} (grades #{g[:guarding].join(', ')})" }
+  culprits = movement[:late].map { |c| "#{c[:sha][0, 12]} at #{c[:at]} \"#{c[:subject]}\"" }
+
+  "GitHub CI is GREEN but it COULD NOT HAVE COVERED this merge — origin/#{base_branch} gained " \
+    "#{base_move_list(culprits)} AFTER this PR's CI completed at #{movement[:cutoff].iso8601}, and ci.yml " \
+    "runs on pull_request and on pushes to main/release only, so that merge re-ran NOTHING. What landed is " \
+    "not incidental to this PR: #{base_move_list(pairs)} — a TEST THAT GRADES code this PR changes, and one " \
+    "this PR does not itself touch. FILE DISJOINTNESS DOES NOT SETTLE THIS, and it is the argument to reach " \
+    "for here: \"the base commits touch none of my files\" is TRUE and IRRELEVANT in this exact shape, " \
+    "because it is a claim about SOURCE overlap while the thing that moved is the GUARD. The two are " \
+    "different sentences and only one of them is \"the merged tree is green\". Settle it by building the " \
+    "merge preview and running that family (git merge-tree the PR head against origin/#{base_branch}, check " \
+    "the result out, run the named tests), or update the branch (git rebase origin/#{base_branch}) and let " \
+    "CI re-run — then re-check. A local full cert does NOT clear this: it grades the desk tree, which is not " \
+    "the merged tree either."
+end
+
 # WHICH LANES a refusing secondary repo's state phrase names — the ones that repo
 # actually OWES, read from the SAME list the verdict is computed over.
 #
@@ -3013,6 +3093,42 @@ if gate != "build"
   ci_base = ci ? ci[:base].to_s.strip : ""
   base_branch = ci_base.empty? ? ENV.fetch("DOR_BASE_BRANCH", "accepted") : ci_base
   base_check = ReviewTreeGuard.base_assessment(root: diff_root, branch: zap_branch, base: base_branch)
+
+  # ==== SEAM 2b: WAS THAT MOVEMENT INSIDE THE GREEN? (/tasks/gate-credits-a-stale-green)
+  #
+  # Seam 2 above says the base MOVED. What it never said is WHAT moved, or WHEN relative
+  # to the run — so the report was unarguable-with, and reviewers settled it the one
+  # cheap way available: FILE DISJOINTNESS, "the N commits `accepted` gained touch none
+  # of my files."
+  #
+  # THAT ARGUMENT IS USUALLY RIGHT AND IT IS NOT THE SAME CLAIM as "the merged tree is
+  # green". It comes apart in exactly one shape — a base commit that changes a TEST
+  # GRADING this PR's code rather than a source file this PR shares. Disjointness is then
+  # TRUE AND IRRELEVANT.
+  #
+  # MEASURED (Carl, PR #1258, 2026-09-07): the `accepted` tip landed 07:59:02Z, 3.3
+  # minutes AFTER that PR's CI completed 07:55:44Z, carrying +117/-17 to
+  # test/lib/dor_check_exempt_ci_test.rb — the guard that PR's whole design leaned on.
+  # 12/12 green, and the green said nothing about the combination. Safe only because a
+  # reviewer built the merge preview by hand.
+  #
+  # THE SPLIT OF SEVERITIES IS THE DESIGN, and it is what keeps the two claims apart:
+  #   movement, any shape      REPORTS, now NAMED (commits, files, and the clock verdict)
+  #                            so the disjointness argument can be made FROM the verdict.
+  #   a late SHARED GUARD      REFUSES — the one shape disjointness cannot settle.
+  # Refusing on movement alone would wedge the lane on every busy night; staying silent
+  # on the guard case is the defect being fixed. Neither half is the other's default.
+  #
+  # AUTOMATIC, not a flag. This is gate-zero for every review, and the reviewer who most
+  # needs the question asked is the one who does not know to ask it — an opt-in switch
+  # makes correctness a thing you have to remember, which is the same reasoning that kept
+  # the multi-PR CI read (dor-check-reads-one-pr) off a --repo flag.
+  ci_completed_at = ENV["DOR_CHECK_CI_COMPLETED_AT"] || (ci && ci[:completed_at])
+  movement = BaseMovementAudit.assess(
+    root: diff_root, branch: zap_branch, base: base_branch,
+    changed_files: changed_files, ci_completed_at: ci_completed_at
+  )
+
   if review_role && base_check[:state] == :moved && ci_error.nil?
     behind = base_check[:behind_by]
     suggestions << "the base has MOVED since this branch last took it — origin/#{base_branch} is at " \
@@ -3022,7 +3138,17 @@ if gate != "build"
       "lives in config/e2e_lane.yml and can be changed by the very merge that moved the base. Re-derive it " \
       "before trusting the spec counts, or update the branch (git rebase origin/#{base_branch}) and let CI " \
       "re-run. Re-derived from LOCAL refs, which this gate never fetches, so this is a floor on the movement, " \
-      "not a measure of it."
+      "not a measure of it.#{base_movement_detail(movement)}"
+  end
+
+  # THE REFUSAL. Green CI, and the base gained — after the run finished — a change to a
+  # test that grades this PR's own code. Not cert-clearable: a local full cert grades the
+  # DESK tree, which is not the merged tree either, so it answers a different question
+  # than the one being refused.
+  if review_role && ci_error.nil? && ci[:state] == :green && movement[:state] == :moved &&
+     movement[:guards].any?
+    errors << stale_green_refusal(movement, base_branch)
+    ci_review_refused = true
   end
 
   # A refusal a cert can clear is DEFERRED past the suite gate below, which is

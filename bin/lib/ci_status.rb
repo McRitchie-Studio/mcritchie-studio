@@ -2,6 +2,7 @@
 
 require "json"
 require "open3"
+require "time"
 require "shellwords"
 require_relative "gh_auth_retry"
 
@@ -859,7 +860,11 @@ module CiStatus
       verdict = view_verdict(view)
       return verdict if verdict
 
-      raw = gh_read("pr", "checks", pr, "--json", "name,state,bucket")
+      # `completedAt` rides along for the STALE-GREEN question (bin/lib/base_movement_audit.rb):
+      # a green is only about this merge while the base has not moved SINCE the run
+      # finished, and that comparison needs the run's clock. One extra field on a call
+      # that already happens — no new round trip.
+      raw = gh_read("pr", "checks", pr, "--json", "name,state,bucket,completedAt")
       # combine, not parse: a bare :none here may be the THIRD STATE (no CI will ever
       # run), and only the view payload can tell the difference.
       return combine(view, raw)
@@ -942,7 +947,39 @@ module CiStatus
     unsettled = checks.reject { |c| %w[pass skipping].include?(c["bucket"].to_s) }.map(&name)
     return { state: :pending, pending: unsettled } if unsettled.any?
 
-    { state: :green, count: checks.size }
+    { state: :green, count: checks.size, completed_at: latest_completion(checks) }.compact
+  end
+
+  # PURE. When did this run FINISH — the LATEST completedAt across its checks, as the
+  # raw ISO string gh handed back.
+  #
+  # LATEST, not earliest, and the direction is the argument: the caller uses this as the
+  # line after which a base commit provably was not covered, so an EARLIER stamp would
+  # call more commits "uncovered" than the evidence supports and manufacture refusals out
+  # of a rounding choice. The latest stamp is the one no reading can dispute.
+  #
+  # Absent on every check (an injected verdict, gh vocabulary drift, the SHA-addressed
+  # path which builds its own rows) → nil, which `.compact` drops. Nil is "no clock",
+  # and every caller must treat that as a question it could not ask — never as "the base
+  # movement is fine".
+  def self.latest_completion(checks)
+    stamps = Array(checks).filter_map { |c| c["completedAt"].to_s.strip if c.is_a?(Hash) }
+                          .reject(&:empty?)
+    # Ordered by PARSED time, not lexically. Lexical max is correct only while every
+    # stamp shares one format, and the failure mode of assuming that is the expensive
+    # direction: a mixed set ("…Z" beside "…+00:00") would sort to an EARLIER instant
+    # and hand the caller a cutoff that calls covered commits uncovered. Unparseable
+    # stamps drop out rather than sorting as garbage; if that empties the set the answer
+    # is nil, which is "no clock".
+    stamps.filter_map { |stamp| (t = iso_time(stamp)) && [t, stamp] }.max_by(&:first)&.last
+  end
+
+  # ISO8601 → Time, or nil. Nil is the honest answer for anything unparseable; the
+  # callers all read nil as "no clock" and refuse to conclude from it.
+  def self.iso_time(value)
+    Time.iso8601(value.to_s)
+  rescue ArgumentError
+    nil
   end
 
   # --- SHA-addressed CI: G3's AUDITOR ----------------------------------------
