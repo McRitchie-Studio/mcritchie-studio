@@ -498,16 +498,26 @@ module ClientSurfaceDiff
   end
 
   # Does this repo HAVE a browser lane at all? The gate must not demand evidence a
-  # repo cannot produce — studio-engine has no e2e/ directory and its CI installs
-  # node but runs no browser, so blocking there would be a refusal with no remedy,
-  # which is the definition of the over-refusal this design rejects. Where there is
-  # no lane the finding REPORTS instead, naming the missing lane as the reason.
+  # repo cannot produce: where a repo has no lane, blocking would be a refusal with
+  # no remedy, which is the definition of the over-refusal this design rejects.
+  # Where there is no lane the finding REPORTS instead, naming the missing lane as
+  # the reason.
+  #
+  # THE QUESTION IS ASKED OF THE FILESYSTEM, ON EVERY RUN, AND NEVER OF A REPO NAME
+  # (the two File checks below are the whole implementation). A repo therefore moves
+  # between the REPORT branch and the BLOCKING one the moment its markers appear or
+  # vanish, with no edit here — and that is also why a COMMENT naming a particular
+  # repo rots while this code stays right. studio-engine was the motivating laneless
+  # repo and stopped being one on 2026-08-12; see item 3 below. Name the condition,
+  # not the repo.
+  #
   # SHOULD AN ENGINE-SIDE CLIENT DIFF BE GATED ON THE CONSUMER'S LANE? NO — JUDGED,
   # NOT DEFERRED.
   #
-  # The engine cannot run a browser, and the hub can, so the tempting move is to
-  # reach across the seam: block studio-engine PR N until the hub PR that adopts the
-  # gem carries a spec. Three facts make that the wrong gate.
+  # (Recorded when the engine had no lane of its own.) The engine could not then run
+  # a browser and the hub could, so the tempting move was to reach across the seam:
+  # block studio-engine PR N until the hub PR that adopts the gem carries a spec.
+  # Three facts made that the wrong gate, and the third is why it never had to be.
   #
   #   1. IT INVERTS THE DEPENDENCY. The adoption PR does not exist when the engine
   #      PR is submitted — the engine merges, releases a gem version, and a
@@ -520,14 +530,17 @@ module ClientSurfaceDiff
   #      hub's pages; an engine primitive no consumer page exercises stays unseen,
   #      and the gate would report GREEN over it — worse than reporting a hole,
   #      because it would look answered.
-  #   3. IT IS MOOT IF THE ENGINE GETS ITS OWN LANE. test/dummy already exists, so a
-  #      Playwright lane can boot the dummy host and drive engine views directly —
-  #      no seam to cross. That is /tasks/stand-up-engine-browser-lane, and when it
-  #      lands, lane_present? flips to true for the engine and the REPORT branch
-  #      below becomes a BLOCK with no change to this file.
+  #   3. IT WAS MOOT ONCE THE ENGINE GOT ITS OWN LANE — and it did, on 2026-08-12.
+  #      test/dummy already existed, so a Playwright lane could boot the dummy host
+  #      and drive engine views directly, with no seam to cross. That is what was
+  #      built: studio-engine/e2e/ with a playwright.config.js (testDir "./e2e") and
+  #      a CI browser lane. When it landed, lane_present? flipped to true for the
+  #      engine and the REPORT branch below became a BLOCK there — with no change to
+  #      this file, exactly as this note predicted. The prediction coming true is why
+  #      the reasoning is kept rather than deleted.
   #
-  # So the cross-repo gate is not filed as "later" — it is refused, and the work it
-  # was standing in for is the engine's own lane.
+  # So the cross-repo gate was not filed as "later" — it was refused, and the work it
+  # was standing in for was the engine's own lane, which was built.
   def self.lane_present?(root = ".")
     File.directory?(File.join(root.to_s, "e2e")) ||
       File.exist?(File.join(root.to_s, "config", "e2e_lane.yml"))

@@ -206,9 +206,11 @@ class VerifyReviewHopTest < Minitest::Test
     assert_equal "landing_not_authorized", leg(report, "landing")["code"]
   end
 
-  # [integration] an app below the 0.36.0 floor (turf-monster is on 0.31.0) has no
-  # reviewer fallback: the address-free mint the button uses cannot work there,
-  # and the failure must name the floor rather than blaming the desk's seeds
+  # [integration] an app below the 0.36.0 floor has no reviewer fallback: the
+  # address-free mint the button uses cannot work there, and the failure must
+  # name the floor rather than blaming the desk's seeds. The floor is a live rule
+  # and is named; WHICH app sits below it is not, because that pairing is exactly
+  # what went stale here. The scenario below supplies the condition directly.
   def test_sub_floor_app_fails_without_an_address_and_names_the_floor
     report, status = run_hop(scenario: :sub_floor)
 

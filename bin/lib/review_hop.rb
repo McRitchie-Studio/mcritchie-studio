@@ -155,10 +155,18 @@ module ReviewHop
     #
     # `/` is the quiet failure this endpoint's provisioning exists to prevent —
     # sign-in SUCCEEDED and `require_admin` bounced the reviewer. Still possible
-    # at studio-engine 0.38.0: provision_reviewer rescues StandardError and lets
-    # the mint proceed, so a host with an extra User validation logs a warning
-    # and lands here anyway. The engine's own comment is the rule — provisioning
-    # "is the thing that makes it pass, not the thing that proves it".
+    # WHEREVER PROVISIONING IS BEST-EFFORT, which is its documented design and
+    # not an accident of any one release: provision_reviewer rescues
+    # StandardError, logs a warning, and lets the mint proceed with no re-raise,
+    # so a host with an extra User validation lands here anyway. The engine's own
+    # comment is the rule — provisioning "is the thing that makes it pass, not
+    # the thing that proves it".
+    #
+    # The condition, not a version number, is what to re-check: read
+    # Studio::LocalReviewsController#provision_reviewer and look for the rescue.
+    # This sentence used to pin the claim to one release, which read as expired
+    # long after the behaviour it describes was still live. Last re-read against
+    # the resolved gem (0.70.0) on 2026-09-07: the rescue is there, unchanged.
     def landing(status:, url:, expected_path:)
       uri = parse(url)
       return fail(:landing_bad_url, "landing URL is not a URL: #{url}") if uri.nil?

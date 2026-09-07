@@ -15,6 +15,8 @@ require "fileutils"
 require_relative "../../bin/lib/fast_cert"
 
 class FastCertTest < Minitest::Test
+  REPO_ROOT = File.expand_path("../..", __dir__)
+
   # --- convention mapping ------------------------------------------------------
 
   def test_model_maps_to_model_test
@@ -50,8 +52,12 @@ class FastCertTest < Minitest::Test
     assert_equal ["test/lib/fast_cert_test.rb"], FastCert.convention_candidates("bin/lib/fast_cert.rb")
   end
 
-  def test_bin_script_maps_to_underscored_harness_test
-    assert_equal ["test/lib/fast_check_test.rb"], FastCert.convention_candidates("bin/fast-check")
+  # BOTH harness namespaces, because there are two: test/lib/ and test/commands/
+  # each name their files after the tool under test. Existence is the caller's
+  # filter, so a candidate list naming both costs nothing when only one exists.
+  def test_bin_script_maps_to_underscored_harness_tests_in_both_namespaces
+    assert_equal %w[test/lib/fast_check_test.rb test/commands/fast_check_test.rb],
+                 FastCert.convention_candidates("bin/fast-check")
   end
 
   def test_changed_test_file_maps_to_itself
@@ -66,23 +72,32 @@ class FastCertTest < Minitest::Test
   end
 
   # --- grep fallback tokens ----------------------------------------------------
+  #
+  # The token is the SUBJECT'S IDENTITY, not its basename as a word — see
+  # #grep_tokens and the fuller pinning in fast_cert_subject_test.rb.
 
-  def test_grep_token_camelizes_ruby_basenames
-    assert_equal "GateRun", FastCert.grep_token("app/models/gate_run.rb")
-    assert_equal "FullSuiteGate", FastCert.grep_token("bin/lib/full_suite_gate.rb")
+  def test_grep_tokens_camelize_ruby_basenames
+    assert_equal ["GateRun"], FastCert.grep_tokens(REPO_ROOT, "app/models/gate_run.rb")
+    assert_equal ["FullSuiteGate"], FastCert.grep_tokens(REPO_ROOT, "bin/lib/full_suite_gate.rb")
   end
 
-  def test_grep_token_uses_the_script_name_for_bin_tools
-    assert_equal "fast-check", FastCert.grep_token("bin/fast-check")
+  # A script is named two ways: by path in code that runs it, and as a bare quoted
+  # command name in the registries that enumerate bin/.
+  def test_grep_tokens_name_a_bin_tool_by_path_and_by_quoted_command
+    assert_equal ["bin/fast-check", %("fast-check")], FastCert.grep_tokens(REPO_ROOT, "bin/fast-check")
   end
 
-  def test_grep_token_uses_the_basename_for_config_yml
-    assert_equal "fast_cert_spine", FastCert.grep_token("config/fast_cert_spine.yml")
+  # A config is named two ways as well: by path, and by the QUOTED BASENAME that
+  # File.join(ROOT, "config", "x.yml") splits it into. The extension rides along, so
+  # the quoted form is a filename and can never be an English word.
+  def test_grep_tokens_name_a_config_file_by_path_and_by_quoted_basename
+    assert_equal ["config/fast_cert_spine.yml", %("fast_cert_spine.yml")],
+                 FastCert.grep_tokens(REPO_ROOT, "config/fast_cert_spine.yml")
   end
 
-  def test_grep_token_is_nil_for_views_and_docs
-    assert_nil FastCert.grep_token("app/views/tasks/_gates.html.erb")
-    assert_nil FastCert.grep_token("docs/agents/sop.md")
+  def test_grep_tokens_are_empty_for_views_and_docs
+    assert_empty FastCert.grep_tokens(REPO_ROOT, "app/views/tasks/_gates.html.erb")
+    assert_empty FastCert.grep_tokens(REPO_ROOT, "docs/agents/sop.md")
   end
 
   # --- grep fallback + select_tests over a fixture tree -------------------------

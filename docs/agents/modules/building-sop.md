@@ -252,11 +252,31 @@ the floor from the app's own `Gemfile.lock`, never from another repo's:
 grep -m1 'studio-engine (' Gemfile.lock
 ```
 
-As of 2026-08-11 the hub is on 0.38.0 and **turf-monster is on 0.31.0** — so on
-turf-monster today this is the sub-floor path, `--email` and all. Do not carry
-one repo's identity list to another to choose that address: the same person can
-be an admin in the hub and `role: "user"` one repo over. Confirm the address is
-an admin in the app you are verifying.
+**Do not decide this from a remembered version number — let the run tell you.**
+The sub-floor path applies to one condition only: an app whose `Gemfile.lock`
+resolves studio-engine *below* the floor. The threshold is written in two places,
+and both are named precisely so you stop at them rather than reading around them:
+`bin/verify-review-hop`'s **`--email` option help**, and the **`MISSING_EMAIL`
+failure text** `bin/lib/review_hop.rb` returns from the mint leg. Both are pinned
+by `test/lib/engine_version_claims_test.rb`, so neither can be quietly deleted;
+prefer the second anyway, because it is asserted through the value the code
+actually returns rather than as a string in a file. You
+do not have to know which apps are sub-floor, because a sub-floor mint dead-ends
+on `MISSING_EMAIL` and that failure text names the cause. So run
+`bin/verify-review-hop` **without** `--email` first, and reach for the flag only
+when that is what comes back.
+
+A version snapshot used to stand here, and it went stale exactly as you would
+expect: measured 2026-09-07, both apps it named — the hub and turf-monster —
+resolved studio-engine 0.70.0, and a five-leg green run with **no** `--email` is
+the behavioural refutation. Treat any **repo-version pairing** in this file as
+history. The **floor itself** (0.36.0, above) is not history — it is the live
+threshold this whole section turns on, and it changes only when the engine's
+reviewer fallback does.
+
+Do not carry one repo's identity list to another to choose that address: the same
+person can be an admin in the hub and `role: "user"` one repo over. Confirm the
+address is an admin in the app you are verifying.
 
 (The command is the check; drive the real browser too when you have one.)
 

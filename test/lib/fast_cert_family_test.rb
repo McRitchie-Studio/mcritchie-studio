@@ -266,15 +266,23 @@ class FastCertFamilyTest < Minitest::Test
   end
 
   # THE GREP IS EXCLUDED FROM THE FALLBACK, and this is the whole reason the fallback
-  # is bounded. The cap exists BECAUSE of the grep — config/initializers/studio.rb has
-  # no convention target, greps "Studio" and matched 48 files at 39m34s. Degrading to
+  # is bounded. The cap exists BECAUSE of the grep — config/initializers/studio.rb had
+  # no convention target, grepped "Studio" and matched 48 files at 39m34s. Degrading to
   # "twins OR grep" would re-run exactly that. A file with no twin contributes nothing.
+  #
+  # THE FIXTURE MOVED FROM AN INITIALIZER TO A MODEL, and the reason is worth keeping:
+  # a config file is now named by its PATH, not by its camelized basename, so
+  # config/initializers/widget.rb greps for "config/initializers/widget.rb" and can no
+  # longer explode at all (that is #grep_tokens doing its job). A twin-less MODEL still
+  # greps its bare constant — app/models/agent_activity.rb really does map 29 files in
+  # the hub today — so it is what still reproduces the shape this test is about. The
+  # PROPERTY under test is unchanged: whatever the grep matched, the fallback ignores it.
   def test_the_fallback_never_reopens_the_grep_explosion
-    files = { "config/initializers/widget.rb" => "Widget.configure\n" }
+    files = { "app/models/widget.rb" => "class Widget; end\n" }
     20.times { |i| files["test/lib/wide_#{i}_test.rb"] = "Widget.reset\n" }
 
     with_tree(files) do |dir|
-      changed = ["config/initializers/widget.rb"]
+      changed = ["app/models/widget.rb"]
       mapped = FastCert.select_tests(dir, changed)
       assert_equal 20, mapped.size, "the grep fallback is what maps this diff"
 
@@ -290,8 +298,9 @@ class FastCertFamilyTest < Minitest::Test
       # of whatever mapped" — would pass every other test in this file while turning
       # a 20-file grep explosion into 15 arbitrary grep matches: a SHORTER CLIFF, not
       # a slope, since which 15 you get is alphabetical accident. Measured over the
-      # hub 2026-09-07, ALL 23 single-file cap-trippers are grep-driven with ZERO
-      # twins, so truncation is the failure mode that would actually bite.
+      # hub 2026-09-07, ALL 27 single-file cap-trippers were grep-driven with ZERO
+      # twins (9 remain after the subject-reference fix, still with zero twins), so
+      # truncation is the failure mode that would actually bite.
       refute_equal mapped.first(15), decision[:fallback],
                    "the fallback must be the convention twins, never the mapped set truncated"
     end

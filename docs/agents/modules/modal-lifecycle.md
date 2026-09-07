@@ -18,31 +18,63 @@ card that needs it.
 
 | | Owns | Bundled by |
 |---|---|---|
-| **studio-engine** | BASE chrome — the modal host, the blocks, the templates, the living style guide. **Ships no wallet UI.** | every app |
+| **studio-engine** | BASE chrome — the modal host, the blocks, the templates, the living style guide. **Ships no wallet UI.** | every **engine-mounting** app (five) |
 | **solana-studio** | The WEB3 add — wallet connect, step-up, network mismatch, the deep-link partial | only the web3 apps |
 
-**Only turf-monster bundles solana-studio.** Measured from the lockfiles
-2026-09-06: acquisition-studio, mcritchie-industries, moms-app and
-**mcritchie-studio itself** do not. So a primitive that needs the gem and lands in
-the engine is a missing-template 500 for four of the five apps — including the
-hub. The style guide already resolves this at RUNTIME rather than build time: it
+**Among the apps that mount the engine, only turf-monster bundles
+solana-studio.** Measured from the lockfiles 2026-09-06. The engine-mounting set
+is five: mcritchie-studio, turf-monster, acquisition-studio,
+mcritchie-industries, moms-app. Of those, acquisition-studio,
+mcritchie-industries, moms-app and **mcritchie-studio itself** carry no
+solana-studio. So a primitive that needs the gem and lands in the engine is a
+missing-template 500 for four of the five engine-mounting apps — including the
+hub.
+
+**Scope both halves to that set** — neither is an ecosystem-wide fact. rolio
+mounts neither gem, and **chain-ops bundles solana-studio (0.5.7) without the
+engine**, so "only turf-monster has solana-studio" is false across the ecosystem
+and true exactly where this rule applies. The conclusion is unchanged; the set it
+ranges over is what needed saying.
+
+The style guide already resolves this at RUNTIME rather than build time: it
 asks `lookup_context.exists?("wallet_connect", ["solana_studio/modals"], true)`
 and lists gem-backed specimens as unopenable where the gem is absent.
 
 **The test is DEPENDENCY, not subject matter**, and that distinction is the whole
-rule:
+rule. Dependency has **two axes**, and a piece goes to solana-studio if EITHER
+fires:
 
-- Does it need **solana-studio code at render or runtime**? → **solana-studio**
-- Does it render entirely from **caller-supplied locals**? → **studio-engine**
+- **Render-time** — does it need **solana-studio code to render**?
+  → **solana-studio**
+- **Runtime** — does it bind to a **wallet/chain JS runtime the base apps do not
+  ship** (`window.walletProvider`, `window.solanaConnectAndVerify`), *even when
+  its ERB is pure locals*? → **solana-studio**
+- Neither — renders entirely from **caller-supplied locals**, against JS every
+  app already has? → **studio-engine**
+
+**The runtime axis is not hypothetical, and the render-time axis alone gets it
+wrong.** solana-studio's `solana_studio/modals/_wallet_connect` and
+`_web3_step_up` take every input through `local_assigns.fetch`, so a locals-only
+test reads both as engine-bound. They are not: they bind at runtime to
+`window.walletProvider` / `window.solanaConnectAndVerify`, host JS the gem does
+not ship. `_web3_step_up` says so in its own header — "CONTRACT WITH THE HOST'S
+JS". The implementation lives in `turf-monster/app/javascript/wallet_provider.js`,
+while the gem's entire shipped JS tree is one file, `network_guard.js`. A base app
+rendering either would paint a picker wired to nothing: a silent dead card, which
+is harder to catch than the 500 the render-time axis produces.
 
 A subject-matter rule ("anything wallet-shaped goes to solana-studio") reads
 better and is wrong: the engine already owns `blocks/_wallet_brand_sprite`, whose
 header says OWNED BY THE ENGINE while it depicts Phantom, Solflare and Backpack —
-plus `blocks/_solana_tx_link` and `blocks/_onchain_success`. All three draw
-chain-shaped things from locals and need no gem, so they belong exactly where they
-are. A rule that needs three memorised exceptions is the judgment call it claims
-to remove; the dependency test classifies all of them without one, and it
-reproduces the real constraint, because only a gem dependency can 500 a base app.
+plus `blocks/_solana_tx_link` and `blocks/_onchain_success`. None needs the gem
+and none binds to host wallet JS, so they belong exactly where they are.
+(`_solana_tx_link` and `_onchain_success` draw chain-shaped things from locals.
+`_wallet_brand_sprite` takes **zero** locals — it is a static `<defs>` of four
+`<symbol>`s with no output ERB at all, which is why it is safe everywhere.) A rule
+that needs three memorised exceptions is the judgment call it claims to remove;
+the two-axis dependency test classifies all of them without one, and it reproduces
+the real constraint — a gem dependency is what 500s a base app, and a missing JS
+global is what silently deadens one.
 
 ## Building a new modal — day one
 
@@ -60,9 +92,14 @@ A new modal lives in the consumer at `app/views/modals/_<name>.html.erb`, and it
 
 Four rules that are not style preferences — each has cost real breakage:
 
-1. **Single root element.** The host wraps every modal in `<template x-if>`, which
-   keeps exactly one child. A sibling of the root is dropped silently — including a
-   sprite whose `<use>` then paints nothing, with no error anywhere.
+1. **Single root element.** Every modal is registered inside a `<template x-if>`,
+   which keeps exactly one child. A sibling of the root is dropped silently —
+   including a sprite whose `<use>` then paints nothing, with no error anywhere.
+   (*Whose* `x-if`? Yours. The CONSUMER writes the per-modal one, keyed on
+   `$store.modals.current().id === '<id>'`. The host has an `x-if` of its own, but
+   it wraps the backdrop and card ONCE per host render and exists to guarantee
+   `current()` is non-null inside your registration — it is not the wrapper your
+   modal gets. The one-child rule binds either way; only the attribution changes.)
 2. **Never re-draw a block.** If `close_x` exists, render it. `_wallet_setup`
    hand-rolled its close mark from 2026-08-11 until 2026-09-05 while the engine
    homed the identical mark for eight other modals from 2026-08-25; the shapes
@@ -130,40 +167,88 @@ git fetch origin && git worktree add .worktrees/<slug> -b feat/<slug> origin/acc
 #    move the partial to studio/modals/blocks/_<name>.html.erb (or
 #    solana_studio/modals/), giving it LOCALS for everything the consumers differ on
 #    add a specimen: app/views/style/modals/_ds_<name>.html.erb, registered in
-#    style/_modals.html.erb so it is live-openable in the guide
-#    release, then note the new version
+#    style/_modals.html.erb at TWO sites — the content template AND the gallery
+#    card. One without the other is a card that opens nothing, or a modal
+#    nobody can reach from the guide.
+#    do NOT set the gem version — the RELEASE owns it (see below)
 
 # 2. CONSUMER — one task, the normal cycle
 cd /Users/alex/projects/mcritchie-studio
 bin/task begin --title "Adopt <Name> Primitive" --repo <app> --agent <soul> \
   --kind chore --shape ui-only
 bin/task update <adoption-task> --depends-on <gem-task>
-#    ^ the release then sequences the gem task before this one
-#    — the qa-release sweep publishes gem versions and bumps consumer LOCKS
-#    itself; the Gemfile FLOOR pin is still a human decision
-#    bump the Gemfile pin AND record WHY in the pin comment — the floor is what
-#    broke below it, not the number
+#    ^ optional: the release then sequences the gem task before this one
+#    the qa-release sweep publishes gem versions, bumps consumer LOCKS, and
+#    re-pins the Gemfile when the new version ESCAPES the constraint
+#    record WHY in the pin comment — the floor is what broke below it, not the
+#    number; a trailing comment SURVIVES an automated re-pin
 #    replace the local markup with a render call, DELETE the local copy
 #    values come from the markup being replaced, never from the specimen
 ```
 
-**`--depends-on` is usually optional here.** `Release::Ordering.producer_first`
-already sorts gems before apps by itself, so a consumer waiting on a gem is the
-case the heuristic gets right unaided. Declare the edge when you want the
-sequence stated rather than inferred, or for an order the heuristic cannot see —
-one app that must deploy before another. Two properties worth knowing before you
-lean on it: a dependency on a task OUTSIDE the release does not hold this one
-back (by design — it cannot be ordered here), and the flag REPLACES the list
-rather than appending, so pass the whole set in one call.
+**Never hand-set the gem version — declare the bump instead.** "Release, then
+note the new version" is a REFUSED instruction: `bin/dor-check` (default gate
+`merge`, the one you run at handoff) exits 1 on any diff touching a release-owned
+gem version file, because "a version belongs to the RELEASE, not to any one PR …
+The release conductor sets it during the sweep." N pull requests riding one
+candidate publish exactly ONE version, so a PR that sets one either re-claims a
+published version or collides with a sibling. The move the procedure needs is the
+one dor-check names:
 
-**Two things that bite here:**
+```bash
+bin/task update <slug> --gem-bump major     # patch|minor|major; an OVERRIDE, never required
+```
+
+This bites twice here, because step 1 prescribes `--kind chore` — and a chore that
+REMOVES or RENAMES a partial consumers render is exactly the breaking-chore case
+`--gem-bump` exists for. `Release::GemVersion::KIND_BUMPS` maps `chore` to
+`patch`, so left undeclared the sweep publishes a **patch** for a change that
+breaks every consumer below it. (A `breaking` risk tag forces `major` too — the
+precedence is explicit override, then a breaking tag, then the kind's default — so
+either move works; what does not work is silence.)
+
+**`--depends-on` declares the sequence; it is usually optional here.** The
+column is real (`db/schema.rb`) and really read — `Release::Ordering.producer_first`
+topologically sorts on it, reached from `Release#ordered_members` and the
+conductor's sweep — and as of /tasks/wire-task-dependencies-field a command
+finally writes it. Until then nothing did: an earlier draft of this procedure
+told you to declare the field in a bracketed literal syntax nothing parsed, so
+the step named a behaviour no one could perform.
+
+Reach for it only for a sequence the heuristic cannot infer. `producer_first`
+already sorts gems before apps unaided, which is exactly the gem-then-consumer
+case above, so the normal graduation needs no edge at all — one app that must
+deploy before another is the case that does. Three properties before you lean
+on it: a dependency on a task OUTSIDE the release does not hold this one back
+(by design — it cannot be ordered here); a slug naming NO task is REFUSED,
+precisely because that same tolerance would otherwise make a typo invisible
+forever; and the flag REPLACES the list rather than appending, so pass the whole
+set in one call.
+
+**Three things that bite here:**
 
 - **The pin string is not the floor.** A two-segment `~>` admits anything below
   1.0, so `~> 0.62` silently resolved 0.65 while everyone read "we're on 0.62".
-  That misreading has bitten twice. turf-monster's
-  `test/lib/engine_pin_contract_test.rb` asserts the DERIVED floor so a
-  `bundle update` walking backwards fails there instead of at runtime — an app
-  adopting a primitive should extend it, not just move the pin.
+  **That misreading is recorded SEVEN times on a single line** —
+  turf-monster's `studio-engine` pin comment, where six floor notes each end
+  "…already admitted X and this bump is invisible to the resolver — it is the
+  FLOOR that moved", and a seventh records the pin "documenting history rather
+  than the floor". Not twice: seven, in one comment, each written by someone who
+  had just been bitten. turf-monster's `test/lib/engine_pin_contract_test.rb`
+  asserts the DERIVED floor so a `bundle update` walking backwards fails there
+  instead of at runtime — an app adopting a primitive should extend it, not just
+  move the pin.
+- **The floor pin is only *sometimes* a human decision.** Raising a floor the
+  resolver ALREADY satisfies is yours — the sweep sees a version its constraint
+  admits, calls it `:lock_only`, and leaves your pin string untouched, so nothing
+  automated will ever record the floor for you. But when a published version
+  **escapes** the constraint upward, `Release::ShipSequence.consumer_bump_action`
+  returns `:rewrite_pin` and `Release::GemfileRepin.rewrite_pin` rewrites the line
+  itself. Say which case you are in rather than assuming the pin is inert.
+  **A WHY comment survives that rewrite**: `rewrite_pin_line` captures the trailing
+  comment and re-emits it with the new constraint, so the reason you record is not
+  lost to an automated re-pin — which is exactly why recording it is worth the
+  keystrokes.
 - **A consumer assertion can red-seal the producer.** A consumer test that pins a
   path inside the gem blocks the gem's own publish. Assert behaviour, not
   the gem's internal layout.

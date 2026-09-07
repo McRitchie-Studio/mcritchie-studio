@@ -249,6 +249,34 @@ GATE_ROLES = %w[builder review].freeze
 # readings of the same fact are literally the same string.
 PR_READ_REFUSAL_PHRASE = "the PR's own file list going unread, so the doc-only exemption was never proven " \
                          "against the artifact this gate judges"
+
+# ...AND THE SAME FACT SAID BY THE PRINTER THAT *IS* IT.
+#
+# THE DEFECT (/tasks/pr-read-alert-overstates-green). PR_READ_REFUSAL_PHRASE above is
+# written for the two places that name the PR read as SOMEONE ELSE'S co-refusal — the
+# exempt closing `refused_by` line and the CI refusal's `also_refused:` list. The
+# PR-read alert itself had no sentence of its own: on the exempt path it ended with
+# CiStatus.unreadable_remedy's cert_route:false closing, "this gate advances on a GREEN
+# CI and nothing else", and BORROWED it.
+#
+# That sentence is falsest exactly where it printed. Driven through `bin/dor-check
+# --gate-role review` with DOR_CHECK_CI_STATUS=green and the PR file read REFUSED:
+# ci.state="green", ready=false, exit=1, ONE error — and that one error closed by
+# telling the reader a green CI is all this gate wants. The CI was green. The error
+# printing the sentence was itself the refusal, and the sentence sent the reader to
+# look at CI, which had nothing wrong with it.
+#
+# So this printer names ITSELF, and `also_refused:` (the merged derivation, PR #1225 →
+# /tasks/gate-sentence-outlived-truth) is the lever that swaps the closing out. Nothing
+# in CiStatus.unreadable_remedy changes: the co-fire branch already existed and already
+# ends "and no CI result clears that", which is the exact refutation this defect needs.
+# The phrase is a SECOND constant rather than a reuse of the first because the two say
+# the same fact from opposite vantages — "something else also refused you" vs "the
+# thing you are reading is what refused you" — and collapsing them would put "the PR's
+# OWN file list going unread" inside the alert about the PR's own file list going
+# unread.
+PR_READ_SELF_REFUSAL_PHRASE = "the refused PR file-list read this alert reports, which left the artifact this " \
+                              "gate judges unread"
 OptionParser.new do |o|
   o.banner = "Usage: bin/dor-check <task-slug> [--gate merge|build] [--gate-role builder|review] [--json] | bin/dor-check --file task.json"
   o.on("--gate GATE", "Boundary to check: merge (default, submitted→reviewed) or build (designed→building)") { |v| options[:gate] = v }
@@ -735,6 +763,17 @@ def injected_pr_file_read(injected)
   files.empty? ? { files: nil, state: :empty } : { files: files, state: :ok }
 end
 
+# DOES THIS ALERT REFUSE THE VERDICT, or merely warn about it? The merge gate in the
+# REVIEW role is the only run where a refused PR file-list read is an ERROR; the build
+# gate resolves no diff, and submit-side the local view is the honest near-twin of the
+# PR, so both keep the loud-but-non-fatal alert. Both printing sites already branched on
+# exactly this, and now they read it from one place — a top-level def cannot see the
+# `gate` / `review_role` locals, which is the same reason and the same ordering rule
+# that put @review_role beside @pr_url (see resolve_branch_diff).
+def pr_read_refuses_verdict?
+  @review_role && !@build_gate
+end
+
 # WHY the PR file list is missing, when the reason is a FAILURE the reader must act
 # on — nil on :ok / :no_pr / :empty, which are not failures.
 #
@@ -773,6 +812,16 @@ end
 # method as a PREDICATE (`pr_read_alert ? …` / `!pr_read_alert`) and discard the
 # string. Both counts are asserted, not asserted-in-prose:
 # test/lib/dor_check_exempt_ci_test.rb reads this file's source.
+#
+# THE CLOSING LINE IS DERIVED FROM WHETHER THIS ALERT REFUSES, and that is a fact about
+# the RUN, not about the branch calling in — which is why it is read here rather than
+# stated per caller like `cert_route:`. Both printing sites spell the same predicate
+# (`review_role && gate != "build"`): the alert lands as an ERROR in the review role at
+# the merge gate and as a SUGGESTION everywhere else, and a suggestion refuses nothing,
+# so the sentence operators already know stays true and prints to the BYTE. Reading it
+# once is also what keeps the alert's own sentence and its own severity from
+# disagreeing; two spellings of one role test is how the exempt path's two closings
+# drifted apart in the first place.
 def pr_read_alert(cert_route: true)
   headline = pr_read_headline
   return nil unless headline
@@ -781,7 +830,8 @@ def pr_read_alert(cert_route: true)
     "#{headline}. The diff this gate judges (shape tiers, the doc-only exemption, migration detection) is the " \
       "PULL REQUEST's file list, and a refused read must never be quietly replaced by whatever tree this run is " \
       "standing in. " + CiStatus.unreadable_remedy(CiStatus.repo_from_pr_url(@pr_url),
-                                                   cause: pr_file_read[:cause], cert_route: cert_route)
+                                                   cause: pr_file_read[:cause], cert_route: cert_route,
+                                                   also_refused: pr_read_refuses_verdict? ? [PR_READ_SELF_REFUSAL_PHRASE] : [])
   else
     "#{headline} — and this is NOT a credential refusal, so the LOCAL view was graded instead. That is a " \
       "different artifact from the PR: if they differ, this verdict describes the wrong diff. Re-run once " \
@@ -1658,6 +1708,10 @@ review_role = options[:gate_role] == "review"
 # role and degrades (loudly) submit-side, and resolve_branch_diff is a top-level def,
 # which cannot see the local above. Same reason, same place, same ordering rule.
 @review_role = review_role
+# ...and so does the GATE, for pr_read_refuses_verdict?: the PR-read alert only REFUSES
+# at the merge gate, and its closing line has to know that before it can name what is
+# refusing. Same reason, same place, same ordering rule.
+@build_gate = gate == "build"
 
 # --- task-root guard (bin/lib/cert_root_guard.rb) -----------------------------
 #
@@ -2044,12 +2098,30 @@ if EXEMPT_KINDS.include?(kind)
     # verdict is provisional by design (review re-runs it). Refusing both roles would
     # stall every docs handoff behind an hour-old App token and buy no integrity —
     # the same reasoning resolve_branch_diff and the gated path both already record.
-    # Not evaluated at the build gate, which resolves no diff and must not shell `gh`.
+    #
+    # AND THE BUILD GATE IS NOT EXCLUDED HERE, whatever this comment used to say. It
+    # read "Not evaluated at the build gate, which resolves no diff and must not shell
+    # `gh`" — true of the GATED caller below, which really is behind `gate != "build"`,
+    # and false of this one, which is not. Driven 2026-09-07: `bin/dor-check --gate
+    # build --gate-role review` on a doc-only task with a refused PR read composes this
+    # alert and prints it. The claim mattered because the fix below is conditioned on
+    # the build gate; a guard derived from a comment that does not describe the code is
+    # how a defect gets re-shipped. What IS true is the consequence the comment was
+    # reaching for: the build gate makes no refusal, so the alert lands as a SUGGESTION
+    # and its closing keeps the original wording — pinned in
+    # test/lib/dor_check_pr_read_closing_test.rb, which is what makes this an observed
+    # fact rather than a second guess.
+    #
+    # ONE FACT, READ ONCE, AND IT IS `pr_read_refuses_verdict?`. Whether this alert
+    # REFUSES the verdict decides two things — which list it lands in, and whether its
+    # closing line may keep promising that a green CI carries this path — and they must
+    # never be two spellings of one role test. `exempt_also_refused` below learned the
+    # same lesson from the other direction.
     pr_read_refusal = pr_read_alert(cert_route: false)
     exempt_alerts = []
     exempt_pr_read_errors = []
     if pr_read_refusal
-      (review_role && gate != "build" ? exempt_pr_read_errors : exempt_alerts) << pr_read_refusal
+      (pr_read_refuses_verdict? ? exempt_pr_read_errors : exempt_alerts) << pr_read_refusal
     end
 
     # ==== THE EXEMPTION IS FROM THE TIER GATE. IT WAS NEVER FROM CI ============
@@ -2127,8 +2199,9 @@ if EXEMPT_KINDS.include?(kind)
             "cert_route here must read the policy note above first (/tasks/exempt-refusal-prints-dead-remedy)."
     end
     exempt_alerts.concat(exempt_ci_notes)
-    # CI FIRST, the PR-read refusal second: one stale token refuses both reads, and
-    # when they co-fire the CI verdict is the one that has always led this refusal.
+    # CI FIRST, the PR-read refusal second: one fault hides both reads — a refused
+    # token, or a `gh`/network failure — and when they co-fire the CI verdict is the
+    # one that has always led this refusal.
     # Reordering it would change the headline of every existing exempt refusal.
     exempt_errors = [exempt_ci_error].compact + exempt_pr_read_errors
     exempt_ready = exempt_errors.empty?
@@ -3149,11 +3222,14 @@ if gate != "build"
         "<reason>'"
     else
       suggestions << "BROWSER-EVIDENCE HOLE (reported, not blocking): this diff adds #{programs.size} " \
-        "browser program(s) — #{sample}#{more} — and THIS REPO HAS NO BROWSER LANE (no e2e/, and its CI " \
-        "runs no browser), so there is no evidence to demand and refusing would be a refusal with no " \
-        "remedy. Two of the three defects that motivated this gate were exactly here. Standing the lane " \
-        "up is tracked at /tasks/stand-up-engine-browser-lane; until it exists, a reviewer opening a " \
-        "browser is the only thing between this code and production."
+        "browser program(s) — #{sample}#{more} — and THIS REPO HAS NO BROWSER LANE: it carries neither " \
+        "an e2e/ directory nor a config/e2e_lane.yml, which is the pair lane_present? reads off disk on " \
+        "every run. So there is no evidence to demand, and refusing would be a refusal with no remedy. " \
+        "Two of the three defects that motivated this gate slipped through this same hole. The remedy " \
+        "is to STAND A LANE UP, and it has been done before: studio-engine added one on 2026-08-12 — a " \
+        "playwright.config.js with testDir e2e/, plus a CI job that runs it — and this gate began " \
+        "BLOCKING there the day that directory landed, with no edit to bin/dor-check. Until this repo " \
+        "has a lane, a reviewer opening a browser is the only thing between this code and production."
     end
   end
 
