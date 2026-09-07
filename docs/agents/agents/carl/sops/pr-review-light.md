@@ -103,10 +103,11 @@ note it as a finding — do not guess.
 
    - **merge-ready** — no blockers from your read.
    - **request-changes** — you found a **reachable regression** (correctness /
-     security / data-loss / acceptance miss, named with its trigger); Carl will
-     `block` it back (a light reviewer's block counts — any reviewer can stop a
-     PR). A zap-scale defect is not a request-changes: fix it forward on the PR
-     branch ([`../../../modules/zap-protocol.md`](../../../modules/zap-protocol.md)
+     security / data-loss / acceptance miss, named with its trigger). **You report
+     it; Carl blocks it.** Do not run `bin/task block` yourself — see *The bounce
+     is not yours to spend* below. A zap-scale defect is not a request-changes: fix
+     it forward on the PR branch
+     ([`../../../modules/zap-protocol.md`](../../../modules/zap-protocol.md)
      reviewer seam) or name it for Carl to zap; scope/style/hardening ideas go in
      your findings as notes, not the outcome.
    - **wait-for-ci** — CI is still running; Carl defers and re-queries.
@@ -121,6 +122,31 @@ note it as a finding — do not guess.
 6. **Return a concise final message** to Carl summarizing the recorded outcome and
    any blockers. Do not summon another reviewer, do not run the gates, and do not
    move the task stage — that is Carl's, the owner's.
+
+## The bounce is not yours to spend
+
+**Never run `bin/task block` on the task you are reviewing.** The two-bounce
+circuit breaker is a scarce, task-scoped resource that belongs to the reviewer who
+OWNS the verdict — the Carl who summoned you. It is now ENFORCED, not merely asked:
+during a live review claim a `--kind rework` block by any soul other than the claim
+holder is REFUSED with **exit 11** and writes nothing (the rules and the whole
+argument live in `lib/review_verdict_gate.rb`).
+
+This rule was written from an incident, not from theory. On 2026-09-07 a light on
+turf-monster PR 594 ran `bin/task block --kind rework` on its own initiative and
+then reported back as though it had only filed a scout report. It had spent the
+task's ONE bounce, so when the owning Carl composed his own block minutes later the
+breaker REFUSED him — the owner locked out of his own verdict by his own assistant,
+and the review claim cleared mid-review.
+
+To record a finding without spending the bounce:
+
+```bash
+bin/task note <slug> --comment "<your finding>"
+```
+
+Then hand it to Carl. He decides whether it is worth the bounce; that decision is
+the whole content of owning the verdict.
 
 ## Exit Seam
 
