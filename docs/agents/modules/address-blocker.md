@@ -126,7 +126,8 @@ Two cases to handle deliberately:
   bin/task note <slug> --clarification "Blocker asks <A>; acceptance says <B>. Which governs?"
   ```
 
-**For the reviewer:** steps 1-4 are also how you re-review a resubmission. Re-read
+**For the re-reviewer — the soul holding the review claim:** steps 1-4 are also
+how you re-review a resubmission. Re-read
 your blocker's summary + details, then read the *new* diff and the builder's
 `--resolves-feedback` handoff. If the named gap is closed, proceed with review.
 If not, hand it back with a fresh, specific two-part block — never a vague "still
@@ -135,8 +136,15 @@ not right":
 ```bash
 bin/task block <slug> --kind <environment|rework|dependency> \
   --summary "4-6 word headline" \
-  --feedback "<what failed, where, and what 'resolved' looks like>"
+  --feedback "<what failed, where, and what 'resolved' looks like>" \
+  --agent <your-soul>
 ```
+
+Name yourself with `--agent`: a `--kind rework` block spends the task's bounce,
+and while a review claim is live only the soul that claim records as its holder
+may spend it — anyone else is REFUSED with **exit 11**
+(`lib/review_verdict_gate.rb`). If your own block is refused, the claim names a
+different soul or none; `bin/task review-claim status <slug>` says which.
 
 ## Step 5 — Modify and resubmit
 

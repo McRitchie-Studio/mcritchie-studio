@@ -194,8 +194,9 @@ structure legible; the review tree nests the light under Carl.
 he runs the gates (`bin/dor-check <task> --gate-role review` / cert / CI /
 acceptance) and **drives the verdict** (merge-ready or request-changes). The
 **LIGHT is a focused second read** through its domain lens that **reports up to
-Carl**: it does **not** run the gates and does **not** drive the verdict — though
-**any reviewer can block** on a defect.
+Carl**: it does **not** run the gates and does **not** drive the verdict. **Any
+reviewer may RAISE a blocking finding; only the reviewer the review claim records
+as its holder may SPEND the task's bounce** (Step 3).
 
 **The review is the task's G2 Review gate**
 ([`gates/g2-review.md`](gates/g2-review.md)): two task-grain lanes,
@@ -276,7 +277,7 @@ Reviewers may also broadcast in-app progress with
 `POST /api/v1/tasks/:slug/review_events` (primary = `primary` swimlane, light =
 light swimlane) — see [`parallel-agent-devops.md`](parallel-agent-devops.md#picking-the-domain-light-binreviewer-select).
 
-## Step 3 — Any reviewer can BLOCK
+## Step 3 — The claim holder spends the bounce
 
 **A block is spent only on a REACHABLE regression** — a correctness, security,
 or data-loss defect someone can actually hit, or an acceptance criterion the
@@ -284,12 +285,30 @@ diff does not meet — named with its trigger. A zap-scale finding is **fixed
 forward** on the PR branch instead ([`zap-protocol.md`](zap-protocol.md)
 reviewer seam, verdict stays merge-ready); scope/style/hardening ideas ride as
 `bin/task note --comment` entries; metadata gaps the reviewer repairs with
-`bin/task update` and proceeds. If a block is earned, **any** reviewer marks
-the task blocked — one complete send-back, then the session moves on
-(block-and-move: one block never holds back the PRs that passed):
+`bin/task update` and proceeds. If a block is earned, **the reviewer the review
+claim records as its holder** marks the task blocked — one complete send-back,
+then the session moves on (block-and-move: one block never holds back the PRs
+that passed):
 
 ```bash
-bin/task block <task> --kind rework --summary "<4-6 word headline>" --feedback "<what is wrong + why>"
+bin/task block <task> --kind rework --summary "<4-6 word headline>" --feedback "<what is wrong + why>" --agent carl
+```
+
+**Any reviewer may RAISE a blocking finding; only the claim's holder may SPEND
+the bounce** — and that is ENFORCED, not merely asked. While a review claim is
+live, a `--kind rework` block by any soul other than the claim's holder is
+REFUSED with **exit 11** and writes nothing (the rule and its whole argument live
+in `lib/review_verdict_gate.rb`). `--kind dependency` and `--kind environment`
+spend no bounce and are not gated. The reason is the budget: a send-back spent by
+a non-holder draws down a scarce, task-scoped resource they do not hold — the
+holder is then refused their own block (exit 10, TRIPPED), and the task can reach
+escalation without its reviewer ever having blocked it. So a **LIGHT reports** a
+defect up as a scout report (`--outcome request-changes`) and the primary decides
+whether it is worth the bounce. Either reviewer records a finding **without**
+spending the bounce:
+
+```bash
+bin/task note <task> --comment "<your finding>"
 ```
 
 **Two-bounce circuit breaker:** a task that already carries a prior send-back is
@@ -347,7 +366,7 @@ One `review-one <task>` run, start to finish (the loop that fans this across the
 | 1 | **Session Pokémon** (orchestrator — never reviews) | base mascot | `bin/task claim-next-review` → spins one Carl per PR | claim lease on the task |
 | 2 | **Carl** (PRIMARY — review OWNER) | `carl` | product-acceptance + gate-zero (`--gate-role review`); deep review; **owns the gates** + **drives the verdict**; **summons one LIGHT** (`light review: <soul>`); on merge-ready **merges the feat PR into `accepted`** (runs `pr-review-primary.md`) | review intent (pair) on the task; opens the `dor_review` gate-zero + the G2a lane; `submitted → reviewed` + `merged: accepted` |
 | 2 | **LIGHT** | domain soul | focused second read through its domain lens; **reports up to Carl**; no gates, no verdict-drive (runs `pr-review-light.md`); Carl's **child** | `Verify --agent <soul>` activity + notes; closes the G2b lane |
-| 3 | any reviewer | — | block on a defect | `bin/task block --kind rework --feedback` |
+| 3 | **Carl** (the review claim's holder) | `carl` | block on a defect — any reviewer may RAISE one, only the claim's holder SPENDS the bounce | `bin/task block --kind rework --feedback --agent carl` (a light instead: `bin/task note --comment`) |
 
 ## Where this plugs in
 
