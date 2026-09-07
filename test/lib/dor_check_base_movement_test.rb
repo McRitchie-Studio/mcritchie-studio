@@ -369,4 +369,94 @@ class DorCheckBaseMovementTest < Minitest::Test
                    "an unmade check must SAY it went unmade rather than passing silently")
     end
   end
+
+  # ==== THE AUDIT'S OWN SILENCE (/tasks/audit-vanishes-when-git-fails) ===========
+  #
+  # Every row above consumes :moved. `assess` also answers :unobservable — from FOUR
+  # paths (:no_ref, :no_merge_base, :no_log, :git_unreadable) — and NOTHING outside the
+  # module consumed it. Grepped on `accepted` at c92f8d73: the only other :unobservable
+  # reads in bin/ are a DIFFERENT audit (head_check/:no_pr_head). So any failed git read
+  # made gate-zero's deepest check report nothing at all, and the review proceeded
+  # exactly as though the base had not moved.
+  #
+  # THAT IS THE DEFECT CLASS THIS SEAM EXISTS TO CLOSE, reproduced inside the check
+  # itself: a check that silently does not run. It fails toward the status quo, which is
+  # the safe direction — and it fails SILENTLY, which is the direction that costs a
+  # reviewer the one fact they needed.
+  #
+  # THE FIXTURE IS THE REAL SHAPE, not an injected state. It strips BOTH refs the audit
+  # resolves the base through (the remote-tracking ref AND the local branch its fallback
+  # reaches for), which is the :no_ref path — and :no_ref is the one a live desk actually
+  # hits, because THIS GATE NEVER FETCHES. Everything else about the desk is the REFUSING
+  # row: same late guard change, same overlap. Only the readability of the ref differs.
+
+  def strip_base_refs!(dir)
+    git!(dir, "update-ref", "-d", "refs/remotes/origin/accepted")
+    git!(dir, "branch", "-D", "accepted")
+  end
+
+  def test_integration_an_unobservable_base_audit_names_the_unmade_check
+    with_desk(base_change: "test/lib/widget_tool_exempt_test.rb", at: AFTER_RUN) do |dir, head|
+      strip_base_refs!(dir)
+
+      verdict, = check(dir, head)
+
+      assert_match(/BASE-MOVEMENT AUDIT could not run/i, all_of(verdict),
+                   "a git read the audit could not make must SAY so. Silence here is indistinguishable " \
+                   "from 'the base did not move' — and telling those two apart IS this seam" \
+                   "\n#{all_of(verdict)}")
+      assert_match(/no_ref/, all_of(verdict),
+                   "the REASON must be named: the four unobservable paths have different remedies " \
+                   "(fetch the ref / unshallow / git is unreadable), and a report whose remedy the " \
+                   "reader cannot derive is the tip-SHA-and-count report this seam replaced")
+      assert_match(/not a freshness certificate/i, all_of(verdict),
+                   "…and it must refuse to read as reassurance, for the same reason " \
+                   ":no_movement_seen is never rendered as 'the base is current'")
+    end
+  end
+
+  # THE OTHER HALF, and it is not decoration. Refusing on :unobservable would be a
+  # SECOND defect rather than a stricter fix: :no_ref is reachable on any checkout that
+  # lacks origin/<base>, and this gate NEVER FETCHES by design — so a refusal would wedge
+  # gate-zero on a condition the gate itself creates. Silence was the defect; strictness
+  # is its mirror image. Without this row, a fix that refused would pass the row above.
+  def test_integration_an_unobservable_base_audit_does_not_refuse
+    with_desk(base_change: "test/lib/widget_tool_exempt_test.rb", at: AFTER_RUN) do |dir, head|
+      strip_base_refs!(dir)
+
+      verdict, code = check(dir, head)
+
+      assert_equal 0, code,
+                   "an unreadable ref must not refuse a review — every desk that has not fetched " \
+                   "would wedge, and a gate that refuses correct work is one reviewers route around" \
+                   "\n#{errors_of(verdict)}"
+      refute_match(/could not have covered/i, errors_of(verdict),
+                   "the stale-green REFUSAL is a claim about a guard that provably moved; it must " \
+                   "never be manufactured out of a read that failed")
+    end
+  end
+
+  # THE SIGNAL IS NOT PARASITIC ON base_check. ReviewTreeGuard.base_assessment and this
+  # audit are two SEPARATE readers over the same refs, and the report is rendered in two
+  # different places (base_movement_detail hangs off base_check[:state] == :moved).
+  # Hanging the unobservable signal off that branch would keep the audit silent in
+  # exactly the case where BOTH reads failed — which is the LIKELIEST case, since they
+  # fail for the same reason. This row is what pins them apart: here base_check cannot
+  # see movement either, so the base-moved suggestion never fires, and the audit's own
+  # report has to stand on its own or there is nothing at all.
+  def test_integration_the_unobservable_report_stands_without_the_base_moved_suggestion
+    with_desk(base_change: "test/lib/widget_tool_exempt_test.rb", at: AFTER_RUN) do |dir, head|
+      strip_base_refs!(dir)
+
+      verdict, = check(dir, head)
+
+      refute_match(/the base has MOVED since this branch last took it/, all_of(verdict),
+                   "fixture check: with both refs stripped base_check is unobservable too, so the " \
+                   "base-moved suggestion must NOT be what is carrying the report")
+      assert_match(/BASE-MOVEMENT AUDIT could not run/i, all_of(verdict),
+                   "…and the audit's own signal must still be there. If this row goes red while the " \
+                   "first passes, the signal was wired to base_check and is silent when it matters " \
+                   "most\n#{all_of(verdict)}")
+    end
+  end
 end
