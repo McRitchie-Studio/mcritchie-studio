@@ -176,6 +176,8 @@ git fetch origin && git worktree add .worktrees/<slug> -b feat/<slug> origin/acc
 cd /Users/alex/projects/mcritchie-studio
 bin/task begin --title "Adopt <Name> Primitive" --repo <app> --agent <soul> \
   --kind chore --shape ui-only
+bin/task update <adoption-task> --depends-on <gem-task>
+#    ^ optional: the release then sequences the gem task before this one
 #    the qa-release sweep publishes gem versions, bumps consumer LOCKS, and
 #    re-pins the Gemfile when the new version ESCAPES the constraint
 #    record WHY in the pin comment — the floor is what broke below it, not the
@@ -205,25 +207,23 @@ breaks every consumer below it. (A `breaking` risk tag forces `major` too — th
 precedence is explicit override, then a breaking tag, then the kind's default — so
 either move works; what does not work is silence.)
 
-**`dependencies:` is conductor/DB-only today — you cannot declare it.** An earlier
-draft of this procedure told you to `declare dependencies: [<gem-task>]` so the
-release sequences the gem first. The column is real (`db/schema.rb`) and really
-read — `Release::Ordering.producer_first` topologically sorts on it, reached from
-`Release#ordered_members` and the conductor's sweep — but **no command writes it**:
-`grep -c dependencies bin/task` is `0`, it appears in neither `task.rb`'s devops
-key lists nor the tasks controller's permit list, and its only writers are tests
-calling `Task.create!` directly. So the ordering it feeds is real and the step is
-not performable. In practice the sweep's gem-before-app ordering already covers
-the normal case; if you need a hard sequence, say so on the task and let the
-conductor place it by hand.
+**`--depends-on` declares the sequence; it is usually optional here.** The
+column is real (`db/schema.rb`) and really read — `Release::Ordering.producer_first`
+topologically sorts on it, reached from `Release#ordered_members` and the
+conductor's sweep — and as of /tasks/wire-task-dependencies-field a command
+finally writes it. Until then nothing did: an earlier draft of this procedure
+told you to declare the field in a bracketed literal syntax nothing parsed, so
+the step named a behaviour no one could perform.
 
-> **Boundary, so the two copies do not silently disagree:**
-> `config/feature_shapes.yml`'s `library` notes still carry the identical
-> aspirational sentence. That file is `config/`, which a `docs`-shaped diff may
-> not touch — dor-check's `docs_with_guards_diff` claim explicitly disqualifies
-> `config` — so correcting it is filed as `/tasks/wire-task-dependencies-field`,
-> which will either wire the field or fix the note. Until that lands, **this
-> module is the correct copy.**
+Reach for it only for a sequence the heuristic cannot infer. `producer_first`
+already sorts gems before apps unaided, which is exactly the gem-then-consumer
+case above, so the normal graduation needs no edge at all — one app that must
+deploy before another is the case that does. Three properties before you lean
+on it: a dependency on a task OUTSIDE the release does not hold this one back
+(by design — it cannot be ordered here); a slug naming NO task is REFUSED,
+precisely because that same tolerance would otherwise make a typo invisible
+forever; and the flag REPLACES the list rather than appending, so pass the whole
+set in one call.
 
 **Three things that bite here:**
 

@@ -207,7 +207,23 @@ class Task < ApplicationRecord
     "release_train" => "the tasks.release_slug column — release membership is recorded by the sweep " \
                        "(Release#record_members), never set by hand",
     "block_kind" => "the tasks.block_kind column — stamped server-side by Task#block! " \
-                    "(POST /api/v1/tasks/:slug/block)"
+                    "(POST /api/v1/tasks/:slug/block)",
+    # Listed the DAY the column got a writer, not later. `dependencies` spent its
+    # whole life read-only-in-practice — a real jsonb column that
+    # Release::Ordering.producer_first topologically sorts on, with no writer
+    # outside tests — and the two docs that told agents to "declare
+    # `dependencies: [<task>]`" described a behaviour nobody could perform. Now
+    # that `--depends-on` writes it, the SHADOW hazard arrives with the writer:
+    # an agent who reads that old sentence and posts it under `devops` would
+    # otherwise get a 200 for a write that reached nothing (normalize_devops_
+    # metadata's `next unless DEVOPS_KEYS.include?` skips an unknown name in
+    # silence), and the conductor would keep sequencing off an empty array. That
+    # is `release_slug`'s incident exactly — a column and a same-named devops key
+    # diverging into disjoint stores, the visible one inert. Naming it here makes
+    # the wrong store a 422 instead, and #shed_column_shadow_keys drops any value
+    # a pre-wiring write already parked there.
+    "dependencies" => "the tasks.dependencies column — set it with " \
+                      "`bin/task update <slug> --depends-on <task-slug>` (repeatable)"
   }.freeze
   DEVOPS_SCALAR_KEYS = %w[
     kind shape worktree_slug branch pr_url local_url qa_url production_url
@@ -250,6 +266,11 @@ class Task < ApplicationRecord
   # The change shape selects its DoR test contract. Keep in sync with
   # config/feature_shapes.yml (the source of truth that bin/dor-check reads).
   SHAPES = %w[ui-only ui+db backend library onchain onchain-vertical docs test-only].freeze
+  # A task slug as `generate_slug` mints one: `title.parameterize` (lowercase
+  # alphanumerics, hyphens, and the underscore parameterize preserves) or the
+  # `task-<hex>` fallback. Used to validate `dependencies` entries — see
+  # #dependencies_name_real_tasks.
+  DEPENDENCY_SLUG = /\A[a-z0-9]+(?:[-_][a-z0-9]+)*\z/
 
   # Board rank read-model (studio-engine board primitive). Supplies `reposition!`
   # (the shared reorder write, driven by Studio::Board::Reorderable in the
@@ -298,6 +319,11 @@ class Task < ApplicationRecord
   # existing tasks that don't touch these fields stay grandfathered.
   validate :title_within_word_range, if: :title_changed?
   validate :acceptance_bullets_within_word_range, if: :acceptance_changed?
+  # Release ordering's explicit task-to-task edge. Gated on change for the same
+  # reason as the two above — a task saved for any other purpose must not become
+  # unsaveable because a dependency it declared last month has since been
+  # archived away. Writing the field is what has to be right.
+  validate :dependencies_name_real_tasks, if: :dependencies_changed?
   validates :priority, inclusion: { in: [0, 1, 2] }
   validates :pm_size,     inclusion: { in: SIZES }, allow_nil: true
   validates :po_size,     inclusion: { in: SIZES }, allow_nil: true
@@ -307,6 +333,10 @@ class Task < ApplicationRecord
   attr_readonly :slug # the readable handle is set once at creation, then immutable
 
   before_validation :generate_slug, on: :create
+  # EVERY save, not `on: :create` — the field's whole purpose is being edited
+  # later, once the task it must wait on exists. Runs before the validation that
+  # reads it, so the check and the stored value are the same list.
+  before_validation :normalize_dependencies
   before_validation :default_devops_handles_from_slug, on: :create
   # Persona BEFORE the Pokémon draw: when a session "acts as" a soul (devops.persona),
   # stamp the agent's name/color/emoji as the mascot and skip the Pokémon entirely.
@@ -3634,6 +3664,71 @@ class Task < ApplicationRecord
 
     errors.add(:title, "must be #{TITLE_WORD_RANGE.first}-#{TITLE_WORD_RANGE.last} words " \
                        "(was #{count}) — name it tightly; put detail in agent_context")
+  end
+
+  # Coerce whatever a writer posted into the shape Release::Ordering reads: a flat
+  # list of task-slug STRINGS.
+  #
+  # WHY COERCION IS NOT OPTIONAL HERE. `Release::Ordering.producer_first` reaches
+  # the field as `Array(task.dependencies)`, and `Array()` is silently generous
+  # about the wrong shapes rather than loud: a Hash becomes `[[k, v]]`, so every
+  # "dependency" is a two-element array that `by_slug.key?` can never match and
+  # the edge simply never fires. A single bare String becomes `["that-slug"]` and
+  # DOES work, which is worse — the writer learns the wrong lesson from a shape
+  # that happens to survive. Both are normalized here, at the one door every
+  # writer passes through, so the reader only ever sees the one shape.
+  #
+  # Order is PRESERVED (it is the operator's stated sequence, and a stable
+  # topological sort reads it) while duplicates and blanks are dropped.
+  def normalize_dependencies
+    raw = dependencies
+    list =
+      case raw
+      when nil then []
+      when String then [raw]
+      when Hash then raw.values
+      else Array(raw)
+      end
+    self.dependencies = list.flatten.map { |entry| entry.to_s.strip }.reject(&:empty?).uniq
+  end
+
+  # Every declared dependency must name a REAL, DIFFERENT task.
+  #
+  # An unknown slug is not a harmless typo — it is a write that reaches nothing
+  # and says so nowhere. `producer_first` skips a dependency it cannot find on
+  # purpose (`!by_slug.key?(dep)`), because a dependency outside the release must
+  # not hold a member back; that same clause makes `depends-on: typo-slug`
+  # indistinguishable from "no dependency at all", forever and silently. The
+  # ordering it was declared to enforce simply does not happen, and the operator's
+  # only evidence is a release that shipped in the wrong order.
+  #
+  # A SELF-reference is refused for a related reason: it can never be satisfied
+  # (a task is placed only after its dependencies are), so the pass falls through
+  # to its `index ||= 0` cycle-breaker and takes the head anyway. The declaration
+  # is discarded by a safety valve rather than honored — again, silently.
+  def dependencies_name_real_tasks
+    entries = Array(dependencies)
+    return if entries.empty?
+
+    if entries.include?(slug.to_s)
+      errors.add(:dependencies, "cannot include the task's own slug (#{slug}) — " \
+                                "a self-dependency can never be satisfied, so the ordering pass discards it")
+    end
+
+    malformed = entries.reject { |entry| entry.match?(DEPENDENCY_SLUG) }
+    if malformed.any?
+      errors.add(:dependencies, "must be task slugs; #{malformed.map(&:inspect).join(", ")} " \
+                                "#{malformed.one? ? "is not one" : "are not"}")
+      return
+    end
+
+    known = Task.where(slug: entries).pluck(:slug)
+    unknown = entries - known - [slug.to_s]
+    return if unknown.empty?
+
+    errors.add(:dependencies, "name no task on this board: #{unknown.map(&:inspect).join(", ")} — " \
+                              "Release::Ordering silently ignores a dependency it cannot resolve, " \
+                              "so the sequencing you declared would never happen")
   end
 
   # Each acceptance bullet stays a readable 5-12 words so the human can follow the story.

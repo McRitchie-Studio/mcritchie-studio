@@ -226,8 +226,11 @@ shapes:
     required_metadata: [acceptance, repositories, risk_tags, test_plan]
     notes: >-
       integration = the consumer-CI suite must pass in BOTH consuming apps.
-      Per-app adoption tasks should declare `dependencies: [this-task]` so Avi
-      sequences the gem release before the app releases.
+      Per-app adoption tasks declare the edge with
+      `bin/task update <adoption-task> --depends-on <this-task>` (repeatable, and
+      it REPLACES the list) so the release sequences the gem before the apps.
+      Release::Ordering already sorts gems before apps on its own, so reach for
+      the flag only when the heuristic cannot infer the sequence.
 
   onchain:
     description: turf-vault program change or its Solana::* Ruby integration.

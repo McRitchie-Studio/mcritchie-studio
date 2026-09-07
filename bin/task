@@ -62,7 +62,8 @@
 #                   [--repo R ...] [--risk R ...] [--accept "..." ...] [--test "..." ...] \
 #                   [--checks "..." ...] [--branch B] [--pr-url U] [--pr-url-for repo=U ...] [--local-url U] \
 #                   [--approval waiting|approved|changes_requested|none] \
-#                   [--po-size S] [--dev-size S] [--pm-size S] [--post-deploy-cmd "rake foo:bar"] [--no-claim]
+#                   [--po-size S] [--dev-size S] [--pm-size S] [--post-deploy-cmd "rake foo:bar"] [--no-claim] \
+#                   [--depends-on task-slug ...]
 #   ( --pr-url-for <repo>=<url> records the PR for ONE repo, repeatable, merging
 #     per repo — so a task naming SEVERAL repos can record one PR per repo instead
 #     of the single --pr-url slot that used to leave the second repo's PR nowhere
@@ -89,6 +90,16 @@
 #     exclusive-lane flag, a top-level Task column. SELF-FLAG it the moment you
 #     discover the task needs a schema change, then take the lane with
 #     `bin/task migration-lane acquire <slug>`. See exclusive-lanes.md. )
+#   ( --depends-on <task-slug>: the explicit task-to-task RELEASE ORDER edge, a
+#     top-level Task column (tasks.dependencies). Repeatable; this task sorts
+#     AFTER every task named here that rides the same release.
+#     Release::Ordering.producer_first already puts gems before apps on its own —
+#     reach for this only for a sequence the heuristic cannot infer, such as one
+#     app that must deploy before another. It REPLACES the list, so pass the whole
+#     set in one call; `--depends-on none` clears it. A dependency on a task
+#     OUTSIDE the release is fine and simply does not hold this one back, but a
+#     slug naming NO task is refused — the ordering pass cannot tell that case
+#     from "no dependency", so it would go silently unenforced. )
 #   bin/task begin --title T [--repo APP] [--agent SOUL] [--steal] [same flags as create]
 #   bin/task begin <slug> [--agent SOUL] [--dev-size S] [--steal]   # resume a partial begin
 #     ( the fast-lane SESSION-START wrapper: create + agent-worktree new +
@@ -1064,9 +1075,43 @@ BOOL_FLAGS = {
   "--requires-migration"    => ["requires_migration", true],
   "--no-requires-migration" => ["requires_migration", false]
 }.freeze
+# REPEATABLE top-level LIST columns. One member: `--depends-on <task-slug>`, the
+# explicit task-to-task release edge.
+#
+# WHY IT EXISTS. `tasks.dependencies` is a real jsonb column that
+# `Release::Ordering.producer_first` topologically sorts on — reached from
+# `Release#ordered_members` and `Release::Conductor` — and until this flag it had
+# no writer outside tests calling `Task.create!`. `grep -c dependencies bin/task`
+# was 0. Meanwhile `config/feature_shapes.yml`'s library notes and
+# `docs/agents/modules/modal-lifecycle.md` BOTH told agents to "declare
+# `dependencies: [<gem-task>]` so the release sequences the gem first" — a
+# behaviour no command could perform, in a syntax nothing parsed. The consumer
+# was shipped and the producer was not, which is the same half-built shape
+# `--requires-migration` above was added to close.
+#
+# REPLACES, it does not append — the same semantics as the devops LIST_FLAGS, and
+# said out loud because `--checks` replacing its list has bitten this house
+# repeatedly. Send the whole set in one call: `--depends-on a --depends-on b`.
+# `--depends-on none` (LIST_CLEAR_VALUES) clears the field; mixing it with a real
+# slug is a contradiction and dies rather than picking a winner.
+#
+# The value is validated for SLUG SHAPE here and for EXISTENCE at the server
+# (Task#dependencies_name_real_tasks), because the failure mode is silence:
+# `producer_first` skips a dependency it cannot resolve on purpose (a dependency
+# outside the release must not hold a member back), so a typo'd slug is
+# indistinguishable from no dependency at all — forever, with the only evidence a
+# release that shipped in the wrong order.
+TOP_LIST_FLAGS = { "--depends-on" => "dependencies" }.freeze
+# A task slug, mirrored from Task::DEPENDENCY_SLUG (this CLI holds no Rails
+# constants — same posture as SOUL_SLUG and the PR-url pattern). Refused HERE so
+# `--depends-on "Adopt Modal Primitive"` dies where a human can still fix it,
+# rather than travelling to a 422 or, worse, landing as a slug the ordering pass
+# silently never resolves.
+DEPENDENCY_SLUG = /\A[a-z0-9]+(?:[-_][a-z0-9]+)*\z/
 # Everything parse_flags (list/create/update) understands — the dictionary an
 # unknown flag is rejected against (and suggestion-matched, --pr → --pr-url).
-PARSE_FLAG_NAMES = (SCALAR_FLAGS.keys + LIST_FLAGS.keys + MAP_FLAGS.keys + SIZE_FLAGS.keys + TOP_FLAGS + BOOL_FLAGS.keys).freeze
+PARSE_FLAG_NAMES = (SCALAR_FLAGS.keys + LIST_FLAGS.keys + MAP_FLAGS.keys + SIZE_FLAGS.keys + TOP_FLAGS +
+                    BOOL_FLAGS.keys + TOP_LIST_FLAGS.keys).freeze
 HELP_FLAGS = %w[--help -h].freeze
 # Two-workflow status model. Stages move via PATCH stage (no named-transition
 # endpoints) so the CLI, the board drag-drop, and the API share one path.
@@ -1093,6 +1138,12 @@ PERSONA_CLEAR = %w[none clear off -].freeze
 # value is deliberate — `--pr-url-for turf-monster=$URL` with URL unset would
 # otherwise silently DELETE the entry it was meant to write.
 MAP_CLEAR_VALUES = PERSONA_CLEAR
+# The clear token for a TOP_LIST_FLAGS field (`--depends-on none`), sharing
+# PERSONA_CLEAR's vocabulary so the CLI keeps ONE clear-token idiom rather than a
+# third. Defined HERE, below PERSONA_CLEAR, rather than beside TOP_LIST_FLAGS —
+# this file is a script, so a constant referenced above its definition is a
+# load-time NameError that takes out every subcommand, not just the new flag.
+LIST_CLEAR_VALUES = PERSONA_CLEAR
 APPROVAL_STATUS_ALIASES = {
   "changes-requested" => "changes_requested",
   "change_requested" => "changes_requested",
@@ -1339,6 +1390,41 @@ def parse_flags(argv, context: nil)
       # would silently vanish.
       column, value = BOOL_FLAGS[arg]
       top[column] = value; i += 1
+    elsif TOP_LIST_FLAGS.key?(arg)
+      # Repeatable top-level LIST column. It accumulates in `top` rather than in
+      # `lists` — `lists` is the DEVOPS namespace (build_devops nests every one of
+      # its keys under "devops"), and this value is a COLUMN. Landing it there
+      # would have written metadata.devops.dependencies: the exact shadow store
+      # Task::DEVOPS_COLUMN_KEYS exists to refuse, and the one nothing reads.
+      #
+      # The four-wide [positionals, scalars, lists, top] contract is preserved by
+      # aliasing into an existing bucket, exactly as MAP_FLAGS rides in `scalars`.
+      # The three states are distinguished by the KEY, never by truthiness:
+      # absent key = flag not passed (top_body omits it, the column is untouched);
+      # present-and-EMPTY = the clear token was passed (top_body sends `[]`, which
+      # the server assigns, clearing the column); present-and-populated = slugs.
+      # An empty array is falsy-looking but meaningful, exactly like
+      # --no-requires-migration's `false` above.
+      column = TOP_LIST_FLAGS[arg]
+      value = (argv[i + 1] || die!("#{arg} needs a value")).to_s.strip
+      cleared = top.key?(column) && top[column].empty?
+      if LIST_CLEAR_VALUES.include?(value.downcase)
+        die!("#{arg} #{value} CLEARS the list, so it cannot be combined with a slug " \
+             "(already given: #{top[column].map(&:inspect).join(", ")}) — pass either the clear " \
+             "token or the slugs, not both") if top.key?(column) && top[column].any?
+
+        top[column] = []
+      else
+        die!("#{arg} #{value.inspect} is not a task slug — lowercase letters, digits and single " \
+             "separators (e.g. adopt-modal-primitive). An unresolvable slug is NOT refused by the " \
+             "release ordering pass, it is silently ignored, so a typo here disables the sequencing " \
+             "you asked for with no error anywhere.") unless value.match?(DEPENDENCY_SLUG)
+        die!("#{arg} cannot follow the clear token — pass either the clear token or the slugs, " \
+             "not both") if cleared
+
+        (top[column] ||= []) << value unless (top[column] || []).include?(value)
+      end
+      i += 2
     else
       # A dashed token here is an unrecognized flag. The old whitelist-and-skip
       # loop dropped it (and its value) into these ignored positionals and
@@ -1408,6 +1494,11 @@ def top_body(top)
   # Boolean columns: presence-tested, NOT truth-tested — `false` is a value the
   # caller asked for (--no-requires-migration), not an absent flag.
   BOOL_FLAGS.each_value { |(col, _)| body[col] = top[col] if top.key?(col) }
+  # List columns: presence-tested for the same reason one line up. `[]` is the
+  # value `--depends-on none` asked for — the CLEAR — and truth-testing it would
+  # drop the clear from the body, leaving the operator with a 200 for a write that
+  # never happened. This is the one flag family where the empty value is the point.
+  TOP_LIST_FLAGS.each_value { |col| body[col] = top[col] if top.key?(col) }
   body
 end
 
@@ -1501,6 +1592,12 @@ end
 
 def print_column_fields(task)
   puts "  #{TaskColumnFields.pair(task, "merged")}   #{TaskColumnFields.pair(task, "release_slug")}"
+  # On its own line: the value is a list, so it is the one column here that can
+  # grow past the width a shared line survives. Unconditional like its two
+  # neighbours, and for the identical reason — a field printed only when set
+  # reads, when absent, as "this tool does not report it", which is what sent
+  # three agents looking in metadata.devops for a stamp that was never there.
+  puts "  #{TaskColumnFields.pair(task, "dependencies")}"
   puts "  ↳ #{TaskColumnFields::LOCATOR}"
 end
 
@@ -2173,6 +2270,16 @@ when "field"
     # An empty map still prints nothing, and correctly so: the server drops an
     # empty map, so empty and unset are the same state.
     puts map_pairs(value)
+  elsif value.is_a?(Array)
+    # LIST column (dependencies): one slug per line — the shape a script consumes
+    # (`bin/task field <slug> dependencies | while read dep`) and the shape that
+    # feeds straight back into `--depends-on`. Without this branch it would fall
+    # through the Enumerable guard below and print NOTHING at exit 0, which is
+    # the identical defect the Hash branch above was added to fix: a read-back
+    # that cannot distinguish "declared" from "unset" is not a read-back, and
+    # this field's whole failure mode is a write that reached nothing. An empty
+    # list still prints nothing, correctly — there is nothing declared.
+    puts value.map { |entry| entry.to_s.strip }.reject(&:empty?)
   else
     print value unless value.nil? || value.is_a?(Enumerable)
   end

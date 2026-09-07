@@ -364,6 +364,91 @@ module Api
         assert_not @task.devops.key?("release_slug")
       end
 
+      # --- dependencies: the release-ordering edge ----------------------------
+      #
+      # This endpoint is the door `bin/task --depends-on` writes through, and
+      # until it permitted the name there was no supported writer at all: the
+      # column fed Release::Ordering while its only writers were tests calling
+      # Task.create! directly. So the round trip is pinned HERE, at the door, and
+      # the refusals with it — a declaration that returns 200 while reaching
+      # nothing is precisely what this field could not afford.
+
+      test "[integration] dependencies posted as a top-level array persist to the column" do
+        blocker = Task.create!(title: "Publish Engine Gem")
+
+        patch api_v1_task_path(@task.slug),
+              params: { dependencies: [blocker.slug] },
+              headers: @headers, as: :json
+
+        assert_response :success
+        assert_equal [blocker.slug], @task.reload.dependencies
+        assert_not @task.devops.key?("dependencies"), "the column write must not also seed a devops shadow"
+      end
+
+      # Two docs told agents to "declare `dependencies: [<task>]`" for months, so
+      # the devops namespace is exactly where the habit points. Strong params
+      # dropping it there would be a 200 for a write the conductor never sees.
+      test "[integration] a devops dependencies write is refused and names the column" do
+        blocker = Task.create!(title: "Publish Engine Gem")
+        @task.update!(dependencies: [blocker.slug])
+
+        patch api_v1_task_path(@task.slug),
+              params: { devops: { kind: "chore", dependencies: ["typed-under-devops"] } },
+              headers: @headers, as: :json
+
+        assert_response :unprocessable_entity, "a write to a column-backed name must fail loudly"
+        assert_match(/devops\.dependencies is not writable/, response.parsed_body["error"].to_s)
+        assert_match(/tasks\.dependencies column/, response.parsed_body["error"].to_s)
+        assert_match(/--depends-on/, response.parsed_body["error"].to_s,
+                     "the refusal must name the command that DOES work")
+
+        @task.reload
+        assert_equal [blocker.slug], @task.dependencies, "the column is untouched by a refused write"
+      end
+
+      # The ordering pass cannot tell an unresolvable slug from no dependency at
+      # all, so the door has to. A 200 here would store a declaration guaranteed
+      # never to fire.
+      test "[integration] a dependency naming no task is refused at the door" do
+        patch api_v1_task_path(@task.slug),
+              params: { dependencies: ["publish-engien-gem"] },
+              headers: @headers, as: :json
+
+        assert_response :unprocessable_entity
+        assert_match(/name no task on this board/, response.parsed_body["error"].to_s)
+        assert_equal [], @task.reload.dependencies
+      end
+
+      # Omission means UNCHANGED — the same rule as every devops name. A devops
+      # PATCH that cleared this column would silently undo the operator's
+      # sequencing while reporting success.
+      test "[integration] an unrelated devops patch leaves dependencies alone" do
+        blocker = Task.create!(title: "Publish Engine Gem")
+        @task.update!(dependencies: [blocker.slug])
+
+        patch api_v1_task_path(@task.slug),
+              params: { devops: { branch: "feat/unrelated" } },
+              headers: @headers, as: :json
+
+        assert_response :success
+        assert_equal [blocker.slug], @task.reload.dependencies
+      end
+
+      # …and an EXPLICIT empty array still clears, because that is what
+      # `--depends-on none` sends. Clearing has to stay expressible, or a wrong
+      # edge would be permanent.
+      test "[integration] an explicit empty array clears the column" do
+        blocker = Task.create!(title: "Publish Engine Gem")
+        @task.update!(dependencies: [blocker.slug])
+
+        patch api_v1_task_path(@task.slug),
+              params: { dependencies: [] },
+              headers: @headers, as: :json
+
+        assert_response :success
+        assert_equal [], @task.reload.dependencies
+      end
+
       # --- devops.pr_urls: the per-repo PR register ---------------------------
       # The JSON API is the door bin/task writes through, so the map's round trip
       # and its refusals are pinned HERE as well as at the model. A refusal that

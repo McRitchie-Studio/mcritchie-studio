@@ -481,9 +481,15 @@ class FastCertSubjectTest < Minitest::Test
       "#{path} (#{n})" if n > FastCert::DEFAULT_MAPPED_CAP
     end
 
-    assert_equal ["config/test_health.yml (20)"], over,
+    # THE COUNT TRACKS THE TREE, so it moves whenever a test file is added whose
+    # path this config's spelling matches — it is not a property of the mapping
+    # rule. 20 → 21 on 2026-09-07 (wire-task-dependencies-field) when
+    # test/models/task_dependencies_test.rb was added. What the assertion is FOR
+    # is the LIST: this one known entry and no other. A second path appearing is
+    # the regression; this number changing is bookkeeping.
+    assert_equal ["config/test_health.yml (21)"], over,
                  "config/test_health.yml was already over the cap before this clause " \
-                 "existed (its PATH matches 20 files); any OTHER entry here means the " \
+                 "existed (its PATH matches 21 files); any OTHER entry here means the " \
                  "config spelling re-opened a cap trip"
   end
 end

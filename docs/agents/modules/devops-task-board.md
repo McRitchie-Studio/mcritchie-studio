@@ -858,10 +858,35 @@ bin/task field <slug> release_slug      # the column, machine-readable
 bin/task show <slug> --verbose          # "release_slug: rel-…" or "not on a release"
 ```
 
-To order work that must ship in sequence, use `dependencies` (enforced by
-`Release::Ordering`); to flag work needing an exclusive rollout lane, use
-`requires_release_conductor`. Each task still owns its own PR, acceptance
-criteria, and URLs.
+To order work that must ship in sequence, use `dependencies`; to flag work
+needing an exclusive rollout lane, use `requires_release_conductor`. Each task
+still owns its own PR, acceptance criteria, and URLs.
+
+`dependencies` is the OTHER top-level column an agent reaches for, and it
+answers the opposite way — **it is yours to write**, so do not generalise
+"top-level column" into "hands off":
+
+```bash
+bin/task update <slug> --depends-on <other-task-slug>   # repeatable; REPLACES the list
+bin/task update <slug> --depends-on none                # clear it
+bin/task field <slug> dependencies                      # read back, one slug per line
+```
+
+`Release::Ordering.producer_first` sorts gems before apps on its own, so declare
+an edge only for a sequence that heuristic cannot infer — one app that must
+deploy before another. Three properties decide whether it does anything:
+
+- A dependency on a task **outside the release** does not hold this one back.
+  That is deliberate (it cannot be ordered here), and it is also why a **typo is
+  invisible** — the pass cannot tell an unresolvable slug from no dependency at
+  all. So the write refuses a slug naming no task, rather than storing a
+  declaration that would never fire.
+- It **replaces** the list, like `--checks`. Pass the whole set in one call.
+- A `devops` write to the name is refused with a 422 naming the column
+  (`Task::DEVOPS_COLUMN_KEYS`) — same rule as `release_slug` above, for the same
+  reason: two docs told agents to declare this field, in a bracketed literal
+  syntax nothing parsed, months before anything could write it at all. The
+  devops namespace is exactly where that habit points.
 
 ## Cleanup Tasks
 
