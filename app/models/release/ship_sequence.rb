@@ -203,8 +203,13 @@ class Release
       argv
     end
 
-    # The operator-facing ABORT for a dispatch that created no run. It must NAME
-    # three things, because the incident above cost an hour for want of each:
+    # The operator-facing ABORT for a dispatch that created no run. Its PRECONDITION
+    # is that the run list was actually READ at least once after the dispatch — this
+    # message asserts, as fact, that GitHub holds no run for it. When every
+    # post-dispatch read FAILED instead, the shell owes the operator
+    # unreadable_run_list_abort below, not this one: nil run_id has two causes and
+    # only one of them is "no run exists". It must NAME three things, because the
+    # incident above cost an hour for want of each:
     #   * the WORKFLOW — which dispatch silently did nothing,
     #   * the SHA      — which tree was supposed to go out (and therefore which
     #                    tree the app is still serving), and
@@ -227,6 +232,55 @@ class Release
           Re-run the dispatch by hand and confirm a run appears, then re-run the release:
             #{command}
             gh run list --workflow #{workflow} --limit 3
+      MSG
+    end
+
+    # The SECOND reason run_id comes back nil — and the reason this is a separate
+    # message rather than a branch inside the one above.
+    #
+    # THE TWO CAUSES (measured in review of the abort above, before it shipped).
+    # bin/release's registration poll ends with nil `run_id` when EITHER
+    #   * every read SUCCEEDED and none ever showed a run newer than the
+    #     pre-dispatch snapshot — GitHub genuinely holds no run, OR
+    #   * every read FAILED (`gh run list` non-zero → newest_run_id nil →
+    #     new_run_id nil) — GitHub was never observed at all.
+    # They are the same nil and they are OPPOSITE facts. The first supports
+    # "the deploy NEVER RAN"; the second supports nothing, because nothing was
+    # seen. Printing the first message for the second case tells an operator the
+    # production deploy did not happen — and hands them a dispatch command to
+    # re-run — while that deploy may be in flight. That is a SECOND production
+    # deploy ordered on the strength of a read that never succeeded.
+    #
+    # SO THIS MESSAGE REPORTS THE OBSERVATION, NOT A VERDICT. It says what was
+    # attempted, what could not be read, and that the state of the deploy is
+    # UNKNOWN — then makes the remedy a CHECK rather than a re-dispatch. The
+    # difference between the two remedies is the whole point: "re-run the
+    # dispatch" is safe only once you know no run exists, and that is exactly
+    # what this failure could not establish.
+    #
+    # The three labelled facts are the same three, for the same reason — and the
+    # command is quoted from the same dispatch_argv builder, so it is still, by
+    # construction, the command that ran.
+    def unreadable_run_list_abort(workflow, inputs = {})
+      command = dispatch_argv(workflow, inputs).join(" ")
+      sha = (inputs || {})["sha"] || (inputs || {})[:sha]
+      <<~MSG.strip
+        #{workflow} was dispatched and the run list could NOT be read afterwards — whether a run
+        was created is UNKNOWN.
+            workflow: #{workflow}
+            sha:      #{sha.to_s.strip.empty? ? '(none supplied)' : sha}
+            command:  #{command}
+          EVERY post-dispatch `gh run list` FAILED, so this is a failure to OBSERVE GitHub — it is
+          NOT a report that the deploy did not happen. A run may exist and be deploying right now.
+          Do NOT re-dispatch on the strength of this message: a blind re-dispatch can land a second
+          deploy on top of a live one.
+          CHECK FIRST, and re-dispatch only if no run for this SHA is there:
+            gh auth status
+            gh run list --workflow #{workflow} --limit 5
+          If a run IS listed, WATCH it — do not dispatch another:
+            gh run watch <that run id> --exit-status
+          Only if the list comes back readable AND empty of a run for this SHA, dispatch by hand:
+            #{command}
       MSG
     end
 

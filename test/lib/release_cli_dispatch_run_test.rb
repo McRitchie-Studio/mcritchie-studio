@@ -101,6 +101,53 @@ class ReleaseCliDispatchRunTest < Minitest::Test
     end
   RUBY
 
+  # THE SECOND CAUSE OF A NIL RUN ID, which NO_RUN_CREATED above cannot express: the
+  # pre-dispatch snapshot ANSWERS (100), `gh workflow run` is accepted — and then
+  # EVERY post-dispatch `gh run list` FAILS. newest_run_id returns nil on a failed
+  # list, new_run_id returns nil on a nil argument, so the poll ends on the identical
+  # `run_id.nil?` branch as a genuinely-never-created run while having observed
+  # NOTHING. The count is what makes the two stubs different: this one fails reads
+  # 2..N, NO_RUN_CREATED succeeds at all of them.
+  LIST_UNREADABLE = <<~RUBY
+    def sleep(*) = nil
+    $watched = false
+    $list_calls = 0
+    def sh(*cmd, capture: false, chdir: nil, env: nil)
+      if cmd[0, 3] == ["gh", "run", "list"]
+        $list_calls += 1
+        return $list_calls == 1 ? ["100", true] : ["", false]
+      end
+      if cmd[0, 3] == ["gh", "run", "watch"]
+        $watched = true
+        return ["", true]
+      end
+      ["", true]
+    end
+  RUBY
+
+  # The snapshot itself never answers: `gh run list` fails from the very first call,
+  # so there is no baseline and the method returns WITHOUT dispatching.
+  SNAPSHOT_NEVER_ANSWERS = <<~RUBY
+    def sleep(*) = nil
+    $dispatched = false
+    def sh(*cmd, capture: false, chdir: nil, env: nil)
+      return ["", false] if cmd[0, 3] == ["gh", "run", "list"]
+      $dispatched = true if cmd[0, 3] == ["gh", "workflow", "run"]
+      ["", true]
+    end
+  RUBY
+
+  # `gh workflow run` itself is REFUSED — gh reports the failure and nothing is
+  # dispatched. Also a `false` return, also downstream of prepare's `qa_ok &&=`.
+  DISPATCH_REFUSED = <<~RUBY
+    def sleep(*) = nil
+    def sh(*cmd, capture: false, chdir: nil, env: nil)
+      return ["100", true] if cmd[0, 3] == ["gh", "run", "list"]
+      return ["", false] if cmd[0, 3] == ["gh", "workflow", "run"]
+      ["", true]
+    end
+  RUBY
+
   # A run that DOES register: 100 before the dispatch, 101 after. `conclusion` drives
   # what that run turns out to be, so the same stub covers the green and failed halves.
   def run_registered(conclusion)
@@ -197,6 +244,83 @@ class ReleaseCliDispatchRunTest < Minitest::Test
 
     assert_includes out, "NO-ABORT RESULT=true", "a green run is still a plain successful deploy"
     refute_includes out, "ABORTED", "nothing about a run that ran and passed is a dispatch failure"
+  end
+
+  # ── [integration] the SECOND cause: nil run id because nothing could be READ ──
+  #
+  # THE DEFECT. Both causes land on the same `run_id.nil?`, and the abort above
+  # asserts one of them as fact: "the deploy NEVER RAN", "the app is still serving
+  # its OLD tree", "Re-run the dispatch by hand". Printed over an unreadable `gh`
+  # that is a false report AND an instruction to fire a SECOND deploy — on
+  # prod-deploy.yml, while the first may be in flight. The message here has to
+  # report the observation instead, and the observation is that there was none.
+
+  def test_an_unreadable_run_list_aborts_with_the_honest_unknown_not_the_never_ran_claim
+    out = run_release(LIST_UNREADABLE, guarded(DISPATCH) + %(; puts("WATCHED \#{$watched}")))
+
+    assert_includes out, "ABORTED", "a poll that never read GitHub still must not return a deploy verdict"
+    assert_includes out, Release::ShipSequence.unreadable_run_list_abort(WORKFLOW, INPUTS),
+                    "the CLI must abort with the UNREADABLE message the source builds"
+    refute_includes out, "NEVER RAN",
+                    "nothing was observed — reporting the deploy as not having run is the defect"
+    refute_includes out, "still serving its OLD tree",
+                    "…and so is describing the app's tree, which was never read either"
+    assert_includes out, "WATCHED false", "and it must not watch a run it never identified"
+  end
+
+  # THE SAFETY PROPERTY, stated as the operator reads it: the remedy on this path is
+  # a CHECK. The other message's remedy — re-run the dispatch — is the one act that
+  # can double a live production deploy, so it must not appear here.
+  def test_the_unreadable_abort_orders_a_check_not_a_second_dispatch
+    out = run_release(LIST_UNREADABLE, guarded(DISPATCH))
+
+    assert_includes out, "Do NOT re-dispatch", "a blind re-dispatch is the harm this message prevents"
+    assert_includes out, "CHECK FIRST"
+    assert_includes out, "UNKNOWN", "the state of the deploy is stated as unknown, not as a fact"
+    refute_includes out, "Re-run the dispatch by hand",
+                     "the never-created message's remedy must not leak onto the unreadable path"
+  end
+
+  # THE PAIR, from the other side. Splitting one branch into two is only worth
+  # anything if each side keeps its own message; a collapse in EITHER direction has
+  # to fail, so the never-created case asserts the absence of the unreadable wording
+  # exactly as the test above asserts the reverse.
+  def test_a_never_created_run_keeps_its_own_message_and_does_not_report_unknown
+    out = run_release(NO_RUN_CREATED, guarded(DISPATCH))
+
+    assert_includes out, Release::ShipSequence.undispatched_run_abort(WORKFLOW, INPUTS),
+                    "reads that ANSWERED and showed no new run do establish that no run exists"
+    refute_includes out, "UNKNOWN",
+                    "…so this path must not hedge: it is the one that legitimately hands over the command"
+    refute_includes out, "Do NOT re-dispatch",
+                     "the unreadable path's refusal must not leak onto the path where re-dispatching is the fix"
+  end
+
+  # ── [integration] the two dispatch failures that stay `false` ────────────────
+  #
+  # These do NOT abort — they are ordinary gh failures on a dispatch that provably
+  # did not happen — but prepare's `qa_ok &&=` short-circuits the /up poll, so they
+  # arrive at the operator as "never returned /up 200": a boot verdict for a request
+  # nobody made. They cannot say it in the summary, so they say it here, and the
+  # runbook's boot-failure row sends the reader up the log to find this line.
+
+  def test_a_snapshot_that_never_answers_says_nothing_was_deployed
+    out = run_release(SNAPSHOT_NEVER_ANSWERS, guarded(DISPATCH) + %(; puts("DISPATCHED \#{$dispatched}")))
+
+    assert_includes out, "NO-ABORT RESULT=false", "no baseline is still a return, not an abort"
+    assert_includes out, "DISPATCHED false", "and it must not dispatch without one"
+    assert_includes out, "NOTHING WAS DEPLOYED",
+                    "the fact the /up summary will otherwise contradict has to be on the log"
+    assert_includes out, "not a boot failure",
+                    "…named as such, because the summary downstream calls it exactly that"
+  end
+
+  def test_a_refused_dispatch_says_nothing_was_deployed
+    out = run_release(DISPATCH_REFUSED, guarded(DISPATCH))
+
+    assert_includes out, "NO-ABORT RESULT=false", "a gh-refused dispatch is an ordinary failed command"
+    assert_includes out, "NOTHING WAS DEPLOYED",
+                    "the app was never deployed to, so the boot diagnosis downstream is wrong about it"
   end
 
   def test_a_registered_run_that_failed_is_a_verdict_not_a_dispatch_abort
