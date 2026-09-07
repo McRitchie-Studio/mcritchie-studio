@@ -28,6 +28,11 @@ require "yaml"
 #      model/flow tests, ~10-15s) so a diff that maps to nothing still exercises
 #      the money paths. Entries may be files or directories; missing paths are
 #      skipped (a satellite worktree runs the hub's script but not its spine).
+#
+# And ONE degradation, because sets 1+2 are unbounded and the lane is not: past
+# DEFAULT_MAPPED_CAP the mapped lane falls back to the CONVENTION TWINS ALONE
+# (set 1 without the family hop and without set 2) rather than to nothing — see
+# #convention_twins for why "to nothing" was a cliff and what the fallback costs.
 module FastCert
   # app/<layer>/<rest>.rb → test/<layer>/<rest>_test.rb for these layers
   # (nested paths carry through: app/controllers/api/v1/x_controller.rb →
@@ -148,10 +153,23 @@ module FastCert
   # edit, which is the over-widening this hop has to avoid to be worth having. A
   # sibling joins the family only when NO source file of its own exists.
   #
-  # Measured over this repo 2026-09-06: of the sixteen candidate siblings the
-  # glob finds, the guard rejects exactly two — desk_ledger_import_test.rb (owned
-  # by bin/lib/desk_ledger_import.rb) and agent_worktree_cli_test.rb (owned by
-  # bin/lib/agent_worktree_cli.rb) — and keeps fourteen genuine ones.
+  # Measured over this repo 2026-09-07, sweeping EVERY source that convention-maps
+  # into test/lib/ (bin/* + bin/lib/**/*.rb + lib/**/*.rb — 95 of them have an
+  # existing twin): the glob finds 26 distinct candidate siblings, the guard rejects
+  # THREE, and 23 genuine ones are kept.
+  #
+  #   test/lib/desk_ledger_import_test.rb   ← bin/lib/desk_ledger_import.rb
+  #   test/lib/agent_worktree_cli_test.rb   ← bin/lib/agent_worktree_cli.rb
+  #   test/lib/importmap_audit_ci_test.rb   ← bin/importmap-audit-ci
+  #
+  # THE EARLIER NUMBERS HERE ("sixteen candidates / rejects exactly two / keeps
+  # fourteen") WERE WRONG ON ALL THREE, and the way they went wrong is worth keeping:
+  # they SPLICED TWO INCOMPATIBLE SWEEPS. Sixteen is the candidate count of a bin/*-ONLY
+  # sweep — which rejects exactly ONE (agent_worktree_cli_test.rb) — while
+  # desk_ledger_import_test.rb is only reachable from the bin/lib sweep, which finds 9
+  # candidates and rejects 2. No single sweep rejects two AND finds sixteen. The GUARD
+  # was always right; only the prose lied, which is the failure mode of a measured
+  # comment nobody re-derives. Re-derive before editing this paragraph, don't paste it.
   def owned_elsewhere?(root, test_path)
     source_twins(test_path).any? { |src| File.file?(File.join(root, src)) }
   end
@@ -224,6 +242,63 @@ module FastCert
     mapping(root, changed).values.flatten.uniq.sort
   end
 
+  # --- the cap's FALLBACK: the convention twins ----------------------------------
+  #
+  # WHAT THE CAP USED TO DO WHEN IT TRIPPED: skip the mapped lane WHOLESALE. So
+  # crossing the cap was a CLIFF, not a slope — one file over and the lane ran ZERO
+  # mapped tests, where the same diff minus that file ran fifteen. Measured on this
+  # repo 2026-09-06/07:
+  #
+  #   bin/dor-check alone                      15 mapped → the lane ran 15
+  #   bin/dor-check + bin/lib/ci_status.rb     16 mapped → the lane ran 0
+  #
+  # THE SECOND ROW IS WORSE THAN BEFORE THE FAMILY HOP EXISTED, which ran the two
+  # twins. A widening that leaves some diffs with LESS than they had is not monotone,
+  # and this one is not a corner case: bin/dor-check maps to exactly the cap, so any
+  # multi-file diff touching the file the whole gate depends on landed on the wrong
+  # side of it. That is what this fallback fixes — the widening is now monotone-good
+  # at every family size, because the floor never drops below the pre-widening set.
+  #
+  # THE FALLBACK IS THAT PRE-WIDENING SET: each changed file's EXISTING convention
+  # target — 1-2 paths per file — and nothing else. Not a new contract; it is the set
+  # the fast lane ran on for months, so its cost and its coverage are both known.
+  #
+  # THE GREP FALLBACK IS DELIBERATELY EXCLUDED, and that exclusion is the only reason
+  # this fallback is BOUNDED. The cap exists BECAUSE of the grep: a diff touching
+  # config/initializers/studio.rb has no convention target, falls through to a
+  # word-boundary grep of "Studio", matched 48 test files and ran 39m34s (2026-08-15).
+  # Degrading to "twins OR grep" would re-run the exact explosion the cap was built to
+  # stop. So a changed file with no twin contributes NOTHING here — which is the right
+  # answer, not a gap: a grep matching half the suite was never evidence ABOUT that
+  # file, and the cap already said so.
+  #
+  # WHICH CAUSE ACTUALLY TRIPS THE CAP — measured 2026-09-07 over all 474 mappable
+  # hub sources, because the answer decides whether this fallback is a slope or just
+  # a shorter cliff:
+  #
+  #   23 sources ALONE exceed the cap. All 23 are GREP-driven. ZERO are family-driven.
+  #   Widest FAMILY mapping in the repo: bin/dor-check at 15 — AT the cap, never over
+  #   it alone. Next widest family: 3.
+  #   Widest GREP mappings: bin/task 325 ("task"), bin/release 257,
+  #   config/environments/test.rb 208 ("Test"), bin/setup 198, bin/gate 176.
+  #
+  # So the family hop trips the cap only IN COMBINATION with a co-changed file — the
+  # cliff above — while every single-file cap trip is a grep precision failure. And
+  # this is what makes the fallback a slope rather than a shorter cliff, provably:
+  # ALL 23 grep-driven cap-trippers have ZERO convention twins, so the fallback takes
+  # nothing from them and they degrade to the spine exactly as they do today.
+  # Truncating 39 arbitrary grep matches to 15 arbitrary grep matches would be a
+  # shorter cliff; falling back to the TWIN is a slope. The grep's precision is a
+  # separate defect and is deliberately NOT addressed here.
+  #
+  # Existence is checked here (unlike convention_candidates, which is pure) because
+  # the caller needs a runnable lane, not a candidate list.
+  def convention_twins(root, changed)
+    Array(changed).flat_map { |path| convention_candidates(path) }
+                  .select { |t| File.file?(File.join(root.to_s, t)) }
+                  .uniq.sort
+  end
+
   # HOW MANY MAPPED TESTS THIS LANE WILL RUN BEFORE IT IS WORTH RUNNING AT ALL.
   #
   # There was no cap, and a fast lane that can silently become a full suite is
@@ -272,14 +347,45 @@ module FastCert
   # Capping the raw union would trip on diffs whose mapping is entirely redundant.
   #
   # Returns a Hash rather than a bare Boolean because the caller has to explain
-  # itself: the cap it applied, how far over, and the file to look at.
-  def cap_decision(mapped_only, breakdown, cap: mapped_cap)
+  # itself: the cap it applied, how far over, the file to look at, and — since the
+  # cliff fix — WHAT THE LANE WILL RUN INSTEAD.
+  #
+  # `twins` is the already-spine-deduped convention-twin set (#convention_twins);
+  # it is passed IN rather than computed here so this stays a pure decision over
+  # sets, unit-testable without a tree. Callers that do not supply it get the old
+  # behaviour exactly: no twins, so an empty fallback, so a capped lane runs nothing.
+  #
+  # :fallback IS THE ONE PLACE THE ANSWER LIVES. Four consumers need to agree about
+  # what a capped lane runs — the lane runner, the --list preview, the evidence line,
+  # and the zero-evidence guard — and in PR #1239 a scope stated TWICE let a mutation
+  # survive because each statement covered for the other. So it is computed once, here,
+  # and every consumer reads this key rather than re-deriving it.
+  #
+  # THE FALLBACK IS CAPPED BY THE SAME NUMBER IT FELL BACK FROM, and this is what
+  # keeps the slope from being a second cliff of its own. Twins are 1-2 paths per
+  # CHANGED FILE, so a 60-file diff has ~60 of them — the unbounded lane the cap
+  # exists to bound. The degradation therefore has three rungs, each governed by one
+  # number: full mapped set → convention twins → spine only. A fallback that is itself
+  # over the cap degrades again rather than buying itself an exemption.
+  def cap_decision(mapped_only, breakdown, cap: mapped_cap, twins: [])
     worst = Array(breakdown).max_by { |_path, tests| Array(tests).size }
+    capped = mapped_only.size > cap
+    fallback = capped ? Array(twins).uniq.sort : []
+    # WHAT THE FALLBACK WEIGHED, kept beside what it CHOSE, because the two empty
+    # fallbacks are different facts and a receipt that cannot tell them apart is a
+    # shrug: 0 considered means no changed file HAS a twin, while N > cap means the
+    # twins were themselves too broad and the lane degraded a second time. It is 0
+    # when the cap did NOT trip — there was nothing to weigh — so read it only
+    # beside :capped.
+    considered = fallback.size
+    fallback = [] if fallback.size > cap
 
     {
-      capped: mapped_only.size > cap,
+      capped: capped,
       cap: cap,
       count: mapped_only.size,
+      fallback: fallback,
+      fallback_considered: considered,
       worst_path: worst && worst[0],
       worst_count: worst ? Array(worst[1]).size : 0
     }
@@ -295,8 +401,27 @@ module FastCert
   # that happens to contain no test cases still counts here, because seeing that needs
   # the runner's own output. This guard needs only the selection, which is why it can be
   # decided before a single lane runs.
+  #
+  # THE ONE LINE THE TWINS FALLBACK CHANGES, and it is worth being precise about what
+  # it does and does not touch, because getting this wrong re-opens PR #1226's
+  # fail-green one rung further along.
+  #
+  #   UNCHANGED: the KEYING. The guard below still fires on ZERO EXECUTED TESTS and
+  #   never on the cap — deliberately, since a diff mapping to 26 files must not be
+  #   refused while a diff mapping to NONE certifies on rubocop alone.
+  #
+  #   CHANGED: the INPUT. A capped lane used to contribute [] here because it ran
+  #   nothing. It now contributes its convention twins, because it RUNS them. The
+  #   guard is not being loosened; it is being told the truth about what will run.
+  #
+  # The consequence is exactly the one intended, and it is a TIGHTENING of evidence,
+  # never a loosening: a run that would previously have executed zero tests (capped
+  # over an empty spine → a DEFERRAL) now executes its twins and certifies — on MORE
+  # evidence than the deferral had, not less. And when the fallback is empty too (an
+  # unmappable diff, or twins that are themselves over the cap), the executed set is
+  # byte-identical to before and the run defers or refuses exactly as it did.
   def executed_test_paths(mapped_only, spine, cap)
-    ran_mapped = cap && cap[:capped] ? [] : Array(mapped_only)
+    ran_mapped = cap && cap[:capped] ? Array(cap[:fallback]) : Array(mapped_only)
     (ran_mapped + Array(spine)).uniq
   end
 
@@ -412,7 +537,8 @@ module FastCert
     culprit = cap[:worst_path] ? " (widest: #{cap[:worst_path]} → #{cap[:worst_count]} test file(s))" : ""
     detail = "cert DEFERRED to GitHub CI: the mapped lane was CAPPED — #{cap[:count]} mapped " \
              "path(s) over the cap of #{cap[:cap]}#{culprit} — over a spine this checkout " \
-             "resolves NONE of, so NO local lane could certify this tree. CI runs the full " \
+             "resolves NONE of, so NO local lane could certify this tree. #{fallback_note(cap)} " \
+             "CI runs the full " \
              "suite on this exact code; bin/dor-check credits this receipt only alongside a " \
              "GREEN CI, never provisionally."
     message =
@@ -425,6 +551,22 @@ module FastCert
       "\n  (or run the mapped lane anyway, deliberately: FAST_CHECK_MAPPED_CAP=#{cap[:count]} " \
       "bin/fast-check #{task} — that is the broad local suite this cap exists to avoid.)"
     { kind: :defer, message: message, detail: detail }
+  end
+
+  # WHY THE TWINS FALLBACK DID NOT SAVE THIS RUN — the clause that keeps the deferral
+  # receipt a complete explanation now that "capped" has a rung under it. Reaching a
+  # deferral means the cap tripped AND the fallback came up empty, and the receipt has
+  # to say which of the two empties it was or a reader cannot tell a diff that maps to
+  # nothing from one whose twins were too broad.
+  def fallback_note(cap)
+    considered = cap[:fallback_considered].to_i
+    if considered > cap[:cap].to_i
+      "The convention-twin fallback did not save it either: #{considered} twin(s) is ITSELF over " \
+        "the cap of #{cap[:cap]}, so the lane degraded a second time, to the spine."
+    else
+      "The convention-twin fallback was empty too — no changed file has an existing test twin " \
+        "(the fallback deliberately excludes the grep, which is what the cap is protecting you from)."
+    end
   end
 
   # --- spine --------------------------------------------------------------------

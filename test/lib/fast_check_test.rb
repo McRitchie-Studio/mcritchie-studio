@@ -612,6 +612,99 @@ class FastCheckTest < Minitest::Test
     end
   end
 
+  # --- [integration] the cap's TWIN FALLBACK ---------------------------------------
+  #
+  # THE CLIFF THIS REPLACES, measured on this repo 2026-09-06/07:
+  #
+  #   bin/dor-check alone                    15 mapped (the cap exactly) → ran 15
+  #   bin/dor-check + bin/lib/ci_status.rb   16 mapped (one over)        → ran 0
+  #
+  # The second row is PR #1236's own shape and is strictly WORSE than before the family
+  # hop, which ran the two twins. Driven through the SCRIPT, not the module, because the
+  # module decision is half the fix: the other half is that the lane RUNS the twins, the
+  # builder is told it narrowed, and the evidence line stops claiming zero.
+
+  # A family whose mapping exceeds the cap AND whose changed file HAS a twin — the
+  # shape with_wide_mapping_repo cannot express (an initializer has no twin at all).
+  def with_family_over_cap_repo
+    with_repo do |dir, write|
+      write.call("bin/wide-tool", "#!/usr/bin/env ruby\n")
+      write.call("test/lib/wide_tool_test.rb", "twin\n")
+      20.times { |i| write.call("test/lib/wide_tool_aspect#{i}_test.rb", "sibling #{i}\n") }
+      assert system("git", "-C", dir, "add", "-A", out: File::NULL, err: File::NULL)
+      assert system("git", "-C", dir, "commit", "-qm", "family", out: File::NULL, err: File::NULL)
+      # The branch diff: the tool itself, which maps to its twin PLUS twenty siblings.
+      write.call("bin/wide-tool", "#!/usr/bin/env ruby\n# edit\n")
+      yield dir, write
+    end
+  end
+
+  # THE HEADLINE: past the cap, the mapped lane runs the TWIN instead of nothing.
+  def test_a_capped_family_runs_its_convention_twin_instead_of_nothing
+    with_family_over_cap_repo do |dir, _|
+      out, code, lines = run_check(dir, merge_stderr: true)
+
+      assert_equal 0, code, out
+      tests = lane_calls(lines, "TEST")
+      assert_equal 2, tests.size, "the mapped lane RUNS (narrowed) plus the spine: #{lines.inspect}"
+      assert_equal ["test/lib/wide_tool_test.rb"], tests[0],
+                   "the capped lane falls back to the convention twin, not to nothing"
+      assert_equal ["test/models/spine_core_test.rb"], tests[1]
+      assert_match(/MAPPED LANE CAPPED/, out, "still loud — the cap did trip")
+      assert_match(/falling back to the CONVENTION TWINS/, out, "and it says what runs instead")
+    end
+  end
+
+  # THE EVIDENCE MUST SAY WHAT RAN. "0 mapped (CAPPED: ...)" over a lane that ran a
+  # twin is the same class of lie the capped line was fixed for in the first place.
+  def test_the_twin_fallback_is_named_in_the_evidence_line
+    with_family_over_cap_repo do |dir, _|
+      out, = run_check(dir, merge_stderr: true)
+
+      assert_match(/fast cert green: 1 twin\(s\) \(CAPPED: 21 mapped path\(s\) over the cap of 15;/, out)
+      assert_match(/fell back to the convention twins/, out)
+      refute_match(/fast cert green: 0 mapped/, out,
+                   "the lane ran a test — recording zero would understate real evidence")
+    end
+  end
+
+  # THE FENCE, DRIVEN END TO END (PR #1226). On a SATELLITE — an empty spine — this
+  # exact shape used to DEFER, because a capped lane over no spine executed nothing.
+  # With a twin to fall back on it executes a real test, so it certifies. That is the
+  # deliberate answer to "certification or deferral", and it holds only because the
+  # guard keys on ZERO EXECUTED TESTS rather than on the cap: the twin IS evidence,
+  # and a deferral has none.
+  def test_a_capped_family_with_a_twin_certifies_where_it_used_to_defer
+    with_family_over_cap_repo do |dir, write|
+      write.call("spine.yml", "spine: []\n") # the satellite: no spine resolves
+
+      out, code, lines = run_check(dir, merge_stderr: true)
+
+      assert_equal 0, code, "a run that executed its twin is a cert, not a deferral:\n#{out}"
+      refute_match(/DEFERRING to GitHub CI/, out)
+      assert_match(/\[fast-cert@/, out, "a CERT line, because a real test ran")
+      assert_equal [["test/lib/wide_tool_test.rb"]], lane_calls(lines, "TEST"),
+                   "and the twin is exactly what ran"
+    end
+  end
+
+  # THE OTHER HALF OF THE FENCE, UNCHANGED. Capped with NO twin to take, over an empty
+  # spine, still executes zero tests — so it still defers, byte-for-byte as before. The
+  # fallback moved the guard's INPUT, never its keying.
+  def test_a_capped_diff_with_no_twin_still_defers
+    with_wide_mapping_repo do |dir, write|
+      write.call("spine.yml", "spine: []\n")
+
+      out, code, lines = run_check(dir, merge_stderr: true)
+
+      assert_equal 2, code, "no twin, no spine — nothing ran, so nothing is certified:\n#{out}"
+      assert_match(/NOT CERTIFIED — DEFERRING to GitHub CI/, out)
+      assert_match(/convention-twin fallback was empty too/, out,
+                   "and the receipt explains why the fallback did not save it")
+      assert_empty lane_calls(lines, "TEST")
+    end
+  end
+
   # --- [integration] the zero-evidence guard --------------------------------------
   #
   # THE DEFECT, live on turf-monster PR #549 (2026-09-05) and reproduced against this

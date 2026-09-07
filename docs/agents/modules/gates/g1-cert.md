@@ -190,15 +190,81 @@ impossible by construction rather than by every repo remembering to ignore `tmp/
      PR #1236 in CI instead. Scoped to `test/lib/` because `test/<layer>/`
      mirrors `app/<layer>/` one file to one file, where a prefix sibling is a
      DIFFERENT subject's test.
-     **CAPPED at 15 files** after the spine dedupe: past that the lane is SKIPPED
-     with a loud line naming the cap and the widest-mapping file, and the spine
-     still runs. A file with no convention target falls back to a word-boundary
-     grep of its camelized name, and when that matches much of the suite it is
-     telling you the token is generic rather than which tests are relevant —
-     `config/initializers/studio.rb` mapped to 45 files and ran for 39m34s against
-     this ~1-minute budget before the cap existed. For a diff that wide the right
-     cert is `bin/full-suite-check`; raise the cap deliberately with
+     **CAPPED at 15 files** after the spine dedupe — and `bin/dor-check`'s family
+     is fifteen, which is the cap EXACTLY. Read those two numbers together —
+     this doc printed them six lines apart without drawing the conclusion (the cap
+     landed `96dcae17`, 2026-08-18; the family count `2b310c08`, 2026-09-06):
+     `bin/dor-check` **plus any one co-changed mapped file is 16**, so the
+     most-edited file in this repo crossed the cap on any multi-file diff.
+     Measured on a real desk 2026-09-06/07:
+
+     | diff | mapped | before the cap fallback | now |
+     |---|---|---|---|
+     | `bin/dor-check` alone | 15 | ran 15 | ran 15 |
+     | `bin/dor-check` + `bin/lib/ci_status.rb` | 16 | ran **0** | runs its **2 twins** |
+
+     **Past the cap the lane degrades to the CONVENTION TWINS, not to nothing.**
+     The twins are the pre-family set — each changed file's existing convention
+     target, 1-2 paths per file — so crossing the cap is a **slope, not a cliff**,
+     and widening a test family is monotone-good at every size: the floor never
+     drops below what the diff mapped to before the family hop existed. The
+     fallback **excludes the grep**, deliberately, because the grep is what the cap
+     exists to stop: `config/initializers/studio.rb` mapped to 45 files and ran
+     39m34s against this ~1-minute budget. A changed file with no twin therefore
+     contributes nothing, and **the fallback is capped by the same number** — 20
+     twins is still too many, and degrades again to the spine. Three rungs, one
+     number: full mapped set → convention twins → spine only. Every rung is
+     announced loudly (the cap, the widest-mapping file, and what runs instead)
+     and named on the evidence line. For a diff this wide the right cert is
+     `bin/full-suite-check`; raise the cap deliberately with
      `FAST_CHECK_MAPPED_CAP=<n>`.
+
+     **WHICH CAUSE ACTUALLY TRIPS THE CAP — measured, because the two want
+     different answers.** Sweeping all 474 mappable sources in the hub
+     2026-09-07: **23 sources alone exceed the cap, and all 23 are GREP-driven.
+     ZERO are family-driven.** The widest family mapping in the whole repo is
+     `bin/dor-check` at **15 — at the cap, never over it alone**; the next widest
+     family is **3**. The grep goes to **325** (`bin/task`, token `"task"`), 257
+     (`bin/release`), 208 (`config/environments/test.rb`, token `"Test"`), 198,
+     176, 153, 129.
+
+     So the family hop trips the cap only *in combination* with a co-changed file
+     — which is the cliff the fallback fixes — while every single-file cap trip is
+     a **grep precision failure**. And this is what makes the fallback a slope
+     rather than a shorter cliff: **all 23 grep-driven cap-trippers have ZERO
+     convention twins**, so the fallback takes *nothing* from them and they behave
+     exactly as they do today. The fallback is defined against the **convention
+     twins**, never as "the mapped set, truncated" — truncating 39 arbitrary grep
+     matches to 15 arbitrary grep matches would be a shorter cliff, not a slope.
+     **The grep's precision is a separate defect and is deliberately NOT addressed
+     here** (this change owns the degradation, not the selection).
+
+     **THE CAP COUNTS FILES, NOT SECONDS — and for a heavy family those diverge.**
+     Measured on this hardware 2026-09-07, the `bin/dor-check` diff at exactly the
+     cap: mapped lane **220.0s** (15 files, 383 runs), spine 37.4s, rubocop 2.1s,
+     **whole cert 262.2s**. That is **~4.4x the ~1-minute budget this lane
+     advertises**, while still legally under the cap. So the cap of 15 is a
+     reasonable bound on FILES and a poor proxy for TIME here, and the twin
+     fallback is cheaper than the lane it replaces (the same two twins measured
+     97.7s).
+
+     And the grep lane is worse again: `bin/pr-review`'s **39-file** mapping —
+     the shape that capped a real ship on 2026-09-07 — measured **422.4s** (1291
+     runs), **~7x the budget**, under some CPU contention so read it as an upper
+     bound. Three points, same hardware, same day:
+
+     | lane | files | runs | wall clock | vs ~60s budget |
+     |---|---|---|---|---|
+     | grep (`bin/pr-review`) | 39 | 1291 | 422.4s | ~7.0x |
+     | family (`bin/dor-check`) | 15 | 383 | 220.0s | ~3.7x |
+     | twin fallback | 2 | 290 | 97.7s | ~1.6x |
+
+     **A cap of 15 FILES admits a 220s lane and rejects a 422s one — but it would
+     equally admit 15 trivial files at 5s.** It bounds the wrong quantity. That is
+     an argument about the CAP, not about this fallback, and it is deliberately not
+     acted on here. Retune the cap with a measurement in hand, and update these
+     numbers when you do — a budget with no recorded normal case is a number nobody
+     can safely change.
    - `spine` — `bin/rails test <config/fast_cert_spine.yml entries>` (the
      always-run critical core, ~10-20s). **The list is anchored in the HUB** and
      filtered to paths that exist under the code root, so a SATELLITE checkout
@@ -211,14 +277,24 @@ impossible by construction rather than by every repo remembering to ignore `tmp/
 
    **A CERT THAT EXECUTES ZERO TEST FILES DOES NOT CERTIFY.** Before any lane
    runs, `bin/fast-check` counts the test paths this run will actually execute —
-   the mapped lane (EMPTY when the cap skipped it) plus the spine — and refuses
-   to report green when that set is empty. **It has two verdicts, and which one
-   you get depends on WHY nothing would run:**
+   the mapped lane (its **twin fallback** when the cap tripped, EMPTY only when
+   there are no twins either) plus the spine — and refuses to report green when
+   that set is empty. **It has two verdicts, and which one you get depends on WHY
+   nothing would run:**
 
    | the set is empty because… | verdict | exit | what happens |
    |---|---|---|---|
    | the diff maps to **NO test file** (no convention target, no grep hit) | **REFUSE** | `1` | nothing recorded, nothing pushed; remedy is `bin/full-suite-check <task>` |
-   | the mapped lane was **CAPPED** (more mapped tests than the cap) | **DEFER** | `2` | a `[cert-deferred@<fp>]` receipt is recorded; `bin/ship` pushes and opens the PR; **`bin/dor-check` then requires a GREEN CI** |
+   | the mapped lane was **CAPPED** *and* **no twin fallback was available** (no changed file has a twin, or the twins were themselves over the cap) | **DEFER** | `2` | a `[cert-deferred@<fp>]` receipt is recorded; `bin/ship` pushes and opens the PR; **`bin/dor-check` then requires a GREEN CI** |
+
+   **A capped run that DOES take its twin fallback certifies — it does not defer.**
+   That is the deliberate answer, and it holds because the guard is keyed on ZERO
+   EXECUTED TESTS and never on the cap: a twins run executed real tests, so there
+   is nothing to defer. It is a **narrower cert, honestly labelled** (`N twin(s)
+   (CAPPED: …)` on the evidence line) — the same treatment a capped run over a live
+   spine has always had. No run that executes zero tests starts reporting green,
+   and no run loses evidence: every run this changes previously executed either the
+   spine alone or nothing at all, and now executes strictly more.
 
    **Deferring is not skipping — the refusal MOVES, from ship step 2 to step 7.**
    A capped diff mapped to MORE relevant tests than the cap, not fewer, and CI
@@ -246,6 +322,13 @@ impossible by construction rather than by every repo remembering to ignore `tmp/
    |---|---|---|
    | **Hub** (`release-offers-retired-cert`) | `bin/release.rb` mapped 50 files, **51 paths over the cap** → mapped lane skipped → **the spine still ran** | certified green, accepted against a green CI. The cap cost coverage, not the PR. **Unchanged by this.** |
    | **Satellite** (`empty-solana-network-fails-open`, turf-monster) | 29 paths over the cap → mapped lane skipped → **spine resolves to nothing** | zero executed tests → REFUSED, and the builder paid the ~30 minutes. **This is what defers now.** |
+
+   **The twin fallback narrows that satellite row further, and this is the point of
+   it.** Since the capped lane now takes its twins, a satellite diff reaches the
+   deferral only when NONE of its changed files has a twin — so the deferral serves
+   the shape it was built for (a grep-driven mapping over an empty spine) and stops
+   catching diffs that had perfectly good twins sitting there unrun. Fewer
+   deferrals, on strictly more local evidence, with the fence unmoved.
 
    So the population the deferral serves is the **six non-hub repos**. The guard
    stays keyed on the ZERO and merely READS the cap: keyed on the cap it would have
