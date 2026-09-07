@@ -373,4 +373,62 @@ class BaseMovementAuditTest < Minitest::Test
       assert_empty audit(dir, changed: [])[:guards]
     end
   end
+
+  # THE REASON IS PART OF THE ANSWER, not decoration (/tasks/audit-vanishes-when-git-fails).
+  #
+  # The row above pins the STATE. Nothing pinned the REASON — and bin/dor-check now renders
+  # a DIFFERENT REMEDY per reason (fetch the ref / unshallow the clone / git itself is
+  # unreadable), because those are the reader's three different next actions. Collapse the
+  # four reasons into one generic :unobservable and the gate still says "could not run"
+  # while handing the reviewer a remedy that does not apply — a report you cannot act on,
+  # which is the exact grade of report this whole seam was built to replace.
+  #
+  # TWO OF THE FOUR ARE FIXTURABLE and they are the two a live desk hits. :no_log needs a
+  # git log that fails over a range whose endpoints both resolved, and :git_unreadable needs
+  # git itself to be unrunnable; neither is reachable without stubbing the process table,
+  # and a stub shaped from this module's own code would certify that code rather than test
+  # it. They are left to the caller's default arm, which names the raw reason either way.
+  def test_the_unobservable_reasons_are_distinguishable
+    Dir.mktmpdir do |raw|
+      dir = File.realpath(raw)
+      git!(dir, "init", "-q")
+
+      result = BaseMovementAudit.assess(
+        root: dir, branch: "feat/x", base: "accepted",
+        changed_files: ["bin/widget-tool"], ci_completed_at: CI_DONE
+      )
+      assert_equal :unobservable, result[:state]
+      assert_equal :no_ref, result[:reason],
+                   "a ref this checkout simply does not have is :no_ref, and its remedy is a fetch — " \
+                   "the ONE remedy that applies, since this gate never fetches for itself"
+    end
+
+    # BOTH REFS RESOLVE, and there is still no common ancestor: two roots that never met.
+    # A different failure from a missing ref, and a different remedy — so it must not
+    # arrive under the same name.
+    Dir.mktmpdir do |raw|
+      dir = File.realpath(raw)
+      git!(dir, "init", "-q")
+      git!(dir, "config", "user.email", "t@t.co")
+      git!(dir, "config", "user.name", "T")
+      write(dir, "bin/widget-tool", "# tool\n")
+      git!(dir, "add", "-A")
+      git!(dir, "commit", "-qm", "init")
+      git!(dir, "branch", "-M", "accepted")
+      git!(dir, "update-ref", "refs/remotes/origin/accepted", "accepted")
+
+      git!(dir, "checkout", "-q", "--orphan", "feat/x")
+      write(dir, "bin/widget-tool", "# a history that never met accepted\n")
+      git!(dir, "add", "-A")
+      git!(dir, "commit", "-qm", "orphan root")
+      git!(dir, "update-ref", "refs/remotes/origin/feat/x", "feat/x")
+
+      result = audit(dir)
+      assert_equal :unobservable, result[:state],
+                   "refs that resolve are not an answer — the QUESTION is about their common ancestor"
+      assert_equal :no_merge_base, result[:reason],
+                   "resolvable-but-unrelated is NOT the missing-ref failure, and telling the reviewer " \
+                   "to fetch would send them after a ref they already have"
+    end
+  end
 end
