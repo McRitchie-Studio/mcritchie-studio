@@ -1,0 +1,139 @@
+# Modal Lifecycle — build in the app, graduate to the gem
+
+A modal starts life in the app that needs it and, if a second app needs the same
+shape, moves into a gem. This module is the standing rule for both halves: what a
+new modal MUST compose on day one, and the trigger + procedure for promoting a
+piece of it.
+
+**The problem it solves.** Every primitive the design system owns today was
+extracted only AFTER it had been copied several times. `blocks/_rail_row`'s own
+header records "this markup appears TEN times across three files"; `blocks/_close_x`
+records EIGHT. Nobody chose that; each copy was individually reasonable and the
+tenth looked like the first. The house wallet row is in that pre-graduation state
+right now — hand-rolled in turf-monster's `modals/_wallet_setup`, again in
+solana-studio's `solana_studio/modals/_wallet_connect`, and a third time in any new
+card that needs it.
+
+## The two gems, and why the split is not a preference
+
+| | Owns | Bundled by |
+|---|---|---|
+| **studio-engine** | BASE chrome — the modal host, the blocks, the templates, the living style guide. **Ships no wallet UI.** | every app |
+| **solana-studio** | The WEB3 add — wallet connect, step-up, network mismatch, the deep-link partial | only the web3 apps |
+
+**Three of the six apps mounting studio-engine bundle no solana-studio.** A
+wallet-shaped primitive placed in the engine is a missing-template 500 for those
+three the moment anything renders it. The style guide already resolves this at
+RUNTIME rather than build time — it asks
+`lookup_context.exists?("wallet_connect", ["solana_studio/modals"], true)` and
+lists gem-backed specimens as unopenable where the gem is absent.
+
+So the target gem is decidable, not a judgment call:
+
+- Does it name, detect, sign with, or depict a **wallet or chain**? → **solana-studio**
+- Otherwise → **studio-engine**
+
+## Building a new modal — day one
+
+A new modal lives in the consumer at `app/views/modals/_<name>.html.erb`, and it
+**composes the primitives that already exist** rather than re-drawing them.
+
+**Blocks** (`studio/modals/blocks/`): `age_gate` · `birthday` · `card_header` ·
+`change_username` · `close_x` · `cta_redirect` · `digit_reel` · `entry_confirmed` ·
+`error_card` · `free_entry_earned` · `leveling_activity` · `onchain_success` ·
+`processing_card` · `progress_countdown` · `progress_pill` · `rail_row` ·
+`seeds_bar` · `shell` · `solana_tx_link` · `success_card` · `wallet_brand_sprite`
+
+**Templates** (`studio/modals/templates/`) — copy-from archetypes: `action` ·
+`form` · `status` · `success` · `wizard`
+
+Four rules that are not style preferences — each has cost real breakage:
+
+1. **Single root element.** The host wraps every modal in `<template x-if>`, which
+   keeps exactly one child. A sibling of the root is dropped silently — including a
+   sprite whose `<use>` then paints nothing, with no error anywhere.
+2. **Never re-draw a block.** If `close_x` exists, render it. `_wallet_setup`
+   hand-rolled its close mark for eight months while the engine homed the identical
+   mark for eight other modals; the shapes drifted because nothing made them share.
+3. **Specimens show STRUCTURE, never VALUES.** When adopting a primitive, take
+   every value — icon, label, data hook — from the markup you are REPLACING. An
+   adopter once carried a specimen's `U+1F39F` across where the app had always
+   drawn `U+1F3AB`, landing the wrong glyph on the primary rail of a payment card.
+   CI was 6/6 green and no assertion anywhere pinned it.
+4. **Register a specimen the same day.** A consumer modal with no entry in
+   `/admin/style#modals` is invisible to the design system: nobody browsing the
+   guide learns it exists, and the next person builds it again. See below.
+
+### Testing a modal, honestly
+
+Component tests that assert inlined JS **source text** prove the string shipped,
+not that the branch works — they cannot kill a mutant that negates a condition.
+Measured 2026-09-06 across two PRs: 25 mutants, **10 survived**, including
+negating a guard, `||`→`&&`, and `throw`→`console.warn`.
+
+- **Markup and wiring** — a component test is the right tier.
+- **Behaviour in inlined JS** — only an e2e spec sees it. If you cannot afford
+  one, say the coverage is structural and do NOT report it as mutation-checked.
+- When you do mutate, **negate and reorder**, never only delete.
+
+## The graduation trigger
+
+Promote when **either** is true, and not before:
+
+- **A second app needs the same shape.** One consumer is a modal; two is a
+  primitive.
+- **The same markup exists three times in one app.** Three is where copies stop
+  being noticed. Waiting for ten is how ten happened.
+
+Do NOT promote a modal because it feels reusable. An app-specific FLOW stays in
+the app even when its chrome is shared — the style guide states the split for the
+wallet card exactly: the engine owns the shell, progress pill and brand sprite,
+while extension detection, the walkthrough video, the guide route and the
+managed-wallet fallback stay in the host.
+
+**Promote the PIECE, not the card.** What graduates is usually a block the card
+composes, not the whole modal.
+
+## Graduating — the procedure
+
+The fast lane cannot drive gems (`bin/task begin` refuses on all of them), so the
+gem half is hand-branched.
+
+```bash
+# 1. GEM — branch by hand off the shared base
+cd /Users/alex/projects/<studio-engine|solana-studio>
+git fetch origin && git checkout -b feat/<slug> origin/accepted
+#    move the partial to studio/modals/blocks/_<name>.html.erb (or
+#    solana_studio/modals/), giving it LOCALS for everything the consumers differ on
+#    add a specimen: app/views/style/modals/_ds_<name>.html.erb, registered in
+#    style/_modals.html.erb so it is live-openable in the guide
+#    release, then note the new version
+
+# 2. CONSUMER — one task, the normal cycle
+cd /Users/alex/projects/mcritchie-studio
+bin/task begin --title "Adopt <Name> Primitive" --repo <app> --agent <soul> \
+  --kind chore --shape ui-only
+#    bump the Gemfile pin AND record WHY in the pin comment — the floor is what
+#    broke below it, not the number
+#    replace the local markup with a render call, DELETE the local copy
+#    values come from the markup being replaced, never from the specimen
+```
+
+**Two things that bite here:**
+
+- **The pin string is not the floor.** A two-segment `~>` admits anything below
+  1.0, so `~> 0.62` silently resolved 0.65 while everyone read "we're on 0.62".
+  That misreading has bitten twice. turf-monster's
+  `test/lib/engine_pin_contract_test.rb` asserts the DERIVED floor so a
+  `bundle update` walking backwards fails there instead of at runtime — an app
+  adopting a primitive should extend it, not just move the pin.
+- **A consumer assertion can red-seal the producer.** A consumer test that pins a
+  path inside the gem blocks the gem's own publish. Assert behaviour, not
+  the gem's internal layout.
+
+## Where this sits
+
+`building-sop.md` covers the feature-agent build flow; this module is the modal
+specialisation of it. The design system itself is the living style guide at
+`/admin/style#modals`, which is the catalogue — read it before building a modal,
+and add to it after.
