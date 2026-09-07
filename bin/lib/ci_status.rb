@@ -90,7 +90,7 @@ module CiStatus
   # headRefOid rides along for ReviewTreeGuard's seam-1 check (is the tree this review
   # grades the tree that will merge?). It is a FIELD ON A CALL THIS GATE ALREADY MAKES,
   # not a second round-trip — the read is `gh pr view --json <these>` either way.
-  VIEW_FIELDS = "state,mergeStateStatus,mergeable,baseRefName,headRefOid"
+  VIEW_FIELDS = "state,mergeStateStatus,mergeable,baseRefName,headRefOid,statusCheckRollup"
 
   # --- THE THIRD STATE: a PR that will NEVER get CI ---------------------------
   #
@@ -381,13 +381,58 @@ module CiStatus
   # because base is GitHub's baseRefName pasted into a shell, an UNSAFE base (not a
   # plain git ref) takes that same omit path, and a validated base is still
   # Shellwords.escape'd (round 5 — see ci_less_remedy's note).
+  # PURE. `gh pr view --json statusCheckRollup` → a census of the head SHA's own
+  # check-runs. Node shapes differ: a CheckRun carries status/conclusion, a
+  # StatusContext carries state. Read BOTH rather than only the shape this repo
+  # happens to emit today — a reader shaped from our own output would certify our
+  # own assumptions.
+  def self.rollup_census(nodes)
+    return nil unless nodes.is_a?(Array)
+
+    nodes.each_with_object({ total: nodes.size, passing: 0, failing: 0, pending: 0 }) do |node, census|
+      next unless node.is_a?(Hash)
+
+      status  = node["status"].to_s.upcase
+      outcome = (node["conclusion"] || node["state"]).to_s.upcase
+      if %w[QUEUED IN_PROGRESS PENDING WAITING REQUESTED].include?(status) || outcome == "PENDING" || outcome.empty?
+        census[:pending] += 1
+      elsif %w[SUCCESS NEUTRAL SKIPPED].include?(outcome)
+        census[:passing] += 1
+      else
+        census[:failing] += 1
+      end
+    end
+  end
+
+  # WHAT THE HEAD SHA'S CHECKS ACTUALLY SAY. "Conflicted" and "has no check-runs"
+  # are INDEPENDENT facts, and this string used to derive the second from the
+  # first. A PR whose base moves AFTER its CI ran reads DIRTY while carrying a
+  # full set of GREEN check-runs — measured 2026-09-07 on turf-monster#590, DIRTY
+  # at head cbd62fb0 with all 7 checks passing while this message said it had
+  # none. The remedy was right and the diagnosis beside it sent readers hunting a
+  # CI that had already passed. "Conflicted, CI green" and "conflicted, CI never
+  # ran" are different situations for the reader, so say which one this is.
+  def self.checks_note(census)
+    # No rollup in the payload is NOT evidence of no check-runs — say only what
+    # is known. Asserting absence from a missing field is the original defect.
+    return "Any check-runs already on the head ran against the OLD base." if census.nil?
+    return "The head SHA carries NO check-runs — CI has not run on it at all." if census[:total].zero?
+
+    parts = []
+    parts << "#{census[:passing]} passing" if census[:passing].positive?
+    parts << "#{census[:failing]} failing" if census[:failing].positive?
+    parts << "#{census[:pending]} still running" if census[:pending].positive?
+    "The head SHA already carries #{census[:total]} check-run(s) (#{parts.join(', ')}), which ran against the " \
+      "OLD base and so say nothing about this merge."
+  end
+
   def self.conflicted_remedy(verdict = nil)
     v = verdict.is_a?(Hash) ? verdict : {}
     base = v[:base].to_s.strip
     diagnosis =
       "This PR is merge-CONFLICTED against its base (mergeStateStatus DIRTY): GitHub cannot compute a merge " \
-      "commit for it, so it never queues the pull_request workflow and the head SHA has ZERO check-runs. This " \
-      "is NOT pending CI — waiting can never clear it."
+      "commit for it, so it will not queue a NEW pull_request run for this head. #{checks_note(v[:checks])} " \
+      "This is NOT pending CI — waiting can never clear the conflict."
     unless safe_git_ref?(base)
       return "#{diagnosis} The base branch could not be resolved to a safe git ref from the PR, so no commands " \
              "are given here: read the PR's base on GitHub, then bring it into the branch and resolve the conflicts."
@@ -893,7 +938,8 @@ module CiStatus
     # feature PRs target `accepted`, not a hardcoded `release`
     # (conflict-remedy-names-wrong-branch). Same field ci_less_verdict surfaces.
     if data["mergeStateStatus"].to_s.upcase == "DIRTY"
-      return { state: :conflicted, merge_state: "DIRTY", base: data["baseRefName"].to_s }
+      return { state: :conflicted, merge_state: "DIRTY", base: data["baseRefName"].to_s,
+               checks: rollup_census(data["statusCheckRollup"]) }
     end
 
     nil
