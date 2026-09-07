@@ -159,6 +159,15 @@ module BaseMovementAudit
   # The tests that grade one source file, by NAME convention only. Mirrors the first
   # branch of FastCert.mapping (convention twins that EXIST, plus the harness family)
   # and stops there — no orphan hop, no grep fallback.
+  #
+  # ONE BOUNDARY IS DELIBERATELY LEFT QUIET, and it is worth naming because a mutation
+  # of the existence filter survives the suite. A source with NO twin on disk returns []
+  # here, so a base commit that CREATES that twin after the run is not reported. Dropping
+  # the filter would report it — arguably correctly, since a new test for this PR's code
+  # is a guard CI never ran. It is left out because "the twin did not exist" is also how
+  # a source with no tests at all reads, and this module refuses to distinguish those two
+  # on a filename alone. The silence costs nothing beyond the status quo; guessing would
+  # cost a refusal nobody can check.
   def guards_for(root, path)
     targets = FastCert.convention_candidates(path).select { |t| File.file?(File.join(root.to_s, t)) }
     return [] if targets.empty?

@@ -134,7 +134,9 @@ class DorCheckBaseMovementTest < Minitest::Test
 
   # A backend task whose spec, tiers and cert are ALL satisfied, so the only thing that
   # can move the verdict is the base-movement guard under test.
-  def task_json
+  def task_json(multi_repo: false)
+    extra = multi_repo ? { "pr_urls" => { "mcritchie-studio" => "https://github.com/x/y/pull/1",
+                                          "studio-engine" => "https://github.com/x/z/pull/2" } } : {}
     {
       "slug" => "base-movement",
       "title" => "Base movement",
@@ -146,14 +148,14 @@ class DorCheckBaseMovementTest < Minitest::Test
         "test_plan" => ["[unit] guard", "[integration] gate"],
         "post_deploy_cmd" => "none",
         "checks_run" => ["[unit] a", "[integration] b"]
-      } }
+      }.merge(extra) }
     }
   end
 
-  def check(root, desk_head, ci_completed_at: CI_DONE, review: true)
+  def check(root, desk_head, ci_completed_at: CI_DONE, review: true, multi_repo: false)
     Dir.mktmpdir do |d|
       path = File.join(d, "task.json")
-      File.write(path, JSON.generate(task_json))
+      File.write(path, JSON.generate(task_json(multi_repo: multi_repo)))
       env = {
         "DOR_CHECK_DIFF_ROOT" => root,
         "DOR_CHECK_DIFF_BASE" => "accepted",
@@ -163,8 +165,10 @@ class DorCheckBaseMovementTest < Minitest::Test
         "DOR_CHECK_CI_STATUS" => "green",
         "DOR_CHECK_CI_COMPLETED_AT" => ci_completed_at,
         "DOR_CHECK_PR_HEAD" => desk_head,
-        "DOR_BASE_BRANCH" => "accepted"
-      }
+        "DOR_BASE_BRANCH" => "accepted",
+        "DOR_CHECK_CI_STATUS_BY_REPO" =>
+          (multi_repo ? JSON.generate({ "mcritchie-studio" => "green", "studio-engine" => "green" }) : nil)
+      }.compact
       role = review ? "--gate-role review" : ""
       out = nil
       with_env(env) do
@@ -247,6 +251,27 @@ class DorCheckBaseMovementTest < Minitest::Test
                    "a base commit that landed BEFORE the run completed was refused — the run covered " \
                    "it, and refusing here means the clock was never consulted\n#{verdict.inspect}"
       refute_match(/could not have covered/i, errors_of(verdict))
+    end
+  end
+
+  # A FOREIGN CLOCK IS NOT EVIDENCE. On a multi-repo task the governing CI verdict is the
+  # WORST PR's, which may belong to a different repo than the tree measured here. Its
+  # completion time says nothing about this repo's base, so the comparison is not made —
+  # and an unmade comparison must not refuse.
+  #
+  # THE SHAPE IS OTHERWISE THE REFUSING ONE: same late guard change, same overlap. Only
+  # the number of PRs differs. So this pins that the guard is the PR COUNT and not some
+  # incidental difference in the fixture.
+  def test_integration_a_multi_repo_task_does_not_refuse_on_a_foreign_clock
+    with_desk(base_change: "test/lib/widget_tool_exempt_test.rb", at: AFTER_RUN) do |dir, head|
+      verdict, code = check(dir, head, multi_repo: true)
+
+      assert_equal 0, code,
+                   "the clock belongs to whichever repo's PR governed the CI read — refusing on it " \
+                   "would block correct work over a coincidence\n#{verdict.inspect}"
+      assert_match(/MORE THAN ONE PR/, all_of(verdict),
+                   "the unmade comparison must name WHY it went unmade, not merely go quiet")
+      assert_match(/not a freshness certificate/i, all_of(verdict))
     end
   end
 

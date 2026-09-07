@@ -1627,7 +1627,7 @@ end
 # The clock clause has THREE outcomes and they are not interchangeable. "Covered",
 # "not covered", and "could not ask" are three different sentences, and printing the
 # third as either of the others is this task's own defect one level down.
-def base_movement_detail(movement)
+def base_movement_detail(movement, ambiguous_clock: false)
   return "" unless movement.is_a?(Hash) && movement[:state] == :moved
 
   named = movement[:commits].map { |c| "#{c[:sha][0, 12]} #{c[:at]} #{c[:subject]}" }
@@ -1635,9 +1635,16 @@ def base_movement_detail(movement)
 
   case movement[:clock]
   when :unreadable
-    detail << " COULD NOT compare that against this PR's CI clock — the checks read carry no completedAt, " \
-      "so \"did the run finish BEFORE this landed?\" went UNASKED. That is not a freshness certificate; " \
-      "absence of a finding here means the question was not answerable, not that the answer was yes."
+    detail << if ambiguous_clock
+                " COULD NOT compare that against this PR's CI clock — this task carries MORE THAN ONE PR, " \
+                  "so the governing CI verdict may belong to a different repo than the tree measured here, " \
+                  "and a foreign run's clock is not evidence about this base."
+              else
+                " COULD NOT compare that against this PR's CI clock — the checks read carry no completedAt, " \
+                  "so \"did the run finish BEFORE this landed?\" went UNASKED."
+              end
+    detail << " That is not a freshness certificate; absence of a finding here means the question was not " \
+      "answerable, not that the answer was yes."
   else
     if movement[:late].empty?
       detail << " All of it predates this PR's CI completion (#{movement[:cutoff].iso8601}), so the run did " \
@@ -3123,7 +3130,24 @@ if gate != "build"
   # needs the question asked is the one who does not know to ask it — an opt-in switch
   # makes correctness a thing you have to remember, which is the same reasoning that kept
   # the multi-PR CI read (dor-check-reads-one-pr) off a --repo flag.
-  ci_completed_at = ENV["DOR_CHECK_CI_COMPLETED_AT"] || (ci && ci[:completed_at])
+  # WHOSE CLOCK IS THIS? On a multi-repo task `ci` is the GOVERNING (worst) PR's verdict,
+  # which may belong to a DIFFERENT repo than diff_root — and comparing another repo's
+  # run clock against this repo's base movement is not a comparison, it is a coincidence.
+  # An earlier foreign clock would call this repo's covered commits uncovered and refuse
+  # correct work; a later one would hide a real gap.
+  #
+  # There is no repo→root map on this path (deriving one across worktrees and gems is a
+  # different task), so the honest move is to ask only when the answer is unambiguous:
+  # ONE PR read means the clock is this PR's. More than one and the clock goes UNREAD —
+  # the movement is still named, the unmade check is still declared, and nothing refuses.
+  # That is the status quo plus better naming, which is the correct direction for a
+  # question this gate cannot currently pose.
+  #
+  # This deliberately does NOT touch the secondary-repo cert bar: that bar is about which
+  # CERT a repo owes, this is about which CLOCK a comparison may use, and nothing here
+  # relaxes the former.
+  ci_clock_ambiguous = task_ci_reads.size > 1
+  ci_completed_at = ci_clock_ambiguous ? nil : (ENV["DOR_CHECK_CI_COMPLETED_AT"] || (ci && ci[:completed_at]))
   movement = BaseMovementAudit.assess(
     root: diff_root, branch: zap_branch, base: base_branch,
     changed_files: changed_files, ci_completed_at: ci_completed_at
@@ -3138,7 +3162,7 @@ if gate != "build"
       "lives in config/e2e_lane.yml and can be changed by the very merge that moved the base. Re-derive it " \
       "before trusting the spec counts, or update the branch (git rebase origin/#{base_branch}) and let CI " \
       "re-run. Re-derived from LOCAL refs, which this gate never fetches, so this is a floor on the movement, " \
-      "not a measure of it.#{base_movement_detail(movement)}"
+      "not a measure of it.#{base_movement_detail(movement, ambiguous_clock: ci_clock_ambiguous)}"
   end
 
   # THE REFUSAL. Green CI, and the base gained — after the run finished — a change to a
