@@ -303,7 +303,18 @@ class BounceHolderRuleDocsTest < ActiveSupport::TestCase
       "widen the window' — which is why the boundary is tokenised rather than counted"
   end
 
-  test "[unit] the extractor reads the two multi-line shapes this corpus actually uses" do
+    test "[unit] an unclosed quote ends the run rather than swallowing the prose after it" do
+    text = 'bin/task block <task> --kind rework --feedback "unclosed, and then prose saying --agent carl'
+    runs = rework_runs(text)
+
+    assert_equal 1, runs.size
+    refute_includes runs.first.command, "--agent",
+      "an unterminated quote let the run consume text whose end it could not see, and it " \
+      "reached an `--agent` in the prose beyond. Under-read here on purpose: a run that " \
+      "swallows an unclosed string is how a sentence acquits a bare command"
+  end
+
+test "[unit] the extractor reads the two multi-line shapes this corpus actually uses" do
     wrapped = <<~MD
       self-heals by retargeting to `accepted`) — or `bin/task block <task> --kind
       rework --feedback "…" --agent carl` (back to you). Review still never touches
