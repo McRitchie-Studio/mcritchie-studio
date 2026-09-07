@@ -1355,6 +1355,17 @@ class CiStatusTest < Minitest::Test
     assert_nil CiStatus.rollup_census("not an array")
   end
 
+  # The census can only be built from a field the view call actually REQUESTS.
+  # Every test above injects the payload by hand, so none of them notices if the
+  # field stops being fetched — the census would be nil in production for every
+  # PR while the suite stayed green, and the diagnosis would quietly go back to
+  # guessing. Pin the request itself. (Measured: dropping the field from
+  # VIEW_FIELDS killed no test until this one existed.)
+  def test_view_fields_requests_the_rollup_the_conflicted_diagnosis_needs
+    assert_includes CiStatus::VIEW_FIELDS.split(","), "statusCheckRollup",
+                    "conflicted_remedy reports the head SHA's real check state from this field"
+  end
+
   private
 
   # Stubs both seams and runs the block with (gh-call-log, mint-call-log). Restores
