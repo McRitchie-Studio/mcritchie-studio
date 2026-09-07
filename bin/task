@@ -194,10 +194,15 @@
 #       A --kind rework block with NO --feedback still posts one (with a placeholder
 #       body + a warning): the columns are wiped on resubmit, so a prose-less bounce
 #       would otherwise vanish from every durable store and never be counted. )
-#     ( --kind rework RUNS `bounces` FIRST and REFUSES (exit 10) when the breaker is
-#       tripped, naming the escalation. --breaker-ack "reason" proceeds anyway for a
-#       MECHANICAL bounce (red CI, merge conflict — nothing to arbitrate); the reason
-#       is recorded on the activity, so an override is evidence, not a bypass. )
+#     ( --kind rework is gated TWICE, authorisation before budget. FIRST the
+#       VERDICT-OWNER gate: during a LIVE review claim, only the reviewer the claim
+#       names may spend the task's bounce — anyone else is REFUSED (exit 11) with
+#       nothing written (lib/review_verdict_gate.rb). A LIGHT reviewer files a scout
+#       report to its primary instead; it does not hold the verdict. THEN the
+#       breaker: `bounces` runs and REFUSES (exit 10) when it is tripped, naming the
+#       escalation. --breaker-ack "reason" proceeds anyway for a MECHANICAL bounce
+#       (red CI, merge conflict — nothing to arbitrate); the reason is recorded on
+#       the activity, so an override is evidence, not a bypass. )
 #   bin/task note <slug> --handoff "..." | --qa-feedback "..." | --clarification "..." | --comment "..." [--agent A] [--resolves-feedback]
 #     ( posts a task activity via POST /api/v1/activities; flags map to
 #       activity_type handoff/qa_feedback/clarification/comment. Repeatable +
@@ -252,6 +257,12 @@
 #      circuit breaker refused `bounces` / `block --kind rework` (escalate, do not
 #      retry). Distinct from 1 so "the breaker says escalate" is never confused
 #      with "the read failed".
+#  11  NOT THE VERDICT OWNER — `block --kind rework` was refused because a LIVE
+#      review claim names a DIFFERENT reviewer (or names none, or could not be
+#      read). Nothing was written. Distinct from 10 on purpose: 10 means "the
+#      budget is spent, escalate" and routes to `--kind dependency`, which is the
+#      OWNER's move — a light that read 10 here would file an escalation on a
+#      review it does not hold.
 #   1  everything else — transport/API failures, usage errors, rejected flags.
 
 require "net/http"
@@ -266,6 +277,7 @@ require_relative "../lib/task_usage_audit"
 require_relative "../lib/claim_lease"
 require_relative "../lib/claim_holder"
 require_relative "../lib/desk_activity"
+require_relative "../lib/review_verdict_gate"
 require_relative "../lib/archive_holder_guard"
 require_relative "../lib/open_pr_guard"
 require_relative "../lib/cert_evidence"
@@ -1167,6 +1179,13 @@ EXIT_TASK_NOT_FOUND = 4
 # breaker says escalate" from "the read failed".
 EXIT_BREAKER_TRIPPED = 10
 
+# The caller is not the reviewer who OWNS this task's verdict, so its rework block
+# was refused before any write (lib/review_verdict_gate.rb). DISTINCT from 10 on
+# purpose: 10 means "the budget is spent, escalate", and this means "the budget is
+# not yours to spend" — a light that saw 10 would follow the breaker's escalation
+# recipe, which is the owner's move, not its own.
+EXIT_NOT_VERDICT_OWNER = 11
+
 # Page size `list --json` asks for. 100 is the index's own ceiling
 # (Api::Paginatable clamps per_page), so this is "as few round trips as the API
 # will allow" — the loop above walks any remainder.
@@ -1824,6 +1843,30 @@ def default_block_actor(task, kind)
   return "avi" if kind.to_s == "rework" && task.is_a?(Hash) && task["stage"].to_s == "submitted"
 
   nil
+end
+
+# ONLY THE VERDICT OWNER MAY SPEND THE BOUNCE. Refuses — exit 11 — a rework block
+# by a soul that is not the live review claim's holder, and writes NOTHING when it
+# does. It refuses; it does not warn and carry on.
+#
+# The rules, the tri-state, and the whole argument for keying this on the SOUL rather
+# than on the lease live in lib/review_verdict_gate.rb — including the measurement that
+# makes the lease unusable here (a light subagent shares its primary's session id AND
+# nonce, so a lease check grades it :same_instance and waves the incident through).
+# This function is only the I/O around that decision.
+#
+# It reads the claim FRESH: the question is who owns the verdict RIGHT NOW, and a
+# stale record answers a different one.
+def enforce_review_verdict_gate!(slug, kind:, actor:)
+  return unless ReviewVerdictGate::GATED_KINDS.include?(kind.to_s.strip)
+
+  holder = review_holder(slug)
+  verdict = ReviewVerdictGate.verdict(kind: kind, holder: holder, actor: actor)
+  return if ReviewVerdictGate.allowed?(verdict)
+
+  ReviewVerdictGate.refusal(verdict, slug: slug, actor: actor, holder: holder)
+                   .each_with_index { |line, i| warn!(i.zero? ? "block: #{line}" : line) }
+  exit EXIT_NOT_VERDICT_OWNER
 end
 
 # ---------------------------------------------------------------------------
@@ -2963,6 +3006,16 @@ when "block"
   # This read doubles as the existence check the breaker would otherwise repeat —
   # an unknown slug die!s here with EXIT_TASK_NOT_FOUND before anything else runs.
   current = api(:get, "/api/v1/tasks/#{slug}")["data"]
+  # WHO THIS BLOCK WOULD BE ATTRIBUTED TO, resolved BEFORE either gate rather than
+  # just before the write. The verdict-owner gate below compares this soul against
+  # the review claim's, so computing it late would leave the gate judging a caller
+  # it had not yet identified.
+  blocker = resolved_block_actor(agent, current, kind: kind)
+  # THE VERDICT-OWNER GATE FIRES FIRST — before the breaker, because this is an
+  # AUTHORISATION question and the breaker is a BUDGET question. Asking the budget
+  # first would print escalation guidance to an agent with no standing to act on it,
+  # and — the actual defect — would let a non-owner reach the write at all.
+  enforce_review_verdict_gate!(slug, kind: kind, actor: blocker)
   # THE BREAKER FIRES HERE, before the block lands — a warning printed after the
   # bounce is recorded is a receipt, not a safety mechanism. Only `rework` is
   # gated: `dependency` IS the escalation this refusal routes you to, and
@@ -3001,7 +3054,6 @@ when "block"
     end
   end
   event = { "source" => "cli" }
-  blocker = resolved_block_actor(agent, current, kind: kind)
   event["actor"] = blocker unless blocker.empty?
   autofill_move_usage(event, slug) unless %w[model tokens_in tokens_out cost].any? { |k| event.key?(k) }
   # Block is a `building` ATTRIBUTE now (not a stage) — PATCH the dedicated block

@@ -80,11 +80,24 @@ class CiStatusTest < Minitest::Test
   # (PR #509, 2026-07-12). view_verdict reads state + mergeStateStatus in one gh
   # call and surfaces :conflicted as its own state.
 
-  def view(state, merge_state, mergeable: nil, base: nil)
+  def view(state, merge_state, mergeable: nil, base: nil, checks: nil)
     payload = { "state" => state, "mergeStateStatus" => merge_state }
     payload["mergeable"] = mergeable if mergeable
     payload["baseRefName"] = base if base
+    payload["statusCheckRollup"] = checks if checks
     JSON.generate(payload)
+  end
+
+  # A CheckRun node — what GitHub Actions emits. conclusion is only meaningful
+  # once status is COMPLETED.
+  def check_run(conclusion, status: "COMPLETED")
+    { "__typename" => "CheckRun", "name" => "ci", "status" => status, "conclusion" => conclusion }
+  end
+
+  # A StatusContext node — the OTHER shape the same rollup returns (commit
+  # statuses from outside Actions). It carries `state`, never `conclusion`.
+  def status_context(state)
+    { "__typename" => "StatusContext", "context" => "legacy", "state" => state }
   end
 
   def test_view_verdict_conflicted_when_the_open_pr_is_dirty
@@ -1266,6 +1279,93 @@ class CiStatusTest < Minitest::Test
     end
   end
 
+  # --- conflicted-remedy-misreads-ci -------------------------------------------
+  #
+  # DIRTY and "the head has no check-runs" are INDEPENDENT facts. This message
+  # used to derive the second from the first, and it was measured false on
+  # 2026-09-07: turf-monster#590 read DIRTY at head cbd62fb0 while carrying all
+  # 7 checks GREEN. The remedy was right; the diagnosis beside it sent readers
+  # hunting a CI that had already passed.
+
+  def conflicted_with(checks)
+    CiStatus.conflicted_remedy(
+      CiStatus.view_verdict(view("OPEN", "DIRTY", base: "accepted", checks: checks))
+    )
+  end
+
+  def test_conflicted_remedy_does_not_claim_zero_checks_when_the_head_has_green_ones
+    remedy = conflicted_with(Array.new(7) { check_run("SUCCESS") })
+
+    refute_match(/ZERO check-runs/i, remedy,
+                 "the head carries 7 green checks — asserting it has none is the defect this fixes")
+    refute_match(/never queues the pull_request workflow/i, remedy,
+                 "a run already fired on this head; only a NEW one is blocked")
+    assert_match(/7 check-run/, remedy, "the message must state what the head SHA actually carries")
+    assert_match(/7 passing/, remedy, "and that they passed — 'conflicted, CI green' is its own situation")
+  end
+
+  def test_conflicted_remedy_still_says_so_when_the_head_really_has_no_checks
+    remedy = conflicted_with([])
+
+    assert_match(/NO check-runs/i, remedy,
+                 "the genuinely CI-less conflict must still be named — this fix must not blur the two")
+    refute_match(/passing|failing|still running/, remedy, "there is nothing to enumerate")
+  end
+
+  def test_conflicted_remedy_asserts_nothing_about_checks_it_could_not_read
+    remedy = CiStatus.conflicted_remedy(CiStatus.view_verdict(view("OPEN", "DIRTY", base: "accepted")))
+
+    refute_match(/ZERO check-runs|NO check-runs/i, remedy,
+                 "a MISSING rollup is not evidence of absence — inferring absence from a missing field " \
+                 "is the original defect wearing a different hat")
+    assert_match(/OLD base/, remedy, "it can still say the true thing: whatever is there predates the move")
+  end
+
+  def test_conflicted_remedy_reports_failing_and_running_checks_distinctly
+    remedy = conflicted_with([check_run("SUCCESS"), check_run("FAILURE"),
+                              check_run(nil, status: "IN_PROGRESS")])
+
+    assert_match(/3 check-run/, remedy)
+    assert_match(/1 passing/, remedy)
+    assert_match(/1 failing/, remedy)
+    assert_match(/1 still running/, remedy)
+  end
+
+  # The rollup returns TWO node shapes. A census that reads only the CheckRun
+  # shape would score every commit status as pending and mis-report a green head.
+  def test_rollup_census_reads_status_contexts_as_well_as_check_runs
+    census = CiStatus.rollup_census([status_context("SUCCESS"), status_context("FAILURE"),
+                                     check_run("SUCCESS")])
+
+    assert_equal 3, census[:total]
+    assert_equal 2, census[:passing], "a StatusContext SUCCESS is a pass, not an unknown"
+    assert_equal 1, census[:failing]
+    assert_equal 0, census[:pending]
+  end
+
+  def test_rollup_census_counts_skipped_and_neutral_as_passing_not_failing
+    census = CiStatus.rollup_census([check_run("SKIPPED"), check_run("NEUTRAL")])
+
+    assert_equal 2, census[:passing], "a skipped or neutral check is not a failure and must not read as one"
+    assert_equal 0, census[:failing]
+  end
+
+  def test_rollup_census_is_nil_when_there_is_no_rollup_to_read
+    assert_nil CiStatus.rollup_census(nil), "absent is not empty — the caller must be able to tell them apart"
+    assert_nil CiStatus.rollup_census("not an array")
+  end
+
+  # The census can only be built from a field the view call actually REQUESTS.
+  # Every test above injects the payload by hand, so none of them notices if the
+  # field stops being fetched — the census would be nil in production for every
+  # PR while the suite stayed green, and the diagnosis would quietly go back to
+  # guessing. Pin the request itself. (Measured: dropping the field from
+  # VIEW_FIELDS killed no test until this one existed.)
+  def test_view_fields_requests_the_rollup_the_conflicted_diagnosis_needs
+    assert_includes CiStatus::VIEW_FIELDS.split(","), "statusCheckRollup",
+                    "conflicted_remedy reports the head SHA's real check state from this field"
+  end
+
   private
 
   # Stubs both seams and runs the block with (gh-call-log, mint-call-log). Restores
@@ -1352,4 +1452,5 @@ class CiStatusTest < Minitest::Test
   ensure
     previous.each { |k, v| v.nil? ? ENV.delete(k) : ENV[k] = v }
   end
+
 end
