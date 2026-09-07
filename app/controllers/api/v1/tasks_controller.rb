@@ -304,6 +304,26 @@ module Api
           # boundary. The lane's mutual exclusion lives in MigrationLaneClaim, and
           # is not weakened by anyone flipping this boolean.
           :requires_migration,
+          # The explicit task-to-task release edge (`bin/task update <slug>
+          # --depends-on <task-slug>`, repeatable). An ARRAY permit, because the
+          # column is jsonb holding a list of slugs — that is the exact shape
+          # Release::Ordering.producer_first resolves against `tasks.index_by(&:slug)`.
+          #
+          # THE FIELD WAS HALF-BUILT UNTIL THIS LINE. The column is real
+          # (db/schema.rb) and really read — producer_first topologically sorts on
+          # it, reached from Release#ordered_members and Release::Conductor — but
+          # it was writable through NO supported surface: absent from bin/task,
+          # absent from both permit lists, its only writers tests calling
+          # Task.create! directly. Two docs meanwhile instructed agents to declare
+          # it. A consumer with no producer is not a feature; it is a promise the
+          # system cannot keep, and the operator's only evidence would have been a
+          # release that shipped in the wrong order.
+          #
+          # Entries are validated on the MODEL (Task#dependencies_name_real_tasks),
+          # not here: an unresolvable slug is silently ignored by the ordering pass,
+          # so every writer — this endpoint, the console, a fixture — owes the same
+          # refusal. Strong params only decides what may be POSTED.
+          dependencies: [],
           required_skills: [],
           metadata: {}
         )

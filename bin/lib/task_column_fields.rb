@@ -53,13 +53,14 @@ module TaskColumnFields
   # the same task. The server enforces the other half — Task::DEVOPS_COLUMN_KEYS
   # refuses a devops write to these names and sheds any stored shadow — which is
   # what makes LOCATOR's "ALWAYS null" a guarantee rather than an observation.
-  COLUMN_NAMES = %w[merged release_slug].freeze
+  COLUMN_NAMES = %w[merged release_slug dependencies].freeze
 
   # What UNSET means, per field, in words. A field is listed here precisely
   # because "empty" has a meaning worth stating out loud.
   UNSET_READS = {
     "merged" => "not merged",
-    "release_slug" => "not on a release"
+    "release_slug" => "not on a release",
+    "dependencies" => "no declared dependencies"
   }.freeze
 
   # What UNREPORTED prints. Deliberately shouty and self-explaining: it is rare,
@@ -77,17 +78,34 @@ module TaskColumnFields
   def state(task, key)
     return :unreported unless task.is_a?(Hash) && task.key?(key)
 
-    task[key].to_s.strip.empty? ? :unset : :set
+    entries(task[key]).empty? ? :unset : :set
   end
 
   # The rendered value for one top-level field — never a bare "-", so the reader
   # can always tell an empty column from an unreported one.
   def read(task, key)
     case state(task, key)
-    when :set then task[key].to_s.strip
+    when :set then entries(task[key]).join(", ")
     when :unset then UNSET_READS.fetch(key, "none")
     else UNREPORTED_READS
     end
+  end
+
+  # The field's non-blank content as a list of strings — the ONE reduction both
+  # `state` and `read` use, so the two can never disagree about whether a value
+  # is empty.
+  #
+  # `dependencies` is a LIST column (jsonb), and the scalar path this module was
+  # built for would have rendered it through `to_s`: `[]` inspects to the
+  # four-character string `"[]"`, which is not blank, so an empty list would have
+  # read as SET and printed as `dependencies: []`. That is the module's own
+  # founding defect — a field that cannot say "empty" in words — reintroduced by
+  # a type it had not met. A populated list would have printed Ruby's inspect
+  # form, `["a", "b"]`, which is not the `--depends-on a --depends-on b` syntax
+  # that wrote it and so does not round-trip back into the write flag.
+  def entries(value)
+    list = value.is_a?(Array) ? value : [value]
+    list.map { |entry| entry.to_s.strip }.reject(&:empty?)
   end
 
   # `label: value` for one field, ready to join onto a line.

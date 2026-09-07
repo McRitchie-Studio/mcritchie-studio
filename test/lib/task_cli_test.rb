@@ -1811,6 +1811,186 @@ class TaskCliTest < Minitest::Test
     assert_equal "", out.strip
   end
 
+  # --- --depends-on: the release-ordering edge --------------------------------
+  #
+  # `tasks.dependencies` fed Release::Ordering.producer_first with NO writer here
+  # at all (`grep -c dependencies bin/task` was 0) while two docs instructed
+  # agents to declare it. These cases pin the writer: the body it PUTS ON THE
+  # WIRE, and the refusals that keep a declaration out of a store nothing reads.
+
+  # THE CENTRAL PROPERTY: `dependencies` is a top-level COLUMN, so it must ride
+  # BESIDE "devops", never inside it. Landing it under devops would write the
+  # shadow store Task::DEVOPS_COLUMN_KEYS refuses and the conductor never reads —
+  # a 200 for a write that reached nothing, which is release_slug's incident.
+  def test_depends_on_writes_the_top_level_column_not_a_devops_shadow
+    requests, _out, _err, status = run_task(
+      ["update", "demo-task", "--depends-on", "publish-modal-block", "--depends-on", "bump-consumer-pin"]
+    )
+    assert status.success?
+    patch = requests.find { |r| r[:method] == "PATCH" }
+    refute_nil patch, "expected a PATCH for the update"
+    parsed = JSON.parse(patch[:body])
+
+    assert_equal %w[publish-modal-block bump-consumer-pin], parsed["dependencies"],
+                 "the declared ORDER is the operator's sequence and must survive the wire"
+    assert_nil parsed.dig("devops", "dependencies"),
+               "a column written under devops is the shadow store nothing reads"
+  end
+
+  def test_depends_on_deduplicates_without_reordering
+    requests, = run_task(
+      ["update", "demo-task", "--depends-on", "alpha-task", "--depends-on", "beta-task",
+       "--depends-on", "alpha-task"]
+    )
+    parsed = JSON.parse(requests.find { |r| r[:method] == "PATCH" }[:body])
+    assert_equal %w[alpha-task beta-task], parsed["dependencies"]
+  end
+
+  # The CLEAR must reach the wire. `[]` is falsy-looking, so a truth-tested body
+  # builder would drop it — handing the operator a 200 for a clear that never
+  # happened, with the old list still sequencing the release.
+  def test_depends_on_none_sends_an_explicit_empty_list
+    requests, _out, _err, status = run_task(["update", "demo-task", "--depends-on", "none"])
+    assert status.success?
+    parsed = JSON.parse(requests.find { |r| r[:method] == "PATCH" }[:body])
+
+    assert parsed.key?("dependencies"), "the clear must be IN the body, not omitted as falsy"
+    assert_equal [], parsed["dependencies"]
+  end
+
+  # …and an ABSENT flag must not send the key at all, or every unrelated update
+  # would silently clear the column.
+  def test_an_update_without_the_flag_never_mentions_dependencies
+    requests, = run_task(["update", "demo-task", "--branch", "feat/x"])
+    parsed = JSON.parse(requests.find { |r| r[:method] == "PATCH" }[:body])
+
+    refute parsed.key?("dependencies"),
+           "omission must mean UNCHANGED — sending [] here would clear every task it touched"
+  end
+
+  # A slug that resolves to nothing is NOT refused by the ordering pass — it is
+  # silently ignored, forever. So the typo has to die where a human can still fix
+  # it, and nothing may be written on the way.
+  def test_depends_on_refuses_a_value_that_is_not_a_slug
+    requests, _out, err, status = run_task(
+      ["update", "demo-task", "--depends-on", "Adopt Modal Primitive"]
+    )
+    refute status.success?, "a malformed slug must exit nonzero"
+    assert_match(/is not a task slug/, err)
+    assert_match(/silently ignored/, err, "the refusal must say WHY a typo is not survivable")
+    assert_empty requests.select { |r| r[:method] == "PATCH" },
+                 "nothing may be written from a rejected flag"
+  end
+
+  def test_depends_on_refuses_an_uppercase_slug
+    _requests, _out, err, status = run_task(["update", "demo-task", "--depends-on", "Publish-Modal-Block"])
+    refute status.success?
+    assert_match(/is not a task slug/, err)
+  end
+
+  # Clearing and declaring in one call is a contradiction. Picking a winner would
+  # silently discard half of what the operator typed.
+  def test_depends_on_refuses_the_clear_token_mixed_with_a_slug
+    _requests, _out, err, status = run_task(
+      ["update", "demo-task", "--depends-on", "alpha-task", "--depends-on", "none"]
+    )
+    refute status.success?
+    assert_match(/CLEARS the list/, err)
+    assert_match(/alpha-task/, err, "the refusal must show what it would have discarded")
+  end
+
+  def test_depends_on_refuses_a_slug_after_the_clear_token
+    _requests, _out, err, status = run_task(
+      ["update", "demo-task", "--depends-on", "none", "--depends-on", "alpha-task"]
+    )
+    refute status.success?
+    assert_match(/cannot follow the clear token/, err)
+  end
+
+  # READ-BACK. A write with no read-back is half a feature here, and this field's
+  # whole failure mode is a write that reached nothing.
+  def test_show_verbose_prints_the_dependencies_column
+    _requests, out, _err, status = run_task(
+      ["show", "demo-task", "--verbose"],
+      stub_columns: { "dependencies" => %w[publish-modal-block bump-consumer-pin] }
+    )
+    assert status.success?
+    assert_match(/dependencies: publish-modal-block, bump-consumer-pin/, out)
+  end
+
+  # The empty list must read as a definite negative IN WORDS. `[]` is the scalar
+  # reduction leaking through, and it is exactly the "-" ambiguity the column
+  # renderer exists to remove.
+  def test_show_verbose_states_an_undeclared_list_in_words
+    _requests, out, = run_task(["show", "demo-task", "--verbose"], stub_columns: { "dependencies" => [] })
+    assert_match(/dependencies: no declared dependencies/, out)
+    refute_match(/dependencies: \[\]/, out)
+  end
+
+  def test_show_verbose_marks_an_unreported_dependencies_field_as_unreported
+    _requests, out, = run_task(["show", "demo-task", "--verbose"], stub_omit_columns: ["dependencies"])
+    assert_match(/dependencies: UNREPORTED/, out)
+  end
+
+  # The machine-readable surface: one slug per line, which is what a script
+  # consumes AND what feeds straight back into --depends-on. An Array IS
+  # Enumerable, so without its own branch this printed NOTHING at exit 0 —
+  # indistinguishable from unset, the identical defect the pr_urls Hash branch
+  # was added to fix.
+  def test_field_prints_a_list_column_one_entry_per_line
+    _requests, out, _err, status = run_task(
+      ["field", "demo-task", "dependencies"],
+      stub_columns: { "dependencies" => %w[publish-modal-block bump-consumer-pin] }
+    )
+    assert status.success?
+    assert_equal %w[publish-modal-block bump-consumer-pin], out.split("\n").map(&:strip).reject(&:empty?)
+  end
+
+  def test_field_reads_dependencies_from_the_column_never_the_devops_shadow
+    _requests, out, = run_task(
+      ["field", "demo-task", "dependencies"],
+      stub_devops: { "dependencies" => ["from-devops"] },
+      stub_columns: { "dependencies" => ["from-column"] }
+    )
+    assert_equal "from-column", out.strip, "dependencies is column-backed — devops must never win"
+  end
+
+  # The invariant behind aliasing a new flag family into the shared `top` hash,
+  # asserted rather than merely commented — the same guard MAP_FLAGS earned. Two
+  # families writing one column would silently overwrite each other, whichever
+  # came last in argv.
+  def test_top_level_flag_families_never_share_a_column
+    source = File.read(BIN)
+    # SINGLE-LINE form first. A multiline `\{.*?^\}` tried first runs straight
+    # past a one-line hash to the next line-starting `}` far below, swallowing
+    # unrelated constants — which is exactly what this extraction did on its first
+    # draft, harvesting the STAGES list into the flag keys and reporting a
+    # collision that did not exist.
+    literal = ->(name) { source[/^#{name} = (\{[^\n]*\}|\{.*?^\}|%w\[[^\]]*\])\.freeze$/m, 1] }
+    strip_comments = ->(text) { text.to_s.lines.reject { |line| line.strip.start_with?("#") }.join }
+
+    size_keys = strip_comments.call(literal.call("SIZE_FLAGS")).scan(/=>\s*"([^"]+)"/).flatten
+    list_keys = strip_comments.call(literal.call("TOP_LIST_FLAGS")).scan(/=>\s*"([^"]+)"/).flatten
+    bool_keys = strip_comments.call(literal.call("BOOL_FLAGS")).scan(/\[\s*"([^"]+)"/).flatten
+    top_keys = strip_comments.call(literal.call("TOP_FLAGS")).to_s.scan(/--([a-z-]+)/).flatten
+
+    # Prove the extraction reached real content — and reached ONLY it. A regex
+    # that silently matched nothing, or matched half the file, would otherwise
+    # "pass" forever.
+    assert_equal %w[dependencies], list_keys
+    assert_equal %w[pm_size po_size dev_size], size_keys
+    assert_equal %w[requires_migration requires_migration], bool_keys
+    assert_equal %w[slug title description agent priority stage], top_keys
+
+    # BOOL_FLAGS is deduped WITHIN itself on purpose: --requires-migration and
+    # --no-requires-migration are two polarities of one column, which is the one
+    # legitimate same-column pair. Across families there is no such case.
+    all = size_keys + list_keys + bool_keys.uniq + top_keys
+    assert_equal all.uniq, all,
+                 "two top-level flag families write the same column; they share one `top` hash, " \
+                 "so one silently overwrites the other"
+  end
+
   # --- stale (the stale war) --------------------------------------------------
 
   def git!(dir, cmd)

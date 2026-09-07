@@ -137,7 +137,8 @@ git fetch origin && git worktree add .worktrees/<slug> -b feat/<slug> origin/acc
 cd /Users/alex/projects/mcritchie-studio
 bin/task begin --title "Adopt <Name> Primitive" --repo <app> --agent <soul> \
   --kind chore --shape ui-only
-#    declare `dependencies: [<gem-task>]` so the release sequences the gem first
+bin/task update <adoption-task> --depends-on <gem-task>
+#    ^ the release then sequences the gem task before this one
 #    — the qa-release sweep publishes gem versions and bumps consumer LOCKS
 #    itself; the Gemfile FLOOR pin is still a human decision
 #    bump the Gemfile pin AND record WHY in the pin comment — the floor is what
@@ -145,6 +146,15 @@ bin/task begin --title "Adopt <Name> Primitive" --repo <app> --agent <soul> \
 #    replace the local markup with a render call, DELETE the local copy
 #    values come from the markup being replaced, never from the specimen
 ```
+
+**`--depends-on` is usually optional here.** `Release::Ordering.producer_first`
+already sorts gems before apps by itself, so a consumer waiting on a gem is the
+case the heuristic gets right unaided. Declare the edge when you want the
+sequence stated rather than inferred, or for an order the heuristic cannot see —
+one app that must deploy before another. Two properties worth knowing before you
+lean on it: a dependency on a task OUTSIDE the release does not hold this one
+back (by design — it cannot be ordered here), and the flag REPLACES the list
+rather than appending, so pass the whole set in one call.
 
 **Two things that bite here:**
 

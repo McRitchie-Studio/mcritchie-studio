@@ -330,7 +330,7 @@ timeline").
 |---|---|
 | `release_slug` | The Release this task rides (null until the sweep attaches it; the stage flips `assembled` on QA-green, not at merge). |
 | `merged` | WHERE the code physically is — the crash-recovery git-location, orthogonal to `stage`: `nil` = not merged anywhere · `"release"` = merged onto the release branch (QA in flight) · `"main"` = ff'd into main (prod deploy in flight). Matrix: reviewed+nil = not swept · reviewed+release = swept/QA-in-flight · assembled+release = QA-green awaiting Steffon · assembled+main = ff'd/prod-in-flight · shipped+main = done. An interrupted Avi skips re-merging `release`; an interrupted Steffon skips re-ff'ing `main`. |
-| `dependencies` | Array of task slugs this one needs shipped first. **Now enforced** by the conductor (`Release::Ordering`) — a member sorts after every task listed here — composed under the producer-first rule (e.g. an engine gem before the apps that consume it). |
+| `dependencies` | Array of task slugs this one needs shipped first. **Now enforced** by the conductor (`Release::Ordering`) — a member sorts after every task listed here — composed under the producer-first rule (e.g. an engine gem before the apps that consume it). Written with `bin/task update <slug> --depends-on <task-slug>` (repeatable, replaces the list); it is a top-level column, so a `devops` write to the name is a 422. Until 2026-09-07 it had no writer outside tests, which is why several docs described declaring it in a syntax nothing parsed. |
 
 `dependencies` (task→task) and the exclusive **lanes** (resource-level:
 migration, release, vault single-writer) compose: dependencies say *"B needs A's
