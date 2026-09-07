@@ -18,7 +18,9 @@ require "yaml"
 # Selection = union of three sets:
 #   1. CONVENTION — each changed file maps to its test by path convention
 #      (app/models/x.rb → test/models/x_test.rb, views → their controller test,
-#      bin/tool → test/lib/tool_test.rb, a changed *_test.rb includes itself).
+#      bin/tool → test/lib/tool_test.rb, a changed *_test.rb includes itself),
+#      PLUS — for a tool whose twin lives in test/lib/ — its whole test FAMILY,
+#      the test/lib/<stem>_<aspect>_test.rb siblings that are nobody else's twin.
 #   2. GREP FALLBACK — a changed .rb file with NO existing convention target
 #      falls back to a word-boundary grep of its class name (or a bin script's
 #      name, or a config file's basename) across test/**/*_test.rb.
@@ -92,6 +94,77 @@ module FastCert
     end
   end
 
+  # --- the test FAMILY hop -----------------------------------------------------
+  # A tool's tests are a FAMILY, not a twin. test/lib/ is a flat namespace named
+  # after the TOOL under test, and any tool big enough to matter grows suffixed
+  # siblings: bin/dor-check has test/lib/dor_check_test.rb AND fourteen
+  # dor_check_<aspect>_test.rb files. The convention hop above found the twin and
+  # stopped, and because the grep fallback fires ONLY when the twin is MISSING,
+  # those fourteen were unreachable from a diff touching bin/dor-check alone.
+  #
+  # THE EXPENSIVE HALF IS WHAT WAS MISSED. Among the fourteen is
+  # dor_check_exempt_ci_test.rb, which holds a self-checking registry over
+  # bin/dor-check's own source — so the one test guaranteed to notice a new call
+  # site was the one test the local cert could never run. Measured 2026-09-06:
+  # `FAST_CHECK_CHANGED_FILES=bin/dor-check bin/fast-check --list` returned 1
+  # mapped path out of 15, and PR #1236's first push learned the difference from
+  # CI instead of from the builder's cert.
+  #
+  # SCOPED TO test/lib/ DELIBERATELY, and this is the whole reason it is safe:
+  # test/<layer>/ mirrors app/<layer>/ one file to one file, so a prefix sibling
+  # THERE is a different subject's test — test/models/task_event_test.rb belongs
+  # to app/models/task_event.rb, not to task.rb. Only the harness namespace names
+  # its files after a tool rather than after a class, so only there does a prefix
+  # sibling constitute evidence about the same subject.
+  def family_tests(root, path, targets)
+    # A changed test file is its own subject. Expanding it would drag thirteen
+    # unrelated siblings into a one-line test edit.
+    return [] if path.match?(%r{\Atest/.+_test\.rb\z})
+
+    Array(targets).flat_map { |target| harness_family(root, target) }.uniq
+  end
+
+  # The existing test/lib/<stem>_<suffix>_test.rb siblings of an existing twin,
+  # minus the ones that are somebody else's twin (see owned_elsewhere?).
+  #
+  # THE SCOPE IS STATED ONCE — in the regex below; the glob is built from the
+  # matched TARGET rather than re-naming "test/lib/". Stated twice, the two
+  # guards covered for each other: widening the regex alone changed nothing
+  # because the glob still pinned the directory, so the test that should have
+  # caught an over-wide scope stayed green against that mutation.
+  def harness_family(root, target)
+    return [] unless target.match?(%r{\Atest/lib/.+_test\.rb\z})
+
+    stem = target.sub(/_test\.rb\z/, "")
+    Dir.glob("#{stem}_*_test.rb", base: root.to_s)
+       .reject { |sibling| owned_elsewhere?(root, sibling) }
+       .sort
+  end
+
+  # PREFIX IS NOT PARENTHOOD. bin/lib/desk_ledger.rb's stem prefixes
+  # test/lib/desk_ledger_import_test.rb — but that file is the twin of
+  # bin/lib/desk_ledger_import.rb, a source file of its own that the diff did not
+  # touch. Claiming it would run an unrelated tool's tests on every desk_ledger
+  # edit, which is the over-widening this hop has to avoid to be worth having. A
+  # sibling joins the family only when NO source file of its own exists.
+  #
+  # Measured over this repo 2026-09-06: of the sixteen candidate siblings the
+  # glob finds, the guard rejects exactly two — desk_ledger_import_test.rb (owned
+  # by bin/lib/desk_ledger_import.rb) and agent_worktree_cli_test.rb (owned by
+  # bin/lib/agent_worktree_cli.rb) — and keeps fourteen genuine ones.
+  def owned_elsewhere?(root, test_path)
+    source_twins(test_path).any? { |src| File.file?(File.join(root, src)) }
+  end
+
+  # The inverse of the test/lib/ half of convention_candidates: every source path
+  # that would convention-map TO this test file. Existence is the caller's test.
+  def source_twins(test_path)
+    return [] unless test_path =~ %r{\Atest/lib/(.+)_test\.rb\z}
+
+    stem = Regexp.last_match(1)
+    ["lib/#{stem}.rb", "bin/lib/#{stem}.rb", "bin/#{stem}", "bin/#{stem.tr('_', '-')}"]
+  end
+
   # The word this file's grep fallback hunts for across test/: a class name for
   # a .rb file (gate_run.rb → GateRun), the script name for a bin tool
   # (bin/fast-check → "fast-check", how harness tests reference it), the bare
@@ -135,7 +208,13 @@ module FastCert
   def mapping(root, changed)
     Array(changed).to_h do |path|
       existing = convention_candidates(path).select { |t| File.file?(File.join(root, t)) }
-      [path, existing.empty? ? grep_tests(root, grep_token(path)) : existing]
+      tests =
+        if existing.empty?
+          grep_tests(root, grep_token(path))
+        else
+          (existing + family_tests(root, path, existing)).uniq
+        end
+      [path, tests]
     end
   end
 

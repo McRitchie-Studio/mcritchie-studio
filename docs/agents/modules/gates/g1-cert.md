@@ -181,6 +181,15 @@ impossible by construction rather than by every repo remembering to ignore `tmp/
      route; this doc previously implied they could not.
    - `mapped-tests` — `bin/rails test <files the branch diff maps to>` (path
      convention with a class-name grep fallback; skipped when nothing maps).
+     A tool whose convention twin lives in `test/lib/` also maps its whole test
+     **family** — the suffixed `test/lib/<stem>_<aspect>_test.rb` siblings that
+     are nobody else's twin. **A tool's tests are a family, not a twin:**
+     `bin/dor-check` has fifteen, and until 2026-09-06 a diff touching it mapped
+     to ONE, so `dor_check_exempt_ci_test.rb` — a self-checking registry over
+     `bin/dor-check`'s own source — was unreachable from the cert and reddened
+     PR #1236 in CI instead. Scoped to `test/lib/` because `test/<layer>/`
+     mirrors `app/<layer>/` one file to one file, where a prefix sibling is a
+     DIFFERENT subject's test.
      **CAPPED at 15 files** after the spine dedupe: past that the lane is SKIPPED
      with a loud line naming the cap and the widest-mapping file, and the spine
      still runs. A file with no convention target falls back to a word-boundary

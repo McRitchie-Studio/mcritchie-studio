@@ -21,7 +21,11 @@
 #            test/models/x_test.rb, views → their controller test, bin/tool →
 #            test/lib/tool_test.rb, a changed *_test.rb runs itself); a .rb file
 #            with no existing convention target falls back to a word-boundary
-#            grep of its class name across test/**/*_test.rb.
+#            grep of its class name across test/**/*_test.rb. A tool whose twin
+#            lives in test/lib/ also pulls its test FAMILY — the suffixed
+#            test/lib/<stem>_<aspect>_test.rb siblings that are nobody else's
+#            twin — because a tool's tests are a family, not a twin: bin/dor-check
+#            has fifteen, and until 2026-09-06 a diff touching it mapped to ONE.
 #   spine  : config/fast_cert_spine.yml — the always-run critical core (~10-20s),
 #            so a diff that maps to nothing still exercises the money paths.
 #            Mapped files already covered by a spine entry run only once.
