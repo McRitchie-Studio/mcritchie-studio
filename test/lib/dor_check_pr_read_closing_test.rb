@@ -103,7 +103,9 @@ class DorCheckPrReadClosingTest < Minitest::Test
     end
   end
 
-  # `--gate build` resolves no diff and reads no CI, so it takes neither seam.
+  # `--gate build` reads no CI, so this helper takes the PR-files seam and NOT the CI
+  # one. It is not "neither seam": DOR_CHECK_PR_FILES is what puts the refused read in
+  # front of the alert, and the run below would have nothing to measure without it.
   def drive_build_gate
     Dir.mktmpdir do |dir|
       path = File.join(dir, "task.json")
@@ -208,8 +210,14 @@ class DorCheckPrReadClosingTest < Minitest::Test
   # build gate", and the DoR-to-Build run in the review role silently acquires a closing
   # that names a refusal it never makes. The suite stayed green at 6 runs / 51 assertions
   # through exactly that mutation, so the role half was pinned and the gate half was a
-  # constant nobody had noticed. It is a real run: `bin/dor-check --gate build` resolves
-  # no diff and must not shell `gh`, so nothing here can refuse anything.
+  # constant nobody had noticed. It is a real run, and the reason nothing here can refuse
+  # is the BUILD GATE MAKING NO REFUSAL — `pr_read_refuses_verdict?` is false — not any
+  # claim that this path stays away from `gh`. It does not: driven 2026-09-07 with a
+  # recording `gh` on PATH and no DOR_CHECK_PR_FILES, `--gate build --gate-role review`
+  # shells `gh api …/pulls/<n>/files` exactly once. This sentence used to carry the
+  # "must not shell `gh`" claim that bin/dor-check's exempt caller corrects three lines
+  # above `pr_read_refusal = pr_read_alert(cert_route: false)`; correcting one copy and
+  # leaving the other is how the next reader re-derives the guard from the false half.
   def test_the_build_gate_never_acquires_a_refusal_it_does_not_make
     verdict, = drive_build_gate
 
