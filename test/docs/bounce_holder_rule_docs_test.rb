@@ -87,12 +87,31 @@ class BounceHolderRuleDocsTest < ActiveSupport::TestCase
         .gsub(/[*`>]/, "").gsub(/\s+/, " ")
   end
 
-  # A `bin/task block …` invocation, read up to the sentence end.
-  BLOCK_RUN = %r{bin/task block[^.]{0,220}}
+  BLOCK_CMD = "bin/task block"
   REWORK = /--kind (rework|<[^>]*rework)/
 
+  # ONE run = ONE invocation. A run ends at the sentence end, at the NEXT
+  # invocation, or after 220 characters — whichever comes first.
+  #
+  # Stopping at the next invocation is load-bearing, and it is not hypothetical:
+  # the first cut of this guard scanned a fixed-width window, so two commands in
+  # one sentence became a SINGLE run and a later agented command masked an earlier
+  # bare one. The mutation that reintroduced an un-agented gate-zero bounce — the
+  # exact defect this guard exists to catch — SURVIVED that version.
   def rework_runs(text)
-    flat(text).scan(BLOCK_RUN).select { |run| run.match?(REWORK) }
+    body = flat(text)
+    runs = []
+    idx = body.index(BLOCK_CMD)
+    while idx
+      nxt = body.index(BLOCK_CMD, idx + BLOCK_CMD.length)
+      stop = [idx + 220, body.length, nxt].compact.min
+      seg = body[idx...stop]
+      dot = seg.index(".")
+      seg = seg[0...dot] if dot
+      runs << seg if seg.match?(REWORK)
+      idx = nxt
+    end
+    runs
   end
 
   # ---------------------------------------------------------------------------
