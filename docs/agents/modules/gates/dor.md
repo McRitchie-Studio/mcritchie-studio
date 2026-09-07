@@ -240,8 +240,7 @@ there, and a cert is content-addressed, so a transient tree can only later read
 a detached `HEAD` is not the PR's state, and a diff read from it is graded as though it
 were — silently, and passing. Same fact, opposite correct answers, so `assess` reports
 it (`standing_in_task_desk`) and each caller decides. That vouch is deliberately
-repo-blind: making it repo-strict would need a repo-per-PR mapping the task record does
-not have (see the single-`pr_url` gap below), and would refuse honest multi-repo builds.
+repo-blind: making it repo-strict would refuse honest multi-repo builds.
 
 **Ambiguity is also a refusal.** The worktree glob spans every app, so a
 **multi-repo** task matches once per repo (live today: `repair-moms-app-ci` exists
@@ -267,19 +266,68 @@ unchanged.
 Two limits, stated so nobody assumes otherwise:
 
 - **A secondary repo's bar is the FULL cert.** A fast cert only counts anywhere
-  alongside a GREEN CI on that repo's own PR, and this gate reads **one** PR's CI.
-  Pairing a fast cert with a *different* repo's CI would be the same cross-repo
-  confusion the per-repo certs exist to end, so a secondary repo needs
+  alongside a GREEN CI on that repo's own PR. This gate now *does* read that PR's CI
+  (see below), but the bar has deliberately **not** been lowered to match: crediting a
+  secondary repo's fast cert is a relaxation, and a relaxation earns its own task and
+  its own proof rather than riding in as a side effect. So a secondary repo still needs
   `bin/full-suite-check` in its own tree. The refusal reports what **is** recorded
   across every evidence lane, not just the graded ones, and names the reason when a
   fast cert is among them — so a fast cert sitting at the current fingerprint reads
   as *rejected for its lane*, never as *absent*. It said "NOTHING is recorded" until
   2026-09-01, and that sentence cost two `bin/fast-check` runs against an
   already-certified tree.
-- **The DIFF half is still one PR.** `devops.pr_url` is a single value, so the
-  shape/tier gate (changed files → required tiers) is measured against **one** PR.
-  The cert half now covers every repo; the tier half does not. Reviewing a multi-repo
-  task still means reading the second PR's diff yourself.
+- **The DIFF and CI halves now read EVERY recorded PR** (2026-09-07,
+  `/tasks/dor-check-reads-one-pr`). Until then `devops.pr_url` — a single value — fed
+  both the PR file list and the CI verdict, while the plural `devops.pr_urls` register
+  fed only the cert list above. So on a two-repo task the shape/tier gate, the doc-only
+  exemption and migration detection were all measured against **one** PR, and the CI
+  allow-list asked **one** PR whether the task was green.
+
+  It was worse than the known "the gate sees only the repos a task NAMES" limit, and
+  in a way that made the standing remedy useless: on `/tasks/document-burn-entry-token`
+  the task named **both** repos and recorded **both** PR URLs correctly, and the gate
+  still read one. Fixing the record could not reach it. Measured: running the gate
+  under `DOR_CHECK_DIFF_ROOT=<turf-vault>` and again under
+  `DOR_CHECK_DIFF_ROOT=<turf-monster>` returned the **identical** diff (turf-vault's
+  three files) — because PR files outrank the git tree, so changing the tree changes
+  nothing and turf-monster's only file, `docs/SOLANA.md`, appeared in neither run.
+
+  What it does now:
+
+  - **The diff is the UNION** of every recorded PR's file list (`devops.pr_url` plus
+    the `devops.pr_urls` register, deduped by URL). That is the diff a two-repo task
+    actually ships, and it is the fail-closed direction on every consumer: more code
+    files, more tiers demanded, and a doc-only exemption that must hold across **both**
+    PRs.
+  - **The CI verdict is the WORST of them**, not the first (`TaskPrSet.governing`) — so
+    a red satellite PR can no longer hide behind a green hub PR. Worst-of rather than
+    first-non-green because the order is a record-keeping detail, and a gate whose
+    verdict depends on which URL somebody typed first can be steered by the record. A
+    state the severity table has never heard of governs **above** red, mirroring the
+    allow-list doctrine one level up. Every remedy names the repo the governing verdict
+    came from, not whichever URL was recorded first.
+  - **A PR it cannot read FAILS THE RUN CLOSED, and names the repo.** If any recorded
+    PR's file list is unreadable, the union cannot be formed, and the states split:
+    `diff_source: "pr_incomplete"`, and the refusal says which repo it could not read
+    (`repos_unread`). Grading the PRs that *did* read would be this defect wearing a
+    smaller number.
+  - **That refusal fires in BOTH roles**, unlike a single-repo unreadable read, which
+    still only warns submit-side. The builder's local-view fallback is earned by
+    standing in the PR's own worktree, where the tree is the PR's honest near-twin. On
+    a two-repo task the builder stands in one of them and **no** tree on the machine is
+    the near-twin of the other, so there is nothing honest to substitute.
+  - **The verdict reports its coverage.** `pr_coverage[]` in `--json`, and a
+    `PRs read (n):` block in the human output on any multi-PR task — one row per PR
+    with its repo, file count, sample files and its own CI state. Before it existed, a
+    verdict that covered one repo and a verdict that covered two were indistinguishable
+    from the output, which is exactly how a gate grading half the work reported a full
+    one.
+
+  A single-repo task takes the one-PR path unchanged, byte for byte: it cannot reach
+  the union, cannot produce `pr_incomplete`, and prints no coverage block.
+
+  Test seams, mirroring the singular ones: `DOR_CHECK_PR_FILES_BY_REPO` and
+  `DOR_CHECK_CI_STATUS_BY_REPO` each take JSON of `repo => <the same token grammar>`.
 
 A repo the task NAMES but has no PR in is deliberately **not** cert-gated — that is
 the gem-release shape, where a gem task names its CONSUMER repos so the gates can
