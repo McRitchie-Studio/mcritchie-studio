@@ -2127,8 +2127,9 @@ if EXEMPT_KINDS.include?(kind)
             "cert_route here must read the policy note above first (/tasks/exempt-refusal-prints-dead-remedy)."
     end
     exempt_alerts.concat(exempt_ci_notes)
-    # CI FIRST, the PR-read refusal second: one stale token refuses both reads, and
-    # when they co-fire the CI verdict is the one that has always led this refusal.
+    # CI FIRST, the PR-read refusal second: one fault hides both reads — a refused
+    # token, or a `gh`/network failure — and when they co-fire the CI verdict is the
+    # one that has always led this refusal.
     # Reordering it would change the headline of every existing exempt refusal.
     exempt_errors = [exempt_ci_error].compact + exempt_pr_read_errors
     exempt_ready = exempt_errors.empty?
