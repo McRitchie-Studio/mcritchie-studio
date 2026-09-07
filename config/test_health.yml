@@ -157,7 +157,22 @@ frozen_size:
   # below is unmoved, sitting at exactly its old ceiling), and the docs↔CLI
   # agreement guard to a NEW file,
   # test/docs/task_dependencies_writer_docs_test.rb.
-  test/lib/task_cli_test.rb: 3057
+  #
+  # +45 (2026-09-07, approval-write-drops-at-submitted): three cases for the warning
+  # `bin/task move` prints when a stage move DISCARDS a pending operator-approval
+  # request — the fired case, the stale-stamp silence, and the nothing-dropped
+  # silence. They stay in THIS file for the same reason as the +180 above: the
+  # property is what the REAL binary prints to stderr after a move PATCH, which is
+  # only observable by driving it against this file's private stub server
+  # (`run_task`). A new file could get there only by duplicating that server and
+  # would then be exercising its own copy of the harness.
+  #
+  # What DID go elsewhere, which is what this ceiling asks for: the whole guard and
+  # its stage x value matrix to a NEW file, test/models/task_approval_request_guard_
+  # test.rb (14 cases, including the drop receipt), and the HTTP-status half to a NEW
+  # file, test/integration/approval_request_guard_api_test.rb (8 cases). Only the
+  # stderr-of-the-real-binary cases needed this harness.
+  test/lib/task_cli_test.rb: 3102
   test/models/task_test.rb: 2266
   # +77 (2026-08-27, retire-acquisition-studio-checkout): three CLI-level tests for
   # the origin-unreachable withhold — the error case, the retired-repo (:gone) case,
