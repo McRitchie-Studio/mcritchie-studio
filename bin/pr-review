@@ -923,11 +923,27 @@ def start_review(task, review_number)
   # path's precondition. So it hedges HONESTLY — "if the diff proves doc-only" —
   # rather than either promising a cert that may be dead or hiding the one that may
   # be live. Overclaiming in either direction is the defect this repeats.
+  #
+  # ...AND GREEN IS NOT THE WHOLE STORY EITHER (/tasks/fence-the-widened-closing).
+  # This caveat used to close "green is the only thing that advances it" — the FOURTH
+  # copy of a claim PR #1225 falsified and PR #1237 corrected in bin/lib/ci_status.rb
+  # and bin/lib/ci_gate.rb. It is sharper HERE than in either of those, because of
+  # WHERE it prints: both its print sites sit on the co-fire's own trigger (the
+  # :unreadable branch below, and the :unverified `else`). One stale App token refuses
+  # the CHECK read and the PR FILE read together, so the supervisor was telling a
+  # reviewer green is SUFFICIENT one screen before their own gate-zero told them green
+  # is NECESSARY AND NOT SUFFICIENT — and a supervisor that contradicts the gate it is
+  # briefing for is worse than one that says nothing. It also contradicted
+  # docs/agents/agents/carl/sops/pr-review-primary.md, which had already been
+  # corrected. The NECESSITY half was never false and is kept: no cert stands in, so
+  # nothing but a green CI clears the CI half.
   maybe_exempt = CodeDiff::EXEMPT_KINDS.include?(task.dig("devops", "kind").to_s)
   cert_caveat = if maybe_exempt
                   " — but this task's kind is #{task.dig("devops", "kind")}, so IF the observed diff proves " \
-                    "doc-only the gate takes its EXEMPT path, where NO cert stands in and green is the only " \
-                    "thing that advances it; do not send the builder to bin/full-suite-check on that refusal"
+                    "doc-only the gate takes its EXEMPT path, where NO cert stands in and a GREEN CI is " \
+                    "NECESSARY AND NOT SUFFICIENT: that path refuses on an unread PR file list too, and one " \
+                    "stale token refuses both reads; do not send the builder to bin/full-suite-check on that " \
+                    "refusal"
                 else
                   ""
                 end
