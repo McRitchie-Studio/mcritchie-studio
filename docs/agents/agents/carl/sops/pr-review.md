@@ -56,8 +56,9 @@ Review runs in two levels; keep them distinct:
    - **The light specialist** (Shannon · Jasper · Steffon · Alex) is Carl's second
      set of eyes — a focused domain second-read Carl summons, not a co-owner. Runs
      [`pr-review-light.md`](pr-review-light.md). The light does not run the gates
-     and does not drive the verdict (though any reviewer can block on a defect it
-     spots). Carl is the standing primary on every PR; the light is the domain
+     and does not drive the verdict — a defect it spots reaches Carl as a scout
+     report, and only the review claim's holder spends the task's bounce. Carl is
+     the standing primary on every PR; the light is the domain
      pick — `bin/reviewer-select <task>` previews the pair (primary Carl + the
      domain light).
 

@@ -836,7 +836,8 @@ claims a green-CI PR and spins **one Carl** — the standing primary AND owner.
 the verdict, and on all-clear merges the feat PR into `accepted` (the
 `accepted → release` promotion is Avi's sweep). The formalized, agent-role
 how-to — Carl summons the light, each reviewer narrates its review **as its
-soul** (`--agent`) into the heartbeat's Agent column, any reviewer can block — is
+soul** (`--agent`) into the heartbeat's Agent column, only the review claim's
+holder spends the task's bounce — is
 the reusable **[PR Review SOP module](../modules/pr-review-sop.md)**; this section
 is its release-context anchor. For each `submitted` task (`bin/task list` or the
 board):
@@ -875,9 +876,12 @@ board):
    `accepted`** (stamping `merged: "accepted"`) and drives the task to `reviewed`
    (`bin/task move <task> reviewed --actor carl`), then STOPS — review never
    touches `release`/`main` and never deploys; Avi's `qa-release` sweep then
-   promotes `accepted → release` and flips the member `assembled` on QA-green. Any
-   reviewer blocks → **`bin/task block <task> --kind rework --feedback "…"`** (one
-   complete send-back). That command runs the **two-bounce circuit breaker** first
+   promotes `accepted → release` and flips the member `assembled` on QA-green. Carl
+   blocks → **`bin/task block <task> --kind rework --feedback "…" --agent carl`**
+   (one complete send-back — any reviewer may RAISE a blocking finding, but only
+   the review claim's holder may SPEND the bounce; a `--kind rework` block by any
+   other soul is refused with exit 11). That command runs the **two-bounce
+   circuit breaker** first
    (`bin/task bounces <task>` reads it standalone: exit 0 CLEAR · 10 TRIPPED ·
    any other non-zero UNKNOWN, which is never to be read as zero) and **refuses**
    a second send-back, routing the deadlock to the operator as a `dependency`

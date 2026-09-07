@@ -27,9 +27,12 @@ alongside his deep review and drives the verdict to `reviewed` or `blocked`.
 
 One PR / one task. A focused second read only — a sharp second perspective
 through your domain, not a re-derivation of Carl's deep review and not a re-run of
-the gates. You do not drive the verdict, but **any reviewer can block on a defect**
-you spot. This SOP does not select or summon reviewers, run the gates, move the
-task stage, merge, deploy QA, ship production, or archive work.
+the gates. You do not drive the verdict: a defect you spot travels to Carl as a
+**scout report** and he decides whether to spend the task's bounce — **the bounce
+belongs to the review claim's holder, and that is not you** (see *The bounce is
+not yours to spend*). Record any finding with `bin/task note <slug> --comment`,
+which spends no bounce. This SOP does not select or summon reviewers, run the
+gates, move the task stage, merge, deploy QA, ship production, or archive work.
 
 Your read is the task's **G2b Light** gate lane
 ([`../../../modules/gates/g2-review.md`](../../../modules/gates/g2-review.md)):
