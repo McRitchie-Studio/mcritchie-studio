@@ -194,10 +194,15 @@
 #       A --kind rework block with NO --feedback still posts one (with a placeholder
 #       body + a warning): the columns are wiped on resubmit, so a prose-less bounce
 #       would otherwise vanish from every durable store and never be counted. )
-#     ( --kind rework RUNS `bounces` FIRST and REFUSES (exit 10) when the breaker is
-#       tripped, naming the escalation. --breaker-ack "reason" proceeds anyway for a
-#       MECHANICAL bounce (red CI, merge conflict — nothing to arbitrate); the reason
-#       is recorded on the activity, so an override is evidence, not a bypass. )
+#     ( --kind rework is gated TWICE, authorisation before budget. FIRST the
+#       VERDICT-OWNER gate: during a LIVE review claim, only the reviewer the claim
+#       names may spend the task's bounce — anyone else is REFUSED (exit 11) with
+#       nothing written (lib/review_verdict_gate.rb). A LIGHT reviewer files a scout
+#       report to its primary instead; it does not hold the verdict. THEN the
+#       breaker: `bounces` runs and REFUSES (exit 10) when it is tripped, naming the
+#       escalation. --breaker-ack "reason" proceeds anyway for a MECHANICAL bounce
+#       (red CI, merge conflict — nothing to arbitrate); the reason is recorded on
+#       the activity, so an override is evidence, not a bypass. )
 #   bin/task note <slug> --handoff "..." | --qa-feedback "..." | --clarification "..." | --comment "..." [--agent A] [--resolves-feedback]
 #     ( posts a task activity via POST /api/v1/activities; flags map to
 #       activity_type handoff/qa_feedback/clarification/comment. Repeatable +
@@ -252,6 +257,12 @@
 #      circuit breaker refused `bounces` / `block --kind rework` (escalate, do not
 #      retry). Distinct from 1 so "the breaker says escalate" is never confused
 #      with "the read failed".
+#  11  NOT THE VERDICT OWNER — `block --kind rework` was refused because a LIVE
+#      review claim names a DIFFERENT reviewer (or names none, or could not be
+#      read). Nothing was written. Distinct from 10 on purpose: 10 means "the
+#      budget is spent, escalate" and routes to `--kind dependency`, which is the
+#      OWNER's move — a light that read 10 here would file an escalation on a
+#      review it does not hold.
 #   1  everything else — transport/API failures, usage errors, rejected flags.
 
 require "net/http"
