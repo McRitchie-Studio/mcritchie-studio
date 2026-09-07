@@ -355,6 +355,15 @@ The exempt path was the last holdout: it printed the alert as a suggestion for
 Its refusal now also says *which* half refused — an unread PR is not the CI
 verdict, and a closing line that blames CI sends the reader to the wrong fix.
 
+**And the alert closes by naming its OWN refusal.** It used to end with the CI
+gate's sentence, *"this gate advances on a GREEN CI and nothing else"* — false
+exactly where it printed, because on a green CI the error carrying that sentence
+is the only thing refusing the verdict, and the sentence sends the reader to look
+at CI. Where this alert REFUSES (the review role at the merge gate) it now closes
+on the read that failed, and says plainly that no CI result clears it. Where it
+refuses nothing (the builder role, and `--gate build`) it is a suggestion, so the
+original sentence is still true and still prints, to the byte.
+
 **The fix depends on WHICH of the two failures you got, and the gate prints the
 right one — do not read one remedy for both.**
 
