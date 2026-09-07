@@ -24,10 +24,20 @@ require_relative "claim_holder"
 # ESCALATION without a primary ever having blocked it, and locks the one agent who
 # holds the verdict out of recording it.
 #
-# THE GAP IS ENFORCEMENT, NOT DOCUMENTATION. pr-review-light.md already says the light
-# does not drive the verdict, and the light in the incident was additionally briefed in
-# its prompt with the prohibition spelled out. Prose did not hold, so the rule moves to
-# where it cannot be walked around: the write itself.
+# THE GAP IS ENFORCEMENT, NOT DOCUMENTATION — though not because the prose was right and
+# simply ignored. The prose GRANTED the block, everywhere the light could have looked.
+# pr-review-light.md's Scope said "any reviewer can block on a defect you spot", and its
+# request-changes bullet — the one a light reads on FINDING a defect — said "a light
+# reviewer's block counts — any reviewer can stop a PR". The light's OWN SPAWN PROMPT
+# (bin/pr-review, reviewer_prompt) said it a third time, inside its own instructions:
+# "any reviewer can still block on a defect". The light did what all three told it to do.
+# Those grants are now swept — 2a1b2abe cleared nine review documents, and the prompt was
+# the tenth and last site; it states the prohibition and names `bin/task note` as the path
+# instead, with a guard test pinning it (test/commands/pr_review_command_test.rb). The
+# lesson is stronger for the correction, not weaker: a resource this scarce cannot rest on
+# prose that was uniformly wrong across all ten files that carried it, where sweeping nine
+# proves nothing about the tenth. So the rule moves to where it cannot be walked around:
+# the write itself.
 #
 # ═══ WHY THIS IS KEYED ON THE SOUL AND NOT ON THE LEASE ═══
 #
