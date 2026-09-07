@@ -556,8 +556,19 @@ module CiStatus
   #                                         Measured and left as a handle in
   #                                         test/lib/dor_check_exempt_ci_test.rb's
   #                                         honour-the-remedy property.
-  #   bin/dor-check suite gate  true      — gated path; the cert it names is the cert
-  #                                         full_cert_stands_in_for_ci? then credits.
+  #   bin/dor-check suite gate  true      — TWO calls, one per cert route the gate can
+  #                                         refuse on an unreadable CI: the FAST-cert
+  #                                         branch and the DEFERRED one. Both print
+  #                                         only in the BUILDER role, where CiGate
+  #                                         raises no CI error to carry the remedy;
+  #                                         the review halves POINT at that error
+  #                                         instead and call nothing here. Gated path
+  #                                         in both — the cert each names is the cert
+  #                                         full_cert_stands_in_for_ci? then credits,
+  #                                         and a full cert really does clear a
+  #                                         deferral (it is what the deferral deferred).
+  #                                         The deferred call is newer than the fast
+  #                                         one: /tasks/deferred-unreadable-skips-role-split.
   #   bin/dor-check submit note true      — gated path suggestion; suppressed when the
   #                                         review allow-list already refused.
   #   bin/pr-review             COMPUTED  — cert_route: !maybe_exempt, so the pre-review

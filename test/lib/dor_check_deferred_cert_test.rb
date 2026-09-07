@@ -144,7 +144,27 @@ class DorCheckDeferredCertTest < Minitest::Test
   # Shell bin/dor-check --file, rooted at the desk. Suite-evidence injection is forced
   # OFF so the REAL fingerprint + evidence-grading path runs — the receipt under test
   # is graded exactly as a builder's would be. Only CI is injected.
-  def dor_check(task, desk, projects, ci:, extra: {})
+  #
+  # `role:` IS A COMMAND-LINE PARAMETER AND NOT AN `extra:` KEY, and the distinction is
+  # the whole reason it exists. bin/dor-check reads the role from --gate-role ONLY
+  # — its `options` hash seeds the "builder" default and the --gate-role switch is the
+  # only writer, and there is NO env seam anywhere for it. `extra:`, meanwhile, merges
+  # into `env` above, which with_env applies to the CHILD'S ENVIRONMENT. So a role
+  # handed through `extra:` is not overridden or rejected: it is never read, the child
+  # silently runs the DEFAULT builder role, and
+  # the run still looks exactly like the one that was asked for. The role test below
+  # spent its life doing precisely that — asserting the builder role twice under a
+  # comment claiming the role was the only variable — which is why it could not catch
+  # the role-blind refusal that shipped beside it in the same commit (2f8973a4).
+  # Sibling test/lib/dor_check_exempt_ci_test.rb passes it on the command line for the
+  # same reason.
+  #
+  # It is passed on EVERY call, including the builder ones, deliberately. "builder" is
+  # already the default, so stating it changes no behaviour — but it means the flag is
+  # exercised by every test in this file, and a --gate-role that were ever renamed or
+  # dropped dies here as an unknown-option error in all of them instead of degrading
+  # quietly into the default in the one test that cared.
+  def dor_check(task, desk, projects, ci:, role: "builder", extra: {})
     Dir.mktmpdir do |d|
       path = File.join(d, "task.json")
       File.write(path, JSON.generate(task))
@@ -159,7 +179,8 @@ class DorCheckDeferredCertTest < Minitest::Test
       }.merge(extra)
       out = nil
       with_env(env) do
-        out = IO.popen(SessionEnv.neutralized, "#{BIN} --file #{path} --json 2>/dev/null", &:read)
+        out = IO.popen(SessionEnv.neutralized,
+                       "#{BIN} --file #{path} --json --gate-role #{role} 2>/dev/null", &:read)
       end
       [JSON.parse(out), $?.exitstatus]
     end
@@ -167,6 +188,21 @@ class DorCheckDeferredCertTest < Minitest::Test
 
   def defer_refusal(verdict)
     Array(verdict["errors"]).find { |e| e.include?("DEFERRED") || e.include?("DEFERRAL") }
+  end
+
+  # WHAT A REVIEW-ROLE RUN LOOKS LIKE FROM THE OUTSIDE. bin/dor-check emits no
+  # gate_role field, so "did the role land?" has to be answered from role-DEPENDENT
+  # behaviour, and this is the one that fires in every CI state: the zap check (is the
+  # tree this verdict graded the commit that will merge?) is asked ONLY under
+  # --gate-role review, and with no headRefOid to compare against it reports itself
+  # unmade. Measured on this exact fixture across green/red/pending/unreadable —
+  # present in all four review runs, absent from all four builder runs.
+  #
+  # Keyed on a phrase, so a reworded suggestion fails this. That direction is the safe
+  # one: it can only ever cost a FALSE RED, never let a builder-role run pass itself
+  # off as a review one, which is the failure actually being fenced.
+  def review_role_marker?(verdict)
+    Array(verdict["suggestions"]).any? { |s| s.include?("the zap check") }
   end
 
   # --- [integration] the route the change exists to open ---------------------------
@@ -267,26 +303,79 @@ class DorCheckDeferredCertTest < Minitest::Test
     end
   end
 
-  # A REFUSED CI READ (401/403) IS THE TOKEN, NOT A VERDICT — and the deferred refusal
-  # must NOT re-print the ~500-character credential remedy the CI gate's own error is
-  # already carrying beside it. A deferral can never clear an unread CI (that needs a
-  # FULL cert, which a deferral is by definition not), so the two errors ALWAYS appear
-  # together; printing the paragraph twice in one verdict is how a reader learns to skim
-  # the thing we most need them to read. Point at it, and say the deferral-specific part.
-  def test_an_unreadable_ci_points_at_the_credential_error_instead_of_repeating_it
+  # A REFUSED CI READ (401/403) IS THE TOKEN, NOT A VERDICT — and what the deferred
+  # refusal owes the reader about it SPLITS ON THE ROLE, because what is standing beside
+  # it splits on the role. Both halves are pinned below, against the same fixture.
+  #
+  # THE CI TOKEN CARRIES A REAL 401 BODY, and that is load-bearing rather than realism.
+  # unreadable_remedy branches on the CAUSE: a bare "unreadable" classifies to nothing
+  # and takes the generic "forbidden response" text, which names NO command — so the
+  # review half's `refute_includes "gh-auth-refresh"` would be asserted against a string
+  # that could not have contained it whatever the code did. This file's whole subject is
+  # a control that cannot fail, so it does not get to ship another one.
+  UNREADABLE_401 = "unreadable:HTTP 401: Bad credentials"
+
+  def credential_remedy?(text) = text.to_s.include?("This is a CREDENTIAL fault")
+
+  # REVIEW ROLE — POINT AT THE ERROR BESIDE IT. Review's allow-list refuses on this same
+  # state (a deferral can never clear an unread CI: that needs a FULL cert, which a
+  # deferral is by definition not), so the CI gate's error IS raised alongside carrying
+  # the ~500-character remedy in full. Printing the paragraph twice in one verdict is how
+  # a reader learns to skim the thing we most need them to read.
+  def test_an_unreadable_ci_points_at_the_credential_error_in_the_REVIEW_role
     with_desk do |projects, desk|
-      verdict, code = dor_check(task_json([receipt_for(desk)]), desk, projects, ci: "unreadable")
+      verdict, code = dor_check(task_json([receipt_for(desk)]), desk, projects,
+                                ci: UNREADABLE_401, role: "review")
 
       refute verdict["ready"], "a CI nobody could read is not a green one"
       assert_equal 1, code
+      assert review_role_marker?(verdict), "this half only holds in the review role — it must BE one"
       refusal = defer_refusal(verdict)
       refute_nil refusal, "expected a deferral refusal: #{verdict['errors']}"
-      assert_includes refusal, "carries the credential remedy",
-                      "it must POINT at the remedy beside it"
+      assert_includes refusal, "carries the credential remedy", "it must POINT at the remedy beside it"
       assert_includes refusal, "NO local run underneath it",
                       "and still say the part that is specific to a deferral"
-      refute_includes refusal, "gh-auth-refresh",
-                      "the remedy itself belongs to the CI error, printed once"
+      refute credential_remedy?(refusal), "the remedy itself belongs to the CI error, printed once"
+      refute_includes refusal, "gh-auth-refresh"
+
+      # THE POINTER'S REFERENT, ASSERTED. "the error beside this one" is a claim about
+      # the OTHER errors in this verdict, and a test that reads only the refusal cannot
+      # tell a correct pointer from one aimed at nothing. That is exactly how the
+      # role-blind version of this branch shipped.
+      assert (Array(verdict["errors"]) - [refusal]).any? { |e| credential_remedy?(e) },
+             "the error it points at must actually be there: #{verdict['errors']}"
+    end
+  end
+
+  # BUILDER ROLE — PRINT THE REMEDY INLINE, because here there is nothing beside it to
+  # point at. CiGate.verdict only reaches unread_ci_refusal when review_role, so
+  # submit-side the CI gate raises no error for :unreadable at all and the remedy travels
+  # as a suggestion. This is the role bin/ship runs, so it is the role a blocked builder
+  # is actually reading — and it read a pointer to an error that was not on their screen.
+  def test_an_unreadable_ci_prints_the_credential_remedy_inline_in_the_BUILDER_role
+    with_desk do |projects, desk|
+      verdict, code = dor_check(task_json([receipt_for(desk)]), desk, projects,
+                                ci: UNREADABLE_401, role: "builder")
+
+      refute verdict["ready"], "a CI nobody could read is not a green one"
+      assert_equal 1, code
+      refute review_role_marker?(verdict), "and this half only holds submit-side"
+      refusal = defer_refusal(verdict)
+      refute_nil refusal, "expected a deferral refusal: #{verdict['errors']}"
+      assert credential_remedy?(refusal),
+             "submit-side the refusal must CARRY the remedy, not point at one: #{refusal}"
+      assert_includes refusal, "gh-auth-refresh", "and carry the command that actually clears it"
+      assert_includes refusal, "NO local run underneath it",
+                      "without losing the part that is specific to a deferral"
+      refute_includes refusal, "carries the credential remedy",
+                      "pointing at a neighbour that does not exist in this role is the defect"
+
+      # THE PREMISE, ASSERTED RATHER THAN ASSUMED — inline is only right BECAUSE nothing
+      # beside it carries the remedy. If CiGate ever starts refusing submit-side, this
+      # fires and says so, instead of leaving a now-duplicated paragraph to be noticed by
+      # a reader who has already learned to skim it.
+      refute (Array(verdict["errors"]) - [refusal]).any? { |e| credential_remedy?(e) },
+             "nothing else in this role's errors carries it — that is why it is inline: #{verdict['errors']}"
     end
   end
 
@@ -294,20 +383,66 @@ class DorCheckDeferredCertTest < Minitest::Test
 
   # THE REVIEW GATE-ZERO GRADES IT THE SAME WAY, which is what keeps a deferred task
   # from dead-ending one rung later: review enforces the settled green, and a settled
-  # green is precisely what this route already requires. Driven through the injected
-  # verdict seam so the role is the only variable.
+  # green is precisely what this route already requires. The cert verdict is driven
+  # through the injected seam so the ROLE is the only variable — and the role is now
+  # actually a variable: it rides `role:` to --gate-role on the command line, and each
+  # run is checked for the review-role marker before its verdict is believed.
+  #
+  # It did not used to be. This test shipped passing the role through `extra:`, which
+  # is the child ENVIRONMENT, against a --gate-role that has no env seam — so it ran
+  # the DEFAULT builder role twice and asserted role-independence by comparing a role
+  # to itself. See the dor_check helper's header. Everything it claimed was true; it
+  # simply could not see it, which is why the role-blind refusal in the same commit
+  # walked past it.
   def test_the_review_role_credits_a_deferred_receipt_on_green_and_refuses_without_it
     with_desk do |projects, desk|
-      ready, = dor_check(task_json([]), desk, projects, ci: "green",
+      ready, = dor_check(task_json([]), desk, projects, ci: "green", role: "review",
                                                         extra: { "DOR_CHECK_SUITE_EVIDENCE" => "deferred_fresh",
                                                                  "DOR_CHECK_PR_HEAD" => nil })
+      assert review_role_marker?(ready),
+             "this run must BE a review run — without the marker it is the builder default again"
       assert_equal "deferred", ready.dig("full_suite", "route"),
-                   "submit-side, an injected fresh deferral routes deferred: #{ready['errors']}"
+                   "review-side, an injected fresh deferral routes deferred: #{ready['errors']}"
 
-      blocked, = dor_check(task_json([]), desk, projects, ci: "red",
+      blocked, = dor_check(task_json([]), desk, projects, ci: "red", role: "review",
                                                           extra: { "DOR_CHECK_SUITE_EVIDENCE" => "deferred_fresh" })
+      assert review_role_marker?(blocked), "and so must this one"
       refute blocked["ready"], "and a red CI refuses it in the same lane"
       assert_nil blocked.dig("full_suite", "route")
+    end
+  end
+
+  # THE CONTROL FOR THE TEST ABOVE, and what makes its `role:` mean anything. A marker
+  # asserted in the review role proves the role landed only if the BUILDER role does
+  # NOT carry it; the failure being fenced is a flag that never arrives, and a fixture
+  # reading identically in both roles cannot tell that from one that reads correctly.
+  # So drive the SAME fixture through both roles and pin the two places they diverge:
+  #
+  #   ci_gate_result — CiGate.gate_row grades a PENDING CI "pending" submit-side and
+  #                    "fail" for review. Structural: a field, not a sentence.
+  #   the zap suggestion — review-only, the marker the test above leans on.
+  #
+  # A pending CI is the state to ask it in: a deferral has no provisional twin, so the
+  # VERDICT is role-independent here (both refuse) and the discriminators are the only
+  # thing separating the two runs. If this test ever fails by finding the two roles
+  # identical, --gate-role stopped reaching the CLI and every "review" run in this file
+  # is a builder run wearing the name.
+  def test_the_gate_role_flag_actually_reaches_the_cli
+    with_desk do |projects, desk|
+      evidence = { "DOR_CHECK_SUITE_EVIDENCE" => "deferred_fresh" }
+      builder, = dor_check(task_json([]), desk, projects, ci: "pending", role: "builder", extra: evidence)
+      review, = dor_check(task_json([]), desk, projects, ci: "pending", role: "review", extra: evidence)
+
+      assert_equal "pending", builder["ci_gate_result"], "submit-side a running CI is PENDING, not a failure"
+      assert_equal "fail", review["ci_gate_result"],
+                   "the review gate-zero fails a CI that has not settled — reading 'pending' here means the " \
+                   "--gate-role flag never reached the CLI"
+
+      refute review_role_marker?(builder), "the builder role must not carry the review-only marker"
+      assert review_role_marker?(review), "and the review role must"
+
+      refute builder["ready"], "a deferral has no provisional twin in EITHER role"
+      refute review["ready"]
     end
   end
 

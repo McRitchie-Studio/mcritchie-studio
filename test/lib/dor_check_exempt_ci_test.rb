@@ -760,20 +760,28 @@ class DorCheckExemptCiTest < Minitest::Test
   # NUMBERS, and the reason for each:
   #   bin/lib/ci_gate.rb  1 stating / 0 default — unread_ci_refusal forwards its own
   #                       cert_route:, and both CiGate.verdict callers state it.
-  #   bin/dor-check       1 stating / 2 default — the stating one is pr_read_alert,
-  #                       which FORWARDS its callers' route (see below); the two
-  #                       defaults are the suite-gate refusal and the submit-side
-  #                       note, both on the GATED path where a cert genuinely clears.
+  #   bin/dor-check       1 stating / 3 default — the stating one is pr_read_alert,
+  #                       which FORWARDS its callers' route (see below); the three
+  #                       defaults are the suite gate's TWO unreadable-CI refusals —
+  #                       the FAST-cert branch and the DEFERRED one, each in its
+  #                       BUILDER half — plus the submit-side note, all on the GATED
+  #                       path where a cert genuinely clears. The deferred half joined
+  #                       them in /tasks/deferred-unreadable-skips-role-split: it had
+  #                       been pointing at a CI error only the REVIEW role raises, so
+  #                       submit-side it named a remedy that was not in the errors.
   #   bin/pr-review       1 stating / 0 default — cert_route: !maybe_exempt.
   #   bin/release.rb      1 stating / 0 default — the G3 pre-QA gate, which STATES
   #                       cert_route: :retired since /tasks/release-offers-retired-cert.
   #                       It is the one entry here that has MOVED: it was 0/1, and the
   #                       pin at 1 default is what brought the fix back to this file.
-  #                       Totals went 3/3 → 4/2 in that one diff; re-derive rather than
-  #                       trusting either number, with the scan below.
+  #                       Totals went 3/3 → 4/2 in that one diff, and 4/2 → 4/3 when
+  #                       the deferred branch above gained its builder half — SEVEN
+  #                       callers over FOUR files as of 2026-09-06. This number has
+  #                       moved in three consecutive sittings: re-derive it with the
+  #                       scan below rather than trusting any figure written here.
   UNREADABLE_REMEDY_CALL_SITES = {
     "bin/lib/ci_gate.rb" => { states_route: 1, takes_default: 0 },
-    "bin/dor-check" => { states_route: 1, takes_default: 2 },
+    "bin/dor-check" => { states_route: 1, takes_default: 3 },
     "bin/pr-review" => { states_route: 1, takes_default: 0 },
     "bin/release.rb" => { states_route: 1, takes_default: 0 }
   }.freeze
