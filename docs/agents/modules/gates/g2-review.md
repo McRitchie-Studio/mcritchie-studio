@@ -64,8 +64,8 @@ What the review session records, per reviewed task:
 0. **Claim-time + gate-zero CI check** — the session only claims green-CI PRs
    (`bin/task claim-next-review`), and Carl's gate-zero re-reads the PR's live CI
    mid-review (`bin/lib/ci_status.rb`):
-   - **red** → `bin/task block <slug> --kind rework` with the failing checks
-     named, and the bounce recorded as a **failed `dor_review` (gate-zero)
+   - **red** → `bin/task block <slug> --kind rework --agent carl` with the failing
+     checks named, and the bounce recorded as a **failed `dor_review` (gate-zero)
      attempt** with a `ci` SOP (`--meta outcome=ci-red`, actor `carl`) — not a
      G2 review lane. No further reviewer tokens burned.
    - **conflicted** (`mergeStateStatus DIRTY`) → the same block-back shape
