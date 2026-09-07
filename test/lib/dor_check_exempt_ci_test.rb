@@ -1287,9 +1287,60 @@ class DorCheckExemptCiTest < Minitest::Test
   # PRINT. The header above quotes the retired sentence on purpose (a correction that
   # deletes its own provenance is how a claim comes back), and a whole-file scan cannot
   # tell that quotation from a live promise: it failed on the explanation of the fix.
+  #
+  # HEREDOC BODIES ARE NOT COMMENTS, and skipping that distinction would have put the
+  # hole back where it hurts most. bin/pr-review hands its reviewers PROMPT/TEXT
+  # heredocs — PROSE, which is this whole family's subject — and a markdown heading
+  # inside one begins with `#`. A flat "drop every line starting with #" would let the
+  # retired claim live on, invisibly, in the one place the supervisor's words reach a
+  # reviewer most directly. So heredoc bodies are tracked and kept. `#{` is kept too:
+  # an interpolation is code.
+  #
   # Trailing comments are deliberately left in, so a claim parked at the end of a code
-  # line still trips this.
-  def pr_review_printable = pr_review_source.lines.reject { |l| l.lstrip.start_with?("#") }.join
+  # line still trips this. test_unit_the_supervisor_stops_promising... is proven to
+  # bite by mutation: the claim reinstated on a code line fails it.
+  def pr_review_printable = printable_ruby(pr_review_source)
+
+  def printable_ruby(source)
+    heredoc = nil
+    source.lines.reject { |line|
+      if heredoc
+        heredoc = nil if line.strip == heredoc
+        false
+      elsif (open = line[/<<[~-]?["']?([A-Z_]+)["']?/, 1])
+        heredoc = open
+        false
+      else
+        line.lstrip.start_with?("#") && !line.lstrip.start_with?("\#{")
+      end
+    }.join
+  end
+
+  # THE STRIPPER'S OWN CONTROL, because a scan that reads nothing passes everything.
+  # bin/pr-review happens to carry no heredoc line starting with `#` today, so driving
+  # this against the real file would prove only that the branch is unreachable in
+  # practice. The fixture puts one claim in each of the four positions and states which
+  # two must survive.
+  def test_unit_the_printable_stripper_keeps_prose_and_drops_comments
+    fixture = <<~RUBY
+      # CLAIM_IN_A_COMMENT — provenance, must be dropped
+      note = "CLAIM_IN_A_STRING"
+      prompt = <<~PROMPT
+        # CLAIM_IN_A_HEREDOC_HEADING
+        body
+      PROMPT
+      value = "x" # CLAIM_IN_A_TRAILING_COMMENT
+    RUBY
+    printable = printable_ruby(fixture)
+
+    refute_includes printable, "CLAIM_IN_A_COMMENT", "a full-line Ruby comment is not printable"
+    assert_includes printable, "CLAIM_IN_A_STRING", "a string literal is printable"
+    assert_includes printable, "CLAIM_IN_A_HEREDOC_HEADING",
+                    "a markdown heading inside a PROMPT heredoc is PROSE HANDED TO A REVIEWER — the one " \
+                    "place this claim would do the most damage, and a flat comment-strip hides it"
+    assert_includes printable, "CLAIM_IN_A_TRAILING_COMMENT",
+                    "a claim parked after code on a live line must still trip the guard"
+  end
 
   # The caveat literal itself — from the assignment to its `else`, so the assertions
   # below describe the string that is PRINTED and not a comment that describes it.
