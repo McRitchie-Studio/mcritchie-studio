@@ -283,7 +283,10 @@ class FeatureShapeTiersTest < Minitest::Test
   # "every demanded tier has a lane HERE" and proves nothing whatsoever about rolio — which
   # has no Playwright lane and no e2e/ directory, while `ui+db` demands `e2e` of it.
   # An unqualified name here would be the same lie one level up, in the guard built to hunt it.
-  # See the audit block in config/feature_shapes.yml, and /tasks/dor-check-tiers-per-repo.
+  # The audit block in config/feature_shapes.yml carries the per-repo picture and the exact
+  # condition that would lift this qualifier. NO TASK CARRIES THAT WORK — the one this line
+  # used to cite was archived with the check unbuilt, which is why the pointer is now to the
+  # code and the audit rather than to a URL that can be closed without landing.
   def test_integration_every_required_tier_is_run_by_a_real_lane_in_this_repo
     commands = runner_commands
     tiers = required_tiers(File.read(FEATURE_SHAPES))
