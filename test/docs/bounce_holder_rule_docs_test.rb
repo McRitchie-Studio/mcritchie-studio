@@ -116,8 +116,11 @@ class BounceHolderRuleDocsTest < ActiveSupport::TestCase
   #
   # SO ASK WHAT ACTUALLY TERMINATES A SHELL COMMAND IN PROSE. Not a period: inside
   # `--feedback "…"` a period is ordinary text and terminates nothing. Not a
-  # newline: five sites here soft-wrap a command across a prose line break with NO
-  # backslash, which is why `flat` joins lines at all. Not a character count. What
+  # newline: FOUR sites here soft-wrap a command across a prose line break with NO
+  # backslash — index.md, heartbeats.md and zap-protocol.md wrap mid-flag, and
+  # pr-review-sop.md wraps between `bin/task` and `block`, where a line-at-a-time
+  # reader cannot even find the invocation at all. That is why `flat` joins lines.
+  # Not a character count either. What
   # ends a command is running out of COMMAND — the first token that is not a flag,
   # a flag's value, a placeholder, a quoted string, or a continuation. `command_extent`
   # walks exactly that, and quoted strings are OPAQUE to it, so one rule fixes both
@@ -323,7 +326,7 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
 
     assert_equal 1, runs.size,
       "a command soft-wrapped across a prose line break with NO backslash did not read as one " \
-      "command. Five sites in this corpus are written that way, and a line-at-a-time reader " \
+      "command. Four sites in this corpus are written that way, and a line-at-a-time reader " \
       "scores ZERO hits on every one of them"
     assert_includes runs.first.command, "--agent carl"
 
