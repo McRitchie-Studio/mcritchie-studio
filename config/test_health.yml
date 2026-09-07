@@ -119,7 +119,25 @@ frozen_size:
   # The PURE rendering decisions DID go to a new file, test/lib/task_author_fields_test.rb
   # (its whole test_unit_* tier), which is what this ceiling asks for. Folding these in
   # beside them would conflate the two tiers and drop the end-to-end proof entirely.
-  test/lib/task_cli_test.rb: 2877
+  #
+  # +180 (2026-09-07, wire-task-dependencies-field): CLI-level cases for
+  # `--depends-on`, the first writer `tasks.dependencies` has ever had outside a
+  # test calling Task.create! directly. They stay in THIS file deliberately.
+  # The property they pin is WHICH BODY GOES ON THE WIRE — that a top-level
+  # COLUMN rides beside "devops" rather than inside it, and that the `[]` a
+  # clear sends is not dropped as falsy — and that is only observable by driving
+  # the real binary against this file's private stub server (`run_task`, 261
+  # lines of harness). A new file could get it only by duplicating that server,
+  # and would then be testing its own copy of the thing under test.
+  #
+  # What DID go elsewhere, which is what this ceiling actually asks for: the
+  # pure rendering decisions to test/lib/task_column_fields_test.rb (7 cases),
+  # the model's normalization and refusals to a NEW file,
+  # test/models/task_dependencies_test.rb (12 cases — which is why task_test.rb
+  # below is unmoved, sitting at exactly its old ceiling), and the docs↔CLI
+  # agreement guard to a NEW file,
+  # test/docs/task_dependencies_writer_docs_test.rb.
+  test/lib/task_cli_test.rb: 3057
   test/models/task_test.rb: 2266
   # +77 (2026-08-27, retire-acquisition-studio-checkout): three CLI-level tests for
   # the origin-unreachable withhold — the error case, the retired-repo (:gone) case,
