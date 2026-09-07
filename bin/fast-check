@@ -26,6 +26,10 @@
 #            test/lib/<stem>_<aspect>_test.rb siblings that are nobody else's
 #            twin — because a tool's tests are a family, not a twin: bin/dor-check
 #            has fifteen, and until 2026-09-06 a diff touching it mapped to ONE.
+#            PAST THE CAP this lane does not vanish: it falls back to the
+#            CONVENTION TWINS (the pre-family set, 1-2 paths per changed file,
+#            no grep), so crossing the cap is a slope rather than a cliff. See
+#            FastCert#convention_twins.
 #   spine  : config/fast_cert_spine.yml — the always-run critical core (~10-20s),
 #            so a diff that maps to nothing still exercises the money paths.
 #            Mapped files already covered by a spine entry run only once.
@@ -55,7 +59,9 @@
 #                     gate-workspace-skips-test-prepare (PR #522): prepare_gate_workspace!
 #                     now runs db:test:prepare test:prepare itself, whatever shape the
 #                     registered command takes. See docs/agents/modules/testing.md.)
-#   mapped-tests    : bin/rails test <mapped files>      (skipped when none map)
+#   mapped-tests    : bin/rails test <mapped files>      (skipped when none map;
+#                     runs the CONVENTION TWINS instead when the cap tripped, and is
+#                     skipped only when there are no twins either)
 #   spine           : bin/rails test <spine entries>
 #   rubocop-changed : bin/rubocop <changed lintable files> (skipped when none)
 # All lanes green → ONE evidence line is recorded on the task's checks_run:
@@ -97,8 +103,9 @@
 #   FAST_CHECK_ROOT                repo dir to run + fingerprint in (default: the
 #                                  cwd's git toplevel, else this repo)
 #   FAST_CHECK_SPINE               spine config path (default: config/fast_cert_spine.yml)
-#   FAST_CHECK_MAPPED_CAP          max mapped test files before the lane is skipped
-#                                  (default: 15, counted AFTER the spine dedupe)
+#   FAST_CHECK_MAPPED_CAP          max mapped test files before the lane falls back to
+#                                  the convention twins (default: 15, counted AFTER the
+#                                  spine dedupe; it caps the fallback too)
 #   FAST_CHECK_TEST_PREPARE_CMD    override the test-prepare lane — test DB + bundled
 #                                  assets (default: bin/rails db:test:prepare test:prepare)
 #   FAST_CHECK_SKIP_TEST_PREPARE   set to 1 only for non-Rails harness tests
@@ -112,8 +119,9 @@
 # Exit code: 0 = all lanes green (evidence recorded/printed), 1 = a lane failed,
 # no fingerprint, the evidence couldn't be recorded, or the diff maps to NO test
 # file at all (the zero-evidence guard below), 2 = DEFERRED to GitHub CI — the
-# mapped lane was CAPPED over an empty spine, so no local lane could certify this
-# tree and a fingerprint-bound receipt was recorded instead. 2 is NOT a
+# mapped lane was CAPPED with no twin fallback to take, over an empty spine, so no
+# local lane could certify this tree and a fingerprint-bound receipt was recorded
+# instead. 2 is NOT a
 # certification: it is falsy to every `system(...)` caller, and only bin/ship
 # reads it as "carry on to the PR" (bin/dor-check then requires a GREEN CI).
 
@@ -167,17 +175,43 @@ spine = FastCert.spine(root, SPINE_CONFIG)
 mapped_only = mapped.reject { |t| FastCert.covered_by_spine?(t, spine) }
 lintable = FastCert.lintable_files(root, changed)
 
+# THE CAP'S FALLBACK, spine-deduped for the same reason the mapped set is: a twin the
+# spine already runs is not extra work, so it should neither be re-run nor counted
+# against the cap. Computed unconditionally (it is a cheap File.file? per changed
+# path) so --list and the run agree even when the cap does not trip.
+twins_only = FastCert.convention_twins(root, changed)
+                     .reject { |t| FastCert.covered_by_spine?(t, spine) }
+
 # THE CAP, decided before anything runs so --list reports the same lane the run
-# would execute. See FastCert.cap_decision for why it sits after the spine dedupe
-# and why the default is as low as it is.
-cap = FastCert.cap_decision(mapped_only, breakdown)
+# would execute. See FastCert.cap_decision for why it sits after the spine dedupe,
+# why the default is as low as it is, and why a capped lane falls back to the twins
+# rather than to nothing.
+cap = FastCert.cap_decision(mapped_only, breakdown, twins: twins_only)
 
 if options[:list]
   warn "fast-check: #{changed.size} changed file(s) → #{mapped.size} mapped test path(s), " \
        "#{spine.size} spine entr#{spine.size == 1 ? 'y' : 'ies'}, #{lintable.size} lintable file(s)"
   warn "fast-check: mapped cap #{cap[:cap]} — #{cap[:capped] ? 'EXCEEDED' : 'not reached'} " \
        "(#{cap[:count]} after the spine dedupe)"
-  mapped_only.each { |t| puts(cap[:capped] ? "capped  #{t}" : "mapped  #{t}") }
+  if cap[:capped]
+    warn "fast-check: capped → falling back to the #{cap[:fallback].size} convention twin(s) " \
+         "of #{cap[:fallback_considered]} considered"
+  end
+  # ONE LINE PER PATH, labelled by what will actually happen to it. Listing the
+  # fallback separately printed every twin TWICE — once as `capped`, once as `twin`
+  # — which reads as "skipped, and also run". A preview that needs explaining is not
+  # a preview.
+  mapped_only.each do |t|
+    label = if !cap[:capped] then "mapped"
+            elsif cap[:fallback].include?(t) then "twin  "
+            else "capped"
+            end
+    puts "#{label}  #{t}"
+  end
+  # A twin the mapped set does not contain (a changed test file whose own family
+  # pushed the union over the cap can still leave its twin outside mapped_only after
+  # the spine dedupe) would otherwise vanish from the preview entirely.
+  (cap[:fallback] - mapped_only).each { |t| puts "twin    #{t}" }
   spine.each { |t| puts "spine   #{t}" }
   lintable.each { |f| puts "lint    #{f}" }
   exit 0
@@ -581,9 +615,8 @@ mapped_res =
               gate_slug: gate_slug)
   elsif cap[:capped]
     # LOUD, because a silently-skipped lane is how a cert stops meaning anything.
-    # The builder is told the cap, what tripped it, and the one command that DOES
-    # cover a diff this broad — the spine still runs below, so this is a narrower
-    # cert rather than no cert.
+    # The builder is told the cap, what tripped it, WHAT RUNS INSTEAD, and the one
+    # command that DOES cover a diff this broad.
     warn ""
     warn "fast-check: MAPPED LANE CAPPED — #{cap[:count]} mapped test file(s) exceeds the cap of #{cap[:cap]}."
     if cap[:worst_path]
@@ -592,15 +625,36 @@ mapped_res =
       warn "  camelized name; when that matches this much of the suite it is telling you the"
       warn "  token is generic, not which tests are relevant."
     end
-    warn "  running the SPINE ONLY. For a diff this broad the right cert is:"
+    if cap[:fallback].any?
+      warn "  falling back to the CONVENTION TWINS — #{cap[:fallback].size} test file(s), one per changed"
+      warn "  file, the set this lane ran before the family hop widened it:"
+      cap[:fallback].each { |t| warn "    #{t}" }
+      warn "  this is a NARROWER cert, not no cert. For the full mapped set:"
+    elsif cap[:fallback_considered] > cap[:cap]
+      warn "  the twin fallback is ITSELF over the cap (#{cap[:fallback_considered]} twins), so it degraded"
+      warn "  again: running the SPINE ONLY. For a diff this broad the right cert is:"
+    else
+      warn "  no changed file has an existing test twin, so there is no fallback to take."
+      warn "  running the SPINE ONLY. For a diff this broad the right cert is:"
+    end
     warn "    bin/full-suite-check #{gate_slug || '<task>'}"
     warn "  (override deliberately with FAST_CHECK_MAPPED_CAP=<n>.)"
     warn ""
-    skip_lane("mapped-tests",
-              "#{cap[:count]} mapped file(s) over the cap of #{cap[:cap]}" \
-              "#{cap[:worst_path] ? " (widest: #{cap[:worst_path]} → #{cap[:worst_count]})" : ''}" \
-              " — spine only; use bin/full-suite-check for this diff",
-              gate_slug: gate_slug)
+    if cap[:fallback].any?
+      # THE LANE KEEPS ITS NAME. dor-check, the board and every reader key on
+      # "mapped-tests"; renaming it for the narrower set would make a capped run
+      # look like a lane that did not run at all, which is the reporting bug this
+      # whole family keeps producing. What NARROWED is said in the reason and on
+      # the evidence line, not in the identifier.
+      run_lane("mapped-tests", "#{test_cmd} #{cap[:fallback].map(&:shellescape).join(' ')}",
+               root, gate_slug: gate_slug)
+    else
+      skip_lane("mapped-tests",
+                "#{cap[:count]} mapped file(s) over the cap of #{cap[:cap]}" \
+                "#{cap[:worst_path] ? " (widest: #{cap[:worst_path]} → #{cap[:worst_count]})" : ''}" \
+                " — spine only; use bin/full-suite-check for this diff",
+                gate_slug: gate_slug)
+    end
   else
     run_lane("mapped-tests", "#{test_cmd} #{mapped_only.map(&:shellescape).join(' ')}", root, gate_slug: gate_slug)
   end
@@ -673,10 +727,20 @@ if fingerprint.nil?
   exit 1
 end
 
-# The mapped count is what RAN, not what mapped: a capped lane is SKIPPED, so
-# mapped_only.size would record "41 mapped" for ZERO mapped tests actually run.
+# The mapped count is what RAN, not what mapped: a capped lane does not run its whole
+# mapped set, so mapped_only.size would record "41 mapped" for a lane that ran two
+# twins — or, before the fallback existed, for one that ran nothing at all.
+#
+# THREE WORDINGS FOR THREE RUNGS, and the capped-with-no-fallback one is BYTE-IDENTICAL
+# to what it has always emitted. That is deliberate: every existing reader of a capped
+# evidence line — dor-check's own tests, the reviewer eyeballing checks_run, the PR
+# #1226 regression assertions — is reading about a run that executed no mapped test,
+# and that run has not changed. Only the rung that now runs something says something new.
 mapped_detail =
-  if cap[:capped]
+  if cap[:capped] && cap[:fallback].any?
+    "#{cap[:fallback].size} twin(s) (CAPPED: #{cap[:count]} mapped path(s) over the cap of " \
+      "#{cap[:cap]}; fell back to the convention twins — bin/full-suite-check covers the full set)"
+  elsif cap[:capped]
     "0 mapped (CAPPED: #{cap[:count]} mapped path(s) over the cap of #{cap[:cap]}; " \
       "spine only — bin/full-suite-check covers this diff)"
   else
