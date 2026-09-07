@@ -1843,6 +1843,11 @@ class ReleaseCliTest < Minitest::Test
 
     assert_includes out, "QA is NOT green", "the boot failure is reported"
     assert_includes out, "Prepared (NOT assembled — QA not green)"
+    # prepare RETURNS NORMALLY here, so the wrapper that runs it prints `PREPARE EXIT: 0`
+    # over a release that assembled nothing — measured on rel-20260907-14cff2, where the
+    # zero was read as success. The block has to say so where the failure is read.
+    assert_includes out, "the exit code is NEVER the QA verdict",
+                    "a NOT-green prepare must warn that its own exit 0 is not a verdict"
     refute_includes out, "hand off to Steffon",
                     "a NOT-green prepare must not point at `bin/release ship` — there is nothing to ship yet"
     refute_includes out, "QA-GREEN-CALL", "no flip on a QA-red prepare"

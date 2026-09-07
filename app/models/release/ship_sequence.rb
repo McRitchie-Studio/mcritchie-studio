@@ -171,6 +171,65 @@ class Release
       status.to_s.strip == "waiting"
     end
 
+    # --- github_actions deploy: the DISPATCH ARGV, and the abort when the run it
+    # --- should have created NEVER APPEARS -------------------------------------
+    #
+    # THE DEFECT (rel-20260907-14cff2, measured). `bin/release prepare` printed
+    # `gh workflow run qa-deploy.yml -f sha=0a0cc23`, GitHub created NO run, `gh`
+    # emitted NO error and exited 0, and the conductor fell through to polling a QA
+    # app that was still serving the OLD tree. The app was fine — it had simply
+    # never been redeployed — so the boot poll timed out and prepare reported
+    # "mcritchie-studio never returned /up 200 — QA is NOT green", remedy "retry
+    # `bin/qa-server deploy`". Both are wrong. An identical manual dispatch of the
+    # same workflow and SHA worked immediately. Cost: a whole prepare re-run, which
+    # superseded an already-published studio-engine version.
+    #
+    # WHY A LONGER BOOT POLL IS THE WRONG FIX, emphatically. The app booted. A
+    # bigger window polls the same stale tree for longer and then tells the same
+    # lie. The missing fact is not "did it boot" but "was a run ever created", and
+    # that is knowable in seconds — the shell already polls for exactly that run id
+    # (new_run_id). The bug was never DETECTING nothing; it was reporting nothing
+    # as a boot timeout.
+    #
+    # ONE SOURCE FOR THE COMMAND. dispatch_argv builds the argv the shell RUNS, and
+    # undispatched_run_abort quotes that same builder — so the command an operator
+    # is handed to reproduce the failure is, by construction, the command that
+    # failed. A hand-written copy in the message would drift the first time an
+    # input is added, and an operator pasting a subtly different dispatch would
+    # conclude the workflow is fine.
+    def dispatch_argv(workflow, inputs = {})
+      argv = ["gh", "workflow", "run", workflow.to_s]
+      (inputs || {}).each { |name, value| argv.push("-f", "#{name}=#{value}") }
+      argv
+    end
+
+    # The operator-facing ABORT for a dispatch that created no run. It must NAME
+    # three things, because the incident above cost an hour for want of each:
+    #   * the WORKFLOW — which dispatch silently did nothing,
+    #   * the SHA      — which tree was supposed to go out (and therefore which
+    #                    tree the app is still serving), and
+    #   * the COMMAND  — the exact line to re-run by hand, which is how the defect
+    #                    was originally distinguished from a broken app at all.
+    # It also says, in the operator's words, what the failure is NOT: this is the
+    # message that has to stop the next reader from retrying `bin/qa-server deploy`
+    # or lengthening a boot poll against an app that was never redeployed.
+    def undispatched_run_abort(workflow, inputs = {})
+      command = dispatch_argv(workflow, inputs).join(" ")
+      sha = (inputs || {})["sha"] || (inputs || {})[:sha]
+      <<~MSG.strip
+        #{workflow} was dispatched but GitHub registered NO run for it — the deploy NEVER RAN.
+            workflow: #{workflow}
+            sha:      #{sha.to_s.strip.empty? ? '(none supplied)' : sha}
+            command:  #{command}
+          This is NOT a boot timeout and NOT a slow dyno. Nothing was deployed, so the app is
+          still serving its OLD tree and a /up poll would only confirm that old tree is healthy.
+          Do NOT retry `bin/qa-server deploy` and do NOT lengthen the boot poll.
+          Re-run the dispatch by hand and confirm a run appears, then re-run the release:
+            #{command}
+            gh run list --workflow #{workflow} --limit 3
+      MSG
+    end
+
     # --- post-ship accepted re-baseline: should we advance origin/accepted? -----
     #
     # After a ship fast-forwards a repo's `main` to the frozen SHA, that repo's

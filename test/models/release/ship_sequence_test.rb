@@ -1384,4 +1384,79 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
     assert_includes kept, "rails (7.2.1)"
     assert_not_includes kept, "studio-engine (0.31.0)"
   end
+
+  # --- the never-dispatched deploy: dispatch_argv + undispatched_run_abort ------
+  #
+  # THE DEFECT these pin (rel-20260907-14cff2, measured during a real sweep):
+  # `gh workflow run qa-deploy.yml -f sha=0a0cc23` was accepted, created NO run,
+  # printed no error, and the conductor polled a QA app still serving the old
+  # tree — then blamed the app ("never returned /up 200"). The operator needed
+  # three facts to tell that apart from a slow dyno, and had none of them.
+
+  test "dispatch_argv builds the gh command the shell actually runs" do
+    assert_equal ["gh", "workflow", "run", "qa-deploy.yml", "-f", "sha=0a0cc23"],
+                 S.dispatch_argv("qa-deploy.yml", { "sha" => "0a0cc23" })
+  end
+
+  test "dispatch_argv carries every input, in order, as its own -f pair" do
+    assert_equal ["gh", "workflow", "run", "prod-deploy.yml", "-f", "sha=abc", "-f", "env=production"],
+                 S.dispatch_argv("prod-deploy.yml", { "sha" => "abc", "env" => "production" })
+  end
+
+  test "dispatch_argv with no inputs is a bare dispatch" do
+    assert_equal ["gh", "workflow", "run", "qa-deploy.yml"], S.dispatch_argv("qa-deploy.yml")
+    assert_equal ["gh", "workflow", "run", "qa-deploy.yml"], S.dispatch_argv("qa-deploy.yml", nil)
+  end
+
+  # The abort must NAME the workflow, the SHA, and the dispatch command — each one
+  # is a fact the incident was missing. Asserted as three separate claims so a
+  # regression that drops exactly one of them cannot hide behind the other two.
+  # EACH FACT GETS ITS OWN LABELLED FIELD, and that is what these assert. A bare
+  # `assert_includes message, sha` is satisfied by the sha appearing INSIDE the
+  # quoted command — measured: deleting the whole `sha:` line left such an assertion
+  # green. The operator scans a labelled block; so does the test.
+  test "undispatched_run_abort gives the workflow its own labelled field" do
+    assert_match(/^\s*workflow:\s+qa-deploy\.yml\s*$/,
+                 S.undispatched_run_abort("qa-deploy.yml", { "sha" => "0a0cc23" }))
+  end
+
+  test "undispatched_run_abort gives the never-deployed sha its own labelled field" do
+    assert_match(/^\s*sha:\s+0a0cc23\s*$/,
+                 S.undispatched_run_abort("qa-deploy.yml", { "sha" => "0a0cc23" }))
+  end
+
+  test "undispatched_run_abort gives the dispatch command its own labelled field" do
+    assert_match(/^\s*command:\s+gh workflow run qa-deploy\.yml -f sha=0a0cc23\s*$/,
+                 S.undispatched_run_abort("qa-deploy.yml", { "sha" => "0a0cc23" }))
+  end
+
+  # NOT a hand-copied string: the expected command is what dispatch_argv — the same
+  # builder the shell dispatches with — emits. A message quoting a command the shell
+  # does not run is worse than no command, because the operator concludes the
+  # workflow is healthy when their paste differs from the real dispatch.
+  test "undispatched_run_abort quotes the dispatch command the shell ran" do
+    inputs = { "sha" => "0a0cc23" }
+    assert_includes S.undispatched_run_abort("qa-deploy.yml", inputs),
+                    S.dispatch_argv("qa-deploy.yml", inputs).join(" ")
+  end
+
+  # The wrong diagnosis is the whole cost of this bug: an hour spent on a healthy
+  # app because the message said boot timeout. The abort has to say what it is NOT.
+  test "undispatched_run_abort refuses the boot-timeout diagnosis in words" do
+    message = S.undispatched_run_abort("qa-deploy.yml", { "sha" => "0a0cc23" })
+    assert_includes message, "NOT a boot timeout"
+    assert_includes message, "bin/qa-server deploy", "it must name the remedy NOT to reach for"
+    assert_includes message, "the deploy NEVER RAN", "it must state the deploy did not happen at all"
+  end
+
+  test "undispatched_run_abort still names the workflow when no sha was supplied" do
+    message = S.undispatched_run_abort("qa-deploy.yml", {})
+    assert_includes message, "qa-deploy.yml"
+    assert_match(/^\s*sha:\s+\(none supplied\)\s*$/, message,
+                 "a missing sha is STATED, never rendered as a blank field the reader mistakes for a value")
+  end
+
+  test "undispatched_run_abort reads a symbol-keyed sha too" do
+    assert_match(/^\s*sha:\s+0a0cc23\s*$/, S.undispatched_run_abort("qa-deploy.yml", { sha: "0a0cc23" }))
+  end
 end

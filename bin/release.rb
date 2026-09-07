@@ -500,6 +500,18 @@ end
 # the PRE-dispatch snapshot must NOT read as before_id=0, or the poll could latch
 # a pre-existing run. So we retry the snapshot, ABORT if it never answers, and in
 # the poll SKIP a nil read rather than compare it.
+#
+# THREE OUTCOMES, not two — and the third is why this method aborts as well as
+# returns. `true`/`false` answer "did the run we created conclude green?", which
+# presumes a run was created at all. A dispatch that GitHub accepts and then
+# silently drops produces no run, and folding that into `false` made a
+# never-deployed app read as a boot failure downstream (see the abort below). So:
+#   * true   — a run appeared and concluded successfully.
+#   * false  — a run appeared (or gh could not be baselined) and did not go green;
+#              the caller decides what that means for its lane.
+#   * ABORT  — the dispatch created NO run. Never a return value, because there is
+#              no honest deploy verdict to report and every downstream reading of
+#              `false` would describe the wrong system.
 def dispatch_and_watch(workflow, inputs = {}, chdir: nil)
   return true if DRY
 
@@ -512,8 +524,7 @@ def dispatch_and_watch(workflow, inputs = {}, chdir: nil)
   end
   return false if before_id.nil? # gh never answered — do not watch a stale run
 
-  args = ["gh", "workflow", "run", workflow]
-  inputs.each { |k, v| args += ["-f", "#{k}=#{v}"] }
+  args = Release::ShipSequence.dispatch_argv(workflow, inputs)
   _, dispatched = sh(*args, chdir: chdir)
   return false unless dispatched
 
@@ -525,7 +536,29 @@ def dispatch_and_watch(workflow, inputs = {}, chdir: nil)
 
     sleep 3
   end
-  return false unless run_id
+
+  # A DISPATCH THAT CREATED NO RUN IS A HARD ABORT, not a false return.
+  # `gh workflow run` can accept a dispatch, exit 0, print nothing, and leave
+  # GitHub with no run at all — measured on rel-20260907-14cff2. Returning false
+  # here (what this used to do, silently) made the QA deploy indistinguishable from
+  # a slow dyno: prepare's caller folded it into the boot-failure bucket and told
+  # the operator "never returned /up 200 — QA is NOT green: retry `bin/qa-server
+  # deploy`". The app was healthy; it had simply never been redeployed, so the
+  # remedy pointed at the wrong system and the sweep had to be re-run whole.
+  #
+  # The run-registration poll above ALREADY knows the difference — nil run_id means
+  # no run with an id greater than the pre-dispatch snapshot ever appeared — so the
+  # only thing missing was saying so. Aborting here is also what keeps the two
+  # failures apart downstream: prepare's /up diagnosis can now only be reached by an
+  # app that was ACTUALLY deployed to.
+  #
+  # Correct on BOTH callers. prepare aborts with the release left `assembling` and
+  # its members `reviewed` — exactly the state a re-run resumes from (the sweep skips
+  # already-merged PRs), so the abort costs a re-run and never a wedged release. ship
+  # aborted on a false return anyway; it now aborts one step earlier, with the
+  # workflow, the SHA, and the dispatch command in hand instead of "deploy failed —
+  # check the run" for a run that does not exist to be checked.
+  abort!(Release::ShipSequence.undispatched_run_abort(workflow, inputs)) if run_id.nil?
 
   _, watched = sh("gh", "run", "watch", run_id.to_s, "--exit-status", chdir: chdir)
   return true if watched
@@ -3382,6 +3415,12 @@ def prepare
     say("  ⚠ #{boot_failures.size} app(s) never returned /up 200 — QA is NOT green: leaving the release `assembling`,")
     say("    swept members stay `reviewed` (merged: release). Re-run `bin/release prepare` once they boot")
     say("    (the sweep skips the already-merged PRs): #{boot_failures.map { |d| d['repo'] }.join(', ')}")
+    # THE EXIT CODE IS NEVER THE VERDICT. prepare returns NORMALLY from this path —
+    # a NOT-green QA is a reported outcome, not a crash — so the wrapper that runs it
+    # prints `PREPARE EXIT: 0` over a release that assembled nothing. A conductor
+    # reading the exit code instead of this block calls a failed sweep a success.
+    # Said here, next to the failure, because that is where it is read.
+    say("    NOTE: prepare EXITS 0 on this path — the exit code is NEVER the QA verdict; this block is.")
   else
     # 8a. Post-deploy hooks on the booted QA app(s): run each member's declared
     #     post_deploy_cmd against its QA app, record the [post-deploy] outcome, and
