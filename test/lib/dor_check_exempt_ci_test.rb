@@ -1344,6 +1344,21 @@ class DorCheckExemptCiTest < Minitest::Test
     source.lines.reject { |line| line.lstrip.start_with?("#") && !line.lstrip.start_with?("\#{") }.join
   end
 
+  # The lines the heredoc branch KEEPS and a flat strip drops — the branch's whole
+  # observable effect on a file. flat_strip drops a superset of what printable_ruby
+  # drops and preserves order, so its output is a subsequence of the other's and one
+  # greedy walk names the difference. Returned as LINES, not as a diff of two whole
+  # files: a failure here must print the offending heredoc line, not bin/pr-review.
+  def heredoc_only_lines(source)
+    flat = flat_strip(source).lines
+    cursor = 0
+    printable_ruby(source).lines.reject do |line|
+      keep = cursor < flat.size && flat[cursor] == line
+      cursor += 1 if keep
+      keep
+    end
+  end
+
   # THE STRIPPER'S OWN CONTROL, because a scan that reads nothing passes everything.
   # bin/pr-review DOES carry heredoc lines that begin with `#` — the reviewer PROMPT
   # heredoc interpolates its sections — but every one of them is a `#{...}`, which the
@@ -1360,10 +1375,11 @@ class DorCheckExemptCiTest < Minitest::Test
     refute_equal pr_review_source, flat_strip(pr_review_source),
                  "CONTROL: the scan must have read a real file — bin/pr-review carries full-line comments, " \
                  "so a strip that removed nothing removed nothing from nothing"
-    assert_equal flat_strip(pr_review_source), pr_review_printable,
-                 "the heredoc branch now CHANGES bin/pr-review's printable source, so the header above is " \
-                 "stale: some heredoc line there begins with `#` and is not a `\#{...}` interpolation. Drive " \
-                 "this control against the real file, and correct the header before re-pinning it"
+    assert_empty heredoc_only_lines(pr_review_source).map(&:strip),
+                 "the heredoc branch now CHANGES bin/pr-review's printable source: the lines above begin " \
+                 "with `#` inside a heredoc and are not `\#{...}` interpolations, so the branch — not the " \
+                 "interpolation exemption — is what keeps them. The header above is stale; drive this " \
+                 "control against the real file, and correct the header before re-pinning it"
 
     fixture = <<~RUBY
       # CLAIM_IN_A_COMMENT — provenance, must be dropped
