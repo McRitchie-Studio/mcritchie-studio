@@ -740,6 +740,28 @@ def pr_coverage
   end
 end
 
+# THE COVERAGE BLOCK — printed on a multi-PR task, pass or fail, on EVERY human
+# verdict this gate can produce. A verdict about a task with a PR in two repos must SAY
+# which PRs it read, or the reader cannot tell a run that covered both from the pre-fix
+# run that read one and looked identical.
+#
+# A DEF, NOT A LAMBDA BESIDE THE FINAL VERDICT, and that is the point: the EXEMPT
+# verdicts exit early, on their own printer, and they are precisely the shapes the
+# 08-08 false pass wore. A block only the gated path could print would be missing from
+# every doc-only run — the runs most in need of it.
+#
+# Suppressed on the ordinary one-PR task, where the verdict already names its subject,
+# and at the build gate, which must not shell to gh.
+def print_pr_coverage(gate)
+  return if gate == "build"
+
+  rows = pr_coverage
+  return if rows.size < 2
+
+  puts "  PRs read (#{rows.size}):"
+  rows.each { |row| puts "    · #{pr_coverage_line(row)}" }
+end
+
 # A printable coverage row: "turf-monster PR 575 · 1 file (docs/SOLANA.md) · CI green".
 def pr_coverage_line(row)
   files = row[:files].to_i
@@ -2281,6 +2303,7 @@ if EXEMPT_KINDS.include?(kind)
     else
       title = task["title"] || task["slug"] || slug || "(task)"
       puts "✗ #{gate_label} NOT met for #{title.inspect}"
+      print_pr_coverage(gate)
       puts "  · #{errors_preamble}"
     end
     if gate_emission_enabled?(options, gate, slug)
@@ -2507,6 +2530,7 @@ if EXEMPT_KINDS.include?(kind)
       title = task["title"] || task["slug"] || slug || "(task)"
       if exempt_ready
         puts "✓ #{gate_label} n/a for #{title.inspect} — #{note}"
+        print_pr_coverage(gate)
         # SAY BOTH HALVES. The old line said only which gate was skipped, which is
         # how "no tier was demanded" and "no CI was read" read the same in a
         # transcript. Name the tier waiver AND the CI verdict that stands behind
@@ -2515,6 +2539,7 @@ if EXEMPT_KINDS.include?(kind)
              "behavior#{exempt_ci ? "; GitHub CI: #{exempt_ci[:state].to_s.upcase}" : ""})"
       else
         puts "✗ #{gate_label} NOT met for #{title.inspect}"
+        print_pr_coverage(gate)
         exempt_errors.each { |e| puts "  - #{e}" }
         # NAME WHICH REFUSAL THIS IS. The line used to assert flatly that the refusal
         # was "the CI verdict" — true while CI was the only thing that could refuse
@@ -3669,22 +3694,9 @@ end
 
 title = task["title"] || task["slug"] || slug || "(task)"
 print_suggestions = -> { suggestions.each { |s| puts "  ⓘ suggestion: #{s}" } unless suggestions.empty? }
-# THE COVERAGE BLOCK — printed on a multi-PR task, pass or fail. A verdict about a task
-# with a PR in two repos must SAY which PRs it read, or the reader cannot tell a run
-# that covered both from the pre-fix run that read one and looked identical. Suppressed
-# on the ordinary one-PR task, where the verdict already names its subject.
-print_pr_coverage = lambda do
-  next if gate == "build"
-
-  rows = pr_coverage
-  next if rows.size < 2
-
-  puts "  PRs read (#{rows.size}):"
-  rows.each { |row| puts "    · #{pr_coverage_line(row)}" }
-end
 if ready
   puts "✓ #{gate_label} met for #{title.inspect} (shape: #{shape})"
-  print_pr_coverage.call
+  print_pr_coverage(gate)
   puts "  tiers green in checks_run: #{dor_tiers.join(", ")}" unless dor_tiers.empty?
   # SAY THE WAIVER OUT LOUD. A gate that skips a requirement in SILENCE reads,
   # to every human and every log scraper, exactly like a gate that enforced one
@@ -3778,7 +3790,7 @@ if ready
 end
 
 puts "✗ #{gate_label} NOT met for #{title.inspect}#{shape.empty? ? "" : " (shape: #{shape})"}"
-print_pr_coverage.call
+print_pr_coverage(gate)
 errors.each { |e| puts "  - #{e}" }
 unless missing_meta.empty?
   puts "  missing metadata:"

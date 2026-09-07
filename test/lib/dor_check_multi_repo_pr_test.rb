@@ -319,7 +319,39 @@ class DorCheckMultiRepoPrTest < Minitest::Test
     assert_equal "pr", verdict["diff_source"]
   end
 
-  # ── 6. THE SINGLE-REPO PATH IS UNTOUCHED ────────────────────────────────────
+  # ── 6. THE HUMAN VERDICT SAYS IT TOO, on the shape most at risk ─────────────
+
+  # THE JSON IS NOT THE VERDICT MOST PEOPLE READ, and the EXEMPT verdicts exit early on
+  # their own printer — which is exactly where the 08-08 false pass lived. A coverage
+  # block only the gated path printed would be absent from every doc-only run, the runs
+  # most in need of it.
+  def drive_text(files:, ci:, role: "review")
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "task.json")
+      File.write(path, JSON.generate("slug" => "multi-repo-task", "title" => "T",
+                                     "metadata" => { "devops" => devops }))
+      out = IO.popen(OutboundSeams.env({
+                       "DOR_CHECK_DIFF_ROOT" => dir, "DOR_CHECK_DIFF_BASE" => "HEAD",
+                       "DOR_CHECK_PR_FILES_BY_REPO" => JSON.generate(files),
+                       "DOR_CHECK_CI_STATUS_BY_REPO" => JSON.generate(ci),
+                       "DOR_CHECK_SUITE_EVIDENCE" => "ok"
+                     }),
+                     "#{BIN} multi-repo-task --file #{path} --gate-role #{role} 2>&1", &:read)
+      refute_empty out.to_s.strip, "the gate printed nothing at all"
+      out
+    end
+  end
+
+  def test_the_exempt_human_verdict_prints_a_row_per_pr
+    text = drive_text(files: { HUB => HUB_DOC, SAT => SAT_DOC }, ci: { HUB => "green", SAT => "green" })
+
+    assert_includes text, "PRs read (2):", "the exempt verdict printed no coverage block:\n#{text}"
+    assert_includes text, "#{SAT} PR 575", "the block must name the second repo AND its PR number:\n#{text}"
+    assert_includes text, SAT_DOC, "...and the files that PR contributed:\n#{text}"
+    assert_includes text, HUB_DOC, "...and the first PR's, so both halves are visible:\n#{text}"
+  end
+
+  # ── 7. THE SINGLE-REPO PATH IS UNTOUCHED ────────────────────────────────────
 
   # The builder's fallback is EARNED, and it survives. A one-PR task cannot produce
   # :incomplete, so an aged App token still costs a builder a loud suggestion rather
