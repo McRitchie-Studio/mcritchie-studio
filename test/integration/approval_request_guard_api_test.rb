@@ -104,6 +104,20 @@ class ApprovalRequestGuardApiTest < ActionDispatch::IntegrationTest
     assert_not task.waiting_for_operator_approval?
   end
 
+  test "asking for approval on the same call that hands off is refused" do
+    # The stage is judged where the save LANDS, not where it came from. Posting the
+    # request and the handoff together asks for something this very save settles
+    # away, so reading the STORED stage here would wave it through.
+    task = task_at("building")
+
+    patch "/api/v1/tasks/#{task.slug}",
+          params: { stage: "submitted", devops: { approval_status: "waiting" } },
+          headers: { "Authorization" => "Bearer #{token}" }, as: :json
+
+    assert_response :unprocessable_entity, "the effective stage decides, not the stored one"
+    assert_equal "building", task.reload.stage, "and the refusal takes the whole save with it"
+  end
+
   # --- the internal settle keeps working: a move is not a request ---
 
   test "submitting a task that carries a live request still settles silently" do
