@@ -82,4 +82,18 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
       end
     end
   end
+
+  # Regression for the SEV-1: a misconfigured cable adapter raises Gem::LoadError on
+  # the first broadcast — a ScriptError, NOT a StandardError — which a plain
+  # `rescue StandardError` let escape the after_commit → 500 on every task write.
+  # The best-effort guard MUST also catch the ScriptError hierarchy.
+  test "a non-StandardError from the broadcast (e.g. a missing cable adapter gem) never breaks the move" do
+    refute Gem::LoadError.ancestors.include?(StandardError), "guard premise: Gem::LoadError is not a StandardError"
+    event = built_submitted_task.task_events.transitions.last
+    DeploymentsBroadcaster.stub(:new, ->(_e) { raise Gem::LoadError, "redis is not part of the bundle" }) do
+      assert_nothing_raised do
+        assert_nil DeploymentsBroadcaster.task_event(event)
+      end
+    end
+  end
 end
