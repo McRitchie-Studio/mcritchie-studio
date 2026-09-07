@@ -253,10 +253,19 @@ class DorCheckBaseMovementTest < Minitest::Test
       refute_match(/None of those is a test that grades/, suggestions_of(verdict),
                    "the report lane is where the false negative lived — pin it there, not only in the " \
                    "union with the refusal that disproves it\nsuggestions: #{suggestions_of(verdict)}")
-      assert_match(/test\/lib\/widget_tool_exempt_test\.rb/, suggestions_of(verdict),
-                   "the two lanes must AGREE, not merely fail to contradict: the report NAMES the guard " \
-                   "the refusal names. Going quiet would satisfy the refute above while still leaving a " \
-                   "reader the disjointness argument by omission\nsuggestions: #{suggestions_of(verdict)}")
+      # THE TWO LANES MUST NAME THE SAME FILE, and this pins it INSIDE the withheld-claim
+      # sentence rather than anywhere in the lane. A bare
+      # `assert_match(/widget_tool_exempt_test/, suggestions_of(...))` proves nothing
+      # here: the movement report already prints "FILES: <that file>" unconditionally,
+      # several sentences earlier, so it passes even when the disjointness block is
+      # deleted outright. Measured — with that block emptied, this row still failed on
+      # ONE assertion (the "going quiet" one above) and a bare name-match did not
+      # contribute. Anchoring to the sentence is what makes it a real agreement check.
+      assert_match(/DISJOINTNESS IS NOT AVAILABLE HERE:[^.]*widget_tool_exempt_test\.rb/,
+                   suggestions_of(verdict),
+                   "the report must name the guard INSIDE the sentence that withholds the claim — the " \
+                   "refusal and the report have to be about the same file, or they are two verdicts " \
+                   "rather than two halves of one\nsuggestions: #{suggestions_of(verdict)}")
     end
   end
 

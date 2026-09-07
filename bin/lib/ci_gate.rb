@@ -318,8 +318,11 @@ module CiGate
     # every integration test green: the line was inert.
     #
     # Scoped to :green because :green is the ONLY state where `review_refused` went
-    # unread — every other branch already answers "fail" when refused, so this is the
-    # narrowest edit that covers the defect and its blast radius is exactly the bug.
+    # unread AND a caller can actually reach it — every other REACHABLE refused state
+    # already answers "fail", so this is the narrowest edit that covers the defect and
+    # its blast radius is exactly the bug. (Stated with that qualifier on purpose:
+    # builder-side :pending returns "pending", not "fail", so the unqualified sentence
+    # would be false. It is refused-unreachable, which the next paragraph establishes.)
     #
     # A blanket `return "fail" if review_refused` above the case would be EQUIVALENT,
     # and that is a measured claim, not a guess: mutation-tested 2026-09-07, it survived
