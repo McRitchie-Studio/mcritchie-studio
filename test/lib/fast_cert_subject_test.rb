@@ -303,11 +303,17 @@ class FastCertSubjectTest < Minitest::Test
   # The registry that enumerates every bin script must stay reachable from a script
   # that has no harness test of its own — it is the only mapped evidence those
   # scripts have, and the quoted-name spelling is what carries it.
+  #
+  # ASSERTED, NOT SKIPPED, if the registry is missing. The reflex here is a guard
+  # skip — and it would be wrong twice: this file lives in the hub and runs against
+  # the hub, so the condition cannot fire; and a skip is coverage switched off while
+  # keeping the test's name, which is what config/test_health.yml ratchets against.
+  # If the registry is ever deleted, the right outcome is a red test saying so.
   def test_the_bin_registry_stays_reachable_from_a_family_less_script
-    skip "registry test not present in this checkout" unless
-      File.file?(File.join(REPO_ROOT, "test/lib/bin_help_flag_class_test.rb"))
+    registry = "test/lib/bin_help_flag_class_test.rb"
 
-    assert_includes FastCert.select_tests(REPO_ROOT, ["bin/docker-entrypoint"]),
-                    "test/lib/bin_help_flag_class_test.rb"
+    assert File.file?(File.join(REPO_ROOT, registry)),
+           "#{registry} is the only mapped evidence a family-less bin script has"
+    assert_includes FastCert.select_tests(REPO_ROOT, ["bin/docker-entrypoint"]), registry
   end
 end
