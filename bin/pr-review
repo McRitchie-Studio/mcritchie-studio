@@ -343,7 +343,11 @@ def reviewer_prompt(task, reviewer, role, reviewers)
         "lands as a SOP on the task's G2a Primary gate run instead of closing the builder's G1 Cert."
     else
       "As the LIGHT you are a focused second read through your domain lens. You do NOT run the gates and do NOT " \
-        "drive the verdict — report your findings up to the primary/supervisor (any reviewer can still block on a defect)."
+        "drive the verdict — report your findings up to the PRIMARY, who owns it. The task's bounce belongs to " \
+        "the review claim's holder, and that is not you: do NOT run `bin/task block` on this task. During a live " \
+        "review claim a `--kind rework` block by any soul other than the claim's holder is REFUSED with exit 11 " \
+        "and writes nothing. Record a finding WITHOUT spending the bounce — any reviewer may do this — with " \
+        "`bin/task note #{task.fetch("slug")} --comment \"<your finding>\"`, then hand it to the primary."
     end
 
   <<~PROMPT
