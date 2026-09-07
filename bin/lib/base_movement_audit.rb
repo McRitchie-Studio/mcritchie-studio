@@ -188,11 +188,34 @@ module BaseMovementAudit
     sha.empty? ? nil : sha
   end
 
-  # Oldest first, so `(commits - late).last` is the newest commit the run could have
-  # seen. %cI is the COMMITTER date — the same field the incident was measured with.
+  # The commits that LANDED ON THE BASE, oldest first, so `(commits - late).last` is the
+  # newest one the run could have seen. %cI is the COMMITTER date — the field the
+  # incident was measured with.
+  #
+  # ── --first-parent IS LOAD-BEARING, NOT TIDINESS ────────────────────────────────
+  #
+  # A commit's committer date is when it was WRITTEN, not when it JOINED the base, and
+  # those are different instants for every merge. `accepted` advances by merge commits
+  # ("Merge pull request #NNNN") whose side-branch work is invariably OLDER than the
+  # merge that lands it. Walking ALL commits in the range therefore classifies that
+  # older work as "the run could have seen it" — when the run could not, because it was
+  # not on `accepted` yet.
+  #
+  # THAT IS A FALSE PASS, AND IT LANDS ON EXACTLY THE MEASURED INCIDENT. Reproduced
+  # against this module before the fix: side-branch work at 07:30:00Z, merged to
+  # `accepted` at 07:59:02Z, CI completed 07:55:44Z. The whole-range walk marked the
+  # 07:30 commit "covered", made it the covered_tip, and computed late_files as
+  # diff(07:30-commit .. merge) — EMPTY, because the guard change came FROM that very
+  # commit. Verdict: no guards, no refusal. The gate missed the case it exists for, and
+  # PR #1258 was itself a merge commit, so this is the ordinary shape and not a corner.
+  #
+  # The first-parent chain is the order things landed on the base, which is the only
+  # order the "could the run have seen it?" question is about. The side-branch commits
+  # are not lost — they arrive through late_files, which is a two-point DIFF across the
+  # merge and therefore carries everything the merge brought with it.
   def commits_between(root, from, to)
-    out = IO.popen(["git", "-C", root.to_s, "log", "--reverse", "--format=%H%x00%cI%x00%s",
-                    "#{from}..#{to}"], err: File::NULL, &:read)
+    out = IO.popen(["git", "-C", root.to_s, "log", "--reverse", "--first-parent",
+                    "--format=%H%x00%cI%x00%s", "#{from}..#{to}"], err: File::NULL, &:read)
     return nil unless $?.success?
 
     out.to_s.lines.filter_map do |line|

@@ -23,6 +23,7 @@ require "minitest/autorun"
 require "tmpdir"
 require "fileutils"
 require_relative "../../bin/lib/base_movement_audit"
+require_relative "../../bin/lib/fast_cert"
 
 class BaseMovementAuditTest < Minitest::Test
   CI_DONE    = "2026-09-07T07:55:44Z"
@@ -47,7 +48,7 @@ class BaseMovementAuditTest < Minitest::Test
   #
   # `merge:` advances `accepted` with a real MERGE COMMIT instead of a fast-forward,
   # which is how `accepted` actually moves ("Merge pull request #NNNN").
-  def with_repo(base_change:, at:, merge: false, extra: {})
+  def with_repo(base_change:, at:, merge: false, side_at: nil, extra: {})
     Dir.mktmpdir do |raw|
       dir = File.realpath(raw)
       git!(dir, "init", "-q")
@@ -76,7 +77,7 @@ class BaseMovementAuditTest < Minitest::Test
         git!(dir, "checkout", "-q", "-b", "other")
         write(dir, base_change, "# moved\n")
         git!(dir, "add", "-A")
-        git!(dir, "commit", "-qm", "other PR", at: at)
+        git!(dir, "commit", "-qm", "other PR work", at: side_at || at)
         git!(dir, "checkout", "-q", "accepted")
         git!(dir, "merge", "--no-ff", "-q", "-m", "Merge pull request #1258 from other", "other", at: at)
       else
@@ -157,18 +158,35 @@ class BaseMovementAuditTest < Minitest::Test
     end
   end
 
-  # THE NARROWING IS DELIBERATE AND IS PINNED. FastCert's third rung is a GREP over
-  # token identity, and this module drops it: a token search widens to whatever mentions
-  # the subject, which is wrong in the expensive direction for something allowed to
-  # REFUSE. test/lib/other_thing_test.rb literally mentions widget-tool in the fixture;
-  # it must still not be claimed. If someone widens guards_for to FastCert.mapping, this
-  # goes red — which is the point, because that change would make the gate refuse on
-  # evidence a reviewer cannot check in one `ls`.
+  # THE NARROWING IS DELIBERATE AND IS PINNED. FastCert maps a source to tests three
+  # ways — convention twin, harness family, and a GREP over token identity. This module
+  # uses the first two and DROPS the grep rung, because a token search widens to whatever
+  # mentions the subject and that width is wrong for something allowed to REFUSE.
+  #
+  # REACHING THE GREP RUNG TAKES A SOURCE WITH NO TWIN. FastCert only falls back to grep
+  # when the convention candidates do not exist on disk, so a fixture whose twin exists
+  # exercises the identical code path in both versions and pins nothing. (That is exactly
+  # how the first version of this test passed while `guards_for` was widened to
+  # FastCert.mapping — an equivalent mutant, not a surviving one.) bin/lib/orphan_thing.rb
+  # has no test/lib/orphan_thing_test.rb, so the rung is genuinely reached.
+  #
+  # THE CONTROL IS THE POINT: FastCert MUST claim the mentioning file here, or this test
+  # is asserting the absence of something that was never on offer.
   def test_the_grep_rung_is_not_used_so_a_mere_mention_is_not_a_guard
-    with_repo(base_change: "test/lib/other_thing_test.rb", at: AFTER_RUN) do |dir|
-      assert_includes File.read(File.join(dir, "test/lib/other_thing_test.rb")), "widget-tool",
-                      "fixture: the file must actually mention the subject or this proves nothing"
-      assert_empty audit(dir)[:guards]
+    orphan = "bin/lib/orphan_thing.rb"
+    extra = { orphan => "module OrphanThing; end\n",
+              "test/lib/mentions_orphan_test.rb" => "# exercises OrphanThing via #{orphan}\nOrphanThing\n" }
+
+    with_repo(base_change: "test/lib/mentions_orphan_test.rb", at: AFTER_RUN, extra: extra) do |dir|
+      assert_empty FastCert.convention_candidates(orphan).select { |t| File.file?(File.join(dir, t)) },
+                   "fixture: the orphan must have NO existing twin, or FastCert never reaches its grep rung"
+      assert_equal ["test/lib/mentions_orphan_test.rb"], FastCert.mapping(dir, [orphan])[orphan],
+                   "control: FastCert's grep rung DOES claim this file — so the assertion below is " \
+                   "about a narrowing that is really happening, not about an empty offer"
+
+      assert_empty audit(dir, changed: [orphan])[:guards],
+                   "a mere mention is not a guard: widening guards_for to FastCert.mapping would make " \
+                   "the gate refuse on evidence a reviewer cannot check in one `ls`"
     end
   end
 
@@ -216,19 +234,50 @@ class BaseMovementAuditTest < Minitest::Test
 
   # ==== THE MERGE-COMMIT TRAP ====================================================
 
-  # `accepted` advances by MERGE COMMITS, and `git log --name-only` on a merge prints
-  # NOTHING by default. A per-commit file walk would therefore report an EMPTY file set
-  # for the real-world case and find no guard — a silent false pass on precisely the
-  # incident this module was built for. The two-point diff is what makes it work, and
-  # this pins it.
-  def test_a_merge_commit_still_yields_its_files
-    with_repo(base_change: "test/lib/widget_tool_exempt_test.rb", at: AFTER_RUN, merge: true) do |dir|
+  # THE REAL-WORLD SHAPE, and the row that caught a defect in this very module.
+  #
+  # `accepted` advances by MERGE COMMITS, and a merge's side-branch work is invariably
+  # OLDER than the merge that lands it. Here the guard change was WRITTEN at 07:30 and
+  # LANDED at 07:59:02, while CI finished 07:55:44 — the measured incident's clock, and
+  # PR #1258 was itself a merge commit, so this is the ordinary case.
+  #
+  # WHAT WENT WRONG BEFORE THE FIX: walking every commit in the range read the 07:30
+  # committer date, called that work "covered", made it the covered_tip, and computed
+  # late_files as diff(07:30-commit .. merge) — EMPTY, because the guard change came
+  # FROM that commit. No guards, no refusal: the gate missed the case it exists for.
+  #
+  # SO THE COMMITTER DATE IS NOT THE LANDING DATE, and only the FIRST-PARENT chain
+  # carries the order things joined the base. Revert commits_between to a whole-range
+  # walk and this goes red. The earlier version of this test used ONE timestamp for both
+  # the side commit and the merge, which made the two walks agree and let the defect
+  # through — the gap was in the fixture, not in the idea.
+  def test_a_merge_landing_late_is_late_even_when_its_work_is_old
+    with_repo(base_change: "test/lib/widget_tool_exempt_test.rb",
+              side_at: "2026-09-07T07:30:00Z", at: AFTER_RUN, merge: true) do |dir|
       a = audit(dir)
 
       assert_equal :moved, a[:state]
+      assert_equal ["Merge pull request #1258 from other"], a[:late].map { |c| c[:subject] },
+                   "the MERGE is what landed after the run; the older work it carries is not a " \
+                   "separate landing and must not be read as one"
       assert_includes a[:late_files], "test/lib/widget_tool_exempt_test.rb",
-                      "a merge commit's files must be seen, or the real `accepted` shape reads as empty"
+                      "a merge's files must arrive through the two-point diff, or the real `accepted` " \
+                      "shape reads as empty"
       assert_equal ["test/lib/widget_tool_exempt_test.rb"], a[:guards].map { |g| g[:test] }
+    end
+  end
+
+  # The same merge, landing BEFORE the run finished, is covered — so the first-parent
+  # walk is not simply "merges are always late". Without this row the test above could
+  # be satisfied by a module that never consults the clock at all.
+  def test_a_merge_that_landed_before_the_run_is_covered
+    with_repo(base_change: "test/lib/widget_tool_exempt_test.rb",
+              side_at: "2026-09-07T07:30:00Z", at: BEFORE_RUN, merge: true) do |dir|
+      a = audit(dir)
+
+      assert_equal :moved, a[:state]
+      assert_empty a[:late]
+      assert_empty a[:guards]
     end
   end
 
