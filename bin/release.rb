@@ -558,6 +558,16 @@ def dispatch_and_watch(workflow, inputs = {}, chdir: nil)
   # aborted on a false return anyway; it now aborts one step earlier, with the
   # workflow, the SHA, and the dispatch command in hand instead of "deploy failed —
   # check the run" for a run that does not exist to be checked.
+  #
+  # ONE TELEMETRY ROW IS DELIBERATELY GIVEN UP. Aborting here skips deploy_app's
+  # `gate_sop("deploy:<repo>", …, ok)` row for this repo, which a `false` return used
+  # to record before ship abort!ed anyway. The G4 gate still closes FAILED — ship's
+  # `rescue SystemExit` does that (`record_gate_close(rel_slug, "g4_ship", false,
+  # aborted: true)`) — so what is lost is one per-app SOP row, not the verdict. Keeping
+  # it would mean threading a third return value through both callers and duplicating
+  # this abort at each, to preserve a row that says "deploy failed" about a deploy that
+  # never started. The abort's own message carries strictly more than the row did.
+  # prepare's QA lane loses nothing: it never recorded a gate_sop for the dispatch.
   abort!(Release::ShipSequence.undispatched_run_abort(workflow, inputs)) if run_id.nil?
 
   _, watched = sh("gh", "run", "watch", run_id.to_s, "--exit-status", chdir: chdir)

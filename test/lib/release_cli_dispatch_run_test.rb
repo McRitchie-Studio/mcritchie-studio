@@ -37,6 +37,7 @@
 require "minitest/autorun"
 require "open3"
 require "tmpdir"
+require "fileutils" # lock_dir cleanup (Minitest.after_run remove_entry)
 require "rbconfig"
 require_relative "../support/session_env"
 require_relative "../support/outbound_seams"
@@ -52,7 +53,20 @@ class ReleaseCliDispatchRunTest < Minitest::Test
   WORKFLOW = "qa-deploy.yml"
   INPUTS   = { "sha" => "0a0cc23" }.freeze
 
-  def self.lock_dir = @lock_dir ||= Dir.mktmpdir("release-dispatch-locks")
+  # Lazy + memoized so forked test workers each get their own dir, and REMOVED after
+  # the run — the same shape test/lib/release_cli_test.rb uses. A per-run tmpdir that
+  # nobody deletes is how a machine accumulates hundreds of them silently.
+  def self.lock_dir
+    @lock_dir ||= begin
+      dir = Dir.mktmpdir("release-dispatch-locks")
+      Minitest.after_run do
+        FileUtils.remove_entry(dir)
+      rescue StandardError
+        nil
+      end
+      dir
+    end
+  end
 
   # Drive bin/release.rb in a sealed subprocess: OutboundSeams puts stub binaries in
   # front of PATH (so a missed stub cannot reach the real `gh`), and the conductor
