@@ -232,6 +232,58 @@ class BaseMovementAuditTest < Minitest::Test
     end
   end
 
+  # ==== THE LATE WINDOW HAS A LOWER EDGE ========================================
+
+  # The base gained TWO landings: the guard change BEFORE the run finished, and an
+  # unrelated change after. The run covered the guard change, so there is nothing to
+  # refuse — only the movement after the cutoff is uncovered.
+  #
+  # This is what stops the late window from being "all movement since the fork". Widen
+  # covered_tip to the fork point and this goes red, because the guard would be dragged
+  # into a window the run demonstrably did cover.
+  def test_only_movement_after_the_cutoff_counts_as_late
+    Dir.mktmpdir do |raw|
+      dir = File.realpath(raw)
+      git!(dir, "init", "-q")
+      git!(dir, "config", "user.email", "t@t.co")
+      git!(dir, "config", "user.name", "T")
+      write(dir, "bin/widget-tool", "# tool\n")
+      write(dir, "test/lib/widget_tool_test.rb", "# twin\n")
+      write(dir, "test/lib/widget_tool_exempt_test.rb", "# FAMILY guard\n")
+      write(dir, "docs/unrelated.md", "prose\n")
+      git!(dir, "add", "-A")
+      git!(dir, "commit", "-qm", "init", at: "2026-09-07T07:00:00Z")
+      git!(dir, "branch", "-M", "accepted")
+      git!(dir, "update-ref", "refs/remotes/origin/accepted", "accepted")
+
+      git!(dir, "checkout", "-q", "-b", "feat/x")
+      write(dir, "bin/widget-tool", "# tool, edited\n")
+      git!(dir, "add", "-A")
+      git!(dir, "commit", "-qm", "feat", at: "2026-09-07T07:10:00Z")
+      git!(dir, "update-ref", "refs/remotes/origin/feat/x", "feat/x")
+
+      git!(dir, "checkout", "-q", "accepted")
+      write(dir, "test/lib/widget_tool_exempt_test.rb", "# guard change the run DID see\n")
+      git!(dir, "add", "-A")
+      git!(dir, "commit", "-qm", "guard change, covered", at: BEFORE_RUN)
+      write(dir, "docs/unrelated.md", "prose, later\n")
+      git!(dir, "add", "-A")
+      git!(dir, "commit", "-qm", "unrelated, after the run", at: AFTER_RUN)
+      git!(dir, "update-ref", "refs/remotes/origin/accepted", "accepted")
+      git!(dir, "checkout", "-q", "feat/x")
+
+      a = audit(dir)
+
+      assert_equal 2, a[:commits].size
+      assert_equal ["unrelated, after the run"], a[:late].map { |c| c[:subject] }
+      assert_equal ["docs/unrelated.md"], a[:late_files],
+                   "the late window starts at the newest landing the run could have seen — not at the fork"
+      assert_empty a[:guards],
+                   "the guard change landed BEFORE the run finished, so the green covered it and there " \
+                   "is nothing here to refuse"
+    end
+  end
+
   # ==== THE MERGE-COMMIT TRAP ====================================================
 
   # THE REAL-WORLD SHAPE, and the row that caught a defect in this very module.
