@@ -361,6 +361,17 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
      classified by the kind stamped on each; never probe the live block columns,
      which a compliant resubmission wipes exactly when the breaker must fire.
 
+     **The bounce is YOURS, and only yours.** During your live review claim, a
+     `--kind rework` block by any soul other than the claim's holder is REFUSED
+     with **exit 11** and writes nothing. That includes the light you summoned: its
+     finding reaches you as a scout report and you decide whether it is worth the
+     bounce. (2026-09-07, turf-monster PR 594: a light spent the task's only bounce
+     on its own initiative, and the owning Carl was then refused his own block.)
+     Pass `--agent carl` as shown above so your block matches the claim you hold.
+     If YOUR OWN block is refused with exit 11, the claim names a different soul or
+     none at all — `bin/task review-claim status <task-slug>` says which, and
+     `bin/task review-claim acquire <task-slug> --agent carl` renews it in your name.
+
      On TRIPPED, do not re-block to the builder — escalate the deadlock to the
      operator instead: `bin/task block <task-slug> --kind dependency --summary
      "Escalated: <4-6 word disagreement>" --feedback "<both positions, in brief>"
