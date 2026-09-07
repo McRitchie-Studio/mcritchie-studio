@@ -458,6 +458,14 @@ class TasksController < ApplicationController
         # the column. Do not "tidy" these away.
         :release_slug,
         :release_train,
+        # Same reason, newer column. `dependencies` is the tasks.dependencies
+        # column as of /tasks/wire-task-dependencies-field; two docs spent months
+        # telling agents to "declare `dependencies: [<task>]`", so the devops
+        # namespace is exactly where someone will try to write it. Listing it
+        # lets Task::DEVOPS_COLUMN_KEYS answer with a 422 that names the real
+        # home; omitting it would have strong params drop the name silently,
+        # which is the defect above, not a tidier list.
+        :dependencies,
         :requires_release_conductor,
         :included_in_release,
         :approval_status,
