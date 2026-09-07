@@ -386,8 +386,16 @@ class SessionMarkersTest < Minitest::Test
         SessionMarkers.delete(SESSION, stand_in, ".open-activity", env: env, state_dir: stand_in)
       end
 
-      assert_empty Dir.glob(File.join(stand_in, ".agents", "sessions", "*")),
-                   "the abort must land BEFORE any IO — a refused write creates nothing"
+      # NOT `Dir.glob(".../sessions/*")`. The only file a refused write could leave behind
+      # is the publish's temp sibling, and that sibling is now a DOTFILE, which a bare `*`
+      # cannot see — so the glob form would hold this guard GREEN through exactly the
+      # regression it exists to catch, an `enforce!` that drifted below the write. Assert
+      # on the STORE ROOT instead: `write` aborts before its own `mkdir_p`, so a clean
+      # refusal creates no `.agents` at all. That is dot-proof by construction, it needs
+      # no directory to exist (`Dir.children` would raise ENOENT here), and it is strictly
+      # stronger — a stray `mkdir_p` fails it too, not merely a stray file.
+      refute File.exist?(File.join(stand_in, ".agents")),
+             "the abort must land BEFORE any IO — a refused write creates nothing"
     end
   end
 
