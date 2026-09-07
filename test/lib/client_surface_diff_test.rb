@@ -10,6 +10,8 @@
 # mode worth more than either, which is why both exist.
 
 require "minitest/autorun"
+require "tmpdir"
+require "fileutils"
 require_relative "../../bin/lib/client_surface_diff"
 
 class ClientSurfaceDiffTest < Minitest::Test
@@ -494,6 +496,31 @@ class ClientSurfaceDiffTest < Minitest::Test
            "the hub HAS e2e/ + config/e2e_lane.yml"
     refute ClientSurfaceDiff.lane_present?("/nonexistent-repo-xyz"),
            "a repo with no e2e/ has no lane — the gate must REPORT there, not refuse with no remedy"
+  end
+
+  # Lane presence is read from the FILESYSTEM at call time, never from a repo name.
+  # That is the whole reason studio-engine moved from the REPORT branch to the
+  # BLOCKING one on 2026-08-12 with NO code change: its e2e/ directory landed and
+  # this method simply saw it. The case above cannot show that — "/nonexistent-repo-xyz"
+  # conflates "a repo with no lane" with "no repo at all", and only the former is what
+  # the REPORT branch serves. So each marker is exercised against a REAL directory,
+  # separately, and the empty case is a directory that genuinely exists.
+  def test_unit_lane_presence_reads_the_filesystem_not_the_repo_name
+    Dir.mktmpdir do |root|
+      refute ClientSurfaceDiff.lane_present?(root),
+             "a real repo carrying neither marker has no lane"
+
+      Dir.mkdir(File.join(root, "e2e"))
+      assert ClientSurfaceDiff.lane_present?(root),
+             "an e2e/ directory ALONE is a lane — this is precisely the flip studio-engine made"
+    end
+
+    Dir.mktmpdir do |root|
+      FileUtils.mkdir_p(File.join(root, "config"))
+      File.write(File.join(root, "config", "e2e_lane.yml"), "---\n")
+      assert ClientSurfaceDiff.lane_present?(root),
+             "config/e2e_lane.yml ALONE is also a lane, with no e2e/ directory present"
+    end
   end
 
   # ==== FAIL DIRECTION ==============================================================
