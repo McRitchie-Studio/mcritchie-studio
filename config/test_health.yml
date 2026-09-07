@@ -108,7 +108,27 @@ frozen_size:
   # UNPIPED — because `bin/ship … | tail` reports TAIL's exit status, which is how
   # the "ship exits 0 on failure" claim was misread in the first place.
   test/lib/release_cli_test.rb: 7598
-  test/lib/dor_check_test.rb: 2745
+  # +27 (2026-09-07, conflicted-remedy-misreads-ci): ONE case pinning the text of
+  # the conflicted blocker. The message inferred "the head SHA has ZERO check-runs"
+  # from mergeStateStatus DIRTY alone — independent facts — and it was measured
+  # false the same day: turf-monster#590 read DIRTY at head cbd62fb0 while carrying
+  # all 7 checks GREEN, so the gate told a builder to go hunting a CI that had
+  # already passed. The remedy beside it was correct throughout, which is why the
+  # defect survived: nobody re-reads advice that works.
+  #
+  # IT STAYS IN THIS FILE deliberately. The property is what dor-check PRINTS, and
+  # it is only observable by driving the real binary through this file's private
+  # harness (`ci_check` → `with_changed_files` + `with_env DOR_CHECK_CI_STATUS` +
+  # `check`). A new file could get there only by duplicating that harness and would
+  # then be testing its own copy. The seam also yields a verdict carrying NO rollup,
+  # so this case additionally pins the absent-data path: not knowing must not be
+  # reported as knowing there are none.
+  #
+  # What DID go elsewhere, which is what this ceiling asks for: every pure decision
+  # — the rollup census across both node shapes, the three message branches, and the
+  # guard that VIEW_FIELDS still requests the field — to test/lib/ci_status_test.rb
+  # (8 cases), which needs no harness at all.
+  test/lib/dor_check_test.rb: 2772
   # +149 (2026-08-31, show-prints-wrong-builder): CLI-level cases pinning that
   # `show` prints the AUTHOR SET (devops.built_by + builders), not the assignee
   # column it used to render. They stay in THIS file deliberately. The defect was
