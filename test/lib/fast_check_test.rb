@@ -482,17 +482,26 @@ class FastCheckTest < Minitest::Test
   # half the fix: the other half is that the mapped lane does not RUN, the spine
   # still does, and the builder is told why.
 
-  # A file with no convention target falls back to a word-boundary grep of its
-  # camelized name; this fixture makes that grep match many test files, which is
-  # the real shape of the defect.
+  # A file with no convention target falls back to a grep for its SUBJECT — for a
+  # class, its constant — and this fixture makes that grep match many test files,
+  # which is the real shape of the defect.
+  #
+  # THE WIDE FILE IS A TWIN-LESS MODEL, not an initializer, and that changed with the
+  # subject-reference fix: a config file is now named by its PATH, so
+  # config/initializers/widget.rb greps for that path and cannot map wide any more. A
+  # model with no test/models/<x>_test.rb still greps its bare constant — the shape
+  # app/models/agent_activity.rb has in the hub today, 29 files — so it is what still
+  # reproduces the cap trip these tests are about. It is gizmo.rb rather than
+  # widget.rb because with_repo hands widget.rb a convention twin.
   def with_wide_mapping_repo
     with_repo do |dir, write|
-      write.call("app/models/widget.rb", "class Widget; end\n")
-      (1..20).each { |i| write.call("test/lib/wide_#{i}_test.rb", "Widget.reset\n") }
+      (1..20).each { |i| write.call("test/lib/wide_#{i}_test.rb", "Gizmo.reset\n") }
       assert system("git", "-C", dir, "add", "-A", out: File::NULL, err: File::NULL)
       assert system("git", "-C", dir, "commit", "-qm", "wide", out: File::NULL, err: File::NULL)
-      # The branch diff: an initializer, which has NO convention candidate.
-      write.call("config/initializers/widget.rb", "Widget.configure\n")
+      # The branch diff: a model with NO convention target. widget.rb cannot play
+      # this part — with_repo gives it test/models/widget_test.rb, so it maps by
+      # convention and never greps at all.
+      write.call("app/models/gizmo.rb", "class Gizmo; end\n")
       yield dir, write
     end
   end
@@ -518,7 +527,7 @@ class FastCheckTest < Minitest::Test
       out, = run_check(dir, merge_stderr: true)
 
       assert_match(/exceeds the cap of 15/, out, "the cap it applied is printed")
-      assert_match(%r{widest mapping: config/initializers/widget\.rb}, out, "the culprit is named")
+      assert_match(%r{widest mapping: app/models/gizmo\.rb}, out, "the culprit is named")
       assert_match(/bin\/full-suite-check/, out, "the command that DOES cover this diff is offered")
       assert_match(/FAST_CHECK_MAPPED_CAP/, out, "the deliberate override is discoverable")
     end
@@ -571,9 +580,9 @@ class FastCheckTest < Minitest::Test
   # punish exactly the diffs the spine already covers best.
   def test_a_wide_mapping_that_the_spine_already_covers_is_not_capped
     with_repo do |dir, write|
-      write.call("app/models/widget.rb", "class Widget; end\n")
+      write.call("app/models/base_gizmo.rb", "class BaseGizmo; end\n")
       wide = (1..20).map { |i| "test/lib/wide_#{i}_test.rb" }
-      wide.each { |rel| write.call(rel, "Widget.reset\n") }
+      wide.each { |rel| write.call(rel, "Gizmo.reset\n") }
       # The spine covers all but TWO, so the raw union is 20 (over the cap of 15)
       # while the post-spine set is 2 (well under it).
       #
@@ -585,7 +594,7 @@ class FastCheckTest < Minitest::Test
       write.call("spine.yml", "spine:\n#{spined.map { |r| "  - #{r}" }.join("\n")}\n")
       assert system("git", "-C", dir, "add", "-A", out: File::NULL, err: File::NULL)
       assert system("git", "-C", dir, "commit", "-qm", "wide-spine", out: File::NULL, err: File::NULL)
-      write.call("config/initializers/widget.rb", "Widget.configure\n")
+      write.call("app/models/gizmo.rb", "class Gizmo; end\n")
 
       out, code, lines = run_check(dir, merge_stderr: true)
 
@@ -843,7 +852,7 @@ class FastCheckTest < Minitest::Test
 
       assert_equal 2, code, out
       assert_match(/CAPPED/, out, "what tripped it")
-      assert_match(%r{config/initializers/widget\.rb}, out, "the culprit file")
+      assert_match(%r{app/models/gizmo\.rb}, out, "the culprit file")
       assert_match(%r{bin/full-suite-check}, out, "the remedy is named")
       assert_match(/FAST_CHECK_MAPPED_CAP=20/, out, "the deliberate override stays discoverable")
     end
@@ -858,9 +867,9 @@ class FastCheckTest < Minitest::Test
   def test_a_refused_run_writes_nothing_to_the_board_or_the_gate
     with_wide_mapping_repo do |dir, write|
       with_empty_spine(dir, write)
-      # UNMAPPED, not capped: drop the branch diff's initializer (whose generic grep
-      # token is what maps wide) and leave prose, which maps to nothing at all.
-      FileUtils.rm_f(File.join(dir, "config/initializers/widget.rb"))
+      # UNMAPPED, not capped: drop the branch diff's twin-less model (whose bare
+      # constant is what maps wide) and leave prose, which maps to nothing at all.
+      FileUtils.rm_f(File.join(dir, "app/models/gizmo.rb"))
       write.call("docs/note.md", "prose only\n")
 
       _, code, lines = run_check(dir, args: ["some-task"], merge_stderr: true,

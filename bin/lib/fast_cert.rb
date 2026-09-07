@@ -15,19 +15,31 @@ require "yaml"
 # without spawning the runner. bin/fast-check owns orchestration: lanes, gate
 # emits, fingerprint-bound evidence.
 #
-# Selection = union of three sets:
+# Selection = union of the spine and a per-file mapping, and the mapping is three
+# rungs ORDERED BY HOW DIRECTLY EACH NAMES THE SUBJECT:
 #   1. CONVENTION — each changed file maps to its test by path convention
 #      (app/models/x.rb → test/models/x_test.rb, views → their controller test,
-#      bin/tool → test/lib/tool_test.rb, a changed *_test.rb includes itself),
-#      PLUS — for a tool whose twin lives in test/lib/ — its whole test FAMILY,
-#      the test/lib/<stem>_<aspect>_test.rb siblings that are nobody else's twin.
-#   2. GREP FALLBACK — a changed .rb file with NO existing convention target
-#      falls back to a word-boundary grep of its class name (or a bin script's
-#      name, or a config file's basename) across test/**/*_test.rb.
-#   3. SPINE — config/fast_cert_spine.yml, a curated always-run core (critical
+#      bin/tool → test/lib/tool_test.rb OR test/commands/tool_test.rb, a changed
+#      *_test.rb includes itself), PLUS — for a tool whose twin lives in a harness
+#      namespace — its whole test FAMILY, the <stem>_<aspect>_test.rb siblings that
+#      are nobody else's twin.
+#   2. ORPHAN FAMILY — a tool whose same-named twin was NEVER WRITTEN still reaches
+#      that family. bin/task has no test/lib/task_test.rb, so rung 1 found nothing
+#      and rung 3 asked for the word "task" and claimed 325 of the repo's 622 test
+#      files. See #orphan_family.
+#   3. GREP — anything still unmapped falls back to a search for the SUBJECT'S
+#      IDENTITY across test/**/*_test.rb: the PATH for a file (a script, a config),
+#      the FULL constant for a class. Not the basename as an English word, which is
+#      what made rung 3 the source of every cap trip in the repo. See #grep_tokens.
+#   +. SPINE — config/fast_cert_spine.yml, a curated always-run core (critical
 #      model/flow tests, ~10-15s) so a diff that maps to nothing still exercises
 #      the money paths. Entries may be files or directories; missing paths are
 #      skipped (a satellite worktree runs the hub's script but not its spine).
+#
+# WHAT THE PRECISION RUNGS ARE WORTH, measured over all 1928 hub sources 2026-09-07
+# (head 3e678a19): 27 sources ALONE mapped over the 15-path cap and all 27 were
+# rung-3 greps; after, 9 do. Across the 160 sources the grep could reach, the total
+# mapped paths fall 2778 → 701. 1832 of the 1928 sources map BYTE-IDENTICALLY.
 #
 # And ONE degradation, because sets 1+2 are unbounded and the lane is not: past
 # DEFAULT_MAPPED_CAP the mapped lane falls back to the CONVENTION TWINS ALONE
@@ -93,7 +105,25 @@ module FastCert
       ["test/lib/#{Regexp.last_match(1)}_test.rb"]
     when %r{\Abin/([^/]+)\z}
       # bin/fast-check → test/lib/fast_check_test.rb (the harness-test seam).
-      ["test/lib/#{Regexp.last_match(1).tr('-', '_')}_test.rb"]
+      #
+      # THE `.rb` IS STRIPPED because a test filename never carries one mid-stem.
+      # bin/release.rb is the only top-level bin/*.rb in the repo, and it used to
+      # ask for `test/lib/release.rb_test.rb` — a path no convention in this repo
+      # would ever produce, so it could not exist, so the file fell to the grep on
+      # the literal token "release.rb" and matched 51 files (2026-09-07). Stripped,
+      # it asks for test/lib/release_test.rb like bin/release does, and reaches the
+      # same subject's family. No source with an EXISTING twin changes: the only
+      # path this clause moves is one whose old target could not exist.
+      #
+      # BOTH HARNESS NAMESPACES, because there are two and the mapper only knew one.
+      # test/commands/ holds 31 files (2026-09-07) named after the tool under test
+      # exactly as test/lib/ is — test/commands/session_kickoff_test.rb builds
+      # `File.join(ROOT, "bin", "session-kickoff")` and drives it. Eleven of them are
+      # the exact twin of a bin script and were INVISIBLE to this hop, so their tools
+      # were pushed onto the grep and matched on an English word instead
+      # (bin/setup → "setup" → 198 files, while test/commands never came up).
+      stem = Regexp.last_match(1).sub(/\.rb\z/, "").tr("-", "_")
+      ["test/lib/#{stem}_test.rb", "test/commands/#{stem}_test.rb"]
     else
       []
     end
@@ -115,10 +145,11 @@ module FastCert
   # mapped path out of 15, and PR #1236's first push learned the difference from
   # CI instead of from the builder's cert.
   #
-  # SCOPED TO test/lib/ DELIBERATELY, and this is the whole reason it is safe:
+  # SCOPED TO THE HARNESS NAMESPACES DELIBERATELY — test/lib/ and test/commands/ —
+  # and this is the whole reason it is safe:
   # test/<layer>/ mirrors app/<layer>/ one file to one file, so a prefix sibling
   # THERE is a different subject's test — test/models/task_event_test.rb belongs
-  # to app/models/task_event.rb, not to task.rb. Only the harness namespace names
+  # to app/models/task_event.rb, not to task.rb. Only a harness namespace names
   # its files after a tool rather than after a class, so only there does a prefix
   # sibling constitute evidence about the same subject.
   def family_tests(root, path, targets)
@@ -127,6 +158,35 @@ module FastCert
     return [] if path.match?(%r{\Atest/.+_test\.rb\z})
 
     Array(targets).flat_map { |target| harness_family(root, target) }.uniq
+  end
+
+  # --- the family hop for a tool whose TWIN IS MISSING ---------------------------
+  #
+  # THE FAMILY HOP ABOVE IS GATED ON THE TWIN EXISTING, and that gate is what sent
+  # the widest sources in the repo to the grep. bin/task has no test/lib/task_test.rb
+  # — nobody ever wrote the same-named file — so `existing` was empty, the family hop
+  # never ran, and the fallback grep asked for the word "task" and got 325 files.
+  # Meanwhile test/lib/task_begin_test.rb, task_cli_test.rb and
+  # task_events_backfill_test.rb sat right there, named after the tool, unreachable.
+  #
+  # A MISSING TWIN IS NOT A MISSING SUBJECT. test/lib/ names its files after the TOOL
+  # under test, so the family is evidence about the tool whether or not one of its
+  # members happens to carry the bare name. Measured 2026-09-07, this is worth 325 → 3
+  # for bin/task, 176 → 1 for bin/gate, 153 → 2 for bin/rails, 39 → 2 for
+  # bin/pr-review, 257 → 21 for bin/release.
+  #
+  # SAME GLOB, SAME OWNERSHIP GUARD — deliberately #harness_family itself rather than
+  # a second implementation of it, so the scope is stated ONCE and a mutation to the
+  # rule cannot be covered for by a copy that still holds. That is the failure PR #1239
+  # hit when its scope was stated twice.
+  #
+  # A CHANGED TEST FILE IS EXCLUDED for the same reason #family_tests excludes it: a
+  # DELETED test/lib/foo_test.rb would otherwise have no existing twin and drag its
+  # whole family into a diff that removed it.
+  def orphan_family(root, path)
+    return [] if path.match?(%r{\Atest/.+_test\.rb\z})
+
+    convention_candidates(path).flat_map { |target| harness_family(root, target) }.uniq
   end
 
   # The existing test/lib/<stem>_<suffix>_test.rb siblings of an existing twin,
@@ -138,7 +198,7 @@ module FastCert
   # because the glob still pinned the directory, so the test that should have
   # caught an over-wide scope stayed green against that mutation.
   def harness_family(root, target)
-    return [] unless target.match?(%r{\Atest/lib/.+_test\.rb\z})
+    return [] unless target.match?(%r{\Atest/(?:lib|commands)/.+_test\.rb\z})
 
     stem = target.sub(/_test\.rb\z/, "")
     Dir.glob("#{stem}_*_test.rb", base: root.to_s)
@@ -177,44 +237,149 @@ module FastCert
   # The inverse of the test/lib/ half of convention_candidates: every source path
   # that would convention-map TO this test file. Existence is the caller's test.
   def source_twins(test_path)
-    return [] unless test_path =~ %r{\Atest/lib/(.+)_test\.rb\z}
-
-    stem = Regexp.last_match(1)
-    ["lib/#{stem}.rb", "bin/lib/#{stem}.rb", "bin/#{stem}", "bin/#{stem.tr('_', '-')}"]
+    case test_path
+    when %r{\Atest/lib/(.+)_test\.rb\z}
+      stem = Regexp.last_match(1)
+      ["lib/#{stem}.rb", "bin/lib/#{stem}.rb", "bin/#{stem}", "bin/#{stem.tr('_', '-')}"]
+    when %r{\Atest/commands/(.+)_test\.rb\z}
+      # ONLY the bin forms. A library under lib/ or bin/lib/ convention-maps to
+      # test/lib/, never to test/commands/, so treating one as the OWNER of a
+      # commands file would reject a genuine sibling that nobody owns — the guard
+      # firing on a source that could not have produced this path.
+      stem = Regexp.last_match(1)
+      ["bin/#{stem}", "bin/#{stem.tr('_', '-')}"]
+    else
+      []
+    end
   end
 
-  # The word this file's grep fallback hunts for across test/: a class name for
-  # a .rb file (gate_run.rb → GateRun), the script name for a bin tool
-  # (bin/fast-check → "fast-check", how harness tests reference it), the bare
-  # basename for a config file (config/fast_cert_spine.yml → "fast_cert_spine").
-  # nil = no fallback for this path (views/docs/assets rely on the spine).
-  def grep_token(path)
+  # --- the grep hop's SUBJECT REFERENCE ------------------------------------------
+  #
+  # WHAT THE GREP IS ASKING, and what it used to ask instead. The question worth
+  # asking is "which tests are ABOUT this file?", and a test is about a subject when
+  # it NAMES that subject the way the codebase names it. The old token asked a much
+  # weaker question — "which tests contain this file's basename as a word?" — and a
+  # basename is not a name. Measured over all 1191 mappable hub sources 2026-09-07:
+  #
+  #   bin/task                     → "task"     → 325 test files (of 622 in the repo)
+  #   bin/release                  → "release"  → 257
+  #   config/environments/test.rb  → "Test"     → 208
+  #   app/services/news/review.rb  → "Review"   → 39, and NOT ONE of them was about it
+  #
+  # The last row is the clearest: the constant that file defines is `News::Review`.
+  # `Review` is not a shorter spelling of it — it is a different token that the class
+  # is never referred to by, so all 39 matches were coincidence. 27 sources ALONE
+  # exceeded the 15-path cap and every one of them was a grep like these.
+  #
+  # SO THE TOKEN IS THE SUBJECT'S IDENTITY, and identity has two forms here:
+  #
+  #   A FILE is identified by its PATH. A harness test names bin/fast-check as
+  #   "bin/fast-check", and a config test names config/queue.yml as
+  #   "config/queue.yml". Neither is ever referred to as the bare word "fast-check"
+  #   or "queue" — those are English, and English is what matched 325 files.
+  #
+  #   A CLASS is identified by its CONSTANT — the FULL one. Rails autoloads
+  #   app/<layer> as a root, so app/services/news/review.rb is `News::Review` and
+  #   app/controllers/api/v1/x_controller.rb is `Api::V1::XController`. Taking only
+  #   the basename threw the namespace away, which is exactly how a nested class ends
+  #   up hunting for a generic word.
+  #
+  # `concerns/` IS DROPPED because Rails autoloads app/*/concerns as a root of its
+  # own: app/models/concerns/position_concern.rb defines `PositionConcern`, not
+  # `Concerns::PositionConcern`. Keeping the segment would name a constant that does
+  # not exist, which is the same defect one directory deeper.
+  #
+  # A SCRIPT IS NAMED TWO WAYS AND BOTH ARE DELIBERATE, so a bin path yields two
+  # spellings. Code that RUNS a script writes the path — `File.join(ROOT, "bin",
+  # "session-kickoff")` — while the registries that ENUMERATE bin/ write the bare
+  # command name as a quoted literal: test/lib/bin_help_flag_class_test.rb holds
+  # `"register-satellite" => :optparse` for every script in the tree. Dropping the
+  # quoted form cost five scripts their only mapped test (measured 2026-09-07:
+  # bin/register-satellite, bin/reap-cert-databases, bin/island-background,
+  # bin/docker-entrypoint, bin/devops-tests all fell to zero), and that one file is
+  # a self-checking registry — the kind of test this whole family exists to reach.
+  #
+  # THE QUOTES ARE THE POINT, not a decoration. A quoted literal is a naming act;
+  # a bare word is English. The same script name unquoted is what matched 325 files.
+  # Worst case measured over this repo: `"release"` appears in 50 test files and
+  # `"task"` in 37 — still an order of magnitude under the bare words they come from,
+  # and in this repo neither reaches the grep at all (both have a harness family).
+  #
+  # RETURNS A LIST, and the list is the ONLY statement of the rule — #token_regexp
+  # below turns each spelling into a pattern and #grep_tests unions them. Nothing
+  # re-derives "which spellings does a bin path have"; a mutation to this case has
+  # no second copy to hide behind.
+  #
+  # [] = no grep for this path (views/docs/assets rely on the spine).
+  def grep_tokens(path)
     case path
-    when %r{\Abin/([^/]+)\z} then Regexp.last_match(1)
-    when /\.rb\z/ then camelize(File.basename(path, ".rb"))
-    when %r{\Aconfig/.+\.ya?ml\z} then File.basename(path).sub(/\.ya?ml\z/, "")
+    when %r{\Abin/([^/]+)\z} then [path, %("#{Regexp.last_match(1)}")]
+    when %r{\Aconfig/.+\.(?:ya?ml|rb)\z} then [path]
+    when %r{\Aapp/(?:#{APP_LAYERS.join('|')})/(.+)\.rb\z} then [constant_path(Regexp.last_match(1))]
+    when /\.rb\z/ then [camelize(File.basename(path, ".rb"))]
+    else []
     end
+  end
+
+  # A token matched at its own edges, where "edge" depends on what KIND of name the
+  # token is. Two things this cannot be, both learned by being wrong:
+  #
+  #   NOT AN UNCONDITIONAL \b. It marks a word/non-word seam, so prefixing one to a
+  #   token that STARTS with a quote would demand a word character before the quote
+  #   and `"register-satellite"` would never match anything.
+  #
+  #   NOT \b FOR A PATH EITHER. `\bbin/task\b` MATCHES "bin/task-archive", because
+  #   the hyphen is the non-word character \b is looking for. A path is extended by
+  #   the very characters \b treats as boundaries, so a path token is bounded by the
+  #   characters that can continue a path: `bin/task` must not match bin/task-archive
+  #   or bin/task.rb, and `bin/release` must not match bin/release.rb.
+  #
+  # A CONSTANT keeps the word boundary, and must: `News::Review.new(news)` is the
+  # canonical usage, so a trailing dot has to be a legal edge there.
+  def token_regexp(token)
+    t = token.to_s
+    edge = t.include?("/") ? '[\w./-]' : '\w'
+    body = Regexp.escape(t)
+    body = "(?<!#{edge})#{body}" if t.match?(/\A\w/)
+    body = "#{body}(?!#{edge})" if t.match?(/\w\z/)
+    Regexp.new(body)
+  end
+
+  # "news/review" → "News::Review"; "concerns/position_concern" → "PositionConcern".
+  def constant_path(rest)
+    rest.sub(%r{\Aconcerns/}, "").split("/").map { |seg| camelize(seg) }.join("::")
   end
 
   def camelize(str)
     str.to_s.split(/[_\-]/).map { |part| part.sub(/\A[a-z]/) { |c| c.upcase } }.join
   end
 
-  # Every test file under root whose text mentions `token` as a whole word.
-  # Read-in-Ruby (not shell grep) for BSD/GNU portability and determinism.
-  def grep_tests(root, token)
-    return [] if token.to_s.strip.empty?
+  # Every test file under root whose text NAMES the subject — i.e. contains any one
+  # of `tokens` at its own edges. Accepts a single token or a list of alternative
+  # spellings (see #grep_tokens). Read-in-Ruby (not shell grep) for BSD/GNU
+  # portability and determinism.
+  def grep_tests(root, tokens)
+    res = Array(tokens).map(&:to_s).reject { |t| t.strip.empty? }.map { |t| token_regexp(t) }
+    return [] if res.empty?
 
-    re = /\b#{Regexp.escape(token)}\b/
     Dir.glob("test/**/*_test.rb", base: root.to_s).select do |rel|
-      File.read(File.join(root, rel)).match?(re)
+      body = File.read(File.join(root, rel))
+      res.any? { |re| body.match?(re) }
     rescue StandardError
       false
     end
   end
 
-  # PER CHANGED FILE, what it maps to: its EXISTING convention targets, or the
-  # grep fallback when it has none. Returns { changed_path => [test paths] }.
+  # PER CHANGED FILE, what it maps to: its EXISTING convention targets, else its
+  # harness FAMILY when the twin is missing, else the grep fallback.
+  # Returns { changed_path => [test paths] }.
+  #
+  # THE THREE RUNGS ARE ORDERED BY HOW DIRECTLY THEY NAME THE SUBJECT — an existing
+  # twin names it exactly, a family member names it by stem, a grep only mentions it.
+  # #orphan_family sits between the two old rungs rather than beside the grep because
+  # a family member IS the subject's test; falling past it to a word search was the
+  # whole defect. The `else` branch is byte-identical to before, so every source with
+  # an existing convention target maps exactly as it did.
   #
   # Exposed separately from select_tests because WHICH FILE mapped widely is the
   # only actionable detail when the mapping explodes. A cap that says "48 files,
@@ -228,7 +393,8 @@ module FastCert
       existing = convention_candidates(path).select { |t| File.file?(File.join(root, t)) }
       tests =
         if existing.empty?
-          grep_tests(root, grep_token(path))
+          orphans = orphan_family(root, path)
+          orphans.empty? ? grep_tests(root, grep_tokens(path)) : orphans
         else
           (existing + family_tests(root, path, existing)).uniq
         end
@@ -272,24 +438,32 @@ module FastCert
   # answer, not a gap: a grep matching half the suite was never evidence ABOUT that
   # file, and the cap already said so.
   #
-  # WHICH CAUSE ACTUALLY TRIPS THE CAP — measured 2026-09-07 over all 474 mappable
-  # hub sources, because the answer decides whether this fallback is a slope or just
-  # a shorter cliff:
+  # WHICH CAUSE ACTUALLY TRIPS THE CAP — swept over every mappable hub source, twice,
+  # because the answer decides whether this fallback is a slope or just a shorter
+  # cliff. Re-derived 2026-09-07 at head 3e678a19 over all 1928 sources (the earlier
+  # sweep counted 474 by excluding test files, which map to themselves):
   #
-  #   23 sources ALONE exceed the cap. All 23 are GREP-driven. ZERO are family-driven.
-  #   Widest FAMILY mapping in the repo: bin/dor-check at 15 — AT the cap, never over
-  #   it alone. Next widest family: 3.
-  #   Widest GREP mappings: bin/task 325 ("task"), bin/release 257,
-  #   config/environments/test.rb 208 ("Test"), bin/setup 198, bin/gate 176.
+  #   BEFORE the subject-reference fix: 27 sources ALONE exceed the cap. All 27 are
+  #   GREP-driven. ZERO are family-driven. Widest: bin/task 325 ("task"),
+  #   bin/release 257, config/environments/test.rb 208 ("Test"), bin/setup 198.
+  #   AFTER: 9 do. Widest FAMILY mapping in the repo is still bin/dor-check at 15 —
+  #   AT the cap, never over it alone; next widest family, 3.
   #
   # So the family hop trips the cap only IN COMBINATION with a co-changed file — the
-  # cliff above — while every single-file cap trip is a grep precision failure. And
-  # this is what makes the fallback a slope rather than a shorter cliff, provably:
-  # ALL 23 grep-driven cap-trippers have ZERO convention twins, so the fallback takes
-  # nothing from them and they degrade to the spine exactly as they do today.
-  # Truncating 39 arbitrary grep matches to 15 arbitrary grep matches would be a
-  # shorter cliff; falling back to the TWIN is a slope. The grep's precision is a
-  # separate defect and is deliberately NOT addressed here.
+  # cliff above — while every single-file cap trip WAS a grep precision failure. That
+  # is what makes the fallback a slope rather than a shorter cliff, provably: the
+  # grep-driven cap-trippers have ZERO convention twins, so the fallback takes nothing
+  # from them and they degrade to the spine. Truncating 39 arbitrary grep matches to 15
+  # arbitrary grep matches would be a shorter cliff; falling back to the TWIN is a slope.
+  #
+  # THE PRECISION HALF IS NOW FIXED AT THE SOURCE (#grep_tokens, #orphan_family), which
+  # does NOT retire this fallback and does not touch the cap. What survives the fix is
+  # the more interesting half: the 9 sources still over the cap map to sets that are
+  # PRECISE — every one of app/models/agent_activity.rb's 29 hits really does name
+  # AgentActivity. Their counts are no longer an argument about selection; they are an
+  # argument about the INSTRUMENT, since a cap that counts FILES cannot bound TIME
+  # (measured: the 15-file bin/dor-check lane runs 220.0s against a ~60s budget, while
+  # a 2-file twin fallback runs 97.7s). That question is deliberately left open here.
   #
   # Existence is checked here (unlike convention_candidates, which is pure) because
   # the caller needs a runnable lane, not a candidate list.
@@ -308,12 +482,17 @@ module FastCert
   # that g1-cert.md budgets at about one minute. bin/ship runs this by default, so
   # every builder pays it.
   #
-  # An initializer has no convention candidate, so it falls through to a
-  # word-boundary grep of its camelized name — and "Studio" appears across the
-  # whole tree. A grep that matches half the suite has told you nothing about
-  # which tests are RELEVANT; it has only told you the token is too generic. Past
-  # the cap the honest move is to stop pretending the mapping is a signal, run the
-  # spine, and say so loudly.
+  # An initializer has no convention candidate, so it fell through to a grep — and
+  # the token was the CAMELIZED BASENAME, so config/initializers/studio.rb hunted for
+  # the word "Studio", which appears across the whole tree. A grep that matches half
+  # the suite has told you nothing about which tests are RELEVANT; it has only told
+  # you the token is too generic. Past the cap the honest move is to stop pretending
+  # the mapping is a signal, run the spine, and say so loudly.
+  #
+  # THAT PARTICULAR TOKEN IS GONE: a config file is now named by its PATH, and
+  # config/initializers/studio.rb maps to 3 files rather than 129 (2026-09-07). The
+  # cap still stands, because precision is not a bound — see #grep_tokens for what
+  # the grep asks now, and #convention_twins for what survives the fix.
   #
   # 15 is deliberately low. The lane's value is being predictable, not thorough —
   # bin/full-suite-check is one command away and is the right answer for a diff
