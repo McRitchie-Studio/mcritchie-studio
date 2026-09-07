@@ -258,3 +258,37 @@ small-host example with scaled knobs — so the next person sizing it down reads
 the answer instead of rediscovering it. `mcritchie-studio`'s
 `tasks/_deployments_live_fx` already carries a worked small-host override
 (2px ring, 4px bloom, on a wrapper sized to the bar) to copy from.
+
+---
+
+## `bin/credential-doctor` — a lane/vault/token status matrix
+
+**Parked 2026-08-28 by Mr. McRitchie: "I like the idea but let's stay focused.
+Triage wasn't that confusing."** Not on the board; kept because the reasoning is
+worth keeping, not because it is queued.
+
+**The idea.** One command printing every credential lane, the vault it reads, the
+token variable it needs, and whether it ACTUALLY MINTS — not merely whether the
+variable is non-empty. Each failing row carries the command that fixes it. Plus a
+non-blocking line in `bin/session-preflight`, so a session about to deploy learns
+its ship lane is broken before it starts rather than at the deploy.
+
+**Why it looked worth building.** Every credential failure on 2026-08-28 had the
+same shape: invisible until something far away broke. The vault rename broke six
+files and surfaced as a 401 an hour later; a missing admin token would not have
+announced itself until a production deploy; eight active docs pointed at a vault
+that no longer existed.
+
+**Why parking it is reasonable.** The triage was, in the event, not hard — the
+error messages carried their own diagnosis once `bin/dor-check` and
+`bin/gh-auth-refresh` were read properly, and `/tasks/two-vault-token-resolver`
+made the remaining failures self-describing (a refused deployer read now names
+the missing variable and says the refusal is intentional). A doctor would have
+saved minutes, not hours.
+
+**Resurrect as:** a `mcritchie-studio` task, if a SECOND credential outage costs
+real time — that is the signal that self-describing errors were not enough. It
+should mint rather than check for a set variable, since the 2026-08-28 outage
+would have passed a set-variable check right up until the deploy. Note it would
+also have reported the deployer lane green in a shell with no admin token, for
+the cache reason in `/tasks/never-cache-deployer-token` — so that one lands first.
