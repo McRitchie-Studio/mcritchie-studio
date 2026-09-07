@@ -107,10 +107,30 @@ class DorCheckExemptCiTest < Minitest::Test
   #
   # READ "ADVANCES" AT THIS GRAIN. Here it means CiGate returns no error, and green
   # really is alone in that. It is NOT the same question as whether the REVIEW
-  # advances: the caller may waive a no-verdict refusal on a full cert, so :none,
-  # :unverified and :unreadable all reach ready=true through bin/dor-check. That is
-  # why the refusal PRINTED for an unclassified state says PASSING and not advances
-  # (/tasks/gate-prose-overclaims-again).
+  # advances: the caller may waive a no-verdict refusal on a full cert. Driven
+  # through `bin/dor-check --gate-role review` on a task carrying a FULL cert,
+  # :none, :unverified and :unreadable each reach ready=true exit=0 ON THE GATED
+  # PATH — the wording bin/lib/ci_gate.rb's own allow-list note already uses. That
+  # is why the refusal PRINTED for an unclassified state says PASSING and not
+  # advances (/tasks/gate-prose-overclaims-again).
+  #
+  # THOSE FOUR WORDS ARE THE WHOLE SENTENCE, AND THIS IS THE FILE THAT OWES THEM
+  # (/tasks/exempt-path-claim-unqualified). The claim landed here UNQUALIFIED — in
+  # the EXEMPT path's own test file, where it is false. Driven the same way, same
+  # FULL cert, on a docs-KIND task with a doc-only diff, all three REFUSE:
+  #
+  #   injected      ci.state      gated            exempt
+  #   green         green         ready=true  0    ready=true   0
+  #   none          none          ready=true  0    ready=false  1
+  #   unverified    unverified    ready=true  0    ready=false  1
+  #   unreadable    unreadable    ready=true  0    ready=false  1
+  #
+  # The exempt caller passes `cert_route: false` (bin/dor-check's exempt branch), so
+  # tier 2 collapses into tier 3 and green is alone in ADVANCING here as well as in
+  # passing. The unqualified sentence read as true only because the clause before it
+  # said the caller MAY waive — conditionality smuggled in by a neighbour. That
+  # accidental rescue is what this prose family keeps living on; name the path
+  # instead.
 
   def test_unit_green_is_the_only_state_that_advances_a_review
     error, = CiGate.verdict({ state: :green }, review_role: true, pr_url: PR_URL, slug: "t")
@@ -1369,9 +1389,15 @@ class DorCheckExemptCiTest < Minitest::Test
   # such line at all, which was flatly false while the conclusion drawn from it was
   # right — a comment about prose drifting from behaviour, drifting from behaviour.
   #
-  # The fixture then puts one claim in each of the four positions and states which two
-  # must survive.
-  def test_unit_the_printable_stripper_keeps_prose_and_drops_comments
+  # ITS OWN TEST, NOT A PRELUDE TO THE FIXTURE'S (/tasks/exempt-path-claim-unqualified).
+  # These two source scans and the four fixture assertions below used to share one
+  # method, with the scans FIRST — so the day this alarm fired, Minitest stopped at it
+  # and the four checks it was standing in front of never executed. A firing alarm
+  # would have silently retired the very assertions that say what the stripper is FOR,
+  # and the run would have reported one failure where there might have been five. Two
+  # methods, not a reordering: order only chooses which half goes blind, and split
+  # leaves neither able to suppress the other.
+  def test_unit_the_printable_stripper_control_reads_the_real_file
     refute_equal pr_review_source, flat_strip(pr_review_source),
                  "CONTROL: the scan must have read a real file — bin/pr-review carries full-line comments, " \
                  "so a strip that removed nothing removed nothing from nothing"
@@ -1380,7 +1406,12 @@ class DorCheckExemptCiTest < Minitest::Test
                  "with `#` inside a heredoc and are not `\#{...}` interpolations, so the branch — not the " \
                  "interpolation exemption — is what keeps them. The header above is stale; drive this " \
                  "control against the real file, and correct the header before re-pinning it"
+  end
 
+  # The fixture puts one claim in each of the four positions and states which two must
+  # survive. It shares nothing with the control above but the predicate under test, and
+  # that is deliberate — see that method's header.
+  def test_unit_the_printable_stripper_keeps_prose_and_drops_comments
     fixture = <<~RUBY
       # CLAIM_IN_A_COMMENT — provenance, must be dropped
       note = "CLAIM_IN_A_STRING"
@@ -1409,6 +1440,14 @@ class DorCheckExemptCiTest < Minitest::Test
     body
   end
 
+  # THE SAME LITERAL AS THE REVIEWER READS IT — the Ruby string-continuation seams
+  # (`" \` + newline + indent + `"`) closed up, so the sentence is one run of text. An
+  # assertion about a CLAUSE has to span those seams or it grades the source layout:
+  # rewrapping the same words across different lines would move a clause boundary and
+  # red-seal a caveat nobody changed. Everything else is left alone, interpolations
+  # included — this closes a seam, it does not evaluate the string.
+  def cert_caveat_text = cert_caveat_literal.gsub(/"\s*\\\n\s*"/, "")
+
   def test_unit_the_supervisor_stops_promising_a_green_ci_advances_the_exempt_path
     assert_includes cert_caveat_literal, CO_FIRE_CLAIM,
                     "the supervisor must brief the reviewer with the SAME claim their gate-zero prints — " \
@@ -1433,17 +1472,78 @@ class DorCheckExemptCiTest < Minitest::Test
   # and bin/dor-check's own alert calls that read "NOT a credential refusal". Naming one
   # site's cause in a literal both sites print sends half the readers hunting a token
   # while `gh` is simply down, so the closing must name the CLASS the two share.
+  #
+  # THE FIRST VERSION OF THIS GUARD WAS DOCUMENTARY, NOT BEHAVIOURAL
+  # (/tasks/exempt-path-claim-unqualified). It pinned three SUBSTRINGS, so it graded a
+  # spelling rather than the claim — and one reword walks straight through all three.
+  # Measured: rewriting the closing as "a refused token, NOT a `gh`/network failure"
+  # REINSTATES the retired credential story (it now asserts one cause and DENIES the
+  # other, which is worse than the sentence this family retired) and the pin stayed
+  # green at 1 run / 12 assertions. A guard the reinstatement passes is a comment with
+  # a `def` in front of it.
+  #
+  # SO ASSERT THE SHAPE OF THE CLAIM. The property is that the two causes are offered
+  # as ALTERNATIVES — one fault, either of two origins, neither excluded — because
+  # that is the only reading true at both print sites. The clause is extracted (from
+  # "hides both reads" to the next `;`) and asked four things: it names the credential
+  # cause, it names the transport cause, it joins them disjunctively, and it does not
+  # EXCLUDE either. Scoping the exclusion check to that clause is what makes it usable
+  # at all — the caveat's own "NECESSARY AND NOT SUFFICIENT" sits two clauses earlier,
+  # and a whole-literal negation scan would red-seal the correct sentence.
+  #
+  # WHAT IT STILL CANNOT SEE, stated rather than papered over. This is a source scan of
+  # a string literal; it reads syntax, not meaning. A reinstatement that keeps the
+  # disjunction and then leans on it in prose the clause does not contain — "…, or a
+  # `gh`/network failure; usually the token" — passes, because the closing it grades
+  # ends at the semicolon. Closing that would mean grading the whole caveat for
+  # emphasis, which has no fixture and no seam at this grain: `cert_caveat` is a local
+  # in a method that spawns real reviewer subprocesses (see pr_review_source's header),
+  # so there is no value to call and nothing to drive. The guard is therefore sound
+  # against DROPPING or NEGATING a cause — the two shapes the retired claim actually
+  # wore — and blind to re-weighting one. That boundary is the file's grain, not an
+  # oversight, and it is written down so the next reader does not mistake the pin for
+  # a proof.
+  CO_FIRE_CAUSE_CREDENTIAL = /token/i
+  CO_FIRE_CAUSE_TRANSPORT = %r{`gh`/network}
+  CO_FIRE_DISJUNCTION = /\bor\b/i
+  # Excluding a cause instead of offering it — the reinstatement's whole move.
+  CO_FIRE_EXCLUSION = /\bnot\b|\bnever\b|\brather than\b|\binstead of\b|\bn't\b/i
+
+  # The co-fire's CAUSE CLAUSE, as the reviewer reads it: "hides both reads" up to the
+  # `;` that ends the thought. Read off cert_caveat_text (seams removed) so a reflow of
+  # the Ruby continuation lines cannot change what these assertions match.
+  def cert_caveat_cause_clause
+    clause = cert_caveat_text[/hides both reads(.*?);/m, 1]
+    refute_nil clause, "the caveat must still close with a co-fire clause ending in `;`:\n#{cert_caveat_text}"
+    clause
+  end
+
   def test_unit_the_supervisor_caveat_names_a_cause_true_at_both_print_sites
-    refute_includes cert_caveat_literal, "stale token refuses both reads",
-                    "THE RETIRED CLAIM: this literal also prints on the :unverified `else`, which is a " \
-                    "TRANSPORT fault — bin/dor-check calls it \"NOT a credential refusal\":\n" \
-                    "#{cert_caveat_literal}"
-    assert_includes cert_caveat_literal, "fault hides both reads",
-                    "the caveat must still name the co-fire — the two reads fail together:\n" \
-                    "#{cert_caveat_literal}"
-    assert_includes cert_caveat_literal, "`gh`/network failure",
-                    "and it must name the NON-credential half, which is the one the :unverified site " \
-                    "actually meets:\n#{cert_caveat_literal}"
+    clause = cert_caveat_cause_clause
+
+    refute_includes cert_caveat_text, "stale token refuses both reads",
+                    "THE RETIRED CLAIM, verbatim: this literal also prints on the :unverified `else`, which " \
+                    "is a TRANSPORT fault — bin/dor-check calls it \"NOT a credential refusal\":\n" \
+                    "#{cert_caveat_text}"
+    assert_includes cert_caveat_text, "fault hides both reads",
+                    "the caveat must still name the co-fire — the two reads fail together:\n#{cert_caveat_text}"
+
+    assert_match CO_FIRE_CAUSE_CREDENTIAL, clause,
+                 "the co-fire clause must name the CREDENTIAL cause, which is the :unreadable site's:\n#{clause}"
+    assert_match CO_FIRE_CAUSE_TRANSPORT, clause,
+                 "and the NON-credential cause, which is the one the :unverified site actually meets:\n#{clause}"
+    # EXCLUSION BEFORE DISJUNCTION, and the order is the message. A reinstatement
+    # trips both — it swaps the "or" for a "NOT" — and Minitest prints only the first,
+    # so the first must be the one that names the DEFECT. Reversed, the operator who
+    # reworded the closing is told their grammar is wrong.
+    refute_match CO_FIRE_EXCLUSION, clause,
+                 "THE RETIRED CLAIM, REWORDED: this clause EXCLUDES one of the two causes. Both are live — " \
+                 "the credential story at the :unreadable branch, the transport story at the :unverified " \
+                 "`else` — so a closing that denies either is wrong for half its traffic, which is the " \
+                 "defect this guard exists to catch and not a stronger version of it:\n#{clause}"
+    assert_match CO_FIRE_DISJUNCTION, clause,
+                 "the two causes must be offered as ALTERNATIVES — one fault, either origin. A clause that " \
+                 "names both without joining them is asserting, not offering:\n#{clause}"
   end
 
   # THE WIRING, at this file's only available grain: the caveat is INTERPOLATED at both
