@@ -127,7 +127,15 @@ class TaskDependenciesWriterDocsTest < ActiveSupport::TestCase
     body = norm(AGENTS.join("modules", "devops-task-board.md"))
     assert_match(/outside the release does not hold this one back/i, body,
                  "the tolerance must be stated, or the refusal reads as 'deps must be in the release'")
-    assert_match(/replaces/i, body, "the replace-not-append semantic bit --checks callers repeatedly")
+    # SCOPED to the phrase, not the bare word. `/replaces/i` passed page-wide on a
+    # file that has said `api-devops-patch-replaces` since long before this guard —
+    # so deleting BOTH in-section statements of the semantic (the `# repeatable;
+    # REPLACES the list` comment and the bullet below it) left this green. That is
+    # the exact defect this whole task exists to close, one assertion short: a guard
+    # matching a literal string somewhere ELSE in the file reports coverage it does
+    # not have. Either in-section statement satisfies it; losing both does not.
+    assert_match(/replaces the list/i, body,
+                 "the replace-not-append semantic bit --checks callers repeatedly")
     assert_match(/refuses a slug naming no task/i, body,
                  "the refusal must be stated beside the tolerance it exists because of")
   end
