@@ -210,6 +210,19 @@ class DorCheckBaseMovementTest < Minitest::Test
       assert_match(/disjoint/i, errors_of(verdict),
                    "the refusal must say WHY the file-disjointness argument does not settle it — " \
                    "that argument is what reviewers reach for here, and it is true and irrelevant")
+
+      # THE TWO HALVES MUST NOT CONTRADICT EACH OTHER. The movement REPORT and the
+      # REFUSAL both fire on this run — same refs, same movement — and the report used to
+      # append "None of those is a test that grades a file this PR changes" unconditionally.
+      # That is the exact negative the refusal has just disproved, about the exact same
+      # file, in one verdict; and it is not a harmless duplication, because the false half
+      # hands the reader the disjointness argument the refusal exists to refute.
+      refute_match(/None of those is a test that grades/, all_of(verdict),
+                   "the report half asserted a negative the refusal half disproved — one verdict named the " \
+                   "same file as both a guard and not-a-guard\n#{all_of(verdict)}")
+      assert_match(/DISJOINTNESS IS NOT AVAILABLE HERE/, all_of(verdict),
+                   "…and having withheld the disjointness claim, the report must say WHY it is withheld " \
+                   "rather than simply going quiet")
     end
   end
 
@@ -231,6 +244,14 @@ class DorCheckBaseMovementTest < Minitest::Test
       assert_match(/docs\/unrelated\.md/, all_of(verdict),
                    "…including WHAT moved, so the disjointness argument can be made from the verdict " \
                    "instead of by hand")
+
+      # THE OTHER HALF of the guards conditional. The refusing row pins that the
+      # disjointness claim is WITHHELD when a guard moved; without this, the branch that
+      # still MAKES the claim is unpinned, and collapsing the conditional the other way
+      # (always withhold) passes the suite silently — measured during review.
+      assert_match(/FILE DISJOINTNESS is available here/, all_of(verdict),
+                   "on the shape where disjointness genuinely does settle it, the report must still say " \
+                   "so — a conditional has two halves and an unasserted half is an unproved one")
     end
   end
 

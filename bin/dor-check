@@ -1652,10 +1652,23 @@ def base_movement_detail(movement, ambiguous_clock: false)
     else
       detail << " #{movement[:late].size} of those landed AFTER this PR's CI completed " \
         "(#{movement[:cutoff].iso8601}), and ci.yml runs on pull_request and on pushes to main/release only, " \
-        "so nothing re-ran: the green never saw #{base_move_list(movement[:late_files])}. None of those is a " \
-        "test that grades a file this PR changes, so FILE DISJOINTNESS is available here — but note what it " \
-        "does and does not say: \"the base touched none of my files\" is a DIFFERENT claim from \"the " \
-        "merged tree is green\", and it is the merged tree that ships."
+        "so nothing re-ran: the green never saw #{base_move_list(movement[:late_files])}."
+      # zap (carl, review of this PR): the disjointness sentence used to be UNCONDITIONAL, so on the
+      # refusing shape this report asserted "None of those is a test that grades a file this PR
+      # changes" in the same verdict where the refusal named exactly such a test. Two opposite claims
+      # about one file, and the false one handed the reader the very argument the refusal exists to
+      # refute. Asserting a negative this branch never checked is the defect the module's own header
+      # forbids (bin/lib/base_movement_audit.rb, "DIRECTION OF ERROR"), one level down.
+      detail << if movement[:guards].empty?
+                  " None of those is a test that grades a file this PR changes, so FILE DISJOINTNESS is " \
+                    "available here — but note what it does and does not say: \"the base touched none of my " \
+                    "files\" is a DIFFERENT claim from \"the merged tree is green\", and it is the merged " \
+                    "tree that ships."
+                else
+                  " FILE DISJOINTNESS IS NOT AVAILABLE HERE: " \
+                    "#{base_move_list(movement[:guards].map { |g| g[:test] })} grades code this PR changes " \
+                    "without being a file this PR touches. The refusal above carries the full finding."
+                end
     end
   end
   detail
