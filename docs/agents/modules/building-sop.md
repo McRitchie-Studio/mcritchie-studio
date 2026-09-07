@@ -254,18 +254,23 @@ grep -m1 'studio-engine (' Gemfile.lock
 
 **Do not decide this from a remembered version number — let the run tell you.**
 The sub-floor path applies to one condition only: an app whose `Gemfile.lock`
-resolves studio-engine *below* the floor (the threshold is written into
-`bin/verify-review-hop`'s `--email` help and `bin/lib/review_hop.rb`). You do not
-have to know which apps those are, because a sub-floor mint dead-ends on
-`MISSING_EMAIL` and `review_hop.rb` names that cause in the failure text. So run
+resolves studio-engine *below* the floor. The threshold is written in two places,
+and both are named precisely so you stop at them rather than reading around them:
+`bin/verify-review-hop`'s **`--email` option help**, and the **`MISSING_EMAIL`
+failure text** `bin/lib/review_hop.rb` returns from the mint leg. Prefer the
+second — it is the one a test asserts, so it cannot drift without going red. You
+do not have to know which apps are sub-floor, because a sub-floor mint dead-ends
+on `MISSING_EMAIL` and that failure text names the cause. So run
 `bin/verify-review-hop` **without** `--email` first, and reach for the flag only
 when that is what comes back.
 
 A version snapshot used to stand here, and it went stale exactly as you would
 expect: measured 2026-09-07, both apps it named — the hub and turf-monster —
-resolve studio-engine 0.70.0, and a five-leg green run with **no** `--email` is
-the behavioural refutation. Treat any version in this file as history, never as
-the current state.
+resolved studio-engine 0.70.0, and a five-leg green run with **no** `--email` is
+the behavioural refutation. Treat any **repo-version pairing** in this file as
+history. The **floor itself** (0.36.0, above) is not history — it is the live
+threshold this whole section turns on, and it changes only when the engine's
+reviewer fallback does.
 
 Do not carry one repo's identity list to another to choose that address: the same
 person can be an admin in the hub and `role: "user"` one repo over. Confirm the
