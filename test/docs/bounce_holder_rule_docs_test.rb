@@ -90,25 +90,130 @@ class BounceHolderRuleDocsTest < ActiveSupport::TestCase
   BLOCK_CMD = "bin/task block"
   REWORK = /--kind (rework|<[^>]*rework)/
 
-  # ONE run = ONE invocation. A run ends at the sentence end, at the NEXT
-  # invocation, or after 220 characters — whichever comes first.
+  # WHERE A COMMAND ENDS — the question this guard first got wrong, in BOTH
+  # directions. The first cut ended each run at its first period. That is not where
+  # a shell command ends, and both failures were measured on planted commands:
   #
-  # Stopping at the next invocation is load-bearing, and it is not hypothetical:
-  # the first cut of this guard scanned a fixed-width window, so two commands in
-  # one sentence became a SINGLE run and a later agented command masked an earlier
-  # bare one. The mutation that reintroduced an un-agented gate-zero bounce — the
-  # exact defect this guard exists to catch — SURVIVED that version.
+  #   FALSE NEGATIVE  bin/task block <t> --feedback "CI red. Fix it." --kind rework
+  #     The cut landed inside the quoted feedback, BEFORE `--kind rework`, so the
+  #     run never matched REWORK, the invocation was never examined, and a BARE
+  #     bounce command scanned green — a seventeenth site arriving unnoticed, which
+  #     is the one thing this file's header claims to make impossible.
+  #
+  #   FALSE POSITIVE  bin/task block <t> --kind rework
+  #                     --feedback "Gate zero is red. Fix CI." --agent carl
+  #     The same cut landed before `--agent carl`, so a CORRECT command was reported
+  #     as an offender. This is the ordinary shape, not an edge case:
+  #     pr-review-primary.md asks for one complete send-back in `--feedback`, and
+  #     complete send-backs end in periods.
+  #
+  # WIDENING THE WINDOW IS NOT THE FIX. It buys the false positive back by paying
+  # the false negative: these docs discuss `--agent` in the prose immediately after
+  # a command — address-blocker.md's "Name yourself with `--agent`" sits one line
+  # under one, and heartbeats.md and devops-cycle-design.md do the same — so a run
+  # allowed to read on into that prose finds an `--agent` that belongs to a SENTENCE
+  # and acquits a bare command. A run has to end where the COMMAND ends.
+  #
+  # SO ASK WHAT ACTUALLY TERMINATES A SHELL COMMAND IN PROSE. Not a period: inside
+  # `--feedback "…"` a period is ordinary text and terminates nothing. Not a
+  # newline: five sites here soft-wrap a command across a prose line break with NO
+  # backslash, which is why `flat` joins lines at all. Not a character count. What
+  # ends a command is running out of COMMAND — the first token that is not a flag,
+  # a flag's value, a placeholder, a quoted string, or a continuation. `command_extent`
+  # walks exactly that, and quoted strings are OPAQUE to it, so one rule fixes both
+  # directions instead of patching either.
+
+  # Shell token shapes, tried in this order: FLAG ahead of the argument shapes, so
+  # `--kind` reads as a flag rather than as a positional argument. ELIDE is a
+  # literal `...`, which bin/task's own breaker remedy prints in place of the flags
+  # it is not repeating.
+  CONT = /\A\\/
+  FLAG = /\A--?[A-Za-z][A-Za-z0-9-]*/
+  ELIDE = /\A\.\.\./
+  PLACEHOLDER = /\A<[^<>]*>/
+  QUOTED = /\A(?:"[^"]*"|'[^']*')/
+  WORD = /\A[-A-Za-z0-9_\/:=+|#\{\}]+(?:\.[-A-Za-z0-9_\/:=+|#\{\}]+)*/
+
+  # A shell token, classified — or nil, which is precisely where the command ends.
+  def command_token(rest)
+    { cont: CONT, flag: FLAG, elide: ELIDE }.each do |kind, shape|
+      token = rest[shape]
+      return [kind, token] if token
+    end
+    [PLACEHOLDER, QUOTED, WORD].each do |shape|
+      token = rest[shape]
+      return [:arg, token] if token
+    end
+    nil
+  end
+
+  # Walk forward from `bin/task block` for as long as the text still reads as that
+  # command. The slot says what may legally come next: `:head` is the positional
+  # straight after `block`; `:flag` accepts ONLY another flag, because a bare word
+  # in flag position is prose and prose is the boundary; `:value` accepts a flag's
+  # value, or another flag when the previous one took none.
+  #
+  # An UNCLOSED quote yields no token and so ends the run at the opening quote. That
+  # under-reads rather than over-reads on purpose: a run that swallows text whose end
+  # it cannot see is exactly how a prose `--agent` acquits a bare command.
+  def command_extent(body, from, upto)
+    pos = from + BLOCK_CMD.length
+    slot = :head
+    while pos < upto
+      pos += 1 while pos < upto && body[pos] == " "
+      break if pos >= upto
+
+      kind, token = command_token(body[pos...upto])
+      break if kind.nil? || (kind == :arg && slot == :flag)
+
+      slot = case kind
+             when :cont then slot
+             when :flag then :value
+             when :elide then slot == :head ? :flag : slot
+             else :flag
+             end
+      pos += token.length
+    end
+    body[from...pos].rstrip
+  end
+
+  # ONE run = ONE invocation, carried as TWO spans, because the guard asks two
+  # different questions about it and they have different extents:
+  #
+  #   `command` — the invocation itself (`command_extent`). "Is this `--kind
+  #     rework`?" and "does it name `--agent`?" are questions about the COMMAND, and
+  #     asking them of anything wider is what lets a sentence acquit a command.
+  #   `context` — the invocation plus the prose around it, to the sentence end, the
+  #     NEXT invocation, or 220 characters. "Is this NARRATION rather than an
+  #     instruction?" is a question about the SENTENCE, so the exemptions below stay
+  #     keyed to distinctive prose instead of to a bare command string that a dozen
+  #     sites share verbatim.
+  #
+  # Stopping at the next invocation bounds BOTH spans, and it is load-bearing: the
+  # first cut of this guard scanned a fixed-width window, so two commands in one
+  # sentence became a SINGLE run and a later agented command masked an earlier bare
+  # one. The mutation that reintroduced an un-agented gate-zero bounce — the exact
+  # defect this guard exists to catch — SURVIVED that version.
+  Run = Struct.new(:command, :context)
+
+  CONTEXT_WINDOW = 220
+  # A backstop only. `command_extent` ends a command structurally, and long before
+  # this; the cap just bounds the walk on a pathological body.
+  COMMAND_BACKSTOP = 600
+
   def rework_runs(text)
     body = flat(text)
     runs = []
     idx = body.index(BLOCK_CMD)
     while idx
       nxt = body.index(BLOCK_CMD, idx + BLOCK_CMD.length)
-      stop = [idx + 220, body.length, nxt].compact.min
-      seg = body[idx...stop]
-      dot = seg.index(".")
-      seg = seg[0...dot] if dot
-      runs << seg if seg.match?(REWORK)
+      command = command_extent(body, idx, [idx + COMMAND_BACKSTOP, body.length, nxt].compact.min)
+
+      context = body[idx...[idx + CONTEXT_WINDOW, body.length, nxt].compact.min]
+      dot = context.index(".")
+      context = context[0...dot] if dot
+
+      runs << Run.new(command, context) if command.match?(REWORK)
       idx = nxt
     end
     runs
@@ -157,10 +262,78 @@ class BounceHolderRuleDocsTest < ActiveSupport::TestCase
     assert_operator doc_runs.size, :>=, 2,
       "extracted #{doc_runs.size} `--kind rework` runs from pr-review-sop.md — the extractor is not reading markdown"
 
-    assert doc_runs.any? { |run| run.include?("--agent") },
+    assert doc_runs.any? { |run| run.command.include?("--agent") },
       "pr-review-sop.md must carry at least one agented block command for the extractor to see"
   end
 
+
+  # BOTH DIRECTIONS OF THE BOUNDARY BUG, PINNED. Each command below was measured
+  # against the period-cut rule this file used to carry: the first scanned GREEN
+  # (a bare bounce command the guard could not see) and the second FAILED (a
+  # correct command reported as an offender). Either regresses if a rule that ends
+  # a command at punctuation it cannot see the end of ever comes back.
+  test "[unit] a period inside a quoted argument does not end the command" do
+    bare = 'bin/task block <task> --feedback "CI red. Fix it." --kind rework'
+    runs = rework_runs(bare)
+
+    assert_equal 1, runs.size,
+      "a quoted period ended the run early, so `--kind rework` fell outside it and this BARE " \
+      "bounce command was never examined at all — the seventeenth site arriving unnoticed"
+    refute_includes runs.first.command, "--agent",
+      "the bare command must read as bare"
+
+    agented = 'bin/task block <task> --kind rework --feedback "Gate zero is red. Fix CI." --agent carl'
+    runs = rework_runs(agented)
+
+    assert_equal 1, runs.size
+    assert_includes runs.first.command, "--agent",
+      "a quoted period ended the run before `--agent carl`, reporting a CORRECT command as an " \
+      "offender. pr-review-primary.md asks for one complete send-back in `--feedback`, and " \
+      "complete send-backs end in periods, so this is the ordinary shape"
+  end
+
+  test "[unit] a command ends at the prose after it, so a sentence's --agent cannot acquit it" do
+    text = "Bounce it with `bin/task block <task> --kind rework` and name yourself with `--agent carl`."
+    runs = rework_runs(text)
+
+    assert_equal 1, runs.size
+    refute_includes runs.first.command, "--agent",
+      "the run read past the end of the command and into the sentence, picking up an `--agent` " \
+      "that belongs to the PROSE. That acquits a bare command, and it is the price of 'just " \
+      "widen the window' — which is why the boundary is tokenised rather than counted"
+  end
+
+  test "[unit] the extractor reads the two multi-line shapes this corpus actually uses" do
+    wrapped = <<~MD
+      self-heals by retargeting to `accepted`) — or `bin/task block <task> --kind
+      rework --feedback "…" --agent carl` (back to you). Review still never touches
+    MD
+    runs = rework_runs(wrapped)
+
+    assert_equal 1, runs.size,
+      "a command soft-wrapped across a prose line break with NO backslash did not read as one " \
+      "command. Five sites in this corpus are written that way, and a line-at-a-time reader " \
+      "scores ZERO hits on every one of them"
+    assert_includes runs.first.command, "--agent carl"
+
+    continued = <<~MD
+      ```bash
+      bin/task block <slug> --kind <environment|rework|dependency> \\
+        --summary "4-6 word headline" \\
+        --agent <your-soul>
+      ```
+
+      Name yourself with `--agent`: a `--kind rework` block spends the task's bounce.
+    MD
+    runs = rework_runs(continued)
+
+    assert_equal 1, runs.size
+    assert_includes runs.first.command, "--agent <your-soul>",
+      "a backslash-continued fenced command must read as ONE command through to its last flag"
+    refute_includes runs.first.command, "Name yourself",
+      "the command ran on past the fence into the prose below it — the prose that says " \
+      "`--agent`, which is precisely the text that would acquit a bare command"
+  end
   # ---------------------------------------------------------------------------
   # 1. THE GRANT MUST NOT COME BACK (negative).
   # ---------------------------------------------------------------------------
@@ -252,7 +425,9 @@ class BounceHolderRuleDocsTest < ActiveSupport::TestCase
       why: "comment explaining the feature-marker repoint" },
     { file: "bin/task", match: /block \#\{slug\} --kind rework/,
       why: "SPLIT, not narration: a printed breaker-ack remedy that omits --agent. Same class, " \
-           "but bin/ is out of the docs shape this guard shipped under — tracked separately." },
+           "but bin/ is out of the docs shape this guard shipped under. Tracked as " \
+           "https://mcritchie.studio/tasks/breaker-remedy-omits-agent — an exemption that names " \
+           "no tracker is a permanent hole wearing a temporary label." },
     { file: "docs/agents/agents/carl/sops/pr-review-light.md", match: /on its own initiative/,
       why: "cautionary account of turf-monster PR 594, the incident that motivated the gate" },
     { file: "docs/agents/agents/carl/sops/pr-review.md", match: /therefore runs the breaker itself/,
@@ -273,10 +448,10 @@ class BounceHolderRuleDocsTest < ActiveSupport::TestCase
     offenders = []
     self.class.corpus.each do |rel, text|
       rework_runs(text).each do |run|
-        next if run.include?("--agent")
-        next if NARRATION.any? { |n| n[:file] == rel && run.match?(n[:match]) }
+        next if run.command.include?("--agent")
+        next if NARRATION.any? { |n| n[:file] == rel && run.context.match?(n[:match]) }
 
-        offenders << "#{rel}\n        #{run.strip[0, 150]}"
+        offenders << "#{rel}\n        #{run.command.strip[0, 150]}"
       end
     end
 
@@ -303,7 +478,9 @@ class BounceHolderRuleDocsTest < ActiveSupport::TestCase
       text = corpus[entry[:file]]
       assert text, "NARRATION names #{entry[:file]}, which the sweep did not read"
 
-      matched = rework_runs(text).any? { |run| !run.include?("--agent") && run.match?(entry[:match]) }
+      matched = rework_runs(text).any? do |run|
+        !run.command.include?("--agent") && run.context.match?(entry[:match])
+      end
       assert matched,
         "stale exemption: no bare `--kind rework` run in #{entry[:file]} matches " \
         "#{entry[:match].inspect} (#{entry[:why]}). Delete the entry — an exemption that " \
