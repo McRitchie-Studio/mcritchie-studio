@@ -145,11 +145,14 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
      cannot hear it — so mint a fresh App token with `bin/gh-app-mint-token` (never
      print it) and retry the exact check read; re-running `dor-check` alone will
      never clear it. For `none`, the opposite: **wait, a check is coming.** Every
-     repo in the ecosystem ships a `pull_request`-triggered workflow — verified at
-     source 2026-08-31 on both `accepted` and `main`: `solana-studio`'s
-     `gem-ci.yml` (`name: Gem CI`), `turf-vault`'s `ci.yml` (`name: CI`),
-     `studio-engine`'s `engine-ci.yml`, and `ci.yml` in every app — so there is no
-     repo left where "no check will ever appear" is a property of the REPO. This
+     repo `config/release_repos.yml` names that actually EXISTS ships a
+     `pull_request`-triggered workflow — all eight verified at source 2026-08-31
+     on both `accepted` and `main`: `solana-studio`'s `gem-ci.yml` (`name: Gem
+     CI`), `turf-vault`'s `ci.yml` (`name: CI`), `studio-engine`'s `engine-ci.yml`
+     (plus `consumer-ci.yml`), and `ci.yml` in every app. The ninth row,
+     `tax-studio`, is `ladder: planned` with no repo yet, so there is no PR to
+     review there either. No repo you can be handed a task from is one where "no
+     check will ever appear" is a property of the REPO. This
      paragraph used to say `solana-studio` and `turf-vault` had **no workflows at
      all** and that the full cert was the only route there; both halves are now
      false, and it contradicted the gem-repo paragraph two above, which already
