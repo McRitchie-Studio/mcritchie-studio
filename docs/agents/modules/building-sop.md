@@ -257,8 +257,10 @@ The sub-floor path applies to one condition only: an app whose `Gemfile.lock`
 resolves studio-engine *below* the floor. The threshold is written in two places,
 and both are named precisely so you stop at them rather than reading around them:
 `bin/verify-review-hop`'s **`--email` option help**, and the **`MISSING_EMAIL`
-failure text** `bin/lib/review_hop.rb` returns from the mint leg. Prefer the
-second — it is the one a test asserts, so it cannot drift without going red. You
+failure text** `bin/lib/review_hop.rb` returns from the mint leg. Both are pinned
+by `test/lib/engine_version_claims_test.rb`, so neither can be quietly deleted;
+prefer the second anyway, because it is asserted through the value the code
+actually returns rather than as a string in a file. You
 do not have to know which apps are sub-floor, because a sub-floor mint dead-ends
 on `MISSING_EMAIL` and that failure text names the cause. So run
 `bin/verify-review-hop` **without** `--email` first, and reach for the flag only
