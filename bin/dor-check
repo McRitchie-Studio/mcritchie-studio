@@ -1378,15 +1378,53 @@ def suite_evidence_error(eval, slug, ci, review_role)
       when :conflicted then CiStatus.conflicted_remedy(ci)
       when :ci_less then CiStatus.ci_less_remedy(ci)
       when :unreadable
-        # DO NOT RE-PRINT THE CREDENTIAL REMEDY HERE. A deferral can never clear an
-        # unread CI (that needs a FULL cert, which a deferral is by definition not), so
-        # the CI gate's own :unreadable error is ALWAYS raised beside this one and it
-        # already carries the ~500-character token remedy in full. Printing it twice in
-        # a single verdict is precisely how a reader learns to skim the thing we most
-        # need them to read — the same call the fast-cert branch above makes for the
-        # same reason. Point at it instead, and say what is specific to a deferral.
-        "the CI gate's error beside this one carries the credential remedy — refresh the token and re-read, " \
-          "because a deferral has NO local run underneath it to fall back on while the check read is refused"
+        # SPLIT ON THE ROLE, because "the error beside this one" is only there in one of
+        # them. This branch shipped (2f8973a4) asserting the CI gate's :unreadable error
+        # is ALWAYS raised beside it; that is true for review and FALSE for the builder,
+        # and the builder is the role bin/ship runs — it shells dor-check with no
+        # --gate-role, so the "builder" default seeded above stands. The fast-cert branch
+        # below has carried BOTH halves since 2abcc093 (2026-08-14) — they landed in one
+        # commit, the one whose comment names the rolio bug — and this branch copied the
+        # review half only. Measured on one fixture, both roles, same tree: review puts
+        # the remedy in `errors`, builder in `suggestions` alone.
+        if review_role
+          # POINT AT IT, DO NOT RE-PRINT IT. A deferral can never clear an unread CI
+          # (that needs a FULL cert, which a deferral is by definition not), so review's
+          # allow-list refuses on this same state and its error is raised beside this one
+          # carrying the ~500-character token remedy in full. Printing it twice in a
+          # single verdict is precisely how a reader learns to skim the thing we most
+          # need them to read — the same call the fast-cert branch below makes for the
+          # same reason. Say what is specific to a deferral instead.
+          "the CI gate's error beside this one carries the credential remedy — refresh the token and re-read, " \
+            "because a deferral has NO local run underneath it to fall back on while the check read is refused"
+        else
+          # SUBMIT-SIDE THERE IS NOTHING BESIDE THIS ONE TO POINT AT. CiGate.verdict only
+          # reaches unread_ci_refusal when review_role (bin/lib/ci_gate.rb), so the
+          # builder's ci_error is nil for :unreadable and the remedy travels as a
+          # SUGGESTION — which is to say the one reader who is blocked here was being
+          # sent to an error that is not in their errors. The remedy was never dead, only
+          # mislabelled; a pointer to the wrong place still costs the reader the read.
+          #
+          # So print it inline, which is what the fast-cert branch below already does for
+          # this exact role and state: the reason it gives is that a builder facing a
+          # refused check read must be sent at the TOKEN, and that reason does not change
+          # because the cert deferred instead of running. ONE remedy string, not a
+          # deferral-flavoured variant of it — CiStatus calls this THE ONE REMEDY STRING
+          # and a second spelling is a second thing to keep true.
+          #
+          # IT IS ALSO IN `suggestions` IN THIS ROLE, and that is not an oversight to
+          # tidy away here. The suggestion below is suppressed only when the REVIEW
+          # allow-list refused, so submit-side both carry it — the fast-cert branch has
+          # read that way since the rolio fix. The duplication is the deliberate side of
+          # the trade: `suggestions` is advisory and prints under the refusals, so a
+          # builder who is BLOCKED and reads what blocked them has to find the remedy in
+          # the errors. Collapsing the pair means teaching the suggestion to know what an
+          # error already said, which is a change to the branch beside this one.
+          # (@pr_url, not the `devops` local — a top-level def cannot see top-level locals.)
+          "a deferral has NO local run underneath it to fall back on while the check read is refused, and " \
+            "submit-side there is no CI error beside this one to carry the credential remedy — so it is here. " \
+            "#{CiStatus.unreadable_remedy(CiStatus.repo_from_pr_url(@pr_url), cause: ci[:cause])}"
+        end
       else
         "no green CI could be read for this PR, and a deferral has no local run underneath it to fall " \
           "back on"
