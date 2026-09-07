@@ -71,7 +71,10 @@
 #     today only because rolio is dormant — which is luck, not a mechanism, and luck is what
 #     this file is supposed to have replaced.
 #   · studio-engine, solana-studio, turf-vault — libraries/programs; no shape here demands e2e
-#     of them (`library`/`onchain` are unit+integration).
+#     of them (`library`/`onchain` are unit+integration). NB this row is about TIER DEMAND,
+#     not lane absence: studio-engine added a playwright lane on 2026-08-12 (e2e/ +
+#     playwright.config.js + a CI browser job). Appearing in this row means no shape ASKS
+#     that tier of the repo — never that the repo could not answer it.
 # The fix is a per-repo tier-collectability check in bin/dor-check (resolve the task's repo,
 # read ITS ci.yml through the bin/lib/ci_test_command.rb seam, REFUSE a tier that repo runs no
 # lane for — fail closed, so deleting a lane goes red rather than granting an exemption).

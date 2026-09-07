@@ -6,7 +6,7 @@
 #
 # THE BUG (/tasks/gate-zero-skips-docs-ci). bin/dor-check's exempt-kind branch ended
 # in a bare `exit 0`, and that `exit` sat ABOVE two things: the CI allow-list (whose
-# own comment says ":green is the ONLY state that advances a review") and the
+# own comment says ":green is the ONLY state that PASSES") and the
 # gate-verdict emit. So `--gate-role review` — the run the pipeline calls THE
 # AUTHORITATIVE CI VERDICT — never evaluated CI on a doc-only diff. --json returned
 # ready=true, exempt=true, errors=[] with no `ci` key at all, and no `dor_review`
@@ -104,6 +104,13 @@ class DorCheckExemptCiTest < Minitest::Test
   # Pure: no subprocess, no ENV, no board. The exempt path's whole fix is that it
   # asks THIS instead of asking nothing, so the states it must refuse are asserted
   # here directly rather than inferred from a verdict's prose.
+  #
+  # READ "ADVANCES" AT THIS GRAIN. Here it means CiGate returns no error, and green
+  # really is alone in that. It is NOT the same question as whether the REVIEW
+  # advances: the caller may waive a no-verdict refusal on a full cert, so :none,
+  # :unverified and :unreadable all reach ready=true through bin/dor-check. That is
+  # why the refusal PRINTED for an unclassified state says PASSING and not advances
+  # (/tasks/gate-prose-overclaims-again).
 
   def test_unit_green_is_the_only_state_that_advances_a_review
     error, = CiGate.verdict({ state: :green }, review_role: true, pr_url: PR_URL, slug: "t")
@@ -1251,15 +1258,28 @@ class DorCheckExemptCiTest < Minitest::Test
   # enforces. The branch consults nothing, so there is no derivation to fence: an
   # unconditional string is pinned by pinning it, and the retired claim is refuted by
   # name so it cannot drift back in as a "simplification".
+  #
+  # THE FIRST CORRECTION WAS NOT ENOUGH. It landed as "GREEN is the only CI state that
+  # advances a review", which is measurably false: driven through bin/dor-check
+  # --gate-role review with a FULL cert, :none, :unverified AND :unreadable each reach
+  # ready=true exit=0. THREE non-green states advance a review. Green is alone in
+  # PASSING, not in advancing — a cert can waive a refusal, so they are different
+  # predicates — and the sentence now borrows the word ci_gate.rb's own comment was
+  # already using. BOTH retired spellings are refuted below, because a correction that
+  # drops its predecessor's name is how the predecessor comes back.
   def test_unit_the_unclassified_refusal_argues_from_necessity_not_sufficiency
     message, clears = CiGate.unread_ci_refusal({ state: :surprise }, PR_URL, "t")
 
     refute clears, "an unclassified state is not the no-verdict family; no cert clears it"
-    assert_includes message, "GREEN is the only CI state that advances a review",
+    assert_includes message, "GREEN is this gate's sole PASSING CI state",
                     "the refusal must argue from what the allow-list enforces:\n#{message}"
     refute_includes message, "advances on a GREEN CI and nothing else",
-                    "THE RETIRED CLAIM: green advances the CI allow-list, not the gate — the shape, tier " \
+                    "THE FIRST RETIRED CLAIM: green advances the CI allow-list, not the gate — the shape, tier " \
                     "and PR-read gates all refuse on a fully green CI:\n#{message}"
+    refute_includes message, "the only CI state that advances a review",
+                    "THE SECOND RETIRED CLAIM: three non-green states advance a review. :none, :unverified " \
+                    "and :unreadable each reach ready=true exit=0 when the task carries a FULL cert, so " \
+                    "GREEN is alone in PASSING and not in advancing:\n#{message}"
   end
 
   # ── the supervisor's own copy of the sentence ───────────────────────────────
@@ -1316,12 +1336,51 @@ class DorCheckExemptCiTest < Minitest::Test
     }.join
   end
 
+  # THE SAME PREDICATE WITH THE HEREDOC BRANCH DISARMED — a flat comment-strip. It is
+  # the control for the control: differencing it against printable_ruby says what the
+  # heredoc branch is load-bearing for in a given file, and it re-implements nothing
+  # else.
+  def flat_strip(source)
+    source.lines.reject { |line| line.lstrip.start_with?("#") && !line.lstrip.start_with?("\#{") }.join
+  end
+
+  # The lines the heredoc branch KEEPS and a flat strip drops — the branch's whole
+  # observable effect on a file. flat_strip drops a superset of what printable_ruby
+  # drops and preserves order, so its output is a subsequence of the other's and one
+  # greedy walk names the difference. Returned as LINES, not as a diff of two whole
+  # files: a failure here must print the offending heredoc line, not bin/pr-review.
+  def heredoc_only_lines(source)
+    flat = flat_strip(source).lines
+    cursor = 0
+    printable_ruby(source).lines.reject do |line|
+      keep = cursor < flat.size && flat[cursor] == line
+      cursor += 1 if keep
+      keep
+    end
+  end
+
   # THE STRIPPER'S OWN CONTROL, because a scan that reads nothing passes everything.
-  # bin/pr-review happens to carry no heredoc line starting with `#` today, so driving
-  # this against the real file would prove only that the branch is unreachable in
-  # practice. The fixture puts one claim in each of the four positions and states which
-  # two must survive.
+  # bin/pr-review DOES carry heredoc lines that begin with `#` — the reviewer PROMPT
+  # heredoc interpolates its sections — but every one of them is a `#{...}`, which the
+  # interpolation exemption keeps on its own. So the heredoc branch decides none of
+  # them, and driving this control against the real file would exercise nothing. That
+  # is the reason, and it is CHECKED rather than asserted in prose
+  # (/tasks/gate-prose-overclaims-again): the header used to claim the file carried no
+  # such line at all, which was flatly false while the conclusion drawn from it was
+  # right — a comment about prose drifting from behaviour, drifting from behaviour.
+  #
+  # The fixture then puts one claim in each of the four positions and states which two
+  # must survive.
   def test_unit_the_printable_stripper_keeps_prose_and_drops_comments
+    refute_equal pr_review_source, flat_strip(pr_review_source),
+                 "CONTROL: the scan must have read a real file — bin/pr-review carries full-line comments, " \
+                 "so a strip that removed nothing removed nothing from nothing"
+    assert_empty heredoc_only_lines(pr_review_source).map(&:strip),
+                 "the heredoc branch now CHANGES bin/pr-review's printable source: the lines above begin " \
+                 "with `#` inside a heredoc and are not `\#{...}` interpolations, so the branch — not the " \
+                 "interpolation exemption — is what keeps them. The header above is stale; drive this " \
+                 "control against the real file, and correct the header before re-pinning it"
+
     fixture = <<~RUBY
       # CLAIM_IN_A_COMMENT — provenance, must be dropped
       note = "CLAIM_IN_A_STRING"
@@ -1365,6 +1424,26 @@ class DorCheckExemptCiTest < Minitest::Test
   def test_unit_the_supervisor_names_the_refusal_a_green_ci_would_not_clear
     assert_includes cert_caveat_literal, "unread PR file list",
                     "the caveat must name the other refusal on this path, not merely hedge:\n#{cert_caveat_literal}"
+  end
+
+  # ONE LITERAL, TWO SITES, TWO CAUSES. The caveat closed "one stale token refuses both
+  # reads" — a credential story, and it is interpolated at BOTH print sites. It is true
+  # at the :unreadable branch, where GitHub refused the credential. It is FALSE at the
+  # :unverified `else`: bin/lib/ci_status.rb defines :unverified as a gh/network fault
+  # and bin/dor-check's own alert calls that read "NOT a credential refusal". Naming one
+  # site's cause in a literal both sites print sends half the readers hunting a token
+  # while `gh` is simply down, so the closing must name the CLASS the two share.
+  def test_unit_the_supervisor_caveat_names_a_cause_true_at_both_print_sites
+    refute_includes cert_caveat_literal, "stale token refuses both reads",
+                    "THE RETIRED CLAIM: this literal also prints on the :unverified `else`, which is a " \
+                    "TRANSPORT fault — bin/dor-check calls it \"NOT a credential refusal\":\n" \
+                    "#{cert_caveat_literal}"
+    assert_includes cert_caveat_literal, "fault hides both reads",
+                    "the caveat must still name the co-fire — the two reads fail together:\n" \
+                    "#{cert_caveat_literal}"
+    assert_includes cert_caveat_literal, "`gh`/network failure",
+                    "and it must name the NON-credential half, which is the one the :unverified site " \
+                    "actually meets:\n#{cert_caveat_literal}"
   end
 
   # THE WIRING, at this file's only available grain: the caveat is INTERPOLATED at both

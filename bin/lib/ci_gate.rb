@@ -175,8 +175,17 @@ module CiGate
       # does not advance the gate — the shape, tier and PR-read gates each refuse on a
       # fully green CI — and a refusal that overstates its own rule teaches the reader
       # to distrust the next one.
-      ["GitHub CI reported #{ci[:state].to_s.upcase}, a state this gate does not classify — GREEN is the only CI " \
-       "state that advances a review, so an unclassified verdict REFUSES rather than falling through " \
+      #
+      # ...AND "ADVANCES" WAS STILL THE WRONG VERB (/tasks/gate-prose-overclaims-again).
+      # The corrected sentence read "GREEN is the only CI state that advances a review",
+      # and that is measurably false. Driven through `bin/dor-check --gate-role review`
+      # on a task carrying a FULL cert, :none, :unverified AND :unreadable each reach
+      # ready=true exit=0 — THREE non-green states advance a review, by tier 2 below.
+      # What :green is alone in is PASSING, the word this comment already used for it.
+      # Advancing and passing are different predicates because a cert can waive a
+      # refusal, so the sentence now claims the one the allow-list enforces.
+      ["GitHub CI reported #{ci[:state].to_s.upcase}, a state this gate does not classify — GREEN is this gate's " \
+       "sole PASSING CI state, so an unclassified verdict REFUSES rather than falling through " \
        "to `ready`. Falling through is the bug this allow-list exists to prevent: a blank pr_url once exited 0 " \
        "with no CI line at all. Classify #{ci[:state].inspect} in bin/dor-check's CI gate and in " \
        "bin/lib/ci_status.rb's header, then re-run.", false]
@@ -257,9 +266,10 @@ module CiGate
 
     # ==== THE REVIEW GATE-ZERO IS AN ALLOW-LIST =================================
     #
-    # :green is the ONLY state that advances a review, and the no-verdict family is
-    # the ONLY state that a full local cert may stand in for. Everything else
-    # refuses — INCLUDING a state this gate has never heard of.
+    # :green is the ONLY state that PASSES, and the no-verdict family is the ONLY
+    # state that a full local cert may stand in for — so a no-verdict state still
+    # ADVANCES a review when a cert stands in, on the cert and not on its CI.
+    # Everything else refuses — INCLUDING a state this gate has never heard of.
     #
     # WHY THE SHAPE AND NOT JUST THE STATES. The gate used to decide `ready` from a
     # deny-list of spellings (:red, :conflicted, :ci_less, :pending, :closed,

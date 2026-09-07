@@ -937,13 +937,23 @@ def start_review(task, review_number)
   # docs/agents/agents/carl/sops/pr-review-primary.md, which had already been
   # corrected. The NECESSITY half was never false and is kept: no cert stands in, so
   # nothing but a green CI clears the CI half.
+  #
+  # ...AND THE CO-FIRE HAS TWO CAUSES, NOT ONE (/tasks/gate-prose-overclaims-again).
+  # This caveat closed "one stale token refuses both reads", and it is interpolated at
+  # BOTH print sites — the :unreadable branch, where a refused credential IS the story,
+  # and the :unverified `else`, where it is not: bin/lib/ci_status.rb defines
+  # :unverified as a gh/network fault and bin/dor-check calls that read "NOT a
+  # credential refusal". One literal, two sites, two causes, so a credential-shaped
+  # closing was wrong for half its traffic — and wrong in the direction that sends a
+  # reviewer hunting a token when `gh` simply failed. The wording now names the class
+  # both sites share rather than one site's cause.
   maybe_exempt = CodeDiff::EXEMPT_KINDS.include?(task.dig("devops", "kind").to_s)
   cert_caveat = if maybe_exempt
                   " — but this task's kind is #{task.dig("devops", "kind")}, so IF the observed diff proves " \
                     "doc-only the gate takes its EXEMPT path, where NO cert stands in and a GREEN CI is " \
                     "NECESSARY AND NOT SUFFICIENT: that path refuses on an unread PR file list too, and one " \
-                    "stale token refuses both reads; do not send the builder to bin/full-suite-check on that " \
-                    "refusal"
+                    "fault hides both reads — a refused token, or a `gh`/network failure; do not send the " \
+                    "builder to bin/full-suite-check on that refusal"
                 else
                   ""
                 end

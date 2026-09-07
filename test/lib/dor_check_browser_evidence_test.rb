@@ -403,8 +403,10 @@ class DorCheckBrowserEvidenceTest < Minitest::Test
   end
 
   # ==== NO LANE => REPORT, NOT REFUSE ===============================================
-  # studio-engine has no e2e/ and its CI runs no browser. Two of the three defects
-  # that motivated this gate were there. Blocking would be a refusal with no remedy.
+  # A repo with no e2e/ and no config/e2e_lane.yml cannot produce browser evidence, so
+  # blocking there would be a refusal with no remedy. studio-engine was the motivating
+  # example until it grew its own lane on 2026-08-12; this test drives a SYNTHETIC
+  # laneless repo (lane: false), so it proves the branch, never a particular repo.
   def test_integration_a_repo_with_no_browser_lane_reports_instead_of_blocking
     with_client_repo({ PARTIAL => SCRIPT_PARTIAL }, lane: false) do |dir|
       out, code = check_in(dir, contract, PARTIAL)
@@ -416,6 +418,10 @@ class DorCheckBrowserEvidenceTest < Minitest::Test
                    "the hole must be NAMED and loud, not silent — a silent hole is how two of the " \
                    "three motivating defects shipped\n#{out}")
       assert_match(/NO BROWSER LANE/, out, out)
+      refute_match(%r{/tasks/stand-up-engine-browser-lane}, out,
+                   "that task is ARCHIVED — the lane it tracked was BUILT on 2026-08-12. A gate " \
+                   "message that sends a reader to a dead task teaches them the hole is unowned " \
+                   "when the remedy actually has a worked example.\n#{out}")
     end
   end
 
