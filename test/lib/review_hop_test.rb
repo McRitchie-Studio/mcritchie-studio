@@ -95,8 +95,10 @@ class ReviewHopTest < Minitest::Test
 
       refute v.ok?, "#{path} should not count as a mint"
       assert_equal :mint_no_reviewer, v.code
-      # The commonest cause in THIS ecosystem is an app below the engine floor
-      # (turf-monster is on 0.31.0), so the verdict must name it and the way out.
+      # The commonest cause in THIS ecosystem is an app below the engine floor,
+      # so the verdict must name the FLOOR and the way out. Which app is below it
+      # is deliberately unnamed: that pairing is what rotted here, while the
+      # floor itself is a live rule and stays. Name the condition, not the repo.
       assert_match(/0\.36\.0/, v.detail)
       assert_match(/--email/, v.detail)
     end
@@ -127,8 +129,10 @@ class ReviewHopTest < Minitest::Test
   end
 
   # [unit] THE quiet failure: sign-in succeeded, require_admin bounced to "/", 200.
-  # Still reachable at studio-engine 0.38.0 — provision_reviewer rescues and lets
-  # the mint proceed, so a host whose User validation rejects the reviewer lands here.
+  # Still reachable wherever provisioning is BEST-EFFORT — provision_reviewer
+  # rescues and lets the mint proceed, so a host whose User validation rejects the
+  # reviewer lands here. The behaviour is the design, not a fact about one release;
+  # re-check it by reading the rescue, not by comparing version numbers.
   def test_landing_on_root_is_the_not_an_admin_failure
     v = ReviewHop.landing(status: 200, url: "http://localhost:3016/", expected_path: "/admin/style")
 

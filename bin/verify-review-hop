@@ -161,9 +161,18 @@ end
 #
 # --email is a DEVIATION from what the button does, not a normal option: the
 # live CTA carries no address. It exists for an app still on studio-engine
-# < 0.36.0, which has no reviewer fallback at all and answers MISSING_EMAIL —
-# turf-monster is on 0.31.0 today. It is reported as a deviation so a run that
-# used it never reads as a clean verification of the real path.
+# < 0.36.0, which has no reviewer fallback at all and answers MISSING_EMAIL. It
+# is reported as a deviation so a run that used it never reads as a clean
+# verification of the real path.
+#
+# WHICH apps sit below the floor is deliberately NOT written here. A comment
+# pairing a repo with a version rots the day either side moves, and this one did:
+# it named an app as sub-floor while that app's own lockfile had moved 39 minors
+# past the version quoted and 34 past the floor, so the comment recommended the
+# flag for a repo that no longer needs it. The --email help further up named the
+# threshold ALONE and stayed true through all of it. The mint itself is the
+# authority — run WITHOUT the flag, and reach for it only when MISSING_EMAIL is
+# what comes back. Name the condition, not the repo.
 token_url = nil
 if mint_url
   request_url = mint_url
