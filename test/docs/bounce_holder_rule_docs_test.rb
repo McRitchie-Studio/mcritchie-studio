@@ -83,8 +83,8 @@ class BounceHolderRuleDocsTest < ActiveSupport::TestCase
   # markdown emphasis, and collapse whitespace so a wrapped sentence or a
   # backslash-continued command joins up.
   def flat(text)
-    text.lines.map { |line| line.sub(/\A\s*#+\s?/, " ") }.join(" ")
-        .gsub(/[*`>]/, "").gsub(/\s+/, " ")
+    text.lines.map { |line| line.sub(/\A(?:\s*[#>])+\s?/, " ") }.join(" ")
+        .gsub(/[*`]/, "").gsub(/\s+/, " ")
   end
 
   BLOCK_CMD = "bin/task block"
