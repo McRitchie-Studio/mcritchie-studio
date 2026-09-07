@@ -813,14 +813,22 @@ class DorCheckExemptCiTest < Minitest::Test
     "bin/release.rb" => { states_route: 1, takes_default: 0 }
   }.freeze
 
-  # pr_read_alert's OWN callers, counted by route. It prints from four branches and is
+  # pr_read_alert's OWN callers, counted by route. It prints from six branches and is
   # used as a predicate (`pr_read_alert ? …`) in three more where the string is
   # discarded — the reason the method keeps a default at all.
-  #   3 printing callers pass true  — the gated path, and the two "could not be proven
-  #                                   doc-only" branches, where nothing is waived and
-  #                                   the exempt denial's premise would be false.
+  #   5 printing callers pass true  — the gated path, the two "could not be proven
+  #                                   doc-only" branches, and the two :pr_incomplete
+  #                                   branches added by /tasks/dor-check-reads-one-pr
+  #                                   (the exempt preamble and the shape-claim refusal
+  #                                   for a multi-repo task with one PR unread). All
+  #                                   five REFUSE: nothing is waived on any of them, so
+  #                                   the exempt denial's premise — "the shape/test-tier
+  #                                   gate is already waived, so there is no suite left
+  #                                   to substitute" — would be false.
   #   1 printing caller passes false — the EXEMPT path. This is the fix.
-  PR_READ_ALERT_CALL_SITES = { true => 3, false => 1, predicate: 3 }.freeze
+  # It went 3 → 5 on 2026-09-07; re-derive it with the scan below rather than trusting
+  # the figure written here.
+  PR_READ_ALERT_CALL_SITES = { true => 5, false => 1, predicate: 3 }.freeze
 
   REPO_ROOT = File.expand_path("../..", __dir__)
 
