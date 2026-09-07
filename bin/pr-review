@@ -947,6 +947,18 @@ def start_review(task, review_number)
   # closing was wrong for half its traffic — and wrong in the direction that sends a
   # reviewer hunting a token when `gh` simply failed. The wording now names the class
   # both sites share rather than one site's cause.
+  #
+  # WHICH STATES ACTUALLY REACH THAT SECOND SITE — settled here, once, so this
+  # comment and the `else`'s own cannot drift into two definitions of one branch
+  # (/tasks/exempt-path-claim-unqualified). bin/lib/ci_status.rb partitions a FAILED
+  # read in exactly two ways: `permission_denied?(raw)` → :unreadable, everything
+  # else → :unverified. A missing or non-executable `gh` is explicitly NOT an auth
+  # failure — it "reaches the caller as the :unverified it has always been" — and
+  # every other state this `case` meets has its own `when`. So :unverified is that
+  # `else`'s SOLE member today, which is why calling it "the :unverified else" is
+  # exact rather than loose. The "anything ci_status.rb grows later" it also
+  # mentions is a default LANDING SPOT for a state nobody has classified yet, not a
+  # second member: latent, not reachable.
   maybe_exempt = CodeDiff::EXEMPT_KINDS.include?(task.dig("devops", "kind").to_s)
   cert_caveat = if maybe_exempt
                   " — but this task's kind is #{task.dig("devops", "kind")}, so IF the observed diff proves " \
@@ -1008,10 +1020,15 @@ def start_review(task, review_number)
     puts "  ci=#{ci[:state].to_s.upcase} — no live PR to verify; the primary's gate-zero REFUSES this. " \
          "Reconcile devops.pr_url before review"
   else
-    # :unverified and anything ci_status.rb grows later. Proceed — a flaky read must
-    # not stall a wave — but do not promise the gate-zero will agree: it allow-lists,
-    # so it clears an unread verdict only on a FULL cert and refuses a state it does
-    # not classify at all.
+    # :unverified — the ONLY state that reaches here today, and the partition that
+    # says so is written out above cert_caveat: ci_status.rb sorts a failed read into
+    # :unreadable when `permission_denied?` and :unverified otherwise, and every
+    # other state has its own `when`. A state ci_status.rb grows later would LAND
+    # here by default rather than by classification, which is why the wording stays
+    # generic — but that is a fail-safe, not a second member of the branch.
+    # Proceed — a flaky read must not stall a wave — but do not promise the
+    # gate-zero will agree: it allow-lists, so it clears an unread verdict only on a
+    # FULL cert and refuses a state it does not classify at all.
     puts "  ci=#{ci[:state]}#{ci[:reason] ? " (#{ci[:reason]})" : ""} — proceeding; the primary's gate-zero holds " \
          "the verdict and REFUSES anything but green (a FULL cert clears an unread one; conductor-review if " \
          "not)#{cert_caveat}"

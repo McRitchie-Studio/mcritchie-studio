@@ -31,6 +31,7 @@ require_relative "../../bin/lib/fast_cert"
 
 class FastCertSubjectTest < Minitest::Test
   REPO_ROOT = File.expand_path("../..", __dir__)
+  SELF = "test/lib/fast_cert_subject_test.rb"
 
   def with_tree(files)
     Dir.mktmpdir do |dir|
@@ -148,9 +149,9 @@ class FastCertSubjectTest < Minitest::Test
   # the class is never referred to by — which is why all 39 of its matches were
   # coincidence.
   def test_a_nested_class_is_named_by_its_qualified_constant
-    assert_equal ["News::Review"], FastCert.grep_tokens("app/services/news/review.rb")
+    assert_equal ["News::Review"], FastCert.grep_tokens(REPO_ROOT, "app/services/news/review.rb")
     assert_equal ["Api::V1::TasksController"],
-                 FastCert.grep_tokens("app/controllers/api/v1/tasks_controller.rb")
+                 FastCert.grep_tokens(REPO_ROOT, "app/controllers/api/v1/tasks_controller.rb")
 
     with_tree(
       "app/services/news/review.rb" => "class News\n class Review; end\nend\n",
@@ -169,33 +170,131 @@ class FastCertSubjectTest < Minitest::Test
   # of the constant. Keeping it would name a constant that does not exist.
   def test_the_concerns_segment_is_not_part_of_the_constant
     assert_equal ["PositionConcern"],
-                 FastCert.grep_tokens("app/models/concerns/position_concern.rb")
+                 FastCert.grep_tokens(REPO_ROOT, "app/models/concerns/position_concern.rb")
     assert_equal ["Api::Paginatable"],
-                 FastCert.grep_tokens("app/controllers/concerns/api/paginatable.rb")
+                 FastCert.grep_tokens(REPO_ROOT, "app/controllers/concerns/api/paginatable.rb")
   end
 
   # A single-segment app file is unchanged — the fix adds a namespace, it does not
   # rename anything that already had none.
   def test_a_top_level_app_class_keeps_its_plain_constant
-    assert_equal ["GateRun"], FastCert.grep_tokens("app/models/gate_run.rb")
-    assert_equal ["FullSuiteGate"], FastCert.grep_tokens("bin/lib/full_suite_gate.rb")
+    assert_equal ["GateRun"], FastCert.grep_tokens(REPO_ROOT, "app/models/gate_run.rb")
+    assert_equal ["FullSuiteGate"], FastCert.grep_tokens(REPO_ROOT, "bin/lib/full_suite_gate.rb")
   end
 
-  # A config file is named by its PATH. The old token was the bare basename, so
-  # config/environments/test.rb hunted for "Test" and matched 208 files.
-  def test_a_config_file_is_named_by_its_path
-    assert_equal ["config/queue.yml"], FastCert.grep_tokens("config/queue.yml")
-    assert_equal ["config/environments/test.rb"],
-                 FastCert.grep_tokens("config/environments/test.rb")
+  # A config file is named by its PATH — and by the QUOTED BASENAME the path is
+  # SPLIT into, which is the half that was missing. The old token was the bare
+  # basename as a word, so config/environments/test.rb hunted for "Test" and matched
+  # 208 files; a path alone, though, cannot see
+  # `File.join(ROOT, "config", "rails_lane.yml")`.
+  #
+  # THE EXTENSION IS WHAT MAKES THE SECOND SPELLING SAFE. "rails_lane.yml" is a
+  # filename, never an English word, so this cannot re-admit the prose the bare token
+  # matched — unlike the bin side, whose quoted form has no extension and still lets
+  # `"rake"` match `require "rake"`.
+  def test_a_config_file_is_named_by_its_path_or_its_quoted_basename
+    assert_equal ["config/queue.yml", %("queue.yml")],
+                 FastCert.grep_tokens(REPO_ROOT, "config/queue.yml")
 
     with_tree(
       "config/queue.yml" => "production:\n",
       "test/jobs/queue_priority_test.rb" => "# asserts the queue name ordering\n",
-      "test/lib/queue_config_test.rb" => "YAML.load_file('config/queue.yml')\n"
+      "test/lib/queue_config_test.rb" => "YAML.load_file('config/queue.yml')\n",
+      "test/lib/queue_contract_test.rb" => %(  PATH = File.join(ROOT, "config", "queue.yml")\n)
     ) do |dir|
-      assert_equal ["test/lib/queue_config_test.rb"],
-                   FastCert.select_tests(dir, ["config/queue.yml"])
+      mapped = FastCert.select_tests(dir, ["config/queue.yml"])
+
+      assert_equal %w[test/lib/queue_config_test.rb test/lib/queue_contract_test.rb], mapped
+      refute_includes mapped, "test/jobs/queue_priority_test.rb",
+                      "the word queue in prose is English, not a naming act"
     end
+  end
+
+  # THE QUALIFICATION, and it is the whole reason this widening is safe. An
+  # initializer configures a class rather than defining one, so its camelized
+  # basename is only a NAME when this repo actually owns that constant. Unqualified —
+  # the pre-#1254 rule — this same clause hands config/environments/test.rb the token
+  # "Test" (208 files) and config/initializers/studio.rb "Studio" (127): the two
+  # widest cap trips the repo has ever had.
+  #
+  # BOTH SIDES ARE PINNED IN ONE PLACE on purpose. A test that only proved the gain
+  # would go green on a mutation that dropped the owner check, which is the exact
+  # over-widening this file has shipped twice.
+  def test_an_initializer_is_named_by_the_constant_it_wires_only_when_that_class_lives_here
+    # The fixture deliberately uses names this REPO does not have. Writing the real
+    # `EdgeGuard` here would make this file match config/initializers/edge_guard.rb in
+    # the live tree below — a test polluting the mapping it measures.
+    with_tree(
+      "config/initializers/port_guard.rb" => "Rails.application.config.middleware.insert_before 0, PortGuard\n",
+      "lib/middleware/port_guard.rb" => "class PortGuard; end\n",
+      "config/initializers/beacon.rb" => "Beacon.configure { }\n",
+      "test/lib/port_guard_test.rb" => "PortGuard.new(app, secret: s)\n",
+      "test/lib/beacon_flow_test.rb" => "Beacon.signal(:up)\n"
+    ) do |dir|
+      assert_equal ["config/initializers/port_guard.rb", %("port_guard.rb"), "PortGuard"],
+                   FastCert.grep_tokens(dir, "config/initializers/port_guard.rb"),
+                   "lib/middleware/port_guard.rb owns PortGuard, so the initializer borrows it"
+      assert_equal ["test/lib/port_guard_test.rb"],
+                   FastCert.select_tests(dir, ["config/initializers/port_guard.rb"])
+
+      assert_equal ["config/initializers/beacon.rb", %("beacon.rb")],
+                   FastCert.grep_tokens(dir, "config/initializers/beacon.rb"),
+                   "nothing in this tree defines Beacon, so it is a word, not a name"
+      refute_includes FastCert.select_tests(dir, ["config/initializers/beacon.rb"]),
+                      "test/lib/beacon_flow_test.rb"
+    end
+  end
+
+  # A YAML FILE BORROWS NOTHING, even when a class of the same name is sitting right
+  # there. config/port_guard.yml is a file; PortGuard is a class; a config that
+  # happens to share a name with one is not that class's test subject.
+  #
+  # THIS CASE EXISTS BECAUSE THE GUARD WAS ONCE INERT. With the stem cut as
+  # `File.basename(path, ".rb")`, a YAML path asked for "port_guard.yml.rb", matched
+  # nothing, and produced [] with OR without the .rb guard — so deleting the guard
+  # broke no test. Cutting the stem with File.extname makes this fixture decide it.
+  def test_a_yaml_config_never_borrows_a_same_named_classs_constant
+    with_tree(
+      "config/port_guard.yml" => "enabled: true\n",
+      "lib/middleware/port_guard.rb" => "class PortGuard; end\n",
+      "test/lib/port_guard_test.rb" => "PortGuard.new(app)\n"
+    ) do |dir|
+      assert_equal ["config/port_guard.yml", %("port_guard.yml")],
+                   FastCert.grep_tokens(dir, "config/port_guard.yml"),
+                   "a YAML file defines no constant, so it may not borrow PortGuard"
+      assert_empty FastCert.select_tests(dir, ["config/port_guard.yml"])
+    end
+  end
+
+  # A SAME-NAMED SOURCE IS NOT AUTOMATICALLY THE OWNER, and this is the half of the
+  # qualification a mere existence check would get wrong. app/services/broadcasts/
+  # assets.rb and app/services/content/assets.rb both share a basename with
+  # config/initializers/assets.rb — but they define `Broadcasts::Assets` and
+  # `Content::Assets`, and neither of those is `Assets`. Qualifying on the basename
+  # instead of on the constant the source is actually NAMED BY would hand the Rails
+  # asset initializer the token `Assets` and three tests about content.
+  #
+  # THIS IS WHY THE CHECK ASKS #grep_tokens rather than asking whether a file exists.
+  def test_a_same_named_source_owns_the_constant_only_if_it_is_named_by_it
+    twin = "app/services/content/assets.rb"
+
+    assert File.file?(File.join(REPO_ROOT, twin)),
+           "#{twin} is the same-named source that must NOT qualify"
+    assert_equal ["Content::Assets"], FastCert.grep_tokens(REPO_ROOT, twin),
+                 "it is named Content::Assets, not Assets"
+
+    assert_equal ["config/initializers/assets.rb", %("assets.rb")],
+                 FastCert.grep_tokens(REPO_ROOT, "config/initializers/assets.rb"),
+                 "no source in this repo is NAMED `Assets`, so the initializer borrows nothing"
+  end
+
+  # The two config .rb files whose unqualified constant WAS the defect, pinned
+  # against the live repo so the guard cannot be satisfied by a friendly fixture.
+  def test_no_english_constant_is_readmitted_for_this_repos_configs
+    assert_equal ["config/environments/test.rb", %("test.rb")],
+                 FastCert.grep_tokens(REPO_ROOT, "config/environments/test.rb")
+    assert_equal ["config/initializers/studio.rb", %("studio.rb")],
+                 FastCert.grep_tokens(REPO_ROOT, "config/initializers/studio.rb")
   end
 
   # A SCRIPT is named two ways, and both are deliberate: by path in code that RUNS
@@ -203,7 +302,7 @@ class FastCertSubjectTest < Minitest::Test
   # Dropping the quoted spelling cost five scripts their only mapped test.
   def test_a_bin_script_is_named_by_path_or_by_quoted_command_name
     assert_equal ["bin/register-satellite", '"register-satellite"'],
-                 FastCert.grep_tokens("bin/register-satellite")
+                 FastCert.grep_tokens(REPO_ROOT, "bin/register-satellite")
 
     with_tree(
       "bin/register-satellite" => "#!/usr/bin/env ruby\n",
@@ -265,9 +364,9 @@ class FastCertSubjectTest < Minitest::Test
   end
 
   def test_unmappable_paths_still_have_no_grep_at_all
-    assert_empty FastCert.grep_tokens("app/views/tasks/_gates.html.erb")
-    assert_empty FastCert.grep_tokens("docs/agents/sop.md")
-    assert_empty FastCert.grep_tokens("db/schema.rb").reject { |t| t == "Schema" }
+    assert_empty FastCert.grep_tokens(REPO_ROOT, "app/views/tasks/_gates.html.erb")
+    assert_empty FastCert.grep_tokens(REPO_ROOT, "docs/agents/sop.md")
+    assert_empty FastCert.grep_tokens(REPO_ROOT, "db/schema.rb").reject { |t| t == "Schema" }
   end
 
   # --- [integration] the real tree, where the defect was measured ----------------
@@ -315,5 +414,76 @@ class FastCertSubjectTest < Minitest::Test
     assert File.file?(File.join(REPO_ROOT, registry)),
            "#{registry} is the only mapped evidence a family-less bin script has"
     assert_includes FastCert.select_tests(REPO_ROOT, ["bin/docker-entrypoint"]), registry
+  end
+
+  # THE WIRING INITIALIZER, which is the diff this whole clause exists for. Its class
+  # half (lib/middleware/edge_guard.rb) still maps both tests, so the hole only opens
+  # on a diff touching the initializer ALONE — which is exactly the diff a wiring
+  # change produces, and it mapped to ZERO.
+  #
+  # ASSERTED, NOT SKIPPED, if a file is missing: this test lives in the hub and runs
+  # against the hub, so the condition cannot fire, and a skip is coverage switched off
+  # while keeping the test's name.
+  def test_the_edge_guard_initializer_maps_its_own_two_tests_in_this_repo
+    initializer = "config/initializers/edge_guard.rb"
+    owner = "lib/middleware/edge_guard.rb"
+
+    assert File.file?(File.join(REPO_ROOT, initializer)), "#{initializer} is the subject here"
+    assert File.file?(File.join(REPO_ROOT, owner)),
+           "#{owner} is what QUALIFIES the EdgeGuard constant; without it the token is dropped"
+
+    # THIS FILE IS SUBTRACTED, and only this file. It has to write the initializer's
+    # path to assert anything about it, so it names the subject and the grep rightly
+    # finds it — a self-reference, not a false positive. Subtracting it keeps the
+    # assertion EXACT about the repo instead of loosening it to assert_includes, which
+    # would go green on a mapping that had grown a hundred coincidental matches.
+    mapped = FastCert.select_tests(REPO_ROOT, [initializer]) - [SELF]
+
+    assert_equal ["test/integration/edge_guard_wiring_test.rb", "test/lib/edge_guard_test.rb"],
+                 mapped,
+                 "the wiring initializer alone must reach both edge-guard tests"
+  end
+
+  # THE CONTRACT TEST OF A CONFIG, reached through the quoted basename. It names its
+  # subject at rails_lane_contract_test.rb:33 as
+  # `File.join(ROOT, "config", "rails_lane.yml")` — split, so the path token cannot
+  # see it, and it is the one test that exists to assert that config's contract.
+  def test_a_config_contract_test_is_reachable_from_its_own_config_in_this_repo
+    contract = "test/lib/rails_lane_contract_test.rb"
+
+    assert File.file?(File.join(REPO_ROOT, contract)), "#{contract} is the subject here"
+    assert_includes FastCert.select_tests(REPO_ROOT, ["config/rails_lane.yml"]), contract
+
+    guard = "test/lib/qa_registry_declares_qa_env_test.rb"
+
+    assert File.file?(File.join(REPO_ROOT, guard)), "#{guard} is the subject here"
+    assert_includes FastCert.select_tests(REPO_ROOT, ["config/qa_environments.yml"]), guard
+  end
+
+  # THE BLAST RADIUS, held down where the widening lives. Widening selection in this
+  # file has gone wrong twice — PR #1239 over-matched, and the bare-token grep #1254
+  # retired was widening's endpoint — and both times the symptom was a source alone
+  # mapping over the cap. So every config source in the repo is swept, not sampled.
+  #
+  # THE SWEEP COUNTS WHAT IT READ. A source-scanning test is exit-blind: if the glob
+  # or the filter ever returns nothing, an assertion inside the loop never runs and
+  # the test passes having proved nothing. The floor below is what makes a green run
+  # mean something.
+  def test_no_config_source_in_this_repo_maps_over_the_cap
+    configs = `git -C #{REPO_ROOT} ls-files`.split("\n")
+                                            .grep(%r{\Aconfig/.+\.(?:ya?ml|rb)\z})
+
+    assert_operator configs.size, :>=, 40,
+                    "swept #{configs.size} config sources — too few to be the real tree"
+
+    over = configs.filter_map do |path|
+      n = FastCert.select_tests(REPO_ROOT, [path]).size
+      "#{path} (#{n})" if n > FastCert::DEFAULT_MAPPED_CAP
+    end
+
+    assert_equal ["config/test_health.yml (20)"], over,
+                 "config/test_health.yml was already over the cap before this clause " \
+                 "existed (its PATH matches 20 files); any OTHER entry here means the " \
+                 "config spelling re-opened a cap trip"
   end
 end

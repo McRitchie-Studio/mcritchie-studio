@@ -15,6 +15,8 @@ require "fileutils"
 require_relative "../../bin/lib/fast_cert"
 
 class FastCertTest < Minitest::Test
+  REPO_ROOT = File.expand_path("../..", __dir__)
+
   # --- convention mapping ------------------------------------------------------
 
   def test_model_maps_to_model_test
@@ -75,24 +77,27 @@ class FastCertTest < Minitest::Test
   # #grep_tokens and the fuller pinning in fast_cert_subject_test.rb.
 
   def test_grep_tokens_camelize_ruby_basenames
-    assert_equal ["GateRun"], FastCert.grep_tokens("app/models/gate_run.rb")
-    assert_equal ["FullSuiteGate"], FastCert.grep_tokens("bin/lib/full_suite_gate.rb")
+    assert_equal ["GateRun"], FastCert.grep_tokens(REPO_ROOT, "app/models/gate_run.rb")
+    assert_equal ["FullSuiteGate"], FastCert.grep_tokens(REPO_ROOT, "bin/lib/full_suite_gate.rb")
   end
 
   # A script is named two ways: by path in code that runs it, and as a bare quoted
   # command name in the registries that enumerate bin/.
   def test_grep_tokens_name_a_bin_tool_by_path_and_by_quoted_command
-    assert_equal ["bin/fast-check", %("fast-check")], FastCert.grep_tokens("bin/fast-check")
+    assert_equal ["bin/fast-check", %("fast-check")], FastCert.grep_tokens(REPO_ROOT, "bin/fast-check")
   end
 
-  def test_grep_tokens_name_a_config_file_by_its_path
-    assert_equal ["config/fast_cert_spine.yml"],
-                 FastCert.grep_tokens("config/fast_cert_spine.yml")
+  # A config is named two ways as well: by path, and by the QUOTED BASENAME that
+  # File.join(ROOT, "config", "x.yml") splits it into. The extension rides along, so
+  # the quoted form is a filename and can never be an English word.
+  def test_grep_tokens_name_a_config_file_by_path_and_by_quoted_basename
+    assert_equal ["config/fast_cert_spine.yml", %("fast_cert_spine.yml")],
+                 FastCert.grep_tokens(REPO_ROOT, "config/fast_cert_spine.yml")
   end
 
   def test_grep_tokens_are_empty_for_views_and_docs
-    assert_empty FastCert.grep_tokens("app/views/tasks/_gates.html.erb")
-    assert_empty FastCert.grep_tokens("docs/agents/sop.md")
+    assert_empty FastCert.grep_tokens(REPO_ROOT, "app/views/tasks/_gates.html.erb")
+    assert_empty FastCert.grep_tokens(REPO_ROOT, "docs/agents/sop.md")
   end
 
   # --- grep fallback + select_tests over a fixture tree -------------------------

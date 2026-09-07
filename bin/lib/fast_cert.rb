@@ -28,9 +28,12 @@ require "yaml"
 #      and rung 3 asked for the word "task" and claimed 325 of the repo's 622 test
 #      files. See #orphan_family.
 #   3. GREP — anything still unmapped falls back to a search for the SUBJECT'S
-#      IDENTITY across test/**/*_test.rb: the PATH for a file (a script, a config),
-#      the FULL constant for a class. Not the basename as an English word, which is
-#      what made rung 3 the source of every cap trip in the repo. See #grep_tokens.
+#      IDENTITY across test/**/*_test.rb: for a FILE its path, plus the other
+#      spelling the codebase actually writes — a script's quoted command name, a
+#      config's quoted basename, and (for an initializer) the constant it wires when
+#      this repo defines it; for a CLASS its FULL constant. Not the basename as an
+#      English word, which is what made rung 3 the source of every cap trip in the
+#      repo. See #grep_tokens.
 #   +. SPINE — config/fast_cert_spine.yml, a curated always-run core (critical
 #      model/flow tests, ~10-15s) so a diff that maps to nothing still exercises
 #      the money paths. Entries may be files or directories; missing paths are
@@ -40,6 +43,21 @@ require "yaml"
 # (head 3e678a19): 27 sources ALONE mapped over the 15-path cap and all 27 were
 # rung-3 greps; after, 9 do. Across the 160 sources the grep could reach, the total
 # mapped paths fall 2778 → 701. 1832 of the 1928 sources map BYTE-IDENTICALLY.
+#
+# WHAT THE CONFIG SECOND SPELLING COSTS, swept the same way — both rule sets run over
+# the SAME tree, all 1929 tracked sources, 2026-09-07 — because a widening is only as
+# good as its blast radius and this file has been over-widened twice:
+#
+#   1925 of 1929 sources map BYTE-IDENTICALLY
+#   the 4 that move all GAIN; NOT ONE source loses a path
+#   cap-trippers 9 → 9, the identical nine sources, none of them a config
+#   total grep-reachable paths 627 → 632
+#
+# The four are config/initializers/edge_guard.rb (gains BOTH edge-guard tests),
+# config/rails_lane.yml (its contract test), config/qa_environments.yml (its permanent
+# guard) and config/e2e_lane.yml. Swept on THIS branch, whose own tests name those
+# configs; on `accepted` the same sweep reads 618 → 623 and edge_guard 0 → 2, which is
+# the number that states the defect.
 #
 # And ONE degradation, because sets 1+2 are unbounded and the lane is not: past
 # DEFAULT_MAPPED_CAP the mapped lane falls back to the CONVENTION TWINS ALONE
@@ -310,15 +328,103 @@ module FastCert
   # re-derives "which spellings does a bin path have"; a mutation to this case has
   # no second copy to hide behind.
   #
+  # A CONFIG FILE IS NAMED TWO WAYS TOO — and shipping only one of them was the
+  # ASYMMETRY this clause pair used to carry. A bin path got its path AND its quoted
+  # command name; a config path got its path alone. So a test that named a config any
+  # OTHER way stopped being selected when that config changed, and the loss is
+  # concentrated in exactly the tests worth reaching: measured over this repo
+  # 2026-09-07 at head 5bd97f64, FOUR of the 41 config sources lost a test that
+  # genuinely names them, and two of those four are the config's OWN contract guard.
+  #
+  #   config/rails_lane.yml       lost test/lib/rails_lane_contract_test.rb, the file
+  #                               that exists to assert that config's contract
+  #   config/qa_environments.yml  lost test/lib/qa_registry_declares_qa_env_test.rb,
+  #                               "THE PERMANENT GUARD over config/qa_environments.yml"
+  #   config/initializers/edge_guard.rb  mapped to ZERO — losing BOTH edge-guard tests
+  #   config/e2e_lane.yml         lost test/lib/review_tree_guard_test.rb
+  #
+  # THE SECOND SPELLING IS THE QUOTED BASENAME, WITH ITS EXTENSION, and the extension
+  # is the whole reason this does not re-admit the English that rung 3 was fixed to
+  # stop. Code that reaches a config by path writes it either whole —
+  # `Rails.root.join("config/queue.yml")` — or SPLIT, which is the form the path token
+  # cannot see: `File.join(ROOT, "config", "rails_lane.yml")` (rails_lane_contract_test.rb:33)
+  # and `Rails.root.join("config", "qa_environments.yml")`. The basename with its
+  # extension is a filename, never a word, so `"rails_lane.yml"` cannot match prose the
+  # way `"jobs"` or `"rake"` still can on the bin side above. Measured: this spelling
+  # adds THREE test paths across all 41 config sources, and each of the three is that
+  # config's own guard.
+  #
+  # AND A CONFIG INITIALIZER IS NAMED BY THE CONSTANT IT WIRES — but only when that
+  # constant is real. config/initializers/edge_guard.rb is the wiring half of a class
+  # whose other half is lib/middleware/edge_guard.rb; both edge-guard tests name it
+  # `EdgeGuard` and neither writes the initializer's path, so the initializer alone
+  # mapped to nothing. See #wired_constant for why the constant is QUALIFIED by that
+  # source existing rather than taken from the basename: unqualified, this same clause
+  # hands config/environments/test.rb the token `Test` (208 files) and
+  # config/initializers/studio.rb the token `Studio` (127) — the two widest cap trips in
+  # the repo and precisely the defect PR #1254 closed. Widening this file has gone wrong
+  # twice (PR #1239 over-matched; the bare-token grep was widening's endpoint), so the
+  # qualification is the point, not a refinement.
+  #
   # [] = no grep for this path (views/docs/assets rely on the spine).
-  def grep_tokens(path)
+  def grep_tokens(root, path)
     case path
     when %r{\Abin/([^/]+)\z} then [path, %("#{Regexp.last_match(1)}")]
-    when %r{\Aconfig/.+\.(?:ya?ml|rb)\z} then [path]
+    when %r{\Aconfig/.+\.(?:ya?ml|rb)\z} then [path, %("#{File.basename(path)}")] + wired_constant(root, path)
     when %r{\Aapp/(?:#{APP_LAYERS.join('|')})/(.+)\.rb\z} then [constant_path(Regexp.last_match(1))]
     when /\.rb\z/ then [camelize(File.basename(path, ".rb"))]
     else []
     end
+  end
+
+  # THE CONSTANT A CONFIG INITIALIZER WIRES — `[]` unless this repo actually defines it.
+  #
+  # WHY A QUALIFICATION AT ALL. The tempting rule is "camelize the basename", and it is
+  # the rule the pre-#1254 grep used. It is also how config/environments/test.rb came to
+  # hunt for `Test` and match 208 of the repo's 623 test files, and config/initializers/
+  # studio.rb to hunt for `Studio` and match 127. Those two were the widest cap trips in
+  # the repo. Re-adding the camelized basename unconditionally would hand both of them
+  # straight back — a fix that trades one defect for the one just closed.
+  #
+  # WHAT SEPARATES `EdgeGuard` FROM `Test` AND `Studio` is not word count or spelling; it
+  # is whether the constant EXISTS HERE. An initializer under config/ almost never defines
+  # a class — it CONFIGURES one — so its constant is only a name when some source file in
+  # this repo owns that name. lib/middleware/edge_guard.rb defines `EdgeGuard` (and the
+  # initializer requires that very file). Nothing in this tree defines `Test`, `Studio`,
+  # `Application`, `Routes`, `Queue` or `Storage`: those are English, Rails, a gem, or the
+  # standard library, which is exactly why their matches were coincidence.
+  #
+  # MEASURED over every config source in this repo 2026-09-07 (head 5bd97f64): of the 24
+  # `.rb` files under config/, exactly ONE qualifies — config/initializers/edge_guard.rb,
+  # owned by lib/middleware/edge_guard.rb. The other 23 get no constant, including all
+  # ten single-word names whose unqualified constant would have matched something.
+  #
+  # THE OWNERSHIP TEST ASKS #grep_tokens ITSELF rather than re-deriving "the constant a
+  # source is named by". Stated twice, the two copies cover for each other and a mutation
+  # to one survives — the failure PR #1239 hit, and the reason #harness_family states its
+  # scope once. Asking grep_tokens also means the answer stays correct by construction if
+  # the constant rules change. It cannot recurse: candidates come only from app/, lib/ and
+  # bin/, never from config/, so the config clause is never re-entered.
+  #
+  # NOT APPLIED TO .yml, deliberately — a YAML file defines no constant, so borrowing
+  # one from a same-named class would be inventing a name rather than reading it:
+  # config/queue.yml is a file, not `Queue`, even in a repo that has a Queue class.
+  #
+  # THE GUARD IS LOAD-BEARING, and it took a mutation to find out it once was not. The
+  # stem was cut with `File.basename(path, ".rb")`, which on a YAML path returns the
+  # basename WITH its extension — so the lookup asked for `<something>.yml.rb`, matched
+  # nothing, and returned [] whether or not the guard was there. Deleting the guard
+  # changed no behaviour and no test went red: a redundant guard, green either way, and
+  # green for a reason that lived in a different line. Cutting the stem with
+  # File.extname makes the .yml path reach a real lookup, so the guard now decides
+  # something and its test can kill it (see #test_a_yaml_config_never_borrows...).
+  def wired_constant(root, path)
+    return [] unless path.end_with?(".rb")
+
+    stem = File.basename(path, File.extname(path))
+    constant = camelize(stem)
+    owners = Dir.glob("{app,lib,bin}/**/#{stem}.rb", base: root.to_s)
+    owners.any? { |src| grep_tokens(root, src) == [constant] } ? [constant] : []
   end
 
   # A token matched at its own edges, where "edge" depends on what KIND of name the
@@ -394,7 +500,7 @@ module FastCert
       tests =
         if existing.empty?
           orphans = orphan_family(root, path)
-          orphans.empty? ? grep_tests(root, grep_tokens(path)) : orphans
+          orphans.empty? ? grep_tests(root, grep_tokens(root, path)) : orphans
         else
           (existing + family_tests(root, path, existing)).uniq
         end
