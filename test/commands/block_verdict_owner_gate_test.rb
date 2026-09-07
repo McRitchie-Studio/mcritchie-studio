@@ -144,6 +144,26 @@ class BlockVerdictOwnerGateTest < Minitest::Test
     end
   end
 
+  # ── ORDER: AUTHORISATION BEFORE BUDGET ──────────────────────────────────────
+  #
+  # A foreign caller facing an ALREADY-TRIPPED breaker must be told "this verdict is
+  # not yours" (exit 11), NOT "the budget is spent, escalate" (exit 10). The two
+  # refusals route to opposite acts: the breaker's recipe is `--kind dependency`, an
+  # ESCALATION TO THE OPERATOR, which is the verdict owner's move. A light handed that
+  # recipe would follow it — filing an escalation on a review it does not hold — which
+  # is the incident again wearing the breaker's clothes.
+  #
+  # This is the only test that can tell the two gate ORDERS apart; with a clear ledger
+  # (every other test here) both orders produce identical output.
+  def test_integration_a_foreign_caller_is_refused_as_non_owner_not_as_a_tripped_breaker
+    result = block_as(LIGHT, bounces: 1)
+
+    assert_equal 11, result[:status].exitstatus,
+                 "the verdict-owner gate must fire BEFORE the breaker — exit 10 here means a " \
+                 "light was handed the operator-escalation recipe for a verdict it does not own"
+    assert_empty result[:writes], "and still nothing may land"
+  end
+
   # ── IGNORANCE IS NOT PERMISSION ─────────────────────────────────────────────
   #
   # Both branches mirror the posture the breaker's OWN read already takes one seam
@@ -181,7 +201,7 @@ class BlockVerdictOwnerGateTest < Minitest::Test
   # inside a tmpdir. The suite arms TASK_USAGE_SANDBOX process-wide, so an unpinned
   # child ABORTS before it reaches the gate — on a different exit code and an empty
   # write log, which would make two of these tests pass for the wrong reason.
-  def block_as(soul, kind: "rework", holder: :default, claim_status: 200,
+  def block_as(soul, kind: "rework", holder: :default, claim_status: 200, bounces: 0,
                session: LIGHT_SESSION, nonce: LIGHT_NONCE)
     holder = default_holder if holder == :default
     Dir.mktmpdir do |dir|
@@ -194,7 +214,7 @@ class BlockVerdictOwnerGateTest < Minitest::Test
         )
       )
 
-      with_board_sink(writes, holder: holder, claim_status: claim_status) do |base|
+      with_board_sink(writes, holder: holder, claim_status: claim_status, bounces: bounces) do |base|
         _out, err, status = Open3.capture3(
           env.merge("TASK_API_BASE" => base),
           BIN, "block", SLUG, "--kind", kind, "--agent", soul,
@@ -219,7 +239,7 @@ class BlockVerdictOwnerGateTest < Minitest::Test
   # ONLY THE MUTATIONS ARE RECORDED (PATCH /block, POST /activities). The auth POST
   # happens on every run, refused or not, so counting it would make the "no write"
   # assertion unfalsifiable.
-  def with_board_sink(writes, holder:, claim_status:)
+  def with_board_sink(writes, holder:, claim_status:, bounces: 0)
     server = TCPServer.new("127.0.0.1", 0)
     thread = Thread.new do
       while (client = server.accept)
@@ -233,7 +253,7 @@ class BlockVerdictOwnerGateTest < Minitest::Test
         verb = request.split(/\s+/)[0].to_s
         writes << payload if payload && (verb == "PATCH" || (verb == "POST" && path.include?("/activities")))
 
-        code, body = respond(verb, path, holder, claim_status)
+        code, body = respond(verb, path, holder, claim_status, bounces)
         client.write("HTTP/1.1 #{code} #{code == 200 ? "OK" : "Internal Server Error"}\r\n" \
                      "Content-Type: application/json\r\n" \
                      "Content-Length: #{body.bytesize}\r\n\r\n#{body}")
@@ -248,18 +268,30 @@ class BlockVerdictOwnerGateTest < Minitest::Test
     thread&.kill
   end
 
-  def respond(_verb, path, holder, claim_status)
+  def respond(_verb, path, holder, claim_status, bounces = 0)
     case path
     when %r{/api/v1/auth}          then [200, { token: "sink-bearer" }.to_json]
     when %r{/review_claim}
       return [claim_status, { error: "boom" }.to_json] unless claim_status == 200
 
       [200, { data: { holder: holder } }.to_json]
-    # The ledger reads CLEAR, so nothing here is decided by the circuit breaker —
-    # a light that got through would land a write, not be caught by the budget.
-    when %r{/api/v1/activities}    then [200, { data: [], meta: { total: 0 } }.to_json]
+    # The ledger reads CLEAR by default, so nothing in the tests above is decided by
+    # the circuit breaker — a light that got through would land a write rather than be
+    # caught by the budget. `bounces:` arms it for the ORDERING test alone.
+    when %r{/api/v1/activities}    then [200, ledger_body(bounces)]
     else [200, task_body]
     end
+  end
+
+  # `n` countable send-backs. One is enough to TRIP (BounceLedger::Verdict#tripped? is
+  # `count.positive?`), and the kind must be stamped in metadata or the row grades
+  # `unknown` — which still counts, but for a different reason than the one under test.
+  def ledger_body(n)
+    rows = Array.new(n) do |i|
+      { "created_at" => (Time.now - (60 * (i + 1))).utc.iso8601, "agent_slug" => PRIMARY,
+        "description" => "prior send-back", "metadata" => { "kind" => "rework", "summary" => "Prior send back here" } }
+    end
+    { data: rows, meta: { total: rows.size } }.to_json
   end
 
   def task_body
