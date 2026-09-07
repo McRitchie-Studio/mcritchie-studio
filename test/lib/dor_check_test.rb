@@ -1999,6 +1999,33 @@ class DorCheckTest < Minitest::Test
     refute_match(/CONFLICTED/i, out)
   end
 
+  # conflicted-remedy-misreads-ci: the blocker was RIGHT and its diagnosis was
+  # WRONG. It inferred "the head SHA has ZERO check-runs" from DIRTY alone —
+  # independent facts. Measured false 2026-09-07: turf-monster#590 read DIRTY at
+  # head cbd62fb0 carrying all 7 checks GREEN, while this text told the builder
+  # there were none. End-to-end through the real script, because the unit test
+  # cannot see what dor-check actually prints. This seam yields a verdict with no
+  # rollup attached, so it also pins the ABSENT-rollup path: not knowing must not
+  # be reported as knowing there are none.
+  def test_conflicted_blocker_does_not_assert_the_head_has_no_checks
+    out, code = ci_check("conflicted")
+
+    assert_equal 1, code, out
+    refute_match(/ZERO check-runs/i, out,
+                 "DIRTY does not imply an empty head — a base that moves after CI ran reads DIRTY and green")
+    refute_match(/never queues the pull_request workflow/i, out,
+                 "a run may already have fired on this head; only a NEW one is blocked")
+    assert_match(/OLD base/, out,
+                 "the true statement survives: whatever checks exist predate the base move")
+    # The REMEDY was never the problem and must come through untouched. This seam
+    # carries no baseRefName, so the remedy correctly withholds the git commands
+    # rather than printing a half-built origin/<placeholder> — assert the branch
+    # that DOES apply here, not the one that does not.
+    assert_match(/resolve the conflicts/i, out)
+    assert_match(/read the PR's base on GitHub/, out)
+    refute_match(%r{origin/\s}, out, "no half-built ref may be printed when the base is unknown")
+  end
+
   def test_ci_conflicted_surfaces_in_the_json_verdict
     out, code = ci_check("conflicted", CI_PR, "--json")
     assert_equal 1, code, out
