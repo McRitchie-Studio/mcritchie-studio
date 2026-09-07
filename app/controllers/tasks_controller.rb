@@ -492,7 +492,7 @@ class TasksController < ApplicationController
     attrs = permitted.except(:devops).to_h
     return attrs unless permitted[:devops]
 
-    attrs[:metadata] = merged_metadata_with_devops(permitted[:devops])
+    attrs[:metadata] = merged_metadata_with_devops(permitted[:devops], stage: permitted[:stage])
     attrs
   end
 
@@ -506,7 +506,13 @@ class TasksController < ApplicationController
   #
   # `#create` reaches here with @task nil, so the merge starts from an empty base
   # and the result is exactly the normalized post.
-  def merged_metadata_with_devops(raw_devops)
-    Task.merge_devops_into_metadata(@task&.metadata, raw_devops)
+  # `stage` is the stage the record will HAVE after this save — the form posts one
+  # when it also moves the card — so an approval REQUEST is judged against where it
+  # lands. Falls back to the model default on #create, which reaches here with
+  # @task nil.
+  def merged_metadata_with_devops(raw_devops, stage: nil)
+    Task.merge_devops_into_metadata(
+      @task&.metadata, raw_devops, stage: stage.presence || @task&.stage || Task.new.stage
+    )
   end
 end

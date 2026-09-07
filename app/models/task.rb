@@ -1898,7 +1898,13 @@ class Task < ApplicationRecord
   #
   # Pure: returns a new hash and writes nothing. Raises whatever
   # normalize_devops_metadata raises (both controllers turn that into a 422).
-  def self.merge_devops_into_metadata(metadata, raw_devops)
+  # `stage` is the stage the record will HAVE after this save (the posted stage when
+  # the same call moves it, else the stored one). It is what decides whether an
+  # explicitly posted approval REQUEST can be honoured — see
+  # .guard_approval_request_stage!. Defaulted to nil so a caller with no stage in
+  # hand folds exactly as before; the guard is skipped rather than guessing.
+  def self.merge_devops_into_metadata(metadata, raw_devops, stage: nil)
+    guard_approval_request_stage!(raw_devops, stage)
     base = (metadata || {}).to_h.deep_dup
     merged = merge_devops_metadata(base["devops"], raw_devops)
     if merged.any?
@@ -1907,6 +1913,57 @@ class Task < ApplicationRecord
       base.delete("devops")
     end
     base
+  end
+
+  # Refuse an approval REQUEST that this save would settle on the way in.
+  #
+  # THE DEFECT THIS CLOSES, measured 2026-09-07 on one task at stage `submitted`,
+  # two writes minutes apart:
+  #
+  #   bin/task update <slug> --approval waiting   -> exit 0, read-back "none"      DROPPED
+  #   bin/task update <slug> --approval approved  -> exit 0, read-back "approved"  LANDED
+  #
+  # The discriminator is neither the stage alone nor the incoming transition: it is
+  # the CONJUNCTION of stage and VALUE. #settle_operator_approval_past_submit
+  # rewrites ONLY "waiting", and only outside APPROVAL_REQUEST_STAGES, on every
+  # save. So the write returned HTTP 200 and reached nothing.
+  #
+  # WHY THAT IS NOT A TIDINESS BUG. approval_status "waiting" is the OPERATOR gate:
+  # a waiting task floats to the top of its stage and pulses on the board, which is
+  # how Mr. McRitchie finds work needing his eyes. A dropped request means the agent
+  # believes it asked, the board never pulses, and the request reaches NOBODY. The
+  # caller cannot detect it either — bin/task's read-back would have to re-read this
+  # one field on purpose, which no standard read-back does.
+  #
+  # THE SETTLE ITSELF IS CORRECT AND STAYS. It holds a real invariant (a waiting
+  # badge may exist only where something can clear it) and it closed three
+  # documented leaks. Raising there instead would break the saves that ask for
+  # NOTHING — a stage move carrying an older request, or a stale wholesale devops
+  # echo — which must keep self-healing silently. Only an EXPLICIT post of
+  # "waiting" is a question, and only a question deserves an answer.
+  #
+  # TWO LAYERS, the shape this file already uses for DEVOPS_COLUMN_KEYS: the front
+  # door raises (normalize_devops_metadata) and the back door silently backstops
+  # (shed_column_shadow_keys). This is the same pair — raise at the fold both write
+  # paths share, and leave the callback as the silent backstop for everything that
+  # does not arrive through it. Both controllers rescue StandardError into a 422,
+  # and bin/task turns any non-2xx into die! — a non-zero exit naming stage and
+  # value, which is the whole remedy.
+  def self.guard_approval_request_stage!(raw_devops, stage)
+    stage = stage.to_s.strip
+    return if stage.empty? || APPROVAL_REQUEST_STAGES.include?(stage)
+
+    posted = (raw_devops || {}).to_h.find { |key, _| key.to_s == "approval_status" }
+    return if posted.nil?
+    return unless posted.last.to_s.strip.downcase == OPERATOR_APPROVAL_WAITING
+
+    raise ArgumentError,
+          "devops.approval_status cannot be set to #{OPERATOR_APPROVAL_WAITING.inspect} at stage " \
+          "#{stage} — an approval request is only actionable in " \
+          "#{APPROVAL_REQUEST_STAGES.join(" or ")}, so this save would settle it to " \
+          "#{OPERATOR_APPROVAL_NONE.inspect} and the board would never pulse. Ask for approval " \
+          "BEFORE handing off, or record a decision the operator already gave with " \
+          "#{OPERATOR_APPROVAL_APPROVED.inspect}."
   end
 
   def self.normalize_devops_metadata(raw)
