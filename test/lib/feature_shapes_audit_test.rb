@@ -265,28 +265,153 @@ class FeatureShapesAuditTest < ActiveSupport::TestCase
   # a tier from the tag alone and never requires the bin/lib/ci_test_command.rb seam, which is
   # the only thing here that reads a repo's ci.yml.
   #
-  # So this guard fails when the check is BUILT. That is the point — it is the alarm that
-  # stops the header from outliving its own truth, in the direction prose always rots
-  # (limitation lifted, paragraph not updated). It is not asking anyone to keep dor-check
+  # THE CORPUS IS THE GATE'S WHOLE LOADED SOURCE, NOT bin/dor-check ALONE. The first version of
+  # this guard read that one file, and the fix it watches for would never have touched it.
+  # bin/dor-check:167 calls Dor::Checks.load!, a DIRECTORY GLOB over bin/lib/dor/checks/*.rb
+  # (bin/lib/dor/checks.rb:58), and that file states the architecture in capitals at :18-22 —
+  # "A DIRECTORY GLOB HAS NO MERGE CONFLICT, A LIST OF REQUIRES DOES ... adding a check is a
+  # PURE FILE ADD - no registry line, no require line, no hook." So the per-repo check, built
+  # the way this repo INSTRUCTS, arrives as bin/lib/dor/checks/per_repo_tier_collectability.rb
+  # reaching up with `require_relative "../../ci_test_command"` — the spelling already live at
+  # bin/lib/dor/checks/migration_collision.rb:3-5 — and bin/dor-check's own text never changes.
+  # Measured 2026-09-07, not argued: that exact file dropped into the glob left this suite at
+  # 8 runs, 99 assertions, 0 failures while the header still called the limitation PERMANENT.
+  # The pattern was right and the SCOPE was wrong — a false promise about a TASK swapped for a
+  # false promise about a MECHANISM. The corpus below is therefore bin/dor-check plus every
+  # check the glob adds plus the require_relative closure of both.
+  #
+  # WHAT THIS GUARD DOES NOT REACH, stated here because the header states it too. It watches
+  # the ci_test_command SEAM — the route feature_shapes.yml names, and the only one that must
+  # read a repo's raw ci.yml. A per-repo check built on a DECLARED key instead
+  # (config/release_repos.yml already carries `lint_lane: none` for exactly this purpose, and
+  # bin/lib/full_suite_gate.rb:352 already reads that file) would close the blind spot and
+  # leave this green. It is a NET, not an invariant — the same standing this file gives rule 2
+  # above — and saying so is the difference between a tripwire and another promise.
+  #
+  # So this guard fails when the check is built ON THE SEAM. That is the point — it is the
+  # alarm that stops the header from outliving its own truth, in the direction prose always
+  # rots (limitation lifted, paragraph not updated). It is not asking anyone to keep dor-check
   # blind. Landing the check is the good outcome; updating the header is the price.
   DOR_CHECK = Rails.root.join("bin/dor-check")
-  CI_SEAM_REQUIRE = /^\s*require(?:_relative)?\s+["'][^"']*ci_test_command/
+  # The directory Dor::Checks.load! globs. A CONSTANT so the anti-vacuity control below can
+  # assert it still matches something: a glob that matches nothing reads nothing, and a widened
+  # guard that silently narrows back to one file is the exact disease this file exists to stop.
+  DOR_CHECKS_DIR = Rails.root.join("bin/lib/dor/checks")
 
-  test "the per-repo tier blind spot is still open, or feature_shapes.yml's header is stale" do
-    source = DOR_CHECK.read
-    assert_operator source.length, :>, 10_000,
-                    "read bin/dor-check as #{source.length} bytes — too small to be the gate; this guard would " \
-                    "be asking a question of an empty string"
-    assert_match CI_SEAM_REQUIRE, %(require_relative "lib/ci_test_command"),
-                 "the pattern cannot recognise the require it is looking for, so its verdict is meaningless"
+  # Any spelling of a require that would LOAD the seam. The first pattern demanded a quote
+  # immediately after the keyword, which reads only bin/dor-check's house style — all 13 of its
+  # requires use it. A glob check is a free-standing file under no obligation to match that
+  # style, so widening the corpus without widening the spelling would have left two more holes:
+  # the parenthesised form, and the `require Rails.root.join(...)` form live at
+  # test/models/release/repos_test.rb:6. The `[\s(]` after the keyword is what stops
+  # `required_meta = ...` (bin/dor-check:2325) from reading as a require.
+  CI_SEAM_REQUIRE = /^\s*require(?:_relative)?[\s(].*ci_test_command/
 
-    refute_match CI_SEAM_REQUIRE, source,
-                 "bin/dor-check now requires the ci_test_command seam, so it may finally resolve a TASK'S REPO " \
-                 "and read that repo's ci.yml — the per-repo tier-collectability check config/feature_shapes.yml " \
-                 "describes as unbuilt. If you built it: rewrite the **IN THIS REPO** paragraph in that header " \
-                 "(it currently calls the limitation PERMANENT and says nobody is building it), rewrite the " \
-                 "matching note in test/lib/feature_shape_tiers_test.rb, and delete this guard. If you required " \
-                 "the seam for something else, narrow this pattern to the call that resolves the repo."
+  # Every spelling must be exercised, for the same reason DEFERRAL_MARKERS are: an alternative
+  # asserted against nothing makes a pattern look sounder than it is.
+  SEAM_REQUIRE_SPELLINGS = [
+    %(require_relative "lib/ci_test_command"),
+    %(require_relative "../../ci_test_command"),
+    %(require_relative("../../ci_test_command")),
+    %(require Rails.root.join("bin", "lib", "ci_test_command").to_s)
+  ].freeze
+
+  # And the other half: lines carrying the letters and loading NOTHING. An alarm that fires on
+  # prose gets deleted rather than heeded, so the negative controls ship with the positive.
+  NON_LOADING_LINES = [
+    %(  required_meta = defaults["required_metadata"] || []),
+    %(# require_relative "../../ci_test_command" — commented out, loads nothing),
+    %(  # read ITS ci.yml through the bin/lib/ci_test_command.rb seam)
+  ].freeze
+
+  # bin/dor-check + every file the glob adds + everything either of them require_relatives,
+  # transitively. Realpath-deduped, so a symlink can neither loop the walk nor double-count.
+  def gate_sources
+    queue = [ DOR_CHECK.to_s ] + dor_check_files
+    seen = []
+    until queue.empty?
+      file = queue.shift
+      next unless File.file?(file)
+
+      real = File.realpath(file)
+      next if seen.include?(real)
+
+      seen << real
+      File.read(real).scan(/^\s*require_relative[\s(]+["']([^"']+)["']/) do |(relative)|
+        candidate = File.expand_path(relative, File.dirname(real))
+        candidate += ".rb" unless candidate.end_with?(".rb")
+        queue << candidate if File.file?(candidate)
+      end
+    end
+    seen
+  end
+
+  def dor_check_files = Dir.glob(DOR_CHECKS_DIR.join("*.rb").to_s).sort
+
+  def repo_path(path) = Pathname.new(path.to_s).relative_path_from(Rails.root).to_s
+
+  # THE ANTI-VACUITY CONTROL FOR THE WIDENED HALF. The one-file version of this guard already
+  # carried a byte floor and was still wrong, because a floor proves the string is BIG, never
+  # that it holds the half that matters. So this proves three separate things: the glob still
+  # matches files, the walk still follows requires, and each glob file's source sits literally
+  # INSIDE the string the refutation scans — and is not already inside bin/dor-check, which is
+  # the only way to tell a widened corpus from the one-file corpus it replaced.
+  test "the blind-spot corpus really contains the glob-loaded checks" do
+    checks = dor_check_files
+    refute_empty checks,
+                 "#{repo_path(DOR_CHECKS_DIR)}/*.rb matched NOTHING. Dor::Checks.load! globs that directory, " \
+                 "so an empty match means the corpus below has silently narrowed back to bin/dor-check alone " \
+                 "and stopped watching the documented way to add a check. If the directory moved, re-point " \
+                 "DOR_CHECKS_DIR — do not delete this control."
+
+    sources = gate_sources
+    assert_operator sources.length, :>, checks.length + 1,
+                    "the require_relative walk resolved #{sources.length} file(s) from #{checks.length + 1} " \
+                    "seed(s), so it followed nothing and the closure half of the corpus is decoration"
+
+    corpus = sources.map { |file| File.read(file) }.join("\n")
+    dor_check_only = DOR_CHECK.read
+    assert_operator corpus.length, :>, dor_check_only.length,
+                    "the corpus (#{corpus.length} bytes) is no larger than bin/dor-check alone " \
+                    "(#{dor_check_only.length} bytes) — the widening did not happen"
+    assert_operator corpus.length, :>, 250_000,
+                    "read the gate as #{corpus.length} bytes — too small to be the gate; this guard would be " \
+                    "asking a question of a near-empty string"
+
+    checks.each do |file|
+      body = File.read(file)
+      assert corpus.include?(body),
+             "#{repo_path(file)} is loaded by Dor::Checks.load! but its source is NOT in the corpus — the " \
+             "walk counted it without reading it, which is a guard that only looks widened"
+      refute dor_check_only.include?(body),
+             "#{repo_path(file)} is already inside bin/dor-check, so this control cannot tell the widened " \
+             "corpus from the one-file corpus it replaced"
+    end
+
+    SEAM_REQUIRE_SPELLINGS.each do |line|
+      assert_match CI_SEAM_REQUIRE, line,
+                   "the pattern cannot recognise #{line.inspect} — a require that WOULD load the seam — so " \
+                   "its verdict is meaningless for any file not written in bin/dor-check's house style"
+    end
+
+    NON_LOADING_LINES.each do |line|
+      refute_match CI_SEAM_REQUIRE, line,
+                   "#{line.inspect} loads nothing. Matching it would fire this alarm on prose, and an alarm " \
+                   "that cries wolf gets deleted rather than heeded."
+    end
+  end
+
+  test "the per-repo tier blind spot is still open on the ci_test_command seam" do
+    offenders = gate_sources.select { |file| File.read(file).match?(CI_SEAM_REQUIRE) }
+
+    assert_empty offenders.map { |file| repo_path(file) },
+                 "a file bin/dor-check LOADS now requires the ci_test_command seam, so the gate may finally " \
+                 "resolve a TASK'S REPO and read that repo's ci.yml — the per-repo tier-collectability check " \
+                 "config/feature_shapes.yml describes as unbuilt. If you built it: rewrite the **IN THIS " \
+                 "REPO** paragraph in that header (it currently calls the limitation PERMANENT and says " \
+                 "nobody is building it), rewrite the matching note in test/lib/feature_shape_tiers_test.rb, " \
+                 "and delete this guard. If you required the seam for something else, narrow this pattern to " \
+                 "the call that resolves the repo."
   end
 
   test "the verdict pattern matches the word, not a substring inside another" do

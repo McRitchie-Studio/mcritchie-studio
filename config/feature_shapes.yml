@@ -85,12 +85,27 @@
 # limitation, not a pending one.
 #
 # ASK THE CODE, NOT THIS COMMENT. bin/dor-check credits a tier from the TAG ALONE —
-# `missing_tiers = dor_tiers.reject { |tier| tier_satisfied?(checks, tier) }` — and it never
-# requires bin/lib/ci_test_command.rb, so it never opens any repo's ci.yml, its own included.
-# While that require is absent the blind spot is open, whatever this paragraph says, and this
-# header claims only what it can prove. test/lib/feature_shapes_audit_test.rb pins that exact
-# condition and goes red the day someone lands the check — so the paragraph cannot outlive
-# its own truth, and the next reader is told by a failing test rather than by trusting prose.
+# `missing_tiers = dor_tiers.reject { |tier| tier_satisfied?(checks, tier) }` — and neither it
+# nor any file it loads requires bin/lib/ci_test_command.rb, so it never opens any repo's
+# ci.yml, its own included. While that require is absent the SEAM ROUTE below is unbuilt,
+# whatever this paragraph says, and this header claims only what it can prove.
+#
+# WHAT THE GUARD PROMISES, EXACTLY — a NET, not an invariant, the same standing this family
+# gives its deferral rule. test/lib/feature_shapes_audit_test.rb reads the gate's WHOLE LOADED
+# SOURCE — bin/dor-check, every check the `bin/lib/dor/checks/*.rb` glob adds, and the
+# require_relative closure of both — and goes red when any of them requires the ci_test_command
+# seam. It has to read all of it: a check here arrives as a PURE FILE ADD
+# (bin/lib/dor/checks.rb:18-22), so a pin on bin/dor-check alone watched the one file the fix
+# never touches. Measured 2026-09-07 — the documented check dropped into that glob left the
+# one-file guard green.
+#
+# It does NOT cover a per-repo check built WITHOUT that seam, and there is a live route:
+# config/release_repos.yml is already a per-repo lane registry of exactly this kind
+# (`lint_lane: none` at :240 and :283, rationale at :202-209), and bin/lib/full_suite_gate.rb:352
+# already reads it — so an `e2e_lane:` key declared there would close this blind spot without
+# ever opening a ci.yml. Read the guard green as "the seam route is still unbuilt", never as
+# "no per-repo check exists". If you close it the declared way, rewrite this paragraph BY HAND;
+# nothing will do it for you.
 #
 # What that cost, measured the day the lane was finally switched on: the studio's
 # 69-spec Playwright suite was 18 SPECS RED on an untouched `release` checkout. It had
@@ -118,6 +133,9 @@
 # `vars.DEVNET_NIGHTLY_ENABLED` and has completed `skipped` on every scheduled run. Ask
 # GitHub rather than trusting that sentence:
 #   gh run list --workflow devnet-nightly.yml -R McRitchie-Studio/turf-monster
+# Nothing guards THAT sentence, and one branch would stale both halves of it at once:
+# turf-monster carries a stranded `origin/feat/turn-on-devnet-nightly` that DELETES the
+# job-level `if:`. If it is ever merged, re-run the command above before trusting this.
 # test/lib/feature_shape_tiers_test.rb enforces the order — restore the tier before a runner
 # executes it and the primary guard goes red.
 #
