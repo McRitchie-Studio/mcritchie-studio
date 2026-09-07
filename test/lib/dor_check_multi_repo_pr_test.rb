@@ -251,6 +251,17 @@ class DorCheckMultiRepoPrTest < Minitest::Test
                  "#{role}: the refusal must NAME the repo it could not read, and it must land as an ERROR. " \
                  "A gate that grades a subset is the disease; one that grades a subset and says which is " \
                  "merely limited:\n#{lines(verdict).join("\n")}"
+
+    # ...AND THE MACHINE-READABLE HALF. Prose in `note` is what a human reads; a monitor
+    # asking "which repo failed closed here?" needs a field. This is the payload a
+    # :pr_incomplete run exits through, so if coverage is missing anywhere it will be
+    # missing exactly here — the refusal it exists to explain.
+    rows = Array(verdict["pr_coverage"])
+    assert_equal 2, rows.size, "#{role}: the fail-closed payload dropped its coverage rows: #{verdict.inspect}"
+    assert_equal "ok", row_for(verdict, HUB)["read"], "#{role}: the readable PR must still report as read"
+    refute_equal "ok", row_for(verdict, SAT)["read"],
+                 "#{role}: the UNREADABLE PR must be marked unread in the machine-readable rows, or the " \
+                 "refusal is unexplainable from the JSON alone: #{rows.inspect}"
   end
 
   def test_an_unreadable_pr_fails_closed_and_names_the_repo_in_the_review_role
@@ -317,6 +328,35 @@ class DorCheckMultiRepoPrTest < Minitest::Test
     assert verdict["ready"], "the readable twin of the fail-closed fixture must PASS:\n#{lines(verdict).join("\n")}"
     assert_equal 0, code
     assert_equal "pr", verdict["diff_source"]
+  end
+
+  # A RECORDED URL THE GATE CANNOT PARSE is a repo whose verdict cannot be obtained —
+  # a different fact from "no PR yet", and one the gate must refuse rather than skip.
+  # The remedy has to name the FIELD to edit, and the primary and the register are
+  # different fields.
+  def test_an_unparseable_recorded_url_fails_closed_and_names_the_field
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "task.json")
+      broken = devops("pr_urls" => { HUB => HUB_PR, SAT => "https://example.com/not-a-pr" })
+      File.write(path, JSON.generate("slug" => "multi-repo-task", "title" => "T",
+                                     "metadata" => { "devops" => broken }))
+      out = IO.popen(OutboundSeams.env({
+                       "DOR_CHECK_DIFF_ROOT" => dir, "DOR_CHECK_DIFF_BASE" => "HEAD",
+                       "DOR_CHECK_PR_FILES_BY_REPO" => JSON.generate(HUB => HUB_DOC),
+                       "DOR_CHECK_CI_STATUS_BY_REPO" => JSON.generate(HUB => "green", SAT => "green"),
+                       "DOR_CHECK_SUITE_EVIDENCE" => "ok"
+                     }),
+                     "#{BIN} multi-repo-task --file #{path} --json --gate-role review 2>/dev/null", &:read)
+      refute_empty out.to_s.strip, "the gate produced no JSON at all"
+      verdict = JSON.parse(out)
+
+      refute verdict["ready"], "an unparseable recorded PR URL must fail the verdict closed"
+      assert_equal "pr_incomplete", verdict["diff_source"]
+      remedy = Array(verdict["errors"]).find { |line| line.include?("not a GitHub pull-request URL") }
+      refute_nil remedy, "the refusal must say WHY the URL could not be read:\n#{lines(verdict).join("\n")}"
+      assert_includes remedy, "devops.pr_urls[#{SAT}]",
+                      "...and name the FIELD to edit, so the remedy can actually be followed:\n#{remedy}"
+    end
   end
 
   # ── 6. THE HUMAN VERDICT SAYS IT TOO, on the shape most at risk ─────────────

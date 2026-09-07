@@ -820,9 +820,13 @@ def read_pr_files_for(target)
   return injected_pr_file_read(injected) if injected
 
   unless target[:readable]
+    # NAME THE FIELD THE READER MUST EDIT. The primary and the register are different
+    # fields, and sending someone to `devops.pr_urls[]` for a malformed `devops.pr_url`
+    # is a remedy that cannot be followed — `recorded_as` is nil for the primary
+    # precisely because it did not come from the register.
+    field = target[:recorded_as] ? "devops.pr_urls[#{target[:recorded_as]}]" : "devops.pr_url"
     return { files: nil, state: :unverified,
-             reason: "devops.pr_urls[#{target[:recorded_as] || target[:repo]}] = " \
-                     "#{target[:url].inspect} is not a GitHub pull-request URL" }
+             reason: "#{field} = #{target[:url].inspect} is not a GitHub pull-request URL" }
   end
 
   read_pr_files(target[:url])
@@ -2294,6 +2298,12 @@ if EXEMPT_KINDS.include?(kind)
         # shapes are precisely where the false pass lived, so a monitor must be able
         # to ask "was the PR actually read?" HERE, not only on the other path.
         pr_read: pr_read_alert ? pr_file_read.slice(:state, :cause, :reason).compact : nil,
+        # THE REFUSAL WHERE COVERAGE MATTERS MOST. This is the payload a multi-repo
+        # :pr_incomplete run exits through, so "which PR could not be read?" must be
+        # answerable from the JSON here — not only from the prose in `note`. Without it
+        # a monitor can see that the run failed closed but not which repo caused it,
+        # which is half of what this refusal exists to say.
+        pr_coverage: gate == "build" ? nil : pr_coverage,
         note: errors_preamble,
         errors: [errors_preamble],
         suggestions: [],
