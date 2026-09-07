@@ -33,9 +33,14 @@ require "stringio"
 require_relative "../support/session_env"
 
 require File.expand_path("../../bin/lib/session_markers", __dir__)
+# The SHIPPED reader of this store. Required here on purpose: the property below is
+# about what a READER sees mid-publish, and restating its glob in the writer's own
+# test is precisely the self-agreement that let this defect through.
+require File.expand_path("../../bin/lib/agent_presence", __dir__)
 
 class SessionMarkersTest < Minitest::Test
   SESSION = "e7c1a930-0000-4000-8000-abcdefabcdef"
+  PEER = "b41d70e2-0000-4000-8000-0123456789ab"    # a second session, already published
   REAL = ProjectsRoot.default_projects_dir              # the operator's real projects root
   ON = { "TASK_USAGE_SANDBOX" => "1" }.freeze
   SUFFIXES = %w[.json .acting-agent .open-activity .open-span .activity-usage.json
@@ -285,6 +290,78 @@ class SessionMarkersTest < Minitest::Test
     end
   end
 
+  # A publish IN FLIGHT must be invisible to the store's readers too — not merely
+  # cleaned up afterwards (the test above). This is the half that was missing.
+  #
+  # THE DEFECT, and it was the atomic publish's own doing: the sibling was named
+  # `"#{path}.#{Process.pid}.tmp"` — the marker path PLUS A SUFFIX — and every reader
+  # of this namespace globs `*.presence-*`. A suffix cannot escape a trailing `*`, so
+  # the window this file closed on the marker path REOPENED on a name the readers still
+  # matched. Production graded the sibling `:malformed` for the width of each write;
+  # the integration tier parses claims bare and died on
+  # `JSON::ParserError: unexpected end of input at line 1 column 1`
+  # (ReleasePresenceIntegrationTest, CI on PR #1259, 2026-09-07).
+  #
+  # HOW THIS OBSERVES THE WINDOW WITHOUT RACING FOR IT. `File.write(tmp, content)` opens
+  # `O_CREAT|O_TRUNC` — the sibling is on disk at zero bytes — and only THEN converts
+  # `content` with `to_s`. So a probe object passed as the content runs at exactly the
+  # instant the flake fires, inside the shipped code path, with no sleep, no spawn and no
+  # second process. A test that waited for this window would be testing the scheduler.
+  #
+  # It asks the SHIPPED READER what it can see rather than restating its glob here: "the
+  # reader was one glob short" is this bug's whole family, and a restatement cannot
+  # express it.
+  def test_unit_a_publish_in_flight_is_invisible_to_the_stores_readers
+    Dir.mktmpdir do |dir|
+      sessions = File.join(dir, ".agents", "sessions")
+      FileUtils.mkdir_p(sessions)
+      peer = File.join(sessions, "#{PEER}.presence-sweep-4242") # a conductor already published
+      File.write(peer, JSON.generate("kind" => "sweep"))
+
+      listing = nil
+      visible = nil
+      torn = nil
+      probe = Object.new
+      probe.define_singleton_method(:to_s) do
+        listing = Dir.children(sessions).to_h { |n| [n, File.size(File.join(sessions, n))] }
+        visible = AgentPresence.send(:claim_paths, dir)
+        torn = begin
+          visible.each { |f| JSON.parse(File.read(f)) }
+          nil
+        rescue JSON::ParserError => e
+          e
+        end
+        "#{JSON.generate("kind" => "ship")}\n"
+      end
+
+      SessionMarkers.write(SESSION, dir, ".presence-ship-4242", probe, env: OFF)
+
+      # ANTI-VACUITY, three ways — the probe ran; a sibling really existed while it ran;
+      # and it really was at ZERO bytes, which is the only state that raises. Without
+      # these, every assertion below passes on an empty observation.
+      refute_nil listing, "the probe never ran: File.write no longer converts its content " \
+                          "after opening the file, so this test is observing nothing"
+      sibling = listing.keys.find { |n| n.end_with?(".tmp") }
+
+      refute_nil sibling, "no temp sibling on disk mid-publish — the publish is no longer " \
+                          "write-then-rename and this property has moved elsewhere"
+      assert_equal 0, listing.fetch(sibling),
+                   "the sibling must be observed EMPTY; a non-empty one cannot tear a read"
+
+      # THE PROPERTY. Mid-publish the reader finds the peer's claim and NOTHING else.
+      assert_equal [peer], visible,
+                   "a reader globbing this store mid-publish must see only PUBLISHED claims. " \
+                   "The sibling is hidden because it is a DOTFILE (#{sibling}) — excluded by " \
+                   "Dir.glob and by a POSIX shell glob alike unless a caller opts in — which " \
+                   "covers every reader of this store at once, including ones not written yet"
+      assert sibling.start_with?("."),
+             "and it is hidden by that mechanism and no other: name it #{SESSION}.presence-" \
+             "ship-4242.<pid>.tmp again and `*.presence-*` matches it straight back"
+      assert_nil torn,
+                 "the reader's bare parse must not tear mid-publish; it raised: #{torn&.message}"
+    end
+  end
+
   # ── [unit] the load-bearing property: the guard is RESCUE-PROOF ──────────────
 
   # write and delete both `rescue StandardError => nil`, because narration is
@@ -309,8 +386,16 @@ class SessionMarkersTest < Minitest::Test
         SessionMarkers.delete(SESSION, stand_in, ".open-activity", env: env, state_dir: stand_in)
       end
 
-      assert_empty Dir.glob(File.join(stand_in, ".agents", "sessions", "*")),
-                   "the abort must land BEFORE any IO — a refused write creates nothing"
+      # NOT `Dir.glob(".../sessions/*")`. The only file a refused write could leave behind
+      # is the publish's temp sibling, and that sibling is now a DOTFILE, which a bare `*`
+      # cannot see — so the glob form would hold this guard GREEN through exactly the
+      # regression it exists to catch, an `enforce!` that drifted below the write. Assert
+      # on the STORE ROOT instead: `write` aborts before its own `mkdir_p`, so a clean
+      # refusal creates no `.agents` at all. That is dot-proof by construction, it needs
+      # no directory to exist (`Dir.children` would raise ENOENT here), and it is strictly
+      # stronger — a stray `mkdir_p` fails it too, not merely a stray file.
+      refute File.exist?(File.join(stand_in, ".agents")),
+             "the abort must land BEFORE any IO — a refused write creates nothing"
     end
   end
 

@@ -20,6 +20,12 @@ require_relative "../../lib/task_usage_sandbox"
 #   <projects>/.agents/sessions/<id>.shift-heartbeat      statusline's shift-renew throttle (bash)
 #   <projects>/.agents/sessions/<id>.mascot-heal          statusline's mascot self-heal throttle (bash)
 #
+# Plus ONE transient entry, which no reader of this store may see:
+#
+#   <projects>/.agents/sessions/.<marker>.<pid>.tmp       a publish in flight (write + rename)
+#
+# It is dot-prefixed so this store's default globs skip it — the argument is in +write+.
+#
 # It began as the shared READS bin/atomic-event and bin/atomic-capture-hook each
 # carried a byte-for-byte copy of. It now owns the WRITES too, because the copies
 # were the bug.
@@ -196,10 +202,29 @@ module SessionMarkers
     #
     # `rename(2)` is atomic within a directory, so a reader sees the previous
     # complete marker or this one, never a half. The temp name carries our pid so
-    # two writers racing here cannot scribble on each other's partial file. The
-    # sibling needs no guard of its own: it is the ENFORCED path plus a suffix, so
-    # it lands inside the directory `write_path` just cleared, by construction.
-    tmp = "#{path}.#{Process.pid}.tmp"
+    # two writers racing here cannot scribble on each other's partial file, and it
+    # stays in THIS directory — rename(2) is atomic only within one, and a sibling
+    # elsewhere would silently become a copy. The sibling needs no guard of its own:
+    # it decorates the ENFORCED path's own basename inside the ENFORCED path's own
+    # directory, which `write_path` just cleared, by construction.
+    #
+    # THE LEADING DOT IS LOAD-BEARING — it is the half this publish shipped without.
+    # The sibling was `"#{path}.#{Process.pid}.tmp"`: the marker path PLUS A SUFFIX,
+    # while every reader of this namespace globs `*.presence-*` (the grader at
+    # bin/lib/agent_presence.rb#claim_paths, plus five test readers, one of them a
+    # SHELL glob in test/lib/ship_test.rb). A suffix cannot escape a trailing `*`, so
+    # the zero-byte window this block closed on the marker path simply REOPENED on a
+    # name the readers still matched. Production graded the sibling `:malformed` for
+    # the width of every write, and the integration tier — which parses claims bare —
+    # died on `JSON::ParserError: unexpected end of input at line 1 column 1` (CI, PR
+    # #1259, 2026-09-07). `Dir.glob` and POSIX shell globs both skip names beginning
+    # with `.` unless the caller opts in (File::FNM_DOTMATCH, dotglob), so ONE name
+    # hides the in-flight sibling from every reader of this store at once — the same
+    # argument that moved the atomic publish in here rather than into each writer.
+    # Tightening the readers instead would be six edits and would leave the NEXT
+    # writer free to invent the next colliding name.
+    dir, base = File.split(path)
+    tmp = File.join(dir, ".#{base}.#{Process.pid}.tmp")
     begin
       File.write(tmp, content)
       File.rename(tmp, path)

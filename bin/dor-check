@@ -154,6 +154,7 @@ require "optparse"
 require_relative "lib/full_suite_gate"
 require_relative "lib/repo_root"
 require_relative "lib/ci_status"
+require_relative "lib/task_pr_set"
 require_relative "lib/ci_gate"
 require_relative "lib/code_diff"
 require_relative "lib/test_only_diff"
@@ -576,6 +577,14 @@ def resolve_branch_diff
   pr = pr_changed_files
   return [pr, :pr] if pr.is_a?(Array) && pr.any?
 
+  # A MULTI-REPO READ THAT DID NOT COMPLETE, in BOTH roles. See pr_read_alert's
+  # :incomplete branch for the argument: the builder's local-view fallback is earned by
+  # standing in the PR's own worktree, and on a task with a PR in each of two repos no
+  # single tree here can stand in for both. Falling through would hand the git tree (or
+  # a partial PR union) to the tier gate as "the task's diff", which is the defect
+  # /tasks/dor-check-reads-one-pr closes, so this fails closed BEFORE the fallbacks.
+  return [[], :pr_incomplete] if pr_file_read[:state] == :incomplete
+
   # A CREDENTIAL-REFUSED PR read, in the REVIEW role, is not a fallback — it is a
   # blind gate. The review gate-zero IS the authoritative verdict (the CI allow-list
   # already refuses an unreadable CI here for exactly this reason), and it runs from a
@@ -689,9 +698,207 @@ end
 
 def compute_pr_file_read
   injected = ENV["DOR_CHECK_PR_FILES"]
+  if injected
+    # The SINGULAR seam still stands in for the whole read, and it still records what
+    # it stood in for: a coverage report that goes blank under one seam and populated
+    # under another is a report nobody can trust to mean "this is what was read".
+    read = injected_pr_file_read(injected)
+    @pr_file_reads = Array(@pr_targets).first(1).map { |target| [target, read] }
+    return read
+  end
+
+  targets = Array(@pr_targets)
+  return { files: nil, state: :no_pr } if targets.empty?
+
+  # THE PER-PR READS ARE KEPT, not just folded. The fold answers "what is the task's
+  # diff"; the coverage report answers "which PRs did this verdict actually read", and
+  # a verdict that cannot answer the second is the one this task is about.
+  @pr_file_reads = targets.map { |target| [target, read_pr_files_for(target)] }
+
+  # ONE PR: the fold is the read, byte for byte — a single-repo task cannot reach the
+  # union below, so nothing about the ordinary verdict changes.
+  return @pr_file_reads.first.last if targets.size == 1
+
+  merge_pr_file_reads(@pr_file_reads)
+end
+
+# ONE ROW PER PR THIS RUN READ — the repo, its PR, how many files it contributed, and
+# ITS OWN CI state. This is the report that makes a multi-repo verdict checkable: the
+# defect being closed was a single confident verdict with no way to ask which repos it
+# had seen, so "did this cover turf-monster?" was unanswerable from the output.
+#
+# Costs a `gh` call per PR through task_ci_reads, which the caller has already made —
+# both are memoized. NEVER call it at the build gate, which must not shell to gh.
+def pr_coverage
+  pr_file_read # force the reads, so @pr_file_reads is populated
+  ci_by_url = task_ci_reads.each_with_object({}) { |entry, acc| acc[entry[:target][:url]] = entry[:ci] }
+  Array(@pr_file_reads).map do |target, read|
+    ci = ci_by_url[target[:url]]
+    { repo: target[:repo], pr_url: target[:url], read: read[:state].to_s,
+      files: Array(read[:files]).size, file_sample: Array(read[:files]).first(3),
+      ci: ci && ci[:state].to_s }.compact
+  end
+end
+
+# THE COVERAGE BLOCK — printed on a multi-PR task, pass or fail, on EVERY human
+# verdict this gate can produce. A verdict about a task with a PR in two repos must SAY
+# which PRs it read, or the reader cannot tell a run that covered both from the pre-fix
+# run that read one and looked identical.
+#
+# A DEF, NOT A LAMBDA BESIDE THE FINAL VERDICT, and that is the point: the EXEMPT
+# verdicts exit early, on their own printer, and they are precisely the shapes the
+# 08-08 false pass wore. A block only the gated path could print would be missing from
+# every doc-only run — the runs most in need of it.
+#
+# Suppressed on the ordinary one-PR task, where the verdict already names its subject,
+# and at the build gate, which must not shell to gh.
+def print_pr_coverage(gate)
+  return if gate == "build"
+
+  rows = pr_coverage
+  return if rows.size < 2
+
+  puts "  PRs read (#{rows.size}):"
+  rows.each { |row| puts "    · #{pr_coverage_line(row)}" }
+end
+
+# A printable coverage row: "turf-monster PR 575 · 1 file (docs/SOLANA.md) · CI green".
+def pr_coverage_line(row)
+  files = row[:files].to_i
+  sample = Array(row[:file_sample]).join(", ")
+  sample += ", …" if files > Array(row[:file_sample]).size
+  detail = if row[:read] == "ok"
+    "#{files} file#{"s" unless files == 1}#{sample.empty? ? "" : " (#{sample})"}"
+  else
+    "files #{row[:read].to_s.upcase}"
+  end
+  "#{row[:repo]} #{row[:pr_url].to_s[%r{/pull/\d+}].to_s.sub("/pull/", "PR ")} · #{detail} · " \
+    "CI #{row[:ci] || "not read"}"
+end
+
+# THE UNION OF EVERY RECORDED PR — the diff a multi-repo task actually ships.
+#
+# WHY A UNION AND NOT A CHOICE. The subject of this gate at the merge boundary is
+# "the code this task is asking to merge", and on a two-repo task that is both PRs.
+# Grading either one alone answers a question nobody asked; picking by DIFF ROOT
+# cannot work either, because PR files OUTRANK the git tree (resolve_branch_diff
+# returns the PR list first), so the tree loses and both roots produced the identical
+# verdict — measured on /tasks/document-burn-entry-token, 2026-09-07.
+#
+# The union is also the FAIL-CLOSED direction on every consumer: more code files means
+# more tiers demanded, a doc-only exemption that must now hold across BOTH PRs, and
+# migration detection that sees the satellite's migration as well as the hub's.
+#
+# A READ THAT DID NOT COMPLETE IS NOT A SUBSET — IT IS :incomplete. If any recorded PR
+# could not be read, the union cannot be formed, and there is nothing honest to hand
+# back: returning the repos that DID read would be this task's own defect wearing a
+# smaller number. It carries `repos_unread` so the refusal can NAME the repo it could
+# not read, which is the whole difference between a gate that is limited and a gate
+# that is lying.
+def merge_pr_file_reads(reads)
+  unread = reads.reject { |_, read| %i[ok empty].include?(read[:state]) }
+  if unread.any?
+    first = unread.first[1]
+    return { files: nil, state: :incomplete,
+             cause: first[:cause], reason: first[:reason],
+             repos_unread: unread.map do |target, read|
+               { repo: target[:repo], url: target[:url], state: read[:state].to_s,
+                 reason: read[:reason] }.compact
+             end }
+  end
+
+  files = reads.flat_map { |_, read| Array(read[:files]) }.map(&:strip).reject(&:empty?).uniq
+  files.empty? ? { files: nil, state: :empty } : { files: files, state: :ok }
+end
+
+# One target's read. A RECORDED url that is not a PR URL is a failure, not silence:
+# :no_pr means "no PR yet" (the builder's quiet pre-PR run), and a repo whose register
+# entry the gate cannot parse is a repo whose verdict cannot be obtained — which must
+# be said, not swallowed.
+def read_pr_files_for(target)
+  injected = injected_pr_files_by_repo[target[:repo]]
   return injected_pr_file_read(injected) if injected
 
-  pr = @pr_url.to_s.strip
+  unless target[:readable]
+    # NAME THE FIELD THE READER MUST EDIT. The primary and the register are different
+    # fields, and sending someone to `devops.pr_urls[]` for a malformed `devops.pr_url`
+    # is a remedy that cannot be followed — `recorded_as` is nil for the primary
+    # precisely because it did not come from the register.
+    field = target[:recorded_as] ? "devops.pr_urls[#{target[:recorded_as]}]" : "devops.pr_url"
+    return { files: nil, state: :unverified,
+             reason: "#{field} = #{target[:url].inspect} is not a GitHub pull-request URL" }
+  end
+
+  read_pr_files(target[:url])
+end
+
+# THE PER-REPO TEST SEAM, mirroring DOR_CHECK_PR_FILES for a task with several PRs:
+# a JSON object of repo => the SAME token grammar the singular seam takes (a file
+# list, "unverified", or "unreadable[:<raw gh body>]"), so the multi-repo properties
+# are driven through the REAL classifier rather than a hand-built hash. Unparseable
+# JSON is ignored rather than fatal — a broken seam must never be able to make the
+# gate pass something.
+def injected_pr_files_by_repo
+  @injected_pr_files_by_repo ||= parse_repo_seam(ENV["DOR_CHECK_PR_FILES_BY_REPO"])
+end
+
+def parse_repo_seam(raw)
+  value = raw.to_s.strip
+  return {} if value.empty?
+
+  parsed = JSON.parse(value)
+  parsed.is_a?(Hash) ? parsed.transform_keys { |key| TaskPrSet.bare_repo(key) } : {}
+rescue JSON::ParserError
+  {}
+end
+
+# ── EVERY RECORDED PR'S CI, AND THE ONE THAT GOVERNS ─────────────────────────
+#
+# The CI half of the same defect. `CiStatus.evaluate(devops["pr_url"], …)` asks ONE
+# PR whether the task is green, so on a two-repo task a RED satellite PR could sit
+# behind a GREEN hub PR and the merge gate would advance the review — the verdict
+# reading, as ever, like it covered the task.
+#
+# WORST-OF, not first-non-green: see TaskPrSet.governing. The governing entry carries
+# its own PR URL because every remedy this gate prints names a repo, and a refusal
+# about turf-monster's red CI that tells you to look at turf-vault is the same
+# cross-repo confusion in different clothes.
+def task_ci_reads
+  @task_ci_reads ||= Array(@pr_targets).map do |target|
+    { target: target,
+      ci: CiStatus.evaluate(target[:url], injected_ci_by_repo.fetch(target[:repo], ENV["DOR_CHECK_CI_STATUS"])) }
+  end
+end
+
+# The per-repo CI seam, mirroring DOR_CHECK_CI_STATUS: JSON of repo => the same token
+# grammar (green/red/pending/…, "state:<novel>", or a raw `gh pr checks --json` array).
+def injected_ci_by_repo
+  @injected_ci_by_repo ||= parse_repo_seam(ENV["DOR_CHECK_CI_STATUS_BY_REPO"])
+end
+
+# [the governing verdict, the PR URL it came from]. With no recorded PR at all this
+# is the untouched single-PR call, so a task with a blank pr_url resolves exactly as
+# it always has (:no_pr, and the allow-list refuses it review-side).
+def task_ci_verdict(devops)
+  @task_ci_verdict ||= begin
+    reads = task_ci_reads
+    if reads.empty?
+      [CiStatus.evaluate(devops["pr_url"], ENV["DOR_CHECK_CI_STATUS"]), devops["pr_url"].to_s]
+    else
+      governing = TaskPrSet.governing(reads)
+      [governing[:ci], governing[:target][:url]]
+    end
+  end
+end
+
+# The repo whose CI verdict this run is speaking about — never "whichever URL was
+# recorded first".
+def governing_ci_pr_url(devops)
+  task_ci_verdict(devops).last
+end
+
+def read_pr_files(url)
+  pr = url.to_s.strip
   return { files: nil, state: :no_pr } if pr.empty?
 
   # The REST files endpoint, NOT `gh pr view --json files` — that surface exposes
@@ -770,8 +977,18 @@ end
 # exactly this, and now they read it from one place — a top-level def cannot see the
 # `gate` / `review_role` locals, which is the same reason and the same ordering rule
 # that put @review_role beside @pr_url (see resolve_branch_diff).
+# ...AND ONE STATE REFUSES IN BOTH ROLES. The role asymmetry above is EARNED by the
+# builder standing in the PR's own worktree: there the local view is the PR's honest
+# near-twin, so the substitution costs integrity nothing and blocking every builder
+# whose App token aged past an hour would cost every handoff. That argument does not
+# survive a task with a PR in TWO repos — the builder stands in one of them, and no
+# tree on this machine is the near-twin of the other. So :incomplete (some recorded PR
+# unread; see merge_pr_file_reads) refuses submit-side too, and the single-repo
+# builder path is untouched because a one-PR task can never produce that state.
 def pr_read_refuses_verdict?
-  @review_role && !@build_gate
+  return false if @build_gate
+
+  @review_role || pr_file_read[:state] == :incomplete
 end
 
 # WHY the PR file list is missing, when the reason is a FAILURE the reader must act
@@ -795,7 +1012,26 @@ def pr_read_headline
   when :unverified
     "the PR's file list could not be read (#{read[:reason].to_s.empty? ? "gh failed" : read[:reason]}), " \
       "so this verdict did NOT read the PR"
+  when :incomplete
+    "this task has #{Array(@pr_targets).size} PRs and #{unread_repo_phrase} could not be read " \
+      "(#{read[:reason].to_s.empty? ? "gh failed" : read[:reason]}), so this verdict did NOT read the " \
+      "whole task"
   end
+end
+
+# WHICH REPOS THIS RUN COULD NOT READ, named. The point of the whole task: a gate that
+# grades a subset in silence is the disease, and a gate that grades a subset and SAYS
+# WHICH is merely limited. Every refusal below routes through this so the repo name
+# cannot go missing from one of them.
+def unread_repos
+  Array(pr_file_read[:repos_unread]).map { |entry| entry[:repo].to_s }.reject(&:empty?)
+end
+
+def unread_repo_phrase
+  repos = unread_repos
+  return "one of them" if repos.empty?
+
+  "#{repos.size == 1 ? "its" : "their"} #{repos.join(" and ")} PR#{"s" if repos.size > 1}"
 end
 
 # The full alert: the headline, what it costs, and the remedy. The caller decides
@@ -826,7 +1062,22 @@ def pr_read_alert(cert_route: true)
   headline = pr_read_headline
   return nil unless headline
 
-  if pr_file_read[:state] == :unreadable
+  if pr_file_read[:state] == :incomplete
+    # NO LOCAL STAND-IN EXISTS FOR THIS ONE, in EITHER role, and that is why it refuses
+    # where a single-repo :unreadable only warns. Submit-side the fallback survives on a
+    # one-repo task because the builder stands in that repo's own worktree, where the
+    # local view is the PR's honest near-twin. On a multi-repo task the builder stands in
+    # ONE of the repos; no tree on this machine is the near-twin of the repo they are not
+    # standing in, so substituting anything is guaranteed to describe the wrong artifact.
+    "#{headline}. A multi-repo task's diff is the UNION of its PRs, and a union missing " \
+      "#{unread_repos.empty? ? "a member" : unread_repos.join(" and ")} is not a smaller diff — it is a " \
+      "different one. Grading the PRs that DID read would be exactly the defect this gate was fixed for " \
+      "(/tasks/dor-check-reads-one-pr): one repo graded, a verdict that reads as covering the task. So the " \
+      "shape/test-tier gate is ENFORCED rather than skipped (fail-closed), in BOTH roles. Fix the read " \
+      "(#{pr_file_read[:cause] ? "a credential: " : ""}" \
+      "#{pr_file_read[:cause] ? "eval \"$(bin/gh-auth-refresh --export)\"" : "check the URL recorded in " \
+        "devops.pr_urls and re-run"}), then re-run."
+  elsif pr_file_read[:state] == :unreadable
     "#{headline}. The diff this gate judges (shape tiers, the doc-only exemption, migration detection) is the " \
       "PULL REQUEST's file list, and a refused read must never be quietly replaced by whatever tree this run is " \
       "standing in. " + CiStatus.unreadable_remedy(CiStatus.repo_from_pr_url(@pr_url),
@@ -1704,6 +1955,13 @@ review_role = options[:gate_role] == "review"
 # Feeds the :pr diff source (resolve_branch_diff). Set BEFORE the first
 # changed_files call below, which memoizes the resolution.
 @pr_url = devops["pr_url"]
+# ...and so do the TASK'S PRs, ALL of them. devops.pr_url is one PR; a task can have
+# one per repo, recorded in the devops.pr_urls register, and reading only the singular
+# is the defect this list closes: on a two-repo task the gate graded ONE repo's PR and
+# printed a verdict that read as though it covered the task. Same reason, same place,
+# same ordering rule — compute_pr_file_read and task_ci_reads are top-level defs and
+# cannot see the local above. See bin/lib/task_pr_set.rb for the measurement.
+@pr_targets = TaskPrSet.targets(devops)
 # ...and so does the ROLE: a credential-refused PR read fails closed in the review
 # role and degrades (loudly) submit-side, and resolve_branch_diff is a top-level def,
 # which cannot see the local above. Same reason, same place, same ordering rule.
@@ -1958,7 +2216,13 @@ if EXEMPT_KINDS.include?(kind)
   if gated_code_files.any?
     # fall through to the full shape/test-tier gate below.
   elsif indeterminate
-    errors_preamble = if diff_source == :pr_unreadable
+    errors_preamble = if diff_source == :pr_incomplete
+      # NOT "no diff could be observed". Diffs were observed — just not all of them,
+      # and the missing one is named. Sending this reader to their worktree would be
+      # the worst possible instruction: the repo they are standing in is precisely
+      # the one that DID read.
+      "kind: #{kind} could not be proven doc-only — #{pr_read_alert(cert_route: true)}"
+    elsif diff_source == :pr_unreadable
       # The refusal has its own voice: this run did not fail to FIND a diff, it
       # refused to accept a substitute for the one it was denied. Saying "no diff
       # could be observed" here would send the reader to their worktree, which is
@@ -2018,7 +2282,12 @@ if EXEMPT_KINDS.include?(kind)
         # refusal, which is a different fact ("the PR read was refused" vs "nothing
         # was readable anywhere") with a different remedy, and the pairing
         # (code_root, diff_source) is where a monitor can see it.
-        diff_source: diff_source == :pr_unreadable ? "pr_unreadable" : "indeterminate",
+        # The OBSERVATION is empty on every branch here, but WHY is a different fact
+        # with a different remedy, so the refusal states carry their own names rather
+        # than being flattened into "indeterminate". :pr_incomplete in particular means
+        # some PRs read and one did not — a monitor that saw "indeterminate" would look
+        # for a blind checkout and find a healthy one.
+        diff_source: %i[pr_unreadable pr_incomplete].include?(diff_source) ? diff_source.to_s : "indeterminate",
         # The pairing (code_root, diff_source) is what dor.md calls the checkable
         # invariant — and the exempt-kind payloads were the ONE verdict shape that
         # omitted the root. That is the shape the 08-08 false pass actually took, so
@@ -2029,6 +2298,12 @@ if EXEMPT_KINDS.include?(kind)
         # shapes are precisely where the false pass lived, so a monitor must be able
         # to ask "was the PR actually read?" HERE, not only on the other path.
         pr_read: pr_read_alert ? pr_file_read.slice(:state, :cause, :reason).compact : nil,
+        # THE REFUSAL WHERE COVERAGE MATTERS MOST. This is the payload a multi-repo
+        # :pr_incomplete run exits through, so "which PR could not be read?" must be
+        # answerable from the JSON here — not only from the prose in `note`. Without it
+        # a monitor can see that the run failed closed but not which repo caused it,
+        # which is half of what this refusal exists to say.
+        pr_coverage: gate == "build" ? nil : pr_coverage,
         note: errors_preamble,
         errors: [errors_preamble],
         suggestions: [],
@@ -2038,6 +2313,7 @@ if EXEMPT_KINDS.include?(kind)
     else
       title = task["title"] || task["slug"] || slug || "(task)"
       puts "✗ #{gate_label} NOT met for #{title.inspect}"
+      print_pr_coverage(gate)
       puts "  · #{errors_preamble}"
     end
     if gate_emission_enabled?(options, gate, slug)
@@ -2167,7 +2443,7 @@ if EXEMPT_KINDS.include?(kind)
     # nothing. Passing the flag DOWN instead of dropping it on the floor makes the
     # promise and the behaviour one decision: `exempt_cert_clears` is now false
     # BECAUSE the text offers no cert, not merely alongside it.
-    exempt_ci = gate == "build" ? nil : CiStatus.evaluate(devops["pr_url"], ENV["DOR_CHECK_CI_STATUS"])
+    exempt_ci = gate == "build" ? nil : task_ci_verdict(devops).first
     # WHAT ELSE IS ALREADY REFUSING THIS VERDICT, handed down so the CI refusal's own
     # closing line cannot promise that a green CI alone would carry this path. Read
     # from the SAME list the closing `refused_by` line below reads, and resolved ABOVE
@@ -2181,7 +2457,7 @@ if EXEMPT_KINDS.include?(kind)
     exempt_also_refused = exempt_pr_read_errors.empty? ? [] : [PR_READ_REFUSAL_PHRASE]
     exempt_ci_error, exempt_cert_clears, exempt_ci_notes =
       if exempt_ci
-        CiGate.verdict(exempt_ci, review_role: review_role, pr_url: devops["pr_url"],
+        CiGate.verdict(exempt_ci, review_role: review_role, pr_url: governing_ci_pr_url(devops),
                                   slug: task["slug"] || slug, cert_route: false,
                                   also_refused: exempt_also_refused)
       else
@@ -2236,6 +2512,10 @@ if EXEMPT_KINDS.include?(kind)
         code_root: diff_root,
         code_files: [],
         changed_files: observed,
+        # Same coverage rows as the gated payload. The exempt shapes are exactly where
+        # the 08-08 false pass lived, so "which PRs was this exemption proven against?"
+        # must be answerable HERE too, not only on the other path.
+        pr_coverage: gate == "build" ? nil : pr_coverage,
         # KEYED OFF THE REFUSAL, NOT OFF `suggestions`. This is how a monitor asks
         # "was the PR actually read?" of an exempt verdict after the fact — and the
         # role split above moves the alert OUT of exempt_alerts in the review role,
@@ -2260,6 +2540,7 @@ if EXEMPT_KINDS.include?(kind)
       title = task["title"] || task["slug"] || slug || "(task)"
       if exempt_ready
         puts "✓ #{gate_label} n/a for #{title.inspect} — #{note}"
+        print_pr_coverage(gate)
         # SAY BOTH HALVES. The old line said only which gate was skipped, which is
         # how "no tier was demanded" and "no CI was read" read the same in a
         # transcript. Name the tier waiver AND the CI verdict that stands behind
@@ -2268,6 +2549,7 @@ if EXEMPT_KINDS.include?(kind)
              "behavior#{exempt_ci ? "; GitHub CI: #{exempt_ci[:state].to_s.upcase}" : ""})"
       else
         puts "✗ #{gate_label} NOT met for #{title.inspect}"
+        print_pr_coverage(gate)
         exempt_errors.each { |e| puts "  - #{e}" }
         # NAME WHICH REFUSAL THIS IS. The line used to assert flatly that the refusal
         # was "the CI verdict" — true while CI was the only thing that could refuse
@@ -2296,7 +2578,7 @@ if EXEMPT_KINDS.include?(kind)
                      { "sop" => "tiers", "tier" => "waived", "result" => "pass" }]
       if exempt_ci
         exempt_sops << { "sop" => "ci", "result" => exempt_ci_result }
-          .merge(CiStatus.gate_evidence(exempt_ci, repo: CiStatus.repo_from_pr_url(devops["pr_url"])))
+          .merge(CiStatus.gate_evidence(exempt_ci, repo: CiStatus.repo_from_pr_url(governing_ci_pr_url(devops))))
       end
       emit_gate_verdict(slug, exempt_ready, options[:gate_role], exempt_sops)
     end
@@ -2469,6 +2751,10 @@ if claim_rule
       "observed diff ships #{offenders.size} file(s) that are not: #{sample} [source: #{diff_source}]. " \
       "#{offender_help} Re-shape it (#{(shapes.keys - [shape]).join(', ')}) and record that shape's tiers, or " \
       "split the #{shape} work into its own task"
+  elsif must_be && !proven && gate != "build" && diff_source == :pr_incomplete
+    # Same distinction the exempt path draws: this run did not fail to FIND a diff, it
+    # refused to grade an INCOMPLETE one. The alert names the repo it could not read.
+    errors << "shape #{shape.inspect} could not be proven #{proven_label} — #{pr_read_alert(cert_route: true)}"
   elsif must_be && !proven && gate != "build"
     errors << "shape #{shape.inspect} could not be proven #{proven_label} — NO diff could be observed " \
       "(no PR files readable, and the git tree at #{diff_root} is clean or unreadable), so the claim is " \
@@ -2600,8 +2886,14 @@ end
 # suite gate's at all" — which is its own task; the extension point is written down in
 # test/lib/dor_check_exempt_ci_test.rb's honour-the-remedy property. The exempt caller
 # passes false. No printing caller of pr_read_alert rides the default.
+# ONE FACT, READ ONCE. This site used to spell the role test inline while its twin on
+# the exempt path asked pr_read_refuses_verdict?, and two spellings of one predicate is
+# how the exempt path's two closings drifted apart in the first place. It is also now
+# load-bearing beyond the role: an :incomplete multi-repo read refuses in BOTH roles,
+# and an inline `review_role ?` here would file that refusal as a SUGGESTION — a
+# non-blocking note attached to a verdict that just failed closed.
 if gate != "build" && (alert = pr_read_alert(cert_route: true))
-  review_role ? errors << alert : suggestions << alert
+  pr_read_refuses_verdict? ? errors << alert : suggestions << alert
 end
 
 ci = nil
@@ -2609,7 +2901,7 @@ ci_error = nil            # the CI refusal, if any
 ci_error_cert_clears = false # ...and whether a FULL local cert stands in for it
 ci_review_refused = false # resolved after the suite gate; feeds the gates-card row
 if gate != "build"
-  ci = CiStatus.evaluate(devops["pr_url"], ENV["DOR_CHECK_CI_STATUS"])
+  ci = task_ci_verdict(devops).first
 
   # The case + the allow-list, both of them, live in CiGate.verdict — the exempt path
   # above asks the very same function, so neither can advance on a state the other
@@ -2621,7 +2913,7 @@ if gate != "build"
   # allowed to name `bin/full-suite-check` — and this is the path that then HONOURS
   # it. The exempt caller passes false and gets a refusal that offers nothing instead.
   ci_error, ci_error_cert_clears, ci_notes =
-    CiGate.verdict(ci, review_role: review_role, pr_url: devops["pr_url"],
+    CiGate.verdict(ci, review_role: review_role, pr_url: governing_ci_pr_url(devops),
                        slug: task["slug"] || slug, cert_route: true)
   suggestions.concat(ci_notes)
 
@@ -2936,12 +3228,18 @@ end
 # untouched: a single-repo task takes exactly the path it always did, because `owed`
 # then holds at most the primary and this loop runs zero times.
 #
-# THE BAR FOR A SECONDARY REPO IS THE FULL CERT. A fast cert is diff-mapped, and the
-# only thing that makes it sufficient anywhere is a GREEN CI on that repo's own PR —
-# which this gate does not read for a secondary repo (it reads one PR, the known gap
-# in gates/dor.md). Pairing a fast cert with a DIFFERENT repo's CI would be the same
-# cross-repo confusion this whole task is about, so the secondary bar is the one piece
-# of evidence that is self-sufficient: the full local suite + rubocop.
+# THE BAR FOR A SECONDARY REPO IS THE FULL CERT, and it STAYS the full cert. A fast
+# cert is diff-mapped, and the only thing that makes it sufficient anywhere is a GREEN
+# CI on that repo's own PR.
+#
+# The parenthetical that used to stand here — "it reads one PR, the known gap in
+# gates/dor.md" — is RETIRED: /tasks/dor-check-reads-one-pr closed that gap, and this
+# gate now reads every recorded PR (task_ci_reads) and folds them worst-of. What did
+# NOT change is this bar. Crediting a secondary repo's fast cert against its own
+# now-readable CI is a RELAXATION, and relaxing a gate is nobody's side effect: it
+# wants its own task, its own argument, and its own mutation. So the secondary bar
+# remains the one piece of evidence that is self-sufficient on its own — the full
+# local suite + rubocop.
 cert_repo_verdicts = []
 if suite_eval && gate != "build" && !suite_eval[:bypass] && suite_eval[:verifiable] &&
    ENV["DOR_CHECK_SUITE_EVIDENCE"].to_s.strip.empty?
@@ -3294,7 +3592,7 @@ when :unreadable
   # checks` manually" here would send the reader to the command that just failed.
   suggestions << "CI gate: the token was REFUSED when reading GitHub CI (#{ci[:reason]}) — status UNREADABLE, " \
     "which is NOT the same as no-CI. " \
-      "#{CiStatus.unreadable_remedy(CiStatus.repo_from_pr_url(devops["pr_url"]), cause: ci[:cause])}"
+      "#{CiStatus.unreadable_remedy(CiStatus.repo_from_pr_url(governing_ci_pr_url(devops)), cause: ci[:cause])}"
 when :unverified
   suggestions << "CI gate: couldn't read GitHub CI (#{ci[:reason]}) — status UNVERIFIED. Check `gh pr checks` " \
     "manually before the handoff."
@@ -3325,7 +3623,7 @@ if gate_emission_enabled?(options, gate, slug)
     # (provisional, never a fail), and the AUTHORITATIVE ci verdict lands on
     # `dor_review` via the review gate-zero. One verdict per gate; no DoR row
     # lingers in flight waiting on CI.
-    repo = CiStatus.repo_from_pr_url(devops["pr_url"])
+    repo = CiStatus.repo_from_pr_url(governing_ci_pr_url(devops))
     gate_sops << { "sop" => "ci", "result" => ci_gate_result }.merge(CiStatus.gate_evidence(ci, repo: repo))
   end
   emit_gate_verdict(slug, ready, options[:gate_role], gate_sops)
@@ -3358,6 +3656,11 @@ if options[:json]
     # the build gate, which resolves no diff (and must not shell `gh` to make one).
     diff_source: gate == "build" ? nil : diff_source.to_s,
     changed_files: gate == "build" ? nil : changed_files,
+    # WHICH PRs THIS VERDICT READ — one row per recorded PR, with the files it
+    # contributed and its OWN CI state. Before this existed a two-repo verdict was
+    # indistinguishable from a one-repo verdict in the JSON, which is what let a gate
+    # that graded half the work report a full one (/tasks/dor-check-reads-one-pr).
+    pr_coverage: gate == "build" ? nil : pr_coverage,
     # HOW THE PR READ WENT — the machine-readable half of the alert above, and the
     # field that makes "did this verdict grade the PR or a stand-in?" answerable from
     # the JSON alone. Present only when the read FAILED (:unreadable / :unverified);
@@ -3403,6 +3706,7 @@ title = task["title"] || task["slug"] || slug || "(task)"
 print_suggestions = -> { suggestions.each { |s| puts "  ⓘ suggestion: #{s}" } unless suggestions.empty? }
 if ready
   puts "✓ #{gate_label} met for #{title.inspect} (shape: #{shape})"
+  print_pr_coverage(gate)
   puts "  tiers green in checks_run: #{dor_tiers.join(", ")}" unless dor_tiers.empty?
   # SAY THE WAIVER OUT LOUD. A gate that skips a requirement in SILENCE reads,
   # to every human and every log scraper, exactly like a gate that enforced one
@@ -3496,6 +3800,7 @@ if ready
 end
 
 puts "✗ #{gate_label} NOT met for #{title.inspect}#{shape.empty? ? "" : " (shape: #{shape})"}"
+print_pr_coverage(gate)
 errors.each { |e| puts "  - #{e}" }
 unless missing_meta.empty?
   puts "  missing metadata:"
