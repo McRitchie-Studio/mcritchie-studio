@@ -112,6 +112,16 @@ class ReleasePresenceIntegrationTest < Minitest::Test
     nil
   end
 
+  # THE READERS' GLOB, spelled as the shipped reader spells it — and the PARSE BELOW IS
+  # BARE ON PURPOSE. Production rescues `JSON::ParserError` to `:malformed`
+  # (bin/lib/agent_presence.rb#read_claim) because a reader racing a writer must degrade
+  # rather than crash; this tier must do the OPPOSITE. A test that swallowed an
+  # unparseable claim would report a wrong count as a plain assertion failure, or as no
+  # failure at all — and it is exactly this bare parse that turned the temp-sibling
+  # defect into a named error (`JSON::ParserError: unexpected end of input at line 1
+  # column 1`, CI on PR #1259) instead of an intermittent, unattributable one. The writer
+  # now publishes through a DOTFILE sibling, so nothing this glob returns is ever
+  # mid-write; if that regresses, this line is the alarm and it stays loud.
   def claim_files(store) = Dir.glob(File.join(store, ".agents", "sessions", "*.presence-*")).sort
 
   def read_claim(store, index: 0) = JSON.parse(File.read(claim_files(store).fetch(index)))

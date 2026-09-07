@@ -858,8 +858,12 @@ yourself rather than trusting a number in a doc, which is the same discipline th
 section is arguing for:
 
 ```bash
-ls "$(cd ~/projects && pwd)/.agents/sessions" | sed 's/.*\.//' | sort | uniq -c | sort -rn
+ls -A "$(cd ~/projects && pwd)/.agents/sessions" | sed 's/.*\.//' | sort | uniq -c | sort -rn
 ```
+
+`-A` is load-bearing, not tidiness. A publish in flight is a DOTFILE
+(`.<marker>.<pid>.tmp`, see `bin/lib/session_markers.rb`), and a SIGKILLed writer
+leaves one behind — plain `ls` hides exactly the residue shape nothing reaps.
 
 A leaked marker is not distinguishable from a real one by inspection either. Residue is the
 **operator's** call to clear; the guard's job is to stop new residue, and the

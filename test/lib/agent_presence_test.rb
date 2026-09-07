@@ -473,4 +473,65 @@ class AgentPresenceTest < Minitest::Test
     end
   end
 
+
+  # --- an in-flight publish must not read as a second claim -------------------------
+
+  # THE FLAKE THIS EXISTS FOR — CI on PR #1259, attempt 1, 2026-09-07:
+  # ReleasePresenceIntegrationTest#test_two_live_conductors_are_both_published_and_both_counted
+  # died on `JSON::ParserError: unexpected end of input at line 1 column 1`.
+  #
+  # `SessionMarkers.write` publishes atomically — write a sibling, `rename(2)` over —
+  # and that is RIGHT: it closed a window measured at 4.6% torn reads. But the sibling
+  # was named "<marker path>.<pid>.tmp", the marker path PLUS A SUFFIX, and this
+  # reader's glob is `*.presence-*`. A suffix cannot escape a trailing `*`, so for the
+  # width of every publish the reader saw the published claim AND a zero-byte file it
+  # had to grade. The atomic write was never the bug; the NAME was.
+  #
+  # NOTHING HERE WAITS ON THE SCHEDULER. Both siblings are hand-made, at zero bytes,
+  # beside a real claim — the window is manufactured, not raced for, so no assertion
+  # below can pass because the timing happened to be kind.
+  def test_the_readers_glob_discriminates_an_in_flight_publishs_sibling
+    Dir.mktmpdir do |root|
+      dir = File.join(root, ".agents", "sessions")
+      FileUtils.mkdir_p(dir)
+      marker = File.join(dir, "sess.presence-ship-300")
+      File.write(marker, JSON.generate(supervisor))
+      suffixed = "#{marker}.9999.tmp"                                  # the name that flaked
+      dotted   = File.join(dir, ".#{File.basename(marker)}.9999.tmp")  # the name that ships now
+      [suffixed, dotted].each { |p| FileUtils.touch(p) }
+
+      # ANTI-VACUITY. Both siblings really are on disk and really are EMPTY; a store
+      # that held neither would satisfy every refutation below by having nothing to refute.
+      assert_equal 3, Dir.children(dir).length, "the store holds the claim and both siblings"
+      assert_equal [0, 0], [File.size(suffixed), File.size(dotted)],
+                   "a non-empty sibling cannot reproduce the parse error"
+
+      paths = AgentPresence.send(:claim_paths, root) # the SHIPPED glob, not a restatement of it
+
+      assert_includes paths, marker,
+                      "the reader must still find the published claim — a test where the glob " \
+                      "matches nothing proves nothing about what it excludes"
+      assert_includes paths, suffixed,
+                      "THE DEFECT, as the bare fact underneath it: `*.presence-*` DOES match a " \
+                      "suffixed sibling. If this line goes red the reader's glob was tightened " \
+                      "— the other valid fix — and the writer's name may only follow it back " \
+                      "once every other reader of this store has been shown to agree, including " \
+                      "the SHELL glob in test/lib/ship_test.rb"
+      refute_includes paths, dotted,
+                      "THE FIX: a dot-prefixed sibling is excluded by `Dir.glob` and by a POSIX " \
+                      "shell glob by default, so one name hides it from every reader of this " \
+                      "store at once — including readers not written yet"
+
+      # The consequence, verbatim. The integration tier parses claims BARE, which is why
+      # this surfaced as a red CI rather than as a quietly wrong headroom number.
+      err = assert_raises(JSON::ParserError) { JSON.parse(File.read(suffixed)) }
+
+      assert_equal "unexpected end of input at line 1 column 1", err.message
+
+      # And the property the fix must NOT cost us: production degrades instead of raising.
+      # A reader that can race a writer has to survive one, so this rescue stays.
+      assert_equal [:malformed, nil], AgentPresence.send(:read_claim, suffixed),
+                   "read_claim must keep rescuing JSON::ParserError to :malformed"
+    end
+  end
 end
