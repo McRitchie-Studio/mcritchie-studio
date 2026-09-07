@@ -187,19 +187,33 @@ module BaseMovementAudit
   # THE COST IS LARGER THAN THAT PARAGRAPH ADMITS, and under-disclosing it is its own
   # defect. `return [] if targets.empty?` does not merely skip the missing twin — it
   # returns BEFORE `family_tests`, so a tool whose twin is absent has NO guards at all
-  # here, siblings included. MEASURED in this repo on 2026-09-07:
+  # here, siblings included.
   #
-  #   bin/task       → test/lib/task_test.rb        MISSING → 0 guards
-  #   bin/pr-review  → test/lib/pr_review_test.rb   MISSING → 0 guards
-  #                    (pr_review_breaker_test.rb, pr_review_zap_safety_test.rb ignored)
-  #   bin/release    → test/lib/release_test.rb     MISSING → 0 guards
-  #                    (24 release_*_test.rb siblings ignored)
+  # MEASURED ACROSS THE WHOLE TREE, 2026-09-07 (not a sampled anecdote — the population,
+  # via FastCert.convention_candidates over bin/* + bin/lib/*.rb):
   #
-  # So three of this repo's busiest tools are INVISIBLE to this audit: a base commit
-  # rewriting release_ladder_test.rb while a bin/release PR is in review produces no
-  # finding. bin/dor-check's own twin EXISTS, which is the only reason the measured
-  # incident (PR #1258) was caught — the audit's headline success is a property of that
-  # one filename, not of the design.
+  #   137 tools/libs   90 have a twin and are covered   47 ARE INVISIBLE
+  #   of those 47, SEVENTEEN have sibling tests sitting right there, discarded:
+  #
+  #     bin/release      → test/lib/release_test.rb       MISSING → 23 siblings dropped
+  #     bin/task         → test/lib/task_test.rb          MISSING →  9 siblings dropped
+  #     bin/devops-shift → test/lib/devops_shift_test.rb  MISSING →  4 siblings dropped
+  #     bin/pr-review    → test/lib/pr_review_test.rb     MISSING →  2 siblings dropped
+  #     …plus 13 more with 1-2 each.
+  #
+  # So a base commit rewriting release_ladder_test.rb while a bin/release PR is in
+  # review produces NO finding. That is a third of this repo's tooling, not a corner.
+  #
+  # THIS FILE'S OWN NEIGHBOUR IS ONE OF THEM, which is the honest way to read the
+  # number: bin/lib/ci_gate.rb has no test/lib/ci_gate_test.rb, so it is invisible here
+  # too — and it is graded in practice by dor_check_exempt_ci_test.rb and
+  # dor_check_base_movement_test.rb, whose stems the family hop would not reach even if
+  # the early return were removed. The PR that introduced this paragraph changed
+  # ci_gate.rb, so this audit could not have protected its own diff.
+  #
+  # bin/dor-check's twin EXISTS, which is the only reason the measured incident
+  # (PR #1258) was caught — the audit's headline success is a property of that one
+  # filename, not of the design.
   #
   # Still left as-is, for the reason above (the two readings of an absent twin are not
   # separable by filename), but the reader is now told WHICH tools that silence covers
