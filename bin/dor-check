@@ -3149,14 +3149,14 @@ if gate != "build"
         "<reason>'"
     else
       suggestions << "BROWSER-EVIDENCE HOLE (reported, not blocking): this diff adds #{programs.size} " \
-        "browser program(s) — #{sample}#{more} — and THIS REPO HAS NO BROWSER LANE (no e2e/ and no " \
-        "config/e2e_lane.yml, which is exactly what lane_present? reads), so there is no evidence to " \
-        "demand and refusing would be a refusal with no remedy. Two of the three defects that motivated " \
-        "this gate slipped through this same hole. The remedy is to STAND A LANE UP, and there is a " \
-        "worked example: studio-engine did it on 2026-08-12 with a playwright.config.js pointing at " \
-        "e2e/ plus a CI job that runs it, and this branch became a BLOCK for that repo the day the " \
-        "directory landed — no change to this gate. Until this repo has one, a reviewer opening a " \
-        "browser is the only thing between this code and production."
+        "browser program(s) — #{sample}#{more} — and THIS REPO HAS NO BROWSER LANE: it carries neither " \
+        "an e2e/ directory nor a config/e2e_lane.yml, which is the pair lane_present? reads off disk on " \
+        "every run. So there is no evidence to demand, and refusing would be a refusal with no remedy. " \
+        "Two of the three defects that motivated this gate slipped through this same hole. The remedy " \
+        "is to STAND A LANE UP, and it has been done before: studio-engine added one on 2026-08-12 — a " \
+        "playwright.config.js with testDir e2e/, plus a CI job that runs it — and this gate began " \
+        "BLOCKING there the day that directory landed, with no edit to bin/dor-check. Until this repo " \
+        "has a lane, a reviewer opening a browser is the only thing between this code and production."
     end
   end
 

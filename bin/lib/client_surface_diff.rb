@@ -501,8 +501,16 @@ module ClientSurfaceDiff
   # repo cannot produce: where a repo has no lane, blocking would be a refusal with
   # no remedy, which is the definition of the over-refusal this design rejects.
   # Where there is no lane the finding REPORTS instead, naming the missing lane as
-  # the reason. studio-engine was the motivating example of a laneless repo and is
-  # NO LONGER ONE — it grew its own e2e/ lane on 2026-08-12; see item 3 below.
+  # the reason.
+  #
+  # THE QUESTION IS ASKED OF THE FILESYSTEM, ON EVERY RUN, AND NEVER OF A REPO NAME
+  # (the two File checks below are the whole implementation). A repo therefore moves
+  # between the REPORT branch and the BLOCKING one the moment its markers appear or
+  # vanish, with no edit here — and that is also why a COMMENT naming a particular
+  # repo rots while this code stays right. studio-engine was the motivating laneless
+  # repo and stopped being one on 2026-08-12; see item 3 below. Name the condition,
+  # not the repo.
+  #
   # SHOULD AN ENGINE-SIDE CLIENT DIFF BE GATED ON THE CONSUMER'S LANE? NO — JUDGED,
   # NOT DEFERRED.
   #
@@ -532,7 +540,7 @@ module ClientSurfaceDiff
   #      the reasoning is kept rather than deleted.
   #
   # So the cross-repo gate was not filed as "later" — it was refused, and the work it
-  # was standing in for was the engine's own lane, which now exists.
+  # was standing in for was the engine's own lane, which was built.
   def self.lane_present?(root = ".")
     File.directory?(File.join(root.to_s, "e2e")) ||
       File.exist?(File.join(root.to_s, "config", "e2e_lane.yml"))
