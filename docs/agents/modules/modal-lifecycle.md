@@ -21,17 +21,28 @@ card that needs it.
 | **studio-engine** | BASE chrome — the modal host, the blocks, the templates, the living style guide. **Ships no wallet UI.** | every app |
 | **solana-studio** | The WEB3 add — wallet connect, step-up, network mismatch, the deep-link partial | only the web3 apps |
 
-**Three of the six apps mounting studio-engine bundle no solana-studio.** A
-wallet-shaped primitive placed in the engine is a missing-template 500 for those
-three the moment anything renders it. The style guide already resolves this at
-RUNTIME rather than build time — it asks
-`lookup_context.exists?("wallet_connect", ["solana_studio/modals"], true)` and
-lists gem-backed specimens as unopenable where the gem is absent.
+**Only turf-monster bundles solana-studio.** Measured from the lockfiles
+2026-09-06: acquisition-studio, mcritchie-industries, moms-app and
+**mcritchie-studio itself** do not. So a primitive that needs the gem and lands in
+the engine is a missing-template 500 for four of the five apps — including the
+hub. The style guide already resolves this at RUNTIME rather than build time: it
+asks `lookup_context.exists?("wallet_connect", ["solana_studio/modals"], true)`
+and lists gem-backed specimens as unopenable where the gem is absent.
 
-So the target gem is decidable, not a judgment call:
+**The test is DEPENDENCY, not subject matter**, and that distinction is the whole
+rule:
 
-- Does it name, detect, sign with, or depict a **wallet or chain**? → **solana-studio**
-- Otherwise → **studio-engine**
+- Does it need **solana-studio code at render or runtime**? → **solana-studio**
+- Does it render entirely from **caller-supplied locals**? → **studio-engine**
+
+A subject-matter rule ("anything wallet-shaped goes to solana-studio") reads
+better and is wrong: the engine already owns `blocks/_wallet_brand_sprite`, whose
+header says OWNED BY THE ENGINE while it depicts Phantom, Solflare and Backpack —
+plus `blocks/_solana_tx_link` and `blocks/_onchain_success`. All three draw
+chain-shaped things from locals and need no gem, so they belong exactly where they
+are. A rule that needs three memorised exceptions is the judgment call it claims
+to remove; the dependency test classifies all of them without one, and it
+reproduces the real constraint, because only a gem dependency can 500 a base app.
 
 ## Building a new modal — day one
 
@@ -53,8 +64,10 @@ Four rules that are not style preferences — each has cost real breakage:
    keeps exactly one child. A sibling of the root is dropped silently — including a
    sprite whose `<use>` then paints nothing, with no error anywhere.
 2. **Never re-draw a block.** If `close_x` exists, render it. `_wallet_setup`
-   hand-rolled its close mark for eight months while the engine homed the identical
-   mark for eight other modals; the shapes drifted because nothing made them share.
+   hand-rolled its close mark from 2026-08-11 until 2026-09-05 while the engine
+   homed the identical mark for eight other modals from 2026-08-25; the shapes
+   drifted because nothing made them share. (A comment in that file says "eight
+   months"; the dates say 25 days. The point stands, the number did not.)
 3. **Specimens show STRUCTURE, never VALUES.** When adopting a primitive, take
    every value — icon, label, data hook — from the markup you are REPLACING. An
    adopter once carried a specimen's `U+1F39F` across where the app had always
@@ -80,8 +93,9 @@ negating a guard, `||`→`&&`, and `throw`→`console.warn`.
 
 Promote when **either** is true, and not before:
 
-- **A second app needs the same shape.** One consumer is a modal; two is a
-  primitive.
+- **A second app has ALREADY rendered the same shape.** Not "will need" — a
+  forecast is the judgment this rule exists to remove. One consumer is a modal;
+  two that both ship it is a primitive.
 - **The same markup exists three times in one app.** Three is where copies stop
   being noticed. Waiting for ten is how ten happened.
 
@@ -99,10 +113,20 @@ composes, not the whole modal.
 The fast lane cannot drive gems (`bin/task begin` refuses on all of them), so the
 gem half is hand-branched.
 
+**The gem half is a task like any other.** There is no size exemption for a gem,
+and `bin/task begin` refusing one is not permission to skip the board — `begin`
+cannot allocate the WORKTREE, but `bin/task create` works, and
+`config/feature_shapes.yml` ships a `library` shape for exactly this (tiers:
+unit + integration, where integration means the consumer CI suite passes in both
+consuming apps). Cut the desk by hand with `git worktree add`.
+
 ```bash
-# 1. GEM — branch by hand off the shared base
+# 1. GEM — its own task, hand-cut desk off the shared base
+cd /Users/alex/projects/mcritchie-studio
+bin/task create --title "<3-5 words>" --repo <studio-engine|solana-studio> \
+  --kind chore --shape library --agent <soul> --no-claim
 cd /Users/alex/projects/<studio-engine|solana-studio>
-git fetch origin && git checkout -b feat/<slug> origin/accepted
+git fetch origin && git worktree add .worktrees/<slug> -b feat/<slug> origin/accepted
 #    move the partial to studio/modals/blocks/_<name>.html.erb (or
 #    solana_studio/modals/), giving it LOCALS for everything the consumers differ on
 #    add a specimen: app/views/style/modals/_ds_<name>.html.erb, registered in
@@ -113,6 +137,9 @@ git fetch origin && git checkout -b feat/<slug> origin/accepted
 cd /Users/alex/projects/mcritchie-studio
 bin/task begin --title "Adopt <Name> Primitive" --repo <app> --agent <soul> \
   --kind chore --shape ui-only
+#    declare `dependencies: [<gem-task>]` so the release sequences the gem first
+#    — the qa-release sweep publishes gem versions and bumps consumer LOCKS
+#    itself; the Gemfile FLOOR pin is still a human decision
 #    bump the Gemfile pin AND record WHY in the pin comment — the floor is what
 #    broke below it, not the number
 #    replace the local markup with a render call, DELETE the local copy
