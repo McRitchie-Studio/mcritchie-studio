@@ -319,23 +319,80 @@ class CertRootGuardTest < Minitest::Test
     end
   end
 
+  # Dir.mktmpdir names its directory `d<date>-<pid>-<rand(0x100000000).to_s(36)>`, so
+  # the tail is one to seven characters of [0-9a-z], and 1 draw in 1296 ends in "cd".
+  # Pin the shapes instead of drawing one: the adversarial name is a FIXTURE here, so
+  # this case can never again pass on a lucky suffix.
+  NO_DESK_ROOT_SHAPES = %w[
+    d20260906-5403-f4hejq
+    d20260906-5403-f4hecd
+    d20260906-5403-cd
+    d20260906-5403-cdcd
+    cd
+  ].freeze
+
+  # The no-desk refusal must carry no `cd <path>` INSTRUCTION — cd_advice's shape,
+  # which is honest only when a desk exists. Test that intent, not a bare "cd "
+  # substring. The message is REQUIRED to name the root it searched, and a root whose
+  # name ends in "cd" then supplies "cd " for free: on 2026-09-06 that collision
+  # failed shard 2/4 and red-sealed the studio-engine 0.69.5 publish. Redact the
+  # strings we asked the message to interpolate, then hold the line on everything
+  # else. Returns the redacted text so a caller can prove the redaction took only that.
+  # Pass EVERY path the message was asked to interpolate. A missed one re-opens the
+  # very collision this helper closes, at that path's own draw rate.
+  def refute_cd_instruction(message, *interpolated)
+    residue = interpolated.reduce(message.to_s.dup) do |text, value|
+      text.gsub(value.to_s, "<interpolated>")
+    end
+    refute_includes residue, "cd ", "there is nowhere to cd; do not invent a destination"
+    residue
+  end
+
   def test_no_desk_in_either_layout_still_refuses_and_says_which_layouts_it_searched
     # FAIL CLOSED is the half a second glob must not cost. A desk found at NEITHER
     # path is still a refusal, and the text now says so positively instead of leaving
     # the reader to infer it from a missing line.
-    Dir.mktmpdir do |empty|
-      with_git_repo do |primary|
-        found = CertRootGuard.assess(task_bin: write_task_stub(nil), slug: "task-x",
-                                     root: primary, projects_dir: empty)
-        refute_nil found, "no desk anywhere is still not-the-task's-tree"
-        assert_nil found[:resolved_root], "inventing a path here would be the fail-GREEN"
-        assert_empty found[:candidate_roots]
-        assert_includes found[:message], "No desk for task-x exists"
-        assert_includes found[:message], empty, "name the root that was searched"
-        assert_includes found[:message], "<repo>/.worktrees/task-x", "name the managed layout"
-        assert_includes found[:message], "<repo>.worktrees/task-x", "name the sibling layout"
-        refute_includes found[:message], "cd ", "there is nowhere to cd; do not invent a destination"
+    stub = write_task_stub(nil)
+    Dir.mktmpdir do |parent|
+      # The message interpolates TWO paths: the projects_dir it searched AND the root
+      # this run stands in (refusal_message's "this run roots at #{root}"). BOTH carry
+      # the cd-tail collision, so pinning and redacting only the first leaves the flake
+      # live at half the rate. Pin the root's name too — a fixture in both positions.
+      with_git_repo(dir: File.join(parent, "d20260906-5403-r00tcd")) do |primary|
+        NO_DESK_ROOT_SHAPES.each do |name|
+          empty = File.join(parent, name)
+          FileUtils.mkdir_p(empty)
+          found = CertRootGuard.assess(task_bin: stub, slug: "task-x",
+                                       root: primary, projects_dir: empty)
+          refute_nil found, "no desk anywhere is still not-the-task's-tree (#{name})"
+          assert_nil found[:resolved_root], "inventing a path here would be the fail-GREEN (#{name})"
+          assert_empty found[:candidate_roots], name
+          assert_includes found[:message], "No desk for task-x exists", name
+          assert_includes found[:message], empty, "name the root that was searched (#{name})"
+          assert_includes found[:message], "<repo>/.worktrees/task-x", "name the managed layout (#{name})"
+          assert_includes found[:message], "<repo>.worktrees/task-x", "name the sibling layout (#{name})"
+          refute_cd_instruction(found[:message], empty, primary)
+        end
       end
+    end
+  end
+
+  def test_the_no_desk_refusal_still_refuses_an_invented_destination
+    # [control] The scoped refutation must still redden on a genuine `cd <path>`
+    # suggestion. That is the behaviour it exists to prevent, and the reason deleting
+    # either half of the pair above would be the wrong fix: one names the searched
+    # root, the other bans an invented destination, and both survive. Driven through
+    # the REAL guidance builders so the control tracks the production wording.
+    root = "/tmp/d20260906-5403-f4hecd" # the mktmpdir shape that red-sealed 0.69.5
+    benign = CertRootGuard.no_desk_advice("task-x", root)
+
+    assert_includes benign, "cd ", "premise: naming this root puts 'cd ' in the text for free"
+    assert_equal benign.gsub(root, "<interpolated>"), refute_cd_instruction(benign, root),
+                 "the redaction must take the interpolated root and nothing else"
+
+    invented = "#{benign} #{CertRootGuard.cd_advice(root)}"
+    assert_raises(Minitest::Assertion, "a real cd suggestion must still fail the case") do
+      refute_cd_instruction(invented, root)
     end
   end
 
