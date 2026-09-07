@@ -338,6 +338,8 @@ class CertRootGuardTest < Minitest::Test
   # failed shard 2/4 and red-sealed the studio-engine 0.69.5 publish. Redact the
   # strings we asked the message to interpolate, then hold the line on everything
   # else. Returns the redacted text so a caller can prove the redaction took only that.
+  # Pass EVERY path the message was asked to interpolate. A missed one re-opens the
+  # very collision this helper closes, at that path's own draw rate.
   def refute_cd_instruction(message, *interpolated)
     residue = interpolated.reduce(message.to_s.dup) do |text, value|
       text.gsub(value.to_s, "<interpolated>")
@@ -352,7 +354,11 @@ class CertRootGuardTest < Minitest::Test
     # the reader to infer it from a missing line.
     stub = write_task_stub(nil)
     Dir.mktmpdir do |parent|
-      with_git_repo do |primary|
+      # The message interpolates TWO paths: the projects_dir it searched AND the root
+      # this run stands in (refusal_message's "this run roots at #{root}"). BOTH carry
+      # the cd-tail collision, so pinning and redacting only the first leaves the flake
+      # live at half the rate. Pin the root's name too — a fixture in both positions.
+      with_git_repo(dir: File.join(parent, "d20260906-5403-r00tcd")) do |primary|
         NO_DESK_ROOT_SHAPES.each do |name|
           empty = File.join(parent, name)
           FileUtils.mkdir_p(empty)
@@ -365,7 +371,7 @@ class CertRootGuardTest < Minitest::Test
           assert_includes found[:message], empty, "name the root that was searched (#{name})"
           assert_includes found[:message], "<repo>/.worktrees/task-x", "name the managed layout (#{name})"
           assert_includes found[:message], "<repo>.worktrees/task-x", "name the sibling layout (#{name})"
-          refute_cd_instruction(found[:message], empty)
+          refute_cd_instruction(found[:message], empty, primary)
         end
       end
     end
