@@ -110,9 +110,12 @@ Four rules that are not style preferences — each has cost real breakage:
    adopter once carried a specimen's `U+1F39F` across where the app had always
    drawn `U+1F3AB`, landing the wrong glyph on the primary rail of a payment card.
    CI was 6/6 green and no assertion anywhere pinned it.
-4. **Register a specimen the same day.** A consumer modal with no entry in
+4. **Card it on the guide the same day.** A consumer modal with no entry in
    `/admin/style#modals` is invisible to the design system: nobody browsing the
-   guide learns it exists, and the next person builds it again. See below.
+   guide learns it exists, and the next person builds it again. Your app's own
+   cards go in your app's own section — see **Your app's section on the guide**
+   below. A modal that has GRADUATED is carded by the gem instead, in the
+   procedure further down.
 
 ### Testing a modal, honestly
 
@@ -125,6 +128,54 @@ negating a guard, `||`→`&&`, and `throw`→`console.warn`.
 - **Behaviour in inlined JS** — only an e2e spec sees it. If you cannot afford
   one, say the coverage is structural and do NOT report it as mutation-checked.
 - When you do mutate, **negate and reorder**, never only delete.
+
+## Your app's section on the guide
+
+**Do not put a copy of your card in the gem to make it visible.** Until
+studio-engine 0.72.0 there was no other way, and the cost is now measured
+(2026-09-07, against 0.72.0): of the 26 specimens in `style/modals/`, **20 are
+second copies of cards a consumer owns, and 18 of those 20 have already drifted**
+from the card that ships. `wallet_setup` is the worst — 214 copy fragments the
+real card has and the specimen does not,
+plus a two-arm fork rendered as one arm, so the guide could only ever show the
+half that refuses the user. Rule 3 above exists because of exactly this.
+
+An app carries its own section instead. Define one file:
+
+```
+app/views/style/host/_modals.html.erb
+```
+
+Defining it IS the registration — the guide finds it with the same three-term
+`lookup_context.exists?("modals", ["style/host"], true)` the modal host uses for
+`modals/_host_extras`. No initializer, no list to append to. An app that ships no
+such file gets a byte-identical page: no section, no heading, no nav pill.
+
+**The gem keeps dictating the structure.** `style/_host.html.erb` renders the
+section, the `#host-modals` anchor, the heading and the nav pill; your partial
+supplies specimen cards and nothing else.
+
+**Trigger `$store.modals`, not `dsModals` — the distinction is the whole point.**
+The guide's own Modals section needs a page-scoped store because its specimens
+carry the ENGINE's ids, which your layout host has no registration for; pushing
+one there paints an empty card behind the specimen. **Your** ids ARE registered in
+your layout host, so opening one there renders the REAL production card. That is
+what makes a host section a review surface rather than a lookalike: there is no
+second file to drift, because there is no second file.
+
+```erb
+<button type="button" @click="$store.modals.open('wallet-setup', { detected: true })">
+```
+
+The consumer contract lives in the doc comment on studio-engine's
+`app/views/style/_host.html.erb`. Read it before writing the partial.
+
+> **Unresolved, and left alone on purpose:** the `_ds_` prefix does not currently
+> mark what people say it marks. `_ds_close_x` and `_ds_rail_row` demo
+> engine-owned blocks, while turf-owned `_cosign_rejected` and `_quest_success`
+> are plain-named — the opposite of "`_ds_` means app-specific". This module
+> leaves the prefix alone, because a doc that redefines a convention the code contradicts
+> just adds another disagreement. Treat the prefix as undecided.
 
 ## The graduation trigger
 
@@ -258,4 +309,5 @@ set in one call.
 `building-sop.md` covers the feature-agent build flow; this module is the modal
 specialisation of it. The design system itself is the living style guide at
 `/admin/style#modals`, which is the catalogue — read it before building a modal,
-and add to it after.
+and add to it after: your app's own cards through its host section, a graduated
+primitive through the gem.
