@@ -212,6 +212,17 @@ the original measurement rather than by argument: a reader thread watching a
 200 KB marker under a rewriting writer observed it at ZERO BYTES under the old
 write and never under the new one (`test/lib/session_markers_test.rb`).
 
+**And the in-flight sibling is a DOTFILE, which is part of that publish, not a
+detail of it.** The first cut named it `<marker path>.<pid>.tmp` — the marker path
+plus a suffix — so the `*.presence-*` glob on this page matched it, and the window
+the rename closed on the marker path reopened on a name every reader still saw. For
+the width of each write the reader reported one extra, zero-byte claim (graded
+`:malformed`), and the integration tier, which parses claims bare, died on
+`JSON::ParserError` (CI, PR #1259, 2026-09-07). `Dir.glob` and POSIX shell globs
+both skip names beginning with `.`, so the dot hides the sibling from every reader
+of this store at once — which is why the fix is one name rather than six globs. A
+reader that wants to see transient siblings must opt in (`File::FNM_DOTMATCH`).
+
 ---
 
 ## 5. The four facts
