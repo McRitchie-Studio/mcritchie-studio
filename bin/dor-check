@@ -3149,10 +3149,13 @@ if gate != "build"
         "<reason>'"
     else
       suggestions << "BROWSER-EVIDENCE HOLE (reported, not blocking): this diff adds #{programs.size} " \
-        "browser program(s) — #{sample}#{more} — and THIS REPO HAS NO BROWSER LANE (no e2e/, and its CI " \
-        "runs no browser), so there is no evidence to demand and refusing would be a refusal with no " \
-        "remedy. Two of the three defects that motivated this gate were exactly here. Standing the lane " \
-        "up is tracked at /tasks/stand-up-engine-browser-lane; until it exists, a reviewer opening a " \
+        "browser program(s) — #{sample}#{more} — and THIS REPO HAS NO BROWSER LANE (no e2e/ and no " \
+        "config/e2e_lane.yml, which is exactly what lane_present? reads), so there is no evidence to " \
+        "demand and refusing would be a refusal with no remedy. Two of the three defects that motivated " \
+        "this gate slipped through this same hole. The remedy is to STAND A LANE UP, and there is a " \
+        "worked example: studio-engine did it on 2026-08-12 with a playwright.config.js pointing at " \
+        "e2e/ plus a CI job that runs it, and this branch became a BLOCK for that repo the day the " \
+        "directory landed — no change to this gate. Until this repo has one, a reviewer opening a " \
         "browser is the only thing between this code and production."
     end
   end

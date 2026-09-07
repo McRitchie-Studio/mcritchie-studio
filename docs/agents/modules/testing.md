@@ -237,14 +237,13 @@ most needed standing up. Where a repo genuinely has NO lane, the gate still
 reports rather than blocks: demanding evidence a repo cannot produce is a refusal
 with no remedy.
 
-**If you grep, you will still find the old claim in two places** —
-`bin/dor-check`'s report-branch message and comments in
-`bin/lib/client_surface_diff.rb`, both of which still describe the engine as
-laneless and cite `/tasks/stand-up-engine-browser-lane` (a task that is now
-ARCHIVED, because the lane it tracked was built). Neither changes what the gate
-DOES, since the branch they sit in no longer fires for the engine. Re-tensing them
-is filed as `/tasks/refresh-stale-lane-prose`; until it lands, **this paragraph is
-the correct copy.**
+**That prose has now been re-tensed at its source.** `bin/dor-check`'s
+report-branch message and the comments in `bin/lib/client_surface_diff.rb` no
+longer describe the engine as laneless, and no gate message cites the archived
+task that once tracked standing the lane up. The report branch itself is
+unchanged and still fires — for a repo that genuinely has no lane, which is all
+it ever meant. It now offers the engine as the worked example of CLOSING that
+hole rather than as an instance of it.
 
 **The escape hatch is a record**, like `[full-suite-bypass]`:
 `bin/task update <task> --checks "[browser-bypass] <reason>"` is honored and flagged
