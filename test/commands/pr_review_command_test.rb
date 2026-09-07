@@ -587,6 +587,55 @@ class PrReviewCommandTest < Minitest::Test
     end
   end
 
+  # The LIGHT's spawn prompt is the most reachable place a light can be told it may
+  # spend the task's bounce — it arrives inside its own instructions, so the light need
+  # not navigate anywhere to read it. It once said "any reviewer can still block on a
+  # defect", which is the exact write ReviewVerdictGate now REFUSES with exit 11, and it
+  # said "primary/supervisor" while the next paragraph of the same prompt says there is
+  # NO supervisor on this lane. This pins the corrected wording against both regressions.
+  #
+  # The prompts are keyed by their own `Role:` line rather than by soul, so the guard
+  # survives reviewer-select handing the light seat to a different domain agent.
+  def test_light_prompt_refuses_the_bounce_and_names_the_note_path
+    newest = task("bounce-guard", created_at: "2026-06-29T12:00:00Z")
+    reviewed = task("bounce-guard", created_at: "2026-06-29T12:00:00Z",
+                                    reports: [report("carl", "merge-ready"), report("shannon", "merge-ready")])
+    write_snapshots(snapshot([newest]), snapshot([reviewed]))
+
+    _out, err, status = run_heartbeat("--once")
+    assert status.success?, err
+
+    prompts = prompt_files_by_reviewer.values
+    light = prompts.find { |p| p.include?("Role: light") }
+    primary = prompts.find { |p| p.include?("Role: primary") }
+    refute_nil light, "expected a prompt carrying the light role"
+    refute_nil primary, "expected a prompt carrying the primary role"
+
+    # 1. The grant is gone. This is the assertion that bites when the old string returns.
+    refute_match(/any reviewer can\s+(still\s+)?block/i, light,
+                 "the light prompt must not grant the block ReviewVerdictGate refuses with exit 11")
+    refute_match(%r{primary/supervisor}i, light,
+                 "there is NO supervisor on this lane — the same prompt says so two paragraphs later")
+
+    # 2. The prohibition is stated WITH ITS CONDITION. ReviewVerdictGate gates only
+    #    `--kind rework`, and only during a live claim held by another soul; a flat
+    #    "a light may not block" would be wrong in three of its six verdicts.
+    assert_includes light, "do NOT run `bin/task block` on this task",
+                    "the light prompt must state the prohibition it is gated by"
+    assert_includes light, "`--kind rework` block by any soul other than the claim's holder",
+                    "the prohibition must carry its CONDITION, not read as a flat rule"
+    assert_includes light, "exit 11",
+                    "the light prompt must name the exit code it will hit"
+
+    # 3. The legitimate path is named, so the prompt says what to DO, not only what not to.
+    assert_includes light, "bin/task note bounce-guard --comment",
+                    "the light prompt must name the note path that records a finding without a bounce"
+
+    # 4. The fix must not disarm the verdict OWNER.
+    assert_includes primary, "DRIVE the verdict",
+                    "the primary is still the review owner and must still be told so"
+  end
+
   def test_run_mode_delivers_narration_instructions_to_each_spawned_reviewer
     task_record = task("narrated-run", created_at: "2026-06-29T12:00:00Z")
     reviewed = task("narrated-run", created_at: "2026-06-29T12:00:00Z",

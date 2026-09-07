@@ -24,10 +24,16 @@ require_relative "claim_holder"
 # ESCALATION without a primary ever having blocked it, and locks the one agent who
 # holds the verdict out of recording it.
 #
-# THE GAP IS ENFORCEMENT, NOT DOCUMENTATION. pr-review-light.md already says the light
-# does not drive the verdict, and the light in the incident was additionally briefed in
-# its prompt with the prohibition spelled out. Prose did not hold, so the rule moves to
-# where it cannot be walked around: the write itself.
+# THE GAP IS ENFORCEMENT, NOT DOCUMENTATION — though not because the prose was right and
+# simply ignored. pr-review-light.md already said the light does not drive the verdict,
+# while the light's OWN SPAWN PROMPT (bin/pr-review, reviewer_prompt) told it the
+# opposite: "any reviewer can still block on a defect", handed to it inside its own
+# instructions. The light was briefed BOTH ways and acted on the grant it was given.
+# That prompt now states the prohibition and names `bin/task note` as the path instead,
+# and a guard test pins it (test/commands/pr_review_command_test.rb) — but the lesson is
+# stronger for the correction, not weaker: prose that contradicts itself across two files
+# cannot hold, and which file an agent happens to read must not decide who spends the
+# bounce. So the rule moves to where it cannot be walked around: the write itself.
 #
 # ═══ WHY THIS IS KEYED ON THE SOUL AND NOT ON THE LEASE ═══
 #
