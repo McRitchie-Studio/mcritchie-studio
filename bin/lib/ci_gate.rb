@@ -120,12 +120,30 @@ module CiGate
                       # branches away would leave this method contradicting itself,
                       # which is the defect family the whole file is about. Empty
                       # prints the original, to the byte.
+                      #
+                      # BOTH BRANCHES ARE PINNED BY MUTATION, and until
+                      # /tasks/fence-the-widened-closing neither was. This derivation
+                      # shipped with the twin in CiStatus.unreadable_remedy, whose two
+                      # branches ARE fenced; forcing THIS one to print either wording
+                      # unconditionally left the suite green at 41 runs / 391 assertions.
+                      # A derivation nothing pins is a constant that has not been
+                      # noticed yet — so the same deliberate pair now drives
+                      # unread_ci_refusal directly AND through bin/dor-check, which is
+                      # what hands the list down (see test/lib/dor_check_exempt_ci_test.rb).
+                      #
+                      # THE CO-FIRE CLAUSE IS INDEPENDENT, not relative, and that is a
+                      # correctness fix rather than a preference. It used to end
+                      # "..., which green does not clear" — and `also_refused` arrives
+                      # as a NOUN PHRASE ending in "the artifact this gate judges", so
+                      # the pronoun attached to the ARTIFACT and said green does not
+                      # clear the artifact. The twin next door already says it
+                      # properly: "..., and no CI result clears that."
                       no_verdict_close = if also_refused.empty?
                                            "Green is the only thing that advances it."
                                          else
                                            "Green is NECESSARY AND NOT SUFFICIENT here: this verdict is " \
-                                             "ALSO refused by #{also_refused.join(' AND ')}, which green " \
-                                             "does not clear."
+                                             "ALSO refused by #{also_refused.join(' AND ')}, and no CI " \
+                                             "result clears that."
                                          end
                       " But no local cert stands in for it here: this is the doc-only path, where the " \
                         "shape/test-tier gate is already waived, so there is no suite to substitute — " \
@@ -147,8 +165,18 @@ module CiGate
     else
       # THE POINT OF THE ALLOW-LIST. A state nobody has classified is not evidence of
       # health; it is evidence that this gate is out of date with ci_status.rb.
-      ["GitHub CI reported #{ci[:state].to_s.upcase}, a state this gate does not classify — the review gate-zero " \
-       "advances on a GREEN CI and nothing else, so an unclassified verdict REFUSES rather than falling through " \
+      #
+      # SCOPED TO THE CI STATE, deliberately. This branch used to argue from "the
+      # review gate-zero advances on a GREEN CI and nothing else" — the same false
+      # sufficiency claim PR #1225 falsified two branches up, borrowed here to justify
+      # a refusal that only ever needed NECESSITY. The argument is unchanged and the
+      # verdict is unchanged; the sentence now claims only what the allow-list below
+      # actually enforces, which is that :green is its sole passing CI STATE. Green
+      # does not advance the gate — the shape, tier and PR-read gates each refuse on a
+      # fully green CI — and a refusal that overstates its own rule teaches the reader
+      # to distrust the next one.
+      ["GitHub CI reported #{ci[:state].to_s.upcase}, a state this gate does not classify — GREEN is the only CI " \
+       "state that advances a review, so an unclassified verdict REFUSES rather than falling through " \
        "to `ready`. Falling through is the bug this allow-list exists to prevent: a blank pr_url once exited 0 " \
        "with no CI line at all. Classify #{ci[:state].inspect} in bin/dor-check's CI gate and in " \
        "bin/lib/ci_status.rb's header, then re-run.", false]

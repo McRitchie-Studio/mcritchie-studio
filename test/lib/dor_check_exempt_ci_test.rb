@@ -1092,4 +1092,248 @@ class DorCheckExemptCiTest < Minitest::Test
                  "the PR-read refusal phrase must exist ONCE in bin/dor-check, as PR_READ_REFUSAL_PHRASE — " \
                  "the refused_by line and the also_refused list must both read that constant"
   end
+
+  # ── the WIDENED half of that closing line (/tasks/fence-the-widened-closing) ─
+  #
+  # WHAT WAS MISSING, and it is a fence rather than a defect. The task above fixed the
+  # sufficiency claim in CiStatus.unreadable_remedy AND deliberately WIDENED to its
+  # twin in bin/lib/ci_gate.rb's :none/:unverified branch — the same promise, the same
+  # role, the same path, reached with a different CI state. The behaviour that shipped
+  # is correct. Only the fence stopped at the file boundary: forcing
+  # `no_verdict_close` to print the co-fire wording ALWAYS, and then the original
+  # wording ALWAYS, left this suite green at 41 runs / 391 assertions / 0 failures,
+  # while the equivalent pair on the ci_status half killed both. A derivation nothing
+  # pins is a constant nobody has noticed yet, and the next reader is free to
+  # "simplify" it back into the sentence PR #1225 falsified.
+  #
+  # SO THE PAIR IS DELIBERATE, exactly as it is next door: the two tests below differ
+  # by ONE input — whether anything else is refusing this verdict — because that is
+  # the only input the sentence is allowed to depend on. Rewording it unconditionally
+  # would change what operators read on every NON-co-fire refusal, which is most of
+  # this branch's traffic, and that is a second defect wearing the first one's clothes.
+  #
+  # AND THE PAIR IS RUN TWICE, at two grains, for the reason the ci_status half
+  # learned the hard way: CiGate can format the derived clause perfectly while
+  # bin/dor-check never hands it the list. The unit pair pins the FORMATTER (and is
+  # what the two mutations above go red on); the binary pair pins the WIRING.
+
+  # The sentence operators already know, pinned as a LITERAL for the same reason
+  # GREEN_SUFFICIENT is: recomputing it from the method under test would make the
+  # fence agree with any rewrite of that method — the fence disarmed, not passing.
+  NO_VERDICT_GREEN_SUFFICIENT = "Green is the only thing that advances it."
+  # The two states that reach the closing line. :unreadable is the THIRD member of
+  # CI_NO_VERDICT_STATES and is deliberately absent: it takes the other branch, which
+  # delegates to CiStatus.unreadable_remedy and is fenced by the pair above.
+  NO_VERDICT_CLOSING_STATES = %i[none unverified].freeze
+  # The noun phrase bin/dor-check actually hands down — its PR_READ_REFUSAL_PHRASE,
+  # spelled here in full so the co-fire assertion reads the whole sentence the
+  # operator does, including the words the closing clause has to attach to.
+  PR_READ_NOUN_PHRASE = "the PR's own file list going unread, so the doc-only exemption was never proven " \
+                        "against the artifact this gate judges"
+  # THE CO-FIRE CLOSES THE SAME WAY IN BOTH TWINS, and it must be an INDEPENDENT
+  # clause. ci_gate.rb's copy ended "..., which green does not clear" — and the list it
+  # interpolates is a NOUN PHRASE ending in "the artifact this gate judges", so the
+  # relative pronoun attached to the ARTIFACT and the sentence said green does not
+  # clear the artifact. Its ci_status.rb twin was already right. One meaning, one
+  # spelling, and the tail is what makes that checkable.
+  CO_FIRE_TAIL = "and no CI result clears that."
+
+  # [unit] MUTATION 1 DIES HERE. Force `no_verdict_close` to the ORIGINAL always and
+  # this test goes red: the co-fire's closing must name what else is refusing.
+  def test_unit_the_no_verdict_co_fire_closing_names_both_refusals
+    NO_VERDICT_CLOSING_STATES.each do |state|
+      message, clears = CiGate.unread_ci_refusal({ state: state }, PR_URL, "t", cert_route: false,
+                                                                                also_refused: [PR_READ_NOUN_PHRASE])
+
+      refute clears, "#{state}: the exempt route never marks a refusal cert-clearable"
+      refute_includes message, NO_VERDICT_GREEN_SUFFICIENT,
+                      "#{state}: THE DEFECT — the CI half still promises a green CI alone advances this " \
+                      "gate, while the PR-read refusal on the same verdict says otherwise:\n#{message}"
+      assert_includes message, CO_FIRE_CLAIM,
+                      "#{state}: the closing must say green is necessary and NOT sufficient here:\n#{message}"
+      assert_includes message, PR_READ_NOUN_PHRASE,
+                      "#{state}: the closing must NAME the other refusal, not merely hedge about it — that " \
+                      "is the refused_by idiom, reused rather than reinvented:\n#{message}"
+      assert message.end_with?(CO_FIRE_TAIL),
+             "#{state}: the closing must end with the INDEPENDENT clause its twin uses — a relative " \
+             "pronoun here attaches to the noun phrase's last words, not to the refusal:\n#{message}"
+    end
+  end
+
+  # AND THE TWIN ENDS THE SAME WAY. The two co-fire closings describe one fact to one
+  # reader, reached with a different CI state; written twice they drift, which is the
+  # failure bin/lib/ci_status.rb's header names in so many words.
+  def test_unit_both_co_fire_closings_end_with_the_same_independent_clause
+    gate, = CiGate.unread_ci_refusal({ state: :none }, PR_URL, "t", cert_route: false,
+                                                                    also_refused: [PR_READ_NOUN_PHRASE])
+    status = CiStatus.unreadable_remedy(REMEDY_REPO, cause: :credentials, cert_route: false,
+                                                     also_refused: [PR_READ_NOUN_PHRASE])
+
+    assert gate.end_with?(CO_FIRE_TAIL), "ci_gate.rb's co-fire closing:\n#{gate}"
+    assert status.end_with?(CO_FIRE_TAIL), "ci_status.rb's co-fire closing:\n#{status}"
+  end
+
+  # [unit] MUTATION 2 DIES HERE. Force `no_verdict_close` to the CO-FIRE wording always
+  # and this test goes red — including on the empty list, where the join renders a
+  # refusal by nobody. Nothing else is refusing, so green really is sufficient and the
+  # operator must read the sentence they have always read, TO THE BYTE.
+  def test_unit_an_empty_also_refused_prints_the_original_no_verdict_closing
+    NO_VERDICT_CLOSING_STATES.each do |state|
+      [false, nil].each do |route|
+        message, = CiGate.unread_ci_refusal({ state: state }, PR_URL, "t", cert_route: route)
+
+        assert message.end_with?(NO_VERDICT_GREEN_SUFFICIENT),
+               "#{state}/#{route.inspect}: with nothing else refusing, the wording operators know must " \
+               "survive VERBATIM — an over-broad fix that reworded it here is what this catches:\n#{message}"
+        refute_includes message, CO_FIRE_CLAIM,
+                        "#{state}/#{route.inspect}: nothing is refusing this verdict besides CI:\n#{message}"
+      end
+    end
+  end
+
+  # [unit] AND THE GATED ROUTE IS INERT TO THE LIST, asserted as EQUALITY rather than
+  # "still contains the offer" — the gated call carries most of this branch's traffic,
+  # and `also_refused` must not leak a word into it. Its closing is the cert offer,
+  # which no other refusal changes.
+  def test_unit_the_gated_no_verdict_route_is_untouched_by_the_derivation
+    NO_VERDICT_CLOSING_STATES.each do |state|
+      plain, plain_clears = CiGate.unread_ci_refusal({ state: state }, PR_URL, "t", cert_route: true)
+      loaded, loaded_clears = CiGate.unread_ci_refusal({ state: state }, PR_URL, "t", cert_route: true,
+                                                                                      also_refused: [PR_READ_NOUN_PHRASE])
+
+      assert_equal plain, loaded, "#{state}: the GATED route must ignore also_refused entirely"
+      assert_equal plain_clears, loaded_clears, "#{state}: nor may it move the cert_clears flag"
+      assert_includes plain, "certify in full instead", "#{state}: the gated offer is the wording being fenced"
+      refute_includes plain, CO_FIRE_CLAIM, "#{state}: the derived clause must not leak here"
+    end
+  end
+
+  # [integration] THE WIRING, END TO END THROUGH THE REAL BINARY. The unit pair above
+  # passes happily while bin/dor-check never builds `exempt_also_refused` or never
+  # forwards it — the exact failure the ci_status half proved lethal as its mutation B.
+  # A :none CI plus an unreadable PR file list is the co-fire reaching THIS branch.
+  def test_the_no_verdict_co_fire_closing_names_both_refusals_in_the_review_role
+    verdict, code = check(devops, ci: "none", role: "review", pr_files: "unverified")
+    errors = errors_of(verdict)
+
+    assert_equal 1, code, "the co-fire must refuse:\n#{errors}"
+    refute_includes errors, NO_VERDICT_GREEN_SUFFICIENT,
+                    "THE DEFECT: the CI half still promises that a green CI alone advances this gate, " \
+                    "while the PR-read refusal below it says otherwise on the same verdict:\n#{errors}"
+    assert_includes errors, CO_FIRE_CLAIM,
+                    "the closing must say green is necessary and NOT sufficient here:\n#{errors}"
+    assert_includes errors, "the PR's own file list going unread",
+                    "the closing must NAME the other refusal — the list must actually reach the " \
+                    "formatter, which is what this tier is here to prove:\n#{errors}"
+  end
+
+  # [integration] THE FENCE AT THE SAME GRAIN. Same fixture, same role, same no-verdict
+  # CI — only the PR read succeeds. Nothing else is refusing, so the sentence operators
+  # already know must come back out of the binary unchanged.
+  def test_the_no_verdict_closing_is_unchanged_when_ci_is_the_only_refusal
+    verdict, code = check(devops, ci: "none", role: "review", pr_files: DOC_DIFF)
+    errors = errors_of(verdict)
+
+    assert_equal 1, code, "a no-verdict CI still refuses a review:\n#{errors}"
+    assert_includes errors, NO_VERDICT_GREEN_SUFFICIENT,
+                    "with nothing else refusing, the wording operators know must survive VERBATIM:\n#{errors}"
+    refute_includes errors, CO_FIRE_CLAIM,
+                    "nothing else is refusing this verdict, so the co-fire clause must not appear:\n#{errors}"
+    refute_includes errors, "the PR's own file list going unread",
+                    "the PR read SUCCEEDED here; naming it would be the misnamed-refusal defect:\n#{errors}"
+  end
+
+  # [unit] THE SECONDARY SITE, and why it is a bare literal rather than a pair. The
+  # unclassified-state branch borrowed the same words to justify its refusal — "the
+  # review gate-zero advances on a GREEN CI and nothing else" — and there the claim was
+  # doing NECESSITY work only: this state is not green, therefore refuse. That argument
+  # never needed sufficiency, so the sentence now says what the allow-list actually
+  # enforces. The branch consults nothing, so there is no derivation to fence: an
+  # unconditional string is pinned by pinning it, and the retired claim is refuted by
+  # name so it cannot drift back in as a "simplification".
+  def test_unit_the_unclassified_refusal_argues_from_necessity_not_sufficiency
+    message, clears = CiGate.unread_ci_refusal({ state: :surprise }, PR_URL, "t")
+
+    refute clears, "an unclassified state is not the no-verdict family; no cert clears it"
+    assert_includes message, "GREEN is the only CI state that advances a review",
+                    "the refusal must argue from what the allow-list enforces:\n#{message}"
+    refute_includes message, "advances on a GREEN CI and nothing else",
+                    "THE RETIRED CLAIM: green advances the CI allow-list, not the gate — the shape, tier " \
+                    "and PR-read gates all refuse on a fully green CI:\n#{message}"
+  end
+
+  # ── the supervisor's own copy of the sentence ───────────────────────────────
+  #
+  # A FOURTH COPY, in a different binary, and the sharpest of the four because of
+  # WHERE it prints. bin/pr-review's `cert_caveat` closed "green is the only thing that
+  # advances it", and it is interpolated into exactly two lines: the :unreadable branch
+  # and the :unverified `else`. Those are the co-fire's OWN TRIGGERS — one stale App
+  # token refuses the check read and the PR file read together — so in the very
+  # incident this family is about, the supervisor told a reviewer green was SUFFICIENT
+  # one screen before their gate-zero told them it was NECESSARY AND NOT SUFFICIENT.
+  # It also contradicted docs/agents/agents/carl/sops/pr-review-primary.md, which had
+  # already been corrected.
+  #
+  # WHY THIS IS A SOURCE TEST. `cert_caveat` is a local inside a method that spawns
+  # real reviewer subprocesses; there is no value seam to call. bin/pr-review's other
+  # prose invariants are pinned the same way (test/lib/pr_review_zap_safety_test.rb),
+  # and the property here is genuinely structural: the supervisor and the gate must
+  # tell ONE story, in ONE spelling, at BOTH print sites.
+  SUPERVISOR_GREEN_SUFFICIENT = "green is the only thing that advances it"
+
+  def pr_review_source = File.read(File.join(REPO_ROOT, "bin/pr-review"))
+
+  # THE SAME FILE WITH ITS COMMENT-ONLY LINES REMOVED — what the script can actually
+  # PRINT. The header above quotes the retired sentence on purpose (a correction that
+  # deletes its own provenance is how a claim comes back), and a whole-file scan cannot
+  # tell that quotation from a live promise: it failed on the explanation of the fix.
+  # Trailing comments are deliberately left in, so a claim parked at the end of a code
+  # line still trips this.
+  def pr_review_printable = pr_review_source.lines.reject { |l| l.lstrip.start_with?("#") }.join
+
+  # The caveat literal itself — from the assignment to its `else`, so the assertions
+  # below describe the string that is PRINTED and not a comment that describes it.
+  def cert_caveat_literal
+    body = pr_review_source[/cert_caveat = if maybe_exempt\n(.*?)\n\s*else\n/m, 1]
+    refute_nil body, "bin/pr-review must still build cert_caveat from an exempt-kind branch"
+    body
+  end
+
+  def test_unit_the_supervisor_stops_promising_a_green_ci_advances_the_exempt_path
+    assert_includes cert_caveat_literal, CO_FIRE_CLAIM,
+                    "the supervisor must brief the reviewer with the SAME claim their gate-zero prints — " \
+                    "green is necessary here and not sufficient:\n#{cert_caveat_literal}"
+    refute_includes pr_review_printable, SUPERVISOR_GREEN_SUFFICIENT,
+                    "bin/pr-review still promises a green CI carries the exempt path. It prints this on the " \
+                    "co-fire's own trigger, so the supervisor contradicts the gate it is briefing for"
+  end
+
+  # The caveat must still name what a green CI would NOT clear — the same other half
+  # the gate's own closing names. A correction that only DELETED the false clause would
+  # pass the test above and leave the reviewer with no reason for the refusal they meet.
+  def test_unit_the_supervisor_names_the_refusal_a_green_ci_would_not_clear
+    assert_includes cert_caveat_literal, "unread PR file list",
+                    "the caveat must name the other refusal on this path, not merely hedge:\n#{cert_caveat_literal}"
+  end
+
+  # THE WIRING, at this file's only available grain: the caveat is INTERPOLATED at both
+  # print sites. Dropping either one silently restores the old briefing for half the
+  # traffic — the :unverified `else` is exactly where a flaky read lands.
+  def test_unit_the_supervisor_caveat_reaches_both_of_its_print_sites
+    assert_equal 2, pr_review_source.scan("\#{cert_caveat}").size,
+                 "cert_caveat must be interpolated into BOTH the :unreadable branch and the :unverified " \
+                 "else — those are the two places the exempt caveat is briefed"
+  end
+
+  # ONE STORY ACROSS THE TOOL AND THE SOP. pr-review-primary.md corrected this claim
+  # first (2026-09-05) and the tool contradicted it for a day. Keep them pinned to each
+  # other so the next correction cannot land in only one of them.
+  def test_unit_the_primary_sop_and_the_supervisor_agree_that_green_is_not_enough
+    sop = File.read(File.join(REPO_ROOT, "docs/agents/agents/carl/sops/pr-review-primary.md"))
+
+    assert_includes sop, "Expect a refusal that a GREEN CI does not clear",
+                    "the primary SOP must keep its correction — the supervisor's caveat now matches it"
+    refute_includes sop, SUPERVISOR_GREEN_SUFFICIENT,
+                    "the SOP must not re-acquire the claim the tool just dropped"
+  end
 end
