@@ -1627,7 +1627,7 @@ end
 # The clock clause has THREE outcomes and they are not interchangeable. "Covered",
 # "not covered", and "could not ask" are three different sentences, and printing the
 # third as either of the others is this task's own defect one level down.
-def base_movement_detail(movement, ambiguous_clock: false)
+def base_movement_detail(movement, base_branch, ambiguous_clock: false)
   return "" unless movement.is_a?(Hash) && movement[:state] == :moved
 
   named = movement[:commits].map { |c| "#{c[:sha][0, 12]} #{c[:at]} #{c[:subject]}" }
@@ -1651,8 +1651,10 @@ def base_movement_detail(movement, ambiguous_clock: false)
         "cover this tree."
     else
       detail << " #{movement[:late].size} of those landed AFTER this PR's CI completed " \
-        "(#{movement[:cutoff].iso8601}), and ci.yml runs on pull_request and on pushes to main/release only, " \
-        "so nothing re-ran: the green never saw #{base_move_list(movement[:late_files])}."
+        "(#{movement[:cutoff].iso8601}). ci.yml DOES run on pushes to `#{base_branch}` — do not expect to " \
+        "find no run — but that run graded the `#{base_branch}` TIP, a tree this PR is not in, and nothing " \
+        "re-runs THIS PR against the moved base: the green never saw " \
+        "#{base_move_list(movement[:late_files])}."
       # zap (carl, review of this PR): the disjointness sentence used to be UNCONDITIONAL, so on the
       # refusing shape this report asserted "None of those is a test that grades a file this PR
       # changes" in the same verdict where the refusal named exactly such a test. Two opposite claims
@@ -1686,8 +1688,10 @@ def stale_green_refusal(movement, base_branch)
   culprits = movement[:late].map { |c| "#{c[:sha][0, 12]} at #{c[:at]} \"#{c[:subject]}\"" }
 
   "GitHub CI is GREEN but it COULD NOT HAVE COVERED this merge — origin/#{base_branch} gained " \
-    "#{base_move_list(culprits)} AFTER this PR's CI completed at #{movement[:cutoff].iso8601}, and ci.yml " \
-    "runs on pull_request and on pushes to main/release only, so that merge re-ran NOTHING. What landed is " \
+    "#{base_move_list(culprits)} AFTER this PR's CI completed at #{movement[:cutoff].iso8601}. ci.yml DOES " \
+    "run on pushes to `#{base_branch}`, so you WILL find a run for that merge — it graded the " \
+    "`#{base_branch}` TIP, which is a tree this PR is not in. Nothing re-ran THIS PR against the moved " \
+    "base, and that combination is what ships. What landed is " \
     "not incidental to this PR: #{base_move_list(pairs)} — a TEST THAT GRADES code this PR changes, and one " \
     "this PR does not itself touch. FILE DISJOINTNESS DOES NOT SETTLE THIS, and it is the argument to reach " \
     "for here: \"the base commits touch none of my files\" is TRUE and IRRELEVANT in this exact shape, " \
@@ -3020,8 +3024,10 @@ if gate != "build"
   # ==== TIER 1 HAS A PRECONDITION: THE GREEN MUST STILL BE ABOUT THIS MERGE ====
   #
   # `gh pr checks` answers for the HEAD COMMIT, and ci.yml triggers on pull_request
-  # and on pushes to main/release ONLY — so a merge into `accepted` moves this PR's
-  # base and re-runs NOTHING. The green stays green while the tree it described stops
+  # and on pushes to main, release AND `accepted` — so a merge into `accepted` DOES
+  # start a run. That run grades the `accepted` TIP, a tree this PR is not in, and
+  # nothing re-runs THIS PR against the moved base.
+  # The green stays green while the tree it described stops
   # being the tree the merge would produce. That is not a hypothetical: on 2026-08-13
   # this gate advanced a review on a green dated three days earlier against a base
   # 30+ commits ahead, and twice more the same day a green predated the change on
@@ -3036,9 +3042,10 @@ if gate != "build"
   # DOR_CHECK_CI_BASE_DRIFT is the test seam, mirroring DOR_CHECK_CI_STATUS.
   ci_drift = (ENV["DOR_CHECK_CI_BASE_DRIFT"] || ci[:base_drift]).to_s
   if review_role && ci_error.nil? && ci[:state] == :green && ci_drift == "behind"
-    ci_error = "GitHub CI is GREEN but the verdict is STALE — GitHub reports this PR BEHIND its base, and " \
-      "ci.yml runs on pull_request and on pushes to main/release only, so a merge into `accepted` moved the " \
-      "base WITHOUT re-running anything. The green describes a tree that is no longer the tree this merge " \
+    ci_error = "GitHub CI is GREEN but the verdict is STALE — GitHub reports this PR BEHIND its base. " \
+      "ci.yml DOES run on pushes to `accepted`, so a run for that merge exists — but it graded the " \
+      "`accepted` TIP, which is a tree this PR is not in, and nothing re-ran THIS PR against the moved " \
+      "base. The green describes a tree that is no longer the tree this merge " \
       "would produce, and the review gate-zero is the authoritative CI verdict. Update the branch from its " \
       "base (`git rebase origin/accepted` or the PR's Update-branch button) and let CI re-run, then re-check."
   end
@@ -3175,7 +3182,7 @@ if gate != "build"
       "lives in config/e2e_lane.yml and can be changed by the very merge that moved the base. Re-derive it " \
       "before trusting the spec counts, or update the branch (git rebase origin/#{base_branch}) and let CI " \
       "re-run. Re-derived from LOCAL refs, which this gate never fetches, so this is a floor on the movement, " \
-      "not a measure of it.#{base_movement_detail(movement, ambiguous_clock: ci_clock_ambiguous)}"
+      "not a measure of it.#{base_movement_detail(movement, base_branch, ambiguous_clock: ci_clock_ambiguous)}"
   end
 
   # THE REFUSAL. Green CI, and the base gained — after the run finished — a change to a

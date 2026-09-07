@@ -223,8 +223,10 @@ module CiStatus
   #
   # :behind — GitHub says the head branch is behind its base. `gh pr checks` answers
   #           for the HEAD COMMIT, and .github/workflows/ci.yml triggers on
-  #           pull_request and on pushes to main/release ONLY — a merge into
-  #           `accepted` moves the base WITHOUT re-running anything. So a green here
+  #           pull_request and on pushes to main, release AND `accepted` — so a
+  #           merge into `accepted` DOES start a run, but that run grades the
+  #           `accepted` TIP, a tree this PR is not in, and nothing re-runs THIS PR
+  #           against the moved base. So a green here
   #           is a true statement about a tree that is no longer the tree the merge
   #           would produce. That is not branch-protection colour; it is an expired
   #           verdict, and it is the shape that passed a review gate on 2026-08-13

@@ -13,9 +13,24 @@ require_relative "fast_cert"
 # ── THE HOLE THIS EXISTS FOR ─────────────────────────────────────────────────────
 #
 # A PR's CI runs against the base AS IT STOOD when the run started. ci.yml triggers on
-# pull_request and on pushes to main/release ONLY, so a merge into `accepted` moves the
-# base and RE-RUNS NOTHING. The green stays green while the tree it described stops
-# being the tree the merge would produce.
+# pull_request and on pushes to main, release AND `accepted` (.github/workflows/ci.yml,
+# `push: branches:` — `accepted` has been in that list since 2026-08-14, ecd0ffe8). So a
+# merge into `accepted` DOES start a run. THAT RUN IS NOT THIS ONE, and the distinction
+# is the whole subject:
+#
+#   what the `accepted` push run grades — the `accepted` TIP. A tree this PR is not in.
+#   what this PR's own green grades ---- its HEAD COMMIT, against the base as it stood
+#                                        when the run started.
+#   what actually ships ---------------- this PR MERGED ONTO the new tip. No trigger
+#                                        exists that runs that combination, so it is the
+#                                        one tree nobody executed.
+#
+# The green stays green while the tree it described stops being the tree the merge would
+# produce. Stated this way ON PURPOSE: an earlier wording here claimed ci.yml ran "on
+# pushes to main/release only, so nothing re-ran", and a reviewer can disprove that in
+# one `sed -n 26,27p .github/workflows/ci.yml`. A gate whose reviewer-facing text asserts
+# something false is a gate reviewers learn to route around — and the true argument is
+# strictly stronger, because it survives the objection "but I can see the run".
 #
 # MEASURED (Carl, PR #1258, 2026-09-07): the `accepted` tip was committed at 07:59:02Z,
 # 3.3 minutes AFTER that PR's CI completed at 07:55:44Z, and the commit it carried
@@ -168,6 +183,29 @@ module BaseMovementAudit
   # a source with no tests at all reads, and this module refuses to distinguish those two
   # on a filename alone. The silence costs nothing beyond the status quo; guessing would
   # cost a refusal nobody can check.
+  #
+  # THE COST IS LARGER THAN THAT PARAGRAPH ADMITS, and under-disclosing it is its own
+  # defect. `return [] if targets.empty?` does not merely skip the missing twin — it
+  # returns BEFORE `family_tests`, so a tool whose twin is absent has NO guards at all
+  # here, siblings included. MEASURED in this repo on 2026-09-07:
+  #
+  #   bin/task       → test/lib/task_test.rb        MISSING → 0 guards
+  #   bin/pr-review  → test/lib/pr_review_test.rb   MISSING → 0 guards
+  #                    (pr_review_breaker_test.rb, pr_review_zap_safety_test.rb ignored)
+  #   bin/release    → test/lib/release_test.rb     MISSING → 0 guards
+  #                    (24 release_*_test.rb siblings ignored)
+  #
+  # So three of this repo's busiest tools are INVISIBLE to this audit: a base commit
+  # rewriting release_ladder_test.rb while a bin/release PR is in review produces no
+  # finding. bin/dor-check's own twin EXISTS, which is the only reason the measured
+  # incident (PR #1258) was caught — the audit's headline success is a property of that
+  # one filename, not of the design.
+  #
+  # Still left as-is, for the reason above (the two readings of an absent twin are not
+  # separable by filename), but the reader is now told WHICH tools that silence covers
+  # rather than being left to infer it is a corner case. Widening it is a task, not a
+  # comment: it needs a rule that distinguishes "untested" from "tested unconventionally"
+  # without manufacturing refusals nobody can check.
   def guards_for(root, path)
     targets = FastCert.convention_candidates(path).select { |t| File.file?(File.join(root.to_s, t)) }
     return [] if targets.empty?

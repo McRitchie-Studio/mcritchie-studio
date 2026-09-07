@@ -306,7 +306,22 @@ module CiGate
     return nil unless ci
 
     case ci[:state]
-    when :green then "pass"
+    # A REFUSED REVIEW CANNOT RECORD ITS CI ROW AS "pass", AND :green IS THE ONLY
+    # STATE WHERE THAT WAS POSSIBLE. `review_refused` used to be consulted in the
+    # `else` alone, so the stale-green refusal — whose whole precondition is
+    # `ci[:state] == :green` — set the flag and changed nothing: the gate refused the
+    # review (exit 1) while the durable gates-card row and the --json payload both
+    # recorded CI as "pass". Measured on the refusing fixture: code=1,
+    # ci_gate_result="pass". That is this module's own subject one level down — a
+    # green credited for a tree nobody ran — surviving into the record the board
+    # renders, and it is why deleting the `ci_review_refused = true` assignment left
+    # every integration test green: the line was inert.
+    #
+    # Scoped to :green DELIBERATELY. A blanket `return "fail" if review_refused` also
+    # flips builder-side :pending, which must stay "pending" (dor_check_deferred_cert
+    # _test: "submit-side a running CI is PENDING, not a failure"). Every other state
+    # already answers "fail" when refused.
+    when :green then review_refused ? "fail" : "pass"
     when :pending then review_role ? "fail" : "pending"
     when :red, :conflicted, :ci_less, :closed, :merged then "fail"
     else

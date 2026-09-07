@@ -5,8 +5,10 @@
 #   ruby -Itest test/lib/dor_check_stale_ci_test.rb
 #
 # THE DEFECT. `gh pr checks` answers for the HEAD COMMIT, and .github/workflows/ci.yml
-# triggers on pull_request and on pushes to main/release ONLY. A merge into `accepted`
-# therefore moves a PR's base and re-runs NOTHING: the green stays green while the
+# triggers on pull_request and on pushes to main, release AND `accepted`. A merge into
+# `accepted` therefore DOES start a run — but that run grades the `accepted` TIP, a tree
+# this PR is not in, and nothing re-runs THIS PR against the moved base.
+# The green stays green while the
 # tree it described stops being the tree the merge would produce. On 2026-08-13 the
 # review gate advanced on a green dated three days earlier against a base 30+ commits
 # ahead, and twice more the same day a green predated the change on `accepted` it was

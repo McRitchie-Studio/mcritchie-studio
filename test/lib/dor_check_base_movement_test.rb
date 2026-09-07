@@ -14,9 +14,11 @@
 # ── THE HOLE ────────────────────────────────────────────────────────────────────
 #
 # A PR's CI runs against the base AS IT STOOD when the run started, and ci.yml triggers
-# on pull_request and on pushes to main/release ONLY — so a merge into `accepted` moves
-# the base and re-runs NOTHING. If `accepted` advances after the run, THE GREEN NEVER
-# COVERED THE MERGE, and `--gate-role review` credited it anyway.
+# on pull_request and on pushes to main, release AND `accepted` — so a merge into
+# `accepted` DOES start a run. That run grades the `accepted` TIP, a tree this PR is not
+# in, and nothing re-runs THIS PR against the moved base, so the combination that ships
+# is never executed. If `accepted` advances after the run, THE GREEN NEVER COVERED THE
+# MERGE, and `--gate-role review` credited it anyway.
 #
 # MEASURED, not theorised (Carl, PR #1258, 2026-09-07): the `accepted` tip was committed
 # at 07:59:02Z, THREE POINT THREE MINUTES AFTER that PR's CI completed at 07:55:44Z. The
@@ -211,6 +213,21 @@ class DorCheckBaseMovementTest < Minitest::Test
                    "the refusal must say WHY the file-disjointness argument does not settle it — " \
                    "that argument is what reviewers reach for here, and it is true and irrelevant")
 
+      # THE DURABLE ROW, not just the exit code. `ci_gate_result` is what the gates
+      # card renders and what the GateRun sop records, and it is the half a reader
+      # meets LATER — after the terminal output that carried the refusal is gone.
+      #
+      # It said "pass" here until 2026-09-07. The refusal set `ci_review_refused =
+      # true`, but CiGate.gate_row read that flag only in its `else` branch, and this
+      # path's precondition IS `ci[:state] == :green` — so the assignment was inert and
+      # the board recorded a passing CI row for a review the same run had refused. That
+      # is precisely this task's defect (a green credited for a tree nobody ran) leaking
+      # into the record, and deleting the assignment left all six integration tests
+      # green because nothing ever asserted on this field.
+      assert_equal "fail", verdict["ci_gate_result"],
+                   "the gates-card CI row recorded PASS on a run that REFUSED the review — the durable " \
+                   "record contradicts the verdict that produced it\nverdict: #{verdict.inspect}"
+
       # THE TWO HALVES MUST NOT CONTRADICT EACH OTHER. The movement REPORT and the
       # REFUSAL both fire on this run — same refs, same movement — and the report used to
       # append "None of those is a test that grades a file this PR changes" unconditionally.
@@ -220,11 +237,30 @@ class DorCheckBaseMovementTest < Minitest::Test
       refute_match(/None of those is a test that grades/, all_of(verdict),
                    "the report half asserted a negative the refusal half disproved — one verdict named the " \
                    "same file as both a guard and not-a-guard\n#{all_of(verdict)}")
-      assert_match(/DISJOINTNESS IS NOT AVAILABLE HERE/, all_of(verdict),
-                   "…and having withheld the disjointness claim, the report must say WHY it is withheld " \
-                   "rather than simply going quiet")
+
+      # ON THE SUGGESTIONS LANE SPECIFICALLY, and that is the point of these three.
+      # The contradiction lived in the REPORT, which lands in `suggestions`; the refusal
+      # lands in `errors`. Asserting the repair over all_of (errors + suggestions joined)
+      # cannot tell those apart, so it is satisfied by the refusal's own text and says
+      # NOTHING about the half that was wrong. Concretely: move the withheld-claim
+      # sentence into the refusal and let the report go silent, and an all_of assertion
+      # still passes — which is exactly the "simply going quiet" outcome it claims to
+      # forbid. The original test asserted only on errors_of and never on suggestions_of,
+      # which is why the contradiction shipped green in the first place.
+      assert_match(/DISJOINTNESS IS NOT AVAILABLE HERE/, suggestions_of(verdict),
+                   "…and having withheld the disjointness claim, the REPORT must say WHY it is withheld " \
+                   "rather than simply going quiet\nsuggestions: #{suggestions_of(verdict)}")
+      refute_match(/None of those is a test that grades/, suggestions_of(verdict),
+                   "the report lane is where the false negative lived — pin it there, not only in the " \
+                   "union with the refusal that disproves it\nsuggestions: #{suggestions_of(verdict)}")
+      assert_match(/test\/lib\/widget_tool_exempt_test\.rb/, suggestions_of(verdict),
+                   "the two lanes must AGREE, not merely fail to contradict: the report NAMES the guard " \
+                   "the refusal names. Going quiet would satisfy the refute above while still leaving a " \
+                   "reader the disjointness argument by omission\nsuggestions: #{suggestions_of(verdict)}")
     end
   end
+
+
 
   # ==== PROVE THE NEGATIVE — the busy night must not get worse ===================
 
@@ -249,9 +285,12 @@ class DorCheckBaseMovementTest < Minitest::Test
       # disjointness claim is WITHHELD when a guard moved; without this, the branch that
       # still MAKES the claim is unpinned, and collapsing the conditional the other way
       # (always withhold) passes the suite silently — measured during review.
-      assert_match(/FILE DISJOINTNESS is available here/, all_of(verdict),
+      assert_match(/FILE DISJOINTNESS is available here/, suggestions_of(verdict),
                    "on the shape where disjointness genuinely does settle it, the report must still say " \
-                   "so — a conditional has two halves and an unasserted half is an unproved one")
+                   "so — a conditional has two halves and an unasserted half is an unproved one. " \
+                   "SUGGESTIONS lane, for the reason given on the refusing row: there are no errors here " \
+                   "at all, so all_of would prove nothing about WHERE the claim was made" \
+                   "\nsuggestions: #{suggestions_of(verdict)}")
     end
   end
 
