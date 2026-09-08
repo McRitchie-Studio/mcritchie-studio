@@ -1297,6 +1297,38 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  # --- the approval-request guard on the BOARD FORM path ---
+  #
+  # The JSON API is where every agent writes, but this controller shares the fold,
+  # and the whole reason the fold lives on the model is that these two paths drifted
+  # apart once already and destroyed a reviewed task's acceptance criteria. Pin the
+  # form path too, so the guard cannot regress on one side only.
+
+  test "[integration] the board form refuses an approval request past the seam" do
+    log_in_as(@admin)
+    task = Task.create!(title: "Form Approval Guard Row", stage: "submitted",
+                        metadata: { "devops" => { "kind" => "bug" } })
+
+    patch task_path(task.slug, format: :json),
+          params: { task: { devops: { approval_status: "waiting" } } }
+
+    assert_response :unprocessable_entity
+    assert_includes JSON.parse(response.body)["error"].to_s, "submitted"
+    assert_not task.reload.waiting_for_operator_approval?
+  end
+
+  test "[integration] the board form still opens the gate where it is actionable" do
+    log_in_as(@admin)
+    task = Task.create!(title: "Form Approval Allow Row", stage: "building",
+                        metadata: { "devops" => { "kind" => "bug" } })
+
+    patch task_path(task.slug, format: :json),
+          params: { task: { devops: { approval_status: "waiting" } } }
+
+    assert_response :success
+    assert task.reload.waiting_for_operator_approval?
+  end
+
   test "board pages link back to the dashboard for admins" do
     log_in_as(@admin)
     [tasks_path, deployments_path, stages_path].each do |page|

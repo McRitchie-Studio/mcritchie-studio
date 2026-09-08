@@ -163,6 +163,7 @@ require_relative "lib/control_replay"
 require_relative "lib/task_board"
 require_relative "lib/cert_root_guard"
 require_relative "lib/review_tree_guard"
+require_relative "lib/base_movement_audit"
 require_relative "lib/dor/checks"
 require_relative "lib/dor/check_context"
 Dor::Checks.load!
@@ -1599,6 +1600,197 @@ def secondary_fast_cert_reason(eval)
     "state clears it; the full cert does"
 end
 
+# ── THE ONE TRIGGER FACT, IN ONE PLACE (/tasks/audit-vanishes-when-git-fails) ────
+#
+# .github/workflows/ci.yml, `push: branches:`. `accepted` joined that list on 2026-08-14
+# (ecd0ffe8), and the gate's reviewer-facing text spent a while asserting otherwise.
+#
+# IT IS A LIST, NOT A SENTENCE, because the sentence has TWO false forms and naming only
+# the first is how the second gets written. "ci.yml runs on main/release only" was the
+# retracted claim; "ci.yml DOES run on pushes to `feat/parent`" is its MIRROR IMAGE, and
+# it is what blind interpolation of the PR's base into that sentence produces on a
+# stacked PR. Both are disprovable in one `sed -n 26,27p .github/workflows/ci.yml`, and a
+# gate whose text a reviewer can disprove is a gate they learn to route around.
+#
+# test/lib/dor_check_stale_ci_test.rb pins this list against ci.yml ITSELF, so a trigger
+# added or removed there cannot leave this copy stale in silence.
+CI_PUSH_BRANCHES = %w[main release accepted].freeze
+
+# Which argument the staleness refusal is entitled to make about the base it just named.
+# On a ladder branch a run for that merge EXISTS and the point is that it graded the
+# wrong tree; on a stacked feature base no such run exists at all. Same verdict, two
+# different true sentences — and the reviewer is sent looking for a run in only one.
+def stale_base_run_clause(base_branch)
+  if CI_PUSH_BRANCHES.include?(base_branch)
+    "ci.yml DOES run on pushes to `#{base_branch}`, so a run for that merge exists — but it graded the " \
+      "`#{base_branch}` TIP, which is a tree this PR is not in, and nothing re-ran THIS PR against the " \
+      "moved base."
+  else
+    "`#{base_branch}` is not one of ci.yml's push branches (#{CI_PUSH_BRANCHES.join(', ')}), so no run " \
+      "exists for that merge at all — and nothing re-ran THIS PR against the moved base either."
+  end
+end
+
+# ── THE STALE-GREEN VOCABULARY (/tasks/gate-credits-a-stale-green) ───────────────
+#
+# Two message builders for one finding, split by SEVERITY rather than by subject,
+# because the severity IS the design: naming the movement is what every reviewer gets,
+# refusing is what the one unsettleable shape gets.
+
+# How many of each to name before trailing off. A verdict nobody finishes reading is a
+# verdict nobody acts on, and the point of these lines is that the reviewer can check
+# them by hand.
+BASE_MOVE_NAME_CAP = 4
+
+def base_move_list(items, cap: BASE_MOVE_NAME_CAP)
+  shown = items.first(cap)
+  rest = items.size - shown.size
+  "#{shown.join(', ')}#{rest.positive? ? " (+#{rest} more)" : ''}"
+end
+
+# PART A — NAME WHAT MOVED, always, on every reported movement.
+#
+# The original report gave a tip SHA and a count, which a reviewer can do nothing with
+# except go look. Naming the commits and the files is what lets the FILE-DISJOINTNESS
+# argument be made FROM the verdict instead of by hand — and lets its limits be stated
+# in the same breath, which is the only place a reader will meet them.
+#
+# The clock clause has THREE outcomes and they are not interchangeable. "Covered",
+# "not covered", and "could not ask" are three different sentences, and printing the
+# third as either of the others is this task's own defect one level down.
+def base_movement_detail(movement, base_branch, ambiguous_clock: false)
+  return "" unless movement.is_a?(Hash) && movement[:state] == :moved
+
+  named = movement[:commits].map { |c| "#{c[:sha][0, 12]} #{c[:at]} #{c[:subject]}" }
+  detail = +" WHAT MOVED: #{base_move_list(named)}. FILES: #{base_move_list(movement[:files])}."
+
+  case movement[:clock]
+  when :unreadable
+    detail << if ambiguous_clock
+                " COULD NOT compare that against this PR's CI clock — this task carries MORE THAN ONE PR, " \
+                  "so the governing CI verdict may belong to a different repo than the tree measured here, " \
+                  "and a foreign run's clock is not evidence about this base."
+              else
+                " COULD NOT compare that against this PR's CI clock — the checks read carry no completedAt, " \
+                  "so \"did the run finish BEFORE this landed?\" went UNASKED."
+              end
+    detail << " That is not a freshness certificate; absence of a finding here means the question was not " \
+      "answerable, not that the answer was yes."
+  else
+    if movement[:late].empty?
+      detail << " All of it predates this PR's CI completion (#{movement[:cutoff].iso8601}), so the run did " \
+        "cover this tree."
+    else
+      detail << " #{movement[:late].size} of those landed AFTER this PR's CI completed " \
+        "(#{movement[:cutoff].iso8601}). ci.yml DOES run on pushes to `#{base_branch}` — do not expect to " \
+        "find no run — but that run graded the `#{base_branch}` TIP, a tree this PR is not in, and nothing " \
+        "re-runs THIS PR against the moved base: the green never saw " \
+        "#{base_move_list(movement[:late_files])}."
+      # zap (carl, review of this PR): the disjointness sentence used to be UNCONDITIONAL, so on the
+      # refusing shape this report asserted "None of those is a test that grades a file this PR
+      # changes" in the same verdict where the refusal named exactly such a test. Two opposite claims
+      # about one file, and the false one handed the reader the very argument the refusal exists to
+      # refute. Asserting a negative this branch never checked is the defect the module's own header
+      # forbids (bin/lib/base_movement_audit.rb, "DIRECTION OF ERROR"), one level down.
+      detail << if movement[:guards].empty?
+                  " None of those is a test that grades a file this PR changes, so FILE DISJOINTNESS is " \
+                    "available here — but note what it does and does not say: \"the base touched none of my " \
+                    "files\" is a DIFFERENT claim from \"the merged tree is green\", and it is the merged " \
+                    "tree that ships."
+                else
+                  " FILE DISJOINTNESS IS NOT AVAILABLE HERE: " \
+                    "#{base_move_list(movement[:guards].map { |g| g[:test] })} grades code this PR changes " \
+                    "without being a file this PR touches. The refusal above carries the full finding."
+                end
+    end
+  end
+  detail
+end
+
+# PART B — THE REFUSAL, for the one shape disjointness cannot settle.
+#
+# Everything a reviewer needs to re-derive the finding by hand is named: the commit, its
+# clock, the run's clock, the guard file, and the file of THIS PR that the guard grades.
+# A refusal whose evidence the reader cannot check is a refusal they learn to route
+# around, and this gate is gate-zero for every review.
+def stale_green_refusal(movement, base_branch)
+  guards = movement[:guards]
+  pairs = guards.map { |g| "#{g[:test]} (grades #{g[:guarding].join(', ')})" }
+  culprits = movement[:late].map { |c| "#{c[:sha][0, 12]} at #{c[:at]} \"#{c[:subject]}\"" }
+
+  "GitHub CI is GREEN but it COULD NOT HAVE COVERED this merge — origin/#{base_branch} gained " \
+    "#{base_move_list(culprits)} AFTER this PR's CI completed at #{movement[:cutoff].iso8601}. ci.yml DOES " \
+    "run on pushes to `#{base_branch}`, so you WILL find a run for that merge — it graded the " \
+    "`#{base_branch}` TIP, which is a tree this PR is not in. Nothing re-ran THIS PR against the moved " \
+    "base, and that combination is what ships. What landed is " \
+    "not incidental to this PR: #{base_move_list(pairs)} — a TEST THAT GRADES code this PR changes, and one " \
+    "this PR does not itself touch. FILE DISJOINTNESS DOES NOT SETTLE THIS, and it is the argument to reach " \
+    "for here: \"the base commits touch none of my files\" is TRUE and IRRELEVANT in this exact shape, " \
+    "because it is a claim about SOURCE overlap while the thing that moved is the GUARD. The two are " \
+    "different sentences and only one of them is \"the merged tree is green\". Settle it by building the " \
+    "merge preview and running that family (git merge-tree the PR head against origin/#{base_branch}, check " \
+    "the result out, run the named tests), or update the branch (git rebase origin/#{base_branch}) and let " \
+    "CI re-run — then re-check. A local full cert does NOT clear this: it grades the desk tree, which is not " \
+    "the merged tree either."
+end
+
+# PART C — THE AUDIT THAT COULD NOT RUN (/tasks/audit-vanishes-when-git-fails).
+#
+# `assess` answers :unobservable from FOUR paths (:no_ref, :no_merge_base, :no_log,
+# :git_unreadable) and, until this, NOTHING outside the module consumed it. A failed git
+# read therefore made gate-zero's deepest check report nothing at all, and the review
+# proceeded exactly as though the base had not moved. A check that silently does not run
+# is the defect class this entire seam exists to close — it had reappeared INSIDE the
+# check, which is the one place nothing else was watching.
+#
+# IT REPORTS AND NEVER REFUSES, and that is the module's stated contract rather than
+# timidity. Its header ("DIRECTION OF ERROR") already fixes the caller's half: an
+# unreadable input resolves to "the question could not be asked", and the caller reports
+# the unmade check rather than refusing on it. Three reasons that is the right call here:
+#
+#   * :no_ref is reachable on ANY checkout lacking origin/<base>, and THIS GATE NEVER
+#     FETCHES — deliberately, because a fetch inside a verdict mutates the tree it is
+#     grading. Refusing would wedge gate-zero on a condition the gate itself creates.
+#   * The error direction is already safe. An unobservable audit under-reports movement;
+#     it cannot invent a green. Silence was the whole defect, and strictness would be a
+#     second one pointing the other way — not a stricter fix.
+#   * A gate that refuses correct work over a transient git read is a gate reviewers
+#     learn to route around, which costs more than the silence it would buy.
+#
+# THE REASON IS NAMED because the four have genuinely different next actions, and a
+# report whose remedy the reader cannot derive is the tip-SHA-and-count report this seam
+# was built to replace.
+BASE_AUDIT_UNREADABLE = {
+  no_ref: "no local ref for origin/%<base>s or origin/%<branch>s in %<root>s — and this gate never " \
+          "fetches, by design, so nothing upstream of you will repair it: run " \
+          "`git fetch origin %<base>s %<branch>s` in that checkout and re-run",
+  no_merge_base: "%<branch>s and origin/%<base>s both resolve in %<root>s and share no common ancestor " \
+                 "— a shallow clone (`git fetch --unshallow`) or a base this branch never forked from",
+  no_log: "`git log` over the commits origin/%<base>s gained returned nothing readable in %<root>s",
+  git_unreadable: "git itself could not be read in %<root>s"
+}.freeze
+
+def base_audit_unobservable(movement, base_branch, branch, root)
+  reason = movement[:reason]
+  template = BASE_AUDIT_UNREADABLE[reason]
+  detail = if template
+             format(template, base: base_branch, branch: branch.to_s, root: root.to_s)
+           else
+             "a git read failed in #{root}"
+           end
+
+  "the BASE-MOVEMENT AUDIT COULD NOT RUN (#{reason || 'unknown'}) — #{detail}. So the question it exists " \
+    "to ask — did origin/#{base_branch} gain anything AFTER this PR's CI finished, and does any of it " \
+    "GRADE code this PR changes? — went UNASKED for this verdict. THAT IS NOT A FRESHNESS CERTIFICATE: " \
+    "the absence of a finding here means the audit could not look, not that it looked and found nothing. " \
+    "Nothing refuses on this — the check fails toward the status quo, and blocking on an unfetched ref " \
+    "would wedge every review on a condition this gate creates by never fetching — but the SHARED-GUARD " \
+    "shape it catches is UNGUARDED for this verdict: a base commit that changes a TEST grading this PR's " \
+    "code, which FILE DISJOINTNESS is true and irrelevant about. Settle it by hand before merging — fix " \
+    "the read above and re-run, or build the merge preview (git merge-tree this PR's head against " \
+    "origin/#{base_branch}) and run the tests that grade your changed files."
+end
+
 # WHICH LANES a refusing secondary repo's state phrase names — the ones that repo
 # actually OWES, read from the SAME list the verdict is computed over.
 #
@@ -2920,8 +3112,10 @@ if gate != "build"
   # ==== TIER 1 HAS A PRECONDITION: THE GREEN MUST STILL BE ABOUT THIS MERGE ====
   #
   # `gh pr checks` answers for the HEAD COMMIT, and ci.yml triggers on pull_request
-  # and on pushes to main/release ONLY — so a merge into `accepted` moves this PR's
-  # base and re-runs NOTHING. The green stays green while the tree it described stops
+  # and on pushes to main, release AND `accepted` — so a merge into `accepted` DOES
+  # start a run. That run grades the `accepted` TIP, a tree this PR is not in, and
+  # nothing re-runs THIS PR against the moved base.
+  # The green stays green while the tree it described stops
   # being the tree the merge would produce. That is not a hypothetical: on 2026-08-13
   # this gate advanced a review on a green dated three days earlier against a base
   # 30+ commits ahead, and twice more the same day a green predated the change on
@@ -2934,13 +3128,25 @@ if gate != "build"
   # side of that notion, using the one signal a PR read already carries.
   #
   # DOR_CHECK_CI_BASE_DRIFT is the test seam, mirroring DOR_CHECK_CI_STATUS.
+  # THE PR'S ACTUAL BASE, resolved HERE rather than eighty lines down (it used to be
+  # assigned just above SEAM 2b, after every consumer on this path had already run).
+  # That ordering had one visible consequence and it was not cosmetic: the staleness
+  # refusal below could not reach the value, so it hardcoded the literal `accepted` into
+  # both halves of its remedy — the trigger claim AND the `git rebase` instruction. On a
+  # STACKED, feat-based PR the gate then refused correctly and sent the reviewer to
+  # rebase onto a branch it is not based on. Nothing downstream reads either name before
+  # this point, so the hoist moves the assignment and changes no verdict.
+  # No ActiveSupport in this script, so no `.presence` — spell the fallback out.
+  ci_base = ci ? ci[:base].to_s.strip : ""
+  base_branch = ci_base.empty? ? ENV.fetch("DOR_BASE_BRANCH", "accepted") : ci_base
+
   ci_drift = (ENV["DOR_CHECK_CI_BASE_DRIFT"] || ci[:base_drift]).to_s
   if review_role && ci_error.nil? && ci[:state] == :green && ci_drift == "behind"
-    ci_error = "GitHub CI is GREEN but the verdict is STALE — GitHub reports this PR BEHIND its base, and " \
-      "ci.yml runs on pull_request and on pushes to main/release only, so a merge into `accepted` moved the " \
-      "base WITHOUT re-running anything. The green describes a tree that is no longer the tree this merge " \
-      "would produce, and the review gate-zero is the authoritative CI verdict. Update the branch from its " \
-      "base (`git rebase origin/accepted` or the PR's Update-branch button) and let CI re-run, then re-check."
+    ci_error = "GitHub CI is GREEN but the verdict is STALE — GitHub reports this PR BEHIND its base. " \
+      "#{stale_base_run_clause(base_branch)} The green describes a tree that is no longer the tree this " \
+      "merge would produce, and the review gate-zero is the authoritative CI verdict. Update the branch " \
+      "from its base (`git rebase origin/#{base_branch}` or the PR's Update-branch button) and let CI " \
+      "re-run, then re-check."
   end
 
 
@@ -3009,10 +3215,73 @@ if gate != "build"
   # ref this can only UNDERSTATE movement, so the absence of a finding is not a
   # freshness certificate. Reporting it as one would be this task's own defect, one
   # level down.
-  # No ActiveSupport in this script, so no `.presence` — spell the fallback out.
-  ci_base = ci ? ci[:base].to_s.strip : ""
-  base_branch = ci_base.empty? ? ENV.fetch("DOR_BASE_BRANCH", "accepted") : ci_base
+  # base_branch is resolved ABOVE, before the drift refusal that also names it — see the
+  # hoist comment there for why that ordering is load-bearing rather than tidy.
   base_check = ReviewTreeGuard.base_assessment(root: diff_root, branch: zap_branch, base: base_branch)
+
+  # ==== SEAM 2b: WAS THAT MOVEMENT INSIDE THE GREEN? (/tasks/gate-credits-a-stale-green)
+  #
+  # Seam 2 above says the base MOVED. What it never said is WHAT moved, or WHEN relative
+  # to the run — so the report was unarguable-with, and reviewers settled it the one
+  # cheap way available: FILE DISJOINTNESS, "the N commits `accepted` gained touch none
+  # of my files."
+  #
+  # THAT ARGUMENT IS USUALLY RIGHT AND IT IS NOT THE SAME CLAIM as "the merged tree is
+  # green". It comes apart in exactly one shape — a base commit that changes a TEST
+  # GRADING this PR's code rather than a source file this PR shares. Disjointness is then
+  # TRUE AND IRRELEVANT.
+  #
+  # MEASURED (Carl, PR #1258, 2026-09-07): the `accepted` tip landed 07:59:02Z, 3.3
+  # minutes AFTER that PR's CI completed 07:55:44Z, carrying +117/-17 to
+  # test/lib/dor_check_exempt_ci_test.rb — the guard that PR's whole design leaned on.
+  # 12/12 green, and the green said nothing about the combination. Safe only because a
+  # reviewer built the merge preview by hand.
+  #
+  # THE SPLIT OF SEVERITIES IS THE DESIGN, and it is what keeps the two claims apart:
+  #   movement, any shape      REPORTS, now NAMED (commits, files, and the clock verdict)
+  #                            so the disjointness argument can be made FROM the verdict.
+  #   a late SHARED GUARD      REFUSES — the one shape disjointness cannot settle.
+  # Refusing on movement alone would wedge the lane on every busy night; staying silent
+  # on the guard case is the defect being fixed. Neither half is the other's default.
+  #
+  # AUTOMATIC, not a flag. This is gate-zero for every review, and the reviewer who most
+  # needs the question asked is the one who does not know to ask it — an opt-in switch
+  # makes correctness a thing you have to remember, which is the same reasoning that kept
+  # the multi-PR CI read (dor-check-reads-one-pr) off a --repo flag.
+  # WHOSE CLOCK IS THIS? On a multi-repo task `ci` is the GOVERNING (worst) PR's verdict,
+  # which may belong to a DIFFERENT repo than diff_root — and comparing another repo's
+  # run clock against this repo's base movement is not a comparison, it is a coincidence.
+  # An earlier foreign clock would call this repo's covered commits uncovered and refuse
+  # correct work; a later one would hide a real gap.
+  #
+  # There is no repo→root map on this path (deriving one across worktrees and gems is a
+  # different task), so the honest move is to ask only when the answer is unambiguous:
+  # ONE PR read means the clock is this PR's. More than one and the clock goes UNREAD —
+  # the movement is still named, the unmade check is still declared, and nothing refuses.
+  # That is the status quo plus better naming, which is the correct direction for a
+  # question this gate cannot currently pose.
+  #
+  # This deliberately does NOT touch the secondary-repo cert bar: that bar is about which
+  # CERT a repo owes, this is about which CLOCK a comparison may use, and nothing here
+  # relaxes the former.
+  ci_clock_ambiguous = task_ci_reads.size > 1
+  ci_completed_at = ci_clock_ambiguous ? nil : (ENV["DOR_CHECK_CI_COMPLETED_AT"] || (ci && ci[:completed_at]))
+  movement = BaseMovementAudit.assess(
+    root: diff_root, branch: zap_branch, base: base_branch,
+    changed_files: changed_files, ci_completed_at: ci_completed_at
+  )
+
+  # INDEPENDENT OF base_check ON PURPOSE. ReviewTreeGuard.base_assessment and this audit
+  # are two SEPARATE readers over the same refs, and base_movement_detail — the only other
+  # place the audit is rendered — hangs off base_check[:state] == :moved. Reporting the
+  # unobservable state from inside that branch would keep the audit silent in exactly the
+  # case where BOTH reads failed, which is the LIKELIEST one, because they fail for the
+  # same reason. So this stands alone, and test/lib/dor_check_base_movement_test.rb pins
+  # that it still speaks when the base-moved suggestion does not fire at all.
+  if review_role && movement[:state] == :unobservable
+    suggestions << base_audit_unobservable(movement, base_branch, zap_branch, diff_root)
+  end
+
   if review_role && base_check[:state] == :moved && ci_error.nil?
     behind = base_check[:behind_by]
     suggestions << "the base has MOVED since this branch last took it — origin/#{base_branch} is at " \
@@ -3022,7 +3291,17 @@ if gate != "build"
       "lives in config/e2e_lane.yml and can be changed by the very merge that moved the base. Re-derive it " \
       "before trusting the spec counts, or update the branch (git rebase origin/#{base_branch}) and let CI " \
       "re-run. Re-derived from LOCAL refs, which this gate never fetches, so this is a floor on the movement, " \
-      "not a measure of it."
+      "not a measure of it.#{base_movement_detail(movement, base_branch, ambiguous_clock: ci_clock_ambiguous)}"
+  end
+
+  # THE REFUSAL. Green CI, and the base gained — after the run finished — a change to a
+  # test that grades this PR's own code. Not cert-clearable: a local full cert grades the
+  # DESK tree, which is not the merged tree either, so it answers a different question
+  # than the one being refused.
+  if review_role && ci_error.nil? && ci[:state] == :green && movement[:state] == :moved &&
+     movement[:guards].any?
+    errors << stale_green_refusal(movement, base_branch)
+    ci_review_refused = true
   end
 
   # A refusal a cert can clear is DEFERRED past the suite gate below, which is

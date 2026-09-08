@@ -237,9 +237,11 @@ onto `accepted`) — the `accepted → release` promotion belongs to Avi's self-
      `accepted`, `bin/task merged <task> accepted`, then `bin/task move <task>
      reviewed` (merge → stamp → move; the task is `reviewed` iff its code is on
      `accepted`).
-  4. **Problems** → `bin/task block <task> --kind rework --feedback "…"` (one
-     block never halts the batch). It runs the **two-bounce circuit breaker**
-     first and REFUSES a repeat send-back (exit 10), naming the `dependency`
+  4. **Problems** → Carl, who holds the review claim, blocks: `bin/task block
+     <task> --kind rework --feedback "…" --agent carl` (one block never halts the
+     batch; only the claim's holder may spend the bounce — anyone else is refused
+     with exit 11). It runs the **two-bounce circuit breaker** first
+     and REFUSES a repeat send-back (exit 10), naming the `dependency`
      escalation to run instead — a review deadlock is Mr. McRitchie's call. Read
      it standalone with `bin/task bounces <task>`; a MECHANICAL bounce (red CI,
      merge conflict) proceeds on `--breaker-ack "<reason>"`.

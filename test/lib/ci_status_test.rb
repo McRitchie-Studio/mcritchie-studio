@@ -1279,6 +1279,47 @@ class CiStatusTest < Minitest::Test
     end
   end
 
+  # ==== THE RUN'S CLOCK (/tasks/gate-credits-a-stale-green) ======================
+  #
+  # A green is only about THIS merge while the base has not moved since the run
+  # finished, and that comparison needs the run's completion time. `completedAt` rides
+  # the `gh pr checks` call the gate already makes; these pin what the fold does with it.
+  #
+  # WITHOUT THESE, latest_completion is untested: the gate-level tests inject the clock
+  # through DOR_CHECK_CI_COMPLETED_AT and never exercise this path at all.
+
+  def test_green_carries_the_latest_completion_across_checks
+    v = CiStatus.parse('[{"name":"a","bucket":"pass","completedAt":"2026-09-07T07:50:00Z"},' \
+                       '{"name":"b","bucket":"pass","completedAt":"2026-09-07T07:55:44Z"}]')
+    assert_equal :green, v[:state]
+    assert_equal "2026-09-07T07:55:44Z", v[:completed_at],
+                 "the run finished when its LAST check did — an earlier stamp would call covered " \
+                 "base commits uncovered and manufacture refusals downstream"
+  end
+
+  # Mixed offset spellings must still order by INSTANT. Lexically "…T07:59:02+00:00"
+  # sorts BELOW "…T07:50:00Z", so a string max would hand back the earlier moment.
+  def test_the_latest_completion_is_ordered_by_instant_not_lexically
+    v = CiStatus.parse('[{"name":"a","bucket":"pass","completedAt":"2026-09-07T07:50:00Z"},' \
+                       '{"name":"b","bucket":"pass","completedAt":"2026-09-07T07:59:02+00:00"}]')
+    assert_equal "2026-09-07T07:59:02+00:00", v[:completed_at]
+  end
+
+  # No stamp is NO CLOCK — the key is absent rather than nil-or-epoch, and every reader
+  # of it treats absence as "the question could not be asked".
+  def test_a_green_without_completion_stamps_carries_no_clock
+    v = CiStatus.parse('[{"name":"a","bucket":"pass"}]')
+    assert_equal :green, v[:state]
+    refute v.key?(:completed_at), "an absent clock must not be invented"
+  end
+
+  def test_unparseable_completion_stamps_are_dropped_rather_than_ordered_as_garbage
+    v = CiStatus.parse('[{"name":"a","bucket":"pass","completedAt":"soon"},' \
+                       '{"name":"b","bucket":"pass","completedAt":"2026-09-07T07:55:44Z"}]')
+    assert_equal "2026-09-07T07:55:44Z", v[:completed_at]
+    assert_nil CiStatus.latest_completion([{ "name" => "a", "bucket" => "pass", "completedAt" => "soon" }])
+  end
+
   # --- conflicted-remedy-misreads-ci -------------------------------------------
   #
   # DIRTY and "the head has no check-runs" are INDEPENDENT facts. This message

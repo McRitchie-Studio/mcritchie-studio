@@ -181,9 +181,9 @@ without you —
   zap on `accepted`** (the seam below), riding the current RC only if it lands
   before that repo's `accepted → release` promote.
 - When the defect is the reason the PR cannot merge, it is not a zap from the
-  review seat at all: the supervisor routes it as rework feedback (`bin/task
-  block <task> --kind rework --feedback "…"`) and the builder fixes it on the
-  feat branch — where it may well be a builder zap.
+  review seat at all: the primary — the review claim's holder — routes it as
+  rework feedback (`bin/task block <task> --kind rework --feedback "…" --agent
+  carl`) and the builder fixes it on the feat branch — where it may well be a builder zap.
 
 ### After a reviewer zap — what re-checks itself, and what does not
 

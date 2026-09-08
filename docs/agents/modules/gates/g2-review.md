@@ -29,7 +29,11 @@ The gate flow order: [G1 Cert](g1-cert.md) → [DoR](dor.md) → **G2 Review**
   [`dor_review`](dor.md) gate), domain checklist, code standards, merge safety,
   docs. The primary drives the verdict.
 - **G2b Light** — a focused second read through the light reviewer's domain
-  lens. No gates, no verdict-drive — but any reviewer can block on a defect.
+  lens. No gates, no verdict-drive: a defect reaches the primary as a scout
+  report, and the primary — the review claim's holder — decides whether to spend
+  the task's bounce. Any reviewer may RAISE a blocking finding (`bin/task note
+  <slug> --comment` spends none); a `--kind rework` block by any soul other than
+  the claim's holder is REFUSED with exit 11 (`lib/review_verdict_gate.rb`).
 
 Each lane's verdict comes from its reviewer's **scout report**:
 `merge-ready` passes the lane; `request-changes`, `wait-for-ci`, and
@@ -60,8 +64,8 @@ What the review session records, per reviewed task:
 0. **Claim-time + gate-zero CI check** — the session only claims green-CI PRs
    (`bin/task claim-next-review`), and Carl's gate-zero re-reads the PR's live CI
    mid-review (`bin/lib/ci_status.rb`):
-   - **red** → `bin/task block <slug> --kind rework` with the failing checks
-     named, and the bounce recorded as a **failed `dor_review` (gate-zero)
+   - **red** → `bin/task block <slug> --kind rework --agent carl` with the failing
+     checks named, and the bounce recorded as a **failed `dor_review` (gate-zero)
      attempt** with a `ci` SOP (`--meta outcome=ci-red`, actor `carl`) — not a
      G2 review lane. No further reviewer tokens burned.
    - **conflicted** (`mergeStateStatus DIRTY`) → the same block-back shape
@@ -125,8 +129,8 @@ The task-level outcome is separate from the lanes: Carl's deep read + the light'
 merge-ready report → **Carl merges the feat PR into `accepted`** (the
 accepted-ladder's first rung), stamps `merged: "accepted"`, then moves the task
 `reviewed` (invariant: `reviewed` ⟺ code-on-`accepted`; a merge failure leaves it
-`submitted`); any `request-changes` → the task is blocked for rework (a `building`
-attribute — `bin/task block` stamps `blocked_at`/`block_kind` and lands it on
+`submitted`); any `request-changes` → **Carl**, who holds the review claim, blocks the
+task for rework (a `building` attribute — `bin/task block` stamps `blocked_at`/`block_kind` and lands it on
 `building`, not a `blocked` stage); `wait-for-ci` / `conductor-review` / a missing
 report → deferred and re-queried. A `request-changes` is spent only on a
 **reachable regression** (correctness / security / data-loss / acceptance miss);

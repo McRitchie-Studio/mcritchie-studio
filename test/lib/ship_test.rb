@@ -127,11 +127,16 @@ class ShipTest < Minitest::Test
   # `review: :absent` omits the review_in_progress column entirely — the older-board
   # case the holder refusal's UNKNOWN route exists for, and the default here so
   # every pre-existing test keeps the payload it was written against.
-  def task_record(stage: "building", pr_url: nil, checks_run: [], claim: nil, review: :absent)
+  # `built_by` names the CURRENT builder — the soul ship must author its commit
+  # as. nil (the default) is compacted away, modelling a task that names nobody,
+  # so every pre-existing test here keeps exactly the payload it was written
+  # against.
+  def task_record(stage: "building", pr_url: nil, checks_run: [], claim: nil, review: :absent,
+                  built_by: nil)
     record = {
       "slug" => SLUG, "stage" => stage, "title" => "Fast lane demo",
       "metadata" => { "devops" => {
-        "branch" => BRANCH, "worktree_slug" => SLUG, "pr_url" => pr_url,
+        "branch" => BRANCH, "worktree_slug" => SLUG, "pr_url" => pr_url, "built_by" => built_by,
         "acceptance" => ["ship collapses the handoff"], "checks_run" => checks_run
       }.merge(claim || {}).compact }
     }
@@ -1164,4 +1169,47 @@ class ShipTest < Minitest::Test
     false
   end
 
+  # --- 1/8 commit authorship (desk-commits-wrong-soul) ------------------------
+  #
+  # THE BEHAVIOUR PROOF for lib/commit_identity.rb. Its own unit tests drive the
+  # module directly; these two run the REAL bin/ship and read the author back OUT
+  # OF GIT, which is the only thing that shows the identity actually reached the
+  # commit rather than merely being computed.
+  #
+  # with_repo sets a REPO-LEVEL `user.name tester` — the same shape as
+  # turf-monster's "Steffon (Claude)" relic, and the identity that authored the
+  # commit before this change.
+
+  def test_ship_authors_its_commit_as_the_claiming_soul
+    with_repo do |dir|
+      _out, _err, status, = run_ship(dir, show_json: task_record(built_by: "shannon"))
+
+      assert_predicate status, :success?
+      assert_equal "shannon@mcritchie.studio", commit_author(dir, "%ae"),
+                   "ship's 1/8 commit must be authored by the soul on the board, " \
+                   "not by the repo's own git identity"
+      assert_equal "Shannon", commit_author(dir, "%an")
+      assert_equal "Shannon", commit_author(dir, "%cn"),
+                   "the committer carries the soul too — leaving it would keep the " \
+                   "relic on git log --format=%cn and leave half the provenance lying"
+    end
+  end
+
+  def test_ship_does_not_fabricate_an_author_for_an_unattributed_task
+    with_repo do |dir|
+      _out, err, status, = run_ship(dir, show_json: task_record(built_by: nil))
+
+      assert_predicate status, :success?
+      assert_equal "tester", commit_author(dir, "%an"),
+                   "with no soul on record the commit stays on the checkout's own " \
+                   "identity — a guessed author is the defect, not the fix"
+      assert_match(/names no builder/, err,
+                   "and ship must SAY the commit is unattributed rather than pass silently")
+    end
+  end
+
+  # The author of the commit ship just made, read out of git.
+  def commit_author(dir, fmt)
+    `git -C #{dir} log -1 --format=#{fmt}`.strip
+  end
 end

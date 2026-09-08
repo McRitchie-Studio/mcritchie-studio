@@ -484,12 +484,16 @@ class FastCertSubjectTest < Minitest::Test
     # THE COUNT TRACKS THE TREE, so it moves whenever a test file is added whose
     # path this config's spelling matches — it is not a property of the mapping
     # rule. 20 → 21 on 2026-09-07 (wire-task-dependencies-field) when
-    # test/models/task_dependencies_test.rb was added. What the assertion is FOR
-    # is the LIST: this one known entry and no other. A second path appearing is
-    # the regression; this number changing is bookkeeping.
-    assert_equal ["config/test_health.yml (21)"], over,
+    # test/models/task_dependencies_test.rb was added; 21 → 22 the same day
+    # (prepare-drops-qa-dispatch) when test/lib/release_cli_dispatch_run_test.rb
+    # was added — a NEW test file whose header cites this config to explain why it
+    # is a new file rather than an append, which is exactly the reference the
+    # mapper is supposed to follow. What the assertion is FOR is the LIST: this one
+    # known entry and no other. A second path appearing is the regression; this
+    # number changing is bookkeeping.
+    assert_equal ["config/test_health.yml (22)"], over,
                  "config/test_health.yml was already over the cap before this clause " \
-                 "existed (its PATH matches 21 files); any OTHER entry here means the " \
+                 "existed (its PATH matches 22 files); any OTHER entry here means the " \
                  "config spelling re-opened a cap trip"
   end
 end

@@ -175,6 +175,16 @@ class DorCheckExemptCiTest < Minitest::Test
 
   def test_unit_gate_row_names_ci_as_the_failing_sop_when_ci_is_why_it_failed
     assert_equal "pass", CiGate.gate_row({ state: :green }, review_role: true, review_refused: false)
+    # THE REFUSED GREEN. The stale-green refusal fires only when ci[:state] == :green,
+    # so this vector is the one that decides whether `review_refused` is wired to
+    # anything at all on that path. It graded "pass" until 2026-09-07: the review
+    # refused while the gates card recorded CI as passing.
+    assert_equal "fail", CiGate.gate_row({ state: :green }, review_role: true, review_refused: true)
+    # …and the builder-side pending row, unchanged. NOTE it is pinned only for
+    # review_refused: false — the refused variant is unreachable (CiGate.verdict makes a
+    # builder-side :pending a NOTE, not a ci_error), so asserting one would pin a state
+    # no caller can construct.
+    assert_equal "pending", CiGate.gate_row({ state: :pending }, review_role: false, review_refused: false)
     assert_equal "fail", CiGate.gate_row({ state: :red }, review_role: true, review_refused: true)
     assert_equal "fail", CiGate.gate_row({ state: :pending }, review_role: true, review_refused: true)
     assert_equal "pending", CiGate.gate_row({ state: :pending }, review_role: false, review_refused: false)

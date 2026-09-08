@@ -306,7 +306,38 @@ module CiGate
     return nil unless ci
 
     case ci[:state]
-    when :green then "pass"
+    # A REFUSED REVIEW CANNOT RECORD ITS CI ROW AS "pass", AND :green IS THE ONLY
+    # STATE WHERE THAT WAS POSSIBLE. `review_refused` used to be consulted in the
+    # `else` alone, so the stale-green refusal — whose whole precondition is
+    # `ci[:state] == :green` — set the flag and changed nothing: the gate refused the
+    # review (exit 1) while the durable gates-card row and the --json payload both
+    # recorded CI as "pass". Measured on the refusing fixture: code=1,
+    # ci_gate_result="pass". That is this module's own subject one level down — a
+    # green credited for a tree nobody ran — surviving into the record the board
+    # renders, and it is why deleting the `ci_review_refused = true` assignment left
+    # every integration test green: the line was inert.
+    #
+    # Scoped to :green because :green is the ONLY state where `review_refused` went
+    # unread AND a caller can actually reach it — every other REACHABLE refused state
+    # already answers "fail", so this is the narrowest edit that covers the defect and
+    # its blast radius is exactly the bug. (Stated with that qualifier on purpose:
+    # builder-side :pending returns "pending", not "fail", so the unqualified sentence
+    # would be false. It is refused-unreachable, which the next paragraph establishes.)
+    #
+    # A blanket `return "fail" if review_refused` above the case would be EQUIVALENT,
+    # and that is a measured claim, not a guess: mutation-tested 2026-09-07, it survived
+    # all three suites. The only branch it could differ on is builder-side :pending
+    # ("pending" here, "fail" under the hoist), and that combination is UNREACHABLE —
+    # CiGate.verdict records a builder-side :pending as a NOTE, never a ci_error (see
+    # the :pending arm above), while every assignment that could set `review_refused`
+    # requires either a ci_error or review_role. So no caller can construct it.
+    #
+    # The narrow form is kept anyway, for auditability rather than behaviour: it puts
+    # the answer on the branch it belongs to, where the next reader of the :green row
+    # meets it. An earlier draft of this comment claimed the hoist WOULD break
+    # builder-side pending. It would not, and the mutation said so — recorded here
+    # because a gate that argues from an unverified claim is this file's own subject.
+    when :green then review_refused ? "fail" : "pass"
     when :pending then review_role ? "fail" : "pending"
     when :red, :conflicted, :ci_less, :closed, :merged then "fail"
     else
