@@ -43,9 +43,12 @@ class BoardLanePinTest < ActionDispatch::IntegrationTest
   test "the lane header composes its top from the pinned stack" do
     header = css_select("[data-test='stage-header']").first
 
-    assert_match(/top:\s*max\(var\(--pin-nav-bottom[^)]*\),\s*var\(--pin-apps-bottom/,
-                 header["style"].to_s,
-                 "the lane header must compose the stack in CSS")
+    assert_match(/top:\s*var\(--pin-stack-bottom/, header["style"].to_s,
+                 "the lane header must read the engine's ONE composed value")
+    refute_match(/max\(var\(--pin-/, header["style"].to_s,
+                 "composing the stack here enumerates the layers — a fourth one would need this " \
+                 "file edited, and a max() over two properties written in different frames is " \
+                 "meaningless on the frame they disagree")
     assert_nil header[":style"],
                "an Alpine style bind would fight the CSS and put the lag back"
 

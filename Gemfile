@@ -152,17 +152,31 @@ gem "sentry-rails"
 # hand-edited lockfile, or an unmigrated database all get past it.
 # test/lib/engine_pin_contract_test.rb asserts the resolved version and columns.
 #
-# 0.65.0 IS THE FLOOR NOW, and a HARD one: it ships the pinned-stack publisher
-# (any element carrying data-pin publishes --pin-<name>-h and --pin-<name>-bottom)
-# and the task board POSITIONS OFF IT — the app-ladder strip from
-# --pin-nav-bottom, the lane headers from max(--pin-nav-bottom, --pin-apps-bottom),
-# with no JS measuring either. Below 0.65 neither property is published, both
-# var() fall back to 0px, and the strip and every stage header pile up under the
-# navbar. It replaced ~40 lines of Alpine that measured the header and chased it
-# through its collapse (task stop-headers-chasing-navbar). The old `~> 0.43`
-# already RESOLVED 0.65.2, so the resolver never saw this bump; it is the floor
-# that moved, which is what this comment records.
-gem "studio-engine", "~> 0.65"
+# 0.65.0 WAS THE FLOOR: it shipped the pinned-stack publisher (any element
+# carrying data-pin publishes --pin-<name>-h and --pin-<name>-bottom) and the task
+# board positioned off it, replacing ~40 lines of Alpine that measured the header
+# and chased it through its collapse (task stop-headers-chasing-navbar).
+#
+# 0.72.3 IS THE FLOOR NOW, and a HARD one for the same reason one rung up. That
+# release rebuilt the publisher to COMPOSE the stack — --pin-stack-bottom (the
+# bottom of the whole stack) and --pin-<name>-top (the bottom of everything above
+# that layer) — and this app now positions off those and nothing else: the lane
+# headers from --pin-stack-bottom, the app-ladder strip from --pin-apps-top. Below
+# 0.72.3 NEITHER is published, both var() fall back to 0px, and the strip and
+# every stage header pile up under the navbar.
+#
+# The composed pair replaced `max(--pin-nav-bottom, --pin-apps-bottom)` here, which
+# was wrong twice over: it made this app re-enumerate the layers on every new piece
+# of pinned chrome, and a max() over two custom properties is only meaningful if
+# they were written in the SAME FRAME — which they were not, because the publisher
+# deferred its write to requestAnimationFrame while the strip's visibility flipped
+# synchronously. Measured on production, parked and untouched: the lane header top
+# went 152 -> 53 -> 152 -> 53px in 240ms behind two Turbo broadcasts (task
+# rebuild-pinned-stack-primitive / adopt-composed-pinned-stack).
+#
+# The old `~> 0.65` already RESOLVED past this, so the resolver never sees the
+# bump; it is the FLOOR that moved, which is what this comment records.
+gem "studio-engine", "~> 0.72"
 
 # Pin the majors this app already runs so an engine bump cannot carry a new one
 # in silently. studio-engine declares `redis >= 4.0.1` with NO upper bound — the

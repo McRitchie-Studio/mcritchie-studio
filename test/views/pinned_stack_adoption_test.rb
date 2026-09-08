@@ -25,11 +25,18 @@ class PinnedStackAdoptionTest < ActiveSupport::TestCase
   STRIP  = Rails.root.join("app/views/tasks/_app_ladder_row.html.erb")
   BOARD  = Rails.root.join("app/views/tasks/_deploy_board.html.erb")
 
-  # The release the pinned-stack publisher landed in. A NUMBER, not a string:
-  # below it neither --pin-nav-bottom nor --pin-apps-bottom is ever published,
+  # The release the COMPOSED pinned stack landed in. A NUMBER, not a string:
+  # below it neither --pin-stack-bottom nor --pin-apps-top is ever published,
   # every var() falls back to 0px, and the strip and every stage header pile up
   # at the top of the viewport underneath the navbar.
-  PINNED_STACK_FROM = Gem::Version.new("0.65")
+  #
+  # It moved 0.65 -> 0.72.3 with the adoption above. 0.65 shipped the per-layer
+  # properties this app used to compose itself with a max(); 0.72.3 is where the
+  # publisher started composing the stack ITSELF, and where it began writing
+  # inside its ResizeObserver callback instead of a frame later. Leaving the floor
+  # at 0.65 would let a resolver serve an engine that publishes neither name while
+  # every assertion below — which reads SOURCE, not a running page — stayed green.
+  PINNED_STACK_FROM = Gem::Version.new("0.72.3")
 
   test "the resolved engine publishes the pinned stack this app positions off" do
     resolved = Gem.loaded_specs["studio-engine"].version
@@ -70,10 +77,14 @@ class PinnedStackAdoptionTest < ActiveSupport::TestCase
     strip = STRIP.read
     board = BOARD.read
 
-    assert_match(/top:\s*var\(--pin-nav-bottom/, strip,
-                 "the strip must take its top from the published edge, not a measured number")
-    assert_match(/top:\s*max\(var\(--pin-nav-bottom[^)]*\),\s*var\(--pin-apps-bottom/, board,
-                 "the stage headers must compose the stack in CSS; max() lets a hidden strip drop out")
+    assert_match(/top:\s*var\(--pin-apps-top/, strip,
+                 "the strip is ITSELF a layer, so it takes the edge of everything ABOVE it — " \
+                 "naming the nav claims the nav is what sits above it, and --pin-apps-bottom " \
+                 "is its OWN edge, which would make it chase itself down the page")
+    assert_match(/top:\s*var\(--pin-stack-bottom/, board,
+                 "the stage headers must read the engine's ONE composed value")
+    refute_match(/max\(var\(--pin-/, board,
+                 "neither consumer may compose the stack itself — see the engine's publisher")
     assert_includes strip, 'data-pin="apps"',
                     "the strip is itself a layer, or the stage headers cannot stack onto it"
 
@@ -83,6 +94,21 @@ class PinnedStackAdoptionTest < ActiveSupport::TestCase
     refute_match(/:style="\{\s*top:\s*laneTop/, board, "the stage headers must no longer write their own top")
     refute_match(/^\s*laneTop:/, board, "laneTop state must go with the writer that used it")
     refute_match(/watchStrip\(/, board, "the strip-observing machinery must be gone")
+
+    # AND THE PINNED STATE MUST OUTLIVE THE NODE. DeploymentsBroadcaster.app_ladder
+    # replaces #app-ladder-row wholesale, which tears down the row's Alpine
+    # component; a fresh one starting at `pinned: false` blinks the strip out and
+    # back on EVERY broadcast, whatever the engine publishes. Measured on
+    # production, parked and untouched for 20s: 4 broadcasts, 2 of them the ladder,
+    # and the lane headers slammed 99px four times. "Have we scrolled past the row"
+    # is a property of the PAGE, so it lives in a store outside the replaced node.
+    refute_match(/^\s*pinned:\s*false,/, strip,
+                 "component-local pinned state dies with the node on every broadcast")
+    assert_match(/x-show="\$store\.appLadder\.pinned"/, strip,
+                 "the strip must read its pinned state from a store that outlives the replace")
+    assert_match(/Alpine\.store\('appLadder'/, board,
+                 "and the store must be registered OUTSIDE the broadcast target — this partial " \
+                 "renders the row and is not itself replaced")
     refute_match(/_laneRo\.observe\(header\)/, board,
                  "observing the header duplicates a measurement the engine already coalesces")
   end

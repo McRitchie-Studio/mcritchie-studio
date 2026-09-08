@@ -91,8 +91,40 @@ class AppLadderRowViewTest < ActionView::TestCase
     render partial: "tasks/app_ladder_row", locals: { cards: cards(5) }
 
     strip = css_select("[data-test='app-ladder-pinned']").first
-    assert_equal "pinned", strip["x-show"]
+    # THE STATE LIVES IN A STORE, not on this component. The row is replaced
+    # wholesale by DeploymentsBroadcaster.app_ladder, and a component-local
+    # `pinned: false` is rebuilt as false on every broadcast — so the strip blinks
+    # out and back while the page has not moved. A store outlives the node.
+    assert_equal "$store.appLadder.pinned", strip["x-show"]
     assert_includes strip["style"].to_s, "display: none"
+  end
+
+  # A DOUBLE QUOTE ANYWHERE IN THE x-data ATTRIBUTE KILLS THE COMPONENT.
+  #
+  # x-data is delimited by double quotes, so one inside the expression — INCLUDING
+  # inside a `//` comment, which is the case that actually shipped — ends the
+  # attribute early. Alpine then never parses the component, and the page reports
+  # a bare `SyntaxError: Unexpected token ')'` plus `overflowing is not defined`,
+  # nowhere near the quote.
+  #
+  # WHY THIS IS A TEST AND NOT A NOTE. Every other assertion in this file reads
+  # SOURCE, and source-reading assertions are all still green with the component
+  # dead: the markup is byte-identical whether Alpine ever evaluated it. This one
+  # was caught by a browser, on a stack booted to check something else. The rule is
+  # cheap to state and impossible to remember, so it is stated here instead.
+  #
+  # Scoped to the x-data BODY, so the ordinary quotes that delimit the attribute
+  # and the other attributes on the element are untouched.
+  test "the x-data expression contains no double quote, which would end the attribute" do
+    source = Rails.root.join("app/views/tasks/_app_ladder_row.html.erb").read
+    body = source[/x-data="\{(.*?)\n\s*\}"/m, 1]
+
+    refute_nil body, "could not isolate the x-data expression — re-anchor this guard"
+    offending = body.lines.each_with_index.select { |line, _| line.include?('"') }
+
+    assert_empty offending.map { |line, i| "line #{i + 1}: #{line.strip}" },
+                 "a double quote inside x-data ends the attribute early and Alpine never " \
+                 "parses the component; use single quotes, or reword the comment"
   end
 
   # THE HEADER IS z-50 AND MUST ALWAYS WIN. A strip that outranks the nav pins itself
@@ -110,8 +142,10 @@ class AppLadderRowViewTest < ActionView::TestCase
     # its collapse, a frame behind, for the whole 300ms ease (task
     # stop-headers-chasing-navbar). The engine publishes the header's live bottom
     # edge, so the strip positions off THAT, in CSS, with nothing to lag.
-    assert_match(/top:\s*var\(--pin-nav-bottom/, strip["style"].to_s,
-                 "the strip must take its top from the published edge, never a measured number")
+    assert_match(/top:\s*var\(--pin-apps-top/, strip["style"].to_s,
+                 "the strip must take its top from the published edge, never a measured number — " \
+                 "and from its OWN place in the stack (the edge of everything above it), not " \
+                 "from a layer it happens to know the name of")
     assert_nil strip[":style"],
                "an Alpine style bind would fight the CSS and reintroduce the frame of lag"
 
