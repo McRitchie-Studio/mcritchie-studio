@@ -284,8 +284,25 @@ impossible by construction rather than by every repo remembering to ignore `tmp/
 
    | the set is empty because… | verdict | exit | what happens |
    |---|---|---|---|
-   | the diff maps to **NO test file** (no convention target, no grep hit) | **REFUSE** | `1` | nothing recorded, nothing pushed; remedy is `bin/full-suite-check <task>` |
+   | the diff maps to **NO test file** (no convention target, no grep hit) **and NO spine is declared** (`config/fast_cert_spine.yml` missing, empty, or unparseable) | **REFUSE** | `1` | nothing recorded, nothing pushed; remedy is the hub's `bin/full-suite-check <task>` |
    | the mapped lane was **CAPPED** *and* **no twin fallback was available** (no changed file has a twin, or the twins were themselves over the cap) | **DEFER** | `2` | a `[cert-deferred@<fp>]` receipt is recorded; `bin/ship` pushes and opens the PR; **`bin/dor-check` then requires a GREEN CI** |
+   | this **CHECKOUT resolves NONE of the spine entries the config DECLARES** — the satellite case | **DEFER** | `2` | same receipt, same `bin/ship` continuation, same GREEN-CI demand at `bin/dor-check` |
+
+   **The spine is hub-anchored, and that is what the third row is for.** Measured
+   2026-09-07: `config/fast_cert_spine.yml` declares five entries; the hub resolves
+   **5/5** while turf-monster, rolio, turf-vault, studio-engine and solana-studio
+   each resolve **0/5**. So the SAME docs-only diff certified green in the hub (the
+   spine ran) and was REFUSED on a satellite — a verdict decided by where the
+   builder was standing, reported as a fact about the diff, and it killed `bin/ship`
+   at step 2 of 8 before any PR or CI existed. What the hub's green buys on such a
+   diff is a **tree-health smoke test**, never coverage of the prose that changed; a
+   satellite cannot run it, but CI runs that repo's whole suite on the same tree. So
+   the deferral demands strictly MORE evidence than the hub's green, not less.
+
+   **The remedy names the HUB'S ABSOLUTE path**, because `bin/full-suite-check`
+   exists **only** in the hub (measured 2026-09-07: absent from turf-monster, rolio,
+   turf-vault, studio-engine and solana-studio). A bare `bin/full-suite-check
+   <task>` is not a command a satellite checkout can run.
 
    **A capped run that DOES take its twin fallback certifies — it does not defer.**
    That is the deliberate answer, and it holds because the guard is keyed on ZERO
