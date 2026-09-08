@@ -1276,6 +1276,13 @@ def drop_receipt_of(task)
   task.is_a?(Hash) ? task.dig("metadata", "devops", "approval_request_dropped_at").to_s.strip : ""
 end
 
+# EVERY COMMAND THIS MESSAGE PRINTS IS EXECUTED BY A TEST
+# (test_every_command_the_warning_prints_actually_runs). The first draft of this
+# very rewrite advertised `bin/task move <slug> building --approval waiting` — a
+# flag `move` does not have, so the one command a stuck reader would paste dies on
+# unknown_flag!. Asserting the text CONTAINS a command proves only that a string is
+# present; running it is what proves the advice is real.
+#
 # `before` is a trailing POSITIONAL on purpose. Adding a KEYWORD to a method whose
 # callers pass a brace-less trailing hash silently re-binds that hash to the
 # keywords — the trap that cost PR 1276 four red tests on a shard no diff-mapped
@@ -1286,9 +1293,10 @@ def warn_dropped_approval_request!(task, slug, before)
   warn!("warning: this move DISCARDED a pending operator-approval request " \
         "(approval_status waiting → none). Nobody was asked and the board will not pulse. " \
         "If the operator already approved in words, record it: bin/task update #{slug} " \
-        "--approval approved. If you still need his eyes, ask from where you stand — " \
-        "move the task back with: bin/task move #{slug} building --approval waiting. " \
-        "A request is only actionable in #{APPROVAL_REQUEST_STAGES.join(" or ")}.")
+        "--approval approved. If you still need his eyes, move the task back and ask " \
+        "again: bin/task move #{slug} building, then bin/task update #{slug} " \
+        "--approval waiting. A request is only actionable in " \
+        "#{APPROVAL_REQUEST_STAGES.join(" or ")}.")
 end
 
 def move_dropped_approval_request?(task, before)

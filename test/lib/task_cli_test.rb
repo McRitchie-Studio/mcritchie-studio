@@ -3217,19 +3217,37 @@ class TaskCliTest < Minitest::Test
   end
 
   # The message has to be actionable from where the reader STANDS. It leads with the
-  # governing condition (a decision the operator already gave), then names the move
-  # that gets his eyes back — rather than opening with advice for last time.
-  def test_the_warning_names_both_ways_out
+  # governing condition (a decision the operator already gave), then names the moves
+  # that get his eyes back — rather than opening with advice for last time.
+  #
+  # And every command it prints is RUN here, not merely matched. The first draft of
+  # the rewrite advertised `bin/task move <slug> building --approval waiting`; `move`
+  # has no `--approval` flag, so the one command a stuck reader would paste dies on
+  # unknown_flag!. A `assert_match(/--approval/, err)` passes on that. Executing it
+  # does not. This is a warning whose entire job is to un-stick a reader, so advice
+  # that does not run is the same defect in a new place.
+  def test_every_command_the_warning_prints_actually_runs
     _reqs, _out, err, _status = run_task(
       %w[move demo-slug submitted],
       stub_stage: "building",
       stub_devops: { "kind" => "feature", "approval_status" => "waiting" }
     )
 
-    assert_match(/already approved in words, record it/, err)
-    assert_match(/--approval approved/, err, "it must name the way to record a decision already given")
-    assert_match(/move demo-slug building --approval waiting/, err,
-                 "and the way to actually get his eyes from here")
+    assert_match(/already approved in words, record it/, err,
+                 "the governing condition leads — not advice for last time")
+
+    commands = err.scan(%r{bin/task ([^.,\n]+)}).flatten.map(&:split)
+    # Guard the SCAN before trusting it: a regex that matched nothing would loop
+    # zero times and pass silently, certifying a message it never read.
+    assert_equal 3, commands.size,
+                 "expected the warning to advertise 3 runnable commands, got #{commands.inspect} from: #{err}"
+
+    commands.each do |argv|
+      _r, _o, cmd_err, cmd_status = run_task(argv, stub_stage: "building")
+      assert cmd_status.success?,
+             "the warning tells the reader to run `bin/task #{argv.join(" ")}`, " \
+             "which the CLI itself rejects: #{cmd_err}"
+    end
   end
 
   # SHAPE 3 — the SAME move run twice. `bin/ship` is documented as resumable and a
