@@ -11,9 +11,10 @@ The bank is the **single source of truth**; the tracked doc
 - **Curate a lesson** — bank it: `bin/agent-activity grade <activity-id> --disposition
   good|not --slug "<4–7 words>" [--long-form "<anchor>"] --bank` (Alex heartbeat
   `grade-events`). The audit-of-Alex (`grader: mcr`) is McRitchie's admin path.
-- **Feed it forward** — a fresh session **will** load the top-N via the planned
-  `bin/session-insights` SessionStart loader (once it lands), so a new agent hatches
-  already knowing them.
+- **Feed it forward** — a fresh session loads the top-N via the `bin/session-insights`
+  SessionStart loader, which GETs `/api/v1/insights`, so a new agent hatches already
+  knowing them. Banking a lesson is what publishes it; the tracked doc below is the
+  readable record, not the delivery path.
 - **Regenerate the doc** — `bin/rails insights:doc` (post-deploy / on demand).
 
 Because the bank is canonical and generated, **hand-edited lesson lists are
