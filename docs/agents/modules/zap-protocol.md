@@ -196,7 +196,7 @@ because they happened to re-verify by hand.
 |---|---|
 | GitHub CI verdict | **Yes** — checks re-run on the new head. |
 | The tree `bin/dor-check --gate-role review` grades | **Now guarded.** It re-roots to the *builder's desk*, which sits wherever the builder left it. It refuses when that tree is not the PR head. |
-| The full-suite cert fingerprint | **Only sometimes** — see below. |
+| The full-suite cert fingerprint | **From a worktree yes; from a separate clone no** — see below. |
 | The e2e declared-vs-executed set | **No** — it ran once, against the base as it was then. |
 | The task's stage | **No mechanism found.** See the open question below. |
 
@@ -210,15 +210,39 @@ naming both SHAs. The remedy is one command:
 git fetch origin <branch>     # then re-run dor-check
 ```
 
-**Do not rely on the cert fingerprint to catch your zap.** It often does — the
-cert is bound to a git *tree* hash, so a zap changes the tree and the cert reads
-STALE (observed on solana-studio #29, where the reviewer had to re-certify). But
-it hashes `origin/<branch>` **in the builder's desk**, and `bin/dor-check` never
-runs `git fetch`. Push your zap from that desk and the ref moves as a side effect,
-so the cert goes stale as expected; push it from anywhere else and the desk's ref
-stays pre-zap, the hash still matches the builder's cert, and the lane reads
-FRESH. Same act, opposite outcome, decided by which checkout you were standing
-in. If the zap was yours, re-certify it: `bin/full-suite-check <task>`.
+**Expect the cert to go STALE — and know the one case where it does not.** The
+cert is bound to a git *tree* hash, so a zap changes the tree and the cert stops
+matching (observed on solana-studio #29, where the reviewer had to re-certify).
+`bin/dor-check --gate-role review` recomputes that hash as
+`origin/<branch>^{tree}` **in the builder's desk** — or in the repo's primary
+checkout when that repo has no desk for the task — and it never runs `git fetch`.
+So the whole question is whether the checkout you push from writes the copy of
+`refs/remotes/origin/<branch>` that the gate reads. Distance is not the test;
+**ref sharing** is:
+
+- **A worktree SHARES that ref, so the cert correctly goes STALE.** Every
+  worktree of a repo keeps ONE ref store, in the common git dir (`git rev-parse
+  --git-common-dir`); only `HEAD` and a few per-worktree refs are private. The
+  throwaway `.worktrees/zap-<slug>` desk this protocol tells you to cut hangs off
+  the same primary checkout the builder's desk does — the recipes above derive it
+  from `--git-common-dir` precisely so it does — so your push moves the very ref
+  the cert is fingerprinted against, the desk resolves the new tree with no fetch,
+  and the lane reads STALE. **That is the house case**, because worktrees are the
+  house desk, and the refusal is the guard working rather than a bug in the gate.
+  If the zap was yours, re-certify it: `bin/full-suite-check <task>`.
+- **A separate CLONE keeps its own refs, so the cert reads FRESH — the dangerous
+  reading.** A distinct clone, a push from another machine, or a merge made in
+  GitHub's web UI never touches the desk's `origin/<branch>`. The hash still
+  matches the builder's cert and the lane reads FRESH over a tree that is no
+  longer the PR head: a green that is evidence of nothing. Only the head check
+  (seam 1 above) catches that one, by comparing the graded commit to the PR head.
+
+Measured 2026-09-08 on real repositories and pinned by
+`test/docs/zap_cert_freshness_docs_test.rb`: a push from a sibling worktree moved
+the reading checkout's `origin/<branch>^{tree}` with no fetch, while the identical
+push from a separate clone left it unchanged until that checkout fetched. Carl hit
+the worktree half zapping studio-engine #305 the same day — he followed the older
+wording, expected FRESH, and the gate correctly refused a stale cert.
 
 **A base that moves mid-review is reported, not refused.** `accepted` moves
 constantly and blocking every review after any merge would wedge the lane, so
