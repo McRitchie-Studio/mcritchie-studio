@@ -1384,4 +1384,165 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
     assert_includes kept, "rails (7.2.1)"
     assert_not_includes kept, "studio-engine (0.31.0)"
   end
+
+  # --- the never-dispatched deploy: dispatch_argv + undispatched_run_abort ------
+  #
+  # THE DEFECT these pin (rel-20260907-14cff2, measured during a real sweep):
+  # `gh workflow run qa-deploy.yml -f sha=0a0cc23` was accepted, created NO run,
+  # printed no error, and the conductor polled a QA app still serving the old
+  # tree — then blamed the app ("never returned /up 200"). The operator needed
+  # three facts to tell that apart from a slow dyno, and had none of them.
+
+  test "dispatch_argv builds the gh command the shell actually runs" do
+    assert_equal ["gh", "workflow", "run", "qa-deploy.yml", "-f", "sha=0a0cc23"],
+                 S.dispatch_argv("qa-deploy.yml", { "sha" => "0a0cc23" })
+  end
+
+  test "dispatch_argv carries every input, in order, as its own -f pair" do
+    assert_equal ["gh", "workflow", "run", "prod-deploy.yml", "-f", "sha=abc", "-f", "env=production"],
+                 S.dispatch_argv("prod-deploy.yml", { "sha" => "abc", "env" => "production" })
+  end
+
+  test "dispatch_argv with no inputs is a bare dispatch" do
+    assert_equal ["gh", "workflow", "run", "qa-deploy.yml"], S.dispatch_argv("qa-deploy.yml")
+    assert_equal ["gh", "workflow", "run", "qa-deploy.yml"], S.dispatch_argv("qa-deploy.yml", nil)
+  end
+
+  # The abort must NAME the workflow, the SHA, and the dispatch command — each one
+  # is a fact the incident was missing. Asserted as three separate claims so a
+  # regression that drops exactly one of them cannot hide behind the other two.
+  # EACH FACT GETS ITS OWN LABELLED FIELD, and that is what these assert. A bare
+  # `assert_includes message, sha` is satisfied by the sha appearing INSIDE the
+  # quoted command — measured: deleting the whole `sha:` line left such an assertion
+  # green. The operator scans a labelled block; so does the test.
+  test "undispatched_run_abort gives the workflow its own labelled field" do
+    assert_match(/^\s*workflow:\s+qa-deploy\.yml\s*$/,
+                 S.undispatched_run_abort("qa-deploy.yml", { "sha" => "0a0cc23" }))
+  end
+
+  test "undispatched_run_abort gives the never-deployed sha its own labelled field" do
+    assert_match(/^\s*sha:\s+0a0cc23\s*$/,
+                 S.undispatched_run_abort("qa-deploy.yml", { "sha" => "0a0cc23" }))
+  end
+
+  test "undispatched_run_abort gives the dispatch command its own labelled field" do
+    assert_match(/^\s*command:\s+gh workflow run qa-deploy\.yml -f sha=0a0cc23\s*$/,
+                 S.undispatched_run_abort("qa-deploy.yml", { "sha" => "0a0cc23" }))
+  end
+
+  # NOT a hand-copied string: the expected command is what dispatch_argv — the same
+  # builder the shell dispatches with — emits. A message quoting a command the shell
+  # does not run is worse than no command, because the operator concludes the
+  # workflow is healthy when their paste differs from the real dispatch.
+  test "undispatched_run_abort quotes the dispatch command the shell ran" do
+    inputs = { "sha" => "0a0cc23" }
+    assert_includes S.undispatched_run_abort("qa-deploy.yml", inputs),
+                    S.dispatch_argv("qa-deploy.yml", inputs).join(" ")
+  end
+
+  # The wrong diagnosis is the whole cost of this bug: an hour spent on a healthy
+  # app because the message said boot timeout. The abort has to say what it is NOT.
+  test "undispatched_run_abort refuses the boot-timeout diagnosis in words" do
+    message = S.undispatched_run_abort("qa-deploy.yml", { "sha" => "0a0cc23" })
+    assert_includes message, "NOT a boot timeout"
+    assert_includes message, "bin/qa-server deploy", "it must name the remedy NOT to reach for"
+    assert_includes message, "the deploy NEVER RAN", "it must state the deploy did not happen at all"
+  end
+
+  test "undispatched_run_abort still names the workflow when no sha was supplied" do
+    message = S.undispatched_run_abort("qa-deploy.yml", {})
+    assert_includes message, "qa-deploy.yml"
+    assert_match(/^\s*sha:\s+\(none supplied\)\s*$/, message,
+                 "a missing sha is STATED, never rendered as a blank field the reader mistakes for a value")
+  end
+
+  test "undispatched_run_abort reads a symbol-keyed sha too" do
+    assert_match(/^\s*sha:\s+0a0cc23\s*$/, S.undispatched_run_abort("qa-deploy.yml", { sha: "0a0cc23" }))
+  end
+
+  # --- the OTHER cause of a missing run: an unreadable run list ----------------
+  #
+  # THE DEFECT these pin (found in review of the abort above, before it shipped).
+  # bin/release's registration poll returns a nil run id for TWO causes: every read
+  # ANSWERED and showed no new run (GitHub holds none), or every read FAILED
+  # (`gh run list` non-zero → newest_run_id nil → new_run_id nil). Same nil,
+  # OPPOSITE facts. Reporting the first message for the second case tells an
+  # operator "the deploy NEVER RAN … the app is still serving its OLD tree" and
+  # hands them the dispatch command — on prod-deploy.yml, while that deploy may be
+  # in flight. A second production deploy, ordered on a read that never succeeded.
+
+  test "unreadable_run_list_abort gives the workflow its own labelled field" do
+    assert_match(/^\s*workflow:\s+qa-deploy\.yml\s*$/,
+                 S.unreadable_run_list_abort("qa-deploy.yml", { "sha" => "0a0cc23" }))
+  end
+
+  test "unreadable_run_list_abort gives the sha its own labelled field" do
+    assert_match(/^\s*sha:\s+0a0cc23\s*$/,
+                 S.unreadable_run_list_abort("qa-deploy.yml", { "sha" => "0a0cc23" }))
+  end
+
+  test "unreadable_run_list_abort gives the dispatch command its own labelled field" do
+    assert_match(/^\s*command:\s+gh workflow run qa-deploy\.yml -f sha=0a0cc23\s*$/,
+                 S.unreadable_run_list_abort("qa-deploy.yml", { "sha" => "0a0cc23" }))
+  end
+
+  test "unreadable_run_list_abort quotes the dispatch command the shell ran" do
+    inputs = { "sha" => "0a0cc23" }
+    assert_includes S.unreadable_run_list_abort("prod-deploy.yml", inputs),
+                    S.dispatch_argv("prod-deploy.yml", inputs).join(" ")
+  end
+
+  # THE HONEST OBSERVATION. Nothing was read, so nothing is known — and the message
+  # has to say the UNKNOWN out loud, because the operator's next act depends on it.
+  test "unreadable_run_list_abort reports the deploy state as UNKNOWN" do
+    message = S.unreadable_run_list_abort("prod-deploy.yml", { "sha" => "0a0cc23" })
+    assert_includes message, "UNKNOWN", "the state of the deploy is the thing that was not established"
+    assert_includes message, "could NOT be read", "…and the reason is a failed READ, stated as such"
+    assert_includes message, "may exist and be deploying right now",
+                    "the live-deploy possibility must be named, not left for the reader to infer"
+  end
+
+  # THE REMEDY IS A CHECK, NOT A RE-DISPATCH. This is the whole safety property:
+  # "re-run the dispatch" is correct ONLY once you know no run exists, which is
+  # precisely what this failure could not establish.
+  test "unreadable_run_list_abort refuses a blind re-dispatch and makes the remedy a check" do
+    message = S.unreadable_run_list_abort("prod-deploy.yml", { "sha" => "0a0cc23" })
+    assert_includes message, "Do NOT re-dispatch",
+                    "a second deploy on top of a live one is the risk this message exists to prevent"
+    assert_includes message, "CHECK FIRST"
+    assert_includes message, "gh run list --workflow prod-deploy.yml --limit 5",
+                    "the check is spelled out, filled in for this workflow"
+    assert_includes message, "gh run watch", "…and so is what to do when a run IS listed"
+  end
+
+  # THE TWO MESSAGES MUST NOT BLEED. Asserted in BOTH directions on purpose: a
+  # single-direction assertion stays green if the branch that picks between them is
+  # collapsed to whichever message this test happens to look at.
+  test "unreadable_run_list_abort never claims the deploy did not happen" do
+    message = S.unreadable_run_list_abort("prod-deploy.yml", { "sha" => "0a0cc23" })
+    assert_not_includes message, "NEVER RAN",
+                        "nothing was observed, so the deploy cannot be reported as not having run"
+    assert_not_includes message, "Nothing was deployed",
+                        "…nor the app reported as unchanged"
+    assert_not_includes message, "OLD tree",
+                        "…nor as still serving its old tree, which is the claim that orders a re-deploy"
+  end
+
+  test "undispatched_run_abort never reports the deploy state as unknown" do
+    message = S.undispatched_run_abort("prod-deploy.yml", { "sha" => "0a0cc23" })
+    assert_includes message, "NEVER RAN", "this one HAS the observation: GitHub answered and holds no run"
+    assert_not_includes message, "UNKNOWN",
+                        "a message that hands over the dispatch command must not also say the state is unknown"
+  end
+
+  test "unreadable_run_list_abort still names the workflow when no sha was supplied" do
+    message = S.unreadable_run_list_abort("qa-deploy.yml", {})
+    assert_includes message, "qa-deploy.yml"
+    assert_match(/^\s*sha:\s+\(none supplied\)\s*$/, message,
+                 "a missing sha is STATED, never rendered as a blank field the reader mistakes for a value")
+  end
+
+  test "unreadable_run_list_abort reads a symbol-keyed sha too" do
+    assert_match(/^\s*sha:\s+0a0cc23\s*$/, S.unreadable_run_list_abort("qa-deploy.yml", { sha: "0a0cc23" }))
+  end
 end
