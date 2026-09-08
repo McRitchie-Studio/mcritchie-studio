@@ -3143,6 +3143,36 @@ class TaskCliTest < Minitest::Test
     refute_match(/DISCARDED/, err, "designed can hold a request too")
   end
 
+  # The sharpest version of shape 1, and the one that would hurt most: the request is
+  # STILL LIVE. `bin/task begin <slug> --steal` and a rework resume both move an
+  # already-`building` task to `building` again, so the pre-state legitimately reads
+  # "waiting" and the settle still never runs. Announcing a discarded request here
+  # would be telling the agent it destroyed the very request that is pulsing on the
+  # board right now. Nothing but the destination-stage test prevents that: the
+  # pre-state half, asked on its own, says "waiting — this will be settled".
+  def test_a_move_into_building_never_announces_a_request_that_is_still_live
+    _reqs, _out, err, status = run_task(
+      %w[move demo-slug building],
+      stub_stage: "building",
+      stub_devops: { "kind" => "feature", "approval_status" => "waiting" }
+    )
+
+    assert status.success?
+    refute_match(/DISCARDED/, err,
+                 "the request survives a move into building — it was not discarded, it is still waiting")
+  end
+
+  def test_a_move_into_designed_never_announces_a_request_that_is_still_live
+    _reqs, _out, err, status = run_task(
+      %w[move demo-slug designed],
+      stub_stage: "building",
+      stub_devops: { "kind" => "feature", "approval_status" => "waiting" }
+    )
+
+    assert status.success?
+    refute_match(/DISCARDED/, err, "designed holds a live request too")
+  end
+
   # ...and it does not even spend a READ to find that out. The pre-PATCH GET exists
   # only to date a possible drop, so a destination that cannot drop one must not pay
   # for it. Asserted as a DIFFERENCE between the two destinations rather than an
