@@ -362,7 +362,13 @@ module Api
         # so the fold starts from an empty base and the result is exactly the
         # normalized post.
         base = attrs.key?("metadata") ? attrs["metadata"] : @task&.metadata
-        attrs["metadata"] = Task.merge_devops_into_metadata(base, raw_devops_params)
+        # The stage the record will HAVE after this save, so an approval REQUEST is
+        # judged against where it is landing rather than where it came from — a PATCH
+        # that moves to `submitted` AND posts approval_status "waiting" is asking for
+        # something the same save would settle away. Falls back to the model default
+        # on a create that names no stage.
+        effective_stage = attrs["stage"].presence || @task&.stage || Task.new.stage
+        attrs["metadata"] = Task.merge_devops_into_metadata(base, raw_devops_params, effective_stage)
         attrs
       end
 
