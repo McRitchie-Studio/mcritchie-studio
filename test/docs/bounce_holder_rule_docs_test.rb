@@ -647,13 +647,13 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
   # A `line` that drifts fails LOUD and prints the lines actually found, so the fix
   # is mechanical. That is the price of an identity, and it is the right price.
   NARRATION = [
-    { file: "app/models/task.rb", line: 2963, match: /lands the task back on building and repoints/,
+    { file: "app/models/task.rb", line: 2970, match: /lands the task back on building and repoints/,
       why: "comment explaining the feature-marker repoint" },
     { file: "bin/pr-review", line: 29, match: /with the failing checks named/,
       why: "header comment narrating the gate-zero flow" },
     { file: "bin/task", line: 919, match: /lands the task back on building and ends with write_feature_marker/,
       why: "comment explaining the feature-marker repoint" },
-    { file: "bin/task", line: 3091, match: /block \#\{slug\} --kind rework/,
+    { file: "bin/task", line: 3168, match: /block \#\{slug\} --kind rework/,
       why: "SPLIT, not narration: a printed breaker-ack remedy that omits --agent. Same class, " \
            "but bin/ is out of the docs shape this guard shipped under. Tracked as " \
            "https://mcritchie.studio/tasks/breaker-remedy-omits-agent — an exemption that names " \
