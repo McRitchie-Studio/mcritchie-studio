@@ -72,7 +72,7 @@ module CiGate
       ["GitHub CI is UNREADABLE (#{ci[:reason]}) — the review gate-zero IS the authoritative CI verdict, and it " \
        "cannot be authoritative about a CI it could not read. " +
        CiStatus.unreadable_remedy(CiStatus.repo_from_pr_url(pr_url), cause: ci[:cause], cert_route: cert_route,
-                                  also_refused: also_refused),
+                                  also_refused: also_refused, task: slug),
        cert_route == true]
     when :none, :unverified
       # WAITING IS THE REMEDY, and it is no longer half of one. This branch used to add
