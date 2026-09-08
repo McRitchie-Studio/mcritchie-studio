@@ -19,14 +19,26 @@ The projects-root `/Users/alex/projects/AGENTS.md` and `CLAUDE.md` are
 skills). Edit the sources in this repo; never edit the generated roots — an edit
 there is silently reverted by the next install.
 
-Sequencing matters. **Run `bin/install-agent-docs install` from the
-mcritchie-studio PRIMARY after the change lands on `accepted`, not from the
-feature worktree.** Installing from a worktree publishes unreviewed doc text to
-the shared projects root, and because `bin/session-preflight` compares the root
-files against ITS OWN checkout's sources, every concurrent session — the primary
-and every other desk cut from `accepted` — starts reporting
-`installed docs/skills drift` until the branch merges. Verify with
+**Nobody hand-runs the installer.** The install is an owned pipeline step:
+`sync_agent_docs` in `bin/release.rb`, which `bin/release ship` runs after every
+production ship (Steffon, G4 Ship) from the hub's ship workspace — the tree
+pinned at the SHA that just shipped. It runs unconditionally, is idempotent, is
+non-fatal by construction, and heals prior drift.
+
+So `installed docs/skills drift` between a docs merge and the next production
+ship is an **expected state, not a chore anyone owes**. It closes itself on the
+next ship. Acting on it is wrong from either tree, and does not even clear the
+report: a run from a feature worktree publishes unshipped mid-branch text to
+every session on the machine, a run from a primary republishes a `main` that can
+sit a release behind what shipped, and `bin/session-preflight` measures drift
+against ITS OWN checkout's sources either way. Verify with
 `bin/install-agent-docs check` (read-only) at any time.
+
+Two runs stay legitimate, and neither is a response to a drift report:
+`bin/agent-runtime install` during fresh-machine bringup
+([`../system/house-burn-down.md`](../system/house-burn-down.md) step 5b), and the
+by-hand fallback `bin/release ship` prints when its own `sync_agent_docs` step
+fails.
 
 ## Drift Review
 

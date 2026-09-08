@@ -471,15 +471,26 @@ def attribute_merged(items, candidates)
   end
 end
 
+# Entry-doc drift, surfaced from bin/install-agent-docs' own `check`.
+#
+# On a FAIL the part that MUST survive is the installer's guidance — it is what
+# says WHO closes the drift (sync_agent_docs, an owned step of `bin/release ship`)
+# and WHEN, so the reader does not take it for a chore they owe. The installer
+# emits that guidance LAST, after one ERROR line per drifted pair, and the old
+# `max: 8` counted the passing `OK:` lines against that budget: enough drifted
+# pairs and the guidance was the half that truncated away, leaving only the
+# accusation. So a FAIL drops the `OK:` lines (noise in a failure report) and
+# keeps a cap with real headroom over every ERROR line the installer can emit.
+# A PASS is unchanged. Task preflight-invites-wrong-fix.
 def install_docs_check(root)
   script = File.join(root, "bin", "install-agent-docs")
   return { "status" => "skipped", "message" => "missing #{script}" } unless File.executable?(script)
 
   ok, out, err = capture(script, "check", chdir: root)
-  {
-    "status" => ok ? "pass" : "fail",
-    "message" => compact_lines(ok ? out : [err, out].join("\n"), max: 8).join("; ")
-  }
+  return { "status" => "pass", "message" => compact_lines(out, max: 8).join("; ") } if ok
+
+  lines = compact_lines([err, out].join("\n"), max: 64).reject { |line| line.start_with?("OK:") }
+  { "status" => "fail", "message" => lines.first(16).join("; ") }
 end
 
 def active_stale_scan_files(root, changed)
