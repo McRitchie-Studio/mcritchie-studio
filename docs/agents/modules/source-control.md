@@ -283,7 +283,7 @@ recoverable; one laundered under a guessed soul is not.
 `--git-common-dir` — so that write lands in the shared `.git/config` and renames
 every other desk in the repo at once. That is how
 `/Users/alex/projects/turf-monster/.git/config` came to read `Steffon (Claude)`
-and mis-author four commits on PR 573, which `shannon` built. The environment
+and mis-author the commit on PR 573, which `shannon` built. The environment
 outranks every config file, so the relic no longer affects a `bin/ship` commit;
 a hand-run `git commit` in that repo still inherits it.
 

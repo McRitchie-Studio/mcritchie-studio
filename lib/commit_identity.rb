@@ -9,8 +9,8 @@
 #   file:/Users/alex/.gitconfig                        -> Alex McRitchie    (the operator)
 #   file:/Users/alex/projects/turf-monster/.git/config -> Steffon (Claude)  (a relic)
 #
-# turf-monster PR 573 was built by `shannon`; all four of its commits, and
-# 599c5327 on the same desk, read "Steffon (Claude)". A desk shared by two souls
+# turf-monster PR 573 was built by `shannon`; its single commit, and 599c5327
+# on the same desk, read "Steffon (Claude)". A desk shared by two souls
 # produced six commits that ALL read "Steffon (Claude)" — the author field
 # carried zero information about who wrote what, and the only thing that
 # separated the two builders was an incidental `Claude-Session:` trailer.
