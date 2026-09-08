@@ -108,23 +108,24 @@ class BounceHolderRuleDocsTest < ActiveSupport::TestCase
   #     complete send-backs end in periods.
   #
   # WIDENING THE WINDOW IS NOT THE FIX. It buys the false positive back by paying
-  # the false negative: these docs discuss `--agent` in the prose immediately after
-  # a command — address-blocker.md's "Name yourself with `--agent`" sits one line
-  # under one, and heartbeats.md and devops-cycle-design.md do the same — so a run
-  # allowed to read on into that prose finds an `--agent` that belongs to a SENTENCE
-  # and acquits a bare command. A run has to end where the COMMAND ends.
+  # the false negative, because this corpus writes `--agent` in the text immediately
+  # PAST the end of a command: address-blocker.md's "Name yourself with `--agent`"
+  # sits one line under one, and bin/task's two usage synopses print `[--agent A]`
+  # just beyond the command they document (measured — those are the three sites). A
+  # run allowed to read on finds an `--agent` that belongs to a SENTENCE and acquits
+  # a bare command, so a run has to end where the COMMAND ends.
   #
   # SO ASK WHAT ACTUALLY TERMINATES A SHELL COMMAND IN PROSE. Not a period: inside
   # `--feedback "…"` a period is ordinary text and terminates nothing. Not a
   # newline: FOUR sites here soft-wrap a command across a prose line break with NO
   # backslash — index.md, heartbeats.md and zap-protocol.md wrap mid-flag, and
   # pr-review-sop.md wraps between `bin/task` and `block`, where a line-at-a-time
-  # reader cannot even find the invocation at all. That is why `flat` joins lines.
-  # Not a character count either. What
-  # ends a command is running out of COMMAND — the first token that is not a flag,
-  # a flag's value, a placeholder, a quoted string, or a continuation. `command_extent`
-  # walks exactly that, and quoted strings are OPAQUE to it, so one rule fixes both
-  # directions instead of patching either.
+  # reader cannot even find the invocation. That is why `flat` joins lines at all.
+  # Not a character count either. What ends a command is running out of COMMAND —
+  # the first token that is not a flag, a flag's value, a placeholder, a quoted
+  # string, or a continuation. `command_extent` walks exactly that, and quoted
+  # strings are OPAQUE to it, so ONE rule fixes both directions instead of patching
+  # either.
 
   # Shell token shapes, tried in this order: FLAG ahead of the argument shapes, so
   # `--kind` reads as a flag rather than as a positional argument. ELIDE is a
