@@ -94,6 +94,7 @@ require_relative "lib/ci_status"
 require_relative "lib/ci_wait"
 require_relative "../lib/claim_lease"
 require_relative "../lib/claim_holder"
+require_relative "../lib/commit_identity"
 
 ROOT = File.expand_path("..", __dir__)
 TASK_BIN = ENV.fetch("SHIP_TASK_BIN", File.expand_path("task", __dir__))
@@ -377,10 +378,25 @@ else
   die!("nothing to use as a commit message (no -m and the task has no title)") if message.empty?
 
   say "1/8 commit — committing #{porcelain.lines.size} changed path(s): #{message.inspect}"
-  _, added = git(root, "add", "-A")
-  die!("git add failed in #{root}") unless added
-  _, committed = git(root, "commit", "-m", message)
-  die!("git commit failed in #{root}") unless committed
+
+  # AUTHORED AS THE CLAIMING SOUL. The desk's git identity names whoever the
+  # checkout happens to carry — the operator, or a relic from some earlier
+  # session — and never the soul on the board, so the author is set per COMMIT
+  # from devops.built_by. lib/commit_identity.rb owns that decision and is the
+  # ONLY commit path here: a bare `git commit` at this seam reopens the defect.
+  result = CommitIdentity.commit!(root, message, devops)
+  die!("git #{result.failed} failed in #{root}") unless result.ok
+
+  if result.soul
+    say "1/8 commit — authored as #{result.name} <#{result.email}> (devops.built_by)"
+  else
+    # Never fabricate an author. Say plainly that the commit is unattributed and
+    # name the repair — a commit that admits it is unattributed is recoverable,
+    # one laundered under a guessed soul is not.
+    say "1/8 commit — WARNING: this task names no builder (devops.built_by is blank), so the " \
+        "commit carries the checkout's own git identity, not a soul. Attribute future commits " \
+        "with: bin/task move #{slug} building --actor <soul>"
+  end
 end
 
 # --- 2/8 G1 cert (bin/fast-check) --------------------------------------------

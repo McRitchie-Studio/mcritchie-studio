@@ -253,6 +253,44 @@ gh api rate_limit                           # is the credential live?
 op whoami                                   # is 1Password unlocked?
 ```
 
+## Commit Authorship — which soul `git log` names
+
+Auth identity answers *may this lane push*. Authorship answers *who wrote this*,
+and the two are unrelated. A desk's commits are authored from the **task's
+`devops.built_by`** — the current builder — set per commit by
+`lib/commit_identity.rb` and applied at `bin/ship`'s 1/8 commit step:
+
+```
+Carl <carl@mcritchie.studio>      # name titleised from the slug; local part IS the slug
+```
+
+The email's local part is the soul slug, so `git log --format=%ae` joins straight
+to the board's author set with no mapping table.
+
+**A re-claim repoints it.** `built_by` names the current builder and already
+repoints on an explicit `--actor`/`--agent`, so after
+`bin/task begin <task> --agent shannon --steal` the next commit is Shannon's
+while the earlier ones stay Carl's. That is the point of setting the author per
+commit rather than per desk: a desk shared by two souls is the measured case, not
+a hypothetical.
+
+**A task that names no builder is not given one.** `bin/ship` says so and commits
+under the checkout's own identity. An unattributed commit that admits it is
+recoverable; one laundered under a guessed soul is not.
+
+**Never `git config user.name` in a desk.** A worktree has no config of its own —
+`--git-dir` is `.git/worktrees/<name>`, but config resolves through
+`--git-common-dir` — so that write lands in the shared `.git/config` and renames
+every other desk in the repo at once. That is how
+`/Users/alex/projects/turf-monster/.git/config` came to read `Steffon (Claude)`
+and mis-author the commit on PR 573, which `shannon` built. The environment
+outranks every config file, so the relic no longer affects a `bin/ship` commit;
+a hand-run `git commit` in that repo still inherits it.
+
+This is **read-only** with respect to `devops.builders`, the author set
+`bin/reviewer-select` excludes. Nothing here writes the board, so it can neither
+forge that set nor silence the refusal an incomplete one raises.
+
 ## Adding A Second Provider
 
 The seam is deliberately narrow. A new provider needs: a credential broker
