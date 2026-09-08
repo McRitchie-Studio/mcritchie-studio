@@ -20,9 +20,18 @@
 #       nothing.
 #   the escalation (`--kind dependency`)
 #     → exit 0, and it WRITES `{"event":{"source":"cli"}}` — no `actor`, no `by`. THE
-#       UNATTRIBUTED BLOCK. That entry lands in the task's AUTHOR SET, and
-#       `bin/reviewer-select` then refuses to pick, because it cannot exclude a soul
-#       it cannot name. The no-self-review property goes unverified for that review.
+#       UNATTRIBUTED BLOCK: a send-back on the record that names nobody, so the audit
+#       row cannot say who stopped the PR.
+#
+# WHAT THAT COSTS, STATED HONESTLY (corrected 2026-09-08,
+# /tasks/escalation-recipe-names-wrong-soul). An earlier draft of this header said the
+# unattributed block joins the task's AUTHOR SET and makes `bin/reviewer-select` refuse
+# to pick. It does not. `Task#block!` lands the task on `building` with `blocked_at`
+# set, which `build_claim_save?` explicitly rejects and `submit_save?` never matches,
+# so `enforce_builder_stamp` writes no author on the block PATCH at all. The author set
+# is only reached SECOND-HAND, if the statusline later adopts the freed lease with no
+# soul and stamps `builders_unattributed` itself. The harm here is a misattributed
+# audit row — real, and worth the fix, but not a disarmed no-self-review guard.
 #
 # WHY A TABLE AND NOT TWO METHODS. The escalation was a sibling of the filed defect,
 # printed three lines above it by the same refusal, and it was the WORSE of the two —

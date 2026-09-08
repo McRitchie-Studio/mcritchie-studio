@@ -32,14 +32,21 @@ require_relative "../support/session_env"
 #     (no live review claim)        {"event":{"actor":"avi"},"by":"avi"} — a bounce
 #                                   recorded against a soul that did nothing.
 #   --kind dependency               exit 0, and it WRITES {"event":{"source":"cli"}} —
-#     (the escalation)              no `actor`, no `by`. THE UNATTRIBUTED BLOCK. That
-#                                   entry lands in the task's author set, and
-#                                   `bin/reviewer-select` then REFUSES to pick, because
-#                                   it cannot exclude a soul it cannot name. The
-#                                   no-self-review property goes unverified for that
-#                                   review, and a human hand-picks the light.
+#     (the escalation)              no `actor`, no `by`. THE UNATTRIBUTED BLOCK: a
+#                                   send-back on the record that names nobody, so the
+#                                   audit row cannot say who stopped the PR.
 #
-# So the remedy quietly disarms the guard that keeps a soul off its own PR.
+# So the remedy hands the reviewer a command that either refuses him or files a block
+# under the wrong name.
+#
+# WHAT IT DOES NOT COST (corrected 2026-09-08, /tasks/escalation-recipe-names-wrong-soul).
+# An earlier draft of this header said the unattributed block joins the task's author
+# set and makes `bin/reviewer-select` refuse to pick. It does not: `Task#block!` lands
+# the task on `building` with `blocked_at` set, which `build_claim_save?` rejects
+# outright and `submit_save?` never matches, so `enforce_builder_stamp` writes no author
+# on the block PATCH. The author set is reached only SECOND-HAND, if the statusline
+# later adopts the freed lease unnamed. Misattributed audit row: real. Disarmed
+# no-self-review guard: not this seam.
 #
 # ═══ WHY THIS FILE EXECUTES THE RECIPES ═══
 #
@@ -73,6 +80,17 @@ class BreakerRemedyNamesItsSoulTest < Minitest::Test
 
   # The escalation and the breaker-ack re-run. Both are printed by the same refusal.
   RECIPE_COUNT = 2
+
+  # Spelled out rather than read from `BlockRecipe::UNKNOWN_SOUL`, because this file
+  # asserts what the CLI PRINTS. Importing the constant would make the assertion agree
+  # with any value the source happens to hold — including "avi". The constant's own
+  # properties (not a slug, reads as a fill-in) are pinned at the unit tier in
+  # test/lib/block_recipe_test.rb; this pins the string a reader actually sees.
+  BLANK_SOUL = "<your-soul>"
+
+  # What `default_block_actor` answers for rework-on-submitted — a real soul, reached
+  # by fallthrough rather than by anything the caller established.
+  FALLTHROUGH_SOUL = "avi"
 
   # What a reviewer types in place of the elision the breaker prints for "the flags
   # you already passed". Substituting it is what pasting the recipe MEANS.
@@ -129,22 +147,101 @@ class BreakerRemedyNamesItsSoulTest < Minitest::Test
                "the un-agented dependency block is the UNATTRIBUTED one — that absence is the defect"
   end
 
+  # EACH RECIPE RESOLVES ITS SOUL UNDER ITS OWN `--kind`
+  # (/tasks/escalation-recipe-names-wrong-soul).
+  #
+  # The refusal above resolved ONE soul, under the caller's `rework`, and printed it on
+  # both recipes. That is right for the breaker-ack — that recipe IS this same rework
+  # block re-run, so echoing the soul this run resolved to is honest. It is wrong for
+  # the ESCALATION, which is a `--kind dependency` block: `default_block_actor` answers
+  # the literal "avi" for rework-on-submitted and NIL for every other kind, so the
+  # escalation printed `--agent avi` to a caller who had passed no `--agent`, carried no
+  # persona, and held no review claim. Pasting it files a dependency block by a soul
+  # that did nothing.
+  #
+  # WHY THIS RUN LOOKS DIFFERENT FROM THE ONE ABOVE. It needs all three sources of a
+  # soul silent at once, which means NO `--agent` — and dropping `--agent` also drops
+  # the verdict-owner gate's only way to admit the caller. It gets through because
+  # `claim: nil` publishes NO live review: the gate grades NO_REVIEW (an allowed
+  # verdict — there is no owner to usurp) instead of the exit-11 FOREIGN it returns
+  # under the live claim the other tests use. That is the real-world shape too: a
+  # breaker tripped from a session whose review lease has lapsed.
+  #
+  # THE ASSERTION IS ON THE PARSED TOKEN, not on a substring. `assert_includes recipe,
+  # "--agent"` cannot tell the visible blank from a soul rendered as nothing at all:
+  # `--agent --summary "..."` still contains "--agent", and a flag that swallows the
+  # next flag is a different bug wearing the same shape.
+  def test_integration_each_printed_recipe_resolves_its_soul_under_its_own_kind
+    printed = trip_the_breaker(agent: nil, claim: nil)
+    recipes = block_recipes(printed)
+
+    assert_equal RECIPE_COUNT, recipes.size, <<~MSG
+      extracted #{recipes.size} `bin/task block` recipe(s) from the refusal, expected #{RECIPE_COUNT}.
+
+      #{printed}
+
+      ZERO means the matcher went blind and both assertions below would be vacuous.
+    MSG
+
+    escalation = recipe_for_kind(recipes, "dependency")
+    assert_equal BLANK_SOUL, agent_token(escalation), <<~MSG
+      the escalation named a soul the caller never established. Nothing here resolved
+      one — no --agent, no persona, no review claim — so the only honest value is the
+      visible blank #{BLANK_SOUL.inspect}. #{FALLTHROUGH_SOUL.inspect} is what
+      `default_block_actor` answers for rework-on-submitted; reaching it from a
+      `--kind dependency` recipe means the recipe was built from the CALLER'S kind
+      instead of its own.
+
+        #{escalation}
+    MSG
+
+    ack = recipe_for_kind(recipes, "rework")
+    assert_equal FALLTHROUGH_SOUL, agent_token(ack), <<~MSG
+      the breaker-ack must KEEP echoing the soul this run resolved to. It is not a
+      different block — it is THIS rework block re-run with --breaker-ack, so
+      #{FALLTHROUGH_SOUL.inspect} is what it will actually record and printing it is
+      what makes a wrong soul visible instead of silent. Blanking it too would hide
+      the fallthrough rather than fix it.
+
+        #{ack}
+    MSG
+  end
+
   # ── phase 1: make the breaker print ─────────────────────────────────────────
 
-  # Runs the block the OWNER would run, against a ledger holding one prior send-back,
-  # and returns everything the refusal printed. `--agent OWNER` is passed because the
-  # verdict-owner gate fires BEFORE the breaker: without it the run is refused as a
-  # non-owner (exit 11) and the recipes are never printed at all.
-  def trip_the_breaker
-    _writes, err, status = run_task(
-      ["block", SLUG, "--kind", "rework", "--summary", "Probe send back now",
-       "--feedback", "probe feedback", "--agent", OWNER],
-      bounces: 1
-    )
+  # Runs the block a caller would run, against a ledger holding one prior send-back,
+  # and returns everything the refusal printed. `--agent OWNER` is the default because
+  # the verdict-owner gate fires BEFORE the breaker: under a live claim, an un-agented
+  # run is refused as a non-owner (exit 11) and the recipes are never printed at all.
+  def trip_the_breaker(agent: OWNER, claim: live_claim)
+    args = ["block", SLUG, "--kind", "rework", "--summary", "Probe send back now",
+            "--feedback", "probe feedback"]
+    args.push("--agent", agent) if agent
+
+    _writes, err, status = run_task(args, bounces: 1, claim: claim)
 
     assert_equal 10, status.exitstatus,
                  "expected the breaker's TRIPPED refusal (exit 10); got #{status.exitstatus}:\n#{err}"
     err
+  end
+
+  # The one recipe in the refusal that blocks with `--kind <kind>`. Asserting the
+  # count is what keeps this from silently picking a neighbour when the recipes change.
+  def recipe_for_kind(recipes, kind)
+    matched = recipes.select { |recipe| recipe.include?("--kind #{kind}") }
+    assert_equal 1, matched.size,
+                 "expected exactly 1 `--kind #{kind}` recipe in the refusal, found #{matched.size}:\n" \
+                 "  #{recipes.join("\n  ")}"
+    matched.first
+  end
+
+  # The value the recipe hands `--agent`, read the way the parser reads it: the token
+  # AFTER the flag.
+  def agent_token(recipe)
+    argv = Shellwords.split(recipe.sub(/(?<=\s)#{Regexp.escape(ELISION)}(?=\s)/, ELISION_FILL))
+    index = argv.index("--agent")
+    refute_nil index, "the recipe carries no --agent at all: #{recipe}"
+    argv[index + 1]
   end
 
   # Every `bin/task block …` invocation in the printed refusal, with backslash
@@ -181,7 +278,12 @@ class BreakerRemedyNamesItsSoulTest < Minitest::Test
   # TaskUsageSandboxEnv.child_env pins the usage store, transcript root and HOME into
   # a tmpdir. TASK_SKIP_MARKER stops the run repointing the operator's active-feature
   # marker at this fixture slug.
-  def run_task(args, bounces: 1)
+  #
+  # `claim` is the review-claim descriptor the stub board publishes, and `nil` means
+  # NO LIVE REVIEW — the state in which the verdict-owner gate grades NO_REVIEW and
+  # waves an un-agented caller through to the breaker. It is a parameter rather than a
+  # constant because the two states print DIFFERENT recipes from the same refusal.
+  def run_task(args, bounces: 1, claim: live_claim)
     Dir.mktmpdir do |dir|
       writes = []
       err = status = nil
@@ -192,7 +294,7 @@ class BreakerRemedyNamesItsSoulTest < Minitest::Test
         )
       )
 
-      with_board_sink(writes, bounces: bounces) do |base|
+      with_board_sink(writes, bounces: bounces, claim: claim) do |base|
         _out, err, status = Open3.capture3(env.merge("TASK_API_BASE" => base), BIN, *args)
       end
 
@@ -200,20 +302,20 @@ class BreakerRemedyNamesItsSoulTest < Minitest::Test
     end
   end
 
-  def execute(argv)
-    writes, err, status = run_task(argv, bounces: 1)
+  def execute(argv, claim: live_claim)
+    writes, err, status = run_task(argv, bounces: 1, claim: claim)
     assert status, "the child never ran: #{err}"
     writes
   end
 
   # A live review claim held by OWNER, so the verdict-owner gate admits OWNER and
   # refuses the literal "avi" the bare recipes resolve to.
-  def holder
+  def live_claim
     { "task_slug" => SLUG, "session" => OWNER_SESSION, "agent" => OWNER, "label" => "carl",
       "expires_at" => (Time.now + 90).utc.iso8601, "heartbeat_age" => 3, "live" => true }
   end
 
-  def with_board_sink(writes, bounces:)
+  def with_board_sink(writes, bounces:, claim: live_claim)
     server = TCPServer.new("127.0.0.1", 0)
     thread = Thread.new do
       while (client = server.accept)
@@ -226,7 +328,7 @@ class BreakerRemedyNamesItsSoulTest < Minitest::Test
         verb, path = request.split(/\s+/).first(2).map(&:to_s)
         writes << payload if payload && verb == "PATCH" && path.include?("/block")
 
-        body = respond(path, bounces)
+        body = respond(path, bounces, claim)
         client.write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n" \
                      "Content-Length: #{body.bytesize}\r\n\r\n#{body}")
         client.close
@@ -242,10 +344,10 @@ class BreakerRemedyNamesItsSoulTest < Minitest::Test
 
   # ROUTING BY PATH MATTERS: a sink answering everything with one body answers /auth
   # with a task, bin/task dies on the missing "token", and that reads as a refusal.
-  def respond(path, bounces)
+  def respond(path, bounces, claim)
     case path
     when %r{/api/v1/auth}       then { token: "sink-bearer" }.to_json
-    when %r{/review_claim}      then { data: { holder: holder } }.to_json
+    when %r{/review_claim}      then { data: { holder: claim } }.to_json
     when %r{/api/v1/activities} then ledger_body(bounces)
     when %r{/block}             then { data: { slug: SLUG, stage: "building" } }.to_json
     else task_body
