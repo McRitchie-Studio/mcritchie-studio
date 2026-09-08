@@ -82,9 +82,62 @@ class BounceHolderRuleDocsTest < ActiveSupport::TestCase
   # "a light # reviewer's block counts" evades the pattern — measured), drop
   # markdown emphasis, and collapse whitespace so a wrapped sentence or a
   # backslash-continued command joins up.
+  #
+  # THE WALK IS LINE-AWARE, because two of the rules below need more than the text.
+  # A run must be able to say WHICH SOURCE LINE it starts on — NARRATION keys its
+  # exemptions on that line, so a second site of the same shape cannot inherit one.
+  # And a command must stop at a closing CODE FENCE — a fence is INVISIBLE once
+  # backticks are stripped, and the walk used to march straight out of one into the
+  # prose below. Both facts are cheap to record while flattening and impossible to
+  # recover afterwards, so `flat_index` records them on the way through.
+  #
+  # `flat` is unchanged in what it RETURNS (bar a leading/trailing space that
+  # nothing anchored on): the control test below re-derives the old expression and
+  # requires it to match, file for file, across the whole corpus.
+  FENCE = /\A(?:```|~~~)/
+
+  FlatText = Struct.new(:body, :line_starts, :fences)
+
+  def flat_index(text)
+    body = +""
+    line_starts = []
+    fences = []
+
+    text.lines.each_with_index do |raw, i|
+      unmarked = raw.sub(/\A(?:\s*[#>])+\s?/, " ")
+      # Recorded BEFORE the separator, so the boundary is the end of the last line
+      # INSIDE the fence. Checked after the comment marker is stripped, so a fence
+      # inside a `#` comment block counts too.
+      fences << body.length if unmarked.strip.match?(FENCE)
+
+      norm = unmarked.gsub(/[*`]/, "").gsub(/\s+/, " ").strip
+      next if norm.empty?
+
+      body << " " unless body.empty?
+      line_starts << [body.length, i + 1]
+      body << norm
+    end
+
+    FlatText.new(body, line_starts, fences)
+  end
+
   def flat(text)
-    text.lines.map { |line| line.sub(/\A(?:\s*[#>])+\s?/, " ") }.join(" ")
-        .gsub(/[*`]/, "").gsub(/\s+/, " ")
+    flat_index(text).body
+  end
+
+  # The source line an offset falls on, and the next fence boundary after it.
+  def source_line(flat_text, offset)
+    line = flat_text.line_starts.first&.last
+    flat_text.line_starts.each do |start, number|
+      break if start > offset
+
+      line = number
+    end
+    line
+  end
+
+  def fence_after(flat_text, offset)
+    flat_text.fences.find { |at| at > offset }
   end
 
   BLOCK_CMD = "bin/task block"
@@ -117,15 +170,23 @@ class BounceHolderRuleDocsTest < ActiveSupport::TestCase
   #
   # SO ASK WHAT ACTUALLY TERMINATES A SHELL COMMAND IN PROSE. Not a period: inside
   # `--feedback "…"` a period is ordinary text and terminates nothing. Not a
-  # newline: FOUR sites here soft-wrap a command across a prose line break with NO
-  # backslash — index.md, heartbeats.md and zap-protocol.md wrap mid-flag, and
-  # pr-review-sop.md wraps between `bin/task` and `block`, where a line-at-a-time
-  # reader cannot even find the invocation. That is why `flat` joins lines at all.
+  # newline: FIVE sites here soft-wrap a command across a prose line break with NO
+  # backslash — index.md and zap-protocol.md wrap mid-flag, heartbeats.md wraps
+  # after `block`, and BOTH pr-review-sop.md and devops-task-board.md wrap between
+  # `bin/task` and `block`, where a line-at-a-time reader cannot even find the
+  # invocation. That is why `flat` joins lines at all.
   # Not a character count either. What ends a command is running out of COMMAND —
   # the first token that is not a flag, a flag's value, a placeholder, a quoted
   # string, or a continuation. `command_extent` walks exactly that, and quoted
   # strings are OPAQUE to it, so ONE rule fixes both directions instead of patching
   # either.
+  #
+  # RUNNING OUT OF COMMAND IS NOT THE ONLY TERMINATOR, though it was written as if
+  # it were. A closing CODE FENCE ends a command too, and it has to: prose is a
+  # boundary only when it opens with a WORD, and `flat` strips backticks, so a
+  # sentence opening with a backticked flag reads as more command and the walk
+  # leaves the fence entirely. Measured live — pr-review.md:302 extracted
+  # `… --agent carl --summary is`. `rework_runs` caps the walk at the next fence.
 
   # Shell token shapes, tried in this order: FLAG ahead of the argument shapes, so
   # `--kind` reads as a flag rather than as a positional argument. ELIDE is a
@@ -160,15 +221,40 @@ class BounceHolderRuleDocsTest < ActiveSupport::TestCase
   # An UNCLOSED quote yields no token and so ends the run at the opening quote. That
   # under-reads rather than over-reads on purpose: a run that swallows text whose end
   # it cannot see is exactly how a prose `--agent` acquits a bare command.
+  #
+  # BUT UNDER-READING IS SAFE IN EXACTLY ONE DIRECTION, and the first cut of this
+  # walk treated it as safe in both. The two questions asked of a run have opposite
+  # tolerances:
+  #
+  #   "Does it name `--agent`?"      A short read can only make a command look MORE
+  #                                  bare, so the worst case is a FALSE POSITIVE —
+  #                                  loud, and a human sees it.
+  #   "Is it `--kind rework` at all?" A short read that stops before `--kind` drops
+  #                                  the run from the inventory ENTIRELY. Measured:
+  #                                  an unclosed quote landing before `--kind rework`
+  #                                  yields ZERO runs, so a bare bounce command scans
+  #                                  green — a seventeenth site arriving unnoticed,
+  #                                  the exact false-negative direction this guard
+  #                                  was blocked for the first time.
+  #
+  # So the walk REPORTS its halt reason instead of swallowing it, and `rework_runs`
+  # classifies a quote-truncated run on its full span while still reporting the
+  # strict command. The truncated command reads as bare, so the site becomes a loud
+  # offender rather than a silent absence.
   def command_extent(body, from, upto)
     pos = from + BLOCK_CMD.length
     slot = :head
+    halt = nil
     while pos < upto
       pos += 1 while pos < upto && body[pos] == " "
       break if pos >= upto
 
       kind, token = command_token(body[pos...upto])
-      break if kind.nil? || (kind == :arg && slot == :flag)
+      if kind.nil?
+        halt = :unterminated_quote if ['"', "'"].include?(body[pos])
+        break
+      end
+      break if kind == :arg && slot == :flag
 
       slot = case kind
              when :cont then slot
@@ -178,7 +264,7 @@ class BounceHolderRuleDocsTest < ActiveSupport::TestCase
              end
       pos += token.length
     end
-    body[from...pos].rstrip
+    [body[from...pos].rstrip, halt]
   end
 
   # ONE run = ONE invocation, carried as TWO spans, because the guard asks two
@@ -198,7 +284,11 @@ class BounceHolderRuleDocsTest < ActiveSupport::TestCase
   # sentence became a SINGLE run and a later agented command masked an earlier bare
   # one. The mutation that reintroduced an un-agented gate-zero bounce — the exact
   # defect this guard exists to catch — SURVIVED that version.
-  Run = Struct.new(:command, :context)
+  # `line` is the run's IDENTITY — the source line its invocation starts on. The
+  # NARRATION inventory keys on it, because a shape is a category and categories
+  # grow: an entry keyed to the shape of a bare remedy silently absorbed the next
+  # site printing that same remedy.
+  Run = Struct.new(:command, :context, :line)
 
   CONTEXT_WINDOW = 220
   # A backstop only. `command_extent` ends a command structurally, and long before
@@ -206,21 +296,41 @@ class BounceHolderRuleDocsTest < ActiveSupport::TestCase
   COMMAND_BACKSTOP = 600
 
   def rework_runs(text)
-    body = flat(text)
+    flat_text = flat_index(text)
+    body = flat_text.body
     runs = []
     idx = body.index(BLOCK_CMD)
     while idx
       nxt = body.index(BLOCK_CMD, idx + BLOCK_CMD.length)
-      command = command_extent(body, idx, [idx + COMMAND_BACKSTOP, body.length, nxt].compact.min)
+      # A CLOSING FENCE ends a command. Without this the walk leaves the fence and
+      # keeps reading, and prose is only a boundary when it opens with a WORD —
+      # prose opening with a backticked flag reads as more command, because `flat`
+      # has stripped the backticks by then. Measured live: pr-review.md:302 ran on
+      # past its fence and swallowed the following sentence's `--summary`.
+      fence = fence_after(flat_text, idx)
+      upto = [idx + COMMAND_BACKSTOP, body.length, nxt, fence].compact.min
+      command, halt = command_extent(body, idx, upto)
 
       context = body[idx...[idx + CONTEXT_WINDOW, body.length, nxt].compact.min]
       dot = context.index(".")
       context = context[0...dot] if dot
 
-      runs << Run.new(command, context) if command.match?(REWORK)
+      # Classify on the full span when the walk was cut short by a quote it could
+      # not close — under-reading must never delete a site from the inventory.
+      # `command` stays the strict read, so the run is REPORTED as the bare command
+      # it appears to be rather than acquitted by something past the truncation.
+      detected = halt == :unterminated_quote ? body[idx...upto] : command
+      runs << Run.new(command, context, source_line(flat_text, idx)) if detected.match?(REWORK)
       idx = nxt
     end
     runs
+  end
+
+  # An exemption names ONE SITE: a file plus the SOURCE LINE its bare invocation
+  # starts on. Keying on the matched shape alone is what let a second site inherit
+  # an exemption in silence.
+  def narration_covers?(entry, rel, run)
+    entry[:file] == rel && entry[:line] == run.line && run.context.match?(entry[:match])
   end
 
   # ---------------------------------------------------------------------------
@@ -268,6 +378,27 @@ class BounceHolderRuleDocsTest < ActiveSupport::TestCase
 
     assert doc_runs.any? { |run| run.command.include?("--agent") },
       "pr-review-sop.md must carry at least one agented block command for the extractor to see"
+  end
+
+  # CONTROL for the line-aware rewrite. `flat_index` had to replace a one-expression
+  # `flat` in order to record line numbers and fence offsets, and every phrase rule
+  # in this file reads the text it returns. So re-derive the ORIGINAL expression here
+  # and require the two to agree on every file in the corpus. If the rewrite ever
+  # perturbs the flattened text, the grant sweep and the positive rules would start
+  # reading something subtly different from what they were measured against, and this
+  # fails instead.
+  test "[unit] the line-aware flattener returns exactly the text the phrase rules were measured on" do
+    legacy = lambda do |text|
+      text.lines.map { |line| line.sub(/\A(?:\s*[#>])+\s?/, " ") }.join(" ")
+          .gsub(/[*`]/, "").gsub(/\s+/, " ")
+    end
+
+    corpus = self.class.corpus
+    corpus.each do |rel, text|
+      assert_equal legacy.call(text).strip, flat(text),
+        "#{rel}: the line-aware flattener changed the text every phrase rule in this file reads"
+    end
+    assert_operator corpus.size, :>, 400, "the control compared #{corpus.size} files — too few to mean anything"
   end
 
 
@@ -327,8 +458,10 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
 
     assert_equal 1, runs.size,
       "a command soft-wrapped across a prose line break with NO backslash did not read as one " \
-      "command. Four sites in this corpus are written that way, and a line-at-a-time reader " \
-      "scores ZERO hits on every one of them"
+      "command. Five sites in this corpus are written that way, and a line-at-a-time reader " \
+      "scores ZERO hits on four of them (zap-protocol.md:185 wraps after `--agent`, so a line " \
+      "reader finds a TRUNCATED run there rather than nothing — which is worse, not better: it " \
+      "reads as an agented command and acquits)"
     assert_includes runs.first.command, "--agent carl"
 
     continued = <<~MD
@@ -348,6 +481,68 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
     refute_includes runs.first.command, "Name yourself",
       "the command ran on past the fence into the prose below it — the prose that says " \
       "`--agent`, which is precisely the text that would acquit a bare command"
+  end
+
+  # ---------------------------------------------------------------------------
+  # THREE MEASURED BOUNDARY GAPS, each closed by a distinct mechanism.
+  # ---------------------------------------------------------------------------
+
+  test "[unit] a fenced command ends at its closing fence, even when the prose below opens with a flag" do
+    text = <<~MD
+      ```bash
+      bin/task block <task> --kind rework --feedback "<one complete send-back>"
+      ```
+
+      `--agent carl` is what stamps the actor.
+    MD
+    runs = rework_runs(text)
+
+    assert_equal 1, runs.size
+    refute_includes runs.first.command, "--agent",
+      "the run walked OUT of its closing code fence and picked up an `--agent` from the prose " \
+      "BELOW it, acquitting a BARE fenced bounce command. The older fence test above is saved " \
+      "only by luck: its trailing prose happens to begin with the WORD `Name`, and a word is a " \
+      "boundary. Prose that opens with a backticked FLAG is not — `flat` strips backticks, so " \
+      "`--agent carl` reads as a flag and its value and the walk marches on. Measured LIVE in " \
+      "this corpus: pr-review.md:302 extracted `… --agent carl --summary is`, the walk having " \
+      "left the fence and swallowed the sentence after it"
+  end
+
+  test "[unit] an unclosed quote before --kind rework does not make the invocation invisible" do
+    text = 'bin/task block <task> --feedback "unclosed, and the rest of the line says --kind rework'
+    runs = rework_runs(text)
+
+    assert_equal 1, runs.size,
+      "an unclosed quote landing BEFORE `--kind rework` truncated the command short of the flag " \
+      "that classifies it, so the run was never recorded and this BARE bounce command was never " \
+      "examined at all — ZERO runs, the invocation INVISIBLE. That is the same false-negative " \
+      "direction this guard was blocked for the first time. Under-reading is safe in exactly ONE " \
+      "direction: for `does it name --agent?` a short read can only look barer, which fails loud; " \
+      "for `is this --kind rework at all?` a short read hides the site entirely"
+    refute_includes runs.first.command, "--agent",
+      "the truncated command must still read as bare, so it is REPORTED rather than acquitted"
+  end
+
+  test "[unit] a narration exemption names one site, so a second site of the same shape is not absorbed" do
+    probe = <<~RUBY
+      warn! "  bin/task block \#{slug} --kind rework ... --breaker-ack"
+      puts "an unrelated line between the two sites"
+      warn! "  bin/task block \#{slug} --kind rework ... --breaker-ack"
+    RUBY
+    bare = rework_runs(probe).reject { |run| run.command.include?("--agent") }
+
+    assert_equal 2, bare.size, "two identical bare remedy shapes must read as TWO runs"
+    refute_equal bare.first.line, bare.last.line, "the two runs must carry distinct line identities"
+
+    entry = { file: "probe", line: bare.first.line, match: /--kind rework/ }
+    assert narration_covers?(entry, "probe", bare.first),
+      "the entry must still cover the site it names"
+    refute narration_covers?(entry, "probe", bare.last),
+      "one NARRATION entry covered TWO different sites. An entry keyed to a SHAPE absorbs the " \
+      "next site of that shape in silence — measured on bin/task, where appending a second " \
+      "`warn!` printing the same remedy took the file from 2 bare runs to 3 while the covered " \
+      "count rose to match, the uncovered count never moved, and nothing failed. A line number " \
+      "is an identity; a shape is a category, and a category grows"
   end
   # ---------------------------------------------------------------------------
   # 1. THE GRANT MUST NOT COME BACK (negative).
@@ -428,34 +623,61 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
   # Prose that NARRATES the command ("`bin/task block --kind rework` exits 10") is
   # not a paste hazard, and no honest heuristic separates it from an instruction —
   # `pr-review-sop.md` carries both shapes with identical syntax. So the inventory
-  # is EXPLICIT: a bare run must be listed here with a reason, or it fails. A
-  # seventeenth site cannot arrive unnoticed, because arriving unnoticed is the
-  # one thing this list makes impossible.
+  # is EXPLICIT: a bare run must be listed here with a reason, or it fails — which is
+  # what makes a seventeenth site in a NEW place fail rather than ship.
+  #
+  # EACH ENTRY NAMES ONE SITE: a file AND the source `line` its bare invocation
+  # starts on. Keying on the matched SHAPE alone was a measured hole — append a
+  # second `warn!` printing bin/task's remedy and the file went from 2 bare runs to
+  # 3, the covered count rose to match, the uncovered count never moved, and nothing
+  # failed. The new site inherited an exemption written for a different one. A line
+  # is an identity; a shape is a category, and categories grow.
+  #
+  # Read this list as an INVENTORY, not as a proof of completeness. The absolute it
+  # used to carry — "a seventeenth site cannot arrive unnoticed, because arriving
+  # unnoticed is the one thing this list makes impossible" — was falsified THREE
+  # times over: by the shape-keyed absorption above, by `command_extent` walking out
+  # of a closing fence into prose that opened with a flag, and by an unclosed quote
+  # landing before `--kind rework`, which drops the run from the inventory entirely —
+  # the walk's own comment above calls that "a seventeenth site arriving unnoticed".
+  # All three are closed now, and PINNED by the three boundary tests above rather
+  # than by this paragraph. That is the durable lesson: a claim of completeness
+  # belongs in a test, never in a header.
+  #
+  # A `line` that drifts fails LOUD and prints the lines actually found, so the fix
+  # is mechanical. That is the price of an identity, and it is the right price.
   NARRATION = [
-    { file: "app/models/task.rb", match: /lands the task back on building and repoints/,
+    { file: "app/models/task.rb", line: 2963, match: /lands the task back on building and repoints/,
       why: "comment explaining the feature-marker repoint" },
-    { file: "bin/pr-review", match: /with the failing checks named/,
+    { file: "bin/pr-review", line: 29, match: /with the failing checks named/,
       why: "header comment narrating the gate-zero flow" },
-    { file: "bin/task", match: /lands the task back on building and ends with write_feature_marker/,
+    { file: "bin/task", line: 919, match: /lands the task back on building and ends with write_feature_marker/,
       why: "comment explaining the feature-marker repoint" },
-    { file: "bin/task", match: /block \#\{slug\} --kind rework/,
+    { file: "bin/task", line: 3091, match: /block \#\{slug\} --kind rework/,
       why: "SPLIT, not narration: a printed breaker-ack remedy that omits --agent. Same class, " \
            "but bin/ is out of the docs shape this guard shipped under. Tracked as " \
            "https://mcritchie.studio/tasks/breaker-remedy-omits-agent — an exemption that names " \
-           "no tracker is a permanent hole wearing a temporary label." },
-    { file: "docs/agents/agents/carl/sops/pr-review-light.md", match: /on its own initiative/,
+           "no tracker is a permanent hole wearing a temporary label. That task's bullet 2 asks " \
+           "this entry to anchor on --breaker-ack instead; it cannot (context cuts at the first " \
+           "period and the remedy's `...` IS that period), and the `line` key above supersedes " \
+           "the ask by giving the identity it was reaching for." },
+    { file: "docs/agents/agents/carl/sops/pr-review-light.md", line: 139, match: /on its own initiative/,
       why: "cautionary account of turf-monster PR 594, the incident that motivated the gate" },
-    { file: "docs/agents/agents/carl/sops/pr-review.md", match: /therefore runs the breaker itself/,
+    { file: "docs/agents/agents/carl/sops/pr-review.md", line: 315, match: /therefore runs the breaker itself/,
       why: "prose describing what the command does, not an instruction to run it" },
-    { file: "docs/agents/modules/devops-task-board.md", match: /lands the task back on building, and three readers/,
+    { file: "docs/agents/modules/devops-task-board.md", line: 820,
+      match: /lands the task back on building, and three readers/,
       why: "prose describing the stage effect on board readers" },
-    { file: "docs/agents/modules/gates/g2-review.md", match: /exits 10\), re-run it/,
+    { file: "docs/agents/modules/gates/g2-review.md", line: 93, match: /exits 10\), re-run it/,
       why: "prose naming the breaker's exit code" },
-    { file: "docs/agents/modules/pr-review-sop.md", match: /lands the task on building, and every reader/,
+    { file: "docs/agents/modules/pr-review-sop.md", line: 150,
+      match: /lands the task on building, and every reader/,
       why: "prose describing the stage effect on board readers" },
-    { file: "docs/agents/modules/pr-review-sop.md", match: /runs the same check and refuses the second bounce/,
+    { file: "docs/agents/modules/pr-review-sop.md", line: 318,
+      match: /runs the same check and refuses the second bounce/,
       why: "prose describing the breaker, not an instruction to run it" },
-    { file: "lib/review_verdict_gate.rb", match: /on its own initiative, then reported back to its Carl/,
+    { file: "lib/review_verdict_gate.rb", line: 12,
+      match: /on its own initiative, then reported back to its Carl/,
       why: "header narrating the incident the gate exists to prevent" }
   ].freeze
 
@@ -464,9 +686,9 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
     self.class.corpus.each do |rel, text|
       rework_runs(text).each do |run|
         next if run.command.include?("--agent")
-        next if NARRATION.any? { |n| n[:file] == rel && run.context.match?(n[:match]) }
+        next if NARRATION.any? { |n| narration_covers?(n, rel, run) }
 
-        offenders << "#{rel}\n        #{run.command.strip[0, 150]}"
+        offenders << "#{rel}:#{run.line}\n        #{run.command.strip[0, 150]}"
       end
     end
 
@@ -487,19 +709,31 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
     MSG
   end
 
-  test "[unit] every narration exemption is still live — a stale one fails rather than widening" do
+  test "[unit] every narration exemption still names exactly one live site" do
     corpus = self.class.corpus
     NARRATION.each do |entry|
       text = corpus[entry[:file]]
       assert text, "NARRATION names #{entry[:file]}, which the sweep did not read"
 
-      matched = rework_runs(text).any? do |run|
-        !run.command.include?("--agent") && run.context.match?(entry[:match])
-      end
-      assert matched,
-        "stale exemption: no bare `--kind rework` run in #{entry[:file]} matches " \
-        "#{entry[:match].inspect} (#{entry[:why]}). Delete the entry — an exemption that " \
-        "matches nothing is a standing hole in the guard."
+      bare = rework_runs(text).reject { |run| run.command.include?("--agent") }
+      matched = bare.select { |run| narration_covers?(entry, entry[:file], run) }
+
+      assert_equal 1, matched.size, <<~MSG
+        NARRATION entry #{entry[:file]}:#{entry[:line]} #{entry[:match].inspect}
+        covers #{matched.size} bare `--kind rework` run(s). An exemption must name exactly ONE
+        site (#{entry[:why]}).
+
+        Bare runs in that file start on line(s): #{bare.map(&:line).inspect}
+        …of which match this entry's prose: #{bare.select { |r| r.context.match?(entry[:match]) }.map(&:line).inspect}
+
+        ZERO means the entry is STALE — the prose moved, or the line drifted to one of the
+        numbers above. Repoint `line:` (or delete the entry if the run is gone); an exemption
+        that matches nothing is a standing hole in the guard.
+
+        TWO OR MORE means two invocations share a line and this entry cannot tell them apart.
+        Split them onto separate lines, or narrow `match:` — never widen an entry to cover a
+        site it was not written for. That absorption is the hole this key exists to close.
+      MSG
     end
   end
 

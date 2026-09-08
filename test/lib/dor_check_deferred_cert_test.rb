@@ -459,6 +459,88 @@ class DorCheckDeferredCertTest < Minitest::Test
     assert_equal :stale, stale.dig(:lanes, FullSuiteGate::DEFER_LANE)
   end
 
+  # --- [integration] ONE remedy per verdict (/tasks/builder-reads-remedy-twice) ----
+  #
+  # HALF 1. The two role tests above proved the refusal CARRIES the remedy submit-side
+  # and POINTS at it under review — and both of them looked only at `errors`. The
+  # submit-side NOTE (bin/dor-check's `when :unreadable` suggestion) carries the same
+  # ~500-character paragraph, and it is suppressed on `ci_review_refused` ONLY: a
+  # role-shaped proxy for "an error already said this", true under review and FALSE for
+  # the builder. So the role that reads it — bin/ship runs the builder role — read it
+  # TWICE, in a verdict they are already blocked by.
+  #
+  # ACROSS BOTH LISTS, deliberately. Counting carriers within `errors` alone is exactly
+  # the blindness that let this ship beside a test whose subject was this same string.
+  def test_the_builder_role_prints_the_credential_remedy_exactly_once
+    with_desk do |projects, desk|
+      verdict, code = dor_check(task_json([receipt_for(desk)]), desk, projects,
+                                ci: UNREADABLE_401, role: "builder")
+
+      refute verdict["ready"], "a CI nobody could read is not a green one"
+      assert_equal 1, code
+      refute review_role_marker?(verdict), "this half only holds submit-side"
+
+      printed = Array(verdict["errors"]) + Array(verdict["suggestions"])
+      carriers = printed.select { |text| credential_remedy?(text) }
+
+      assert_equal 1, carriers.size,
+                   "the ONE REMEDY STRING must appear ONCE in a verdict, counting errors AND " \
+                   "suggestions — a remedy printed twice trains the reader to skim the thing they " \
+                   "most need to read:\n#{carriers.join("\n---\n")}"
+      assert credential_remedy?(defer_refusal(verdict)),
+             "and the surviving copy must be the REFUSAL — that is the list a blocked builder reads"
+    end
+  end
+
+  # THE FENCE, and it is the half that makes the dedupe honest rather than a silencing.
+  # With a FULL cert standing, the suite gate does not refuse, so NO error carries the
+  # remedy — and the submit-side note is then the only thing between a builder and a
+  # token they have to refresh. It must still print, in full. Printing it once is the
+  # goal; printing it zero times is the worse defect wearing the fix's clothes.
+  def test_a_builder_whose_cert_stands_still_receives_the_remedy
+    with_desk do |projects, desk|
+      verdict, = dor_check(task_json([]), desk, projects, ci: UNREADABLE_401, role: "builder",
+                                                          extra: { "DOR_CHECK_SUITE_EVIDENCE" => "ok" })
+
+      errors = Array(verdict["errors"])
+      refute errors.any? { |text| credential_remedy?(text) },
+             "the premise: with the cert standing, no ERROR carries the remedy here — if one does, " \
+             "this fixture stopped testing what it says:\n#{errors.join("\n---\n")}"
+      assert Array(verdict["suggestions"]).any? { |text| credential_remedy?(text) },
+             "so the submit-side note MUST carry it — suppressing it here would trade a noisy " \
+             "correct message for a missing one:\n#{Array(verdict['suggestions']).join("\n---\n")}"
+    end
+  end
+
+  # HALF 2. The gated route ends by naming the full cert, and it named it with the
+  # LITERAL `<task>` — a token the reader cannot type, printed to a builder whose task
+  # slug is the one thing this run definitely knows. Same defect class as
+  # /tasks/release-offers-retired-cert, which removed an unfillable placeholder at G3
+  # rather than leaving it to be ignored; here a slug EXISTS, so the honest fix is to
+  # name it. Asserted on the RENDERED verdict, in both roles, because the defect is the
+  # output and a unit test on the formatter cannot see whether the wiring hands it one.
+  def test_no_printed_remedy_carries_an_unfillable_placeholder
+    with_desk do |projects, desk|
+      %w[builder review].each do |role|
+        verdict, = dor_check(task_json([receipt_for(desk)]), desk, projects,
+                             ci: UNREADABLE_401, role: role)
+        printed = (Array(verdict["errors"]) + Array(verdict["suggestions"])).join("\n")
+
+        refute_includes printed, "bin/full-suite-check <task>",
+                        "#{role}: the cert offer must name a command the reader can TYPE — this run " \
+                        "knows the slug:\n#{printed}"
+        # SCOPED TO THE REMEDY'S OWN CLAUSE, not to the slug appearing anywhere. The
+        # dor-check sentence WRAPPING the remedy independently ends "or certify locally
+        # in full: bin/full-suite-check <slug>" — so a bare `bin/full-suite-check #{SLUG}`
+        # assertion is satisfied by the neighbour and says nothing about the remedy.
+        # Measured: deleting the offer from ci_status.rb left that looser form GREEN.
+        assert_includes printed, "certify in full instead: bin/full-suite-check #{SLUG}.",
+                        "#{role}: the offer must survive AND name THIS task — deleting it would satisfy " \
+                        "the placeholder half while losing the route the gate honours:\n#{printed}"
+      end
+    end
+  end
+
   # The lane has to be MACHINE-OWNED or an author `--checks` update wipes the receipt
   # and strands the build. Asserted against the shipped list, not assumed.
   def test_the_defer_lane_is_part_of_the_machine_owned_evidence_namespace

@@ -132,13 +132,40 @@ negating a guard, `||`→`&&`, and `throw`→`console.warn`.
 ## Your app's section on the guide
 
 **Do not put a copy of your card in the gem to make it visible.** Until
-studio-engine 0.72.0 there was no other way, and the cost is now measured
-(2026-09-07, against 0.72.0): of the 26 specimens in `style/modals/`, **20 are
-second copies of cards a consumer owns, and 18 of those 20 have already drifted**
-from the card that ships. `wallet_setup` is the worst — 214 copy fragments the
-real card has and the specimen does not,
-plus a two-arm fork rendered as one arm, so the guide could only ever show the
-half that refuses the user. Rule 3 above exists because of exactly this.
+**studio-engine 0.71.0** there was no other way — that is the earliest tag
+containing the commit which added `style/_host.html.erb` (`dc9f9bad2`), and
+v0.70.0 has neither it nor the `index.html.erb` wiring.
+
+The cost of the old way is measured. **Of the 26 specimens in `style/modals/`,
+20 are second copies of cards a consumer owns** — that count reproduces exactly
+on an independent pass, down to the same six non-mirrors, so treat it as solid.
+**Most of those 20 have drifted from the card that ships**, and `wallet_setup` is
+the worst by a wide margin.
+
+The drift COUNT is deliberately not stated as a number here, because it is
+method-dependent and two independent passes disagreed: 18, 14 and 16 depending on
+what counts as a fragment, and `wallet_setup` came out at 214 on one definition
+and 222 on another. Anyone re-deriving it must state their definition first —
+strip ERB comments, then compare (a) prose split on sentence and newline
+boundaries above a length floor and (b) string literals long enough to hold two
+words, excluding class lists and Alpine expressions. **The disagreement is
+between measures, not about whether the drift is real**: every pass found the
+same cards drifting, and none found `wallet_setup` close.
+
+**And a specimen can drop a whole AXIS, not just wording.** `wallet_setup`'s real
+card forks on `isMobile` in two places — the `<template x-if>` arms
+`!phantomPresent && isMobile` and `!phantomPresent && !isMobile` (a third
+mention, the getter itself, is a definition and not a fork); the specimen
+mentions it **zero** times,
+so no toggle on the guide can ever reach the mobile arm. (An earlier draft of this
+note said "a two-arm fork rendered as one arm" — that was wrong in both halves.
+The card has more than two arms, and the OTHER axis, `phantomPresent`, the
+specimen does expose, through its "Wallet detected" toggle. `isMobile` is the one
+that is simply missing.) A missing axis is the more dangerous kind of drift: wrong
+wording is visible to anyone comparing, an absent fork looks like a card that
+never had one.
+
+Rule 3 above exists because of exactly this.
 
 An app carries its own section instead. Define one file:
 
@@ -155,17 +182,40 @@ such file gets a byte-identical page: no section, no heading, no nav pill.
 section, the `#host-modals` anchor, the heading and the nav pill; your partial
 supplies specimen cards and nothing else.
 
-**Trigger `$store.modals`, not `dsModals` — the distinction is the whole point.**
-The guide's own Modals section needs a page-scoped store because its specimens
-carry the ENGINE's ids, which your layout host has no registration for; pushing
-one there paints an empty card behind the specimen. **Your** ids ARE registered in
-your layout host, so opening one there renders the REAL production card. That is
-what makes a host section a review surface rather than a lookalike: there is no
-second file to drift, because there is no second file.
+**Trigger `$store.modals`, not `dsModals` — the distinction is the whole point,
+but it has a precondition.** The guide's own Modals section needs a page-scoped
+store because its specimens carry the ENGINE's ids, which your layout host has no
+registration for; pushing one there paints an empty card behind the specimen.
+Your OWN ids are registered in your OWN layout host, so opening one there renders
+the REAL production card — no second file to drift, because there is no second
+file.
+
+**The precondition: your app must actually mount the shared host.** Measured
+2026-09-07 by grepping every local checkout whose Gemfile carries
+`gem "studio-engine"` for `render "studio/modals/host"` in its layouts:
+turf-monster (2) and McRitchie Studio (1) mount it; **`mcritchie-industries`,
+`moms-app` and `acquisition-studio` mount it zero times**. In those three,
+`$store.modals` is undefined, so a host-section trigger throws on click and the
+card never opens. (Deliberately no "N of M apps" here — this module and the
+engine's CHANGELOG disagree on the total, and the claim does not need it. Re-run
+the grep; it names the apps.) If your app is one of the three, mount the shared
+host first, or drive a page-scoped store through `studio/modals/_scoped_host` and
+accept that what you are then reviewing is a specimen rather than the production
+card.
 
 ```erb
-<button type="button" @click="$store.modals.open('wallet-setup', { detected: true })">
+<button type="button" @click="$store.modals.open('wallet-setup', { returnUrl: '/contests' })">
 ```
+
+**Pass a prop the REAL card reads.** `returnUrl` is the only one turf's
+`modals/_wallet_setup` takes. The tempting `{ detected: true }` is a **specimen**
+prop — it lives only in the specimen and its registry entry:
+`style/modals/_wallet_setup`'s `get detected` accessor and the two `x-show`
+bindings it drives, plus `style/_modals.html.erb`'s `open_expr`, which is the
+very line a copied trigger comes from — and the real card decides that
+question itself, at runtime, from a `phantomPresent` getter no prop can set.
+Copying a trigger out of a specimen is the same mistake as copying a value out of
+one (rule 3); it just fails later, on click, instead of in review.
 
 The consumer contract lives in the doc comment on studio-engine's
 `app/views/style/_host.html.erb`. Read it before writing the partial.
