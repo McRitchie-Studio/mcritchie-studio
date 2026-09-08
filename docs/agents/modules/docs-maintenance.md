@@ -43,6 +43,16 @@ Two runs stay legitimate, and neither is a response to a drift report:
 by-hand fallback `bin/release ship` prints when its own `sync_agent_docs` step
 fails.
 
+**Exactly those two — the list is closed.** Alex's `share-insights` act used to
+run the installer as a third; it no longer does, and must not again. Its output
+is the tracked lessons doc [`../shared/insights.md`](../shared/insights.md),
+which this installer has never published: the payload is the two entry docs plus
+`docs/agents/skills/`, and a fresh session reads insights from the board
+(`bin/session-insights` GETs `/api/v1/insights`), not from that file. So the
+step distributed nothing the act produced.
+`test/docs/registered_sop_installer_docs_test.rb` sweeps every registered SOP in
+the invocation table and holds the set to the two above.
+
 ## Drift Review
 
 When finishing a meaningful feature:

@@ -8,8 +8,8 @@ a source of truth.** Its two jobs now live in canonical places:
   (`ActionGrade.banked`), and the tracked doc is **generated** from it:
   [`docs/agents/shared/insights.md`](insights.md). Curate lessons into the bank with
   `bin/agent-activity grade <activity-id> --disposition good|not --slug "…" --bank`; regenerate
-  the doc with `bin/rails insights:doc`. A fresh session **will** load them via the
-  planned `bin/session-insights` SessionStart loader (once it lands). See
+  the doc with `bin/rails insights:doc`. A fresh session loads them via the
+  `bin/session-insights` SessionStart loader, which GETs `/api/v1/insights`. See
   [`../system/memory.md`](../system/memory.md).
 
 - **Operational reference** — accounts / 1Password → `../modules/credentials.md`
