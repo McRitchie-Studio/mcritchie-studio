@@ -793,32 +793,87 @@ module FastCert
   # Returns nil when at least one test path will run, or a Hash the caller acts on:
   #   { kind: :refuse, message: } — abort (the caller prefixes "fast-check: ")
   #   { kind: :defer,  message:, detail: } — record the receipt, exit DEFERRED
-  def zero_test_outcome(mapped_only, spine, cap, slug: nil)
+  # `declared_spine` is what config/fast_cert_spine.yml ASKS FOR; `spine` is what this
+  # CHECKOUT HAS. The gap between them is the satellite signal, and the two are passed in
+  # separately precisely so this stays a pure decision over sets — see #declared_spine.
+  #
+  # BOTH NEW KWARGS FAIL CLOSED. `declared_spine:` defaults to [] (→ the old refusal) and
+  # `remedy:` to the hub-relative command, so a caller that has not been taught about either
+  # gets byte-identical behaviour. A loosening can only happen where someone WROTE one.
+  def zero_test_outcome(mapped_only, spine, cap, slug: nil, declared_spine: [], remedy: nil)
     return nil unless executed_test_paths(mapped_only, spine, cap).empty?
 
     task = slug.to_s.strip.empty? ? "<task>" : slug.to_s.strip
-    return defer_outcome(cap, task) if cap && cap[:capped]
+    fix = remedy.to_s.strip.empty? ? "bin/full-suite-check #{task}" : remedy.to_s.strip
+    return defer_outcome(cap, task, fix) if cap && cap[:capped]
 
-    { kind: :refuse, message: refuse_message(task) }
+    # Reaching here means `spine` is EMPTY — executed_test_paths is (mapped + spine) and it
+    # just tested empty — so the only question left is whether a spine was ASKED FOR. If it
+    # was, every declared entry failed to resolve, and that is a fact about the CHECKOUT.
+    # Deliberately NOT re-asserting `spine.empty?`: a clause that cannot be false is a clause
+    # no mutation can kill, and this file has been bitten by exactly that (PR #1239).
+    return unresolved_spine_outcome(declared_spine, task, fix) if Array(declared_spine).any?
+
+    { kind: :refuse, message: refuse_message(task, fix) }
+  end
+
+  # THE SATELLITE DEFERRAL — the second door into the deferral, and why it is a deferral
+  # rather than a certification.
+  #
+  # MEASURED 2026-09-07 (re-derived; the 2026-09-06 figure held): the spine declares five
+  # entries; the hub resolves 5/5 while turf-monster, rolio, turf-vault, studio-engine and
+  # solana-studio each resolve 0/5. So one docs-only diff split two ways by WHERE THE BUILDER
+  # STOOD — green in the hub, REFUSED on a satellite — while the refusal's own text blamed
+  # the diff. That is the bug: a verdict decided by the checkout, reported as a fact about
+  # the code.
+  #
+  # WHAT THE HUB'S GREEN ACTUALLY BUYS on such a diff is a TREE-HEALTH SMOKE TEST (the
+  # task/release/gate models still pass), never coverage of the markdown that changed. A
+  # satellite cannot run that smoke test; CI runs the satellite's WHOLE suite on this exact
+  # tree. So deferring demands strictly MORE evidence than the hub's green for the same diff.
+  # It is the capped case's argument with the same shape, which is why it lands in the same
+  # machinery rather than a new one.
+  #
+  # AND IT CERTIFIES NOTHING, by construction. The caller exits DEFERRED_EXIT (2) — falsy to
+  # every `system(...)` caller — records a fingerprint-bound "[cert-deferred@<fp>]" receipt,
+  # and never reaches the lane runner or the "fast cert green" line. bin/dor-check credits
+  # that receipt ONLY beside a GREEN CI. There is no path from here to a green cert.
+  def unresolved_spine_outcome(declared, task, fix)
+    count = Array(declared).size
+    noun = count == 1 ? "entry" : "entries"
+    detail = "cert DEFERRED to GitHub CI: this run would execute ZERO test files — the diff mapped to " \
+             "no test file, and this checkout resolves NONE of the #{count} spine #{noun} declared in " \
+             "config/fast_cert_spine.yml (the spine is anchored in the hub; a satellite checkout " \
+             "resolves none of it). So no LOCAL lane could certify this tree — the CHECKOUT is why, " \
+             "not the diff. CI runs the full suite on this exact code; bin/dor-check credits this " \
+             "receipt only alongside a GREEN CI, never provisionally."
+    message =
+      "NOT CERTIFIED — DEFERRING to GitHub CI. #{detail}" \
+      "\n  What happens next: bin/ship pushes and opens the PR anyway, waits for CI, and " \
+      "bin/dor-check REFUSES the submit unless CI is GREEN. A red CI, no CI, or an edit after this " \
+      "receipt all still block — deferring is not skipping." \
+      "\n  Prefer to certify locally instead? #{fix}"
+    { kind: :defer, message: message, detail: detail }
   end
 
   # The UNMAPPED refusal — the half that does not move. Kept verbatim from the guard PR
   # 1226 added, because the case it describes has not changed.
-  def refuse_message(task)
+  def refuse_message(task, fix = nil)
+    remedy_line = fix.to_s.strip.empty? ? "bin/full-suite-check #{task}" : fix.to_s.strip
     "REFUSING TO CERTIFY — this run would execute ZERO test files, so there is nothing to " \
       "certify. the diff maps to NO test file — no convention target, and no word-boundary " \
-      "grep hit, and this checkout resolves NO spine entries (the spine list is " \
-      "anchored in the hub; a satellite checkout resolves none of it). That leaves rubocop " \
+      "grep hit — and NO spine is declared for this run to fall back on " \
+      "(config/fast_cert_spine.yml is missing, empty, or unreadable). That leaves rubocop " \
       "as the only lane, and a linter cannot observe behaviour — a green cert here would be " \
       "a verdict on evidence that does not exist. Run the cert that DOES cover this diff:" \
-      "\n    bin/full-suite-check #{task}"
+      "\n    #{remedy_line}"
   end
 
   # The CAPPED deferral. `detail` is what goes on the recorded receipt — it must name the
   # cap, the count and the culprit, because a receipt nobody can read back to a cause is how
   # a deferral becomes a shrug. `message` is what the builder reads, and it says the two
   # things they need: nothing was certified here, and what has to be true later.
-  def defer_outcome(cap, task)
+  def defer_outcome(cap, task, fix = nil)
     culprit = cap[:worst_path] ? " (widest: #{cap[:worst_path]} → #{cap[:worst_count]} test file(s))" : ""
     detail = "cert DEFERRED to GitHub CI: the mapped lane was CAPPED — #{cap[:count]} mapped " \
              "path(s) over the cap of #{cap[:cap]}#{culprit} — over a spine this checkout " \
@@ -832,7 +887,7 @@ module FastCert
       "\n  What happens next: bin/ship pushes and opens the PR anyway, waits for CI, and " \
       "bin/dor-check REFUSES the submit unless CI is GREEN. A red CI, no CI, or an edit " \
       "after this receipt all still block — deferring is not skipping." \
-      "\n  Prefer to certify locally instead? bin/full-suite-check #{task}" \
+      "\n  Prefer to certify locally instead? #{fix.to_s.strip.empty? ? "bin/full-suite-check #{task}" : fix.to_s.strip}" \
       "\n  (or run the mapped lane anyway, deliberately: FAST_CHECK_MAPPED_CAP=#{cap[:count]} " \
       "bin/fast-check #{task} — that is the broad local suite this cap exists to avoid.)"
     { kind: :defer, message: message, detail: detail }
@@ -858,12 +913,46 @@ module FastCert
   # The curated always-run core from config/fast_cert_spine.yml. Entries may be
   # files or directories; only ones that exist under root survive (the hub's
   # spine list silently no-ops in a satellite checkout).
-  def spine(root, config_path)
+  # WHAT THE CONFIG ASKS FOR, before any checkout is consulted. Split out from #spine
+  # because the gap between the two — declared but unresolved — is the ONLY evidence that
+  # distinguishes "this diff maps to nothing" from "this checkout is not the hub", and a
+  # single read that filters as it goes cannot tell a caller which of the two it saw.
+  # Fails CLOSED: a missing or unparseable config declares NOTHING, which routes to the
+  # refusal rather than to the deferral.
+  def declared_spine(config_path)
     data = YAML.safe_load(File.read(config_path.to_s)) || {}
-    Array(data["spine"]).map(&:to_s).select { |p| File.exist?(File.join(root, p)) }
+    Array(data["spine"]).map(&:to_s)
   rescue Errno::ENOENT, Psych::SyntaxError
     []
   end
+
+  def spine(root, config_path)
+    declared_spine(config_path).select { |p| File.exist?(File.join(root, p)) }
+  end
+
+# THE REMEDY — a command the READER'S repo can actually execute.
+#
+# MEASURED 2026-09-07: bin/full-suite-check exists ONLY in the hub. turf-monster, rolio,
+# turf-vault, studio-engine and solana-studio have no such file, so the bare
+# "bin/full-suite-check <task>" that both zero-evidence verdicts used to print was, verbatim,
+# a command the reader's checkout could not run. Naming a hub-only command at a satellite
+# builder is the same defect as a gate naming a workflow trigger that does not exist.
+#
+# THE FIX IS A PATH, AND DELIBERATELY NOTHING MORE. An earlier cut of this also tried to
+# detect repos with "no suite lane at all" and point them at a [full-suite-bypass] instead.
+# It was wrong twice over. The probe (no bin/rails, no gem-registry row) fired on turf-vault,
+# which HAS a ci.yml and real test commands (`yarn test:scripts`, an `anchor test` in
+# Anchor.toml) — measured 2026-09-07, after the probe was written. And the direction of its
+# error was the dangerous one: an over-fire tells a builder with a real suite to RECORD A
+# SKIP. So no such branch exists. The hub's bin/full-suite-check is always named, and when it
+# genuinely cannot resolve a command for a checkout it refuses on its own terms, loudly,
+# naming what it could not read (bin/lib/ci_test_command.rb) — a recoverable under-fire
+# instead of an invitation to skip the evidence.
+def remedy(task, root:, hub_root:)
+  in_hub = File.expand_path(root.to_s) == File.expand_path(hub_root.to_s)
+  bin = in_hub ? "bin/full-suite-check" : File.join(hub_root.to_s, "bin", "full-suite-check")
+  "#{bin} #{task}"
+end
 
   # Mapped tests already covered by a spine entry (exact file, or inside a spine
   # directory) are dropped from the mapped lane so nothing runs twice.
