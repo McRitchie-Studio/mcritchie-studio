@@ -1234,11 +1234,20 @@ end
 #   2. THE RECEIPT MOVED — approval_request_dropped_at differs across the PATCH.
 #      That catches a drop the pre-read could not predict: a writer that set
 #      "waiting" in the window between our read and our write, and the same-second
-#      collision where two stamps render identically.
+#      collision where two stamps render identically. Stated as a plain inequality
+#      on purpose: an earlier cut also required the post-receipt to be non-empty,
+#      which no test could kill (the board only ever WRITES this stamp, so a receipt
+#      cannot vanish) and which was the single place the verdict resolved an unknown
+#      toward SILENCE. Every branch here now resolves the other way.
 #
 # An UNREADABLE pre-state (`before` nil — the board hiccuped) is not silence: half 2
-# reads it as "the receipt moved" and warns. Failing safe is the whole point — a
-# spurious line costs a reader one sentence, a missed one costs the operator gate.
+# reads a receipt on the record as news and warns. Failing safe is the whole point —
+# a spurious line costs a reader one sentence, a missed one costs the operator gate.
+# The one residual blind spot is BOTH failures at once: an unreadable pre-read
+# against a board too old to write a receipt leaves nothing to compare. Warning on
+# every unreadable pre-read would close it, at the price of a false line on every
+# transient board hiccup — and a warning readers learn to skip is the defect this
+# whole path exists to prevent.
 #
 # A destination that CAN hold a request never reaches here at all — the `settleable`
 # test at the call site is the single place that decision is made, so the message can
@@ -1284,7 +1293,7 @@ end
 
 def move_dropped_approval_request?(task, before)
   predicted = approval_status_of(before) == APPROVAL_WAITING
-  receipt_moved = !drop_receipt_of(task).empty? && drop_receipt_of(task) != drop_receipt_of(before)
+  receipt_moved = drop_receipt_of(task) != drop_receipt_of(before)
 
   predicted || receipt_moved
 end
