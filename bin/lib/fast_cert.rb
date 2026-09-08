@@ -930,29 +930,29 @@ module FastCert
     declared_spine(config_path).select { |p| File.exist?(File.join(root, p)) }
   end
 
-# THE REMEDY — a command the READER'S repo can actually execute.
-#
-# MEASURED 2026-09-07: bin/full-suite-check exists ONLY in the hub. turf-monster, rolio,
-# turf-vault, studio-engine and solana-studio have no such file, so the bare
-# "bin/full-suite-check <task>" that both zero-evidence verdicts used to print was, verbatim,
-# a command the reader's checkout could not run. Naming a hub-only command at a satellite
-# builder is the same defect as a gate naming a workflow trigger that does not exist.
-#
-# THE FIX IS A PATH, AND DELIBERATELY NOTHING MORE. An earlier cut of this also tried to
-# detect repos with "no suite lane at all" and point them at a [full-suite-bypass] instead.
-# It was wrong twice over. The probe (no bin/rails, no gem-registry row) fired on turf-vault,
-# which HAS a ci.yml and real test commands (`yarn test:scripts`, an `anchor test` in
-# Anchor.toml) — measured 2026-09-07, after the probe was written. And the direction of its
-# error was the dangerous one: an over-fire tells a builder with a real suite to RECORD A
-# SKIP. So no such branch exists. The hub's bin/full-suite-check is always named, and when it
-# genuinely cannot resolve a command for a checkout it refuses on its own terms, loudly,
-# naming what it could not read (bin/lib/ci_test_command.rb) — a recoverable under-fire
-# instead of an invitation to skip the evidence.
-def remedy(task, root:, hub_root:)
-  in_hub = File.expand_path(root.to_s) == File.expand_path(hub_root.to_s)
-  bin = in_hub ? "bin/full-suite-check" : File.join(hub_root.to_s, "bin", "full-suite-check")
-  "#{bin} #{task}"
-end
+  # THE REMEDY — a command the READER'S repo can actually execute.
+  #
+  # MEASURED 2026-09-07: bin/full-suite-check exists ONLY in the hub. turf-monster, rolio,
+  # turf-vault, studio-engine and solana-studio have no such file, so the bare
+  # "bin/full-suite-check <task>" that both zero-evidence verdicts used to print was, verbatim,
+  # a command the reader's checkout could not run. Naming a hub-only command at a satellite
+  # builder is the same defect as a gate naming a workflow trigger that does not exist.
+  #
+  # THE FIX IS A PATH, AND DELIBERATELY NOTHING MORE. An earlier cut of this also tried to
+  # detect repos with "no suite lane at all" and point them at a [full-suite-bypass] instead.
+  # It was wrong twice over. The probe (no bin/rails, no gem-registry row) fired on turf-vault,
+  # which HAS a ci.yml and real test commands (`yarn test:scripts`, an `anchor test` in
+  # Anchor.toml) — measured 2026-09-07, after the probe was written. And the direction of its
+  # error was the dangerous one: an over-fire tells a builder with a real suite to RECORD A
+  # SKIP. So no such branch exists. The hub's bin/full-suite-check is always named, and when it
+  # genuinely cannot resolve a command for a checkout it refuses on its own terms, loudly,
+  # naming what it could not read (bin/lib/ci_test_command.rb) — a recoverable under-fire
+  # instead of an invitation to skip the evidence.
+  def remedy(task, root:, hub_root:)
+    in_hub = File.expand_path(root.to_s) == File.expand_path(hub_root.to_s)
+    bin = in_hub ? "bin/full-suite-check" : File.join(hub_root.to_s, "bin", "full-suite-check")
+    "#{bin} #{task}"
+  end
 
   # Mapped tests already covered by a spine entry (exact file, or inside a spine
   # directory) are dropped from the mapped lane so nothing runs twice.
