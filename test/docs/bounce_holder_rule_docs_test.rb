@@ -117,10 +117,11 @@ class BounceHolderRuleDocsTest < ActiveSupport::TestCase
   #
   # SO ASK WHAT ACTUALLY TERMINATES A SHELL COMMAND IN PROSE. Not a period: inside
   # `--feedback "…"` a period is ordinary text and terminates nothing. Not a
-  # newline: FOUR sites here soft-wrap a command across a prose line break with NO
-  # backslash — index.md, heartbeats.md and zap-protocol.md wrap mid-flag, and
-  # pr-review-sop.md wraps between `bin/task` and `block`, where a line-at-a-time
-  # reader cannot even find the invocation. That is why `flat` joins lines at all.
+  # newline: FIVE sites here soft-wrap a command across a prose line break with NO
+  # backslash — index.md and zap-protocol.md wrap mid-flag, heartbeats.md wraps
+  # after `block`, and BOTH pr-review-sop.md and devops-task-board.md wrap between
+  # `bin/task` and `block`, where a line-at-a-time reader cannot even find the
+  # invocation. That is why `flat` joins lines at all.
   # Not a character count either. What ends a command is running out of COMMAND —
   # the first token that is not a flag, a flag's value, a placeholder, a quoted
   # string, or a continuation. `command_extent` walks exactly that, and quoted
@@ -327,8 +328,9 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
 
     assert_equal 1, runs.size,
       "a command soft-wrapped across a prose line break with NO backslash did not read as one " \
-      "command. Four sites in this corpus are written that way, and a line-at-a-time reader " \
-      "scores ZERO hits on every one of them"
+      "command. Five sites in this corpus are written that way, and a line-at-a-time reader " \
+      "scores ZERO hits on four of them (zap-protocol.md wraps after `--agent`, so a line " \
+      "reader finds a truncated run there rather than nothing)"
     assert_includes runs.first.command, "--agent carl"
 
     continued = <<~MD
@@ -428,9 +430,13 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
   # Prose that NARRATES the command ("`bin/task block --kind rework` exits 10") is
   # not a paste hazard, and no honest heuristic separates it from an instruction —
   # `pr-review-sop.md` carries both shapes with identical syntax. So the inventory
-  # is EXPLICIT: a bare run must be listed here with a reason, or it fails. A
-  # seventeenth site cannot arrive unnoticed, because arriving unnoticed is the
-  # one thing this list makes impossible.
+  # is EXPLICIT: a bare run must be listed here with a reason, or it fails — which
+  # is what makes a seventeenth site in a NEW place fail rather than ship. TWO
+  # measured gaps it does NOT close (tracked: /tasks/close-guard-boundary-gaps): an
+  # entry keyed to a SHAPE absorbs a second site of that shape in silence, and
+  # `command_extent` walks past a closing fence when the prose after it opens with a
+  # flag-shaped token. Neither is a false pass today; read this list as an
+  # inventory, not as a proof of completeness.
   NARRATION = [
     { file: "app/models/task.rb", match: /lands the task back on building and repoints/,
       why: "comment explaining the feature-marker repoint" },
