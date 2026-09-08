@@ -488,12 +488,15 @@ class FastCertSubjectTest < Minitest::Test
     # (prepare-drops-qa-dispatch) when test/lib/release_cli_dispatch_run_test.rb
     # was added — a NEW test file whose header cites this config to explain why it
     # is a new file rather than an append, which is exactly the reference the
-    # mapper is supposed to follow. What the assertion is FOR is the LIST: this one
-    # known entry and no other. A second path appearing is the regression; this
-    # number changing is bookkeeping.
-    assert_equal ["config/test_health.yml (22)"], over,
+    # mapper is supposed to follow. 22 → 23 on 2026-09-07
+    # (approval-drop-warning-overfires) for the same reason again:
+    # test/lib/task_move_approval_drop_test.rb was split out of the frozen hotspot
+    # test/lib/task_cli_test.rb, and its header cites this config to say why.
+    # What the assertion is FOR is the LIST: this one known entry and no other. A
+    # second path appearing is the regression; this number changing is bookkeeping.
+    assert_equal ["config/test_health.yml (23)"], over,
                  "config/test_health.yml was already over the cap before this clause " \
-                 "existed (its PATH matches 22 files); any OTHER entry here means the " \
+                 "existed (its PATH matches 23 files); any OTHER entry here means the " \
                  "config spelling re-opened a cap trip"
   end
 end
