@@ -3302,8 +3302,10 @@ when "review-claim"
   # under live review. Delegated whole to ReviewClaimCli (bin/lib/review_claim_cli.rb),
   # the mirror of bin/devops-shift one granularity down (lane → task): same
   # live-instance identity, TTL, and detached renewer. `cmd` is already shifted, so
-  # ARGV is [<sub> <slug> ...flags]. Exit codes: 0 claimed · 10 skipped (already under
-  # review by another) · 1 fail-open (no session / no board).
+  # ARGV is [<sub> <slug> ...flags]. Exit codes: 0 claimed/renewed · 10 skipped (already
+  # under review by another) · 12 (renew) no lease of yours to renew · 1 fail-open (no
+  # session / no board). `renew` exits NONZERO when it renewed nothing — it used to
+  # exit 0 either way, which is renew-exits-zero-renewing.
   require_relative "lib/review_claim_cli"
   exit(ReviewClaimCli.new.run(ARGV))
 when "claim-next-review"

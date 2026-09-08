@@ -11,7 +11,8 @@
 #   bin/task review-claim acquire <slug> [--label <text>] [--agent <soul>]  # take it, or skip
 #   bin/task claim-next-review    [--label <text>] [--agent <soul>]  # ATOMIC server pop: claim the
 #                                                            # next reviewable GREEN-CI task
-#   bin/task review-claim renew   <slug>                     # one heartbeat (internal)
+#   bin/task review-claim renew   <slug>                     # one heartbeat — exits
+#                                                            # NONZERO if it renewed nothing
 #   bin/task review-claim release <slug>                     # clean drop when the review lands
 #   bin/task review-claim status  <slug> [--observe-for <s>] [--no-observe] [--json]
 #                                                            # who is reviewing it, and whether
@@ -44,9 +45,19 @@
 #   10 — skipped (a DIFFERENT live instance is already reviewing it; pick another)
 #   4  — none (claim-next-review only): the atomic pop found NOTHING eligible (no
 #        reviewable task, or none with green CI) — a normal empty pop, not a failure.
+#   12 — (renew only) there was NO lease of yours to renew — no claim row, an
+#        unclaimed one, or somebody else's lapsed one. Renewing nothing is not success.
 #   1  — could not run (no session id / no board / usage error) — fail OPEN so a
 #        telemetry hiccup never wedges a real review.
-# Best-effort and never raises; renew/release/status always exit 0.
+# Best-effort and never raises. `release`/`status` always exit 0.
+#
+# `renew` DOES NOT, and that is the fix in renew-exits-zero-renewing: it used to
+# discard the board's answer and exit 0 whether it had renewed a lease, been refused
+# one, or found none at all. A reviewer running the documented renew loop believed he
+# held a task he did not hold, for ~31 minutes, with the lease FREE. `renew` now
+# reports the state it is in — 0 renewed (quiet) · 0 re-acquired after a LAPSE (loud on
+# stderr, because the lease was free for a window) · 10 held by another (named) · 12
+# nothing to renew.
 
 require "json"
 require "fileutils"
@@ -69,6 +80,13 @@ class ReviewClaimCli
   # task, or none green-CI) — a normal empty pop, not a failure, but nonzero so a
   # caller can branch (`slug=$(bin/task claim-next-review) || idle`).
   NONE = 4
+  # `renew` outcome: there was NO lease of ours to renew (no claim row, an unclaimed
+  # one, or someone else's lapsed one). Distinct from SKIPPED, which means a live
+  # reviewer holds it and there is somebody to ask — here there is nobody, and the
+  # remedy is `acquire`, not "ask them to release". Distinct from CANT_RUN, which is
+  # the fail-open "we could not tell". Renewing nothing is not success, so it is not
+  # OK either; the whole defect was these three answering 0 alongside a real renewal.
+  NO_LEASE = 12
 
   # --help/-h from ANY position prints usage and mutates nothing. Same two spellings
   # bin/task's HELP_FLAGS honors, because an agent probing this CLI has no way to
@@ -239,14 +257,94 @@ class ReviewClaimCli
     end
   end
 
+  # `renew` — one heartbeat, and it now REPORTS WHAT HAPPENED.
+  #
+  # THE BUG THIS REPLACES (renew-exits-zero-renewing). The body of this method was a
+  # bare `post(...)` followed by `OK`: the response was discarded unread, so the
+  # command exited 0 whether it had renewed a lease, been refused one, or found no
+  # lease at all. Measured 2026-09-08 during a real review — the documented renew loop
+  # run every 60s against the 120s TTL for ~31 minutes, every call exit 0 with ZERO
+  # stderr, while the lease sat FREE nearly the whole window with its heartbeat frozen
+  # at acquisition. The reviewer believed he held the task and did not; for that window
+  # a racing reviewer could have popped the same PR, and the no-duplicate-review
+  # guarantee was failing silently. He caught it only because he checked the lease
+  # instead of trusting the exit code — which is precisely the thing an exit code is
+  # for, so the exit code is now worth trusting.
+  #
+  # FOUR STATES, FOUR ANSWERS, none of them collapsed into another:
+  #   renewed      → 0, quiet (the ordinary beat; a renew loop must not chatter)
+  #   reacquired   → 0, but SAY SO on stderr — the lease had lapsed and was FREE
+  #   held_by_other→ SKIPPED, naming the holder to ask
+  #   no lease     → NO_LEASE. Renewing nothing is not success.
   def renew(slug)
     return usage_slug("renew") unless present?(slug)
 
     sid = session_id
-    return OK unless present?(sid) # best-effort heartbeat — never a failure
+    # Fail OPEN on an unidentifiable caller, as the rest of this CLI does — but never
+    # by claiming success. Without a session there is no live instance to renew FOR,
+    # so the one thing we must not do is answer 0 and let a loop believe it beat.
+    return cant_run("no session id — there is no live instance whose review lease this could renew") unless present?(sid)
 
-    post("#{base(slug)}/review_claim/renew", { "session" => sid, "nonce" => nonce })
+    res = post("#{base(slug)}/review_claim/renew", { "session" => sid, "nonce" => nonce })
+    return cant_run("no response from the board — the review lease was NOT renewed") if res.nil?
+
+    # The BODY decides, not the status code: 204 sits inside `ok?`'s 200-299 range, so
+    # reading the code here would call the no-op a success all over again. A 204 (and
+    # any non-JSON answer) parses to {} and reads as "nothing renewed", which is the
+    # safe direction for every shape this can take.
+    data = parse_data(res)
+    return renewed_ok(slug, data) if data["renewed"]
+
+    refuse_renew(slug)
+  end
+
+  # The 200 path. Quiet on an ordinary renewal — this runs on a loop and a line per
+  # beat is how a real signal gets buried — and loud on the heal, because a lease that
+  # LAPSED was free for a window in which another reviewer could have taken the task.
+  def renewed_ok(slug, data)
+    if data["state"].to_s == "reacquired"
+      @err.puts("review-claim: ⚠️  #{slug} — your review lease had LAPSED and was re-acquired just now. " \
+                "It was FREE for up to #{lease_ttl_seconds}s, so another reviewer could have popped this " \
+                "task in that window: check `bin/task review-claim status #{slug}` and the PR before you merge.")
+    end
     OK
+  end
+
+  # The 204 path — nothing was renewed, and this is where the old silence lived. A
+  # bodiless 204 cannot say WHICH refusal it is, so we ask the holder read that
+  # `status` already uses. It costs one extra board call on a path that today produces
+  # no output at all, and only on the FAILING branch: the renew loop's happy path never
+  # reaches here. The lease can of course change between the two calls; the exit code
+  # is already decided by the 204, so a race can only affect the WORDING, and we report
+  # what we actually read rather than what we assume.
+  def refuse_renew(slug)
+    holder = read_holder(slug)
+
+    if holder == :unreadable
+      @err.puts("review-claim: ❌ #{slug} — NOT renewed, and the board would not say who holds it. " \
+                "Treat this task as NOT yours to review until `bin/task review-claim status #{slug}` answers.")
+      return NO_LEASE
+    end
+
+    return report_no_lease(slug, holder) unless holder.is_a?(Hash) && present?(holder["session"])
+    return report_no_lease(slug, holder) unless holder["live"]
+
+    @err.puts("review-claim: ❌ #{slug} — NOT renewed: this review is held by #{holder_line(holder)}. " \
+              "Only their session can release it — ask them (bin/task review-claim release #{slug}). " \
+              "Do NOT take it over: a steal mid-review voids the no-self-review guarantee.")
+    SKIPPED
+  end
+
+  # "Nothing of yours to renew" — no claim row, an unclaimed one, or somebody else's
+  # LAPSED lease. All three mean the caller holds nothing, and the remedy is the same;
+  # a lapsed prior holder is named because it tells the reader the task was recently
+  # under review by someone, which changes what they do next.
+  def report_no_lease(slug, holder)
+    lapsed = holder_line(holder) if holder.is_a?(Hash) && present?(holder["session"])
+    @err.puts("review-claim: ❌ #{slug} — nothing renewed: you hold no review lease on this task" \
+              "#{lapsed ? " (a LAPSED claim by #{lapsed} is on it)" : ""}. " \
+              "Claim it first: bin/task review-claim acquire #{slug} --agent <soul>.")
+    NO_LEASE
   end
 
   # The detached renewer body (started by `acquire`; not for hand invocation). Renews
@@ -557,6 +655,14 @@ class ReviewClaimCli
   # review changed hands — so we stop. An unreachable board is NOT that: a network
   # blip keeps renewing (bounded by the renewer's safety cap), while a clear "you
   # don't hold this" stops.
+  #
+  # A LAPSE OF OUR OWN NO LONGER LANDS HERE AS A STOP. The board re-acquires a lease
+  # that is still ours when nobody else has taken it, and answers 200 — so a slow beat,
+  # a slept laptop or a throttled board heals instead of exiting `:lease_lost` and
+  # silently ending renewal for a review still being written. The 204 is now reserved
+  # for the two states where stopping is right: a DIFFERENT live instance holds it, or
+  # there is nothing to hold. Read from the status CODE, deliberately: this predicate
+  # is the one thing detached renewers already out in the fleet depend on.
   def renewed?(slug)
     res = post("#{base(slug)}/review_claim/renew", { "session" => session_id, "nonce" => nonce })
     return true if res.nil? # board unreachable — not proof we lost the review
@@ -855,8 +961,12 @@ class ReviewClaimCli
       `acquire` and `claim-next-review` are WRITES, not reads: each takes a real
       ~#{lease_ttl_seconds}s review lease on a real task. claim-next-review asks the BOARD for the
       next reviewable green-CI task, claims it, and prints its slug on stdout.
+      `renew` REPORTS what it did. It exits 0 only when you hold the lease afterwards,
+      and says so on stderr when it had LAPSED and was re-acquired — that lease was
+      free for a window, so check the PR was not popped by another reviewer.
       Release what you claim: bin/task review-claim release <slug>
-      exit: 0 claimed · 10 skipped (already under live review) · 4 nothing eligible · 1 could not run
+      exit: 0 claimed/renewed · 10 skipped (already under live review) · 4 nothing eligible
+            · 12 (renew) no lease of yours to renew · 1 could not run
     TEXT
     code
   end

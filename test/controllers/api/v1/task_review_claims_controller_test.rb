@@ -46,10 +46,46 @@ module Api
                                                               headers: @headers, as: :json
         assert_response :ok
         assert response.parsed_body.dig("data", "renewed")
+        assert_equal "renewed", response.parsed_body.dig("data", "state"),
+                     "the caller has to be able to tell a beat from a heal"
 
         post review_claim_renew_api_v1_task_path(@task.slug), params: { session: "B", nonce: "b" },
                                                               headers: @headers, as: :json
         assert_response :no_content
+      end
+
+      # THE 204 IS A CONTRACT, not an implementation detail: ReviewClaimCli#renewed? —
+      # the loop inside every detached renewer, including ones already running out in
+      # the fleet from older checkouts — stops on exactly this code. The two states
+      # that must keep sending it are the two where stopping is right.
+      test "[integration] a renew nobody can honour still answers 204, so a renewer stops" do
+        post review_claim_renew_api_v1_task_path(@task.slug), params: { session: "A", nonce: "a" },
+                                                              headers: @headers, as: :json
+        assert_response :no_content, "no claim row at all: there is nothing to renew"
+
+        acquire(session: "B", nonce: "b")
+        post review_claim_renew_api_v1_task_path(@task.slug), params: { session: "A", nonce: "a" },
+                                                              headers: @headers, as: :json
+        assert_response :no_content, "held by another: A's renewer must stop, not keep beating"
+      end
+
+      # The heal, at the wire. A lapse the caller can re-take answers 200 rather than
+      # 204, so a renewer whose own beat ran slow keeps going instead of exiting
+      # `:lease_lost` and silently ending renewal for a review still in progress. It
+      # says `reacquired`, because the lease WAS free for a window and the reviewer
+      # needs to know that before they merge.
+      test "[integration] a lapsed lease the caller still owns renews as a re-acquire" do
+        acquire(session: "A", nonce: "a")
+        TaskReviewClaim.find_by(task_slug: @task.slug)
+                       .update!(claim_expires_at: 5.minutes.ago)
+
+        post review_claim_renew_api_v1_task_path(@task.slug), params: { session: "A", nonce: "a" },
+                                                              headers: @headers, as: :json
+
+        assert_response :ok
+        assert response.parsed_body.dig("data", "renewed")
+        assert_equal "reacquired", response.parsed_body.dig("data", "state")
+        assert TaskReviewClaim.find_by(task_slug: @task.slug).live?, "the lease is alive again"
       end
 
       test "[integration] release frees the task for the next session" do

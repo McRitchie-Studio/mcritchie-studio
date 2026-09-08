@@ -33,10 +33,16 @@ class ReviewClaimCliTest < Minitest::Test
   class FakeApi
     attr_reader :posts
 
-    def initialize(projects_dir:, data: {}, code: 200)
+    # `routes` answers PER PATH SUFFIX — needed by the renew tests, where one command
+    # makes two different calls (POST the heartbeat, then GET the holder to say WHICH
+    # refusal it was) and a single canned answer would let both reads see the same
+    # body. A suffix with no route falls back to the flat `data`/`code`, so every
+    # existing test is untouched.
+    def initialize(projects_dir:, data: {}, code: 200, routes: {})
       @projects_dir = projects_dir
       @data = data
       @code = code
+      @routes = routes
       @posts = []
     end
 
@@ -52,18 +58,33 @@ class ReviewClaimCliTest < Minitest::Test
 
     def http_json(method, path, body = nil, **)
       @posts << { method: method, path: path, body: body }
-      Resp.new(@code, JSON.generate({ data: @data }))
+      code, data = route_for(method, path)
+      # A 204 carries NO body, exactly as the real board sends it — the renew path
+      # must survive an empty answer rather than depending on canned JSON riding
+      # along with a status that forbids one.
+      return Resp.new(code, "") if code.to_i == 204
+
+      Resp.new(code, JSON.generate({ data: data }))
+    end
+
+    def route_for(method, path)
+      key = @routes.keys.find { |suffix| path.to_s.end_with?(suffix.to_s) }
+      return [@code, @data] unless key
+
+      route = @routes[key]
+      route = route[method] if route.is_a?(Hash) && route.key?(method)
+      route.is_a?(Array) ? route : [@code, route]
     end
   end
 
   # Every cli() gets a RECORDING spawner, so no test ever forks a real renewer, and an
   # explicit anchor pid, so anchor resolution never depends on whether the suite runs
   # under a `claude` process.
-  def cli(env: {}, data: {}, code: 200, projects_dir:)
+  def cli(env: {}, data: {}, code: 200, routes: {}, projects_dir:)
     c = ReviewClaimCli.new(env: { "TASK_REVIEW_CLAIM_SESSION" => SESSION,
                                   "TASK_REVIEW_CLAIM_ANCHOR_PID" => Process.pid.to_s }.merge(env),
                            out: (@out = StringIO.new), err: (@err = StringIO.new))
-    c.instance_variable_set(:@api, FakeApi.new(projects_dir: projects_dir, data: data, code: code))
+    c.instance_variable_set(:@api, FakeApi.new(projects_dir: projects_dir, data: data, code: code, routes: routes))
     @spawned = []
     c.instance_variable_set(:@spawner, ->(spawn_env, argv) { @spawned << [spawn_env, argv]; 4242 })
     c
@@ -307,9 +328,142 @@ class ReviewClaimCliTest < Minitest::Test
     end
   end
 
-  def test_renew_is_always_a_clean_exit_zero
+  # --- [unit] renew REPORTS WHAT IT DID -----------------------------------------
+  #
+  # THIS BLOCK REPLACES `test_renew_is_always_a_clean_exit_zero`, which asserted the
+  # defect. That test drove a fake board answering `renewed: true` to everything and
+  # asserted exit 0 — so it passed identically whether the CLI read the answer or
+  # threw it away, which is exactly what the CLI was doing (renew-exits-zero-renewing).
+  # Measured on the real board 2026-09-08: renew every 60s against the 120s TTL for
+  # ~31 minutes, every call exit 0 with zero stderr, lease FREE nearly throughout.
+  #
+  # The mutation the old test could not catch, and these can: delete the CLI's read of
+  # the response body and three of the four cases below go red.
+  #
+  # A 204 here is a REAL 204 — no body — because that is what the board sends and
+  # because a test that hands the refusal path a JSON body would prove the CLI can
+  # read an answer it will never actually receive.
+
+  # No route: the flat data answers everything, including the board's holder read.
+  def renew_refusal_routes(holder)
+    { "/review_claim/renew" => [204, {}], "/review_claim" => [200, { "holder" => holder }] }
+  end
+
+  def test_unit_renew_of_a_live_lease_exits_zero_and_stays_quiet
     Dir.mktmpdir do |proj|
-      assert_equal ReviewClaimCli::OK, cli(projects_dir: proj, data: { "renewed" => true }).run(["renew", SLUG])
+      c = cli(projects_dir: proj, data: { "renewed" => true, "state" => "renewed" })
+
+      assert_equal ReviewClaimCli::OK, c.run(["renew", SLUG])
+      assert_empty @err.string, "the ordinary beat runs on a loop — a line per beat buries the real signal"
+    end
+  end
+
+  # The heal. Exit 0, because the caller DOES hold the lease now — but never silently:
+  # the lease was FREE for a window, and a racing reviewer could have popped the task
+  # in it. Saying nothing here is the same failure one notch quieter.
+  def test_unit_renew_after_a_lapse_exits_zero_but_says_the_lease_was_free
+    Dir.mktmpdir do |proj|
+      c = cli(projects_dir: proj, data: { "renewed" => true, "state" => "reacquired" })
+
+      assert_equal ReviewClaimCli::OK, c.run(["renew", SLUG])
+      assert_match(/LAPSED/, @err.string, "a lease that lapsed must say so")
+      assert_match(/another reviewer could have popped/i, @err.string,
+                   "…and must name the consequence, which is the whole reason this is not silent")
+    end
+  end
+
+  def test_unit_renew_refused_by_a_live_holder_exits_skipped_and_names_them
+    Dir.mktmpdir do |proj|
+      holder = { "session" => "sess-other", "agent" => "carl", "label" => "Gengar", "live" => true }
+      c = cli(projects_dir: proj, routes: renew_refusal_routes(holder))
+
+      assert_equal ReviewClaimCli::SKIPPED, c.run(["renew", SLUG])
+      assert_match(/NOT renewed/, @err.string)
+      assert_match(/carl/, @err.string, "a refusal has to name somebody to ask")
+      assert_match(/release/, @err.string, "and the remedy is to ask them, never to take it over")
+    end
+  end
+
+  def test_unit_renew_with_no_lease_at_all_exits_no_lease
+    Dir.mktmpdir do |proj|
+      c = cli(projects_dir: proj, routes: renew_refusal_routes(nil))
+
+      assert_equal ReviewClaimCli::NO_LEASE, c.run(["renew", SLUG]),
+                   "renewing nothing is not success"
+      assert_match(/nothing renewed/, @err.string)
+      assert_match(/acquire/, @err.string, "with nobody to ask, the remedy is to claim it")
+    end
+  end
+
+  # Somebody else's LAPSED lease. Free, but not ours — and the reader is told a claim
+  # was recently on it, because that changes what they do next.
+  def test_unit_renew_over_a_lapsed_foreign_lease_exits_no_lease_and_names_the_lapse
+    Dir.mktmpdir do |proj|
+      holder = { "session" => "sess-other", "agent" => "carl", "live" => false }
+      c = cli(projects_dir: proj, routes: renew_refusal_routes(holder))
+
+      assert_equal ReviewClaimCli::NO_LEASE, c.run(["renew", SLUG])
+      assert_match(/LAPSED claim by/, @err.string)
+      assert_match(/carl/, @err.string)
+    end
+  end
+
+  # THE POINT OF THE WHOLE FIX, asserted as one statement: the four shapes do not
+  # answer alike. Under the defect this array was [0, 0, 0, 0].
+  def test_unit_the_four_renew_outcomes_are_distinguishable_from_each_other
+    Dir.mktmpdir do |proj|
+      codes = {
+        renewed: cli(projects_dir: proj, data: { "renewed" => true, "state" => "renewed" }).run(["renew", SLUG]),
+        reacquired: cli(projects_dir: proj,
+                        data: { "renewed" => true, "state" => "reacquired" }).run(["renew", SLUG]),
+        held: cli(projects_dir: proj,
+                  routes: renew_refusal_routes({ "session" => "s", "live" => true })).run(["renew", SLUG]),
+        none: cli(projects_dir: proj, routes: renew_refusal_routes(nil)).run(["renew", SLUG])
+      }
+
+      assert_equal ReviewClaimCli::OK, codes[:renewed]
+      assert_equal ReviewClaimCli::OK, codes[:reacquired]
+      refute_equal codes[:renewed], codes[:held], "a refusal must not read as a renewal"
+      refute_equal codes[:renewed], codes[:none], "renewing nothing must not read as a renewal"
+      refute_equal codes[:held], codes[:none],
+                   "'ask the holder' and 'claim it yourself' are different next moves"
+      assert_equal 3, codes.values.uniq.size, "success · held · nothing — three distinct answers"
+    end
+  end
+
+  # An unreachable board must not answer 0. It also must not answer "held by another",
+  # because we did not read one — "we could not tell" is its own outcome, and the
+  # honest thing to report is that nothing was renewed.
+  def test_unit_renew_against_a_dead_board_does_not_report_success
+    Dir.mktmpdir do |proj|
+      c = cli(projects_dir: proj)
+      c.instance_variable_get(:@api).define_singleton_method(:http_json) { |*, **| nil }
+
+      refute_equal ReviewClaimCli::OK, c.run(["renew", SLUG]),
+                   "a heartbeat that never reached the board did not renew anything"
+      assert_match(/NOT renewed/, @err.string)
+    end
+  end
+
+  # A session we cannot identify has no live instance to renew FOR. It fails OPEN
+  # (exit 1, the CLI's could-not-run) — but never by claiming a renewal.
+  def test_unit_renew_without_a_session_cannot_claim_it_renewed
+    Dir.mktmpdir do |proj|
+      c = cli(projects_dir: proj, env: { "TASK_REVIEW_CLAIM_SESSION" => "", "CLAUDE_CODE_SESSION_ID" => "" },
+              data: { "renewed" => true })
+
+      assert_equal ReviewClaimCli::CANT_RUN, c.run(["renew", SLUG])
+      assert_empty renew_posts(c), "with no identity there is nothing to post"
+    end
+  end
+
+  # The status CODE is not the signal — 204 sits inside 200-299, so a CLI that asked
+  # `ok?(res)` would call the no-op a success all over again. The BODY decides.
+  def test_unit_a_204_is_not_read_as_success_despite_being_a_2xx
+    Dir.mktmpdir do |proj|
+      c = cli(projects_dir: proj, routes: renew_refusal_routes(nil))
+
+      assert_equal ReviewClaimCli::NO_LEASE, c.run(["renew", SLUG])
     end
   end
 

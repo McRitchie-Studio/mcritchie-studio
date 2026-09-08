@@ -124,6 +124,38 @@ not the holder (board answers 204, nothing released) saw `shift released.` while
 now speak from the board: the verdict comes from the release response, and on a 204
 the holder line is re-read from the same `GET …/devops_shifts` that `status` renders.
 
+**`bin/task review-claim renew` reports what the board did, too** (fixed 2026-09-08,
+`renew-exits-zero-renewing`) — the same defect as the paragraph above, one lease down,
+and the more expensive one because a REVIEW lease is what stops two reviewers landing
+on one PR. The CLI discarded the renew response unread and returned 0 unconditionally,
+so three distinct failures answered exactly like a success. Measured during a real
+review: the renew loop run every 60s against the 120s TTL for ~31 minutes, every call
+exit 0 with **zero stderr**, while the lease sat FREE for nearly the whole window with
+its heartbeat frozen at acquisition. The reviewer believed he held the task; for that
+window any racing session could have popped the same PR. He caught it only by checking
+the lease instead of trusting the exit code.
+
+`renew` now distinguishes four states and never collapses them:
+
+| state | exit | says |
+|-------|------|------|
+| renewed a live lease you hold | 0 | nothing — it runs on a loop |
+| your lease had LAPSED and was re-acquired | 0 | **stderr warning**: it was free for up to a TTL, so check the PR was not popped |
+| held by a DIFFERENT live instance | 10 | names the holder, and to ask them to release |
+| no lease of yours to renew | 12 | claim it first; renewing nothing is not success |
+
+Two design points worth keeping. **Re-acquiring your own lapse is a heal, not a
+steal** — it is the same compare-and-set `acquire` uses, so the moment another
+instance holds a live lease the renewal is refused and writes nothing; what it fixes
+is a slow beat (or a slept laptop) making a renewer exit `:lease_lost` and silently
+stop renewing a review still being written. And **the 204 stays the detached
+renewer's stop signal**: `ReviewClaimCli#renewed?` reads the status code, renewers
+already running out in the fleet were spawned from older checkouts, and the two states
+that still answer 204 are exactly the two where stopping is correct. A bodiless 204
+cannot say WHICH refusal it is, so the CLI resolves that with the holder read
+`status` already owns — one extra call, on a path that used to produce no output at
+all.
+
 Surface: `bin/devops-shift acquire|renew|release|status` (+ the internal
 `renew-loop`); the board endpoints
 `POST /api/v1/devops_shifts/{acquire,renew,release}` + `GET …/devops_shifts`; the

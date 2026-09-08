@@ -16,12 +16,18 @@ require "ripper"
 # agent_slug nil AND devops.built_by nil, while the same flag on a create
 # stamped both.
 #
-# WHY A DROPPED FLAG IS WORSE THAN A FAILED ONE. `devops.built_by` is the ONLY
-# input `bin/reviewer-select` can use to keep a soul off their own PR. Blank, it
-# REFUSES to pick and a human hand-picks instead — and a hand-picked light once
-# turned out to be the PR's own author. `begin` printed the worktree and reported
-# success either way, so the builder had no signal; the failure surfaced a day
-# later, in review, wearing a different costume.
+# WHY A DROPPED FLAG IS WORSE THAN A FAILED ONE. The AUTHOR SET
+# (`devops.builders` + `devops.built_by`) is what `bin/reviewer-select` reads to
+# keep a soul off their own PR — `agent_slug` is the ASSIGNEE and it reads that
+# only to guess who is busy elsewhere. Blank, the selector REFUSES to pick and a
+# human hand-picks instead — and a hand-picked light once turned out to be the
+# PR's own author. `begin` printed the worktree and reported success either way,
+# so the builder had no signal; the failure surfaced a day later, in review,
+# wearing a different costume.
+#
+# ONLY THE `built_by` HALF OF THAT MEASUREMENT WAS A DEFECT. `agent_slug` nil
+# after a resume is CORRECT and is pinned as such below — see "a resume writes no
+# assignee on either branch".
 #
 # EVERY ASSERTION HERE RUNS OFF-NETWORK by construction: both refusals happen in
 # argument parsing, before `begin` resolves a slug against the board. TASK_API_BASE
@@ -245,6 +251,52 @@ class TaskBeginFlagGrammarTest < ActiveSupport::TestCase
 
     assert_includes argv, "--dev-size"
     assert_equal "large", argv[argv.index("--dev-size") + 1]
+  end
+
+  # ── THE RESUME WRITES THE AUTHOR, NEVER THE ASSIGNEE ────────────────────────
+  #
+  # [integration] MEASURED 2026-09-08 on throwaway tasks, because both entry docs
+  # read as though ONE write did both jobs:
+  #
+  #   bin/task create --agent avi           → agent_slug "avi"  · authors NOT STAMPED
+  #   bin/task begin <slug> --agent avi     → agent_slug nil    · authors ["avi"]
+  #   bin/task begin --title … --agent avi  → agent_slug "avi"  · authors ["avi"]
+  #
+  # Exact mirrors, and NEITHER of the first two sets both. The docs called that a
+  # dropped write; it is two independent ones. `agent_slug` is the ASSIGNEE column
+  # and a resume must NOT touch it — the author set ACCUMULATES a second soul
+  # (Task#builder_roll_call unions it), while the assignee holds ONE value, so
+  # writing it on every resume would silently take the task away from whoever the
+  # PO assigned it to. The fix there was prose; this pins the behaviour that prose
+  # now describes, so changing it later has to be deliberate.
+  #
+  # BOTH BRANCHES, because `begin` claims two ways and a test against one of them
+  # says nothing about the other — the mistake this file has already been blocked
+  # for twice.
+  test "a resume writes no assignee on either branch" do
+    renewal = begin_patch_bodies("building", "--steal", "--agent", "carl")
+    designed = begin_patch_bodies("designed", "--agent", "carl")
+
+    # PROVE THE RENEWAL READ SOMETHING. Without this the refute below passes over
+    # an empty list — the quietest way for this guard to die.
+    refute_empty renewal, "the renewal branch sent no PATCH — this test inspected nothing"
+    assert_equal "carl", renewal.last.dig("event", "actor"),
+                 "the actor forward must still be there, or the assignee refute is vacuous: " \
+                 "a resume that writes NEITHER field is the 2026-08-29 defect, not the fix"
+
+    renewal.each do |patch|
+      refute patch.key?("agent_slug"),
+             "a resume must not write the ASSIGNEE column — the author set is what " \
+             "reviewer-select reads, and the assignee holds the one value the PO owns: " \
+             "#{patch.inspect}"
+    end
+
+    # The designed branch claims through the child `move` (stubbed here), so begin
+    # sends no PATCH of its own. Asserted rather than left implicit: an
+    # `agent_slug` write added on this branch has to redden something.
+    assert_empty designed,
+                 "the designed branch must claim through the child move and write nothing " \
+                 "itself — a PATCH here is a new write nobody has reasoned about"
   end
 
   test "the repo flag is accepted because the resume path reads it" do
@@ -474,6 +526,48 @@ class TaskBeginFlagGrammarTest < ActiveSupport::TestCase
     end
   end
 
+  # ── THE DOCS MUST NAME WHAT ACTUALLY STAMPS THE AUTHOR SET ──────────────────
+  #
+  # [unit] Both entry docs read "It sets `agent_slug`, WHICH STAMPS the task's
+  # AUTHOR SET" — one write, with a causal arrow drawn through the assignee
+  # column. The board disagrees on every path (see "a resume writes no assignee on
+  # either branch"), and the wording is not merely imprecise: it makes `agent_slug`
+  # look load-bearing for no-self-review when `bin/reviewer-select` never reads it
+  # for the task under review. An agent who then "repairs" a nil assignee has
+  # repaired nothing, and an agent who reads a stamped assignee as proof of
+  # attribution is wrong in the dangerous direction.
+  #
+  # PROSE HAS NO OTHER WAY TO FAIL, so the correction is pinned from both sides:
+  # the new statement must be present, and the disproved one must not come back.
+  AUTHOR_SET_HEADLINE = "**THE BUILD CLAIM STAMPS THE AUTHOR SET — `agent_slug` does not.**"
+
+  test "the entry docs name the claim, not agent_slug, as what stamps the author set" do
+    ENTRY_DOCS.each do |rel|
+      body = Rails.root.join(rel).read
+
+      # READ THE PARAGRAPH, NOT THE FILE — the lesson the honoured-flags guard
+      # above already paid for. Both docs name `agent_slug` in several places, so a
+      # whole-body substring assertion will always find its needle somewhere.
+      section = body[/#{Regexp.escape(AUTHOR_SET_HEADLINE)}(.+?)\*\*It works on BOTH forms/m, 1]
+
+      refute_nil section,
+                 "#{rel} no longer carries the paragraph this guard reads. It must say, in " \
+                 "these words, that the build claim stamps the author set: #{AUTHOR_SET_HEADLINE}"
+      assert_includes section, "A RESUME NEVER WRITES IT",
+                      "#{rel} must say plainly that a resume leaves the assignee alone — that " \
+                      "is the measurement this whole paragraph exists to record"
+      assert_match(/build\s+CLAIM/, section,
+                   "#{rel} must name the CLAIM as what stamps the author set, not the flag")
+      assert_includes section, "devops.builders",
+                      "#{rel} must name the field review actually excludes on"
+
+      refute_match(/sets\s+`agent_slug`, which stamps/m, body,
+                   "#{rel} has the disproved causal chain back: `--agent` does not reach the " \
+                   "author set BY setting `agent_slug`. A bare `bin/task create --agent <soul>` " \
+                   "sets the assignee and stamps no author at all, because it makes no claim.")
+    end
+  end
+
   private
 
   # ── THE WIRING CHECK, AS A FUNCTION OF SOURCE ───────────────────────────────
@@ -642,25 +736,36 @@ class TaskBeginFlagGrammarTest < ActiveSupport::TestCase
   # is present so `begin` writes the claim rather than leaving it alone. Returns the
   # decoded body of the LAST PATCH it sent.
   def captured_renewal_body(*extra)
+    parsed = begin_patch_bodies("building", "--steal", *extra)
+    flunk "the renewal branch sent no PATCH — the test never reached the code it targets" if parsed.empty?
+    parsed.last
+  end
+
+  # EVERY PATCH `begin` SENDS ITSELF, decoded, for a task sitting at `stage`. The
+  # child `move` is stubbed, so its writes are deliberately NOT in here: this
+  # answers "what does begin write on its own", which is the only question the
+  # assignee pin can ask. The claim's own writes belong to `move`, and `move` is
+  # not what this file tests.
+  def begin_patch_bodies(stage, *extra)
     Dir.mktmpdir do |dir|
+      stub(dir, "move-stub", "exit 0")
       stub(dir, "worktree-stub", "echo #{dir}")
       stub(dir, "preflight-stub", "exit 0")
       writes = []
 
-      with_board_sink(dir, stage: "building", writes: writes) do |base|
+      with_board_sink(dir, stage: stage, writes: writes) do |base|
         Open3.capture3(
           { "TASK_API_BASE" => base, "AGENT_API_SECRET" => "not-a-real-secret",
             "TASK_SKIP_MARKER" => "1", "TASK_BEGIN_PROJECTS_DIR" => dir,
             "CLAUDE_CODE_SESSION_ID" => "019f3b0c-3a8d-73b1-9e8b-f380e11fb91b",
+            "TASK_BEGIN_MOVE_BIN" => File.join(dir, "move-stub"),
             "TASK_BEGIN_WORKTREE_BIN" => File.join(dir, "worktree-stub"),
             "TASK_BEGIN_PREFLIGHT_BIN" => File.join(dir, "preflight-stub") },
-          BIN, "begin", "probe-task", "--steal", *extra
+          BIN, "begin", "probe-task", *extra
         )
       end
 
-      parsed = writes.filter_map { |w| JSON.parse(w) rescue nil }
-      flunk "the renewal branch sent no PATCH — the test never reached the code it targets" if parsed.empty?
-      parsed.last
+      writes.filter_map { |w| JSON.parse(w) rescue nil }
     end
   end
 
