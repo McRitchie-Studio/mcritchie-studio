@@ -69,7 +69,17 @@ module ShapeContract
     return nil unless shapes.is_a?(Hash)
 
     shapes[name]
-  rescue Errno::ENOENT, Psych::SyntaxError
+  rescue StandardError
+    # EVERY failure to read the taxonomy is the SAME answer — nil, which #suite_owed?
+    # reads as "assume a suite is owed". Deliberately broad, and measured: the named
+    # pair (ENOENT, Psych::SyntaxError) was NARROWER than the three places that promise
+    # this survives an "unreadable config" — a chmod-000 file raises Errno::EACCES, a
+    # directory Errno::EISDIR, a YAML merge key Psych::AliasesNotEnabled, a `Date`
+    # value Psych::DisallowedClass, and a non-Hash root a NoMethodError. Every one is a
+    # StandardError, and every one must fail CLOSED rather than crash the cert runner.
+    # Breadth is safe here precisely because the fallback is the STRICT answer: a
+    # swallowed bug costs a suite run, never a waived one. (bin/dor-check:2134 reads
+    # the same file with no rescue at all, so this stays the more robust of the two.)
     nil
   end
 

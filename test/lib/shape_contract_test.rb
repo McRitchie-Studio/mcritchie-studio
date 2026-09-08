@@ -79,6 +79,42 @@ class ShapeContractTest < Minitest::Test
     end
   end
 
+  # EVERY way the taxonomy can be unreadable, not just the two that were named. The
+  # rescue was `Errno::ENOENT, Psych::SyntaxError`, which is NARROWER than the promise
+  # this module's header, bin/fast-check's comment and g1-cert.md all make about an
+  # "unreadable config" — measured in review 2026-09-08, each case below RAISED out of
+  # #definition and would have crashed bin/fast-check instead of failing closed.
+  #
+  # Failing closed is the whole point: nil reads as "shape unknown", #suite_owed?
+  # answers TRUE, and the diff is refused. A broad rescue is safe here precisely
+  # because its fallback is the STRICT answer — a swallowed bug costs a suite run,
+  # never a waived one.
+  def test_definition_fails_closed_on_every_unreadable_taxonomy_not_only_the_two_named
+    Dir.mktmpdir do |dir|
+      unreadable = File.join(dir, "chmod000.yml")
+      File.write(unreadable, "shapes:\n  docs: {}\n")
+      File.chmod(0o000, unreadable)
+
+      cases = { "a directory where a file was expected (Errno::EISDIR)" => dir }
+      # chmod(0) does not stop root, and some CI images run as root — assert the EACCES
+      # case only where the OS actually enforced it, rather than failing for the one
+      # reason that has nothing to do with this module.
+      cases["a file the process cannot read (Errno::EACCES)"] = unreadable unless File.readable?(unreadable)
+      cases.each do |what, path|
+        assert_nil ShapeContract.definition(path, "docs"),
+                   "#{what} must read as 'unknown shape' (owed), never crash the cert runner"
+      end
+
+      # Parseable YAML that safe_load still refuses, and a root that is not a map at all.
+      with_config("a: &anchor {}\nshapes:\n  <<: *anchor\n") do |path|
+        assert_nil ShapeContract.definition(path, "docs"), "a YAML merge key (Psych::AliasesNotEnabled)"
+      end
+      with_config("just a scalar\n") do |path|
+        assert_nil ShapeContract.definition(path, "docs"), "a non-Hash document root (NoMethodError)"
+      end
+    end
+  end
+
   # THE REAL TAXONOMY, not a fixture. This is the claim the whole change rests on, and
   # it must break here if someone edits the `docs` stanza rather than being discovered
   # by a builder mid-ship.

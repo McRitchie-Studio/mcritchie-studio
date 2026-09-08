@@ -928,7 +928,14 @@ class FastCheckTest < Minitest::Test
   # satellite. Deliberately NOT `with_repo`: that fixture's diff is an app model, and
   # rewriting its tracked spine.yml to empty would itself put a behavioural .yml in the
   # diff and kill the very waiver under test.
-  def with_prose_repo
+  # `spine:` is the fixture's COMMITTED spine.yml body, and it selects which of the
+  # zero-evidence guard's two doors this prose diff arrives at. The default `spine: []`
+  # declares nothing, so FastCert.zero_test_outcome REFUSES. Pass a spine that declares
+  # a path this checkout does not have and it DEFERS instead (the satellite condition,
+  # PR #1287) — which is the other verdict the waiver has to beat. It is written before
+  # the initial commit either way, so it never enters the diff and never disturbs the
+  # observation half of the waiver.
+  def with_prose_repo(spine: "spine: []\n")
     Dir.mktmpdir do |dir|
       git = ->(args) { assert(system("git -C #{dir} #{args} >/dev/null 2>&1"), "git #{args}") }
       write = lambda do |rel, body|
@@ -937,7 +944,7 @@ class FastCheckTest < Minitest::Test
         File.write(full, body)
       end
       write.call(".gitignore", "stub.log*\n*-stub\n")
-      write.call("spine.yml", "spine: []\n")
+      write.call("spine.yml", spine)
       write.call("README.md", "# fixture\n")
       write.call("bin/deploy.sh", "#!/bin/sh\necho ship\n")
       FileUtils.chmod(0o755, File.join(dir, "bin/deploy.sh"))
@@ -1004,6 +1011,57 @@ class FastCheckTest < Minitest::Test
 
       assert_equal 1, code, "no shape read, no waiver:\n#{out}"
       assert_match(/REFUSING TO CERTIFY/, out)
+    end
+  end
+
+  # THE PRECEDENCE, PINNED — the waiver beats the DEFERRAL, not only the refusal.
+  #
+  # bin/fast-check's comment and g1-cert.md's verdict table both say the waiver
+  # "INTERCEPTS BOTH VERDICTS, refuse and defer", but until this test only the REFUSE
+  # door was exercised: every other waiver case here uses the default `spine: []`
+  # fixture, which declares nothing and so can only refuse. This is the DEFER door — a
+  # spine that DECLARES an entry this checkout does not resolve, which is exactly the
+  # satellite condition PR #1287 added (turf-monster resolves 0/5 of the hub's spine).
+  #
+  # REACHABLE, not hypothetical, and it is this change's OWN motivating case: the
+  # measured defect (/tasks/wallet-transport-architecture-doc) was a docs diff in a
+  # satellite checkout, so post-#1287 that diff DEFERS rather than refuses. A waiver
+  # that only beat the refusal would leave the original bug standing exactly where it
+  # was found.
+  #
+  # WITHOUT this test the ordering is inert to mutation: narrowing the waiver's
+  # `if zero` to `if zero && zero[:kind] == :refuse` keeps all 88 other cases in this
+  # file green (measured in review, 2026-09-08) while sending every satellite docs diff
+  # back to a deferral — writing a receipt that bin/dor-check never reads for this
+  # shape, since its only consumer sits inside the `full_suite_gate` block `docs` skips.
+  def test_the_waiver_beats_a_DEFERRAL_and_not_only_a_refusal
+    with_prose_repo(spine: "spine:\n  - test/hub_only_spine_test.rb\n") do |dir, write|
+      write.call("docs/wallet-transport.md", "# Wallet transport\n\n316 lines of prose\n")
+
+      out, code, lines = prose_check(dir)
+
+      assert_equal 0, code,
+                   "a declared-but-unresolved spine DEFERS for a code shape; a shape that owes " \
+                   "no suite must be WAIVED, not deferred:\n#{out}"
+      assert_match(/NO CERT OWED/, out)
+      refute_match(/DEFERRED/, out, "a waived diff has nothing to defer TO — no cert is asked of CI here")
+      assert_empty lines.select { |l| l[0] == "TASK" && l[1] == "update" },
+                   "and writes no receipt: the deferral's receipt is read only inside " \
+                   "bin/dor-check's full_suite_gate block, which a `docs` shape skips"
+    end
+  end
+
+  # THE CONTROL for the test above: the SAME declared-but-unresolved spine under a shape
+  # that owes a suite still DEFERS. Without it, a fixture that had quietly stopped being
+  # able to defer at all would let the precedence test pass for the wrong reason.
+  def test_the_same_unresolved_spine_still_defers_for_a_shape_that_owes_a_suite
+    with_prose_repo(spine: "spine:\n  - test/hub_only_spine_test.rb\n") do |dir, write|
+      write.call("docs/wallet-transport.md", "# Wallet transport\n")
+
+      out, code, = prose_check(dir, shape_json: BACKEND_SHAPE_JSON)
+
+      assert_equal FastCert::DEFERRED_EXIT, code, "PR #1287's satellite deferral, intact:\n#{out}"
+      refute_match(/NO CERT OWED/, out)
     end
   end
 
