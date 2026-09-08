@@ -175,7 +175,23 @@
 # Read an EXISTING fixture where you can.
 # MEASURED with the lister, not added by hand: `npx playwright test --list` => 145.
 # Coverage ADDED; `quarantined` is untouched.
-total_specs: 146
+#
+# 146 -> 148 on 2026-09-07: e2e/app_ladder_pin_bridge.spec.js, TWO specs in ONE new
+# file (the lane counts SPECS, not files). They close an evidence gap review proved
+# rather than argued: it re-added `this.$store.appLadder.pinned = false` to the
+# ladder row's init(), reintroducing the exact per-broadcast flash the adoption
+# exists to remove, and all 22 runs / 131 assertions stayed GREEN. Every guard for
+# that criterion read source or rendered markup, and the markup is byte-identical
+# whether Alpine ever ran.
+#
+# The same blind spot had already shipped a defect: the pinned strip's store was
+# armed on `alpine:init` alone, which does not re-fire on a Turbo Drive visit, so
+# arriving by clicking an in-app link left the store undefined and the strip never
+# pinned. One spec arrives by BOTH paths; the other samples every frame across a row
+# replacement and fails on any frame the strip is unpinned. Coverage ADDED;
+# `quarantined` is untouched.
+# MEASURED with the lister: `npx playwright test --list` => 148.
+total_specs: 148
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
@@ -280,7 +296,13 @@ quarantined: 10
 # Re-derived after the resubmission signal landed:
 #   npx playwright test --list                           => 145
 #   npx playwright test --list --grep-invert @quarantine => 135
-executed: 136
+#
+# 136 -> 138 on 2026-09-07: the two app_ladder_pin_bridge specs above. Coverage
+# ADDED; `quarantined` untouched.
+# Re-derived on THIS tree with the lister, never by arithmetic:
+#   npx playwright test --list                           => 148
+#   npx playwright test --list --grep-invert @quarantine => 138
+executed: 138
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to

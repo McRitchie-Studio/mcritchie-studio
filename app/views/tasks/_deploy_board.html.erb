@@ -78,9 +78,43 @@
 // is NOT itself a broadcast target, and the row may carry no <script> of its own
 // — a script inside a replaced fragment is a re-execution question nobody should
 // have to answer on a live board.
-document.addEventListener('alpine:init', () => {
+// ARMED ON BOTH EVENTS, because either can be the one that happens.
+//
+// `alpine:init` fires ONCE, inside Alpine.start(). A Turbo Drive visit does not
+// re-fire it — Alpine is already up — and this layout documents that rule
+// verbatim at layouts/application.html.erb:109-113 for its own first-name hook.
+// Armed on alpine:init alone, ANY arrival at /deployments by clicking an in-app
+// link left the store undefined, `x-show="$store.appLadder.pinned"` threw, and the
+// strip never pinned at all. Measured on a review desk at scrollY=959: a direct
+// load gave {pinned:true}, strip pinned at y=53, 0 page errors; the Turbo visit
+// gave store UNDEFINED, strip display:none, and 13 page errors. measure() threw
+// before gauge() and before the ResizeObserver was built, so the fade mask froze
+// and every @scroll.window threw too.
+//
+// Same shape as studio-engine components/_link_sidebar.html.erb:31-45 and this
+// layout's askFirstName: a named ensure*, guarded on Alpine being present,
+// idempotent, armed on both events, plus one immediate call for the case where
+// Alpine has already started by the time this script runs.
+function ensureAppLadderStore() {
+  if (!window.Alpine || !Alpine.store) return null;
   if (!Alpine.store('appLadder')) Alpine.store('appLadder', { pinned: false });
-});
+  return Alpine.store('appLadder');
+}
+// ATTACHED ONCE PER DOCUMENT. Turbo Drive replaces the body, so this inline
+// script RE-EXECUTES on every visit to a page rendering this board — and without
+// the flag each visit adds another listener pair, accumulating for the life of
+// the tab. Same guard, and the same reason, as the engine's
+// __studioLinkSidebarBridge and this layout's own first-name hook.
+if (!window.__appLadderStoreBridge) {
+  window.__appLadderStoreBridge = true;
+  document.addEventListener('alpine:init', ensureAppLadderStore);
+  document.addEventListener('turbo:load', ensureAppLadderStore);
+}
+// The immediate call stays OUTSIDE the flag: it is per-execution, not per
+// document. A Turbo visit re-runs this script with Alpine already started and
+// both listeners already attached but neither about to fire again for THIS
+// document, so the visit that mattered would arm nothing without it.
+ensureAppLadderStore();
 
 function kanbanBoard(live) {
   return {
