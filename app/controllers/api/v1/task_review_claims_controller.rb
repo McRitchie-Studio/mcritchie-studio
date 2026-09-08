@@ -77,13 +77,27 @@ module Api
       end
 
       # POST /api/v1/tasks/:slug/review_claim/renew { session, nonce } — the
-      # heartbeat. 200 { renewed: true } when this instance still holds the review;
-      # 204 no-op otherwise (lost/expired/never-held — never an error).
+      # heartbeat. 200 { renewed: true, state: "renewed"|"reacquired", holder: … } when
+      # this instance holds the review after the call; 204 no-op when it does not
+      # (held by another, or nothing of ours to renew — never an error).
+      #
+      # THE 204 IS THE DETACHED RENEWER'S STOP SIGNAL and is kept exactly where it was
+      # on purpose (ReviewClaimCli#renewed? reads the code, and renewers already
+      # running out in the fleet were spawned from older checkouts). What CHANGED is
+      # which states reach it: a lapse the caller can heal now re-acquires and answers
+      # 200, so a renewer no longer exits `:lease_lost` on its own slow beat. The two
+      # states that still 204 are the two where stopping is correct.
+      #
+      # A bodiless 204 cannot say WHICH refusal it is, so the CLI resolves that with
+      # the holder read (GET review_claim) it already owns, rather than this endpoint
+      # inventing a body a 204 is not allowed to carry.
       def renew
-        ok = TaskReviewClaim.renew(task_slug: params[:slug], session: claim_params[:session], nonce: claim_params[:nonce])
-        return head :no_content unless ok
+        outcome = TaskReviewClaim.renew(task_slug: params[:slug], session: claim_params[:session],
+                                        nonce: claim_params[:nonce])
+        return head :no_content unless outcome.renewed?
 
-        render_data({ "renewed" => true })
+        render_data({ "renewed" => true, "state" => outcome.state.to_s,
+                      "holder" => outcome.claim&.holder_info })
       end
 
       # POST /api/v1/tasks/:slug/review_claim/release { session, nonce } — the clean

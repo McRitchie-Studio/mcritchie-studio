@@ -77,24 +77,40 @@ module ClaimLease
     # never-renewed claim frees the task rather than locking it forever.
     return :expired if expires.nil? || expires <= now
 
-    return :held_by_other unless stored_session == session.to_s
+    same_instance?(claim, session: session, nonce: nonce) ? :same_instance : :held_by_other
+  end
 
-    # Same session — now decide whether it's the SAME live instance or a second
-    # terminal of it. Distinguish the two ONLY when BOTH nonces are known: a BLANK
-    # on either side means "instance unknown", and the degrade contract
-    # (SessionIdentity.nonce) is a session-only lease, so the same session is the
-    # same holder. Reading blank-vs-populated as a DIFFERENT instance is the
-    # ship-claim-blank-nonce bug: a detached heartbeat renewal blanked the STORED
-    # nonce, then the owner's populated nonce was compared against blank and the
-    # true owner was locked out of its own task. Absence of a signal must never
-    # read as an affirmative negative.
+  # IDENTITY ALONE, with the lease CLOCK deliberately left out of it: "is this stored
+  # claim THIS live instance's?", expired or not.
+  #
+  # WHY IT IS SEPARATE FROM `evaluate`. `evaluate` answers the CLAIM question and so
+  # returns :expired BEFORE it ever compares identity — right for claiming, where a
+  # lapsed lease is free to anyone. But a RENEWAL asking to re-take its OWN lapsed
+  # lease has to ask the identity question on its own, and it must ask it with the
+  # SAME blank-nonce rule, not a second copy of it. Two copies of this rule is how the
+  # ship-claim-blank-nonce bug gets re-introduced in a file that never mentions it.
+  # `evaluate` is now the caller above, so there is exactly one implementation.
+  #
+  # THE BLANK-NONCE RULE. Distinguish two instances of one session ONLY when BOTH
+  # nonces are known: a BLANK on either side means "instance unknown", and the degrade
+  # contract (SessionIdentity.nonce) is a session-only lease, so the same session is
+  # the same holder. Reading blank-vs-populated as a DIFFERENT instance is the
+  # ship-claim-blank-nonce bug: a detached heartbeat renewal blanked the STORED nonce,
+  # then the owner's populated nonce was compared against blank and the true owner was
+  # locked out of its own task. Absence of a signal must never read as an affirmative
+  # negative.
+  #
+  # A claim nobody holds is nobody's — a session-less claim answers false, so "is this
+  # mine?" can never be true of an empty lease.
+  def self.same_instance?(claim, session:, nonce:)
+    claim ||= {}
+    stored_session = claim["claimed_session"].to_s
+    return false if stored_session.empty?
+    return false unless stored_session == session.to_s
+
     stored_nonce = claim["claim_nonce"].to_s.strip
     current_nonce = nonce.to_s.strip
-    if !stored_nonce.empty? && !current_nonce.empty? && stored_nonce != current_nonce
-      :held_by_other # two terminals of one session (both nonces resolved, and differ)
-    else
-      :same_instance
-    end
+    stored_nonce.empty? || current_nonce.empty? || stored_nonce == current_nonce
   end
 
   # True when a claim is held by anyone and cannot be ruled lapsed — a confirmed
