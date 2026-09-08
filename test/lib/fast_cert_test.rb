@@ -519,6 +519,48 @@ class FastCertTest < Minitest::Test
     assert_match(/deferring is not skipping/i, message)
   end
 
+  # THE SECOND-RUNG DEFERRAL, and the sentence inside it that contradicted the receipt
+  # carrying it. #fallback_note has exactly ONE caller — #defer_outcome — which is
+  # reached only over a spine this checkout resolves NONE of, and whose detail says so
+  # two clauses earlier. Its over-cap branch then offered "the lane degraded a second
+  # time, to the spine": a rung the reader has just been told does not exist here. The
+  # branch was untested anywhere, which is how two halves of one paragraph came to
+  # disagree without anything going red.
+  def test_a_twin_set_over_the_cap_does_not_offer_a_spine_the_checkout_lacks
+    mapped = (1..40).map { |i| "test/lib/t#{i}_test.rb" }
+    twins = (1..20).map { |i| "test/lib/t#{i}_test.rb" }
+    capped = FastCert.cap_decision(mapped, { "bin/wide-tool" => mapped }, twins: twins)
+
+    assert_equal 20, capped[:fallback_considered], "the fixture must REACH the over-cap branch"
+    assert_empty capped[:fallback], "…which is the branch where 20 twins is itself over the cap of 15"
+
+    detail = FastCert.zero_test_outcome(mapped, [], capped, slug: "some-task")[:detail]
+
+    assert_match(/20 twin\(s\) is ITSELF over the cap of 15/, detail,
+                 "the receipt still names WHICH empty this was")
+    assert_match(/resolves NONE of/, detail,
+                 "and the same receipt still says this checkout has no spine — that is the contradiction")
+    refute_match(/degraded a second time, to the spine\./, detail,
+                 "a receipt cannot degrade to a spine it has just said resolves nowhere here")
+    assert_match(/which this checkout resolves none of/, detail,
+                 "so the rung is named AND placed: it is why the run ends in a deferral, not a cert")
+  end
+
+  # THE OTHER BRANCH OF THE SAME NOTE IS CORRECT AND STAYS. A deferral presupposes an
+  # empty spine, so `0 considered` there really does mean no changed file has a twin —
+  # the spine-covered case that made the identical wording FALSE in bin/fast-check's
+  # narration cannot arise where there is no spine to cover anything.
+  def test_the_no_twin_branch_of_the_deferral_receipt_is_unchanged
+    mapped = (1..26).map { |i| "test/lib/t#{i}_test.rb" }
+    capped = FastCert.cap_decision(mapped, { "app/services/solana/config.rb" => mapped })
+
+    detail = FastCert.zero_test_outcome(mapped, [], capped, slug: "some-task")[:detail]
+
+    assert_equal 0, capped[:fallback_considered]
+    assert_match(/no changed file has an existing test twin/, detail,
+                 "correct HERE, because a deferral is only reached over a spine that resolves nothing")
+  end
+
   # THE OTHER DOOR INTO THE SAME ROOM, AND IT DOES NOT MOVE. Keyed on the CAP, a
   # satellite diff mapping to 26 test files would be refused while one mapping to NONE
   # — strictly LESS evidence — would certify green on rubocop alone. The guard stays
