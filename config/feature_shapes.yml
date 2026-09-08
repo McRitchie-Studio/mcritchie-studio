@@ -180,7 +180,12 @@
 #
 #   full_suite_gate: true|false
 #     Whether the merge gate demands fingerprint-bound FULL-suite + rubocop
-#     evidence (see the block below). Until 2026-08-11 this was INFERRED from
+#     evidence (see the block below) — and, since 2026-09-07, whether the LOCAL
+#     cert is owed at all: bin/fast-check reads this key too (via
+#     bin/lib/shape_contract.rb) and WAIVES its zero-evidence refusal for a shape
+#     that owes no suite over a diff it OBSERVES to ship no behaviour. TWO
+#     READERS, ONE KEY, which is the point — they used to disagree. See the `docs`
+#     shape's notes for what that disagreement cost. Until 2026-08-11 this was INFERRED from
 #     `dor_tiers` being empty, so the only zero-tier shape (`docs`) silently
 #     skipped the suite gate too — correct for prose, and a trap for any future
 #     zero-tier shape, which would have inherited a suite-gate exemption nobody
@@ -319,6 +324,32 @@ shapes:
       FALSE. Making every doc change pay a full suite would undo the cheap prose
       pass this shape exists to provide, and push people to mislabel shapes,
       which is strictly worse than the hole. Gate the CLAIM, not the cost.
+
+      bin/fast-check NOW READS THIS STANZA TOO (2026-09-07,
+      /tasks/fast-check-ignores-docs-shape). It did not, and the two halves of
+      one gate held opposite answers to one question: bin/dor-check waived the
+      suite here while the G1 cert runner REFUSED a one-file markdown diff in a
+      satellite checkout — where the hub-anchored spine resolves nothing — and
+      named bin/full-suite-check as the remedy. MEASURED 2026-09-07 on
+      /tasks/wallet-transport-architecture-doc (2026-09-07): a ~31-minute
+      turf-monster suite run to certify 316 lines of prose that cannot reach a
+      single test. The
+      cert's zero-evidence reasoning was never the defect and is UNCHANGED for
+      every diff that ships behaviour; what it lacked was the prior question,
+      "was a suite owed at all?".
+
+      THE WAIVER IS NOT UNLOCKED BY THIS LABEL, which is the only reason it is
+      safe to state here. It needs BOTH this declaration AND an OBSERVATION —
+      CodeDiff.doc_only? over the rename-aware path view, the same classifier
+      claimable_when runs, and the STRICTER of the two (a docs+guards diff
+      normally runs its guard test and never reaches the guard; the one way it
+      does is a guard test that was DELETED, which needs a suite). A
+      `docs`-shaped diff carrying app/models/task.rb is refused by the cert
+      exactly as PR #1172 should have been refused by dor-check. Nothing is
+      recorded on the waived path: dor-check re-derives the same waiver from
+      this key at the verdict, so a receipt would be a line nothing grades.
+      Full case split: bin/lib/shape_contract.rb and
+      docs/agents/modules/gates/g1-cert.md.
 
   test-only:
     description: A change whose entire content is test code — a fixed, deleted, added, or re-diagnosed test. No production diff.

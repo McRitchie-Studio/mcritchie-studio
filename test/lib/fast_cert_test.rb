@@ -249,6 +249,59 @@ class FastCertTest < Minitest::Test
     end
   end
 
+  # --- classifiable_paths: the CLASSIFICATION view of the same diff ----------------
+  #
+  # THE ONE THING #changed_files CANNOT SEE. `git diff --name-only` collapses
+  # `R100 bin/deploy.sh docs/notes.md` to the DESTINATION alone, so a commit that
+  # renames an executable INTO a .md presents as one prose file while having deleted a
+  # script from bin/. That is correct for SELECTION (the old path has no test to run)
+  # and a fail-green for CLASSIFICATION, which is what the no-suite-owed waiver in
+  # bin/fast-check asks. See the "BOTH SIDES OF A RENAME" block in bin/lib/code_diff.rb.
+
+  def test_classifiable_paths_shows_BOTH_sides_of_a_rename
+    with_git_repo do |dir, git|
+      FileUtils.mkdir_p(File.join(dir, "bin"))
+      File.write(File.join(dir, "bin/deploy.sh"), "#!/bin/sh\necho ship\n")
+      git.call("add -A")
+      git.call("commit -q -m script")
+      base_sha = `git -C #{dir} rev-parse HEAD`.strip
+      git.call("mv bin/deploy.sh notes.md")
+      git.call("commit -q -m rename")
+
+      selection = FastCert.changed_files(dir, base_sha)
+      classification = FastCert.classifiable_paths(dir, base_sha)
+
+      assert_equal ["notes.md"], selection,
+                   "the SELECTION view is right to carry only the destination"
+      assert_includes classification, "notes.md"
+      assert_includes classification, "bin/deploy.sh",
+                      "the DELETED half is the behaviour change, and it is invisible in the new path"
+    end
+  end
+
+  def test_classifiable_paths_unions_staged_unstaged_untracked_and_committed
+    with_git_repo do |dir, git|
+      write = lambda do |rel, body|
+        full = File.join(dir, rel)
+        FileUtils.mkdir_p(File.dirname(full))
+        File.write(full, body)
+      end
+      base_sha = `git -C #{dir} rev-parse HEAD`.strip
+
+      write.call("app/models/committed.rb", "x\n")
+      git.call("add -A")
+      git.call("commit -q -m committed")
+      write.call("app/models/staged.rb", "x\n")
+      git.call("add app/models/staged.rb")
+      write.call("app/models/untracked.rb", "x\n")
+
+      paths = FastCert.classifiable_paths(dir, base_sha)
+      %w[app/models/committed.rb app/models/staged.rb app/models/untracked.rb].each do |f|
+        assert_includes paths, f, "the classification view must see every view #changed_files does"
+      end
+    end
+  end
+
   def test_default_diff_base_prefers_origin_release
     with_git_repo do |dir, git|
       assert_equal "origin/main", FastCert.default_diff_base(dir)
