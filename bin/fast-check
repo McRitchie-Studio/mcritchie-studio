@@ -103,6 +103,7 @@
 #   FAST_CHECK_ROOT                repo dir to run + fingerprint in (default: the
 #                                  cwd's git toplevel, else this repo)
 #   FAST_CHECK_SPINE               spine config path (default: config/fast_cert_spine.yml)
+#   FAST_CHECK_SHAPES              shape taxonomy path (default: config/feature_shapes.yml)
 #   FAST_CHECK_MAPPED_CAP          max mapped test files before the lane falls back to
 #                                  the convention twins (default: 15, counted AFTER the
 #                                  spine dedupe; it caps the fallback too)
@@ -116,7 +117,9 @@
 #   FAST_CHECK_TASK_BIN            board CLI (default: bin/task; tests stub it)
 #   FAST_CHECK_GATE_BIN            gate CLI (default: bin/gate; tests stub it)
 #
-# Exit code: 0 = all lanes green (evidence recorded/printed), 1 = a lane failed,
+# Exit code: 0 = all lanes green (evidence recorded/printed) OR no cert was owed
+# (the no-suite-owed waiver below: a `full_suite_gate: false` shape over a diff
+# OBSERVED to ship no behaviour — nothing runs and nothing is recorded), 1 = a lane failed,
 # no fingerprint, the evidence couldn't be recorded, or the diff maps to NO test
 # file at all (the zero-evidence guard below), 2 = DEFERRED to GitHub CI — the
 # mapped lane was CAPPED with no twin fallback to take, over an empty spine, so no
@@ -137,6 +140,7 @@ require_relative "lib/desk_guard"
 require_relative "lib/cert_tree_guard"
 require_relative "lib/cert_orphan_guard"
 require_relative "lib/cert_process"
+require_relative "lib/shape_contract"
 
 # ROOT = this script's OWN repo (the hub): CONFIG (the spine) and the board CLIs
 # anchor here. The CODE we run + fingerprint roots at the agent's worktree.
@@ -144,6 +148,10 @@ ROOT = File.expand_path("..", __dir__)
 TASK_BIN = ENV.fetch("FAST_CHECK_TASK_BIN", File.expand_path("task", __dir__))
 GATE_BIN = ENV.fetch("FAST_CHECK_GATE_BIN", File.expand_path("gate", __dir__))
 SPINE_CONFIG = ENV.fetch("FAST_CHECK_SPINE", File.join(ROOT, "config", "fast_cert_spine.yml"))
+# The shape taxonomy, anchored in the HUB exactly as the spine is — it is studio-owned
+# config, not a property of whatever checkout is being certified, which is the same rule
+# bin/dor-check states at its own CONFIG_PATH ("the shape taxonomy is studio-owned").
+SHAPES_CONFIG = ENV.fetch("FAST_CHECK_SHAPES", File.join(ROOT, "config", "feature_shapes.yml"))
 
 options = { print: false, list: false }
 OptionParser.new do |o|
@@ -161,13 +169,27 @@ root = RepoRoot.code_root(ENV["FAST_CHECK_ROOT"], ROOT)
 
 # --- selection ---------------------------------------------------------------
 
+injected_changed = ENV.key?("FAST_CHECK_CHANGED_FILES")
+diff_base = ENV.fetch("FAST_CHECK_DIFF_BASE") { FastCert.default_diff_base(root) } unless injected_changed
+
 changed =
-  if ENV.key?("FAST_CHECK_CHANGED_FILES")
+  if injected_changed
     ENV["FAST_CHECK_CHANGED_FILES"].to_s.split(/[\n,]/).map(&:strip).reject(&:empty?)
   else
-    base = ENV.fetch("FAST_CHECK_DIFF_BASE") { FastCert.default_diff_base(root) }
-    FastCert.changed_files(root, base)
+    FastCert.changed_files(root, diff_base)
   end
+
+# THE SAME DIFF, SEEN THE OTHER WAY — every path a CLASSIFIER must judge, which for a
+# rename is BOTH sides. `changed` above is the SELECTION view and is right to carry only
+# the destination (the old path has no test to run); the no-suite-owed waiver below asks
+# whether the diff ships behaviour, and there the deleted `bin/deploy.sh` half of
+# `R100 bin/deploy.sh docs/notes.md` IS the change. See FastCert.classifiable_paths and
+# the "BOTH SIDES OF A RENAME" block in bin/lib/code_diff.rb.
+#
+# An INJECTED file list (FAST_CHECK_CHANGED_FILES, the test/CI seam) carries no rename
+# information to recover, so it is its own classification view — the injector declared
+# the paths, and there is no second side to miss.
+classifiable = injected_changed ? changed : FastCert.classifiable_paths(root, diff_base)
 
 breakdown = FastCert.mapping(root, changed)
 mapped = breakdown.values.flatten.uniq.sort
@@ -341,6 +363,64 @@ skip_test_prepare = ENV.fetch("FAST_CHECK_SKIP_TEST_PREPARE", "") == "1" || gem_
 # for one would refuse the repo that runs the MOST.
 unless gem_repo
   zero = FastCert.zero_test_outcome(mapped_only, spine, cap, slug: slug)
+
+  # --- was a suite OWED at all? (bin/lib/shape_contract.rb) ----------------------
+  # A PRIOR QUESTION, not a softer answer. Everything the guard above says is still
+  # true and still enforced for every diff that ships behaviour: a run that executes
+  # zero tests certifies nothing, and rubocop is not evidence. What it never asked is
+  # whether this task's SHAPE owed a suite in the first place — and for `docs` the
+  # config answers "no" in its own words (`dor_tiers: []`, `full_suite_gate: false`,
+  # "a doc change certifies by REVIEW, not a test lane"). bin/dor-check has honoured
+  # that declaration for months (it gates its whole suite-evidence block on
+  # `full_suite_gate`); this script did not, so a ONE-FILE MARKDOWN diff in a
+  # satellite checkout — where the hub-anchored spine resolves nothing — was refused
+  # here and sent to bin/full-suite-check, buying a ~31-minute suite run over 316
+  # lines of prose that cannot reach a test (/tasks/fast-check-ignores-docs-shape,
+  # measured 2026-09-07 on /tasks/wallet-transport-architecture-doc).
+  #
+  # THE WAIVER NEEDS BOTH HALVES — the shape's DECLARATION and an OBSERVATION of the
+  # diff — and the observation is what keeps it from being the third instance of this
+  # repo's oldest bug (a `kind` label, then a `docs/` directory, then a `docs` SHAPE,
+  # each a claim ABOUT a change standing in for evidence OF it). Read the module for
+  # the case split; the short version is that a diff carrying one .rb never reaches
+  # the waiver, whatever it is shaped.
+  #
+  # IT INTERCEPTS BOTH VERDICTS, refuse and defer. A capped mapped lane over a
+  # doc-only diff should not be reachable (prose maps to nothing, so the cap cannot
+  # trip), but if the selection ever produced one, "no suite was owed" is the true
+  # answer to it too — deferring to CI for evidence nobody will ask for would just be
+  # the old detour with a receipt attached.
+  #
+  # THE BOARD READ IS LAZY, and deliberately inside this branch: the shape only
+  # matters when the guard is about to fire, so the ordinary green cert pays no extra
+  # `bin/task show` round-trip. It is best-effort in the fail-closed direction — an
+  # unreachable board, an unknown shape, or an unreadable config all leave
+  # ShapeContract#suite_owed? at TRUE and the refusal below stands.
+  if zero
+    waived_shape = slug ? CertRootGuard.task_devops(TASK_BIN, slug)["shape"] : nil
+    waiver = ShapeContract.cert_waiver(
+      shape: waived_shape,
+      shape_def: ShapeContract.definition(SHAPES_CONFIG, waived_shape),
+      changed: classifiable
+    )
+    if waiver
+      # NOTHING IS RECORDED, and that is the honest shape of this outcome rather than an
+      # omission. The deferral below writes a receipt because bin/dor-check REQUIRES one
+      # — it is the thing that says CI is now the only evidence. This waiver has no such
+      # consumer: dor-check reaches the same conclusion from the same config key at the
+      # verdict, freshly, so a receipt would be a line nothing grades. It would also cost
+      # more than it looks: a new evidence lane is unknown to the DEPLOYED board's
+      # CertEvidence.lane_of, which keys the machine-owned namespace on lane MEMBERSHIP —
+      # so until the board shipped, a pure-evidence write on an unrecognized lane would
+      # classify as an AUTHOR write and replace the author namespace with just that line
+      # (the footgun documented in lib/cert_evidence.rb#preserve). No G1 attempt is
+      # stamped either, for the same reason the refusal stamps none: a testing window
+      # that measured nothing should not be drawn on the board as one that did.
+      warn "fast-check: #{waiver[:message]}"
+      exit 0
+    end
+  end
+
   abort "fast-check: #{zero[:message]}" if zero && zero[:kind] == :refuse
 
   if zero && zero[:kind] == :defer

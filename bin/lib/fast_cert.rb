@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "yaml"
+require_relative "code_diff"
 
 # bin/lib/fast_cert.rb — test SELECTION for the G1 fast cert (bin/fast-check).
 #
@@ -87,6 +88,38 @@ module FastCert
     committed = capture(["git", "-C", root.to_s, "diff", "--name-only", "#{base}...HEAD"])
     files.concat(committed.split("\n"))
     files.map(&:strip).reject(&:empty?).uniq
+  end
+
+  # The SAME three-plus-one views as #changed_files, but as the RENAME-AWARE path
+  # list — both sides of every R/C entry (CodeDiff.paths_from_name_status).
+  #
+  # THIS IS NOT AN ALTERNATIVE SPELLING OF #changed_files, and the difference is a
+  # documented fail-green. `--name-only` collapses `R100 bin/deploy.sh docs/notes.md`
+  # to `docs/notes.md`, so a commit that RENAMES AN EXECUTABLE INTO A .md presents as
+  # one prose file while having deleted a script from bin/. #changed_files is for test
+  # SELECTION, where the destination is the right answer (the old path has no tests to
+  # run); this view is for CLASSIFICATION, where the old path is half the change. See
+  # the "BOTH SIDES OF A RENAME" block in bin/lib/code_diff.rb.
+  #
+  # Used by the no-suite-owed waiver in bin/fast-check, which must never call a diff
+  # doc-only on the strength of a path the rename invented.
+  def classifiable_paths(root, base)
+    paths = []
+    [
+      %w[diff --cached --name-status -M],
+      %w[diff --name-status -M]
+    ].each do |args|
+      paths.concat(CodeDiff.paths_from_name_status(capture(["git", "-C", root.to_s, *args])))
+    end
+    # Untracked files have no status line — they are plain paths, and a rename cannot
+    # hide in them (git has never seen the file before).
+    paths.concat(capture(["git", "-C", root.to_s, "ls-files", "--others", "--exclude-standard"]).split("\n"))
+    paths.concat(
+      CodeDiff.paths_from_name_status(
+        capture(["git", "-C", root.to_s, "diff", "--name-status", "-M", "#{base}...HEAD"])
+      )
+    )
+    paths.map(&:strip).reject(&:empty?).uniq
   end
 
   # origin/accepted when it exists (post-v2 branches are cut off `accepted`), else

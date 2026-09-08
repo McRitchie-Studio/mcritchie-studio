@@ -279,13 +279,61 @@ impossible by construction rather than by every repo remembering to ignore `tmp/
    runs, `bin/fast-check` counts the test paths this run will actually execute —
    the mapped lane (its **twin fallback** when the cap tripped, EMPTY only when
    there are no twins either) plus the spine — and refuses to report green when
-   that set is empty. **It has two verdicts, and which one you get depends on WHY
-   nothing would run:**
+   that set is empty. **It has three verdicts. Two of them ask WHY nothing would
+   run; the third asks a question that comes before it — was a suite OWED at all?**
 
    | the set is empty because… | verdict | exit | what happens |
    |---|---|---|---|
+   | the task's **shape owes no suite** (`full_suite_gate: false`, no `dor_tiers`) **and** the OBSERVED diff ships **no behaviour** | **WAIVE** | `0` | nothing runs, nothing recorded; `bin/ship` carries on and `bin/dor-check` re-derives the same waiver from the shape |
    | the diff maps to **NO test file** (no convention target, no grep hit) | **REFUSE** | `1` | nothing recorded, nothing pushed; remedy is `bin/full-suite-check <task>` |
    | the mapped lane was **CAPPED** *and* **no twin fallback was available** (no changed file has a twin, or the twins were themselves over the cap) | **DEFER** | `2` | a `[cert-deferred@<fp>]` receipt is recorded; `bin/ship` pushes and opens the PR; **`bin/dor-check` then requires a GREEN CI** |
+
+   **The WAIVE row is not a softer refusal — it is a prior question**
+   (`bin/lib/shape_contract.rb`, added 2026-09-07 by
+   `/tasks/fast-check-ignores-docs-shape`). `config/feature_shapes.yml` says of the
+   `docs` shape, in its own words, `dor_tiers: []` + `full_suite_gate: false` +
+   "a doc change certifies by REVIEW, not a test lane". `bin/dor-check` has honoured
+   that for months — it gates its whole suite-evidence block on
+   `shape_def.fetch("full_suite_gate", true)`. `bin/fast-check` never asked, so a
+   **one-file markdown diff in a satellite checkout** (where the hub-anchored spine
+   resolves nothing) was REFUSED here and sent to `bin/full-suite-check`: measured
+   2026-09-07 on `/tasks/wallet-transport-architecture-doc`, a ~31-minute
+   turf-monster suite run to certify 316 lines of prose that cannot reach a test.
+   Two halves of one gate holding opposite answers to one question.
+
+   **It takes TWO facts and the second is the safety.** The shape's DECLARATION
+   only ever narrows what an OBSERVATION of the diff may excuse — it never
+   substitutes for one:
+
+   | | what is read | fails closed when |
+   |---|---|---|
+   | **the declaration** | the shape's stanza in `config/feature_shapes.yml` | the shape is blank, unknown, or unreadable; `full_suite_gate` is absent (it defaults **true**); or ANY `dor_tiers` entry is declared |
+   | **the observation** | `CodeDiff.doc_only?` over the **rename-aware** path view (`FastCert.classifiable_paths`) — the same classifier `bin/dor-check`'s exempt-kind gate runs | one behavioural file is present, or the diff cannot be observed at all (an empty list is "we saw nothing", never "there is nothing but prose") |
+
+   A `docs`-shaped diff carrying `app/models/task.rb` is refused exactly as before —
+   that is PR #1172's defect, and the label is what this waiver *narrows*, never
+   what unlocks it. The observation reads **both sides of a rename**, so
+   `R100 bin/deploy.sh docs/notes.md` — which `--name-only` shows as one prose file
+   — still refuses: the DELETED script is the behaviour change and it is invisible
+   in the new path. The strict `doc_only?` is used rather than the `docs` shape's
+   own looser `docs_with_guards?`, because the one way a docs+guards diff reaches
+   this guard is a guard test that was **deleted**, and a deleted test is precisely
+   the change that needs a suite.
+
+   **Nothing is recorded on the WAIVE path, deliberately.** The deferral writes a
+   receipt because `bin/dor-check` REQUIRES one; this has no such consumer —
+   dor-check reaches the same conclusion from the same config key at the verdict,
+   freshly, so a receipt would be a line nothing grades. It would also cost more
+   than it looks: a new evidence lane is unknown to the DEPLOYED board's
+   `CertEvidence.lane_of`, which keys the machine-owned namespace on lane
+   membership, so until the board shipped a pure-evidence write on it would
+   classify as an AUTHOR write and replace the author namespace (the footgun in
+   `lib/cert_evidence.rb#preserve`). No `g1_cert` attempt is stamped either, for
+   the same reason the REFUSE path stamps none.
+
+   **A gem never reaches it.** The whole zero-evidence guard is skipped for a gem
+   repo — its registry command IS its suite and runs as the mapped lane — so a
+   `docs`-shaped prose diff in `studio-engine` still runs `bin/release-check`.
 
    **A capped run that DOES take its twin fallback certifies — it does not defer.**
    That is the deliberate answer, and it holds because the guard is keyed on ZERO

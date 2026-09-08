@@ -904,6 +904,161 @@ class FastCheckTest < Minitest::Test
     end
   end
 
+  # --- [integration] the no-suite-owed waiver (fast-check-ignores-docs-shape) --------
+  #
+  # THE DEFECT. config/feature_shapes.yml says of `docs`: `dor_tiers: []`,
+  # `full_suite_gate: false`, "a doc change certifies by REVIEW, not a test lane". This
+  # script never asked. On a ONE-FILE MARKDOWN diff in a satellite checkout — where the
+  # hub-anchored spine resolves nothing — the guard above refused and named
+  # bin/full-suite-check, so 316 lines of prose that cannot reach a test bought a
+  # ~31-minute turf-monster suite run (measured 2026-09-07 on
+  # /tasks/wallet-transport-architecture-doc).
+  #
+  # WHAT THESE PIN IS THE PAIR, not the waiver. One test says the prose diff certifies;
+  # the four after it say the refusal is untouched the moment either half of the waiver's
+  # evidence is missing. A fix that also loosened a CODE diff would be a regression, so
+  # each of those four carries the `docs` LABEL and is refused anyway.
+
+  DOCS_SHAPE_JSON = JSON.generate("metadata" => { "devops" => { "shape" => "docs" } })
+  BACKEND_SHAPE_JSON = JSON.generate("metadata" => { "devops" => { "shape" => "backend" } })
+
+  # A repo whose committed state is prose plus an EMPTY spine — the satellite condition
+  # (nothing in the hub's spine list resolves here), reproduced without needing a
+  # satellite. Deliberately NOT `with_repo`: that fixture's diff is an app model, and
+  # rewriting its tracked spine.yml to empty would itself put a behavioural .yml in the
+  # diff and kill the very waiver under test.
+  def with_prose_repo
+    Dir.mktmpdir do |dir|
+      git = ->(args) { assert(system("git -C #{dir} #{args} >/dev/null 2>&1"), "git #{args}") }
+      write = lambda do |rel, body|
+        full = File.join(dir, rel)
+        FileUtils.mkdir_p(File.dirname(full))
+        File.write(full, body)
+      end
+      write.call(".gitignore", "stub.log*\n*-stub\n")
+      write.call("spine.yml", "spine: []\n")
+      write.call("README.md", "# fixture\n")
+      write.call("bin/deploy.sh", "#!/bin/sh\necho ship\n")
+      FileUtils.chmod(0o755, File.join(dir, "bin/deploy.sh"))
+      git.call("init -q")
+      git.call("config user.email tester@example.com")
+      git.call("config user.name tester")
+      git.call("add -A")
+      git.call("commit -q -m init")
+      yield dir, write, git
+    end
+  end
+
+  def prose_check(dir, shape_json: DOCS_SHAPE_JSON)
+    run_check(dir, args: ["some-task"], merge_stderr: true,
+                   extra_env: { "TASK_SHOW_JSON" => shape_json })
+  end
+
+  # THE FIX ITSELF. Exit 0, nothing executed, nothing recorded.
+  def test_a_docs_shaped_prose_diff_is_waived_instead_of_sent_to_the_full_suite
+    with_prose_repo do |dir, write|
+      write.call("docs/wallet-transport.md", "# Wallet transport\n\n316 lines of prose\n")
+
+      out, code, lines = prose_check(dir)
+
+      assert_equal 0, code, "a shape whose own config owes no suite must not be refused:\n#{out}"
+      assert_match(/NO CERT OWED/, out)
+      assert_match(/full_suite_gate/, out, "it names the DECLARATION it read")
+      assert_match(%r{docs/wallet-transport\.md}, out, "and the file it OBSERVED")
+      refute_match(/REFUSING TO CERTIFY/, out)
+      refute_match(%r{bin/full-suite-check}, out,
+        "the ~31-minute detour is the whole defect — it must not be named as the remedy")
+
+      assert_empty lane_calls(lines, "TEST"), "no test lane may run — there is nothing to run"
+      assert_empty lines.select { |l| l[0] == "TASK" && l[1] == "update" },
+                   "a waiver is the ABSENCE of a cert, so it records none: #{lines.inspect}"
+      assert_empty lines.select { |l| l[0] == "GATE" },
+                   "and stamps no g1_cert attempt — a window that measured nothing"
+      refute_match(/\[fast-cert@/, out, "and must never emit an evidence line")
+    end
+  end
+
+  # HALF ONE OF THE EVIDENCE: THE SHAPE. Identical prose diff, a shape that owes a
+  # suite — the refusal is exactly as it was. This is what makes the fix shape-aware
+  # rather than a softened guard.
+  def test_the_same_prose_diff_under_a_shape_that_owes_a_suite_still_refuses
+    with_prose_repo do |dir, write|
+      write.call("docs/wallet-transport.md", "# Wallet transport\n")
+
+      out, code, = prose_check(dir, shape_json: BACKEND_SHAPE_JSON)
+
+      assert_equal 1, code, "backend owes unit+integration; nothing here waives that:\n#{out}"
+      assert_match(/REFUSING TO CERTIFY/, out)
+      refute_match(/NO CERT OWED/, out)
+    end
+  end
+
+  # …and with NO shape on the task at all, which is the fail-closed default: an
+  # unreachable board, an unshaped task, and an unknown shape all land here.
+  def test_an_unshaped_task_still_refuses
+    with_prose_repo do |dir, write|
+      write.call("docs/wallet-transport.md", "# Wallet transport\n")
+
+      out, code, = prose_check(dir, shape_json: JSON.generate("metadata" => { "devops" => {} }))
+
+      assert_equal 1, code, "no shape read, no waiver:\n#{out}"
+      assert_match(/REFUSING TO CERTIFY/, out)
+    end
+  end
+
+  # HALF TWO OF THE EVIDENCE: THE DIFF. The `docs` LABEL is on the task and the refusal
+  # stands anyway, because the diff ships code. This is the property that separates this
+  # waiver from PR #1172 (a `docs`-shaped diff carrying app/models/task.rb told
+  # "DoR-to-Merge met") — the label narrows what an OBSERVATION may excuse; it never
+  # substitutes for one.
+  def test_a_docs_shaped_diff_that_ships_code_still_refuses
+    with_prose_repo do |dir, write|
+      write.call("docs/wallet-transport.md", "# Wallet transport\n")
+      write.call("app/models/widget.rb", "class Widget; end\n")
+
+      out, code, = prose_check(dir)
+
+      assert_equal 1, code, "one behavioural file kills the waiver, whatever the shape:\n#{out}"
+      assert_match(/REFUSING TO CERTIFY/, out)
+      refute_match(/NO CERT OWED/, out)
+    end
+  end
+
+  # THE RENAME THAT HIDES AN EXECUTABLE INSIDE A .md. `git diff --name-only` — the
+  # SELECTION view — shows only `notes.md`, so classifying from it would call this diff
+  # prose and waive a commit that DELETED a script from bin/. The waiver classifies from
+  # the rename-aware view instead (FastCert.classifiable_paths). Without that, this test
+  # goes green with exit 0, which is the fail-green in full.
+  def test_a_rename_burying_an_executable_in_a_markdown_path_still_refuses
+    with_prose_repo do |dir, _, git|
+      git.call("mv bin/deploy.sh notes.md")
+
+      out, code, = prose_check(dir)
+
+      assert_equal 1, code,
+                   "the DELETED bin/deploy.sh is the behaviour change and is invisible in the " \
+                   "new path — classifying on the destination alone waives it:\n#{out}"
+      assert_match(/REFUSING TO CERTIFY/, out)
+      refute_match(/NO CERT OWED/, out)
+    end
+  end
+
+  # A GEM NEVER REACHES THE WAIVER, because it never reaches the guard the waiver
+  # intercepts: its registry command IS its suite and runs as the mapped lane. Pinned so
+  # a future edit cannot route a gem's prose diff around its own gate.
+  def test_a_gem_repo_certifies_through_its_registry_gate_not_the_waiver
+    with_repo_named("studio-engine", release_check: GEM_GATE_OK) do |dir|
+      out, code, = run_check(dir, args: ["some-task"], merge_stderr: true,
+                             extra_env: { "FAST_CHECK_TEST_CMD" => nil,
+                                          "FAST_CHECK_CHANGED_FILES" => "README.md",
+                                          "TASK_SHOW_JSON" => DOCS_SHAPE_JSON })
+
+      assert_equal 0, code, out
+      refute_match(/NO CERT OWED/, out, "a gem runs its whole gate; it is never waived")
+      assert_match(/whole registry gate/, out)
+    end
+  end
+
   # --- and the half that MUST NOT MOVE ---------------------------------------------
 
   # THE ANY-CAP-DEGRADES RULING, REJECTED AND PINNED. A capped run whose SPINE still ran
