@@ -17,6 +17,13 @@ require_relative "../../bin/lib/fast_cert"
 class FastCertTest < Minitest::Test
   REPO_ROOT = File.expand_path("../..", __dir__)
 
+  # The real config/fast_cert_spine.yml shape: five hub-anchored entries. Used as the
+  # DECLARED set in the satellite tests below, where none of them exist in the checkout.
+  SPINE_FIVE = %w[
+    test/models/task_test.rb test/models/release_test.rb test/models/gate_run_test.rb
+    test/controllers/tasks_controller_test.rb test/controllers/api/v1
+  ].freeze
+
   # --- convention mapping ------------------------------------------------------
 
   def test_model_maps_to_model_test
@@ -524,6 +531,135 @@ class FastCertTest < Minitest::Test
                "a mapped lane that runs is evidence, spine or no spine"
     assert_nil FastCert.zero_test_outcome([], ["test/models/task_test.rb"], decision),
                "a spine that runs is evidence, mapping or no mapping"
+  end
+
+
+  # --- the SATELLITE door: a checkout that resolves NO declared spine -----------------
+  #
+  # MEASURED 2026-09-07 (re-derived; the 2026-09-06 figure held): config/fast_cert_spine.yml
+  # declares FIVE entries and the hub resolves 5/5 while turf-monster, rolio, turf-vault,
+  # studio-engine and solana-studio each resolve 0/5. So the SAME docs-only diff certifies
+  # GREEN in the hub (the spine runs) and is REFUSED on a satellite (the spine resolves to
+  # nothing) — a verdict decided by WHERE THE BUILDER IS STANDING, not by the diff. The old
+  # refusal message asserted the opposite in so many words ("the diff maps to NO test file"),
+  # which is why this went unnoticed for a day.
+  #
+  # WHY DEFER AND NOT CERTIFY. What the hub's spine buys on a docs-only diff is a TREE-HEALTH
+  # SMOKE TEST — the task/release/gate models still pass — never coverage of the markdown that
+  # changed. A satellite cannot run that smoke test, but CI runs the satellite's WHOLE suite on
+  # this exact tree. Deferring therefore demands strictly MORE evidence than the hub's green,
+  # not less; it is the capped case's argument with the same shape.
+  def test_a_docs_only_diff_on_a_satellite_DEFERS_instead_of_refusing
+    outcome = FastCert.zero_test_outcome([], [], FastCert.cap_decision([], {}), slug: "some-task",
+                                                                               declared_spine: SPINE_FIVE)
+
+    refute_nil outcome, "zero executed tests is still zero evidence — the guard must fire"
+    assert_equal :defer, outcome[:kind],
+                 "the spine resolving to NOTHING is a fact about the CHECKOUT; CI covers this tree"
+    refute_match(/CAPPED/, outcome[:message], "no cap was involved — naming one would misdirect")
+    assert_match(/resolves NONE/i, outcome[:message], "it must name the REAL cause: the unresolved spine")
+    assert outcome[:detail].to_s.length.positive?, "a deferral with no receipt detail is a shrug"
+    assert_match(/5/, outcome[:detail], "the receipt must name how many entries went unresolved")
+  end
+
+  # THE HALF THAT MUST NOT MOVE — and the one a lazy fix deletes. With NO spine declared at
+  # all (a missing, empty or unparseable config) there is no satellite story to tell: the
+  # cert's configured core has vanished, and that is worth stopping for rather than deferring
+  # every diff in the ecosystem forever.
+  def test_no_spine_DECLARED_at_all_still_REFUSES
+    outcome = FastCert.zero_test_outcome([], [], FastCert.cap_decision([], {}), slug: "some-task",
+                                                                               declared_spine: [])
+
+    assert_equal :refuse, outcome[:kind], "nothing declared, nothing mapped — refuse, do not defer"
+    assert_match(/REFUSING TO CERTIFY/, outcome[:message])
+  end
+
+  # THE DEFAULT IS THE STRICT ONE. Every caller that has not been taught to pass the declared
+  # spine keeps the OLD refusal, so this can never loosen a lane by omission.
+  def test_the_declared_spine_defaults_to_the_strict_refusal
+    outcome = FastCert.zero_test_outcome([], [], FastCert.cap_decision([], {}), slug: "some-task")
+
+    assert_equal :refuse, outcome[:kind], "omitting declared_spine must fail CLOSED, not open"
+  end
+
+  # A LIVE SPINE IS STILL EVIDENCE. Declared AND resolved means the hub, and the hub runs it.
+  def test_a_declared_spine_that_RESOLVES_is_neither_refused_nor_deferred
+    assert_nil FastCert.zero_test_outcome([], ["test/models/task_test.rb"], FastCert.cap_decision([], {}),
+                                          slug: "some-task", declared_spine: SPINE_FIVE)
+  end
+
+  # THE CAP STILL WINS WHEN BOTH ARE TRUE, so a capped satellite run keeps naming the cap —
+  # the number the builder can actually act on (FAST_CHECK_MAPPED_CAP).
+  def test_a_capped_satellite_run_still_reports_the_CAP_as_its_cause
+    mapped = (1..26).map { |i| "test/lib/t#{i}_test.rb" }
+    capped = FastCert.cap_decision(mapped, { "app/services/solana/config.rb" => mapped })
+    outcome = FastCert.zero_test_outcome(mapped, [], capped, slug: "t", declared_spine: SPINE_FIVE)
+
+    assert_equal :defer, outcome[:kind]
+    assert_match(/CAPPED/, outcome[:detail], "the cap is the actionable cause when it tripped")
+  end
+
+  # --- the REMEDY: a command the checkout can actually RUN ---------------------------
+  #
+  # MEASURED 2026-09-07: bin/full-suite-check exists ONLY in the hub. Every satellite —
+  # turf-monster, rolio, turf-vault, studio-engine, solana-studio — has no such file, so the
+  # remedy every zero-evidence verdict printed ("bin/full-suite-check <task>") was, verbatim,
+  # a command the reader's repo could not execute. The fix is the hub's ABSOLUTE path, and only
+  # that — see test_the_remedy_never_offers_a_bypass for the branch that was written, measured
+  # against turf-vault, and deliberately removed.
+  def test_the_hub_remedy_stays_the_plain_relative_command
+    line = FastCert.remedy("some-task", root: "/x/mcritchie-studio", hub_root: "/x/mcritchie-studio")
+
+    assert_equal "bin/full-suite-check some-task", line
+  end
+
+  def test_a_satellite_remedy_names_the_HUB_ABSOLUTE_path
+    line = FastCert.remedy("some-task", root: "/x/turf-monster", hub_root: "/x/mcritchie-studio")
+
+    assert_equal "/x/mcritchie-studio/bin/full-suite-check some-task", line
+    refute_match(%r{\Abin/full-suite-check}, line,
+                 "a satellite has no bin/full-suite-check of its own — a relative path is not runnable there")
+  end
+
+  # BOTH VERDICTS CARRY THE SAME REMEDY, because a builder reading either one has the same
+  # question. Stating it twice is how the two drift apart.
+  def test_the_satellite_remedy_reaches_the_deferral_message
+    outcome = FastCert.zero_test_outcome([], [], FastCert.cap_decision([], {}), slug: "some-task",
+                                                                               declared_spine: SPINE_FIVE,
+                                                                               remedy: "/hub/bin/full-suite-check some-task")
+
+    assert_match(%r{/hub/bin/full-suite-check some-task}, outcome[:message])
+  end
+
+  def test_the_satellite_remedy_reaches_the_refusal_message
+    outcome = FastCert.zero_test_outcome([], [], FastCert.cap_decision([], {}), slug: "some-task",
+                                                                               remedy: "/hub/bin/full-suite-check some-task")
+
+    assert_equal :refuse, outcome[:kind]
+    assert_match(%r{/hub/bin/full-suite-check some-task}, outcome[:message])
+  end
+
+  # --- declared_spine: the fact the script feeds in ---------------------------------
+
+  # declared_spine counts what the CONFIG asks for; spine() counts what the CHECKOUT has.
+  # The gap between the two IS the satellite signal, so they must not collapse into one read.
+  def test_declared_spine_lists_entries_the_checkout_does_not_have
+    Dir.mktmpdir do |tmp|
+      config = File.join(tmp, "spine.yml")
+      File.write(config, "spine:\n  - test/models/task_test.rb\n  - test/models/release_test.rb\n")
+
+      assert_equal ["test/models/task_test.rb", "test/models/release_test.rb"], FastCert.declared_spine(config)
+      assert_empty FastCert.spine(tmp, config), "…and NONE of them exist here — that is the satellite gap"
+    end
+  end
+
+  def test_declared_spine_is_empty_when_the_config_is_missing_or_broken
+    Dir.mktmpdir do |tmp|
+      assert_empty FastCert.declared_spine(File.join(tmp, "nope.yml"))
+      broken = File.join(tmp, "broken.yml")
+      File.write(broken, "spine: [\n")
+      assert_empty FastCert.declared_spine(broken), "an unparseable config declares nothing — fail CLOSED"
+    end
   end
 
   def with_env(pairs)
