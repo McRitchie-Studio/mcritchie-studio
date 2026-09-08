@@ -35,9 +35,9 @@ bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> --agent 
 bin/ship <task-slug> -m "Commit message"
 ```
 
-**Pass `--agent <soul>` — it is what makes review able to exclude you.** It sets
-`agent_slug`, which stamps the task's AUTHOR SET (`devops.built_by` +
-`devops.builders`) — what `bin/reviewer-select` uses to keep a soul off its own PR.
+**Pass `--agent <soul>` — it is what makes review able to exclude you.** It stamps
+the task's AUTHOR SET (`devops.built_by` + `devops.builders`) — what
+`bin/reviewer-select` reads to keep a soul off its own PR.
 Omit it and the selector fails CLOSED: it refuses to pick, the reviewer chooses a
 light by hand, and the no-self-review property goes unverified for that review.
 **If a second soul finishes the task, claim it again** (`bin/task move <task>
@@ -45,6 +45,30 @@ building --actor <soul>`): the set accumulates, so both authors are excluded, an
 handoff that names nobody makes the selector refuse rather than guess. Measured
 2026-08-28 — `built_by` blank on six consecutive tasks across one review sitting,
 two reviewers reporting the refusal and hand-picking.
+
+**THE BUILD CLAIM STAMPS THE AUTHOR SET — `agent_slug` does not.** `--agent`
+writes two independent facts, and only one of them is what review reads:
+
+- **AUTHOR SET** (`devops.built_by` + `devops.builders`) — stamped by the build
+  CLAIM (`move <task> building --actor <soul>`), which `begin` makes on BOTH
+  forms. This is what `bin/reviewer-select` excludes on.
+- **ASSIGNEE** (the `agent_slug` column) — written by a create body, or by
+  `bin/task update <slug> --agent <soul>`. A RESUME NEVER WRITES IT, by design:
+  the author set ACCUMULATES a second soul, while the assignee holds ONE value,
+  so writing it on every resume would take the task away from whoever the PO
+  assigned it to.
+
+Measured 2026-09-08 on throwaway tasks — no single write sets both:
+
+```text
+bin/task create --agent avi           → assignee avi     · authors NOT STAMPED
+bin/task begin <slug> --agent avi     → assignee unset   · authors ["avi"]
+bin/task begin --title … --agent avi  → assignee avi     · authors ["avi"]
+```
+
+So `assignee: unassigned  builders: avi` is a correctly attributed, fully
+protected task — not a missing stamp. `bin/task show <slug>` prints the two
+lines separately for exactly this reason.
 
 **It works on BOTH forms of `begin`, and the value must be a soul SLUG** —
 lowercase with single hyphens (`steffon`, `turf-monster`). `--agent Steffon` or
@@ -61,8 +85,11 @@ how a re-run NAMES the task whose slug was just resolved — so re-running the
 create line resumes cleanly, and only the OTHER create flags on it are refused.
 Measured 2026-08-29: four tasks
 resumed with `--agent` came back with `agent_slug` nil AND `built_by` nil, while
-the same flag on a create stamped both — the flag was silently discarded, and
-`begin` reported success either way.
+the same flag on a `begin --title` create stamped both — the flag was silently
+discarded, and `begin` reported success either way. The `built_by` half was the
+defect and is fixed; the `agent_slug` half is the by-design split above, and a
+bare `bin/task create --agent <soul>` still stamps no author at all because it
+makes no claim.
 
 `bin/task begin` runs steps 1-2 (create → worktree → bind → `move building` →
 preflight) and prints the worktree path, port, and task URL. `bin/ship`, run

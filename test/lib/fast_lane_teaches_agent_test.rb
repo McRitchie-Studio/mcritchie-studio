@@ -2,12 +2,15 @@ require "test_helper"
 
 # [unit] Every documented fast-lane invocation must pass `--agent <soul>`.
 #
-# THE DEFECT THIS REPLACES A CODE FIX FOR. `--agent` sets agent_slug, which
-# stamps devops.built_by, which is the ONLY input bin/reviewer-select can use to
-# keep a soul off its own PR. The flag ALWAYS WORKED. No documented path passed
-# it, so built_by came back blank on six consecutive tasks in one review sitting
-# and the selector fails closed on every one — reviewers hand-picked their light
-# and the no-self-review property went unverified.
+# THE DEFECT THIS REPLACES A CODE FIX FOR. `--agent` rides to the build CLAIM as
+# its actor, and the CLAIM is what stamps the AUTHOR SET (devops.built_by +
+# devops.builders) that bin/reviewer-select excludes on. It does NOT reach that
+# set by way of agent_slug — measured 2026-09-08, a bare `bin/task create --agent
+# <soul>` sets agent_slug and stamps no author at all, because it makes no claim.
+# The flag ALWAYS WORKED. No documented path passed it, so built_by came back
+# blank on six consecutive tasks in one review sitting and the selector fails
+# closed on every one — reviewers hand-picked their light and the no-self-review
+# property went unverified.
 #
 # The first attempt at this task added a fourth identity source in bin/task. It
 # was dead code (an unrequired constant raising NameError into its own rescue)
