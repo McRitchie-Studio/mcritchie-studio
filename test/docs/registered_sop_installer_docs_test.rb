@@ -87,6 +87,21 @@ class RegisteredSopInstallerDocsTest < ActiveSupport::TestCase
                     "SPACES and CAPITALS for the `Alex Heartbeat` rows), so this test is now asserting " \
                     "NOTHING. Fix the scan; do not lower this floor."
 
+    # A COUNT FLOOR ALONE IS HALF THE GUARD, and the number above is why. Measured
+    # 2026-09-08 (review of this PR): narrowing the name class to /[a-z0-9-]+/ — the exact
+    # break the message above names — drops the five `<Soul> Heartbeat` rows and leaves 24,
+    # which clears a floor of 20 while the sweep has gone BLIND to the launchers. A real
+    # `bin/install-agent-docs` added to alex/HEARTBEAT.md then passes this test. The PARTIAL
+    # break is the likely one; a total break (0 files) is what the floor already catches.
+    # So pin the class this file calls highest-risk by NAME, not by count.
+    heartbeats = files.map(&:first).grep(%r{/HEARTBEAT\.md\z})
+    assert_operator heartbeats.length, :>=, 5,
+                    "the sweep matched only #{heartbeats.length} HEARTBEAT.md row(s) — the registry has " \
+                    "one per soul (carl, avi, turf_monster, steffon, alex). The ROW name class has stopped " \
+                    "admitting SPACES and CAPITALS, so the `<Soul> Heartbeat` rows dropped out while the " \
+                    "count floor above still passed. A heartbeat is exactly the launcher that would " \
+                    "re-acquire an install step. Fix the scan; do not lower this."
+
     offenders = files.select { |path, body| prescribes_installer?(body) && !EXEMPT.key?(path) }
 
     assert_empty offenders.map(&:first),
