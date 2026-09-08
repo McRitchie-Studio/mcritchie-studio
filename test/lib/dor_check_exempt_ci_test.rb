@@ -1004,7 +1004,12 @@ class DorCheckExemptCiTest < Minitest::Test
   # method under test would make the fence agree with any rewrite of that method,
   # which is the fence disarmed rather than the fence passing.
   GREEN_SUFFICIENT = "Fixing the credential is the only route — this gate advances on a GREEN CI and nothing else."
-  GATED_OFFER = "certify in full instead: bin/full-suite-check <task>."
+  # The gated offer AS THESE CALLS PRINT IT — they pass no `task:`, which is the
+  # no-slug fallback (/tasks/builder-reads-remedy-twice). It reads this way, rather
+  # than "bin/full-suite-check <task>", because the placeholder was the one token the
+  # reader could not fill; a caller that HAS a slug names it instead, which the
+  # deferred-cert file asserts against a rendered verdict.
+  GATED_OFFER = "certify in full instead: bin/full-suite-check, run with this task's slug"
   CO_FIRE_CLAIM = "NECESSARY AND NOT SUFFICIENT"
   REMEDY_CAUSES = [:permissions, :credentials, :authentication, :rate_limit, :forbidden, nil].freeze
   REMEDY_REPO = "McRitchie-Studio/myapp"

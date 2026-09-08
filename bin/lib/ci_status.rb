@@ -524,7 +524,9 @@ module CiStatus
   #   cert_route: true  — the GATED path. A fresh full cert stands in for the unread
   #                       verdict, so naming bin/full-suite-check is an instruction
   #                       the gate goes on to honour (bin/dor-check's
-  #                       full_cert_stands_in_for_ci?).
+  #                       full_cert_stands_in_for_ci?). It names `task:`'s SLUG; it
+  #                       used to print the literal `<task>`, which is the one thing
+  #                       the reader cannot type (/tasks/builder-reads-remedy-twice).
   #   cert_route: false — the EXEMPT (doc-only) path, where nothing stands in. Saying
   #                       "certify in full instead" there was a remedy the gate could
   #                       not honour: adding the cert produced a BYTE-IDENTICAL
@@ -669,7 +671,19 @@ module CiStatus
                          "take a branch by falling through."
   end
 
-  def self.unreadable_remedy(repo = nil, cause: nil, cert_route: true, also_refused: [])
+  # THE HEADER SENTENCE, hoisted because it is now READ as well as written.
+  # bin/dor-check's submit-side CI note asks "does an error in THIS verdict already
+  # carry the remedy?" before printing a second copy, and it has to ask that of the
+  # rendered string — the fact, not a role-shaped proxy for it. One literal, one
+  # meaning: a second spelling in the reader would go stale the first time this
+  # opening is reworded, and the dedupe would silently stop deduping.
+  UNREADABLE_REMEDY_HEADER =
+    "This is a CREDENTIAL fault or API limit, NOT a missing CI — re-running will never clear it."
+
+  # `task:` IS THE SLUG THE GATED OFFER NAMES. It has a default only because three
+  # callers are on routes that name no command at all (`false`/`nil`/`:retired`), and
+  # a required argument there would be a parameter about a sentence they never print.
+  def self.unreadable_remedy(repo = nil, cause: nil, cert_route: true, also_refused: [], task: nil)
     validate_cert_route!(cert_route)
     where = repo.to_s.strip.empty? ? "this repo" : repo.to_s.strip
     fix = case cause&.to_sym
@@ -718,12 +732,14 @@ module CiStatus
               # `false` to a release gate would print a true verdict on a false
               # premise, which is the same species of defect as the offer it replaces.
               #
-              # NO `<task>` PLACEHOLDER, and that is the second half of the fix. The
-              # gated route names `bin/full-suite-check <task>`; at G3 there is no
-              # task to substitute for `<task>` — the subject is a release SHA
-              # carrying many tasks — so the placeholder was unfillable as well as
+              # NO `<task>` PLACEHOLDER, and that is the second half of the fix. At
+              # G3 there is no task to substitute at all — the subject is a release
+              # SHA carrying many tasks — so the placeholder was unfillable as well as
               # unhonourable. The command named here is the one the operator actually
               # re-runs, spelled as bin/release.rb's sibling abort branches spell it.
+              # The GATED route has since stopped printing `<task>` too, by naming
+              # `task:`'s slug (/tasks/builder-reads-remedy-twice) — so no route left
+              # in this method hands the reader a token they cannot fill.
               #
               # "no local cert stands in" is the CONTRACT CLAUSE, spelled identically
               # in all three denying places (here, the exempt branch below, and
@@ -770,9 +786,28 @@ module CiStatus
               "and no local cert stands in for it on a doc-only diff either: the shape/test-tier gate is " \
                 "already waived, so there is no suite left to substitute. #{closing}"
             else
-              "certify in full instead: bin/full-suite-check <task>."
+              # NAME A COMMAND THE READER CAN TYPE (/tasks/builder-reads-remedy-twice).
+              # This branch ended "bin/full-suite-check <task>" — the LITERAL
+              # placeholder — on the one surface a builder reads while already blocked,
+              # and every gated caller has the slug in hand. Same defect class as
+              # /tasks/release-offers-retired-cert, which DELETED an unfillable `<task>`
+              # at G3; the difference here is that a task DOES exist, so the honest fix
+              # is to name it rather than to drop the offer.
+              #
+              # AND NO PLACEHOLDER IN THE FALLBACK EITHER. `bin/full-suite-check` with
+              # no slug runs the suite and records NOTHING on the task, so a bare
+              # command would be an offer this gate cannot honour — the failure
+              # `cert_route: false` exists to prevent, reintroduced through the back
+              # door. Say what the command needs instead of inventing a token.
+              cert_task = task.to_s.strip
+              if cert_task.empty?
+                "certify in full instead: bin/full-suite-check, run with this task's slug — the bare " \
+                  "command certifies the tree but records no evidence this gate can read."
+              else
+                "certify in full instead: bin/full-suite-check #{cert_task}."
+              end
             end
-    "This is a CREDENTIAL fault or API limit, NOT a missing CI — re-running will never clear it. #{fix} " \
+    "#{UNREADABLE_REMEDY_HEADER} #{fix} " \
       "Until the check read works, the FAST-cert route cannot be credited on this repo (a fast cert needs a " \
       "GREEN CI it can actually read) — #{route}"
   end

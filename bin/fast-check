@@ -121,10 +121,16 @@
 # (the no-suite-owed waiver below: a `full_suite_gate: false` shape over a diff
 # OBSERVED to ship no behaviour — nothing runs and nothing is recorded), 1 = a lane failed,
 # no fingerprint, the evidence couldn't be recorded, or the diff maps to NO test
-# file at all (the zero-evidence guard below), 2 = DEFERRED to GitHub CI — the
-# mapped lane was CAPPED with no twin fallback to take, over an empty spine, so no
-# local lane could certify this tree and a fingerprint-bound receipt was recorded
-# instead. 2 is NOT a
+# file with NO spine declared to fall back on (the zero-evidence guard below),
+# 2 = DEFERRED to GitHub CI, which now has TWO causes and one meaning — "no LOCAL
+# lane could certify this tree":
+#   * the mapped lane was CAPPED with no twin fallback to take, over an empty spine; or
+#   * this CHECKOUT resolves NONE of the spine entries the config declares — the
+#     satellite case. config/fast_cert_spine.yml is hub-anchored: measured 2026-09-07,
+#     the hub resolves 5/5 and turf-monster, rolio, turf-vault, studio-engine and
+#     solana-studio each resolve 0/5, so a docs-only diff that certifies green in the
+#     hub used to be REFUSED on a satellite for standing somewhere else.
+# Either way a fingerprint-bound receipt is recorded instead. 2 is NOT a
 # certification: it is falsy to every `system(...)` caller, and only bin/ship
 # reads it as "carry on to the PR" (bin/dor-check then requires a GREEN CI).
 
@@ -194,6 +200,11 @@ classifiable = injected_changed ? changed : FastCert.classifiable_paths(root, di
 breakdown = FastCert.mapping(root, changed)
 mapped = breakdown.values.flatten.uniq.sort
 spine = FastCert.spine(root, SPINE_CONFIG)
+# WHAT THE CONFIG ASKED FOR, kept beside what the checkout RESOLVED. The gap between the
+# two is the only thing that can tell "this diff maps to nothing" (a fact about the code)
+# apart from "this checkout is not the hub" (a fact about where the builder is standing).
+# MEASURED 2026-09-07: the hub resolves 5/5 of these, every satellite 0/5.
+declared_spine = FastCert.declared_spine(SPINE_CONFIG)
 mapped_only = mapped.reject { |t| FastCert.covered_by_spine?(t, spine) }
 lintable = FastCert.lintable_files(root, changed)
 
@@ -343,10 +354,15 @@ skip_test_prepare = ENV.fetch("FAST_CHECK_SKIP_TEST_PREPARE", "") == "1" || gem_
 # executed lane was rubocop. That still never certifies.
 #
 # WHAT CHANGED IS WHERE THE EVIDENCE COMES FROM, not whether it is demanded. The
-# guard now has two verdicts (FastCert.zero_test_outcome): a diff that maps to NO
-# test REFUSES exactly as before, while a CAPPED diff — which mapped to MORE tests
-# than the cap, every one of which runs on CI — DEFERS: it records a
-# fingerprint-bound "[cert-deferred@<fp>]" receipt and exits 2, so ship can push
+# guard has two verdicts (FastCert.zero_test_outcome) and the DEFERRAL now has two
+# doors. A diff that maps to NO test with NO spine declared REFUSES exactly as
+# before — nothing is configured to run and nothing mapped, which is worth stopping
+# for. A CAPPED diff (it mapped to MORE tests than the cap, every one of which runs
+# on CI) DEFERS, and so does a diff whose checkout resolves NONE of the spine
+# entries the config DECLARES — the satellite case, where the reason nothing runs is
+# the checkout rather than the code, and where CI runs that repo's whole suite on
+# this exact tree. Both record a fingerprint-bound "[cert-deferred@<fp>]" receipt
+# and exit 2, so ship can push
 # and open the PR and bin/dor-check can demand the GREEN CI at step 7. The refusal
 # moved from step 2 of 8 (no PR, no CI, ~30 minutes of local suite as the only
 # remedy) to step 7 (the PR open, CI settled, the verdict on real evidence).
@@ -362,7 +378,15 @@ skip_test_prepare = ENV.fetch("FAST_CHECK_SKIP_TEST_PREPARE", "") == "1" || gem_
 # lane, so a gem never has an empty mapped lane to refuse — reading `mapped_only`
 # for one would refuse the repo that runs the MOST.
 unless gem_repo
-  zero = FastCert.zero_test_outcome(mapped_only, spine, cap, slug: slug)
+  # THE REMEDY IS RESOLVED ONCE, HERE, and handed to whichever verdict fires — because the
+  # builder reading either one asks the same question, and a remedy stated twice is a remedy
+  # that drifts. bin/full-suite-check lives ONLY in the hub (measured 2026-09-07: absent from
+  # turf-monster, rolio, turf-vault, studio-engine and solana-studio), so a satellite is given
+  # the hub's ABSOLUTE path rather than a relative one its checkout cannot resolve.
+  cert_remedy = FastCert.remedy(slug || "<task>", root: root, hub_root: ROOT)
+  zero = FastCert.zero_test_outcome(mapped_only, spine, cap, slug: slug,
+                                    declared_spine: declared_spine,
+                                    remedy: cert_remedy)
 
   # --- was a suite OWED at all? (bin/lib/shape_contract.rb) ----------------------
   # A PRIOR QUESTION, not a softer answer. Everything the guard above says is still
@@ -436,7 +460,7 @@ unless gem_repo
       # different from a shrug. Refuse rather than defer into nothing.
       abort "fast-check: could not fingerprint the code at #{root} (no git repo / identity?), so the " \
             "deferral cannot be recorded and dor-check would refuse it. Certify locally instead: " \
-            "bin/full-suite-check #{slug || '<task>'}"
+            "#{cert_remedy}"
     end
 
     defer_line = FullSuiteGate.evidence_line(FullSuiteGate::DEFER_LANE, defer_fp, zero[:detail],

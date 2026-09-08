@@ -1004,7 +1004,7 @@ def start_review(task, review_number)
     # is now the only thing standing between a red CI and a merge.
     puts "  ci=UNREADABLE (#{ci[:reason]}) — the token was refused; NOT deferring (CI has reported; we cannot read it)"
     puts "  #{CiStatus.unreadable_remedy(CiStatus.repo_from_pr_url(task.dig("devops", "pr_url")),
-                                        cause: ci[:cause], cert_route: !maybe_exempt)}"
+                                        cause: ci[:cause], cert_route: !maybe_exempt, task: task["slug"])}"
     puts "  proceeding to review WITHOUT a CI verdict — review this PR as if CI were unchecked, because it is"
     # And say what their FIRST command will do, because it is no longer "proceed".
     # The gate-zero clears an unread verdict on a FULL cert and refuses on anything

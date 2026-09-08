@@ -1078,6 +1078,50 @@ class CiStatusTest < Minitest::Test
     end
   end
 
+  # NO REMEDY MAY NAME A TOKEN THE READER CANNOT TYPE
+  # (/tasks/builder-reads-remedy-twice). The gated route closed with the LITERAL
+  # `<task>` — printed to a builder whose slug is the one thing the run definitely
+  # knows — which is the defect /tasks/release-offers-retired-cert closed at G3 in a
+  # different register. Asserted across every cause and every route, because a
+  # placeholder is a property of the METHOD, not of one branch.
+  def test_no_remedy_hands_the_reader_an_unfillable_placeholder
+    [true, false, nil, :retired].each do |route|
+      ALL_REMEDY_CAUSES.each do |cause|
+        text = CiStatus.unreadable_remedy("McRitchie-Studio/rolio", cause: cause, cert_route: route,
+                                          task: "some-task")
+
+        refute_includes text, "<task>",
+                        "#{cause.inspect}/#{route.inspect}: `<task>` is the one token the reader cannot " \
+                        "fill, and this string is read only by someone already blocked"
+      end
+    end
+  end
+
+  # AND THE GATED ROUTE NAMES THE SLUG IT WAS GIVEN. The half above would pass on a
+  # method that simply deleted the offer — which would be the worse failure, since a
+  # cert genuinely DOES stand in on this route. Both halves, or neither is evidence.
+  def test_the_gated_route_names_the_task_it_was_handed
+    text = CiStatus.unreadable_remedy("McRitchie-Studio/rolio", cause: :credentials,
+                                      cert_route: true, task: "builder-reads-remedy-twice")
+
+    assert_includes text, "certify in full instead: bin/full-suite-check builder-reads-remedy-twice.",
+                    "the gated route must offer the cert, and offer it as a command that can be typed"
+  end
+
+  # WITHOUT A SLUG IT DEGRADES TO A SENTENCE, NEVER TO A BARE COMMAND. `bin/full-suite-
+  # check` with no argument runs the suite and records NOTHING on any task, so the gate
+  # that reads the recorded evidence would refuse identically afterwards — a remedy this
+  # gate cannot honour, which is exactly what `cert_route: false` exists to prevent.
+  def test_the_gated_route_without_a_slug_offers_no_unhonourable_bare_command
+    text = CiStatus.unreadable_remedy("McRitchie-Studio/rolio", cause: :credentials, cert_route: true)
+
+    refute_includes text, "<task>"
+    assert_includes text, "run with this task's slug",
+                    "it must say what the command needs rather than invent a token or imply the bare form works"
+    refute_match(/bin\/full-suite-check\.\s*\z/, text,
+                 "a bare `bin/full-suite-check.` records no evidence this gate can read")
+  end
+
   # The specific shape that failed: no remedy may tell a blocked agent to pipe a
   # token into `gh auth login`, which `gh` refuses whenever GH_TOKEN is set.
   def test_no_remedy_prescribes_a_command_gh_refuses

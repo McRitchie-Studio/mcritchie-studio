@@ -1083,7 +1083,8 @@ def pr_read_alert(cert_route: true)
       "PULL REQUEST's file list, and a refused read must never be quietly replaced by whatever tree this run is " \
       "standing in. " + CiStatus.unreadable_remedy(CiStatus.repo_from_pr_url(@pr_url),
                                                    cause: pr_file_read[:cause], cert_route: cert_route,
-                                                   also_refused: pr_read_refuses_verdict? ? [PR_READ_SELF_REFUSAL_PHRASE] : [])
+                                                   also_refused: pr_read_refuses_verdict? ? [PR_READ_SELF_REFUSAL_PHRASE] : [],
+                                                   task: @task_slug)
   else
     "#{headline} — and this is NOT a credential refusal, so the LOCAL view was graded instead. That is a " \
       "different artifact from the PR: if they differ, this verdict describes the wrong diff. Re-run once " \
@@ -1916,7 +1917,7 @@ def suite_evidence_error(eval, slug, ci, review_role)
           # (@pr_url, not the `devops` local — a top-level def cannot see top-level locals.)
           "a deferral has NO local run underneath it to fall back on while the check read is refused, and " \
             "submit-side there is no CI error beside this one to carry the credential remedy — so it is here. " \
-            "#{CiStatus.unreadable_remedy(CiStatus.repo_from_pr_url(@pr_url), cause: ci[:cause])}"
+            "#{CiStatus.unreadable_remedy(CiStatus.repo_from_pr_url(@pr_url), cause: ci[:cause], task: slug)}"
         end
       else
         "no green CI could be read for this PR, and a deferral has no local run underneath it to fall " \
@@ -1965,7 +1966,7 @@ def suite_evidence_error(eval, slug, ci, review_role)
         # genuinely unavailable here — but the reason is a TOKEN, and the reader must
         # be sent at the token, not at a re-run that cannot possibly help.
         # (@pr_url, not the `devops` local — a top-level def cannot see top-level locals.)
-        CiStatus.unreadable_remedy(CiStatus.repo_from_pr_url(@pr_url), cause: ci[:cause])
+        CiStatus.unreadable_remedy(CiStatus.repo_from_pr_url(@pr_url), cause: ci[:cause], task: slug)
       elsif review_role
         "The review gate-zero needs the SETTLED green — defer until CI finishes (red bounces the task back)"
       else
@@ -2162,6 +2163,11 @@ review_role = options[:gate_role] == "review"
 # at the merge gate, and its closing line has to know that before it can name what is
 # refusing. Same reason, same place, same ordering rule.
 @build_gate = gate == "build"
+# ...and so does the SLUG, for the cert offer the PR-read alert's remedy ends with.
+# That offer names `bin/full-suite-check <slug>`, and it used to name the literal
+# `<task>` because pr_read_alert is a top-level def and could not see the local
+# (/tasks/builder-reads-remedy-twice). Same reason, same place, same ordering rule.
+@task_slug = task["slug"] || slug
 
 # --- task-root guard (bin/lib/cert_root_guard.rb) -----------------------------
 #
@@ -3599,7 +3605,8 @@ end
 #
 #   * THE GATE MUST HONOUR ITS OWN REMEDY. On THIS route — `cert_route: true`, the
 #     gated one — unreadable_remedy ends by naming the full cert, "certify in full
-#     instead: bin/full-suite-check <task>", and bin/full-suite-check calls itself the
+#     instead: bin/full-suite-check <the task's slug>" (the LITERAL `<task>` until
+#     /tasks/builder-reads-remedy-twice), and bin/full-suite-check calls itself the
 #     ONLY route available for a repo whose CI dor-check cannot read. "ALWAYS ends by
 #     naming that command" is what this bullet used to say, and it has been false
 #     since PR #1221 gave the EXEMPT route a denial instead of an offer; PR #1235's
@@ -3861,6 +3868,16 @@ end
 # refusal carries the same remedy, and ci_status.rb calls that THE ONE REMEDY STRING
 # — printing it twice in one run is how a reader learns to skim it, which is the
 # failure this whole gate is about.
+#
+# `ci_review_refused` IS A ROLE-SHAPED PROXY FOR "AN ERROR ALREADY SAID THIS", and on
+# the :unreadable branch below it is the WRONG question (/tasks/builder-reads-remedy-
+# twice). CiGate.verdict only reaches unread_ci_refusal when review_role, so submit-side
+# this flag is false — while the suite gate's own unreadable-CI refusals DO carry the
+# remedy inline, in that same role, since /tasks/deferred-unreadable-skips-role-split.
+# So the builder, the one reader bin/ship's verdict is written for, read the
+# ~500-character paragraph TWICE while already blocked. That branch now asks the FACT
+# instead: does an error in THIS verdict carry it? The proxy stays for :none and
+# :unverified, whose suggestions are different facts that no remedy stands in for.
 case ci_review_refused ? nil : ci && ci[:state]
 when :none
   suggestions << "CI gate: the PR reports no GitHub checks yet — CI is UNVERIFIED. Confirm the workflow triggered " \
@@ -3869,9 +3886,23 @@ when :unreadable
   # NOT the same fact as :unverified, and the difference is the whole point: the CI
   # may well be GREEN — this token simply may not read it. Saying "check `gh pr
   # checks` manually" here would send the reader to the command that just failed.
-  suggestions << "CI gate: the token was REFUSED when reading GitHub CI (#{ci[:reason]}) — status UNREADABLE, " \
-    "which is NOT the same as no-CI. " \
-      "#{CiStatus.unreadable_remedy(CiStatus.repo_from_pr_url(governing_ci_pr_url(devops)), cause: ci[:cause])}"
+  #
+  # THE HEADLINE ALWAYS PRINTS; only the REMEDY is deduplicated. `ci[:reason]` — the
+  # first line of GitHub's own denial — appears nowhere else in the verdict, so
+  # dropping the whole note to kill a duplicate paragraph would trade a noisy correct
+  # message for a missing fact. And the branch is keyed on what is RENDERED, matched
+  # against the one constant that builds it: errors print ABOVE suggestions on the
+  # refusal path (see print_suggestions), so "in the refusal above" is a claim about
+  # this verdict's own output rather than about a role.
+  ci_note = "CI gate: the token was REFUSED when reading GitHub CI (#{ci[:reason]}) — status UNREADABLE, " \
+            "which is NOT the same as no-CI. "
+  suggestions << if errors.any? { |error| error.to_s.include?(CiStatus::UNREADABLE_REMEDY_HEADER) }
+                   "#{ci_note}The credential remedy is in the refusal above — the SAME fault refuses both, " \
+                     "and one token refresh clears them together."
+                 else
+                   ci_note + CiStatus.unreadable_remedy(CiStatus.repo_from_pr_url(governing_ci_pr_url(devops)),
+                                                        cause: ci[:cause], task: task["slug"] || slug)
+                 end
 when :unverified
   suggestions << "CI gate: couldn't read GitHub CI (#{ci[:reason]}) — status UNVERIFIED. Check `gh pr checks` " \
     "manually before the handoff."

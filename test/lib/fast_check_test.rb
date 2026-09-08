@@ -20,6 +20,7 @@ require "rbconfig"
 require "shellwords"
 require_relative "../support/session_env"
 require_relative "../../bin/lib/full_suite_gate"
+require_relative "../../bin/lib/fast_cert"
 
 class FastCheckTest < Minitest::Test
   BIN = File.expand_path("../../bin/fast-check", __dir__)
@@ -1202,6 +1203,132 @@ class FastCheckTest < Minitest::Test
       assert_equal [["test/models/spine_core_test.rb"]], lane_calls(lines, "TEST"),
                    "the spine still runs when nothing maps"
       assert_match(/\[fast-cert@/, out)
+    end
+  end
+
+
+  # --- the SATELLITE door: a checkout that resolves none of the DECLARED spine --------
+  #
+  # THE PAIR THAT IS THE WHOLE BUG. The test directly above
+  # (test_doc_only_diff_skips_test_and_rubocop_lanes_but_still_runs_the_spine) sends the SAME
+  # docs-only diff through a HUB-shaped checkout and gets exit 0 with a "[fast-cert@" line,
+  # because the spine resolves there. These send it through a SATELLITE-shaped checkout — the
+  # config declares entries, none of which exist in this tree — which is what every satellite
+  # is: measured 2026-09-07, config/fast_cert_spine.yml declares 5 entries, the hub resolves
+  # 5/5 and turf-monster, rolio, turf-vault, studio-engine and solana-studio each resolve 0/5.
+  # It used to exit 1 and kill bin/ship at step 2 of 8, before any PR or CI existed.
+  #
+  # A spine config declaring a path that is NOT in the fixture is the whole satellite shape;
+  # nothing else about the repo has to change, which is the point — the diff is identical.
+  def satellite_spine(write)
+    write.call("spine.yml", "spine:\n  - test/models/task_test.rb\n  - test/models/release_test.rb\n")
+  end
+
+  def test_a_docs_only_diff_on_a_SATELLITE_checkout_DEFERS_instead_of_dying
+    with_repo do |dir, write|
+      satellite_spine(write)
+      write.call("docs/notes.md", "notes\n")
+
+      out, code, lines = run_check(dir, args: ["some-task"], merge_stderr: true,
+                                   extra_env: { "FAST_CHECK_CHANGED_FILES" => "docs/notes.md",
+                                                "TASK_SHOW_JSON" => SHOW_JSON,
+                                                "FAST_CHECK_SKIP_ORPHAN_GUARD" => "1" })
+
+      assert_equal FastCert::DEFERRED_EXIT, code, "the satellite door must DEFER, not die at step 2:\n#{out}"
+      assert_empty lane_calls(lines, "TEST"), "nothing resolved, so nothing ran — that is the premise"
+      refute_match(/\[fast-cert@/, out, "IT CERTIFIES NOTHING — a green cert line here would be the fail-green")
+      refute_match(/fast cert green/, out, "…and it must not say green either")
+      assert_match(/resolves NONE/i, out, "the cause named must be the checkout, not the diff")
+    end
+  end
+
+  # A DEFERRAL WITHOUT A RECORDED RECEIPT IS A SHRUG. This is the answer to "how would you
+  # know it certified nothing?": the run writes a [cert-deferred@<fp>] receipt that SAYS so,
+  # bound to this tree's fingerprint, and bin/dor-check credits it only beside a GREEN CI.
+  def test_the_satellite_deferral_records_a_receipt_naming_the_unresolved_spine
+    with_repo do |dir, write|
+      satellite_spine(write)
+      write.call("docs/notes.md", "notes\n")
+
+      out, code, lines = run_check(dir, args: ["some-task"], merge_stderr: true,
+                                   extra_env: { "FAST_CHECK_CHANGED_FILES" => "docs/notes.md",
+                                                "TASK_SHOW_JSON" => SHOW_JSON,
+                                                "FAST_CHECK_SKIP_ORPHAN_GUARD" => "1" })
+
+      assert_equal FastCert::DEFERRED_EXIT, code, out
+      update = lines.find { |l| l[0] == "TASK" && l[1] == "update" }
+      refute_nil update, "the receipt must be RECORDED: #{lines.inspect}"
+      recorded = update[update.index("--checks") + 1]
+      assert_match(/\A\[cert-deferred@[0-9a-f]{7,64}/, recorded, "recorded as the DEFERRAL lane: #{recorded}")
+      assert_match(/resolves NONE of the 2 spine entries/, recorded,
+                   "the receipt carries the REAL cause and its count, or nobody can read it back")
+      refute_match(/CAPPED/, recorded, "no cap tripped here — a receipt naming one is a false cause")
+      assert_empty lines.select { |l| l[0] == "GATE" },
+                   "no lane ran, so there is no g1_cert testing window to report"
+    end
+  end
+
+  # ============ THE GATE IS NOT A RUBBER STAMP =======================================
+  # The easy way to make a docs-only satellite diff "ship" is to make the lane run nothing
+  # and call it green. This is the test that says we did not. SAME satellite checkout, SAME
+  # unresolvable spine — but the diff maps to a test that EXISTS, and that test lane goes
+  # RED. Nothing about the satellite condition may rescue it: the guard never fires (a test
+  # WILL run), the lane fails, and the exit is 1, which kills bin/ship at step 2.
+  def test_a_RED_lane_on_the_SAME_satellite_checkout_still_FAILS
+    with_repo do |dir, write|
+      satellite_spine(write)
+
+      out, code, lines = run_check(dir, args: ["some-task"], merge_stderr: true, fail_token: "TEST",
+                                   extra_env: { "TASK_SHOW_JSON" => SHOW_JSON,
+                                                "FAST_CHECK_SKIP_ORPHAN_GUARD" => "1" })
+
+      assert_equal 1, code, "a red lane is a REFUSAL, not a deferral — ship must die here:\n#{out}"
+      refute_equal FastCert::DEFERRED_EXIT, code, "the satellite condition must never launder a red suite"
+      refute_match(/\[fast-cert@/, out, "and it certifies nothing")
+      refute_match(/DEFERR/i, out, "nor may it advertise the deferral it is not taking")
+      assert_equal [["test/models/widget_test.rb"]], lane_calls(lines, "TEST"),
+                   "the mapped lane DID run — which is exactly why the guard stayed out of it"
+    end
+  end
+
+  # AND THE GREEN HALF OF THE SAME PROOF: a satellite diff that maps to a PASSING test
+  # certifies normally. The deferral is reachable ONLY when nothing runs.
+  def test_a_mapped_lane_on_a_satellite_checkout_still_CERTIFIES_normally
+    with_repo do |dir, write|
+      satellite_spine(write)
+
+      out, code, lines = run_check(dir)
+
+      assert_equal 0, code, out
+      assert_match(/\[fast-cert@/, out, "a satellite whose diff maps to a real test certifies as ever")
+      assert_equal [["test/models/widget_test.rb"]], lane_calls(lines, "TEST"),
+                   "one mapped run and NO spine run — the spine resolved to nothing here"
+    end
+  end
+
+  # --- the REMEDY names a command THIS checkout can run ------------------------------
+  #
+  # MEASURED 2026-09-07: bin/full-suite-check exists ONLY in the hub. turf-monster, rolio,
+  # turf-vault, studio-engine and solana-studio have no such file, so the bare
+  # "bin/full-suite-check <task>" this verdict used to print was a command the reader's repo
+  # could not execute — the same defect as a gate naming a workflow trigger that is false.
+  def test_the_satellite_verdict_names_the_HUB_ABSOLUTE_full_suite_path
+    with_repo do |dir, write|
+      satellite_spine(write)
+      write.call("docs/notes.md", "notes\n")
+      FileUtils.mkdir_p(File.join(dir, "bin"))
+      File.write(File.join(dir, "bin", "rails"), "#!/bin/sh\nexit 0\n")
+
+      out, = run_check(dir, args: ["some-task"], merge_stderr: true,
+                       extra_env: { "FAST_CHECK_CHANGED_FILES" => "docs/notes.md",
+                                    "TASK_SHOW_JSON" => SHOW_JSON,
+                                    "FAST_CHECK_SKIP_ORPHAN_GUARD" => "1" })
+
+      hub_bin = File.expand_path("../../bin/full-suite-check", __dir__)
+      assert_match(/#{Regexp.escape(hub_bin)} some-task/, out,
+                   "a satellite has no bin/full-suite-check of its own — name the hub's ABSOLUTE path")
+      refute_match(/[^\/]\bbin\/full-suite-check some-task/, out,
+                   "a bare relative path is not runnable from a satellite checkout")
     end
   end
 
