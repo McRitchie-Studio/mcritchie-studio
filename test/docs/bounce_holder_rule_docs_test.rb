@@ -646,21 +646,20 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
   #
   # A `line` that drifts fails LOUD and prints the lines actually found, so the fix
   # is mechanical. That is the price of an identity, and it is the right price.
+  #
+  # bin/task's BREAKER-ACK REMEDY used to sit in this list, exempted as a SPLIT rather
+  # than as narration and tracked at /tasks/breaker-remedy-omits-agent. That task landed:
+  # the remedy (and the escalation printed three lines above it, which was the worse of
+  # the two — it wrote a block with no actor at all) now name their acting soul, so both
+  # are covered by the RULE and the entry was DELETED rather than repointed. An exemption
+  # is the temporary form of a fix; deleting one is what finishing looks like.
   NARRATION = [
     { file: "app/models/task.rb", line: 2970, match: /lands the task back on building and repoints/,
       why: "comment explaining the feature-marker repoint" },
     { file: "bin/pr-review", line: 29, match: /with the failing checks named/,
       why: "header comment narrating the gate-zero flow" },
-    { file: "bin/task", line: 919, match: /lands the task back on building and ends with write_feature_marker/,
+    { file: "bin/task", line: 920, match: /lands the task back on building and ends with write_feature_marker/,
       why: "comment explaining the feature-marker repoint" },
-    { file: "bin/task", line: 3168, match: /block \#\{slug\} --kind rework/,
-      why: "SPLIT, not narration: a printed breaker-ack remedy that omits --agent. Same class, " \
-           "but bin/ is out of the docs shape this guard shipped under. Tracked as " \
-           "https://mcritchie.studio/tasks/breaker-remedy-omits-agent — an exemption that names " \
-           "no tracker is a permanent hole wearing a temporary label. That task's bullet 2 asks " \
-           "this entry to anchor on --breaker-ack instead; it cannot (context cuts at the first " \
-           "period and the remedy's `...` IS that period), and the `line` key above supersedes " \
-           "the ask by giving the identity it was reaching for." },
     { file: "docs/agents/agents/carl/sops/pr-review-light.md", line: 139, match: /on its own initiative/,
       why: "cautionary account of turf-monster PR 594, the incident that motivated the gate" },
     { file: "docs/agents/agents/carl/sops/pr-review.md", line: 315, match: /therefore runs the breaker itself/,

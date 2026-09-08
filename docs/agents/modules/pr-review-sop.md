@@ -321,7 +321,7 @@ second bounce on its own. It counts the task's `qa_feedback` activity rows, one
 per bounce, classified by the kind stamped on each; never probe the live block
 columns, which a compliant resubmission wipes exactly when the breaker must fire.
 On TRIPPED, escalate instead (`bin/task block <task> --kind dependency --summary
-"Escalated: <disagreement>" --feedback "<both positions>"`) and flag it
+"Escalated: <disagreement>" --feedback "<both positions>" --agent carl`) and flag it
 **⚠ Escalated** in the run handoff; a review deadlock is the operator's call. A
 MECHANICAL bounce (red CI, merge conflict) proceeds on `--breaker-ack "<reason>"`,
 which records the reason on the row.
