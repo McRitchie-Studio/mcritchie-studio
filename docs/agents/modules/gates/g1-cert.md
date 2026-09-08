@@ -180,7 +180,13 @@ impossible by construction rather than by every repo remembering to ignore `tmp/
      subset that was never selected. So a studio-engine builder CAN use the fast
      route; this doc previously implied they could not.
    - `mapped-tests` — `bin/rails test <files the branch diff maps to>` (path
-     convention with a class-name grep fallback; skipped when nothing maps).
+     convention, falling back to a grep for the SUBJECT'S IDENTITY — a script's
+     path and quoted command name, a config's path and quoted basename, an app
+     class's full constant, any other `.rb`'s camelized stem; skipped when
+     nothing maps). It is **not** "a class-name grep": naming only that rung
+     misreads the cap trips this repo actually has, where three of the eleven
+     single-file trippers reach their width through a test FAMILY and never grep
+     at all (measured below). `FastCert#grep_tokens` owns the rule.
      A tool whose convention twin lives in `test/lib/` also maps its whole test
      **family** — the suffixed `test/lib/<stem>_<aspect>_test.rb` siblings that
      are nobody else's twin. **A tool's tests are a family, not a twin:**
@@ -191,7 +197,10 @@ impossible by construction rather than by every repo remembering to ignore `tmp/
      mirrors `app/<layer>/` one file to one file, where a prefix sibling is a
      DIFFERENT subject's test.
      **CAPPED at 15 files** after the spine dedupe — and `bin/dor-check`'s family
-     is fifteen, which is the cap EXACTLY. Read those two numbers together —
+     was fifteen, which was the cap EXACTLY. (A family grows with its tool: the
+     same family measures **18** at 2026-09-08, so `bin/dor-check` now exceeds
+     the cap on its own. Re-derive the number rather than reading it here.) Read
+     those two numbers together —
      this doc printed them six lines apart without drawing the conclusion (the cap
      landed `96dcae17`, 2026-08-18; the family count `2b310c08`, 2026-09-06):
      `bin/dor-check` **plus any one co-changed mapped file is 16**, so the
@@ -220,20 +229,29 @@ impossible by construction rather than by every repo remembering to ignore `tmp/
      `FAST_CHECK_MAPPED_CAP=<n>`.
 
      **WHICH CAUSE ACTUALLY TRIPS THE CAP — measured, because the two want
-     different answers.** Sweeping all 474 mappable sources in the hub
-     2026-09-07: **23 sources alone exceed the cap, and all 23 are GREP-driven.
-     ZERO are family-driven.** The widest family mapping in the whole repo is
-     `bin/dor-check` at **15 — at the cap, never over it alone**; the next widest
-     family is **3**. The grep goes to **325** (`bin/task`, token `"task"`), 257
-     (`bin/release`), 208 (`config/environments/test.rb`, token `"Test"`), 198,
-     176, 153, 129.
+     different answers.** Re-derived 2026-09-08 over all **1952** tracked
+     files, one at a time (`FastCert.mapping(root, [path])`): **11 sources
+     alone exceed the cap.** Eight reach that width through the GREP — six named
+     by a constant (`test/support/session_env.rb` 79,
+     `app/models/agent_activity.rb` 29, `github_workflow_run.rb` 25,
+     `current.rb` 23, `builder.rb` 18, `test/support/outbound_seams.rb` 18) and
+     two by a PATH plus a quoted name (`config/test_health.yml` 23,
+     `bin/rubocop` 20). **Three do not:** `bin/release` and `bin/release.rb` at
+     23 reach it through the ORPHAN family (no same-named twin was ever written),
+     and `bin/dor-check` at 18 through its convention twin's family.
+     These counts track the TREE, not the mapping rule — re-derive before
+     editing this paragraph, do not paste it.
 
-     So the family hop trips the cap only *in combination* with a co-changed file
-     — which is the cliff the fallback fixes — while every single-file cap trip is
-     a **grep precision failure**. And this is what makes the fallback a slope
-     rather than a shorter cliff: **all 23 grep-driven cap-trippers have ZERO
-     convention twins**, so the fallback takes *nothing* from them and they behave
-     exactly as they do today. The fallback is defined against the **convention
+     Two things follow. A single-file cap trip is **no longer always a grep
+     precision failure**: it was when the fallback landed, and `bin/dor-check`
+     has since grown past the cap on its own. And the fallback is still a slope
+     rather than a shorter cliff, for the reason that has not moved — a source
+     that reaches the grep or the orphan family has **ZERO convention twins by
+     construction**, since `FastCert#mapping` looks past the convention target
+     only when it is MISSING. So ten of the eleven take nothing from the fallback
+     and degrade to the spine exactly as they did before it existed, while
+     `bin/dor-check` — the only one of them with a twin — degrades to that twin
+     instead of to nothing. The fallback is defined against the **convention
      twins**, never as "the mapped set, truncated" — truncating 39 arbitrary grep
      matches to 15 arbitrary grep matches would be a shorter cliff, not a slope.
      **The grep's precision is a separate defect and is deliberately NOT addressed
@@ -422,11 +440,20 @@ impossible by construction rather than by every repo remembering to ignore `tmp/
    alone. The cap decides only WHICH of the two verdicts you get, never whether a
    run with no tests may report green.
    **A capped run whose spine still ran is NOT refused**: it executed real tests
-   and its evidence already reads `0 mapped (CAPPED: …)` beside the loud
-   `MAPPED LANE CAPPED` narration — a narrower cert, honestly labelled, which is
-   what the cap was designed to produce. A gem repo is exempt (its registry
-   command IS its suite and runs as the mapped lane). **The cap itself is
-   unchanged**: this alters what a capped run REPORTS, never how much it runs.
+   and its evidence says which rung it ran on — `N twin(s) (CAPPED: …)` when the
+   twin fallback took, `0 mapped (CAPPED: …)` when there were no twins or they
+   were themselves over the cap — beside the loud `MAPPED LANE CAPPED`
+   narration. A narrower cert, honestly labelled, which is what the cap was
+   designed to produce. A gem repo is exempt (its registry command IS its suite
+   and runs as the mapped lane).
+
+   **The cap NUMBER is unchanged, and so is this guard's keying**: the
+   zero-evidence guard alters what a capped run REPORTS, never how much it runs.
+   What a capped run RUNS did change, one rung along and by a different change —
+   the convention-twin fallback documented above (`f0cc947a`), which is why the
+   evidence line now has two capped wordings rather than one. Read the two
+   statements in that order; collapsing them into "the cap itself is unchanged"
+   is what made this paragraph contradict its own page.
 
    All lanes green stamps one `[fast-cert@<fp>]` line into `checks_run`,
    merged with the existing list (tier tags and full-suite evidence are

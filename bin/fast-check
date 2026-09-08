@@ -19,9 +19,12 @@
 # Test selection (bin/lib/fast_cert.rb, unit-tested there):
 #   mapped : each changed file → its test by path convention (app/models/x.rb →
 #            test/models/x_test.rb, views → their controller test, bin/tool →
-#            test/lib/tool_test.rb, a changed *_test.rb runs itself); a .rb file
-#            with no existing convention target falls back to a word-boundary
-#            grep of its class name across test/**/*_test.rb. A tool whose twin
+#            test/lib/tool_test.rb, a changed *_test.rb runs itself); a file with
+#            no existing convention target falls back to a grep across
+#            test/**/*_test.rb for the SUBJECT'S IDENTITY — a script's path and
+#            quoted command name, a config's path and quoted basename, an app
+#            class's full constant, any other .rb's camelized stem (not the bare
+#            basename as an English word; see FastCert#grep_tokens). A tool whose twin
 #            lives in test/lib/ also pulls its test FAMILY — the suffixed
 #            test/lib/<stem>_<aspect>_test.rb siblings that are nobody else's
 #            twin — because a tool's tests are a family, not a twin: bin/dor-check
@@ -212,8 +215,15 @@ lintable = FastCert.lintable_files(root, changed)
 # spine already runs is not extra work, so it should neither be re-run nor counted
 # against the cap. Computed unconditionally (it is a cheap File.file? per changed
 # path) so --list and the run agree even when the cap does not trip.
-twins_only = FastCert.convention_twins(root, changed)
-                     .reject { |t| FastCert.covered_by_spine?(t, spine) }
+#
+# BOTH SIDES OF THE DEDUPE ARE KEPT, because the narration below has to tell apart two
+# empties that the deduped set alone cannot: "no changed file HAS a twin" is a fact
+# about the DIFF, while "every twin is already a spine entry" is a fact about the SPINE
+# — and the second was being reported to operators as the first. The decision itself is
+# asked once, of the module (FastCert.empty_fallback_cause).
+twins_all = FastCert.convention_twins(root, changed)
+spine_twins = twins_all.select { |t| FastCert.covered_by_spine?(t, spine) }
+twins_only = twins_all - spine_twins
 
 # THE CAP, decided before anything runs so --list reports the same lane the run
 # would execute. See FastCert.cap_decision for why it sits after the spine dedupe,
@@ -229,6 +239,14 @@ if options[:list]
   if cap[:capped]
     warn "fast-check: capped → falling back to the #{cap[:fallback].size} convention twin(s) " \
          "of #{cap[:fallback_considered]} considered"
+    # "0 considered" READS AS "no twin exists", and for a spine-covered diff that is
+    # false — the preview and the run have to agree about WHICH empty this is, or the
+    # preview quietly teaches the thing the run was just fixed for saying out loud.
+    if cap[:fallback].empty? &&
+       FastCert.empty_fallback_cause(cap, spine_covered_twins: spine_twins) == :spine_covered
+      warn "fast-check: (#{spine_twins.size} twin(s) DO exist — the spine already runs them, " \
+           "so they are listed below as spine, not missing)"
+    end
   end
   # ONE LINE PER PATH, labelled by what will actually happen to it. Listing the
   # fallback separately printed every twin TWICE — once as `capped`, once as `twin`
@@ -241,10 +259,15 @@ if options[:list]
             end
     puts "#{label}  #{t}"
   end
-  # A twin the mapped set does not contain (a changed test file whose own family
-  # pushed the union over the cap can still leave its twin outside mapped_only after
-  # the spine dedupe) would otherwise vanish from the preview entirely.
-  (cap[:fallback] - mapped_only).each { |t| puts "twin    #{t}" }
+  # NO SECOND TWIN PASS. The loop above already prints every twin exactly once, because
+  # the fallback is always a SUBSET of mapped_only: FastCert#convention_twins is the
+  # union of exactly the `existing` sets #mapping unions into its own values, and both
+  # sides take the identical spine dedupe. A `(cap[:fallback] - mapped_only)` walk stood
+  # here and could only ever print nothing; the case its comment cited — a changed TEST
+  # file leaving its twin outside mapped_only — cannot occur, since a changed test
+  # file's convention candidate IS itself (#convention_candidates). Dead code is safe to
+  # delete only when something notices it stopping being dead, so the invariant is
+  # PINNED (test/lib/fast_cert_family_test.rb) rather than restated as an empty loop.
   spine.each { |t| puts "spine   #{t}" }
   lintable.each { |f| puts "lint    #{f}" }
   exit 0
@@ -724,22 +747,44 @@ mapped_res =
     warn ""
     warn "fast-check: MAPPED LANE CAPPED — #{cap[:count]} mapped test file(s) exceeds the cap of #{cap[:cap]}."
     if cap[:worst_path]
+      # TWO RUNGS CAN MAP THIS WIDE, and naming only one of them misreads a third of
+      # the cap trips in this repo. RE-DERIVED 2026-09-08 over all 1952 tracked files,
+      # one at a time: 11 exceed the cap alone, and THREE of them never grep —
+      # bin/release and bin/release.rb reach 23 through the ORPHAN family, bin/dor-check
+      # 18 through its twin's family. Of the eight that do grep, two are named by a PATH
+      # plus a quoted name (config/test_health.yml, bin/rubocop) rather than by any
+      # camelized anything. "a word-boundary grep of its camelized name" therefore
+      # described 6 of the 11 and was printed for all of them — and "word-boundary" was
+      # wrong even for the path tokens it did cover (#token_regexp bounds a path by the
+      # characters that CONTINUE a path, since \b matches inside bin/task-archive).
       warn "  widest mapping: #{cap[:worst_path]} → #{cap[:worst_count]} test file(s)"
-      warn "  a file with no convention target falls back to a word-boundary grep of its"
-      warn "  camelized name; when that matches this much of the suite it is telling you the"
-      warn "  token is generic, not which tests are relevant."
+      warn "  Two rungs map this wide. A file WITH a harness twin also pulls that twin's test"
+      warn "  FAMILY; a file with none greps for the subject's identity — a script's path and"
+      warn "  quoted command name, a config's path and quoted basename, an app class's full"
+      warn "  constant, any other .rb's camelized stem. Either way, this many matches tells"
+      warn "  you the selection is broad, not which tests are relevant."
     end
     if cap[:fallback].any?
       warn "  falling back to the CONVENTION TWINS — #{cap[:fallback].size} test file(s), one per changed"
       warn "  file, the set this lane ran before the family hop widened it:"
       cap[:fallback].each { |t| warn "    #{t}" }
       warn "  this is a NARROWER cert, not no cert. For the full mapped set:"
-    elsif cap[:fallback_considered] > cap[:cap]
-      warn "  the twin fallback is ITSELF over the cap (#{cap[:fallback_considered]} twins), so it degraded"
-      warn "  again: running the SPINE ONLY. For a diff this broad the right cert is:"
     else
-      warn "  no changed file has an existing test twin, so there is no fallback to take."
-      warn "  running the SPINE ONLY. For a diff this broad the right cert is:"
+      # WHICH EMPTY THIS IS — asked ONCE, of the module. Two of these were one sentence,
+      # and for the spine-covered population that sentence was FALSE: the twin existed
+      # and the spine was already running it.
+      case FastCert.empty_fallback_cause(cap, spine_covered_twins: spine_twins)
+      when :over_cap
+        warn "  the twin fallback is ITSELF over the cap (#{cap[:fallback_considered]} twins), so it degraded"
+        warn "  again: running the SPINE ONLY. For a diff this broad the right cert is:"
+      when :spine_covered
+        warn "  every existing test twin in this diff (#{spine_twins.size}) is ALREADY A SPINE ENTRY, so"
+        warn "  the fallback has nothing to ADD — the spine below RUNS them. Nothing is missing"
+        warn "  here; for the FULL mapped set the right cert is:"
+      else
+        warn "  no changed file has an existing test twin, so there is no fallback to take."
+        warn "  running the SPINE ONLY. For a diff this broad the right cert is:"
+      end
     end
     warn "    bin/full-suite-check #{gate_slug || '<task>'}"
     warn "  (override deliberately with FAST_CHECK_MAPPED_CAP=<n>.)"

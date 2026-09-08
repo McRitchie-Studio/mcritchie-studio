@@ -598,12 +598,23 @@ module FastCert
   #   AFTER: 9 do. Widest FAMILY mapping in the repo is still bin/dor-check at 15 —
   #   AT the cap, never over it alone; next widest family, 3.
   #
+  #   RE-DERIVED 2026-09-08 over all 1952 tracked files, and the second half of that
+  #   line has EXPIRED: 11 exceed the cap alone, and THREE of them never reach the
+  #   grep — bin/release and bin/release.rb at 23 through the ORPHAN family, and
+  #   bin/dor-check at 18 through its twin's family, having grown past the cap it once
+  #   sat exactly on. These are counts of the TREE, not of the rule, so they move
+  #   whenever test files are added; re-derive rather than paste.
+  #
   # So the family hop trips the cap only IN COMBINATION with a co-changed file — the
   # cliff above — while every single-file cap trip WAS a grep precision failure. That
   # is what makes the fallback a slope rather than a shorter cliff, provably: the
   # grep-driven cap-trippers have ZERO convention twins, so the fallback takes nothing
   # from them and they degrade to the spine. Truncating 39 arbitrary grep matches to 15
   # arbitrary grep matches would be a shorter cliff; falling back to the TWIN is a slope.
+  # THE "ZERO TWINS" HALF IS TRUE BY CONSTRUCTION, not merely in the measured cases:
+  # #mapping looks past the convention target only when it is MISSING, so a source that
+  # reaches the grep — or the orphan family — cannot have one. It is the argument that
+  # survives every re-derivation of the counts above.
   #
   # THE PRECISION HALF IS NOW FIXED AT THE SOURCE (#grep_tokens, #orphan_family), which
   # does NOT retire this fallback and does not touch the cap. What survives the fix is
@@ -699,12 +710,18 @@ module FastCert
     worst = Array(breakdown).max_by { |_path, tests| Array(tests).size }
     capped = mapped_only.size > cap
     fallback = capped ? Array(twins).uniq.sort : []
-    # WHAT THE FALLBACK WEIGHED, kept beside what it CHOSE, because the two empty
+    # WHAT THE FALLBACK WEIGHED, kept beside what it CHOSE, because the empty
     # fallbacks are different facts and a receipt that cannot tell them apart is a
-    # shrug: 0 considered means no changed file HAS a twin, while N > cap means the
-    # twins were themselves too broad and the lane degraded a second time. It is 0
-    # when the cap did NOT trip — there was nothing to weigh — so read it only
+    # shrug: N > cap means the twins were themselves too broad and the lane degraded a
+    # second time, while 0 means there was nothing to weigh AT ALL. It is 0 when the cap
+    # did NOT trip either — there was nothing to weigh then either — so read it only
     # beside :capped.
+    #
+    # AND 0 IS NOT ONE FACT, WHICH THIS KEY CANNOT SEE. `twins` arrives already
+    # spine-deduped, so a diff whose only twin is a spine entry weighs 0 exactly like a
+    # diff with no twin at all. THE CALLER SEPARATES THEM — it holds both sides of the
+    # dedupe — via #empty_fallback_cause. Reading a bare 0 here as "no changed file has
+    # a twin" is the false statement bin/fast-check printed to operators.
     considered = fallback.size
     fallback = [] if fallback.size > cap
 
@@ -717,6 +734,56 @@ module FastCert
       worst_path: worst && worst[0],
       worst_count: worst ? Array(worst[1]).size : 0
     }
+  end
+
+  # WHICH EMPTY A CAPPED RUN'S FALLBACK WAS — three answers, kept apart because two of
+  # them were being told to the operator as one, and the one they were told as is a
+  # claim about the DIFF that was not true.
+  #
+  #   :over_cap      the twins were themselves broader than the cap, so the lane
+  #                  degraded a second time.
+  #   :spine_covered twins EXIST for this diff and the SPINE already runs every one of
+  #                  them. The lane has nothing to ADD — not the same statement as
+  #                  having nothing to take.
+  #   :none          no changed file has an existing convention twin.
+  #
+  # THE REACHABLE FALSE STATEMENT THIS CLOSES. `:fallback_considered` is counted AFTER
+  # the spine dedupe (see #cap_decision), so a diff whose only twin is a spine entry
+  # arrives with 0 considered — from that number alone, indistinguishable from a diff
+  # with no twin at all. bin/fast-check printed "no changed file has an existing test
+  # twin" for BOTH. Reproduced against this repo 2026-09-08:
+  #
+  #   FAST_CHECK_CHANGED_FILES=app/views/tasks/_board.html.erb,test/support/session_env.rb \
+  #     bin/fast-check --print
+  #   -> MAPPED LANE CAPPED — 79 mapped test file(s) exceeds the cap of 15.
+  #        no changed file has an existing test twin, so there is no fallback to take.
+  #
+  # The view's twin is test/controllers/tasks_controller_test.rb, which IS a spine entry
+  # and DID run. The OUTCOME was right — nothing to add that the spine is not already
+  # running — and that is what makes the sentence the worse half: it sent the builder
+  # hunting a coverage gap that does not exist, and a warning that fires on a false
+  # negative is how builders learn to ignore warnings.
+  #
+  # PASSED THE DROPPED TWINS, NOT THE SPINE. This stays a pure decision over sets — the
+  # caller already holds both sides of its own dedupe, and re-deriving "covered by the
+  # spine" here would state that rule twice, which is how PR #1239's mutation survived.
+  #
+  # FAILS TO THE OLD SENTENCE: `spine_covered_twins:` defaults to [], so a caller that
+  # has not been taught to pass it gets :none — the wording the fallback shipped with
+  # (f0cc947a) — never a claim about a spine it never mentioned.
+  #
+  # :over_cap OUTRANKS :spine_covered. Both can hold at once, and the degradation is the
+  # more useful fact: it says the lane HAD a fallback and gave it up for breadth.
+  #
+  # NOT MERGED WITH #fallback_note, deliberately. That note's identical wording is
+  # CORRECT where it is used, because a deferral presupposes a spine that resolved to
+  # nothing — so nothing can have been deduped away there, and :spine_covered cannot
+  # arise. One sentence was wrong; the other was right for a reason. Fix one.
+  def empty_fallback_cause(cap, spine_covered_twins: [])
+    return :over_cap if cap[:fallback_considered].to_i > cap[:cap].to_i
+    return :spine_covered if Array(spine_covered_twins).any?
+
+    :none
   end
 
   # --- the zero-evidence guard ----------------------------------------------------
@@ -941,11 +1008,27 @@ module FastCert
   # deferral means the cap tripped AND the fallback came up empty, and the receipt has
   # to say which of the two empties it was or a reader cannot tell a diff that maps to
   # nothing from one whose twins were too broad.
+  #
+  # ONE CALLER, AND BOTH SENTENCES DEPEND ON IT: #defer_outcome, which is reached only
+  # when NO test path will execute — so the spine resolved to nothing here, and the
+  # receipt has already said so. Two consequences, and getting either backwards is how
+  # this note stopped agreeing with the receipt that carries it:
+  #
+  #   THE THIRD RUNG IS NOT A DESTINATION HERE. "degraded a second time, to the spine"
+  #   read as an offer of a rung the very same sentence has just called unresolvable.
+  #   The degradation is real; where it lands is empty, and that is precisely WHY this
+  #   run defers instead of certifying narrower.
+  #
+  #   THE `0 considered` WORDING IS CORRECT HERE, and is NOT the false statement
+  #   bin/fast-check's narration carried. A deferral presupposes an empty spine, so
+  #   nothing can have been deduped away and 0 really does mean no twin exists. The
+  #   spine-covered case (#empty_fallback_cause) cannot arise where there is no spine.
   def fallback_note(cap)
     considered = cap[:fallback_considered].to_i
     if considered > cap[:cap].to_i
       "The convention-twin fallback did not save it either: #{considered} twin(s) is ITSELF over " \
-        "the cap of #{cap[:cap]}, so the lane degraded a second time, to the spine."
+        "the cap of #{cap[:cap]}, so the lane degraded a second time — to the spine, which this " \
+        "checkout resolves none of, which is why this run ends here rather than in a narrower cert."
     else
       "The convention-twin fallback was empty too — no changed file has an existing test twin " \
         "(the fallback deliberately excludes the grep, which is what the cap is protecting you from)."

@@ -231,6 +231,48 @@ class SessionPreflightTest < Minitest::Test
     assert report.fetch("errors").any? { |error| error.include?("installed docs/skills drift") }
   end
 
+  # [integration] The drift REPORT must carry the installer's guidance, which is the
+  # half that says who closes the drift and when. bin/install-agent-docs emits that
+  # guidance AFTER one ERROR line per drifted pair and prints a passing `OK:` line
+  # for every clean one; the old compaction kept the first 8 lines of the whole blob,
+  # so a wide enough drift truncated the guidance away and left only the accusation —
+  # exactly the shape three agents misread as a chore they owed on 2026-09-07.
+  # Task preflight-invites-wrong-fix.
+  def test_installed_docs_drift_message_keeps_the_ownership_guidance
+    errors = (1..6).map { |i| "ERROR: /Users/alex/projects/doc-#{i}.md is out of date\n" }.join
+    guidance = "This is NOT yours to fix: published by sync_agent_docs, which `bin/release ship` runs (Steffon).\n" \
+               "Drift here is EXPECTED between a docs merge and the next production ship.\n" \
+               "Do NOT hand-run the installer.\n" \
+               "See docs/agents/modules/docs-maintenance.md § Editing The Entry Docs.\n"
+    write_installer(status: 1, stderr: errors + guidance, stdout: "OK: /Users/alex/projects/CLAUDE.md matches\n")
+    task = write_task
+
+    out, _err, status = run_preflight("--file", task, "--no-gh", "--no-fetch", "--json")
+    refute status.success?
+
+    report = JSON.parse(out)
+    message = report.fetch("installed_docs").fetch("message")
+
+    # FLOOR: the stub really ran and its drift really landed, so the assertions below
+    # are reading a populated message rather than an empty string.
+    assert_equal "fail", report.fetch("installed_docs").fetch("status")
+    assert_includes message, "doc-1.md", "the drift report must still name what drifted"
+
+    [
+      "bin/release ship",
+      "sync_agent_docs",
+      "Steffon",
+      "EXPECTED",
+      "docs-maintenance.md"
+    ].each do |needle|
+      assert_includes message, needle,
+        "compaction dropped the ownership guidance (#{needle.inspect}) from:\n#{message}"
+    end
+
+    refute_includes message, "OK:",
+      "a failure report should not spend its budget on passing lines"
+  end
+
   def test_github_state_and_same_file_overlap_are_reported
     task = write_task(devops: default_devops.merge("branch" => "feat/session-preflight"))
     commit_file("docs/agents/index.md", "changed\n", "feature docs")
@@ -896,12 +938,22 @@ end
     YAML
   end
 
-  def write_installer(status:, stderr: "")
-    write_file("bin/install-agent-docs", <<~RUBY)
-      #!/usr/bin/env ruby
-      warn #{stderr.inspect}
+  # The stub stands in for bin/install-agent-docs, which is BASH. Keep the stub
+  # bash too: a `#!/usr/bin/env ruby` stub inherits this suite's RUBYOPT/BUNDLE_*
+  # and prints a dozen bundler "already initialized constant" warnings to stderr
+  # before its own output — noise the real script never emits, which then occupies
+  # the drift message the preflight reports and hides what the stub actually said.
+  def write_installer(status:, stderr: "", stdout: "")
+    write_file("bin/install-agent-docs", <<~SH)
+      #!/bin/bash
+      cat >&2 <<'PREFLIGHT_STUB_STDERR'
+      #{stderr.chomp}
+      PREFLIGHT_STUB_STDERR
+      cat <<'PREFLIGHT_STUB_STDOUT'
+      #{stdout.chomp}
+      PREFLIGHT_STUB_STDOUT
       exit #{status}
-    RUBY
+    SH
     File.chmod(0o755, File.join(@repo, "bin", "install-agent-docs"))
   end
 

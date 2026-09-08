@@ -18,7 +18,7 @@ When Alex is the PR reviewer (primary or light) on a docs / operating-model /
 runbook / README PR, walk the diff against these gotchas — hard-won, so they earn
 a line:
 - **SOP integrity** — SOPs stand alone and deterministic; no SOP→design-doc pointer for execution; one-hop primitive references only
-- **Generated-doc drift** — root `AGENTS.md` / `CLAUDE.md` regenerate from source; a doc change goes live only after `bin/install-agent-docs` (a post-merge step, not a PR defect)
+- **Generated-doc drift** — root `AGENTS.md` / `CLAUDE.md` regenerate from source via `bin/install-agent-docs`; that install is an owned step of `bin/release ship` (`sync_agent_docs`), so a doc change goes live on the next production ship — not a PR defect, and never a hand-run anyone owes
 - **Model-agnostic** — the operating model lives in `AGENTS.md`; the `CLAUDE.md` adapter stays thin (`@AGENTS.md`); no root `CODEX.md`
 - **Terminology** — **Alex** = the agent/orchestrator, **Mr. McRitchie** = the owner/operator; fix nearby ambiguous refs (leave historical/archive snapshots alone)
 - **Registry consistency** — SOP registry entries map name → a real repo file; legacy aliases preserved

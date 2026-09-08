@@ -285,6 +285,7 @@ require_relative "../lib/cert_evidence"
 require_relative "../lib/stale_check"
 require_relative "../lib/feature_marker"
 require_relative "lib/task_board"
+require_relative "lib/block_recipe"
 require_relative "lib/bounce_ledger"
 require_relative "lib/task_column_fields"
 require_relative "lib/task_author_fields"
@@ -2029,12 +2030,6 @@ def bounce_verdict(slug, verify_task: true)
   BounceLedger::Verdict.new(rows: rows)
 end
 
-def escalation_recipe(slug)
-  "bin/task block #{slug} --kind dependency \\\n" \
-  "    --summary \"Escalated: <4-6 word disagreement>\" \\\n" \
-  "    --feedback \"<builder's position vs review's position, in brief>\""
-end
-
 def print_bounce_verdict(slug, verdict)
   if verdict.tripped?
     puts "BREAKER: TRIPPED — #{verdict.count} prior send-back(s) on #{slug}"
@@ -2052,7 +2047,11 @@ def print_bounce_verdict(slug, verdict)
   puts ""
   puts "  A repeat bounce is a review DEADLOCK, and a deadlock is the operator's call."
   puts "  Do NOT re-block to the builder. Escalate instead:"
-  puts "    #{escalation_recipe(slug)}"
+  # No block is in flight here, so there is no `blocker` to echo — resolve the
+  # reader's own soul from their session marker instead, and fall back to the
+  # visible blank when even that is silent. Never to a default: a confidently
+  # wrong soul is worse than one the reader can see is missing.
+  puts "    #{BlockRecipe.escalation(slug, agent: resolved_block_actor(nil, nil, kind: "dependency"))}"
 end
 
 def resolved_block_actor(explicit_agent, task, kind: nil)
@@ -3161,11 +3160,34 @@ when "block"
       warn!("")
       warn!("  A repeat bounce is a review DEADLOCK, and a deadlock is the operator's call, never a ping-pong.")
       warn!("  Escalate instead:")
-      warn!("    #{escalation_recipe(slug)}")
+      # EACH RECIPE RESOLVES ITS SOUL UNDER ITS OWN `--kind`, not under the caller's.
+      # This one is a `--kind dependency` block, and `default_block_actor` answers the
+      # literal "avi" for rework-on-submitted and NIL for every other kind — so reusing
+      # `blocker` (resolved above under `rework`) printed `--agent avi` to a caller who
+      # had passed no `--agent`, carried no persona, and held no review claim. Pasting
+      # that files a dependency block by a soul that did nothing. Resolving it again
+      # under `dependency` prints the visible blank instead, while an explicit
+      # `--agent carl` still rides through unchanged.
+      #
+      # An escalation pasted with NO soul at all writes `{"event":{"source":"cli"}}`:
+      # no actor, no `by`. It leaves a block whose audit row names nobody. (It does not
+      # poison `bin/reviewer-select`: `Task#block!` lands the task on `building` with
+      # `blocked_at` set, which is neither a `build_claim_save?` nor a `submit_save?`,
+      # so `enforce_builder_stamp` writes no author. The author set is only reached
+      # second-hand, when the statusline later adopts the freed lease unnamed.)
+      warn!("    #{BlockRecipe.escalation(slug, agent: resolved_block_actor(agent, current, kind: "dependency"))}")
       warn!("")
       warn!("  If this bounce is MECHANICAL and not a disagreement (red CI, a merge conflict, a")
       warn!("  dirty base — nothing for the operator to arbitrate), say so and it proceeds:")
-      warn!("    bin/task block #{slug} --kind rework ... --breaker-ack \"red CI, mechanical\"")
+      # THIS one KEEPS `blocker`, and that is not an oversight — it is the rule above
+      # applied, not exempted. This recipe IS the block being refused, re-run with
+      # `--breaker-ack`: same slug, same `--kind rework`, same caller. So the soul this
+      # run already resolved to is what it will ACTUALLY record, and printing it is how
+      # a wrong one becomes VISIBLE rather than silent. (A pasted block does not run as
+      # whoever pasted it: `resolved_block_actor` returns the literal "avi" for
+      # rework-on-submitted, so the bare remedy printed to the verdict owner was a
+      # command the verdict-owner gate then REFUSED him — exit 11, nothing written.)
+      warn!("    #{BlockRecipe.breaker_ack(slug, agent: blocker)}")
       exit EXIT_BREAKER_TRIPPED
     end
     # An override that only shows up in the database is not an override anyone will

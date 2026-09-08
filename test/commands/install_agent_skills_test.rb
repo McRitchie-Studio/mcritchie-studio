@@ -314,34 +314,157 @@ class InstallAgentSkillsTest < Minitest::Test
       "check should report the Codex skill as matching")
   end
 
-  # [unit] install-check-worktree-advice: a failing `check` run from a WORKTREE
-  # must NOT hand back a publish command. The entry docs/skills install GLOBALLY,
-  # so `bin/install-agent-docs` from a feature desk would push unreviewed,
-  # mid-branch text to the shared roots and flip every concurrent session to
-  # "installed docs drift". From a worktree, check gives POST-MERGE sequencing;
-  # only the primary gets the install command. Worktree-ness is ROOT != RUNTIME_ROOT.
-  def test_check_from_a_worktree_gives_post_merge_advice_not_a_publish_command
+  # ---------------------------------------------------------------------------
+  # Drift guidance — task preflight-invites-wrong-fix.
+  #
+  # THE BUG (measured 2026-09-07): three separate agents in one night read this
+  # script's entry-doc drift FAIL as a chore they personally owed, and two
+  # proposed acting on it — one wrote it up as "a post-merge global install owed
+  # from the primary checkout". They were not careless. The message SAID that:
+  # from a worktree it read "install from the PRIMARY checkout ($RUNTIME_ROOT)",
+  # and from a primary it handed over a runnable "Run: cd <root> && bin/install-agent-docs".
+  # Editing a primary checkout is the thing the operating model forbids most flatly.
+  #
+  # WHAT IS ACTUALLY TRUE. Installed entry docs/skills are published by exactly one
+  # OWNED step: bin/release.rb's `sync_agent_docs`, which `bin/release ship` calls
+  # after every production ship (Steffon, G4 Ship). It installs from the hub's SHIP
+  # WORKSPACE — the tree pinned at the SHA that just shipped — runs unconditionally,
+  # is idempotent, is non-fatal by construction, and HEALS PRIOR DRIFT. So drift
+  # between a docs merge and the next ship is an EXPECTED state that closes itself.
+  #
+  # A hand-run is wrong from either tree AND cannot even close what the reader sees:
+  # the check compares the installed roots against THIS $ROOT's sources, so installing
+  # from a primary republishes a `main` that can be a release behind and leaves a
+  # worktree's drift exactly where it was.
+  #
+  # BOUNDARY (checked, not missed): two hand-runs stay legitimate and are NOT
+  # drift reports — `bin/agent-runtime install` during fresh-machine bringup
+  # (house-burn-down step 5b, install mode, never this branch), and bin/release.rb's
+  # own warn line when the ship's `sync_agent_docs` step fails, which is Steffon
+  # standing at the ship.
+  #
+  # Worktree-ness is ROOT != RUNTIME_ROOT ($AGENT_DOCS_RUNTIME_ROOT overrides).
+
+  # Every drift report must name the OWNER and the MOMENT that closes it.
+  OWNED_CLOSER_PATTERNS = {
+    "the shipping command" => %r{bin/release ship}i,
+    "the owned pipeline step" => /sync_agent_docs/i,
+    "the step's owner" => /steffon/i,
+    "that the drift is expected, not owed" => /expected/i
+  }.freeze
+
+  # No drift report may invite a hand-run install, from a worktree or a primary.
+  HAND_RUN_INVITATIONS = {
+    "a runnable install command" => %r{(run|cd)[^\n]{0,80}bin/install-agent-docs(?![^\n]{0,20}check)}i,
+    "an install-from-the-primary instruction" => %r{install[^\n]{0,40}from the[^\n]{0,40}primary}i
+  }.freeze
+
+  def assert_drift_guidance(err, where)
+    OWNED_CLOSER_PATTERNS.each do |what, pattern|
+      assert_match pattern, err,
+        "#{where}: drift guidance must name #{what}, got:\n#{err}"
+    end
+    HAND_RUN_INVITATIONS.each do |what, pattern|
+      refute_match pattern, err,
+        "#{where}: drift guidance must not offer #{what}, got:\n#{err}"
+    end
+  end
+
+  # [integration] From a WORKTREE the guidance names the owned closer and offers
+  # no hand-run. The ERROR assertion is the FLOOR: it proves drift really fired and
+  # the guidance branch really ran, so the refutations cannot pass vacuously.
+  def test_integration_drift_guidance_from_a_worktree_names_the_owned_closer
     run_installer("install")
-    File.write(installed_claude_wrap, "#{File.read(installed_claude_wrap)}\nlocal drift\n") # make check FAIL
+    File.write(installed_claude_wrap, "#{File.read(installed_claude_wrap)}\nlocal drift\n")
+
     _out, err, status = run_installer("check", "AGENT_DOCS_RUNTIME_ROOT" => "/some/primary-checkout")
 
     refute status.success?, "drift must fail the check"
-    assert_match(/after .*merge|post-merge|from the primary/i, err,
-                 "a worktree must get post-merge sequencing advice, got:\n#{err}")
-    refute_match(%r{cd \S+ && bin/install-agent-docs}, err,
-                 "a worktree must NEVER be told to RUN the installer — that publishes unreviewed docs fleet-wide")
+    assert_match(/^ERROR: .*is out of date with /, err,
+      "FLOOR: the check must have reported real drift, got:\n#{err}")
+    assert_drift_guidance(err, "worktree")
   end
 
-  # [unit] The other half of the property: from the PRIMARY (ROOT == RUNTIME_ROOT)
-  # a failing check DOES print the install command, because there it is correct.
-  def test_check_from_the_primary_gives_the_install_command
+  # [integration] The other half. From the PRIMARY (ROOT == RUNTIME_ROOT) the old
+  # code printed "Run: cd <root> && bin/install-agent-docs" — the exact hand-run
+  # this task exists to delete. The primary gets the SAME owned-closer explanation.
+  def test_integration_drift_guidance_from_the_primary_names_the_owned_closer
     run_installer("install")
     File.write(installed_claude_wrap, "#{File.read(installed_claude_wrap)}\nlocal drift\n")
-    _out, err, status = run_installer("check", "AGENT_DOCS_RUNTIME_ROOT" => ROOT) # ROOT == the script's $ROOT ⇒ primary
+
+    _out, err, status = run_installer("check", "AGENT_DOCS_RUNTIME_ROOT" => ROOT)
 
     refute status.success?, "drift must fail the check"
-    assert_match(%r{Run: cd \S+ && bin/install-agent-docs}, err,
-                 "the primary must be told to install, got:\n#{err}")
+    assert_match(/^ERROR: .*is out of date with /, err,
+      "FLOOR: the check must have reported real drift, got:\n#{err}")
+    assert_drift_guidance(err, "primary")
+    refute_match(%r{Run: cd \S+ && bin/install-agent-docs}, err,
+      "the primary must never be handed a runnable install, got:\n#{err}")
+  end
+
+  # [unit] Sweep every site that REPORTS entry-doc drift to a reader. A half-corrected
+  # explanation is worse than the current one, because it reads as authoritative.
+  #
+  # Exit-blind guard: a glob that matched nothing would make the loop body never run
+  # and this test would pass having proved nothing. So the sweep is an explicit,
+  # named list, every entry is asserted to exist and to be non-empty, and the number
+  # of files actually READ is asserted against a floor.
+  DRIFT_REPORT_SITES = [
+    "bin/install-agent-docs",
+    "bin/session-preflight",
+    "bin/agent-runtime",
+    "docs/agents/modules/docs-maintenance.md",
+    "docs/agents/agents/alex/role.md"
+  ].freeze
+
+  def test_unit_no_drift_report_site_invites_a_hand_run_install_from_a_primary
+    read = 0
+
+    DRIFT_REPORT_SITES.each do |rel|
+      path = File.join(ROOT, rel)
+      assert File.file?(path), "drift-report site #{rel} is missing — fix the sweep list"
+      body = File.read(path)
+      refute body.empty?, "drift-report site #{rel} is empty — the sweep would prove nothing"
+      read += 1
+
+      refute_match(%r{install[^\n]{0,40}from the[^\n]{0,40}primary}i, body,
+        "#{rel} tells a reader to install from a primary checkout — the forbidden hand-run")
+      refute_match(%r{Run: cd \S+ && bin/install-agent-docs}, body,
+        "#{rel} hands over a runnable entry-docs install")
+    end
+
+    assert_equal DRIFT_REPORT_SITES.size, read,
+      "FLOOR: the sweep must have read every listed site, not short-circuited"
+    assert_operator read, :>=, 5, "FLOOR: the sweep must cover every known drift-report site"
+  end
+
+  # [unit] The positive half: deleting the invitation is not enough — the prose a
+  # reader lands on must NAME the owned closer, or the drift is simply unexplained
+  # and the next session invents an owner again. These two are the docs a drift
+  # report and a docs reviewer actually reach for.
+  OWNER_NAMING_DOCS = [
+    "docs/agents/modules/docs-maintenance.md",
+    "docs/agents/agents/alex/role.md"
+  ].freeze
+
+  def test_unit_entry_doc_drift_prose_names_the_owned_closer
+    checked = 0
+
+    OWNER_NAMING_DOCS.each do |rel|
+      path = File.join(ROOT, rel)
+      assert File.file?(path), "#{rel} is missing — fix the list"
+      body = File.read(path)
+      refute body.empty?, "#{rel} is empty — this assertion would prove nothing"
+      checked += 1
+
+      assert_match(%r{bin/release ship}, body,
+        "#{rel} must name the command that closes entry-doc drift")
+      assert_match(/sync_agent_docs/, body,
+        "#{rel} must name the owned step that closes entry-doc drift")
+    end
+
+    assert_equal OWNER_NAMING_DOCS.size, checked,
+      "FLOOR: every listed doc must have been read"
   end
 
   def test_integration_check_fails_when_any_local_skill_modified

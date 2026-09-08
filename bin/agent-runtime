@@ -231,7 +231,11 @@ doctor() {
   if "$INSTALLER" check >/tmp/mcritchie-agent-runtime-check.$$ 2>/tmp/mcritchie-agent-runtime-check-err.$$; then
     ok "installed agent docs and skills match tracked sources"
   else
-    fail_line "installed agent docs or skills are out of date; run bin/agent-runtime install"
+    # Doctor exists for BRINGUP, where `bin/agent-runtime install` is the right move —
+    # but it is also run mid-cycle, where drift is the expected wait for the next
+    # production ship and NOT a chore the reader owes. Name both, and let the
+    # installer's own guidance (piped through below) carry the owner and the moment.
+    fail_line "installed agent docs or skills are out of date; on a fresh machine run bin/agent-runtime install, otherwise see the guidance below"
     sed 's/^/  /' /tmp/mcritchie-agent-runtime-check-err.$$ >&2 || true
   fi
   rm -f /tmp/mcritchie-agent-runtime-check.$$ /tmp/mcritchie-agent-runtime-check-err.$$

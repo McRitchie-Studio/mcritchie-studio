@@ -715,6 +715,131 @@ class FastCheckTest < Minitest::Test
     end
   end
 
+  # --- [integration] WHICH EMPTY the twin fallback was ------------------------------
+  #
+  # A REACHABLE FALSE STATEMENT TO THE OPERATOR, found reviewing PR #1242 and
+  # reproduced against this binary before the fix, verbatim:
+  #
+  #   fast-check: MAPPED LANE CAPPED — 79 mapped test file(s) exceeds the cap of 15.
+  #     no changed file has an existing test twin, so there is no fallback to take.
+  #
+  # printed for a diff touching app/views/tasks/_board.html.erb, whose convention twin
+  # test/controllers/tasks_controller_test.rb IS a declared spine entry. A twin existed
+  # and the spine was already running it. `:fallback_considered` is counted AFTER the
+  # spine dedupe, so BOTH empties arrive at the narration as 0 and one sentence covered
+  # both. The OUTCOME was right — there is nothing to add that the spine is not already
+  # running — and that is what makes the sentence the worse half: it sends the builder
+  # hunting a coverage gap that does not exist, and a warning that fires on a false
+  # negative is how builders learn to ignore warnings.
+
+  # A capped diff whose ONLY convention twin is a spine entry: the twin-less wide file
+  # supplies the cap trip, the twin-owning file supplies the twin the spine swallows.
+  def with_spine_covered_twin_repo
+    with_repo do |dir, write|
+      (1..20).each { |i| write.call("test/lib/wide_#{i}_test.rb", "Gizmo.reset\n") }
+      # THE FIXTURE IS THIS ONE LINE: test/models/widget_test.rb is app/models/widget.rb's
+      # convention twin AND a declared spine entry, so the spine dedupe empties the
+      # fallback without the diff ever lacking a twin.
+      write.call("spine.yml",
+                 "spine:\n  - test/models/spine_core_test.rb\n  - test/models/widget_test.rb\n")
+      assert system("git", "-C", dir, "add", "-A", out: File::NULL, err: File::NULL)
+      assert system("git", "-C", dir, "commit", "-qm", "spine-covers-the-twin",
+                    out: File::NULL, err: File::NULL)
+      # The branch diff: the twin-OWNING file (modified, so it is a change), plus the
+      # twin-LESS file whose grep trips the cap.
+      write.call("app/models/widget.rb", "class Widget\n  def id\n    1\n  end\nend\n")
+      write.call("app/models/gizmo.rb", "class Gizmo; end\n")
+      yield dir, write
+    end
+  end
+
+  def test_a_spine_covered_twin_is_not_reported_as_no_twin_at_all
+    with_spine_covered_twin_repo do |dir, _|
+      out, code, lines = run_check(dir, merge_stderr: true)
+
+      assert_equal 0, code, out
+      assert_match(/MAPPED LANE CAPPED/, out, "the fixture has to actually trip the cap:\n#{out}")
+      refute_match(/no changed file has an existing test twin/, out,
+                   "app/models/widget.rb HAS one — the spine is running it:\n#{out}")
+      assert_match(/ALREADY A SPINE ENTRY/, out,
+                   "and the builder is told WHICH empty this was:\n#{out}")
+      # THE OUTCOME NEVER MOVED, only the sentence: the spine still runs the twin and
+      # the mapped lane still adds nothing.
+      assert_equal [%w[test/models/spine_core_test.rb test/models/widget_test.rb]],
+                   lane_calls(lines, "TEST"),
+                   "the spine lane alone, carrying the twin: #{lines.inspect}"
+    end
+  end
+
+  # THE OTHER EMPTY IS UNTOUCHED. A diff with no twin at all still gets the sentence it
+  # always got — this separates two cases, it does not retire one.
+  def test_a_diff_with_no_twin_at_all_still_says_so
+    with_wide_mapping_repo do |dir, _|
+      out, = run_check(dir, merge_stderr: true)
+
+      assert_match(/no changed file has an existing test twin/, out, out)
+      refute_match(/ALREADY A SPINE ENTRY/, out,
+                   "there is no twin here for the spine to have covered:\n#{out}")
+    end
+  end
+
+  # THE WIDEST MAPPING IS EXPLAINED BY BOTH RUNGS THAT CAN PRODUCE IT. The narration
+  # said "a file with no convention target falls back to a word-boundary grep of its
+  # camelized name" as though that were the rule, and printed it for every cap trip.
+  # RE-DERIVED 2026-09-08 over all 1952 tracked files, one at a time: 11 exceed the
+  # cap alone and THREE never grep (bin/release and bin/release.rb reach 23 through the
+  # ORPHAN family, bin/dor-check 18 through its twin's family). Of the eight that do
+  # grep, two are named by a PATH plus a quoted name, not by a camelized anything. The
+  # sentence described 6 of the 11 and was printed for all of them.
+  def test_the_cap_narration_does_not_blame_a_camelized_grep_for_every_width
+    with_wide_mapping_repo do |dir, _|
+      out, = run_check(dir, merge_stderr: true)
+
+      assert_match(%r{widest mapping: app/models/gizmo\.rb}, out, "the culprit is still named")
+      refute_match(/word-boundary grep of its/, out,
+                   "the grep is not word-bounded for a PATH token, and the family rung is no grep at all")
+      assert_match(/Two rungs map this wide/, out, "both causes of a wide mapping are named:\n#{out}")
+      assert_match(/quoted command name/, out,
+                   "and the grep is described by what it actually searches for:\n#{out}")
+    end
+  end
+
+  # THE PREVIEW AGREES WITH THE RUN about which empty this is. `--list` reports counts
+  # rather than sentences, but "0 considered" reads as "no twin exists" just as loudly,
+  # and the two views of one decision must not disagree.
+  def test_the_capped_preview_says_the_spine_already_runs_the_twin
+    with_spine_covered_twin_repo do |dir, _|
+      out, code, = run_check(dir, args: ["--list"], merge_stderr: true)
+
+      assert_equal 0, code, out
+      assert_match(/falling back to the 0 convention twin\(s\) of 0 considered/, out,
+                   "the count itself is unchanged — it is honest about what the fallback weighed")
+      assert_match(/1 twin\(s\) DO exist — the spine already runs them/, out,
+                   "and the preview says why that 0 is not a missing twin:\n#{out}")
+      assert_includes out.lines.map(&:chomp), "spine   test/models/widget_test.rb",
+                      "…which the preview then shows, on the spine lane:\n#{out}"
+    end
+  end
+
+  # EVERY TWIN IS PREVIEWED EXACTLY ONCE. `--list` used to print the fallback in TWO
+  # passes — the labelled walk over mapped_only, then a second walk over
+  # `(fallback - mapped_only)` — and that second pass could only ever be empty (the
+  # fallback is a subset of the mapped set; the invariant is pinned in
+  # fast_cert_family_test.rb). Removing dead code is safe only if something notices
+  # when it stops being dead, so this asserts the PREVIEW's property rather than the
+  # subtraction's: one line per twin, none missing, none doubled.
+  def test_the_capped_preview_lists_each_twin_exactly_once
+    with_family_over_cap_repo do |dir, _|
+      out, code, = run_check(dir, args: ["--list"], merge_stderr: true)
+
+      assert_equal 0, code, out
+      twins = out.lines.map(&:chomp).select { |l| l.start_with?("twin") }
+
+      assert_equal ["twin    test/lib/wide_tool_test.rb"], twins,
+                   "the twin is previewed exactly once — not doubled, not missing:\n#{out}"
+    end
+  end
+
   # --- [integration] the zero-evidence guard --------------------------------------
   #
   # THE DEFECT, live on turf-monster PR #549 (2026-09-05) and reproduced against this

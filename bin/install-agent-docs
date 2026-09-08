@@ -233,18 +233,36 @@ if [ "$MODE" = "check" ]; then
     done
   done
   if [ "$status" -ne 0 ]; then
+    # DRIFT IS NOT A CHORE THE READER OWES. Measured 2026-09-07: three separate
+    # agents in one night read this FAIL as personal work, and two proposed acting
+    # on it — one wrote it up as a post-merge global install owed from a primary
+    # checkout, which would mean editing a primary checkout. They were not careless;
+    # the old text told them to do it. From a worktree it pointed at $RUNTIME_ROOT as
+    # the place to publish from, and from a primary it handed over a ready-to-paste
+    # `cd` + installer line. So the guidance now names the OWNER and the MOMENT.
+    #
+    # The owner is real, not a hand-wave: bin/release.rb's sync_agent_docs is an owned
+    # step of `bin/release ship` (Steffon, G4 Ship). It installs from the hub's SHIP
+    # WORKSPACE — the tree pinned at the SHA that just shipped — runs unconditionally,
+    # is idempotent, is non-fatal by construction, and HEALS PRIOR DRIFT.
+    #
+    # And a hand-run does not CLOSE the drift, it MOVES it: this check compares the
+    # installed roots against THIS $ROOT's sources, so publishing from here clears
+    # this tree's report and turns every other session's report red.
+    #
+    # Two hand-runs stay legitimate and are deliberately NOT reached from here:
+    # `bin/agent-runtime install` during fresh-machine bringup (install mode, never
+    # this branch), and bin/release.rb's own warn line when the ship's step fails.
+    echo "This is NOT yours to fix: the entry docs/skills are published by ONE owned step — sync_agent_docs, which \`bin/release ship\` runs after every production ship (Steffon, G4 Ship) from the tree that just shipped." >&2
+    echo "Drift here is EXPECTED between a docs merge and the next production ship. That ship closes it and heals prior drift: the step runs unconditionally, is idempotent, and is non-fatal." >&2
     if [ "$ROOT" != "$RUNTIME_ROOT" ]; then
       # Invoked from a feature WORKTREE (ROOT sits under a primary's checkout).
-      # The entry docs/skills install GLOBALLY, so running the installer HERE would
-      # publish unreviewed, mid-branch text to the shared roots and flip every
-      # concurrent session to "installed docs drift". The install is a POST-MERGE
-      # step from the primary — so give sequencing, never a runnable install command.
-      echo "Do NOT run bin/install-agent-docs from a worktree: these entry docs/skills install GLOBALLY, so publishing mid-branch text flips every concurrent session to 'installed docs drift'." >&2
-      echo "The install is a POST-MERGE step: after this branch merges to accepted and rides a release, install from the PRIMARY checkout ($RUNTIME_ROOT)." >&2
-      echo "See docs/agents/modules/docs-maintenance.md § Editing The Entry Docs." >&2
+      echo "Do NOT hand-run the installer from this worktree: these docs/skills publish GLOBALLY, so it would push unshipped mid-branch text to every session on this machine. It WOULD clear this report — each session measures the shared roots against its OWN sources, so publishing yours turns every other session red." >&2
     else
-      echo "Run: cd $ROOT && bin/install-agent-docs" >&2
+      # Invoked from a primary checkout.
+      echo "Do NOT hand-run the installer from this checkout either: a primary can sit a release behind what shipped (the ship's restore is best-effort and REFUSES a primary holding a live session's work), so a by-hand run would republish stale docs to every session on this machine." >&2
     fi
+    echo "See docs/agents/modules/docs-maintenance.md § Editing The Entry Docs." >&2
   fi
   exit "$status"
 fi

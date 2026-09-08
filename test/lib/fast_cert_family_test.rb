@@ -294,13 +294,24 @@ class FastCertFamilyTest < Minitest::Test
                    "an initializer has no convention twin — the grep must NOT be reused as the fallback"
       assert_equal 0, decision[:fallback_considered]
 
-      # AND IT IS NOT TRUNCATION. The lazy shape of this fix — "take the first `cap`
-      # of whatever mapped" — would pass every other test in this file while turning
-      # a 20-file grep explosion into 15 arbitrary grep matches: a SHORTER CLIFF, not
-      # a slope, since which 15 you get is alphabetical accident. Measured over the
-      # hub 2026-09-07, ALL 27 single-file cap-trippers were grep-driven with ZERO
-      # twins (9 remain after the subject-reference fix, still with zero twins), so
-      # truncation is the failure mode that would actually bite.
+      # AND IT IS NOT TRUNCATION — named here, though it is not this line that catches
+      # it. The lazy shape of this fix, "take the first `cap` of whatever mapped", turns
+      # a 20-file grep explosion into 15 arbitrary grep matches: a SHORTER CLIFF, not a
+      # slope, since which 15 you get is alphabetical accident. Measured over the hub
+      # 2026-09-07, ALL 27 single-file cap-trippers were grep-driven with ZERO twins (9
+      # remain after the subject-reference fix, still with zero twins), so truncation is
+      # the failure mode that would actually bite.
+      #
+      # THE LINE BELOW CANNOT BE THE ASSERTION THAT FIRES, and the comment that stood
+      # here claimed the opposite — that truncation "would pass every other test in this
+      # file". MEASURED 2026-09-08, by making #cap_decision return
+      # `Array(mapped_only).first(cap)`: SIX tests in this file go red, and the
+      # `assert_empty decision[:fallback]` one line ABOVE reddens on ANY non-empty
+      # fallback, so it always beats this refute_equal to it. The property is well
+      # pinned — by that line and three other tests. This one is a NAMED restatement of
+      # the shape, kept because "never the mapped set truncated" is what a reader needs
+      # told; it is not load-bearing. Delete the redundancy if you like, never the
+      # property.
       refute_equal mapped.first(15), decision[:fallback],
                    "the fallback must be the convention twins, never the mapped set truncated"
     end
@@ -401,5 +412,136 @@ class FastCertFamilyTest < Minitest::Test
     assert_includes executed, "test/lib/ci_status_test.rb",
                     "and so must the co-changed file that tripped the cap"
     refute_empty executed, "before this fallback, this exact diff executed ZERO mapped tests"
+  end
+
+  # --- WHICH EMPTY the twin fallback was ------------------------------------------
+  #
+  # `:fallback_considered` is counted AFTER the spine dedupe, so a diff whose only twin
+  # is a spine entry reaches the narration carrying 0 — the same number a diff with NO
+  # twin carries. bin/fast-check printed ONE sentence for both, and for the first
+  # population it was false: "no changed file has an existing test twin". A warning that
+  # fires on a false negative teaches builders to ignore warnings, which is the real
+  # cost; the OUTCOME was right either way. The question is asked ONCE, here, so the two
+  # sentences cannot drift apart again.
+
+  def test_a_spine_covered_twin_is_not_a_missing_twin
+    cause = FastCert.empty_fallback_cause({ cap: 15, fallback_considered: 0 },
+                                          spine_covered_twins: ["test/controllers/tasks_controller_test.rb"])
+
+    assert_equal :spine_covered, cause,
+                 "the twin EXISTS and the spine is already running it — a different fact from having none"
+  end
+
+  def test_no_twin_anywhere_is_still_reported_as_a_missing_twin
+    cause = FastCert.empty_fallback_cause({ cap: 15, fallback_considered: 0 }, spine_covered_twins: [])
+
+    assert_equal :none, cause, "the dedupe dropped nothing, so there was nothing to drop"
+  end
+
+  # BOTH CAN HOLD AT ONCE, and the degradation is the more useful fact: it says the lane
+  # HAD a fallback and gave it up for breadth. Order is the assertion here.
+  def test_a_twin_set_over_the_cap_outranks_the_spine_covered_reason
+    over = { cap: 15, fallback_considered: 20 }
+
+    assert_equal :over_cap,
+                 FastCert.empty_fallback_cause(over, spine_covered_twins: ["test/models/task_test.rb"]),
+                 "20 twins over a cap of 15 is a degradation, whatever the spine also covered"
+    assert_equal :over_cap, FastCert.empty_fallback_cause(over, spine_covered_twins: []),
+                 "and it does not need a spine-covered twin to be the answer"
+  end
+
+  # A DEFAULT THAT FAILS TO THE OLD SENTENCE. A caller that has not been taught to pass
+  # the dropped twins gets :none — the wording the fallback shipped with (f0cc947a) —
+  # never a claim about a spine it never mentioned.
+  def test_a_caller_that_names_no_spine_covered_twins_gets_the_old_answer
+    assert_equal :none, FastCert.empty_fallback_cause({ cap: 15, fallback_considered: 0 })
+  end
+
+  # --- the fallback is INSIDE the mapped set --------------------------------------
+  #
+  # WHAT MAKES THE REMOVED PREVIEW PASS SAFE TO REMOVE. bin/fast-check's --list carried a
+  # second walk over `(cap[:fallback] - mapped_only)` to catch "a twin the mapped set does
+  # not contain". No such twin can exist: #convention_twins is the union of exactly the
+  # `existing` sets #mapping unions into its own values, so every twin is already a mapped
+  # path — and bin/fast-check subtracts the identical spine set from both sides. The case
+  # the old comment cited cannot occur either: a changed TEST file's convention candidate
+  # IS itself (#convention_candidates), so its twin is never outside the mapped set.
+  #
+  # Dead code is only safely deleted when something notices it stopping being dead. This
+  # is that something, and the two floors below are what keep it from proving nothing: an
+  # empty-set subtraction is empty for the wrong reason, and a sweep whose cases vanish
+  # asserts over nothing at all.
+  def test_the_convention_twins_are_always_a_subset_of_the_mapped_set
+    cases = {
+      "a harness family" => [
+        { "bin/wide-tool" => "#!/usr/bin/env ruby\n",
+          "test/lib/wide_tool_test.rb" => "class A; end\n",
+          "test/lib/wide_tool_aspect_test.rb" => "class B; end\n" },
+        ["bin/wide-tool"]
+      ],
+      "a model and its twin" => [
+        { "app/models/widget.rb" => "class Widget; end\n",
+          "test/models/widget_test.rb" => "class A; end\n" },
+        ["app/models/widget.rb"]
+      ],
+      "a view through its controller test" => [
+        { "app/views/tasks/_board.html.erb" => "board\n",
+          "test/controllers/tasks_controller_test.rb" => "class A; end\n" },
+        ["app/views/tasks/_board.html.erb"]
+      ],
+      "a changed test file, which is its own twin" => [
+        { "test/lib/thing_test.rb" => "class A; end\n",
+          "test/lib/thing_extra_test.rb" => "class B; end\n" },
+        ["test/lib/thing_test.rb"]
+      ],
+      "a twin-less file, which greps and contributes no twin" => [
+        { "app/models/gizmo.rb" => "class Gizmo; end\n",
+          "test/lib/wide_test.rb" => "Gizmo.reset\n" },
+        ["app/models/gizmo.rb"]
+      ],
+      "a multi-file diff mixing all of them" => [
+        { "bin/wide-tool" => "#!/usr/bin/env ruby\n",
+          "test/lib/wide_tool_test.rb" => "class A; end\n",
+          "app/models/widget.rb" => "class Widget; end\n",
+          "test/models/widget_test.rb" => "class B; end\n",
+          "app/models/gizmo.rb" => "class Gizmo; end\n",
+          "test/lib/wide_test.rb" => "Gizmo.reset\n" },
+        ["bin/wide-tool", "app/models/widget.rb", "app/models/gizmo.rb"]
+      ]
+    }
+
+    with_twins = 0
+    cases.each do |name, (files, changed)|
+      with_tree(files) do |dir|
+        twins = FastCert.convention_twins(dir, changed)
+
+        assert_empty twins - FastCert.select_tests(dir, changed),
+                     "#{name}: a convention twin landed OUTSIDE the mapped set"
+        with_twins += 1 if twins.any?
+      end
+    end
+
+    assert_equal 6, cases.size, "the LIST is the assertion — a case that quietly vanishes is a hole"
+    assert_operator with_twins, :>=, 5,
+                    "only #{with_twins} of #{cases.size} cases had a twin at all; a subset assertion " \
+                    "over empty sets proves nothing"
+  end
+
+  # AND ON THE REAL TREE, whose shapes are not the ones a fixture remembers to build.
+  def test_real_repo_every_convention_twin_is_inside_the_mapped_set
+    changed = %w[
+      bin/dor-check
+      bin/lib/ci_status.rb
+      app/models/task.rb
+      app/views/tasks/_board.html.erb
+      test/lib/fast_cert_family_test.rb
+    ]
+
+    twins = FastCert.convention_twins(REPO_ROOT, changed)
+
+    assert_operator twins.size, :>=, 4,
+                    "swept #{twins.size} twins on the real tree — too few for the subtraction to mean anything"
+    assert_empty twins - FastCert.select_tests(REPO_ROOT, changed),
+                 "a twin outside the mapped set would make the removed --list pass load-bearing again"
   end
 end
