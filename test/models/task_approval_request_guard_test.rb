@@ -240,8 +240,8 @@ class TaskApprovalRequestGuardTest < ActiveSupport::TestCase
   # drop can be told apart from a stamp already on the record. A copy that drifts
   # does not fail loudly — it silently certifies a rule the board no longer holds.
   #
-  # Pinned HERE rather than beside either copy because test/lib/task_cli_test.rb is
-  # deliberately standalone (no Rails, no network) and cannot see Task at all: the
+  # Pinned HERE rather than beside either copy because test/lib/task_move_approval_drop_test.rb
+  # is deliberately standalone (no Rails, no network) and cannot see Task at all: the
   # first cut of this pin sat in that file behind `defined?(::Task)` and SKIPPED in
   # both lanes, including under `bin/rails test`, which does not boot the app for a
   # file that never requires test_helper. A pin that cannot read its subject pins
@@ -253,7 +253,8 @@ class TaskApprovalRequestGuardTest < ActiveSupport::TestCase
 
   def test_the_cli_stub_board_models_the_real_approval_request_stages
     assert_equal Task::APPROVAL_REQUEST_STAGES.map(&:to_s).sort,
-                 stage_literal_in("test/lib/task_cli_test.rb", /^\s*SETTLE_EXEMPT_STAGES = %w\[([^\]]*)\]/)
+                 stage_literal_in("test/lib/task_move_approval_drop_test.rb",
+                                 /^\s*SETTLE_EXEMPT_STAGES = %w\[([^\]]*)\]/)
   end
 
   private
