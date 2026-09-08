@@ -635,11 +635,14 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
   #
   # Read this list as an INVENTORY, not as a proof of completeness. The absolute it
   # used to carry — "a seventeenth site cannot arrive unnoticed, because arriving
-  # unnoticed is the one thing this list makes impossible" — was falsified twice
-  # over, by the shape-keyed absorption above and by `command_extent` walking out of
-  # a closing fence into prose that opened with a flag. Both are closed now, and
-  # PINNED by the three boundary tests above rather than by this paragraph. That is
-  # the durable lesson: a claim of completeness belongs in a test, never in a header.
+  # unnoticed is the one thing this list makes impossible" — was falsified THREE
+  # times over: by the shape-keyed absorption above, by `command_extent` walking out
+  # of a closing fence into prose that opened with a flag, and by an unclosed quote
+  # landing before `--kind rework`, which drops the run from the inventory entirely —
+  # the walk's own comment above calls that "a seventeenth site arriving unnoticed".
+  # All three are closed now, and PINNED by the three boundary tests above rather
+  # than by this paragraph. That is the durable lesson: a claim of completeness
+  # belongs in a test, never in a header.
   #
   # A `line` that drifts fails LOUD and prints the lines actually found, so the fix
   # is mechanical. That is the price of an identity, and it is the right price.
