@@ -27,12 +27,15 @@ non-fatal by construction, and heals prior drift.
 
 So `installed docs/skills drift` between a docs merge and the next production
 ship is an **expected state, not a chore anyone owes**. It closes itself on the
-next ship. Acting on it is wrong from either tree, and does not even clear the
-report: a run from a feature worktree publishes unshipped mid-branch text to
-every session on the machine, a run from a primary republishes a `main` that can
-sit a release behind what shipped, and `bin/session-preflight` measures drift
-against ITS OWN checkout's sources either way. Verify with
-`bin/install-agent-docs check` (read-only) at any time.
+next ship. Acting on it is wrong from either tree: a run from a feature worktree
+publishes unshipped mid-branch text to every session on the machine, and a run
+from a primary republishes a `main` that can sit a release behind what shipped
+(the ship's restore is best-effort and refuses a primary holding a live
+session's work). Such a run does not CLOSE the drift, it MOVES it — because
+`bin/session-preflight` measures the shared roots against ITS OWN checkout's
+sources, publishing from one tree clears that tree's report and turns every
+other session's report red. Verify with `bin/install-agent-docs check`
+(read-only) at any time.
 
 Two runs stay legitimate, and neither is a response to a drift report:
 `bin/agent-runtime install` during fresh-machine bringup

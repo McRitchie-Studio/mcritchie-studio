@@ -246,9 +246,9 @@ if [ "$MODE" = "check" ]; then
     # WORKSPACE — the tree pinned at the SHA that just shipped — runs unconditionally,
     # is idempotent, is non-fatal by construction, and HEALS PRIOR DRIFT.
     #
-    # And a hand-run cannot even close what the reader is looking at: this check
-    # compares the installed roots against THIS $ROOT's sources, so publishing from
-    # some other tree leaves the reported drift exactly where it was.
+    # And a hand-run does not CLOSE the drift, it MOVES it: this check compares the
+    # installed roots against THIS $ROOT's sources, so publishing from here clears
+    # this tree's report and turns every other session's report red.
     #
     # Two hand-runs stay legitimate and are deliberately NOT reached from here:
     # `bin/agent-runtime install` during fresh-machine bringup (install mode, never
@@ -257,10 +257,10 @@ if [ "$MODE" = "check" ]; then
     echo "Drift here is EXPECTED between a docs merge and the next production ship. That ship closes it and heals prior drift: the step runs unconditionally, is idempotent, and is non-fatal." >&2
     if [ "$ROOT" != "$RUNTIME_ROOT" ]; then
       # Invoked from a feature WORKTREE (ROOT sits under a primary's checkout).
-      echo "Do NOT hand-run the installer from this worktree: these docs/skills publish GLOBALLY, so it would push unshipped mid-branch text to every session on this machine — and it would not clear this report, which is measured against THIS tree's sources." >&2
+      echo "Do NOT hand-run the installer from this worktree: these docs/skills publish GLOBALLY, so it would push unshipped mid-branch text to every session on this machine. It WOULD clear this report — each session measures the shared roots against its OWN sources, so publishing yours turns every other session red." >&2
     else
       # Invoked from a primary checkout.
-      echo "Do NOT hand-run the installer from this checkout either: a primary can sit a release behind what shipped (the ship no longer fast-forwards its local \`main\`), so a by-hand run would republish stale docs to every session on this machine." >&2
+      echo "Do NOT hand-run the installer from this checkout either: a primary can sit a release behind what shipped (the ship's restore is best-effort and REFUSES a primary holding a live session's work), so a by-hand run would republish stale docs to every session on this machine." >&2
     fi
     echo "See docs/agents/modules/docs-maintenance.md § Editing The Entry Docs." >&2
   fi
