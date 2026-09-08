@@ -152,33 +152,43 @@ test("a ladder row replacement leaves the strip pinned, with no unpinned frame",
   const result = await page.evaluate(async () => {
     const row = document.getElementById("app-ladder-row");
     const html = row.outerHTML;
+    const strip = () => document.querySelector("[data-test='app-ladder-pinned']");
+    const read = () => { const s = strip(); return s ? getComputedStyle(s).display : "absent"; };
 
-    // Sample every frame across the replace, so an unpinned FRAME is caught rather
-    // than only an unpinned end state.
+    // SAMPLED ACROSS THE REPLACE, and the non-vacuity guard is that the sampler
+    // SPANNED it — frames before AND frames after — rather than a raw frame count.
+    // A count is frame-rate dependent and a loaded CI runner is slow: the first cut
+    // asserted `> 3` and the runner produced exactly 3 at ~200ms/frame, so the spec
+    // failed for the machine's speed rather than for anything about the board.
     const seen = [];
-    let stop = false;
-    const sample = () => {
-      const s = document.querySelector("[data-test='app-ladder-pinned']");
-      seen.push(s ? getComputedStyle(s).display : "absent");
-      if (!stop) requestAnimationFrame(sample);
-    };
-    requestAnimationFrame(sample);
+    let replacedAt = -1;
+    await new Promise((resolve) => {
+      const deadline = performance.now() + 4000;
+      const sample = () => {
+        seen.push(read());
+        // Replace once a couple of frames of "before" are on record.
+        if (seen.length === 2) { row.outerHTML = html; replacedAt = seen.length; }
+        if ((replacedAt > -1 && seen.length >= replacedAt + 8) || performance.now() > deadline) {
+          return resolve();
+        }
+        requestAnimationFrame(sample);
+      };
+      requestAnimationFrame(sample);
+    });
 
-    // Replace the row the way the broadcast does, then let Alpine re-initialise it.
-    row.outerHTML = html;
-    await new Promise((r) => setTimeout(r, 600));
-    stop = true;
-
-    const strip = document.querySelector("[data-test='app-ladder-pinned']");
     return {
+      before: replacedAt,
+      after: seen.length - replacedAt,
       unpinnedFrames: seen.filter((d) => d === "none" || d === "absent").length,
       totalFrames: seen.length,
-      endDisplay: strip ? getComputedStyle(strip).display : null,
+      endDisplay: strip() ? getComputedStyle(strip()).display : null,
       storePinned: Alpine.store("appLadder") ? Alpine.store("appLadder").pinned : null,
     };
   });
 
-  expect(result.totalFrames, "the sampler must actually have run").toBeGreaterThan(3);
+  expect(result.before, "the sampler must have run BEFORE the replace").toBeGreaterThan(0);
+  expect(result.after, "and must have kept running AFTER it, or 0 unpinned frames is vacuous")
+    .toBeGreaterThan(1);
   expect(result.storePinned, "the store must carry the state across the replace").toBe(true);
   expect(result.endDisplay, "and the strip must still be showing afterwards").not.toBe("none");
   expect(
