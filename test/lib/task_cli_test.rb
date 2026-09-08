@@ -30,6 +30,12 @@ class TaskCliTest < Minitest::Test
   # it and captures 1.9B real tokens under a stub slug. Pinned HOME makes the id
   # inert; the sandbox makes an unpinned run impossible.
   SESSION = "2aa216f6-7565-4bf4-bd01-70793c8ba617"
+  # The stages a request may LIVE in — the stub board's copy of
+  # Task::APPROVAL_REQUEST_STAGES. A save landing anywhere else settles a waiting
+  # request (Task#settle_operator_approval_past_submit). Pinned against the real
+  # constant by test_the_stub_board_models_the_real_settle_stages whenever Rails is
+  # loaded, so this copy cannot drift into certifying a rule the board dropped.
+  SETTLE_EXEMPT_STAGES = %w[designed building].freeze
   OTHER_SESSION = "9f9f9f9f-0000-1111-2222-333344445555"
 
   # One sandbox root per TEST (not per run_task call): a case may invoke the CLI
@@ -49,6 +55,7 @@ class TaskCliTest < Minitest::Test
   def run_task(args, env: {}, stub_devops: { "kind" => "feature" }, stub_stage: "building", chdir: nil, fail_get: nil,
                fail_get_body: nil, stub_persist: true, fail_patch: nil, stub_progress: nil,
                stub_columns: {}, stub_omit_columns: [], stub_bounces: [],
+               stub_stamps_drop_receipt: true, stub_devops_after: nil,
                stub_session_mascot: { "mascot" => "snorlax", "mascot_color" => "#A8A77A", "mascot_emoji" => "🔶",
                                       "app" => "mcritchie-studio", "app_color" => "#B57EDC" },
                stub_agent: { "name" => "Jasper", "status_color" => "#22D3EE", "emoji" => "🧪" })
@@ -67,6 +74,14 @@ class TaskCliTest < Minitest::Test
     # The GET response the stub serves — lets a test seed an existing claim so the
     # move-to-building gate (and the heartbeat) read a real claim state.
     @stub_devops = stub_devops
+    # Whether the modelled settle writes the approval_request_dropped_at RECEIPT.
+    # False models a board too old to carry it — which still settles the request,
+    # and is the only way to exercise the warning's pre-state half on its own.
+    @stub_stamps_drop_receipt = stub_stamps_drop_receipt
+    # Devops served AFTER a stage PATCH lands, replacing what the pre-PATCH GET
+    # showed. Models a writer that changed the record inside the move's own window,
+    # which the pre-read by construction could not predict.
+    @stub_devops_after = stub_devops_after
     @stub_progress = stub_progress
     @stub_stage = stub_stage
     # The board's PERSISTED stage, which a GET reads back. A stage-move PATCH
@@ -184,6 +199,7 @@ class TaskCliTest < Minitest::Test
       requested = move_stage_of(body)
       if requested
         @persisted_stage = requested if @stub_persist
+        settle_approval_request!(requested)
         return ["200 OK", task_response(requested)]
       end
       # A `bin/task merged` PATCH carries the git-location, no stage. Advance the
@@ -220,6 +236,32 @@ class TaskCliTest < Minitest::Test
     # session stamp / claim is MERGED, not a wipe, and seed an existing claim. Its
     # stage is the board's PERSISTED stage, which the move read-back verifies.
     ["200 OK", task_response(@persisted_stage)]
+  end
+
+  # The board's settle rule, MODELLED: Task#settle_operator_approval_past_submit
+  # resolves a WAITING request to "none" on any save landing outside
+  # APPROVAL_REQUEST_STAGES, and stamps approval_request_dropped_at as the receipt.
+  #
+  # This stub used to be STATIC — the same devops hash answered the pre-PATCH GET
+  # and the PATCH — so no test here could tell a drop this move caused from a stamp
+  # already sitting on the record. That is precisely how a warning that fires on
+  # moves it should not shipped green. A stub that cannot express the defect
+  # certifies nothing.
+  def settle_approval_request!(stage)
+    settle_the_waiting_request!(stage)
+    # Applied LAST so it can model a record that moved underneath the pre-PATCH
+    # read, including one whose receipt changed without the pre-state predicting it.
+    @stub_devops = @stub_devops_after if @stub_devops_after
+  end
+
+  def settle_the_waiting_request!(stage)
+    return if SETTLE_EXEMPT_STAGES.include?(stage)
+    return unless @stub_devops["approval_status"] == "waiting"
+
+    @stub_devops = @stub_devops.merge("approval_status" => "none")
+    return unless @stub_stamps_drop_receipt
+
+    @stub_devops["approval_request_dropped_at"] = Time.now.utc.iso8601
   end
 
   # The stage a PATCH body requests, or nil when the body carries none (a devops-
@@ -3061,42 +3103,192 @@ class TaskCliTest < Minitest::Test
   # waiting at `building`, read it back as "waiting", ran bin/ship, and the handoff
   # move discarded the request with nothing printed. The board never pulsed and
   # Mr. McRitchie was never asked. The move still succeeds — it just has to SAY SO.
+  #
+  # The first cut of that warning asked a CLOCK — is the drop receipt younger than
+  # `since - 300s`? — which is not the question. It over-fired on moves that settled
+  # nothing, and the pinning test used a 3600s stamp, so the boundary that decides
+  # every real case (anything under 300s) went unprobed and the defect shipped green.
+  # Every case below that must stay QUIET seeds a stamp ~60 SECONDS old: each one
+  # fires under the clock rule and must not fire under the effect rule.
+  RECENT_DROP = -> { (Time.now.utc - 60).iso8601 }
 
-  def test_move_warns_when_it_discards_a_pending_approval_request
+  # SHAPE 1 — a move INTO a stage that can hold a request. The settle provably never
+  # runs (Task#settle_operator_approval_past_submit returns early on the stage), so
+  # nothing was discarded and there is nothing to announce. The old clock rule
+  # announced one anyway, and the message it printed contradicted itself: it named
+  # `building` as a stage where a request is actionable while warning about the move
+  # into `building`. This is the rework resume and `bin/task begin <slug> --steal`.
+  def test_move_into_building_is_quiet_about_a_recent_drop
+    _reqs, _out, err, status = run_task(
+      %w[move demo-slug building],
+      stub_stage: "submitted",
+      stub_devops: { "kind" => "feature", "approval_status" => "none",
+                     "approval_request_dropped_at" => RECENT_DROP.call }
+    )
+
+    assert status.success?
+    refute_match(/DISCARDED/, err,
+                 "a move INTO building settles nothing — announcing a drop there is false twice over")
+  end
+
+  def test_move_into_designed_is_quiet_about_a_recent_drop
+    _reqs, _out, err, status = run_task(
+      %w[move demo-slug designed],
+      stub_stage: "submitted",
+      stub_devops: { "kind" => "feature", "approval_status" => "none",
+                     "approval_request_dropped_at" => RECENT_DROP.call }
+    )
+
+    assert status.success?
+    refute_match(/DISCARDED/, err, "designed can hold a request too")
+  end
+
+  # ...and it does not even spend a READ to find that out. The pre-PATCH GET exists
+  # only to date a possible drop, so a destination that cannot drop one must not pay
+  # for it. Asserted as a DIFFERENCE between the two destinations rather than an
+  # absolute count, so unrelated reads elsewhere in the move cannot make it lie.
+  def test_a_destination_that_can_hold_a_request_spends_no_extra_read
+    quiet, = run_task(%w[move demo-slug building], stub_stage: "submitted")
+    loud, = run_task(%w[move demo-slug submitted], stub_stage: "building")
+
+    assert_equal task_gets(quiet) + 1, task_gets(loud),
+                 "the pre-move read is spent only where a drop is possible"
+  end
+
+  def task_gets(requests)
+    requests.count { |r| r[:method] == "GET" && r[:path] == "/api/v1/tasks/demo-slug" }
+  end
+
+  # SHAPE 2 — a move PAST the seam that genuinely discards a pending request. The
+  # request read "waiting" going in; the board settles it and stamps the receipt.
+  # This is the case the warning exists for and it must never go quiet.
+  def test_move_past_the_seam_warns_when_it_discards_a_pending_request
     _reqs, _out, err, status = run_task(
       %w[move demo-slug submitted],
       stub_stage: "building",
-      stub_devops: { "kind" => "feature",
-                     "approval_request_dropped_at" => Time.now.utc.iso8601 }
+      stub_devops: { "kind" => "feature", "approval_status" => "waiting" }
     )
 
     assert status.success?, "the move itself still succeeds — the drop is a warning, not a refusal"
     assert_match(/DISCARDED a pending operator-approval request/, err,
                  "a silently dropped operator request is the whole defect")
-    assert_match(/--approval approved/, err, "and it must name the way to record a decision already given")
   end
 
-  # The guard that keeps the warning honest: it fires only for a request THIS move
-  # dropped. An older stamp already on the record must stay quiet, or the warning
-  # cries wolf on every subsequent move and gets ignored.
-  def test_move_is_quiet_about_an_older_approval_drop
+  # One drop, one line. The old rule re-announced the SAME stamp on every later
+  # move, and a warning that cries wolf is read as noise by the third repetition.
+  def test_a_single_drop_is_announced_exactly_once
+    _reqs, _out, err, _status = run_task(
+      %w[move demo-slug submitted],
+      stub_stage: "building",
+      stub_devops: { "kind" => "feature", "approval_status" => "waiting" }
+    )
+
+    assert_equal 1, err.scan(/DISCARDED a pending operator-approval request/).size
+  end
+
+  # The message has to be actionable from where the reader STANDS. It leads with the
+  # governing condition (a decision the operator already gave), then names the move
+  # that gets his eyes back — rather than opening with advice for last time.
+  def test_the_warning_names_both_ways_out
+    _reqs, _out, err, _status = run_task(
+      %w[move demo-slug submitted],
+      stub_stage: "building",
+      stub_devops: { "kind" => "feature", "approval_status" => "waiting" }
+    )
+
+    assert_match(/already approved in words, record it/, err)
+    assert_match(/--approval approved/, err, "it must name the way to record a decision already given")
+    assert_match(/move demo-slug building --approval waiting/, err,
+                 "and the way to actually get his eyes from here")
+  end
+
+  # SHAPE 3 — the SAME move run twice. `bin/ship` is documented as resumable and a
+  # killed ship is re-run routinely, so the second `move <slug> submitted` is a
+  # normal event. The request was already settled by the first run: this move
+  # discarded nothing and must say nothing. The stamp is 60s old, so the clock rule
+  # warned here a second time about one single drop.
+  def test_rerunning_the_move_does_not_warn_again_about_one_drop
     _reqs, _out, err, status = run_task(
-      %w[move demo-slug reviewed],
+      %w[move demo-slug submitted],
       stub_stage: "submitted",
-      stub_devops: { "kind" => "feature",
-                     "approval_request_dropped_at" => (Time.now.utc - 3600).iso8601 }
+      stub_devops: { "kind" => "feature", "approval_status" => "none",
+                     "approval_request_dropped_at" => RECENT_DROP.call }
     )
 
     assert status.success?
-    refute_match(/DISCARDED a pending operator-approval request/, err,
-                 "a stamp from an earlier move is not this move's news")
+    refute_match(/DISCARDED/, err, "one drop is one warning, not one per later move")
   end
 
-  def test_move_without_a_dropped_request_warns_nothing
+  # --- the two halves, each on its own ---
+  #
+  # The verdict OR-s a PRE-STATE prediction with an observation that the RECEIPT
+  # moved. OR-ed guards mask each other under mutation — a case that trips both
+  # halves stays green when either is broken — so each half gets a case that trips
+  # ONLY it. They are OR-ed to fail SAFE: each covers the other's blind spot, and
+  # the union can only ever warn MORE than either half alone.
+
+  # HALF 1 alone: a board too old to carry the receipt still SETTLES the request.
+  # Nothing stamps, so the receipt cannot move and only the pre-state knows.
+  def test_a_board_that_writes_no_receipt_is_still_announced
+    _reqs, _out, err, status = run_task(
+      %w[move demo-slug submitted],
+      stub_stage: "building",
+      stub_devops: { "kind" => "feature", "approval_status" => "waiting" },
+      stub_stamps_drop_receipt: false
+    )
+
+    assert status.success?
+    assert_match(/DISCARDED/, err,
+                 "the drop is real whether or not the board is new enough to record it")
+  end
+
+  # HALF 2 alone: the pre-read said "none", so nothing predicted a drop — but the
+  # receipt moved across the PATCH. Models a writer that set "waiting" inside this
+  # move's own window, and the same-second collision where two stamps render alike.
+  def test_a_drop_the_pre_read_could_not_predict_is_still_announced
+    _reqs, _out, err, status = run_task(
+      %w[move demo-slug submitted],
+      stub_stage: "building",
+      stub_devops: { "kind" => "feature", "approval_status" => "none",
+                     "approval_request_dropped_at" => (Time.now.utc - 900).iso8601 },
+      stub_devops_after: { "kind" => "feature", "approval_status" => "none",
+                           "approval_request_dropped_at" => Time.now.utc.iso8601 }
+    )
+
+    assert status.success?
+    assert_match(/DISCARDED/, err, "a receipt that moved across this PATCH is this move's news")
+  end
+
+  # An UNREADABLE pre-state must not buy silence. Trading a false warning for a
+  # missed one would re-open the exact hole the warning was built to close, so a
+  # board that cannot be read before the write still gets announced.
+  def test_an_unreadable_pre_state_warns_rather_than_going_quiet
+    _reqs, _out, err, status = run_task(
+      %w[move demo-slug submitted],
+      stub_stage: "building",
+      stub_devops: { "kind" => "feature", "approval_status" => "waiting" },
+      fail_get: 503
+    )
+
+    assert status.success?, "an unreadable board does not fail the move"
+    assert_match(/DISCARDED/, err, "unknown must resolve to loud, never to quiet")
+  end
+
+  def test_move_without_any_approval_request_warns_nothing
     _reqs, _out, err, status = run_task(%w[move demo-slug submitted], stub_stage: "building")
 
     assert status.success?
     refute_match(/DISCARDED/, err)
+  end
+
+  # The stub above models the board's settle rule with its own copy of the stage
+  # list. Pin it to the real constant wherever Rails is loaded (the `bin/rails test`
+  # sweep, which is what CI runs) so the model cannot drift into certifying a rule
+  # the board no longer holds. Skipped on the standalone `ruby -Itest` run.
+  def test_the_stub_board_models_the_real_settle_stages
+    skip "Task is not loaded on the standalone run" unless defined?(::Task)
+
+    assert_equal ::Task::APPROVAL_REQUEST_STAGES.map(&:to_s).sort, SETTLE_EXEMPT_STAGES.sort
   end
 
 end
