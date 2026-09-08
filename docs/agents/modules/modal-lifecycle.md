@@ -153,7 +153,10 @@ between measures, not about whether the drift is real**: every pass found the
 same cards drifting, and none found `wallet_setup` close.
 
 **And a specimen can drop a whole AXIS, not just wording.** `wallet_setup`'s real
-card forks on `isMobile` in three places; the specimen mentions it **zero** times,
+card forks on `isMobile` in two places — the `<template x-if>` arms
+`!phantomPresent && isMobile` and `!phantomPresent && !isMobile` (a third
+mention, the getter itself, is a definition and not a fork); the specimen
+mentions it **zero** times,
 so no toggle on the guide can ever reach the mobile arm. (An earlier draft of this
 note said "a two-arm fork rendered as one arm" — that was wrong in both halves.
 The card has more than two arms, and the OTHER axis, `phantomPresent`, the
@@ -206,8 +209,10 @@ card.
 
 **Pass a prop the REAL card reads.** `returnUrl` is the only one turf's
 `modals/_wallet_setup` takes. The tempting `{ detected: true }` is a **specimen**
-prop — it exists solely on `style/modals/_wallet_setup`'s `get detected`
-accessor, the mirror this section abolishes — and the real card decides that
+prop — it lives only in the specimen and its registry entry:
+`style/modals/_wallet_setup`'s `get detected` accessor and the two `x-show`
+bindings it drives, plus `style/_modals.html.erb`'s `open_expr`, which is the
+very line a copied trigger comes from — and the real card decides that
 question itself, at runtime, from a `phantomPresent` getter no prop can set.
 Copying a trigger out of a specimen is the same mistake as copying a value out of
 one (rule 3); it just fails later, on click, instead of in review.
