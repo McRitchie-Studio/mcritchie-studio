@@ -135,21 +135,90 @@ class TaskReviewClaim < ApplicationRecord
     nil
   end
 
+  # The renewal verdict. FOUR STATES, and they are deliberately not collapsed:
+  #
+  #   :renewed       — a LIVE lease this instance holds, pushed out by one TTL
+  #   :reacquired    — this instance's OWN lease had lapsed and nobody else had taken
+  #                    it, so the renewal re-took it. The lease is healthy again, but
+  #                    there was a WINDOW in which it was free, and the caller has to
+  #                    be told: a racing reviewer could have popped the task in it.
+  #   :held_by_other — a DIFFERENT live instance holds it (or holds an unverifiable
+  #                    lease). Nothing was written.
+  #   :no_lease      — there is nothing of ours to renew: no claim row, an unclaimed
+  #                    row, or a LAPSED lease belonging to somebody else. Nothing was
+  #                    written.
+  #
+  # `renewed?` is the two-state question every old boolean caller was really asking;
+  # it exists so a caller that only needs "did the heartbeat land" cannot accidentally
+  # read the truthiness of the struct itself and get `true` for a refusal.
+  Renewal = Struct.new(:state, :claim) do
+    def renewed? = %i[renewed reacquired].include?(state)
+    def reacquired? = state == :reacquired
+  end
+
   # Extend the lease — but ONLY for the instance that already holds it (renew never
-  # steals). Returns true when renewed, false otherwise. This is the renewer's path.
+  # steals). Returns a Renewal; this is the renewer's path AND the hand-run
+  # `bin/task review-claim renew` path.
+  #
+  # THIS RETURNED A BARE BOOLEAN, AND THE `false` WENT NOWHERE (renew-exits-zero-renewing).
+  # The controller turned every false into a bodiless 204 and the CLI threw the
+  # response away entirely, so `bin/task review-claim renew` exited 0 while renewing
+  # NOTHING. Measured 2026-09-08: a reviewer ran the documented renew loop every 60s
+  # against the 120s TTL for ~31 minutes, every call exited 0 with zero stderr, and the
+  # lease was FREE for nearly the whole window with its heartbeat frozen at
+  # acquisition. That is the no-duplicate-review guarantee failing silently — for that
+  # window a second reviewer could have popped the same PR. Three distinct failures
+  # answering identically as success is the defect; hence four states, and hence the
+  # caller CANNOT get its answer from truthiness alone.
+  #
+  # RE-ACQUIRING OUR OWN LAPSE IS NOT A STEAL, and it is the difference between a
+  # renewer that heals and one that quietly stops. A lapse whose lease is still ours
+  # (a slow beat, a slept laptop, a throttled board) used to answer "not renewed", the
+  # renewer read that as `:lease_lost` and EXITED — ending renewal for a review that
+  # was still being written. The compare-and-set is what keeps this honest: the moment
+  # another instance holds a live lease, `evaluate` says :held_by_other and we write
+  # nothing. We only ever re-take a lease nobody else wants.
   def self.renew(task_slug:, session:, nonce:, now: Time.current, ttl: ClaimLease::DEFAULT_TTL_SECONDS)
     row = find_by(task_slug: task_slug.to_s.strip)
-    return false unless row
+    return Renewal.new(:no_lease, nil) unless row
 
-    renewed = false
+    outcome = nil
     row.with_lock do
-      next unless ClaimLease.evaluate(row.claim_hash, session: session, nonce: nonce, now: now) == :same_instance
+      disposition = ClaimLease.evaluate(row.claim_hash, session: session, nonce: nonce, now: now)
+      mine = ClaimLease.same_instance?(row.claim_hash, session: session, nonce: nonce)
 
-      row.update!(claim_expires_at: now + ttl)
-      renewed = true
+      outcome =
+        case disposition
+        when :same_instance
+          row.update!(claim_expires_at: now + ttl)
+          Renewal.new(:renewed, row)
+        when :expired
+          # Ours to heal, or somebody else's lapsed lease — which is not "held", but is
+          # equally not a lease of ours to renew.
+          next_state_for_lapse(row, mine, now, ttl)
+        when :corrupt
+          # An expiry we cannot parse is "we could not check", never "they are gone" —
+          # the same posture ClaimLease.live? takes. Ours heals by rewriting a parseable
+          # lease; anyone else's is treated as possibly-live and refused.
+          mine ? reacquire(row, now, ttl) : Renewal.new(:held_by_other, row)
+        when :held_by_other
+          Renewal.new(:held_by_other, row)
+        else # :unclaimed — a row exists but nobody holds it
+          Renewal.new(:no_lease, row)
+        end
     end
-    renewed
+    outcome
   end
+
+  def self.next_state_for_lapse(row, mine, now, ttl)
+    mine ? reacquire(row, now, ttl) : Renewal.new(:no_lease, row)
+  end
+
+  def self.reacquire(row, now, ttl)
+    row.update!(claim_expires_at: now + ttl)
+    Renewal.new(:reacquired, row)
+  end
+  private_class_method :next_state_for_lapse, :reacquire
 
   # Drop the lease — but ONLY the instance that holds it may release it. Returns true
   # when released. A clean review-end release frees the task immediately (rather than

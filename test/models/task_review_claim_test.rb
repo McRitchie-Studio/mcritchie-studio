@@ -130,13 +130,19 @@ class TaskReviewClaimTest < ActiveSupport::TestCase
     assert_equal "Gastly", out.claim.holder_label, "a renew keeps the label it was acquired with"
   end
 
+  # `renew` returns a Renewal, not a boolean — the struct is truthy for a REFUSAL too,
+  # so these ask `renewed?`. That is the whole point of renew-exits-zero-renewing:
+  # three distinct failures used to answer indistinguishably from success, and a
+  # caller reading truthiness is how that happened. The four states themselves are
+  # pinned in test/models/review_claim_renew_states_test.rb.
   test "renew extends only for the holder, never steals" do
     t0 = Time.utc(2026, 7, 21, 3, 0, 0)
     acquire(**A, now: t0)
 
-    assert TaskReviewClaim.renew(task_slug: SLUG, session: "sess-A", nonce: "inst-A", now: t0 + 10)
-    refute TaskReviewClaim.renew(task_slug: SLUG, session: "sess-B", nonce: "inst-B", now: t0 + 10),
-           "a non-holder cannot renew (and thus cannot steal via renew)"
+    assert TaskReviewClaim.renew(task_slug: SLUG, session: "sess-A", nonce: "inst-A", now: t0 + 10).renewed?
+    refused = TaskReviewClaim.renew(task_slug: SLUG, session: "sess-B", nonce: "inst-B", now: t0 + 10)
+    refute refused.renewed?, "a non-holder cannot renew (and thus cannot steal via renew)"
+    assert_equal :held_by_other, refused.state, "and it says so, rather than reporting a renewal"
     assert_equal "sess-A", TaskReviewClaim.find_by(task_slug: SLUG).claimed_session
   end
 
@@ -183,8 +189,13 @@ class TaskReviewClaimTest < ActiveSupport::TestCase
     checks = 0
     (beat..work_window).step(beat) do |elapsed|
       now = t0 + elapsed
-      assert TaskReviewClaim.renew(task_slug: SLUG, session: A[:session], nonce: A[:nonce], now: now),
-             "the reviewer's own renewer must keep the review lease alive at t+#{elapsed}s"
+      # `:renewed`, not merely `renewed?`. A renewal that LAPSED and healed on every
+      # beat would satisfy renewed? at every step and still leave the task claimable
+      # in the gaps — a moving expiry is not by itself proof the lease was never free.
+      assert_equal :renewed,
+                   TaskReviewClaim.renew(task_slug: SLUG, session: A[:session], nonce: A[:nonce], now: now).state,
+                   "the reviewer's own renewer must keep the review lease alive at t+#{elapsed}s, " \
+                   "without it ever lapsing and being re-acquired"
 
       out = acquire(**B, now: now)
       refute out.acquired,
@@ -205,14 +216,42 @@ class TaskReviewClaimTest < ActiveSupport::TestCase
     t0 = Time.utc(2026, 7, 21, 4, 0, 0)
     assert acquire(**A, now: t0).acquired
 
+    # A DEAD reviewer's renewer dies with its anchor, so the lease is never renewed at
+    # all — THAT is what frees the task, and it is asserted by simply not renewing here.
     dead_at = t0 + ClaimLease::DEFAULT_TTL_SECONDS + 1
-    refute TaskReviewClaim.renew(task_slug: SLUG, session: A[:session], nonce: A[:nonce], now: dead_at),
-           "a lapsed lease cannot be renewed back to life"
+    refute TaskReviewClaim.find_by(task_slug: SLUG).live?(now: dead_at), "the lease lapsed on its own"
 
     out = acquire(**B, now: dead_at)
     assert out.acquired, "a crash must never deadlock a task"
     assert_equal :expired, out.disposition
     assert_equal "sess-B", out.claim.claimed_session
+  end
+
+  # THE OTHER HALF OF THAT, and the boundary of the re-acquire renew-exits-zero-renewing
+  # added. This test used to assert "a lapsed lease cannot be renewed back to life",
+  # which conflated two different facts. A renewal that re-takes its OWN lapse when
+  # NOBODY else has claimed it is a heal, and refusing it is what made a slow beat end
+  # renewal for a review still being written. What must never happen is a renewal
+  # reaching ACROSS a live holder — so that is what is pinned here, and the mutation
+  # the old assertion caught (renew becoming a steal) is still caught.
+  test "a lapse re-acquired by its own holder is a heal, but never once someone else has it" do
+    t0 = Time.utc(2026, 7, 21, 4, 0, 0)
+    assert acquire(**A, now: t0).acquired
+    lapsed_at = t0 + ClaimLease::DEFAULT_TTL_SECONDS + 1
+
+    healed = TaskReviewClaim.renew(task_slug: SLUG, session: A[:session], nonce: A[:nonce], now: lapsed_at)
+    assert_equal :reacquired, healed.state, "A's own lapse, which nobody else took, heals"
+    assert_equal "sess-A", TaskReviewClaim.find_by(task_slug: SLUG).claimed_session
+
+    # Now let it lapse again and let B legitimately take it. A's next heartbeat must be
+    # REFUSED: re-acquire is a compare-and-set, never a reach across a live reviewer.
+    taken_at = lapsed_at + ClaimLease::DEFAULT_TTL_SECONDS + 1
+    assert acquire(**B, now: taken_at).acquired
+
+    refused = TaskReviewClaim.renew(task_slug: SLUG, session: A[:session], nonce: A[:nonce], now: taken_at + 5)
+    refute refused.renewed?, "a renewal must never take a task back from the reviewer now holding it"
+    assert_equal :held_by_other, refused.state
+    assert_equal "sess-B", TaskReviewClaim.find_by(task_slug: SLUG).claimed_session
   end
 
   # --- [unit] THE ATOMIC GUARD: the unique index is what makes acquire a CAS ------
