@@ -84,10 +84,11 @@ Avi supervisor. Carl:
 
 1. Re-checks the PR's **live GitHub CI** (the claim only pops green-CI PRs, but CI
    can flip mid-review): his gate-zero `bin/dor-check <task> --gate-role review` is
-   **strict** — **red** → `bin/task block <task> --kind rework` naming the failing
-   checks; **conflicted** (`gh pr view <pr> --json mergeStateStatus` reports
-   `DIRTY`) → `bin/task block <task> --kind rework` with "merge the PR's base in and
-   resolve" guidance (`outcome=ci-conflicted`); **pending** → defer to a later pass;
+   **strict** — **red** → `bin/task block <task> --kind rework --agent carl` naming
+   the failing checks; **conflicted** (`gh pr view <pr> --json mergeStateStatus`
+   reports `DIRTY`) → `bin/task block <task> --kind rework --agent carl` with "merge
+   the PR's base in and resolve" guidance (`outcome=ci-conflicted`); **pending** →
+   defer to a later pass;
    **green** → continue. (A red or conflicted PR is never claimed in the first
    place — `claim-next-review` only pops green-CI tasks — so this is the mid-review
    catch.) Both gate-zero bounces are **MECHANICAL** — there is no disagreement for

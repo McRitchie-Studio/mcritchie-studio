@@ -433,8 +433,8 @@ branch ladder — **`accepted` → `release` → `main`**:
   `merged: "accepted"`, then moves the task `reviewed` (invariant: `reviewed` ⟺
   code-on-`accepted`; a merge failure leaves it `submitted`, a mis-based PR
   self-heals by retargeting to `accepted`) — or `bin/task block <task> --kind
-  rework --feedback "…"` (back to you). Review still never touches `release`/
-  `main` and never deploys. Avi's self-healing `qa-release` sweep
+  rework --feedback "…" --agent carl` (back to you). Review still never touches
+  `release`/`main` and never deploys. Avi's self-healing `qa-release` sweep
   (`bin/release prepare`) then **promotes ALL of `accepted` onto `release` via
   ONE batch PR per repo** (`--base release --head accepted`, not N per-task
   merges), records `reviewed` members + `assembled` stragglers (re-stamping
