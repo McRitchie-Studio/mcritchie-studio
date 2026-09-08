@@ -83,7 +83,6 @@
         accumulate per broadcast on a board that broadcasts all day. %>
     <div x-data="{
            fadeRight: '<%= ApplicationHelper::APP_LADDER_FADE_MASK %>',
-           pinned: false,
            overflowing: <%= seed_fade %>,
            atEnd: false,
            pinnedOverflowing: <%= seed_fade %>,
@@ -108,16 +107,24 @@
            },
            measure() {
              // READ THE PUBLISHED EDGE, DO NOT MEASURE THE HEADER. The engine
-             // publishes --pin-nav-bottom once per animation frame from one
-             // coalesced measurement; a second getBoundingClientRect() here was
-             // both a duplicate forced layout and a frame behind it. Positioning
-             // is pure CSS now (see the style attribute above) — this number only
-             // decides WHETHER the pinned copy shows.
+             // publishes the stack from one coalesced measurement; a second
+             // getBoundingClientRect() here was both a duplicate forced layout
+             // and a frame behind it. Positioning is pure CSS (see the style
+             // attribute above) — this number only decides WHETHER the pinned
+             // copy shows.
+             //
+             // The SAME variable the strip positions off, so the question asked
+             // ("has the row scrolled above where I would pin?") and the answer
+             // acted on cannot drift apart.
              const edge = parseFloat(
-               getComputedStyle(document.documentElement).getPropertyValue('--pin-nav-bottom')
+               getComputedStyle(document.documentElement).getPropertyValue('--pin-apps-top')
              ) || 0;
              const row = this.$refs.row;
-             this.pinned = !!row && row.getBoundingClientRect().bottom <= edge;
+             // Written to the STORE, which outlives this node. See the note over
+             // Alpine.store('appLadder') in tasks/_deploy_board: a broadcast
+             // replaces this row, and a fresh component starting at false is what
+             // made the strip blink out and back on every one.
+             this.$store.appLadder.pinned = !!row && row.getBoundingClientRect().bottom <= edge;
              this.gauge();
            },
            gauge() {
@@ -185,15 +192,24 @@
            data-test="app-ladder-pinned"
            role="region"
            aria-label="Applications, pinned to the top of the page"
-           x-show="pinned"
+           x-show="$store.appLadder.pinned"
            <%# top comes from the engine's pinned stack, not from JS. The old
                :style wrote a MEASURED number that chased the site header through
                every intermediate height of its collapse — see the task
                stop-headers-chasing-navbar for the 17 values it stepped through.
                data-pin makes this strip publish its own --pin-apps-* in turn,
-               which is what the board's lane headers stack onto. %>
+               which is what the board's lane headers stack onto.
+
+               --pin-apps-TOP, not --pin-nav-bottom: this strip is ITSELF a layer
+               of the stack, and -top is the bottom edge of everything ABOVE it.
+               Today that is the site header and the two are equal, so the change
+               moves nothing — but naming the nav here is a claim that the nav is
+               what sits above this strip, which stops being true the moment
+               anything is pinned between them. (-bottom would be worse still: it
+               is this strip's OWN edge, so the strip would chase itself down the
+               page on every publish.) %>
            data-pin="apps"
-           style="display: none; top: var(--pin-nav-bottom, 0px)"
+           style="display: none; top: var(--pin-apps-top, 0px)"
            x-transition.opacity.duration.150ms>
         <div class="mx-auto w-full max-w-screen-2xl px-3 py-1.5 sm:px-4 lg:px-6 xl:px-8">
             <div class="flex min-w-0 items-stretch gap-2 overflow-x-auto"

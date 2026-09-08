@@ -91,7 +91,11 @@ class AppLadderRowViewTest < ActionView::TestCase
     render partial: "tasks/app_ladder_row", locals: { cards: cards(5) }
 
     strip = css_select("[data-test='app-ladder-pinned']").first
-    assert_equal "pinned", strip["x-show"]
+    # THE STATE LIVES IN A STORE, not on this component. The row is replaced
+    # wholesale by DeploymentsBroadcaster.app_ladder, and a component-local
+    # `pinned: false` is rebuilt as false on every broadcast — so the strip blinks
+    # out and back while the page has not moved. A store outlives the node.
+    assert_equal "$store.appLadder.pinned", strip["x-show"]
     assert_includes strip["style"].to_s, "display: none"
   end
 
@@ -110,8 +114,10 @@ class AppLadderRowViewTest < ActionView::TestCase
     # its collapse, a frame behind, for the whole 300ms ease (task
     # stop-headers-chasing-navbar). The engine publishes the header's live bottom
     # edge, so the strip positions off THAT, in CSS, with nothing to lag.
-    assert_match(/top:\s*var\(--pin-nav-bottom/, strip["style"].to_s,
-                 "the strip must take its top from the published edge, never a measured number")
+    assert_match(/top:\s*var\(--pin-apps-top/, strip["style"].to_s,
+                 "the strip must take its top from the published edge, never a measured number — " \
+                 "and from its OWN place in the stack (the edge of everything above it), not " \
+                 "from a layer it happens to know the name of")
     assert_nil strip[":style"],
                "an Alpine style bind would fight the CSS and reintroduce the frame of lag"
 

@@ -70,10 +70,14 @@ class PinnedStackAdoptionTest < ActiveSupport::TestCase
     strip = STRIP.read
     board = BOARD.read
 
-    assert_match(/top:\s*var\(--pin-nav-bottom/, strip,
-                 "the strip must take its top from the published edge, not a measured number")
-    assert_match(/top:\s*max\(var\(--pin-nav-bottom[^)]*\),\s*var\(--pin-apps-bottom/, board,
-                 "the stage headers must compose the stack in CSS; max() lets a hidden strip drop out")
+    assert_match(/top:\s*var\(--pin-apps-top/, strip,
+                 "the strip is ITSELF a layer, so it takes the edge of everything ABOVE it — " \
+                 "naming the nav claims the nav is what sits above it, and --pin-apps-bottom " \
+                 "is its OWN edge, which would make it chase itself down the page")
+    assert_match(/top:\s*var\(--pin-stack-bottom/, board,
+                 "the stage headers must read the engine's ONE composed value")
+    refute_match(/max\(var\(--pin-/, board,
+                 "neither consumer may compose the stack itself — see the engine's publisher")
     assert_includes strip, 'data-pin="apps"',
                     "the strip is itself a layer, or the stage headers cannot stack onto it"
 
@@ -83,6 +87,21 @@ class PinnedStackAdoptionTest < ActiveSupport::TestCase
     refute_match(/:style="\{\s*top:\s*laneTop/, board, "the stage headers must no longer write their own top")
     refute_match(/^\s*laneTop:/, board, "laneTop state must go with the writer that used it")
     refute_match(/watchStrip\(/, board, "the strip-observing machinery must be gone")
+
+    # AND THE PINNED STATE MUST OUTLIVE THE NODE. DeploymentsBroadcaster.app_ladder
+    # replaces #app-ladder-row wholesale, which tears down the row's Alpine
+    # component; a fresh one starting at `pinned: false` blinks the strip out and
+    # back on EVERY broadcast, whatever the engine publishes. Measured on
+    # production, parked and untouched for 20s: 4 broadcasts, 2 of them the ladder,
+    # and the lane headers slammed 99px four times. "Have we scrolled past the row"
+    # is a property of the PAGE, so it lives in a store outside the replaced node.
+    refute_match(/^\s*pinned:\s*false,/, strip,
+                 "component-local pinned state dies with the node on every broadcast")
+    assert_match(/x-show="\$store\.appLadder\.pinned"/, strip,
+                 "the strip must read its pinned state from a store that outlives the replace")
+    assert_match(/Alpine\.store\('appLadder'/, board,
+                 "and the store must be registered OUTSIDE the broadcast target — this partial " \
+                 "renders the row and is not itself replaced")
     refute_match(/_laneRo\.observe\(header\)/, board,
                  "observing the header duplicates a measurement the engine already coalesces")
   end

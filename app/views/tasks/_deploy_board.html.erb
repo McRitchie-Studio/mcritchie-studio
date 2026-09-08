@@ -60,6 +60,28 @@
 <%= render "components/elapsed_label_script" %>
 <%# kanbanBoard must be defined inline (before Alpine CDN defer evaluates x-data) %>
 <script>
+// WHETHER THE APPLICATIONS ROW HAS SCROLLED AWAY — held HERE, outside the row.
+//
+// That fact is a property of the PAGE, not of the node that reads it, and the
+// distinction is the whole bug. DeploymentsBroadcaster.app_ladder replaces
+// #app-ladder-row wholesale (the pinned strip is rendered inside it on purpose,
+// so a pinned copy can never show a verdict the row beneath it has moved past).
+// The replace tears down the row's Alpine component and builds a fresh one, and a
+// fresh one starts at `pinned: false` — so the strip BLINKS OUT and back on every
+// broadcast, whatever the engine publishes. Measured on production, parked and
+// untouched for 20s: 4 broadcasts, 2 of them the ladder, and the board's lane
+// headers slammed 99px four times.
+//
+// A store outlives the node. The replaced row re-reads the same value on init and
+// comes up already pinned, so the strip never flickers through a state the page
+// was not in. THIS partial is the right home: it renders the row (line ~517) and
+// is NOT itself a broadcast target, and the row may carry no <script> of its own
+// — a script inside a replaced fragment is a re-execution question nobody should
+// have to answer on a live board.
+document.addEventListener('alpine:init', () => {
+  if (!Alpine.store('appLadder')) Alpine.store('appLadder', { pinned: false });
+});
+
 function kanbanBoard(live) {
   return {
     live: !!live, // animate Turbo-Streamed card updates (turbo_stream_from "deployments")
@@ -601,14 +623,30 @@ document.addEventListener('turbo:before-cache', function() {
         <div class="sticky z-30 mb-3 rounded-t-lg bg-page px-1 py-2"
              data-test="stage-header"
              data-stage="<%= stage %>"
-             <%# THE PINNED STACK, COMPOSED IN CSS. This was laneTop — "site
-                 header bottom + strip height" measured in Alpine behind its own
-                 ResizeObserver and recomputed while the header was still easing,
-                 so these headers chased it a frame behind through every
-                 intermediate value. max() takes whichever layer is lower, and a
-                 hidden strip measures 0 and drops out, so nothing here has to
+             <%# THE PINNED STACK, COMPOSED BY THE ENGINE. One variable, and the
+                 header sits on the bottom of whatever chrome is pinned above it.
+
+                 This was laneTop — "site header bottom + strip height" measured
+                 in Alpine behind its own ResizeObserver and recomputed while the
+                 header was still easing, so these headers chased it a frame
+                 behind through every intermediate value.
+
+                 IT WAS THEN max(--pin-nav-bottom, --pin-apps-bottom), AND THAT
+                 WAS STILL WRONG — in a way that reads as correct. Enumerating
+                 the layers here means this file has to be edited every time the
+                 page grows another piece of pinned chrome. Worse, a max() over
+                 two custom properties is only meaningful if they were written in
+                 the SAME FRAME, and they were not: the strip's visibility flips
+                 synchronously while the publisher wrote a frame later, so on
+                 every flip one of the two described the previous state. Measured
+                 on production, parked and untouched: this top went 152 -> 53 ->
+                 152 -> 53px in 240ms behind two ladder broadcasts.
+
+                 --pin-stack-bottom is ONE value that cannot disagree with
+                 itself, and a fourth pinned layer needs no edit here. A hidden
+                 layer measures 0 and drops out of it, so nothing still has to
                  know which layer sits above which. %>
-             style="top: max(var(--pin-nav-bottom, 0px), var(--pin-apps-bottom, 0px))">
+             style="top: var(--pin-stack-bottom, 0px)">
           <div class="flex items-center gap-2">
             <h3 class="text-sm font-bold text-heading uppercase tracking-wider">
               <%= Task::STAGE_LABELS.fetch(stage) %>
