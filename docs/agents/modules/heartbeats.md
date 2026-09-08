@@ -409,12 +409,15 @@ act is named for its audience — the next agents — not the doc-write mechanic
 - **Steps:**
   1. Regenerate the tracked lessons doc from the confirmed insights (composes with
      the lever-3 generator — `bin/rails insights:doc`, scoped to the confirmed set).
-  2. `bin/install-agent-docs` to distribute the regenerated doc across the runtimes
-     (`~/.claude` + `~/.codex`), so the confirmed lessons reach every agent. (No
-     longer the only owned installer run — `bin/release ship` auto-syncs the
-     installed docs post-ship; see §3 Act 1, step 5.)
-- **Exit seam:** the confirmed insights are in the tracked doc and distributed. A
-  re-run with nothing newly confirmed is a clean no-op.
+     **That is the whole act — it installs nothing, and owes no install step.** The
+     generator writes one file, `../shared/insights.md`, which the docs installer has
+     never published (its payload is the two entry docs plus `docs/agents/skills/`),
+     and a fresh session reads insights from the board via `bin/session-insights`,
+     not from that file. Nobody hand-runs the installer, and the exemption list is
+     closed at two: [`docs-maintenance.md`](docs-maintenance.md) § Editing The Entry
+     Docs.
+- **Exit seam:** every confirmed insight is in the tracked doc. A re-run with
+  nothing newly confirmed is a clean no-op.
 
 ### Act 3 — `full-cycle`
 
