@@ -114,8 +114,15 @@
              // copy shows.
              //
              // The SAME variable the strip positions off, so the question asked
-             // ("has the row scrolled above where I would pin?") and the answer
+             // -- has the row scrolled above where I would pin? -- and the answer
              // acted on cannot drift apart.
+             //
+             // NO DOUBLE QUOTES ANYWHERE IN THIS ATTRIBUTE. x-data is delimited by
+             // them, so one inside -- even inside a comment -- ends the attribute
+             // early and Alpine never parses the component. It fails as a bare
+             // `SyntaxError: Unexpected token` plus `overflowing is not defined`,
+             // nowhere near the quote, and every source-reading test stays green.
+             // test/views/app_ladder_row_test.rb guards this.
              const edge = parseFloat(
                getComputedStyle(document.documentElement).getPropertyValue('--pin-apps-top')
              ) || 0;

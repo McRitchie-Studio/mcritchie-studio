@@ -25,11 +25,18 @@ class PinnedStackAdoptionTest < ActiveSupport::TestCase
   STRIP  = Rails.root.join("app/views/tasks/_app_ladder_row.html.erb")
   BOARD  = Rails.root.join("app/views/tasks/_deploy_board.html.erb")
 
-  # The release the pinned-stack publisher landed in. A NUMBER, not a string:
-  # below it neither --pin-nav-bottom nor --pin-apps-bottom is ever published,
+  # The release the COMPOSED pinned stack landed in. A NUMBER, not a string:
+  # below it neither --pin-stack-bottom nor --pin-apps-top is ever published,
   # every var() falls back to 0px, and the strip and every stage header pile up
   # at the top of the viewport underneath the navbar.
-  PINNED_STACK_FROM = Gem::Version.new("0.65")
+  #
+  # It moved 0.65 -> 0.72.3 with the adoption above. 0.65 shipped the per-layer
+  # properties this app used to compose itself with a max(); 0.72.3 is where the
+  # publisher started composing the stack ITSELF, and where it began writing
+  # inside its ResizeObserver callback instead of a frame later. Leaving the floor
+  # at 0.65 would let a resolver serve an engine that publishes neither name while
+  # every assertion below — which reads SOURCE, not a running page — stayed green.
+  PINNED_STACK_FROM = Gem::Version.new("0.72.3")
 
   test "the resolved engine publishes the pinned stack this app positions off" do
     resolved = Gem.loaded_specs["studio-engine"].version

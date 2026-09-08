@@ -99,6 +99,34 @@ class AppLadderRowViewTest < ActionView::TestCase
     assert_includes strip["style"].to_s, "display: none"
   end
 
+  # A DOUBLE QUOTE ANYWHERE IN THE x-data ATTRIBUTE KILLS THE COMPONENT.
+  #
+  # x-data is delimited by double quotes, so one inside the expression — INCLUDING
+  # inside a `//` comment, which is the case that actually shipped — ends the
+  # attribute early. Alpine then never parses the component, and the page reports
+  # a bare `SyntaxError: Unexpected token ')'` plus `overflowing is not defined`,
+  # nowhere near the quote.
+  #
+  # WHY THIS IS A TEST AND NOT A NOTE. Every other assertion in this file reads
+  # SOURCE, and source-reading assertions are all still green with the component
+  # dead: the markup is byte-identical whether Alpine ever evaluated it. This one
+  # was caught by a browser, on a stack booted to check something else. The rule is
+  # cheap to state and impossible to remember, so it is stated here instead.
+  #
+  # Scoped to the x-data BODY, so the ordinary quotes that delimit the attribute
+  # and the other attributes on the element are untouched.
+  test "the x-data expression contains no double quote, which would end the attribute" do
+    source = Rails.root.join("app/views/tasks/_app_ladder_row.html.erb").read
+    body = source[/x-data="\{(.*?)\n\s*\}"/m, 1]
+
+    refute_nil body, "could not isolate the x-data expression — re-anchor this guard"
+    offending = body.lines.each_with_index.select { |line, _| line.include?('"') }
+
+    assert_empty offending.map { |line, i| "line #{i + 1}: #{line.strip}" },
+                 "a double quote inside x-data ends the attribute early and Alpine never " \
+                 "parses the component; use single quotes, or reword the comment"
+  end
+
   # THE HEADER IS z-50 AND MUST ALWAYS WIN. A strip that outranks the nav pins itself
   # over the site header the moment the two meet.
   test "the strip sits under the site header rather than over it" do
