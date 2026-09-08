@@ -529,8 +529,14 @@ class DorCheckDeferredCertTest < Minitest::Test
         refute_includes printed, "bin/full-suite-check <task>",
                         "#{role}: the cert offer must name a command the reader can TYPE — this run " \
                         "knows the slug:\n#{printed}"
-        assert_includes printed, "bin/full-suite-check #{SLUG}",
-                        "#{role}: and the command it names must be THIS task's:\n#{printed}"
+        # SCOPED TO THE REMEDY'S OWN CLAUSE, not to the slug appearing anywhere. The
+        # dor-check sentence WRAPPING the remedy independently ends "or certify locally
+        # in full: bin/full-suite-check <slug>" — so a bare `bin/full-suite-check #{SLUG}`
+        # assertion is satisfied by the neighbour and says nothing about the remedy.
+        # Measured: deleting the offer from ci_status.rb left that looser form GREEN.
+        assert_includes printed, "certify in full instead: bin/full-suite-check #{SLUG}.",
+                        "#{role}: the offer must survive AND name THIS task — deleting it would satisfy " \
+                        "the placeholder half while losing the route the gate honours:\n#{printed}"
       end
     end
   end
