@@ -3312,13 +3312,9 @@ class TaskCliTest < Minitest::Test
   end
 
   # The stub above models the board's settle rule with its own copy of the stage
-  # list. Pin it to the real constant wherever Rails is loaded (the `bin/rails test`
-  # sweep, which is what CI runs) so the model cannot drift into certifying a rule
-  # the board no longer holds. Skipped on the standalone `ruby -Itest` run.
-  def test_the_stub_board_models_the_real_settle_stages
-    skip "Task is not loaded on the standalone run" unless defined?(::Task)
-
-    assert_equal ::Task::APPROVAL_REQUEST_STAGES.map(&:to_s).sort, SETTLE_EXEMPT_STAGES.sort
-  end
+  # list. It is pinned to Task::APPROVAL_REQUEST_STAGES — alongside bin/task's own
+  # copy — by test/models/task_approval_request_guard_test.rb, which runs in a lane
+  # that has Rails. It cannot be pinned HERE: this file is deliberately standalone
+  # and never boots the app, so `Task` is unreachable even under `bin/rails test`.
 
 end

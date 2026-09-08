@@ -231,4 +231,42 @@ class TaskApprovalRequestGuardTest < ActiveSupport::TestCase
     assert_nothing_raised { task.submit! }
     assert_equal "none", task.reload.approval_status
   end
+  # --- the copies of this rule that live OUTSIDE the model ---
+  #
+  # [unit] APPROVAL_REQUEST_STAGES is the settle's whole trigger, and two places
+  # outside app/models/task.rb now decide behaviour from their own copy of it:
+  # bin/task, whose move warning refuses to announce a drop on a destination that
+  # can HOLD a request, and the CLI test's stub board, which models the settle so a
+  # drop can be told apart from a stamp already on the record. A copy that drifts
+  # does not fail loudly — it silently certifies a rule the board no longer holds.
+  #
+  # Pinned HERE rather than beside either copy because test/lib/task_cli_test.rb is
+  # deliberately standalone (no Rails, no network) and cannot see Task at all: the
+  # first cut of this pin sat in that file behind `defined?(::Task)` and SKIPPED in
+  # both lanes, including under `bin/rails test`, which does not boot the app for a
+  # file that never requires test_helper. A pin that cannot read its subject pins
+  # nothing, so each assertion below first proves it actually FOUND the literal.
+  def test_bin_task_pins_the_real_approval_request_stages
+    assert_equal Task::APPROVAL_REQUEST_STAGES.map(&:to_s).sort,
+                 stage_literal_in("bin/task", /^APPROVAL_REQUEST_STAGES = %w\[([^\]]*)\]/)
+  end
+
+  def test_the_cli_stub_board_models_the_real_approval_request_stages
+    assert_equal Task::APPROVAL_REQUEST_STAGES.map(&:to_s).sort,
+                 stage_literal_in("test/lib/task_cli_test.rb", /^\s*SETTLE_EXEMPT_STAGES = %w\[([^\]]*)\]/)
+  end
+
+  private
+
+  # Reads a %w[] stage literal out of a source file. A miss is a FAILURE naming the
+  # file and the pattern, never an empty array that would compare equal to nothing
+  # and pass — a renamed or reformatted constant must turn this red, not silent.
+  def stage_literal_in(relative_path, pattern)
+    source = Rails.root.join(relative_path).read
+    match = source.match(pattern)
+    refute_nil match,
+               "#{relative_path} no longer declares its stage list as #{pattern.source} — " \
+               "the copy moved or was reformatted, so this pin stopped reading it"
+    match[1].split.sort
+  end
 end
