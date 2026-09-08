@@ -1164,6 +1164,10 @@ APPROVAL_STATUS_ALIASES = {
   "cleared" => "none"
 }.freeze
 APPROVAL_STATUSES = %w[waiting approved changes_requested none].freeze
+# The one status a stage move can SETTLE (Task::OPERATOR_APPROVAL_WAITING). Named
+# rather than spelled at the comparison site: the drop warning turns on this exact
+# value, and a literal there reads as an incidental string rather than the rule.
+APPROVAL_WAITING = "waiting"
 
 def warn!(msg)
   $stderr.puts(msg)
@@ -1208,34 +1212,98 @@ end
 # the board never pulsed, and Mr. McRitchie was never asked — a human gate that
 # reports success and does nothing.
 #
-# `since` is the instant this move began, so the warning fires only for a request
-# THIS move discarded — never an older stamp already on the record.
+# THE WARNING ASKS ABOUT THIS MOVE'S EFFECT, NOT ABOUT A CLOCK. The first cut
+# compared the drop receipt against the instant the move began, with a 300s grace
+# for board-vs-laptop skew, and a clock cannot answer the question the warning
+# asks. Measured 2026-09-07 against the real binary: with a 60-second-old stamp,
+# `bin/task move <slug> building` announced a discarded request — on a move INTO
+# one of the two stages where a request is ACTIONABLE, where the settle provably
+# never runs — and a re-run `move <slug> submitted` (the documented killed-ship
+# resume) announced the SAME single drop a second time. Every one of those was a
+# stamp the move did not write. So the grace window is gone, and with it the skew
+# problem it existed to paper over: nothing is compared against this machine's
+# clock any more.
 #
-# THE COMPARISON LEANS TOWARD WARNING, deliberately. The stamp is written by the
-# BOARD (Heroku, UTC) and compared against the CLI's own clock on a laptop, so the
-# two are never exactly aligned. A skew of even a few seconds would push a genuine
-# drop under `since` and silence it — which is the exact defect this warning exists
-# to close. So allow generous skew: a spurious extra line costs a reader one
-# sentence, while a missed one costs the operator gate. An hour-old stamp is still
-# comfortably outside the window and stays quiet.
-CLOCK_SKEW_GRACE = 300 # seconds
+# The move dropped the request when EITHER half says so, and the halves are OR-ed
+# because each covers the other's blind spot — never to make the warning quieter:
+#
+#   1. THE PRE-STATE PREDICTED IT — the request read "waiting" before the PATCH and
+#      the destination cannot hold one. That is Task#settle_operator_approval_past_submit's
+#      own rule, so it fires even against a board too old to write the receipt at all
+#      (this CLI has to stay correct against a board that has not taken that fix).
+#   2. THE RECEIPT MOVED — approval_request_dropped_at differs across the PATCH.
+#      That catches a drop the pre-read could not predict: a writer that set
+#      "waiting" in the window between our read and our write, and the same-second
+#      collision where two stamps render identically. Stated as a plain inequality
+#      on purpose: an earlier cut also required the post-receipt to be non-empty,
+#      which no test could kill (the board only ever WRITES this stamp, so a receipt
+#      cannot vanish) and which was the single place the verdict resolved an unknown
+#      toward SILENCE. Every branch here now resolves the other way.
+#
+# An UNREADABLE pre-state (`before` nil — the board hiccuped) is not silence: half 2
+# reads a receipt on the record as news and warns. Failing safe is the whole point —
+# a spurious line costs a reader one sentence, a missed one costs the operator gate.
+# The one residual blind spot is BOTH failures at once: an unreadable pre-read
+# against a board too old to write a receipt leaves nothing to compare. Warning on
+# every unreadable pre-read would close it, at the price of a false line on every
+# transient board hiccup — and a warning readers learn to skip is the defect this
+# whole path exists to prevent.
+#
+# A destination that CAN hold a request never reaches here at all — the `settleable`
+# test at the call site is the single place that decision is made, so the message can
+# no longer contradict itself by naming `building` as a stage where a request is fine
+# while warning about the move INTO it.
+APPROVAL_REQUEST_STAGES = %w[designed building].freeze
 
-def warn_dropped_approval_request!(task, slug, since)
-  dropped = task.dig("metadata", "devops", "approval_request_dropped_at")
-  return if dropped.to_s.strip.empty?
+# A GET that DEGRADES instead of aborting. The move itself is correct and must
+# still succeed when the board is briefly unreadable; only the warning's accuracy
+# depends on this read, and it fails loud (see half 2) rather than quiet.
+def read_task_softly(slug)
+  res = TaskBoard.request(:get, "/api/v1/tasks/#{slug}", base_url: BASE_URL, token: token)
+  return nil unless res.code.to_i.between?(200, 299)
 
-  at = begin
-    Time.parse(dropped).utc
-  rescue ArgumentError, TypeError
-    nil
-  end
-  return if at.nil? || at < (since - CLOCK_SKEW_GRACE)
+  data = TaskBoard.parse_body(res)["data"]
+  data.is_a?(Hash) ? data : nil
+rescue StandardError
+  nil
+end
+
+def approval_status_of(task)
+  task.is_a?(Hash) ? task.dig("metadata", "devops", "approval_status").to_s.strip : ""
+end
+
+def drop_receipt_of(task)
+  task.is_a?(Hash) ? task.dig("metadata", "devops", "approval_request_dropped_at").to_s.strip : ""
+end
+
+# EVERY COMMAND THIS MESSAGE PRINTS IS EXECUTED BY A TEST
+# (test_every_command_the_warning_prints_actually_runs). The first draft of this
+# very rewrite advertised `bin/task move <slug> building --approval waiting` — a
+# flag `move` does not have, so the one command a stuck reader would paste dies on
+# unknown_flag!. Asserting the text CONTAINS a command proves only that a string is
+# present; running it is what proves the advice is real.
+#
+# `before` is a trailing POSITIONAL on purpose. Adding a KEYWORD to a method whose
+# callers pass a brace-less trailing hash silently re-binds that hash to the
+# keywords — the trap that cost PR 1276 four red tests on a shard no diff-mapped
+# lane runs, and the same one bin/task's own `api` helper carries a note about.
+def warn_dropped_approval_request!(task, slug, before)
+  return unless move_dropped_approval_request?(task, before)
 
   warn!("warning: this move DISCARDED a pending operator-approval request " \
         "(approval_status waiting → none). Nobody was asked and the board will not pulse. " \
-        "A request is only actionable in designed or building. If you still need the " \
-        "operator's eyes, get them BEFORE handing off; to record a decision he already " \
-        "gave, run: bin/task update #{slug} --approval approved")
+        "If the operator already approved in words, record it: bin/task update #{slug} " \
+        "--approval approved. If you still need his eyes, move the task back and ask " \
+        "again: bin/task move #{slug} building, then bin/task update #{slug} " \
+        "--approval waiting. A request is only actionable in " \
+        "#{APPROVAL_REQUEST_STAGES.join(" or ")}.")
+end
+
+def move_dropped_approval_request?(task, before)
+  predicted = approval_status_of(before) == APPROVAL_WAITING
+  receipt_moved = drop_receipt_of(task) != drop_receipt_of(before)
+
+  predicted || receipt_moved
 end
 
 def print_usage!
@@ -2765,7 +2833,16 @@ when "move"
     merged.merge!(ClaimLease.renewed(session: mover_session, nonce: claim_nonce, prior: current_devops))
     body["devops"] = merged
   end
-  move_started_at = Time.now.utc
+  # Can this move settle a pending approval request at all? That is
+  # Task#settle_operator_approval_past_submit's own first line, and it is asked ONCE:
+  # a destination that can HOLD a request discarded nothing, so there is no warning
+  # to consider and no read to spend on dating one. Everything downstream — whether
+  # to read, whether to warn — hangs off this single test.
+  settleable = !APPROVAL_REQUEST_STAGES.include?(stage)
+  # The approval facts as they stood BEFORE the write, the only way to tell a drop
+  # THIS move caused from one already on the record. nil here means UNREADABLE and
+  # nothing else, which the verdict resolves toward warning.
+  approval_before = settleable ? read_task_softly(slug) : nil
   task = api(:patch, "/api/v1/tasks/#{slug}", body)["data"]
   # The board answered 2xx — but a 2xx is not persistence. Read the task back and
   # confirm the stage actually moved before printing the success line, so a
@@ -2774,7 +2851,7 @@ when "move"
   verify_move_persisted!(slug, stage)
   # ...and a move that SETTLED a pending approval request must say so. The move
   # itself is correct and still succeeds; what must not happen is doing it quietly.
-  warn_dropped_approval_request!(task, slug, move_started_at)
+  warn_dropped_approval_request!(task, slug, approval_before) if settleable
   verify_abandonment_recorded!(slug, archive_devops[OpenPrGuard::RECORD_KEY]) if archive_devops
   write_feature_marker(task)
   print_task(task)

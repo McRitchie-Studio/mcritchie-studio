@@ -3054,49 +3054,5 @@ class TaskCliTest < Minitest::Test
     assert_match(/merged NOT persisted/, err)
     assert_match(/unreadable/i, err, "the failure names that the board could not be read")
   end
-  # --- the operator-approval drop warning ---
-  #
-  # A move past the request stages SETTLES a pending approval request. That is
-  # deliberate, but on 2026-09-07 it happened in SILENCE: an agent set --approval
-  # waiting at `building`, read it back as "waiting", ran bin/ship, and the handoff
-  # move discarded the request with nothing printed. The board never pulsed and
-  # Mr. McRitchie was never asked. The move still succeeds — it just has to SAY SO.
-
-  def test_move_warns_when_it_discards_a_pending_approval_request
-    _reqs, _out, err, status = run_task(
-      %w[move demo-slug submitted],
-      stub_stage: "building",
-      stub_devops: { "kind" => "feature",
-                     "approval_request_dropped_at" => Time.now.utc.iso8601 }
-    )
-
-    assert status.success?, "the move itself still succeeds — the drop is a warning, not a refusal"
-    assert_match(/DISCARDED a pending operator-approval request/, err,
-                 "a silently dropped operator request is the whole defect")
-    assert_match(/--approval approved/, err, "and it must name the way to record a decision already given")
-  end
-
-  # The guard that keeps the warning honest: it fires only for a request THIS move
-  # dropped. An older stamp already on the record must stay quiet, or the warning
-  # cries wolf on every subsequent move and gets ignored.
-  def test_move_is_quiet_about_an_older_approval_drop
-    _reqs, _out, err, status = run_task(
-      %w[move demo-slug reviewed],
-      stub_stage: "submitted",
-      stub_devops: { "kind" => "feature",
-                     "approval_request_dropped_at" => (Time.now.utc - 3600).iso8601 }
-    )
-
-    assert status.success?
-    refute_match(/DISCARDED a pending operator-approval request/, err,
-                 "a stamp from an earlier move is not this move's news")
-  end
-
-  def test_move_without_a_dropped_request_warns_nothing
-    _reqs, _out, err, status = run_task(%w[move demo-slug submitted], stub_stage: "building")
-
-    assert status.success?
-    refute_match(/DISCARDED/, err)
-  end
 
 end

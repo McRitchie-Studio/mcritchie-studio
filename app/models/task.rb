@@ -760,6 +760,13 @@ class Task < ApplicationRecord
   # Idempotent: only ever "waiting" → "none", only past the seam. update_column
   # skips callbacks so a historical row is not otherwise disturbed — no
   # broadcasts, no timestamps, no stage churn. Returns the slugs it settled.
+  #
+  # And DELIBERATELY no approval_request_dropped_at receipt, which is why the drop
+  # is not universally auditable. The receipt exists to tell an agent that the move
+  # IT JUST RAN discarded a live request; these rows were stranded by the old
+  # one-shot settle long ago, there is no such agent to tell, and stamping today's
+  # timestamp on a months-old drop would date it wrong for the one reader that
+  # compares it. A backfill announces nothing, so it records nothing.
   # Driver: `rake tasks:settle_stale_operator_approvals`.
   def self.settle_stale_operator_approvals!
     settled = []
@@ -3231,10 +3238,14 @@ class Task < ApplicationRecord
     # ever asked. `local_url` from the same call survived the move, which is what
     # made it look like the write had worked.
     #
-    # This stamp is the durable half of the remedy: it makes the drop auditable on
-    # the record for EVERY caller (CLI, JSON API, board form), and it is what
-    # bin/task's move warning reads to announce the drop to the agent that caused
-    # it. Overwritten on each drop on purpose — the useful fact is the LAST time a
+    # This stamp is the durable half of the remedy: every caller that drops a request
+    # (CLI, JSON API, board form) leaves it on the record. It has exactly ONE reader
+    # today — bin/task's move warning, which compares it ACROSS the stage PATCH to
+    # tell a drop this move caused from one already sitting here. So it is a receipt
+    # a reader can go find, not yet a fact any view surfaces: it is absent from
+    # print_task_verbose beside approval_status, from the task show page, and from
+    # the card. Surfacing it is worth doing; claiming it is already surfaced is not.
+    # Overwritten on each drop on purpose — the useful fact is the LAST time a
     # request was discarded, not the first.
     settled["approval_request_dropped_at"] = Time.current.iso8601
     self.metadata = merged
