@@ -103,6 +103,16 @@ module FastCert
   #
   # Used by the no-suite-owed waiver in bin/fast-check, which must never call a diff
   # doc-only on the strength of a path the rename invented.
+  #
+  # WHAT `-M` IS AND IS NOT DOING HERE, measured rather than assumed (2026-09-07): it
+  # is NOT the safety. `diff.renames` defaults to TRUE, and with detection OFF git
+  # emits the pair as `D bin/deploy.sh` + `A notes.md` — BOTH paths, which classifies
+  # identically. So dropping `-M` is an equivalent mutation and no test can bite on it.
+  # It is here to pin the parse shape `CodeDiff.paths_from_name_status` documents
+  # (`--name-status -M`) and to make this view independent of the reader's git config
+  # rather than incidentally correct under it. What IS load-bearing is `--name-status`:
+  # switch this to `--name-only` and the parse yields NOTHING (its lines carry one
+  # field), which reads as an unobservable diff and — fail-closed — refuses.
   def classifiable_paths(root, base)
     paths = []
     [
