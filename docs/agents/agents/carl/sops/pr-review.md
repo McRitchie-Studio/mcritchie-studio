@@ -115,12 +115,12 @@ Release the claim on the verdict (a crash frees it via the TTL, within 3h25m):
 bin/task review-claim release <slug>
 ```
 
-**Read what release says — it now names which of five states it found.** A clean drop
-is one quiet line. A drop whose lease had already LAPSED, and any refusal, goes to
-**stderr** and is worth stopping for: "your lease had lapsed" means the task was FREE
-for part of your review, and "held by <soul>" means it changed hands and somebody else
-has been reviewing it too. Reconcile before you treat your verdict as the only one.
-The exit code stays 0 in every case, so the message is the signal.
+**Read what release says — it names which of five states it found.** A clean drop is
+one quiet line. Exactly TWO states go to **stderr**, and both are worth stopping for:
+"your lease had LAPSED" means the task was FREE for part of your review, and "held by
+<soul>" means it changed hands and somebody else has been reviewing it too. Reconcile
+either before you treat your verdict as the only one. The other three print on STDOUT
+and still want reading. The exit code is 0 in every case, so the message is the signal.
 
 Keep each session's fan-out to **waves of five or fewer agents** (the per-session
 cap: the prod board Postgres has a hard connection budget). A Carl plus his light
