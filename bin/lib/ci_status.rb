@@ -252,8 +252,8 @@ module CiStatus
   # fingerprint cannot answer on its own, because it hashes a LOCAL ref that a zap
   # pushed from a checkout with INDEPENDENT refs (a separate clone, another machine)
   # never touched — a zap from a sibling WORKTREE moves that ref, and the cert catches
-  # that one unaided. "" when GitHub sent nothing: an absent
-  # head is not a matching head, and ReviewTreeGuard treats it as unobservable.
+  # that one unaided. "" when GitHub sent nothing: an absent head is not a matching
+  # head, and ReviewTreeGuard treats it as unobservable.
   def self.head_oid(view_raw)
     data = parse_view(view_raw)
     return "" unless data

@@ -231,7 +231,12 @@ So the whole question is whether the checkout you push from writes the copy of
   the cert is fingerprinted against, the desk resolves the new tree with no fetch,
   and the lane reads STALE. **That is the house case**, because worktrees are the
   house desk, and the refusal is the guard working rather than a bug in the gate.
-  If the zap was yours, re-certify it: `bin/full-suite-check <task>`.
+  If the zap was yours, re-certify it — but from a checkout standing **on the
+  pushed head**. `bin/full-suite-check` fingerprints the WORKING tree, and your
+  push moved the shared *ref*, not the builder desk's *files*; re-certifying that
+  desk as it stands re-stamps the tree that was already there and the lane reads
+  STALE again. Move first, then certify: `git merge --ff-only origin/<branch>`,
+  then `bin/full-suite-check <task>`.
 - **A separate CLONE keeps its own refs, so the cert reads FRESH — the dangerous
   reading.** A distinct clone, a push from another machine, or GitHub's
   **Update branch** button never touches the desk's `origin/<branch>`. The hash still
@@ -239,9 +244,12 @@ So the whole question is whether the checkout you push from writes the copy of
   longer the PR head: a green that is evidence of nothing. Only the head check
   above — the stale-tree refusal in this section — catches that one, by comparing
   the graded commit to the PR head. **Re-certify here too, with more reason than in
-  the worktree case:** `git fetch origin <branch>`, then `bin/full-suite-check
-  <task>`. A STALE lane is the gate telling you the cert is out of date; this FRESH
-  is the cert being wrong while looking right, so nothing prompts you if you skip it.
+  the worktree case:** `git fetch origin <branch>`, then `git merge --ff-only
+  origin/<branch>`, then `bin/full-suite-check <task>`. Do not stop after the
+  fetch: it moves the ref and not your files, so a cert taken between those two
+  commands stamps the tree you already had and the lane stays STALE. A STALE lane
+  is the gate telling you the cert is out of date; this FRESH is the cert being
+  wrong while looking right, so nothing prompts you if you skip it.
 
 Measured 2026-09-08 on real repositories and pinned by
 `test/docs/zap_cert_freshness_docs_test.rb`: a push from a sibling worktree moved
@@ -249,6 +257,14 @@ the reading checkout's `origin/<branch>^{tree}` with no fetch, while the identic
 push from a separate clone left it unchanged until that checkout fetched. Carl hit
 the worktree half zapping studio-engine #305 the same day — he followed the older
 wording, expected FRESH, and the gate correctly refused a stale cert.
+
+Measured again 2026-09-09, on the **remedy** rather than the mechanism, and the
+move step above is what that added: after a clone-side zap, `git fetch` alone
+cleared the head refusal but left the lane STALE, and re-certifying at that point
+left it STALE — only moving the checkout onto the fetched head first read FRESH.
+The worktree case behaves the same way, because the ref moves there without the
+files. `bin/dor-check`'s own refusal prints the corrected three-step remedy, and
+both are pinned by `test_the_printed_remedy_clears_the_state_it_is_printed_into`.
 
 **A base that moves mid-review is reported, not refused.** `accepted` moves
 constantly and blocking every review after any merge would wedge the lane, so

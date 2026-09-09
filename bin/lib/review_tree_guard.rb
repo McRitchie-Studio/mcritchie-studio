@@ -30,13 +30,22 @@
 # (else the local `<branch>`) IN THE DESK, and **bin/dor-check never runs `git fetch`**
 # — verified 2026-09-02: every `fetch` in that script is prose in a remedy string. A
 # reviewer who zaps from the desk — or from ANY SIBLING WORKTREE of the same repo, which
-# is what the zap protocol's own recipes cut — updates that ref as a side effect of
-# pushing, because every worktree of a repo shares ONE ref store. The cert goes stale
-# exactly as observed. Only a push whose refs are INDEPENDENT of this checkout's — a
-# separate clone, another machine, GitHub's Update-branch button — leaves the desk's ref
-# pre-zap, so the hash still matches the cert the builder stamped and the lane reads
-# FRESH. Same act, opposite outcome, decided NOT by distance but by whether the pushing
-# checkout shares this one's ref store.
+# is what the zap protocol's own recipes cut — moves origin/<branch> as a side effect of
+# pushing (every worktree of a repo shares ONE ref store), so the cert goes STALE exactly
+# as observed. A push whose refs are INDEPENDENT of this checkout's — a separate clone,
+# another machine, GitHub's Update-branch button — does not move it, so on a ref nothing
+# else has touched the hash still matches the builder's stamp and the lane reads FRESH.
+# Same act, opposite outcome, decided NOT by distance but by whether the pushing checkout
+# shares this one's ref store.
+#
+# THE LANE IS A SEPARATE FACT FROM THE HEAD CHECK, and neither may narrate the other's
+# verdict. Both pushes can land in sequence — the protocol's own throwaway zap desk, then
+# GitHub's Update-branch button — and the cert is then STALE while `head_assessment`
+# below returns :mismatch. So :mismatch establishes exactly one thing: THIS ref does not
+# carry the pushed head. It says nothing about whether the ref ever moved, and nothing
+# about what the cert lane currently reads. bin/dor-check's refusal is written to that
+# limit; a version of it that claimed FRESH there contradicted the `full-suite: STALE`
+# error in its own errors array (/tasks/refusal-names-wrong-checkout, 2026-09-09).
 #
 # AND FRESH IS THE HAZARDOUS READING, NOT THE REASSURING ONE: a green cert over a tree
 # that is no longer the PR head, which the head check below is the only thing to catch.
