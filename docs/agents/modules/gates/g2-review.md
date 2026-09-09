@@ -176,20 +176,32 @@ bin/gate close task <task-slug> g2b_light --failed --actor <light-soul> \
   gates card even though no reviewer ran, and it lands on the gate-zero gate, not
   a G2 review lane. A pre-spawn **defer** (CI pending) records nothing; nothing
   started.
-- **`ci:unreadable` is not `ci:fail`.** `unreadable` is the one `ci` SOP `result`
-  that names its state exactly: GitHub **refused the read** — an expired
-  installation token, a 403, a rate limit — so no verdict was ever seen. It is not
-  a red CI, and re-reading it once the credential is fresh
-  (`eval "$(bin/gh-auth-refresh --export)"`) is the whole remedy. The row carries
-  `state` / `cause` / `reason` alongside, and the gates card paints it `⚠`, never
-  `✓` and never `✗`. Read the record with `bin/gate show task <task-slug>`.
-  Auditing a bounce, `ci:unreadable` means "nobody could look" — but do NOT read
-  its sibling as the mirror image. `ci:fail` stays the COLLAPSED bucket for every
-  other non-green state: red, pending in the review role, `conflicted`, `ci_less`
-  (CI never ran at all), closed/merged, and a refused review on a GREEN CI. Two of
-  those `bin/pr-review` writes as a bare `ci:fail` of its own, never through
-  `CiGate.gate_row`. So read `state` and `metadata.outcome` beside a `fail` before
-  calling it a red CI; only `unreadable` carries its cause in the result itself.
+- **A CI with no verdict is not `ci:fail`.** Three `ci` SOP `result` values name
+  their state exactly, and none of them is a failure. Read the record with
+  `bin/gate show task <task-slug>`; the gates card paints all three `⚠`, never `✓`
+  and never `✗`:
+
+  | `result` | What actually happened | The move |
+  |----------|------------------------|----------|
+  | `unreadable` | GitHub **refused the read** — expired installation token, 403, rate limit. Nobody could look | `eval "$(bin/gh-auth-refresh --export)"`, then re-run the gate. The row carries `state` / `cause` / `reason` alongside |
+  | `no_checks` | The PR **reported no checks yet**. CI has nothing to say | wait, then re-run the gate. Do NOT chase a credential |
+  | `unverified` | **`gh` itself fell over** — network, a 404, a missing binary. Not an auth fault | re-read. Do NOT chase a credential |
+
+  Auditing a bounce, these three mean "no verdict was seen" — but do NOT read
+  `ci:fail` as the mirror image. It stays the COLLAPSED bucket for every state that
+  settled NEGATIVE: red, pending in the review role, `conflicted`, `ci_less` (CI
+  never ran at all), closed/merged, a refused review on a GREEN CI, and a state the
+  allow-list does not classify. Three of those `bin/pr-review` writes as a bare
+  `ci:fail` of its own, never through `CiGate.gate_row`. So read `state` and
+  `metadata.outcome` beside a `fail` before calling it a red CI.
+
+  Both halves were once collapsed onto `ci:fail`, which wrote a red-CI bounce that
+  never happened into a task's permanent gate history —
+  `/tasks/gate-logs-auth-as-red` took `unreadable` out, `/tasks/refused-review-records-fail`
+  the other two. **Adding a fourth needs its arm in `GateRun::NO_VERDICT_RESULTS`
+  in the same change**: the card's glyph chain ends in a `✓` default, so a value
+  with no arm is painted as a PASS — a manufactured failure traded for a
+  manufactured success.
 - A **reportless lane stays in flight** (no verdict yet) and is reused by the
   next wave rather than double-opened — `GateRun.open!` converges racing
   openers onto one row.
