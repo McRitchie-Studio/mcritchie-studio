@@ -1121,7 +1121,30 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_equal "Watch a live NFL slot and record every score", action_description("live-score-watch")
     assert_equal "Grade 10 recent events for quality", action_description("grade-events")
     assert_equal "Full cycle — review, assemble, QA, ship to prod", action_description("full-cycle")
+    # share-insights was the ONE act this map skipped, which is exactly how its
+    # caption kept saying "confirmed" after the SOP and all six docs were corrected
+    # (/tasks/heartbeat-label-says-confirmed). The act publishes ActionGrade.banked
+    # with NO grader filter, so "banked" is the word; pin it like every sibling.
+    assert_equal "Share the banked insights into the docs", action_description("share-insights")
     assert_nil action_description("not-an-act")
+  end
+
+  # DRIFT GUARD. The defect this replaces was a caption nothing asserted: the docs
+  # sweep in test/docs/share_insights_precondition_docs_test.rb bans /confirmed\s+
+  # insights?/ across docs/agents/**, but ACTION_DESCRIPTIONS lives in app/ and was
+  # never in that corpus, so this one site survived the correction. The bank is
+  # ActionGrade.banked whichever grader wrote the row, and `mcr` is an audit OF a
+  # grade (writable anonymously — heartbeat_grade_auth_test.rb), so no caption may
+  # sell the act as publishing a confirmed subset.
+  test "[unit] no launcher caption describes the bank as confirmed" do
+    offenders = ACTION_DESCRIPTIONS.select { |_act, caption| caption.match?(/confirmed/i) }
+
+    assert_empty offenders,
+                 "these launcher captions claim a confirmation the act neither requires nor "\
+                 "produces: #{offenders.inspect}. Insights::DocGenerator publishes "\
+                 "ActionGrade.banked with no grader filter, and the agent API always grades as "\
+                 "`alex`, so a 'confirmed' caption stands the act down over the whole bank "\
+                 "(/tasks/sop-precondition-blocks-sharing). Say what is published: the banked set."
   end
 
   test "[unit] action_icon numbers the three ordered release actions (1→3), nil otherwise" do
