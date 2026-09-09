@@ -326,13 +326,19 @@ Ship the assembled, QA-green release to production.
   3. Prod-smoke, green seal, and post release notes (`ship!` flips members
      `shipped`, `merged` stays `main`).
   4. Restore the primary checkouts.
-  5. Post-ship agent-docs sync — ship auto-runs the hub primary's
-     `bin/install-agent-docs` (non-fatal, never aborts a completed ship), so the
-     installed docs (`~/.claude` + `~/.codex` skills, the projects-root
-     `AGENTS.md`/`CLAUDE.md`) match what just shipped. **Steffon owns this step
-     and its mechanism** (the `Run Deployment` building block in
+  5. Post-ship agent-docs sync — ship auto-runs `bin/install-agent-docs` from the
+     hub's **ship workspace** (`mcritchie-studio/.worktrees/_ship`, the tree
+     pinned at the SHA that just shipped; non-fatal, never aborts a completed
+     ship), so the installed docs (`~/.claude` + `~/.codex` skills, the
+     projects-root `AGENTS.md`/`CLAUDE.md`) are published from exactly what
+     shipped. The hub **primary is the fallback, not the source** — taken only
+     when that workspace holds no installer — because step 4's restore is
+     best-effort (it refuses a primary holding a live session's work), so the
+     primary can sit a release behind. **Steffon owns this step and its
+     mechanism** (the `Run Deployment`
+     building block in
      [`devops-cycle-design.md` §1.4](../system/devops-cycle-design.md)); if it
-     warns, run the installer from the hub primary by hand.
+     warns, run the installer path the warn line prints, not the primary's copy.
 - **Exit seam:** `shipped` (stage 5 **Deployed**). Report the prod SHA + release
   slug. An interrupted run re-runs safely: published gems skip, ffs no-op
   (`merged: main` members are already over), re-pins are idempotent.

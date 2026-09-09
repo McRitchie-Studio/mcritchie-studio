@@ -504,12 +504,27 @@ fires the live Last Release freshness glow. Do not hand-run a bulk
 `bin/task move ... shipped` batch: let `bin/release ship` move the member tasks
 so each task transition lands one second after the prior one.
 
-Post-ship, `bin/release ship` auto-runs the hub primary's
-`bin/install-agent-docs` (non-fatal — it never aborts a completed ship;
-Steffon owns the step and its mechanism) so the installed agent docs
-(`~/.claude` + `~/.codex` skills, the projects-root `AGENTS.md`/`CLAUDE.md`)
-match what shipped. If it warns, run the installer from the hub primary by
-hand.
+Post-ship, `bin/release ship` auto-runs `bin/install-agent-docs` from the hub's
+**ship workspace** (`mcritchie-studio/.worktrees/_ship`, the tree pinned at the
+SHA that just shipped), so the installed agent docs (`~/.claude` + `~/.codex`
+skills, the projects-root `AGENTS.md`/`CLAUDE.md`) are published from exactly
+what shipped. The installer syncs from its own root, so the tree it runs in IS
+the docs it installs.
+
+The hub **primary is the fallback, not the source**: `sync_agent_docs` drops
+back to it only when the ship workspace holds no installer (a ship that resolved
+no hub member). That ordering is deliberate — the ship no longer fast-forwards
+the primary's local `main` (`restore_primaries` tries, best-effort, and
+correctly refuses a primary holding a live session's work), so the primary can
+sit a release behind, and installing from it would publish docs that did not
+ship. The step is non-fatal — it never aborts a completed ship — and **Steffon
+owns the step** and its mechanism.
+
+If it warns, run the installer path the warn line prints — that is the one
+by-hand run [`docs-maintenance.md`](../../../modules/docs-maintenance.md)
+§ Editing The Entry Docs keeps legitimate. Do not substitute the primary's copy,
+and do not run it from a feature worktree: a hand-run from the wrong tree does
+not close the drift, it moves it.
 
 ## Close out the cycle — run `archive-shipped`
 
