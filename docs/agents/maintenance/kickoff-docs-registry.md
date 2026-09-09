@@ -122,8 +122,9 @@ and requiring them in Start Here would defeat the archive sweep.
 - A new `test/docs/` guard fails when a doc is added without an index entry.
 - The guard exempts `archive/` and carries an explicit allowlist for anything
   else, with a comment saying why each exemption exists.
-- `bin/install-agent-docs` still regenerates `/Users/alex/projects/AGENTS.md`
-  cleanly, and the existing `sop_registry_docs_test.rb` still passes.
+- `docs/agents/index.md` stays well-formed, so the generated root
+  `/Users/alex/projects/AGENTS.md` still renders cleanly from it, and the
+  existing `sop_registry_docs_test.rb` still passes.
 
 ## Routing
 
@@ -131,5 +132,11 @@ This is one **mcritchie-studio** task, shape `library` or `backend` (no UI). It
 touches `docs/agents/**`, `docs/agents/index.md`, and `test/docs/`. The fast lane
 works — this is a normal app repo, not the gem.
 
-Because `docs/agents/index.md` generates the root `AGENTS.md`, run
-`bin/install-agent-docs` after the edits and confirm the generated file matches.
+`docs/agents/index.md` generates the root `AGENTS.md`, but publishing it is
+**not part of this task**: that is the owned `sync_agent_docs` step of
+`bin/release ship`, which republishes the roots after every production ship. Do
+not hand-run the docs installer to confirm your edits — it publishes globally,
+so from a worktree it would push this branch's unshipped text to every session
+on the machine. See
+[`../modules/docs-maintenance.md`](../modules/docs-maintenance.md)
+§ Editing The Entry Docs.

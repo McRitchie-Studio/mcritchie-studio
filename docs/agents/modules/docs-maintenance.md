@@ -46,12 +46,29 @@ fails.
 **Exactly those two — the list is closed.** Alex's `share-insights` act used to
 run the installer as a third; it no longer does, and must not again. Its output
 is the tracked lessons doc [`../shared/insights.md`](../shared/insights.md),
-which this installer has never published: the payload is the two entry docs plus
-`docs/agents/skills/`, and a fresh session reads insights from the board
-(`bin/session-insights` GETs `/api/v1/insights`), not from that file. So the
-step distributed nothing the act produced.
-`test/docs/registered_sop_installer_docs_test.rb` sweeps every registered SOP in
-the invocation table and holds the set to the two above.
+which this installer has never published, and a fresh session reads insights from
+the board (`bin/session-insights` GETs `/api/v1/insights`), not from that file.
+So the step distributed nothing the act produced.
+
+**What the installer actually writes** — worth stating, because "it only copies
+two docs" is how a hand-run gets talked into. `install` publishes the two entry
+docs (`index.md` → `AGENTS.md`, `claude.md` → `CLAUDE.md`), mirrors
+`docs/agents/skills/**` into `~/.claude/skills` and `~/.codex/skills` and
+`rm -rf`s retired ones, rewrites the managed hooks in `~/.claude/settings.json`
+(PostToolUse capture, SessionStart mascot + insights, SessionEnd close-open) and
+their Codex equivalents in `/etc/codex/requirements.toml` or
+`~/.codex/hooks.json`, sets the Codex TUI status line, and appends the Ruby PATH
+block to `~/.zprofile`. Every one of those targets is **global and shared** —
+the operator's live login profile and editor settings included.
+
+`test/docs/executable_docs_installer_test.rb` holds the set to the two above. It
+sweeps the docs an agent **executes** — every registered SOP in the invocation
+table, the `maintenance/kickoff-*.md` briefs, and everything under
+`docs/agents/skills/` — treating *any* mention of the installer as a hit that
+owes an explicit exemption. Descriptive docs under `system/` and `modules/` are
+**not swept**: they name the installer legitimately and constantly (this file
+does), so the any-mention rule would drown there. That limit is deliberate — if
+you add an install directive to a design doc, no guard will stop you.
 
 ## Drift Review
 
