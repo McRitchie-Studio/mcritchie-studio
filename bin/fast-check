@@ -141,6 +141,7 @@ require "optparse"
 require "json"
 require "shellwords"
 require_relative "lib/full_suite_gate"
+require_relative "lib/fast_lane"
 require_relative "lib/repo_root"
 require_relative "lib/fast_cert"
 require_relative "lib/cert_emission"
@@ -155,6 +156,18 @@ require_relative "lib/shape_contract"
 # anchor here. The CODE we run + fingerprint roots at the agent's worktree.
 ROOT = File.expand_path("..", __dir__)
 TASK_BIN = ENV.fetch("FAST_CHECK_TASK_BIN", File.expand_path("task", __dir__))
+# ── remedy forms of the scripts this cert NAMES in a refusal ──────────────────
+# Absolute and resolvable. bin/fast-check, bin/full-suite-check and bin/task all
+# live in mcritchie-studio/bin ALONE, so a builder on a turf-monster, rolio, or gem
+# desk reached THIS script through its absolute path and cannot resolve a bare
+# `bin/fast-check` — following the tool's own re-run hint died as `No such file or
+# directory`. Resolved from __dir__: the very fast-check that is speaking, and its
+# siblings beside it. Deliberately NOT TASK_BIN above — that is the EXEC seam and
+# is redirected to a stub under test, while a remedy names the real script the
+# reader is sent to. Policy: FastLane.remedy_command.
+SELF_CMD = FastLane.remedy_command("fast-check", __dir__)
+TASK_CMD = FastLane.remedy_command("task", __dir__)
+FULL_SUITE_CMD = FastLane.remedy_command("full-suite-check", __dir__)
 GATE_BIN = ENV.fetch("FAST_CHECK_GATE_BIN", File.expand_path("gate", __dir__))
 SPINE_CONFIG = ENV.fetch("FAST_CHECK_SPINE", File.join(ROOT, "config", "fast_cert_spine.yml"))
 # The shape taxonomy, anchored in the HUB exactly as the spine is — it is studio-owned
@@ -504,11 +517,11 @@ unless gem_repo
     defer_existing = CertEmission.fetch_checks(TASK_BIN, slug)
     if defer_existing.nil?
       abort "fast-check: DEFERRED, but #{slug.inspect}'s checks_run could not be read (bin/task show), so " \
-            "the receipt cannot be written or verified. Re-run bin/fast-check #{slug}."
+            "the receipt cannot be written or verified. Re-run #{SELF_CMD} #{slug}."
     end
     unless system(TASK_BIN, "update", slug, "--checks", defer_line)
       abort "fast-check: DEFERRED, but FAILED to record the receipt on #{slug.inspect} (bin/task update). " \
-            "Re-run bin/fast-check #{slug}."
+            "Re-run #{SELF_CMD} #{slug}."
     end
     defer_kept = defer_existing.reject { |prior| prior.match?(FullSuiteGate.evidence_re([FullSuiteGate::DEFER_LANE])) }
     defer_missing = CertEmission.missing_after_write(TASK_BIN, slug, [defer_line] + defer_kept)
@@ -516,11 +529,11 @@ unless gem_repo
       # The write returned 200; only the confirming READ failed. Say so — the deferral IS
       # recorded as far as anything here can tell, and dor-check reads the board itself.
       warn "fast-check: DEFERRED at #{defer_fp[0, 12]} — receipt written to #{slug}, but the read-back " \
-           "FAILED (UNVERIFIED). Check with bin/task show #{slug} -v; if it is absent, re-run bin/fast-check #{slug}."
+           "FAILED (UNVERIFIED). Check with #{TASK_CMD} show #{slug} -v; if it is absent, re-run #{SELF_CMD} #{slug}."
     elsif defer_missing.any?
       abort "fast-check: DEFERRED, but the read-back is MISSING #{defer_missing.size} checks line(s) — the " \
             "receipt did not land, and dor-check will refuse without it:\n  #{defer_missing.join("\n  ")}\n" \
-            "Re-run bin/fast-check #{slug}."
+            "Re-run #{SELF_CMD} #{slug}."
     else
       warn "fast-check: DEFERRED at #{defer_fp[0, 12]} — receipt recorded on #{slug} (read-back confirms). " \
            "GitHub CI is now the ONLY evidence for this diff, and dor-check requires it GREEN."
@@ -786,7 +799,7 @@ mapped_res =
         warn "  running the SPINE ONLY. For a diff this broad the right cert is:"
       end
     end
-    warn "    bin/full-suite-check #{gate_slug || '<task>'}"
+    warn "    #{FULL_SUITE_CMD} #{gate_slug || '<task>'}"
     warn "  (override deliberately with FAST_CHECK_MAPPED_CAP=<n>.)"
     warn ""
     if cap[:fallback].any?
@@ -929,7 +942,7 @@ end
 existing = CertEmission.fetch_checks(TASK_BIN, slug)
 if existing.nil?
   warn "fast-check: ran green but couldn't read #{slug.inspect}'s checks_run (bin/task show), so the write " \
-       "cannot be verified. Not writing. Re-run, or record by hand: bin/task update #{slug} " \
+       "cannot be verified. Not writing. Re-run, or record by hand: #{TASK_CMD} update #{slug} " \
        "--checks #{Shellwords.escape(line)}"
     g1_settled = true
   emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
@@ -982,7 +995,7 @@ if missing.nil?
   # did not complete. The certification happened — close success, exit 0.
   warn "#{summary}, but the read-back FAILED — UNVERIFIED that the recorded evidence" \
        "#{kept.empty? ? '' : " and the #{kept.size} pre-existing checks line(s)"} landed. " \
-       "Verify: bin/task show #{slug} -v. #{followup}"
+       "Verify: #{TASK_CMD} show #{slug} -v. #{followup}"
     g1_settled = true
   emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--success") if gate_slug
   exit 0
@@ -996,7 +1009,7 @@ if lost_evidence.any? || lost_kept.any?
   if lost_evidence.any?
     # The cert's OWN evidence line(s) did not land — re-running regenerates them.
     # Never hand-write a "[<lane>@<fp>]" line: that forges the certification.
-    warn "fast-check: the evidence line did NOT land — re-run the cert: bin/fast-check #{slug}"
+    warn "fast-check: the evidence line did NOT land — re-run the cert: #{SELF_CMD} #{slug}"
   end
   if lost_kept.any?
     # Re-record the UNION — survivors AND lost. `--checks` REPLACES the author
@@ -1005,7 +1018,7 @@ if lost_evidence.any? || lost_kept.any?
     # is PASTED, and a Ruby literal leaves $(…)/backticks live in double quotes
     # (round-3 catch).
     warn "fast-check: re-record the full pre-existing set (survivors AND lost — resending only the lost " \
-         "lines would drop the survivors): bin/task update #{slug} " \
+         "lines would drop the survivors): #{TASK_CMD} update #{slug} " \
          "#{kept.map { |line_kept| "--checks #{Shellwords.escape(line_kept)}" }.join(' ')}"
   end
     g1_settled = true

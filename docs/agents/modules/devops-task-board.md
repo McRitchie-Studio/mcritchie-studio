@@ -1215,3 +1215,48 @@ bin/task update <task-slug> --gem-bump major   # patch | minor | major
 It is an override, never a requirement. Leave it unset and the release derives the
 bump from the task's `kind`.
 
+
+## Remedy hints name a command you can actually run
+
+**Every command a fast-lane script tells you to run is an absolute path.** When
+`bin/ship`, `bin/fast-check`, `bin/full-suite-check` or `bin/dor-check` refuses
+and hands you a next move, the line it prints is pasteable from wherever you are
+standing — `/Users/…/mcritchie-studio/bin/ship <slug>`, never a bare
+`bin/ship <slug>`.
+
+**Why it has to be.** Every one of those scripts, plus `bin/task`, lives in
+`mcritchie-studio/bin` **alone**. No satellite (`turf-monster`, `rolio`) and no
+gem (`studio-engine`, `solana-studio`, `turf-vault`) carries any of them, so a
+builder on one of those desks reached the script through its absolute path in the
+first place — that is the only way they could have. A bare re-run hint handed
+that reader `No such file or directory`, from the tool's own advice, at the exact
+moment they were already stuck.
+
+| Thing | Shape | Why |
+|-------|-------|-----|
+| a RE-RUN remedy (`Re-run <abs>/bin/fast-check <slug>`) | absolute script, **no `cd`** | you are already standing in the tree — the root guard proved it before the cert ran |
+| a HANDOFF remedy (`cd <desk> && <abs>/bin/ship <slug>`) | absolute script **and** the desk | it points at a tree you are *not* in; the path picks the script, the cwd picks the tree it acts on |
+| a script named as a SUBJECT (`bin/dor-check credits this receipt only alongside a green CI`) | stays bare | prose, not an instruction — nobody pastes a sentence's subject |
+| a usage banner, a step transcript (`5/8 record — bin/task update …`), a board-recorded `"cmd"` field | stays bare | a synopsis, a transcript, or a durable record — none of them is addressed to a reader standing anywhere |
+
+**Which copy you are sent to is decided by the disk, never by a repo's name.**
+`FastLane.remedy_command` (`bin/lib/fast_lane.rb`) takes an ordered list of `bin`
+directories and picks the first that actually holds an executable. A re-run passes
+one directory — the speaking script's own `__dir__`, so it names the very script
+that is talking. A handoff passes the desk's first and the hub's second. Resolving
+by existence self-heals: onboard a repo, or give a satellite a shim, and the hints
+follow the disk with no registry to remember.
+
+**Writing a new refusal?** Build the command through the helper, never by hand:
+
+```ruby
+SELF_CMD = FastLane.remedy_command("fast-check", __dir__)
+# …
+abort "fast-check: the receipt did not land. Re-run #{SELF_CMD} #{slug}."
+```
+
+`test/lib/remedy_hint_guard_test.rb` sweeps the scripts for bare instructions and
+fails on a new one, naming the file and line. Its exemptions are keyed on the
+**line's text**, never its number, and each carries a `why:` — so a genuinely
+bare-and-correct site is recorded with its reason instead of quietly widening the
+hole.

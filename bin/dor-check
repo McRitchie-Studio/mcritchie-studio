@@ -152,6 +152,7 @@ require "uri"
 require "yaml"
 require "optparse"
 require_relative "lib/full_suite_gate"
+require_relative "lib/fast_lane"
 require_relative "lib/repo_root"
 require_relative "lib/ci_status"
 require_relative "lib/task_pr_set"
@@ -177,6 +178,22 @@ Dor::Checks.load!
 # diff_root's name.
 ROOT = File.expand_path("..", __dir__)
 CONFIG_PATH = File.join(ROOT, "config", "feature_shapes.yml")
+# ── remedy forms of the scripts this gate NAMES in a refusal ──────────────────
+# Absolute and resolvable. bin/fast-check, bin/full-suite-check and bin/task live
+# in mcritchie-studio/bin ALONE, so a builder grading a turf-monster or rolio desk
+# reached THIS gate through its absolute path and could not resolve the bare form
+# it printed back at them. Resolved from __dir__ — the very dor-check that is
+# speaking, and its siblings beside it. Deliberately NOT TASK_BIN below: that is
+# the ENV-redirected EXEC seam, while a remedy names the real script the reader is
+# sent to. Policy: FastLane.remedy_command.
+#
+# The two CROSS-TREE remedies here (the zap re-certify, and the second repo's cert
+# on a two-repo task) do NOT use these: they lead with a `cd` into another
+# checkout, so they resolve desk-first against THAT tree with the hub as fallback —
+# the same shape as FastLane.handoff_command.
+FAST_CHECK_CMD = FastLane.remedy_command("fast-check", __dir__)
+FULL_SUITE_CMD = FastLane.remedy_command("full-suite-check", __dir__)
+TASK_CMD = FastLane.remedy_command("task", __dir__)
 # The board CLI the task-root guard reads devops.branch/worktree_slug through when
 # a caller has no task in hand. dor-check always DOES (it just fetched one), so it
 # passes `devops:` and this stays unused on the normal path; tests stub it.
@@ -1927,7 +1944,7 @@ def suite_evidence_error(eval, slug, ci, review_role)
       "(the mapped lane was CAPPED over a spine this checkout resolves none of), so it recorded a " \
       "receipt instead of a cert and CI is the ONLY evidence there is. CI is currently #{state}. " \
       "#{guidance}; or certify locally in full and stop depending on CI for this diff: " \
-      "bin/full-suite-check #{slug}."
+      "#{FULL_SUITE_CMD} #{slug}."
   end
 
   # A receipt for a DIFFERENT tree is not a receipt for this one. Called out separately
@@ -1935,8 +1952,8 @@ def suite_evidence_error(eval, slug, ci, review_role)
   if lanes[FullSuiteGate::DEFER_LANE] == :stale
     return "the cert DEFERRAL recorded for this task is STALE (#{stale_delta(eval, FullSuiteGate::DEFER_LANE)}) " \
       "— the code moved after it was recorded, so the CI run it points at graded a tree that is not this one. " \
-      "Re-run bin/fast-check #{slug} (it re-defers in seconds if the diff is still capped), push, and let CI " \
-      "settle on the new tree; or certify locally in full: bin/full-suite-check #{slug}."
+      "Re-run #{FAST_CHECK_CMD} #{slug} (it re-defers in seconds if the diff is still capped), push, and let CI " \
+      "settle on the new tree; or certify locally in full: #{FULL_SUITE_CMD} #{slug}."
   end
 
   if lanes[FullSuiteGate::FAST_LANE] == :fresh
@@ -1976,7 +1993,7 @@ def suite_evidence_error(eval, slug, ci, review_role)
     return "fast-cert evidence is FRESH for this exact code, but a fast cert only satisfies the suite gate " \
       "alongside a GREEN GitHub CI — CI carries the FULL suite + test:system as the net, and it is currently " \
       "#{state}. #{guidance}; or certify locally " \
-      "in full: bin/full-suite-check #{slug}."
+      "in full: #{FULL_SUITE_CMD} #{slug}."
   end
 
   # THE LANES THIS REPO OWES, read from the SAME list the verdict is computed over.
@@ -2026,12 +2043,12 @@ def suite_evidence_error(eval, slug, ci, review_role)
   # separate defect on the GEM axis, filed rather than folded in.
   "#{lint_owed ? "the FULL suite + FULL rubocop are" : "the FULL suite is"} not certified green for " \
     "this code#{eval[:repo].to_s.strip.empty? ? "" : " in #{eval[:repo]}"} — #{parts.join("; ")}. " \
-    "Run `bin/full-suite-check #{slug}` (runs `bin/rails test`#{lint_owed ? " + `bin/rubocop`" : ""} " \
+    "Run `#{FULL_SUITE_CMD} #{slug}` (runs `bin/rails test`#{lint_owed ? " + `bin/rubocop`" : ""} " \
     "IN FULL and records fingerprint-bound evidence) — it REFUSES a touched-files subset" \
     "#{lint_owed ? " or a lint-red tree" : ""}. Or take the FAST " \
-    "route: `bin/fast-check #{slug}` (diff-mapped tests + core spine + rubocop on changed files, ~1 min), " \
+    "route: `#{FAST_CHECK_CMD} #{slug}` (diff-mapped tests + core spine + rubocop on changed files, ~1 min), " \
     "accepted once the PR's GitHub CI is green. " \
-    "Conscious, justified skip? Record a bypass: bin/task update #{slug} --checks \"[full-suite-bypass] <why>\"."
+    "Conscious, justified skip? Record a bypass: #{TASK_CMD} update #{slug} --checks \"[full-suite-bypass] <why>\"."
 end
 
 # --- DoR gate-run emit (durable GateRun markers) ----------------------------
@@ -2396,7 +2413,7 @@ unless release_owned_edits.empty?
        "collides with a sibling PR. The release conductor sets it during the sweep."
   puts "  - drop the hunk: git checkout origin/#{ENV.fetch('DOR_BASE_BRANCH', 'accepted')} -- #{release_owned_edits.first}"
   puts "  - if this change is BREAKING, declare it instead of versioning it: " \
-       "bin/task update #{task["slug"] || slug} --gem-bump major"
+       "#{TASK_CMD} update #{task["slug"] || slug} --gem-bump major"
   puts "  → not ready to advance #{boundary}; resolve the above"
   exit 1
 end
@@ -2978,7 +2995,7 @@ if gate != "build"
     sample = data_files.first(3).join(", ") + (data_files.size > 3 ? ", …" : "")
     errors << "diff touches a seed/migration (#{sample}) but devops.post_deploy_cmd is blank — this " \
       "change should declare a post-deploy command so the conductor runs it on ship and nobody runs the " \
-      "rake by hand (e.g. bin/task update #{task["slug"] || slug} --post-deploy-cmd 'bin/rails pokemon:seed'); " \
+      "rake by hand (e.g. #{TASK_CMD} update #{task["slug"] || slug} --post-deploy-cmd 'bin/rails pokemon:seed'); " \
       "set it to 'none' if no command is needed (a schema-only migration the release phase auto-runs)"
   end
 
@@ -3199,6 +3216,18 @@ if gate != "build"
     pr_head: ENV["DOR_CHECK_PR_HEAD"] || (ci && ci[:head_oid])
   )
   if review_role && head_check[:state] == :mismatch
+    # THE RE-CERTIFY COMMAND, resolved desk-first against the GRADED checkout (the tree
+    # every -C command in this refusal acts on) with the hub as fallback — a reviewer
+    # standing at a satellite\'s primary cannot run a bare `bin/full-suite-check`.
+    #
+    # NAMED, not inlined, so the ORDER guard in test/docs/zap_cert_freshness_docs_test.rb
+    # can still find it: that guard reads this refusal\'s SOURCE and asserts the last
+    # mention of the re-cert falls AFTER the command that moves the checkout. The path is
+    # now computed at runtime, so the literal `bin/full-suite-check` it used to index on is
+    # no longer in the source; `recert_command` is the marker that replaces it.
+    recert_command = FastLane.remedy_command("full-suite-check",
+                                             [File.join(diff_root.to_s, "bin"), __dir__],
+                                             task["slug"] || slug)
     errors << "the tree this review gate graded is NOT the PR head — #{head_check[:ref]} in #{diff_root} is at " \
       "#{head_check[:local_sha][0, 12]} while the PR head is #{head_check[:pr_head][0, 12]}. Somebody pushed " \
       "(a reviewer zap is the usual cause) and this checkout has not seen it, so the DIFF, the file contents " \
@@ -3218,7 +3247,7 @@ if gate != "build"
       "hashes the WORKING tree, while this gate hashes #{head_check[:ref]}. So if the zap was yours, " \
       "move the graded checkout onto the fetched head first " \
       "(git -C #{diff_root} merge --ff-only origin/#{zap_branch}), then re-certify " \
-      "(bin/full-suite-check #{task["slug"] || slug}) so the cert describes what will merge. IF THAT " \
+      "(#{recert_command}) so the cert describes what will merge. IF THAT " \
       "MERGE REFUSES (`Not possible to fast-forward`), #{diff_root} carries a commit " \
       "origin/#{zap_branch} does not, and NEITHER hint git prints there ends the job: --no-ff SUCCEEDS " \
       "and leaves a tree still holding what the PR head lacks, and `git rebase` alone leaves that " \
@@ -3611,7 +3640,7 @@ if suite_eval && gate != "build" && !suite_eval[:bypass] && suite_eval[:verifiab
               "#{tree[:root]}#{tree[:override] ? " at #{tree[:override][:ref]}" : ""} = " \
               "@#{repo_eval[:fingerprint].to_s[0, 12]}#{secondary_cert_evidence(repo_eval)}. A task that names " \
               "two repos owes a cert in EACH — certify it there: cd #{tree[:root]} && " \
-              "bin/full-suite-check #{task['slug'] || slug}."
+              "#{FastLane.remedy_command('full-suite-check', [File.join(tree[:root].to_s, 'bin'), __dir__], task['slug'] || slug)}."
   end
 
   # DECLARED but PR-less repos are NOT gated (see cert_owing_repos — the gem-release
@@ -3626,7 +3655,7 @@ if suite_eval && gate != "build" && !suite_eval[:bypass] && suite_eval[:verifiab
     suggestions << "cert scope: this task also names #{ungated.join(', ')}, which recorded no PR, so " \
                    "#{ungated.size == 1 ? 'it was' : 'they were'} NOT cert-gated. That is correct for a gem " \
                    "task naming its consumers; if code changed there, record the PR " \
-                   "(bin/task update #{task['slug'] || slug} --pr-url-for <repo>=<url>) so the gate can see it."
+                   "(#{TASK_CMD} update #{task['slug'] || slug} --pr-url-for <repo>=<url>) so the gate can see it."
   end
 end
 
@@ -3738,7 +3767,7 @@ if gate != "build" && Array(shape_def && shape_def["required_evidence"]).include
       "\"does the changed test still bite?\", which is the question a tier list cannot ask about a diff " \
       "with no behavior in it. Nothing in this diff is automatically replayable (an added file has no " \
       "pre-change version; e2e/ and tests/ have no runner here), so this half is yours: run the control and " \
-      "record what you SAW, e.g. bin/task update #{task["slug"] || slug} --checks '[control] pre-change " \
+      "record what you SAW, e.g. #{TASK_CMD} update #{task["slug"] || slug} --checks '[control] pre-change " \
       "test/integration/hub_test.rb at HEAD → 1 failure at line 42 (the assertion I deleted); post-change " \
       "green' — or, for added coverage, the mutation you forced and the failure it produced"
   elsif control_lines.any? && observed.any? &&
@@ -3837,7 +3866,7 @@ if gate != "build"
         "something only a live browser can produce (a computed style, a post-interaction DOM state, a " \
         "page.evaluate result) — NOT that a token appears in the markup. The lane's runtime executed-set " \
         "gate (config/e2e_lane.yml) then proves it actually ran. If a browser genuinely cannot reach " \
-        "this code, record why: bin/task update #{task["slug"] || slug} --checks '[browser-bypass] " \
+        "this code, record why: #{TASK_CMD} update #{task["slug"] || slug} --checks '[browser-bypass] " \
         "<reason>'"
     else
       suggestions << "BROWSER-EVIDENCE HOLE (reported, not blocking): this diff adds #{programs.size} " \

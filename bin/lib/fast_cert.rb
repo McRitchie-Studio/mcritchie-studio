@@ -2,6 +2,7 @@
 
 require "yaml"
 require_relative "code_diff"
+require_relative "fast_lane"
 
 # bin/lib/fast_cert.rb — test SELECTION for the G1 fast cert (bin/fast-check).
 #
@@ -914,7 +915,7 @@ module FastCert
     return nil unless executed_test_paths(mapped_only, spine, cap).empty?
 
     task = slug.to_s.strip.empty? ? "<task>" : slug.to_s.strip
-    fix = remedy.to_s.strip.empty? ? "bin/full-suite-check #{task}" : remedy.to_s.strip
+    fix = default_remedy(task, remedy)
     return defer_outcome(cap, task, fix) if cap && cap[:capped]
 
     # Reaching here means `spine` is EMPTY — executed_test_paths is (mapped + spine) and it
@@ -969,7 +970,7 @@ module FastCert
   # The UNMAPPED refusal — the half that does not move. Kept verbatim from the guard PR
   # 1226 added, because the case it describes has not changed.
   def refuse_message(task, fix = nil)
-    remedy_line = fix.to_s.strip.empty? ? "bin/full-suite-check #{task}" : fix.to_s.strip
+    remedy_line = default_remedy(task, fix)
     "REFUSING TO CERTIFY — this run would execute ZERO test files, so there is nothing to " \
       "certify. the diff maps to NO test file — no convention target, and no word-boundary " \
       "grep hit — and NO spine is declared for this run to fall back on " \
@@ -984,6 +985,10 @@ module FastCert
   # a deferral becomes a shrug. `message` is what the builder reads, and it says the two
   # things they need: nothing was certified here, and what has to be true later.
   def defer_outcome(cap, task, fix = nil)
+    remedy_line = default_remedy(task, fix)
+    # The deliberate-override line names the mapped lane by the SAME absolute
+    # fast-check the reader just ran, so a satellite desk can paste it too.
+    mapped_override = FastLane.remedy_command("fast-check", File.expand_path("..", __dir__), task)
     culprit = cap[:worst_path] ? " (widest: #{cap[:worst_path]} → #{cap[:worst_count]} test file(s))" : ""
     detail = "cert DEFERRED to GitHub CI: the mapped lane was CAPPED — #{cap[:count]} mapped " \
              "path(s) over the cap of #{cap[:cap]}#{culprit} — over a spine this checkout " \
@@ -997,9 +1002,9 @@ module FastCert
       "\n  What happens next: bin/ship pushes and opens the PR anyway, waits for CI, and " \
       "bin/dor-check REFUSES the submit unless CI is GREEN. A red CI, no CI, or an edit " \
       "after this receipt all still block — deferring is not skipping." \
-      "\n  Prefer to certify locally instead? #{fix.to_s.strip.empty? ? "bin/full-suite-check #{task}" : fix.to_s.strip}" \
+      "\n  Prefer to certify locally instead? #{remedy_line}" \
       "\n  (or run the mapped lane anyway, deliberately: FAST_CHECK_MAPPED_CAP=#{cap[:count]} " \
-      "bin/fast-check #{task} — that is the broad local suite this cap exists to avoid.)"
+      "#{mapped_override} — that is the broad local suite this cap exists to avoid.)"
     { kind: :defer, message: message, detail: detail }
   end
 
@@ -1074,10 +1079,36 @@ module FastCert
   # genuinely cannot resolve a command for a checkout it refuses on its own terms, loudly,
   # naming what it could not read (bin/lib/ci_test_command.rb) — a recoverable under-fire
   # instead of an invitation to skip the evidence.
+  # BOTH ARMS ARE NOW ABSOLUTE, and the hub arm's bare form is gone. It was defensible
+  # on its own — CertRootGuard makes the cert writers' cwd agree with `root`, so a hub
+  # tree DOES carry a runnable bin/full-suite-check — but it rested on a guard the
+  # FAST_CHECK_ROOT seam bypasses, and it left one refusal speaking two dialects: every
+  # OTHER command in the same fast-check output is now absolute. Partial correction is
+  # how this house ends up with two authorities on one question, and the arm a guard
+  # exercises should be the arm every builder is handed.
+  #
+  # RESOLVED BY EXISTENCE, NOT BY REPO IDENTITY. The old `root == hub_root` comparison
+  # asked "is this the hub?"; this asks the only question that decides whether the
+  # command runs — "is there an executable there?" — preferring the tree being certified
+  # and falling back to the hub. That self-heals: onboard a repo, or give a satellite a
+  # bin/full-suite-check shim, and the remedy follows the disk instead of a registry
+  # somebody has to remember. When neither exists the hub path is still named, so the
+  # reader gets an absolute path to reason about rather than a bare word that hides the
+  # question. See FastLane.remedy_command.
   def remedy(task, root:, hub_root:)
-    in_hub = File.expand_path(root.to_s) == File.expand_path(hub_root.to_s)
-    bin = in_hub ? "bin/full-suite-check" : File.join(hub_root.to_s, "bin", "full-suite-check")
-    "#{bin} #{task}"
+    FastLane.remedy_command("full-suite-check",
+                            [File.join(root.to_s, "bin"), File.join(hub_root.to_s, "bin")],
+                            task)
+  end
+
+  # The remedy a caller that passed none gets — the hub's own full suite, absolute,
+  # resolved from THIS file's own bin dir (bin/lib → bin). It is a fallback, not the
+  # normal path: bin/fast-check always passes an explicit `remedy:`.
+  def default_remedy(task, fix = nil)
+    given = fix.to_s.strip
+    return given unless given.empty?
+
+    FastLane.remedy_command("full-suite-check", File.expand_path("..", __dir__), task)
   end
 
   # Mapped tests already covered by a spine entry (exact file, or inside a spine
