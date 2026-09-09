@@ -124,8 +124,10 @@ class BreakerRemedyNamesItsSoulTest < Minitest::Test
                    "the block landed as #{body["by"].inspect}, not #{OWNER.inspect} — a recipe printed to " \
                    "#{OWNER} must record #{OWNER}:\n  #{recipe}\n  wrote #{body.to_json}"
       assert_equal OWNER, body.dig("event", "actor"),
-                   "the TaskEvent named #{body.dig("event", "actor").inspect}. An event with a session and no " \
-                   "actor is the UNATTRIBUTED worker that makes bin/reviewer-select fail closed:\n  #{recipe}"
+                   "the TaskEvent named #{body.dig("event", "actor").inspect}. An event carrying a session " \
+                   "and no actor is the UNATTRIBUTED block this file exists to prevent — a send-back on the " \
+                   "record that cannot say who stopped the PR (see the header: the author set is reached " \
+                   "only second-hand, via the statusline adopting the freed lease):\n  #{recipe}"
     end
   end
 

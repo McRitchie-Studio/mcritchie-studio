@@ -36,7 +36,7 @@ require "test_helper"
 #     is what renew answers about.
 class ReviewClaimRenewStatesTest < ActiveSupport::TestCase
   SLUG = "renew-state-subject"
-  TTL = ClaimLease::DEFAULT_TTL_SECONDS
+  TTL = ClaimLease::REVIEW_TTL_SECONDS
   MINE = { session: "sess-mine", nonce: "inst-mine" }.freeze
   THEIRS = { session: "sess-theirs", nonce: "inst-theirs" }.freeze
 

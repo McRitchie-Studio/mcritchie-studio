@@ -133,9 +133,16 @@ class ReviewClaimCli
   # The CEILING exists because an unbounded --observe-for turns a diagnostic into a
   # hang, and the POLL is what lets an actively-renewing lease answer the moment its
   # expiry moves instead of at the end of the budget.
+  # The CEILING is derived from the same BEAT, not from the TTL. It used to be
+  # "one TTL + 5s" — a fine ceiling while the review lease was 120s and a
+  # three-and-a-half-HOUR hang once ClaimLease::REVIEW_TTL_SECONDS gave the review
+  # lane its own TTL. What this instrument watches is the expiry MOVING, which
+  # happens on the renewer's beat; four beats is already three chances to see it and
+  # is all a diagnostic may spend.
   OBSERVE_SAFETY_FACTOR = 1.5
+  MAX_OBSERVE_BEATS = 4
   DEFAULT_OBSERVE_SECONDS = (ShiftRenewer::INTERVAL_SECONDS * OBSERVE_SAFETY_FACTOR).ceil
-  MAX_OBSERVE_SECONDS = ClaimLease::DEFAULT_TTL_SECONDS + 5
+  MAX_OBSERVE_SECONDS = ShiftRenewer::INTERVAL_SECONDS * MAX_OBSERVE_BEATS
   POLL_SECONDS = 5
 
   def initialize(env: ENV, out: $stdout, err: $stderr)
@@ -304,7 +311,7 @@ class ReviewClaimCli
   def renewed_ok(slug, data)
     if data["state"].to_s == "reacquired"
       @err.puts("review-claim: ⚠️  #{slug} — your review lease had LAPSED and was re-acquired just now. " \
-                "It was FREE for up to #{lease_ttl_seconds}s, so another reviewer could have popped this " \
+                "It was FREE for up to #{lease_ttl_human}, so another reviewer could have popped this " \
                 "task in that window: check `bin/task review-claim status #{slug}` and the PR before you merge.")
     end
     OK
@@ -618,7 +625,7 @@ class ReviewClaimCli
     anchor = anchor_process
     unless anchor
       @out.puts("review-claim: note — no agent process to anchor a renewer to; " \
-                "this review lapses in ~#{lease_ttl_seconds}s unless something renews it.")
+                "this review lapses in ~#{lease_ttl_human} unless something renews it.")
       return nil
     end
 
@@ -711,18 +718,75 @@ class ReviewClaimCli
 
   # Report what the BOARD did, not what we hoped it did (the same lesson bin/devops-shift
   # learned: a 204 release means NOTHING was released, so don't claim success).
+  #
+  # THE 204 USED TO BE ONE SENTENCE FOR THREE DIFFERENT SITUATIONS, and the sentence
+  # it chose ("not under review by this session") was a guess. Measured 2026-09-08: a
+  # probe reading this line mislabelled two lease states, and a 75-minute review hit
+  # the same confusion live — a release that answered "nothing released" while the
+  # reviewer had no idea whether the task was still theirs, somebody else's, or free.
+  # So the refusal now ASKS, with the same holder read `refuse_renew` uses, and names
+  # what it found. It costs one extra board call on a path that produced no usable
+  # information at all, and only on the failing branch.
+  #
+  # The exit code stays 0 for every outcome (this CLI's documented contract, and a
+  # release that found nothing to drop is not a failed review) — the honesty is in
+  # the message, and the dangerous state gets stderr rather than stdout.
   def report_release(slug, res)
     if res.nil?
       @out.puts("review-claim: could not reach the board — the #{slug} review will lapse " \
-                "on its own within ~#{lease_ttl_seconds}s.")
+                "on its own within ~#{lease_ttl_human}.")
     elsif res.code.to_i == 204
-      @out.puts("review-claim: #{slug} was not under review by this session — nothing released.")
+      refuse_release(slug)
     elsif ok?(res)
-      @out.puts("review-claim: #{slug} review released.")
+      report_released(slug, parse_data(res))
     else
       @out.puts("review-claim: the board refused the #{slug} release (HTTP #{res.code}) — " \
-                "it will lapse within ~#{lease_ttl_seconds}s.")
+                "it will lapse within ~#{lease_ttl_human}.")
     end
+  end
+
+  # The 200 path. A plain drop is one quiet line; a drop of a lease that had already
+  # LAPSED is loud, because it says the task was FREE for a window in which another
+  # reviewer could have popped it — the same warning `renew` gives on :reacquired,
+  # and for the same reason.
+  def report_released(slug, data)
+    if data["state"].to_s == "released_lapsed"
+      @err.puts("review-claim: ⚠️  #{slug} released — but your review lease had already LAPSED, " \
+                "so the task was FREE for part of this review. Another reviewer could have popped " \
+                "it in that window: check the PR before you treat your verdict as the only one.")
+      return
+    end
+
+    @out.puts("review-claim: #{slug} review released.")
+  end
+
+  # The 204 path — nothing was dropped. Three states reach it and they call for three
+  # different next moves, so read the holder rather than assuming the common one.
+  def refuse_release(slug)
+    holder = read_holder(slug)
+
+    if holder == :unreadable
+      @out.puts("review-claim: #{slug} — NOTHING released, and the board would not say who holds it. " \
+                "Check before you assume the task is free: bin/task review-claim status #{slug}.")
+      return
+    end
+
+    return report_release_no_lease(slug, holder) unless holder.is_a?(Hash) && present?(holder["session"])
+    return report_release_no_lease(slug, holder) unless holder["live"]
+
+    @err.puts("review-claim: ⚠️  #{slug} — NOTHING released: this review is now held by " \
+              "#{holder_line(holder)}, NOT by you. Your lease changed hands during the review, so " \
+              "another reviewer has been working this task too — reconcile before merging.")
+  end
+
+  # "Nothing of yours to drop" — no claim row, an unclaimed one, or somebody else's
+  # lapsed lease. The task is FREE either way, which is the outcome `release` wanted;
+  # a lapsed prior holder is named because it tells the reader the lease expired
+  # under them rather than never existing.
+  def report_release_no_lease(slug, holder)
+    lapsed = holder_line(holder) if holder.is_a?(Hash) && present?(holder["session"])
+    @out.puts("review-claim: #{slug} — nothing released: you held no review lease on this task" \
+              "#{lapsed ? " (a LAPSED claim by #{lapsed} is on it)" : ""}. The task is free either way.")
   end
 
   # THE WIRING GAP, told apart from a red build. `no_green_ci` is a WHOLE-QUEUE
@@ -783,7 +847,7 @@ class ReviewClaimCli
     @out.puts("review-claim: ⏭️  #{slug} already under review — SKIP.")
     @out.puts("  #{holder_line(holder)}")
     @out.puts("  Another session is reviewing this task; pick the next reviewable one " \
-              "(its lease lapses ~#{lease_ttl_seconds}s after it stops).")
+              "(its lease lapses ~#{lease_ttl_human} after it stops).")
   end
 
   # The no-self-review refusal: this soul is recorded as the task's builder
@@ -959,7 +1023,7 @@ class ReviewClaimCli
       has already passed (free). Absent/lapsed answers instantly; a live holder
       answers within a renewal cycle; --observe-for raises the ~#{DEFAULT_OBSERVE_SECONDS}s budget.
       `acquire` and `claim-next-review` are WRITES, not reads: each takes a real
-      ~#{lease_ttl_seconds}s review lease on a real task. claim-next-review asks the BOARD for the
+      ~#{lease_ttl_human} review lease on a real task. claim-next-review asks the BOARD for the
       next reviewable green-CI task, claims it, and prints its slug on stdout.
       `renew` REPORTS what it did. It exits 0 only when you hold the lease afterwards,
       and says so on stderr when it had LAPSED and was re-acquired — that lease was
@@ -1073,13 +1137,26 @@ class ReviewClaimCli
     @api.present?(value)
   end
 
-  # The lease TTL for the skip/lapse copy — read from ClaimLease when the app libs are
-  # loadable (they are in-repo), else the documented 120s default.
+  # The REVIEW lane's lease TTL for the skip/lapse copy — read from ClaimLease when
+  # the app libs are loadable (they are in-repo), else the documented default. It is
+  # deliberately not DEFAULT_TTL_SECONDS: that one is the build claim's and the two
+  # role leases', and quoting it here promised a two-minute lapse on a lane whose
+  # lease now lasts hours.
   def lease_ttl_seconds
     require_relative "../../lib/claim_lease"
-    ClaimLease::DEFAULT_TTL_SECONDS
+    ClaimLease::REVIEW_TTL_SECONDS
   rescue StandardError
-    120
+    12_275
+  end
+
+  # The same number as a human reads it ("3.4h"), through the ONE renderer every
+  # surface in the studio already shares. A TTL measured in hours printed as a raw
+  # "~12275s" is a number the reader has to do arithmetic on before it means anything.
+  def lease_ttl_human
+    require_relative "../../lib/claim_lease"
+    ClaimLease.humanize_age(lease_ttl_seconds)
+  rescue StandardError
+    "#{lease_ttl_seconds}s"
   end
 end
 

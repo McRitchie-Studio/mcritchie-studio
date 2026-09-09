@@ -46,17 +46,23 @@ handoff that names nobody makes the selector refuse rather than guess. Measured
 2026-08-28 — `built_by` blank on six consecutive tasks across one review sitting,
 two reviewers reporting the refusal and hand-picking.
 
-**THE BUILD CLAIM STAMPS THE AUTHOR SET — `agent_slug` does not.** `--agent`
+**THE BUILD CLAIM STAMPS THE AUTHOR SET — a create alone does not.** `--agent`
 writes two independent facts, and only one of them is what review reads:
 
 - **AUTHOR SET** (`devops.built_by` + `devops.builders`) — stamped by the build
-  CLAIM (`move <task> building --actor <soul>`), which `begin` makes on BOTH
-  forms. This is what `bin/reviewer-select` excludes on.
+  CLAIM (`move <task> building`), which `begin` makes on BOTH forms. This is
+  what `bin/reviewer-select` excludes on. The claim is only the TRIGGER; the
+  soul it records comes from a PRECEDENCE CHAIN (`Task#builder_to_stamp`) —
+  **`--actor <soul>`** first, else `devops.persona`, else **the task's assigned
+  `agent_slug`**, the no-flag default that keeps a bare `bin/task move <task>
+  building` attributed. An existing `built_by` is KEPT, so only an explicit
+  `--actor` re-points a recorded builder.
 - **ASSIGNEE** (the `agent_slug` column) — written by a create body, or by
-  `bin/task update <slug> --agent <soul>`. A RESUME NEVER WRITES IT, by design:
-  the author set ACCUMULATES a second soul, while the assignee holds ONE value,
-  so writing it on every resume would take the task away from whoever the PO
-  assigned it to.
+  `bin/task update <slug> --agent <soul>`. **A resume does not write it**: the
+  resume branch builds no `top_body`, so `--agent` reaches the claim as
+  `--actor` and never lands on the column. That is a property of the code
+  path, not a policy of sparing top-level columns — the same resume PATCH
+  writes `dev_size` (`bin/task:2694`).
 
 Measured 2026-09-08 on throwaway tasks — no single write sets both:
 
@@ -66,9 +72,21 @@ bin/task begin <slug> --agent avi     → assignee unset   · authors ["avi"]
 bin/task begin --title … --agent avi  → assignee avi     · authors ["avi"]
 ```
 
-So `assignee: unassigned  builders: avi` is a correctly attributed, fully
-protected task — not a missing stamp. `bin/task show <slug>` prints the two
-lines separately for exactly this reason.
+Every row above reaches the author set through `--actor` — both `begin` forms
+forward `--agent` to the claim — so none of them can exercise the `agent_slug`
+fallback. Measured 2026-09-08, the path that does:
+
+```text
+bin/task create --agent avi, then a BARE
+  bin/task move <slug> building       → assignee avi     · authors ["avi"]
+```
+
+The actor there is the session UUID and no persona is set, so `--actor` cannot
+fire and the stamp comes from `agent_slug` alone. So `assignee: unassigned
+builders: avi` is a correctly attributed, fully protected task — not a missing
+stamp — while a blank assignee on a task NOBODY claimed by name is a real gap,
+because `agent_slug` is the last source the chain has. `bin/task show <slug>`
+prints the two lines separately for exactly this reason.
 
 **It works on BOTH forms of `begin`, and the value must be a soul SLUG** —
 lowercase with single hyphens (`steffon`, `turf-monster`). `--agent Steffon` or
@@ -87,9 +105,9 @@ Measured 2026-08-29: four tasks
 resumed with `--agent` came back with `agent_slug` nil AND `built_by` nil, while
 the same flag on a `begin --title` create stamped both — the flag was silently
 discarded, and `begin` reported success either way. The `built_by` half was the
-defect and is fixed; the `agent_slug` half is the by-design split above, and a
-bare `bin/task create --agent <soul>` still stamps no author at all because it
-makes no claim.
+defect and is fixed; the `agent_slug` half is the assignee/author split
+above, and a bare `bin/task create --agent <soul>` still stamps no author at
+all because it makes no claim.
 
 `bin/task begin` runs steps 1-2 (create → worktree → bind → `move building` →
 preflight) and prints the worktree path, port, and task URL. `bin/ship`, run

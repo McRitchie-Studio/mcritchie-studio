@@ -80,6 +80,71 @@ class TaskApprovalRequestGuardTest < ActiveSupport::TestCase
                     "an operator decision already given is still recordable — say so"
   end
 
+  # --- the refusal must name a way FORWARD, not only advice for last time ---
+  #
+  # Until 2026-09-08 this body opened with "Ask for approval BEFORE handing off" and
+  # named no move that gets the operator's eyes NOW — while bin/task's warning for
+  # the SAME situation printed a full recovery path. Two messages, one situation,
+  # two shapes, and the one an agent hits through the API was the useless one.
+  #
+  # WHAT THIS FILE CANNOT DECIDE, stated plainly: the message carries a `<task-slug>`
+  # placeholder, because the guard is a class method with no task in scope — so
+  # these commands cannot be shelled out and RUN from here. The identical pair is
+  # executed end to end, in the printed order, against a stub board that enforces
+  # this very guard: test/docs/approval_drop_warning_docs_test.rb,
+  # test_the_recovery_step_prints_commands_that_actually_run. What is pinned HERE is
+  # the narrower claim this file can settle against the model itself — that the
+  # stage the message names is one the model will accept a request in, and that the
+  # printed order is the only order that works.
+
+  def refusal_commands
+    error = assert_raises(ArgumentError) { fold(stage: "submitted", approval_status: "waiting") }
+    commands = error.message.scan(%r{bin/task [^,.]+}).map(&:strip)
+
+    # FLOOR. An extraction that matched nothing would pass every assertion below
+    # vacuously, which is exactly how a message-shape guard rots into decoration.
+    assert_equal 3, commands.size,
+                 "the refusal names the move back, the re-request, and the " \
+                 "already-approved shortcut: #{commands.inspect}"
+    commands
+  end
+
+  test "[unit] the refusal names a move to a stage the model will accept a request in" do
+    move = refusal_commands.first
+    stage = move.split.last
+
+    assert_match(%r{\Abin/task move }, move, "the FIRST command has to be the move back")
+    assert_includes Task::APPROVAL_REQUEST_STAGES, stage,
+                    "the refusal sends the reader to #{stage}, where this same guard refuses again"
+
+    # And the move it names really does clear the way — the request folds there.
+    merged = fold(stage: stage, approval_status: "waiting")
+
+    assert_equal "waiting", merged.dig("devops", "approval_status"),
+                 "#{stage}: the remedy has to leave the request LIVE"
+  end
+
+  test "[unit] the printed order is the only order that works" do
+    assert_match(/--approval waiting\z/, refusal_commands[1], "the re-request follows the move")
+
+    # Reverse the two and you land right back on this refusal. That is why the move
+    # is printed first, and why "just ask again" is not the advice on its own.
+    assert_raises(ArgumentError, "asking again before moving only repeats the refusal") do
+      fold(stage: "submitted", approval_status: "waiting")
+    end
+  end
+
+  test "[unit] the already-approved shortcut needs no move at all" do
+    assert_match(/--approval approved\z/, refusal_commands.last)
+
+    # It is offered WITHOUT a move for a reason: recording a decision the operator
+    # already gave is legal at the very stage that just refused the request.
+    merged = fold(stage: "submitted", approval_status: "approved")
+
+    assert_equal "approved", merged.dig("devops", "approval_status"),
+                 "the shortcut has to work where it is printed, or it is not a shortcut"
+  end
+
   # --- the VALUE discriminator: prove we did NOT turn a value rule into a stage lock ---
 
   test "[unit] every settled approval value still folds in every stage" do
@@ -189,6 +254,30 @@ class TaskApprovalRequestGuardTest < ActiveSupport::TestCase
     task.submit!
 
     assert_nil task.reload.devops["approval_request_dropped_at"]
+  end
+
+  # The BACKFILL is silent, and its note now rests on that alone. Until 2026-09-08
+  # Task.settle_stale_operator_approvals! gave TWO reasons for writing no receipt.
+  # One — that today's timestamp "would date it wrong for the one reader that
+  # compares it" — was removed as refuted: the one reader is bin/task's move
+  # warning, which compares two renderings across a SINGLE PATCH and consults no
+  # clock (pinned in test/lib/task_move_approval_drop_test.rb). What survived is the
+  # reason that carries the paragraph: a backfill announces nothing to nobody, so it
+  # records nothing. This is the assertion holding that sentence up.
+  test "[unit] the backfill settles a stranded request without leaving a receipt" do
+    task = Task.create!(title: "Stranded Backfill Receipt", stage: "shipped")
+    forced = task.metadata.deep_dup
+    (forced["devops"] ||= {})["approval_status"] = "waiting"
+    task.update_column(:metadata, forced) # rubocop:disable Rails/SkipsModelValidations
+
+    assert_includes Task.settle_stale_operator_approvals!, task.slug,
+                    "the row has to be one the sweep actually took, or this proves nothing"
+
+    devops = task.reload.devops
+
+    assert_equal "none", devops["approval_status"], "the sweep still settles the stale request"
+    assert_nil devops["approval_request_dropped_at"],
+               "a backfill announces nothing to nobody, so it must record nothing"
   end
 
   test "[unit] an approved grant crossing the seam is not a drop" do

@@ -361,7 +361,10 @@ class TaskMoveApprovalDropTest < Minitest::Test
 
   # HALF 2 alone: the pre-read said "none", so nothing predicted a drop — but the
   # receipt moved across the PATCH. Models a writer that set "waiting" inside this
-  # move's own window, and the same-second collision where two stamps render alike.
+  # move's own window, and NOTHING else. It is NOT the same-second collision: half 2
+  # is an inequality, so identical renderings make it false — that case belongs to
+  # half 1, and the controlled pair further down proves the attribution. The fixture
+  # seeds stamps 900s apart, which can only be the racing writer.
   def test_a_drop_the_pre_read_could_not_predict_is_still_announced
     _reqs, _out, err, status = run_task(
       %W[move #{SLUG} submitted],
@@ -375,8 +378,11 @@ class TaskMoveApprovalDropTest < Minitest::Test
     assert_match(/DISCARDED/, err, "a receipt that moved across this PATCH is this move's news")
   end
 
-  # An UNREADABLE pre-state must not buy silence. Trading a false warning for a missed
-  # one would re-open the exact hole the warning was built to close.
+  # An UNREADABLE pre-state must not buy silence while the RECEIPT can still speak —
+  # the board stamps one here, so half 2 carries the case alone. Trading a false
+  # warning for a missed one would re-open the exact hole this warning was built to
+  # close. Silence survives only when the board writes no receipt either, which is
+  # residual (i) in the matrix below — not "unreadable" on its own.
   def test_an_unreadable_pre_state_warns_rather_than_going_quiet
     _reqs, _out, err, status = run_task(
       %W[move #{SLUG} submitted],
@@ -385,7 +391,8 @@ class TaskMoveApprovalDropTest < Minitest::Test
     )
 
     assert status.success?, "an unreadable board does not fail the move"
-    assert_match(/DISCARDED/, err, "unknown must resolve to loud, never to quiet")
+    assert_match(/DISCARDED/, err,
+                 "an unreadable pre-read resolves to LOUD wherever the receipt can still speak")
   end
 
   def test_move_without_any_approval_request_warns_nothing
@@ -393,5 +400,179 @@ class TaskMoveApprovalDropTest < Minitest::Test
 
     assert status.success?
     refute_match(/DISCARDED/, err)
+  end
+
+  # --- WHICH half catches the same-second collision: a controlled pair ---
+  #
+  # bin/task's verdict comment credits HALF 1 with the same-second collision, where
+  # the fresh stamp renders identically to the one already on the record. Until
+  # 2026-09-08 it credited HALF 2, which cannot: half 2 is
+  # `drop_receipt_of(task) != drop_receipt_of(before)`, so identical renderings make
+  # it FALSE. That sentence is the stated justification for OR-ing the halves, so a
+  # maintainer trusting it would delete the half that does the work.
+  #
+  # These two runs settle it by experiment. Both hold the receipt IDENTICAL across
+  # the PATCH — half 2 is provably false in both — and differ in exactly ONE
+  # variable: what the pre-read saw. So the warning in the first can only be half 1
+  # speaking, and its absence in the second is half 2 failing to cover the case.
+  #
+  # A FIXED stamp, never Time.now: "the same second" means the two strings render
+  # alike, and seeding off a real clock would make that a coin flip on the boundary.
+  SAME_SECOND_STAMP = "2026-09-08T12:00:00Z"
+
+  def test_half_one_alone_catches_the_same_second_collision
+    _reqs, _out, err, status = run_task(
+      %W[move #{SLUG} submitted],
+      stub_devops: { "kind" => "feature", "approval_status" => "waiting",
+                     "approval_request_dropped_at" => SAME_SECOND_STAMP },
+      stub_devops_after: { "kind" => "feature", "approval_status" => "none",
+                           "approval_request_dropped_at" => SAME_SECOND_STAMP }
+    )
+
+    assert status.success?
+    assert_match(/DISCARDED/, err,
+                 "the receipt is identical on both sides, so only the pre-state half can be speaking")
+  end
+
+  def test_half_two_alone_cannot_catch_the_same_second_collision
+    _reqs, _out, err, status = run_task(
+      %W[move #{SLUG} submitted],
+      stub_devops: { "kind" => "feature", "approval_status" => "none",
+                     "approval_request_dropped_at" => SAME_SECOND_STAMP },
+      stub_devops_after: { "kind" => "feature", "approval_status" => "none",
+                           "approval_request_dropped_at" => SAME_SECOND_STAMP }
+    )
+
+    assert status.success?
+    refute_match(/DISCARDED/, err,
+                 "take the pre-read away and the inequality has nothing left to see — residual (ii)")
+  end
+
+  # --- the receipt is COMPARED, never dated ---
+  #
+  # Task.settle_stale_operator_approvals! writes no receipt on purpose. Its note used
+  # to justify that partly by claiming today's timestamp "would date it wrong for the
+  # one reader that compares it". That reader is this verdict, and it is indifferent
+  # to age: it compares two renderings across ONE PATCH and consults no clock. Both
+  # stamps below are years old — no clock rule would call this move recent — and it
+  # still warns. The other direction (a RECENT stamp that must stay quiet) is already
+  # covered by every "must stay quiet" case above, each seeded ~60s old. The refuted
+  # clause came out on 2026-09-08; this pair is what makes its removal safe to trust.
+  ANCIENT_STAMP = "2019-03-04T09:15:00Z"
+  ANCIENT_STAMP_LATER = "2019-03-04T09:16:00Z"
+
+  def test_a_receipt_that_moved_is_this_moves_news_however_old_both_renderings_are
+    _reqs, _out, err, status = run_task(
+      %W[move #{SLUG} submitted],
+      stub_devops: { "kind" => "feature", "approval_status" => "none",
+                     "approval_request_dropped_at" => ANCIENT_STAMP },
+      stub_devops_after: { "kind" => "feature", "approval_status" => "none",
+                           "approval_request_dropped_at" => ANCIENT_STAMP_LATER }
+    )
+
+    assert status.success?
+    assert_match(/DISCARDED/, err,
+                 "the verdict asks whether the stamp MOVED, never how old either rendering is")
+  end
+
+  # --- the residual SET: what the comment enumerates vs. what the binary produces ---
+  #
+  # bin/task's verdict comment names THREE board states where a real drop goes
+  # unannounced. It named ONE until 2026-09-08, and the count was wrong for as long
+  # as the sentence stood — an enumeration in a comment rots the moment the code's
+  # set moves. So this measures the binary and asserts the two agree, rather than
+  # grepping the comment and calling that proof.
+  #
+  # Every cell MODELS a real drop, so a residual is simply a cell measured SILENT.
+  # In the racing-writer cells the drop is the PREMISE rather than something the stub
+  # performs — a writer set "waiting" inside this move's window and the PATCH settled
+  # it — and what the stub reproduces is exactly what the CLI can OBSERVE of that:
+  # the two reads it gets, before and after. Completeness across all nine board
+  # states lives in test/docs/approval_drop_warning_docs_test.rb; this file drives
+  # the residual cells and the one that would make a fourth.
+  RESIDUAL_MATRIX = {
+    # (i) nothing to predict from, and nothing to compare.
+    unreadable_pre_read_and_no_receipt: {
+      stub_devops: { "kind" => "feature", "approval_status" => "waiting" },
+      fail_get: 503, stub_stamps_drop_receipt: false
+    },
+    # (ii) a racing writer whose fresh stamp renders alike.
+    racing_writer_and_identical_stamp: {
+      stub_devops: { "kind" => "feature", "approval_status" => "none",
+                     "approval_request_dropped_at" => SAME_SECOND_STAMP },
+      stub_devops_after: { "kind" => "feature", "approval_status" => "none",
+                           "approval_request_dropped_at" => SAME_SECOND_STAMP }
+    },
+    # (iii) a racing writer against a board too old to stamp.
+    racing_writer_and_no_receipt: {
+      stub_devops: { "kind" => "feature", "approval_status" => "none" },
+      stub_devops_after: { "kind" => "feature", "approval_status" => "none" }
+    },
+    # THE CELL THAT WOULD MAKE A FOURTH — driven, never assumed away. An unreadable
+    # pre-read against a board that DOES stamp. `drop_receipt_of(nil)` is "", so any
+    # real stamp is a change and half 2 speaks. This is the whole reason there is no
+    # "unreadable pre-read + same second" residual: with `before` nil there is no
+    # prior rendering to collide with, and the only way the right side is also "" is
+    # a receipt-less board, which is (i). Measuring it is what separates "no fourth
+    # case" from "we wrote three cells and never looked at the fourth".
+    unreadable_pre_read_and_a_receipt: {
+      stub_devops: { "kind" => "feature", "approval_status" => "waiting" },
+      fail_get: 503
+    }
+  }.freeze
+
+  EXPECTED_RESIDUALS = %i[
+    unreadable_pre_read_and_no_receipt
+    racing_writer_and_identical_stamp
+    racing_writer_and_no_receipt
+  ].freeze
+
+  def test_the_silent_drops_are_exactly_the_three_residuals_named_here
+    measured = RESIDUAL_MATRIX.each_with_object({}) do |(name, opts), acc|
+      _reqs, _out, err, status = run_task(%W[move #{SLUG} submitted], **opts)
+
+      # A crashed move must never be read as a quiet one.
+      assert status.success?, "#{name}: bin/task move exited #{status.exitstatus}: #{err}"
+      acc[name] = err.include?("DISCARDED") ? :warn : :silent
+    end
+
+    # FLOOR. A harness that failed to launch the binary, or a stub that 500s every
+    # request, would otherwise measure "all silent" and pass having proved nothing.
+    assert_equal RESIDUAL_MATRIX.keys.sort, measured.keys.sort, "every cell must have been driven"
+    assert_includes measured.values, :warn, "the matrix must contain at least one ANNOUNCED drop"
+    assert_includes measured.values, :silent, "the matrix must contain at least one SILENT drop"
+
+    silent = measured.select { |_name, verdict| verdict == :silent }.keys
+
+    assert_equal EXPECTED_RESIDUALS.sort, silent.sort,
+                 "the drops bin/task cannot see changed — bring the residual list in bin/task's " \
+                 "verdict comment, this list, and the approval_request_dropped_at row in " \
+                 "docs/agents/modules/devops-task-board.md back into agreement"
+  end
+
+  # The comment block the residuals live in. Anchored on CONTENT, never a line
+  # number — bin/task took four merges the day this was written — and floored on
+  # length, so a renamed heading or a collapsed block reddens here instead of
+  # passing on an empty string.
+  def verdict_comment
+    @verdict_comment ||= begin
+      block = File.read(BIN)[/# THE THREE RESIDUALS.*?(?=\nAPPROVAL_REQUEST_STAGES)/m].to_s
+
+      refute_empty block, "no THREE RESIDUALS block in bin/task — did the enumeration move?"
+      assert_operator block.length, :>, 600, "the block is too short to be the enumeration"
+      block
+    end
+  end
+
+  def test_the_verdict_comment_names_every_residual_the_binary_still_has
+    { unreadable_pre_read_and_no_receipt: /unreadable pre-read AND a board too old/i,
+      racing_writer_and_identical_stamp: /SAME SECOND/i,
+      racing_writer_and_no_receipt: /racing writer AND a board too old/i }.each do |residual, phrase|
+      assert_match phrase, verdict_comment, "the comment must name the #{residual} residual"
+    end
+
+    # The retired claim, kept as a tripwire against a revert.
+    refute_match(/the one residual blind spot/i, verdict_comment,
+                 "the comment claimed a single residual; three of them are real")
   end
 end

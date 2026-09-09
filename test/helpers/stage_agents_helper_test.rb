@@ -437,7 +437,7 @@ class StageAgentsHelperTest < ActionView::TestCase
 
     # The reviewer dies: no heartbeat, the lease runs out. Nothing else changes —
     # the intent is still open, exactly as a crashed review leaves it.
-    travel(ClaimLease::DEFAULT_TTL_SECONDS + 60) do
+    travel(ClaimLease::REVIEW_TTL_SECONDS + 60) do
       lane = review_lane(task.reload)
       assert_empty lane.stacked, "a dead reviewer must not keep the seat"
       assert_nil lane.live_since, "and must not keep ticking as if still reviewing"

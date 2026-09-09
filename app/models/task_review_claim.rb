@@ -33,7 +33,7 @@ class TaskReviewClaim < ApplicationRecord
   # (the caller skips this task and moves to the next). Atomic under a row lock.
   # Returns an Outcome.
   def self.acquire(task_slug:, session:, nonce:, label: nil, reviewer: nil, now: Time.current,
-                   ttl: ClaimLease::DEFAULT_TTL_SECONDS)
+                   ttl: ClaimLease::REVIEW_TTL_SECONDS)
     row = claim_row(task_slug)
     # THE SECOND LINE AGAINST SELF-REVIEW. `bin/reviewer-select` is the gate that
     # keeps a builder out of the reviewer seats — but a gate at SELECTION time only
@@ -178,7 +178,7 @@ class TaskReviewClaim < ApplicationRecord
   # was still being written. The compare-and-set is what keeps this honest: the moment
   # another instance holds a live lease, `evaluate` says :held_by_other and we write
   # nothing. We only ever re-take a lease nobody else wants.
-  def self.renew(task_slug:, session:, nonce:, now: Time.current, ttl: ClaimLease::DEFAULT_TTL_SECONDS)
+  def self.renew(task_slug:, session:, nonce:, now: Time.current, ttl: ClaimLease::REVIEW_TTL_SECONDS)
     row = find_by(task_slug: task_slug.to_s.strip)
     return Renewal.new(:no_lease, nil) unless row
 
@@ -220,21 +220,97 @@ class TaskReviewClaim < ApplicationRecord
   end
   private_class_method :next_state_for_lapse, :reacquire
 
-  # Drop the lease — but ONLY the instance that holds it may release it. Returns true
-  # when released. A clean review-end release frees the task immediately (rather than
-  # waiting out the TTL) so the next pr-review session can pick it up.
+  # The release verdict, the mirror of Renewal above and for the same reason: a bare
+  # boolean collapsed three different situations into one silence.
+  #
+  #   :released        — a LIVE lease this instance held, dropped
+  #   :released_lapsed — this instance's OWN lease was not renewable (it had lapsed,
+  #                      or its expiry was unreadable) and was dropped anyway. The
+  #                      row is clean, but the lease was FREE for a window and the
+  #                      caller has to be told, exactly as `renew` says on :reacquired
+  #   :held_by_other   — a DIFFERENT live instance holds it. Nothing was written, and
+  #                      there is somebody to ASK
+  #   :no_lease        — nothing of ours to drop: no claim row, an unclaimed one, or
+  #                      somebody else's lapsed lease. Nothing was written
+  Release = Struct.new(:state, :claim) do
+    def released? = %i[released released_lapsed].include?(state)
+    def lapsed? = state == :released_lapsed
+  end
+
+  # Drop the lease — but ONLY the instance that holds it may release it, so a racing
+  # reviewer can never release the holder out from under a live review. Returns a
+  # Release. A clean review-end release frees the task immediately rather than waiting
+  # out the TTL, so the next pr-review session can pick it up.
+  #
+  # RELEASING OUR OWN LAPSED LEASE IS NOT A STEAL, and refusing to used to be the last
+  # place this file still read a lapse as a stranger. `evaluate` answers :expired
+  # BEFORE it compares identity — right for CLAIMING, where a lapsed lease is free to
+  # anyone — so the holder of a lease that outran its TTL asked to release it, was
+  # told "nothing released", and left a stale row behind. That cost 120s once. Against
+  # ClaimLease::REVIEW_TTL_SECONDS it would strand the task for over three hours,
+  # which is precisely the review that most needs to hand its task back: the long one.
+  # The compare-and-set keeps it honest — the moment another instance holds a live
+  # lease, `evaluate` says :held_by_other and we write nothing.
   def self.release(task_slug:, session:, nonce:, now: Time.current)
     row = find_by(task_slug: task_slug.to_s.strip)
-    return false unless row
+    return Release.new(:no_lease, nil) unless row
 
-    released = false
+    outcome = nil
     row.with_lock do
-      next unless ClaimLease.evaluate(row.claim_hash, session: session, nonce: nonce, now: now) == :same_instance
+      disposition = ClaimLease.evaluate(row.claim_hash, session: session, nonce: nonce, now: now)
+      mine = ClaimLease.same_instance?(row.claim_hash, session: session, nonce: nonce)
 
-      row.update!(claimed_session: nil, claim_nonce: nil, claim_expires_at: nil, holder_label: nil, acquired_at: nil)
-      released = true
+      outcome =
+        case disposition
+        when :same_instance     then drop(row, :released)
+        when :expired           then mine ? drop(row, :released_lapsed) : Release.new(:no_lease, row)
+        # An expiry we cannot parse is "we could not check", never "they are gone" —
+        # ours is dropped (a garbled lease of our own is ours to clear), anyone else's
+        # is treated as possibly-live and refused. The same posture ClaimLease.live?
+        # and .renew take.
+        when :corrupt           then mine ? drop(row, :released_lapsed) : Release.new(:held_by_other, row)
+        when :held_by_other     then Release.new(:held_by_other, row)
+        else                         Release.new(:no_lease, row) # :unclaimed
+        end
     end
-    released
+    outcome
+  end
+
+  def self.drop(row, state)
+    row.update!(claimed_session: nil, claim_nonce: nil, claim_expires_at: nil, holder_label: nil, acquired_at: nil)
+    Release.new(state, row)
+  end
+  private_class_method :drop
+
+  # THE ONE UNCONDITIONAL CLEAR, and the only place a claim is dropped without the
+  # holder's consent. It exists because the TTL got long, and a long TTL turns a
+  # forgotten release from a two-minute nuisance into a three-hour queue stall.
+  #
+  # THE STALL, measured on this branch before the fix. A reviewer claims a submitted
+  # task and bounces it (`bin/task block`, stage → `building`). The builder reworks and
+  # resubmits inside the hour. `Task.reviewable` asks only "does a live claim exist",
+  # so the PREVIOUS review's claim — with 205 minutes still on it — held the resubmitted
+  # task out of the review queue, silently. Under the old 120s lease this window was two
+  # minutes and nobody ever saw it.
+  #
+  # WHY IT IS SAFE TO CLEAR WITHOUT ASKING, stated as the argument and not as a
+  # convenience: a review claim protects a review OF THE WORK BEING OFFERED. A task
+  # ENTERING `submitted` is being offered now, so any claim already on it was acquired
+  # before this submission — during a review that ended when the task left `submitted`.
+  # It cannot be a review of this submission, and nothing it could still be protecting
+  # is reachable. That is why the hook is on the ENTRY to `submitted` and nowhere else:
+  # on a bounce the lease legitimately still matters (the reviewer may be mid-feedback,
+  # which is why ReviewClaimCli::TERMINAL_STAGES excludes `building`), and clearing
+  # there would take a live review's lease away.
+  #
+  # The prior holder's detached renewer, if any, stops on its own next beat: renewing an
+  # unclaimed row answers :no_lease, which the board sends as the 204 that ends the loop.
+  def self.release_for_new_submission!(task_slug)
+    row = find_by(task_slug: task_slug.to_s.strip)
+    return nil unless row
+    return nil if row.claimed_session.to_s.strip.empty?
+
+    row.with_lock { drop(row, :released) }
   end
 
   # The holder descriptor for one task (the CLI `status <slug>` read), or nil when no
@@ -265,8 +341,13 @@ class TaskReviewClaim < ApplicationRecord
     ClaimLease.live?(claim_hash, now: now)
   end
 
+  # Seconds since the holder's last heartbeat, derived as `expiry - TTL`. It MUST be
+  # handed this lane's TTL: the default is the 120s build-claim one, and reading a
+  # review lease through it reports every freshly renewed claim as ~3h stale — a lie
+  # the skip message and the status read would both print. MigrationLaneClaim passes
+  # its own for the same reason.
   def heartbeat_age(now: Time.current)
-    ClaimLease.heartbeat_age(claim_hash, now: now)
+    ClaimLease.heartbeat_age(claim_hash, now: now, ttl: ClaimLease::REVIEW_TTL_SECONDS)
   end
 
   # The holder descriptor the CLI skip message + the status read render.

@@ -745,8 +745,8 @@ ruby -I lib -r desk_activity \
 
 What each one is worth:
 
-- **The claim** is authoritative for the *task* and renews on a ~5s statusline
-  cadence with a 120s TTL, so a live holder is unambiguous. It prints with its
+- **The claim** is authoritative for the *task* and renews on the status line's
+  45s-throttled heartbeat under a 120s TTL, so a live holder is unambiguous. It prints with its
   **verdict already worked out** — `LIVE · lapses in 47s` or `EXPIRED · lapsed 2m
   ago … free to claim` — because the line used to print a bare `expires <ts>` and
   a lapsed lease looked exactly like a live one (measured 2026-09-02: `expires

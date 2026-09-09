@@ -204,6 +204,7 @@ and the tests behind that classification are in `credential-inventory.md`.
 | `Too many requests` from `op` | account-wide daily quota | step 2 — read the `[ERROR]` line, not the summary; if the quota really is spent, mint by hand rather than wait |
 | Quota spent and nobody knows by what | nothing recorded WHICH command read | step 2a — `bin/op-reads` (and `--by context` for a fan-out). Do NOT re-derive it by measurement; that was tried on 2026-08-31 and came up empty |
 | `gh` acts as a person, not a bot | an EMPTY token fell back to the keyring | never hand `gh` an empty `GH_TOKEN`; see the trap below |
+| `ci:unreadable` on a task's `dor_review` gate row | the token expired **mid-gate** — CI was never read, and was never red | step 1, then re-run `bin/dor-check <slug> --gate-role review`. Do NOT chase a red CI; there is none |
 | `REFUSING to merge <slug>` from `pr-review` | the merge-path identity assertion refused | read the line — it names which of the three causes; see the trap below |
 | deployer mint fails, and you hold the ship lane | `OP_ADMIN_SERVICE_ACCOUNT_TOKEN` is not in **this shell** | `source ~/.zprofile.admin`, then `export GH_APP_ITEM=github.mcritchie-deployer` **before** minting |
 | deployer mint fails in an ordinary build shell | `OP_ADMIN_SERVICE_ACCOUNT_TOKEN` absent **by design** | that refusal is the isolation working — stop there |

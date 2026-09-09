@@ -103,11 +103,18 @@ module Api
       # POST /api/v1/tasks/:slug/review_claim/release { session, nonce } — the clean
       # review-end drop (frees the task without waiting out the TTL). 200 when the
       # holder released it; 204 no-op when a non-holder asked (never an error).
+      #
+      # The 200 now carries the STATE, exactly as `renew` does, because "released"
+      # and "released, but your lease had already lapsed" are different facts and the
+      # second one means the review ran for a window with its task FREE. The status
+      # code contract is unchanged — a 204 is still every no-op — so the CLI resolves
+      # WHICH refusal it is with the holder read it already owns.
       def release
-        ok = TaskReviewClaim.release(task_slug: params[:slug], session: claim_params[:session], nonce: claim_params[:nonce])
-        return head :no_content unless ok
+        outcome = TaskReviewClaim.release(task_slug: params[:slug], session: claim_params[:session],
+                                          nonce: claim_params[:nonce])
+        return head :no_content unless outcome.released?
 
-        render_data({ "released" => true })
+        render_data({ "released" => true, "state" => outcome.state.to_s })
       end
 
       private
