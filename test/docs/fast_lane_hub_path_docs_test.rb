@@ -104,6 +104,14 @@ class FastLaneHubPathDocsTest < ActiveSupport::TestCase
   # loads a config from prose that merely mentions one: deleting the `load_file` call
   # while leaving the path in this very comment left the count at 16, unchanged.
   #
+  # HENCE THE HOUSE RULE FOR THIS FILE: write `config/<name>` ONLY for a config this
+  # file actually reads — today that is satellites.yml and nothing else. Every other
+  # config is named by BARE BASENAME (test_health.yml, rails_lane.yml), which stays
+  # navigable for a reader while matching neither grep token: the mapper looks for the
+  # full path, or for the basename IN QUOTES. Expanding one of those back into a full
+  # path is not a tidy-up — it invents a dependency this file does not have, and can
+  # push that config over the cap.
+  #
   # Nothing load-bearing was lost. The two claims that matter both rest on
   # config/satellites.yml (4 reachable files, far under the cap): a slug in the
   # satellite row MUST be deskable, and a slug in the no-lane row must NOT be. A
@@ -205,8 +213,8 @@ class FastLaneHubPathDocsTest < ActiveSupport::TestCase
   # sibling checkouts were absent — which is exactly the case ON CI, so the guard was
   # switched off in the one place it runs on every PR, while still reporting a passing
   # test name. TWO independent ratchets caught it, and the pair is the proof:
-  # config/test_health.yml's EXACT skip call-site count went 25 → 26 by reading the
-  # source, and config/rails_lane.yml's executed-skip ceiling went 11 → 12 at RUNTIME.
+  # test_health.yml's EXACT skip call-site count went 25 → 26 by reading the source,
+  # and rails_lane.yml's executed-skip ceiling went 11 → 12 at RUNTIME.
   # The second only moves if the skip actually FIRES on CI — which is precisely the
   # defect, measured, rather than a worry about one. The fix was to give the test a
   # claim it can always check: the
