@@ -12,9 +12,18 @@ require_relative "../../bin/lib/block_recipe"
 # does not run as whoever pastes it — `resolved_block_actor` falls through an unset
 # session persona to `default_block_actor`, which returns the literal "avi" for
 # rework-on-submitted and NIL for every other kind — so the escalation landed a block
-# with no actor at all. That unattributed entry joins the task's AUTHOR SET and
-# `bin/reviewer-select` then refuses to pick, because it cannot exclude a soul it
-# cannot name.
+# with no actor at all.
+#
+# WHAT THAT COSTS (corrected 2026-09-08 in bin/lib/block_recipe.rb and
+# test/commands/breaker_remedy_names_its_soul_test.rb; this header was the third copy
+# and was missed by that sweep). An earlier draft said the unattributed entry joins the
+# task's AUTHOR SET and makes `bin/reviewer-select` refuse to pick. It does not.
+# `Task#block!` sets `blocked_at`, which `build_claim_save?` rejects and `submit_save?`
+# never matches, so `enforce_builder_stamp` writes no author on the block PATCH at all.
+# The chain is SECOND-ORDER: the block lands the task on `building`, the statusline
+# heartbeat adopts the freed lease with no soul, and THAT stamps
+# `builders_unattributed`. Misattributed audit row: real, and worth this file.
+# Disarmed no-self-review guard: not this seam.
 #
 # WHY THIS FILE ENUMERATES RATHER THAN NAMES. The ticket named ONE coordinate,
 # bin/task's breaker-ack line. The escalation printed three lines above it was the

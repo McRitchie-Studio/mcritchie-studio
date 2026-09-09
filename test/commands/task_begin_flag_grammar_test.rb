@@ -528,20 +528,52 @@ class TaskBeginFlagGrammarTest < ActiveSupport::TestCase
 
   # ── THE DOCS MUST NAME WHAT ACTUALLY STAMPS THE AUTHOR SET ──────────────────
   #
-  # [unit] Both entry docs read "It sets `agent_slug`, WHICH STAMPS the task's
-  # AUTHOR SET" — one write, with a causal arrow drawn through the assignee
-  # column. The board disagrees on every path (see "a resume writes no assignee on
-  # either branch"), and the wording is not merely imprecise: it makes `agent_slug`
-  # look load-bearing for no-self-review when `bin/reviewer-select` never reads it
-  # for the task under review. An agent who then "repairs" a nil assignee has
-  # repaired nothing, and an agent who reads a stamped assignee as proof of
-  # attribution is wrong in the dangerous direction.
+  # [unit] The entry docs have now been wrong about this TWICE, in OPPOSITE
+  # directions, and this guard is what the second correction cost:
   #
-  # PROSE HAS NO OTHER WAY TO FAIL, so the correction is pinned from both sides:
-  # the new statement must be present, and the disproved one must not come back.
-  AUTHOR_SET_HEADLINE = "**THE BUILD CLAIM STAMPS THE AUTHOR SET — `agent_slug` does not.**"
+  #   1. "It sets `agent_slug`, WHICH STAMPS the task's AUTHOR SET" — one write,
+  #      with a causal arrow drawn through the assignee column. A bare
+  #      `bin/task create --agent <soul>` sets the assignee and stamps no author
+  #      at all, because it makes no claim.
+  #   2. "THE BUILD CLAIM STAMPS THE AUTHOR SET — `agent_slug` does not" — the
+  #      OVER-correction, and the more dangerous of the two. Task#builder_to_stamp
+  #      is a PRECEDENCE CHAIN and the claim is only its TRIGGER; its LAST rule is
+  #      the assigned `agent_slug` — "the automatic, no-flag default ... the FIX
+  #      behind reviewer-select-exclude", in the model's own words. MEASURED
+  #      2026-09-08: `bin/task create --agent avi`, then a BARE `bin/task move
+  #      <slug> building`, stamped built_by "avi" from agent_slug alone (the actor
+  #      was the session UUID and no persona was set, so no earlier rule could
+  #      fire). Denying that tells every agent the assignee has no bearing on
+  #      no-self-review, when it is the SILENT backstop: when it fails, the
+  #      selector merely fails closed and a human hand-picks.
+  #
+  # HOW CORRECTION 1 SHIPPED WRONG: the three measurements behind it were all
+  # TRUE and none could reach the last rule. A bare create lands at `designed`, so
+  # build_claim_save? is false and nothing stamps; BOTH `begin` forms forward
+  # `--agent` to the claim as `--actor`, so rule 1 fires and outranks the
+  # fallback. Sampling only the paths an agent runs by habit cannot see a default
+  # that exists FOR the path nobody runs deliberately.
+  #
+  # SO THIS GUARD NO LONGER PINS A CLAIM IT CANNOT CHECK. The headline is a
+  # LOCATOR (it finds the paragraph); the substance is checked against the CODE —
+  # #builder_stamp_fallbacks reads the chain out of Task#builder_to_stamp, so a
+  # source added to or dropped from the model reddens this until the prose
+  # catches up. That is the lesson correction 2 paid for: a guard that pins prose
+  # by exact string turns a CORRECTION into a red build, which makes the false
+  # sentence the path of least resistance.
+  AUTHOR_SET_HEADLINE = "**THE BUILD CLAIM STAMPS THE AUTHOR SET — a create alone does not.**"
 
   test "the entry docs name the claim, not agent_slug, as what stamps the author set" do
+    fallbacks = builder_stamp_fallbacks
+
+    # ANTI-VACUITY, and the drop-detector the per-doc loop below cannot be: the
+    # loop reddens when the docs OMIT a source the code reads, but docs naming a
+    # source the code no longer has would sail through it.
+    assert_equal %w[devops.persona agent_slug], fallbacks,
+                 "Task#builder_to_stamp's fallback chain changed. Rewrite the AUTHOR SET " \
+                 "bullet in both entry docs to name the sources it now reads, in this order, " \
+                 "then update this expectation."
+
     ENTRY_DOCS.each do |rel|
       body = Rails.root.join(rel).read
 
@@ -551,20 +583,57 @@ class TaskBeginFlagGrammarTest < ActiveSupport::TestCase
       section = body[/#{Regexp.escape(AUTHOR_SET_HEADLINE)}(.+?)\*\*It works on BOTH forms/m, 1]
 
       refute_nil section,
-                 "#{rel} no longer carries the paragraph this guard reads. It must say, in " \
-                 "these words, that the build claim stamps the author set: #{AUTHOR_SET_HEADLINE}"
-      assert_includes section, "A RESUME NEVER WRITES IT",
-                      "#{rel} must say plainly that a resume leaves the assignee alone — that " \
-                      "is the measurement this whole paragraph exists to record"
+                 "#{rel} no longer carries the paragraph this guard reads. It must open with " \
+                 "the headline naming the CLAIM as the trigger: #{AUTHOR_SET_HEADLINE}"
       assert_match(/build\s+CLAIM/, section,
-                   "#{rel} must name the CLAIM as what stamps the author set, not the flag")
+                   "#{rel} must name the CLAIM as what triggers the author-set stamp")
       assert_includes section, "devops.builders",
                       "#{rel} must name the field review actually excludes on"
 
+      # THE CHAIN, IN THE CODE'S ORDER, READ INSIDE THE AUTHOR SET BULLET ONLY.
+      # Scoping matters twice over, and a surviving mutation proved it: dropping
+      # `devops.persona` from the bullet left this green, because the paragraph's
+      # closing sentence ("no persona is set") carries the bare word further down
+      # and the ordering walk happily matched THAT. So the walk reads the bullet,
+      # not the paragraph, and matches the BACKTICKED token — prose about a source
+      # is not the same as naming it as a source.
+      bullet = section[/- \*\*AUTHOR SET\*\*(.+?)\n- \*\*ASSIGNEE\*\*/m, 1]
+      refute_nil bullet,
+                 "#{rel} must state the author set as its own bullet, ahead of the ASSIGNEE " \
+                 "bullet — this guard reads the chain out of that bullet alone"
+
+      cursor = bullet.index("--actor") ||
+               flunk("#{rel} must name `--actor <soul>` as the first source of the stamped soul")
+      fallbacks.each do |source|
+        at = bullet.index("`#{source}`", cursor)
+        refute_nil at,
+                   "#{rel}'s AUTHOR SET bullet must name `#{source}` as a source " \
+                   "Task#builder_to_stamp falls back to, in the code's precedence order: " \
+                   "--actor, then #{fallbacks.join(", ")}."
+        cursor = at
+      end
+
+      # The resume fact stays, but WITHOUT the disproved rationale it shipped with
+      # ("A RESUME NEVER WRITES IT, by design ... the assignee holds ONE value").
+      # A resume does not spare top-level columns — bin/task:2694 sends `dev_size`
+      # on that same PATCH. The honest statement is the code path: the resume
+      # branch never builds a `top_body`, and `top_body` is the only thing that
+      # maps `--agent` onto the agent_slug column.
+      assert_includes section, "top_body",
+                      "#{rel} must explain the missing assignee on a resume by the CODE PATH " \
+                      "(the resume branch builds no `top_body`), not by a policy of leaving " \
+                      "top-level columns alone — the same PATCH writes `dev_size`."
+
+      # PINNED FROM BOTH SIDES — neither disproved wording may come back.
       refute_match(/sets\s+`agent_slug`, which stamps/m, body,
-                   "#{rel} has the disproved causal chain back: `--agent` does not reach the " \
-                   "author set BY setting `agent_slug`. A bare `bin/task create --agent <soul>` " \
-                   "sets the assignee and stamps no author at all, because it makes no claim.")
+                   "#{rel} has correction 1's disproved causal chain back: `--agent` does not " \
+                   "reach the author set BY setting `agent_slug`. A bare `bin/task create " \
+                   "--agent <soul>` sets the assignee and stamps no author at all.")
+      refute_match(/`agent_slug`\s+does not/m, body,
+                   "#{rel} has correction 2's over-correction back. `agent_slug` IS the last " \
+                   "rule of Task#builder_to_stamp, so a bare `bin/task move <slug> building` " \
+                   "stamps built_by from it — denying that hides the backstop that keeps " \
+                   "no-self-review working when nobody passes a flag.")
     end
   end
 
@@ -578,6 +647,27 @@ class TaskBeginFlagGrammarTest < ActiveSupport::TestCase
   def unwired_flags(source)
     body = executable_begin_block(source)
     advertised_flags(source).reject { |flag| body.match?(READERS.fetch(flag)) }
+  end
+
+  # The FALLBACK sources Task#builder_to_stamp reads once no soul `--actor` is in
+  # play, in the model's own precedence order — DERIVED, never restated, for the
+  # same reason the honoured-flag count is derived from bin/task's whitelists: a
+  # restated chain is a second copy that can go quietly stale, and the prose it
+  # certifies is exactly what went stale last time.
+  def builder_stamp_fallbacks
+    model = Rails.root.join("app/models/task.rb").read
+    chain = model[/def builder_to_stamp\b(.*?)^  end$/m, 1] ||
+            flunk("could not read Task#builder_to_stamp out of app/models/task.rb")
+    # Anchored to the START of its line: `return nil if devops["built_by"]...` one
+    # line up also carries a `[`, and a floating non-greedy slice reads THAT as the
+    # chain and reports built_by as a fallback source.
+    list = chain[/^\s*\[(.+?)\]\.find\b/, 1] ||
+           flunk("Task#builder_to_stamp no longer ends in a fallback list this guard can read")
+    # Returned in the DOC's spelling (`devops.persona`, `agent_slug`) so the
+    # assertions can demand the backticked token the prose must actually carry.
+    list.scan(/devops\["(\w+)"\]|\b(agent_slug)\b/).map do |key, column|
+      key ? "devops.#{key}" : column
+    end
   end
 
   # Door 2's extra whitelist entry, read from the source rather than restated.

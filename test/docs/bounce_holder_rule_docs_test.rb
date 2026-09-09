@@ -40,6 +40,17 @@ require "test_helper"
 # judged it defensible house policy for a light — a second read has no business
 # filing dependency or environment blocks either. It is policy, not a misstatement
 # of the gate, so this guard leaves it alone rather than forcing it looser.
+#
+# THE SECOND RULE, AND WHY IT READS EVERY KIND. Rule 2 below is about ATTRIBUTION
+# rather than the budget: a printed `bin/task block` command that omits `--agent`
+# is a paste hazard whatever its kind. It used to extract `--kind rework` alone,
+# which scoped it to the kind that always names SOMEBODY — a bare rework block
+# resolves to the literal "avi" and is refused loudly. A bare `--kind dependency`
+# block exits 0 and WRITES with no actor and no by. The one bare dependency site
+# this corpus carried was found BY HAND (/tasks/breaker-remedy-omits-agent), which
+# is the whole problem: the next one would not have been found at all. So the
+# extractor reads the kind list out of `bin/task` and covers all of them,
+# including a kind added after this was written.
 class BounceHolderRuleDocsTest < ActiveSupport::TestCase
   ROOTS = %w[docs bin lib app config .github].freeze
   SKIP_DIRS = %r{/(node_modules|tmp|vendor|\.git|builds)/}
@@ -74,6 +85,67 @@ class BounceHolderRuleDocsTest < ActiveSupport::TestCase
       raw.force_encoding(Encoding::UTF_8).scrub("?")
     rescue StandardError
       nil
+    end
+
+    # THE KINDS `bin/task block` ACTUALLY ACCEPTS — read out of the CLI, never
+    # typed here.
+    #
+    # WHY THIS IS NOT A LIST OF TWO. This guard extracted `--kind rework` ALONE,
+    # and that scoped it to the LESS dangerous kind. Measured 2026-09-08 by
+    # driving the real `bin/task` against a stub board and reading the wire
+    # payload it PUTs:
+    #
+    #   --kind dependency, no --agent
+    #     → exit 0, and it writes {"event":{"source":"cli"},"kind":"dependency"}
+    #       — no `actor`, no `by`. THE UNATTRIBUTED BLOCK.
+    #
+    # Note the ASYMMETRY, because it inverts the obvious framing. The breaker-ack
+    # recipe never lands an unattributed block: with a live claim it exits 11,
+    # refusing the very reviewer it was printed for, and without one it
+    # misattributes to the literal "avi" (`default_block_actor`). Only the
+    # dependency/escalation path writes with NOBODY'S name on it. So the kind the
+    # old regex covered is the one that always names somebody, and the kind it
+    # skipped is the one that names nobody.
+    #
+    # WHAT THAT COSTS, STATED HONESTLY — this was oversold once and corrected.
+    # `bin/task block` does NOT stamp the task's author set directly. `Task#block!`
+    # sets `blocked_at`, which `build_claim_save?` rejects and `submit_save?` never
+    # matches, so `enforce_builder_stamp` writes no author on the block PATCH at
+    # all. The author set is reached SECOND-HAND: the block lands the task back on
+    # `building`, the statusline heartbeat adopts the freed lease with no soul, and
+    # THAT stamps `builders_unattributed`. The harm is a MISATTRIBUTED AUDIT ROW —
+    # real, and worth guarding, but not a disarmed no-self-review gate.
+    #
+    # PARSED, NOT LISTED, so a THIRD kind added later is covered the moment it
+    # exists rather than by another task. `bin/task` runs without Rails loaded and
+    # so keeps its OWN copy of the list; this reads THAT copy, because it is the
+    # one `--kind` is validated against (`die!("--kind must be one of: …")`).
+    # The "kind list is read from the CLI" test below pins it to `Task::BLOCK_KINDS`
+    # so the two copies cannot drift apart in silence, and pins it non-empty — a
+    # failed parse yields `Regexp.union([])`, which matches NOTHING and would make
+    # every rule below vacuously green.
+    KINDS_DECL = /^\s*BLOCK_KINDS\s*=\s*%w\[([^\]]+)\]/
+
+    def block_kinds
+      @block_kinds ||= begin
+        source = corpus.fetch("bin/task")
+        decl = source[KINDS_DECL, 1]
+        raise "bin/task no longer declares `BLOCK_KINDS = %w[...]` — the kind list cannot be read, " \
+              "and a guard that cannot name the kinds guards nothing" unless decl
+
+        decl.split.freeze
+      end
+    end
+
+    # A literal `--kind dependency`, or the PLACEHOLDER spelling
+    # `--kind <environment|rework|dependency>` that bin/task's synopses and the
+    # SOPs write. Group 1 is the literal kind (nil when the run matched as a
+    # placeholder), which is what the per-kind floors below count.
+    def kind_pattern
+      @kind_pattern ||= begin
+        alternation = Regexp.union(block_kinds)
+        /--kind (?:(#{alternation})|<[^>]*(#{alternation}))/
+      end
     end
   end
 
@@ -141,7 +213,6 @@ class BounceHolderRuleDocsTest < ActiveSupport::TestCase
   end
 
   BLOCK_CMD = "bin/task block"
-  REWORK = /--kind (rework|<[^>]*rework)/
 
   # WHERE A COMMAND ENDS — the question this guard first got wrong, in BOTH
   # directions. The first cut ended each run at its first period. That is not where
@@ -186,7 +257,7 @@ class BounceHolderRuleDocsTest < ActiveSupport::TestCase
   # boundary only when it opens with a WORD, and `flat` strips backticks, so a
   # sentence opening with a backticked flag reads as more command and the walk
   # leaves the fence entirely. Measured live — pr-review.md:302 extracted
-  # `… --agent carl --summary is`. `rework_runs` caps the walk at the next fence.
+  # `… --agent carl --summary is`. `block_runs` caps the walk at the next fence.
 
   # Shell token shapes, tried in this order: FLAG ahead of the argument shapes, so
   # `--kind` reads as a flag rather than as a positional argument. ELIDE is a
@@ -237,7 +308,7 @@ class BounceHolderRuleDocsTest < ActiveSupport::TestCase
   #                                  the exact false-negative direction this guard
   #                                  was blocked for the first time.
   #
-  # So the walk REPORTS its halt reason instead of swallowing it, and `rework_runs`
+  # So the walk REPORTS its halt reason instead of swallowing it, and `block_runs`
   # classifies a quote-truncated run on its full span while still reporting the
   # strict command. The truncated command reads as bare, so the site becomes a loud
   # offender rather than a silent absence.
@@ -288,14 +359,17 @@ class BounceHolderRuleDocsTest < ActiveSupport::TestCase
   # NARRATION inventory keys on it, because a shape is a category and categories
   # grow: an entry keyed to the shape of a bare remedy silently absorbed the next
   # site printing that same remedy.
-  Run = Struct.new(:command, :context, :line)
+  # `kind` is the literal kind the run declares, or nil when it declared one as a
+  # PLACEHOLDER (`--kind <environment|rework|dependency>`), where no single kind is
+  # named. The per-kind floors count literals only, for exactly that reason.
+  Run = Struct.new(:command, :context, :line, :kind)
 
   CONTEXT_WINDOW = 220
   # A backstop only. `command_extent` ends a command structurally, and long before
   # this; the cap just bounds the walk on a pathological body.
   COMMAND_BACKSTOP = 600
 
-  def rework_runs(text)
+  def block_runs(text)
     flat_text = flat_index(text)
     body = flat_text.body
     runs = []
@@ -320,7 +394,8 @@ class BounceHolderRuleDocsTest < ActiveSupport::TestCase
       # `command` stays the strict read, so the run is REPORTED as the bare command
       # it appears to be rather than acquitted by something past the truncation.
       detected = halt == :unterminated_quote ? body[idx...upto] : command
-      runs << Run.new(command, context, source_line(flat_text, idx)) if detected.match?(REWORK)
+      declared = detected.match(self.class.kind_pattern)
+      runs << Run.new(command, context, source_line(flat_text, idx), declared[1]) if declared
       idx = nxt
     end
     runs
@@ -367,17 +442,118 @@ class BounceHolderRuleDocsTest < ActiveSupport::TestCase
   test "[unit] the run extractor finds real block invocations in both a bare script and a markdown doc" do
     corpus = self.class.corpus
 
-    script_runs = rework_runs(corpus.fetch("bin/task"))
+    script_runs = block_runs(corpus.fetch("bin/task"))
     assert_operator script_runs.size, :>=, 1,
-      "extracted no `--kind rework` runs from bin/task — the extractor is blind to extensionless scripts, " \
+      "extracted no `bin/task block` runs from bin/task — the extractor is blind to extensionless scripts, " \
       "which is the exact failure this guard exists to prevent"
 
-    doc_runs = rework_runs(corpus.fetch("docs/agents/modules/pr-review-sop.md"))
+    doc_runs = block_runs(corpus.fetch("docs/agents/modules/pr-review-sop.md"))
     assert_operator doc_runs.size, :>=, 2,
-      "extracted #{doc_runs.size} `--kind rework` runs from pr-review-sop.md — the extractor is not reading markdown"
+      "extracted #{doc_runs.size} `bin/task block` runs from pr-review-sop.md — the extractor is not reading markdown"
 
     assert doc_runs.any? { |run| run.command.include?("--agent") },
       "pr-review-sop.md must carry at least one agented block command for the extractor to see"
+  end
+
+  # THE KIND LIST IS THE ROOT OF EVERY RULE BELOW, so it is proven before it is
+  # used. `kind_pattern` is built from it, and an empty list builds
+  # `Regexp.union([])` — a regex that matches NOTHING, which would take the whole
+  # file green having examined nothing at all.
+  test "[unit] the kind list is read from the CLI, and the CLI's copy has not drifted from the model's" do
+    kinds = self.class.block_kinds
+
+    refute_empty kinds,
+      "the BLOCK_KINDS declaration could not be parsed out of bin/task. An empty list builds " \
+      "Regexp.union([]), which matches nothing, and every rule in this file would pass having " \
+      "extracted ZERO runs"
+
+    assert_equal Task::BLOCK_KINDS.sort, kinds.sort, <<~MSG
+      bin/task accepts #{kinds.inspect} but Task::BLOCK_KINDS is #{Task::BLOCK_KINDS.inspect}.
+
+      The CLI keeps its own copy because it runs without Rails loaded, and this guard reads the
+      CLI's copy — the one `--kind` is actually validated against. When the two drift, a kind the
+      server stamps is a kind this guard cannot see, or vice versa. Reconcile them; do not teach
+      this test to tolerate the gap.
+    MSG
+  end
+
+  # EVERY KIND, PROVEN ON A PLANTED COMMAND — the mechanism proof, and the reason a
+  # THIRD kind needs no second task. It loops the list rather than naming kinds, so
+  # adding one to `BLOCK_KINDS` extends this test the moment it lands.
+  #
+  # This is also the proof the corpus floors below CANNOT give for a kind with no
+  # site in the corpus yet: `environment` is written in bin/task's two synopses and
+  # nowhere as a runnable command, so its corpus floor is 0 and this test is the
+  # only thing standing between the extractor and a silent blind spot there.
+  test "[unit] the extractor sees a bare block of EVERY kind bin/task accepts" do
+    self.class.block_kinds.each do |kind|
+      bare = block_runs(%(bin/task block <task> --kind #{kind} --summary "Four to six words"))
+
+      assert_equal 1, bare.size,
+        "a bare `--kind #{kind}` block extracted #{bare.size} run(s) — the extractor is blind to " \
+        "that kind, so a bare one in the corpus would scan GREEN. `--kind dependency` with no " \
+        "`--agent` exits 0 and writes an audit row naming nobody; that is the kind this guard was " \
+        "widened to cover"
+      assert_equal kind, bare.first.kind, "the run must record the kind it declares"
+      refute_includes bare.first.command, "--agent", "the bare command must read as bare"
+
+      agented = block_runs(%(bin/task block <task> --kind #{kind} --summary "Four to six words" --agent carl))
+
+      assert_equal 1, agented.size
+      assert_includes agented.first.command, "--agent carl",
+        "an agented `--kind #{kind}` block must read as agented, or the rule below reports every " \
+        "correct command as an offender"
+    end
+  end
+
+  # A FLOOR ON WHAT THE SWEEP EXTRACTED. Without it, an extractor that stops
+  # matching passes having PROVED NOTHING — the negative rules below are all
+  # "assert_empty offenders", and zero runs yields zero offenders. That failure
+  # mode has bitten this corpus repeatedly, so the floors are per KIND: a regex
+  # whose `dependency` arm breaks drops the total from 28 to 24, which no total-only
+  # floor would notice.
+  #
+  # MEASURED 2026-09-08 across the whole corpus: 28 runs — rework 23, dependency 4,
+  # and 1 placeholder (`--kind <environment|rework|dependency>`, which names no
+  # single kind and so counts toward the total only). The floors sit below the
+  # measurement so ordinary doc churn does not fail them, and far enough above zero
+  # that a broken arm does.
+  #
+  # `environment` sits at 0 HONESTLY: it appears in bin/task's synopses and nowhere
+  # as a runnable command, so the corpus cannot prove the extractor sees it. The
+  # planted-command test above is what proves that, for every kind, unconditionally.
+  KIND_FLOORS = { "rework" => 15, "dependency" => 3, "environment" => 0 }.freeze
+  TOTAL_FLOOR = 20
+
+  test "[unit] the sweep extracts a floor of block runs per kind, so a regex that stops matching FAILS" do
+    tally = Hash.new(0)
+    total = 0
+    self.class.corpus.each_value do |text|
+      block_runs(text).each do |run|
+        total += 1
+        tally[run.kind] += 1 if run.kind
+      end
+    end
+
+    assert_equal self.class.block_kinds.sort, KIND_FLOORS.keys.sort, <<~MSG
+      KIND_FLOORS names #{KIND_FLOORS.keys.sort.inspect} but bin/task accepts
+      #{self.class.block_kinds.sort.inspect}.
+
+      A kind added to BLOCK_KINDS must be MEASURED and given a floor here, not left to inherit
+      silence. Count its runs in the corpus and add the entry; 0 is a legitimate floor for a kind
+      with no runnable site yet, and the planted-command test above still covers it.
+    MSG
+
+    assert_operator total, :>=, TOTAL_FLOOR,
+      "the sweep extracted #{total} block runs across the whole corpus (floor #{TOTAL_FLOOR}, " \
+      "measured 28). A collapsed extraction makes every `assert_empty offenders` rule below pass " \
+      "on an empty list"
+
+    KIND_FLOORS.each do |kind, floor|
+      assert_operator tally[kind], :>=, floor,
+        "extracted #{tally[kind]} `--kind #{kind}` run(s), floor #{floor}. The extractor has gone " \
+        "blind to that kind — the negative rules below now scan it as green rather than examining it"
+    end
   end
 
   # CONTROL for the line-aware rewrite. `flat_index` had to replace a one-expression
@@ -409,7 +585,7 @@ class BounceHolderRuleDocsTest < ActiveSupport::TestCase
   # a command at punctuation it cannot see the end of ever comes back.
   test "[unit] a period inside a quoted argument does not end the command" do
     bare = 'bin/task block <task> --feedback "CI red. Fix it." --kind rework'
-    runs = rework_runs(bare)
+    runs = block_runs(bare)
 
     assert_equal 1, runs.size,
       "a quoted period ended the run early, so `--kind rework` fell outside it and this BARE " \
@@ -418,7 +594,7 @@ class BounceHolderRuleDocsTest < ActiveSupport::TestCase
       "the bare command must read as bare"
 
     agented = 'bin/task block <task> --kind rework --feedback "Gate zero is red. Fix CI." --agent carl'
-    runs = rework_runs(agented)
+    runs = block_runs(agented)
 
     assert_equal 1, runs.size
     assert_includes runs.first.command, "--agent",
@@ -429,7 +605,7 @@ class BounceHolderRuleDocsTest < ActiveSupport::TestCase
 
   test "[unit] a command ends at the prose after it, so a sentence's --agent cannot acquit it" do
     text = "Bounce it with `bin/task block <task> --kind rework` and name yourself with `--agent carl`."
-    runs = rework_runs(text)
+    runs = block_runs(text)
 
     assert_equal 1, runs.size
     refute_includes runs.first.command, "--agent",
@@ -440,7 +616,7 @@ class BounceHolderRuleDocsTest < ActiveSupport::TestCase
 
     test "[unit] an unclosed quote ends the run rather than swallowing the prose after it" do
     text = 'bin/task block <task> --kind rework --feedback "unclosed, and then prose saying --agent carl'
-    runs = rework_runs(text)
+    runs = block_runs(text)
 
     assert_equal 1, runs.size
     refute_includes runs.first.command, "--agent",
@@ -454,7 +630,7 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
       self-heals by retargeting to `accepted`) — or `bin/task block <task> --kind
       rework --feedback "…" --agent carl` (back to you). Review still never touches
     MD
-    runs = rework_runs(wrapped)
+    runs = block_runs(wrapped)
 
     assert_equal 1, runs.size,
       "a command soft-wrapped across a prose line break with NO backslash did not read as one " \
@@ -473,7 +649,7 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
 
       Name yourself with `--agent`: a `--kind rework` block spends the task's bounce.
     MD
-    runs = rework_runs(continued)
+    runs = block_runs(continued)
 
     assert_equal 1, runs.size
     assert_includes runs.first.command, "--agent <your-soul>",
@@ -495,7 +671,7 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
 
       `--agent carl` is what stamps the actor.
     MD
-    runs = rework_runs(text)
+    runs = block_runs(text)
 
     assert_equal 1, runs.size
     refute_includes runs.first.command, "--agent",
@@ -510,7 +686,7 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
 
   test "[unit] an unclosed quote before --kind rework does not make the invocation invisible" do
     text = 'bin/task block <task> --feedback "unclosed, and the rest of the line says --kind rework'
-    runs = rework_runs(text)
+    runs = block_runs(text)
 
     assert_equal 1, runs.size,
       "an unclosed quote landing BEFORE `--kind rework` truncated the command short of the flag " \
@@ -529,7 +705,7 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
       puts "an unrelated line between the two sites"
       warn! "  bin/task block \#{slug} --kind rework ... --breaker-ack"
     RUBY
-    bare = rework_runs(probe).reject { |run| run.command.include?("--agent") }
+    bare = block_runs(probe).reject { |run| run.command.include?("--agent") }
 
     assert_equal 2, bare.size, "two identical bare remedy shapes must read as TWO runs"
     refute_equal bare.first.line, bare.last.line, "the two runs must carry distinct line identities"
@@ -611,14 +787,35 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
   end
 
   # ---------------------------------------------------------------------------
-  # 2. NO RUNNABLE BOUNCE COMMAND WITHOUT ITS ACTOR (negative).
+  # 2. NO RUNNABLE BLOCK COMMAND WITHOUT ITS ACTOR (negative) — EVERY KIND.
   # ---------------------------------------------------------------------------
   #
   # A block command printed WITHOUT `--agent` is as dangerous as a prose grant,
   # because someone pastes it. `resolved_block_actor` (bin/task) falls through an
-  # unset `session_marker_persona` to `default_block_actor`, which returns the
-  # LITERAL "avi" for `--kind rework` on a submitted task — so Carl pasting his own
-  # gate-zero command grades FOREIGN against his own claim and exits 11.
+  # unset `session_marker_persona` to `default_block_actor`, and what happens next
+  # depends on the KIND — which is why this rule reads every kind bin/task accepts
+  # rather than `rework` alone:
+  #
+  #   --kind rework, on a submitted task → the LITERAL "avi". Carl pasting his own
+  #     gate-zero command grades FOREIGN against his own claim and exits 11. Loud,
+  #     and it writes nothing.
+  #   --kind dependency (and every other kind) → NIL. The block succeeds, exit 0,
+  #     and the wire payload is {"event":{"source":"cli"},"kind":"dependency"} —
+  #     no `actor`, no `by`. Silent, and it WRITES.
+  #
+  # So the kind this rule used to skip is the one that lands a send-back on the
+  # record with nobody's name on it. The cost is a MISATTRIBUTED AUDIT ROW: the
+  # block PATCH itself stamps no author (`Task#block!` sets `blocked_at`, which
+  # `build_claim_save?` rejects and `submit_save?` never matches), but it lands the
+  # task on `building`, and the statusline heartbeat then adopts the freed lease
+  # with no soul and stamps `builders_unattributed`. Second-order and real — not,
+  # as an earlier draft claimed, a disarmed no-self-review gate.
+  #
+  # A NOTE ON THE WORD "BOUNCE", which this heading used to carry. Only `--kind
+  # rework` spends the task's bounce; dependency and environment are NOT_GATED and
+  # spend nothing (lib/review_verdict_gate.rb). They still need their actor, for
+  # the attribution reason above rather than the budget one, so the rule is about
+  # BLOCKS and the heading now says so.
   #
   # Prose that NARRATES the command ("`bin/task block --kind rework` exits 10") is
   # not a paste hazard, and no honest heuristic separates it from an instruction —
@@ -654,7 +851,7 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
   # are covered by the RULE and the entry was DELETED rather than repointed. An exemption
   # is the temporary form of a fix; deleting one is what finishing looks like.
   NARRATION = [
-    { file: "app/models/task.rb", line: 2993, match: /lands the task back on building and repoints/,
+    { file: "app/models/task.rb", line: 3009, match: /lands the task back on building and repoints/,
       why: "comment explaining the feature-marker repoint" },
     { file: "bin/pr-review", line: 29, match: /with the failing checks named/,
       why: "header comment narrating the gate-zero flow" },
@@ -680,29 +877,34 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
       why: "header narrating the incident the gate exists to prevent" }
   ].freeze
 
-  test "[integration] every runnable rework block command names its acting soul" do
+  test "[integration] every runnable block command names its acting soul, whatever its kind" do
     offenders = []
     self.class.corpus.each do |rel, text|
-      rework_runs(text).each do |run|
+      block_runs(text).each do |run|
         next if run.command.include?("--agent")
         next if NARRATION.any? { |n| narration_covers?(n, rel, run) }
 
-        offenders << "#{rel}:#{run.line}\n        #{run.command.strip[0, 150]}"
+        offenders << "#{rel}:#{run.line} [--kind #{run.kind || '<placeholder>'}]\n        #{run.command.strip[0, 150]}"
       end
     end
 
     assert_empty offenders, <<~MSG
-      #{offenders.size} `--kind rework` block command(s) print without `--agent`:
+      #{offenders.size} `bin/task block` command(s) print without `--agent`:
 
       #{offenders.join("\n      ")}
 
-      A bounce command with no `--agent` does NOT run as whoever pastes it.
+      A block command with no `--agent` does NOT run as whoever pastes it.
       `resolved_block_actor` falls through an unset session persona to
-      `default_block_actor`, which returns the literal "avi" for a rework block on a
-      submitted task — so Carl pasting his own gate-zero command grades FOREIGN
-      against his own review claim and exits 11, writing nothing.
+      `default_block_actor`, and the damage depends on the kind:
 
-      Fix: append `--agent <soul>` (`--agent carl` for a review-lane bounce).
+        --kind rework, submitted task → the literal "avi", so Carl pasting his own
+          gate-zero command grades FOREIGN against his own review claim and exits
+          11, writing nothing.
+        every other kind → nil. Exit 0, and it WRITES a block whose payload carries
+          no `actor` and no `by` — a send-back on the record naming nobody, which
+          the statusline then compounds by adopting the freed lease unattributed.
+
+      Fix: append `--agent <soul>` (`--agent carl` for a review-lane block).
       If the line NARRATES the command rather than instructing anyone to run it,
       add it to NARRATION with a reason.
     MSG
@@ -714,12 +916,12 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
       text = corpus[entry[:file]]
       assert text, "NARRATION names #{entry[:file]}, which the sweep did not read"
 
-      bare = rework_runs(text).reject { |run| run.command.include?("--agent") }
+      bare = block_runs(text).reject { |run| run.command.include?("--agent") }
       matched = bare.select { |run| narration_covers?(entry, entry[:file], run) }
 
       assert_equal 1, matched.size, <<~MSG
         NARRATION entry #{entry[:file]}:#{entry[:line]} #{entry[:match].inspect}
-        covers #{matched.size} bare `--kind rework` run(s). An exemption must name exactly ONE
+        covers #{matched.size} bare `bin/task block` run(s). An exemption must name exactly ONE
         site (#{entry[:why]}).
 
         Bare runs in that file start on line(s): #{bare.map(&:line).inspect}

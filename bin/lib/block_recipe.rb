@@ -56,6 +56,12 @@ module BlockRecipe
   # deliberate — it is the shape test/docs/bounce_holder_rule_docs_test.rb's command
   # walk reads as an argument, so these recipes stay INSIDE that guard's sweep instead
   # of disappearing from it behind a `%<…>s` format token it cannot parse.
+  #
+  # BOTH rows are only actually swept as of /tasks/guard-every-block-kind. That guard
+  # extracted `--kind rework` alone, so it saw `breaker_ack` and was blind to
+  # `escalation` — the `--kind dependency` row, and the only one that can write a block
+  # naming nobody. It now reads the kind list out of `bin/task`'s own `BLOCK_KINDS`, so
+  # a row added here with any accepted kind is swept the moment it exists.
   TEMPLATES = {
     escalation: <<~CMD.chomp,
       bin/task block <slug> --kind dependency --agent <agent> \\

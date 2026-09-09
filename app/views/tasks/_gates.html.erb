@@ -30,10 +30,17 @@
               <ul class="mt-1 space-y-0.5">
                 <% run.sops.each do |entry| %>
                   <%# `running` is a THIRD result, not a pass. Painting everything that is
-                      not "fail" green reported an in-flight — or ABANDONED — lane as PASSED. %>
+                      not "fail" green reported an in-flight — or ABANDONED — lane as PASSED.
+                      `unreadable` is a FOURTH, for the same reason in the other direction:
+                      GitHub refused the credential, so no verdict was seen. It must not be a
+                      ✓ (a CI nobody could read is not a CI that passed) and it must not be an
+                      ✗ (that is the false red /tasks/gate-logs-auth-as-red removed from the
+                      record). NOTE the default below is ✓ — any result value added upstream
+                      without an arm here silently becomes a pass. %>
                   <% result = entry["result"].to_s %>
                   <% glyph, tone = if result == "fail" then ["✗", "text-rose-400"]
                                    elsif result == GateRun::RUNNING_RESULT then ["◌", "text-amber-400"]
+                                   elsif result == GateRun::UNREADABLE_RESULT then ["⚠", "text-amber-400"]
                                    else ["✓", "text-emerald-400"]
                                    end %>
                   <li class="text-[11px] text-muted flex items-baseline gap-1" data-result="<%= result %>">

@@ -1851,17 +1851,17 @@ class DorCheckTest < Minitest::Test
   end
 
   # A FAILED dor_review must name CI as the failing SOP when CI is why it failed.
-  # The no-verdict family used to record a flat "unverified" — a NOTE — as the sole
-  # cause of a failed row, the same asymmetry :pending already avoids. "unverified"
-  # stays correct where CI genuinely only noted: a full cert standing in for it.
+  # "unverified" stays where CI genuinely only noted AND the state has no better name
+  # of its own. :unreadable HAS one, in all three vectors below: GitHub REFUSED the
+  # read, and both old answers misled — "fail" wrote a red CI that never ran into the
+  # permanent record; "unverified" is painted ✓. Full: gate_record_unreadable_ci_test.
   def test_the_gates_card_names_ci_as_the_cause_when_ci_is_the_cause
-    assert_equal "fail", ci_gate_result("unreadable", evidence: FAST_CERT_ONLY)
-    assert_equal "unverified", ci_gate_result("unreadable", evidence: FULL_CERT),
-                 "a full cert standing in for an unread verdict is a NOTE, not a CI failure"
+    assert_equal "unreadable", ci_gate_result("unreadable", evidence: FAST_CERT_ONLY)
+    assert_equal "unreadable", ci_gate_result("unreadable", evidence: FULL_CERT),
+                 "a cert standing in for an unread verdict is a NOTE — it must still say UNREADABLE"
     assert_equal "fail", ci_gate_result("state:quantum_flux", evidence: FULL_CERT)
     assert_equal "pass", ci_gate_result("green", evidence: FULL_CERT)
-    # Submit-side keeps the note: the builder's handoff is provisional by design.
-    assert_equal "unverified", ci_gate_result("unreadable", evidence: FULL_CERT, review: false)
+    assert_equal "unreadable", ci_gate_result("unreadable", evidence: FULL_CERT, review: false)
   end
 
   # The gates-card row this run WOULD write, read out of --json rather than off the
