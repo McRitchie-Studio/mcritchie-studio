@@ -1502,6 +1502,27 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
                     "the live-deploy possibility must be named, not left for the reader to infer"
   end
 
+  # THE PRECONDITION THE MESSAGE STATES MUST MATCH THE ONE THE GUARD ENFORCES.
+  # bin/release selects this message on `saw_a_read == false`, and that flag is the
+  # verdict of the poll's LAST read alone. An EARLIER read in the same poll may well
+  # have answered — a token expiring mid-poll produces exactly that shape, and it is
+  # the ordinary case, not an exotic one, since App installation tokens expire
+  # ~hourly by design while the poll is ~60s wide.
+  #
+  # So a message asserting that EVERY post-dispatch read failed would state, as
+  # fact, something the guard never established — overclaiming its own precondition
+  # on the one path whose entire purpose is to stop reporting unobserved things as
+  # observed. The honest claim is about the state the poll ENDED in, which is what
+  # `saw_a_read` actually measures.
+  test "unreadable_run_list_abort claims only what its guard establishes" do
+    message = S.unreadable_run_list_abort("prod-deploy.yml", { "sha" => "0a0cc23" })
+    assert_not_includes message, "EVERY post-dispatch",
+                        "the guard reads the LAST poll result, so the message must not assert that " \
+                        "all of the reads failed — an earlier one may have answered"
+    assert_includes message, "still FAILING when the poll gave up",
+                    "it reports the state the poll ended in, which is exactly what saw_a_read measures"
+  end
+
   # THE REMEDY IS A CHECK, NOT A RE-DISPATCH. This is the whole safety property:
   # "re-run the dispatch" is correct ONLY once you know no run exists, which is
   # precisely what this failure could not establish.

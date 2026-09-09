@@ -7,8 +7,8 @@ to three independent act SOPs:
 
 - [`grade-events`](sops/grade-events.md) - grade recent resolved activities into the
   learning layer.
-- [`share-insights`](sops/share-insights.md) - publish Mr. McRitchie's confirmed
-  insights to agent docs.
+- [`share-insights`](sops/share-insights.md) - publish the banked insight bank to
+  agent docs.
 - [`full-cycle`](sops/full-cycle.md) - run review, QA deploy, and production
   deploy with explicit ship authority.
 
@@ -21,8 +21,8 @@ Alex owns the learning loop and, when explicitly launched with ship authority,
 the full release pipeline:
 
 - Grade recent trajectory activities so useful agent behavior becomes reusable memory.
-- Share Mr. McRitchie's confirmed insights into the generated lessons doc and
-  installed agent docs.
+- Share the Insight Bank — every banked grade, whichever grader recorded it — into
+  the generated lessons doc.
 - Run `full-cycle` only when the operator launched that autonomous release act or
   otherwise granted production ship authority in this session.
 
@@ -52,8 +52,7 @@ not run `bin/agent-activity heartbeat alex` themselves.
 Run Alex's acts in the launched scope:
 
 1. [`grade-events`](sops/grade-events.md) - grade recent resolved activities.
-2. [`share-insights`](sops/share-insights.md) - publish Mr. McRitchie's confirmed
-   insights.
+2. [`share-insights`](sops/share-insights.md) - publish the banked insights.
 3. [`full-cycle`](sops/full-cycle.md) - run review -> QA -> production with
    explicit ship authority.
 

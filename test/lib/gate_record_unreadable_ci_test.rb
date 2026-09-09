@@ -72,14 +72,32 @@ class GateRecordUnreadableCiTest < Minitest::Test
     assert_equal "fail", CiGate.gate_row({ state: :conflicted }, review_role: true, review_refused: true)
   end
 
-  # The arm is scoped to :unreadable, and the rest of the no-verdict family keeps the
-  # `else`. :none ("nothing reported") and :unverified ("gh itself fell over") are
-  # different non-answers from "GitHub refused my credential", and the row stays 1:1
-  # with the CI state — which is the whole reason a fourth value was worth adding.
-  def test_unit_the_rest_of_the_no_verdict_family_is_untouched
-    assert_equal "fail", CiGate.gate_row({ state: :none }, review_role: true, review_refused: true)
-    assert_equal "fail", CiGate.gate_row({ state: :unverified }, review_role: true, review_refused: true)
-    assert_equal "unverified", CiGate.gate_row({ state: :none }, review_role: false, review_refused: false)
+  # THIS TEST PINNED THE DEFECT ITS OWN PREMISE FORBADE, and it is kept (renamed,
+  # corrected) rather than deleted so the correction is legible.
+  #
+  # The premise was right: :none ("nothing reported"), :unverified ("gh itself fell
+  # over") and :unreadable ("GitHub refused my credential") are three different
+  # non-answers, and the row stays 1:1 with the CI state. The assertions said the
+  # opposite — they froze :none and :unverified onto the SAME flat "fail" a genuinely
+  # red CI writes, which is neither 1:1 nor a non-answer. Scoping the arm to
+  # :unreadable left two thirds of the family manufacturing a failure in permanent
+  # gate history, and this test held that in place until 2026-09-09.
+  #
+  # Corrected by /tasks/refused-review-records-fail, which gave the other two their own
+  # arms by this file's own rule. Their coverage — the live chain, the persisted argv,
+  # the distinctness invariant — is in test/lib/gate_record_no_verdict_ci_test.rb; what
+  # stays here is the neighbour check that this file's :unreadable arm did not swallow
+  # them.
+  def test_unit_the_rest_of_the_no_verdict_family_names_itself_too
+    none = CiGate.gate_row({ state: :none }, review_role: true, review_refused: true)
+    unverified = CiGate.gate_row({ state: :unverified }, review_role: true, review_refused: true)
+
+    assert_equal CiGate::GATE_ROW_NO_CHECKS, none
+    assert_equal CiGate::GATE_ROW_UNVERIFIED, unverified
+    refute_equal CiGate::GATE_ROW_UNREADABLE, none, "the :unreadable arm must not swallow its neighbours"
+    refute_equal CiGate::GATE_ROW_UNREADABLE, unverified
+    assert_equal none, CiGate.gate_row({ state: :none }, review_role: false, review_refused: false),
+                 "one fact, one name, whoever asked — the rule the :unreadable arm above is written to"
     assert_equal "pass", CiGate.gate_row({ state: :green }, review_role: true, review_refused: false)
   end
 

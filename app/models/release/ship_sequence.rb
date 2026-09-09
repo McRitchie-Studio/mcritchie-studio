@@ -204,11 +204,14 @@ class Release
     end
 
     # The operator-facing ABORT for a dispatch that created no run. Its PRECONDITION
-    # is that the run list was actually READ at least once after the dispatch — this
-    # message asserts, as fact, that GitHub holds no run for it. When every
-    # post-dispatch read FAILED instead, the shell owes the operator
-    # unreadable_run_list_abort below, not this one: nil run_id has two causes and
-    # only one of them is "no run exists". It must NAME three things, because the
+    # is that the LAST post-dispatch read of the run list SUCCEEDED — because this
+    # message asserts, as fact, that GitHub holds no run for it, and only the most
+    # recent observation can support a claim about the run list's current state. An
+    # EARLIER read that answered is not enough and never was: a read taken before
+    # GitHub could have registered the run shows no new run for a reason that has
+    # nothing to do with whether one exists. When the poll's last read FAILED, the
+    # shell owes the operator unreadable_run_list_abort below, not this one: nil
+    # run_id has two causes and only one of them is "no run exists". It must NAME three things, because the
     # incident above cost an hour for want of each:
     #   * the WORKFLOW — which dispatch silently did nothing,
     #   * the SHA      — which tree was supposed to go out (and therefore which
@@ -240,16 +243,25 @@ class Release
     #
     # THE TWO CAUSES (measured in review of the abort above, before it shipped).
     # bin/release's registration poll ends with nil `run_id` when EITHER
-    #   * every read SUCCEEDED and none ever showed a run newer than the
+    #   * its reads SUCCEEDED and none ever showed a run newer than the
     #     pre-dispatch snapshot — GitHub genuinely holds no run, OR
-    #   * every read FAILED (`gh run list` non-zero → newest_run_id nil →
-    #     new_run_id nil) — GitHub was never observed at all.
+    #   * its reads FAILED (`gh run list` non-zero → newest_run_id nil →
+    #     new_run_id nil) — the run list could not be observed.
     # They are the same nil and they are OPPOSITE facts. The first supports
     # "the deploy NEVER RAN"; the second supports nothing, because nothing was
     # seen. Printing the first message for the second case tells an operator the
     # production deploy did not happen — and hands them a dispatch command to
     # re-run — while that deploy may be in flight. That is a SECOND production
     # deploy ordered on the strength of a read that never succeeded.
+    #
+    # WHICH CAUSE IT WAS IS DECIDED BY THE LAST READ, and the two are not cleanly
+    # "all succeeded" versus "all failed" — a poll can do both in turn. The common
+    # mixed shape is a read that answers early, before GitHub has registered
+    # anything, followed by failures once an App installation token expires
+    # mid-poll (they expire ~hourly by design; the poll is ~60s wide). That early
+    # read observed nothing about whether a run exists, so it must not buy the
+    # NEVER-RAN claim: the poll ended unable to see the run list, which is this
+    # message's case.
     #
     # SO THIS MESSAGE REPORTS THE OBSERVATION, NOT A VERDICT. It says what was
     # attempted, what could not be read, and that the state of the deploy is
@@ -270,8 +282,9 @@ class Release
             workflow: #{workflow}
             sha:      #{sha.to_s.strip.empty? ? '(none supplied)' : sha}
             command:  #{command}
-          EVERY post-dispatch `gh run list` FAILED, so this is a failure to OBSERVE GitHub — it is
-          NOT a report that the deploy did not happen. A run may exist and be deploying right now.
+          The post-dispatch `gh run list` was still FAILING when the poll gave up, so this is a
+          failure to OBSERVE GitHub — it is NOT a report that the deploy did not happen.
+          A run may exist and be deploying right now.
           Do NOT re-dispatch on the strength of this message: a blind re-dispatch can land a second
           deploy on top of a live one.
           CHECK FIRST, and re-dispatch only if no run for this SHA is there:

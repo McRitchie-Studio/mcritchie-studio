@@ -25,6 +25,14 @@ three ordered release actions, a themed glyph on the rest):
   therefore ends at `3️⃣`, and `clean-infra` took the slot but not the number — it
   is off-sequence on purpose, invoked when the machine is in the way.
 
+  `sleeper-auction-watch` is deliberately NOT a chip either, for the opposite
+  reason: nothing runs it for you, and nothing should schedule it. The auction
+  watch is calendar-bound — one league's draft, one evening a year — so a
+  standing button on a card that reads as a cadence would misstate it. Like
+  `archive-shipped` it stays a registered invocation by name, invoked the evening
+  it is wanted (see
+  [`sleeper-auction-watch`](../agents/turf_monster/sops/sleeper-auction-watch.md)).
+
 **Every row is independently copyable** (the row-1 heartbeat prompt and each act),
 and **any of them**, pasted into a fresh agent session run from
 `/Users/alex/projects`, launches that heartbeat. All rows are **recognized
@@ -38,16 +46,18 @@ pipeline.
 Each soul's action-level procedure lives with that soul:
 [`Carl`](../agents/carl/HEARTBEAT.md),
 [`Avi`](../agents/avi/HEARTBEAT.md),
-[`Steffon`](../agents/steffon/HEARTBEAT.md), and
-[`Alex`](../agents/alex/HEARTBEAT.md). This page is the cross-soul map.
+[`Steffon`](../agents/steffon/HEARTBEAT.md),
+[`Alex`](../agents/alex/HEARTBEAT.md), and
+[`Turf Monster`](../agents/turf_monster/HEARTBEAT.md). This page is the
+cross-soul map.
 
 | Soul (avatar → `/agents/<slug>`) | Row 1 prompt | Acts | Enters at | Exit seam |
 |---|---|---|---|---|
 | **Carl** (`carl`) | `Carl Heartbeat` | `pr-review`, `pr-review-slow` | submitted PRs waiting for review | each PR `reviewed` (merged into `accepted`) or `blocked` |
 | **Avi** (`avi`) | `Avi Heartbeat` | `qa-release`, `deploy-with-task` (direct-invoke only) | `reviewed` work + `assembled` stragglers to sweep | the RC swept, **live on QA, members `assembled` on QA-green** |
 | **Steffon** (`steffon`) | `Steffon Heartbeat` | `production-deploy`, `clean-infra` | a QA-green (`assembled`) release ready to ship / a machine carrying finished work | the ready release `shipped` (archived on the way out, or no-op); the machine swept |
-| **Alex** (`alex`) | `Alex Heartbeat` | `grade-events`, `share-insights`, `full-cycle` | activities to grade / confirmed insights to share / a full pipeline to run | 10 graded + banked; confirmed insights shared out; or the whole release `shipped` |
-| **Turf Monster** (`turf-monster`) | `Turf Monster Heartbeat` | `live-score-watch` · `contest-rehearsal` | a live NFL slot with the poller deployed, or QA reachable on devnet | the slot final or the window elapsed; or the rehearsal contest settled and closed |
+| **Alex** (`alex`) | `Alex Heartbeat` | `grade-events`, `share-insights`, `full-cycle` | activities to grade / a non-empty insight bank to share / a full pipeline to run | 10 graded + banked; the bank shared out; or the whole release `shipped` |
+| **Turf Monster** (`turf-monster`) | `Turf Monster Heartbeat` | `live-score-watch` · `contest-rehearsal` · `sleeper-auction-watch` (registered, not a chip — calendar-bound) | a live NFL slot with the poller deployed, QA reachable on devnet, or a Sleeper auction about to start | the slot final or the window elapsed; the rehearsal contest settled and closed; or the draft board full |
 
 > **Direct-drive the mutating acts.** `qa-release`, `production-deploy`, and
 > `archive-shipped` MUTATE shared state across many minutes, so the heartbeat
@@ -369,7 +379,7 @@ mechanics:
 [`full-cycle`](../agents/alex/sops/full-cycle.md).
 
 **Enter as Alex** (the Lead Orchestrator). Three acts: grade recent trajectory
-activities for the learning layer, share the CONFIRMED insights out to every agent, and
+activities for the learning layer, share the BANKED insights out to every agent, and
 — with ship authority — run the whole DevOps cycle end to end. The distillation
 pipeline at [`/alex/pipeline`](https://mcritchie.studio/alex/pipeline) is the
 operator view of the first two: Activities → Insights (Alex grades) →
@@ -405,16 +415,19 @@ only what makes the next agent smarter.
 Canonical SOP:
 [`../agents/alex/sops/share-insights.md`](../agents/alex/sops/share-insights.md).
 
-Take the insights Mr. McRitchie has **confirmed** (column 3 of the pipeline — the
-`mcr`-graded subset) and share them out through the platform's docs, so every next
-agent starts with the confirmed lessons. (Renamed from `propagate-insights`: the
-act is named for its audience — the next agents — not the doc-write mechanics.)
+Take the **Insight Bank** — `ActionGrade.banked`, whichever grader recorded each
+row — and share it out through the platform's docs, so every next agent starts with
+the curated lessons. (Renamed from `propagate-insights`: the act is named for its
+audience — the next agents — not the doc-write mechanics.)
 
-- **Precondition:** at least one confirmed insight (a `grader: "mcr"` `ActionGrade`).
-  None confirmed → report "nothing to share" and stop (idempotent no-op).
+- **Precondition:** the bank is non-empty (at least one banked `ActionGrade`).
+  Empty bank → report "nothing to share" and stop (idempotent no-op). **Banking is
+  the gate, not the grader:** `mcr` marks Mr. McRitchie's audit *of* an Alex grade,
+  a lane the agent CLI cannot even write, so gating on it stands the act down over
+  every lesson an agent banks — see the SOP's Preconditions.
 - **Steps:**
-  1. Regenerate the tracked lessons doc from the confirmed insights (composes with
-     the lever-3 generator — `bin/rails insights:doc`, scoped to the confirmed set).
+  1. Regenerate the tracked lessons doc from the bank (composes with the lever-3
+     generator — `bin/rails insights:doc`, which reads `ActionGrade.banked`).
      **That is the whole act — it installs nothing, and owes no install step.** The
      generator writes one file, `../shared/insights.md`, which the docs installer has
      never published (its payload is the two entry docs plus `docs/agents/skills/`),
@@ -422,8 +435,8 @@ act is named for its audience — the next agents — not the doc-write mechanic
      not from that file. Nobody hand-runs the installer, and the exemption list is
      closed at two: [`docs-maintenance.md`](docs-maintenance.md) § Editing The Entry
      Docs.
-- **Exit seam:** every confirmed insight is in the tracked doc. A re-run with
-  nothing newly confirmed is a clean no-op.
+- **Exit seam:** every banked insight is in the tracked doc. A re-run with nothing
+  newly banked is a clean no-op.
 
 ### Act 3 — `full-cycle`
 
