@@ -19,10 +19,20 @@ require "application_system_test_case"
 # THE CARD IS EXPANDED FIRST, and that is load-bearing. Rows past +compact_limit+ (3)
 # are hidden behind the card's Show All toggle, and a display:none box measures 0x0 —
 # scrollWidth 0, clientWidth 0, height 0 — which sails through every check below. So
-# this file silently measured 10 of 12 chips: `full-cycle` and any THIRD act a soul
+# this file silently measured 10 of 11 chips: `full-cycle` and any THIRD act a soul
 # gained were exempt, and the third act is exactly where a new one lands. A file that
 # exists to catch "a longer future act" could not see the future act. Measured
-# 2026-09-09. +assert_every_chip_was_measured+ is the control that keeps it honest.
+# 2026-09-09. +assert_every_chip_was_measured+ is the control that keeps it honest,
+# and +reveal_compact_rows+ now fails on its OWN cause rather than falling through to
+# it — a toggle that never opened is not a chip that does not fit.
+#
+# ELEVEN, NOT TWELVE, which is what this header said until 2026-09-09. The card renders
+# 2 + 2 + 2 + 3 + 2 act chips (ApplicationHelper#heartbeat_launchers, with the card's own
+# order for Carl/Avi/Steffon), and ALEX ALONE has a third act — so `full-cycle` is the
+# only row past the limit today. The twelfth chip in the old count was
+# `sleeper-auction-watch`, the act deliberately carved OUT of this card, which has no
+# chip here to measure. A wrong number in the header of a file whose whole job is to
+# stop wrong numbers standing.
 class WorkflowsCardChipFitTest < ApplicationSystemTestCase
   setup do
     %w[carl avi steffon alex].each { |s| Agent.find_or_create_by!(slug: s) { |a| a.name = s.capitalize } }
@@ -50,7 +60,21 @@ class WorkflowsCardChipFitTest < ApplicationSystemTestCase
   # production-deploy already runs it. If the card is ever widened enough for the
   # auction slug to fit, this reddens and the comment must be rewritten rather than
   # left standing as a reason that has quietly expired.
-  DESIGN_WIDTH = 1536
+  #
+  # THE WIDTH IS 1728, NOT 1536, AND THAT IS THE MEASUREMENT'S WHOLE FOOTING. 1536 is
+  # EXACTLY Tailwind's `2xl` breakpoint — the width at which the card's ladder returns to
+  # `2xl:grid-cols-5`. One pixel below it the grid is `xl:grid-cols-3` and the chip hits
+  # its `max-w-[11rem]` cap. MEASURED at 1535px, 2026-09-09: three columns, and
+  # `sleeper-auction-watch` needs 114px of 114px — so `assert_operator 114, :>, 114`
+  # fails and prints the text below, which tells the reader the carve-out's reason has
+  # expired. A scrollbar, a Chrome bump, or a different runner is all it takes. An
+  # argument holder that can cry "expired" for a reason unrelated to the argument
+  # destroys the very property it was built to hold. 1728 is the sweep's own top width,
+  # sits well inside 2xl, and measures the identical budget: the card is at its 728px cap
+  # from 1536 up, so the chip's text area is the same at both. The 5-up grid is ASSERTED
+  # below before anything is measured, so the test states its precondition instead of
+  # assuming it.
+  DESIGN_WIDTH = 1728
   OFF_CARD_FITS     = "archive-shipped".freeze        # 15 chars — absent for a NON-geometry reason
   OFF_CARD_TOO_WIDE = "sleeper-auction-watch".freeze  # 21 chars — absent because it does not fit
 
@@ -59,6 +83,14 @@ class WorkflowsCardChipFitTest < ApplicationSystemTestCase
     visit deployments_path
     assert_selector "[data-test='heartbeats-card']", wait: 10
     reveal_compact_rows
+
+    columns = grid_column_count
+    assert_equal 5, columns,
+                 "the budget asserted here is the FIVE-UP card's, and at #{DESIGN_WIDTH}px the grid " \
+                 "resolved to #{columns} column(s) instead. Read nothing below until that is fixed: " \
+                 "at 3-up the chip hits its max-w-[11rem] cap and both measurements are about a card " \
+                 "this test did not mean to measure. Check the ladder in tasks/_heartbeats_card and " \
+                 "that DESIGN_WIDTH is not sitting on a breakpoint edge."
 
     chip = page.all("[data-test='heartbeats-card'] button[data-row='action'] code", visible: :all).first
     assert chip, "no act chip to measure the budget against"
@@ -76,6 +108,58 @@ class WorkflowsCardChipFitTest < ApplicationSystemTestCase
                     "#{OFF_CARD_FITS} no longer fits (#{snug[:need]}px of #{snug[:room]}px). It is " \
                     "off the card because production-deploy runs it, NOT because of width — if the " \
                     "chip has shrunk this far, the acts that ARE on the card are in trouble too."
+  end
+
+  # THE GUARD FOR THE HELPER ITSELF. Everything above is only readable as a verdict about
+  # WIDTH if a reveal that never happened cannot arrive dressed as one. So break the
+  # reveal in each of the four ways it can fail and prove the failure names the TOGGLE —
+  # and, just as load-bearing, that it does not read as the width or hidden-chip verdict.
+  # Without this the fix is a promise; with it, deleting any one of the four flunks below
+  # turns this red.
+  test "a reveal that cannot open fails as a toggle, never as a chip width" do
+    load_workflows_card
+
+    # 1. Alpine has not hydrated the card: the compacted rows still carry x-cloak, so a
+    #    click would land before @click is bound and be swallowed in silence. Its observer
+    #    is stopped first BECAUSE the signal is real — a live Alpine strips a re-added
+    #    x-cloak within the microtask, which is the readiness fact the reveal relies on.
+    #    Measured 2026-09-09 on Alpine 3.16.1: 0 cloaked elements under the card once
+    #    hydrated, 1 with the observer stopped. The throw is deliberate — if this API ever
+    #    goes, this scenario must fail loudly rather than quietly stop simulating anything.
+    page.execute_script(<<~JS)
+      if (!window.Alpine || !window.Alpine.stopObservingMutations) {
+        throw new Error('Alpine.stopObservingMutations is gone: this scenario no longer simulates an unhydrated card.');
+      }
+      window.Alpine.stopObservingMutations();
+      document.querySelector("#{CARD} [data-test='heartbeat-copy-row']").setAttribute('x-cloak', '');
+    JS
+    assert_reveal_blames_the_toggle { reveal_compact_rows(wait: 0.5) }
+
+    # 2. No toggle at all — the card stopped offering a reveal.
+    load_workflows_card
+    page.execute_script(%(document.querySelector("#{TOGGLE}").remove()))
+    assert_reveal_blames_the_toggle { reveal_compact_rows(wait: 0.5) }
+
+    # 3. A toggle that is present, clickable, and INERT — the swallowed click, reproduced.
+    #    The replacement carries no Alpine attributes, so Alpine has nothing to re-bind
+    #    when its observer sees the new node, and the state can never flip.
+    load_workflows_card
+    page.execute_script(<<~JS)
+      var live = document.querySelector("#{TOGGLE}");
+      var dead = document.createElement('button');
+      dead.setAttribute('type', 'button');
+      dead.setAttribute('data-test', 'heartbeat-compact-toggle');
+      dead.setAttribute('aria-expanded', 'false');
+      dead.textContent = 'Show All';
+      live.parentNode.replaceChild(dead, live);
+    JS
+    assert_reveal_blames_the_toggle { reveal_compact_rows(wait: 0.5) }
+
+    # 4. The toggle opens and the rows never paint. Measuring is stubbed to the 0px the
+    #    caller would otherwise receive and report as HIDDEN chips.
+    load_workflows_card
+    define_singleton_method(:act_chip_widths) { [ 0, 0 ] }
+    assert_reveal_blames_the_toggle { reveal_compact_rows(wait: 0.5) }
   end
 
   private
@@ -105,20 +189,133 @@ class WorkflowsCardChipFitTest < ApplicationSystemTestCase
                  "line at a space is fine and expected here; losing characters is not."
   end
 
-  # Open the Show All toggle so the rows past +compact_limit+ have real boxes, then
-  # wait for Alpine to paint them. Without this every third act measures 0x0.
-  def reveal_compact_rows
-    return unless page.has_selector?("[data-test='heartbeat-compact-toggle']", wait: 2)
+  CARD = "[data-test='heartbeats-card']".freeze
+  TOGGLE = "[data-test='heartbeat-compact-toggle']".freeze
 
-    find("[data-test='heartbeat-compact-toggle']").click
-    deadline = Time.now + 5
+  # The ceiling on each step of the reveal — the card's OWN first-paint budget (the
+  # `wait: 10` on every assert_selector above), not a fresh number tuned on a warm
+  # laptop. It bounds a hang; it is not what makes the reveal deterministic.
+  REVEAL_WAIT = 10
+
+  # Open the Show All toggle so the rows past +compact_limit+ have real boxes, then wait
+  # for Alpine to paint them. Without this every third act measures 0x0.
+  #
+  # EVERY EXIT HERE IS A FAILURE THAT NAMES ITSELF, and that is the point of the method.
+  # It used to hold two SOFT exits — `return unless has_selector?(..., wait: 2)` and
+  # `break if Time.now > deadline` — and both fell through to the width assertions with
+  # the chips still hidden. A hidden chip measures 0x0, so a toggle that never opened was
+  # REPORTED as a chip that does not fit, and the reader was sent to tasks/_heartbeats_card
+  # to reclaim pixels that were never the problem. Measured 2026-09-09: the `system` job
+  # red at 1m33s naming `full-cycle` at 0px seven seconds after Puma booted, then GREEN on
+  # a re-run of the same SHA. A toggle timeout and a width regression must never share a
+  # message.
+  #
+  # READINESS SIGNALS, NOT A BIGGER NUMBER, and here is why the number could not work.
+  # The race is not that the page is slow — it is that the click is UNORDERED against two
+  # things that finish on their own schedule, so any fixed wait only moves the threshold:
+  #
+  #   ALPINE — the button is server-rendered and clickable long before `@click` is bound.
+  #            A click that lands first does nothing at all: no error, no state change.
+  #            Alpine strips `x-cloak` from every element it initializes, so the card
+  #            SHEDDING its cloak is the hydration signal, and the click waits behind it.
+  #   FONTS  — page text is Montserrat, fetched from fonts.googleapis.com; the files land
+  #            AFTER `visit` returns and every glyph is re-measured, which reflows this
+  #            grid under the pointer. +click_when_settled+ (application_system_test_case)
+  #            exists for exactly that and carries the measured case: pointerdown and
+  #            pointerup hit different elements and the browser fires `click` on their
+  #            common ancestor. Locally the font is cached and it never reproduces; on a
+  #            CI runner it is a live fetch. That asymmetry is this flake's signature.
+  #
+  # +wait+ is a per-step ceiling, exposed so the guard test above can drive each exit
+  # without paying it four times over.
+  def reveal_compact_rows(wait: REVEAL_WAIT)
+    unless page.has_selector?(TOGGLE, wait: wait)
+      flunk "the Workflows card rendered no Show All toggle within #{wait}s, so the rows past " \
+            "compact_limit were never revealed. The card renders one whenever a soul has more rows " \
+            "than compact_limit (Alex has three acts), so either the page never finished loading or " \
+            "the card no longer hides rows — in which case this helper is obsolete and every chip is " \
+            "already measurable. THIS IS NOT A VERDICT ABOUT CHIP WIDTH."
+    end
+
+    unless page.has_no_selector?("#{CARD} [x-cloak]", visible: :all, wait: wait)
+      flunk "Alpine had not hydrated the Workflows card within #{wait}s — its compacted rows still " \
+            "carry the x-cloak that Alpine strips as it initializes each element. Clicking the Show " \
+            "All toggle now would be swallowed (@click is not bound yet) and every row past " \
+            "compact_limit would stay hidden at 0px. THIS IS NOT A VERDICT ABOUT CHIP WIDTH."
+    end
+
+    click_when_settled(TOGGLE)
+
+    unless page.has_selector?("#{TOGGLE}[aria-expanded='true']", wait: wait)
+      flunk "the Show All toggle did not open within #{wait}s of the click — it still reports " \
+            "aria-expanded=#{toggle_expanded_state.inspect} (nil means Alpine never bound the " \
+            "attribute at all). The click was swallowed, or the toggle no longer drives " \
+            "heartbeatsExpanded. THIS IS NOT A VERDICT ABOUT CHIP WIDTH."
+    end
+
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + wait
     loop do
       widths = act_chip_widths
-      break if widths.any? && widths.none?(&:zero?)
-      break if Time.now > deadline
+      return if widths.any? && widths.none?(&:zero?)
+
+      if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+        flunk "the Show All toggle reported OPEN but #{widths.count(&:zero?)} of #{widths.size} act " \
+              "chips still measured 0px #{wait}s later, so the revealed rows never painted. " \
+              "THIS IS NOT A VERDICT ABOUT CHIP WIDTH."
+      end
 
       sleep 0.1
     end
+  end
+
+  # Load /deployments and hold until the Workflows card is both rendered AND hydrated —
+  # the state every scenario in the guard test starts from, so each one breaks exactly
+  # the thing it means to break.
+  def load_workflows_card
+    visit deployments_path
+    assert_selector CARD, wait: REVEAL_WAIT
+    assert_no_selector "#{CARD} [x-cloak]", visible: :all, wait: REVEAL_WAIT
+  end
+
+  # A reveal failure has to be readable as a TOGGLE failure by whoever finds it in a CI
+  # log, which is two claims, not one: it names the toggle, and it cannot be mistaken for
+  # the width verdict this file exists to deliver.
+  def assert_reveal_blames_the_toggle(&block)
+    error = assert_raises(Minitest::Assertion, &block)
+
+    assert_match(/toggle/i, error.message,
+                 "a reveal that failed must name the toggle. Got: #{error.message}")
+    assert_match(/NOT A VERDICT ABOUT CHIP WIDTH/, error.message,
+                 "a reveal that failed must disclaim the width verdict. Got: #{error.message}")
+    refute_match(/wrap or are ellipsised|measured 0px wide, which means/, error.message,
+                 "a reveal that failed must not arrive wearing the width or hidden-chip verdict's " \
+                 "words — that confusion is the whole defect this file was fixed for.")
+    error
+  end
+
+  # What the toggle currently claims about itself. nil when Alpine never bound the
+  # attribute, which separates "never hydrated" from "click swallowed" in the flunk above.
+  def toggle_expanded_state
+    page.evaluate_script(<<~JS)
+      (function () {
+        var t = document.querySelector("#{TOGGLE}");
+        return t ? t.getAttribute('aria-expanded') : null;
+      })()
+    JS
+  end
+
+  # The grid's RESOLVED track count, read off the launcher's own parent so it does not
+  # depend on the card's class strings — the same reason every other measurement here
+  # comes from the rendered box.
+  def grid_column_count
+    page.evaluate_script(<<~JS).to_i
+      (function () {
+        var first = document.querySelector("#{CARD} [data-test='heartbeat-launcher']");
+        if (!first) return 0;
+        return window.getComputedStyle(first.parentElement)
+                     .gridTemplateColumns.split(' ').filter(Boolean).length;
+      })()
+    JS
   end
 
   def act_chip_widths
@@ -135,7 +332,12 @@ class WorkflowsCardChipFitTest < ApplicationSystemTestCase
       text if page.evaluate_script("arguments[0].scrollWidth", c).to_i.zero?
     end
     assert_empty unmeasured,
-                 "At #{width}px these act chips measured 0px wide, which means they were HIDDEN "                  "when this file checked them — not that they fit. Rows past compact_limit are "                  "behind the Show All toggle; reveal_compact_rows must open it before measuring."
+                 "At #{width}px these act chips measured 0px wide, which means they were HIDDEN " \
+                 "when this file checked them — not that they fit. This is NOT the toggle timing " \
+                 "out: reveal_compact_rows now flunks on its own cause if the Show All toggle is " \
+                 "missing, unhydrated, swallowed the click, or never painted, so by the time this " \
+                 "fires the rows past compact_limit were genuinely revealed and something else is " \
+                 "hiding these."
   end
 
   # Returns a description when the box misbehaves, nil when it is fine. `single_line`
