@@ -45,8 +45,11 @@ correctly. If the bank is empty, report "nothing to share" and stop.
 is mutually exclusive with `#discard!`), while `grader` records only WHO WROTE THE
 ROW: `alex` is Alex's grade of the activity, `mcr` is Mr. McRitchie's audit **of
 that grade** — a second row on the same target, written from the browser drawer
-and never by the agent CLI, because the agent API always grades as `alex` so a shared token can never
-forge the audit lane. Every other reader of the bank agrees: the feed-forward
+and never by the agent CLI, because the agent API always grades as `alex`. That
+is PROVENANCE, NOT PROOF: the heartbeat drawer skips authentication (build-first,
+2026-07-03), so an `mcr` row is writable with no token at all. "A shared token
+can never forge the audit lane" is therefore true but vacuous — one more reason
+the grader cannot be the gate. Every other reader of the bank agrees: the feed-forward
 `/api/v1/insights` hook and the `/alex/insights` page both read
 `ActionGrade.banked` with no grader filter.
 

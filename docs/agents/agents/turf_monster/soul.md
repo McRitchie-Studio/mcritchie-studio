@@ -77,8 +77,9 @@ Turf Monster lives and breathes sports. Knows every team, every player, every st
 - [`sops/sleeper-auction-watch.md`](sops/sleeper-auction-watch.md) — sit beside Mr.
   McRitchie through a live Sleeper auction draft: value every player under the
   league's own scoring, then call a max bid as each one comes up. Direct-invocation
-  only and deliberately off the launcher card — it is calendar-bound, one evening a
-  year, so nothing should schedule it. It writes nothing; the pacing, the scarcity
+  only and deliberately off the launcher card, for two separate reasons: it is
+  calendar-bound, one evening a year, so nothing should schedule it, and at 21
+  characters the slug clips a card chip anyway. It writes nothing; the pacing, the scarcity
   reads, and the roster-feasibility calls are mine
 - [`git-protocol.md`](../../system/git-protocol.md) — when committing scrapers, contest types, or Rails code in turf-monster
 - [`sizing-rubric.md`](../../system/sizing-rubric.md) — sports tickets size honestly; "just add a contest type" is rarely S
