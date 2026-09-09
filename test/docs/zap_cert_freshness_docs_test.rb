@@ -32,15 +32,24 @@
 # mechanism is not detectable by string matching. So the prose half is deliberately
 # NARROW: it pins only that the cert paragraph still binds each verdict to the right
 # case and no longer carries the falsified absolute. The mechanism itself is held by
-# the four behaviour tests and by the source-order pin on the gate's own ref
+# the six behaviour tests and by the source-order pin on the gate's own ref
 # preference, which is what actually goes red if the gate or git stops working the
 # way the paragraph says.
+#
+# THE SECOND PASS (/tasks/refusal-names-wrong-checkout, 2026-09-09). The same false
+# claim turned out to live in six more places, in bin/ and test/ rather than in prose
+# — including the operator refusal bin/dor-check prints mid-verdict, and this file's
+# own sibling fixtures, whose COMMENTS justified a correct fixture with the wrong
+# reason. Correcting the doc alone would have left the code still saying it. The last
+# two tests below pin exactly what those comments got wrong: WHICH of the gate's two
+# checks catches WHICH case.
 
 require "minitest/autorun"
 require "tmpdir"
 require "fileutils"
 require_relative "../../lib/cert_evidence"
 require_relative "../../bin/lib/full_suite_gate"
+require_relative "../../bin/lib/review_tree_guard"
 
 class ZapCertFreshnessDocsTest < Minitest::Test
   ROOT = File.expand_path("../..", __dir__)
@@ -224,6 +233,62 @@ class ZapCertFreshnessDocsTest < Minitest::Test
     assert_match(/fingerprint_of_first_ref\(root, "origin\/#\{branch\}", branch\)/, body,
                  "the doc says the gate hashes origin/<branch> in the desk (falling back to the local " \
                  "branch). If that preference changes, the cert paragraph is wrong again.")
+  end
+
+  # --- WHICH check catches WHICH case (/tasks/refusal-names-wrong-checkout) --
+  #
+  # bin/dor-check runs TWO checks over the SAME ref — the cert fingerprint and
+  # ReviewTreeGuard's head check — and the comments and the operator-facing refusal
+  # beside them explain which one bites for a given zap. That explanation was wrong
+  # in six places at once: it said a push from "any other checkout" leaves the desk's
+  # ref pre-zap, collapsing the worktree and clone cases exactly as the doc had.
+  #
+  # These two tests pin the division of labour to REF SHARING rather than to distance,
+  # in the same house geometry and through the same functions the gate calls. They are
+  # deliberately NOT a grep of the refusal text: a string pin dies at the next reword
+  # and proves nothing about which check actually fires. Reword those messages freely;
+  # break the mechanism they describe and these go red.
+
+  def test_a_worktree_zap_is_caught_by_the_cert_while_the_head_check_stays_quiet
+    with_house do |h|
+      certified = cert_tree_seen_from(h[:builder])
+      checks = cert_for(certified)
+
+      zap!(h[:zapdesk], "2\n")
+      pr_head = capture(h[:remote], "rev-parse #{BRANCH}")
+      head = ReviewTreeGuard.head_assessment(root: h[:builder], branch: BRANCH, pr_head: pr_head)
+
+      assert_equal :stale, FullSuiteGate.lane_status(checks, LANE, cert_tree_seen_from(h[:builder])),
+                   "the shared ref moved, so the CERT is what catches a sibling-worktree zap"
+      assert_equal :match, head[:state],
+                   "the head check MUST stay quiet here — the desk's ref followed the push. Any comment " \
+                   "or refusal claiming the head check is what catches a push from 'another checkout' " \
+                   "is describing THIS case, and describing it wrongly."
+      assert_equal "origin/#{BRANCH}", head[:ref],
+                   "and it must read the SAME ref the cert hashes: if those diverge the two checks stop " \
+                   "being complementary and neither explanation can be right"
+    end
+  end
+
+  def test_a_clone_zap_is_caught_only_by_the_head_check_and_the_cert_says_fresh
+    with_house do |h|
+      certified = cert_tree_seen_from(h[:builder])
+      checks = cert_for(certified)
+
+      zap!(h[:otherclone], "3\n")
+      pr_head = capture(h[:remote], "rev-parse #{BRANCH}")
+      head = ReviewTreeGuard.head_assessment(root: h[:builder], branch: BRANCH, pr_head: pr_head)
+
+      assert_equal :fresh, FullSuiteGate.lane_status(checks, LANE, cert_tree_seen_from(h[:builder])),
+                   "independent refs, so the cert cannot see the push — it reads FRESH over a tree that " \
+                   "is no longer the PR head. That is the HAZARDOUS reading, not the reassuring one."
+      assert_equal :mismatch, head[:state],
+                   "the head check is the ONLY thing between a clone-side zap and a green verdict, which " \
+                   "is why the refusal it prints must not credit the cert with catching this"
+      assert_equal capture(h[:builder], "rev-parse origin/#{BRANCH}"), head[:local_sha]
+      refute_equal head[:pr_head], head[:local_sha],
+                   "fixture: the desk and the PR head must differ or this proves nothing"
+    end
   end
 
   # --- the narrow prose backstop (see THE LIMIT in the header) ---------------

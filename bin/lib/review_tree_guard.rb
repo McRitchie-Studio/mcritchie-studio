@@ -29,11 +29,21 @@
 # ref it hashes has actually seen the zap. `review_fingerprint` hashes `origin/<branch>`
 # (else the local `<branch>`) IN THE DESK, and **bin/dor-check never runs `git fetch`**
 # — verified 2026-09-02: every `fetch` in that script is prose in a remedy string. A
-# reviewer who zaps from the desk itself updates that ref as a side effect of pushing,
-# and the cert goes stale exactly as observed. A reviewer who zaps from ANYWHERE ELSE
-# leaves the desk's ref pre-zap, the hash matches the cert the builder stamped, and the
-# lane reads FRESH. Same act, opposite outcome, decided by which checkout the reviewer
-# happened to be standing in.
+# reviewer who zaps from the desk — or from ANY SIBLING WORKTREE of the same repo, which
+# is what the zap protocol's own recipes cut — updates that ref as a side effect of
+# pushing, because every worktree of a repo shares ONE ref store. The cert goes stale
+# exactly as observed. Only a push whose refs are INDEPENDENT of this checkout's — a
+# separate clone, another machine, GitHub's Update-branch button — leaves the desk's ref
+# pre-zap, so the hash still matches the cert the builder stamped and the lane reads
+# FRESH. Same act, opposite outcome, decided NOT by distance but by whether the pushing
+# checkout shares this one's ref store.
+#
+# AND FRESH IS THE HAZARDOUS READING, NOT THE REASSURING ONE: a green cert over a tree
+# that is no longer the PR head, which the head check below is the only thing to catch.
+# Measured 2026-09-09 in the real house geometry and pinned by
+# test/docs/zap_cert_freshness_docs_test.rb: a worktree push moves the desk's ref (cert
+# STALE, head check :match), a clone push does not (cert FRESH, head check :mismatch).
+# The two checks are complementary, and only this one speaks in the dangerous case.
 #
 # So this asks the question the fingerprint cannot: does the commit this gate is about
 # to grade EQUAL the PR head? A mismatch is refused rather than reconciled, because the

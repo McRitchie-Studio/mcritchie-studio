@@ -224,19 +224,24 @@ So the whole question is whether the checkout you push from writes the copy of
   worktree of a repo keeps ONE ref store, in the common git dir (`git rev-parse
   --git-common-dir`); only `HEAD` and a few per-worktree refs are private. The
   throwaway `.worktrees/zap-<slug>` desk this protocol tells you to cut hangs off
-  the same primary checkout the builder's desk does — the recipes above derive it
-  from `--git-common-dir` precisely so it does — so your push moves the very ref
+  the same primary checkout the builder's desk does — `git worktree add` shares the
+  ref store wherever the path lands, and the recipes' `--git-common-dir` only puts
+  that path *inside* `.worktrees/`, which is what `desk_guard.rb`'s `desk?`
+  predicate needs (see above) — so your push moves the very ref
   the cert is fingerprinted against, the desk resolves the new tree with no fetch,
   and the lane reads STALE. **That is the house case**, because worktrees are the
   house desk, and the refusal is the guard working rather than a bug in the gate.
   If the zap was yours, re-certify it: `bin/full-suite-check <task>`.
 - **A separate CLONE keeps its own refs, so the cert reads FRESH — the dangerous
-  reading.** A distinct clone, a push from another machine, or a merge made in
-  GitHub's web UI never touches the desk's `origin/<branch>`. The hash still
+  reading.** A distinct clone, a push from another machine, or GitHub's
+  **Update branch** button never touches the desk's `origin/<branch>`. The hash still
   matches the builder's cert and the lane reads FRESH over a tree that is no
   longer the PR head: a green that is evidence of nothing. Only the head check
   above — the stale-tree refusal in this section — catches that one, by comparing
-  the graded commit to the PR head.
+  the graded commit to the PR head. **Re-certify here too, with more reason than in
+  the worktree case:** `git fetch origin <branch>`, then `bin/full-suite-check
+  <task>`. A STALE lane is the gate telling you the cert is out of date; this FRESH
+  is the cert being wrong while looking right, so nothing prompts you if you skip it.
 
 Measured 2026-09-08 on real repositories and pinned by
 `test/docs/zap_cert_freshness_docs_test.rb`: a push from a sibling worktree moved
