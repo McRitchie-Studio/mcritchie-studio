@@ -279,8 +279,8 @@ Two wrappers collapse the cycle's bookends into one command each. Reach for
 them first; the long form below is the fallback.
 
 ```bash
-/Users/alex/projects/mcritchie-studio/bin/task begin --title "Three To Five Words" \
-  --repo <app> --kind <kind> --agent <soul> \
+/Users/alex/projects/mcritchie-studio/bin/task begin --title "Three To Five Words" --agent <soul> \
+  --repo <app> --kind <kind> \
   --shape <shape> --risk <tags> --accept "criterion" --test "[unit] ..."
 
 cd <desk>   #   ... the worktree begin printed; build there ...

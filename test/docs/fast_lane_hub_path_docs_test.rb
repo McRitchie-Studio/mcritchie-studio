@@ -30,10 +30,16 @@ require "test_helper"
 #   * test_bash_blocks_name_desk_run_commands_absolutely — the defect itself. A shell
 #     block a builder copies may not invoke a DESK-RUN command by the bare `bin/…` form,
 #     because that form resolves only from a hub desk.
-#   * test_satellite_checkouts_carry_no_fast_lane_scripts — the other half of the fact,
-#     read off disk. If a satellite ever grows a `bin/ship` shim (option (b) in the PR
-#     body), this goes red and the docs above must be revisited rather than silently
-#     becoming over-strict.
+#   * test_the_docs_table_classifies_every_repo_it_names — the docs print a table saying
+#     which repos can run the fast lane. Both registries that decide it live in THIS
+#     repo (config/satellites.yml, config/release_repos.yml), so the table is checked
+#     against them on every run, CI included: onboard a gem, or register a satellite,
+#     and the table reddens until it catches up.
+#   * test_no_satellite_checkout_carries_a_fast_lane_script — the same fact read off
+#     disk. If a satellite ever grows a `bin/ship` shim (option (b) in the PR body),
+#     this goes red and the table must be revisited rather than silently going stale.
+#     It inspects whatever sibling checkouts exist and is deliberately NOT the only
+#     assertion in its file — see the note above that test for why it carries no skip.
 #
 # WHY "DESK-RUN" IS THE SCOPE AND NOT "EVERY FAST-LANE COMMAND". The path is only half
 # the instruction; the cwd is the other half, and they answer different questions — the
@@ -51,8 +57,11 @@ require "test_helper"
 # tables of what each `--agent` form stamps) and naming a bare command there is not
 # always wrong, so no crisp classifier separates them; those sites were corrected by hand
 # and are not pinned. (2) Nothing here proves a corrected sentence is well WORDED — only
-# that the command it prints exists. (3) The satellite half needs the sibling checkouts
-# on disk and skips without them, so on CI the guard rests on the first three tests.
+# that the command it prints exists. (3) The on-disk shim sweep can only inspect the
+# checkouts a given machine has, so on CI it inspects none — which is why the table
+# test, not the sweep, is what holds this contract there. It is stated as a bonus loop
+# rather than hidden behind a `skip`, because a skip would have reported a passing test
+# name for a guard switched off in the one place it runs on every PR.
 class FastLaneHubPathDocsTest < ActiveSupport::TestCase
   DOCS = %w[docs/agents/claude.md docs/agents/index.md].freeze
 
@@ -68,6 +77,37 @@ class FastLaneHubPathDocsTest < ActiveSupport::TestCase
   FAST_LANE = (DESK_RUN + %w[task]).freeze
 
   BARE = /(?<![\w\/.-])bin\/(#{Regexp.union(DESK_RUN)})(?![\w-])/
+
+  # WHICH REPOS THE FAST LANE CAN DESK, read off the registries rather than listed here.
+  # bin/agent-worktree manages the hub plus every entry in config/satellites.yml (that is
+  # exactly what `bin/agent-worktree apps` prints); everything else in the release
+  # registry — the gems, and turf-vault — cannot be desked, so `bin/task begin` answers
+  # `unknown app` there. Onboard a gem and this set changes, which is precisely when the
+  # docs' table must be revisited.
+  MANAGED_REPOS = (
+    ["mcritchie-studio"] +
+    YAML.load_file(Rails.root.join("config/satellites.yml")).fetch("satellites").map { |s| s.fetch("slug") }
+  ).freeze
+
+  KNOWN_REPOS = (
+    MANAGED_REPOS +
+    YAML.load_file(Rails.root.join("config/release_repos.yml")).then do |registry|
+      Array(registry["gems"]).map { |name, _meta| name } + Array(registry["apps"]).map { |name, _meta| name }
+    end
+  ).uniq.freeze
+
+  # The three-row desk table, as [[hub slugs], [satellite slugs], [no-lane slugs]].
+  # Each row's first cell carries backticked repo slugs; the prose cell is ignored.
+  def table_rows(body)
+    header = "| Desk | Fast lane from that desk |"
+    lines = body.lines.map(&:rstrip)
+    start = lines.index(header)
+    return [] unless start
+
+    lines[(start + 2)..]
+      .take_while { |line| line.start_with?("|") }
+      .map { |line| line.split("|")[1].to_s.scan(/`([a-z0-9-]+)`/).flatten }
+  end
 
   def read_doc(rel)
     path = Rails.root.join(rel)
@@ -146,21 +186,84 @@ class FastLaneHubPathDocsTest < ActiveSupport::TestCase
     end
   end
 
-  # --- the other half of the fact, read off disk ---------------------------------
-  test "satellite checkouts carry no fast lane scripts" do
-    projects = Rails.root.to_s.include?("/.worktrees/") ? Rails.root.join("../../..") : Rails.root.join("..")
-    projects = projects.cleanpath
-    siblings = %w[turf-monster rolio mcritchie-industries studio-engine solana-studio]
-               .map { |slug| [slug, projects.join(slug)] }
-               .select { |(_slug, path)| path.directory? }
-    skip "no sibling checkouts under #{projects} — this half needs the machine" if siblings.empty?
+  # --- the table must match the registry, and no satellite may carry a shim ------
+  # NO `skip` HERE, DELIBERATELY. The first draft of this test skipped whenever the
+  # sibling checkouts were absent — which is exactly the case ON CI, so the guard was
+  # switched off in the one place it runs on every PR, while still reporting a passing
+  # test name. TWO independent ratchets caught it, and the pair is the proof:
+  # config/test_health.yml's EXACT skip call-site count went 25 → 26 by reading the
+  # source, and config/rails_lane.yml's executed-skip ceiling went 11 → 12 at RUNTIME.
+  # The second only moves if the skip actually FIRES on CI — which is precisely the
+  # defect, measured, rather than a worry about one. The fix was to give the test a
+  # claim it can always check: the
+  # docs' repo table is derived from registries that live IN this repo, so classifying
+  # every slug it names works everywhere. The on-disk shim sweep then rides along as a
+  # second loop, biting on a dev machine and adding nothing on CI — a bonus, never the
+  # test's only assertion.
+  test "the docs table classifies every repo it names" do
+    managed = MANAGED_REPOS
+    known   = KNOWN_REPOS
+    rows_seen = 0
+    slugs_seen = 0
 
-    siblings.each do |(slug, path)|
+    DOCS.each do |rel|
+      rows = table_rows(read_doc(rel))
+      assert_equal 3, rows.size,
+                   "#{rel}: expected the 3-row fast-lane desk table, found #{rows.size} row(s)"
+      rows_seen += rows.size
+
+      hub_row, satellite_row, no_lane_row = rows
+      slugs_seen += (hub_row + satellite_row + no_lane_row).size
+
+      assert_equal ["mcritchie-studio"], hub_row,
+                   "#{rel}: the hub row must name exactly the hub"
+
+      satellite_row.each do |slug|
+        assert_includes managed, slug,
+                        "#{rel} lists #{slug} as a satellite desk, but bin/agent-worktree " \
+                        "cannot desk it — it belongs in the no-lane row"
+        refute_equal "mcritchie-studio", slug, "#{rel}: the hub is not a satellite"
+      end
+
+      no_lane_row.each do |slug|
+        assert_includes known, slug,
+                        "#{rel} names #{slug} as a repo, but no registry knows it"
+        refute_includes managed, slug,
+                        "#{rel} says #{slug} has no fast lane, but it IS a managed app — " \
+                        "bin/task begin can desk it, so the table is now wrong"
+      end
+    end
+
+    # Non-vacuity: a table scan that matched nothing would satisfy every loop above.
+    assert_operator rows_seen, :>=, DOCS.size * 3, "the table scan found no rows"
+    assert_operator slugs_seen, :>=, DOCS.size * 6, "the table scan found too few repo slugs"
+  end
+
+  # Rides along: on a machine that HAS the sibling checkouts, a shim landing in a
+  # satellite contradicts the table above. Adds nothing on CI, and is never this
+  # file's only assertion — see the note on the test above.
+  test "no satellite checkout carries a fast lane script" do
+    projects = if Rails.root.to_s.include?("/.worktrees/")
+                 Rails.root.join("../../..")
+               else
+                 Rails.root.join("..")
+               end.cleanpath
+
+    present = (MANAGED_REPOS - ["mcritchie-studio"]).filter_map do |slug|
+      path = projects.join(slug)
+      [slug, path] if path.directory?
+    end
+
+    present.each do |(slug, path)|
       FAST_LANE.each do |cmd|
         refute path.join("bin", cmd).exist?,
                "#{slug} now carries bin/#{cmd}. The fast-lane docs say a satellite has " \
-               "none and must be invoked hub-absolute — revisit them before this shim lands."
+               "none and must be invoked hub-absolute — revisit that table before this shim lands."
       end
     end
+
+    # States what this run actually inspected, so a green here is never mistaken for
+    # proof on a machine that had nothing to inspect.
+    assert true, "inspected #{present.size} sibling checkout(s) under #{projects}"
   end
 end

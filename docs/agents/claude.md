@@ -29,8 +29,8 @@ or "just a registry entry" is exactly when this gets skipped.
 bookends below into one command each:
 
 ```bash
-/Users/alex/projects/mcritchie-studio/bin/task begin --title "Three To Five Words" \
-  --repo <app> --kind <kind> --agent <soul> \
+/Users/alex/projects/mcritchie-studio/bin/task begin --title "Three To Five Words" --agent <soul> \
+  --repo <app> --kind <kind> \
   --shape <shape> --risk <tags> --accept "criterion" --test "[unit] ..."
 
 cd <desk>   #   ... the worktree begin printed; build there ...
