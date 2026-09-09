@@ -20,7 +20,11 @@ class TaskTest < ActiveSupport::TestCase
     assert_not_nil task.submitted_at
   end
 
-  test "[unit] submitting from building settles waiting approval to none" do
+  test "[unit] submitting from building carries a waiting approval into review" do
+    # THE REGRESSION for the defect measured three times on 2026-09-09 (turf PRs
+    # 644, 647, 653). `submitted` is inside APPROVAL_REQUEST_STAGES, so the handoff
+    # move carries the request rather than discarding it, and the card keeps
+    # pulsing — in the review column instead of nowhere.
     task = Task.create!(
       title: "Approval Exit Build",
       stage: "building",
@@ -37,29 +41,58 @@ class TaskTest < ActiveSupport::TestCase
 
     task.reload
     assert_equal "submitted", task.stage
-    # The review flow takes over on submit, so the WAITING APPROVAL badge drops —
-    # settled to "none", NOT self-approved (no fabricated operator grant).
-    assert_equal "none", task.approval_status
-    assert_not task.waiting_for_operator_approval?
-    # The original request timestamp is preserved as history; no approval was granted.
+    assert_equal "waiting", task.approval_status,
+      "the handoff must not discard a request the operator was asked to act on"
+    assert task.waiting_for_operator_approval?, "so the board still pulses"
+    assert_nil task.devops["approval_request_dropped_at"],
+      "and nothing was dropped, so no receipt may be stamped"
+    # The original request timestamp is preserved; no approval was granted.
     assert_equal requested_at, task.devops["approval_requested_at"]
     assert_nil task.devops["approval_approved_at"]
   end
 
-  test "[unit] submitting straight from designed also settles waiting approval" do
+  test "[unit] reviewing a submitted task settles waiting approval to none" do
+    # The seam itself, at its new home. Review merges the PR onto `accepted` and
+    # moves the task to `reviewed`; the desk serving the local demo is reclaimable
+    # from that moment, so the request points at nothing and the badge drops —
+    # settled to "none", NOT self-approved (no fabricated operator grant).
+    task = Task.create!(
+      title: "Approval Exit Review",
+      stage: "building",
+      metadata: {
+        "devops" => {
+          "approval_status" => "waiting",
+          "local_url" => "http://localhost:3021/tasks"
+        }
+      }
+    )
+    requested_at = task.devops["approval_requested_at"]
+
+    task.submit!
+    task.review!
+
+    task.reload
+    assert_equal "reviewed", task.stage
+    assert_equal "none", task.approval_status
+    assert_not task.waiting_for_operator_approval?
+    assert_equal requested_at, task.devops["approval_requested_at"]
+    assert_nil task.devops["approval_approved_at"]
+  end
+
+  test "[unit] jumping straight from designed past the window also settles waiting approval" do
     # The old build-exit callback only fired when LEAVING `building`; a
-    # designed→submitted jump stranded the WAITING APPROVAL badge on the submitted
-    # card. Keying off the transition INTO submitted covers that path too.
+    # designed→(past the window) jump stranded the WAITING APPROVAL badge. The
+    # settle is a stage INVARIANT, so it covers that path too — from any origin.
     task = Task.create!(
       title: "Approval Skip Building",
       stage: "designed",
       metadata: { "devops" => { "approval_status" => "waiting", "local_url" => "http://localhost:3021/tasks" } }
     )
 
-    task.submit!
+    task.review!
 
     task.reload
-    assert_equal "submitted", task.stage
+    assert_equal "reviewed", task.stage
     assert_equal "none", task.approval_status
     assert_not task.waiting_for_operator_approval?
   end
@@ -81,8 +114,8 @@ class TaskTest < ActiveSupport::TestCase
 
     task.reload
     assert_equal "submitted", task.stage
-    # Only the "waiting" request settles on submit; changes_requested carries its
-    # own meaning into review and must survive the transition untouched.
+    # Only the "waiting" request is ever settled; changes_requested carries its
+    # own meaning into review and must survive every transition untouched.
     assert_equal "changes_requested", task.approval_status
     assert_nil task.devops["approval_approved_at"]
   end
@@ -101,7 +134,7 @@ class TaskTest < ActiveSupport::TestCase
     assert_equal "2026-07-01T00:00:00Z", task.devops["approval_approved_at"]
   end
 
-  test "[unit] settling waiting on submit is idempotent across a block/resubmit cycle" do
+  test "[unit] settling waiting past the window is idempotent across a block/resubmit cycle" do
     task = Task.create!(
       title: "Approval Resettle On Resubmit",
       stage: "building",
@@ -109,6 +142,7 @@ class TaskTest < ActiveSupport::TestCase
     )
 
     task.submit!
+    task.review!
     assert_equal "none", task.reload.approval_status
 
     # QA rework sends it back to building; the demo is re-flagged waiting, then resubmitted.
@@ -117,20 +151,21 @@ class TaskTest < ActiveSupport::TestCase
     md["devops"]["approval_status"] = "waiting"
     task.update!(metadata: md)
     task.submit!
+    task.review!
 
-    assert_equal "none", task.reload.approval_status, "re-entering submitted settles again, no-op-safe"
+    assert_equal "none", task.reload.approval_status, "re-entering reviewed settles again, no-op-safe"
     assert_not task.waiting_for_operator_approval?
   end
 
-  test "[unit] an agent-sourced submit settles waiting without tripping the operator guard" do
+  test "[unit] an agent-sourced merge settles waiting without tripping the operator guard" do
     task = Task.create!(
       title: "Approval Agent Submit",
-      stage: "building",
+      stage: "submitted",
       metadata: { "devops" => { "approval_status" => "waiting", "local_url" => "http://localhost:3021/tasks" } }
     )
 
     Current.task_event_source = "cli" # the bin/task agent lane, normally barred from granting approval
-    assert_nothing_raised { task.submit! }
+    assert_nothing_raised { task.review! }
 
     task.reload
     assert_equal "none", task.approval_status, "the system settle resolves to the agent-writable none"
@@ -139,18 +174,32 @@ class TaskTest < ActiveSupport::TestCase
     Current.reset
   end
 
-  test "[unit] creating straight into submitted settles the request too" do
+  test "[unit] creating straight past the window settles the request too" do
     # The settle is a stage INVARIANT, not a transition event, so it holds on
-    # create as well: a row born past the seam cannot carry a badge that nothing
+    # create as well: a row born past the window cannot carry a badge that nothing
     # in the pipeline will clear.
+    task = Task.create!(
+      title: "Approval Born Reviewed",
+      stage: "reviewed",
+      metadata: { "devops" => { "approval_status" => "waiting", "local_url" => "http://localhost:3021/tasks" } }
+    )
+
+    assert_equal "none", task.reload.approval_status
+    assert_not task.waiting_for_operator_approval?
+  end
+
+  test "[unit] creating straight into submitted keeps the request live" do
+    # The other side of the same invariant, and the one the 2026-09-09 fix turns
+    # on: `submitted` is INSIDE the window, so a row born there — a ship that
+    # creates and hands off in one motion — keeps a badge review can still act on.
     task = Task.create!(
       title: "Approval Born Submitted",
       stage: "submitted",
       metadata: { "devops" => { "approval_status" => "waiting", "local_url" => "http://localhost:3021/tasks" } }
     )
 
-    assert_equal "none", task.reload.approval_status
-    assert_not task.waiting_for_operator_approval?
+    assert_equal "waiting", task.reload.approval_status
+    assert task.waiting_for_operator_approval?
   end
 
   # --- the three leaks the OLD one-shot transition callback had. Each was
@@ -168,6 +217,7 @@ class TaskTest < ActiveSupport::TestCase
       metadata: { "devops" => { "approval_status" => "waiting", "local_url" => "http://localhost:3021/tasks" } }
     )
     task.submit!
+    task.review!
     assert_equal "none", task.reload.approval_status
 
     task.update!(metadata: { "devops" => { "approval_status" => "waiting", "local_url" => "http://localhost:3021/tasks" } })
@@ -177,10 +227,11 @@ class TaskTest < ActiveSupport::TestCase
     assert_not task.waiting_for_operator_approval?
   end
 
-  test "[unit] flagging approval AFTER submitting settles immediately" do
+  test "[unit] flagging approval AFTER the window settles immediately" do
     # Leak 2: there was no move left to settle it, so it stuck forever.
     task = Task.create!(title: "Approval Late Flag", stage: "building")
     task.submit!
+    task.review!
 
     metadata = task.metadata.deep_dup
     (metadata["devops"] ||= {})["approval_status"] = "waiting"
@@ -192,8 +243,10 @@ class TaskTest < ActiveSupport::TestCase
 
   test "[unit] a waiting request cannot ride a later stage move to shipped" do
     # Leak 3: reviewed / assembled / shipped were not the submitted transition,
-    # so a restored request rode the whole pipeline. Force one in past the seam
+    # so a restored request rode the whole pipeline. Force one in past the window
     # (update_column skips the invariant) and assert every later stage clears it.
+    # Unchanged by the 2026-09-09 seam move: every stage below is still outside
+    # APPROVAL_REQUEST_STAGES, which is what keeps this leak closed.
     task = Task.create!(title: "Approval Rides Pipeline", stage: "building")
     task.submit!
 
@@ -213,25 +266,31 @@ class TaskTest < ActiveSupport::TestCase
     # 9 such rows were live in production when this was found — one of them a
     # SHIPPED card still flashing WAITING APPROVAL. The invariant fixes the
     # future; nothing saves these rows again, so they need the sweep.
-    stranded = %w[submitted reviewed assembled shipped archived].map do |stage|
+    #
+    # `submitted` LEFT this list on 2026-09-09. It reads on the "survives" side
+    # below now, because a request there is live rather than stranded — the sweep
+    # takes only rows outside APPROVAL_REQUEST_STAGES, and taking a live one would
+    # silently un-ask a question the operator has not answered.
+    stranded = %w[reviewed assembled shipped archived].map do |stage|
       task = Task.create!(title: "Stranded #{stage.capitalize} Badge", stage: stage)
       forced = task.metadata.deep_dup
       (forced["devops"] ||= {})["approval_status"] = "waiting"
       task.update_column(:metadata, forced)
       task
     end
-    live = Task.create!(
-      title: "Live Waiting Request",
-      stage: "building",
-      metadata: { "devops" => { "approval_status" => "waiting" } }
-    )
+    live = %w[designed building submitted].map do |stage|
+      Task.create!(title: "Live Waiting #{stage.capitalize}", stage: stage,
+                   metadata: { "devops" => { "approval_status" => "waiting" } })
+    end
 
     settled = Task.settle_stale_operator_approvals!
 
     assert_equal stranded.map(&:slug).sort, settled.sort
     stranded.each { |task| assert_equal "none", task.reload.approval_status }
-    assert_equal "waiting", live.reload.approval_status,
-      "a request in a stage that can still act on it must survive the sweep"
+    live.each do |task|
+      assert_equal "waiting", task.reload.approval_status,
+        "#{task.stage}: a request in a stage that can still act on it must survive the sweep"
+    end
 
     assert_empty Task.settle_stale_operator_approvals!, "re-running the sweep is a no-op"
   end

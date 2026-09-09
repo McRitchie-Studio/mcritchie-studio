@@ -1306,14 +1306,17 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
 
   test "[integration] the board form refuses an approval request past the seam" do
     log_in_as(@admin)
-    task = Task.create!(title: "Form Approval Guard Row", stage: "submitted",
+    # `reviewed`, not `submitted`: the request window grew to include `submitted` on
+    # 2026-09-09 (Task::APPROVAL_REQUEST_STAGES), so the first stage that refuses is
+    # the one past the merge.
+    task = Task.create!(title: "Form Approval Guard Row", stage: "reviewed",
                         metadata: { "devops" => { "kind" => "bug" } })
 
     patch task_path(task.slug, format: :json),
           params: { task: { devops: { approval_status: "waiting" } } }
 
     assert_response :unprocessable_entity
-    assert_includes JSON.parse(response.body)["error"].to_s, "submitted"
+    assert_includes JSON.parse(response.body)["error"].to_s, "reviewed"
     assert_not task.reload.waiting_for_operator_approval?
   end
 

@@ -4,19 +4,28 @@
 # EXACTLY when this move discarded one — and stay quiet otherwise.
 #
 # A move out of the request stages SETTLES a pending request
-# (Task#settle_operator_approval_past_submit). That is deliberate: past `submitted`
-# the PR review flow owns the work. But on 2026-09-07 it happened in SILENCE — an
-# agent set --approval waiting at `building`, read it back as "waiting", ran
-# bin/ship, and the handoff move discarded the request with nothing printed. The
+# (Task#settle_operator_approval_past_request_window). That is deliberate: past
+# `reviewed` the work has merged and the desk serving the local demo is reclaimable,
+# so the request points at a page nobody can open. But on 2026-09-07 it happened in
+# SILENCE — an agent set --approval waiting at `building`, read it back as "waiting",
+# ran bin/ship, and the handoff move discarded the request with nothing printed. The
 # board never pulsed and Mr. McRitchie was never asked. The move still succeeds; it
 # just has to SAY SO.
+#
+# THE SEAM THESE TESTS DRIVE MOVED ON 2026-09-09, from `submitted` to `reviewed`.
+# Making the drop loud made it countable, and it was counted: three ship handoffs in
+# one night discarded a request the documented flow told the builder to set. So
+# `submitted` joined APPROVAL_REQUEST_STAGES and the ship handoff drops nothing to
+# announce. Every "past the seam" case below therefore moves to `reviewed` — the
+# boundary that is still real. What is being tested is unchanged: the warning fires
+# exactly when THIS move discarded a request.
 #
 # THE DEFECT THIS FILE CLOSES. The first cut of that warning asked a CLOCK — is the
 # drop receipt younger than `since - 300s`? — which is not the question a warning
 # about THIS MOVE can answer. Measured against the real binary with a 60-second-old
 # stamp, `bin/task move <slug> building` announced a discarded request on a move INTO
-# a stage where a request is ACTIONABLE, and a re-run `move <slug> submitted` (the
-# documented killed-ship resume) announced one drop twice. The pinning test used a
+# a stage where a request is ACTIONABLE, and a re-run of the handoff move announced
+# one drop twice. The pinning test used a
 # 3600s stamp, so the boundary that decides every real case went unprobed and the
 # defect shipped green. Every case below that must stay QUIET seeds a stamp ~60
 # SECONDS old: each fires under the clock rule and must not fire under the effect rule.
@@ -48,7 +57,7 @@ class TaskMoveApprovalDropTest < Minitest::Test
   # request. Pinned against the real constant by
   # test/models/task_approval_request_guard_test.rb, which runs in a lane that HAS
   # Rails; this file is deliberately standalone and never boots the app.
-  SETTLE_EXEMPT_STAGES = %w[designed building].freeze
+  SETTLE_EXEMPT_STAGES = %w[designed building submitted].freeze
   # ~60s: comfortably inside the retired 300s grace window, so every "must stay
   # quiet" case below is one the clock rule got wrong.
   def recent_drop = (Time.now.utc - 60).iso8601
@@ -151,7 +160,7 @@ class TaskMoveApprovalDropTest < Minitest::Test
     ["200 OK", task_response]
   end
 
-  # The board's settle rule, MODELLED: Task#settle_operator_approval_past_submit
+  # The board's settle rule, MODELLED: Task#settle_operator_approval_past_request_window
   # resolves a WAITING request to "none" on any save landing outside
   # APPROVAL_REQUEST_STAGES, and stamps approval_request_dropped_at as the receipt.
   #
@@ -199,7 +208,7 @@ class TaskMoveApprovalDropTest < Minitest::Test
   def test_move_into_building_is_quiet_about_a_recent_drop
     _reqs, _out, err, status = run_task(
       %W[move #{SLUG} building],
-      stub_stage: "submitted",
+      stub_stage: "reviewed",
       stub_devops: { "kind" => "feature", "approval_status" => "none",
                      "approval_request_dropped_at" => recent_drop }
     )
@@ -212,7 +221,7 @@ class TaskMoveApprovalDropTest < Minitest::Test
   def test_move_into_designed_is_quiet_about_a_recent_drop
     _reqs, _out, err, status = run_task(
       %W[move #{SLUG} designed],
-      stub_stage: "submitted",
+      stub_stage: "reviewed",
       stub_devops: { "kind" => "feature", "approval_status" => "none",
                      "approval_request_dropped_at" => recent_drop }
     )
@@ -256,8 +265,8 @@ class TaskMoveApprovalDropTest < Minitest::Test
   # for it. Asserted as a DIFFERENCE between destinations rather than an absolute
   # count, so unrelated reads elsewhere in the move cannot make it lie.
   def test_a_destination_that_can_hold_a_request_spends_no_extra_read
-    quiet, = run_task(%W[move #{SLUG} building], stub_stage: "submitted")
-    loud,  = run_task(%W[move #{SLUG} submitted], stub_stage: "building")
+    quiet, = run_task(%W[move #{SLUG} building], stub_stage: "reviewed")
+    loud,  = run_task(%W[move #{SLUG} reviewed], stub_stage: "building")
 
     assert_equal task_gets(quiet) + 1, task_gets(loud),
                  "the pre-move read is spent only where a drop is possible"
@@ -267,7 +276,7 @@ class TaskMoveApprovalDropTest < Minitest::Test
   # case the warning exists for; it must never go quiet.
   def test_move_past_the_seam_warns_when_it_discards_a_pending_request
     _reqs, _out, err, status = run_task(
-      %W[move #{SLUG} submitted],
+      %W[move #{SLUG} reviewed],
       stub_devops: { "kind" => "feature", "approval_status" => "waiting" }
     )
 
@@ -280,7 +289,7 @@ class TaskMoveApprovalDropTest < Minitest::Test
   # move, and a warning that cries wolf is read as noise by the third repetition.
   def test_a_single_drop_is_announced_exactly_once
     _reqs, _out, err, _status = run_task(
-      %W[move #{SLUG} submitted],
+      %W[move #{SLUG} reviewed],
       stub_devops: { "kind" => "feature", "approval_status" => "waiting" }
     )
 
@@ -299,7 +308,7 @@ class TaskMoveApprovalDropTest < Minitest::Test
   # does not run is the same defect in a new place.
   def test_every_command_the_warning_prints_actually_runs
     _reqs, _out, err, _status = run_task(
-      %W[move #{SLUG} submitted],
+      %W[move #{SLUG} reviewed],
       stub_devops: { "kind" => "feature", "approval_status" => "waiting" }
     )
 
@@ -320,15 +329,15 @@ class TaskMoveApprovalDropTest < Minitest::Test
     end
   end
 
-  # SHAPE 3 — the SAME move run twice. `bin/ship` is documented as resumable and a
-  # killed ship is re-run routinely, so a second `move <slug> submitted` is normal.
-  # The request was already settled by the first run: this move discarded nothing and
-  # must say nothing. The stamp is 60s old, so the clock rule warned again here about
-  # one single drop.
+  # SHAPE 3 — the SAME move run twice. A re-run of a move past the seam is routine
+  # (an interrupted review sweep re-runs its `move <slug> reviewed`), so a second one
+  # is normal. The request was already settled by the first run: this move discarded
+  # nothing and must say nothing. The stamp is 60s old, so the clock rule warned
+  # again here about one single drop.
   def test_rerunning_the_move_does_not_warn_again_about_one_drop
     _reqs, _out, err, status = run_task(
-      %W[move #{SLUG} submitted],
-      stub_stage: "submitted",
+      %W[move #{SLUG} reviewed],
+      stub_stage: "reviewed",
       stub_devops: { "kind" => "feature", "approval_status" => "none",
                      "approval_request_dropped_at" => recent_drop }
     )
@@ -349,7 +358,7 @@ class TaskMoveApprovalDropTest < Minitest::Test
   # Nothing stamps, so the receipt cannot move and only the pre-state knows.
   def test_a_board_that_writes_no_receipt_is_still_announced
     _reqs, _out, err, status = run_task(
-      %W[move #{SLUG} submitted],
+      %W[move #{SLUG} reviewed],
       stub_devops: { "kind" => "feature", "approval_status" => "waiting" },
       stub_stamps_drop_receipt: false
     )
@@ -367,7 +376,7 @@ class TaskMoveApprovalDropTest < Minitest::Test
   # seeds stamps 900s apart, which can only be the racing writer.
   def test_a_drop_the_pre_read_could_not_predict_is_still_announced
     _reqs, _out, err, status = run_task(
-      %W[move #{SLUG} submitted],
+      %W[move #{SLUG} reviewed],
       stub_devops: { "kind" => "feature", "approval_status" => "none",
                      "approval_request_dropped_at" => (Time.now.utc - 900).iso8601 },
       stub_devops_after: { "kind" => "feature", "approval_status" => "none",
@@ -385,7 +394,7 @@ class TaskMoveApprovalDropTest < Minitest::Test
   # residual (i) in the matrix below — not "unreadable" on its own.
   def test_an_unreadable_pre_state_warns_rather_than_going_quiet
     _reqs, _out, err, status = run_task(
-      %W[move #{SLUG} submitted],
+      %W[move #{SLUG} reviewed],
       stub_devops: { "kind" => "feature", "approval_status" => "waiting" },
       fail_get: 503
     )
@@ -396,7 +405,7 @@ class TaskMoveApprovalDropTest < Minitest::Test
   end
 
   def test_move_without_any_approval_request_warns_nothing
-    _reqs, _out, err, status = run_task(%W[move #{SLUG} submitted])
+    _reqs, _out, err, status = run_task(%W[move #{SLUG} reviewed])
 
     assert status.success?
     refute_match(/DISCARDED/, err)
@@ -422,7 +431,7 @@ class TaskMoveApprovalDropTest < Minitest::Test
 
   def test_half_one_alone_catches_the_same_second_collision
     _reqs, _out, err, status = run_task(
-      %W[move #{SLUG} submitted],
+      %W[move #{SLUG} reviewed],
       stub_devops: { "kind" => "feature", "approval_status" => "waiting",
                      "approval_request_dropped_at" => SAME_SECOND_STAMP },
       stub_devops_after: { "kind" => "feature", "approval_status" => "none",
@@ -436,7 +445,7 @@ class TaskMoveApprovalDropTest < Minitest::Test
 
   def test_half_two_alone_cannot_catch_the_same_second_collision
     _reqs, _out, err, status = run_task(
-      %W[move #{SLUG} submitted],
+      %W[move #{SLUG} reviewed],
       stub_devops: { "kind" => "feature", "approval_status" => "none",
                      "approval_request_dropped_at" => SAME_SECOND_STAMP },
       stub_devops_after: { "kind" => "feature", "approval_status" => "none",
@@ -463,7 +472,7 @@ class TaskMoveApprovalDropTest < Minitest::Test
 
   def test_a_receipt_that_moved_is_this_moves_news_however_old_both_renderings_are
     _reqs, _out, err, status = run_task(
-      %W[move #{SLUG} submitted],
+      %W[move #{SLUG} reviewed],
       stub_devops: { "kind" => "feature", "approval_status" => "none",
                      "approval_request_dropped_at" => ANCIENT_STAMP },
       stub_devops_after: { "kind" => "feature", "approval_status" => "none",
@@ -529,7 +538,7 @@ class TaskMoveApprovalDropTest < Minitest::Test
 
   def test_the_silent_drops_are_exactly_the_three_residuals_named_here
     measured = RESIDUAL_MATRIX.each_with_object({}) do |(name, opts), acc|
-      _reqs, _out, err, status = run_task(%W[move #{SLUG} submitted], **opts)
+      _reqs, _out, err, status = run_task(%W[move #{SLUG} reviewed], **opts)
 
       # A crashed move must never be read as a quiet one.
       assert status.success?, "#{name}: bin/task move exited #{status.exitstatus}: #{err}"

@@ -160,18 +160,51 @@ class Task < ApplicationRecord
   MIGRATION_LANE = "backend_migration".freeze
   OPERATOR_APPROVAL_WAITING = "waiting".freeze
   # The only stages where a WAITING operator-approval request is meaningful: the
-  # ones whose owner can still act on the local demo. Past the `submitted` seam
-  # the PR review flow owns the work, so the request is settled on every save
-  # (#settle_operator_approval_past_submit). An ALLOW-list, so a stage added later
-  # settles by default. `blocked` is not a stage (Task#block! parks the task on
-  # `building`), so a QA-rework demo can re-request approval.
-  APPROVAL_REQUEST_STAGES = %w[designed building].freeze
+  # ones where the LOCAL DEMO the request points at is still servable, so somebody
+  # can still act on it. Past this window the request is settled on every save
+  # (#settle_operator_approval_past_request_window). An ALLOW-list, so a stage
+  # added later settles by default. `blocked` is not a stage (Task#block! parks the
+  # task on `building`), so a QA-rework demo can re-request approval.
+  #
+  # `submitted` IS IN THE WINDOW, and that is the whole of the fix for the defect
+  # measured three times on the night of 2026-09-09 (turf PRs 644, 647, 653). The
+  # seam used to sit at `submitted`, which put it one stage BEFORE the thing the
+  # request is about stops existing, and the fast lane straddled it: the documented
+  # build flow tells a builder to set `--approval waiting` with a `--local-url`
+  # BEFORE opening the PR, and the documented `bin/ship` then moved the task to
+  # `submitted` and discarded the request on the way. Following the docs exactly
+  # produced the discard every time, and on PR 644 the thing nobody was asked about
+  # was user-facing copy on a money page shown after a wallet signature.
+  #
+  # THE WINDOW NOW MATCHES THE ARTIFACT. A request says "open this local URL and
+  # look". That URL is served by the task's DESK, and a desk stays up until the
+  # work merges — `bin/agent-worktree cleanup --reclaim` takes a desk once it is
+  # clean AND merged, which is exactly when the task reaches `reviewed`. So the
+  # request now lives precisely as long as the page it points at, and the settle
+  # fires at the `reviewed` boundary where the local demo really has gone away.
+  #
+  # WHAT THIS DOES NOT RELAX. The invariant behind the settle is unchanged — a
+  # waiting badge may exist only where something can clear it — and `submitted`
+  # satisfies it two ways: the operator's verdict is recordable there by any lane
+  # (`--approval approved` / `changes_requested` are legal at every stage), and the
+  # pipeline itself clears it, because review's merge moves the task to `reviewed`,
+  # which is outside this list. The board needed no change to honour it: the float
+  # (the `ordered` scope) and the pulse (#waiting_for_operator_approval?, the card
+  # glow and the WAITING APPROVAL bar) were already stage-agnostic, so the card
+  # simply pulses in the review column instead of never pulsing at all.
+  #
+  # A BOUNCE RE-ARMS FOR FREE. A rework block parks the task on `building` (see
+  # Task#block!, which assigns that stage rather than a `blocked` one), and
+  # `building` is also in this list — so a request that survived the handoff
+  # survives the send-back too and re-pulses without anyone re-asking.
+  APPROVAL_REQUEST_STAGES = %w[designed building submitted].freeze
   OPERATOR_APPROVAL_APPROVED = "approved".freeze
   OPERATOR_APPROVAL_CHANGES_REQUESTED = "changes_requested".freeze
   # The settled/moot resolution. An open "waiting" request is cleared to "none"
-  # the moment a task moves into `submitted` — the PR review flow takes over, so
-  # the local-preview approval is no longer pending. See
-  # #settle_operator_approval_past_submit. The settle resolves to "none" and never
+  # the moment a task lands outside APPROVAL_REQUEST_STAGES — at `reviewed` the
+  # work has merged and the desk serving the local demo is reclaimable, so the
+  # request points at nothing. See
+  # #settle_operator_approval_past_request_window. The settle resolves to "none" and never
   # to "approved" — nobody granted approval, and fabricating a grant would
   # misreport the acceptance metric.
   OPERATOR_APPROVAL_NONE = "none".freeze
@@ -397,9 +430,9 @@ class Task < ApplicationRecord
   before_save :evolve_stage_mascot, if: -> { will_save_change_to_stage? && Task::MASCOT_EVOLUTION_GATES.key?(stage) }
   before_save :sync_app_identity
   # Unconditional: the settle is a stage INVARIANT re-asserted on every save, not
-  # a transition event. See #settle_operator_approval_past_submit for the three
+  # a transition event. See #settle_operator_approval_past_request_window for the three
   # leaks the transition shape had.
-  before_save :settle_operator_approval_past_submit
+  before_save :settle_operator_approval_past_request_window
   before_save :stamp_operator_approval_request
   before_save :stamp_operator_approval_approved
   # The cert evidence in devops.checks_run is MACHINE-owned and survives an
@@ -766,7 +799,7 @@ class Task < ApplicationRecord
   # transition callback fired on the single building→submitted save, so anything
   # that rewrote devops afterwards restored "waiting" and nothing cleared it —
   # the request rode to `shipped` and kept flashing WAITING APPROVAL on a
-  # finished card). #settle_operator_approval_past_submit now holds the invariant
+  # finished card). #settle_operator_approval_past_request_window now holds the invariant
   # on every save, but a row nobody saves again never gets it.
   #
   # Idempotent: only ever "waiting" → "none", only past the seam. update_column
@@ -781,7 +814,7 @@ class Task < ApplicationRecord
   # alone — a second one, that today's timestamp "would date it wrong for the one
   # reader that compares it", was removed on 2026-09-08 as false: the one reader is
   # bin/task's move warning, which compares the two renderings ACROSS A SINGLE PATCH
-  # (see the receipt's own note on #settle_operator_approval_past_submit) and is
+  # (see the receipt's own note on #settle_operator_approval_past_request_window) and is
   # indifferent to how old either one is.
   # Driver: `rake tasks:settle_stale_operator_approvals`.
   def self.settle_stale_operator_approvals!
@@ -1985,9 +2018,16 @@ class Task < ApplicationRecord
   #   bin/task update <slug> --approval approved  -> exit 0, read-back "approved"  LANDED
   #
   # The discriminator is neither the stage alone nor the incoming transition: it is
-  # the CONJUNCTION of stage and VALUE. #settle_operator_approval_past_submit
+  # the CONJUNCTION of stage and VALUE. #settle_operator_approval_past_request_window
   # rewrites ONLY "waiting", and only outside APPROVAL_REQUEST_STAGES, on every
   # save. So the write returned HTTP 200 and reached nothing.
+  #
+  # THAT PARTICULAR PAIR NO LONGER REPRODUCES, and reading it as a live example is
+  # the one way to misread this note. `submitted` joined APPROVAL_REQUEST_STAGES on
+  # 2026-09-09, so at that stage BOTH lines above now land. The reproduction is kept
+  # because the RULE it isolates is what this guard implements and is unchanged —
+  # only the stage list it is evaluated against moved. Re-run the same pair at
+  # `reviewed` to see it today.
   #
   # WHY THAT IS NOT A TIDINESS BUG. approval_status "waiting" is the OPERATOR gate:
   # a waiting task floats to the top of its stage and pulses on the board, which is
@@ -2023,7 +2063,7 @@ class Task < ApplicationRecord
     # way out, while bin/task's warning for the SAME situation printed a recovery
     # path — two messages, one situation, different shapes. The order below is the
     # whole remedy: `building` is in APPROVAL_REQUEST_STAGES, so the move returns
-    # early from #settle_operator_approval_past_submit, and this guard then permits
+    # early from #settle_operator_approval_past_request_window, and this guard then permits
     # "waiting" there — which re-pulses the card, because the pulse reads
     # approval_status (#waiting_for_operator_approval?), not the request stamp. The
     # reverse order lands back here. Pinned by test/models/task_approval_request_guard_test.rb.
@@ -2036,7 +2076,8 @@ class Task < ApplicationRecord
           "building, then bin/task update <task-slug> --approval #{OPERATOR_APPROVAL_WAITING}. If " \
           "he already approved in words, record that instead: bin/task update <task-slug> " \
           "--approval " \
-          "#{OPERATOR_APPROVAL_APPROVED}. Next time, ask BEFORE handing off."
+          "#{OPERATOR_APPROVAL_APPROVED}. Next time, ask BEFORE the work merges — a request " \
+          "now survives the handoff to submitted and pulses through review."
   end
 
   def self.normalize_devops_metadata(raw)
@@ -3277,12 +3318,22 @@ class Task < ApplicationRecord
   # 100 under the `position DESC` sort, 100-spaced to leave drag gaps). The concern's
   # implementation is byte-for-byte what Task hand-rolled, so it was removed here.
 
-  # A still-open operator-approval REQUEST is settled once the task is past the
-  # `submitted` seam: the PR review flow takes over, so the local-preview approval
-  # is moot and its WAITING APPROVAL treatment (the card_glow "approval" state and
-  # the operator-approval status bar, both keyed off #waiting_for_operator_approval?)
-  # must drop. Settled in before_save, so it rides the SAME UPDATE as whatever
-  # write reached this stage — a rollback can never strand a half-settled card.
+  # A still-open operator-approval REQUEST is settled once the task lands outside
+  # APPROVAL_REQUEST_STAGES — at `reviewed`, where the work has merged onto
+  # `accepted` and the desk serving the local demo is reclaimable, so the request
+  # points at a page nobody can open and its WAITING APPROVAL treatment (the
+  # card_glow "approval" state and the operator-approval status bar, both keyed off
+  # #waiting_for_operator_approval?) must drop. Settled in before_save, so it rides
+  # the SAME UPDATE as whatever write reached this stage — a rollback can never
+  # strand a half-settled card.
+  #
+  # THE SEAM MOVED FROM `submitted` TO `reviewed` on 2026-09-09. It is the same
+  # rule against a corrected boundary, not a relaxation: see APPROVAL_REQUEST_STAGES
+  # for the three measured discards that forced it and for why `submitted` satisfies
+  # the "something can clear it" invariant. Everything below still holds verbatim —
+  # the shape is still an INVARIANT re-asserted on every save, and all three leaks
+  # the transition shape had are still closed, because `reviewed`, `assembled`,
+  # `shipped` and `archived` all remain outside the list.
   #
   # An INVARIANT, not a transition event. It was a transition callback
   # (`entering_submitted_stage?`, fired only on the one save that moved
@@ -3318,7 +3369,7 @@ class Task < ApplicationRecord
   # the operator gave in words; this settle still never fabricates one.
   #
   # Idempotent by construction: once "none" every later save is a no-op.
-  def settle_operator_approval_past_submit
+  def settle_operator_approval_past_request_window
     return if APPROVAL_REQUEST_STAGES.include?(stage)
     return unless approval_status == OPERATOR_APPROVAL_WAITING
 

@@ -851,7 +851,7 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
   # are covered by the RULE and the entry was DELETED rather than repointed. An exemption
   # is the temporary form of a fix; deleting one is what finishing looks like.
   NARRATION = [
-    { file: "app/models/task.rb", line: 3065, match: /lands the task back on building and repoints/,
+    { file: "app/models/task.rb", line: 3106, match: /lands the task back on building and repoints/,
       why: "comment explaining the feature-marker repoint" },
     { file: "bin/pr-review", line: 29, match: /with the failing checks named/,
       why: "header comment narrating the gate-zero flow" },
@@ -861,7 +861,7 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
       why: "cautionary account of turf-monster PR 594, the incident that motivated the gate" },
     { file: "docs/agents/agents/carl/sops/pr-review.md", line: 322, match: /therefore runs the breaker itself/,
       why: "prose describing what the command does, not an instruction to run it" },
-    { file: "docs/agents/modules/devops-task-board.md", line: 836,
+    { file: "docs/agents/modules/devops-task-board.md", line: 849,
       match: /lands the task back on building, and three readers/,
       why: "prose describing the stage effect on board readers" },
     { file: "docs/agents/modules/gates/g2-review.md", line: 93, match: /exits 10\), re-run it/,

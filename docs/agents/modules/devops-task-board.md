@@ -130,7 +130,9 @@ Handoff connections:
 ## Operator Validation Gate
 
 Use this gate when a feature agent has built enough for Mr. McRitchie to inspect
-locally, but before the PR is opened or moved to `submitted`.
+locally. Ask BEFORE opening the PR — that is still the flow — but a request you
+set at `building` now SURVIVES the handoff and keeps pulsing while the task sits
+in review, so a ship no longer costs you the request (fixed 2026-09-09).
 
 1. Start or verify the task worktree stack, and record the reviewable URL:
 
@@ -157,20 +159,31 @@ locally, but before the PR is opened or moved to `submitted`.
    board itself cannot mint a session for another server, which is why it hands
    off instead of minting. It refuses any `local_url` that is not loopback.
 5. If Mr. McRitchie approves, finish DoR, commit, push, open the PR, and hand off.
+   If he has not answered yet, hand off anyway — `bin/ship` carries the request
+   into `submitted` and the card keeps pulsing in the review column.
 6. If changes are requested, set `--approval changes_requested` and keep the task
    in `building` until the next validation packet is ready.
-7. A `waiting` request is only legal BEFORE the `submitted` seam (`designed` /
-   `building`, and `blocked` — which parks the task on `building`). Past the
-   seam the PR review flow owns the work, so **any** save at `submitted` or
-   later settles an open request to `none` — settled, NOT `approved`: the
-   operator never granted anything, and faking a grant would misreport the
-   acceptance metric. This is an invariant re-asserted on every save, not a
-   one-shot transition: until 2026-07-27 it fired only on the building →
-   submitted save, so a later wholesale devops echo restored `waiting` and the
+7. A `waiting` request is legal for as long as the LOCAL DEMO it points at can be
+   served: `designed`, `building` and `submitted` (plus `blocked`, which parks the
+   task on `building`). The window closes at `reviewed` — the work has merged onto
+   `accepted` and `bin/agent-worktree cleanup --reclaim` can take the desk from
+   that moment, so the request points at a page nobody can open. **Any** save at
+   `reviewed` or later settles an open request to `none` — settled, NOT
+   `approved`: the operator never granted anything, and faking a grant would
+   misreport the acceptance metric. This is an invariant re-asserted on every
+   save, not a one-shot transition: until 2026-07-27 it fired only on the one
+   stage-move save, so a later wholesale devops echo restored `waiting` and the
    badge rode all the way to `shipped`.
 
-8. **Already handed off? Move the task back and ask again.** Past the seam the
-   request is discarded, not deferred, so re-open it — the move first, the
+   **The seam used to sit at `submitted`, and that was the bug** (fixed
+   2026-09-09). The documented flow above tells a builder to ask before the PR,
+   and the documented `bin/ship` then discarded the request on its move to
+   `submitted` — measured three times in one night, on turf PRs 644, 647 and 653.
+   Following the docs produced the discard every time, and the pulse is the only
+   mechanism that asks for Mr. McRitchie's attention at all.
+
+8. **Already past `reviewed`? Move the task back and ask again.** Past the window
+   the request is discarded, not deferred, so re-open it — the move first, the
    request second:
 
    ```bash
@@ -178,12 +191,12 @@ locally, but before the PR is opened or moved to `submitted`.
    bin/task update <task-slug> --approval waiting
    ```
 
-   The card pulses again and the request is live; re-submit once Mr. McRitchie
-   answers. **The reverse order 422s** — `--approval waiting` at `submitted` is
-   refused, naming the stage and the value. If he already answered in words,
-   skip the move and record the decision where you stand: `--approval approved`
-   and `--approval changes_requested` are legal at every stage. This is the same
-   remedy `bin/task move` prints when it announces a discarded request.
+   The card pulses again and the request is live. **The reverse order 422s** —
+   `--approval waiting` at `reviewed` or later is refused, naming the stage and
+   the value. If he already answered in words, skip the move and record the
+   decision where you stand: `--approval approved` and `--approval
+   changes_requested` are legal at every stage. This is the same remedy `bin/task
+   move` prints when it announces a discarded request.
 
 ## Task Conversation and QA Feedback
 
@@ -433,9 +446,9 @@ Supported fields:
 | `branch` | The feature branch (opened as a PR with base `release`). The shared integration branch is the persistent per-repo `release` (same name everywhere). |
 | `pr_url` | GitHub PR URL |
 | `local_url` | Worktree review URL, rendered as the `Local Demo` card button |
-| `approval_status` | Operator validation state: `waiting`, `approved`, `changes_requested`, or `none`. `waiting` floats and pulses the card, and is legal only before the `submitted` seam. **Asking for it at `submitted` or later is REFUSED** — a 422 naming the stage and the value, so `bin/task update <task> --approval waiting` exits NON-ZERO there instead of reporting success for a write that reaches nothing. Request approval before you hand off. A `waiting` request the task already CARRIES through a handoff still settles silently to `none` (settled, never a fabricated `approved`) — that is a state-machine settle, not a request. `--approval approved` and `--approval changes_requested` stay legal at every stage, so a decision the operator gave in words is always recordable |
+| `approval_status` | Operator validation state: `waiting`, `approved`, `changes_requested`, or `none`. `waiting` floats and pulses the card, and is legal wherever the local demo it points at can still be served: `designed`, `building` and `submitted`. **Asking for it at `reviewed` or later is REFUSED** — a 422 naming the stage and the value, so `bin/task update <task> --approval waiting` exits NON-ZERO there instead of reporting success for a write that reaches nothing. Ask before the work merges; a request set at `building` SURVIVES `bin/ship` and keeps pulsing through review (fixed 2026-09-09 — the seam used to sit at `submitted`, so the documented ship discarded it). A `waiting` request the task carries past `reviewed` settles silently to `none` (settled, never a fabricated `approved`) — that is a state-machine settle, not a request. `--approval approved` and `--approval changes_requested` stay legal at every stage, so a decision the operator gave in words is always recordable |
 | `approval_requested_at` | Server-stamped ISO8601 timestamp when approval first enters `waiting` |
-| `approval_request_dropped_at` | Server-stamped ISO8601 timestamp of the LAST time a pending `waiting` request was discarded by a save past the request stages. **Handing off destroys a pending request** — set `--approval waiting` at `building`, read it back as `waiting`, then ship, and the handoff move settles it to `none`. That is deliberate (past the seam the PR review flow owns the work), but it used to be silent, so the agent believed it had asked and nobody had been. `bin/task move` prints a loud warning naming the discarded request, and this stamp is the durable receipt it compares. The warning asks whether **THIS move** dropped it — the request read `waiting` going in and the destination cannot hold one, or this stamp moved across the write — never how OLD the stamp is. So a move **into** `designed`/`building` (a rework resume, `bin/task begin <slug> --steal`) is silent, one drop is announced exactly once, and a re-run of a killed `bin/ship` does not re-announce it. Unknowns resolve to warning wherever either half can still see the drop — an unreadable pre-read is announced by the stamp moving. It is SILENT on a real drop only when NEITHER half sees it: the pre-read did not show `waiting` (the board was unreadable, or a writer set it after the read) **and** the stamp reads the same on both sides of the write (the board is too old to write one at all, or the fresh stamp renders in the same second as the last). Those states are indistinguishable to the CLI from a move that dropped nothing, and after the move `approval_status` reads `none` either way — so a quiet move is weak evidence, never a receipt. **Get the operator's eyes BEFORE you hand off** |
+| `approval_request_dropped_at` | Server-stamped ISO8601 timestamp of the LAST time a pending `waiting` request was discarded by a save past the request stages. **Merging destroys a pending request** — a request that survived the handoff is settled to `none` when review moves the task to `reviewed`. That is deliberate (the work has merged and the desk serving the local demo is reclaimable, so the request points at a page nobody can open), but it used to be silent, so the agent believed it had asked and nobody had been. Until 2026-09-09 the HANDOFF dropped it too, which is the defect this row previously described. `bin/task move` prints a loud warning naming the discarded request, and this stamp is the durable receipt it compares. The warning asks whether **THIS move** dropped it — the request read `waiting` going in and the destination cannot hold one, or this stamp moved across the write — never how OLD the stamp is. So a move **into** `designed`/`building`/`submitted` (a rework resume, `bin/task begin <slug> --steal`, or the ship handoff, which no longer drops anything) is silent, one drop is announced exactly once, and a re-run of a move past the window does not re-announce it. Unknowns resolve to warning wherever either half can still see the drop — an unreadable pre-read is announced by the stamp moving. It is SILENT on a real drop only when NEITHER half sees it: the pre-read did not show `waiting` (the board was unreadable, or a writer set it after the read) **and** the stamp reads the same on both sides of the write (the board is too old to write one at all, or the fresh stamp renders in the same second as the last). Those states are indistinguishable to the CLI from a move that dropped nothing, and after the move `approval_status` reads `none` either way — so a quiet move is weak evidence, never a receipt. **Get the operator's eyes BEFORE the work merges** |
 | `approval_requested_by` | Optional agent/session label that requested operator validation |
 | `approval_approved_at` | Server-stamped ISO8601 timestamp when approval first enters `approved`. Any lane may record the grant — the board UI, or an agent writing down an approval the operator gave in words (`bin/task update <task> --approval approved`) |
 | `qa_url` | Stable QA URL or specific QA route |

@@ -312,8 +312,11 @@ safe precisely because the CTA mints a fresh token per click.
 
 For email/auth flows, also return `Local Inbox:
 http://localhost:<port>/_studio/local_emails` (worktree stacks default to
-`LOCAL_EMAIL_CAPTURE=1`). Then **wait for approval or requested changes** before
-opening the PR — this is the point of the step.
+`LOCAL_EMAIL_CAPTURE=1`). Then **give him the chance to answer** before opening the
+PR — this is the point of the step. You do not have to STALL on it: since
+2026-09-09 the request survives `bin/ship` and keeps pulsing in the review column,
+settling only when review merges the work. So if he has not answered by the time
+the work is certified, ship it and let the card keep asking.
 
 **If no**, skip straight to Step 5. Do not set a `local_url` you will not stand
 behind.
