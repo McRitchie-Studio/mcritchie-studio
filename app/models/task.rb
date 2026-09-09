@@ -764,9 +764,13 @@ class Task < ApplicationRecord
   # And DELIBERATELY no approval_request_dropped_at receipt, which is why the drop
   # is not universally auditable. The receipt exists to tell an agent that the move
   # IT JUST RAN discarded a live request; these rows were stranded by the old
-  # one-shot settle long ago, there is no such agent to tell, and stamping today's
-  # timestamp on a months-old drop would date it wrong for the one reader that
-  # compares it. A backfill announces nothing, so it records nothing.
+  # one-shot settle long ago, and there is no such agent to tell. A backfill
+  # announces nothing, so it records nothing. That reason carries the paragraph
+  # alone — a second one, that today's timestamp "would date it wrong for the one
+  # reader that compares it", was removed on 2026-09-08 as false: the one reader is
+  # bin/task's move warning, which compares the two renderings ACROSS A SINGLE PATCH
+  # (see the receipt's own note on #settle_operator_approval_past_submit) and is
+  # indifferent to how old either one is.
   # Driver: `rake tasks:settle_stale_operator_approvals`.
   def self.settle_stale_operator_approvals!
     settled = []
@@ -1976,13 +1980,25 @@ class Task < ApplicationRecord
     return if posted.nil?
     return unless posted.last.to_s.strip.downcase == OPERATOR_APPROVAL_WAITING
 
+    # THE REMEDY COMES FIRST, and it is a move the caller can make NOW. This body
+    # used to open with advice for last time ("ask BEFORE handing off") and name no
+    # way out, while bin/task's warning for the SAME situation printed a recovery
+    # path — two messages, one situation, different shapes. The order below is the
+    # whole remedy: `building` is in APPROVAL_REQUEST_STAGES, so the move returns
+    # early from #settle_operator_approval_past_submit, this guard then permits
+    # "waiting" there, and #stamp_operator_approval_request re-pulses the card. The
+    # reverse order lands right back here. Pinned by
+    # test/models/task_approval_request_guard_test.rb.
     raise ArgumentError,
           "devops.approval_status cannot be set to #{OPERATOR_APPROVAL_WAITING.inspect} at stage " \
           "#{stage} — an approval request is only actionable in " \
           "#{APPROVAL_REQUEST_STAGES.join(" or ")}, so this save would settle it to " \
-          "#{OPERATOR_APPROVAL_NONE.inspect} and the board would never pulse. Ask for approval " \
-          "BEFORE handing off, or record a decision the operator already gave with " \
-          "#{OPERATOR_APPROVAL_APPROVED.inspect}."
+          "#{OPERATOR_APPROVAL_NONE.inspect} and the board would never pulse. If you still need " \
+          "the operator's eyes, move the task back and ask again: bin/task move <task-slug> " \
+          "building, then bin/task update <task-slug> --approval #{OPERATOR_APPROVAL_WAITING}. If " \
+          "he already approved in words, record that instead: bin/task update <task-slug> " \
+          "--approval " \
+          "#{OPERATOR_APPROVAL_APPROVED}. Next time, ask BEFORE handing off."
   end
 
   def self.normalize_devops_metadata(raw)
