@@ -265,8 +265,11 @@ Add to `~/.claude/settings.json` (command points at the **primary checkout**):
 > **Do not hand-edit the operator's global `~/.claude/settings.json` from a build
 > session.** `bin/install-agent-docs` wires this hook idempotently (pointing at
 > `$RUNTIME_ROOT/bin/atomic-capture-hook`, pruning stale entries) the
-> same way it wires the status line and SessionStart mascot hook. The orchestrator
-> runs `bin/install-agent-docs` **after** this change is reviewed and merged.
+> same way it wires the status line and SessionStart mascot hook. **Nobody
+> hand-runs that installer** — the wiring lands on the next production ship, via
+> the owned `sync_agent_docs` step of `bin/release ship`. See
+> [`../modules/docs-maintenance.md`](../modules/docs-maintenance.md)
+> § Editing The Entry Docs.
 
 Codex gets the same producer in `/etc/codex/requirements.toml` when writable, or
 in `~/.codex/hooks.json` as a user fallback:
@@ -323,8 +326,11 @@ survives worktree cleanup; **no `matcher`** ⇒ it fires for every end reason �
 > **Same rule — do not hand-edit the operator's global settings from a build
 > session.** `bin/install-agent-docs` wires this SessionEnd hook idempotently
 > (pointing at `$RUNTIME_ROOT/bin/agent-activity close-open`, pruning stale
-> entries) the same way it wires the PostToolUse capture hook. The orchestrator
-> runs it **after** this change is reviewed and merged.
+> entries) the same way it wires the PostToolUse capture hook. **Nobody hand-runs
+> that installer** — the wiring lands on the next production ship, via the owned
+> `sync_agent_docs` step of `bin/release ship`. See
+> [`../modules/docs-maintenance.md`](../modules/docs-maintenance.md)
+> § Editing The Entry Docs.
 
 Codex uses `Stop` for the same teardown:
 
@@ -450,11 +456,13 @@ the same `hookSpecificOutput.additionalContext` schema; live consumption depends
 on the McRitchie-patched Codex runtime (the patch targets hook output — confirm
 with `bin/codex-update plan` before relying on Codex-side injection).
 
-> **Activation still needs a fresh session.** Editing `~/.claude/settings.json`
-> mid-session can silence hooks for the *running* session, so after this merges the
-> orchestrator runs `bin/install-agent-docs` and verifies the injection in a **new**
-> session (not the one that ran the installer). Relevance ranking by app/shape is a
-> documented follow-up — v1 injects the most recently curated set.
+> **Activation still needs a fresh session.** Rewriting `~/.claude/settings.json`
+> mid-session can silence hooks for the *running* session. The wiring arrives on
+> the next production ship (the owned `sync_agent_docs` step of `bin/release
+> ship`) — **nobody hand-runs the installer to hurry it**; verify the injection in
+> a session started **after** that ship, never in the session that observed the
+> drift. Relevance ranking by app/shape is a documented follow-up — v1 injects the
+> most recently curated set.
 
 ### Tests
 

@@ -54,5 +54,8 @@ Success criteria:
 5. Does not treat app `CLAUDE.md` files as active truth.
 
 If the smoke test fails because Claude ignores the root adapter or does not
-expand `@AGENTS.md`, fix `docs/agents/claude.md`, run `bin/agent-runtime install`,
-and re-run the smoke test.
+expand `@AGENTS.md`, fix the source `docs/agents/claude.md` and ship it. The
+generated root `CLAUDE.md` is republished by the owned `sync_agent_docs` step of
+`bin/release ship`, so re-run the smoke test against a session started **after**
+that ship — **do not hand-run the installer** to shorten the loop
+([`docs-maintenance.md`](docs-maintenance.md) § Editing The Entry Docs).
