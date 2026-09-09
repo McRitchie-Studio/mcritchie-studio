@@ -27,10 +27,21 @@ three ordered release actions, a themed glyph on the rest):
 
   `sleeper-auction-watch` is deliberately NOT a chip either, for the opposite
   reason: nothing runs it for you, and nothing should schedule it. The auction
-  watch is calendar-bound — one league's draft, one evening a year — so a
-  standing button on a card that reads as a cadence would misstate it. Like
-  `archive-shipped` it stays a registered invocation by name, invoked the evening
-  it is wanted (see
+  watch is calendar-bound — one league's draft, one evening a year — and that
+  decision is settled in
+  [`turf_monster/HEARTBEAT.md`](../agents/turf_monster/HEARTBEAT.md).
+
+  The **card's** own reason is separate, and it is the one worth stating because a
+  test can hold it: at 21 characters the slug needs 114px, while a chip's text area
+  at the card's 728px cap is 99px — so it clips, losing its last three characters.
+  Measured 2026-09-09 at 1536px and 1728px; `test/system/workflows_card_chip_fit_test.rb`
+  holds it and fails if the card is ever widened enough for the reason to expire.
+  It is **not** that a chip implies a cadence: `clean-infra`, `deploy-with-task`
+  and `contest-rehearsal` are all on the card and all three are direct-invoke or
+  off-sequence, so that argument never survived contact with the card's own
+  contents. It was retired 2026-09-09 — do not restate it. Like `archive-shipped`
+  the auction watch stays a registered invocation by name, invoked the evening it
+  is wanted (see
   [`sleeper-auction-watch`](../agents/turf_monster/sops/sleeper-auction-watch.md)).
 
 **Every row is independently copyable** (the row-1 heartbeat prompt and each act),
@@ -55,9 +66,9 @@ cross-soul map.
 |---|---|---|---|---|
 | **Carl** (`carl`) | `Carl Heartbeat` | `pr-review`, `pr-review-slow` | submitted PRs waiting for review | each PR `reviewed` (merged into `accepted`) or `blocked` |
 | **Avi** (`avi`) | `Avi Heartbeat` | `qa-release`, `deploy-with-task` (direct-invoke only) | `reviewed` work + `assembled` stragglers to sweep | the RC swept, **live on QA, members `assembled` on QA-green** |
-| **Steffon** (`steffon`) | `Steffon Heartbeat` | `production-deploy`, `clean-infra` | a QA-green (`assembled`) release ready to ship / a machine carrying finished work | the ready release `shipped` (archived on the way out, or no-op); the machine swept |
+| **Steffon** (`steffon`) | `Steffon Heartbeat` | `production-deploy`, `clean-infra`, `archive-shipped` (registered, not a chip — production-deploy runs it) | a QA-green (`assembled`) release ready to ship / a machine carrying finished work | the ready release `shipped` (archived on the way out, or no-op); the machine swept |
 | **Alex** (`alex`) | `Alex Heartbeat` | `grade-events`, `share-insights`, `full-cycle` | activities to grade / a non-empty insight bank to share / a full pipeline to run | 10 graded + banked; the bank shared out; or the whole release `shipped` |
-| **Turf Monster** (`turf-monster`) | `Turf Monster Heartbeat` | `live-score-watch` · `contest-rehearsal` · `sleeper-auction-watch` (registered, not a chip — calendar-bound) | a live NFL slot with the poller deployed, QA reachable on devnet, or a Sleeper auction about to start | the slot final or the window elapsed; the rehearsal contest settled and closed; or the draft board full |
+| **Turf Monster** (`turf-monster`) | `Turf Monster Heartbeat` | `live-score-watch`, `contest-rehearsal`, `sleeper-auction-watch` (registered, not a chip — the slug clips the card) | a live NFL slot with the poller deployed, QA reachable on devnet, or a Sleeper auction about to start | the slot final or the window elapsed; the rehearsal contest settled and closed; or the draft board full |
 
 > **Direct-drive the mutating acts.** `qa-release`, `production-deploy`, and
 > `archive-shipped` MUTATE shared state across many minutes, so the heartbeat

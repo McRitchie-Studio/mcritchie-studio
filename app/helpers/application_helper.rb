@@ -1124,10 +1124,20 @@ module ApplicationHelper
   #
   # +sleeper-auction-watch+ is deliberately ABSENT too, for the opposite reason:
   # nothing runs it for you, and nothing should schedule it. The auction watch is
-  # calendar-bound — one league's draft, one evening a year — and this card reads as a
-  # cadence, so a standing chip would misstate it. It stays a registered invocation
-  # — see agents/turf_monster/sops/sleeper-auction-watch.md. Adding a chip
-  # here also owes ACTION_DESCRIPTIONS + ACTION_ICONS keys and the pinned array in
+  # calendar-bound — one league's draft, one evening a year — and that decision is
+  # settled in agents/turf_monster/HEARTBEAT.md.
+  #
+  # The CARD's own reason is separate, and it is the one to state here because it is
+  # measurable: the slug is 21 characters and needs 114px, while a chip's text area
+  # at the card's 728px cap is 99px, so it CLIPS — measured 2026-09-09, held by
+  # test/system/workflows_card_chip_fit_test.rb. It is NOT that a chip implies a
+  # cadence: clean-infra, deploy-with-task and contest-rehearsal are all on the card
+  # and all three are direct-invoke or off-sequence, so that argument never survived
+  # contact with the card's own contents. Retired 2026-09-09; do not restate it.
+  #
+  # It stays a registered invocation — see
+  # agents/turf_monster/sops/sleeper-auction-watch.md. Adding a chip here also owes
+  # ACTION_DESCRIPTIONS + ACTION_ICONS keys and the pinned array in
   # application_helper_test.rb; the absence is asserted there so this stays a
   # decision rather than an oversight.
   #

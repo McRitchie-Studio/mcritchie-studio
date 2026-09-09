@@ -37,9 +37,26 @@
     lose to it at every width. %>
   <div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-3 2xl:grid-cols-5">
     <% launchers.each do |launcher| %>
-      <%# Card-specific visual order. archive-shipped is deliberately NOT here:
-          production-deploy runs it as its final step, so the cleaning rides the
-          release rather than waiting to be remembered. It stays invocable by name. %>
+      <%# Card-specific visual order, plus the two acts deliberately NOT here.
+          archive-shipped — production-deploy runs it as its final step, so the
+          cleaning rides the release rather than waiting to be remembered.
+          sleeper-auction-watch — the decision is settled in
+          agents/turf_monster/HEARTBEAT.md (calendar-bound, operator-attended, so
+          nothing should schedule it), and this card could not carry it regardless:
+          the slug is 21 characters and needs 114px, while a chip's text area at the
+          card's 728px cap is 99px, so it clips away its last ~3 characters. The
+          longest act that fits is 17 (production-deploy, 92px, 7px to spare), so the
+          budget is ~18. Measured 2026-09-09 at 1536/1728px and held by
+          test/system/workflows_card_chip_fit_test.rb, which FAILS if the card is
+          ever widened enough to retire this reason.
+          It is NOT that a chip implies a cadence — clean-infra, deploy-with-task and
+          contest-rehearsal are all here, and all three are direct-invoke or
+          off-sequence. That argument was retired 2026-09-09; do not restate it.
+          Both acts stay invocable by name. Adding either also owes
+          ACTION_DESCRIPTIONS + ACTION_ICONS keys and the arrays pinned in
+          application_helper_test.rb, and test/lib/workflows_card_carve_out_test.rb
+          holds THIS comment to the helper's "deliberately ABSENT" list, so a third
+          carve-out cannot land here in silence. %>
       <% card_actions = case launcher[:agent_slug]
                         when "carl" then ["pr-review", "pr-review-slow"]
                         when "avi" then ["qa-release", "deploy-with-task"]
