@@ -995,6 +995,16 @@ ONE deterministic verb — **`bin/release prepare --yes [--task SLUG ...]
    The lock commit lands BEFORE the gate resolves `origin/release`, so the CI
    verdict targets the post-bump SHA and QA tests the real published gem
    (`validate_gems_for_qa` / `publish_gems_for_qa` / `bump_consumer_locks_for_qa`).
+   Then the **producer** half, because a registered gem is a consumer too:
+   `bump_producer_locks_for_accepted` bumps every registered gem repo's OWN
+   lock for the gems IT declares (studio-engine declares `solana-studio`) and
+   commits onto **`origin/accepted`** — not `release`, because a gem repo's PRs
+   are based on `accepted` and that is the tree its CI reads. It keys off the
+   REGISTRY, not this candidate's members: a self-gated gem may release alone,
+   and the engine's dependency exists either way. `assert_no_lock_drift!` then
+   asserts the effect — no repo may be left resolving a gem this sweep just
+   published OLDER than the published version (`Release::LockDrift`; ahead is
+   never a finding, since a producer may track an unreleased gem).
 5. **Pre-QA gate.** Each app's registry **`qa_test_cmd`** (the integration +
    e2e-smoke tier `prepare` owns — `Release::STEP_TEST_TIERS`) runs on
    `origin/release` BEFORE anything deploys. A regression → **eject the
