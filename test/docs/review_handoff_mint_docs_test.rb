@@ -42,6 +42,7 @@ require "test_helper"
 class ReviewHandoffMintDocsTest < ActiveSupport::TestCase
   MODULE_DOC = Rails.root.join("docs", "agents", "modules", "communication-style.md")
   ROOT_DOC   = Rails.root.join("docs", "agents", "index.md")
+  SOP_DOC    = Rails.root.join("docs", "agents", "modules", "building-sop.md")
 
   # The endpoint IS the mechanism: it mints inside the request the desk server is
   # already handling, so the row cannot land in another database.
@@ -121,6 +122,21 @@ class ReviewHandoffMintDocsTest < ActiveSupport::TestCase
                  "not left looking prescriptive")
     assert_match(/302|\/login|\/signin/, row,
                  "and it must name the symptom, so the next reader recognises the bounce")
+  end
+
+  # A REGISTERED SOP stands alone by standard — every command inline — so an agent
+  # at the handoff step reads THIS recipe and never opens the module. It carried the
+  # console mint verbatim; correcting only the module leaves two live docs disagreeing.
+  test "the building SOP teaches the same mechanism at the handoff step" do
+    sop = SOP_DOC.read
+
+    assert_includes sop, IN_REQUEST_MINT,
+                    "building-sop.md hands over a link at the handoff step — it must name the " \
+                    "in-request mint, not a console one"
+    refute_match(/create_magic_link/, sop,
+                 "the SOP has no room to explain the hazard, so it must not name the console mint")
+    refute_match(%r{^Magic Link: http://localhost:<port>/l/<token>}, sop,
+                 "the pasted label must not be a pre-minted single-use token")
   end
 
   # The root operating model is auto-loaded by every session, so it outranks the

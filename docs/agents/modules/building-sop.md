@@ -294,21 +294,21 @@ never hunts through prose (full recipe:
 
 ```text
 Task: https://mcritchie.studio/tasks/<slug>
-Magic Link: http://localhost:<port>/l/<token>
+Magic Link: http://localhost:<port>/_studio/local_review?return_to=/<path>
 Local Demo: http://localhost:<port>/<path>
 ```
 
-Mint the `Magic Link:` yourself so it lands on the page under review:
+Hand over the stack's own MINT URL, never a token you minted in a console: a
+console mint binds the SHARED development database, not the desk's, and the
+desk server 302s him to `/login` holding a link that is alive nowhere he can
+reach it.
 
 ```bash
-bin/rails runner 'l = Studio::Link.create_magic_link(email: "alex@mcritchie.studio",
-  return_to: "/<path>", ttl: 12.hours); puts "http://localhost:#{ENV.fetch("PORT")}/l/#{l.token}"'
+http://localhost:<port>/_studio/local_review?return_to=/<path>
 ```
 
-**Never click the link you are about to hand over.** This one is a fixed
-single-use token — consuming it to "check that it works" burns it, and Mr.
-McRitchie receives a dead link. `bin/verify-review-hop` is the check, and it is
-safe precisely because the CTA mints a fresh token per click.
+That URL is REUSABLE — each click mints a fresh single-use token — so checking
+it never burns it, and `bin/verify-review-hop` is safe for the same reason.
 
 For email/auth flows, also return `Local Inbox:
 http://localhost:<port>/_studio/local_emails` (worktree stacks default to
