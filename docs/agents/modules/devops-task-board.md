@@ -677,6 +677,76 @@ point:
 semantics are untouched. Owned by `bin/lib/ci_wait.rb`; the rule is proven in
 `test/lib/ci_wait_test.rb` and its presence on the path in `test/lib/ship_test.rb`.
 
+### Waiting for a backgrounded ship — `bin/ship-wait`
+
+The CI wait makes a cold `bin/ship` a **~12-minute** command, so **run it in the
+background — and wait for it with `bin/ship-wait`**. That sentence used to stop
+one clause earlier, and the gap cost real time: five builders in one session each
+filled it with the same watcher, and it cannot fire.
+
+```bash
+bin/ship-wait <task-slug> --launch -m "Commit message"   # start the ship, then block
+bin/ship-wait <task-slug>                                # attach to one already running
+bin/ship-wait <task-slug> --log <path> --pid <pid>       # attach to one you launched yourself
+```
+
+**Exit codes — branch on these, never re-parse the log:**
+
+| Code | Means | Do |
+|------|-------|----|
+| `0` | SUCCEEDED — the log carries `stage: submitted (read back verified)` | hand off |
+| `1` | FAILED — the run ended without that line | read the log, re-run `bin/ship` (it resumes) |
+| `2` | TIMEOUT — still running when `--timeout` elapsed | nothing is wrong; wait again |
+| `3` | USAGE — bad invocation, or a ship for that slug is already running | read the refusal |
+| `4` | NO LOG — nothing to watch, and `--launch` was not given | `--launch`, or point `--log` at your redirect |
+
+**Four properties, and each one is a mistake somebody already made:**
+
+- **It never matches itself.** There is no `pgrep`, `pkill` or `ps` scrape in
+  `bin/ship-wait` or `bin/lib/ship_wait.rb`. Liveness is a PID captured at launch
+  (`Process.kill(0, pid)`) or a sentinel line the launcher appends to the log.
+  The reinvention — `while pgrep -f "bin/ship <slug>"; do sleep 30; done` — is
+  immortal, and the mechanism is worth stating exactly, because the folk version
+  is half wrong. On macOS `pgrep` excludes **itself and its ancestors** by
+  default, so a LONE watcher does exit; the deadlock needs a **sibling** — a
+  second watcher, or one orphan from an earlier attempt — whose argv carries the
+  same pattern. Then both conditions are true forever with no ship running at
+  all. Measured 2026-09-09: 30+ orphaned shells from one builder, and several
+  agents waking repeatedly to report "still pending". Each wake-up costs a turn
+  in the builder's session AND one in the orchestrator's.
+- **The LOG holds the verdict — not the process table, and not the exit code.**
+  `bin/ship` can exit 0 on a run that never reached the seam, so "the process is
+  gone" answers WHEN to stop waiting and never WHAT happened. The authoritative
+  fact is ship's own post-read-back line, `stage: submitted (read back
+  verified)`, matched whole rather than as a substring.
+- **Already-done returns AT ONCE.** The first read happens before the first
+  sleep. This is the case the naive loop gets most wrong, and the case
+  `test/lib/ship_wait_script_test.rb` pins with a wall-clock bound — because a
+  test that only asserts "it waits" passes on a watcher that waits forever.
+- **It is bounded** (`--timeout`, default 1800s; `--interval`, default 10s,
+  floored at 1). A wait that can hang forever is the same defect in a new shape.
+
+The log and pidfile land in **`tmp/ship-wait/`** under the desk you run from
+(gitignored, namespaced per slug) — not under `<projects>/.agents`, which is a
+guarded store. Attaching from a different checkout resolves a different root and
+says so; pass `--dir` or `--log` for that.
+
+`--launch` rotates any previous log to `ship-<slug>.log.prev` before starting.
+It has to: a stale sentinel left in place would make the very first read
+terminal, and the fast path would credit the OLD run's verdict to the new ship,
+instantly and wrongly.
+
+**It does not wait on CI, deliberately.** `bin/ship` already does, through
+`bin/lib/ci_wait.rb`, which keys on `CiStatus`'s **named** states and knows that
+an ABSENT check is not a PENDING one. A second CI wait here would be a second
+copy of that allow-list, and the two would drift the first time either grew a
+state. Waiting for the ship subsumes waiting for its CI.
+
+Owned by `bin/lib/ship_wait.rb` (the decision rules) and `bin/ship-wait` (the
+CLI); proven in `test/lib/ship_wait_test.rb` (unit) and
+`test/lib/ship_wait_script_test.rb` (the real script, including a decoy sibling
+process that a pattern-based watcher would hang on).
+
 With the PR open, ship asks two questions of the sibling PRs in **one**
 `gh pr list` — same-file overlap, which **advises**, and duplicate migration
 installs, which **block**. The second is not a stricter flavour of the first: the
