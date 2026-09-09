@@ -2,6 +2,8 @@
 
 > **When to read this:** A token/key/secret needs to be rotated — scheduled, compromised, or expiring. Each section is a self-contained procedure: where the secret is stored, how to regenerate it at the source, how to push the new value to every consumer, how to verify the rotation succeeded.
 
+> **The PROCEDURE is the `credential-rotation` SOP** — `docs/agents/agents/steffon/sops/credential-rotation.md`. It owns store enumeration, ordering, verification, rollback and the receipt, and it applies to every secret including the ones with no section here. **This file is the per-credential appendix**: what each secret is, where it lives, and how to regenerate it at the source. Run the SOP; reach for the matching section below as an accelerator. Where the two disagree, the SOP wins and the section below gets fixed in the same pass.
+
 The 1Password account is `alex@mcritchie.studio` (account ID `MWOV5OT5BRHATI4EGMN26C5DPA`), vaults `studio-agents` (agent lane) and `studio-agents-admin` (ship lane — separate service account, `bin/setup-1pass-token --admin`). Heroku apps are `mcritchie-studio` and `turf-monster-mainnet`. After every rotation, re-run `bin/ecosystem-build` so the dev `.env` files refresh from Heroku's new config.
 
 ---
@@ -44,7 +46,7 @@ The 1Password account is `alex@mcritchie.studio` (account ID `MWOV5OT5BRHATI4EGM
 
 **Store:** Heroku config var on both apps + `config/master.key` (gitignored) locally + 1Password (recommended backup).
 
-**Symptoms of rotation needed:** master key compromise (committed accidentally, leaked from CI logs, etc.). This is the single most disruptive secret to rotate because it decrypts `config/credentials.yml.enc` AND derives the session-cookie signing secret — rotating it logs out every user and requires re-encrypting credentials.
+**Symptoms of rotation needed:** master key compromise (committed accidentally, leaked from CI logs, etc.). This is the single most disruptive secret to rotate because it decrypts `config/credentials.yml.enc` — rotating it means RE-ENCRYPTING, not replacing. Whether users are logged out depends on `secret_key_base`, not on the master key: the procedure below pastes the same plaintext back, so `secret_key_base` is unchanged and signed cookies keep verifying. Regenerate credentials from scratch and it changes, and then every session and signed URL dies too.
 
 **Procedure (per app — do each Rails app separately):**
 1. Edit `config/credentials.yml.enc` with the *current* key: `EDITOR='code --wait' bin/rails credentials:edit`.
@@ -116,7 +118,7 @@ The 1Password account is `alex@mcritchie.studio` (account ID `MWOV5OT5BRHATI4EGM
 6. `heroku config:set SOLANA_ADMIN_KEY=<new_base58> --app turf-monster-mainnet`.
 7. Re-run `bin/ecosystem-build` → Phase 4 re-fetches from 1P and writes to local `.env`.
 8. Securely delete `/tmp/new-admin.json` (it contains the unencrypted secret).
-9. After 24-48h of confirmed normal operation, run `update_signers` again to remove the *old* pubkey from `VaultState.signers`.
+9. There is no second `update_signers`. `signers` is `[Pubkey; 3]` and the instruction does `vault.signers = new_signers` — a whole-set replace across three fixed slots — so step 4 already evicted the old pubkey in the same transaction. The only way to hold old and new at once is to evict a third signer for the duration; see the `credential-rotation` SOP's worked example before choosing that.
 
 **Verify:** `bin/rails runner 'puts Solana::Keypair.from_base58(ENV["SOLANA_ADMIN_KEY"]).address'` matches the new pubkey. A test contest settlement completes successfully (admin signs as `admin`, human cosigns).
 
@@ -252,6 +254,18 @@ The 1Password account is `alex@mcritchie.studio` (account ID `MWOV5OT5BRHATI4EGM
 | Google OAuth client secret | yearly | Hygiene |
 
 Add a calendar reminder for the quarterly cycle so this doesn't slip.
+
+---
+
+## Rotation log
+
+The receipt, written by the `credential-rotation` SOP's final phase. One row per
+rotated credential. **No values, no digests, no key material** — this repo is
+public, and the log records WHAT and WHEN, never what the value is.
+
+| Date (UTC) | 1Password item | Reason | Stores updated | How verified | Old value revoked | Task |
+|------------|----------------|--------|----------------|--------------|-------------------|------|
+| _(no rotation recorded since the log was added 2026-09-09)_ | | | | | | |
 
 ---
 
