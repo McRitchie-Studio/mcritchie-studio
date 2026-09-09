@@ -198,7 +198,50 @@ because they happened to re-verify by hand.
 | The tree `bin/dor-check --gate-role review` grades | **Now guarded.** It re-roots to the *builder's desk*, which sits wherever the builder left it. It refuses when that tree is not the PR head. |
 | The full-suite cert fingerprint | **From a worktree yes; from a separate clone no** — see below. |
 | The e2e declared-vs-executed set | **No** — it ran once, against the base as it was then. |
+| The PR's AUTHOR SET (who may review it next) | **Yes, since 2026-09-09** — `bin/pr-review` records the head move as a fix-forward. Before that it did **not**, and the gap seated a reviewer on his own commit. See below. |
 | The task's stage | **No mechanism found.** See the open question below. |
+
+**Your zap makes you an AUTHOR of that PR, and the record now says so.** The
+author set `bin/reviewer-select` excludes (`devops.built_by` +
+`devops.builders`) is stamped only by the build CLAIM, and a zap makes none —
+you push onto someone else's branch and claim nothing. So the exclusion set
+never grew. Measured twice on merged PRs the night of 2026-09-09: on **#1321**
+Steffon zapped `be5579a5` while holding the light seat and the next selection
+**seated Steffon on a PR containing Steffon's own commit**; on **#1322** the
+reviewer pushed `7113af85` to resolve a conflict and had to **disclose it in
+prose** because nothing recorded it.
+
+That failure mode is worse than a missing stamp. A blank `built_by` makes the
+selector fail **closed** — it refuses and a human chooses. This failed **open**:
+the set was populated and confident, just short by one, so nothing looked wrong.
+
+`bin/pr-review` now closes it for you: it holds both the pre-review head and the
+seated souls, so when the head advances during a review it records the
+fix-forward before dispatching the outcome — on **every** outcome, not only a
+merge, because the ones that send the task back around are followed by a fresh
+`bin/reviewer-select`. **Nothing is asked of you at the reviewer seam.**
+
+Record it by hand only when your zap did **not** ride a `bin/pr-review` review —
+a hand-spawned reviewer, or a conductor zap on `accepted` that lands on someone's
+open PR:
+
+```bash
+cd /Users/alex/projects/mcritchie-studio
+bin/task fix-forward <task-slug> --agent <your-soul>
+```
+
+It writes one devops key. It moves no stage and claims no build — deliberately:
+`bin/task move <slug> building --actor <soul>` is the repair for a *missing
+builder* stamp and is the wrong instrument here twice over, because it drags a
+submitted task back onto `building` mid-review and re-points `built_by` at a
+reviewer. Your soul joins `devops.builders`; `built_by` is left alone.
+
+**A fix-forward nobody can name REFUSES.** Where the pusher cannot be
+attributed, the record carries `--unnamed` instead, `bin/reviewer-select` reports
+the author set INCOMPLETE and refuses to pick until someone runs the command
+above. That is the intended cost: a commit is provably in the diff whose author
+is somewhere in the pool, so a confident pick is the one answer that must not be
+available.
 
 **The gate now refuses a stale tree rather than grading one.** `--gate-role
 review` re-roots to the builder's desk, and on turf #519 that desk sat at
@@ -358,6 +401,14 @@ Every zap leaves the same two-part trail, whatever the seam:
 **The note is the ledger at every seam, builder included.** A `[zap]` line in
 `checks_run`, or a zappable defect named in a review verdict, is color on
 top — never a substitute for the note.
+
+**The note is not the author record, and never was.** It is free-form prose on
+an activity feed; nothing reads it to decide who may review the PR. A **reviewer
+or conductor** zap that lands on an open PR therefore owes a third part, and
+`bin/pr-review` writes it automatically for a zap applied inside a review it
+supervised — `bin/task fix-forward <task> --agent <soul>` for one it did not.
+See [After a reviewer zap](#after-a-reviewer-zap--what-re-checks-itself-and-what-does-not).
+A **builder** zap owes nothing extra: he is already the author on record.
 
 The board CLI lives in `mcritchie-studio`: run every `bin/task` write from
 the hub (`cd /Users/alex/projects/mcritchie-studio && bin/task …`), whichever
