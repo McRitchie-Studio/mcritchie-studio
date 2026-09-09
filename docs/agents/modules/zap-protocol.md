@@ -235,7 +235,8 @@ So the whole question is whether the checkout you push from writes the copy of
   GitHub's web UI never touches the desk's `origin/<branch>`. The hash still
   matches the builder's cert and the lane reads FRESH over a tree that is no
   longer the PR head: a green that is evidence of nothing. Only the head check
-  (seam 1 above) catches that one, by comparing the graded commit to the PR head.
+  above — the stale-tree refusal in this section — catches that one, by comparing
+  the graded commit to the PR head.
 
 Measured 2026-09-08 on real repositories and pinned by
 `test/docs/zap_cert_freshness_docs_test.rb`: a push from a sibling worktree moved
