@@ -366,6 +366,15 @@ class ZapCertFreshnessDocsTest < Minitest::Test
     body
   end
 
+  # The same refusal as the OPERATOR sees it, with Ruby's string-continuation seams
+  # (a trailing backslash, a newline, and a re-opened quote) closed up and whitespace
+  # flattened. Pins on the COMMANDS it prints read THIS and not the literal: where a
+  # command falls in the source is a wrapping accident, and a guard a re-wrap turns red
+  # is a guard that gets deleted rather than re-pointed.
+  def head_refusal_text
+    head_refusal_literal.gsub(/"\s*\\\s*\n\s*"/, "").gsub(/\s+/, " ")
+  end
+
   # A comment block, de-hashed and reflowed into sentences. Both bounds are structural.
   def comment_sentences(rel, from:, to:)
     block = source(rel)[/#{from}(.*?)#{to}/m, 1]
@@ -537,13 +546,68 @@ class ZapCertFreshnessDocsTest < Minitest::Test
     assert_equal %i[fresh match], fetch_move_recert,
                  "only moving this checkout onto the fetched head BEFORE re-certifying clears both"
 
-    remedy = head_refusal_literal[/git fetch origin.*/m]
-    refute_nil remedy, "the refusal no longer names `git fetch origin <branch>` — re-point this guard rather " \
-                       "than deleting it; whether the printed remedy works is still the live question"
+    # --- AND IT MUST NAME THE TREE IT ACTS ON (/tasks/remedy-command-lacks-directory) --
+    #
+    # Everything above measures the remedy from INSIDE the graded checkout. The operator
+    # is not standing there: bin/dor-check:1176-1180 says `--gate-role review` is run from
+    # the repo's PRIMARY, which sits on release or main by SOP, and the gate re-roots to
+    # the desk by itself. So the directory a pasted command acts on is whichever tree the
+    # reviewer happens to be in — and the move above is the FIRST MUTATING command this
+    # refusal has ever printed. The previous remedy was `git fetch`, harmless from
+    # anywhere; that is why nobody had to think about this before.
+    poisoned_primary, spared_primary, moved_desk = with_house do |h|
+      # The SOP geometry, built for real: the primary sits on main, BEHIND the feature
+      # head. Note `-B main origin/#{BRANCH}` and not a bare `-B main` — with only feat/x
+      # ever pushed, the clone leaves this primary on an UNBORN branch, where `git
+      # rev-parse HEAD` echoes the literal "HEAD" on stdout instead of failing, and every
+      # sha comparison below would then compare two copies of that string.
+      git!(h[:primary], "checkout -q -B main origin/#{BRANCH}")
+      pristine = capture(h[:primary], "rev-parse HEAD")
+      zap!(h[:otherclone], "7\n")
+      git!(h[:primary], "fetch -q origin #{BRANCH}")
+      git!(h[:builder], "fetch -q origin #{BRANCH}")
 
-    move = remedy.index(/git (?:merge --ff-only|pull|reset --hard|checkout)/)
+      # (a) the command WITHOUT a directory, run where the reviewer actually stands
+      system("git -C #{h[:primary]} merge --ff-only origin/#{BRANCH} >/dev/null 2>&1")
+      bare = capture(h[:primary], "rev-parse HEAD")
+      git!(h[:primary], "reset -q --hard #{pristine}")
+
+      # (b) the same command scoped to the graded checkout, which is what it prints now
+      system("git -C #{h[:builder]} merge --ff-only origin/#{BRANCH} >/dev/null 2>&1")
+      [bare != pristine,
+       capture(h[:primary], "rev-parse HEAD") == pristine,
+       capture(h[:builder], "rev-parse HEAD") == capture(h[:builder], "rev-parse origin/#{BRANCH}")]
+    end
+
+    assert poisoned_primary,
+           "fixture: the unscoped command must move the primary, or the pin below proves nothing. It " \
+           "fast-forwards main onto the feature head with exit 0 and a `Fast-forward` message — nothing is " \
+           "pushed, but every later gate and every bin/release read then works from a poisoned checkout."
+    assert spared_primary,
+           "scoping to the graded checkout leaves the reviewer's own tree where it was — the whole point"
+    assert moved_desk,
+           "scoping still does the job it is printed for: the GRADED checkout lands on the fetched head"
+
+    remedy = head_refusal_text[/git (?:-C \S+ )?fetch origin.*/m]
+    refute_nil remedy, "the refusal no longer names `git [-C <root>] fetch origin <branch>` — re-point this " \
+                       "guard rather than deleting it; whether the printed remedy works is still the live " \
+                       "question"
+
+    # Every command printed AGAINST THE PR BRANCH must name the tree. Commands naming
+    # some OTHER ref are exempt on purpose: a recovery note for the primary's own
+    # upstream is run where the operator is standing and correctly carries no -C.
+    unscoped = remedy.scan(/git (?!-C )(?:[a-z-]+ )+?origin[ \/]\#\{\w+\}/)
+    assert_empty unscoped,
+                 "the refusal prints #{unscoped.length} command(s) against the PR branch with no directory " \
+                 "(#{unscoped.inspect}). Measured directly above: pasted from the primary this very gate " \
+                 "tells reviewers to run from, the bare fast-forward moves THAT checkout onto the feature " \
+                 "head. Scope them — `git -C \#{diff_root} …` — so the printed command acts on the tree the " \
+                 "sentence around it is talking about."
+
+    move = remedy.index(/git -C \S+ (?:merge --ff-only|pull|reset --hard|checkout)/)
     refute_nil move,
-               "the remedy names no command that MOVES this checkout onto the fetched head. Measured directly " \
+               "the remedy names no DIRECTORY-SCOPED command that MOVES the graded checkout onto the fetched " \
+               "head. Measured directly " \
                "above: fetch-then-re-certify leaves the lane STALE, because bin/full-suite-check hashes the " \
                "WORKING tree and a fetch does not move it. A remedy that loops is the same defect as a " \
                "diagnosis that lies — the operator trusts it once and then stops trusting the gate."
@@ -564,8 +628,17 @@ class ZapCertFreshnessDocsTest < Minitest::Test
     refute_empty bullets, "neither case's bullet tells the reader how to re-certify any more — re-point this pin"
     bullets.each do |bullet|
       lead = bullet[/\A\*\*(.+?)\*\*/m, 1].to_s.gsub(/\s+/, " ")[0, 60]
-      moved = bullet.index(/git (?:merge --ff-only|pull|reset --hard|checkout)/)
-      certified = bullet.rindex("bin/full-suite-check")
+      # Flattened for the same reason head_refusal_text is: markdown re-wraps, and a
+      # command split across two lines is still one command to the reader who copies it.
+      flat = bullet.gsub(/\s+/, " ")
+      unscoped_here = flat.scan(/git (?!-C )(?:[a-z-]+ )+?origin\/<branch>/)
+      assert_empty unscoped_here,
+                   "zap-protocol.md, bullet «#{lead}»: prints #{unscoped_here.inspect} against the PR branch " \
+                   "with no directory. Measured above, that command run from the primary fast-forwards the " \
+                   "PRIMARY. The gate and this doc are the two authorities on one remedy — correcting only " \
+                   "one is how the false claim in this same passage survived its first pass."
+      moved = flat.index(/git -C <\w+> (?:merge --ff-only|pull|reset --hard|checkout)/)
+      certified = flat.rindex("bin/full-suite-check")
       refute_nil moved,
                  "zap-protocol.md, bullet «#{lead}»: sends the reader to bin/full-suite-check with no command " \
                  "that moves their checkout onto the pushed head. Measured above, in BOTH cases, that cert " \
@@ -575,5 +648,85 @@ class ZapCertFreshnessDocsTest < Minitest::Test
              "zap-protocol.md, bullet «#{lead}»: the certify step comes before the move step. Order is the " \
              "whole finding — a cert taken before the move stamps the tree the reader already had."
     end
+  end
+
+  # --- AND THE CASE THE MOVE ITSELF CAN REFUSE (/tasks/remedy-command-lacks-directory)
+  #
+  # The remedy above ends in a FAST-FORWARD, and a fast-forward can refuse. Measured
+  # below in the same house geometry, on a desk carrying its own unpushed commit:
+  #
+  #   merge --ff-only   exit != 0   nothing moved     safe — and it DEAD-ENDS there
+  #   merge --no-ff     exit 0      tree != PR head   git's own hint, and it SUCCEEDS
+  #   rebase (alone)    exit 0      tree != PR head   git's other hint
+  #   reset --hard      exit 0      tree == PR head   and the desk's commit is GONE
+  #
+  # So an operator who takes either hint git prints certifies a tree that never merges,
+  # and one who takes neither has been told nothing at all. A remedy that dead-ends is
+  # the same defect as one that loops (the test above): each spends the reviewer's trust
+  # in the gate once and does not get it back. The pins are on COMMANDS — that the
+  # escape hatch is named and scoped, that the operator is told to LOOK before it
+  # discards, and that the hint measured here to land the wrong tree is never printed as
+  # something to run.
+  def test_the_remedy_names_a_next_step_when_the_fast_forward_refuses
+    measured = with_house do |h|
+      desk = h[:builder]
+      zap!(h[:otherclone], "8\n")                  # the PR head moves out from under the desk
+      # DISJOINT from what the zap touches, so --no-ff below merges CLEANLY. A conflict
+      # here would prove only that git stopped; the finding is that it does not stop.
+      File.write(File.join(desk, "local_only.rb"), "still mine\n")
+      git!(desk, "add -A")
+      git!(desk, "commit -q -m 'unpushed local work'")
+      git!(desk, "fetch -q origin #{BRANCH}")
+      diverged = capture(desk, "rev-parse HEAD")
+      pr_tree = capture(desk, "rev-parse origin/#{BRANCH}^{tree}")
+
+      try = lambda do |args|
+        ok = system("git -C #{desk} #{args} >/dev/null 2>&1")
+        landed = capture(desk, "rev-parse HEAD^{tree}")
+        git!(desk, "reset -q --hard #{diverged}")
+        [ok, landed == pr_tree]
+      end
+
+      { "merge --ff-only" => try.call("merge --ff-only origin/#{BRANCH}"),
+        "merge --no-ff"   => try.call("merge --no-ff --no-edit origin/#{BRANCH}"),
+        "rebase"          => try.call("rebase origin/#{BRANCH}"),
+        "reset --hard"    => try.call("reset --hard origin/#{BRANCH}") }
+    end
+
+    assert_equal({ "merge --ff-only" => [false, false],
+                   "merge --no-ff"   => [true,  false],
+                   "rebase"          => [true,  false],
+                   "reset --hard"    => [true,  true] },
+                 measured,
+                 "[did it run?, did it land the PR head tree?] per candidate move. BOTH moves git prints " \
+                 "as hints succeed and BOTH land a tree that is not the PR head — which is why the refusal " \
+                 "may not stop at the fast-forward and leave the operator holding git's advice.")
+
+    refusal = head_refusal_text
+    refute_match(/git (?:-C \S+ )?merge --no-ff/, refusal,
+                 "the refusal prints git's own --no-ff hint as a command to RUN. Measured directly above it " \
+                 "succeeds and lands a tree that is not the PR head's, so a cert taken after it describes a " \
+                 "tree that never merges — the remedy steering into the very defect this gate exists to catch")
+    assert_match(/git -C \S+ reset --hard origin\/\#\{\w+\}/, refusal,
+                 "the refusal names no scoped command that RESOLVES a refused fast-forward. Measured above, " \
+                 "`reset --hard origin/<branch>` is the only candidate that lands the PR head tree, and it " \
+                 "DISCARDS the desk's own commit — which is exactly why the refusal must name it out loud " \
+                 "instead of leaving the operator to pick one of git's two wrong hints")
+    assert_match(/git -C \S+ log [^)]*origin\/\#\{\w+\}\.\.HEAD/, refusal,
+                 "the refusal reaches `reset --hard` without first naming a command that shows WHAT would be " \
+                 "discarded. On a review lane that diverged commit is usually sitting on the BUILDER'S desk; " \
+                 "a remedy that says destroy-it-to-proceed without saying look-first is one that eats work")
+
+    # The doc's copy of the same two claims. Two authorities, one remedy — and this
+    # passage is where a correction applied to only one of them last time.
+    paragraph = File.read(DOC)[/\*\*Expect the cert to go STALE.*?(?=\n\*\*A base that moves)/m]
+    refute_nil paragraph, "the cert-freshness paragraph is gone or renamed — re-point this guard"
+    flat = paragraph.gsub(/\s+/, " ")
+    refute_match(/git (?:-C <\w+> )?merge --no-ff/, flat,
+                 "zap-protocol.md prints the --no-ff hint as a command to run — measured above, it lands the " \
+                 "wrong tree. Correcting the gate and not the protocol leaves two authorities disagreeing.")
+    assert_match(/git -C <\w+> reset --hard origin\/<branch>/, flat,
+                 "zap-protocol.md never names the scoped command that resolves a refused fast-forward, so a " \
+                 "reader who hits one is left with git's hints — both measured wrong above")
   end
 end

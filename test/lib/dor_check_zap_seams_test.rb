@@ -171,8 +171,30 @@ class DorCheckZapSeamsTest < Minitest::Test
                    "the refusal must name the commit it actually graded")
       assert_match(/#{zapped[0, 12]}/, errors_of(verdict),
                    "…and the PR head it was measured against, so a reviewer can verify by hand")
-      assert_match(/git fetch origin feat\/x/, errors_of(verdict),
-                   "a refusal whose remedy is one command must print that command")
+      # THE REMEDY MUST NAME THE TREE IT ACTS ON (/tasks/remedy-command-lacks-directory).
+      # This assertion used to accept a BARE `git fetch origin feat/x`, and once the
+      # remedy grew a `git merge --ff-only` beside it that acceptance became a hazard:
+      # bin/dor-check:1176-1180 says reviewers run --gate-role review from the PRIMARY
+      # checkout, which sits on release or main by SOP, so an unscoped fast-forward
+      # pasted from there moves THAT checkout onto the feature head — exit 0, and a
+      # "Fast-forward" success message. Measured in test/docs/zap_cert_freshness_docs_test.rb.
+      #
+      # Pinned against the root the refusal's own DIAGNOSIS names, rather than against
+      # `dir`, because that comparison is the defect stated exactly: the message always
+      # knew which tree it was talking about, and printed a command that did not say so.
+      graded = errors_of(verdict)[/origin\/feat\/x in (\S+) is at/, 1]
+      refute_nil graded,
+                 "the refusal no longer names the graded checkout in its diagnosis — re-point this guard; " \
+                 "whether its printed commands act on that same tree is still the live question"
+      assert_match(/git -C #{Regexp.escape(graded)} fetch origin feat\/x/, errors_of(verdict),
+                   "a refusal whose remedy is one command must print that command — and scope it to the tree " \
+                   "the sentence around it is about")
+      assert_match(/git -C #{Regexp.escape(graded)} merge --ff-only origin\/feat\/x/, errors_of(verdict),
+                   "the MUTATING half of the remedy is unscoped. This is the one that costs something: run " \
+                   "from the primary it fast-forwards release or main onto the feature head and reports " \
+                   "success, poisoning every later gate and every bin/release read off that checkout")
+      refute_match(/(?<!-C #{Regexp.escape(graded)} )\bgit merge --ff-only/, errors_of(verdict),
+                   "some copy of the fast-forward is still printed without a directory")
     end
   end
 

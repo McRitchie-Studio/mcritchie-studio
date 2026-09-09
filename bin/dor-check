@@ -3209,12 +3209,25 @@ if gate != "build"
       "this check is for. REF SHARING decides which pushes reach origin/#{zap_branch} at all: one from a " \
       "SIBLING WORKTREE does (worktrees share one ref store), one from INDEPENDENT refs — a separate " \
       "clone, another machine, GitHub's Update-branch button — does not. Fetch the branch " \
-      "(git fetch origin #{zap_branch}) and re-run — that alone clears THIS refusal, and the cert " \
-      "lane then grades the fetched head instead of the tree you are standing on. Re-certifying at " \
-      "THAT point would re-stamp the tree you already have: bin/full-suite-check hashes the WORKING " \
-      "tree, while this gate hashes #{head_check[:ref]}. So if the zap was yours, move this checkout " \
-      "onto the fetched head first (git merge --ff-only origin/#{zap_branch}), then re-certify " \
-      "(bin/full-suite-check #{task["slug"] || slug}) so the cert describes what will merge."
+      "(git -C #{diff_root} fetch origin #{zap_branch}) and re-run — that alone clears THIS refusal, " \
+      "and the cert lane then grades the fetched head instead of the tree it was grading. KEEP THE -C: " \
+      "this gate re-roots to the graded checkout, so a reviewer running it from the repo's primary is " \
+      "standing somewhere else, and a bare `git merge` pasted there fast-forwards whatever the primary " \
+      "has checked out — release or main by SOP — with exit 0 and a success message. Re-certifying " \
+      "straight after the fetch would re-stamp the tree that checkout already has: bin/full-suite-check " \
+      "hashes the WORKING tree, while this gate hashes #{head_check[:ref]}. So if the zap was yours, " \
+      "move the graded checkout onto the fetched head first " \
+      "(git -C #{diff_root} merge --ff-only origin/#{zap_branch}), then re-certify " \
+      "(bin/full-suite-check #{task["slug"] || slug}) so the cert describes what will merge. IF THAT " \
+      "MERGE REFUSES (`Not possible to fast-forward`), #{diff_root} carries a commit " \
+      "origin/#{zap_branch} does not, and NEITHER hint git prints there ends the job: --no-ff SUCCEEDS " \
+      "and leaves a tree still holding what the PR head lacks, and `git rebase` alone leaves that " \
+      "commit on top — both would certify a tree that never merges. Read what is at stake " \
+      "(git -C #{diff_root} log --oneline origin/#{zap_branch}..HEAD): if that commit belongs on this " \
+      "PR, land it as a zap (rebase onto origin/#{zap_branch}, then push) so it BECOMES the head and " \
+      "this merge succeeds; if it does not and the desk is yours, git -C #{diff_root} reset --hard " \
+      "origin/#{zap_branch} DISCARDS it. If the desk is NOT yours, discard nothing — grade on the CI " \
+      "green for this exact head and say so in your report."
   elsif review_role && head_check[:state] == :unobservable && head_check[:reason] == :no_pr_head
     # NOT a refusal: with no head from GitHub the question could not be asked, and the
     # CI gate above already owns "we could not read this PR". Say which check went
