@@ -507,7 +507,13 @@ printf '%s' "$NEW" | digest    # a digest, not EMPTY, and it matches what you mi
 
 Every write below repeats that guard, because the blocks get copy-pasted one at a
 time and a guard that lives only at the top of the section is not there when you
-need it.
+need it. **Each guard is chained to its write with `&&`, and that is
+load-bearing, not style.** An unset `${NEW:?...}` aborts a SCRIPT, but an
+interactive shell — the one you are pasting into — prints the refusal and carries
+straight on to the next line. Measured 2026-09-09 in both `zsh -i` and `bash -i`:
+the guard on its own line refused, and the loop under it still stripped every
+fixture `.env` to a bare `<VAR>=`. `&&` makes the guard and the write ONE command,
+so the refusal actually skips the write in every shell.
 
 ### 4.1 Mint, and put the value in `$NEW`
 
@@ -545,8 +551,7 @@ that may WRITE the vault — `OP_ADMIN_SERVICE_ACCOUNT_TOKEN` for `studio-agents
 permission`:
 
 ```bash
-: "${NEW:?refusing to file an empty value}"
-op item edit "<item>" --vault <vault> "<field>[concealed]=$NEW"
+: "${NEW:?refusing to file an empty value}" && op item edit "<item>" --vault <vault> "<field>[concealed]=$NEW"
 ```
 
 Update `authorization-id`, `used-by`, and the `scope`/`CAN`/`CANNOT` notes in the
@@ -588,8 +593,8 @@ command you type — and behind the guard, so an empty `$NEW` refuses instead of
 blanking the variable on every app in the list:
 
 ```bash
-: "${NEW:?refusing to write — NEW is empty and this would blank <VAR> on every app}"
-APPS="${APPS:?set APPS to the apps from your Phase 1 list, space separated}"
+: "${NEW:?refusing to write — NEW is empty and this would blank <VAR> on every app}" &&
+APPS="${APPS:?set APPS to the apps from your Phase 1 list, space separated}" &&
 for app in $APPS; do
   heroku config:set "<VAR>=$NEW" --app "$app"
 done
@@ -625,7 +630,7 @@ Heroku, which is the sanctioned refresher once Heroku is correct.
 replaced, printing nothing:
 
 ```bash
-: "${NEW:?refusing to write — NEW is empty and this would strip <VAR> out of every desk .env}"
+: "${NEW:?refusing to write — NEW is empty and this would strip <VAR> out of every desk .env}" &&
 for f in /Users/alex/projects/*/.worktrees/*/.env; do
   [ -f "$f" ] || continue
   grep -q '^<VAR>=' "$f" || continue
@@ -646,7 +651,7 @@ just made along with the stale ones. Split them on the `captured_at` stamp insid
 each file instead, which is exact where the filename's date is not:
 
 ```bash
-: "${ROTATED_AT:?stamp ROTATED_AT above, when the Heroku writes finished}"
+: "${ROTATED_AT:?stamp ROTATED_AT above, when the Heroku writes finished}" &&
 for snap in /Users/alex/projects/mcritchie-studio/tmp/env-snapshot-*.json; do
   [ -f "$snap" ] || continue
   cap=$(jq -r '.captured_at // empty' "$snap")

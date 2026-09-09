@@ -302,6 +302,51 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
     end
   end
 
+  # ── B1, in the shell the OPERATOR actually uses ────────────────────────────
+  #
+  # The refusal test above runs each block with `bash -c` — a NON-interactive
+  # shell, where an unset `${NEW:?...}` aborts. The SOP is pasted into an
+  # INTERACTIVE shell, which does NOT abort: it prints the refusal and runs the
+  # next line anyway. Measured 2026-09-09: with the guard on its own line, both
+  # `zsh -i` and `bash -i` stripped every fixture `.env` to a bare `<VAR>=` while
+  # the guard "refused". So this asserts the property in the shell that matters —
+  # otherwise the fix ships with the same blind spot as the bug.
+  test "Phase 4.4's writes refuse in an INTERACTIVE shell, not only in a script" do
+    writing = blocks_under("### 4.4 Write the runtime stores").select { |b| b[:body].include?("$NEW") }
+
+    assert_operator writing.length, :>=, 2, "Phase 4.4 lost its $NEW writes; re-point this guard"
+
+    %w[bash zsh].each do |sh|
+      next unless system("command -v #{sh} > /dev/null 2>&1")
+
+      Dir.mktmpdir("crs-interactive-#{sh}") do |dir|
+        build_sandbox(dir)
+
+        writing.each do |block|
+          script = block[:body].gsub(PROJECTS_ROOT, dir).gsub("<VAR>", FIXTURE_VAR)
+
+          refute_includes script, PROJECTS_ROOT,
+                          "REFUSING TO EXECUTE: snippet still references #{PROJECTS_ROOT} after rewriting"
+
+          env = { "PATH" => "#{File.join(dir, 'bin')}:#{ENV['PATH']}", "APPS" => "fixture-app-one" }
+          Open3.capture3(env, sh, "-i", stdin_data: script, unsetenv_others: false, chdir: dir)
+        end
+
+        desk_envs(dir).each do |file|
+          assert_includes File.read(file), "#{FIXTURE_VAR}=#{LIVE_VALUE}",
+                          "#{file} was stripped by a Phase 4.4 block pasted into an INTERACTIVE #{sh} " \
+                          "with $NEW unset. `${NEW:?...}` on its own line does not stop an interactive " \
+                          "shell — chain it to the write with `&&` so the refusal skips the write.\n" \
+                          "File now:\n#{File.read(file)}"
+        end
+
+        emptied = heroku_calls(dir).select { |c| c =~ /#{FIXTURE_VAR}=(\s|$)/ }
+
+        assert_empty emptied, "interactive #{sh}: heroku config:set ran with an EMPTY value: #{emptied.inspect}"
+      end
+    end
+  end
+
   # ── the snapshot delete keeps the post-rotation fallback ───────────────────
 
   test "the env-snapshot sweep deletes pre-rotation snapshots and KEEPS the post-rotation one" do
