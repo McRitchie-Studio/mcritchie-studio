@@ -15,6 +15,15 @@
 # swallowed run is covered by the next week's.
 class InsightsDocFreshnessJob < ApplicationJob
   def perform
+    # QA IS RAILS-PRODUCTION, so config/recurring.yml's `production:` block registers
+    # this there too — but a QA app has only ONE half of the comparison. Its slug ships
+    # the tracked doc carrying the BOARD's count while its own bank is empty, so every
+    # run would read count_drift and file a weekly receipt about a doc that is CORRECT.
+    # That is exactly the cry-wolf this detector's causal freshness bound exists to
+    # avoid. Studio.qa_environment? reads QA_ENV, which the release conductor sets on
+    # every QA app (config/qa_environments.yml).
+    return if Studio.qa_environment?
+
     result = Insights::DocFreshness.check
     return if result.fresh?
 

@@ -41,6 +41,20 @@ class InsightsDocFreshnessJobTest < ActiveSupport::TestCase
     assert log.backtrace.present?, "the receipt carries a backtrace pointing at the job"
   end
 
+  # QA boots RAILS_ENV=production, so it registers the production schedule while
+  # holding an EMPTY bank against a doc that ships the board's count. Without this
+  # guard the detector files a weekly receipt on QA about a CORRECT doc — the
+  # cry-wolf the causal freshness bound exists to avoid.
+  test "[unit] the detector stands down on QA, where the bank is empty by design" do
+    banked(slug: "a banked lesson")
+
+    with_doc(rendered(count: 0)) do
+      assert_no_difference -> { ErrorLog.count } do
+        Studio.stub(:qa_environment?, true) { InsightsDocFreshnessJob.perform_now }
+      end
+    end
+  end
+
   test "[integration] a fresh doc is quiet" do
     banked(slug: "a banked lesson")
 
