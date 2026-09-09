@@ -207,6 +207,19 @@ back was the one who could not. Five outcomes, five messages:
 Exit stays 0 for all five (a release that found nothing to drop is not a failed
 review); the honesty is in the message, and the two dangerous states go to stderr.
 
+**A long TTL makes a FORGOTTEN release expensive, so a resubmission clears the
+previous review's claim.** `Task.reviewable` asks only whether a live claim exists, so
+after a rework bounce (`bin/task block`, stage → `building`) the builder's resubmission
+was held out of the review queue by the LAST review's lease — **measured at 205 minutes
+on the branch that raised the TTL**, and silent. Entering `submitted` now clears any
+claim already on the task (`TaskReviewClaim.release_for_new_submission!`), which is
+sound for one reason and only at that one transition: a task being offered for review
+NOW cannot be under a review claimed before this submission. **The bounce itself is
+deliberately left alone** — the reviewer who just blocked a task is often still writing
+feedback, which is the same reason `ReviewClaimCli::TERMINAL_STAGES` excludes
+`building`. The stale holder's renewer, if any, stops on its next beat: renewing an
+unclaimed row answers `:no_lease`, the 204 that ends the loop.
+
 Surface: `bin/devops-shift acquire|renew|release|status` (+ the internal
 `renew-loop`); the board endpoints
 `POST /api/v1/devops_shifts/{acquire,renew,release}` + `GET …/devops_shifts`; the

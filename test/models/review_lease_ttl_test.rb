@@ -214,4 +214,52 @@ class ReviewLeaseTtlTest < ActiveSupport::TestCase
                  TaskReviewClaim.release(task_slug: SLUG, **A, now: t0 + 6).state,
                  "and releasing an already-released row drops nothing, rather than claiming success"
   end
+
+  # --- THE COST OF A LONG TTL, PAID DOWN -------------------------------------
+  #
+  # A long lease makes a FORGOTTEN release expensive, and the sharpest case is the
+  # rework loop: a reviewer bounces a task, the builder fixes it inside the hour, and
+  # the resubmission is held out of the review queue by the previous review's claim.
+  # Measured on this branch before the fix: 205 minutes, silently.
+
+  test "[unit] a resubmission clears the PREVIOUS review's claim and is reviewable at once" do
+    task = Task.find_by(slug: SLUG)
+    acquire(**A)
+    task.block!(by: "carl", kind: "rework")   # the reviewer bounces it: stage -> building
+
+    task.update!(stage: "submitted")          # the builder reworks and resubmits
+
+    assert_includes Task.reviewable, task,
+                    "a stale claim from the last review must not hold the new submission out of the queue"
+    assert_nil TaskReviewClaim.find_by(task_slug: SLUG).claimed_session
+  end
+
+  # THE CONTROL, and the line this fix must not cross. A bounce is NOT a resubmission:
+  # the reviewer who just blocked a task is often still writing feedback against it, so
+  # their lease stays. Clearing on the bounce would take a live review's lease away.
+  test "[unit] a BOUNCE leaves the reviewer's claim exactly where it was" do
+    task = Task.find_by(slug: SLUG)
+    acquire(**A)
+
+    task.block!(by: "carl", kind: "rework")
+
+    row = TaskReviewClaim.find_by(task_slug: SLUG)
+    assert row.live?, "the bouncing reviewer keeps their lease while they write the feedback"
+    assert_equal "sess-A", row.claimed_session
+  end
+
+  # The clear is scoped to the ENTRY into `submitted`. Any other move must not touch a
+  # claim — a blanket "clear on every save" would be the unconsented steal this file
+  # exists to prevent.
+  test "[unit] moves that are NOT an entry into submitted leave the claim alone" do
+    task = Task.find_by(slug: SLUG)
+    acquire(**A)
+
+    task.update!(title: "Review Lease Ttl Target Renamed")
+    assert TaskReviewClaim.find_by(task_slug: SLUG).live?, "a non-stage save clears nothing"
+
+    task.update!(stage: "reviewed")
+    assert TaskReviewClaim.find_by(task_slug: SLUG).live?,
+           "the merge path releases through `release`, which reports what it did — not silently here"
+  end
 end

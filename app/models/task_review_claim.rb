@@ -282,6 +282,37 @@ class TaskReviewClaim < ApplicationRecord
   end
   private_class_method :drop
 
+  # THE ONE UNCONDITIONAL CLEAR, and the only place a claim is dropped without the
+  # holder's consent. It exists because the TTL got long, and a long TTL turns a
+  # forgotten release from a two-minute nuisance into a three-hour queue stall.
+  #
+  # THE STALL, measured on this branch before the fix. A reviewer claims a submitted
+  # task and bounces it (`bin/task block`, stage → `building`). The builder reworks and
+  # resubmits inside the hour. `Task.reviewable` asks only "does a live claim exist",
+  # so the PREVIOUS review's claim — with 205 minutes still on it — held the resubmitted
+  # task out of the review queue, silently. Under the old 120s lease this window was two
+  # minutes and nobody ever saw it.
+  #
+  # WHY IT IS SAFE TO CLEAR WITHOUT ASKING, stated as the argument and not as a
+  # convenience: a review claim protects a review OF THE WORK BEING OFFERED. A task
+  # ENTERING `submitted` is being offered now, so any claim already on it was acquired
+  # before this submission — during a review that ended when the task left `submitted`.
+  # It cannot be a review of this submission, and nothing it could still be protecting
+  # is reachable. That is why the hook is on the ENTRY to `submitted` and nowhere else:
+  # on a bounce the lease legitimately still matters (the reviewer may be mid-feedback,
+  # which is why ReviewClaimCli::TERMINAL_STAGES excludes `building`), and clearing
+  # there would take a live review's lease away.
+  #
+  # The prior holder's detached renewer, if any, stops on its own next beat: renewing an
+  # unclaimed row answers :no_lease, which the board sends as the 204 that ends the loop.
+  def self.release_for_new_submission!(task_slug)
+    row = find_by(task_slug: task_slug.to_s.strip)
+    return nil unless row
+    return nil if row.claimed_session.to_s.strip.empty?
+
+    row.with_lock { drop(row, :released) }
+  end
+
   # The holder descriptor for one task (the CLI `status <slug>` read), or nil when no
   # claim row exists yet.
   def self.status_for(task_slug, now: Time.current)
