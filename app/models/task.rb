@@ -1985,10 +1985,10 @@ class Task < ApplicationRecord
     # way out, while bin/task's warning for the SAME situation printed a recovery
     # path — two messages, one situation, different shapes. The order below is the
     # whole remedy: `building` is in APPROVAL_REQUEST_STAGES, so the move returns
-    # early from #settle_operator_approval_past_submit, this guard then permits
-    # "waiting" there, and #stamp_operator_approval_request re-pulses the card. The
-    # reverse order lands right back here. Pinned by
-    # test/models/task_approval_request_guard_test.rb.
+    # early from #settle_operator_approval_past_submit, and this guard then permits
+    # "waiting" there — which re-pulses the card, because the pulse reads
+    # approval_status (#waiting_for_operator_approval?), not the request stamp. The
+    # reverse order lands back here. Pinned by test/models/task_approval_request_guard_test.rb.
     raise ArgumentError,
           "devops.approval_status cannot be set to #{OPERATOR_APPROVAL_WAITING.inspect} at stage " \
           "#{stage} — an approval request is only actionable in " \
