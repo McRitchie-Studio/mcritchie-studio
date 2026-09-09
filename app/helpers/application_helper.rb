@@ -1115,13 +1115,23 @@ module ApplicationHelper
   # Heartbeat" / "Turf Monster Heartbeat"); +actions+ are the launcher acts that
   # scope that heartbeat's work (Carl: pr-review + pr-review-slow; Avi: qa-release +
   # deploy-with-task; Steffon: production-deploy + clean-infra; Alex: grade-events +
-  # share-insights + full-cycle; Turf Monster: live-score-watch).
+  # share-insights + full-cycle; Turf Monster: live-score-watch +
+  # contest-rehearsal).
   #
   # +archive-shipped+ is deliberately ABSENT: production-deploy runs it as its final
   # step, so the cleaning rides every release instead of waiting to be remembered.
   # It stays a registered invocation — see agents/steffon/sops/archive-shipped.md.
-  # +agent_slug+
-  # resolves the soul avatar (reused from the heartbeat Agent column + stage
+  #
+  # +sleeper-auction-watch+ is deliberately ABSENT too, for the opposite reason:
+  # nothing runs it for you, and nothing should schedule it. The auction watch is
+  # calendar-bound — one league's draft, one evening a year — and this card reads as a
+  # cadence, so a standing chip would misstate it. It stays a registered invocation
+  # — see agents/turf_monster/sops/sleeper-auction-watch.md. Adding a chip
+  # here also owes ACTION_DESCRIPTIONS + ACTION_ICONS keys and the pinned array in
+  # application_helper_test.rb; the absence is asserted there so this stays a
+  # decision rather than an oversight.
+  #
+  # +agent_slug+ resolves the soul avatar (reused from the heartbeat Agent column + stage
   # timeline) AND its /agents/<slug> link; +label+ is the small purpose caption;
   # +title+ is the hover tooltip. Every row (the heartbeat prompt and each act) is
   # genuinely launchable on its own; each is a recognized launcher in
