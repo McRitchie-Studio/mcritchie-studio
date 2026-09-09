@@ -382,17 +382,74 @@ the first and stop, and the rotated-out key still holds **upgrade authority over
 the mainnet program** — a strictly larger power than the one you just took away.
 
 The Squads half is mutable and is an operator act at `app.squads.so`. The mechanism,
-inline so you need not leave this file: propose a config transaction doing
-`removeMember(<old pubkey>)` + `addMember(<new pubkey>)`, keep threshold 2, approve
-with the **two clean members** (never with the key being rotated out), execute.
+inline so you need not leave this file: propose **one** config transaction doing
+`removeMember(<old pubkey>)` + `addMember(<new pubkey>, Permissions.all())`, keep
+threshold 2, approve with the **two clean members** (never with the key being
+rotated out), execute.
+
+**Name the permission mask, and make it 7.** `addMember` is not symmetric with
+`removeMember`: remove takes a bare pubkey, add takes a `Member { key, permissions:
+{ mask: u8 } }`, so a mask is ALWAYS chosen — by you, or by whatever the Squads UI
+had checked when you were not looking. Which bits this key needs is decided by
+`turf-vault/scripts/squad-upgrade.js`, the only thing that signs upgrades, and it
+uses all three:
+
+| Bit | Value | Where `squad-upgrade.js` needs it |
+|---|---|---|
+| `Initiate` | 1 | `:155` `vaultTransactionCreate({ creator: alexBot })` and `:158` `proposalCreate({ creator: alexBot })` |
+| `Vote` | 2 | `:161` `proposalApprove({ member: alexBot })` |
+| `Execute` | 4 | `:172` `vaultTransactionExecute({ member: alexBot })` |
+
+`Initiate | Vote | Execute` = **mask 7** = `Permissions.all()`. The bit values are
+`@sqds/multisig`'s own (`Permission.Initiate = 0b001`, `Vote = 0b010`,
+`Execute = 0b100`), measured against 2.1.4, the version turf-vault pins. Grant
+anything narrower and the rotation still "succeeds" — the break lands at the NEXT
+upgrade, in whichever call lost its bit, weeks later and far from this SOP.
+
+Grant 7 because the tooling provably needs 7, **not** because the other two members
+happen to hold it. Those are different claims, and only the first one survives a
+change to the script: if `squad-upgrade.js` ever stops approving as Alex Bot, or
+splits create from execute across two keys, recompute this table and grant the
+narrower mask then. A rotation is the wrong moment to also re-scope authority — do
+one thing, so a later failure has one candidate cause.
+
+**There is no ConfigAction that edits an existing member's permissions.** The seven
+variants are add member, remove member, change threshold, set timelock, add spending
+limit, remove spending limit, set rent collector. A wrong mask is repaired only by
+another `removeMember` + `addMember` — another config transaction, another two-human
+ceremony at `app.squads.so`. That cost is why step 5 below reads the mask back
+instead of trusting the checkboxes you clicked.
+
+**One transaction, not two.** Executing any config transaction sets the multisig's
+`stale_transaction_index` to the current `transaction_index`, invalidating every
+proposal created before it. Split the rotation and execute the remove first, and the
+pending add is STALE — it fails at execute with `StaleProposal` (`0x1777`, 6007) and
+must be re-proposed and re-approved. You are meanwhile sitting at **2 members,
+threshold 2**: a 2-of-2 over mainnet upgrade authority, where losing either surviving
+key is unrecoverable. One transaction and the multisig never leaves three members.
+The same staleness kills any upgrade proposal already in flight — land or abandon
+those before you rotate.
 
 `turf-vault/docs/KEY_ROTATION.md` §7 describes the same mechanism, and
 `secrets-rotation.md` is right that the file as a whole is a **SUPERSEDED plan** —
 so take the mechanism from it and **no addresses**: its program IDs, multisig PDAs
-and member lists are historical. Live truth is the **top level** of
-`turf-vault/scripts/squad.json` (`multisigPda`, `members`, `threshold`), confirmed
-on-chain with `solana program show <PROGRAM_ID> --url mainnet-beta` for the upgrade
-authority.
+and member lists are historical.
+
+**What is live truth for what.** `turf-vault/scripts/squad.json`'s top level is
+authoritative for the ADDRESSES, because it is what `squad-upgrade.js` actually
+reads — take `multisigPda` from there. It is **not** authoritative for membership:
+its own `_comment` says "members is documentation only", and no Squads rotation
+writes to a committed file. Live truth for **members, their masks, and the
+threshold** is the on-chain `Multisig` account at `multisigPda` — the read
+`squad-upgrade.js:143` already performs, and the one step 5 below runs.
+
+`solana program show <PROGRAM_ID> --url mainnet-beta` does **not** confirm a member
+rotation and must never be used as its proof. It prints the upgrade AUTHORITY, which
+is the Squads vault PDA — the same value before and after, because rotating a member
+changes who can DIRECT that PDA, not the PDA itself. It returns the answer you were
+hoping for whether or not the rotation happened. Run it for the question it does
+answer — that upgrade authority is still the Squads vault at all, and has not been
+moved or revoked — and read membership off the `Multisig` account.
 
 Now the on-chain signer half. Read the program, not the intuition
 (`turf-vault/programs/turf_vault/src/instructions/update_signers.rs`, and
@@ -436,7 +493,22 @@ Setting the config var first leaves the app signing as an identity the vault doe
 not recognise. That is not "isolated"; it is BROKEN, and it is broken for both QA
 and mainnet at once. The correct order:
 
-1. Mint the new keypair. Nothing is live yet.
+1. Mint the new keypair, **and fund it**. Nothing is live yet, and an unfunded
+   key is not a working replacement: Alex Bot is the FEE PAYER, not just an
+   identity. It pays all five transactions in `squad-upgrade.js` — including
+   Mason's approval (`:164`) — signs and pays the permissionless `extendProgram`
+   (`:119`, `:123`), and is the payer slot for `create_contest`,
+   `mint_entry_token` and `enter_contest` (`turf-monster/docs/SOLANA.md`, "Two-level
+   multisig auth"). Skip this and every one of those fails AFTER the rotation reads
+   as done — the same late, far-from-here failure as a wrong permission mask.
+   `turf-vault/docs/KEY_ROTATION.md` §2 is the recipe: read the old key's balance
+   and transfer it across, less dust. Take the MOVE from it, not its `4.55` — that
+   figure is sized for the v0.20 migration, which front-loaded ~3.5 SOL of one-time
+   ProgramData rent for a NEW program deploy (`KEY_ROTATION.md:341`, `:347`). A
+   rotation onto an already-deployed program owes no such rent. **If the old key is
+   COMPROMISED, do not plan on sweeping it** — whoever holds it can drain it first.
+   Fund the new key from a key you control, and treat any balance still there as a
+   bonus.
 2. Update registration **one of two**: run `update_signers` with the new pubkey in
    the evicted slot, cosigned by the two who stay — **not** by the key being
    evicted (the callout above; it either trips 6017 or evicts the wrong slot).
@@ -447,19 +519,98 @@ and mainnet at once. The correct order:
    pubkey is in `signers` **and the old one is not** — and that both human
    cosigners survived. "The transaction succeeded" does not distinguish the
    rotation you wanted from the one that evicted the wrong slot.
-4. Update registration **two of two — the Squads membership**: propose
-   `removeMember(old)` + `addMember(new)` at `app.squads.so` against the live
-   `multisigPda` in `scripts/squad.json`, threshold stays 2, approved by the two
-   clean members. This is the step that moves **program upgrade authority**, and it
-   is a separate 2-of-3 on a separate system; step 2 does not do it and cannot.
-5. VERIFY it: the Squads member list shows the new pubkey and not the old one, and
-   the multisig still reports threshold 2 over three members.
+4. Update registration **two of two — the Squads membership**: propose ONE config
+   transaction doing `removeMember(old)` + `addMember(new, Permissions.all())` at
+   `app.squads.so` against the live `multisigPda` in `scripts/squad.json`, threshold
+   stays 2, approved by the two clean members. **Mask 7 — see the table above; the
+   UI will happily give you a narrower one.** This step does **not** move program
+   upgrade authority: that authority is the Squads vault PDA before and after, and
+   is unchanged by a membership edit. What it moves is **who can direct it** — which
+   is the whole of the power, and is a separate 2-of-3 on a separate system that
+   step 2 does not touch and cannot.
+5. VERIFY it — with the block under **Verifying the Squads rotation** below, not by
+   eye. Four properties, and the member list shows only two of them: three members,
+   threshold 2, the new pubkey present **with mask 7**, the old pubkey gone. A
+   verification that stops at "the right pubkeys are listed" passes over a member
+   who cannot execute, and the first thing that tells you is a failed upgrade.
 6. ONLY THEN set the config var on each consuming app.
 7. Phase 6. For this credential the on-chain eviction already happened at step 2
    and the Squads eviction at step 4, so Phase 6 clears the dead secret out of the
    remaining stores — Heroku, `.env`, 1Password, and any shell that ran
    `squad-upgrade.js`. **Do not read that as "nothing else holds authority": read
    it off your Phase 1 list, which is why the list is the rotation.**
+
+#### Verifying the Squads rotation
+
+Step 5's four properties, graded against the on-chain `Multisig` account. The
+reader is separate from the grader on purpose: the read is the part that talks to
+mainnet, the grading is the part that must be able to FAIL, and only the second one
+is worth testing.
+
+```bash
+# The reader. Live truth for members, masks and threshold — NOT squad.json.
+# Prints "threshold <n>", then one "<pubkey> <mask>" line per member.
+squads_members() {
+  ( cd /Users/alex/projects/turf-vault && node -e "
+      const multisig = require(\"@sqds/multisig\");
+      const { Connection, PublicKey } = require(\"@solana/web3.js\");
+      const cfg = require(\"./scripts/squad.json\");
+      const rpc = process.env.RPC_URL || \"https://api.mainnet-beta.solana.com\";
+      (async () => {
+        const ms = await multisig.accounts.Multisig.fromAccountAddress(
+          new Connection(rpc), new PublicKey(cfg.multisigPda));
+        console.log(\"threshold \" + ms.threshold);
+        for (const m of ms.members) {
+          console.log(m.key.toBase58() + \" \" + m.permissions.mask);
+        }
+      })().catch((e) => { console.error(e.message); process.exit(1); });
+  " )
+}
+```
+
+```bash
+# The grader. Substitute the two pubkeys, then run it. It prints one FAIL line per
+# broken property and exits non-zero; a silent PASS is the only success.
+NEW_MEMBER=<new pubkey>
+OLD_MEMBER=<old pubkey>
+WANT_MASK=7
+
+check_squads_rotation() {
+  local ms
+  local bad=0
+  local threshold count new_mask old_hit
+
+  ms=$(squads_members) || {
+    printf 'FAIL  could not read the Multisig account — this verification is VOID\n' >&2
+    return 1
+  }
+
+  threshold=$(printf '%s\n' "$ms" | awk '$1=="threshold" {print $2}')
+  count=$(printf '%s\n' "$ms" | awk '$1!="threshold"' | wc -l | tr -d ' ')
+  new_mask=$(printf '%s\n' "$ms" | awk -v k="$NEW_MEMBER" '$1==k {print $2}')
+  old_hit=$(printf '%s\n' "$ms" | awk -v k="$OLD_MEMBER" '$1==k {print $1}')
+
+  [ "$count" = 3 ] || { printf 'FAIL  %s members, expected 3\n' "$count"; bad=1; }
+  [ "$threshold" = 2 ] || { printf 'FAIL  threshold %s, expected 2\n' "$threshold"; bad=1; }
+  [ -z "$old_hit" ] || { printf 'FAIL  the rotated-out key is STILL a member\n'; bad=1; }
+  [ -n "$new_mask" ] || { printf 'FAIL  the new key is NOT a member\n'; bad=1; }
+  [ "$new_mask" = "$WANT_MASK" ] || {
+    printf 'FAIL  new member mask is %s, expected %s (Initiate|Vote|Execute). squad-upgrade.js will break at the NEXT upgrade, not now.\n' "${new_mask:-none}" "$WANT_MASK"
+    bad=1
+  }
+
+  [ "$bad" = 0 ] && printf 'PASS  3 members, threshold 2, new key present with mask %s, old key gone\n' "$WANT_MASK"
+  return "$bad"
+}
+
+check_squads_rotation
+```
+
+A FAIL on the mask is recoverable **right now**, while both humans are still at
+their wallets, by re-running step 4 with the correct mask. Discovered at the next
+upgrade instead, it is the same two-human ceremony scheduled from cold — which is
+the entire reason this reads the mask rather than the member list.
+
 
 ### The second shape: one identity, many consumers
 
