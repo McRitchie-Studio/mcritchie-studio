@@ -78,6 +78,7 @@ require "optparse"
 require "json"
 require "shellwords" # the pasteable recovery commands are SHELL-quoted, not inspect'd
 require_relative "lib/full_suite_gate"
+require_relative "lib/fast_lane"
 require_relative "lib/repo_root"
 require_relative "lib/session_identity"
 require_relative "lib/cert_emission"
@@ -95,6 +96,14 @@ require_relative "lib/lint_waiver_guard"
 # CODE we run + fingerprint, though, roots at the agent's worktree (below).
 ROOT = File.expand_path("..", __dir__)
 TASK_BIN = ENV.fetch("FULL_SUITE_TASK_BIN", File.expand_path("task", __dir__))
+# ── remedy forms of the scripts this cert NAMES in a refusal ──────────────────
+# The twin of bin/fast-check's block, for the same reason and by the same policy:
+# these scripts live in mcritchie-studio/bin ALONE, so the bare form a satellite or
+# gem desk was handed could not resolve. Resolved from __dir__ — the very
+# full-suite-check that is speaking — and NOT from TASK_BIN above, which is the
+# ENV-redirected EXEC seam. See FastLane.remedy_command.
+SELF_CMD = FastLane.remedy_command("full-suite-check", __dir__)
+TASK_CMD = FastLane.remedy_command("task", __dir__)
 GATE_BIN = ENV.fetch("FULL_SUITE_GATE_BIN", File.expand_path("gate", __dir__))
 
 # The narration CLI — the SAME emit seam bin/release.rb's run_test_scope
@@ -581,7 +590,7 @@ def bank_completed_lanes(lines, slug:, banked:, owed:, fingerprint:)
 
   unless system(TASK_BIN, "update", slug, *lines.flat_map { |line| ["--checks", line] })
     warn "full-suite-check: the green lane(s) could NOT be banked on #{slug.inspect} (bin/task update failed) — " \
-         "they will have to be re-run. Or record by hand: bin/task update #{slug} " \
+         "they will have to be re-run. Or record by hand: #{TASK_CMD} update #{slug} " \
          "#{lines.map { |line| "--checks #{Shellwords.escape(line)}" }.join(' ')}"
     return
   end
@@ -591,7 +600,7 @@ def bank_completed_lanes(lines, slug:, banked:, owed:, fingerprint:)
   missing = CertEmission.missing_after_write(TASK_BIN, slug, lines)
   if missing.nil?
     warn "full-suite-check: #{headline}, but the read-back FAILED — UNVERIFIED that it landed. " \
-         "Verify: bin/task show #{slug} -v."
+         "Verify: #{TASK_CMD} show #{slug} -v."
   elsif missing.any?
     warn "full-suite-check: the green lane(s) did NOT land on #{slug} — the read-back is missing " \
          "#{missing.length} line(s). Nothing was banked; the re-run owes them again."
@@ -664,7 +673,7 @@ end
 existing = CertEmission.fetch_checks(TASK_BIN, slug)
 if existing.nil?
   warn "full-suite-check: ran green but couldn't read #{slug.inspect}'s checks_run (bin/task show), so the " \
-       "write cannot be verified. Not writing. Re-run, or record by hand: bin/task update #{slug} " \
+       "write cannot be verified. Not writing. Re-run, or record by hand: #{TASK_CMD} update #{slug} " \
        "#{passed_lines.map { |l| "--checks #{Shellwords.escape(l)}" }.join(' ')}"
   emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
   exit 1
@@ -705,7 +714,7 @@ if missing.nil?
   # did not complete. The certification happened — close success, exit 0.
   warn "#{summary}, but the read-back FAILED — UNVERIFIED that the recorded evidence" \
        "#{kept.empty? ? '' : " and the #{kept.size} pre-existing checks line(s)"} landed. " \
-       "Verify: bin/task show #{slug} -v."
+       "Verify: #{TASK_CMD} show #{slug} -v."
   emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--success") if gate_slug
   exit 0
 end
@@ -718,7 +727,7 @@ if lost_evidence.any? || lost_kept.any?
   if lost_evidence.any?
     # The cert's OWN evidence line(s) did not land — re-running regenerates them.
     # Never hand-write a "[<lane>@<fp>]" line: that forges the certification.
-    warn "full-suite-check: the evidence line did NOT land — re-run the cert: bin/full-suite-check #{slug}"
+    warn "full-suite-check: the evidence line did NOT land — re-run the cert: #{SELF_CMD} #{slug}"
   end
   if lost_kept.any?
     # Re-record the UNION — survivors AND lost. `--checks` REPLACES the author
@@ -727,7 +736,7 @@ if lost_evidence.any? || lost_kept.any?
     # is PASTED, and a Ruby literal leaves $(…)/backticks live in double quotes
     # (round-3 catch).
     warn "full-suite-check: re-record the full pre-existing set (survivors AND lost — resending only the lost " \
-         "lines would drop the survivors): bin/task update #{slug} " \
+         "lines would drop the survivors): #{TASK_CMD} update #{slug} " \
          "#{kept.map { |line_kept| "--checks #{Shellwords.escape(line_kept)}" }.join(' ')}"
   end
   emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug

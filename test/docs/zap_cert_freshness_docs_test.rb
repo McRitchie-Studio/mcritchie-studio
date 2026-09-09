@@ -611,7 +611,14 @@ class ZapCertFreshnessDocsTest < Minitest::Test
                "above: fetch-then-re-certify leaves the lane STALE, because bin/full-suite-check hashes the " \
                "WORKING tree and a fetch does not move it. A remedy that loops is the same defect as a " \
                "diagnosis that lies — the operator trusts it once and then stops trusting the gate."
-    recert = remedy.rindex("bin/full-suite-check")
+    # EITHER SPELLING. The re-cert used to be the literal `bin/full-suite-check <slug>`;
+    # remedy-hints-print-bare-paths made it an ABSOLUTE, desk-first path computed at
+    # runtime (a reviewer at a satellite primary cannot run the bare form), so the source
+    # now carries `#{recert_command}` where the literal used to be. Indexing on the
+    # literal alone silently found the PROSE mention earlier in the paragraph instead —
+    # green in the wrong place, then red for the wrong reason. What this guard is ABOUT
+    # is the ORDER, so it matches whichever spelling names the command.
+    recert = remedy.rindex(/bin\/full-suite-check \S|recert_command/)
     assert recert.nil? || move < recert,
            "the remedy's LAST word on bin/full-suite-check comes BEFORE the command that moves this checkout. " \
            "Measured above, a cert taken in that order stamps the tree the operator already had."

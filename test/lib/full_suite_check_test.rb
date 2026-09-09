@@ -1185,7 +1185,12 @@ class FullSuiteCheckTest < Minitest::Test
                                                               "STUB_READBACK_DROP_WRITTEN" => "1" })
       assert_equal 1, code, "a read-back missing the fresh evidence lines must FAIL the cert: #{out}"
       assert_match(/MISSING/, out)
-      assert_match(/re-run the cert: bin\/full-suite-check task-x/, out)
+      # Filesystem-keyed, the twin of test/lib/fast_check_test.rb's: bin/full-suite-check
+      # exists only in the hub, so the bare form this used to print died on every
+      # satellite and gem desk — and a substring assertion cannot tell the two apart.
+      remedy = out[%r{re-run the cert: (\S*/bin/full-suite-check) task-x}, 1]
+      refute_nil remedy, "the cert must name its own re-run: #{out}"
+      assert File.executable?(remedy), "the re-run must name a runnable script, got #{remedy.inspect}"
       refute_match(/read-back confirms/, out)
       close = lines.select { |l| l[0] == "GATE" && l[1] == "close" }.last
       refute_nil close
