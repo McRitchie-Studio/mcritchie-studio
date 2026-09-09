@@ -51,8 +51,11 @@ class DorCheckZapSeamsTest < Minitest::Test
 
   # A BUILDER'S DESK, which is what `--gate-role review` re-roots to: on feat/x, with
   # refs/remotes/origin/feat/x pointing where the builder last pushed. A reviewer's zap
-  # pushed from ANOTHER checkout does not move that ref — which is the seam, so the
-  # fixture models it by simply never moving it.
+  # pushed from a checkout with INDEPENDENT refs — a separate clone, which is what this
+  # fixture's `seed` is — does not move that ref, which is the seam, so the fixture
+  # models it by simply never moving it. A zap from a SIBLING WORKTREE would move it and
+  # the cert would go STALE unaided; that half is not this seam, and it is pinned in
+  # test/docs/zap_cert_freshness_docs_test.rb.
   #
   # `origin/accepted` is a real ref here so the base re-derivation has something to
   # read. `base_moved: true` advances it past the branch, reproducing turf #517 merging
@@ -148,8 +151,9 @@ class DorCheckZapSeamsTest < Minitest::Test
 
   # ==== SEAM 1 — the gate must not grade a pre-zap tree ==========================
 
-  # THE SEAM. The reviewer zapped from elsewhere, so the desk's origin/feat/x is still
-  # at the pre-zap commit while the PR head has moved. Before this guard, the verdict
+  # THE SEAM. The reviewer zapped from a checkout whose refs are INDEPENDENT of the desk's
+  # (a separate clone), so the desk's origin/feat/x is still at the pre-zap commit while
+  # the PR head has moved. Before this guard, the verdict
   # read clean: the cert fingerprint hashes that very ref, so it matched, and nothing
   # else compared the two.
   def test_integration_review_refuses_when_the_desk_is_behind_the_pr_head
