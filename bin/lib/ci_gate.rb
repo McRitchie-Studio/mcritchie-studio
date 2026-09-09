@@ -22,6 +22,14 @@ module CiGate
   # is not listed here cannot be excused by evidence, it can only be classified.
   CI_NO_VERDICT_STATES = %i[none unreadable unverified].freeze
 
+  # The `result` a `{"sop" => "ci"}` GateRun row carries when GitHub REFUSED the read.
+  # Mirrors app/models/gate_run.rb's UNREADABLE_RESULT — this file is a bin/ lib and
+  # cannot load a Rails model, the same split RUNNING_RESULT already lives with. The
+  # two must stay equal or the gates card falls back to painting this row as a pass;
+  # test/integration/gates_card_unreadable_ci_test.rb pins the pair (it is the one
+  # test that can load both halves).
+  GATE_ROW_UNREADABLE = "unreadable"
+
   # The review role's refusal for a non-green CI → [message, cert_clears]. Never called
   # for :green (the allow-list's only pass) nor for a state `verdict`'s case below
   # already wrote a remedy for. `cert_clears` marks the no-verdict family, whose refusal a FULL
@@ -340,12 +348,45 @@ module CiGate
     when :green then review_refused ? "fail" : "pass"
     when :pending then review_role ? "fail" : "pending"
     when :red, :conflicted, :ci_less, :closed, :merged then "fail"
+    # THE TOKEN EXPIRED; CI DID NOT FAIL. :unreadable means GitHub REFUSED the read
+    # (401/403/rate limit) — the gate never saw a verdict at all. It used to fall
+    # through to the `else` and record "fail" on a refused review, so the DURABLE
+    # GateRun row said `ci:fail` for a PR whose CI was never red. That lands in the
+    # task's PERMANENT gate history, where a later auditor reads a red-CI bounce that
+    # never happened — and installation tokens expire ~HOURLY BY DESIGN in this fleet,
+    # so every gate run straddling an expiry wrote one.
+    #
+    # It inverts the usual direction, which is why it is worth its own arm: the rest
+    # of this table guards against a green credited for work nobody verified, and this
+    # one MANUFACTURED a failure.
+    #
+    # The state is not new and the word is not invented: CiStatus.gate_evidence has
+    # ridden `state:"unreadable"` + cause + reason into this very sops entry since
+    # PR #865, and /tasks/builder-reads-remedy-twice established UNREADABLE as
+    # distinct from no-CI in the refusal prose. Only the `result` — the ONE field
+    # `bin/gate show` and the gates card actually render — collapsed it. So this is
+    # plumbing an existing state into the headline, not a new vocabulary.
+    #
+    # UNCONDITIONAL, in both roles, on purpose. "Unreadable" is a fact about the
+    # READ, not about who asked, and a role-conditional answer would give one fact
+    # two names ("unreadable" in review, "unverified" for the builder) in a record
+    # whose whole job is being read later by someone who was not here. Builder-side
+    # this REPLACES a "unverified" that the gates card painted as a green ✓, so the
+    # same edit closes the mirror-image misreport on that path.
+    #
+    # `:unverified` (gh down, a non-auth failure), `:none`, `:no_pr` and any state
+    # ci_status.rb grows later keep the `else` — a different question was asked and
+    # got a different non-answer, and this row must stay 1:1 with the CI state.
+    when :unreadable then GATE_ROW_UNREADABLE
     else
       # A FAILED dor_review must name CI as the failing SOP when CI is why it failed.
       # Leaving the no-verdict family on a flat "unverified" recorded the card's sole
       # cause as a NOTE — the same asymmetry :pending avoids one line above.
-      # "unverified" stays right where CI genuinely only noted: any builder-side run,
-      # and a review run whose FULL cert stood in for the unread verdict.
+      # "unverified" stays right where CI genuinely only noted AND the state has no
+      # better name of its own: a builder-side :none/:unverified run, and a review run
+      # whose FULL cert stood in for the unread verdict. :unreadable no longer reaches
+      # here in either role — it has its own arm above, because "the token was
+      # refused" is a different fact from "nothing reported".
       review_refused ? "fail" : "unverified"
     end
   end

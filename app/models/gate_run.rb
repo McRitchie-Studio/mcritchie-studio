@@ -61,6 +61,23 @@ class GateRun < ApplicationRecord
   # leaves ONE row here, not nine.
   RUNNING_RESULT = "running"
 
+  # A lane whose ANSWER COULD NOT BE READ — today only the `ci` row, when GitHub
+  # refused the credential (401/403/rate limit) while the gate tried to read the PR's
+  # checks. It is NOT a failure and NOT a pass: no verdict was ever seen.
+  #
+  # It exists because collapsing it into "fail" wrote a red-CI bounce into a task's
+  # PERMANENT gate history for a PR whose CI was never red — installation tokens
+  # expire ~hourly by design here, so any gate run straddling an expiry produced one
+  # (/tasks/gate-logs-auth-as-red). The row still carries `state`/`cause`/`reason`
+  # from CiStatus.gate_evidence; this is the field the two readers actually render.
+  #
+  # LIKE `running`, IT MUST NOT BE PAINTED AS A PASS. The gates card's glyph default
+  # is `✓` for anything it does not recognise, so a new result value that reaches
+  # that default turns a misreported failure into a misreported success — the exact
+  # inversion this constant was added to stop. bin/lib/ci_gate.rb holds the producer
+  # copy (GATE_ROW_UNREADABLE) because a bin/ lib cannot load this model.
+  UNREADABLE_RESULT = "unreadable"
+
   validates :subject_type, inclusion: { in: SUBJECT_TYPES }
   validates :subject_slug, presence: true
   validates :key, inclusion: { in: KEYS }
