@@ -1144,11 +1144,21 @@ heartbeat that followed used to take the desk and the authorship with it.
 version line of a gemspec. `bin/dor-check` refuses a PR that does, and the refusal
 names the remedy. This is not a style preference; it is arithmetic.
 
-**`CHANGELOG.md` is NOT gated** — deliberately, for now. The version is safe to
+**`CHANGELOG.md` is NOT gated** — deliberately. The version is safe to
 refuse because it has a working manual path: the release conductor commits it onto
-the gem's `accepted` during the sweep. Nothing yet assembles a changelog from a
+the gem's `accepted` during the sweep. Nothing assembles a changelog from a
 release's members, so refusing changelog edits would leave the file un-editable with
-no writer and no manual path. It becomes release-owned when its assembler ships.
+no writer and no manual path.
+
+**But the HEADING is release-owned, as of 2026-09-09.** Write your entries under
+`## Unreleased` and **never write a version heading yourself**. `bin/release
+prepare` renames that bucket to the version it allocates and opens a fresh empty
+one, in the same commit as the `version_file`
+(`Release::Changelog`, see `docs/agents/modules/deployment.md` step 2) — so a
+heading you write by hand either duplicates the one prepare is about to write or
+sits AHEAD of what has shipped, and the sweep refuses rather than publish over
+it. The entries are yours; the heading is the release's, for the same arithmetic
+reason the version is.
 
 A version is a property of the **release**, not of any PR. N pull requests riding
 one candidate publish exactly **one** version, so no individual PR can know the
