@@ -398,10 +398,22 @@ Now the on-chain signer half. Read the program, not the intuition
 - Auth is 2-of-3 of the CURRENT signers: `validate_multisig` is `s1 != s2 &&
   is_signer(s1) && is_signer(s2)` — two DISTINCT current signers must sign.
 - Signer continuity (OPSEC-027) requires **both** cosigners who authorized THIS
-  update to survive it. So the evictable slot is exactly the one that did NOT
-  cosign — WHO you may evict is decided by who shows up to sign, and there are
-  three legal rotations, one per choice of cosigning pair.
+  update to survive it. It is enforced by the program, not by policy —
+  `SignerContinuityRequired` (6017). So the evictable slot is exactly the one that
+  did NOT cosign — WHO you may evict is decided by who shows up to sign, and there
+  are three legal rotations, one per choice of cosigning pair.
 - The set must also contain no duplicates and no `Pubkey::default()`.
+
+> **The key you are rotating out must not supply either signature.** Alex Bot is
+> the SERVER key that normally partial-signs as `admin`, so the tooling and the
+> instinct both point at it — and continuity then requires it to SURVIVE the
+> update it authorized. Two outcomes, and the second is the dangerous one: the
+> eviction trips 6017 and fails loudly, **or** it succeeds having evicted the only
+> other slot — a signer who did nothing wrong — and left the compromised key in
+> place. You would read that transaction as a completed rotation. Both humans
+> cosign an eviction (Alex + Mason from Phantom); the compromised key stays out of
+> it. Same rule at Squads: approve the config transaction with the two clean
+> members, never with the member being removed.
 
 **There is no overlap window in `VaultState`, and that is by construction.**
 (The Squads membership above is a different system with its own rules.) Because
@@ -420,12 +432,15 @@ and mainnet at once. The correct order:
 
 1. Mint the new keypair. Nothing is live yet.
 2. Update registration **one of two**: run `update_signers` with the new pubkey in
-   the evicted slot, cosigned by the two who stay. **There is no operational script
-   for this** — `update_signers` appears in `turf-vault/tests/turf_vault.ts` and
-   nowhere in `scripts/`. Budget for writing the transaction and for two humans at
-   Phantom.
+   the evicted slot, cosigned by the two who stay — **not** by the key being
+   evicted (the callout above; it either trips 6017 or evicts the wrong slot).
+   **There is no operational script for this** — `update_signers` appears in
+   `turf-vault/tests/turf_vault.ts` and nowhere in `scripts/`. Budget for writing
+   the transaction and for two humans at Phantom.
 3. VERIFY it: read `VaultState` (`seeds = [b"vault"]`) back and confirm the new
-   pubkey is in `signers`.
+   pubkey is in `signers` **and the old one is not** — and that both human
+   cosigners survived. "The transaction succeeded" does not distinguish the
+   rotation you wanted from the one that evicted the wrong slot.
 4. Update registration **two of two — the Squads membership**: propose
    `removeMember(old)` + `addMember(new)` at `app.squads.so` against the live
    `multisigPda` in `scripts/squad.json`, threshold stays 2, approved by the two
