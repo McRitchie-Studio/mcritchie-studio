@@ -131,11 +131,27 @@ require "yaml"
 #   * It works in ci.yml only because the FIRST arg (`db:test:prepare`) is NOT a
 #     rails command, which routes the whole line through RAKE — where `test` and
 #     `test:system` are two separate tasks. KEEP db:test:prepare FIRST.
-#   * That shape also self-prepares its assets: Rails skips its `test:prepare`
-#     hook — the one tailwindcss-rails enhances with `tailwindcss:build`, which
-#     builds the gitignored app/assets/builds/tailwind.css — whenever an argument
-#     looks like a PATH. A rake-routed, path-free line fires the hook for free, so
-#     a virgin worktree builds its CSS on demand with no setup step.
+#   * That shape also self-prepares its assets, and it does so because it NAMES A
+#     TEST TASK — not because it is rake-routed and free of paths. The chain: the
+#     rake `test` task's BODY spawns an ARGLESS `rails test`; that command runs
+#     `test:prepare` when no argument looks like a PATH or `-n`; tailwindcss-rails
+#     enhances `test:prepare` with `tailwindcss:build`, which builds the gitignored
+#     app/assets/builds/tailwind.css. So the tiers pay for the CSS, and a virgin
+#     worktree needs no setup step. TWO EDGES, both measured on ubuntu-latest with
+#     the stylesheet deleted first (turf run 34382943177):
+#       · `bin/rails db:test:prepare` alone → stylesheet ABSENT. That line is
+#         rake-routed AND path-free and still misses the hook: tailwindcss-rails
+#         enhances `test:prepare`, and falls back to `db:test:prepare` only when
+#         `test:prepare` is undefined, which in a Rails app it never is.
+#       · `TEST=<path> bin/rails db:test:prepare test` → ABSENT. Two layers feed
+#         that argv: the rake `test` task passes `ENV["TEST"]` POSITIONALLY
+#         (railties' testing.rake) and `run_from_rake` splices `ENV["TESTOPTS"]`
+#         into EVERY spawn it makes (its runner.rb). So ADDING A FILTER SILENCES
+#         THE HOOK WHILE THE COMMAND STILL READS THE SAME.
+#     That second edge is why an explicit `test:prepare` step stays wherever one
+#     exists (bin/ci-shard, bin/fast-check's test-prepare lane): it survives an edit
+#     this shape does not. Every link is asserted against the REAL rake graph by
+#     test/lib/tasks/test_prepare_asset_hook_test.rb.
 #   * So the working CI line carries a setup task AND the tiers in ONE command.
 #     The probes must therefore judge the whole invocation, not its first arg:
 #     `bin/rails db:test:prepare test test:system` RUNS TESTS; `bin/rails
