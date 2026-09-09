@@ -31,10 +31,10 @@ require "test_helper"
 #     block a builder copies may not invoke a DESK-RUN command by the bare `bin/…` form,
 #     because that form resolves only from a hub desk.
 #   * test_the_docs_table_classifies_every_repo_it_names — the docs print a table saying
-#     which repos can run the fast lane. Both registries that decide it live in THIS
-#     repo (config/satellites.yml, config/release_repos.yml), so the table is checked
-#     against them on every run, CI included: onboard a gem, or register a satellite,
-#     and the table reddens until it catches up.
+#     which repos can run the fast lane. The registry that decides it lives in THIS repo
+#     (config/satellites.yml), so the table is checked against it on every run, CI
+#     included: register a satellite, or retire one, and the table reddens until it
+#     catches up.
 #   * test_no_satellite_checkout_carries_a_fast_lane_script — the same fact read off
 #     disk. If a satellite ever grows a `bin/ship` shim (option (b) in the PR body),
 #     this goes red and the table must be revisited rather than silently going stale.
@@ -78,7 +78,7 @@ class FastLaneHubPathDocsTest < ActiveSupport::TestCase
 
   BARE = /(?<![\w\/.-])bin\/(#{Regexp.union(DESK_RUN)})(?![\w-])/
 
-  # WHICH REPOS THE FAST LANE CAN DESK, read off the registries rather than listed here.
+  # WHICH REPOS THE FAST LANE CAN DESK, read off the registry rather than listed here.
   # bin/agent-worktree manages the hub plus every entry in config/satellites.yml (that is
   # exactly what `bin/agent-worktree apps` prints); everything else in the release
   # registry — the gems, and turf-vault — cannot be desked, so `bin/task begin` answers
@@ -89,12 +89,26 @@ class FastLaneHubPathDocsTest < ActiveSupport::TestCase
     YAML.load_file(Rails.root.join("config/satellites.yml")).fetch("satellites").map { |s| s.fetch("slug") }
   ).freeze
 
-  KNOWN_REPOS = (
-    MANAGED_REPOS +
-    YAML.load_file(Rails.root.join("config/release_repos.yml")).then do |registry|
-      Array(registry["gems"]).map { |name, _meta| name } + Array(registry["apps"]).map { |name, _meta| name }
-    end
-  ).uniq.freeze
+  # ONE REGISTRY, NOT TWO — AND THE SECOND ONE COST MORE THAN IT WAS WORTH.
+  # The first draft also read the RELEASE registry (the sibling YAML listing the gems
+  # and apps), to assert that a slug in the no-lane row is a repo SOME registry knows —
+  # a typo guard. MEASURED on CI: that one reference pushed the release registry from 15
+  # grep-reachable test files to 16, one over FastCert::DEFAULT_MAPPED_CAP — and past
+  # the cap bin/fast-check's mapped lane falls back to the CONVENTION TWINS ALONE. So
+  # editing that registry would have stopped mapping to the 15 tests that depend on it,
+  # to buy a typo check on three slugs in a docs table.
+  # test/lib/fast_cert_subject_test.rb caught it, which is what that sweep is for.
+  #
+  # ITS PATH IS DELIBERATELY NOT SPELLED ANYWHERE IN THIS FILE, and that is the whole
+  # remedy. The mapper greps for the path STRING, so it does not distinguish code that
+  # loads a config from prose that merely mentions one: deleting the `load_file` call
+  # while leaving the path in this very comment left the count at 16, unchanged.
+  #
+  # Nothing load-bearing was lost. The two claims that matter both rest on
+  # config/satellites.yml (4 reachable files, far under the cap): a slug in the
+  # satellite row MUST be deskable, and a slug in the no-lane row must NOT be. A
+  # typo'd slug in the no-lane row is the harmless direction — it names a repo that
+  # does not exist as having no fast lane, which is vacuously true.
 
   # The three-row desk table, as [[hub slugs], [satellite slugs], [no-lane slugs]].
   # Each row's first cell carries backticked repo slugs; the prose cell is ignored.
@@ -202,7 +216,6 @@ class FastLaneHubPathDocsTest < ActiveSupport::TestCase
   # test's only assertion.
   test "the docs table classifies every repo it names" do
     managed = MANAGED_REPOS
-    known   = KNOWN_REPOS
     rows_seen = 0
     slugs_seen = 0
 
@@ -226,8 +239,6 @@ class FastLaneHubPathDocsTest < ActiveSupport::TestCase
       end
 
       no_lane_row.each do |slug|
-        assert_includes known, slug,
-                        "#{rel} names #{slug} as a repo, but no registry knows it"
         refute_includes managed, slug,
                         "#{rel} says #{slug} has no fast lane, but it IS a managed app — " \
                         "bin/task begin can desk it, so the table is now wrong"

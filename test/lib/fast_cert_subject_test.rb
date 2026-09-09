@@ -499,9 +499,21 @@ class FastCertSubjectTest < Minitest::Test
     # now accounts for three of the four increments is the pattern working, not
     # drifting — the freeze exists to push new tests into new files, and each one
     # that explains itself lands here.
+    # 24 → 25 on 2026-09-09 (ship-path-misleads-satellites) when
+    # test/docs/fast_lane_hub_path_docs_test.rb explained, in prose, why it carries no
+    # `skip` — citing this config as the ratchet that caught the skip. Same shape as the
+    # four above: a test file citing this config to justify its own structure.
     # What the assertion is FOR is the LIST: this one known entry and no other. A
     # second path appearing is the regression; this number changing is bookkeeping.
-    assert_equal ["config/test_health.yml (24)"], over,
+    #
+    # THAT DISTINCTION WAS EXERCISED THE SAME DAY, and it worked. The same task's first
+    # draft LOADED the release registry, which put a SECOND path in this list at 16 —
+    # one over the cap, which would have collapsed that registry's mapped lane to the
+    # convention twins. This sweep is what caught it. The fix was to drop the
+    # dependency, not to widen this list — and note what the fix had to include: the
+    # mapper greps the path STRING, so removing the `load_file` while still naming the
+    # path in a comment left the count at 16 untouched.
+    assert_equal ["config/test_health.yml (25)"], over,
                  "config/test_health.yml was already over the cap before this clause " \
                  "existed (its PATH matches 24 files); any OTHER entry here means the " \
                  "config spelling re-opened a cap trip"
