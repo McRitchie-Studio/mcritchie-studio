@@ -699,13 +699,22 @@ class FastCertTest < Minitest::Test
   # MEASURED 2026-09-07: bin/full-suite-check exists ONLY in the hub. Every satellite —
   # turf-monster, rolio, turf-vault, studio-engine, solana-studio — has no such file, so the
   # remedy every zero-evidence verdict printed ("bin/full-suite-check <task>") was, verbatim,
-  # a command the reader's repo could not execute. The fix is the hub's ABSOLUTE path, and only
+  # a command the reader's repo could not execute. The fix is an ABSOLUTE path, and only
   # that — see test_the_remedy_never_offers_a_bypass for the branch that was written, measured
   # against turf-vault, and deliberately removed.
-  def test_the_hub_remedy_stays_the_plain_relative_command
+  #
+  # BOTH ARMS ARE ABSOLUTE NOW (remedy-hints-print-bare-paths, 2026-09-09). The hub arm used
+  # to keep the bare "bin/full-suite-check <task>" — defensible on its own, since CertRootGuard
+  # makes a cert writer's cwd agree with `root` — but it rested on a guard the FAST_CHECK_ROOT
+  # seam bypasses, and it left ONE refusal speaking two dialects once every other command in
+  # the same fast-check output became absolute. Partial correction is how this house ends up
+  # with two authorities on one question.
+  def test_the_hub_remedy_is_absolute_too
     line = FastCert.remedy("some-task", root: "/x/mcritchie-studio", hub_root: "/x/mcritchie-studio")
 
-    assert_equal "bin/full-suite-check some-task", line
+    assert_equal "/x/mcritchie-studio/bin/full-suite-check some-task", line
+    refute_match(%r{\Abin/full-suite-check}, line,
+                 "one form ships, and it is the one the guard exercises — not a second, bare arm")
   end
 
   def test_a_satellite_remedy_names_the_HUB_ABSOLUTE_path
@@ -714,6 +723,36 @@ class FastCertTest < Minitest::Test
     assert_equal "/x/mcritchie-studio/bin/full-suite-check some-task", line
     refute_match(%r{\Abin/full-suite-check}, line,
                  "a satellite has no bin/full-suite-check of its own — a relative path is not runnable there")
+  end
+
+  # RESOLUTION IS BY EXISTENCE, NOT BY REPO IDENTITY. The old arm compared `root` to
+  # `hub_root`; this asks the only question that decides whether the command RUNS — is
+  # there an executable there — preferring the tree being certified and falling back to
+  # the hub. Give a satellite a bin/full-suite-check shim and the remedy follows the disk,
+  # with no registry anywhere to remember to update.
+  def test_the_remedy_follows_the_disk_when_the_graded_tree_carries_its_own_script
+    Dir.mktmpdir do |root|
+      satellite_bin = File.join(root, "turf-monster", "bin")
+      hub_bin = File.join(root, "mcritchie-studio", "bin")
+      FileUtils.mkdir_p(satellite_bin)
+      FileUtils.mkdir_p(hub_bin)
+      File.write(File.join(hub_bin, "full-suite-check"), "#!/bin/sh\n")
+      FileUtils.chmod(0o755, File.join(hub_bin, "full-suite-check"))
+
+      hub_path = File.join(root, "mcritchie-studio")
+      satellite_path = File.join(root, "turf-monster")
+
+      assert_equal "#{File.join(hub_bin, 'full-suite-check')} some-task",
+                   FastCert.remedy("some-task", root: satellite_path, hub_root: hub_path),
+                   "no script on the satellite → the hub's absolute path"
+
+      File.write(File.join(satellite_bin, "full-suite-check"), "#!/bin/sh\n")
+      FileUtils.chmod(0o755, File.join(satellite_bin, "full-suite-check"))
+
+      assert_equal "#{File.join(satellite_bin, 'full-suite-check')} some-task",
+                   FastCert.remedy("some-task", root: satellite_path, hub_root: hub_path),
+                   "once the graded tree carries one, THAT is the certifier to name"
+    end
   end
 
   # BOTH VERDICTS CARRY THE SAME REMEDY, because a builder reading either one has the same

@@ -1731,8 +1731,12 @@ class FastCheckTest < Minitest::Test
                                                 "STUB_READBACK_DROP_WRITTEN" => "1" })
       assert_equal 1, code, "a read-back missing the fresh evidence line must FAIL the cert: #{out}"
       assert_match(/MISSING/, out)
-      assert_match(/re-run the cert: bin\/fast-check task-x/, out,
-                   "the remedy for a lost evidence line is a re-run, never a hand-written evidence line")
+      remedy = out[%r{re-run the cert: (\S*/bin/fast-check) task-x}, 1]
+      refute_nil remedy,
+                 "the remedy for a lost evidence line is a re-run, never a hand-written evidence line: #{out}"
+      # ABSOLUTE and runnable: bin/fast-check exists only in the hub, so the bare form
+      # this used to print died on every satellite and gem desk.
+      assert File.executable?(remedy), "the re-run must name a runnable script, got #{remedy.inspect}"
       refute_match(/read-back confirms/, out, "a vanished evidence line must not report a confirmed cert")
       # The G1 attempt must close FAILED, not success-while-exit-1.
       close = lines.select { |l| l[0] == "GATE" && l[1] == "close" }.last
