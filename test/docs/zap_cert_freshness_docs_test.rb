@@ -30,8 +30,8 @@
 # THE LIMIT, STATED PLAINLY. No runnable assertion can prove that a paragraph of
 # English describes these measurements correctly — an arbitrarily reworded false
 # mechanism is not detectable by string matching. So the prose half is deliberately
-# NARROW: it pins only that the cert paragraph still distinguishes the two cases by
-# name and no longer carries the falsified absolute. The mechanism itself is held by
+# NARROW: it pins only that the cert paragraph still binds each verdict to the right
+# case and no longer carries the falsified absolute. The mechanism itself is held by
 # the four behaviour tests and by the source-order pin on the gate's own ref
 # preference, which is what actually goes red if the gate or git stops working the
 # way the paragraph says.
@@ -239,5 +239,20 @@ class ZapCertFreshnessDocsTest < Minitest::Test
     refute_match(/push it from anywhere else/i, paragraph,
                  "the falsified absolute: 'anywhere else' collapses the worktree and clone cases, which " \
                  "is exactly the misstatement this task fixed")
+
+    # Presence alone is NOT a pin. A straight SWAP of the two bullets keeps both nouns,
+    # both verdicts, and the old phrase still absent — so the checks above stay green over
+    # an exactly-inverted doc, which is the partial break a half-remembered rule produces.
+    # Bind each verdict to its own case.
+    leads = paragraph.scan(/^- \*\*(.+?)\*\*/m).flatten
+    refute_empty leads, "the two cases are no longer bolded bullet leads — re-point this pin"
+    assert leads.any? { |l| l =~ /worktree/i && l.include?("STALE") },
+           "no bullet lead assigns STALE to the WORKTREE case (the shared-ref, house case)"
+    assert leads.any? { |l| l =~ /clone/i && l.include?("FRESH") },
+           "no bullet lead assigns FRESH to the CLONE case (the independent-ref, dangerous reading)"
+    refute leads.any? { |l| l =~ /worktree/i && l.include?("FRESH") },
+           "a bullet lead calls the WORKTREE case FRESH — the two cases are inverted"
+    refute leads.any? { |l| l =~ /clone/i && l.include?("STALE") },
+           "a bullet lead calls the CLONE case STALE — the two cases are inverted"
   end
 end
