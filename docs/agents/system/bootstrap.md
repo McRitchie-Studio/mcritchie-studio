@@ -46,9 +46,11 @@ Entry Docs; this one is exemption 1.
 Bringing up the **whole machine** instead? Use
 [`ecosystem-build.md`](ecosystem-build.md) — `bin/ecosystem-build` runs the same
 install at Phase 5b, plus toolchain, sibling repos, and databases. It is the
-better road when you want the ecosystem, and the wrong one for a single app: it
-clones every sibling and stops at Phase 4 without a 1Password service-account
-token, which is *before* the step that would have installed the roots.
+better road when you want the ecosystem, and the wrong one for a single app. Its
+two costs land on different runs: WITH a 1Password service-account token it
+clones every sibling repo (Phase 5) before it installs the roots (Phase 5b);
+WITHOUT one it halts in Phase 4 — *before* either — and prints the five steps
+that get you a token.
 
 `bin/install-agent-docs check` and `bin/agent-runtime doctor` are read-only and
 safe at any time; `check` is the byte-for-byte docs/skills drift check that
