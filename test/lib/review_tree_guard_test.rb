@@ -63,9 +63,11 @@ class ReviewTreeGuardTest < Minitest::Test
     IO.popen(["git", "-C", dir, "rev-parse", ref], &:read).strip
   end
 
-  # A reviewer zap, pushed from SOMEWHERE THAT IS NOT THE DESK — the case that leaves
-  # the desk's remote-tracking ref pre-zap, and the case the cert fingerprint cannot
-  # catch because it hashes that very ref.
+  # A reviewer zap, pushed from `seed` — a SEPARATE CLONE, whose refs are INDEPENDENT of
+  # the desk's. That is the case that leaves the desk's remote-tracking ref pre-zap, and
+  # the case the cert fingerprint cannot catch because it hashes that very ref. Pushing
+  # from a sibling WORKTREE instead would move the desk's ref and the cert would catch it
+  # unaided — ref sharing is the test, not distance.
   def zap!(seed, message: "zap")
     File.write(File.join(seed, "feature.rb"), "2\n")
     git!(seed, "add -A") && git!(seed, "commit -q -m #{message}")
@@ -88,8 +90,8 @@ class ReviewTreeGuardTest < Minitest::Test
     end
   end
 
-  # THE SEAM, reproduced end to end: the reviewer pushes a zap from elsewhere, the desk
-  # never fetches, and the desk's ref still points at the pre-zap commit. This is the
+  # THE SEAM, reproduced end to end: the reviewer pushes a zap from a separate clone, the
+  # desk never fetches, and the desk's ref still points at the pre-zap commit. This is the
   # state in which the cert reads FRESH and the gate would otherwise pass a verdict
   # about a tree that is not the one merging.
   def test_head_mismatch_after_a_zap_the_desk_never_fetched

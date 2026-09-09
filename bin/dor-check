@@ -3174,8 +3174,22 @@ if gate != "build"
   # the one merging. `--gate-role review` re-roots to the BUILDER'S DESK, which sits
   # wherever the builder left it; measured on turf #519, that was 262059b while the
   # merged commit was 9137d57. The cert fingerprint catches this ONLY when the desk's
-  # ref has seen the push, and a zap pushed from any other checkout leaves that ref
-  # pre-zap — so the cert reads FRESH and nothing else asks the question.
+  # ref has seen the push — and DISTANCE IS NOT THE TEST, REF SHARING IS. A zap pushed
+  # from a SIBLING WORKTREE moves origin/<branch> (every worktree of a repo shares one
+  # ref store), so the cert goes STALE unaided and this check stays quiet. A zap pushed
+  # from INDEPENDENT refs — a separate clone, another machine, GitHub's Update-branch
+  # button — does not move it, so on a ref nothing else has touched the cert reads FRESH
+  # and this check is the only thing that asks. Measured 2026-09-09 in the real house
+  # geometry and pinned by test/docs/zap_cert_freshness_docs_test.rb.
+  #
+  # BUT :mismatch DOES NOT DETERMINE THE LANE — which is why the refusal below states no
+  # lane verdict at all. Both pushes can land in sequence: the protocol's own throwaway
+  # zap desk, then Update-branch (which the base report below recommends by name). The
+  # cert is then STALE while this check reads :mismatch, and a refusal claiming FRESH
+  # there would contradict the `full-suite: STALE` error raised into the SAME errors
+  # array. Naming a state this check has not established is this task's own defect one
+  # notch down, so the message describes THIS ref and lets the cert lane speak for
+  # itself. Pinned by the compound case in zap_cert_freshness_docs_test.rb.
   #
   # A mismatch can only ever be a FALSE REFUSAL (an unfetched desk), never a false
   # pass, and the remedy for the harmless case is the same `git fetch` that fixes the
@@ -3189,9 +3203,17 @@ if gate != "build"
       "#{head_check[:local_sha][0, 12]} while the PR head is #{head_check[:pr_head][0, 12]}. Somebody pushed " \
       "(a reviewer zap is the usual cause) and this checkout has not seen it, so the DIFF, the file contents " \
       "and the cert fingerprint all describe a tree that is not the one merging — while the CI verdict beside " \
-      "them describes the PR head. The fingerprint does NOT reliably catch this on its own: it hashes " \
-      "#{head_check[:ref]}, which a push from another checkout never touched. Fetch the branch " \
-      "(git fetch origin #{zap_branch}) and re-run; if the zap was yours, re-certify it " \
+      "them describes the PR head. The cert fingerprint cannot see THIS push: it hashes #{head_check[:ref]}, " \
+      "and that ref did not follow the push. So the cert lane beside this line, whichever way it fell, " \
+      "grades #{head_check[:ref]} and NOT the PR head — asking whether those are the same commit is what " \
+      "this check is for. REF SHARING decides which pushes reach origin/#{zap_branch} at all: one from a " \
+      "SIBLING WORKTREE does (worktrees share one ref store), one from INDEPENDENT refs — a separate " \
+      "clone, another machine, GitHub's Update-branch button — does not. Fetch the branch " \
+      "(git fetch origin #{zap_branch}) and re-run — that alone clears THIS refusal, and the cert " \
+      "lane then grades the fetched head instead of the tree you are standing on. Re-certifying at " \
+      "THAT point would re-stamp the tree you already have: bin/full-suite-check hashes the WORKING " \
+      "tree, while this gate hashes #{head_check[:ref]}. So if the zap was yours, move this checkout " \
+      "onto the fetched head first (git merge --ff-only origin/#{zap_branch}), then re-certify " \
       "(bin/full-suite-check #{task["slug"] || slug}) so the cert describes what will merge."
   elsif review_role && head_check[:state] == :unobservable && head_check[:reason] == :no_pr_head
     # NOT a refusal: with no head from GitHub the question could not be asked, and the
