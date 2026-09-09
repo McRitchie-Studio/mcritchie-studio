@@ -110,7 +110,12 @@ class ActionGrade < ApplicationRecord
   # invalid write (a grade is a deliberate act, not best-effort telemetry).
   #
   # `grader` is the CALLER's responsibility to constrain — the agent path passes
-  # ALEX and NEVER MCR, so McRitchie's audit-of-Alex lane stays admin-only.
+  # ALEX and NEVER MCR. That makes `grader` PROVENANCE, NOT PROOF: it records who
+  # wrote the row, and the agent CLI's `alex` is a property of that caller, not an
+  # authenticated boundary. HeartbeatController skips authentication outright
+  # (build-first, 2026-07-03), so an ANONYMOUS request can write an `mcr` row —
+  # proven green in test/integration/heartbeat_grade_auth_test.rb. Do not read
+  # this lane as admin-only, and do not re-derive a grader gate from it.
   def self.record_activity_grade(activity:, grader:, disposition: nil, slug: nil, long_form: :unset, intent: nil)
     grade = for_activity(activity).by_grader(grader).first_or_initialize(grader: grader)
     grade.disposition = disposition.presence || grade.disposition.presence || GOOD

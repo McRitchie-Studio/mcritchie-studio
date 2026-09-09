@@ -1160,7 +1160,7 @@ module ApplicationHelper
     "live-score-watch"  => "Watch a live NFL slot and record every score",
     "contest-rehearsal" => "Rehearse a whole contest on QA, end to end",
     "grade-events"      => "Grade 10 recent events for quality",
-    "share-insights"    => "Share confirmed insights into the docs",
+    "share-insights"    => "Share the banked insights into the docs",
     "full-cycle"        => "Full cycle — review, assemble, QA, ship to prod",
     "deploy-with-task"  => "Expedite ONE task to prod (asks: what task?)"
   }.freeze

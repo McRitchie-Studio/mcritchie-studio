@@ -5,10 +5,14 @@ module Api
       # first-class alternative to the admin browser drawer. `awaiting` returns the
       # resolved activities still ungraded by Alex; `create` records Alex's grade.
       #
-      # SECURITY BOUNDARY: this path ALWAYS grades as `alex` — the grader is never
-      # read from params. Mr. McRitchie's audit-OF-Alex (`grader: "mcr"`) stays
-      # exclusively the admin browser path, so the shared agent token can never
-      # forge the audit-of-Alex ground truth.
+      # PROVENANCE, NOT A SECURITY BOUNDARY: this path ALWAYS grades as `alex` — the
+      # grader is never read from params, so there is no way to post an audit-OF-Alex
+      # (`grader: "mcr"`) row THROUGH THIS ENDPOINT. That is all it buys. The `mcr`
+      # lane is NOT otherwise gated: HeartbeatController skips authentication
+      # (build-first, 2026-07-03), so an anonymous request forges an `mcr` row with no
+      # token at all — green in test/integration/heartbeat_grade_auth_test.rb. Saying
+      # "a shared token can never forge the audit lane" is true but vacuous; re-gate
+      # the heartbeat surface before treating `mcr` as ground truth.
 
       # GET /api/v1/agent_activities/awaiting_grade?limit=N
       #
