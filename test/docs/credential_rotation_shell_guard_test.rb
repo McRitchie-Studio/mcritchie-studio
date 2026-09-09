@@ -60,6 +60,53 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
   NEW_VALUE     = "freshly-minted-guard-fixture-value"
   EMPTY_SHA256  = Digest::SHA256.hexdigest("")
 
+  FIXTURE_ITEM  = "guard-fixture-item"
+  FIXTURE_VAULT = "guard-fixture-vault"
+  FIXTURE_FIELD = "guard-fixture-field"
+
+  # Squads fixture identities for the step-5 grader. Deliberately not real pubkeys:
+  # the grader compares strings, and a real address in a test invites someone to
+  # believe the test talked to mainnet. It does not — see that test's comment.
+  NEW_MEMBER    = "GuardFixtureNewMember"
+  OLD_MEMBER    = "GuardFixtureOldMember"
+  KEEP_MEMBER_A = "GuardFixtureSurvivorA"
+  KEEP_MEMBER_B = "GuardFixtureSurvivorB"
+
+  # Every angle-bracket placeholder the harness knows how to make safe. Substituted
+  # before execution, and anything left over REFUSES the run: `--vault <vault>` is
+  # not a literal to bash, it is a REDIRECT PAIR — it would read a file named
+  # `vault` and CREATE one named `<field>[concealed]=<the value>`. A placeholder
+  # this map has not learned about must stop the harness, not be executed.
+  PLACEHOLDERS = {
+    "<VAR>"        => FIXTURE_VAR,
+    "<item>"       => FIXTURE_ITEM,
+    "<vault>"      => FIXTURE_VAULT,
+    "<field>"      => FIXTURE_FIELD,
+    "<new pubkey>" => NEW_MEMBER,
+    "<old pubkey>" => OLD_MEMBER
+  }.freeze
+
+  UNSUBSTITUTED = /<[a-z][a-z _]*>/i
+
+  # The SOP's WRITE lanes: every heading whose fenced shell mutates a real store
+  # from `$NEW`, with the substring that picks its writing blocks out and the count
+  # there must be. BOTH behavioural lanes below iterate this map.
+  #
+  # 4.2 was uncovered until 2026-09-09. Its `op item edit` guard was correctly
+  # chained in the shipped text, but no test EXECUTED it — so zap 5b292c36's claim
+  # that "un-chaining any guard turns it red" was false for exactly one guard, and
+  # a coverage claim that is false is worse than a missing one, because it is
+  # believed. Adding a lane here is how a new write earns the same grading.
+  WRITE_LANES = {
+    "### 4.2 File it in 1Password FIRST" => ["op item edit", 1],
+    "### 4.4 Write the runtime stores"   => ["$NEW", 2]
+  }.freeze
+
+  # What counts as MUTATING a store. Any fenced block matching this must live under
+  # a WRITE_LANES heading, so the coverage claim cannot quietly go false again —
+  # see the test at the bottom of this file.
+  MUTATING = /heroku config:set|heroku config:unset|op item edit|op item create|\brm -f\b|\bmv\b|>>[ \t]/
+
   # Names a snippet may expand without assigning, each with the reason it is
   # supplied from outside the SOP. Anything NOT on this list must be assigned by
   # the SOP itself — that is the B1 property.
@@ -105,6 +152,20 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
                  "no ```bash block found under the heading #{heading.inspect}. Either the section was " \
                  "renamed or its commands stopped being fenced as bash — and this test would then grade " \
                  "an empty set. Point the constant at the new heading."
+    found
+  end
+
+  # The writing blocks of one WRITE_LANES heading, with the count assertion inline
+  # so a lane that loses its write fails loudly instead of grading an empty set.
+  def write_blocks(heading)
+    needle, expected = WRITE_LANES.fetch(heading)
+    found = blocks_under(heading).select { |b| b[:body].include?(needle) }
+
+    assert_operator found.length, :>=, expected,
+                    "only #{found.length} of #{heading.inspect}'s bash blocks contain #{needle.inspect}, " \
+                    "expected at least #{expected}. Either the write was removed, or it now writes the " \
+                    "value some other way this guard cannot see — and the refusal assertions below would " \
+                    "then grade an empty set and pass on nothing."
     found
   end
 
@@ -201,9 +262,15 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
 
     bin = File.join(dir, "bin")
     FileUtils.mkdir_p(bin)
-    heroku = File.join(bin, "heroku")
-    File.write(heroku, "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"#{File.join(dir, 'heroku.log')}\"\n")
-    FileUtils.chmod(0o755, heroku)
+
+    # One stub per external writer the SOP's blocks call. Each records its argv and
+    # writes nothing, so a block that SHOULD have refused is caught by the call it
+    # made rather than by the damage it did.
+    { "heroku" => "heroku.log", "op" => "op.log" }.each do |cmd, log|
+      path = File.join(bin, cmd)
+      File.write(path, "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"#{File.join(dir, log)}\"\n")
+      FileUtils.chmod(0o755, path)
+    end
 
     dir
   end
@@ -214,13 +281,31 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
 
   # Rewrites the SOP's real paths and its <VAR> placeholder onto the sandbox, then
   # REFUSES to run anything still pointing at the real projects root.
-  def run_block(body, dir, env)
-    script = body.gsub(PROJECTS_ROOT, dir).gsub("<VAR>", FIXTURE_VAR)
+  # Path + placeholder rewriting, with the two preconditions that make execution
+  # safe. SHARED by both behavioural lanes so they cannot drift: the interactive
+  # lane used to do its own `<VAR>`-only rewrite, which would have handed a live
+  # `--vault <vault>` redirect to a real shell.
+  def safe_script(body, dir)
+    script = PLACEHOLDERS.reduce(body.gsub(PROJECTS_ROOT, dir)) { |acc, (k, v)| acc.gsub(k, v) }
 
     refute_includes script, PROJECTS_ROOT,
                     "REFUSING TO EXECUTE: after path rewriting this snippet still references #{PROJECTS_ROOT}. " \
                     "Running it would rewrite real `.env` files and delete real env snapshots. Fix the " \
                     "rewrite in this test before touching anything else."
+
+    leftover = script[UNSUBSTITUTED]
+
+    assert_nil leftover,
+               "REFUSING TO EXECUTE: this snippet still contains the placeholder #{leftover.inspect}. " \
+               "bash does not treat that as a literal — `--vault <vault>` is a redirect pair that reads " \
+               "a file named `vault` and creates one named after the rest of the line. Teach PLACEHOLDERS " \
+               "what to substitute before this block can be graded."
+
+    script
+  end
+
+  def run_block(body, dir, env)
+    script = safe_script(body, dir)
 
     full_env = { "PATH" => "#{File.join(dir, 'bin')}:#{ENV['PATH']}" }.merge(env)
     stdout, stderr, status = Open3.capture3(full_env, "bash", "-c", script, unsetenv_others: false, chdir: dir)
@@ -228,34 +313,47 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
   end
 
   def heroku_calls(dir)
-    path = File.join(dir, "heroku.log")
+    stub_calls(dir, "heroku.log")
+  end
+
+  def op_calls(dir)
+    stub_calls(dir, "op.log")
+  end
+
+  def stub_calls(dir, log)
+    path = File.join(dir, log)
     File.exist?(path) ? File.readlines(path).map(&:chomp) : []
   end
 
   # ── B1, behaviourally: the writes refuse, and the control proves they can write
 
-  test "Phase 4.4's writes REFUSE to run with $NEW unset, and still write when it is set" do
-    blocks = blocks_under("### 4.4 Write the runtime stores")
-    writing = blocks.select { |b| b[:body].include?("$NEW") }
-
-    assert_operator writing.length, :>=, 2,
-                    "only #{writing.length} of Phase 4.4's #{blocks.length} bash blocks interpolate $NEW. " \
-                    "The Heroku write and the desk `.env` rewrite are both supposed to — if one stopped, " \
-                    "either it was removed or it now writes the value some other way this guard cannot see."
+  test "every WRITE lane REFUSES to run with $NEW unset, and still writes when it is set" do
+    lanes = WRITE_LANES.keys.to_h { |heading| [heading, write_blocks(heading)] }
 
     # ── the refusal ────────────────────────────────────────────────────────
     Dir.mktmpdir("crs-refuse") do |dir|
       build_sandbox(dir)
       env = { "APPS" => "fixture-app-one fixture-app-two", "ROTATED_AT" => "2026-09-09T12:00:00Z" }
 
-      writing.each do |block|
-        result = run_block(block[:body], dir, env)
+      lanes.each do |heading, blocks|
+        blocks.each do |block|
+          result = run_block(block[:body], dir, env)
 
-        refute_equal 0, result[:status],
-                     "a Phase 4.4 block that interpolates $NEW ran to SUCCESS with $NEW unset. It wrote " \
-                     "the empty string into a real store and reported nothing wrong. Open the block with " \
-                     ": \"${NEW:?...}\" so it refuses.\n--- script ---\n#{result[:script]}"
+          refute_equal 0, result[:status],
+                       "a write block under #{heading} ran to SUCCESS with $NEW unset. It wrote " \
+                       "the empty string into a real store and reported nothing wrong. Open the block with " \
+                       ": \"${NEW:?...}\" so it refuses.\n--- script ---\n#{result[:script]}"
+        end
       end
+
+      # 4.2's store. The guard is CHAINED to the write, so the refusal is not
+      # "op wrote an empty field" — it is that `op` was never reached at all.
+      edits = op_calls(dir).select { |c| c.include?("item edit") }
+
+      assert_empty edits,
+                   "`op item edit` was reached with $NEW unset: #{edits.inspect}. On the real vault that " \
+                   "overwrites the live 1Password field with the empty string — the ONE store Phase 4.2 " \
+                   "calls reversible, and the one every later comparison reads back as the reference."
 
       desk_envs(dir).each do |file|
         assert_includes File.read(file), "#{FIXTURE_VAR}=#{LIVE_VALUE}",
@@ -280,7 +378,14 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
         "ROTATED_AT" => "2026-09-09T12:00:00Z"
       }
 
-      writing.each { |block| run_block(block[:body], dir, env) }
+      lanes.each_value { |blocks| blocks.each { |block| run_block(block[:body], dir, env) } }
+
+      filed = op_calls(dir).select { |c| c.include?("item edit") && c.include?("#{FIXTURE_FIELD}[concealed]=#{NEW_VALUE}") }
+
+      assert_operator filed.length, :>=, 1,
+                      "with $NEW set, no `op item edit … #{FIXTURE_FIELD}[concealed]=<value>` reached the " \
+                      "stub. The 4.2 refusal above is then VACUOUS — a block that never writes refuses " \
+                      "perfectly and proves nothing. Calls seen: #{op_calls(dir).inspect}"
 
       rewritten = desk_envs(dir).select { |f| File.read(f).include?("#{FIXTURE_VAR}=#{NEW_VALUE}") }
 
@@ -311,10 +416,8 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
   # `zsh -i` and `bash -i` stripped every fixture `.env` to a bare `<VAR>=` while
   # the guard "refused". So this asserts the property in the shell that matters —
   # otherwise the fix ships with the same blind spot as the bug.
-  test "Phase 4.4's writes refuse in an INTERACTIVE shell, not only in a script" do
-    writing = blocks_under("### 4.4 Write the runtime stores").select { |b| b[:body].include?("$NEW") }
-
-    assert_operator writing.length, :>=, 2, "Phase 4.4 lost its $NEW writes; re-point this guard"
+  test "every WRITE lane refuses in an INTERACTIVE shell, not only in a script" do
+    lanes = WRITE_LANES.keys.to_h { |heading| [heading, write_blocks(heading)] }
 
     %w[bash zsh].each do |sh|
       next unless system("command -v #{sh} > /dev/null 2>&1")
@@ -322,14 +425,12 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
       Dir.mktmpdir("crs-interactive-#{sh}") do |dir|
         build_sandbox(dir)
 
-        writing.each do |block|
-          script = block[:body].gsub(PROJECTS_ROOT, dir).gsub("<VAR>", FIXTURE_VAR)
-
-          refute_includes script, PROJECTS_ROOT,
-                          "REFUSING TO EXECUTE: snippet still references #{PROJECTS_ROOT} after rewriting"
-
-          env = { "PATH" => "#{File.join(dir, 'bin')}:#{ENV['PATH']}", "APPS" => "fixture-app-one" }
-          Open3.capture3(env, sh, "-i", stdin_data: script, unsetenv_others: false, chdir: dir)
+        lanes.each_value do |blocks|
+          blocks.each do |block|
+            env = { "PATH" => "#{File.join(dir, 'bin')}:#{ENV['PATH']}", "APPS" => "fixture-app-one" }
+            Open3.capture3(env, sh, "-i", stdin_data: safe_script(block[:body], dir),
+                           unsetenv_others: false, chdir: dir)
+          end
         end
 
         desk_envs(dir).each do |file|
@@ -343,6 +444,13 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
         emptied = heroku_calls(dir).select { |c| c =~ /#{FIXTURE_VAR}=(\s|$)/ }
 
         assert_empty emptied, "interactive #{sh}: heroku config:set ran with an EMPTY value: #{emptied.inspect}"
+
+        edits = op_calls(dir).select { |c| c.include?("item edit") }
+
+        assert_empty edits,
+                     "interactive #{sh}: `op item edit` was reached with $NEW unset: #{edits.inspect}. " \
+                     "An interactive shell does not abort on `${NEW:?…}`; it prints and runs the next " \
+                     "command. Chain the guard to the write with `&&` so the refusal skips it."
       end
     end
   end
@@ -440,5 +548,132 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
                     "the SOP does not name sha256(\"\") = #{EMPTY_SHA256}. An operator who runs a bare " \
                     "`shasum` during triage needs to recognise that value on sight; it is what an unset " \
                     "config var, a stripped `.env` line, and a failed read all produce."
+  end
+
+  # ── Finding A: step 5's Squads check must be able to FAIL ─────────────────
+  #
+  # The audited defect was a GREEN verification over a broken state. Step 5 checked
+  # the member list and the threshold, and a permission mask is neither — so a
+  # member who cannot Execute read as a completed rotation, and the truth arrived
+  # weeks later as a failed upgrade.
+  #
+  # This grades the SOP's ASSERTIONS, not its RPC call: `squads_members` is stubbed
+  # with a canned account read and nothing here touches mainnet. The reader is not
+  # the part that can be wrong. Whether a wrong mask FAILS is, and a check that
+  # cannot fail is the defect itself.
+  test "step 5's Squads check fails on a wrong permission mask, and passes on the right one" do
+    block = blocks_under("#### Verifying the Squads rotation")
+            .find { |b| b[:body].include?("check_squads_rotation()") }
+
+    refute_nil block,
+               "the SOP no longer defines `check_squads_rotation()` under its Squads verification " \
+               "heading. Step 5 is then back to eyeballing a member list, which passes over a member " \
+               "holding a mask that cannot run `squad-upgrade.js`."
+
+    stub = lambda do |lines|
+      "squads_members() { printf '%s\\n' " + lines.map { |l| "'#{l}'" }.join(" ") + "; }\n"
+    end
+
+    healthy = ["threshold 2", "#{NEW_MEMBER} 7", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"]
+
+    Dir.mktmpdir("crs-squads") do |dir|
+      # ── the control: a correct rotation must PASS ─────────────────────────
+      ok = run_block(stub.call(healthy) + block[:body], dir, {})
+
+      assert_equal 0, ok[:status],
+                   "the Squads check REJECTED a CORRECT rotation (3 members, threshold 2, new key at " \
+                   "mask 7, old key gone). Every refusal below then proves only that the check is " \
+                   "broken.\nstdout: #{ok[:out]}\nstderr: #{ok[:err]}"
+      assert_includes ok[:out], "PASS",
+                      "a passing check printed no PASS line: #{ok[:out].inspect}. Silence and success " \
+                      "look identical to an operator working down a runbook."
+
+      # ── the states it exists to catch ─────────────────────────────────────
+      # The three partial masks are each a REAL call site in squad-upgrade.js
+      # losing its bit — they are the whole reason the mask is checked at all.
+      {
+        "mask 3 — Initiate|Vote, no Execute (vaultTransactionExecute :172 breaks)" =>
+          ["threshold 2", "#{NEW_MEMBER} 3", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
+        "mask 5 — Initiate|Execute, no Vote (proposalApprove :161 breaks)" =>
+          ["threshold 2", "#{NEW_MEMBER} 5", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
+        "mask 6 — Vote|Execute, no Initiate (vaultTransactionCreate :155 breaks)" =>
+          ["threshold 2", "#{NEW_MEMBER} 6", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
+        "the rotated-out key is STILL a member" =>
+          ["threshold 2", "#{NEW_MEMBER} 7", "#{OLD_MEMBER} 7", "#{KEEP_MEMBER_A} 7"],
+        "the new key never landed" =>
+          ["threshold 2", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
+        "threshold moved off 2" =>
+          ["threshold 3", "#{NEW_MEMBER} 7", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
+        "the multisig is down to a 2-of-2" =>
+          ["threshold 2", "#{NEW_MEMBER} 7", "#{KEEP_MEMBER_A} 7"]
+      }.each do |label, lines|
+        result = run_block(stub.call(lines) + block[:body], dir, {})
+
+        refute_equal 0, result[:status],
+                     "the Squads check PASSED on a broken rotation (#{label}). That is the audited " \
+                     "defect verbatim — a green step 5 over a multisig that cannot run " \
+                     "squad-upgrade.js.\nstdout: #{result[:out]}"
+        assert_includes result[:out] + result[:err], "FAIL",
+                        "the check exited non-zero on #{label} but printed no FAIL line, so the operator " \
+                        "sees a failure with no reason: #{result[:out].inspect}"
+      end
+
+      # The mask failure must NAME the mask it found. "Wrong permissions" sends the
+      # operator back to app.squads.so with nothing to compare against.
+      wrong = run_block(
+        stub.call(["threshold 2", "#{NEW_MEMBER} 3", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"]) + block[:body],
+        dir, {}
+      )
+
+      assert_includes wrong[:out], "mask is 3",
+                      "the mask failure does not report the mask it actually found: #{wrong[:out].inspect}"
+    end
+  end
+
+  # Structural, not prose-matching: `addMember` takes a `Member { key, permissions }`,
+  # so every one the SOP writes must carry a mask. A bare `addMember(<new pubkey>)`
+  # is the instruction that shipped, and it leaves the choice to whatever the Squads
+  # UI had checked.
+  test "every addMember the SOP writes carries a permission mask" do
+    calls = SOP.read.scan(/addMember\([^)]*\)/)
+
+    assert_operator calls.length, :>=, 2,
+                    "only #{calls.length} addMember call(s) found in the SOP — it names the Squads " \
+                    "rotation in both the mechanism paragraph and the ordered step 4, so this scan has " \
+                    "gone blind and would pass on nothing."
+
+    bare = calls.reject { |c| c.include?("Permissions.all") }
+
+    assert_empty bare,
+                 "these addMember calls name no permission mask: #{bare.inspect}. The operator then " \
+                 "accepts whatever app.squads.so had checked, and `squad-upgrade.js` needs all three " \
+                 "bits (Initiate :155, Vote :161, Execute :172). Write Permissions.all()."
+  end
+
+  # ── Finding E: the coverage claim, made self-enforcing ────────────────────
+  #
+  # 4.2 was not a MISSING guard — its `${NEW:?…} &&` chain shipped correct. It was a
+  # false COVERAGE claim: no test executed 4.2, so un-chaining it left the suite
+  # green while zap 5b292c36's commit message said "un-chaining any guard turns it
+  # red". A protection believed to exist is worse than one known to be absent.
+  #
+  # Adding 4.2 to WRITE_LANES makes that sentence true today. This keeps it true:
+  # a new mutating block under a new heading, or a lane deleted from WRITE_LANES,
+  # both land here instead of passing silently.
+  test "every bash block that mutates a store sits under a graded WRITE lane" do
+    mutating = bash_blocks.select { |b| b[:body] =~ MUTATING }
+
+    assert_operator mutating.length, :>=, 4,
+                    "only #{mutating.length} mutating bash blocks found in the SOP, expected at least 4 " \
+                    "(the 1Password edit, the Heroku write, the desk `.env` rewrite, the snapshot sweep). " \
+                    "The MUTATING pattern has gone blind and this assertion would pass on nothing."
+
+    ungraded = mutating.map { |b| b[:heading] }.uniq - WRITE_LANES.keys
+
+    assert_empty ungraded,
+                 "these headings contain shell that MUTATES a store, but no behavioural lane executes " \
+                 "them: #{ungraded.inspect}. Their guards are unverified — un-chaining one would leave " \
+                 "this suite green, which is exactly the gap 4.2 sat in until 2026-09-09. Add the heading " \
+                 "to WRITE_LANES with the substring that selects its writing blocks."
   end
 end
