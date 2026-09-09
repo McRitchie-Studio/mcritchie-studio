@@ -91,10 +91,31 @@ class GateRecordNoVerdictCiTest < Minitest::Test
     assert_equal CiGate::CI_NO_VERDICT_STATES.size, rows.uniq.size,
                  "two no-verdict states share one row value, so the record cannot say which: #{rows.inspect}"
     refute_includes rows, "fail", "no member of the no-verdict family may claim a CI failure"
-    assert_equal CiGate::GATE_ROW_NO_VERDICT.sort, rows.sort,
+
+    # CORRECTED BY /tasks/no-pr-records-as-fail, and the correction is the finding.
+    # This used to read `assert_equal GATE_ROW_NO_VERDICT.sort, rows.sort` — an EQUALITY
+    # between the row set and the STATE family, which held only because the three states
+    # that arrived first happened to belong to both. :no_pr broke it on purpose: it
+    # records a no-verdict ROW (there was no CI to have a verdict) while staying OUT of
+    # CI_NO_VERDICT_STATES (no cert may stand in for a PR that was never opened). See
+    # CiGate::GATE_ROW_NO_VERDICT for the full argument.
+    #
+    # THE GUARANTEE IS UNCHANGED, and is what this assertion still buys: no state that
+    # produces a no-verdict row may fall through gate_row's `else`, and no value may be
+    # DECLARED no-verdict that gate_row cannot actually produce — either drift paints a
+    # CI-with-no-verdict green. It is now stated over the states that produce such a row
+    # rather than over the cert-waiver family, which is the set it always meant.
+    producing_states = CiGate::CI_NO_VERDICT_STATES + [:no_pr]
+    produced = producing_states.map do |state|
+      CiGate.gate_row({ state: state }, review_role: true, review_refused: true)
+    end
+
+    assert_equal CiGate::GATE_ROW_NO_VERDICT.sort, produced.sort,
                  "the declared no-verdict row values must be exactly the ones gate_row can produce — " \
-                 "a state added to the family without its own arm falls through to the `else` and is " \
-                 "painted with the PASS glyph"
+                 "a state that records a no-verdict row without its own arm falls through to the " \
+                 "`else` and is painted with the PASS glyph"
+    assert_equal producing_states.size, produced.uniq.size,
+                 "two no-verdict rows share one value, so the record cannot say which: #{produced.inspect}"
   end
 
   # THE SAME INVARIANT IN THE BUILDER ROLE, where the old answer was a flat
@@ -126,14 +147,35 @@ class GateRecordNoVerdictCiTest < Minitest::Test
     assert_equal "pass", CiGate.gate_row({ state: :green }, review_role: true, review_refused: false)
   end
 
-  # THE BOUNDARY, stated so the next reader does not mistake it for an oversight.
-  # :no_pr is NOT a member of CI_NO_VERDICT_STATES — it is not a non-answer FROM CI,
-  # it is the absence of a review target — so it keeps the `else`, and an
-  # unclassified state keeps it too (an allow-list must default to refuse).
+  # THE BOUNDARY, stated so the next reader does not mistake it for an oversight — and
+  # MOVED by /tasks/no-pr-records-as-fail, because this test had it in the wrong place.
+  #
+  # It used to pin `:no_pr` here as the worked example of "outside the family, so it
+  # keeps the `else`". The premise was half right and the conclusion was wrong. :no_pr
+  # is indeed NOT a member of CI_NO_VERDICT_STATES (a cert cannot stand in for a PR that
+  # was never opened) — but it does not follow that it belongs on the DEFAULT, and the
+  # default is not a neutral place to leave a state: it answered "fail" to a reviewer
+  # and "unverified" to a builder for the same world, so this assertion was pinning a
+  # manufactured red. It now has its own arm and its own row value; the cert-waiver
+  # question and the row-value question are answered separately (see
+  # CiGate::GATE_ROW_NO_VERDICT).
+  #
+  # WHAT IS LEFT ON THE DEFAULT IS THE UNCLASSIFIED, and that is the boundary worth
+  # pinning: an allow-list must default to refuse, so a state nobody has classified
+  # answers with the failing words rather than a considered-looking amber.
   def test_unit_states_outside_the_no_verdict_family_keep_the_default
-    assert_equal "fail", CiGate.gate_row({ state: :no_pr }, review_role: true, review_refused: true)
     assert_equal "fail", CiGate.gate_row({ state: :quantum_flux }, review_role: true, review_refused: true)
+    assert_equal "unverified", CiGate.gate_row({ state: :quantum_flux }, review_role: false, review_refused: false),
+                 "the builder-side default is unchanged for an UNKNOWN state"
     assert_nil CiGate.gate_row(nil, review_role: true, review_refused: false)
+
+    # ...and the boundary that DOES still hold for :no_pr: it stays out of the family
+    # whose refusal a full local cert clears. This is the assertion the old one should
+    # have been.
+    refute_includes CiGate::CI_NO_VERDICT_STATES, :no_pr,
+                    "a cert may stand in for missing EVIDENCE about a PR, never for a missing PR"
+    assert_includes CiGate::GATE_ROW_NO_VERDICT, CiGate::GATE_ROW_NO_PR,
+                    "its ROW is still a no-verdict row — the two memberships are different questions"
   end
 
   # ── [integration] what actually lands in the record ─────────────────────────
