@@ -21,12 +21,14 @@ invokes a single act directly, read that act's SOP file.
 **The heartbeat itself composes only `live-score-watch`.**
 [`contest-rehearsal`](sops/contest-rehearsal.md) and
 [`sleeper-auction-watch`](sops/sleeper-auction-watch.md) are direct-invocation
-only, which is why the launcher card on the agent profile lists every act while
-the heartbeat composition runs one. The auction watch is also calendar-bound —
-it is useful on one evening a year, so nothing should schedule it. Each act occupies the session for a long stretch
-— the watch for the length of a game window, up to twelve hours; the rehearsal
-for a full contest cycle — so a heartbeat that opened both would never reach the
-second. That is the same reason the watch sat direct-invoke-only under Avi
+only, which is why the launcher card on the agent profile lists the two
+composable acts while the heartbeat composition runs one. The auction watch is
+deliberately NOT a chip: it is calendar-bound, useful on one evening a year, so
+nothing should schedule it — the same carve-out `archive-shipped` has. Each act
+occupies the session for a long stretch — the watch for the length of a game
+window, up to twelve hours; the rehearsal for a full contest cycle — so a
+heartbeat that opened more than one would never reach the rest. That is the same
+reason the watch sat direct-invoke-only under Avi
 before this soul had a heartbeat of its own.
 
 ## Scope
@@ -45,8 +47,9 @@ ask for a sports-domain judgement:
 It ships nothing and holds **no release lane**. `contest-rehearsal` writes only
 to `turf-monster-qa` and the devnet program; `live-score-watch` writes `Goal`
 rows; `sleeper-auction-watch` writes nothing at all — it reads a public API and
-advises, and Mr. McRitchie clicks every button. Neither promotes, deploys, or settles a production contest, and this
-heartbeat never reviews a PR, never merges, and never promotes
+advises, and Mr. McRitchie clicks every button. None of them promotes, deploys,
+or settles a production contest, and this heartbeat never reviews a PR, never
+merges, and never promotes
 `accepted → release`. Review is Carl's, the sweep is Avi's, the ship is
 Steffon's.
 
