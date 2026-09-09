@@ -40,7 +40,11 @@ module ClaimLease
   # by a comment describing a "~5s render cadence" that is wrong twice over: the
   # status line's RENEWAL is throttled to 45s (not 5s, so ~2.7 beats of slack rather
   # than the claimed ≈24), and it renews the build claim and the shift lease and
-  # NEVER a review claim. Two other files copied that sentence before it was caught.
+  # NEVER a review claim. The sentence had been copied widely; this change corrects it
+  # in five places, and four uncorrected copies remain to sweep — app/helpers/
+  # claim_progress_helper.rb, lib/desk_activity.rb, test/models/task_progress_test.rb,
+  # and docs/agents/system/exclusive-lanes.md, which still says the status line watches
+  # a REVIEW claim. Do not cite any of them as the cadence; cite this paragraph.
   DEFAULT_TTL_SECONDS = 120
 
   # --- The review lane's own TTL --------------------------------------------
@@ -236,7 +240,7 @@ module ClaimLease
   # --- Progress, which is NOT liveness -------------------------------------
   #
   # The lease above attests exactly one thing: A TERMINAL IS RENDERING. It is
-  # renewed by bin/statusline's ~5s status-line paint, so it survives a wedged
+  # renewed by bin/statusline's 45s-throttled heartbeat, so it survives a wedged
   # agent — on 2026-07-13 a session sat 28 minutes making no durable write while
   # its lease stayed green, and the board read that green as "progressing".
   # It never meant that. Liveness and progress are two different facts, and the
