@@ -125,6 +125,39 @@ class ReleaseCliDispatchRunTest < Minitest::Test
     end
   RUBY
 
+  # THE THIRD SHAPE, and the one that separates "did ANY read answer" from "did the
+  # LAST read answer". The pre-dispatch snapshot ANSWERS (call 1), the dispatch is
+  # accepted, the FIRST post-dispatch read ANSWERS (call 2) and reports 100 — the
+  # same id as the snapshot, because GitHub has not registered the run YET — and
+  # reads 3..N then FAIL. That is the token-expiry window, not an exotic shape: App
+  # installation tokens expire ~hourly BY DESIGN and this poll is only ~60s wide, so
+  # "one read lands, the rest fail" is this house's most ordinary `gh` failure.
+  #
+  # WHY THE COUNT IS THE WHOLE POINT. LIST_UNREADABLE fails reads 2..N, so no
+  # post-dispatch read ever answers; this one lets exactly one answer FIRST. That
+  # single read carries NO evidence that no run exists — it was taken before
+  # registration could have happened — yet it is enough to flip an ACCUMULATING
+  # discriminator true for the remainder of the poll, routing the abort to the
+  # message that asserts "the deploy NEVER RAN" and hands over a re-dispatch
+  # command. On prod-deploy.yml that orders a SECOND PRODUCTION DEPLOY while the
+  # first may be in flight.
+  READ_THEN_UNREADABLE = <<~RUBY
+    def sleep(*) = nil
+    $watched = false
+    $list_calls = 0
+    def sh(*cmd, capture: false, chdir: nil, env: nil)
+      if cmd[0, 3] == ["gh", "run", "list"]
+        $list_calls += 1
+        return $list_calls <= 2 ? ["100", true] : ["", false]
+      end
+      if cmd[0, 3] == ["gh", "run", "watch"]
+        $watched = true
+        return ["", true]
+      end
+      ["", true]
+    end
+  RUBY
+
   # The snapshot itself never answers: `gh run list` fails from the very first call,
   # so there is no baseline and the method returns WITHOUT dispatching.
   SNAPSHOT_NEVER_ANSWERS = <<~RUBY
@@ -289,11 +322,46 @@ class ReleaseCliDispatchRunTest < Minitest::Test
     out = run_release(NO_RUN_CREATED, guarded(DISPATCH))
 
     assert_includes out, Release::ShipSequence.undispatched_run_abort(WORKFLOW, INPUTS),
-                    "reads that ANSWERED and showed no new run do establish that no run exists"
+                    "a poll whose LAST read ANSWERED and showed no new run does establish that " \
+                    "no run exists — this is the path entitled to say so"
     refute_includes out, "UNKNOWN",
                     "…so this path must not hedge: it is the one that legitimately hands over the command"
     refute_includes out, "Do NOT re-dispatch",
                      "the unreadable path's refusal must not leak onto the path where re-dispatching is the fix"
+  end
+
+  # ── [integration] the discriminator must read the LAST observation ───────────
+  #
+  # THE DEFECT THIS PINS. The two messages above are only ever as good as the
+  # predicate that chooses between them, and that predicate ACCUMULATED:
+  # `saw_a_read = true unless latest_id.nil?`, evaluated inside the poll, records
+  # whether ANY read ever answered rather than whether the LAST one did. So one
+  # early read — taken ~0s after the dispatch, before GitHub could have registered
+  # anything — licensed the "no run exists" claim for the whole remaining poll, no
+  # matter how completely `gh` failed afterwards.
+  #
+  # WHY THE LAST READ IS THE ONLY HONEST ONE. "GitHub registered NO run" is a claim
+  # about the run list's state NOW. An observation from before registration was
+  # possible cannot support it; only the most recent one can. Accumulation quietly
+  # substitutes "we managed to talk to GitHub at some point" for "we can see that no
+  # run is there", and those are different facts.
+  #
+  # This is the same harm the two-message split exists to prevent, surviving at a
+  # narrower trigger — it needs one read to land before the failures begin, which is
+  # exactly what a token expiring mid-poll produces.
+  def test_a_read_that_succeeds_before_the_list_goes_unreadable_does_not_claim_never_ran
+    out = run_release(READ_THEN_UNREADABLE, guarded(DISPATCH) + %(; puts("WATCHED \#{$watched}")))
+
+    assert_includes out, "ABORTED", "a nil run id is a hard abort on this path too"
+    refute_includes out, "NEVER RAN",
+                    "the LAST read FAILED, so nothing observed supports asserting that no run " \
+                    "exists — and that message hands over a re-dispatch that can double a live deploy"
+    refute_includes out, "Re-run the dispatch by hand",
+                     "an early read that answered before registration must not buy the remedy " \
+                     "that is safe only once you KNOW no run exists"
+    assert_includes out, Release::ShipSequence.unreadable_run_list_abort(WORKFLOW, INPUTS),
+                    "the abort must report the observation as UNKNOWN and order a CHECK"
+    assert_includes out, "WATCHED false", "and it must not watch a run it never identified"
   end
 
   # ── [integration] the two dispatch failures that stay `false` ────────────────
