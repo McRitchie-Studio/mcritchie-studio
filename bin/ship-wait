@@ -1,0 +1,264 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/ship-wait — block until a `bin/ship` run reaches a terminal state, then
+# exit with a code the caller can branch on.
+#
+# WHY IT EXISTS (task ship-wait-has-no-primitive, 2026-09-09). `bin/ship` runs
+# ~12 minutes now that it waits for CI. The docs say "run it in the background"
+# and stop there, so every builder invents a watcher, and the obvious invention
+# cannot fire — the loop's own command line contains the string it greps for:
+#
+#     while pgrep -f "bin/ship <slug>" >/dev/null; do sleep 30; done
+#
+# Measured across one session: 30+ orphaned shells from one builder, and several
+# others waking repeatedly to report "still pending". The mechanics of why that
+# loop is immortal on macOS — and why it takes TWO shells, not one — are in
+# bin/lib/ship_wait.rb's header. This script is the primitive that ends the
+# reinvention.
+#
+# TWO PROPERTIES, AND THEY ARE THE WHOLE DESIGN:
+#
+#   1. IT NEVER MATCHES ITSELF. There is no `pgrep`, no `pkill`, no `ps | grep`
+#      anywhere in this script or in bin/lib/ship_wait.rb — enforced by
+#      test/lib/ship_wait_script_test.rb. Liveness is a PID captured at launch
+#      (`Process.kill(0, pid)`) or a sentinel line the launcher appends to the
+#      log. A pattern that can match a sibling watcher is the disease.
+#   2. THE LOG HOLDS THE VERDICT, NOT THE PROCESS TABLE AND NOT THE EXIT CODE.
+#      `bin/ship` can exit 0 on a run that never reached the seam, so "the
+#      process is gone" answers WHEN to stop, never WHAT happened. The
+#      authoritative fact is ship's own post-read-back line,
+#      `stage: submitted (read back verified)`.
+#
+# ALREADY-DONE RETURNS AT ONCE. The first read happens BEFORE the first sleep,
+# so attaching to a finished ship returns immediately — the case the naive loop
+# gets most wrong, and the case the guard pins with a wall-clock bound.
+#
+# IT DOES NOT WAIT ON CI, deliberately. `bin/ship` already does, through
+# bin/lib/ci_wait.rb, which knows that an ABSENT check is not a PENDING one and
+# keys on CiStatus's named states rather than on "nothing pending". A second,
+# weaker CI wait here would be a second copy of that allow-list, and the two
+# would drift the first time either grew a state. Waiting for the ship subsumes
+# waiting for its CI.
+#
+# Usage:
+#   bin/ship-wait <task-slug> --launch -m "Commit message"   # start it, then wait
+#   bin/ship-wait <task-slug>                                # attach to the recorded run
+#   bin/ship-wait <task-slug> --log path/to/ship-<slug>.log --pid 12345
+#
+# Exit codes — branch on these, do not re-parse the log:
+#   0  SUCCEEDED  the log carries `stage: submitted (read back verified)`
+#   1  FAILED     the run ended without that line (re-run bin/ship; it resumes)
+#   2  TIMEOUT    still running when --timeout elapsed (nothing is wrong; wait more)
+#   3  USAGE      bad invocation
+#   4  NO LOG     nothing to watch — no log found, and --launch was not given
+#
+# Options:
+#   --launch            start `bin/ship <slug>` detached first, capturing its PID
+#   -m, --message MSG   commit message forwarded to bin/ship (with --launch)
+#   --log PATH          the log to read (default <state-dir>/ship-<slug>.log)
+#   --pid PID           PID of an already-launched ship (liveness only)
+#   --timeout SECONDS   bound on the wait (default 1800)
+#   --interval SECONDS  poll interval (default 10, floored at 1)
+#   --dir PATH          state directory (default <projects>/.agents/ship-wait)
+#   --quiet             suppress the periodic still-running line
+#
+# Env seams (the house pattern — each defaults to the real sibling tool):
+#   SHIP_WAIT_DIR       state directory
+#   SHIP_WAIT_SHIP_BIN  the ship to launch (default bin/ship)
+#   SHIP_WAIT_TIMEOUT   default timeout, seconds
+#   SHIP_WAIT_INTERVAL  default poll interval, seconds
+
+require "fileutils"
+require "json"
+require "optparse"
+require "time"
+require_relative "lib/projects_root"
+require_relative "lib/ship_wait"
+
+PROGRAM = "ship-wait"
+SHIP_BIN = ENV.fetch("SHIP_WAIT_SHIP_BIN", File.expand_path("ship", __dir__))
+
+def say(msg) = warn("#{PROGRAM}: #{msg}")
+
+def die!(msg, code)
+  warn "#{PROGRAM}: #{msg}"
+  exit code
+end
+
+options = {
+  launch: false,
+  message: nil,
+  log: nil,
+  pid: nil,
+  timeout: Float(ENV.fetch("SHIP_WAIT_TIMEOUT", ShipWait::DEFAULT_TIMEOUT_S)),
+  interval: Float(ENV.fetch("SHIP_WAIT_INTERVAL", ShipWait::DEFAULT_INTERVAL_S)),
+  dir: ENV["SHIP_WAIT_DIR"],
+  quiet: false
+}
+
+parser = OptionParser.new do |o|
+  o.banner = "Usage: bin/ship-wait <task-slug> [--launch [-m MSG]] [--log PATH] [--pid PID] " \
+             "[--timeout S] [--interval S] [--dir PATH] [--quiet]"
+  o.on("--launch", "start bin/ship detached first, capturing its PID") { options[:launch] = true }
+  o.on("-m", "--message MSG", "commit message forwarded to bin/ship") { |v| options[:message] = v }
+  o.on("--log PATH", "log file to read") { |v| options[:log] = v }
+  o.on("--pid PID", Integer, "PID of an already-launched ship") { |v| options[:pid] = v }
+  o.on("--timeout SECONDS", Float, "bound on the wait") { |v| options[:timeout] = v }
+  o.on("--interval SECONDS", Float, "poll interval") { |v| options[:interval] = v }
+  o.on("--dir PATH", "state directory") { |v| options[:dir] = v }
+  o.on("--quiet", "suppress the periodic still-running line") { options[:quiet] = true }
+  o.on("-h", "--help", "print this help") do
+    puts o
+    exit 0
+  end
+end
+
+begin
+  parser.parse!(ARGV)
+rescue OptionParser::ParseError => e
+  die!("#{e.message}\n#{parser.banner}", ShipWait::EXIT_USAGE)
+end
+
+slug = ARGV.shift.to_s.strip
+die!("name the task slug.\n#{parser.banner}", ShipWait::EXIT_USAGE) if slug.empty?
+die!("unexpected argument(s): #{ARGV.join(" ")}\n#{parser.banner}", ShipWait::EXIT_USAGE) unless ARGV.empty?
+if options[:message] && !options[:launch]
+  die!("-m is only meaningful with --launch (it is forwarded to bin/ship).", ShipWait::EXIT_USAGE)
+end
+
+state_dir = File.expand_path(options[:dir] || File.join(ProjectsRoot.default_projects_dir, ".agents", PROGRAM))
+log_path = File.expand_path(options[:log] || ShipWait.log_path(state_dir, slug))
+pid_path = ShipWait.pid_path(state_dir, slug)
+interval = ShipWait.clamp_interval(options[:interval])
+timeout = options[:timeout].to_f
+
+def read_log(path)
+  File.read(path)
+rescue Errno::ENOENT
+  nil
+rescue StandardError => e
+  warn "#{PROGRAM}: could not read #{path}: #{e.class}: #{e.message}"
+  nil
+end
+
+def read_pidfile(path)
+  JSON.parse(File.read(path))
+rescue StandardError
+  nil
+end
+
+# --- launch ------------------------------------------------------------------
+# The sentinel is written by a detached /bin/sh wrapper, NOT by this process, so
+# it lands even when the harness kills the watcher mid-wait. That is what makes a
+# later `bin/ship-wait <slug>` able to answer from the log alone.
+SENTINEL_WRAPPER = <<~SH
+  log="$1"; shift
+  "$@" >>"$log" 2>&1
+  status=$?
+  printf '#{ShipWait::SENTINEL_PREFIX}%s\\n' "$status" >>"$log"
+  exit "$status"
+SH
+
+if options[:launch]
+  recorded = read_pidfile(pid_path)
+  existing_log = read_log(log_path)
+  if recorded && ShipWait.alive?(recorded["pid"]) && existing_log && !ShipWait.exited?(existing_log)
+    die!("a ship for #{slug} is ALREADY RUNNING (pid #{recorded["pid"]}, started #{recorded["started_at"]}). " \
+         "Attach to it instead: bin/ship-wait #{slug}. Two concurrent ships on one task race the same " \
+         "branch and PR.", ShipWait::EXIT_USAGE)
+  end
+
+  FileUtils.mkdir_p(state_dir)
+  # ROTATE, never append. A previous run's sentinel left in place would make the
+  # very first read terminal and the wait would return at once on the WRONG run —
+  # the already-done fast path turned against itself.
+  if File.exist?(log_path)
+    FileUtils.mv(log_path, ShipWait.previous_log_path(state_dir, slug), force: true)
+  end
+  FileUtils.mkdir_p(File.dirname(log_path))
+  File.write(log_path, "")
+
+  ship_argv = [SHIP_BIN, slug]
+  ship_argv += ["-m", options[:message]] if options[:message]
+  child = Process.spawn("/bin/sh", "-c", SENTINEL_WRAPPER, PROGRAM, log_path, *ship_argv,
+                        pgroup: true, in: File::NULL, out: File::NULL, err: File::NULL)
+  Process.detach(child)
+  File.write(pid_path, JSON.pretty_generate(
+                         "slug" => slug, "pid" => child, "log" => log_path,
+                         "command" => ship_argv.join(" "),
+                         "started_at" => Time.now.utc.iso8601
+                       ))
+  options[:pid] ||= child
+  say "launched #{ship_argv.join(" ")} (pid #{child}) → #{log_path}"
+end
+
+# --- resolve what we are watching -------------------------------------------
+watch_pid = options[:pid]
+if watch_pid.nil?
+  recorded = read_pidfile(pid_path)
+  watch_pid = recorded["pid"] if recorded && recorded["log"].to_s == log_path
+end
+
+if read_log(log_path).nil?
+  die!("no log to watch at #{log_path}. Either start the ship through this script " \
+       "(bin/ship-wait #{slug} --launch -m \"…\") or point at the log you redirected to " \
+       "(bin/ship-wait #{slug} --log <path>).", ShipWait::EXIT_NO_LOG)
+end
+
+say "watching #{log_path}#{watch_pid ? " (pid #{watch_pid})" : " (no pid — log sentinel only)"}; " \
+    "timeout #{timeout.round}s, poll #{interval.round}s"
+
+# --- the wait ----------------------------------------------------------------
+# Read BEFORE the first sleep: an already-finished ship must return at once.
+started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+last_tick = started
+result = :running
+
+loop do
+  text = read_log(log_path).to_s
+  result = ShipWait.verdict(text, ended: false)
+  break unless result == :running
+
+  # Liveness NEVER comes from a pattern. Only a captured PID answers here, and a
+  # dead PID re-reads the log first — the final flush can land in the gap between
+  # our read and the process leaving the table.
+  if watch_pid && !ShipWait.alive?(watch_pid)
+    text = read_log(log_path).to_s
+    result = ShipWait.verdict(text, ended: true)
+    break
+  end
+
+  now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+  elapsed = now - started
+  break if elapsed >= timeout
+
+  if !options[:quiet] && (now - last_tick) >= 60
+    last_tick = now
+    say "still running — #{(elapsed / 60).floor}m elapsed, #{((timeout - elapsed) / 60).ceil}m of budget left"
+  end
+  sleep([interval, timeout - elapsed].min.clamp(0.05, Float::INFINITY))
+end
+
+elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+text = read_log(log_path).to_s
+took = "#{(elapsed / 60).floor}m#{(elapsed % 60).round}s"
+
+case result
+when :succeeded
+  say "SUCCEEDED — #{slug} reached the submitted seam after #{took}."
+  # Relay ship's own summary block so the caller has the PR without opening the log.
+  text.each_line.map(&:rstrip).select { |l| l.start_with?("Task:", "PR:", "branch:", "stage:") }.each { |l| puts l }
+  exit ShipWait::EXIT_SUCCEEDED
+when :failed
+  status = ShipWait.sentinel_status(text)
+  say "FAILED — #{slug} did NOT reach the submitted seam (#{took}#{status ? ", ship exited #{status}" : ""})."
+  say "last line: #{ShipWait.last_report(text)}"
+  say "read the whole log: #{log_path} — then re-run bin/ship #{slug} (it resumes)."
+  exit ShipWait::EXIT_FAILED
+else
+  say "TIMEOUT — #{slug} is STILL RUNNING after #{took}. This is not a failure; the budget ran out."
+  say "last line: #{ShipWait.last_report(text)}"
+  say "keep waiting: bin/ship-wait #{slug} --timeout <seconds>"
+  exit ShipWait::EXIT_TIMEOUT
+end
