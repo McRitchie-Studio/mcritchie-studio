@@ -2,8 +2,8 @@
 
 ## Status: Active
 
-This is Alex's `share-insights` SOP. It publishes Mr. McRitchie's confirmed
-insights into the tracked agent docs.
+This is Alex's `share-insights` SOP. It publishes the Insight Bank — the curated
+lessons of `ActionGrade.banked` — into the tracked agent docs.
 
 ## Scope
 
@@ -29,12 +29,39 @@ the Procedure below.
 
 ## Preconditions
 
-At least one insight has been confirmed by Mr. McRitchie (`grader: "mcr"`). If
-none are confirmed, report "nothing to share" and stop.
+**The bank is non-empty.** That is the whole entry condition, and it is stated
+here as the set the generator publishes — `Insights::DocGenerator.banked_insights`
+reads exactly this and filters on nothing else:
+
+```ruby
+ActionGrade.banked
+```
+
+Ask the **board** that question, never a local database: every local one answers
+zero, and the Procedure's verification read below is the same question asked
+correctly. If the bank is empty, report "nothing to share" and stop.
+
+**Banked-ness is the gate; the grader is not.** `#bank!` is the curation act (and
+is mutually exclusive with `#discard!`), while `grader` records only WHO WROTE THE
+ROW: `alex` is Alex's grade of the activity, `mcr` is Mr. McRitchie's audit **of
+that grade** — a second row on the same target, written from the browser drawer
+and never by the agent CLI, because the agent API always grades as `alex` so a shared token can never
+forge the audit lane. Every other reader of the bank agrees: the feed-forward
+`/api/v1/insights` hook and the `/alex/insights` page both read
+`ActionGrade.banked` with no grader filter.
+
+So an entry condition of `grader: "mcr"` would stand this SOP down over every
+lesson an agent can bank — which is precisely what it did. This section used to
+require McRitchie confirmation while all five banked lessons were Alex-graded, so
+the SOP reported "nothing to share" over the bank it exists to publish
+(`/tasks/sop-precondition-blocks-sharing`). The guard in
+`test/docs/share_insights_precondition_docs_test.rb` now EXECUTES the condition
+stated above and holds it equal to the set the generator publishes, so prose and
+query cannot drift apart again in silence.
 
 ## Procedure
 
-Regenerate the tracked lessons doc from confirmed insights, **against the board's
+Regenerate the tracked lessons doc from the bank (`ActionGrade.banked`), **against the board's
 database**. The URL never reaches the terminal or a file:
 
 ```bash
@@ -96,8 +123,9 @@ and would push whatever tree you are standing in to every session on the machine
 
 ## Exit Seam
 
-The tracked lessons doc reflects every confirmed insight. Report the changed doc
-path and the banked-insight count `insights:doc` printed.
+The tracked lessons doc reflects every banked insight, whichever grader recorded
+it. Report the changed doc path and the banked-insight count `insights:doc`
+printed.
 
 ## Related
 
