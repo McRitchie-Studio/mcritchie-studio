@@ -30,6 +30,40 @@ module CiGate
   # test that can load both halves).
   GATE_ROW_UNREADABLE = "unreadable"
 
+  # The other two members of CI_NO_VERDICT_STATES, for the same reason and by the same
+  # rule: the row stays 1:1 with the CI state. Until /tasks/refused-review-records-fail
+  # both collapsed onto a flat "fail" on a refused review, so the PERMANENT gate history
+  # claimed a red-CI bounce for a PR whose CI was never red — :none is "the PR reports no
+  # checks YET" (the fix is to WAIT) and :unverified is "`gh` itself fell over" (the fix
+  # is to RE-READ). Neither is a verdict; they are two different absences of one.
+  #
+  # THE NAMES ARE THE ONLY DISCRIMINATOR THESE TWO GET. CiStatus.gate_evidence rides
+  # `state`/`cause`/`reason` onto the :unreadable row ALONE, so for these two `result`
+  # is the whole record. That is why they cannot share a value: "wait for CI" and
+  # "GitHub was unreachable" prescribe different moves, and one honest word for both
+  # would make the record uniformly useless instead of uniformly wrong.
+  #
+  # "no_checks", not "none": `bin/gate show` renders `<sop>:<result>`, and `ci:none`
+  # reads as "no ci sop was recorded". "unverified" keeps the word the builder path has
+  # always written for this state — it is newly 1:1 and newly glyphed, not newly coined.
+  GATE_ROW_NO_CHECKS = "no_checks"
+  GATE_ROW_UNVERIFIED = "unverified"
+
+  # Every row value the no-verdict family can produce. Mirrors app/models/gate_run.rb's
+  # NO_VERDICT_RESULTS (the same bin/-lib-cannot-load-a-model split GATE_ROW_UNREADABLE
+  # documents above), and the two are pinned equal by
+  # test/integration/gates_card_no_verdict_ci_test.rb — the one test that loads both.
+  #
+  # IT EXISTS SO THE GLYPH ARM IS ONE EDIT, NOT N. The gates card's chain ends in a ✓
+  # DEFAULT, so a value that reaches it is painted as a PASS: adding a state here
+  # without an arm there converts a manufactured failure into a manufactured success,
+  # which is the direction every other defect in this family runs. Add a member to
+  # CI_NO_VERDICT_STATES and you owe it an arm below AND an entry here; the
+  # distinctness assertion in test/lib/gate_record_no_verdict_ci_test.rb reddens if you
+  # skip the arm (the state falls to the `else` and collides with "unverified"), and
+  # the equality assertion reddens if you skip the entry.
+  GATE_ROW_NO_VERDICT = [GATE_ROW_NO_CHECKS, GATE_ROW_UNREADABLE, GATE_ROW_UNVERIFIED].freeze
+
   # The review role's refusal for a non-green CI → [message, cert_clears]. Never called
   # for :green (the allow-list's only pass) nor for a state `verdict`'s case below
   # already wrote a remedy for. `cert_clears` marks the no-verdict family, whose refusal a FULL
@@ -374,19 +408,35 @@ module CiGate
     # this REPLACES a "unverified" that the gates card painted as a green ✓, so the
     # same edit closes the mirror-image misreport on that path.
     #
-    # `:unverified` (gh down, a non-auth failure), `:none`, `:no_pr` and any state
-    # ci_status.rb grows later keep the `else` — a different question was asked and
-    # got a different non-answer, and this row must stay 1:1 with the CI state.
+    # `:no_pr` and any state ci_status.rb grows later keep the `else` — a different
+    # question was asked and got a different non-answer, and this row must stay 1:1
+    # with the CI state.
     when :unreadable then GATE_ROW_UNREADABLE
+    # THE SAME FIX, THE OTHER TWO CAUSES (/tasks/refused-review-records-fail). These
+    # rode the `else` and so recorded "fail" on a refused review — a red-CI bounce that
+    # never happened, written into the artifact that outlives Heroku's log retention.
+    # Measured 2026-09-09 through the live chain: :none, :unverified and a genuinely RED
+    # CI all persisted the identical `{"sop":"ci","result":"fail"}`.
+    #
+    # UNCONDITIONAL, in both roles, for the reason :unreadable is: what CI reported is
+    # a fact about the READ, not about who asked, and a role-conditional answer gives
+    # one fact two names in a record whose whole job is being read later by someone who
+    # was not here. Builder-side this also splits a flat "unverified" that named :none
+    # wrongly and that the gates card painted with the PASS glyph, so the same edit
+    # closes the mirror-image misreport on that path — exactly as :unreadable's did.
+    when :none then GATE_ROW_NO_CHECKS
+    when :unverified then GATE_ROW_UNVERIFIED
     else
       # A FAILED dor_review must name CI as the failing SOP when CI is why it failed.
       # Leaving the no-verdict family on a flat "unverified" recorded the card's sole
       # cause as a NOTE — the same asymmetry :pending avoids one line above.
-      # "unverified" stays right where CI genuinely only noted AND the state has no
-      # better name of its own: a builder-side :none/:unverified run, and a review run
-      # whose FULL cert stood in for the unread verdict. :unreadable no longer reaches
-      # here in either role — it has its own arm above, because "the token was
-      # refused" is a different fact from "nothing reported".
+      #
+      # WHAT IS LEFT HERE IS DELIBERATELY NOT THE NO-VERDICT FAMILY. Every member of
+      # CI_NO_VERDICT_STATES now has its own arm above; this default serves :no_pr and
+      # any state ci_status.rb grows later. :no_pr is NOT a non-answer FROM CI — it is
+      # the absence of a review target — and an unclassified state is not the family
+      # either, it is an unread gate. An allow-list defaults to REFUSE, which is what
+      # a gate is for.
       review_refused ? "fail" : "unverified"
     end
   end

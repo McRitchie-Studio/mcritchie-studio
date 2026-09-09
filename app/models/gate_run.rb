@@ -78,6 +78,26 @@ class GateRun < ApplicationRecord
   # copy (GATE_ROW_UNREADABLE) because a bin/ lib cannot load this model.
   UNREADABLE_RESULT = "unreadable"
 
+  # The other two lanes whose ANSWER WAS NEVER GIVEN: the PR reported no checks yet
+  # (`no_checks`), and `gh` itself fell over (`unverified`). Same family as
+  # UNREADABLE_RESULT, same reason — collapsing them into "fail" wrote a red-CI bounce
+  # into a task's PERMANENT gate history for a PR whose CI was never red
+  # (/tasks/refused-review-records-fail). They are kept APART from each other, and from
+  # `unreadable`, because for these two the `result` is the ONLY field carrying the
+  # cause: CiStatus.gate_evidence rides state/cause/reason onto the unreadable row
+  # alone. "Wait for CI" and "GitHub was unreachable" are different instructions.
+  NO_CHECKS_RESULT = "no_checks"
+  UNVERIFIED_RESULT = "unverified"
+
+  # THE SET THE GATES CARD PAINTS `⚠`. It exists so that adding a no-verdict result is
+  # ONE edit rather than two: the card's glyph chain ends in a `✓` DEFAULT, so a value
+  # that is not matched by an arm is rendered as a PASS — turning a misreported failure
+  # into a misreported success, the exact inversion these constants were added to stop.
+  # bin/lib/ci_gate.rb holds the producer copy (GATE_ROW_NO_VERDICT) because a bin/ lib
+  # cannot load this model; test/integration/gates_card_no_verdict_ci_test.rb pins the
+  # two lists equal, and it is the one test that can load both halves.
+  NO_VERDICT_RESULTS = [NO_CHECKS_RESULT, UNREADABLE_RESULT, UNVERIFIED_RESULT].freeze
+
   validates :subject_type, inclusion: { in: SUBJECT_TYPES }
   validates :subject_slug, presence: true
   validates :key, inclusion: { in: KEYS }

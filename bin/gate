@@ -10,7 +10,12 @@
 # Usage:
 #   bin/gate open  <task|release> <slug> <key> [--actor A] [--source S]
 #   bin/gate sop   <task|release> <slug> <key> --sop NAME [--cmd C] [--tier T]
-#                  [--result pass|fail|running] [--duration-ms N] [--actor A] [--source S]
+#                  [--result pass|fail|running|unreadable|no_checks|unverified]
+#                  [--duration-ms N] [--actor A] [--source S]
+#
+# The last three are the NO-VERDICT results (GateRun::NO_VERDICT_RESULTS): CI was
+# never read, never reported, or never reachable. They are not failures, and `show`
+# prints them verbatim as `ci:<result>` — see docs/agents/modules/gates/g2-review.md.
 #   bin/gate close <task|release> <slug> <key> (--success | --failed)
 #                  [--sop-json JSON]... [--meta k=v]... [--actor A] [--source S]
 #   bin/gate show  <task|release> <slug> [--json]
