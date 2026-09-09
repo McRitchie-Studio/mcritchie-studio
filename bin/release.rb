@@ -7245,10 +7245,35 @@ end
 # NON-FATAL by construction (rescue-and-warn, like the merged:main stamps): a
 # docs sync must never abort or fail an already-completed ship. Under --dry-run,
 # `sh` prints the command and skips. Steffon owns this step; the warn line hands
-# the by-hand fix to whoever is watching the ship.
+# the by-hand fix to whoever is watching the ship — and BOTH warn branches must hand
+# over an ABSOLUTE path, for the reason spelled out at the seed below.
 def sync_agent_docs
   say("")
   step("sync installed agent docs: bin/install-agent-docs from the shipped hub tree")
+  # SEED THE BY-HAND PATH BEFORE ANYTHING THAT CAN RAISE.
+  #
+  # The `rescue` below is METHOD-LEVEL, so it does not cover only the `sh` call — it
+  # also covers the three lines that resolve `root`. A raise there (GateWorkspace.path,
+  # repo_path, or File.join on a nil root) reaches the rescue with `installer` in
+  # LEXICAL scope but still NIL, because Ruby defines a local at the parser's first
+  # sight of the assignment whether or not it executed. So "just interpolate
+  # #{installer} in the rescue" is not the fix it looks like: on an early raise it
+  # renders "run `` by hand" — an empty backtick pair, strictly worse than a bare name.
+  #
+  # This seed is TOTAL — __dir__ is this file's own bin/, where the installer is its
+  # sibling — so `installer` holds an absolute path from here on and every warn branch
+  # prints something the operator can actually execute. The workspace resolution below
+  # still refines it; the seed only decides what a warn says when that resolution never
+  # got the chance to run.
+  #
+  # Why absolute matters more here than in a normal warn line: a bare
+  # `bin/install-agent-docs` resolves against whatever directory the READER is sitting
+  # in, and this installer PUBLISHES GLOBALLY (the projects-root AGENTS.md/CLAUDE.md,
+  # ~/.claude + ~/.codex skills, ~/.claude/settings.json, /etc/codex/requirements.toml,
+  # and an append to ~/.zprofile, which keeps no reflog). On 2026-09-08 a builder ran it
+  # from a feature worktree and published unshipped mid-branch text to every session on
+  # the machine. A cwd-relative prescription is one `cd` from repeating that.
+  installer = File.expand_path("install-agent-docs", __dir__)
   root = Release::GateWorkspace.path(repo_path("mcritchie-studio"), role: "ship")
   root = repo_path("mcritchie-studio") unless File.exist?(File.join(root, "bin", "install-agent-docs"))
   installer = File.join(root, "bin", "install-agent-docs")
@@ -7256,7 +7281,7 @@ def sync_agent_docs
   print(out)
   say("  ⚠ agent-docs install failed — run `#{installer}` by hand (the ship already succeeded)") unless ok
 rescue StandardError => e
-  say("  ⚠ agent-docs install skipped (#{e.message}) — run `bin/install-agent-docs` by hand (the ship already succeeded)")
+  say("  ⚠ agent-docs install skipped (#{e.message}) — run `#{installer}` by hand (the ship already succeeded)")
 end
 
 # --- archive (the DevOps loop's conclusion) --------------------------------
