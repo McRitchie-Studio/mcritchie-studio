@@ -11,14 +11,19 @@ attribution and routes to its act SOPs:
 - [`contest-rehearsal`](sops/contest-rehearsal.md) - run a whole contest
   lifecycle on QA devnet end to end: create, enter, replay a played week, settle
   on-chain, close.
+- [`sleeper-auction-watch`](sops/sleeper-auction-watch.md) - sit beside Mr.
+  McRitchie through a live Sleeper auction draft: value every player under the
+  league's own scoring, then call a max bid as each one comes up.
 
 Use this file when Mr. McRitchie invokes `Turf Monster Heartbeat`. When he
 invokes a single act directly, read that act's SOP file.
 
 **The heartbeat itself composes only `live-score-watch`.**
-[`contest-rehearsal`](sops/contest-rehearsal.md) is direct-invocation only,
-which is why the launcher card on the agent profile lists both acts while the
-heartbeat composition runs one. Each act occupies the session for a long stretch
+[`contest-rehearsal`](sops/contest-rehearsal.md) and
+[`sleeper-auction-watch`](sops/sleeper-auction-watch.md) are direct-invocation
+only, which is why the launcher card on the agent profile lists every act while
+the heartbeat composition runs one. The auction watch is also calendar-bound —
+it is useful on one evening a year, so nothing should schedule it. Each act occupies the session for a long stretch
 — the watch for the length of a game window, up to twelve hours; the rehearsal
 for a full contest cycle — so a heartbeat that opened both would never reach the
 second. That is the same reason the watch sat direct-invoke-only under Avi
@@ -26,7 +31,7 @@ before this soul had a heartbeat of its own.
 
 ## Scope
 
-Turf Monster is the sports-domain soul. This heartbeat covers the two acts that
+Turf Monster is the sports-domain soul. This heartbeat covers the acts that
 ask for a sports-domain judgement:
 
 - Watch a live NFL slot end to end and record what the feed reports.
@@ -34,10 +39,13 @@ ask for a sports-domain judgement:
 - Stop at the end of the window, or when the slot is final.
 - Or rehearse a whole contest on QA — create, enter, replay, settle, close —
   and judge whether the board moved the way the games did.
+- Or price a Sleeper auction draft live and call the bids, judging scarcity and
+  roster feasibility against a model built from the league's own scoring.
 
 It ships nothing and holds **no release lane**. `contest-rehearsal` writes only
 to `turf-monster-qa` and the devnet program; `live-score-watch` writes `Goal`
-rows. Neither promotes, deploys, or settles a production contest, and this
+rows; `sleeper-auction-watch` writes nothing at all — it reads a public API and
+advises, and Mr. McRitchie clicks every button. Neither promotes, deploys, or settles a production contest, and this
 heartbeat never reviews a PR, never merges, and never promotes
 `accepted → release`. Review is Carl's, the sweep is Avi's, the ship is
 Steffon's.
