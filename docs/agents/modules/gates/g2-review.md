@@ -176,15 +176,20 @@ bin/gate close task <task-slug> g2b_light --failed --actor <light-soul> \
   gates card even though no reviewer ran, and it lands on the gate-zero gate, not
   a G2 review lane. A pre-spawn **defer** (CI pending) records nothing; nothing
   started.
-- **`ci:unreadable` is not `ci:fail`.** The `ci` SOP's `result` names the state CI
-  was actually in, and `unreadable` means GitHub **refused the read** — an expired
+- **`ci:unreadable` is not `ci:fail`.** `unreadable` is the one `ci` SOP `result`
+  that names its state exactly: GitHub **refused the read** — an expired
   installation token, a 403, a rate limit — so no verdict was ever seen. It is not
   a red CI, and re-reading it once the credential is fresh
   (`eval "$(bin/gh-auth-refresh --export)"`) is the whole remedy. The row carries
   `state` / `cause` / `reason` alongside, and the gates card paints it `⚠`, never
-  `✓` and never `✗`. Read the record with `bin/gate show task <task-slug>`;
-  auditing a bounce, treat `ci:fail` as "CI ran and failed" and `ci:unreadable` as
-  "nobody could look".
+  `✓` and never `✗`. Read the record with `bin/gate show task <task-slug>`.
+  Auditing a bounce, `ci:unreadable` means "nobody could look" — but do NOT read
+  its sibling as the mirror image. `ci:fail` stays the COLLAPSED bucket for every
+  other non-green state: red, pending in the review role, `conflicted`, `ci_less`
+  (CI never ran at all), closed/merged, and a refused review on a GREEN CI. Two of
+  those `bin/pr-review` writes as a bare `ci:fail` of its own, never through
+  `CiGate.gate_row`. So read `state` and `metadata.outcome` beside a `fail` before
+  calling it a red CI; only `unreadable` carries its cause in the result itself.
 - A **reportless lane stays in flight** (no verdict yet) and is reused by the
   next wave rather than double-opened — `GateRun.open!` converges racing
   openers onto one row.
