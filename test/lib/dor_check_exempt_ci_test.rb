@@ -231,19 +231,25 @@ class DorCheckExemptCiTest < Minitest::Test
   # and an exempt task is no different.
   #
   # THE RECORDED ROW IS ASSERTED PER-STATE, NOT AS ONE FLAT "fail"
-  # (/tasks/gate-logs-auth-as-red). Every one of these REFUSES — that half is
-  # uniform and stays uniform — but the DURABLE row must say which non-answer it
-  # got, because the row outlives the refusal text above it. :unreadable ("GitHub
-  # refused my credential") is the one that had to move: recorded as "fail" it wrote
-  # a red-CI bounce that never happened into the permanent gate history, and tokens
-  # expire ~hourly here. The rest keep "fail" — collapsing them all onto one honest
-  # value would make the record uniformly useless instead of uniformly wrong.
+  # (/tasks/gate-logs-auth-as-red, then /tasks/refused-review-records-fail). Every one
+  # of these REFUSES — that half is uniform and stays uniform — but the DURABLE row
+  # must say which non-answer it got, because the row outlives the refusal text above
+  # it. The three that had to move are CiGate::CI_NO_VERDICT_STATES: recorded as "fail"
+  # they wrote a red-CI bounce that never happened into the permanent gate history —
+  # :unreadable on every gate run straddling an ~hourly token expiry, :none on every PR
+  # whose checks had not started, :unverified on every transport blip.
+  #
+  # NOT "collapsing them all onto one honest value", which an earlier draft of this
+  # comment defended keeping "fail" to avoid: each of the three carries its OWN word,
+  # so the record stays 1:1 with the CI state. What keeps "fail" is the states that
+  # genuinely settled negative — a red CI, a conflict, a closed target, and an
+  # unclassified state an allow-list must refuse by default.
   def test_pending_unreadable_and_unclassified_ci_all_refuse_an_exempt_review
     {
       "pending" => ["still RUNNING", "fail"],
       "unreadable" => ["UNREADABLE", "unreadable"],
-      "unverified" => ["no verdict yet", "fail"],
-      "none" => ["no verdict yet", "fail"],
+      "unverified" => ["no verdict yet", "unverified"],
+      "none" => ["no verdict yet", "no_checks"],
       "conflicted" => ["gate-zero", "fail"],
       "closed" => ["not an OPEN review target", "fail"],
       "state:teal" => ["does not classify", "fail"]

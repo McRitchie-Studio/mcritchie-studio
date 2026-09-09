@@ -54,5 +54,5 @@ Report how many were banked and discarded.
 
 ## Related
 
-- [`share-insights.md`](share-insights.md) - shares Mr. McRitchie's confirmed
-  insights.
+- [`share-insights.md`](share-insights.md) - shares the banked insights (the bank
+  is `ActionGrade.banked`, whichever grader recorded each row).

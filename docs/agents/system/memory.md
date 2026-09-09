@@ -15,7 +15,18 @@ The bank is the **single source of truth**; the tracked doc
   SessionStart loader, which GETs `/api/v1/insights`, so a new agent hatches already
   knowing them. Banking a lesson is what publishes it; the tracked doc below is the
   readable record, not the delivery path.
-- **Regenerate the doc** — `bin/rails insights:doc` (post-deploy / on demand).
+- **Regenerate the doc** — `bin/rails insights:doc`, pointed at the **board's**
+  database. The generator reads whatever `DATABASE_URL` your shell carries, and a
+  primary checkout or a desk worktree reads an EMPTY local one — writing a
+  confident `0 banked insights` over a doc that was right. The exact command, and
+  the independent count check that proves it read the bank, are in
+  [`share-insights.md`](../agents/alex/sops/share-insights.md).
+- **Staleness is detected, not remembered** — `InsightsDocFreshnessJob` runs
+  weekly on the board (`config/recurring.yml`) and writes an **ErrorLog** receipt
+  when the doc's recorded count diverges from the bank, when the bank has been
+  curated since the doc was generated, or when the generated header stops being
+  machine-readable. The board is the only environment that holds both halves of
+  that comparison: CI and every desk have the doc but an empty database.
 
 Because the bank is canonical and generated, **hand-edited lesson lists are
 retired** — `docs/agents/shared/MEMORY.md` is a pointer stub, and local provider

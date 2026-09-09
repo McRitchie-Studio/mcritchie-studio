@@ -651,6 +651,14 @@ class ApplicationHelperTest < ActionView::TestCase
     # CARD contract, not the registry.
     assert_not_includes launchers.flat_map { |l| l[:actions] }, "archive-shipped"
 
+    # sleeper-auction-watch is NOT a launcher act either, and for the opposite
+    # reason: nothing runs it for you. It is calendar-bound (one league's draft,
+    # one evening a year), so a standing chip on a cadence card would misstate it.
+    # Registered by name in the SOP registry and owned in the prose guard's
+    # ACT_OWNER; absent HERE on purpose. Flip this to a chip and you also owe an
+    # ACTION_DESCRIPTIONS caption, an ACTION_ICONS glyph, and the array above.
+    assert_not_includes launchers.flat_map { |l| l[:actions] }, "sleeper-auction-watch"
+
     # Every act on the card carries a caption + an icon, or the row renders bare.
     launchers.flat_map { |l| l[:actions] }.each do |act|
       assert action_description(act).present?, "#{act} has no ACTION_DESCRIPTIONS caption"

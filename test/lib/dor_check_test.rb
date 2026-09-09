@@ -1850,11 +1850,11 @@ class DorCheckTest < Minitest::Test
     assert_match(/not ready to advance/, out)
   end
 
-  # A FAILED dor_review must name CI as the failing SOP when CI is why it failed.
-  # "unverified" stays where CI genuinely only noted AND the state has no better name
-  # of its own. :unreadable HAS one, in all three vectors below: GitHub REFUSED the
-  # read, and both old answers misled — "fail" wrote a red CI that never ran into the
-  # permanent record; "unverified" is painted ✓. Full: gate_record_unreadable_ci_test.
+  # A FAILED dor_review must name CI as the failing SOP when CI is why it failed, under
+  # the name of the state it was actually in — every member of CI_NO_VERDICT_STATES now
+  # has one. Both old answers misled: "fail" wrote a red CI that never ran into the
+  # permanent record, and the flat "unverified" it fell back to is painted ✓. Full
+  # coverage: gate_record_unreadable_ci_test and gate_record_no_verdict_ci_test.
   def test_the_gates_card_names_ci_as_the_cause_when_ci_is_the_cause
     assert_equal "unreadable", ci_gate_result("unreadable", evidence: FAST_CERT_ONLY)
     assert_equal "unreadable", ci_gate_result("unreadable", evidence: FULL_CERT),
