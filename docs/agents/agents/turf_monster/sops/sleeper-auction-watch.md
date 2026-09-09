@@ -236,7 +236,7 @@ const val = new Map(V.players.map(p => [p.id, p]));
   log.slice(seen).forEach(x => { const d = x.val - x.amt;
     console.log(`  $${String(x.amt).padStart(3)} (model $${String(x.val).padStart(3)}, ${d>0?'+':''}${d})  ` +
       `${(x.pos||'').padEnd(4)}${x.name.slice(0,22).padEnd(23)}-> ${rn[x.rid]}` +
-      (d <= -10 ? '  << BARGAIN GONE' : d >= 10 ? '  << OVERPAY' : '')); });
+      (d <= -10 ? '  << OVERPAY' : d >= 10 ? '  << BARGAIN GONE' : '')); });
   console.log('\nBUDGETS');
   for (let i = 1; i <= TEAMS; i++) {
     const left = BUDGET - (spent[i]||0), slots = ROSTER - (count[i]||0);
