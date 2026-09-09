@@ -309,6 +309,15 @@ How a gem rides a release:
 5. **Consumers deploy on the bumped lock.** The consumer's lock bump landed on
    `origin/release` at prepare (step 3), so QA and prod both build the bumped
    lock. Never deploy a consumer ahead of its gem.
+6. **Producers get their own locks bumped too, onto `accepted`.** A registered
+   gem is also a CONSUMER (studio-engine's Gemfile declares `solana-studio`),
+   and the step above only ever reached `app` members — so every publish used
+   to leave the engine's lock behind and redden EVERY open engine PR through
+   its own `bin/gem-drift-check` lane. `bump_producer_locks_for_accepted`
+   closes that, committing onto **`origin/accepted`** (where those PRs are
+   based; `bin/release` never otherwise writes `accepted`, and nothing merges
+   `release` back down). `assert_no_lock_drift!` then refuses to leave any repo
+   resolving a just-published gem older than what was published.
 
 Operational notes:
 
