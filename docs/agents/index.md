@@ -279,12 +279,37 @@ Two wrappers collapse the cycle's bookends into one command each. Reach for
 them first; the long form below is the fallback.
 
 ```bash
-cd /Users/alex/projects/mcritchie-studio
-bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> --agent <soul> \
+/Users/alex/projects/mcritchie-studio/bin/task begin --title "Three To Five Words" \
+  --repo <app> --kind <kind> --agent <soul> \
   --shape <shape> --risk <tags> --accept "criterion" --test "[unit] ..."
-#   ... build in the worktree it prints ...
-bin/ship <task-slug> -m "Commit message"
+
+cd <desk>   #   ... the worktree begin printed; build there ...
+
+/Users/alex/projects/mcritchie-studio/bin/ship <task-slug> -m "Commit message"
 ```
+
+**Name the hub's script; stand in the desk.** Every fast-lane command —
+`bin/task`, `bin/ship`, `bin/fast-check`, `bin/full-suite-check`, `bin/dor-check`
+— lives ONLY in `/Users/alex/projects/mcritchie-studio/bin`. A **satellite** desk
+(turf-monster, rolio, mcritchie-industries) carries none of them, so the bare
+`bin/ship` dies there as `nohup: bin/ship: No such file or directory` — instantly,
+and looking like a broken install rather than a wrong path. Only a **hub** desk
+has them, which is the whole reason the bare form reads as correct.
+
+The absolute path alone is NOT the remedy, because the path and the cwd answer
+different questions: **the path picks the SCRIPT, the cwd picks the TREE it acts
+on.** The cert writers root at the cwd's git toplevel, and the cert-root guard
+(`bin/lib/cert_root_guard.rb`) REFUSES when that is not the task's tree — so
+`cd /Users/alex/projects/mcritchie-studio && bin/ship <satellite-slug>` fails in the
+opposite direction, measured: *"this run roots at /Users/alex/projects/mcritchie-studio
+(branch main), which is not <slug>'s tree — refusing to certify it."* Both halves
+are load-bearing, so state both.
+
+| Desk | Fast lane from that desk |
+|------|--------------------------|
+| `mcritchie-studio` | Hub-absolute **or** bare `bin/…` — a hub desk checks the scripts out, so both resolve |
+| `turf-monster` · `rolio` · `mcritchie-industries` | **Hub-absolute only.** The desk has no fast-lane scripts; only the cwd is the desk's |
+| `studio-engine` · `solana-studio` · `turf-vault` | **No lane at all.** `bin/task begin` answers `unknown app` (measured 2026-09-09) — create with `bin/task create`, make the desk with a plain `git worktree add`, and run the handoff steps by hand |
 
 **Pass `--agent <soul>` — it is what makes review able to exclude you.** It stamps
 the task's AUTHOR SET (`devops.built_by` + `devops.builders`) — what
@@ -362,8 +387,9 @@ all because it makes no claim.
 
 `bin/task begin` runs steps 1-3 (create → `agent-worktree new` → `bind-task` →
 `move building` → `session-preflight`) and prints the worktree path, port, and
-task URL. `bin/ship`, run from that worktree, runs steps 5-6 (commit →
-`bin/fast-check` → push → **non-draft** PR into `accepted` led by the task URL →
+task URL. `bin/ship` — the HUB's script, run with that worktree as the cwd —
+runs steps 5-6 (commit → `bin/fast-check` → push → **non-draft** PR into
+`accepted` led by the task URL →
 record `pr_url` → **wait for CI to settle** → `bin/dor-check` → `move submitted`
 → read-back verify).
 Re-running either after a failure **resumes** — each skips the steps already
@@ -472,7 +498,8 @@ Before handoff:
    (`mcritchie-studio/docs/agents/modules/gates/g1-cert.md`): commit, then run
    `bin/fast-check <task>` (the builder default — diff-mapped tests + core
    spine + rubocop on changed files, ~1 min) or `bin/full-suite-check <task>`
-   (CI-independent).
+   (CI-independent). These are hub scripts too: from a satellite desk name
+   them `/Users/alex/projects/mcritchie-studio/bin/…`, still standing in the desk.
 6. Push, open a PR **into `accepted`** (base `accepted`, not `release`/`main`)
    whose body **leads with the task URL**, then verdict: run **`bin/dor-check
    <task>`** and fix whatever it flags — it refuses an under-tested PR and its
@@ -623,8 +650,10 @@ tier-tagged in devops["checks_run"]. Before PR handoff, mark local validation
 with `bin/task update <task> --local-url http://localhost:<port>/<path>
 --approval waiting`, return `Local Demo: http://localhost:<port>/<path>` in
 chat, and wait for approval or requested changes. Update docs if behavior
-changes. Then hand off with bin/ship <task> -m "<commit message>" from the
-worktree — it commits, certifies, pushes, opens the non-draft PR into accepted
+changes. Then hand off, WITH THE DESK AS CWD, using the hub's copy of the
+script — /Users/alex/projects/mcritchie-studio/bin/ship <task> -m "<commit
+message>" (a satellite desk has no bin/ship of its own; only the cwd is the
+desk's) — it commits, certifies, pushes, opens the non-draft PR into accepted
 led by the task URL, waits for the PR's CI to settle, runs bin/dor-check, and
 moves the task to submitted (review's gate-zero still holds the authoritative
 CI verdict). Fall back to
@@ -804,7 +833,9 @@ worktree:
 cd /Users/alex/projects/mcritchie-studio
 bin/task begin --title "Three To Five Words" --repo turf-monster --agent <soul> --shape <shape>
 bin/agent-worktree up turf-monster task-slug     # only when you need a live stack
-bin/ship task-slug -m "Commit message"           # from the worktree, at handoff
+
+cd <desk>                                        # the worktree begin printed
+/Users/alex/projects/mcritchie-studio/bin/ship task-slug -m "Commit message"
 ```
 
 `bin/task begin` covers create + `new` + `bind-task` + `move building` +
