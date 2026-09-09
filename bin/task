@@ -1226,29 +1226,62 @@ end
 # clock any more.
 #
 # The move dropped the request when EITHER half says so, and the halves are OR-ed
-# because each covers the other's blind spot — never to make the warning quieter:
+# because each covers the other's blind spot. The OR only ever widens — the union
+# warns wherever either half does, and is never quieter than either half alone. It
+# is NOT silence-free: three real drops go unannounced, named below and MEASURED,
+# not reasoned.
 #
 #   1. THE PRE-STATE PREDICTED IT — the request read "waiting" before the PATCH and
 #      the destination cannot hold one. That is Task#settle_operator_approval_past_submit's
 #      own rule, so it fires even against a board too old to write the receipt at all
 #      (this CLI has to stay correct against a board that has not taken that fix).
+#      It is also the ONLY half that catches the SAME-SECOND COLLISION, where the
+#      fresh stamp renders identically to the one already on the record.
 #   2. THE RECEIPT MOVED — approval_request_dropped_at differs across the PATCH.
 #      That catches a drop the pre-read could not predict: a writer that set
-#      "waiting" in the window between our read and our write, and the same-second
-#      collision where two stamps render identically. Stated as a plain inequality
+#      "waiting" in the window between our read and our write. It does NOT catch the
+#      same-second collision — this is a plain INEQUALITY, so identical renderings
+#      make it false, and half 1 is what covers that case. Stated as an inequality
 #      on purpose: an earlier cut also required the post-receipt to be non-empty,
 #      which no test could kill (the board only ever WRITES this stamp, so a receipt
 #      cannot vanish) and which was the single place the verdict resolved an unknown
-#      toward SILENCE. Every branch here now resolves the other way.
+#      toward SILENCE. Every branch but the three residuals below now resolves the
+#      other way.
 #
-# An UNREADABLE pre-state (`before` nil — the board hiccuped) is not silence: half 2
-# reads a receipt on the record as news and warns. Failing safe is the whole point —
-# a spurious line costs a reader one sentence, a missed one costs the operator gate.
-# The one residual blind spot is BOTH failures at once: an unreadable pre-read
-# against a board too old to write a receipt leaves nothing to compare. Warning on
-# every unreadable pre-read would close it, at the price of a false line on every
-# transient board hiccup — and a warning readers learn to skip is the defect this
-# whole path exists to prevent.
+# An UNREADABLE pre-state (`before` nil — the board hiccuped) is not silence BY
+# ITSELF: half 2 reads a receipt on the record as news and warns. Failing safe is
+# the point — a spurious line costs a reader one sentence, a missed one costs the
+# operator gate.
+#
+# THE THREE RESIDUALS, measured 2026-09-08 by DRIVING this binary across the whole
+# nine-cell board-state matrix (both pins are named at the end of this note). Each
+# is a REAL drop that neither half can see:
+#
+#   (i)   an unreadable pre-read AND a board too old to write a receipt — nothing
+#         to predict from, and nothing to compare.
+#   (ii)  a racing writer AND a fresh stamp that renders in the SAME SECOND as the
+#         prior one — the pre-read said "none", and the inequality sees no change.
+#   (iii) a racing writer AND a board too old to write a receipt.
+#
+# The mechanism under all three is the string inequality plus drop_receipt_of(nil)
+# => "": `"" != ""` is false, and so is `STAMP != STAMP`. There is no FOURTH case
+# hiding behind an unreadable pre-read plus a same-second stamp — with `before` nil
+# the left side is "" and only a receipt-less board makes the right side "" too,
+# which is (i). The test DRIVES that cell rather than assuming it away.
+#
+# They stay open because closing them costs more: (i) would warn on every unreadable
+# pre-read — a false line on every transient board hiccup, and a warning readers
+# learn to skip is the defect this whole path exists to prevent — while (ii) and
+# (iii) are observationally IDENTICAL to a move that dropped nothing, so no rule can
+# be quiet on the common state and loud on the rare one. What a reader must take
+# from this: a quiet move is weak evidence, never a receipt.
+#
+# Pinned in TWO places, and it takes both. test/lib/task_move_approval_drop_test.rb
+# drives the three cells above plus the would-be fourth, checks that THIS list still
+# names what it measured, and proves the half-1/half-2 attribution with a controlled
+# pair. test/docs/approval_drop_warning_docs_test.rb drives the FULL nine-cell
+# matrix, so a residual appearing in a cell the first file does not drive still turns
+# something red. Close a residual and both ask this note to say so.
 #
 # A destination that CAN hold a request never reaches here at all — the `settleable`
 # test at the call site is the single place that decision is made, so the message can
@@ -2840,7 +2873,9 @@ when "move"
   settleable = !APPROVAL_REQUEST_STAGES.include?(stage)
   # The approval facts as they stood BEFORE the write, the only way to tell a drop
   # THIS move caused from one already on the record. nil here means UNREADABLE and
-  # nothing else, which the verdict resolves toward warning.
+  # nothing else — which the verdict resolves toward WARNING wherever the receipt can
+  # still speak, and toward silence only in residual (i) of the note above, where the
+  # board writes no receipt to compare either.
   approval_before = settleable ? read_task_softly(slug) : nil
   task = api(:patch, "/api/v1/tasks/#{slug}", body)["data"]
   # The board answered 2xx — but a 2xx is not persistence. Read the task back and

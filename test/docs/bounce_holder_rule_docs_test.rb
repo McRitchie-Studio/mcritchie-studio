@@ -851,7 +851,7 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
   # are covered by the RULE and the entry was DELETED rather than repointed. An exemption
   # is the temporary form of a fix; deleting one is what finishing looks like.
   NARRATION = [
-    { file: "app/models/task.rb", line: 2970, match: /lands the task back on building and repoints/,
+    { file: "app/models/task.rb", line: 2986, match: /lands the task back on building and repoints/,
       why: "comment explaining the feature-marker repoint" },
     { file: "bin/pr-review", line: 29, match: /with the failing checks named/,
       why: "header comment narrating the gate-zero flow" },
