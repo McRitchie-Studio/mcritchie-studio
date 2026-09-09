@@ -176,9 +176,9 @@ bin/gate close task <task-slug> g2b_light --failed --actor <light-soul> \
   gates card even though no reviewer ran, and it lands on the gate-zero gate, not
   a G2 review lane. A pre-spawn **defer** (CI pending) records nothing; nothing
   started.
-- **A CI with no verdict is not `ci:fail`.** Three `ci` SOP `result` values name
+- **A CI with no verdict is not `ci:fail`.** Four `ci` SOP `result` values name
   their state exactly, and none of them is a failure. Read the record with
-  `bin/gate show task <task-slug>`; the gates card paints all three `⚠`, never `✓`
+  `bin/gate show task <task-slug>`; the gates card paints all four `⚠`, never `✓`
   and never `✗`:
 
   | `result` | What actually happened | The move |
@@ -186,8 +186,9 @@ bin/gate close task <task-slug> g2b_light --failed --actor <light-soul> \
   | `unreadable` | GitHub **refused the read** — expired installation token, 403, rate limit. Nobody could look | `eval "$(bin/gh-auth-refresh --export)"`, then re-run the gate. The row carries `state` / `cause` / `reason` alongside |
   | `no_checks` | The PR **reported no checks yet**. CI has nothing to say | wait, then re-run the gate. Do NOT chase a credential |
   | `unverified` | **`gh` itself fell over** — network, a 404, a missing binary. Not an auth fault | re-read. Do NOT chase a credential |
+  | `no_pr` | **`devops.pr_url` is blank** — there is no PR, so no CI ever ran. Submit-side this is the ORDINARY state (`bin/dor-check` runs before the PR exists) | push and open the PR, then re-run. Nothing is wrong with CI or the credential |
 
-  Auditing a bounce, these three mean "no verdict was seen" — but do NOT read
+  Auditing a bounce, these four mean "no verdict was seen" — but do NOT read
   `ci:fail` as the mirror image. It stays the COLLAPSED bucket for every state that
   settled NEGATIVE: red, pending in the review role, `conflicted`, `ci_less` (CI
   never ran at all), closed/merged, a refused review on a GREEN CI, and a state the
@@ -195,13 +196,21 @@ bin/gate close task <task-slug> g2b_light --failed --actor <light-soul> \
   `ci:fail` of its own, never through `CiGate.gate_row`. So read `state` and
   `metadata.outcome` beside a `fail` before calling it a red CI.
 
-  Both halves were once collapsed onto `ci:fail`, which wrote a red-CI bounce that
+  All of these were once collapsed onto `ci:fail`, which wrote a red-CI bounce that
   never happened into a task's permanent gate history —
-  `/tasks/gate-logs-auth-as-red` took `unreadable` out, `/tasks/refused-review-records-fail`
-  the other two. **Adding a fourth needs its arm in `GateRun::NO_VERDICT_RESULTS`
-  in the same change**: the card's glyph chain ends in a `✓` default, so a value
-  with no arm is painted as a PASS — a manufactured failure traded for a
-  manufactured success.
+  `/tasks/gate-logs-auth-as-red` took `unreadable` out,
+  `/tasks/refused-review-records-fail` `no_checks` and `unverified`, and
+  `/tasks/no-pr-records-as-fail` `no_pr`. **Adding a fifth needs its entry in
+  `GateRun::NO_VERDICT_RESULTS` in the same change**: the card's glyph chain ends in
+  a `✓` default, so a value with no arm is painted as a PASS — a manufactured failure
+  traded for a manufactured success.
+
+  **`no_pr` also showed the two lists are not one list.** `CI_NO_VERDICT_STATES` (the
+  family a FULL local cert may stand in for) and `GATE_ROW_NO_VERDICT` (the values the
+  card paints `⚠`) were 1:1 only because the first three states belonged to both.
+  `no_pr` records an amber row — there was no CI to have a verdict — while staying OUT
+  of the cert-waiver family, because a cert can stand in for missing *evidence about* a
+  PR but never for a *missing PR*. Decide a new state's two memberships separately.
 - A **reportless lane stays in flight** (no verdict yet) and is reused by the
   next wave rather than double-opened — `GateRun.open!` converges racing
   openers onto one row.
