@@ -10,13 +10,22 @@
 # Usage:
 #   bin/gate open  <task|release> <slug> <key> [--actor A] [--source S]
 #   bin/gate sop   <task|release> <slug> <key> --sop NAME [--cmd C] [--tier T]
-#                  [--result pass|fail|running|unreadable|no_checks|unverified|no_pr]
+#                  [--result pass|fail|running|pending|unreadable|no_checks|unverified|no_pr]
 #                  [--duration-ms N] [--actor A] [--source S]
 #
-# The last four are the NO-VERDICT results (GateRun::NO_VERDICT_RESULTS): CI was never
-# read, never reported, never reachable, or never had a PR to run against at all. They
-# are not failures, and `show` prints them verbatim as `ci:<result>` — see
-# docs/agents/modules/gates/g2-review.md.
+# Only `pass` and `fail` are VERDICTS. The rest split into two families the gates card
+# paints differently, and neither may be read as an outcome:
+#
+#   IN FLIGHT (GateRun::IN_FLIGHT_RESULTS, painted ◌) — `running`, a cert lane that has
+#     started; `pending`, CI checks GitHub has not settled. The answer is COMING: wait.
+#   NO VERDICT (GateRun::NO_VERDICT_RESULTS, painted ⚠) — CI was never read, never
+#     reported, never reachable, or never had a PR to run against at all. The answer was
+#     never GIVEN: go find out why.
+#
+# `show` prints all of them verbatim as `ci:<result>` — see
+# docs/agents/modules/gates/g2-review.md. A result value the card does not recognise
+# renders `?`, NOT `✓` (/tasks/pending-ci-paints-check): adding a word here without an
+# arm there is now a visible gap rather than a silent green.
 #   bin/gate close <task|release> <slug> <key> (--success | --failed)
 #                  [--sop-json JSON]... [--meta k=v]... [--actor A] [--source S]
 #   bin/gate show  <task|release> <slug> [--json]

@@ -200,10 +200,51 @@ bin/gate close task <task-slug> g2b_light --failed --actor <light-soul> \
   never happened into a task's permanent gate history —
   `/tasks/gate-logs-auth-as-red` took `unreadable` out,
   `/tasks/refused-review-records-fail` `no_checks` and `unverified`, and
-  `/tasks/no-pr-records-as-fail` `no_pr`. **Adding a fifth needs its entry in
-  `GateRun::NO_VERDICT_RESULTS` in the same change**: the card's glyph chain ends in
-  a `✓` default, so a value with no arm is painted as a PASS — a manufactured failure
-  traded for a manufactured success.
+  `/tasks/no-pr-records-as-fail` `no_pr`.
+
+  **Adding a fifth is THREE edits, not one.** This used to say "its entry in
+  `GateRun::NO_VERDICT_RESULTS`", which named the last of the three and read as though
+  it were the whole job. A new no-verdict value needs, in the same change:
+
+  1. `CiGate::GATE_ROW_<NAME>` **and its `when` arm** in `CiGate.gate_row` — without
+     the arm the state rides the producer's `else` and collapses onto
+     `fail`/`unverified`, which is the defect all four of the tasks above fixed;
+  2. its entry in `CiGate::GATE_ROW_NO_VERDICT` — the producer-side set;
+  3. its entry in `GateRun::NO_VERDICT_RESULTS` — the set the CARD reads.
+
+  Steps 2 and 3 exist separately because `bin/lib/ci_gate.rb` is a `bin/` lib and
+  cannot load a Rails model; `test/integration/gates_card_no_verdict_ci_test.rb` is the
+  one test that loads both halves and pins them equal.
+
+- **A CI that is still RUNNING is not a verdict either — and it is the more dangerous
+  direction.** `pending` is a fifth non-verdict `result`, but it is NOT in the
+  no-verdict family: those four mean the answer was never **given**, while `pending`
+  means the answer is **coming**. It joins `running` (a cert lane that started) in
+  `GateRun::IN_FLIGHT_RESULTS`, which the card paints `◌`.
+
+  | `result` | What actually happened | The move |
+  |----------|------------------------|----------|
+  | `pending` | CI checks exist and **have not settled**. Builder-side only — review's gate-zero grades an unsettled CI `fail`, because "may this merge NOW" has a legitimate no | wait for CI, then re-run the gate |
+  | `running` | A **cert lane started** and has not reported. Re-emitted as a heartbeat while the lane runs | wait; if the beat stops, the lane was killed |
+
+  `/tasks/pending-ci-paints-check` found this one: `pending` matched no arm, so it fell
+  to the card's `✓` default and a CI that was **still running** was painted in the
+  permanent record as one that **passed**. Its four siblings each manufactured a
+  FAILURE, which gets audited because it blocks somebody. This manufactured a SUCCESS,
+  and nobody audits a green.
+
+  **That task also moved the card's default, which is why the rule above is now about
+  arms rather than about avoiding a silent green.** The glyph chain used to end
+  `else ["✓", …]`, so `pass` and every unclassified value shared one arm — four
+  consecutive defects arrived by that route. `pass` is now an explicit arm and the
+  fall-through renders `?`. A value with no arm is therefore a VISIBLE gap rather than
+  a false pass; it is still a defect, and the three edits above are still owed.
+
+  **The producer's `else` did NOT move, deliberately.** `CiGate.gate_row` still answers
+  `fail`/`unverified` for a state it cannot classify. That is a GATE — an allow-list
+  defaults to REFUSE, and the loud refusal is what gets an arm added. The card is a
+  RENDERER: it refuses nothing, so its conservative direction is not "fail", it is "I
+  do not know". Do not carry the argument for one default across to the other.
 
   **`no_pr` also showed the two lists are not one list.** `CI_NO_VERDICT_STATES` (the
   family a FULL local cert may stand in for) and `GATE_ROW_NO_VERDICT` (the values the
