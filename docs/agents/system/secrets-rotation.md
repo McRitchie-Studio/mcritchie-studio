@@ -4,7 +4,7 @@
 
 > **The PROCEDURE is the `credential-rotation` SOP** — `docs/agents/agents/steffon/sops/credential-rotation.md`. It owns store enumeration, ordering, verification, rollback and the receipt, and it applies to every secret including the ones with no section here. **This file is the per-credential appendix**: what each secret is, where it lives, and how to regenerate it at the source. Run the SOP; reach for the matching section below as an accelerator. Where the two disagree, the SOP wins and the section below gets fixed in the same pass.
 
-The 1Password account is `alex@mcritchie.studio` (account ID `MWOV5OT5BRHATI4EGMN26C5DPA`), vaults `studio-agents` (agent lane) and `studio-agents-admin` (ship lane — separate service account, `bin/setup-1pass-token --admin`). Heroku apps are `mcritchie-studio` and `turf-monster-mainnet`. After every rotation, re-run `bin/ecosystem-build` so the dev `.env` files refresh from Heroku's new config.
+The 1Password account is `alex@mcritchie.studio` (account ID `MWOV5OT5BRHATI4EGMN26C5DPA`). There are **six vaults**, not two: `studio-agents` (agent lane), `studio-agents-admin` (ship lane — separate service account, `bin/setup-1pass-token --admin`), `studio-applications` (app runtime and CI), `industries-agents`, `family-agents`, and `Commercial Welding`. Vault choice and the lane that may write each one are [`credential-filing`](../agents/steffon/sops/credential-filing.md) §§1-4. The Heroku fleet is **ten apps**, not two: `mcritchie-studio(-qa)`, `turf-monster-mainnet`, `turf-monster-qa`, `mcritchie-industries(-qa)`, `rolio-prod`, `rolio-qa`, `tax-studio`, `moms-app` — a per-app section below that names only one or two of them is describing that secret's consumers, not the fleet, and the `credential-rotation` SOP's Phase 1 sweeps all ten regardless. After every rotation, re-run `bin/ecosystem-build` so the dev `.env` files refresh from Heroku's new config.
 
 ---
 
@@ -46,7 +46,7 @@ The 1Password account is `alex@mcritchie.studio` (account ID `MWOV5OT5BRHATI4EGM
 
 **Store:** Heroku config var on both apps + `config/master.key` (gitignored) locally + 1Password (recommended backup).
 
-**Symptoms of rotation needed:** master key compromise (committed accidentally, leaked from CI logs, etc.). This is the single most disruptive secret to rotate because it decrypts `config/credentials.yml.enc` — rotating it means RE-ENCRYPTING, not replacing. Whether users are logged out depends on `secret_key_base`, not on the master key: the procedure below pastes the same plaintext back, so `secret_key_base` is unchanged and signed cookies keep verifying. Regenerate credentials from scratch and it changes, and then every session and signed URL dies too.
+**Symptoms of rotation needed:** master key compromise (committed accidentally, leaked from CI logs, etc.). This is the single most disruptive secret to rotate because it decrypts `config/credentials.yml.enc` — rotating it means RE-ENCRYPTING, not replacing. Users are NOT logged out by it on production: `SECRET_KEY_BASE` is a separate Heroku config var on both `mcritchie-studio` and `turf-monster-mainnet` (measured 2026-09-09), and an environment `SECRET_KEY_BASE` is what Rails uses, so the master key cannot reach the session secret there. Off those apps, sessions still survive as long as the procedure below pastes the same plaintext back; regenerate credentials from scratch and `secret_key_base` changes, and then every session and signed URL dies too.
 
 **Procedure (per app — do each Rails app separately):**
 1. Edit `config/credentials.yml.enc` with the *current* key: `EDITOR='code --wait' bin/rails credentials:edit`.
@@ -74,30 +74,23 @@ The 1Password account is `alex@mcritchie.studio` (account ID `MWOV5OT5BRHATI4EGM
 
 **Symptoms of rotation needed:** Suspected key compromise (committed accidentally, leaked from logs). Routine quarterly hygiene tied to the Solana admin-key cadence. Required after any incident affecting the `RAILS_MASTER_KEY` (which seeds the key derivation salt).
 
-**Procedure (turf-monster only — managed wallets don't exist in mcritchie-studio):**
-1. Generate a fresh 32-byte key: `bin/rails runner 'puts SecureRandom.hex(32)'`. Copy the value.
-2. Update 1Password `agent.managed_wallet` → field `encryption key` → paste the new value. Save.
-3. Set the new key on Heroku as `MANAGED_WALLET_ENCRYPTION_KEY_NEW` (NOT yet replacing the live one):
-   ```bash
-   heroku config:set MANAGED_WALLET_ENCRYPTION_KEY_NEW=<new_value> --app turf-monster-mainnet
-   ```
-4. Run the reencrypt rake task — this reads each `User.web2_solana_address` row, decrypts with the OLD key, re-encrypts with the NEW key, and writes the row back. Runs in batches with a row-lock per user:
-   ```bash
-   heroku run --app turf-monster-mainnet bin/rails managed_wallets:reencrypt
-   ```
-   The task is idempotent — safe to re-run if it crashes mid-stream. It tracks progress in `OutboundRequest`-style audit rows.
-5. Promote the new key to primary on Heroku (atomic swap):
-   ```bash
-   heroku config:set MANAGED_WALLET_ENCRYPTION_KEY=<new_value> --app turf-monster-mainnet
-   heroku config:unset MANAGED_WALLET_ENCRYPTION_KEY_NEW --app turf-monster-mainnet
-   ```
-6. Restart dynos: `heroku ps:restart --app turf-monster-mainnet`.
-7. Update dev `.env` files via `bin/ecosystem-build` (re-fetches from Heroku).
-8. Verify a managed-wallet user can sign a transaction (a contest entry, faucet claim, or any flow that exercises `User#solana_keypair`).
+**🚫 THERE IS NO PROCEDURE. DO NOT ROTATE THIS KEY.**
 
-**Verify:** `heroku run --app turf-monster-mainnet bin/rails runner 'puts User.where.not(web2_solana_secret_encrypted: nil).first.solana_keypair.address'` returns the correct base58 address (no decrypt errors). A test contest entry from a managed wallet completes.
+This section used to carry a step-by-step rotation. **Every load-bearing step of it was fabricated**, and following it destroys every managed wallet on the platform. Removed 2026-09-09 after verification against `turf-monster` at that date:
 
-**Last rotation (2026-05-20, prod v80):** Reencrypt ran clean against ~all managed-wallet users. Memory ref: `project_managed_wallet_encryption_key`.
+| What the old procedure said | What is actually there |
+|---|---|
+| Set `MANAGED_WALLET_ENCRYPTION_KEY_NEW`, "not yet replacing the live one" | **Nothing reads it.** `app/services/solana/keypair.rb:118-125` reads `ENV["MANAGED_WALLET_ENCRYPTION_KEY"]` and only that, then memoizes the derived encryptor. There is no second-key path. |
+| `bin/rails managed_wallets:reencrypt` | **No such task.** There is no `managed_wallets` namespace in `lib/tasks/`. |
+| "decrypts with the OLD key, re-encrypts with the NEW key" | The real task, `solana:reencrypt_managed_wallets` (`lib/tasks/solana.rake:532`), is the OPSEC-015 **legacy→v2 migration**. `Keypair.reencrypt` is `from_encrypted(x).encrypt` — same key, both directions. |
+| "idempotent — safe to re-run" / "tracks progress in `OutboundRequest`-style audit rows" | Idempotent, yes — by **skipping every row already at v2**. It writes no audit rows. On a fully-migrated database it prints `0 migrated, N already v2, 0 failed` and **exits 0**, so "ran to completion" is satisfied having re-encrypted nothing. |
+| Verify with `User.where.not(web2_solana_secret_encrypted: nil)` | No such column. It is `encrypted_web2_solana_private_key` (`db/schema.rb:907`). |
+
+Run the old sequence and you promote a new key, revoke the old one, and discover that every managed wallet's Ed25519 secret was never re-encrypted and is now undecryptable — with a green rake run as the evidence that it worked.
+
+**What has to exist first**, as its own turf-monster task: a decrypt path that accepts a second key, a migration that walks every row from the old key to the new one, and a verification that counts rows rather than trusting an exit code. Until that ships, the answer to "rotate `MANAGED_WALLET_ENCRYPTION_KEY`" is **no** — and if the key is compromised, that is an incident to escalate, not a runbook to follow.
+
+**Last rotation:** none. The 2026-05-20 run recorded here was the OPSEC-015 legacy→v2 **migration**, which re-encrypted under the key already in use; the key itself has never been rotated.
 
 **Warning:** If `MANAGED_WALLET_ENCRYPTION_KEY` is lost while the wallets are still in use, every managed wallet becomes unrecoverable. Treat it with the same care as `RAILS_MASTER_KEY` — 1Password + cold backup.
 
