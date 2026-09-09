@@ -23,8 +23,9 @@ mirrors files inside a `<name>/` subdir.
 
 `bin/agent-runtime install` mirrors this tree into `~/.claude/skills/*` and
 `~/.codex/skills/*` (copy, not symlink) alongside the root agent docs and Codex
-hooks. `bin/agent-runtime check` flags local docs/skills drift. It runs
-automatically in `bin/ecosystem-build` (Phase 5b) on a fresh-machine rebuild.
+hooks; `bin/ecosystem-build` runs that install for you at Phase 5b on a
+fresh-machine rebuild. `bin/agent-runtime check` reports local docs/skills drift
+without writing anything.
 
 ```bash
 bin/agent-runtime install       # FRESH-MACHINE BRINGUP ONLY — publishes globally
