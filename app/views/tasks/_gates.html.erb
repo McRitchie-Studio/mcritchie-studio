@@ -33,13 +33,15 @@
                       not "fail" green reported an in-flight — or ABANDONED — lane as PASSED.
                       GateRun::NO_VERDICT_RESULTS is the FOURTH arm, for the same reason in
                       the other direction: CI was never READ (`unreadable` — the credential was
-                      refused), or never SPOKE (`no_checks` — the PR reported none yet;
-                      `unverified` — `gh` fell over). None of the three may be a ✓ (a CI nobody
-                      heard is not a CI that passed) and none may be an ✗ (that is the false red
-                      /tasks/gate-logs-auth-as-red and /tasks/refused-review-records-fail took
-                      out of the record). NOTE the default below is ✓ — any result value added
-                      upstream without an arm here silently becomes a pass, which is why the
-                      set, not a literal, is what this arm tests. %>
+                      refused), never SPOKE (`no_checks` — the PR reported none yet;
+                      `unverified` — `gh` fell over), or never had a PR to run against at all
+                      (`no_pr` — devops.pr_url is blank). None of the four may be a ✓ (a CI
+                      nobody heard is not a CI that passed) and none may be an ✗ (that is the
+                      false red /tasks/gate-logs-auth-as-red, /tasks/refused-review-records-fail
+                      and /tasks/no-pr-records-as-fail took out of the record). NOTE the default
+                      below is ✓ — any result value added upstream without an arm here
+                      silently becomes a pass, which is why the set, not a literal, is what this
+                      arm tests. %>
                   <% result = entry["result"].to_s %>
                   <% glyph, tone = if result == "fail" then ["✗", "text-rose-400"]
                                    elsif result == GateRun::RUNNING_RESULT then ["◌", "text-amber-400"]

@@ -20,6 +20,12 @@ module CiGate
   # not about a live review target (:closed / :merged). This is the ONLY family a full
   # local cert may stand in for, and membership is deliberately explicit: a state that
   # is not listed here cannot be excused by evidence, it can only be classified.
+  #
+  # :no_pr IS DELIBERATELY ABSENT, and it is absent from THIS list only — it does record
+  # a no-verdict ROW (GATE_ROW_NO_PR). The two memberships are separate questions, which
+  # /tasks/no-pr-records-as-fail had to prise apart; the full argument is on
+  # GATE_ROW_NO_VERDICT below. In one line: a cert can stand in for missing EVIDENCE
+  # about a PR, never for a missing PR.
   CI_NO_VERDICT_STATES = %i[none unreadable unverified].freeze
 
   # The `result` a `{"sop" => "ci"}` GateRun row carries when GitHub REFUSED the read.
@@ -49,6 +55,48 @@ module CiGate
   GATE_ROW_NO_CHECKS = "no_checks"
   GATE_ROW_UNVERIFIED = "unverified"
 
+  # THERE IS NO PR TO HAVE A CI (/tasks/no-pr-records-as-fail). A blank devops.pr_url
+  # resolves to :no_pr, and until this arm that row was written TWO different wrong ways
+  # depending on who asked — the one thing every other member of this table refuses to do:
+  #
+  #   review role  → "fail"        a red-CI bounce for a PR that does not exist
+  #   builder role → "unverified"  collides with the state where `gh` FELL OVER
+  #
+  # The builder half is the sharper one, and it is the NORMAL path: `bin/dor-check` runs
+  # BEFORE the PR exists, so this is the ordinary submit-side state rather than an edge
+  # case. It is silent on stdout there by design (the gate re-runs after the push), yet it
+  # still wrote a durable row — and "unverified" now carries an INSTRUCTION, added by
+  # /tasks/refused-review-records-fail: "`gh` fell over — re-read, do NOT chase a
+  # credential." That is precisely the wrong move for a task whose PR simply is not open
+  # yet, where the fix is to PUSH ONE. A record that prescribes the wrong move is worse
+  # than one that says nothing, which is why this cannot stay on the `else`.
+  #
+  # ==== WHY IT IS RECORDED AT ALL, WHICH WAS THE REAL QUESTION =================
+  #
+  # The sharper framing (steffon's, raising this) is not "which value" but whether an
+  # absent PR belongs under the `ci` sop at all: :none and :unverified are ANSWERS ABOUT
+  # CI, while :no_pr is the ABSENCE OF THE THING CI WOULD ANSWER ABOUT. That is right,
+  # and it is why :no_pr is NOT in CI_NO_VERDICT_STATES (see there). It is not why the
+  # row should vanish, for three measured reasons:
+  #
+  #   1. OMISSION IS NOT REACHABLE FROM HERE. Both callers append the row on `if ci`,
+  #      not on this method's return (bin/dor-check:3930 and :2777), and `ci` is
+  #      `{state: :no_pr}` — truthy. Returning nil persists `"result" => null`, and
+  #      `nil.to_s` is "", which falls to the gates card's ✓ DEFAULT. The omission
+  #      route's failure mode IS the inversion trap this family exists to stop.
+  #   2. ABSENCE IS ALREADY SPOKEN FOR. `--gate build` writes no ci row at all
+  #      (bin/dor-check:3101), so a missing row already means "build gate". A second
+  #      meaning makes the record LESS legible, not more — and the suite already holds
+  #      this principle: gate_record_no_verdict_ci_test's `ci_sop_entry` refuses to
+  #      conclude anything from an absent row, because an absent row is not a passing row.
+  #   3. THE AUDITOR NEEDS THE WORD. This is the fleet's most common gate run. Omitting
+  #      it would leave the normal path indistinguishable from a build gate and from a
+  #      run that aborted early. "no_pr" says the true thing in one word, in both roles.
+  #
+  # "no_pr" keeps the state's own spelling, as "unverified" did: it is newly 1:1 and
+  # newly glyphed, not newly coined.
+  GATE_ROW_NO_PR = "no_pr"
+
   # Every row value the no-verdict family can produce. Mirrors app/models/gate_run.rb's
   # NO_VERDICT_RESULTS (the same bin/-lib-cannot-load-a-model split GATE_ROW_UNREADABLE
   # documents above), and the two are pinned equal by
@@ -62,7 +110,27 @@ module CiGate
   # distinctness assertion in test/lib/gate_record_no_verdict_ci_test.rb reddens if you
   # skip the arm (the state falls to the `else` and collides with "unverified"), and
   # the equality assertion reddens if you skip the entry.
-  GATE_ROW_NO_VERDICT = [GATE_ROW_NO_CHECKS, GATE_ROW_UNREADABLE, GATE_ROW_UNVERIFIED].freeze
+  #
+  # ==== THIS SET IS NOT CI_NO_VERDICT_STATES, AND THE DIFFERENCE IS LOAD-BEARING ====
+  #
+  # They were 1:1 until /tasks/no-pr-records-as-fail, which is an accident of the three
+  # states that arrived first, not a rule. They answer DIFFERENT QUESTIONS:
+  #
+  #   CI_NO_VERDICT_STATES  is GATE SEMANTICS — "a FULL local cert may stand in for this
+  #                         refusal, so the review still ADVANCES."
+  #   GATE_ROW_NO_VERDICT   is RENDERING — "this row is neither a pass nor a failure, so
+  #                         paint it ⚠ rather than ✓ or ✗."
+  #
+  # :no_pr is a member of the SECOND and deliberately not the first. Its row is honestly
+  # no-verdict (there was no CI to have one), but no cert may excuse it: what is missing
+  # is not the EVIDENCE, it is the SUBJECT — review's job is to merge a PR, and a cert
+  # cannot conjure one. Admitting it to CI_NO_VERDICT_STATES would let a task with no PR
+  # at all advance a review on tier 2 of the allow-list, which is the most dangerous
+  # false green this gate could produce; the :no_pr refusal already returns
+  # cert_clears = false for exactly this reason. So keep any future member's two
+  # memberships decided SEPARATELY, and do not restore an equality between these lists.
+  GATE_ROW_NO_VERDICT = [GATE_ROW_NO_CHECKS, GATE_ROW_UNREADABLE, GATE_ROW_UNVERIFIED,
+                         GATE_ROW_NO_PR].freeze
 
   # The review role's refusal for a non-green CI → [message, cert_clears]. Never called
   # for :green (the allow-list's only pass) nor for a state `verdict`'s case below
@@ -426,17 +494,48 @@ module CiGate
     # closes the mirror-image misreport on that path — exactly as :unreadable's did.
     when :none then GATE_ROW_NO_CHECKS
     when :unverified then GATE_ROW_UNVERIFIED
+    # THERE IS NO PR, SO THERE IS NO CI (/tasks/no-pr-records-as-fail). The last state
+    # riding the `else`, and the only one that took BOTH of its wrong turns: "fail" in
+    # review (a red-CI bounce for a PR that does not exist) and "unverified" for the
+    # builder (colliding with the state where `gh` fell over, whose recorded remedy —
+    # "re-read, do NOT chase a credential" — is the wrong instruction for a task that
+    # simply has not pushed a PR yet).
+    #
+    # UNCONDITIONAL, in both roles, for the reason :unreadable and the other two are:
+    # whether a PR exists is a fact about the WORLD, not about who asked, and a
+    # role-conditional answer gives one fact two names in a record whose whole job is
+    # being read later by someone who was not here. Here that is not a tidiness argument
+    # — the two names were "fail" and "unverified", both false, and both already in use
+    # for something else.
+    #
+    # RECORDED, NOT OMITTED, and NOT admitted to CI_NO_VERDICT_STATES. Both halves of
+    # that are argued on GATE_ROW_NO_PR; the short form is that the row is honestly
+    # no-verdict while the refusal is honestly uncertifiable, so the value is amber and
+    # the cert still cannot clear it.
+    when :no_pr then GATE_ROW_NO_PR
     else
       # A FAILED dor_review must name CI as the failing SOP when CI is why it failed.
       # Leaving the no-verdict family on a flat "unverified" recorded the card's sole
       # cause as a NOTE — the same asymmetry :pending avoids one line above.
       #
-      # WHAT IS LEFT HERE IS DELIBERATELY NOT THE NO-VERDICT FAMILY. Every member of
-      # CI_NO_VERDICT_STATES now has its own arm above; this default serves :no_pr and
-      # any state ci_status.rb grows later. :no_pr is NOT a non-answer FROM CI — it is
-      # the absence of a review target — and an unclassified state is not the family
-      # either, it is an unread gate. An allow-list defaults to REFUSE, which is what
-      # a gate is for.
+      # WHAT IS LEFT HERE IS NOW ONLY THE UNCLASSIFIED. Every member of
+      # CI_NO_VERDICT_STATES has its own arm above, and since
+      # /tasks/no-pr-records-as-fail so does :no_pr — which was the last NAMED state on
+      # this default, and the one that proved the default is not a safe place to leave a
+      # state you have actually thought about (it answered "fail" to a reviewer and
+      # "unverified" to a builder, for the same world).
+      #
+      # So this now serves exactly one population: a state ci_status.rb grows that nobody
+      # has classified here yet. That is not the no-verdict family — it is an unread
+      # gate, and an allow-list defaults to REFUSE, which is what a gate is for. The
+      # right response to landing here is to ADD AN ARM, not to read the value.
+      #
+      # NOTE THE ASYMMETRY THAT REMAINS, deliberately: an unclassified state still
+      # answers "fail"/"unverified", the two words this family spent three tasks taking
+      # OUT of honest rows. That is correct for an unknown — a gate that cannot classify
+      # a state must not paint it amber and look considered — but it does mean a `fail`
+      # here can be an unread gate rather than a red CI. `state` is recorded alongside;
+      # read it before calling any `ci:fail` a CI failure.
       review_refused ? "fail" : "unverified"
     end
   end
