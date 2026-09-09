@@ -33,11 +33,19 @@ class MigrationLaneClaim < ApplicationRecord
 
   # A migration is written in one sitting, but that sitting is long: schema
   # design, the migration file, the seed/fixture update, and a test run share the
-  # lane. The review lane's 120s TTL suits a claim renewed every ~5s by the
-  # status line; this lane has no renewer, so the TTL is the whole working
-  # window. Four hours frees a crashed holder the same working day while never
-  # yanking the lane out from under live work. `release` is the normal exit — the
-  # TTL is the backstop for the holder who never comes back.
+  # lane. This lane has NO renewer, so the TTL is the whole working window. Four
+  # hours frees a crashed holder the same working day while never yanking the
+  # lane out from under live work. `release` is the normal exit — the TTL is the
+  # backstop for the holder who never comes back.
+  #
+  # This paragraph used to contrast itself against "the review lane's 120s TTL,
+  # suited to a claim renewed every ~5s by the status line". Both halves were
+  # wrong: nothing in bin/statusline has ever renewed a review claim (it heartbeats
+  # the build claim and the shift lease), and the review lane's renewer beats every
+  # 30s, not 5. The review lane now carries its own derived TTL for the same reason
+  # this one does — see ClaimLease::REVIEW_TTL_SECONDS, which reasons from a
+  # measured corpus of review lengths exactly as this comment reasons from a
+  # sitting.
   DEFAULT_TTL_SECONDS = 4 * 60 * 60
 
   validates :lane, presence: true, uniqueness: true

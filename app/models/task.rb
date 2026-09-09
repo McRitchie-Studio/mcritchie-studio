@@ -356,6 +356,17 @@ class Task < ApplicationRecord
   # keeps blocked_at meaning "currently blocked" — without it, a later return to
   # building would false-positive as blocked off a stale timestamp.
   before_save :clear_block_on_forward_move, if: -> { will_save_change_to_stage? && stage != "building" }
+  # A task ENTERING `submitted` is being offered for review NOW, so any review claim
+  # already sitting on it belongs to a PREVIOUS review — one that ended when the task
+  # left `submitted`. Clear it, or the resubmission after a rework bounce is held out
+  # of `Task.reviewable` until that stale lease expires. Harmless while the review lease
+  # was 120s; a silent multi-hour queue stall now that the review lane carries its own
+  # TTL (ClaimLease::REVIEW_TTL_SECONDS). Measured on the branch that raised it: 205
+  # minutes. See TaskReviewClaim.release_for_new_submission! for why this is the one
+  # transition where an unconsented clear is sound.
+  after_commit :clear_stale_review_claim_on_submit,
+               on: %i[create update],
+               if: -> { previous_changes.key?("stage") && stage == "submitted" }
   # Per-session mascot: re-derive on each build-phase transition (designed/building/
   # submitted) so a task picked up by a DIFFERENT agent swaps to that session's Pokémon.
   # FIRST of the mascot callbacks: put the handle back before anything reads it.
@@ -2653,6 +2664,18 @@ class Task < ApplicationRecord
     self.blocked_by = nil
     self.block_kind = nil
     self.blocked_from = nil
+  end
+
+  # Drop a review claim left over from a PREVIOUS review of this task (see the callback
+  # above). after_commit, not before_save: the claim row is another table taking its own
+  # row lock, and a lock taken inside the task's own save would widen this transaction
+  # for a write that is not part of the task record. Best-effort — a claim we failed to
+  # clear costs a delayed review, while raising here would fail the stage move itself.
+  def clear_stale_review_claim_on_submit
+    TaskReviewClaim.release_for_new_submission!(slug)
+  rescue StandardError => e
+    Rails.logger.warn("[review-claim] stale-claim clear failed for #{slug}: #{e.class}: #{e.message}")
+    nil
   end
 
   # A soul SLUG is a short human handle (carl, shannon) — lowercase letters with

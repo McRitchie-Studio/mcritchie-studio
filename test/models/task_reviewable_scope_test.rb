@@ -12,7 +12,7 @@ class TaskReviewableScopeTest < ActiveSupport::TestCase
     Task.create!(title: title, stage: "submitted")
   end
 
-  def claim(task, now: Time.current, ttl: ClaimLease::DEFAULT_TTL_SECONDS)
+  def claim(task, now: Time.current, ttl: ClaimLease::REVIEW_TTL_SECONDS)
     TaskReviewClaim.acquire(task_slug: task.slug, session: "sess-R", nonce: "inst-R", now: now, ttl: ttl)
   end
 
@@ -32,14 +32,14 @@ class TaskReviewableScopeTest < ActiveSupport::TestCase
     task = submitted("Lapsed Review Claim Task")
     claim(task, now: now)
     # Ask for reviewable AFTER the lease has lapsed (crashed reviewer, no renewal).
-    later = now + ClaimLease::DEFAULT_TTL_SECONDS + 1
+    later = now + ClaimLease::REVIEW_TTL_SECONDS + 1
     assert_includes Task.reviewable(now: later), task, "a lapsed claim frees the task for the next reviewer"
   end
 
   test "reviewable INCLUDES a submitted task whose review claim was released" do
     task = submitted("Released Review Claim Task")
     claim(task)
-    assert TaskReviewClaim.release(task_slug: task.slug, session: "sess-R", nonce: "inst-R")
+    assert TaskReviewClaim.release(task_slug: task.slug, session: "sess-R", nonce: "inst-R").released?
     assert_includes Task.reviewable, task, "a released claim (null expiry) leaves the task reviewable"
   end
 

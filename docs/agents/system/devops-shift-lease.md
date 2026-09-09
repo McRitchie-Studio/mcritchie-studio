@@ -156,6 +156,70 @@ cannot say WHICH refusal it is, so the CLI resolves that with the holder read
 `status` already owns — one extra call, on a path that used to produce no output at
 all.
 
+**The REVIEW lane now has its own TTL** (fixed 2026-09-08,
+`review-lease-outlives-review`). Fixing the renewer was necessary and not sufficient:
+the lease it renews was still the SHARED 120-second build lease, so the
+no-two-reviewers-on-one-PR property rested on an unbroken chain of ~180 beats across
+a real review. Miss four to a board deploy, a throttled API, or a slept laptop and it
+lapsed **silently** while the reviewer worked on. Two reviews that same day ended with
+a `release` that no-op'd because the holder had changed underneath them.
+
+`ClaimLease::REVIEW_TTL_SECONDS` (**12,275s — 3h24m35s**) is derived, not chosen, and
+`lib/claim_lease.rb` carries the corpus a guard test reads. 1233 review windows on the
+production board (each review-claim intent event to that task's next
+`reviewed`/`blocked` transition) put the median at 12.6m and the p95 at **8,183s**;
+past that the windows stop describing review WORK and become reviews parked across a
+break, a band with no ceiling at all (8h, 11h). The p95 is corroborated by a second
+instrument that CANNOT span a break — the `g2a_primary` GateRun, one attempt, n=259,
+max **7,962s** — and that agreement at ~2.2h is the band separator. Clear it by half
+again, the same margin this file's other derived thresholds use.
+
+What it buys and what it costs, both plainly. A normal review now holds its task with
+**zero** renewals, so the renewer is redundancy rather than the guarantee. And the TTL
+is ALSO the bound on reclaiming a genuinely dead reviewer's task, which moves from 2
+minutes to 3h25m — the cheap side of the trade, because a stranded claim does not
+block the pipeline (`Task.reviewable` skips it and the sweep reviews something else),
+while a duplicated review costs the whole review plus a stranded verdict. The beat is
+deliberately NOT re-derived from it: `ShiftRenewer::INTERVAL_SECONDS` stays 30s, since
+a 51-minute beat would blind `review-claim status`, whose whole instrument is watching
+the expiry move.
+
+The build claim and the two role leases keep `DEFAULT_TTL_SECONDS` (120s) — sized for
+`bin/statusline`'s 45s heartbeat. **`bin/statusline` has never renewed a review
+claim**; the comment that once justified sharing the number described a "~5s render
+cadence" that renews nothing on this lane, and two other files had copied it.
+
+**`bin/task review-claim release` reports what the board did, too.** The longer TTL is
+what made this urgent: a release that quietly dropped nothing used to cost 120s and now
+strands the task for over three hours — and the review most likely to hit it is the long
+one. `release` also refused to drop its OWN lapsed lease (`ClaimLease.evaluate` answers
+`:expired` before it compares identity), so the reviewer who most needed to hand a task
+back was the one who could not. Five outcomes, five messages:
+
+| state | says |
+|-------|------|
+| released a live lease you held | `review released.` |
+| released, but your lease had LAPSED | **stderr warning**: the task was FREE for part of your review — check the PR |
+| a DIFFERENT live instance holds it | **stderr warning**: names who has it now; the review changed hands, reconcile |
+| somebody else's LAPSED claim is on it | nothing dropped, and the task is free either way |
+| no claim row at all | nothing dropped, and the task is free either way |
+
+Exit stays 0 for all five (a release that found nothing to drop is not a failed
+review); the honesty is in the message, and the two dangerous states go to stderr.
+
+**A long TTL makes a FORGOTTEN release expensive, so a resubmission clears the
+previous review's claim.** `Task.reviewable` asks only whether a live claim exists, so
+after a rework bounce (`bin/task block`, stage → `building`) the builder's resubmission
+was held out of the review queue by the LAST review's lease — **measured at 205 minutes
+on the branch that raised the TTL**, and silent. Entering `submitted` now clears any
+claim already on the task (`TaskReviewClaim.release_for_new_submission!`), which is
+sound for one reason and only at that one transition: a task being offered for review
+NOW cannot be under a review claimed before this submission. **The bounce itself is
+deliberately left alone** — the reviewer who just blocked a task is often still writing
+feedback, which is the same reason `ReviewClaimCli::TERMINAL_STAGES` excludes
+`building`. The stale holder's renewer, if any, stops on its next beat: renewing an
+unclaimed row answers `:no_lease`, the 204 that ends the loop.
+
 Surface: `bin/devops-shift acquire|renew|release|status` (+ the internal
 `renew-loop`); the board endpoints
 `POST /api/v1/devops_shifts/{acquire,renew,release}` + `GET …/devops_shifts`; the
