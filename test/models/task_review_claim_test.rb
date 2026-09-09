@@ -104,7 +104,7 @@ class TaskReviewClaimTest < ActiveSupport::TestCase
     t0 = Time.utc(2026, 7, 21, 3, 0, 0)
     acquire(**A, now: t0)
     # B launches AFTER A's lease has lapsed (crashed reviewer, no renewal).
-    out = acquire(**B, now: t0 + ClaimLease::DEFAULT_TTL_SECONDS + 1, label: "Haunter")
+    out = acquire(**B, now: t0 + ClaimLease::REVIEW_TTL_SECONDS + 1, label: "Haunter")
     assert out.acquired, "a lapsed review lease is reclaimable"
     assert_equal :expired, out.disposition
     assert_equal "sess-B", out.claim.claimed_session
@@ -115,7 +115,7 @@ class TaskReviewClaimTest < ActiveSupport::TestCase
     t0 = Time.utc(2026, 7, 21, 3, 0, 0)
     acquire(**A, now: t0, label: "Gastly")
     # B takes over after A's lease lapsed, WITHOUT supplying its own label.
-    out = acquire(**B, now: t0 + ClaimLease::DEFAULT_TTL_SECONDS + 1, label: nil)
+    out = acquire(**B, now: t0 + ClaimLease::REVIEW_TTL_SECONDS + 1, label: nil)
     assert out.acquired
     assert_equal :expired, out.disposition
     assert_equal "sess-B", out.claim.claimed_session
@@ -148,8 +148,9 @@ class TaskReviewClaimTest < ActiveSupport::TestCase
 
   test "release frees the task only for the holder" do
     acquire(**A)
-    refute TaskReviewClaim.release(task_slug: SLUG, session: "sess-B", nonce: "inst-B"), "a non-holder cannot release"
-    assert TaskReviewClaim.release(task_slug: SLUG, session: "sess-A", nonce: "inst-A")
+    refute TaskReviewClaim.release(task_slug: SLUG, session: "sess-B", nonce: "inst-B").released?,
+           "a non-holder cannot release"
+    assert TaskReviewClaim.release(task_slug: SLUG, session: "sess-A", nonce: "inst-A").released?
 
     row = TaskReviewClaim.find_by(task_slug: SLUG)
     assert_nil row.claimed_session
@@ -180,7 +181,7 @@ class TaskReviewClaimTest < ActiveSupport::TestCase
   # instance is refused at EVERY point in it.
   test "a headless reviewer keeps the task across the whole review window, second acquire refused throughout" do
     t0 = Time.utc(2026, 7, 21, 4, 0, 0)
-    ttl = ClaimLease::DEFAULT_TTL_SECONDS
+    ttl = ClaimLease::REVIEW_TTL_SECONDS
     beat = ShiftRenewer::INTERVAL_SECONDS
 
     assert acquire(**A, now: t0, label: "Gengar").acquired
@@ -218,7 +219,7 @@ class TaskReviewClaimTest < ActiveSupport::TestCase
 
     # A DEAD reviewer's renewer dies with its anchor, so the lease is never renewed at
     # all — THAT is what frees the task, and it is asserted by simply not renewing here.
-    dead_at = t0 + ClaimLease::DEFAULT_TTL_SECONDS + 1
+    dead_at = t0 + ClaimLease::REVIEW_TTL_SECONDS + 1
     refute TaskReviewClaim.find_by(task_slug: SLUG).live?(now: dead_at), "the lease lapsed on its own"
 
     out = acquire(**B, now: dead_at)
@@ -237,7 +238,7 @@ class TaskReviewClaimTest < ActiveSupport::TestCase
   test "a lapse re-acquired by its own holder is a heal, but never once someone else has it" do
     t0 = Time.utc(2026, 7, 21, 4, 0, 0)
     assert acquire(**A, now: t0).acquired
-    lapsed_at = t0 + ClaimLease::DEFAULT_TTL_SECONDS + 1
+    lapsed_at = t0 + ClaimLease::REVIEW_TTL_SECONDS + 1
 
     healed = TaskReviewClaim.renew(task_slug: SLUG, session: A[:session], nonce: A[:nonce], now: lapsed_at)
     assert_equal :reacquired, healed.state, "A's own lapse, which nobody else took, heals"
@@ -245,7 +246,7 @@ class TaskReviewClaimTest < ActiveSupport::TestCase
 
     # Now let it lapse again and let B legitimately take it. A's next heartbeat must be
     # REFUSED: re-acquire is a compare-and-set, never a reach across a live reviewer.
-    taken_at = lapsed_at + ClaimLease::DEFAULT_TTL_SECONDS + 1
+    taken_at = lapsed_at + ClaimLease::REVIEW_TTL_SECONDS + 1
     assert acquire(**B, now: taken_at).acquired
 
     refused = TaskReviewClaim.renew(task_slug: SLUG, session: A[:session], nonce: A[:nonce], now: taken_at + 5)
@@ -340,7 +341,7 @@ class TaskReviewClaimCrewSeatTest < ActiveSupport::TestCase
 
     # The reviewer dies: no more heartbeats, so the lease simply runs out. Time
     # moves, nothing else — exactly what a crashed reviewer leaves behind.
-    travel(ClaimLease::DEFAULT_TTL_SECONDS + 60) do
+    travel(ClaimLease::REVIEW_TTL_SECONDS + 60) do
       refute TaskReviewClaim.find_by(task_slug: SLUG).live?
       refute task.reload.review_in_progress?, "a dead reviewer must not hold the seat"
     end

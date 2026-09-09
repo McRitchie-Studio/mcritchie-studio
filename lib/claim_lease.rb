@@ -27,12 +27,90 @@ require "time"
 # Every function is PURE: inject `now:` (and the mover identity) — nothing here
 # reads the clock, the environment, or the process tree.
 module ClaimLease
-  # The lease TTL. 120s comfortably outlives the ~5s bin/statusline render cadence
-  # (≈24 renders of slack) so a brief stall or a throttled heartbeat never falsely
-  # expires a live claim — yet a closed/crashed terminal frees the task within two
-  # minutes. The renewer and the reader share this constant, so the "last heartbeat
-  # Ns ago" the gate reports is exact, not an estimate.
+  # The lease TTL for the BUILD claim and the two ROLE leases (DevopsShift,
+  # ReleaseConductorClaim). Those are renewed by bin/statusline, whose heartbeat is
+  # throttled to 45s (STATUSLINE_HEARTBEAT_THROTTLE) — so 120s is under three beats
+  # of slack: a brief stall or a throttled heartbeat never falsely expires a live
+  # claim, yet a closed/crashed terminal frees the task within two minutes. The
+  # renewer and the reader share this constant, so the "last heartbeat Ns ago" the
+  # gate reports is exact, not an estimate.
+  #
+  # THIS IS NOT THE REVIEW LANE'S TTL — see REVIEW_TTL_SECONDS below, and do not
+  # re-merge them. It answered for the review lease too until 2026-09-08, justified
+  # by a comment describing a "~5s render cadence" that is wrong twice over: the
+  # status line's RENEWAL is throttled to 45s (not 5s, so ~2.7 beats of slack rather
+  # than the claimed ≈24), and it renews the build claim and the shift lease and
+  # NEVER a review claim. Two other files copied that sentence before it was caught.
   DEFAULT_TTL_SECONDS = 120
+
+  # --- The review lane's own TTL --------------------------------------------
+  #
+  # WHY THE REVIEW LANE NEEDS ITS OWN NUMBER. A build claim and a review claim are
+  # renewed by different machinery and protect different things. The build claim is
+  # heartbeat by a terminal that is rendering. The review claim (TaskReviewClaim) is
+  # held for one unit of WORK — a whole PR review — and is renewed by the DETACHED,
+  # timer-driven ShiftRenewer on a 30s beat. Sharing 120s made the
+  # no-two-reviewers-on-one-PR gate rest entirely on an unbroken chain of ~180
+  # renewals: miss four beats to a board deploy, a throttled API, or a slept laptop
+  # and the lease lapses SILENTLY mid-review, after which a second pr-review session
+  # can pop the same PR. Measured 2026-09-08: two reviews ended with a `release` that
+  # no-op'd because the holder had changed underneath them.
+  #
+  # The precedent is MigrationLaneClaim, whose 4h TTL reasons explicitly about not
+  # yanking a lane out from under live work. The same reasoning applies here, and so
+  # does the asymmetry this file already states for desks: a lease that outlives a
+  # DEAD holder costs a delay, while one that lapses under a LIVE holder costs the
+  # work itself — a duplicated review, and a verdict stranded when the second
+  # reviewer takes the task.
+  #
+  # THE CORPUS, as data rather than prose, so the guard test can READ it. 1233 review
+  # windows on the production board, measured 2026-09-08: for each review-claim
+  # intent event (written inside TaskReviewClaim.acquire) the elapsed time to that
+  # task's next `reviewed`/`blocked` transition, discarding pairs over 12h — an
+  # intent whose review never closed, matched to an unrelated later verdict.
+  MEASURED_REVIEW_WINDOW_SECONDS = {
+    p50: 756,           # 12.6m
+    p75: 1_299,         # 21.7m
+    p90: 3_220,         # 53.7m
+    sitting_max: 8_183, # 2h16m — the binding number: the longest CONTINUOUS review
+    parked_p99: 28_636, # 8h    — a review parked across a break (see below)
+    parked_max: 40_566  # 11.3h
+  }.freeze
+
+  # WHERE THE BAND ENDS, and why `sitting_max` is the corpus p95 rather than its max.
+  # Past ~2h the windows stop describing review WORK: they are reviews parked across
+  # a break, an operator wait, or a rework conversation, and that band has no ceiling
+  # at all — 8h, 11h, and bounded above only by the 12h cut. A TTL cannot cover an
+  # unbounded tail, and stretching one to try is how the dead-holder bound becomes
+  # absurd. The renewer covers that band; covering it is what the renewer is for.
+  #
+  # The cut is not eyeballed. A SECOND, INDEPENDENT instrument that CANNOT span a
+  # break — the `g2a_primary` GateRun, ONE attempt of the primary review lane, n=259
+  # — puts its own maximum at 7_962s. Two instruments measuring different things
+  # agree on a ~2.2h ceiling for a continuous review, and that agreement is the band
+  # separator this constant rests on. Re-measure either corpus and the number moves
+  # with it; that is the point of deriving it.
+  #
+  # Then clear that ceiling by half again — the same ordinary margin on a noisy tail
+  # estimate this file already applies to its other two derived thresholds. 3h24m35s,
+  # deliberately not a round number: a round threshold reads as chosen.
+  REVIEW_TTL_SAFETY_FACTOR = 1.5
+  REVIEW_TTL_SECONDS = (MEASURED_REVIEW_WINDOW_SECONDS[:sitting_max] * REVIEW_TTL_SAFETY_FACTOR).ceil # 12_275
+
+  # WHAT IT COSTS, stated rather than hidden. REVIEW_TTL_SECONDS is ALSO the bound on
+  # reclaiming a genuinely DEAD reviewer's task, and that bound moves from 2 minutes
+  # to 3h25m. The trade is taken deliberately, and it is the cheap side: a stranded
+  # review claim does not block the pipeline — `Task.reviewable` skips it and the
+  # sweep reviews something else — so the cost is one task missing a review wave,
+  # against a duplicated review whose cost is the whole review plus a stranded
+  # verdict. The bound stays inside one working session and well inside the renewer's
+  # 12h safety cap, exactly as MigrationLaneClaim's 4h does.
+  #
+  # THE BEAT IS DELIBERATELY NOT RE-DERIVED FROM THIS. ShiftRenewer::INTERVAL_SECONDS
+  # stays TTL/4 of the SHARED constant (30s). Re-deriving it here would beat once per
+  # 51 minutes, which would blind `bin/task review-claim status` — its whole
+  # instrument is watching the expiry MOVE within a renewal cycle — and would delay
+  # every stop condition by the same hour. The beat's job is liveness, not slack.
 
   CLAIM_KEYS = %w[claimed_session claim_nonce claim_expires_at].freeze
 

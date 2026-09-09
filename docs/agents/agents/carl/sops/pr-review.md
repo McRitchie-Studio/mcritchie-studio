@@ -92,8 +92,8 @@ empties again on release, or within the claim's TTL if the reviewer dies.
 reads into one atomic server-side pop: it ranks the reviewable queue, skips any
 task whose live CI is NOT green (red / pending / ci-less / conflicted are never
 popped — they defer to a later wave, so a red PR is never claimed), and acquires
-the per-task review lease (`TaskReviewClaim`: 120s TTL, renewed by the run,
-self-healing on crash) on the winner — all under a row lock, so two racing
+the per-task review lease (`TaskReviewClaim`: a **3h25m** TTL sized to outlast a
+real review unaided, renewed by the run, self-healing on crash) on the winner — all under a row lock, so two racing
 sessions serialize and exactly one wins. It prints **just the claimed slug** so a
 caller can `slug=$(bin/task claim-next-review)`, or **`none`** (exit 4) when
 nothing is eligible.
@@ -109,11 +109,18 @@ refuses, including a verdict it could not read (`unreadable` / `unverified` /
 the unread verdict; a refusal with no such cert is a `conductor-review`, since the
 credential is not the builder's to fix. See `../../../modules/gates/dor.md`.
 
-Release the claim on the verdict (a crash frees it via the TTL):
+Release the claim on the verdict (a crash frees it via the TTL, within 3h25m):
 
 ```bash
 bin/task review-claim release <slug>
 ```
+
+**Read what release says — it now names which of five states it found.** A clean drop
+is one quiet line. A drop whose lease had already LAPSED, and any refusal, goes to
+**stderr** and is worth stopping for: "your lease had lapsed" means the task was FREE
+for part of your review, and "held by <soul>" means it changed hands and somebody else
+has been reviewing it too. Reconcile before you treat your verdict as the only one.
+The exit code stays 0 in every case, so the message is the signal.
 
 Keep each session's fan-out to **waves of five or fewer agents** (the per-session
 cap: the prod board Postgres has a hard connection budget). A Carl plus his light

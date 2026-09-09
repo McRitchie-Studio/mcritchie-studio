@@ -40,7 +40,7 @@
         </button>
         <span x-ref="resumeCmd" class="hidden"><%= @task.resume_command %></span>
         <%# The live dot attests that a TERMINAL IS PAINTING, nothing more — it is
-            renewed by bin/statusline's ~5s render and so survives a wedged agent.
+            renewed by bin/statusline's 45s-throttled heartbeat and so survives a wedged agent.
             State the progress fact next to it rather than letting "live" be read as
             "progressing" (the 2026-07-13 lie). Informational: no verdict, no reclaim. %>
         <% if @task.claim_live? %>

@@ -273,7 +273,10 @@ class ReviewClaimCliTest < Minitest::Test
       assert_equal ReviewClaimCli::OK, c.run(["release", SLUG]), "release is still never a hard failure"
       refute_match(/review released\./, @out.string,
                    "a 204 means NOTHING was released — saying otherwise is a lie status would contradict")
-      assert_match(/not under review by this session/i, @out.string, "and it says so plainly")
+      # It no longer GUESSES which of the three 204 states this is. With the board
+      # naming no holder, the honest reading is "you held nothing", and the reader is
+      # told the outcome they wanted (a free task) actually holds.
+      assert_match(/nothing released: you held no review lease/i, @out.string, "and it says which state it found")
     end
   end
 
@@ -282,6 +285,82 @@ class ReviewClaimCliTest < Minitest::Test
       c = cli(projects_dir: proj, code: 200, data: { "released" => true })
       assert_equal ReviewClaimCli::OK, c.run(["release", SLUG])
       assert_match(/review released\./, @out.string)
+    end
+  end
+
+  # RELEASE NOW SAYS WHICH STATE IT FOUND (review-lease-outlives-review).
+  #
+  # A 204 has three causes and the CLI used to print one guessed sentence for all
+  # three ("not under review by this session"). Measured 2026-09-08: a probe reading
+  # that line mislabelled two lease states, and a 75-minute review hit the same
+  # confusion live. So the refusal asks the holder read — the SAME one `refuse_renew`
+  # uses — and names what it actually found. The exit code stays 0 throughout: a
+  # release that found nothing to drop is not a failed review.
+
+  def release_refusal_routes(holder)
+    { "/review_claim/release" => [204, {}], "/review_claim" => [200, { "holder" => holder }] }
+  end
+
+  def test_unit_release_refused_by_a_live_holder_names_them_and_warns
+    Dir.mktmpdir do |proj|
+      holder = { "session" => "sess-other", "agent" => "carl", "label" => "Gengar", "live" => true }
+      c = cli(projects_dir: proj, routes: release_refusal_routes(holder))
+
+      assert_equal ReviewClaimCli::OK, c.run(["release", SLUG]), "release is still never a hard failure"
+      assert_match(/NOTHING released/, @err.string)
+      assert_match(/carl/, @err.string, "the review changed hands, and the reader must learn WHO has it")
+      assert_match(/reconcile/i, @err.string,
+                   "two reviewers worked this task — the consequence is what makes this worth saying")
+    end
+  end
+
+  def test_unit_release_over_a_lapsed_foreign_lease_says_the_task_is_free
+    Dir.mktmpdir do |proj|
+      holder = { "session" => "sess-other", "agent" => "carl", "live" => false }
+      c = cli(projects_dir: proj, routes: release_refusal_routes(holder))
+
+      assert_equal ReviewClaimCli::OK, c.run(["release", SLUG])
+      assert_match(/nothing released/i, @out.string)
+      assert_match(/LAPSED claim by/, @out.string, "a lapsed prior holder changes what the reader does next")
+      assert_match(/free either way/i, @out.string, "and the outcome they wanted does hold")
+    end
+  end
+
+  # The 75-minute review's actual ending. The board DID drop the row, but the lease
+  # had lapsed first — so the task was free for part of the review, and a reviewer who
+  # reads "released." and merges is merging on an unverified assumption.
+  def test_unit_release_of_a_lapsed_lease_warns_instead_of_reporting_a_clean_drop
+    Dir.mktmpdir do |proj|
+      c = cli(projects_dir: proj, code: 200, data: { "released" => true, "state" => "released_lapsed" })
+
+      assert_equal ReviewClaimCli::OK, c.run(["release", SLUG])
+      assert_match(/LAPSED/, @err.string, "the reviewer has to learn the lease was not held throughout")
+      assert_match(/check the PR/i, @err.string, "…and what to do about it")
+      refute_match(/review released\.$/, @out.string,
+                   "a lapsed drop is not the quiet clean drop — reporting it as one is the old silence")
+    end
+  end
+
+  # The three 204 causes plus the two 200s must not all read alike. Under the defect
+  # every one of these produced the same sentence.
+  def test_unit_the_release_outcomes_are_distinguishable_from_each_other
+    Dir.mktmpdir do |proj|
+      lines = {}
+      { held: { "session" => "s", "agent" => "carl", "live" => true },
+        lapsed_foreign: { "session" => "s", "agent" => "carl", "live" => false },
+        none: nil }.each do |name, holder|
+        c = cli(projects_dir: proj, routes: release_refusal_routes(holder))
+        c.run(["release", SLUG])
+        lines[name] = @out.string + @err.string
+      end
+      cli(projects_dir: proj, code: 200, data: { "released" => true, "state" => "released" }).run(["release", SLUG])
+      lines[:clean] = @out.string + @err.string
+      cli(projects_dir: proj, code: 200,
+          data: { "released" => true, "state" => "released_lapsed" }).run(["release", SLUG])
+      lines[:lapsed_mine] = @out.string + @err.string
+
+      assert_equal 5, lines.values.uniq.length,
+                   "five outcomes, five messages — collapsing any pair is how a probe mislabels a lease"
     end
   end
 
