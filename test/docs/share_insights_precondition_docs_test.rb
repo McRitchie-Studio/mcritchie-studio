@@ -221,23 +221,76 @@ class ShareInsightsPreconditionDocsTest < ActiveSupport::TestCase
                  "precondition")
   end
 
-  # The retired shape, stated as a REQUIREMENT rather than as history. The section
-  # necessarily discusses `grader: "mcr"` in order to reject it, so this looks for
-  # the directive form only — a stop keyed on confirmation.
-  test "[docs] the SOP does not gate its entry on McRitchie confirmation" do
-    directives = [
-      /has been confirmed by Mr\. McRitchie/i,
-      /at least one insight has been confirmed/i,
-      /if none are confirmed/i,
-      /only .{0,40}confirmed .{0,40}insights? (are|is) (shared|published|generated)/i
-    ]
+  # ── the sweep ──────────────────────────────────────────────────────────────
+  #
+  # The SOP was never the only place stating this precondition. When it was found,
+  # THREE other live docs carried the same grader gate — heartbeats.md (which
+  # states the act's Precondition in full, and claimed the generator was "scoped to
+  # the confirmed set"), alex/HEARTBEAT.md, and devops-cycle-design.md. An agent
+  # reaches the act through the heartbeat launcher BEFORE it reaches the SOP, so
+  # fixing only the SOP would have left the defect operative and the two authorities
+  # contradicting each other. The sweep therefore covers every live doc that
+  # DESCRIBES the act, derived rather than listed, so a new one joins automatically.
 
-    directives.each do |pattern|
-      refute_match pattern, sop_body,
-                   "share-insights.md gates its entry on McRitchie confirmation again (/#{pattern.source}/). " \
-                   "Insights::DocGenerator publishes ActionGrade.banked with no grader filter, and the " \
-                   "agent write path always grades as `alex` — so this condition stands the SOP down over " \
-                   "every lesson an agent can bank."
+  # The retired shape stated as a REQUIREMENT, not as history. These docs
+  # necessarily discuss `grader: "mcr"` in order to rule it out, so only the
+  # directive forms are matched — a gate, a stop, or a false claim about scope.
+  GRADER_GATE_DIRECTIVES = [
+    /has been confirmed by Mr\. McRitchie/i,
+    /at least one (insight has been confirmed|confirmed insight)/i,
+    /(if )?none (are )?confirmed/i,
+    /scoped to the confirmed set/i,
+    /`?mcr`?-confirmed insights/i,
+    /confirmed insights (shared|to share)/i,
+    # The one-line summaries — soul.md and grade-events.md described the act as
+    # publishing "confirmed insights", the same wrong scope in miniature.
+    /(publish|share)\w*(\s+Mr\. McRitchie's)?\s+confirmed\s+insights/i,
+    /only .{0,40}confirmed .{0,40}insights? (are|is) (shared|published|generated)/i
+  ].freeze
+
+  # The authorities that must be IN the sweep. A floor on coverage, not a count:
+  # if the sweep stops seeing these, it is reading the wrong corpus and its silence
+  # means nothing.
+  REQUIRED_IN_SWEEP = [
+    "docs/agents/agents/alex/sops/share-insights.md",
+    "docs/agents/modules/heartbeats.md",
+    "docs/agents/agents/alex/HEARTBEAT.md",
+    "docs/agents/system/devops-cycle-design.md"
+  ].freeze
+
+  # Every LIVE doc that names the act. Frozen records (audits, any /archive path)
+  # are left as written — they are snapshots of what was true then.
+  def docs_describing_the_act
+    Dir.glob(Rails.root.join("docs/agents/**/*.md"))
+       .reject { |path| path.match?(%r{/(archive|audits)/}) }
+       .select { |path| File.read(path).include?("share-insights") }
+       .map { |path| Pathname.new(path).relative_path_from(Rails.root).to_s }
+       .sort
+  end
+
+  test "[docs] no live doc gates the share act on McRitchie confirmation" do
+    swept = docs_describing_the_act
+
+    REQUIRED_IN_SWEEP.each do |required|
+      assert_includes swept, required,
+                      "#{required} no longer names `share-insights`, so this sweep no longer reads it. " \
+                      "That file states the act's precondition to an agent; if it moved, point the sweep " \
+                      "at where it went rather than letting coverage shrink silently."
     end
+    assert_operator swept.size, :>=, REQUIRED_IN_SWEEP.size,
+                    "the sweep read #{swept.size} doc(s) — below its own floor"
+
+    offenders = swept.flat_map do |path|
+      body = Rails.root.join(path).read
+      GRADER_GATE_DIRECTIVES.filter_map { |pattern| "#{path} → /#{pattern.source}/" if body.match?(pattern) }
+    end
+
+    assert_empty offenders,
+                 "these live docs gate the share act on McRitchie confirmation again. " \
+                 "Insights::DocGenerator publishes ActionGrade.banked with NO grader filter, and the agent " \
+                 "write path always grades as `alex` (the `mcr` row is McRitchie's audit OF that grade, " \
+                 "admin-only) — so this condition stands the act down over every lesson an agent can bank. " \
+                 "It is also not enough to fix the SOP alone: an agent meets the precondition in the " \
+                 "heartbeat launcher first (/tasks/sop-precondition-blocks-sharing)."
   end
 end
