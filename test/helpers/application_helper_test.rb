@@ -653,7 +653,11 @@ class ApplicationHelperTest < ActionView::TestCase
 
     # sleeper-auction-watch is NOT a launcher act either, and for the opposite
     # reason: nothing runs it for you. It is calendar-bound (one league's draft,
-    # one evening a year), so a standing chip on a cadence card would misstate it.
+    # one evening a year), and that decision is settled in turf_monster/HEARTBEAT.md.
+    # The CARD's reason is measurable and separate: at 21 characters the slug needs
+    # 114px of a 99px chip text area and clips (test/system/workflows_card_chip_fit).
+    # NOT because a chip implies a cadence — clean-infra, deploy-with-task and
+    # contest-rehearsal are all on the card and all direct-invoke or off-sequence.
     # Registered by name in the SOP registry and owned in the prose guard's
     # ACT_OWNER; absent HERE on purpose. Flip this to a chip and you also owe an
     # ACTION_DESCRIPTIONS caption, an ACTION_ICONS glyph, and the array above.

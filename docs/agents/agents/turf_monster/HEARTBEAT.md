@@ -21,10 +21,19 @@ invokes a single act directly, read that act's SOP file.
 **The heartbeat itself composes only `live-score-watch`.**
 [`contest-rehearsal`](sops/contest-rehearsal.md) and
 [`sleeper-auction-watch`](sops/sleeper-auction-watch.md) are direct-invocation
-only, which is why the launcher card on the agent profile lists the two
-composable acts while the heartbeat composition runs one. The auction watch is
-deliberately NOT a chip: it is calendar-bound, useful on one evening a year, so
-nothing should schedule it — the same carve-out `archive-shipped` has. Each act
+only, which is why the heartbeat composition runs one act while the launcher card
+carries two. Direct-invocation is a fact about the COMPOSITION, not about card
+membership: `contest-rehearsal` is direct-invocation only and is a chip, so being
+direct-invoke has never been what keeps an act off the card.
+
+The auction watch is deliberately NOT a chip, and two separate reasons hold it
+there. The product reason is this file's and it is settled: the watch is
+calendar-bound, useful on one evening a year with Mr. McRitchie in the chair, so
+nothing should schedule it. The card's reason is its own and it is measured: at
+21 characters the slug needs 114px against a 99px chip text area, so it clips
+(2026-09-09, held by `test/system/workflows_card_chip_fit_test.rb`). It is not
+"the same carve-out `archive-shipped` has" — that act is off the card because
+`production-deploy` already runs it, which is the opposite reason. Each act
 occupies the session for a long stretch — the watch for the length of a game
 window, up to twelve hours; the rehearsal for a full contest cycle — so a
 heartbeat that opened more than one would never reach the rest. That is the same
