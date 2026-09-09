@@ -38,10 +38,18 @@ other session's report red. Verify with `bin/install-agent-docs check`
 (read-only) at any time.
 
 Two runs stay legitimate, and neither is a response to a drift report:
-`bin/agent-runtime install` during fresh-machine bringup
-([`../system/house-burn-down.md`](../system/house-burn-down.md) step 5b), and the
-by-hand fallback `bin/release ship` prints when its own `sync_agent_docs` step
-fails.
+`bin/agent-runtime install` at **bringup** — a machine with no roots installed,
+whether that is a full fresh-machine rebuild
+([`../system/house-burn-down.md`](../system/house-burn-down.md) step 5b) or a
+single app cloned onto a bare machine
+([`../system/bootstrap.md`](../system/bootstrap.md)) — and the by-hand fallback
+`bin/release ship` prints when its own `sync_agent_docs` step fails.
+
+**Bringup is the scope, and single-app bringup is inside it.** Exemption 1 used
+to read "fresh-machine", which left the one-app case arguing about whether it
+counted; it does. The test is the MACHINE, not the app count: no roots installed
+and no ship to wait for. That is the whole of it — an app cloned onto a machine
+that already has roots is not bringup, and neither is a drift report.
 
 **Exactly those two — the list is closed.** Alex's `share-insights` act used to
 run the installer as a third; it no longer does, and must not again. Its output
@@ -67,8 +75,28 @@ table, the `maintenance/kickoff-*.md` briefs, and everything under
 `docs/agents/skills/` — treating *any* mention of the installer as a hit that
 owes an explicit exemption. Descriptive docs under `system/` and `modules/` are
 **not swept**: they name the installer legitimately and constantly (this file
-does), so the any-mention rule would drown there. That limit is deliberate — if
-you add an install directive to a design doc, no guard will stop you.
+does), so the any-mention rule would drown there. That limit is deliberate, and
+it is no longer a blanket amnesty for design docs — see the scope guard next.
+
+**Where the command is printed, the scope is printed with it.**
+`test/docs/installer_command_scope_test.rb` sweeps **all** of `docs/agents/**`,
+`system/` and `modules/` included, and asks a different question: not "is the
+installer mentioned" but "is the reader being handed a command to run". Every
+fenced `bin/agent-runtime install` / `bin/install-agent-docs` command line must
+carry the bringup scope — on the line itself, or in the prose that introduces
+the block. Three sites qualify today, and the predicate draws **zero** false
+positives across 123 live docs, because a copyable command line is a different
+object from a prose mention. It pairs that with an imperative-mood directive
+sweep and a per-site pin on
+[`../system/bootstrap.md`](../system/bootstrap.md), whose unscoped invitation to
+run the installer by hand is the defect it was written for.
+
+**Its limit, stated so nobody over-trusts it in turn:** it sees command
+*presentations* and the imperative mood — not every sentence that could talk a
+reader into a run. A third-person rationale is still caught only where it names
+the wrong source tree (`test/docs/ship_docs_sync_docs_test.rb`). Three guards,
+three predicates: any mention in an **executed** doc, the wrong **source tree**
+anywhere, and an **unscoped command** anywhere.
 
 ## Drift Review
 
