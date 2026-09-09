@@ -423,7 +423,10 @@ the process spiral it exists to prevent.
 
 ## Go-live note for this doc
 
-This module lives in `docs/agents/modules/` inside `mcritchie-studio`. Changes
-to it — like all agent-doc changes — reach the generated projects-root
-`AGENTS.md` and adapters only after `bin/install-agent-docs` runs from the
-McRitchie Studio primary checkout.
+This module lives in `docs/agents/modules/` inside `mcritchie-studio`, and the
+entry docs link to it by repo path — so a change here is live for the next
+session as soon as it merges. Nothing installs it. Only the generated
+projects-root `AGENTS.md`/`CLAUDE.md` and the user-global skills are published,
+and they are published by an owned step of `bin/release ship`, running from the
+tree that just shipped — never by hand. See
+[`docs-maintenance.md`](docs-maintenance.md) § Editing The Entry Docs.
