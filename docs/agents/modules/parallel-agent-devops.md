@@ -208,7 +208,8 @@ honest, and **none of them needs a manual flag in the common case**:
   task in the fleet. A guard that cries wolf gets routed around.
   `built_by` itself is **auto-stamped on any build CLAIM**: a bare
   `bin/task move <slug> building` records the task's soul persona, else its
-  assigned `agent_slug` (an explicit `--actor <soul>` move wins over both). The
+  assigned `agent_slug` (an explicit `--actor <soul>` move wins over both; an
+  already-recorded `built_by` is kept, so only `--actor` re-points one). The
   stamp is an invariant of the CLAIM, not of the transition, so **a re-claim of a
   task already at `building` stamps too** — which is what `bin/task move <slug>
   building --actor <soul>` after `bin/task begin` relies on. So the builder drops
