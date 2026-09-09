@@ -726,6 +726,11 @@ bin/ship-wait <task-slug> --log <path> --pid <pid>       # attach to one you lau
 - **It is bounded** (`--timeout`, default 1800s; `--interval`, default 10s,
   floored at 1). A wait that can hang forever is the same defect in a new shape.
 
+The log and pidfile land in **`tmp/ship-wait/`** under the desk you run from
+(gitignored, namespaced per slug) — not under `<projects>/.agents`, which is a
+guarded store. Attaching from a different checkout resolves a different root and
+says so; pass `--dir` or `--log` for that.
+
 `--launch` rotates any previous log to `ship-<slug>.log.prev` before starting.
 It has to: a stale sentinel left in place would make the very first read
 terminal, and the fast path would credit the OLD run's verdict to the new ship,

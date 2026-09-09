@@ -60,8 +60,17 @@
 #   --pid PID           PID of an already-launched ship (liveness only)
 #   --timeout SECONDS   bound on the wait (default 1800)
 #   --interval SECONDS  poll interval (default 10, floored at 1)
-#   --dir PATH          state directory (default <projects>/.agents/ship-wait)
+#   --dir PATH          state directory (default <repo root>/tmp/ship-wait)
 #   --quiet             suppress the periodic still-running line
+#
+# WHERE THE STATE LIVES, and why NOT in `.agents`. The log and pidfile default to
+# `tmp/ship-wait/` under the git toplevel of the cwd — the task's own worktree,
+# since that is where `bin/ship` must run from. It is gitignored (`/tmp/*`), it is
+# namespaced per desk AND per slug, and it is deliberately OUTSIDE the operator's
+# `<projects>/.agents`: that root is a guarded store (lib/task_usage_sandbox.rb,
+# test/lib/state_store_containment_test.rb), and a watcher log is not state worth
+# an allowlist entry in an architecture guard. Attaching from a DIFFERENT checkout
+# resolves a different root and says so — pass `--dir` or `--log` for that.
 #
 # Env seams (the house pattern — each defaults to the real sibling tool):
 #   SHIP_WAIT_DIR       state directory
@@ -73,10 +82,12 @@ require "fileutils"
 require "json"
 require "optparse"
 require "time"
-require_relative "lib/projects_root"
+require_relative "lib/repo_root"
 require_relative "lib/ship_wait"
 
 PROGRAM = "ship-wait"
+# The script's own repo — the state-dir fallback when cwd is not in a git work tree.
+ROOT = File.expand_path("..", __dir__)
 SHIP_BIN = ENV.fetch("SHIP_WAIT_SHIP_BIN", File.expand_path("ship", __dir__))
 
 def say(msg) = warn("#{PROGRAM}: #{msg}")
@@ -127,7 +138,7 @@ if options[:message] && !options[:launch]
   die!("-m is only meaningful with --launch (it is forwarded to bin/ship).", ShipWait::EXIT_USAGE)
 end
 
-state_dir = File.expand_path(options[:dir] || File.join(ProjectsRoot.default_projects_dir, ".agents", PROGRAM))
+state_dir = File.expand_path(options[:dir] || File.join(RepoRoot.code_root(nil, ROOT), "tmp", PROGRAM))
 log_path = File.expand_path(options[:log] || ShipWait.log_path(state_dir, slug))
 pid_path = ShipWait.pid_path(state_dir, slug)
 interval = ShipWait.clamp_interval(options[:interval])
