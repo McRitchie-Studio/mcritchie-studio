@@ -247,7 +247,8 @@ class Task < ApplicationRecord
   # form, and never cleared — it is the difference a later reader needs between a PR
   # that was DROPPED DELIBERATELY and one that was simply forgotten, which is the
   # whole defect the open-PR gate closes.
-  DEVOPS_LIST_KEYS = %w[repositories risk_tags acceptance test_plan checks_run abandoned_prs].freeze
+  DEVOPS_LIST_KEYS = %w[repositories risk_tags acceptance test_plan checks_run abandoned_prs
+                        fix_forward].freeze
   # Repo-keyed MAPS: { "<repo>" => "<value>" }. `pr_urls` is the per-repo PR url
   # register — the multi-repo answer to the single-valued `pr_url`.
   #
@@ -942,6 +943,32 @@ class Task < ApplicationRecord
   # might be that someone. Server-owned like #devops_builders.
   def devops_builders_unattributed
     devops.fetch("builders_unattributed", "").presence
+  end
+
+  # WHO MOVED THE PR HEAD OUTSIDE THE BUILD CLAIM — the reviewer fix-forward (a
+  # "zap"), recorded by `bin/task fix-forward` and posted by bin/pr-review at the
+  # seam where it already PROVES the head moved during review.
+  #
+  # WHY A THIRD AUTHORSHIP MOMENT EXISTS. #builder_roll_call had two — the build
+  # CLAIM and the SUBMIT — and a zap is neither. A reviewer who fixes forward puts
+  # his own commit in the merged diff, so he is an author of that PR; but he makes
+  # no claim and does not submit, so nothing grew the author set. Measured twice on
+  # merged PRs the night of 2026-09-09: on #1321 steffon zapped be5579a5 while
+  # holding the light seat and `bin/reviewer-select` then SEATED STEFFON on a PR
+  # carrying steffon's own commit; on #1322 the reviewer pushed 7113af85 to resolve
+  # a conflict and had to DISCLOSE it in prose, because nothing recorded it.
+  #
+  # This is worse than a blank built_by. A blank set makes the selector fail
+  # CLOSED — it refuses and a human chooses. A set missing its zap author fails
+  # OPEN: populated, confident, and incomplete, so nothing looks wrong.
+  #
+  # ENTRIES THAT NAME A SOUL join `builders` (never `built_by` — a reviewer
+  # recorded as the CURRENT builder of the PR he reviewed is the same defect
+  # inverted; the same rule #reviewer_taking_the_build? already enforces). Entries
+  # that name NO soul are the "we saw a fix-forward and cannot attribute it" marker
+  # — ReviewerSelector reads them as an INCOMPLETE author set and the CLI refuses.
+  def devops_fix_forward
+    Array(devops["fix_forward"]).map { |slug| slug.to_s.strip }.reject(&:empty?)
   end
 
   # --- Session resume (V1: store + display + copy; no enforcement gate) -------
@@ -2891,7 +2918,36 @@ class Task < ApplicationRecord
       end
     end
 
+    # THE THIRD AUTHORSHIP MOMENT — the REVIEWER FIX-FORWARD (a "zap"), which is
+    # neither of the two above. Both branches key on an act the AUTHOR performs on
+    # his own task: the claim, or the submit. A reviewer who fixes forward performs
+    # neither — he pushes a commit onto someone else's PR branch — so the author set
+    # never grew, while the merged diff plainly carried his work.
+    #
+    # It is folded here rather than in its own callback so it takes the SAME
+    # append-only, server-owned guarantees as every other author: `fix_forward` names
+    # who to ADD and can never shrink the set, and #enforce_builder_stamp keeps it
+    # out of `built_by` for free (only `soul` reaches that field).
+    #
+    # UNCONDITIONAL — not keyed on a transition. The two branches above are keyed on
+    # a save (a claim, a submit) because they read an ACTOR, which only that save
+    # carries. This reads a RECORDED LIST, which is the same fact on every later
+    # save, so re-folding it is idempotent and a task cannot lose its zap author to
+    # an unrelated write. Entries that name no soul are deliberately dropped here and
+    # read by ReviewerSelector instead — see #devops_fix_forward.
+    authors |= fix_forward_authors
+
     [authors, unattributed]
+  end
+
+  # The souls named by `devops.fix_forward`, current save and prior record unioned.
+  # Both halves are needed: the current one so the write that RECORDS a zap stamps on
+  # that same save, the prior one so a later write that posts no `fix_forward` key
+  # cannot drop an author already on record.
+  def fix_forward_authors
+    current = metadata.is_a?(Hash) ? (metadata["devops"] || {}) : {}
+    (Array(current["fix_forward"]) + Array(prior_devops["fix_forward"]))
+      .map { |slug| slug.to_s.strip }.select { |slug| self.class.soul?(slug) }.uniq
   end
 
   # True when THIS save hands the build off — the task LANDS on `submitted`. Keyed on

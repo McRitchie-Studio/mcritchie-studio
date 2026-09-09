@@ -851,11 +851,11 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
   # are covered by the RULE and the entry was DELETED rather than repointed. An exemption
   # is the temporary form of a fix; deleting one is what finishing looks like.
   NARRATION = [
-    { file: "app/models/task.rb", line: 3009, match: /lands the task back on building and repoints/,
+    { file: "app/models/task.rb", line: 3065, match: /lands the task back on building and repoints/,
       why: "comment explaining the feature-marker repoint" },
     { file: "bin/pr-review", line: 29, match: /with the failing checks named/,
       why: "header comment narrating the gate-zero flow" },
-    { file: "bin/task", line: 920, match: /lands the task back on building and ends with write_feature_marker/,
+    { file: "bin/task", line: 928, match: /lands the task back on building and ends with write_feature_marker/,
       why: "comment explaining the feature-marker repoint" },
     { file: "docs/agents/agents/carl/sops/pr-review-light.md", line: 139, match: /on its own initiative/,
       why: "cautionary account of turf-monster PR 594, the incident that motivated the gate" },
@@ -866,10 +866,10 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
       why: "prose describing the stage effect on board readers" },
     { file: "docs/agents/modules/gates/g2-review.md", line: 93, match: /exits 10\), re-run it/,
       why: "prose naming the breaker's exit code" },
-    { file: "docs/agents/modules/pr-review-sop.md", line: 150,
+    { file: "docs/agents/modules/pr-review-sop.md", line: 165,
       match: /lands the task on building, and every reader/,
       why: "prose describing the stage effect on board readers" },
-    { file: "docs/agents/modules/pr-review-sop.md", line: 318,
+    { file: "docs/agents/modules/pr-review-sop.md", line: 333,
       match: /runs the same check and refuses the second bounce/,
       why: "prose describing the breaker, not an instruction to run it" },
     { file: "lib/review_verdict_gate.rb", line: 12,

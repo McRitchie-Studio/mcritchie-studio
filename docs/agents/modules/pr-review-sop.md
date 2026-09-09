@@ -123,7 +123,21 @@ Avi supervisor. Carl:
    claimed the task stamps `builders_unattributed` instead — the refusal below.
    Forgetting the flag is therefore LOUD, not silent.
 
-   **It REFUSES (exit 2) in four states**, because an empty exclusion list is not
+   **A FIX-FORWARD MAKES YOU AN AUTHOR.** Zapping a PR you are reviewing puts your
+   commit in the merged diff, and this SOP tells you to prefer that over spending a
+   bounce. But a zap makes no build claim, and the claim is the only thing that
+   stamped the author set — so the set never grew. Measured twice on merged PRs the
+   night of 2026-09-09: on **#1321** Steffon zapped `be5579a5` while holding the
+   light seat and the next selection **seated Steffon on a PR carrying Steffon's own
+   commit**; on **#1322** the reviewer pushed `7113af85` and had to disclose it in
+   prose. Worse than a missing stamp: a blank `built_by` fails CLOSED, this failed
+   OPEN — populated, confident, short by one, and nothing looked wrong.
+   `devops.fix_forward` now carries the fact, `bin/pr-review` records it whenever the
+   PR head advances under a review, and one it cannot attribute refuses (below).
+   Nothing is asked of you at the review seat; a zap OUTSIDE a supervised review is
+   recorded by hand with `bin/task fix-forward <task> --agent <soul>`.
+
+   **It REFUSES (exit 2) in five states**, because an empty exclusion list is not
    the same answer as "nobody to exclude":
 
    | Refusal | What it means |
@@ -131,6 +145,7 @@ Avi supervisor. Carl:
    | AN AUTHOR NAMED NOBODY | a `--builder` entry matches no roster soul — including a PARTIAL typo (`--builder steffon,alexx`), where the list still resolves to someone and the missed soul silently goes un-excluded |
    | authors unknown | no *soul* is named — `built_by` blank, or holding a name that is not on the roster, and no soul on a `→ building` **build claim** (a rework bounce lands there too and is deliberately not read as authorship) |
    | author set INCOMPLETE | another session claimed **or shipped** the task and named no soul (`devops.builders_unattributed`) — never YOUR OWN bounce; see below |
+   | A FIX-FORWARD AUTHOR IS UNNAMED | the PR head moved under a review and the pusher could not be attributed (`devops.fix_forward` holds a non-soul marker). The authors on record are RIGHT and INCOMPLETE — a commit in this diff belongs to someone in the pool. Clear it with `bin/task fix-forward <task> --agent <soul>`; **`--builder none` is not a remedy here**, because it denies a commit that provably exists |
    | an author would be SEATED | the pool was too small to drop them all, so one was kept eligible |
 
    Say which it is: `--builder <soul>[,<soul>]` names the authors (comma-separated

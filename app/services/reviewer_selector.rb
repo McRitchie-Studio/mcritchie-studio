@@ -44,12 +44,33 @@
 # seat went to ALEX, who had written every test on the diff, because built_by said
 # "steffon". A hand-passed `--busy alex` was the only thing that stopped it.
 #
-# So #builders is the exclusion set, unioned from three sources: devops.built_by
+# So #builders is the exclusion set, unioned from FOUR sources: devops.built_by
 # (the current builder), devops.builders (the SERVER-OWNED append-only claim
-# history — see Task#builder_roll_call), and every soul actor on a `→ building`
+# history — see Task#builder_roll_call), every soul actor on a `→ building`
 # TaskEvent (persisted tasks only, which self-heals rows stamped before the
-# accumulator existed). Pass `builder:` — a comma/space list — to override the whole
-# set. #builder keeps its old singular meaning for the audit and the log.
+# accumulator existed), and devops.fix_forward (the REVIEWER FIX-FORWARD — see
+# below). Pass `builder:` — a comma/space list — to override the whole set.
+# #builder keeps its old singular meaning for the audit and the log.
+#
+# THE FOURTH SOURCE, and why the first three could not cover it. All three key on an
+# act the AUTHOR performs on his own task: he claims it, or he submits it. A REVIEWER
+# who fixes forward performs neither — he pushes a commit onto someone else's PR
+# branch — so the author set never grew while the merged diff plainly carried his
+# work. Measured twice on merged PRs the night of 2026-09-09: on #1321 steffon zapped
+# be5579a5 while holding the light seat and this class then SEATED STEFFON on a PR
+# containing steffon's own commit; on #1322 the reviewer pushed 7113af85 and had to
+# disclose it in prose because nothing recorded it. It is worse than the blank-stamp
+# case above: that one fails CLOSED and a human decides, while this one failed OPEN —
+# populated, confident, and short by one, so nothing looked wrong.
+#
+# AND IT CANNOT BE DERIVED FROM THE PR. Deriving authorship from the commits was the
+# obvious alternative and it is not available here: a commit carries no soul. 214 of
+# the last 400 commits on `accepted` are authored `Alex McRitchie
+# <amcritchie@gmail.com>` — the operator's own git identity, which every agent
+# inherits by default — and BOTH measured zap commits are among them, so a
+# commit-author derive would have caught neither. It would also collide the operator
+# with the `alex` soul. The fact has to be RECORDED, which is what devops.fix_forward
+# is; #fix_forward_unnamed is the fail-closed half for when it cannot be attributed.
 #
 # An author who isn't a specialist (Carl, a non-pool soul, or the QA owner) excludes
 # nobody from the light pool. If excluding them all would leave too few light
@@ -288,6 +309,14 @@ class ReviewerSelector
       "excluded_builders" => excluded_builders,
       "kept_builders" => kept_builders,
       "builders_unattributed" => builders_unattributed,
+      # A recorded reviewer FIX-FORWARD that names no soul — "the PR head moved
+      # under a reviewer and we cannot say whose commit it is". Non-empty means the
+      # author set is INCOMPLETE for the same reason `builders_unattributed` means
+      # it, by a different route, so it refuses the same way. Kept a separate key
+      # because the two carry opposite remedies: that one wants the CLAIMING session
+      # named, this one wants the ZAPPER named.
+      "fix_forward" => fix_forward,
+      "fix_forward_unnamed" => fix_forward_unnamed,
       # Entries of an explicit --builder list that named nobody. Non-empty means the
       # caller's stated fact was only partly understood — the CLI refuses on it.
       "builder_override_unresolved" => (@builder_override && !builder_asserted_none? ? override_unresolved : []),
@@ -489,9 +518,34 @@ class ReviewerSelector
       elsif @builder_override
         override_builders
       else
-        ([devops_built_by] + task_devops_builders + building_event_actors)
+        ([devops_built_by] + task_devops_builders + building_event_actors + fix_forward)
           .map { |s| s.to_s.strip }.select { |s| soul?(s) }.uniq
       end
+  end
+
+  # `devops.fix_forward` — the souls recorded as having moved the PR head OUTSIDE a
+  # build claim (a reviewer zap). Read here as well as folded server-side into
+  # `devops.builders`, and the redundancy is deliberate: this class is also driven
+  # from `bin/reviewer-select --file task.json` over a hand-held record, and from an
+  # in-memory Task the CLI builds from board JSON. Reading the recorded fact directly
+  # means the exclusion holds even where the server-side fold never ran.
+  def fix_forward
+    return [] if builder_asserted_none? || @builder_override
+    return [] unless task.respond_to?(:devops_fix_forward)
+
+    Array(task.devops_fix_forward).map { |slug| slug.to_s.strip }.reject(&:empty?)
+  end
+
+  # Fix-forward entries that resolve to NO soul — the marker bin/pr-review records
+  # when it PROVES the head moved during a review but cannot attribute the commit.
+  #
+  # It has to be its own state rather than an empty list. "No fix-forward happened"
+  # and "a fix-forward happened and we cannot name who" are opposite facts, and the
+  # second is the one that must refuse: a commit is in the diff whose author is
+  # somewhere in the pool. Recording it as nothing is exactly the silent fail-OPEN
+  # this whole seam exists to close.
+  def fix_forward_unnamed
+    fix_forward.reject { |slug| soul?(slug) }
   end
 
   # The caller's `--builder a,b` — a comma/space list, so naming several authors is
@@ -568,7 +622,7 @@ class ReviewerSelector
   def builder_known?
     return true if builder_asserted_none?
 
-    builders.any? && builders_unattributed.nil?
+    builders.any? && builders_unattributed.nil? && fix_forward_unnamed.empty?
   end
 
   # A soul who EXISTS — Task.soul? checks the roster, not merely the shape.
