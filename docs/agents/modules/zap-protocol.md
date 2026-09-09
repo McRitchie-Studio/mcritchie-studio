@@ -278,8 +278,8 @@ So the whole question is whether the checkout you push from writes the copy of
   pushed head**. `bin/full-suite-check` fingerprints the WORKING tree, and your
   push moved the shared *ref*, not the builder desk's *files*; re-certifying that
   desk as it stands re-stamps the tree that was already there and the lane reads
-  STALE again. Move first, then certify: `git merge --ff-only origin/<branch>`,
-  then `bin/full-suite-check <task>`.
+  STALE again. Move first, then certify: `git -C <desk> merge --ff-only
+  origin/<branch>`, then `bin/full-suite-check <task>`.
 - **A separate CLONE keeps its own refs, so the cert reads FRESH — the dangerous
   reading.** A distinct clone, a push from another machine, or GitHub's
   **Update branch** button never touches the desk's `origin/<branch>`. The hash still
@@ -287,12 +287,35 @@ So the whole question is whether the checkout you push from writes the copy of
   longer the PR head: a green that is evidence of nothing. Only the head check
   above — the stale-tree refusal in this section — catches that one, by comparing
   the graded commit to the PR head. **Re-certify here too, with more reason than in
-  the worktree case:** `git fetch origin <branch>`, then `git merge --ff-only
-  origin/<branch>`, then `bin/full-suite-check <task>`. Do not stop after the
-  fetch: it moves the ref and not your files, so a cert taken between those two
-  commands stamps the tree you already had and the lane stays STALE. A STALE lane
-  is the gate telling you the cert is out of date; this FRESH is the cert being
+  the worktree case:** `git -C <desk> fetch origin <branch>`, then `git -C <desk>
+  merge --ff-only origin/<branch>`, then `bin/full-suite-check <task>`. Do not stop
+  after the fetch: it moves the ref and not your files, so a cert taken between
+  those two commands stamps the tree you already had and the lane stays STALE. A
+  STALE lane is the gate telling you the cert is out of date; this FRESH is the cert being
   wrong while looking right, so nothing prompts you if you skip it.
+
+**`<desk>` is the checkout the gate grades** — the builder's desk, or the repo's
+primary when that repo has no desk for the task; `bin/dor-check`'s refusal prints
+the path. **Keep the `-C`.** A reviewer runs `--gate-role review` from the primary
+checkout, which sits on `release` or `main` by SOP, and `cert_root_guard` accepts a
+cert only from the graded tree — so the move and the re-certify both belong in
+`<desk>`, not wherever you are standing. Drop the `-C` and paste the move from a
+primary and the fast-forward lands on THAT checkout instead: it moves onto the
+feature head, prints `Fast-forward`, and exits 0. Nothing is pushed and a hard
+reset back to the primary's upstream recovers it, but until then every later gate
+and every `bin/release` read is looking at a poisoned checkout.
+
+**If the fast-forward REFUSES** (`Not possible to fast-forward`), `<desk>` carries a
+commit the PR head does not, and **neither hint git prints there ends the job**:
+`--no-ff` SUCCEEDS and leaves a tree still holding what the PR head lacks, and `git
+rebase` alone leaves that commit on top — either way the cert stamps a tree that
+never merges, so the lane stays STALE and you have moved the desk further from the
+PR head. Read what is at stake first (`git -C <desk> log --oneline
+origin/<branch>..HEAD`), then pick by what that commit IS. If it belongs on this
+PR, land it as a zap — rebase onto `origin/<branch>` and push, and it becomes the
+head the merge wanted. If it does not and the desk is yours, `git -C <desk> reset
+--hard origin/<branch>` DISCARDS it. If the desk is not yours, discard nothing:
+lean on the CI green for that exact head and say so in the review.
 
 Measured 2026-09-08 on real repositories and pinned by
 `test/docs/zap_cert_freshness_docs_test.rb`: a push from a sibling worktree moved

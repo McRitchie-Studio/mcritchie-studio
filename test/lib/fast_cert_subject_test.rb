@@ -492,11 +492,18 @@ class FastCertSubjectTest < Minitest::Test
     # (approval-drop-warning-overfires) for the same reason again:
     # test/lib/task_move_approval_drop_test.rb was split out of the frozen hotspot
     # test/lib/task_cli_test.rb, and its header cites this config to say why.
+    # 23 → 24 on 2026-09-09 (prepare-skips-engine-own-lock) for the SAME reason a
+    # third time: test/lib/release_producer_lock_bump_test.rb is a new file rather
+    # than an append to the frozen hotspot test/lib/release_cli_test.rb (7669, at
+    # its ceiling), and its header cites this config to say so. That the same cause
+    # now accounts for three of the four increments is the pattern working, not
+    # drifting — the freeze exists to push new tests into new files, and each one
+    # that explains itself lands here.
     # What the assertion is FOR is the LIST: this one known entry and no other. A
     # second path appearing is the regression; this number changing is bookkeeping.
-    assert_equal ["config/test_health.yml (23)"], over,
+    assert_equal ["config/test_health.yml (24)"], over,
                  "config/test_health.yml was already over the cap before this clause " \
-                 "existed (its PATH matches 23 files); any OTHER entry here means the " \
+                 "existed (its PATH matches 24 files); any OTHER entry here means the " \
                  "config spelling re-opened a cap trip"
   end
 end

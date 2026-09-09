@@ -149,6 +149,7 @@ require "fileutils" # primary_checkout_lock_path mkdir_p's the fixed lock dir
 require_relative "../app/models/release/ladder"
 require_relative "../app/models/release/accepted_certification"
 require_relative "../app/models/release/gemfile_repin"
+require_relative "../app/models/release/lock_drift"
 require_relative "../app/models/release/ship_sequence"
 require_relative "../app/models/release/engine_migration_install"
 require_relative "../app/models/release/post_deploy"
@@ -3305,6 +3306,18 @@ def prepare
   published_gems = publish_gems_for_qa(gem_plan)
   bump_consumer_locks_for_qa(app_groups, published_gems)
 
+  #     4e. PRODUCER LOCK BUMP + THE DRIFT POST-CONDITION. A registered gem is a
+  #     CONSUMER too — studio-engine's Gemfile declares solana-studio — and 4d
+  #     above only ever bumped `app` members, so every publish left the engine's
+  #     own lock behind and reddened every open engine PR. It is a separate step
+  #     rather than another entry in `app_groups` for four reasons argued at
+  #     bump_producer_locks_for_accepted, the sharpest being that it commits onto
+  #     `accepted` (where a gem repo's PRs are based) while 4d commits onto
+  #     `release` (what QA and prod read). Then ASSERT the effect: no repo may be
+  #     left resolving a gem this sweep published older than the published version.
+  bump_producer_locks_for_accepted(published_gems)
+  assert_no_lock_drift!(app_groups, published_gems)
+
   # 5. PRE-QA GATE — the prepare-owned test tier on origin/release, BEFORE any
   #    QA deploy. A regression aborts with eject guidance while every member is
   #    still `reviewed`; the rest of the RC rides on the re-run.
@@ -5758,6 +5771,219 @@ def bump_consumer_locks_for_qa(app_groups, published_gems)
       (@prepare_live ||= []) << "#{repo}: lock bump #{bumps.join(', ')} committed + pushed to origin/#{RELEASE_BRANCH}"
     end
   end
+end
+
+# Bump each PRODUCER's own Gemfile.lock for the gems IT consumes — committed onto
+# its `accepted`, not its `release`.
+#
+# ── WHY THIS IS A SEPARATE STEP AND NOT MORE ENTRIES IN `app_groups` ──────────
+#
+# studio-engine is registered as a `gem` (a producer) and is ALSO a consumer: its
+# Gemfile declares `solana-studio`. The obvious fix — let the engine ride
+# `bump_consumer_locks_for_qa` by adding it to the apps half of the registry — was
+# considered and REFUSED. Four reasons, any one of which is disqualifying:
+#
+#   1. `app_groups` IS A FAIL-CLOSED QUORUM, NOT JUST A LOOP LIST.
+#      validate_gems_for_qa aborts when `app_groups.empty?` and a swept gem is not
+#      self-gated ("would publish with no consumer lock bump, no pre-QA gate, and
+#      no QA deploy, then assemble QA-green untested"), and its per-gem check asks
+#      that a SWEPT CONSUMER declares the gem. Put the engine in that list and a
+#      producer starts satisfying both. solana-studio could then publish with only
+#      studio-engine "consuming" it and no deployable app ever exercising it —
+#      disarming a guard built to stop exactly that silent, irreversible publish.
+#
+#   2. `app_groups` DRIVES DEPLOYS. Its members flow into merge_forward_release_
+#      branches, the pre-QA gate, the QA deploy loop, deploy_app and repin_
+#      consumers. studio-engine has no dyno, no URL and no prod_deploy adapter; it
+#      would need a `qa_evidence: exempt` and a null deploy target to sit there —
+#      i.e. the registry would have to be made false to hold it.
+#
+#   3. THE TARGET BRANCH IS DIFFERENT, and this is the decisive one. The consumer
+#      bump commits onto `release` because the pre-QA gate, QA and prod all read
+#      that tree — it is a DEPLOY fact. The engine's problem is a DEVELOPMENT
+#      fact: its PRs are based on `accepted`, and studio-engine's consumer-ci lane
+#      (`bin/gem-drift-check`) reads the lock in the PR's tree. `bin/release` never
+#      writes `accepted` — it only promotes accepted → release — and nothing merges
+#      release or main back DOWN. So a bump landing on the engine's `release` would
+#      leave every open engine PR exactly as red as before. Same operation, opposite
+#      destination: that cannot be one loop.
+#
+#   4. MEMBERSHIP SCOPE IS DIFFERENT. solana-studio is self-gated, so it MAY
+#      release alone with no app member at all (validate_gems_for_qa says so in
+#      as many words). In that candidate studio-engine is not a member of anything,
+#      so no member-derived list can ever reach it. This step keys off the REGISTRY
+#      — every registered gem — precisely because the engine's dependency on
+#      solana-studio exists whether or not the engine rides this release. That is
+#      the case that actually broke on 2026-09-09.
+#
+# WHAT IT SKIPS, and why each is a skip rather than a failure. A gem never bumps
+# ITSELF: both producers declare their own gem with `gemspec`, never `gem "<self>"`,
+# so consumer_bump_action reports :absent and self-reference cannot arise — the
+# explicit reject below states the intent rather than leaning on that. A producer
+# that does not declare the published gem is skipped. A producer with no sibling
+# checkout is WARNED ABOUT AND SKIPPED rather than aborted: the gems are already
+# pushed by the time this runs, and stranding a candidate over a repo that is
+# merely not cloned would trade an irreversible cost for a missing convenience.
+# assert_no_lock_drift! cannot see that repo either (it has no lock to read), so
+# the warning is the only signal — which is why it is a warning and not a whisper.
+def bump_producer_locks_for_accepted(published_gems)
+  return if published_gems.empty?
+
+  gem_names = published_gems.keys
+  producers = RELEASE_REPOS.fetch("gems", {}).keys
+  return if producers.empty?
+
+  step("bump PRODUCER locks for #{gem_names.join(', ')} on origin/#{ACCEPTED_BRANCH} — a gem repo is a " \
+       "consumer too, and its PRs are based on `#{ACCEPTED_BRANCH}`, not `#{RELEASE_BRANCH}`")
+
+  producers.each do |repo|
+    # A producer never re-pins the gem it publishes.
+    wanted = gem_names.reject { |gem_name| gem_name == repo }
+    if wanted.empty?
+      say("  #{repo}: publishes #{gem_names.join(', ')} and consumes none of it — no lock bump")
+      next
+    end
+
+    if DRY
+      step("  #{repo}: bundle lock --update #{wanted.join(' ')} --conservative in the ship workspace @ " \
+           "origin/#{ACCEPTED_BRANCH} → commit + push origin #{ACCEPTED_BRANCH} (idempotent; no-op when current)")
+      next
+    end
+
+    path = repo_path(repo)
+    unless Dir.exist?(path)
+      say("  ⚠ #{repo}: no checkout at #{path} — CANNOT bump its lock for #{wanted.join(', ')}. Its open PRs " \
+          "will redden on `#{gem_names.join(', ')}` drift until someone runs `bundle update #{wanted.join(' ')}` " \
+          "there on `#{ACCEPTED_BRANCH}`. Clone it as a sibling at the projects root so the next sweep can.")
+      next
+    end
+
+    _, fetched = sh("git", "-C", path, "fetch", "origin", "--quiet")
+    unless fetched
+      say("  ⚠ #{repo}: git fetch failed — skipping the producer lock bump rather than bumping against a " \
+          "possibly-stale origin/#{ACCEPTED_BRANCH}; fix the remote and re-run `bin/release prepare`.")
+      next
+    end
+
+    out, ok = git_capture("-C", path, "rev-parse", "origin/#{ACCEPTED_BRANCH}")
+    unless ok
+      say("  ⚠ #{repo}: could not resolve origin/#{ACCEPTED_BRANCH} — skipping its producer lock bump.")
+      next
+    end
+    tip = out.strip
+
+    with_ship_workspace(repo) do
+      workspace = ship_workspace!(repo, tip)
+      ws_gemfile = File.join(workspace, "Gemfile")
+      next unless File.exist?(ws_gemfile)
+
+      text = File.read(ws_gemfile)
+      touched = wanted.select do |gem_name|
+        Release::ShipSequence.consumer_bump_action(text, gem_name, published_gems[gem_name]) != :absent
+      end
+      if touched.empty?
+        say("  #{repo}: Gemfile does not declare #{wanted.join(', ')} — no lock bump")
+        next
+      end
+
+      expected = text.dup
+      touched.each { |gem_name| expected = Release::ShipSequence.bumped_gemfile(expected, gem_name, published_gems[gem_name]) }
+      File.write(ws_gemfile, expected) if expected != text
+
+      # ASSERT THE LOCK, DO NOT INFER IT FROM THE DIFF — the same discipline (and
+      # the same `expect:`) the consumer bump above learned from rel-20260809-3b8f3d:
+      # `bundle lock --update` exits 0 whether or not it could SEE the version we
+      # just published, so its status proves nothing about which version landed.
+      touched.each do |gem_name|
+        bundle_lock(workspace, gem_name, conservative: true, expect: published_gems[gem_name])
+      end
+
+      # NO install_engine_migrations! here, and that is deliberate rather than an
+      # omission: a producer has no db/ and runs no migrations — it is a gem repo,
+      # not a deployed app. The consumer bump installs them because a consumer's
+      # engine migrations must ride the same commit as its lock.
+      status, = git_capture("-C", workspace, "status", "--porcelain", "--", "Gemfile", "Gemfile.lock")
+      if status.to_s.strip.empty?
+        say("  #{repo}: lock verified at #{touched.map { |g| "#{g} #{published_gems[g]}" }.join(', ')} — " \
+            "nothing to commit (idempotent re-run)")
+        next
+      end
+
+      bumps = touched.map { |g| "#{g} #{published_gems[g]}" }
+      sh("git", "-C", workspace, "add", "Gemfile", "Gemfile.lock")
+      _, committed = sh("git", "-C", workspace, "commit", "-m", "bump #{bumps.join(', ')}", capture: true)
+      abort!("could not commit the producer lock bump in #{repo}'s ship workspace") unless committed
+
+      # Fast-forward-checked, no --force: an `accepted` that moved under us fails
+      # closed here rather than clobbering a merge that landed mid-sweep.
+      _, pushed = sh("git", "-C", workspace, "push", "origin", "HEAD:refs/heads/#{ACCEPTED_BRANCH}", capture: true)
+      unless pushed
+        say("  ⚠ #{repo}: could not push the producer lock bump to origin/#{ACCEPTED_BRANCH} (did it move?). " \
+            "Re-run `bin/release prepare` — it resumes — or run `bundle update #{touched.join(' ')}` there by hand.")
+        next
+      end
+
+      step("  #{repo}: committed #{bumps.join(', ')} onto origin/#{ACCEPTED_BRANCH}")
+      (@prepare_live ||= []) << "#{repo}: producer lock bump #{bumps.join(', ')} committed + pushed to origin/#{ACCEPTED_BRANCH}"
+    end
+  end
+end
+
+# THE POST-CONDITION: after the sweep has bumped every lock it owns, does any repo
+# still resolve a gem this sweep published OLDER than the version published?
+#
+# ASSERTS THE RELATION, NEVER A LITERAL. The floor is `published_gems` — a fact
+# this run produced — so the next publish re-anchors the check with nobody editing
+# anything. A hardcoded `>= 0.9.1` would be a number that goes stale at the next
+# push, which is the defect class this guard exists to end rather than join.
+# Being AHEAD is never a finding: a producer may legitimately resolve an unreleased
+# build of the gem it develops against. The reasoning lives in Release::LockDrift.
+#
+# ABORTS, and prepare RESUMES. By the time this runs the sweep has already done
+# everything it can to repair the drift, so drift that survives means the repair
+# itself failed — the loudest possible moment to say so. The gems are already
+# pushed; the message says so, because the wrong reaction here is to retry the
+# publish. This matches the discipline of every other post-publish abort in this
+# file (the consumer bump aborts on a failed commit or push in the same window).
+#
+# WHAT IT CANNOT SEE: a repo with no sibling checkout has no lock to read, so it is
+# absent from the map rather than counted as aligned. bump_producer_locks_for_
+# accepted warns loudly in that case, which is the only signal there is.
+def assert_no_lock_drift!(app_groups, published_gems)
+  return if DRY || published_gems.empty?
+
+  resolutions = {}
+  seen = {}
+
+  readers = app_groups.map { |g| [ g["repo"], RELEASE_BRANCH ] } +
+            RELEASE_REPOS.fetch("gems", {}).keys.map { |repo| [ repo, ACCEPTED_BRANCH ] }
+
+  readers.each do |(repo, branch)|
+    next if seen[repo]
+
+    seen[repo] = true
+    path = repo_path(repo)
+    next unless Dir.exist?(path)
+
+    # `origin/<branch>` is CURRENT here without a fetch: both bumps push from a
+    # `git worktree add` workspace of this very checkout, so the push updates the
+    # remote-tracking ref both sides share. Reading the branch rather than the
+    # workspace is what makes this measure what LANDED, not what we hoped to land.
+    body, ok = git_capture("-C", path, "show", "origin/#{branch}:Gemfile.lock")
+    next unless ok
+
+    resolutions[repo] = published_gems.keys.to_h do |gem_name|
+      [ gem_name, Release::ShipSequence.locked_version(body, gem_name) ]
+    end
+  end
+
+  findings = Release::LockDrift.trailing(resolutions, published_gems)
+  if findings.empty?
+    step("lock drift: none — every repo with a checkout resolves #{published_gems.map { |g, v| "#{g} #{v}" }.join(', ')} or newer")
+    return
+  end
+
+  abort!(Release::LockDrift.message(findings))
 end
 
 # MERGE-FORWARD: every app's `release` must CONTAIN `main` before the gate reads
