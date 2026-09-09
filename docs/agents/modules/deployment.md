@@ -266,7 +266,9 @@ How a gem rides a release:
    cycle): `bin/dor-check` **refuses** a diff that edits one, because N
    PRs riding one candidate publish exactly **one** version, so no single PR can
    know the answer. The **release** owns the number (step 2). Editing
-   `CHANGELOG.md` is *not* refused. Otherwise it is reviewed → `reviewed` like
+   `CHANGELOG.md` is *not* refused — a PR writes its entries under
+   `## Unreleased` as normal; only the **heading** is release-owned (step 2).
+   Otherwise it is reviewed → `reviewed` like
    any other task.
 2. **`bin/release prepare` allocates the version — you do not.** The bump is
    derived from the candidate's membership: any member risk-tagged `breaking` →
@@ -286,6 +288,55 @@ How a gem rides a release:
    stays armed behind it, so a skipped or wrong allocation still aborts loudly.
    When the derived bump is wrong — most often a `chore` that is genuinely
    breaking — the override is `bin/task update <task-slug> --gem-bump major`.
+
+   **That same commit rolls `CHANGELOG.md` — you do not.** `## Unreleased`
+   becomes `## <allocated version> — <date>` and the bucket stays in place,
+   empty, ready for the next cycle. `Release::Changelog`
+   (`app/models/release/changelog.rb`) owns the parse, the transform and the
+   guard; prepare writes the result into the same commit as the `version_file`
+   and the `Gemfile.lock`, so the changelog can never sit on a different SHA
+   from the version it names, and the write lands **before** the irreversible
+   `gem push`. **It writes no prose**: every bullet it moves was authored by a
+   builder and merged through review, and the only new text is the heading —
+   the version the release just allocated and the date it published. **It
+   copies the repo's own dialect** rather than imposing one (`## 0.40.0 —
+   <date>` in studio-engine, `## v0.6.0 (<date>)` in solana-studio), because a
+   second dialect in one file breaks that repo's own structure test and every
+   reader's regex. **An empty bucket still earns its heading**, which keeps one
+   invariant exact — the newest heading names the newest published version —
+   and makes a release that documented nothing visible rather than a silent gap
+   in the numbering.
+
+   **And it REFUSES rather than lie.** In the decide phase — nothing written,
+   nothing published — prepare aborts when the file already carries a
+   **backlog**: the newest heading more than `MAX_MINOR_DRIFT` (2) minors
+   behind the last published version *while the bucket holds entries*. Rolling
+   several releases of history under one new heading would be a bigger false
+   statement than the one it replaces. It also refuses a file it cannot read —
+   a missing or duplicated `## Unreleased`, a bucket that is not the first
+   heading, or any `## ` heading below it that parses as neither a version nor
+   the bucket. That last rule **is** the parse floor, and it is a *property*
+   rather than a count on purpose: a copied `MIN_VERSION_HEADINGS` number
+   cannot fire in a smaller repo, so the guard would pass vacuously — the exact
+   failure a floor exists to prevent, reproduced by the act of reuse.
+
+   **Two gaps, named rather than papered over.** (1) A gem tracking no
+   `CHANGELOG.md` is not refused — the registry declares no `changelog` key, so
+   its absence breaks no stated contract; prepare says so and moves on. (2) The
+   roll runs only on the **allocate** path, so a version bumped **by hand** onto
+   `accepted` (the emergency route `publish_gem`'s abort message names) skips
+   allocation and therefore skips the roll — roll that one by hand in the same
+   PR that bumps the version.
+
+   **History.** Before 2026-09-09 prepare published and tagged without ever
+   touching `CHANGELOG.md`, and nothing failed when it didn't. Measured at
+   `origin/release` that day: studio-engine `VERSION` 0.74.4 against a newest
+   heading of 0.39.0 — **35 minor versions, 2,382 lines** of shipped history
+   still filed as pending — and solana-studio 0.9.1 against `## v0.5.0`, **4
+   minor versions**: the same shape at a smaller scale, from the same shared
+   publisher. turf-vault is the control that proves the cause — registered
+   under `apps`, never published to RubyGems, its version bumped by a human who
+   rolls the block in the same PR — and it carries **no drift at all**.
 3. **Prepare preflights EVERY swept gem, then publishes — before the gate and
    QA.** `bin/release prepare` adds the gem to the release record without
    merging a branch for it (it has none here), then runs the two-phase

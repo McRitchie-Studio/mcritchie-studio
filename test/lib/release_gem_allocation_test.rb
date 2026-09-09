@@ -107,7 +107,11 @@ class ReleaseGemAllocationTest < Minitest::Test
   # A projects root holding a bare `origin` and a `studio-engine` clone whose
   # `release` branch is tagged v<version> and then carries one commit PAST the
   # tag — the exact state a swept gem member is in at step 4d.
-  def build_projects_root(root, version: "0.4.0", tracked_lock: true)
+  #
+  # `changelog:` is nil by DEFAULT — a repo tracking no CHANGELOG.md — so every
+  # test written before the roll landed keeps exercising exactly the tree it was
+  # written against, and the absent-file path stays covered by all of them.
+  def build_projects_root(root, version: "0.4.0", tracked_lock: true, changelog: nil)
     origin = File.join(root, "studio-engine-origin.git")
     repo   = File.join(root, "studio-engine")
     Open3.capture2e("git", "init", "--quiet", "--bare", origin)
@@ -119,6 +123,7 @@ class ReleaseGemAllocationTest < Minitest::Test
     FileUtils.mkdir_p(File.join(repo, "lib", "studio"))
     File.write(File.join(repo, "lib", "studio", "version.rb"), %(module Studio\n  VERSION = "#{version}"\nend\n))
     File.write(File.join(repo, "Gemfile.lock"), lockfile(version)) if tracked_lock
+    File.write(File.join(repo, "CHANGELOG.md"), changelog) if changelog
     git(repo, "add", "-A")
     git(repo, "commit", "--quiet", "-m", "seed #{version}")
     git(repo, "tag", "v#{version}")
@@ -264,6 +269,135 @@ class ReleaseGemAllocationTest < Minitest::Test
       files = git(origin, "show", "--name-only", "--format=", "release").split("\n").map(&:strip).reject(&:empty?)
       assert_equal %w[Gemfile.lock lib/studio/version.rb], files.sort,
                    "one commit, both files — not a version commit with the lock trailing behind"
+    end
+  end
+
+  # --- the CHANGELOG roll, against real git ------------------------------------
+  #
+  # The transform, the dialects and the guard are unit-tested in
+  # test/models/release/changelog_test.rb. What is tested HERE is everything the
+  # pure module cannot see: that the file is read from origin/release, that the
+  # rolled text is PUSHED, that it rides the SAME commit as the version and the
+  # lock, and that a refusal leaves origin/release exactly as it found it.
+
+  # A changelog whose newest heading is `heading`, holding one entry in the bucket.
+  def changelog(heading: "## 0.4.0 — 2026-08-01", entries: ["### Fixed", "", "- entry one"])
+    lines = ["# Changelog", "", "## Unreleased", ""]
+    lines += entries + [""] unless entries.empty?
+    lines += [heading, "", "- older entry"]
+    "#{lines.join("\n")}\n"
+  end
+
+  def today = Time.now.strftime("%Y-%m-%d")
+
+  def test_the_version_commit_carries_the_rolled_changelog
+    with_root do |root|
+      origin, = build_projects_root(root, changelog: changelog)
+      out, ok = allocate(root, members: [member(kind: "feature")])
+
+      assert ok, "allocation should have succeeded:\n#{out}"
+      rolled = pushed(origin, "CHANGELOG.md")
+
+      assert_includes rolled, "## 0.5.0 — #{today}", "the allocated version must reach the file that was PUSHED"
+      assert_includes rolled, "- entry one", "the entry must survive the move"
+      assert_operator rolled.index("## 0.5.0"), :<, rolled.index("- entry one"),
+                      "the entry must end up UNDER the new heading, not above it"
+      assert_operator rolled.index("## Unreleased"), :<, rolled.index("## 0.5.0"),
+                      "the bucket stays first, empty, ready for the next cycle"
+
+      # ONE commit, all three files. Asserting the commit's file LIST (not just
+      # each file's contents) is the load-bearing half — two commits would satisfy
+      # a contents-only check while letting the changelog land on a SHA whose
+      # version contradicts it.
+      files = git(origin, "show", "--name-only", "--format=", "release").split("\n").map(&:strip).reject(&:empty?)
+      assert_equal %w[CHANGELOG.md Gemfile.lock lib/studio/version.rb], files.sort
+    end
+  end
+
+  # THE DIALECT SURVIVES THE REAL PATH. turf-vault's bracketed/hyphen form, read
+  # off the real file on 2026-09-09. A roll that imposed one house style would
+  # put a second dialect into a repo's own file and break its structure test.
+  def test_the_roll_writes_the_repos_own_heading_dialect
+    with_root do |root|
+      origin, = build_projects_root(root, changelog: changelog(heading: "## [0.4.0] - 2026-08-01"))
+      _, ok = allocate(root, members: [member(kind: "feature")])
+
+      assert ok
+      assert_includes pushed(origin, "CHANGELOG.md"), "## [0.5.0] - #{today}"
+    end
+  end
+
+  # A release that documented nothing still earns its heading — that is what keeps
+  # "the newest heading names the newest published version" exact, and what makes
+  # an undocumented release visible instead of a silent gap in the numbering.
+  def test_an_empty_bucket_still_records_the_release
+    with_root do |root|
+      origin, = build_projects_root(root, changelog: changelog(entries: []))
+      out, ok = allocate(root, members: [member(kind: "feature")])
+
+      assert ok, out
+      assert_includes pushed(origin, "CHANGELOG.md"), "## 0.5.0 — #{today}"
+      assert_includes out, "no entries — the heading records the release"
+    end
+  end
+
+  # A gem tracking no CHANGELOG.md is NOT refused — the registry declares no
+  # changelog key, so its absence breaks no stated contract. It says so out loud
+  # rather than passing in silence.
+  def test_a_gem_with_no_changelog_still_allocates
+    with_root do |root|
+      origin, = build_projects_root(root)
+      out, ok = allocate(root, members: [member(kind: "feature")])
+
+      assert ok, out
+      assert_includes out, "no CHANGELOG.md"
+      assert_includes pushed(origin, "lib/studio/version.rb"), %(VERSION = "0.5.0")
+    end
+  end
+
+  # THE GUARD, at the call site. A file already carrying a backlog cannot be
+  # rolled honestly — stamping several releases of entries with one new version is
+  # a bigger false statement than the one it replaces — so the sweep aborts in the
+  # DECIDE phase with nothing written and nothing published.
+  def test_a_backlogged_changelog_refuses_and_writes_nothing
+    with_root do |root|
+      origin, = build_projects_root(root, changelog: changelog(heading: "## 0.1.0 — 2026-01-01"))
+      out = assert_refuses(root, origin, "BACKLOG", members: [member(kind: "feature")])
+
+      assert_includes out, "3 minor version(s)"
+      assert_includes out, "NOTHING was published"
+      assert_includes pushed(origin, "lib/studio/version.rb"), %(VERSION = "0.4.0"),
+                      "the version must not have moved either — the refusal is in the decide phase"
+    end
+  end
+
+  # A bucket that holds nothing has no history to mis-file, so a backlog alone
+  # must not hold the sweep. The pair with the test above is what keeps the guard
+  # aimed at the HARM rather than at the number.
+  def test_a_backlog_with_an_empty_bucket_does_not_hold_the_sweep
+    with_root do |root|
+      origin, = build_projects_root(root, changelog: changelog(heading: "## 0.1.0 — 2026-01-01", entries: []))
+      _, ok = allocate(root, members: [member(kind: "feature")])
+
+      assert ok
+      assert_includes pushed(origin, "CHANGELOG.md"), "## 0.5.0 — #{today}"
+    end
+  end
+
+  # A changelog the parser cannot read is refused rather than rolled into blind.
+  # THE FLOOR IS A PROPERTY, NOT A COUNT: studio-engine's own guard carries
+  # MIN_VERSION_HEADINGS = 110 against a real 115, and copying that number into a
+  # repo with eleven headings makes it unfireable — the guard then passes
+  # vacuously, which is the failure the floor was added to catch. Here every '## '
+  # heading below the bucket must PARSE, so a two-heading fixture proves the same
+  # property a hundred-heading one would.
+  def test_an_unreadable_changelog_refuses_rather_than_rolling_blind
+    with_root do |root|
+      origin, = build_projects_root(root, changelog: changelog(heading: "## Release 0.4.0"))
+      out = assert_refuses(root, origin, "parse as neither a version nor the Unreleased bucket",
+                           members: [member(kind: "feature")])
+
+      assert_includes out, "Release 0.4.0", "the refusal must name the line it could not read"
     end
   end
 
