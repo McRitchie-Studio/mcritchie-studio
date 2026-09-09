@@ -400,7 +400,15 @@ if (unresolved = Array(decision["builder_override_unresolved"])).any?
 end
 
 unless decision["builder_known"]
-  warn!("reviewer-select REFUSED to select for task=#{decision["task"] || "-"} — the AUTHORS ARE UNKNOWN.")
+  # THE HEADLINE MUST NAME THE FACT IT REFUSED ON. An unnamed reviewer FIX-FORWARD is
+  # not "the authors are unknown" — the authors are known, and the set is INCOMPLETE
+  # by one commit that is provably in the diff. Reporting it under the unknown-author
+  # headline sends the reader to stamp a builder who is already stamped, and the
+  # remedy they would reach for next (`--builder none`) asserts that NO soul built
+  # this — which is false here and lifts the guard entirely.
+  zap_unnamed = Array(decision["fix_forward_unnamed"])
+  headline = zap_unnamed.any? ? "A FIX-FORWARD AUTHOR IS UNNAMED" : "the AUTHORS ARE UNKNOWN"
+  warn!("reviewer-select REFUSED to select for task=#{decision["task"] || "-"} — #{headline}.")
   if builder
     # An override was passed and it named NOBODY on the roster — a typo. Say that,
     # rather than the record's story: `--builder stefon` is a different problem from
@@ -410,6 +418,16 @@ unless decision["builder_known"]
     warn!("  override is authoritative — so it names nobody rather than falling back to")
     warn!("  the record it was meant to correct. Check the spelling against:")
     warn!("    #{ReviewerSelector::POOL.union([ReviewerSelector::DEFAULT_QA_OWNER]).sort.join(', ')}")
+  elsif zap_unnamed.any?
+    # A REVIEWER ZAP NOBODY CAN NAME. bin/pr-review proved the PR head advanced while
+    # the reviewers held it, so a commit in this diff was written by someone other
+    # than the builders on record — and it recorded that it could not say who.
+    warn!("  Authors on record: #{Array(decision["builders"]).join(", ")}.")
+    warn!("  But the PR head MOVED under review and the fix-forward was recorded")
+    warn!("  #{zap_unnamed.join(", ")} — which names no soul. A reviewer who fixes forward")
+    warn!("  puts his own commit in the merged diff, so he is an author of this PR; the")
+    warn!("  set above is therefore short by one, and every soul the pool might seat is")
+    warn!("  a candidate for the commit nobody claimed. Refusing rather than rolling.")
   elsif (session = decision["builders_unattributed"].to_s.strip).empty?
     if (stray = Array(decision["record_unresolved"])).any?
       # NAMED, BUT NOT A SOUL. Saying "blank" here is false, and the durable fix
@@ -439,11 +457,21 @@ unless decision["builder_known"]
     warn!("  so the set names the claimer and the real author is still in the pool.")
   end
   warn!("")
-  warn!("  Resolve it by stating the fact (name EVERY author, comma-separated):")
-  warn!("    bin/reviewer-select #{named} --builder <soul>[,<soul>]   # who wrote it")
-  warn!("    bin/reviewer-select #{named} --builder none              # no soul built it")
-  warn!("  Durable fix (stamps the author for next time, re-claims included):")
-  warn!("    bin/task move #{named} building --actor <soul>")
+  if zap_unnamed.any?
+    # `--builder none` is deliberately ABSENT from this branch. It asserts that no
+    # soul built the task, and here a commit demonstrably exists — offering it would
+    # be handing the reader a lever that clears the refusal by denying its premise.
+    warn!("  Resolve it by naming who fixed forward (durable — it stamps the author set):")
+    warn!("    bin/task fix-forward #{named} --agent <soul>[,<soul>]  # who pushed to the PR")
+    warn!("  Or state the whole set for this pick only:")
+    warn!("    bin/reviewer-select #{named} --builder <soul>[,<soul>]  # every author, zapper included")
+  else
+    warn!("  Resolve it by stating the fact (name EVERY author, comma-separated):")
+    warn!("    bin/reviewer-select #{named} --builder <soul>[,<soul>]   # who wrote it")
+    warn!("    bin/reviewer-select #{named} --builder none              # no soul built it")
+    warn!("  Durable fix (stamps the author for next time, re-claims included):")
+    warn!("    bin/task move #{named} building --actor <soul>")
+  end
   exit 2
 end
 

@@ -816,6 +816,24 @@ def block_for_rework(slug, reports)
               "--feedback", feedback, "--agent", "avi"]) ? :escalated : false
 end
 
+# Record the reviewer FIX-FORWARD onto the task's author set, so the NEXT
+# `bin/reviewer-select` on this PR cannot seat the soul who pushed to it.
+#
+# Names the SEATED reviewers when they are known. When they are not — a resumed
+# supervisor, a hand-spawned review, a snapshot that lost the pair — it records
+# `--unnamed`, which makes the author set INCOMPLETE and makes reviewer-select
+# REFUSE until a human names the pusher. That asymmetry is the whole design: a
+# fix-forward we cannot attribute must fail CLOSED, because the alternative is the
+# populated-and-confident-but-short author set this seam exists to prevent.
+def record_fix_forward(slug, reviewer_slugs)
+  souls = Array(reviewer_slugs).map { |soul| soul.to_s.strip }.reject(&:empty?)
+  args = souls.empty? ? ["--unnamed"] : ["--agent", souls.join(",")]
+  ok = task_write(["fix-forward", slug, *args])
+  puts "  fix-forward: PR head moved under review — recorded #{souls.empty? ? "UNNAMED" : souls.join(" + ")} as author(s)" if ok
+  warn "  fix-forward: FAILED to record the head move on #{slug} — reviewer-select may seat the pusher" unless ok
+  ok
+end
+
 def note_deferred(slug, outcome, reports)
   description = "pr-review deferred #{slug}: #{outcome}. #{reports.map { |r| report_summary(r) }.join("; ")}"
   task_write(["note", slug, "--comment", description, "--agent", "avi"])
@@ -1230,14 +1248,38 @@ def finish_review(review, events, handled, deferred_until)
   # in flight for the next wave) — before the task-level outcome dispatch.
   close_review_gates(slug, reviewers, reports)
 
+  # THE FIX-FORWARD SEAM. The head advancing between launch and now means a commit
+  # entered this PR that the reviewers did not receive — in practice a reviewer zap,
+  # which the SOP actively encourages over spending a bounce. Whoever wrote it is an
+  # AUTHOR of the merged diff, but a zap makes no build claim, and the build claim is
+  # the only thing that stamps the author set — so `bin/reviewer-select` kept seating
+  # souls onto PRs carrying their own commits (measured on #1321 and #1322,
+  # 2026-09-09) with nothing looking wrong.
+  #
+  # HOISTED ABOVE THE OUTCOME DISPATCH on purpose. It was computed inside
+  # `merge-ready` alone, and that is the one outcome where it matters LEAST: the PR
+  # merges and the task leaves the queue. The costly ones are the outcomes that send
+  # the task back around — a hold-for-re-review, or a rework block — because those
+  # are followed by a FRESH `bin/reviewer-select`, and that is the pick that would
+  # seat the zapper. Recorded here, every outcome carries the fact forward.
+  #
+  # This is the only place in the fleet that can PROVE a fix-forward happened: it is
+  # the one component holding both the pre-review head and the seated souls. It
+  # cannot prove WHICH soul pushed — commit authorship does not identify one (214 of
+  # the last 400 commits on `accepted` are authored as the operator, both measured
+  # zaps included) — so it names the reviewers who held the seats. Over-naming
+  # over-EXCLUDES, which refuses rather than seats; under-naming is what we are here
+  # to fix.
+  reviewed_head = review[:reviewed_head]
+  current_head = pr_head_oid(fresh_task&.dig("devops", "pr_url"))
+  head_moved = reviewed_head && current_head && current_head != reviewed_head
+  record_fix_forward(slug, reviewer_slugs) if head_moved
+
   case outcome
   when "merge-ready"
     # Revalidate the reviewed head before merging — the reviewer-zap seam. If the head
     # advanced during review, its OWN CI must be green to merge; otherwise HOLD it for
     # the next wave to re-review the zapped head (never merge an unseen head on non-green CI).
-    reviewed_head = review[:reviewed_head]
-    current_head = pr_head_oid(fresh_task&.dig("devops", "pr_url"))
-    head_moved = reviewed_head && current_head && current_head != reviewed_head
     reval_ci = head_moved ? supervisor_ci_check(fresh_task) : nil
     decision = ZapRevalidation.decide(reviewed_head, current_head, reval_ci&.dig(:state))
 

@@ -107,7 +107,37 @@ frozen_size:
   # test/lib/cert_failure_exit_contract_test.rb, which drives the real binaries
   # UNPIPED — because `bin/ship … | tail` reports TAIL's exit status, which is how
   # the "ship exits 0 on failure" claim was misread in the first place.
-  test/lib/release_cli_test.rb: 7598
+  #
+  # +71 (2026-09-09, rescue-warn-omits-installer-path): two cases proving BOTH warn
+  # branches of sync_agent_docs hand the operator an ABSOLUTE installer path. The
+  # rescue printed a bare `bin/install-agent-docs`, which resolves against the
+  # reader's cwd — and that installer publishes GLOBALLY (projects-root
+  # AGENTS.md/CLAUDE.md, ~/.claude + ~/.codex skills, an append to ~/.zprofile). On
+  # 2026-09-08 that hand-run went from a feature worktree and pushed unshipped text
+  # to every session on the machine.
+  #
+  # THEY STAY IN THIS FILE, and the reason is the one this ceiling already accepts
+  # five times above: they drive the real bin/release.rb through `run_cli`, this
+  # file's PRIVATE subprocess harness (OutboundSeams env, lock_dir, the
+  # SUBPROCESS_ATTEMPTS retry). A new file could reach them only by re-implementing
+  # that runner and would then be testing its own copy — and the archived
+  # split-release-cli-tests task already measured the extraction and deferred it as
+  # its own planned work, not something to improvise inside a two-line bug fix.
+  # They are also exact SIBLINGS of the four sync_agent_docs cases already here:
+  # same method, same stub shape, one variable moved (WHERE the raise lands relative
+  # to the path resolution), which is most of their value.
+  #
+  # Why two cases and not one: the `rescue` is METHOD-LEVEL, so it also covers the
+  # lines that resolve the path. Raise AFTER them and the variable is set; raise
+  # BEFORE and Ruby leaves it declared-but-NIL, so the obvious fix renders
+  # "run `` by hand". Only the second case can see that, and no source scan can.
+  #
+  # What DID go elsewhere, which is what this ceiling asks for: the whole static
+  # mechanism guard — every warn branch interpolates rather than hard-codes, the
+  # seed precedes the first line that can raise, plus a mutation proof over both
+  # the reverted and corrected source — extends the EXISTING owner of this method's
+  # claims, test/docs/ship_docs_sync_docs_test.rb, rather than appending here.
+  test/lib/release_cli_test.rb: 7669
   # +27 (2026-09-07, conflicted-remedy-misreads-ci): ONE case pinning the text of
   # the conflicted blocker. The message inferred "the head SHA has ZERO check-runs"
   # from mergeStateStatus DIRTY alone — independent facts — and it was measured

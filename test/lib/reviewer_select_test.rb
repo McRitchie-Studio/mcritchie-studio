@@ -608,4 +608,58 @@ class ReviewerSelectCliTest < Minitest::Test
     decision = JSON.parse(out.lines.reverse.find { |l| l.strip.start_with?("{") })
     assert_equal "shannon", decision["builder"]
   end
+
+  # --- the REVIEWER FIX-FORWARD (reviewer-zap-skips-author-stamp) --------------
+  #
+  # A reviewer who zaps the PR he is reviewing puts his commit in the merged diff,
+  # so he is an author of it — but a zap makes no build claim, and the claim is the
+  # only thing that stamped the author set. Measured on #1321 (2026-09-09): steffon
+  # zapped be5579a5 while holding the light seat and this command then SEATED
+  # STEFFON on a PR containing steffon's own commit.
+
+  def test_a_recorded_fix_forward_author_is_excluded_from_the_light_seat
+    out, code = select({ "shape" => "backend", "built_by" => "shannon",
+                         "fix_forward" => ["steffon"] }, "--json", "--no-record")
+
+    assert_equal 0, code, out
+    decision = JSON.parse(out.lines.reverse.find { |l| l.strip.start_with?("{") })
+    assert_includes decision["builders"], "steffon", "a soul who pushed to the PR is an author of it"
+    refute_includes decision["reviewers"].map { |r| r["slug"] }, "steffon"
+  end
+
+  # THE FAIL-CLOSED HALF. A fix-forward nobody could attribute is not "no
+  # fix-forward" — a commit is provably in the diff whose author is somewhere in the
+  # pool — so the pick must refuse rather than roll.
+  def test_refuses_when_a_fix_forward_author_is_unnamed
+    out, code = select_verbose({ "shape" => "backend", "built_by" => "shannon",
+                                 "fix_forward" => ["unattributed"] }, "--no-record")
+
+    assert_equal 2, code, out
+    assert_match(/A FIX-FORWARD AUTHOR IS UNNAMED/, out,
+                 "the headline must name the fact refused on — the authors here are KNOWN " \
+                 "and INCOMPLETE, which is a different remedy from an unstamped task")
+    assert_match(/bin\/task fix-forward/, out, "the refusal must print the durable remedy")
+  end
+
+  # `--builder none` asserts that NO soul built the task. Offering it here would hand
+  # the reader a lever that clears the refusal by DENYING its premise — a commit that
+  # demonstrably exists.
+  def test_the_unnamed_refusal_never_offers_builder_none
+    out, _code = select_verbose({ "shape" => "backend", "built_by" => "shannon",
+                                  "fix_forward" => ["unattributed"] }, "--no-record")
+
+    refute_match(/--builder none/, out)
+  end
+
+  # And the caller's explicit override still clears it — the escape hatch every other
+  # author refusal has, or this one gets routed around instead of answered.
+  def test_naming_every_author_clears_the_unnamed_fix_forward_refusal
+    out, code = select({ "shape" => "backend", "built_by" => "shannon",
+                         "fix_forward" => ["unattributed"] },
+                       "--json", "--no-record", "--builder", "shannon,steffon")
+
+    assert_equal 0, code, out
+    decision = JSON.parse(out.lines.reverse.find { |l| l.strip.start_with?("{") })
+    assert_equal %w[shannon steffon].sort, decision["builders"].sort
+  end
 end

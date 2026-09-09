@@ -107,6 +107,8 @@ class ShipDocsSyncDocsTest < ActiveSupport::TestCase
   BEHAVIOURAL_PINS = %w[
     test_sync_agent_docs_installs_from_the_shipped_ship_workspace
     test_sync_agent_docs_falls_back_to_the_primary_without_a_ship_workspace
+    test_sync_agent_docs_rescue_names_an_absolute_installer_after_resolution
+    test_sync_agent_docs_rescue_names_an_absolute_installer_before_resolution
   ].freeze
 
   # Three spellings of ONE false claim — "the installer's source tree is the primary" —
@@ -174,6 +176,165 @@ class ShipDocsSyncDocsTest < ActiveSupport::TestCase
     assert_match(/installer\s*=\s*File\.join\(root,/, body,
                  "the installer path is no longer built from `root`, so the workspace-vs-primary " \
                  "choice above no longer decides which tree publishes the docs")
+  end
+
+  # --- EVERY warn branch must hand over an ABSOLUTE path --------------------
+  # (rescue-warn-omits-installer-path)
+  #
+  # WHAT WENT WRONG. sync_agent_docs emits TWO warn lines and only one was safe to act
+  # on. The `unless ok` branch interpolated the resolved `installer` — absolute, correct.
+  # The `rescue StandardError` branch printed a BARE `bin/install-agent-docs`, which
+  # resolves against whatever directory the reader is sitting in. The recovery line the
+  # docs now carry — "run the installer path the warn line prints" — is exactly right
+  # against the first branch and meaningless against the second.
+  #
+  # WHY THIS SURFACE EARNS A GUARD. bin/install-agent-docs is 1000+ lines and PUBLISHES
+  # GLOBALLY: the projects-root AGENTS.md/CLAUDE.md, ~/.claude + ~/.codex skills,
+  # ~/.claude/settings.json, /etc/codex/requirements.toml, and an APPEND to ~/.zprofile
+  # (whose own comment notes nothing keeps a reflog for it). On 2026-09-08 a builder
+  # followed a prescription like this from a feature worktree and published unshipped
+  # mid-branch text to every session on the machine. A warn line that hands over a
+  # cwd-relative path is one `cd` from repeating that.
+  #
+  # WHAT THIS FILE ASSERTS, AND WHAT IT DELIBERATELY DOES NOT. Statically we can prove
+  # two things: that no warn branch hard-codes a command (each interpolates a local), and
+  # that the local is SEEDED with an absolute path before the first line that can raise.
+  # The second half is what makes the first half worth anything, and it is not pedantry:
+  # the `rescue` is METHOD-LEVEL, so it also covers the three lines that resolve `root`.
+  # Ruby defines a local at the parser's first sight of its assignment, so on an early
+  # raise `installer` is IN SCOPE BUT NIL — and a naive "interpolate #{installer}" fix
+  # renders "run `` by hand", an empty backtick pair strictly worse than the bare name.
+  #
+  # A source scan cannot tell a nil interpolation from a good one. That half is proved by
+  # EXECUTION, in test/lib/release_cli_test.rb, which loads bin/release.rb in a subprocess
+  # and drives sync_agent_docs with the raise placed on BOTH sides of the resolution. Both
+  # tests are pinned by name in BEHAVIOURAL_PINS above, so the runnable half cannot quietly
+  # leave the suite while this file keeps asserting the shape.
+
+  def sync_agent_docs_body
+    src = File.read(Rails.root.join("bin", "release.rb"))
+    src[/^def sync_agent_docs$.*?^end$/m]
+  end
+
+  # [line, backticked command] for every warn branch in a sync_agent_docs body. Takes the
+  # body as an argument so the mutation proof below runs THIS extraction over the reverted
+  # source, rather than a lookalike written to agree with it.
+  def warn_commands_in(body)
+    body.lines.select { |line| line.include?("⚠") }
+        .map { |line| [line.strip, line[/`([^`]*)`/, 1]] }
+  end
+
+  # A by-hand command is acceptable only as a bare interpolation of a local — `#{installer}`.
+  # A literal cannot be absolute-by-construction across machines, and a literal with an
+  # interpolated PREFIX (`#{root}/bin/...`) sidesteps the seeded variable this guard tracks.
+  def interpolated_command?(command)
+    command.to_s.match?(/\A#\{[a-z_][a-z0-9_]*\}\z/)
+  end
+
+  test "[static] every warn branch in sync_agent_docs hands over an interpolated installer path" do
+    body = sync_agent_docs_body
+    assert body, "bin/release.rb no longer defines sync_agent_docs at the top level"
+
+    warns = warn_commands_in(body)
+    assert_operator warns.length, :>=, 2,
+                    "sync_agent_docs used to carry TWO warn branches (the `unless ok` failure and the " \
+                    "`rescue StandardError` skip) and this guard found #{warns.length}. If a branch was " \
+                    "removed, say so here; if the warn marker changed, this scan is now asserting " \
+                    "nothing. Do not lower this floor."
+
+    warns.each do |line, command|
+      assert command,
+             "a warn branch in sync_agent_docs offers no backticked by-hand command:\n  #{line}\n" \
+             "Every warn in this method is an operator's recovery instruction — it must name the " \
+             "installer to run."
+      assert interpolated_command?(command),
+             "a warn branch prescribes `#{command}`, a hard-coded command:\n  #{line}\n" \
+             "It must interpolate the resolved installer path instead. A bare `bin/install-agent-docs` " \
+             "resolves against the READER's cwd, and this installer publishes GLOBALLY — that is how " \
+             "unshipped worktree text reached every session on this machine on 2026-09-08."
+    end
+
+    names = warns.map { |_line, command| command[/\A#\{([a-z_][a-z0-9_]*)\}\z/, 1] }.uniq
+    assert_equal ["installer"], names,
+                 "the warn branches interpolate #{names.inspect}. This guard tracks ONE variable — the " \
+                 "`installer` seeded absolute below — and can only prove the seed covers a name it knows. " \
+                 "If you renamed it, rename it here and in test/lib/release_cli_test.rb."
+  end
+
+  test "[static] sync_agent_docs seeds an absolute installer path before anything that can raise" do
+    body = sync_agent_docs_body
+    assert body, "bin/release.rb no longer defines sync_agent_docs at the top level"
+
+    seed_at  = body.index(/installer\s*=\s*File\.expand_path\("install-agent-docs",\s*__dir__\)/)
+    risky_at = body.index(/Release::GateWorkspace\.path\(/)
+
+    assert seed_at,
+           "sync_agent_docs no longer seeds `installer` with File.expand_path(\"install-agent-docs\", " \
+           "__dir__). That seed is the only reason the rescue's interpolation cannot be nil: the rescue " \
+           "is METHOD-LEVEL, so it also covers the lines that resolve `root`, and Ruby leaves a local " \
+           "declared-but-nil when its assignment never ran. Without the seed the rescue prints " \
+           "\"run `` by hand\" — an empty backtick pair, worse than the bare command it replaced."
+    assert risky_at, "sync_agent_docs no longer calls Release::GateWorkspace.path — this ordering check " \
+                     "has lost the landmark it measures against"
+    assert_operator seed_at, :<, risky_at,
+                    "the installer seed now comes AFTER Release::GateWorkspace.path. Everything between " \
+                    "the top of the method and the seed is unprotected: a raise there reaches the rescue " \
+                    "with `installer` still nil. The seed must be the first thing the body does."
+
+    assert_match(/File\.expand_path\("install-agent-docs",\s*__dir__\)/, body,
+                 "the seed must be absolute BY CONSTRUCTION. __dir__ is bin/release.rb's own directory, " \
+                 "where the installer is its sibling, and it cannot itself raise — a seed that calls " \
+                 "repo_path or GateWorkspace would be inside the blast radius it exists to survive.")
+  end
+
+  # MUTATION PROOF: run the SAME extraction and predicate over the code as it stood before
+  # this fix, and as it stands after. A guard that cannot fail on the reintroduced defect is
+  # decoration — and this one has a specific blind spot worth stating, so the third case
+  # pins it rather than pretending otherwise.
+  test "the warn-branch scan fires on the bare command this task removed" do
+    before = <<~RUBY
+      def sync_agent_docs
+        installer = File.join(root, "bin", "install-agent-docs")
+        say("  ⚠ agent-docs install failed — run `\#{installer}` by hand (the ship already succeeded)") unless ok
+      rescue StandardError => e
+        say("  ⚠ agent-docs install skipped (\#{e.message}) — run `bin/install-agent-docs` by hand (the ship already succeeded)")
+      end
+    RUBY
+
+    after = <<~RUBY
+      def sync_agent_docs
+        installer = File.expand_path("install-agent-docs", __dir__)
+        say("  ⚠ agent-docs install failed — run `\#{installer}` by hand (the ship already succeeded)") unless ok
+      rescue StandardError => e
+        say("  ⚠ agent-docs install skipped (\#{e.message}) — run `\#{installer}` by hand (the ship already succeeded)")
+      end
+    RUBY
+
+    before_commands = warn_commands_in(before).map(&:last)
+    after_commands  = warn_commands_in(after).map(&:last)
+
+    assert_equal ["\#{installer}", "bin/install-agent-docs"], before_commands,
+                 "the extraction no longer sees both warn branches — it is the scan that is broken, " \
+                 "not the code under it"
+    refute interpolated_command?(before_commands.last),
+           "the predicate ACCEPTS the bare `bin/install-agent-docs` the rescue branch used to print. " \
+           "That is the whole defect: relax this and the guard passes on the reintroduced bug."
+    assert interpolated_command?(before_commands.first),
+           "the predicate rejects the `unless ok` branch, which was always correct — it would have " \
+           "forced a needless change to the one line that had it right"
+
+    assert after_commands.all? { |command| interpolated_command?(command) },
+           "the predicate rejects the CORRECTED method, so the fix could not satisfy its own guard"
+
+    # THE BLIND SPOT, pinned so nobody mistakes this scan for the whole proof. The naive fix
+    # — interpolate `installer` in the rescue WITHOUT seeding it — passes here, because a
+    # source scan cannot see that the local is nil at that moment. It is caught by execution,
+    # in test/lib/release_cli_test.rb's
+    # test_sync_agent_docs_rescue_names_an_absolute_installer_before_resolution.
+    naive = after.sub(/installer = File\.expand_path.*\n/, "  root = Release::GateWorkspace.path(x)\n")
+    assert warn_commands_in(naive).map(&:last).all? { |command| interpolated_command?(command) },
+           "sanity: this scan is expected to PASS the unseeded naive fix. If it now fails, the static " \
+           "guard has grown teeth it does not actually have, and the comment above is wrong."
   end
 
   test "[static] the behavioural proof of the installer source is still in the suite" do
