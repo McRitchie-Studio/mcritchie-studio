@@ -61,6 +61,54 @@ class GateRun < ApplicationRecord
   # leaves ONE row here, not nine.
   RUNNING_RESULT = "running"
 
+  # CI IS STILL RUNNING — the checks were found, they were read, and they have not
+  # settled (/tasks/pending-ci-paints-check). `CiGate.gate_row` has written this word
+  # builder-side since the arm was added; what it never had was a GLYPH. The card's
+  # chain was fail → ✗, `running` → ◌, no-verdict → ⚠, DEFAULT → ✓, and "pending" is
+  # none of the first three, so an IN-FLIGHT CI was painted with the PASS glyph in the
+  # permanent gate record. Measured 2026-09-09 through a real page load, from a real
+  # GateRun row, before the fix: `{"sop":"ci","result":"pending"}` rendered `✓`.
+  #
+  # THE MORE DANGEROUS DIRECTION. `unreadable`/`no_checks`/`unverified`/`no_pr` each
+  # manufactured a FAILURE, and a false red gets audited because it blocks somebody.
+  # This one manufactures a SUCCESS, and nobody audits a green — the row outlives
+  # Heroku's log retention still claiming a CI passed that may since have gone red.
+  #
+  # IT IS NOT IN NO_VERDICT_RESULTS, DELIBERATELY. That family is "the answer was never
+  # given" — never read, never reported, never asked. This is "the answer is COMING",
+  # which is the same thing `running` says about a cert lane. So it joins RUNNING_RESULT
+  # in IN_FLIGHT_RESULTS below and shares its ◌, rather than diluting a family whose
+  # members all prescribe "go find out why there is no answer".
+  #
+  # The word is not newly coined: `bin/dor-check`'s --json `ci_gate_result` and
+  # test/lib/dor_check_exempt_ci_test.rb have pinned this exact literal for the
+  # builder role all along. bin/lib/ci_gate.rb holds the producer copy
+  # (GATE_ROW_PENDING) because a bin/ lib cannot load this model.
+  PENDING_RESULT = "pending"
+
+  # THE SET THE GATES CARD PAINTS `◌` — work STARTED, verdict not yet in. Two members
+  # for two producers: the certs emit `running` around a lane they are executing, and
+  # the CI gate emits `pending` for checks GitHub has not settled. Both mean "ask
+  # again later", and neither may be read as an outcome in either direction.
+  #
+  # It is a SET for the reason NO_VERDICT_RESULTS is one: so that adding an in-flight
+  # result is ONE edit at the card rather than a new `elsif` somebody forgets. Since
+  # /tasks/pending-ci-paints-check the card's default no longer paints an unrecognised
+  # value `✓`, so forgetting now costs a `?` rather than a false green — a visible
+  # omission instead of a silent lie, which is the whole point of that change.
+  #
+  # ⚠ THIS IS A RENDER SET, NOT A HEARTBEAT SET. DO NOT substitute it for
+  # RUNNING_RESULT in `append_sop!` or `supersede_running` below. Those two read
+  # RUNNING_RESULT for a DIFFERENT property: a `running` row is a BEAT — it may not
+  # open an attempt, it may not land on a closed one, and the next beat COLLAPSES the
+  # last so a seven-minute lane leaves one row instead of nine. `pending` has none of
+  # those semantics: it is a one-shot terminal row the CI gate writes once per
+  # dor-check run, and it must keep minting and landing normally. Widening those two
+  # call sites to this set would stop pending rows from opening attempts and start
+  # silently swallowing consecutive ones — a history bug traded for a glyph fix.
+  # test/models/gate_run_pending_is_terminal_test.rb pins that distinction.
+  IN_FLIGHT_RESULTS = [RUNNING_RESULT, PENDING_RESULT].freeze
+
   # A lane whose ANSWER COULD NOT BE READ — today only the `ci` row, when GitHub
   # refused the credential (401/403/rate limit) while the gate tried to read the PR's
   # checks. It is NOT a failure and NOT a pass: no verdict was ever seen.

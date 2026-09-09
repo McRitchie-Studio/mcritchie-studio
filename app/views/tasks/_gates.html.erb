@@ -29,24 +29,54 @@
               </summary>
               <ul class="mt-1 space-y-0.5">
                 <% run.sops.each do |entry| %>
-                  <%# `running` is a THIRD result, not a pass. Painting everything that is
-                      not "fail" green reported an in-flight — or ABANDONED — lane as PASSED.
-                      GateRun::NO_VERDICT_RESULTS is the FOURTH arm, for the same reason in
-                      the other direction: CI was never READ (`unreadable` — the credential was
-                      refused), never SPOKE (`no_checks` — the PR reported none yet;
-                      `unverified` — `gh` fell over), or never had a PR to run against at all
-                      (`no_pr` — devops.pr_url is blank). None of the four may be a ✓ (a CI
-                      nobody heard is not a CI that passed) and none may be an ✗ (that is the
-                      false red /tasks/gate-logs-auth-as-red, /tasks/refused-review-records-fail
-                      and /tasks/no-pr-records-as-fail took out of the record). NOTE the default
-                      below is ✓ — any result value added upstream without an arm here
-                      silently becomes a pass, which is why the set, not a literal, is what this
-                      arm tests. %>
+                  <%# THE GLYPH CHAIN IS AN ALLOW-LIST, AND SINCE
+                      /tasks/pending-ci-paints-check IT DEFAULTS TO `?`, NOT `✓`.
+
+                      `pass` and `fail` are the only VERDICTS. Everything else is one of two
+                      families, and neither is an outcome:
+
+                        IN FLIGHT (GateRun::IN_FLIGHT_RESULTS → ◌) — the answer is COMING.
+                          `running`, a cert lane that started (or was ABANDONED); `pending`,
+                          CI checks GitHub has not settled. The remedy is to WAIT.
+                        NO VERDICT (GateRun::NO_VERDICT_RESULTS → ⚠) — the answer was never
+                          GIVEN. CI was never READ (`unreadable` — the credential was
+                          refused), never SPOKE (`no_checks` — the PR reported none yet;
+                          `unverified` — `gh` fell over), or never had a PR to run against at
+                          all (`no_pr` — devops.pr_url is blank). The remedy is to go find
+                          out WHY. None may be a ✓ (a CI nobody heard is not a CI that
+                          passed) and none may be an ✗ (the false red
+                          /tasks/gate-logs-auth-as-red, /tasks/refused-review-records-fail and
+                          /tasks/no-pr-records-as-fail took out of the record).
+
+                      WHY THE DEFAULT FLIPPED, which was the whole of
+                      /tasks/pending-ci-paints-check. This chain used to end
+                      `else ["✓", …]`, so `pass` and every UNCLASSIFIED value shared one arm.
+                      Four consecutive defects arrived that way: a value was added upstream,
+                      nobody added an arm here, and the row rendered as a PASS. `pending` was
+                      the fourth — a CI still RUNNING, painted in the permanent record as one
+                      that passed, which is the direction nobody audits.
+
+                      Adding the missing arm fixes the instance; moving the default fixes the
+                      CLASS. `pass` is now an EXPLICIT arm and the fall-through is `?`, so a
+                      value this file has never heard of renders as what it actually is — an
+                      unknown — instead of as the strongest positive claim the card can make.
+                      An empty/absent `result` lands here too, by design: `nil.to_s` is "",
+                      and `bin/gate show` has always printed that as `-` rather than a pass.
+
+                      NOTE THE ASYMMETRY WITH THE PRODUCER, deliberately. CiGate.gate_row's
+                      own `else` still answers "fail"/"unverified" for an unclassified STATE,
+                      and that stays: it is a GATE, an allow-list defaults to REFUSE, and a
+                      loud refusal is what gets an arm added. This is a RENDERER — it refuses
+                      nothing, it only tells an auditor what happened — so its conservative
+                      direction is not "fail", it is "I do not know". Same word, opposite risk:
+                      a gate that cannot classify must refuse; a record that cannot classify
+                      must say so rather than congratulate. %>
                   <% result = entry["result"].to_s %>
                   <% glyph, tone = if result == "fail" then ["✗", "text-rose-400"]
-                                   elsif result == GateRun::RUNNING_RESULT then ["◌", "text-amber-400"]
+                                   elsif result == "pass" then ["✓", "text-emerald-400"]
+                                   elsif GateRun::IN_FLIGHT_RESULTS.include?(result) then ["◌", "text-amber-400"]
                                    elsif GateRun::NO_VERDICT_RESULTS.include?(result) then ["⚠", "text-amber-400"]
-                                   else ["✓", "text-emerald-400"]
+                                   else ["?", "text-muted"]
                                    end %>
                   <li class="text-[11px] text-muted flex items-baseline gap-1" data-result="<%= result %>">
                     <span class="<%= tone %>" data-test="gate-sop-glyph"><%= glyph %></span>

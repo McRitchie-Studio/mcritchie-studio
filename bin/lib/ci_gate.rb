@@ -28,6 +28,30 @@ module CiGate
   # about a PR, never for a missing PR.
   CI_NO_VERDICT_STATES = %i[none unreadable unverified].freeze
 
+  # CI IS STILL RUNNING (/tasks/pending-ci-paints-check). The word this arm has written
+  # builder-side all along, now a named constant because the card needs to MATCH on it:
+  # "pending" was in neither the `running` arm nor GATE_ROW_NO_VERDICT, so it fell to the
+  # card's `✓` DEFAULT and an in-flight CI was painted as one that PASSED. Mirrors
+  # app/models/gate_run.rb's PENDING_RESULT — this file is a bin/ lib and cannot load a
+  # Rails model, the same split RUNNING_RESULT and the no-verdict values already live
+  # with — and test/integration/gates_card_pending_ci_test.rb pins the pair.
+  #
+  # IN-FLIGHT, NOT NO-VERDICT, and the difference is the one GATE_ROW_NO_VERDICT spends
+  # its own comment on. Those four say the answer was never GIVEN and prescribe going to
+  # find out why. This one says the answer is COMING and prescribes waiting — the same
+  # thing GateRun::RUNNING_RESULT says about a cert lane, which is why they share a glyph
+  # and a set (GateRun::IN_FLIGHT_RESULTS) rather than this one joining a family whose
+  # remedy it does not share.
+  #
+  # ROLE-CONDITIONAL, UNLIKE EVERY VALUE BELOW IT, and that is not an oversight. The
+  # no-verdict four are unconditional because what CI reported is a fact about the READ,
+  # not about who asked. Here the two roles are asking DIFFERENT QUESTIONS: review's
+  # gate-zero asks "may this PR merge NOW", and an unsettled CI is a legitimate NO
+  # (hence "fail"), while the builder asks "is my work certified" before the checks have
+  # had time to run, where an unsettled CI is simply not an answer yet. Same world, two
+  # honest answers, because two different questions were put to it.
+  GATE_ROW_PENDING = "pending"
+
   # The `result` a `{"sop" => "ci"}` GateRun row carries when GitHub REFUSED the read.
   # Mirrors app/models/gate_run.rb's UNREADABLE_RESULT — this file is a bin/ lib and
   # cannot load a Rails model, the same split RUNNING_RESULT already lives with. The
@@ -448,7 +472,7 @@ module CiGate
     # builder-side pending. It would not, and the mutation said so — recorded here
     # because a gate that argues from an unverified claim is this file's own subject.
     when :green then review_refused ? "fail" : "pass"
-    when :pending then review_role ? "fail" : "pending"
+    when :pending then review_role ? "fail" : GATE_ROW_PENDING
     when :red, :conflicted, :ci_less, :closed, :merged then "fail"
     # THE TOKEN EXPIRED; CI DID NOT FAIL. :unreadable means GitHub REFUSED the read
     # (401/403/rate limit) — the gate never saw a verdict at all. It used to fall
