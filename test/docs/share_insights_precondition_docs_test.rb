@@ -10,7 +10,7 @@ require "test_helper"
 # ActionGrade.banked and applies NO grader filter, and all five live insights are
 # Alex-graded — so the SOP told its own agent "nothing to share" while the bank it
 # exists to publish was full. The prose was the wrong half: `grader` records WHO
-# WROTE THE ROW (the `mcr` row is McRitchie's audit OF Alex's grade, admin-only by
+# WROTE THE ROW (the `mcr` row is McRitchie's audit OF Alex's grade, browser-only, never the agent CLI by
 # design — the agent API always grades as `alex`), while `#bank!` is the curation
 # act. Both other readers of the bank agree with the generator: ActionGrade
 # .insight_feed (the /api/v1/insights SessionStart feed) and HeartbeatController
@@ -213,7 +213,7 @@ class ShareInsightsPreconditionDocsTest < ActiveSupport::TestCase
     assert_match(/banked-ness is the gate; the grader is not/i, section,
                  "the Preconditions lost the sentence that settles which column gates publication. " \
                  "Without it, `grader: \"mcr\"` reads like a quality bar rather than what it is — the " \
-                 "admin-only audit OF Alex's grade — and gets re-added as an entry condition.")
+                 "browser-only, never the agent CLI audit OF Alex's grade — and gets re-added as an entry condition.")
     assert_match(/audit/i, section,
                  "the Preconditions no longer say that the `mcr` row is McRitchie's AUDIT of a grade")
     assert_match(/nothing to share/, section,
@@ -245,7 +245,11 @@ class ShareInsightsPreconditionDocsTest < ActiveSupport::TestCase
     # The one-line summaries — soul.md and grade-events.md described the act as
     # publishing "confirmed insights", the same wrong scope in miniature.
     /(publish|share)\w*(\s+Mr\. McRitchie's)?\s+confirmed\s+insights/i,
-    /only .{0,40}confirmed .{0,40}insights? (are|is) (shared|published|generated)/i
+    /only .{0,40}confirmed .{0,40}insights? (are|is) (shared|published|generated)/i,
+    # The class, not just today's phrasings: a reworded gate escaped every pattern
+    # above (Carl review, PR 1321). No live doc needs this phrase to rule the gate
+    # out -- they say "banked" -- so the bare form is safe to ban outright.
+    /confirmed\s+insights?/i
   ].freeze
 
   # The authorities that must be IN the sweep. A floor on coverage, not a count:
@@ -289,7 +293,7 @@ class ShareInsightsPreconditionDocsTest < ActiveSupport::TestCase
                  "these live docs gate the share act on McRitchie confirmation again. " \
                  "Insights::DocGenerator publishes ActionGrade.banked with NO grader filter, and the agent " \
                  "write path always grades as `alex` (the `mcr` row is McRitchie's audit OF that grade, " \
-                 "admin-only) — so this condition stands the act down over every lesson an agent can bank. " \
+                 "browser-only, never the agent CLI) — so this condition stands the act down over every lesson an agent can bank. " \
                  "It is also not enough to fix the SOP alone: an agent meets the precondition in the " \
                  "heartbeat launcher first (/tasks/sop-precondition-blocks-sharing)."
   end

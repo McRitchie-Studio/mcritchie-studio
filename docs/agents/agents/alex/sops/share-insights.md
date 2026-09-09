@@ -44,10 +44,10 @@ correctly. If the bank is empty, report "nothing to share" and stop.
 **Banked-ness is the gate; the grader is not.** `#bank!` is the curation act (and
 is mutually exclusive with `#discard!`), while `grader` records only WHO WROTE THE
 ROW: `alex` is Alex's grade of the activity, `mcr` is Mr. McRitchie's audit **of
-that grade** — a second row on the same target, writable only from the admin
-drawer, because the agent API always grades as `alex` so a shared token can never
+that grade** — a second row on the same target, written from the browser drawer
+and never by the agent CLI, because the agent API always grades as `alex` so a shared token can never
 forge the audit lane. Every other reader of the bank agrees: the feed-forward
-`/api/v1/insights` hook and the `/heartbeat/insights` page both read
+`/api/v1/insights` hook and the `/alex/insights` page both read
 `ActionGrade.banked` with no grader filter.
 
 So an entry condition of `grader: "mcr"` would stand this SOP down over every
@@ -61,7 +61,7 @@ query cannot drift apart again in silence.
 
 ## Procedure
 
-Regenerate the tracked lessons doc from confirmed insights, **against the board's
+Regenerate the tracked lessons doc from the bank (`ActionGrade.banked`), **against the board's
 database**. The URL never reaches the terminal or a file:
 
 ```bash

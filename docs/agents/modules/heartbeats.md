@@ -369,7 +369,7 @@ mechanics:
 [`full-cycle`](../agents/alex/sops/full-cycle.md).
 
 **Enter as Alex** (the Lead Orchestrator). Three acts: grade recent trajectory
-activities for the learning layer, share the CONFIRMED insights out to every agent, and
+activities for the learning layer, share the BANKED insights out to every agent, and
 — with ship authority — run the whole DevOps cycle end to end. The distillation
 pipeline at [`/alex/pipeline`](https://mcritchie.studio/alex/pipeline) is the
 operator view of the first two: Activities → Insights (Alex grades) →
