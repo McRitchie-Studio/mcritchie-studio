@@ -5256,6 +5256,82 @@ class ReleaseCliTest < Minitest::Test
     assert_includes out, "SHIP-CONTINUES", "an installer exception never aborts the completed ship"
   end
 
+  # --- the rescue's by-hand path must be EXECUTABLE AS PRINTED ----------------
+  # (rescue-warn-omits-installer-path)
+  #
+  # The rescue branch used to print a BARE `bin/install-agent-docs`. That resolves
+  # against whatever directory the READER happens to be sitting in, and this installer
+  # PUBLISHES GLOBALLY (projects-root AGENTS.md/CLAUDE.md, ~/.claude + ~/.codex skills,
+  # ~/.claude/settings.json, /etc/codex/requirements.toml, an append to ~/.zprofile).
+  # On 2026-09-08 that hand-run was done from a feature worktree and pushed unshipped
+  # mid-branch text to every session on the machine.
+  #
+  # TWO raise sites, because `rescue` here is METHOD-LEVEL and they are NOT equivalent:
+  #   * AFTER `installer` resolves (`sh` raises) — the easy half.
+  #   * BEFORE it resolves (`GateWorkspace.path` raises) — `installer` is in LEXICAL
+  #     scope (Ruby defines a local at the parser's first sight of the assignment) but
+  #     still NIL. So the obvious "interpolate #{installer}" fix prints "run `` by hand",
+  #     an empty backtick pair that is WORSE than the bare name it replaced. The seed at
+  #     the top of sync_agent_docs exists for exactly this case, and a test that only
+  #     stubs `sh` cannot see it.
+  #
+  # Neither test ever executes the real installer: the first raises inside the stubbed
+  # `sh`, and the second raises before `sh` is reached — which it also ASSERTS, via the
+  # SH-REACHED sentinel, so "the installer was not run" is a measured fact and not a
+  # reading of the control flow.
+
+  # The path the rescue hands over, or nil if the warn line stopped offering one.
+  def skipped_installer_path(out)
+    out[/agent-docs install skipped \([^)]*\) — run `([^`]*)` by hand/, 1]
+  end
+
+  def assert_absolute_installer(path, out, when_:)
+    refute_nil path,
+               "the rescue warn line no longer hands over a by-hand command in backticks (#{when_}). " \
+               "That line is the operator's only recovery instruction when the sync is skipped:\n#{out}"
+    refute_equal "", path,
+                 "the rescue interpolated an EMPTY path (#{when_}) — it printed \"run `` by hand\". " \
+                 "That is the nil-interpolation failure mode the seed in sync_agent_docs prevents, and " \
+                 "it is strictly worse than the bare `bin/install-agent-docs` it replaced."
+    assert path.start_with?("/"),
+           "the rescue prescribed #{path.inspect} (#{when_}), which is NOT absolute. A relative command " \
+           "resolves against the reader's cwd, and bin/install-agent-docs publishes GLOBALLY — that is " \
+           "how unshipped worktree text reached every session on this machine on 2026-09-08."
+    assert path.end_with?("bin/install-agent-docs"),
+           "the rescue prescribed #{path.inspect} (#{when_}), which does not name the installer"
+  end
+
+  def test_sync_agent_docs_rescue_names_an_absolute_installer_after_resolution
+    setup = <<~RUBY
+      def sh(*_a, **_k) = raise("no such installer")
+    RUBY
+    out = run_cli(["--yes"], setup: setup, call: "sync_agent_docs")
+
+    assert_absolute_installer(skipped_installer_path(out), out, when_: "sh raised, path already resolved")
+  end
+
+  def test_sync_agent_docs_rescue_names_an_absolute_installer_before_resolution
+    # GateWorkspace.path raises on the FIRST line of the body, so the rescue fires with
+    # `installer` still nil. `sh` is stubbed only as a tripwire — it must never be reached.
+    setup = <<~RUBY
+      Release::GateWorkspace.define_singleton_method(:path) { |*_| raise("workspace lookup exploded") }
+      def sh(*a, **_k)
+        $stdout.puts("SH-REACHED " + a.inspect)
+        ["", true]
+      end
+    RUBY
+    out = run_cli(["--yes"], setup: setup, call: "sync_agent_docs; puts('SHIP-CONTINUES')")
+
+    assert_includes out, "agent-docs install skipped (workspace lookup exploded)",
+                    "sanity: the rescue fired on the workspace lookup, not somewhere later"
+    refute_includes out, "SH-REACHED",
+                    "sanity: the raise must precede the `sh` call, or this case is not testing the " \
+                    "unresolved-path branch at all"
+    assert_absolute_installer(skipped_installer_path(out), out, when_: "raised before the path resolved")
+    assert_includes out, "SHIP-CONTINUES",
+                    "a raise before the path resolves must still be non-fatal to the completed ship"
+  end
+
   # A non-zero exit from `heroku run` must ABORT the pipeline. Drive run_post_deploy
   # directly (DRY=false) with `sh` stubbed to FAIL — but the stub first ECHOES its
   # argv, so we also prove the EXECUTED command carries `--exit-code` (the flag that
