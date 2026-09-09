@@ -861,7 +861,7 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
       why: "cautionary account of turf-monster PR 594, the incident that motivated the gate" },
     { file: "docs/agents/agents/carl/sops/pr-review.md", line: 322, match: /therefore runs the breaker itself/,
       why: "prose describing what the command does, not an instruction to run it" },
-    { file: "docs/agents/modules/devops-task-board.md", line: 836,
+    { file: "docs/agents/modules/devops-task-board.md", line: 849,
       match: /lands the task back on building, and three readers/,
       why: "prose describing the stage effect on board readers" },
     { file: "docs/agents/modules/gates/g2-review.md", line: 93, match: /exits 10\), re-run it/,

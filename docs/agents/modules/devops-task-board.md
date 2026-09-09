@@ -590,9 +590,22 @@ fresh path `--steal` is forwarded to the child move. Handoff (commit → `bin/fa
 record `pr_url` → `bin/dor-check` → `move submitted` → read-back verify):
 
 ```bash
-bin/ship <task-slug>                     # commit message defaults to the task title
-bin/ship <task-slug> -m "Commit message"
+cd <desk>                                # the worktree begin printed
+/Users/alex/projects/mcritchie-studio/bin/ship <task-slug>   # message defaults to the task title
+/Users/alex/projects/mcritchie-studio/bin/ship <task-slug> -m "Commit message"
 ```
+
+**Both halves of that are load-bearing, and `begin` now prints them for you.**
+The PATH picks the script: every fast-lane script — `bin/task`, `bin/ship`,
+`bin/fast-check`, `bin/full-suite-check`, `bin/dor-check` — lives in
+mcritchie-studio/bin ALONE, so a bare `bin/ship` on a turf-monster or rolio desk
+dies as `nohup: bin/ship: No such file or directory`. The CWD picks the TREE the
+script acts on: `bin/ship` roots at the cwd's git toplevel and `CertRootGuard`
+REFUSES a run rooted anywhere but the task's desk, so `cd <hub> && bin/ship
+<satellite-slug>` fails in the opposite direction. `bin/task begin` closes by
+printing the resolved `cd <desk> && <absolute bin/ship> <task-slug>` line, ready
+to paste — a hub desk ships its own `bin/`, so there it names the desk's script;
+a satellite desk has none, so there it names the hub's.
 
 **Both wrappers talk to GitHub, and that credential expires ~hourly BY DESIGN.**
 `bin/ship` pushes, opens the PR, and polls `gh pr checks`; `begin`'s preflight
