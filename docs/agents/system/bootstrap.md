@@ -29,9 +29,11 @@ bin/agent-runtime doctor        # read-only — docs, marker hooks, login-shell 
 
 **Once, to bring a bare machine up — then never again.** That command is not
 scoped to this app or this checkout. It publishes **globally**: the projects-root
-`AGENTS.md` and `CLAUDE.md`, `~/.claude/skills`, `~/.codex/skills`,
-`~/.claude/settings.json`, `/etc/codex/requirements.toml`, and an appended block
-in `~/.zprofile`. Every agent session on the machine reads what it writes. After
+`AGENTS.md` and `CLAUDE.md`, `~/.claude/skills` and `~/.codex/skills` (retired
+skills are deleted from both), `~/.claude/settings.json`,
+`/etc/codex/requirements.toml`, `~/.codex/config.toml` — the operator's own Codex
+TUI settings — `~/.codex/hooks.json`, and an appended block in `~/.zprofile`.
+Every agent session on the machine reads what it writes. After
 bringup the roots are republished by the owned `sync_agent_docs` step of every
 production ship, so a second run is never owed — and it is **never** the answer
 to an installed-docs drift report. From a feature worktree it would publish that

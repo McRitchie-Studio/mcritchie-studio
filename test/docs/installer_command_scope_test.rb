@@ -159,7 +159,8 @@ class InstallerCommandScopeTest < ActiveSupport::TestCase
                  "runnable command without saying it is a BRINGUP-ONLY run. Unscoped, it reads as routine " \
                  "maintenance — and it is not: it publishes GLOBALLY (projects-root AGENTS.md/CLAUDE.md, " \
                  "~/.claude/skills, ~/.codex/skills, ~/.claude/settings.json, /etc/codex/requirements.toml, " \
-                 "and an appended ~/.zprofile block), so from a feature worktree it pushes unshipped " \
+                 "~/.codex/config.toml, ~/.codex/hooks.json, and an appended ~/.zprofile block), so from a " \
+                 "feature worktree it pushes unshipped " \
                  "mid-branch text to every session on the machine. That is the 2026-09-08 incident. Put the " \
                  "scope on the command line (`# BRINGUP ONLY — publishes globally`) or in the prose that " \
                  "introduces the block, per docs/agents/modules/docs-maintenance.md § Editing The Entry " \
