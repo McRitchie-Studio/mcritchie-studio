@@ -547,15 +547,29 @@ def dispatch_and_watch(workflow, inputs = {}, chdir: nil)
   end
 
   run_id = nil
-  # DID WE EVER SEE GITHUB AT ALL? A nil `run_id` at the end of this poll has two
+  # DID THE LAST READ SEE GITHUB? A nil `run_id` at the end of this poll has two
   # causes and they are opposite facts (see the abort below), so the poll has to
-  # remember which one it met. Set by a SUCCESSFUL read, never by the run id: a read
-  # that answers and shows no new run has still OBSERVED GitHub, and that is the
-  # distinction the abort turns on.
+  # remember which one it met. Set by whether a read SUCCEEDED, never by the run id:
+  # a read that answers and shows no new run has still OBSERVED GitHub, and that is
+  # the distinction the abort turns on.
+  #
+  # PLAIN ASSIGNMENT, AND THE `=` IS THE GUARD. Accumulating here (`= true unless
+  # ...`, which this was) answers "did ANY read ever succeed", and that is not the
+  # question the abort asks. The message it selects claims GitHub holds no run —
+  # a statement about the run list NOW — so only the MOST RECENT observation can
+  # support it. A read taken ~0s after the dispatch answers and shows no new run
+  # simply because registration has not happened yet; it is evidence of nothing.
+  # Under accumulation that one read licensed the "deploy NEVER RAN" message, plus
+  # its re-dispatch remedy, for the rest of the poll however badly `gh` failed
+  # afterwards — and on prod-deploy.yml that orders a SECOND PRODUCTION DEPLOY
+  # while the first may be in flight. Reachable on ordinary infrastructure, not an
+  # exotic race: App installation tokens expire ~hourly BY DESIGN and this poll is
+  # ~60s wide, so read-1-answers-then-all-fail is a routine token expiry.
+  # Pinned by test_a_read_that_succeeds_before_the_list_goes_unreadable_does_not_claim_never_ran.
   saw_a_read = false
   20.times do
     latest_id = newest_run_id(workflow, chdir: chdir)
-    saw_a_read = true unless latest_id.nil?
+    saw_a_read = !latest_id.nil?
     # nil (a transient list failure) is SKIPPED, never compared to before_id.
     run_id = Release::ShipSequence.new_run_id(before_id, latest_id)
     break if run_id
@@ -574,11 +588,14 @@ def dispatch_and_watch(workflow, inputs = {}, chdir: nil)
   # deploy`". The app was healthy; it had simply never been redeployed, so the
   # remedy pointed at the wrong system and the sweep had to be re-run whole.
   #
-  # TWO CAUSES, TWO MESSAGES — and this is the sharp edge. `run_id` is nil when
-  # every read ANSWERED and none showed a run newer than the snapshot (GitHub
-  # genuinely holds none), and ALSO when every read FAILED (newest_run_id nil →
-  # new_run_id nil), where nothing about the deploy was observed at all. Collapsing
-  # them printed "the deploy NEVER RAN … the app is still serving its OLD tree" and
+  # TWO CAUSES, TWO MESSAGES — and this is the sharp edge. `run_id` is nil when the
+  # poll's reads ANSWERED and none showed a run newer than the snapshot (GitHub
+  # genuinely holds none), and ALSO when they FAILED (newest_run_id nil →
+  # new_run_id nil), where nothing about the deploy was observed at all. Which of
+  # the two the poll ended on is decided by its LAST read — not by whether some
+  # earlier read happened to succeed, because a read taken before GitHub could have
+  # registered the run says nothing about whether a run exists. Collapsing the two
+  # printed "the deploy NEVER RAN … the app is still serving its OLD tree" and
   # handed the operator the dispatch command to re-run — over an unreadable `gh`,
   # on prod-deploy.yml, while that deploy may be IN FLIGHT. That is a second
   # production deploy ordered on the strength of a read that never succeeded: the
@@ -587,9 +604,9 @@ def dispatch_and_watch(workflow, inputs = {}, chdir: nil)
   # as load-bearing for the PRE-dispatch snapshot; it is no less load-bearing here,
   # where it drives a positive factual claim rather than a fail-closed skip.
   # `saw_a_read` is the only thing that separates them, so the honest message when
-  # nothing was ever read reports the OBSERVATION (unknown) and makes the remedy a
+  # the last read failed reports the OBSERVATION (unknown) and makes the remedy a
   # CHECK — "re-run the dispatch" is safe only once you know no run exists, which is
-  # exactly what an unreadable run list could not establish.
+  # exactly what a run list that would not answer could not establish.
   #
   # WHAT THIS DOES **NOT** MAKE TRUE. prepare's `/up` boot-failure diagnosis is still
   # reachable with NOTHING deployed — the two `return false`s above (no baseline, and
