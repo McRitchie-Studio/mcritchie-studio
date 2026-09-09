@@ -381,12 +381,18 @@ other is the Squads V4 multisig that owns the program's upgrade authority. Rotat
 the first and stop, and the rotated-out key still holds **upgrade authority over
 the mainnet program** — a strictly larger power than the one you just took away.
 
-The Squads half is mutable and is an operator act at `app.squads.so`, described in
-`turf-vault/docs/KEY_ROTATION.md` §7: propose a config transaction doing
+The Squads half is mutable and is an operator act at `app.squads.so`. The mechanism,
+inline so you need not leave this file: propose a config transaction doing
 `removeMember(<old pubkey>)` + `addMember(<new pubkey>)`, keep threshold 2, approve
-with the **two clean members** (never with the key being rotated out), execute. Pin
-no addresses from that file — its addresses are historical; the live `multisigPda`
-and member set are the **top level** of `scripts/squad.json`.
+with the **two clean members** (never with the key being rotated out), execute.
+
+`turf-vault/docs/KEY_ROTATION.md` §7 describes the same mechanism, and
+`secrets-rotation.md` is right that the file as a whole is a **SUPERSEDED plan** —
+so take the mechanism from it and **no addresses**: its program IDs, multisig PDAs
+and member lists are historical. Live truth is the **top level** of
+`turf-vault/scripts/squad.json` (`multisigPda`, `members`, `threshold`), confirmed
+on-chain with `solana program show <PROGRAM_ID> --url mainnet-beta` for the upgrade
+authority.
 
 Now the on-chain signer half. Read the program, not the intuition
 (`turf-vault/programs/turf_vault/src/instructions/update_signers.rs`, and

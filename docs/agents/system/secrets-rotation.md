@@ -110,8 +110,9 @@ Run the old sequence and you promote a new key, revoke the old one, and discover
 5. Update 1Password `agent.alex.solana` -> field `private key` -> paste the new base58 secret. Save.
 6. `heroku config:set SOLANA_ADMIN_KEY=<new_base58> --app turf-monster-mainnet`.
 7. Re-run `bin/ecosystem-build` → Phase 4 re-fetches from 1P and writes to local `.env`.
-8. Securely delete `/tmp/new-admin.json` (it contains the unencrypted secret).
-9. There is no second `update_signers`. `signers` is `[Pubkey; 3]` and the instruction does `vault.signers = new_signers` — a whole-set replace across three fixed slots — so step 4 already evicted the old pubkey in the same transaction. The only way to hold old and new at once is to evict a third signer for the duration; see the `credential-rotation` SOP's worked example before choosing that.
+8. Delete `/tmp/new-admin.json` (it contains the unencrypted secret). "Securely" is not available here: macOS has no `shred`, and `man rm` says `-P` "has no effect". On APFS the guarantee is *unlinked*, not *erased* — so keep the window short and treat the plaintext as exposed if the disk is ever suspect.
+9. **`update_signers` is not the only registration.** This pubkey is also a member of the Squads V4 2-of-3 that holds the turf-vault **mainnet program upgrade authority** (`turf-vault/scripts/squad.json` top level), and `update_signers` does not touch Squads membership. Rotate it there too — a config transaction at https://app.squads.so doing `removeMember(old)` + `addMember(new)`, threshold stays 2, approved by the two CLEAN members — or the rotated-out key keeps upgrade authority over the deployed program. The `credential-rotation` SOP's worked example carries the full order and the proofs.
+10. There is no second `update_signers`. `signers` is `[Pubkey; 3]` and the instruction does `vault.signers = new_signers` — a whole-set replace across three fixed slots — so step 4 already evicted the old pubkey in the same transaction. The only way to hold old and new at once is to evict a third signer for the duration; see the `credential-rotation` SOP's worked example before choosing that.
 
 **Verify:** `bin/rails runner 'puts Solana::Keypair.from_base58(ENV["SOLANA_ADMIN_KEY"]).address'` matches the new pubkey. A test contest settlement completes successfully (admin signs as `admin`, human cosigns).
 
