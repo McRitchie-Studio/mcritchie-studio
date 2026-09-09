@@ -1853,15 +1853,33 @@ class DorCheckTest < Minitest::Test
   # A FAILED dor_review must name CI as the failing SOP when CI is why it failed.
   # The no-verdict family used to record a flat "unverified" — a NOTE — as the sole
   # cause of a failed row, the same asymmetry :pending already avoids. "unverified"
-  # stays correct where CI genuinely only noted: a full cert standing in for it.
+  # stays correct where CI genuinely only noted AND the state has no better name of
+  # its own: a full cert standing in for an unread :none/:unverified.
+  #
+  # :unreadable NOW NAMES ITSELF, in all three (/tasks/gate-logs-auth-as-red). The
+  # state means GitHub REFUSED the read, and the row it writes is durable — read
+  # later, off the board, by someone who was not here. Both old answers misled a
+  # different reader:
+  #
+  #   * "fail" (the refusing run) wrote a red-CI bounce that never happened into the
+  #     task's PERMANENT gate history. Installation tokens expire ~hourly BY DESIGN
+  #     here, so any gate run straddling an expiry produced one.
+  #   * "unverified" (the cleared runs) is painted with the gates card's PASS glyph,
+  #     so a review that advanced on a FULL CERT rendered as though CI had gone green
+  #     — a green credited for a lane nobody could read.
+  #
+  # One state, one name, and the card gets a ⚠ arm of its own so neither reading
+  # returns. What did NOT move: a genuinely red CI, an unclassified state, and a
+  # green all keep their answers below, so the row still separates the causes.
   def test_the_gates_card_names_ci_as_the_cause_when_ci_is_the_cause
-    assert_equal "fail", ci_gate_result("unreadable", evidence: FAST_CERT_ONLY)
-    assert_equal "unverified", ci_gate_result("unreadable", evidence: FULL_CERT),
-                 "a full cert standing in for an unread verdict is a NOTE, not a CI failure"
+    assert_equal "unreadable", ci_gate_result("unreadable", evidence: FAST_CERT_ONLY)
+    assert_equal "unreadable", ci_gate_result("unreadable", evidence: FULL_CERT),
+                 "a full cert standing in for an unread verdict is a NOTE — but the note must say " \
+                 "the CI was UNREADABLE, not let the card paint it as a CI that passed"
     assert_equal "fail", ci_gate_result("state:quantum_flux", evidence: FULL_CERT)
     assert_equal "pass", ci_gate_result("green", evidence: FULL_CERT)
     # Submit-side keeps the note: the builder's handoff is provisional by design.
-    assert_equal "unverified", ci_gate_result("unreadable", evidence: FULL_CERT, review: false)
+    assert_equal "unreadable", ci_gate_result("unreadable", evidence: FULL_CERT, review: false)
   end
 
   # The gates-card row this run WOULD write, read out of --json rather than off the

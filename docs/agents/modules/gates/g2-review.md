@@ -176,6 +176,15 @@ bin/gate close task <task-slug> g2b_light --failed --actor <light-soul> \
   gates card even though no reviewer ran, and it lands on the gate-zero gate, not
   a G2 review lane. A pre-spawn **defer** (CI pending) records nothing; nothing
   started.
+- **`ci:unreadable` is not `ci:fail`.** The `ci` SOP's `result` names the state CI
+  was actually in, and `unreadable` means GitHub **refused the read** — an expired
+  installation token, a 403, a rate limit — so no verdict was ever seen. It is not
+  a red CI, and re-reading it once the credential is fresh
+  (`eval "$(bin/gh-auth-refresh --export)"`) is the whole remedy. The row carries
+  `state` / `cause` / `reason` alongside, and the gates card paints it `⚠`, never
+  `✓` and never `✗`. Read the record with `bin/gate show task <task-slug>`;
+  auditing a bounce, treat `ci:fail` as "CI ran and failed" and `ci:unreadable` as
+  "nobody could look".
 - A **reportless lane stays in flight** (no verdict yet) and is reused by the
   next wave rather than double-opened — `GateRun.open!` converges racing
   openers onto one row.

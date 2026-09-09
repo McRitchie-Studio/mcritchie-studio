@@ -188,7 +188,15 @@ class DorCheckExemptCiTest < Minitest::Test
     assert_equal "fail", CiGate.gate_row({ state: :red }, review_role: true, review_refused: true)
     assert_equal "fail", CiGate.gate_row({ state: :pending }, review_role: true, review_refused: true)
     assert_equal "pending", CiGate.gate_row({ state: :pending }, review_role: false, review_refused: false)
-    assert_equal "fail", CiGate.gate_row({ state: :unreadable }, review_role: true, review_refused: true)
+    # THIS ASSERTION PINNED A DEFECT UNTIL 2026-09-08 (/tasks/gate-logs-auth-as-red).
+    # :unreadable means GitHub REFUSED the read — the gate saw no verdict at all — and
+    # recording it as "fail" wrote a red-CI bounce that never happened into the task's
+    # PERMANENT gate history. Installation tokens expire ~hourly by design here, so
+    # every gate run straddling an expiry produced one. It now names the state it is
+    # actually in; a genuinely red CI (asserted three lines up) still says "fail", so
+    # the record keeps the two causes apart. Its own coverage lives in
+    # test/lib/gate_record_unreadable_ci_test.rb, which reads the PERSISTED row.
+    assert_equal "unreadable", CiGate.gate_row({ state: :unreadable }, review_role: true, review_refused: true)
     assert_nil CiGate.gate_row(nil, review_role: true, review_refused: false)
   end
 
@@ -221,21 +229,31 @@ class DorCheckExemptCiTest < Minitest::Test
 
   # THE NEIGHBOURS, not just red. The documented allow-list refuses each of these,
   # and an exempt task is no different.
+  #
+  # THE RECORDED ROW IS ASSERTED PER-STATE, NOT AS ONE FLAT "fail"
+  # (/tasks/gate-logs-auth-as-red). Every one of these REFUSES — that half is
+  # uniform and stays uniform — but the DURABLE row must say which non-answer it
+  # got, because the row outlives the refusal text above it. :unreadable ("GitHub
+  # refused my credential") is the one that had to move: recorded as "fail" it wrote
+  # a red-CI bounce that never happened into the permanent gate history, and tokens
+  # expire ~hourly here. The rest keep "fail" — collapsing them all onto one honest
+  # value would make the record uniformly useless instead of uniformly wrong.
   def test_pending_unreadable_and_unclassified_ci_all_refuse_an_exempt_review
     {
-      "pending" => "still RUNNING",
-      "unreadable" => "UNREADABLE",
-      "unverified" => "no verdict yet",
-      "none" => "no verdict yet",
-      "conflicted" => "gate-zero",
-      "closed" => "not an OPEN review target",
-      "state:teal" => "does not classify"
-    }.each do |injected, expected|
+      "pending" => ["still RUNNING", "fail"],
+      "unreadable" => ["UNREADABLE", "unreadable"],
+      "unverified" => ["no verdict yet", "fail"],
+      "none" => ["no verdict yet", "fail"],
+      "conflicted" => ["gate-zero", "fail"],
+      "closed" => ["not an OPEN review target", "fail"],
+      "state:teal" => ["does not classify", "fail"]
+    }.each do |injected, (expected, recorded)|
       verdict, code = check(devops, ci: injected)
 
       assert_equal 1, code, "#{injected} must refuse"
       assert_includes errors_of(verdict), expected
-      assert_equal "fail", verdict["ci_gate_result"], "#{injected} must record CI as the failing sop"
+      assert_equal recorded, verdict["ci_gate_result"],
+                   "#{injected} must record CI as the reason, under the name of the state it was actually in"
     end
   end
 
