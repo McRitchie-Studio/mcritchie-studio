@@ -68,6 +68,18 @@ class ShipDocsSyncDocsTest < ActiveSupport::TestCase
   # and `modules/zap-protocol.md` carried the same claim; the sweep below is how they were
   # found, and is what a grep for the one reported sentence would have missed.
   #
+  # THE FIFTH SITE (cycle-doc-prescribes-hand-install, 2026-09-09).
+  # `system/devops-cycle-design.md` carried the same claim twice and was GRANDFATHERED out
+  # of the sweep above, because another session held the file that day. It has since been
+  # corrected and the exemption is gone — the file is swept like every other, and is now
+  # PINNED by name below. Two things that fix taught this guard:
+  #   * It carried a THIRD shape the sweep could not see — a rationale, not a directive.
+  #     Hence the third pattern; see PRIMARY_AS_SOURCE.
+  #   * The by-hand half is not hypothetical. On 2026-09-08 it was copied into a builder
+  #     brief, the builder ran the installer from a WORKTREE, and because these docs publish
+  #     GLOBALLY it pushed unshipped mid-branch text to every session on the machine. It was
+  #     caught and re-synced the same day. The doc is where the instruction came from.
+  #
   # WHY THIS IS NOT PEDANTRY, and why it earns a guard. Installing from the ship workspace
   # is what publishes THE TREE THAT SHIPPED. A reader who believes it installs from the
   # primary concludes that a dirty or lagging primary corrupts what gets published — and
@@ -83,35 +95,43 @@ class ShipDocsSyncDocsTest < ActiveSupport::TestCase
   # with — once with a workspace present, once without. Re-executing that harness from a
   # Rails-loaded docs test would duplicate a slow subprocess for no new information. So
   # this file asserts the ORDER of the two root assignments (which tree is the source and
-  # which is the rescue) and PINS those two behavioural tests by name, so the executable
+  # which is the fallback) and PINS those two behavioural tests by name, so the executable
   # half cannot quietly leave the suite while the docs keep citing it.
+  #
+  # Name the fallback precisely: it is a GUARD CLAUSE (`root = primary unless File.exist?`),
+  # not a rescue. `sync_agent_docs` also has a `rescue StandardError`, and that is a
+  # different mechanism — the non-fatal skip that keeps a docs sync from failing an
+  # already-completed ship. Calling the fallback "the rescue" merges the two, and a doc
+  # written from that reading describes a fallback that fires on error rather than on a
+  # missing installer.
   BEHAVIOURAL_PINS = %w[
     test_sync_agent_docs_installs_from_the_shipped_ship_workspace
     test_sync_agent_docs_falls_back_to_the_primary_without_a_ship_workspace
   ].freeze
 
-  # Two spellings of ONE false claim — "the installer's source tree is the primary" —
+  # Three spellings of ONE false claim — "the installer's source tree is the primary" —
   # read over the emphasis-normalised body so a line-wrapped sentence matches as one run.
   # `[^.]` keeps each match inside a sentence, which is what stops the many legitimate
   # "Run this SOP from the McRitchie Studio primary checkout" lines from scoring.
-  # Measured against the 120+ live docs the day this landed: zero false positives.
+  # Measured against the live docs each time a pattern was added: zero false positives
+  # (120+ for the first two, 122 for the third).
+  #
+  # The THIRD pattern was added by cycle-doc-prescribes-hand-install, and the reason is
+  # worth keeping: the first two catch DIRECTIVES ("the hub primary's install-agent-docs",
+  # "run it from the hub primary"), and system/devops-cycle-design.md carried a third shape
+  # this sweep did not see — a RATIONALE. It explained the step's post-ship placement by
+  # saying "the installer reads the LOCAL hub checkout's docs, and only after the ff
+  # release → main + restore does the primary's main hold the merged docs". Measured: the
+  # two original patterns MISS that sentence. It is the most dangerous of the three,
+  # because a reader who accepts an explanation reasons their way to the hand-run instead
+  # of merely being told to do it — so a sweep that only catches instructions catches the
+  # symptom and leaves the cause. The pattern targets the family ("the installer reads the
+  # <hub|primary> checkout"), not that one sentence.
   PRIMARY_AS_SOURCE = [
     /(?:hub|McRitchie Studio) primary'?s?[^.]{0,80}?install-agent-docs/i,
-    /(?:install-agent-docs|the installer)[^.]{0,60}?from the (?:hub |McRitchie Studio )?primary/i
+    /(?:install-agent-docs|the installer)[^.]{0,60}?from the (?:hub |McRitchie Studio )?primary/i,
+    /(?:install-agent-docs|the installer)[^.]{0,60}?reads the[^.]{0,40}?(?:hub|primary)/i
   ].freeze
-
-  # An ALLOWANCE, not an expectation. This file carries the same wrong-tree claim and owes
-  # the same fix; it was held out of the correcting diff because another session was editing
-  # it that day, and two sessions editing one doc is a merge conflict, not a sweep. Deliberately
-  # asymmetric: the sweep below SKIPS these paths, it does not assert they are still wrong —
-  # a test that demands a doc stay broken reddens whoever fixes it. So fixing it passes, and
-  # the row is then dead weight to delete.
-  GRANDFATHERED = {
-    "system/devops-cycle-design.md" =>
-      "same claim at :1091 ('the hub primary's bin/install-agent-docs') and :1103 ('the fix is " \
-      "running bin/install-agent-docs from the hub primary by hand'); owed a follow-up as of " \
-      "2026-09-08. Fix it and delete this row."
-  }.freeze
 
   # Every live agent doc, emphasis-normalised. `archive/` and `audits/` are frozen dated
   # snapshots — the house rule leaves them as written, and correcting a 2026-06 audit's
@@ -182,13 +202,20 @@ class ShipDocsSyncDocsTest < ActiveSupport::TestCase
 
     # A count floor alone is half the guard: it survives losing exactly the docs that carry
     # the claim. Pin the three corrected files by name.
-    %w[agents/steffon/sops/production-deploy.md modules/heartbeats.md modules/zap-protocol.md].each do |rel|
+    %w[
+      agents/steffon/sops/production-deploy.md
+      modules/heartbeats.md
+      modules/zap-protocol.md
+      system/devops-cycle-design.md
+    ].each do |rel|
       assert_includes docs.map(&:first), rel,
-                      "#{rel} dropped out of the sweep — it is one of the three files this guard was " \
-                      "written for, so its absence is the failure mode, not a passing run"
+                      "#{rel} dropped out of the sweep — it is one of the four files this guard was " \
+                      "written for, so its absence is the failure mode, not a passing run. The doc " \
+                      "count floor above does NOT catch this: a glob break that drops all of system/ " \
+                      "still clears 80."
     end
 
-    offenders = docs.select { |rel, body| names_primary_as_source?(body) && !GRANDFATHERED.key?(rel) }
+    offenders = docs.select { |_rel, body| names_primary_as_source?(body) }
 
     assert_empty offenders.map(&:first),
                  "These docs say the post-ship installer runs from the PRIMARY. It runs from the hub's " \
@@ -197,16 +224,14 @@ class ShipDocsSyncDocsTest < ActiveSupport::TestCase
                  "bin/release.rb and modules/docs-maintenance.md § Editing The Entry Docs. The wrong " \
                  "tree is not a synonym: it tells a reader that a lagging primary corrupts what is " \
                  "published, and the next thing that reader does is hand-run the installer."
-
-    GRANDFATHERED.each_key do |rel|
-      assert AGENTS.join(rel).exist?,
-             "#{rel} is grandfathered out of this sweep but no longer exists — the row is dead. " \
-             "Delete it, or point it at wherever that prose moved."
-    end
   end
 
   test "[static] the ship-sync docs name the workspace as source and the primary as fallback" do
-    %w[agents/steffon/sops/production-deploy.md modules/heartbeats.md].each do |rel|
+    %w[
+      agents/steffon/sops/production-deploy.md
+      modules/heartbeats.md
+      system/devops-cycle-design.md
+    ].each do |rel|
       body = norm(rel)
 
       assert_match(/install-agent-docs[^.]{0,120}?ship workspace/i, body,
@@ -255,5 +280,51 @@ class ShipDocsSyncDocsTest < ActiveSupport::TestCase
     refute names_primary_as_source?(unrelated), "the detector fires on 'run this SOP from the primary " \
                                                 "checkout' — that line opens most SOPs in the tree and " \
                                                 "has nothing to do with the installer"
+  end
+
+  # MUTATION PROOF, second wave: the three sentences cycle-doc-prescribes-hand-install
+  # removed from system/devops-cycle-design.md, and the prose that replaced them. The
+  # RATIONALE is the one that earned the third pattern — it was measured MISSED by the
+  # original two, which is why that file could carry the claim while the sweep ran green
+  # over the other four docs.
+  test "the wrong-tree detector fires on the cycle-design sentences, RATIONALE included" do
+    possessive = "After the primaries are restored to the freshly shipped main, ship auto-runs the " \
+                 "hub primary's bin/install-agent-docs (sync_agent_docs, ship step 7b)"
+    rationale  = "It is post-SHIP by design — the installer reads the LOCAL hub checkout's docs, and " \
+                 "only after the ff release → main + restore does the primary's main hold the merged docs"
+    by_hand    = "If the step warns, the fix is running bin/install-agent-docs from the hub primary by hand."
+
+    assert names_primary_as_source?(possessive),
+           "the detector missed devops-cycle-design.md's possessive attribution at :1091"
+    assert names_primary_as_source?(rationale),
+           "the detector missed the RATIONALE at :1096 — the sentence that EXPLAINS the wrong premise " \
+           "instead of merely stating it. The two original patterns match directives only, and this " \
+           "sentence is a directive-free explanation, so it swept green while being the most dangerous " \
+           "of the three. Removing the third pattern reopens exactly that hole."
+    assert names_primary_as_source?(by_hand),
+           "the detector missed the by-hand prescription at :1103 — the half a builder actually acted " \
+           "on from a worktree on 2026-09-08, publishing unshipped text machine-wide"
+
+    # The replacements. Each must pass, or the fix could not have been written.
+    source   = "ship auto-runs bin/install-agent-docs (sync_agent_docs, ship step 7b) from the hub's " \
+               "ship workspace (mcritchie-studio/.worktrees/_ship, the tree pinned at the frozen SHA " \
+               "that just shipped)"
+    guard    = "sync_agent_docs takes the workspace root first, then drops back to the primary in a " \
+               "guard clause (unless File.exist? on the workspace's installer)"
+    recovery = "If the step warns, run the installer path the warn line prints"
+    why      = "It is post-SHIP by design: the step publishes only what actually shipped, so a " \
+               "qa-release-time or prepare-time run would publish a candidate that has not gone to " \
+               "production and may never"
+
+    refute names_primary_as_source?(source), "the detector fires on the corrected SOURCE sentence"
+    refute names_primary_as_source?(guard),
+           "the detector fires on prose describing the primary FALLBACK as a guard clause — every " \
+           "corrected doc owes that half, because bin/release.rb really does drop back to the primary"
+    refute names_primary_as_source?(recovery),
+           "the detector fires on the corrected recovery line, which points at the path the warn " \
+           "line prints rather than at a tree"
+    refute names_primary_as_source?(why),
+           "the detector fires on the corrected post-ship RATIONALE — the replacement for the " \
+           "sentence above must be able to pass this sweep"
   end
 end

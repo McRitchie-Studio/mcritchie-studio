@@ -1088,20 +1088,49 @@ flips the RC + its members to `shipped` (`Release::Conductor.ship!`), and
 each repo's `release` equals `main` and re-accumulates the next candidate. Run
 `ship` from a **primary checkout** (not a worktree): the gem repos are resolved
 as siblings at the projects root.
+
 **Post-ship agent-docs sync (the OWNED installer run).** After the primaries are
-restored to the freshly shipped `main`, ship auto-runs the hub primary's
-**`bin/install-agent-docs`** (`sync_agent_docs`, ship step 7b) — the owned
-pipeline step that keeps the installed docs (`~/.claude` + `~/.codex` skills,
-the projects-root `AGENTS.md`/`CLAUDE.md`) in sync with what shipped, so an
-adapter/skill/SOP merge no longer drifts until someone happens to run the
-installer by hand. It is post-SHIP by design — the installer reads the LOCAL hub
-checkout's docs, and only after the ff `release → main` + restore does the
-primary's `main` hold the merged docs (a qa-release-time / prepare-time run
-would install `main`'s stale docs) — and NON-FATAL by construction (rescue-and-warn; a docs
-sync never aborts a completed ship). **Owner: Steffon (infra) owns the step and
-its mechanism;** it runs inside whichever act drives `bin/release ship`
-(`production-deploy` / `full-cycle`). If the step warns, the fix is running
-`bin/install-agent-docs` from the hub primary by hand.
+restored to the freshly shipped `main`, ship auto-runs
+**`bin/install-agent-docs`** (`sync_agent_docs`, ship step 7b) from the hub's
+**ship workspace** (`mcritchie-studio/.worktrees/_ship`, the tree pinned at the
+frozen SHA that just shipped). It keeps the installed docs (`~/.claude` +
+`~/.codex` skills, the projects-root `AGENTS.md`/`CLAUDE.md`) in sync with what
+shipped, so an adapter/skill/SOP merge no longer drifts until someone happens to
+run the installer by hand. **Owner: Steffon (infra) owns the step and its
+mechanism;** it runs inside whichever act drives `bin/release ship`
+(`production-deploy` / `full-cycle`).
+
+The installer syncs from its own root, so **the tree it runs in IS the docs it
+publishes** — which is why the source is the workspace and not a checkout that
+merely ought to match it. The hub **primary is the fallback, not the source**:
+`sync_agent_docs` takes the workspace root first, then drops back to the primary
+in a **guard clause** (`unless File.exist?` on the workspace's installer), so the
+fallback fires exactly when a ship resolved no hub member and that workspace
+holds no installer. The fallback is real — a doc that denies it disagrees with
+the code — but it is second, and deliberately so: ship no longer fast-forwards
+the primary's local `main` (`restore_primaries` tries, best-effort, and correctly
+refuses a primary holding a live session's work), so the primary can sit a
+release behind, and publishing from it would install docs that did not ship.
+(The `rescue StandardError` in the same method is a separate mechanism — the
+non-fatal skip below, not the fallback.)
+
+It is post-SHIP by design: the step publishes only what actually shipped, so a
+qa-release-time or prepare-time run would publish a candidate that has not gone
+to production and may never. It runs unconditionally — idempotent file copies, so
+a ship carrying no docs changes is a cheap no-op that also heals prior drift —
+and is NON-FATAL by construction (rescue-and-warn; a docs sync never aborts a
+completed ship).
+
+**If the step warns,** run the installer path the warn line prints. That is the
+ship lane's own recovery and the one by-hand run
+[`docs-maintenance.md`](../modules/docs-maintenance.md) § Editing The Entry Docs
+keeps legitimate. Do not substitute the primary's copy, and do not run it from a
+feature worktree: this installer publishes **globally**, to every session on the
+machine, so a hand-run from the wrong tree does not close the drift — it moves
+it, and pushes unshipped mid-branch text everywhere (measured 2026-09-08).
+**Installed-docs drift reported by `bin/session-preflight` is not yours to
+fix.** It is expected between a docs merge and the next production ship, and that
+ship closes it — the step is idempotent, so it heals prior drift too.
 
 **`Archive completed tasks`**  *(shipped → archived — the Deploy loop's conclusion)*
 Run **`bin/release archive [--dry-run] [--yes] [--prod]`** to close the loop. It
