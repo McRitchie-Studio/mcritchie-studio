@@ -222,6 +222,22 @@ class WorkflowsCardChipFitTest < ApplicationSystemTestCase
                  "moves the toggle further than its own height."
   end
 
+  # A retry certifies a NEW box, so the frame guard's two sides must come from the attempt
+  # that LANDED. A forced swallow runs that path everywhere, not only on a starved runner.
+  test "the certified frame matches the click that landed, even after a retry" do
+    page.driver.browser.manage.window.resize_to(700, 1000)
+    load_workflows_card
+    record_pointerdown_box
+    swallow_the_next_click
+
+    click_when_settled(TOGGLE)
+
+    assert_equal 1, swallowed_clicks, "no retry was forced, so this proves nothing"
+    assert_equal last_settled_box, pointerdown_box,
+                 "retry certified #{last_settled_box} but pointerdown read #{pointerdown_box}: " \
+                 "record_pointerdown_box must keep the LAST pointerdown, not an abandoned attempt's"
+  end
+
   private
 
   # How far the toggle's bottom edge sits BELOW the viewport, in px. Positive means the
@@ -237,12 +253,14 @@ class WorkflowsCardChipFitTest < ApplicationSystemTestCase
 
   # Record the toggle's box at the instant pointerdown is dispatched — the coordinate
   # frame the click really happens in. Capture phase, so nothing downstream can stop it.
+  # Overwritten on EVERY pointerdown: last_settled_box is re-certified per attempt, so a
+  # first-only latch would pair a retry's certified box with an abandoned attempt's.
   def record_pointerdown_box
     page.execute_script(<<~JS)
       window.__pointerdownBox = null;
       document.addEventListener('pointerdown', function () {
         var t = document.querySelector("#{TOGGLE}");
-        if (!t || window.__pointerdownBox) return;
+        if (!t) return;
         var r = t.getBoundingClientRect();
         window.__pointerdownBox = #{ApplicationSystemTestCase::BOX_JS};
       }, true);
