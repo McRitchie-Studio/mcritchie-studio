@@ -8,6 +8,7 @@ require "json"
 require "time"
 require "rbconfig"
 require "fileutils"
+require "securerandom"
 require Rails.root.join("lib/claim_lease").to_s
 
 # THE BUILD CLAIM MUST OUTLIVE A HEADLESS BUILD — and must NOT outlive a dead builder.
@@ -57,7 +58,15 @@ require Rails.root.join("lib/claim_lease").to_s
 #   bin/rails test test/commands/build_claim_renewer_integration_test.rb
 class BuildClaimRenewerIntegrationTest < ActiveSupport::TestCase
   BIN = Rails.root.join("bin/task").to_s
-  SLUG = "probe-build-claim-renewal"
+  # One slug per test, never a shared constant. Rails runs this file's methods in
+  # PARALLEL WORKERS, and every assertion here identifies a renewer by its command line
+  # (`claim-renew-loop <slug>`). With one shared slug, a test in one worker counted the
+  # renewer another worker's test had started — CI read "got 2" where one was correct —
+  # and a teardown's pkill could kill a sibling test's renewer mid-assertion. A slug
+  # unique to the test scopes pgrep, pkill and the stub board to that test alone.
+  def slug
+    @slug ||= "probe-build-claim-renewal-#{SecureRandom.hex(4)}"
+  end
 
   # The builder's live instance. Injected through the documented seams
   # (CLAUDE_CODE_SESSION_ID + SessionIdentity's TASK_CLAIM_NONCE) so the identity under
@@ -76,7 +85,8 @@ class BuildClaimRenewerIntegrationTest < ActiveSupport::TestCase
   # would make the renewer evaluate its own claim as :unclaimed and the test would pass
   # or fail for a reason that has nothing to do with renewal.
   class StubBoard
-    def initialize(stage:, devops: {})
+    def initialize(stage:, slug:, devops: {})
+      @slug = slug
       @server = TCPServer.new("127.0.0.1", 0)
       @lock = Mutex.new
       @stage = stage
@@ -149,7 +159,7 @@ class BuildClaimRenewerIntegrationTest < ActiveSupport::TestCase
             @claims << @devops.dup if parsed["devops"]["claim_expires_at"]
           end
         end
-        { "data" => { "slug" => SLUG, "stage" => @stage, "title" => "Probe Build Claim Renewal",
+        { "data" => { "slug" => @slug, "stage" => @stage, "title" => "Probe Build Claim Renewal",
                       "metadata" => { "devops" => @devops } } }
       end
     end
@@ -160,7 +170,7 @@ class BuildClaimRenewerIntegrationTest < ActiveSupport::TestCase
     # once its anchor is gone, which is the very property this file asserts. The pkill
     # is belt and braces for a run cut short before the loop noticed.
     kill(@anchor)
-    system("pkill", "-f", "claim-renew-loop #{SLUG}", out: File::NULL, err: File::NULL)
+    system("pkill", "-f", "claim-renew-loop #{slug}", out: File::NULL, err: File::NULL)
     @board&.stop
   end
 
@@ -262,9 +272,9 @@ class BuildClaimRenewerIntegrationTest < ActiveSupport::TestCase
   # claim: the renewer then ran for its whole lifetime cap on a builder it could not see.
   test "[integration] a multi-repo task's renewer finds its desk under the second repo" do
     with_desk do |_bound|
-      second = File.join(@sandbox, "projects", "repo-b", ".worktrees", SLUG)
+      second = File.join(@sandbox, "projects", "repo-b", ".worktrees", slug)
       FileUtils.mkdir_p(second)
-      File.write(File.join(second, ".agent-context.json"), { "task_slug" => SLUG }.to_json)
+      File.write(File.join(second, ".agent-context.json"), { "task_slug" => slug }.to_json)
       nowhere = Dir.mktmpdir # a cwd bound to no task, like a primary checkout
 
       claim_the_task(nowhere, devops: { "repositories" => %w[repo-a repo-b] })
@@ -308,9 +318,9 @@ class BuildClaimRenewerIntegrationTest < ActiveSupport::TestCase
   # unpinned child ABORTS before it reaches the code under test and every assertion
   # here would pass or fail for the wrong reason.
   def claim_the_task(desk, renewer: "on", devops: {})
-    @board = StubBoard.new(stage: "designed", devops: { "kind" => "bug", "worktree_slug" => SLUG }.merge(devops))
+    @board = StubBoard.new(stage: "designed", slug: slug, devops: { "kind" => "bug", "worktree_slug" => slug }.merge(devops))
     env = claim_env(desk, renewer)
-    out, err, status = Open3.capture3(env, BIN, "move", SLUG, "building", chdir: desk)
+    out, err, status = Open3.capture3(env, BIN, "move", slug, "building", chdir: desk)
     assert_equal 0, status.exitstatus, "the claim itself must land:\n#{out}\n#{err}"
     assert_equal 1, @board.claim_count, "the move writes exactly one claim; everything after it is renewal"
     @board.claims.first
@@ -325,14 +335,14 @@ class BuildClaimRenewerIntegrationTest < ActiveSupport::TestCase
   # A second claim by the SAME live instance on a task it already holds — what a
   # resumed `bin/task begin <slug>` or a repeated `move building` does.
   def reclaim(desk)
-    out, err, status = Open3.capture3(claim_env(desk), BIN, "move", SLUG, "building", chdir: desk)
+    out, err, status = Open3.capture3(claim_env(desk), BIN, "move", slug, "building", chdir: desk)
     assert_equal 0, status.exitstatus, "a re-claim by the holder must land:\n#{out}\n#{err}"
   end
 
-  # Live `claim-renew-loop <SLUG>` processes. pgrep cannot match this test process: its
+  # Live `claim-renew-loop <slug>` processes. pgrep cannot match this test process: its
   # own argv never contains the loop's subcommand.
   def live_renewers
-    IO.popen(["pgrep", "-f", "claim-renew-loop #{SLUG}"], err: File::NULL, &:read).split.map(&:to_i)
+    IO.popen(["pgrep", "-f", "claim-renew-loop #{slug}"], err: File::NULL, &:read).split.map(&:to_i)
   end
 
   def renewer_argv(pid)
@@ -344,7 +354,7 @@ class BuildClaimRenewerIntegrationTest < ActiveSupport::TestCase
   # this slug, which is what keeps `--desk` from being a universal override.
   def with_desk
     Dir.mktmpdir do |desk|
-      File.write(File.join(desk, ".agent-context.json"), { "task_slug" => SLUG }.to_json)
+      File.write(File.join(desk, ".agent-context.json"), { "task_slug" => slug }.to_json)
       @sandbox = Dir.mktmpdir
       yield desk
     ensure
