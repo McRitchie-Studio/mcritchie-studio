@@ -385,9 +385,9 @@ class ReleaseGemAllocationTest < Minitest::Test
   end
 
   # A changelog the parser cannot read is refused rather than rolled into blind.
-  # THE FLOOR IS A PROPERTY, NOT A COUNT: studio-engine's own guard carries
-  # MIN_VERSION_HEADINGS = 110 against a real 115, and copying that number into a
-  # repo with eleven headings makes it unfireable — the guard then passes
+  # THE FLOOR IS A PROPERTY, NOT A COUNT: a guard that carries a hard-coded
+  # heading count is tuned to one repo's history, and copying that number into a
+  # repo with fewer headings makes it unfireable — the guard then passes
   # vacuously, which is the failure the floor was added to catch. Here every '## '
   # heading below the bucket must PARSE, so a two-heading fixture proves the same
   # property a hundred-heading one would.

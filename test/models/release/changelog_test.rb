@@ -224,11 +224,11 @@ class ReleaseChangelogTest < Minitest::Test
 
   # --- the parse floor, DERIVED rather than counted ----------------------------
   #
-  # studio-engine's own guard carries MIN_VERSION_HEADINGS = 110 against a real
-  # 115. Copied into a repo with eleven headings that number can never fire and
-  # the guard passes VACUOUSLY — the exact failure the floor was added to prevent,
-  # reproduced by the act of reuse. So the floor here is a PROPERTY: every '## '
-  # heading below the bucket must PARSE. The two tests below are what make that
+  # A guard that carries a hard-coded heading COUNT is tuned to one repo's
+  # history. Copied into a repo with fewer headings that number can never fire
+  # and the guard passes VACUOUSLY — the exact failure the floor was added to
+  # prevent, reproduced by the act of reuse. So the floor here is a PROPERTY:
+  # every '## ' heading below the bucket must PARSE. The two tests below make that
   # claim real — the same broken dialect is caught in a 2-heading file and in a
   # 200-heading one, because no count is consulted.
 

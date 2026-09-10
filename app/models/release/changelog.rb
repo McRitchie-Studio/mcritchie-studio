@@ -262,14 +262,14 @@ class Release
     # when nothing has shipped yet.
     #
     # THE PARSE FLOOR IS DERIVED, NEVER A CONSTANT — and that is the whole point.
-    # studio-engine's own guard carries MIN_VERSION_HEADINGS = 110 against a real
-    # 115; carried into a repo with eleven headings that floor can never fire, and
-    # the guard passes VACUOUSLY, which is precisely the failure the floor was
-    # added to catch. So the floor here is a PROPERTY, not a count: EVERY `## `
-    # heading below the bucket must parse as a version. If the regex ever stops
-    # matching a repo's dialect, every heading in that repo becomes unparseable at
-    # once and this refuses loudly — the parsed set can never quietly collapse to
-    # zero, and there is no number to copy wrong.
+    # A guard that carries a hard-coded heading COUNT is tuned to one repo's
+    # history: carried into a repo with fewer headings than the constant, that
+    # floor can never fire and the guard passes VACUOUSLY, which is precisely
+    # the failure a floor is added to catch. So the floor here is a PROPERTY,
+    # not a count: EVERY `## ` heading below the bucket must parse as a version.
+    # If the regex ever stops matching a repo's dialect, every heading in that
+    # repo becomes unparseable at once and this refuses loudly — the parsed set
+    # can never quietly collapse to zero, and there is no number to copy wrong.
     def refusal(text, published_version: nil)
       lines = body_lines(text)
       _, unterminated = fence_scan(lines)

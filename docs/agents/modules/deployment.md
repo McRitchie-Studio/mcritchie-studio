@@ -316,7 +316,7 @@ How a gem rides a release:
    a missing or duplicated `## Unreleased`, a bucket that is not the first
    heading, or any `## ` heading below it that parses as neither a version nor
    the bucket. That last rule **is** the parse floor, and it is a *property*
-   rather than a count on purpose: a copied `MIN_VERSION_HEADINGS` number
+   rather than a count on purpose: a copied heading-count number
    cannot fire in a smaller repo, so the guard would pass vacuously — the exact
    failure a floor exists to prevent, reproduced by the act of reuse.
 
