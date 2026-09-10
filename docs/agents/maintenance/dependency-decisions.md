@@ -447,8 +447,9 @@ buys a slot only until the next release.** Every CLOSE below is paired with eith
 
 It is a snapshot, and the tally moved twice while it was being written. Nothing in
 CI re-measures GitHub for you. `test/docs/dependency_decisions_docs_test.rb`
-guards the record's internal consistency and pins the three repo-local claims it
-makes about `.github/` — so acting on this record's own advice turns that test
+guards the record's internal consistency and pins its two repo-local premises —
+no `ignore:` block in `.github/dependabot.yml`, and the Gemfile's minitest and
+redis pins — so acting on this record's own advice turns that test
 red and forces a refresh — but a PR merged, closed, or rebased on GitHub changes
 none of those files and will go unnoticed. **Re-run the commands at the top before
 trusting a count.**
