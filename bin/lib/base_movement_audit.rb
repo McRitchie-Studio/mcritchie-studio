@@ -141,20 +141,35 @@ module BaseMovementAudit
     if exact
       clock = :merge_ref
       late = commits.reject { |c| ancestor?(root, c[:sha], tested) }
+      # THE FILES CI NEVER SAW ARE diff(tested, tip) — exact by construction
+      # (/tasks/freshness-verdict-states-falsehoods, D1). Deriving a "covered tip" from the
+      # first-parent walk breaks when the tested base sits OFF that walk — the release
+      # back-merge, tip = merge(release, accepted) with the tested base the SECOND parent:
+      # every first-parent commit is a non-ancestor, the covered tip fell back to
+      # fork_point, and late_files swept in what the tested base itself contributed.
+      late_files = late.empty? ? [] : diff_files(root, tested, base_sha)
+      # Non-ancestor commits that change NO file relative to the tested tree (a back-merge
+      # of content CI already had) left the green nothing unseen. Keeping them "late" would
+      # print "the green never saw" over an empty list — true of no file at all.
+      late = [] if late_files.empty?
     else
       # The completion clock stays as a LOWER BOUND: anything it flags truly landed after
       # the run, so its refusals are sound (the PR #1258 shape). What it cannot do is call
       # anything COVERED, and :window :unchecked is how the caller learns that.
       clock = cutoff ? :read : :unreadable
       late = cutoff ? commits.select { |c| c[:time] && c[:time] > cutoff } : []
-    end
 
-    # The files CI provably never saw: everything between the newest commit it COULD
-    # have seen and the base tip. A two-point diff rather than a per-commit walk, so a
-    # MERGE commit (which is how `accepted` actually advances, and whose --name-only is
-    # empty by default) contributes its files like any other.
-    covered_tip = late.empty? ? base_sha : (commits - late).last&.dig(:sha) || fork_point
-    late_files = late.empty? ? [] : diff_files(root, covered_tip, base_sha)
+      # The files CI provably never saw: everything between the newest commit it COULD
+      # have seen and the base tip. A two-point diff rather than a per-commit walk, so a
+      # MERGE commit (which is how `accepted` actually advances, and whose --name-only is
+      # empty by default) contributes its files like any other.
+      covered_tip = late.empty? ? base_sha : (commits - late).last&.dig(:sha) || fork_point
+      late_files = late.empty? ? [] : diff_files(root, covered_tip, base_sha)
+    end
+    # How many late commits a COMPLETION clock would have called covered — the ones that
+    # landed at or before the run finished. Counted so the refusal can say it only when it
+    # is true (D2): a commit after completion is one that clock would have CAUGHT.
+    completion_blind = cutoff ? late.count { |c| c[:time] && c[:time] <= cutoff } : 0
 
     {
       state: :moved,
@@ -163,7 +178,9 @@ module BaseMovementAudit
       files: diff_files(root, fork_point, base_sha),
       clock: clock, cutoff: cutoff,
       window: exact ? :exact : :unchecked,
-      tested_base: exact ? tested : nil,
+      # Kept when GitHub named a base this checkout lacks, so the verdict can name it (S1).
+      tested_base: tested.empty? ? nil : tested,
+      completion_blind: completion_blind,
       window_reason: exact || tested.empty? ? nil : :not_local,
       late: late.map { |c| c.reject { |k, _| k == :time } },
       late_files: late_files,

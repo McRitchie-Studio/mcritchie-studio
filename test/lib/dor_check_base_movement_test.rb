@@ -338,6 +338,51 @@ class DorCheckBaseMovementTest < Minitest::Test
                    "the refusal must NAME the guard that moved")
       assert_match(/#{tested[0, 12]}/, errors_of(verdict),
                    "…and the base the tested merge ref was built on, the evidence a reviewer checks")
+      # D2, the branch where the clause is TRUE: the commit predates the run's completion,
+      # so a completion clock would have called it covered — and the refusal says so, exactly.
+      assert_includes errors_of(verdict),
+                      "1 of 1 landed before the run completed at 2026-09-07T07:55:44Z, so a completion " \
+                      "clock would have called it covered"
+    end
+  end
+
+  # D2, the branch where the old clause was FALSE (/tasks/freshness-verdict-states-falsehoods).
+  # The commit lands AFTER the run completed; a completion clock would have CAUGHT it. The
+  # refusal must not claim otherwise — a reader disproves that from two printed timestamps.
+  def test_integration_a_post_run_refusal_makes_no_completion_clock_claim
+    with_desk(base_change: "test/lib/widget_tool_exempt_test.rb", at: AFTER_RUN) do |dir, head, base_sha|
+      tested = IO.popen(["git", "-C", dir, "rev-parse", "#{base_sha}^"], &:read).to_s.strip
+      verdict, code = check(dir, head, tested_base: tested)
+
+      refute_equal 0, code, "precondition: this is the refusing shape\n#{verdict.inspect}"
+      refute_match(/completion clock (would have called|calls) (it|them) covered/, errors_of(verdict),
+                   "the commit landed AFTER completion (07:59:02 > 07:55:44); a completion clock catches it")
+    end
+  end
+
+  # D3 — the disclosure itself is PRINTED, not merely set on the module's hash.
+  def test_integration_an_unresolved_tested_base_prints_the_unchecked_window
+    with_desk(base_change: "test/lib/widget_tool_exempt_test.rb", at: AFTER_RUN) do |dir, head|
+      verdict, = check(dir, head, tested_base: "none")
+
+      assert_includes all_of(verdict),
+                      "THE MID-RUN WINDOW WENT UNCHECKED: the base this PR's merge ref was built on could not " \
+                      "be resolved (the tested base was injected as unresolvable), so a base commit that " \
+                      "landed after GitHub built that ref but before the run finished would read as covered here."
+    end
+  end
+
+  # S1 — GitHub DID resolve the base; only this checkout lacks it. "Could not be resolved" is
+  # false there, and the one reason with a remedy must name it.
+  def test_integration_a_tested_base_missing_locally_says_fetch_not_unresolved
+    with_desk(base_change: "test/lib/widget_tool_exempt_test.rb", at: AFTER_RUN) do |dir, head|
+      missing = "f" * 40
+      verdict, = check(dir, head, tested_base: missing)
+
+      refute_match(/could not be resolved/, all_of(verdict), "GitHub resolved it; the checkout lacks it")
+      assert_includes all_of(verdict),
+                      "THE MID-RUN WINDOW WENT UNCHECKED: this PR's merge ref was built on #{missing[0, 12]}, " \
+                      "which is not in this checkout — run `git fetch origin` and re-check."
     end
   end
 
@@ -351,6 +396,9 @@ class DorCheckBaseMovementTest < Minitest::Test
       assert_equal 0, code,
                    "the tested merge ref was built on #{base_sha[0, 12]}, which holds the guard change — " \
                    "the run covered it, and refusing means ancestry was never consulted\n#{verdict.inspect}"
+      assert_includes all_of(verdict),
+                      "Everything it changed is already in the tree this PR's CI tested — its merge ref was " \
+                      "built on #{base_sha[0, 12]} — so the run did cover this tree."
     end
   end
 

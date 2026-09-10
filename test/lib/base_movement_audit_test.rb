@@ -140,6 +140,81 @@ class BaseMovementAuditTest < Minitest::Test
     end
   end
 
+  # ── D1: THE RELEASE BACK-MERGE (/tasks/freshness-verdict-states-falsehoods) ─────
+  #
+  # accepted on 2026-09-10: tip 50cfea07 = merge(beb44fb9, 377f0424), the tested base the
+  # SECOND parent. Every first-parent commit is then a non-ancestor, and a late_files diff
+  # taken from fork_point sweeps in what the tested base ITSELF contributed.
+  def with_back_merge(release_change:)
+    Dir.mktmpdir do |raw|
+      dir = File.realpath(raw)
+      git!(dir, "init", "-q")
+      git!(dir, "config", "user.email", "t@t.co")
+      git!(dir, "config", "user.name", "T")
+      write(dir, "bin/widget-tool", "# tool\n")
+      write(dir, "test/lib/widget_tool_test.rb", "# twin\n")
+      write(dir, "test/lib/widget_tool_exempt_test.rb", "# FAMILY guard\n")
+      write(dir, "docs/unrelated.md", "prose\n")
+      git!(dir, "add", "-A")
+      git!(dir, "commit", "-qm", "init", at: BEFORE_RUN)
+      git!(dir, "branch", "-M", "accepted")
+      init = rev(dir, "accepted")
+
+      git!(dir, "checkout", "-q", "-b", "feat/x")
+      write(dir, "bin/widget-tool", "# tool, edited\n")
+      git!(dir, "add", "-A")
+      git!(dir, "commit", "-qm", "feat", at: BEFORE_RUN)
+      git!(dir, "update-ref", "refs/remotes/origin/feat/x", "feat/x")
+
+      # accepted gains the GUARD change — and the PR's merge ref is built on THAT.
+      git!(dir, "checkout", "-q", "accepted")
+      write(dir, "test/lib/widget_tool_exempt_test.rb", "# guard, changed before the ref was built\n")
+      git!(dir, "add", "-A")
+      git!(dir, "commit", "-qm", "guard change", at: BEFORE_RUN)
+      tested = rev(dir, "accepted")
+
+      # A release-side branch, then the back-merge: release FIRST parent, accepted SECOND.
+      git!(dir, "checkout", "-q", "-b", "release-side", init)
+      if release_change
+        write(dir, "docs/unrelated.md", "release prose\n")
+        git!(dir, "add", "-A")
+        git!(dir, "commit", "-qm", "release work", at: AFTER_RUN)
+      else
+        git!(dir, "commit", "-q", "--allow-empty", "-m", "release work, no content", at: AFTER_RUN)
+      end
+      git!(dir, "merge", "--no-ff", "-q", "-m", "Merge remote-tracking branch 'origin/main' into HEAD",
+           "accepted", at: AFTER_RUN)
+      git!(dir, "update-ref", "refs/remotes/origin/accepted", "release-side")
+      git!(dir, "checkout", "-q", "feat/x")
+
+      yield dir, tested
+    end
+  end
+
+  # [unit] criss-cross base: late_files excludes tested-base content.
+  def test_a_back_merged_tip_diffs_late_files_from_the_tested_base
+    with_back_merge(release_change: true) do |dir, tested|
+      a = audit(dir, tested_base: tested)
+
+      assert_equal :merge_ref, a[:clock]
+      assert_equal ["docs/unrelated.md"], a[:late_files],
+                   "late_files swept in what the TESTED BASE itself contributed"
+      assert_empty a[:guards],
+                   "the tested base already held the guard change — refusing on it is a FALSE refusal"
+    end
+  end
+
+  # The live ms#1370 shape: the back-merge changes no file relative to the tested base.
+  # Non-ancestor commits, identical trees — the green saw everything that ships.
+  def test_a_back_merge_identical_to_the_tested_tree_is_covered
+    with_back_merge(release_change: false) do |dir, tested|
+      a = audit(dir, tested_base: tested)
+
+      assert_empty a[:late_files]
+      assert_empty a[:late], "identical trees are covered; a late list with no late files renders a falsehood"
+    end
+  end
+
   # A tested base this checkout does not hold cannot be asked — say so, keep the clock.
   def test_an_unknown_tested_base_leaves_the_window_unchecked
     with_repo(base_change: "test/lib/widget_tool_exempt_test.rb", at: AFTER_RUN) do |dir|
