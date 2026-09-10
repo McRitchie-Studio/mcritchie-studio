@@ -368,17 +368,18 @@ How a gem rides a release:
    **Two gaps, named rather than papered over.** (1) A gem tracking no
    `CHANGELOG.md` is not refused — the registry declares no `changelog` key, so
    its absence breaks no stated contract; prepare says so and moves on. (2) The
-   roll runs only on the **allocate** path, and that path is skipped more often
-   than "by hand" suggests. `Release::GemVersion` skips allocation whenever the
-   version file is **already ahead of the newest `v*` tag** — which covers the
-   emergency hand-bump onto `accepted` that `publish_gem`'s abort message names,
-   but *also* the ordinary state a **prior sweep leaves behind** once it has
-   allocated a number. Measured at `origin/release` on 2026-09-09: studio-engine
-   `0.74.7` against tag `v0.74.6`, solana-studio `0.9.3` against `v0.9.2` — both
-   sitting in the skip branch, and therefore both unrolled. So the roll reaches
-   the gem this sweep allocates, not one already carrying an
-   allocated-but-unpublished number; roll that one by hand in the same PR that
-   bumps the version.
+   roll runs only on the **allocate** path. `Release::GemVersion` skips
+   allocation whenever the version file is **already ahead of the newest `v*`
+   tag**. A **hand-set version** — the emergency bump onto `accepted` that
+   `publish_gem`'s abort message names — reaches that skip with its entries
+   still under `## Unreleased`: roll it by hand in the same COMMIT that sets the
+   version, since `bin/dor-check` refuses a PR that edits it. A version the
+   sweep allocated reaches the skip already rolled (a re-run after an abort
+   between its `Release <version>` commit and its tag), because the roll rode
+   that commit. The skip is not the state between sweeps: prepare publishes and
+   tags in the same run — studio-engine `0.74.8` on `v0.74.8` at
+   `origin/release`, 2026-09-10. The 2026-09-09 reading of `0.74.7` against
+   `v0.74.6` fell inside one sweep, between its version commit and its tag.
 
    **History.** Before 2026-09-09 prepare published and tagged without ever
    touching `CHANGELOG.md`, and nothing failed when it didn't. Measured at
