@@ -29,6 +29,7 @@ class BaseMovementAuditTest < Minitest::Test
   CI_DONE    = "2026-09-07T07:55:44Z"
   AFTER_RUN  = "2026-09-07T07:59:02Z"
   BEFORE_RUN = "2026-09-07T07:50:00Z"
+  MID_RUN    = "2026-09-07T07:52:00Z" # after the merge ref was built, before the run ended
 
   def git!(dir, *args, at: nil)
     env = at ? { "GIT_AUTHOR_DATE" => at, "GIT_COMMITTER_DATE" => at } : {}
@@ -92,9 +93,62 @@ class BaseMovementAuditTest < Minitest::Test
     end
   end
 
-  def audit(dir, changed: ["bin/widget-tool"], clock: CI_DONE)
+  def audit(dir, changed: ["bin/widget-tool"], clock: CI_DONE, tested_base: nil)
     BaseMovementAudit.assess(root: dir, branch: "feat/x", base: "accepted",
-                             changed_files: changed, ci_completed_at: clock)
+                             changed_files: changed, ci_completed_at: clock, tested_base: tested_base)
+  end
+
+  def rev(dir, ref) = IO.popen(["git", "-C", dir, "rev-parse", ref], &:read).to_s.strip
+
+  # ==== THE MID-RUN WINDOW (/tasks/stale-merge-ref-passes-freshness) =============
+
+  # [unit] base commit between ref build and CI finish. The completion clock calls it
+  # covered; ancestry against the base the tested merge ref was built on does not.
+  def test_a_mid_run_commit_outside_the_tested_base_is_late
+    with_repo(base_change: "test/lib/widget_tool_exempt_test.rb", at: MID_RUN) do |dir|
+      completion_only = audit(dir)
+      assert_empty completion_only[:late], "precondition: the completion clock calls a 07:52 commit covered"
+      assert_equal :unchecked, completion_only[:window], "…and must say the window went unchecked"
+
+      tested = rev(dir, "accepted^") # the merge ref was built BEFORE the commit landed
+      a = audit(dir, tested_base: tested)
+      assert_equal :merge_ref, a[:clock]
+      assert_equal :exact, a[:window]
+      assert_equal tested, a[:tested_base]
+      assert_equal 1, a[:late].size, "the commit is not in the tree CI tested — it is late"
+      refute_empty a[:guards], "…and it changes this PR's family guard, the refusable shape"
+    end
+  end
+
+  # The control: the tested base ALREADY HELD the commit, so ancestry calls it covered.
+  def test_a_commit_inside_the_tested_base_is_covered_whatever_the_clock
+    with_repo(base_change: "test/lib/widget_tool_exempt_test.rb", at: AFTER_RUN) do |dir|
+      a = audit(dir, tested_base: rev(dir, "accepted"))
+      assert_equal :merge_ref, a[:clock]
+      assert_empty a[:late], "ancestry says covered; a clock that disagrees must not win"
+    end
+  end
+
+  # A merge commit lands side-branch work OLDER than the merge. Ancestry follows the
+  # landing, not the committer date — the reason this is ancestry and not a better clock.
+  def test_ancestry_counts_a_merged_side_branch_by_when_it_landed
+    with_repo(base_change: "test/lib/widget_tool_exempt_test.rb", at: MID_RUN, merge: true,
+              side_at: BEFORE_RUN) do |dir|
+      a = audit(dir, tested_base: rev(dir, "accepted^1"))
+      assert_equal 1, a[:late].size, "the merge landed after the ref was built, whatever its side's dates"
+      assert_includes a[:late_files], "test/lib/widget_tool_exempt_test.rb"
+    end
+  end
+
+  # A tested base this checkout does not hold cannot be asked — say so, keep the clock.
+  def test_an_unknown_tested_base_leaves_the_window_unchecked
+    with_repo(base_change: "test/lib/widget_tool_exempt_test.rb", at: AFTER_RUN) do |dir|
+      a = audit(dir, tested_base: "0" * 40)
+      assert_equal :read, a[:clock], "falls back to the completion LOWER bound"
+      assert_equal :unchecked, a[:window]
+      assert_equal :not_local, a[:window_reason]
+      assert_equal 1, a[:late].size, "the lower bound still flags what provably landed after the run"
+    end
   end
 
   # ==== THE SHARED-GUARD SHAPE — what disjointness cannot see ====================

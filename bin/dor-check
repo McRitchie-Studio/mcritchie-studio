@@ -165,6 +165,7 @@ require_relative "lib/task_board"
 require_relative "lib/cert_root_guard"
 require_relative "lib/review_tree_guard"
 require_relative "lib/base_movement_audit"
+require_relative "lib/merge_ref_base"
 require_relative "lib/dor/checks"
 require_relative "lib/dor/check_context"
 Dor::Checks.load!
@@ -1703,11 +1704,16 @@ def base_movement_detail(movement, base_branch, ambiguous_clock: false)
       "answerable, not that the answer was yes."
   else
     if movement[:late].empty?
-      detail << " All of it predates this PR's CI completion (#{movement[:cutoff].iso8601}), so the run did " \
-        "cover this tree."
+      detail << if movement[:clock] == :merge_ref
+                  " All of it is in the base this PR's CI tested — its merge ref was built on " \
+                    "#{movement[:tested_base][0, 12]} — so the run did cover this tree."
+                else
+                  " All of it predates this PR's CI completion (#{movement[:cutoff].iso8601}) — which bounds " \
+                    "what the run saw from ABOVE and does not show it covered this tree."
+                end
     else
-      detail << " #{movement[:late].size} of those landed AFTER this PR's CI completed " \
-        "(#{movement[:cutoff].iso8601}). ci.yml DOES run on pushes to `#{base_branch}` — do not expect to " \
+      detail << " #{movement[:late].size} of those #{late_clause(movement)}. ci.yml DOES run on pushes to " \
+        "`#{base_branch}` — do not expect to " \
         "find no run — but that run graded the `#{base_branch}` TIP, a tree this PR is not in, and nothing " \
         "re-runs THIS PR against the moved base: the green never saw " \
         "#{base_move_list(movement[:late_files])}."
@@ -1728,8 +1734,31 @@ def base_movement_detail(movement, base_branch, ambiguous_clock: false)
                     "without being a file this PR touches. The refusal above carries the full finding."
                 end
     end
+    detail << window_unchecked_sentence(movement) if movement[:window] == :unchecked
   end
   detail
+end
+
+# The one phrase that differs between the two clocks, so the verdict names the evidence
+# that actually answered: ancestry against the tested base, or the completion lower bound.
+def late_clause(movement)
+  if movement[:clock] == :merge_ref
+    "are NOT in the base this PR's CI tested (its merge ref was built on #{movement[:tested_base][0, 12]})"
+  else
+    "landed AFTER this PR's CI completed (#{movement[:cutoff].iso8601})"
+  end
+end
+
+# SAY SO, never substitute (/tasks/stale-merge-ref-passes-freshness). When the base the
+# tested merge ref was built on could not be resolved, the completion clock above is a
+# LOWER bound: what it flags is real, but a base commit that landed after GitHub built
+# the merge ref and before the run ended reads as covered. That is the hole, so it is
+# declared every time it is open rather than left for a reviewer to know about.
+def window_unchecked_sentence(movement)
+  " THE MID-RUN WINDOW WENT UNCHECKED: the base this PR's merge ref was built on could not be " \
+    "resolved (#{MergeRefBase.reason_text(movement[:window_reason])}), so a base commit that landed " \
+    "after GitHub built that ref but before the run finished would read as covered here. Not a " \
+    "freshness certificate."
 end
 
 # PART B — THE REFUSAL, for the one shape disjointness cannot settle.
@@ -1744,7 +1773,7 @@ def stale_green_refusal(movement, base_branch)
   culprits = movement[:late].map { |c| "#{c[:sha][0, 12]} at #{c[:at]} \"#{c[:subject]}\"" }
 
   "GitHub CI is GREEN but it COULD NOT HAVE COVERED this merge — origin/#{base_branch} gained " \
-    "#{base_move_list(culprits)} AFTER this PR's CI completed at #{movement[:cutoff].iso8601}. ci.yml DOES " \
+    "#{base_move_list(culprits)} that #{stale_green_clause(movement, base_branch)}. ci.yml DOES " \
     "run on pushes to `#{base_branch}`, so you WILL find a run for that merge — it graded the " \
     "`#{base_branch}` TIP, which is a tree this PR is not in. Nothing re-ran THIS PR against the moved " \
     "base, and that combination is what ships. What landed is " \
@@ -1757,6 +1786,14 @@ def stale_green_refusal(movement, base_branch)
     "the result out, run the named tests), or update the branch (git rebase origin/#{base_branch}) and let " \
     "CI re-run — then re-check. A local full cert does NOT clear this: it grades the desk tree, which is not " \
     "the merged tree either."
+end
+
+def stale_green_clause(movement, base_branch)
+  return "landed AFTER this PR's CI completed at #{movement[:cutoff].iso8601}" unless movement[:clock] == :merge_ref
+
+  ran = movement[:cutoff] ? " — the run completed #{movement[:cutoff].iso8601}, so a completion clock calls them covered" : ""
+  "are NOT in the base this PR's CI tested: its merge ref was built on " \
+    "origin/#{base_branch}@#{movement[:tested_base][0, 12]}#{ran}"
 end
 
 # PART C — THE AUDIT THAT COULD NOT RUN (/tasks/audit-vanishes-when-git-fails).
@@ -3343,10 +3380,26 @@ if gate != "build"
   # relaxes the former.
   ci_clock_ambiguous = task_ci_reads.size > 1
   ci_completed_at = ci_clock_ambiguous ? nil : (ENV["DOR_CHECK_CI_COMPLETED_AT"] || (ci && ci[:completed_at]))
+  # WHICH TREE DID THE GREEN TEST? (/tasks/stale-merge-ref-passes-freshness) The run tested
+  # the merge ref GitHub built when it was TRIGGERED, so "covered" is ancestry against the
+  # base that ref was built on — never the completion clock above, which calls every base
+  # commit landing mid-run covered. Same one-PR rule as the clock: a foreign run's base is
+  # not evidence about this tree. A live read only when CI itself was read live.
+  ci_injected = !ENV["DOR_CHECK_CI_STATUS"].to_s.strip.empty? || !ENV["DOR_CHECK_CI_STATUS_BY_REPO"].to_s.strip.empty?
+  tested_base = if ci_clock_ambiguous
+                  { state: :unresolved, reason: :multi_pr }
+                else
+                  MergeRefBase.resolve(task_ci_verdict(devops)[1],
+                                       BaseMovementAudit.rev(diff_root, "origin/#{zap_branch}", zap_branch),
+                                       injected: ENV["DOR_CHECK_CI_TESTED_BASE"], live: !ci_injected)
+                end
   movement = BaseMovementAudit.assess(
     root: diff_root, branch: zap_branch, base: base_branch,
-    changed_files: changed_files, ci_completed_at: ci_completed_at
+    changed_files: changed_files, ci_completed_at: ci_completed_at, tested_base: tested_base[:sha]
   )
+  if movement[:state] == :moved && movement[:window] == :unchecked
+    movement[:window_reason] ||= tested_base[:reason]
+  end
 
   # INDEPENDENT OF base_check ON PURPOSE. ReviewTreeGuard.base_assessment and this audit
   # are two SEPARATE readers over the same refs, and base_movement_detail — the only other
