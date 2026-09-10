@@ -109,7 +109,11 @@ re-run can change that.
 
 **Disposition: CLOSE all four, and add `ignore` entries.** Closing alone is not
 enough — see CONFIG-7 for what a bare close actually does, and CONFIG-3 for why
-nothing is currently suppressed.
+nothing is currently suppressed. Scope each entry to the major —
+`update-types: ["version-update:semver-major"]` — never a bare `dependency-name`:
+GitHub applies `ignore` "when it opens pull requests for version updates and
+security updates", so a bare entry would silence a patched 5.x redis or minitest
+the day CONFIG-1 is switched on.
 
 ### CAUSE-B · Superseded — the tree is already past the proposed version
 
@@ -425,7 +429,7 @@ buys a slot and loses the reason.** Every CLOSE below is paired with either an
    fixed in 7.2.1) need `set_remote_address proxy_protocol: :v1`, which neither
    app sets.
 2. **Close six and add the `ignore` entries** — #707, #253, #1058, #460 (CAUSE-A,
-   with `ignore` for minitest and redis in both configs), #26 (CAUSE-B), #1245
+   with major-scoped `ignore` for minitest and redis in both configs), #26 (CAUSE-B), #1245
    (CAUSE-C). Frees four of the twenty jammed bundler slots and stops three
    changes the Gemfiles already refuse from being re-proposed forever.
 3. **Merge the ten trivials** — turf #258 first (a Rails 8.2 removal blocker with
