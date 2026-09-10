@@ -937,20 +937,21 @@ class ReviewClaimCliTest < Minitest::Test
     end
   end
 
-  def test_unit_every_stage_past_review_ends_the_renewal_and_no_earlier_one_does
+  # THIS TEST USED TO PIN THE DEFECT. It asserted that `blocked`, `building` and
+  # `designed` must NOT end the renewal — "a reviewer who has just bounced a task back is
+  # often still writing feedback" — and on 2026-09-10 exactly that let one loop renew
+  # through a bounce, the rework and the resubmit, then adopt the NEXT review in the same
+  # session. The feedback concern is about the LEASE, which is untouched: at the bounce
+  # it carries a fresh REVIEW_TTL. Only the loop that renews it ends.
+  def test_unit_every_stage_but_submitted_ends_the_renewal
     Dir.mktmpdir do |proj|
-      %w[reviewed assembled shipped archived].each do |stage|
-        assert cli(projects_dir: proj, data: { "stage" => stage }).task_finished?(SLUG),
-               "#{stage}: the review has landed, so the claim protects nothing"
+      %w[reviewed assembled shipped archived building blocked designed].each do |stage|
+        assert cli(projects_dir: proj, data: { "stage" => stage }).review_over?(SLUG),
+               "#{stage}: the review this loop protected has reached its verdict"
       end
 
-      # `blocked` is deliberately NOT terminal: a reviewer who has just bounced a task
-      # back is often still writing feedback against it, and a rework bounce can move a
-      # task back to `building` while a legitimate lease is still held.
-      %w[designed building submitted blocked].each do |stage|
-        refute cli(projects_dir: proj, data: { "stage" => stage }).task_finished?(SLUG),
-               "#{stage}: a review can still be live here — stopping would free the task under its reviewer"
-      end
+      refute cli(projects_dir: proj, data: { "stage" => "submitted" }).review_over?(SLUG),
+             "submitted: the task is still being offered for review — stopping would free it under its reviewer"
     end
   end
 
@@ -960,9 +961,9 @@ class ReviewClaimCliTest < Minitest::Test
       # asymmetry is deliberate: a wrong "anchor dead" costs a recoverable delay, but a
       # wrong "work finished" drops a LIVE reviewer's lease and lets a second session
       # claim the task underneath them. Silence is not completion.
-      refute cli(projects_dir: proj, data: {}, code: 500).task_finished?(SLUG),
+      refute cli(projects_dir: proj, data: {}, code: 500).review_over?(SLUG),
              "an unreadable board is not evidence that the review ended"
-      refute cli(projects_dir: proj, data: { "slug" => SLUG }).task_finished?(SLUG),
+      refute cli(projects_dir: proj, data: { "slug" => SLUG }).review_over?(SLUG),
              "a response carrying no stage at all is not evidence either"
     end
   end

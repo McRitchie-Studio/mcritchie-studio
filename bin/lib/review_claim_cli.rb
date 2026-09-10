@@ -107,16 +107,58 @@ class ReviewClaimCli
     "status"     => %w[--json --no-observe --observe-for]
   }.freeze
 
-  # The stages at which a REVIEW CLAIM has nothing left to protect. A claim exists to
-  # stop a SECOND session reviewing the same task; once the task is `reviewed` the
-  # review has landed, and `assembled`/`shipped`/`archived` are further downstream
-  # still — so a renewal on any of them is meaningless BY DEFINITION, not merely
-  # wasteful. This list is deliberately the four terminal-for-review stages and NOT
-  # simply "anything that is not submitted": `blocked` is excluded because a reviewer
-  # who has just bounced a task back is often still writing feedback against it, and
-  # `building`/`designed` are excluded because a task can be moved BACK to them by a
-  # rework bounce while the review lease legitimately still matters.
-  TERMINAL_STAGES = %w[reviewed assembled shipped archived].freeze
+  # The ONE stage a review happens at. A review claim stops a SECOND session reviewing a
+  # task that is being OFFERED for review, and a task is offered for review only while
+  # it is `submitted`. The moment it leaves — `reviewed` (merged), `building`/`blocked`
+  # (bounced), `archived`, anything — the review that claim protected has reached its
+  # verdict, and the RENEWER has nothing left to do.
+  #
+  # THIS USED TO BE A LIST OF FOUR "TERMINAL" STAGES (reviewed, assembled, shipped,
+  # archived), and the bounce was deliberately left off it: "a reviewer who has just
+  # bounced a task back is often still writing feedback against it, and the review
+  # lease legitimately still matters." True of the LEASE — and it conflated the lease
+  # with the loop that renews it. Ending the renewer does not end the lease: at the
+  # bounce it carries a fresh ClaimLease::REVIEW_TTL_SECONDS (3h25m), which covers any
+  # trailing feedback many times over, and TaskReviewClaim.release_for_new_submission!
+  # still clears it the moment the task is resubmitted. What the old list cost was the
+  # 2026-09-10 incident: one loop renewed straight through a bounce (21:22), the rework
+  # and the resubmit (01:01), and — because a subagent reviewer shares its session's
+  # identity — went on renewing the NEXT review as though it were its own. When that
+  # reviewer died in the 07:10Z spend-limit 429s, the task sat `review_in_progress`
+  # with nobody reviewing it.
+  REVIEW_STAGE = "submitted"
+
+  # HOW LONG A REVIEW RENEWER MAY RENEW, measured from its start — and the answer to a
+  # reviewer that dies inside a session that does not.
+  #
+  # THE ANCHOR CANNOT SEE A REVIEWER. A reviewer is a SUBAGENT, and a subagent is not an
+  # OS process: its shell commands are direct children of the session's `claude`
+  # process and carry the session's own CLAUDE_CODE_SESSION_ID (measured from inside a
+  # subagent, 2026-09-10). So the anchor pid, the session id AND the live-instance nonce
+  # all belong to the SESSION. A reviewer dying changes none of them, and a renewer
+  # bounded only by its anchor ran for as long as the session stayed open — ShiftRenewer's
+  # 12h cap, plus one REVIEW_TTL after the last beat. No anchor fix exists: there is no
+  # reviewer process to anchor to.
+  #
+  # SO THE BOUND COMES FROM THE WORK. ClaimLease::REVIEW_TTL_SECONDS is the longest
+  # CONTINUOUS review ever measured, cleared by half again — and two independent
+  # instruments (1233 review windows; 259 g2a_primary lane runs) agree on that ~2.2h
+  # ceiling. A live continuous review therefore never NEEDS a renewal: the lease it was
+  # acquired with already outlasts it. Past that ceiling a live review and a dead reviewer
+  # are indistinguishable to every signal this machine has — same process, same session,
+  # same nonce, and reviewers work from the primary checkout, so there is no desk to go
+  # cold (which is also why the BUILD lane's abandonment check cannot be borrowed here:
+  # its evidence is the desk, and with no desk ClaimLease.abandoned? answers "not
+  # abandoned" forever).
+  #
+  # WHAT IT BUYS AND COSTS, stated. A dead reviewer's task is freed at most 2 x
+  # REVIEW_TTL (~6.8h) after the claim, down from 12h + REVIEW_TTL (~15.4h). A live
+  # review is never lapsed before the same 6.8h — more than three times the longest
+  # continuous review measured. The review PARKED across a break (ClaimLease's parked
+  # band, 8h-11h) is the case given up, and deliberately: under today's review
+  # architecture the reviewer is a subagent, which cannot park — it runs to a verdict
+  # or dies — so that band is where dead reviewers were hiding, not live ones.
+  REVIEW_RENEW_WINDOW_SECONDS = ClaimLease::REVIEW_TTL_SECONDS
 
   # The subcommands that name their own task. `claim-next` deliberately does NOT:
   # the BOARD picks the task, so a slug on that line is a caller who meant
@@ -377,11 +419,14 @@ class ReviewClaimCli
     start = flags["anchor-start"]
     ShiftRenewer.run(
       alive:    -> { SessionIdentity.process_alive?(pid, start) },
-      finished: -> { task_finished?(slug) },
+      finished: -> { review_over?(slug) },
       renew:    -> { renewed?(slug) },
-      sleeper: ->(seconds) { sleep(seconds) },
-      clock:   -> { Time.now },
-      interval: ShiftRenewer.interval_from(@env["TASK_REVIEW_CLAIM_RENEW_INTERVAL"])
+      sleeper: @sleeper,
+      clock:   @clock,
+      interval: ShiftRenewer.interval_from(@env["TASK_REVIEW_CLAIM_RENEW_INTERVAL"]),
+      # NOT ShiftRenewer's 12h default: see REVIEW_RENEW_WINDOW_SECONDS. The session this
+      # loop is anchored to can outlive the reviewer by a day, and did.
+      max_lifetime: REVIEW_RENEW_WINDOW_SECONDS
     )
     OK
   end
@@ -677,9 +722,9 @@ class ReviewClaimCli
     res.code.to_i != 204
   end
 
-  # Has this task moved past the point where a review claim means anything? Asked once
-  # per cycle BEFORE the renew, so a loop whose task has shipped exits without posting
-  # another heartbeat at all.
+  # Has the review this loop protects reached its verdict — i.e. has the task left
+  # REVIEW_STAGE? Asked once per cycle BEFORE the renew, so a loop whose review has
+  # ended exits without posting another heartbeat at all.
   #
   # FAILS OPEN, on purpose and in the opposite direction from the anchor check. A
   # board we cannot read, a stage we cannot parse, an error page — none of those are
@@ -687,11 +732,13 @@ class ReviewClaimCli
   # reviewer's lease every time the network hiccuped and let a second session claim
   # the task underneath them. Silence means "carry on"; only the board plainly naming
   # a terminal stage stops the loop.
-  def task_finished?(slug)
+  def review_over?(slug)
     res = get(base(slug))
     return false unless ok?(res)
 
-    TERMINAL_STAGES.include?(parse_data(res)["stage"].to_s)
+    stage = parse_data(res)["stage"].to_s
+    # A reply with no stage in it is no answer, and no answer never ends a live review.
+    !stage.empty? && stage != REVIEW_STAGE
   end
 
   def stop_renewer(sid, slug)
