@@ -77,10 +77,17 @@ module FastLane
   # at the moment of action.
   #
   # THE PATH IS ONLY HALF THE INSTRUCTION. The path picks the SCRIPT; the cwd picks
-  # the TREE it acts on. bin/ship roots at the cwd's git toplevel and CertRootGuard
-  # REFUSES when that is not the task's tree (measured: "this run roots at
-  # …/mcritchie-studio (branch main), which is not <slug>'s tree — refusing to
-  # certify it"), so a hint that fixes only the path fails in the OPPOSITE direction.
+  # the TREE it acts on — and ship does NOT refuse a foreign root. It roots at the cwd's
+  # git toplevel, then RE-ROOTS at the task's desk and says so ("re-rooting at the task
+  # worktree … (you ran from …)", bin/ship's `--- rooting ---` block), running every gate
+  # chdir'd to the resolved desk; it dies ONLY when no desk resolves on disk. So the cwd
+  # is still half the instruction, for two reasons that are not a refusal by ship: (1) a
+  # re-root is a correction the reader has to notice and trust, not the tree they chose;
+  # (2) the cert WRITERS the builder runs by hand afterwards DO refuse outright — "this
+  # run roots at …/mcritchie-studio (branch main), which is not <slug>'s tree — refusing
+  # to certify it" is bin/fast-check's and bin/full-suite-check's text, labelled in
+  # cert_root_guard.rb as "The cert writers' refusal text", and never ship's. A hint that
+  # fixes only the path leaves the builder one by-hand cert from the mirror-image failure.
   # This line names BOTH and is copy-pasteable verbatim: `cd <desk> && <ship> <slug>`.
   #
   # WHY THE FORM IS UNCONDITIONALLY ABSOLUTE — never a bare `bin/ship`, not even for

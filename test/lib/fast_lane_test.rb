@@ -162,9 +162,12 @@ class FastLaneTest < Minitest::Test
                  "BARE_SHIP does not match the bare form, so the assertion above proves nothing"
   end
 
-  # The cwd half. bin/ship roots at the cwd's git toplevel and CertRootGuard refuses
-  # a run rooted anywhere but the task's tree, so naming the script without naming the
-  # desk trades one failure for its mirror image.
+  # The cwd half. bin/ship roots at the cwd's git toplevel and, off a foreign root,
+  # RE-ROOTS at the task's desk loudly rather than refusing (bin/ship's `--- rooting ---`
+  # block); it dies only when no desk resolves. Naming the desk is still half the
+  # instruction: the re-root is a correction the reader must notice, and the cert WRITERS
+  # run by hand next (bin/fast-check, bin/full-suite-check) DO refuse a foreign root —
+  # so a hint that names the script alone trades one failure for its mirror image.
   def test_handoff_command_stands_in_the_desk
     Dir.mktmpdir("desk-without-ship") do |desk|
       cd, = parse_handoff(FastLane.handoff_command("fix-nav-bug", desk, HUB_BIN))

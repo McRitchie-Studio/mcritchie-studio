@@ -861,11 +861,14 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
       why: "cautionary account of turf-monster PR 594, the incident that motivated the gate" },
     { file: "docs/agents/agents/carl/sops/pr-review.md", line: 322, match: /therefore runs the breaker itself/,
       why: "prose describing what the command does, not an instruction to run it" },
-    # Repointed 836 → 906 (2026-09-09): the ship-wait section added ~70 lines
-    # ABOVE this prose. The prose is unchanged; only its line number moved. This
-    # entry is line-keyed by design, so any insertion earlier in the file drifts
-    # it — expect to repoint again when a sibling doc PR lands first.
-    { file: "docs/agents/modules/devops-task-board.md", line: 906,
+    # Repointed 836 → 906 → 927 (2026-09-09): first the ship-wait section, then the
+    # handoff-path correction, each added lines ABOVE this prose. The prose is
+    # unchanged; only its line number moved. This entry is line-keyed by design, so
+    # any insertion earlier in the file drifts it — expect to repoint again when a
+    # sibling doc PR lands first. /tasks/exemptions-keyed-by-line (ms#1352) deletes
+    # this entry outright, which is the real fix; until it lands, dropping the
+    # repoint is not an option — the guard fails LOUD on a stale line.
+    { file: "docs/agents/modules/devops-task-board.md", line: 927,
       match: /lands the task back on building, and three readers/,
       why: "prose describing the stage effect on board readers" },
     { file: "docs/agents/modules/gates/g2-review.md", line: 93, match: /exits 10\), re-run it/,
