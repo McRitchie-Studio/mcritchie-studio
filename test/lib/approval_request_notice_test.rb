@@ -45,12 +45,21 @@ class ApprovalRequestNoticeTest < Minitest::Test
   end
 
   def test_says_so_when_a_fact_is_missing_rather_than_printing_blank
-    text = ApprovalRequestNotice.lines(api_task("approval_status" => "waiting")).join("\n")
+    text = ApprovalRequestNotice.lines(api_task("approval_status" => "waiting"), note: nil).join("\n")
 
     assert_includes text, "asked by: unknown (no setter on record)"
     assert_includes text, "at: unrecorded"
     assert_includes text, "local demo: none recorded"
     assert_includes text, "the note that asked: no handoff note on record"
+  end
+
+  # bin/pr-review and bin/review-autopilot never read the note, so they must not
+  # print "no handoff note on record" over one that exists.
+  def test_a_caller_that_never_read_the_note_does_not_claim_there_is_none
+    text = ApprovalRequestNotice.lines(api_task(WAITING_DEVOPS)).join("\n")
+
+    assert_includes text, "the note that asked: not read here (bin/task show demo-task prints it)"
+    refute_includes text, "no handoff note on record"
   end
 
   def test_a_long_note_is_truncated

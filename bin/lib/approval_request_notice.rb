@@ -16,6 +16,9 @@
 module ApprovalRequestNotice
   WAITING = "waiting"
   NOTE_LIMIT = 280
+  # The caller never read the handoff note. Distinct from nil (read, none found), so
+  # the block never claims an absence it did not observe.
+  NOT_READ = :not_read
 
   module_function
 
@@ -34,7 +37,7 @@ module ApprovalRequestNotice
 
   # [] unless the task is waiting, so a caller can print the result unconditionally.
   # `note` is the text of the handoff note that asked, when the caller has it.
-  def lines(task, note: nil)
+  def lines(task, note: NOT_READ)
     return [] unless waiting?(task)
 
     devops = devops_of(task)
@@ -44,14 +47,16 @@ module ApprovalRequestNotice
       "   asked by: #{present(devops["approval_requested_by"]) || "unknown (no setter on record)"}" \
       "   at: #{present(devops["approval_requested_at"]) || "unrecorded"}",
       "   local demo: #{present(devops["local_url"]) || "none recorded"}",
-      "   the note that asked: #{note_text(note)}",
+      "   the note that asked: #{note_text(note, slug)}",
       "   Merging settles it to none and leaves a note addressed to the setter.",
       "   Mr. McRitchie can still answer: bin/task update #{slug} --approval approved " \
       "(or --approval changes_requested)."
     ]
   end
 
-  def note_text(note)
+  def note_text(note, slug = "<task-slug>")
+    return "not read here (bin/task show #{slug} prints it)" if note == NOT_READ
+
     text = present(note)
     return "no handoff note on record" unless text
 
