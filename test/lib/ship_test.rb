@@ -1006,6 +1006,31 @@ class ShipTest < Minitest::Test
       assert_includes err, SLUG
     end
   end
+  # SHIP DOES EMIT THE ROOT GUARD'S REFUSAL — on the one path where it cannot re-root.
+  # A comment in bin/lib/fast_lane.rb once said the "refusing to certify it" text was
+  # the cert writers' "and never ship's" (task handoff-narration-overclaims-four). With
+  # NO desk on disk there is nothing to re-root to, so ship die!s with the assessment's
+  # message — the same string bin/fast-check prints.
+  def test_a_foreign_checkout_with_no_desk_dies_with_the_root_guard_refusal
+    Dir.mktmpdir do |root|
+      projects = File.realpath(root)
+      stranger = File.join(projects, "myapp")
+      FileUtils.mkdir_p(stranger)
+      assert system("git -C #{stranger} init -q -b release")
+      assert system("git -C #{stranger} config user.email t@t.co")
+      assert system("git -C #{stranger} config user.name t")
+      File.write(File.join(stranger, "README.md"), "hub\n")
+      assert system("git -C #{stranger} add -A && git -C #{stranger} commit -q -m init")
+
+      _out, err, status = run_ship_from(stranger, stranger, projects)
+
+      refute status.success?, "no desk to re-root to — ship must refuse"
+      assert_includes err, "refusing to certify it"
+      refute_includes err, "re-rooting at the task worktree",
+                      "with no desk on disk there is nothing to re-root to"
+    end
+  end
+
   # --- presence: the phase this run is in, published for peers to READ ---------
   #
   # THE DEFECT, measured on this box on 2026-09-01 with the slice-1 reader

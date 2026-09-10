@@ -604,8 +604,8 @@ record `pr_url` → `bin/dor-check` → `move submitted` → read-back verify):
 
 ```bash
 cd <desk>                            # the worktree begin printed
-<desk>/bin/ship <task-slug>          # message defaults to the task title
-<desk>/bin/ship <task-slug> -m "Commit message"
+<ship> <task-slug>                   # <ship> = the absolute path begin printed
+<ship> <task-slug> -m "Commit message"   # message defaults to the task title
 ```
 
 **Both halves of that are load-bearing, and `begin` now prints them for you.**
@@ -620,10 +620,10 @@ running every gate `chdir`'d there; it dies only when no desk resolves on disk.
 Stand in the desk anyway, for the two reasons that are NOT a refusal by ship: a
 re-root is a correction you have to notice and trust rather than the tree you
 chose, and the cert **writers** you run by hand afterwards — `bin/fast-check`,
-`bin/full-suite-check` — genuinely DO refuse a foreign root (`this run roots at
-… which is not <slug>'s tree — refusing to certify it`, which
-`bin/lib/cert_root_guard.rb` labels in source as *the cert writers' refusal
-text*). `bin/task begin` closes by printing the resolved `cd <desk> && <absolute
+`bin/full-suite-check` — refuse ANY foreign root outright (`this run roots at …
+which is not <slug>'s tree — refusing to certify it`). `bin/ship` dies with that
+same text when no desk resolves; it never refuses a root it can re-root from.
+`bin/task begin` closes by printing the resolved `cd <desk> && <absolute
 bin/ship> <task-slug>` line, ready to paste — a hub desk ships its own `bin/`, so
 there it names the desk's script; a satellite desk has none, so there it names
 the hub's.
