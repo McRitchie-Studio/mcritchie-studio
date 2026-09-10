@@ -31,10 +31,13 @@ three ordered release actions, a themed glyph on the rest):
   decision is settled in
   [`turf_monster/HEARTBEAT.md`](../agents/turf_monster/HEARTBEAT.md).
 
-  `entry-forfeit` is deliberately NOT a chip either, for a third reason: it is an
-  on-demand incident SOP. It runs when an entrant asks to withdraw from a contest
-  and never otherwise, so there is no cadence for a chip to imply. Registered by
-  name, owned in the prose guard's `ACT_OWNER`, and settled in the same
+  `entry-forfeit` is deliberately NOT a chip either, for a third reason: it is
+  externally triggered. An entrant asks to withdraw, so the request arrives from
+  outside the team at a moment nobody here picks. `clean-infra`,
+  `deploy-with-task` and `contest-rehearsal` are all on the card because the
+  operator chooses when to run them; there is nothing to choose here until
+  someone outside asks. Registered by name, owned in the prose guard's
+  `ACT_OWNER`, and settled in the same
   [`turf_monster/HEARTBEAT.md`](../agents/turf_monster/HEARTBEAT.md).
 
   The **card's** own reason is separate, and it is the one worth stating because a
