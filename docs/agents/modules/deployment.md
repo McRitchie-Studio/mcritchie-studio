@@ -320,13 +320,40 @@ How a gem rides a release:
    cannot fire in a smaller repo, so the guard would pass vacuously — the exact
    failure a floor exists to prevent, reproduced by the act of reuse.
 
+   **Fenced code is content, not structure.** Every scanner in the module reads
+   `## ` at column 0, so a builder who quotes a heading inside a fenced
+   `markdown` block under `## Unreleased` used to cut the bucket short right
+   there. Measured against published 0.74.4: the guard returned **nil**, the
+   bucket read **5 of its 14 lines**, and the roll injected a blank line
+   *inside* the fence and filed everything below it under a version that had
+   already shipped — onto `origin/release`, in the commit that precedes the
+   irreversible `gem push`. It was blind exactly where it mattered, because the
+   drift guard fails closed only outside `MAX_MINOR_DRIFT`: a quoted 0.74.4,
+   0.74.2 or 0.72.0 all passed silently. The scan now skips fenced lines by
+   CommonMark's rules, so it agrees with what renders — backtick or tilde,
+   indented up to three spaces, closing only on the same character at least as
+   long as the opener. A **terminated** fence is ignored as content, because
+   that is the *correct* parse and refusing a well-formed file would charge a
+   held multi-repo sweep for the most ordinary act there is: documenting a
+   change with an example. An **unterminated** fence is **refused**, naming the
+   line it opened on, because there the parse is genuinely undecidable — a
+   renderer reads the rest of the file as code, so every `## ` below it is a
+   heading or not depending on how you read it.
+
    **Two gaps, named rather than papered over.** (1) A gem tracking no
    `CHANGELOG.md` is not refused — the registry declares no `changelog` key, so
    its absence breaks no stated contract; prepare says so and moves on. (2) The
-   roll runs only on the **allocate** path, so a version bumped **by hand** onto
-   `accepted` (the emergency route `publish_gem`'s abort message names) skips
-   allocation and therefore skips the roll — roll that one by hand in the same
-   PR that bumps the version.
+   roll runs only on the **allocate** path, and that path is skipped more often
+   than "by hand" suggests. `Release::GemVersion` skips allocation whenever the
+   version file is **already ahead of the newest `v*` tag** — which covers the
+   emergency hand-bump onto `accepted` that `publish_gem`'s abort message names,
+   but *also* the ordinary state a **prior sweep leaves behind** once it has
+   allocated a number. Measured at `origin/release` on 2026-09-09: studio-engine
+   `0.74.7` against tag `v0.74.6`, solana-studio `0.9.3` against `v0.9.2` — both
+   sitting in the skip branch, and therefore both unrolled. So the roll reaches
+   the gem this sweep allocates, not one already carrying an
+   allocated-but-unpublished number; roll that one by hand in the same PR that
+   bumps the version.
 
    **History.** Before 2026-09-09 prepare published and tagged without ever
    touching `CHANGELOG.md`, and nothing failed when it didn't. Measured at

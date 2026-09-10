@@ -67,8 +67,64 @@ class Release
     # bucket.
     UNRELEASED = /\A\#\#[ \t]+\[?Unreleased\]?[ \t]*\z/i
 
-    # Any level-2 heading. The section boundary the roll cuts on.
+    # Any level-2 heading. The section boundary the roll cuts on — but ONLY
+    # outside a fenced code block; see FENCE.
     HEADING = /\A\#\#[ \t]+/
+
+    # A fenced code block delimiter: three or more backticks or tildes, indented
+    # up to three spaces (four would make it an indented code block, not a
+    # fence). Captures the indent, the run, and the info string.
+    #
+    # WHY THIS EXISTS, measured 2026-09-09. Every scanner here looks for `## ` at
+    # column 0, and a builder documenting THIS module writes an entry under
+    # `## Unreleased` quoting the heading the roll produces:
+    #
+    #     - prepare now rolls the bucket. The heading it writes:
+    #
+    #     ```markdown
+    #     ## 0.74.4 — 2026-09-09
+    #     ```
+    #
+    # Without fence awareness that quoted line IS a heading: against published
+    # 0.74.4, `refusal` returned nil, `unreleased_entries` returned 5 of the
+    # bucket's 14 lines, and `roll` injected a blank line INSIDE the fence and
+    # filed everything below it — the trailing bullet and a whole `### Docs`
+    # section — under `## 0.74.4`, a version that had already shipped. The rolled
+    # file rides the same commit as version_file + Gemfile.lock onto
+    # origin/release BEFORE `gem push`, so the artifact and its v* tag would carry
+    # that mis-filed history.
+    #
+    # It was blind exactly where it matters: the drift guard fails closed only
+    # OUTSIDE MAX_MINOR_DRIFT, so a fenced 0.74.4 / 0.74.2 / 0.72.0 all passed
+    # silently and only 0.60.0 hit BACKLOG. Quoting a RECENT heading is the likely
+    # case, not the exotic one. Reachability is live rather than hypothetical:
+    # studio-engine's Unreleased bucket already carries a column-0 ```ruby fence,
+    # and only the absence of a `## ` line inside it keeps today's file safe.
+    #
+    # THE SECOND FORK, and it was as real as the first: IGNORE a fenced `## ` as
+    # content, or REFUSE a bucket that contains one. This implements IGNORE for a
+    # TERMINATED fence and REFUSE for an UNTERMINATED one — which is not two
+    # policies but the one above applied twice, "roll when the roll is true,
+    # refuse when it would not be":
+    #
+    #   1. A TERMINATED FENCE IS NOT AMBIGUOUS. CommonMark, GitHub's renderer and
+    #      every human reader agree a `## ` inside a fence is literal text. Reading
+    #      it as content is not a heuristic or a guess — it is the CORRECT parse,
+    #      and once it is correct the roll is TRUE, which is the condition under
+    #      which this module rolls.
+    #   2. REFUSING A CORRECT FILE RE-IMPORTS THE CIRCULARITY the (a)/(b) fork
+    #      already rejected. A refusal's only remedy is "edit CHANGELOG.md prose,
+    #      land it on `accepted`, wait for the batch promote to `release`, re-run"
+    #      — a multi-repo QA sweep held on a doc edit. That price buys something
+    #      when the file is wrong. Charged against a well-formed file it is the
+    #      exact cost this module exists to avoid, and it would fall on the most
+    #      ordinary act there is: documenting a change with an example.
+    #   3. AN UNTERMINATED FENCE IS GENUINELY UNDECIDABLE. A renderer reads the
+    #      rest of the file as code, so "where does the bucket end" has no honest
+    #      answer — every `## ` below is a heading or not depending on how you
+    #      read it. That is the same condition the unparseable-heading refusal
+    #      already fires on, so it refuses there, naming the opener's line.
+    FENCE = /\A( {0,3})(`{3,}|~{3,})(.*)\z/
 
     # A version heading, in EVERY dialect measured across the three repos:
     #   ## 0.39.0 — 2026-08-11     studio-engine (modern)
@@ -90,9 +146,14 @@ class Release
     # NOT ZERO, and the reason is measured: a release that ships no entry at all
     # is legitimate (studio-engine 0.74.4 was one of thirty-four such). Two is the
     # same tolerance studio-engine's own test/lib/changelog_structure_test.rb
-    # carries, deliberately, so the runtime guard and the repo guard can never
-    # disagree about what counts as drift. Once the roll below is live the
-    # expected drift is 0 — this tolerance only grandfathers a hand-bump.
+    # carries, deliberately, so the two guards agree about the SIZE of drift they
+    # tolerate. They are not the same guard and must not be described as one: this
+    # one measures against the last PUBLISHED version and only refuses when the
+    # bucket actually holds entries, while the repo test measures Studio::VERSION
+    # unconditionally. Both diverge safely — the repo test is the stricter of the
+    # two — but neither subsumes the other. Once the roll below is live the
+    # expected drift is 0; this tolerance only grandfathers a version bumped
+    # outside a publish, including a prior sweep's own allocation.
     MAX_MINOR_DRIFT = 2
 
     module_function
@@ -103,11 +164,14 @@ class Release
     # `version` is [major, minor, patch] for a version heading and nil otherwise
     # (including the Unreleased bucket).
     def headings(text)
-      text.to_s.lines.each_with_index.filter_map do |line, i|
-        stripped = line.chomp
-        next unless HEADING.match?(stripped)
+      lines = body_lines(text)
+      fenced, = fence_scan(lines)
 
-        { number: i + 1, line: stripped, version: version_of(stripped) }
+      lines.each_with_index.filter_map do |line, i|
+        next if fenced[i]
+        next unless HEADING.match?(line)
+
+        { number: i + 1, line: line, version: version_of(line) }
       end
     end
 
@@ -208,7 +272,18 @@ class Release
     # zero, and there is no number to copy wrong.
     def refusal(text, published_version: nil)
       lines = body_lines(text)
-      all   = headings(text)
+      _, unterminated = fence_scan(lines)
+
+      # FIRST, because an unclosed fence swallows every heading below it — so any
+      # later refusal would fire on a symptom and name the wrong cause.
+      if unterminated
+        return "CHANGELOG.md has an unterminated fenced code block: the fence opened at line " \
+               "#{unterminated + 1} (#{lines[unterminated].strip.inspect}) is never closed, so every '## ' " \
+               "below it is a heading or code depending on how the file is read. Close the fence, land that on " \
+               "the gem's `accepted`, then re-run `bin/release prepare` — it resumes, and NOTHING has been published"
+      end
+
+      all = headings(text)
 
       return "CHANGELOG.md has no '## ' headings at all — refusing to guess where a version heading belongs" if all.empty?
 
@@ -312,14 +387,62 @@ class Release
       text.to_s.lines.map(&:chomp)
     end
 
+    # Which lines sit INSIDE a fenced code block, plus the index of an opener that
+    # never closed (nil when every fence is terminated).
+    #
+    # ONE SCAN FEEDS EVERY READER, and that is the point rather than an economy.
+    # The bucket regex looks for `## ` too, so fence blindness cut both ways: a
+    # quoted `## Unreleased` was read as a second live bucket. `refusal` COUNTS
+    # buckets while `roll` INDEXES the first one, so a fix applied to one and not
+    # the other would let the guard and the write disagree about the structure of
+    # the same file — the split-brain that precedes an irreversible push.
+    #
+    # Closing rules are CommonMark's, because the goal is to agree with what
+    # renders: a fence closes only on a delimiter of the SAME character and AT
+    # LEAST the opener's length, followed by nothing but spaces. So a ``` line
+    # inside a ```` block is content, not a close — which is exactly the file that
+    # documents a fence inside a fence. A backtick fence's info string may not
+    # contain a backtick; a tilde fence's may.
+    def fence_scan(lines)
+      inside  = Array.new(lines.size, false)
+      opener  = nil
+      marker  = nil
+
+      lines.each_with_index do |line, i|
+        match = FENCE.match(line)
+
+        if opener
+          inside[i] = true
+          if match && match[2][0] == marker[0] && match[2].length >= marker.length && match[3].strip.empty?
+            opener = nil
+            marker = nil
+          end
+          next
+        end
+
+        next unless match
+        next if match[2].start_with?("`") && match[3].include?("`")
+
+        opener    = i
+        marker    = match[2]
+        inside[i] = true
+      end
+
+      [inside, opener]
+    end
+
     def unreleased_index(lines)
-      lines.index { |line| UNRELEASED.match?(line) }
+      fenced, = fence_scan(lines)
+
+      lines.each_index.find { |i| !fenced[i] && UNRELEASED.match?(lines[i]) }
     end
 
     # The line index where the section opened at `start` ends — the next `## `
-    # heading, or end of file.
+    # heading OUTSIDE a fence, or end of file.
     def section_end(lines, start)
-      ((start + 1)...lines.size).find { |i| HEADING.match?(lines[i]) } || lines.size
+      fenced, = fence_scan(lines)
+
+      ((start + 1)...lines.size).find { |i| !fenced[i] && HEADING.match?(lines[i]) } || lines.size
     end
 
     def trim(slice)

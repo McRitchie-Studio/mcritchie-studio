@@ -295,6 +295,226 @@ class ReleaseChangelogTest < Minitest::Test
                     "parse as neither a version nor the Unreleased bucket"
   end
 
+
+  # --- fenced code blocks are CONTENT, not structure ---------------------------
+  #
+  # REPRODUCED 2026-09-09 against published 0.74.4. A builder documenting this
+  # very change writes an entry under `## Unreleased` quoting the heading the roll
+  # writes, inside a ```markdown fence. Before fence awareness:
+  #
+  #   refusal()            => nil            — the guard was BLIND
+  #   unreleased_entries() =>  5 of 14 lines
+  #   roll()               => a blank line injected INSIDE the fence, and every
+  #                           entry below it (the trailing bullet and the whole
+  #                           `### Docs` section) filed under `## 0.74.4`, a
+  #                           version that had already shipped.
+  #
+  # It is blind exactly where it matters: the drift guard fails closed only
+  # OUTSIDE MAX_MINOR_DRIFT, so a fenced 0.74.4 / 0.74.2 / 0.72.0 all passed
+  # silently while only 0.60.0 hit BACKLOG. Quoting a RECENT heading — the likely
+  # case — was the one that slipped through. And the rolled file rides the same
+  # commit as version_file + Gemfile.lock onto origin/release BEFORE `gem push`,
+  # so the artifact and its v* tag would carry the mis-filed history.
+  #
+  # THE FORK, and it was a real one: IGNORE a fenced `## ` as content, or REFUSE a
+  # bucket that contains one. This picks IGNORE for a TERMINATED fence and REFUSE
+  # for an UNTERMINATED one — which is not two policies but the module's existing
+  # one, applied twice. A terminated fence is UNAMBIGUOUS: CommonMark, GitHub's
+  # renderer and every human reader agree the line is literal text, so ignoring it
+  # is the CORRECT parse and refusing would refuse a file that is fine — the
+  # second of the two directions this file is adversarial about. An UNTERMINATED
+  # fence is genuinely undecidable: a renderer reads the rest of the file as code,
+  # so "where does the bucket end" has no honest answer. That is the same
+  # condition the unparseable-heading refusal already fires on.
+
+  # The 14-line body from the reproduction. `open`/`close` are the delimiters
+  # under test and `indent` the content's column, so one fixture drives every
+  # fence dialect the ecosystem can write.
+  def documented(open: "```markdown", close: "```", indent: "")
+    ["### Fixed", "",
+     "- prepare now rolls the bucket. The heading it writes:", "",
+     open,
+     "#{indent}## 0.74.4 — 2026-09-09",
+     close, "",
+     "- and a trailing bullet", "",
+     "### Docs", "",
+     "- documented the roll",
+     "- and the guard"]
+  end
+
+  # (a) The whole bucket is read — all 14 lines, verbatim. Pre-fix: 5.
+  def test_a_fenced_heading_is_content_so_the_whole_bucket_is_read
+    body = documented
+
+    assert_equal 14, body.size, "the fixture is the reproduction's 14 lines"
+    assert_equal body, CL.unreleased_entries(engine(entries: body)),
+                 "a '## ' inside a fence is literal text; it cannot cut the section short"
+  end
+
+  # (b) Every entry lands under the NEW heading, and nothing is written inside the
+  # fence. Asserted byte-for-byte, because the pre-fix failure was a single blank
+  # line injected between the fence's opener and its content — invisible to any
+  # assertion that filters blanks.
+  def test_the_roll_files_every_fenced_entry_under_the_new_heading
+    body   = documented
+    rolled = CL.roll(engine(entries: body), version: "0.74.5", date: "2026-09-09")
+    lines  = rolled.lines.map(&:chomp)
+    start  = lines.index("## 0.74.5 — 2026-09-09")
+    finish = lines.index("## 0.39.0 — 2026-08-11")
+
+    assert_equal ["## Unreleased", "## 0.74.5 — 2026-09-09", "## 0.39.0 — 2026-08-11", "## 0.38.0 — 2026-08-10"],
+                 CL.headings(rolled).map { |h| h[:line] },
+                 "the quoted heading must not become a section of its own"
+    assert start && finish && start < finish
+    assert_equal body, lines[(start + 1)...finish].drop_while { |l| l.strip.empty? }
+                                                  .reverse.drop_while { |l| l.strip.empty? }.reverse,
+                 "the fence arrives intact: nothing injected inside it, nothing left behind it"
+    assert_empty CL.unreleased_entries(rolled), "and the bucket is empty and ready for the next cycle"
+  end
+
+  # Every fence dialect a builder can write. The INDENTED row is the one that
+  # corrects a tempting half-truth: an indented fence is safe only while its
+  # CONTENT is indented too. A fence opened at column 2 around a heading at
+  # column 0 is a valid fenced block whose inner line matches the anchored
+  # heading regex exactly.
+  def test_every_fence_dialect_is_recognised
+    {
+      "backtick" => { open: "```markdown", close: "```" },
+      "tilde" => { open: "~~~markdown", close: "~~~" },
+      "bare backtick" => { open: "```", close: "```" },
+      "indented opener, column-0 content" => { open: "  ```markdown", close: "  ```" },
+      "longer opener" => { open: "````markdown", close: "````" }
+    }.each do |label, delims|
+      body = documented(**delims)
+
+      assert_equal body, CL.unreleased_entries(engine(entries: body)), "#{label}: the bucket must read whole"
+      refute_includes CL.headings(engine(entries: body)).map { |h| h[:line] }, "## 0.74.4 — 2026-09-09",
+                      "#{label}: the fenced line must not be counted as a heading"
+    end
+  end
+
+  # WHAT DOES NOT CLOSE A FENCE. Each row below is a delimiter-looking line that
+  # a looser reader would treat as the close, putting the heading beneath it back
+  # outside the fence and reopening the defect. All three were reached by mutating
+  # the closing rule and watching the suite stay green, so each one is here
+  # because its absence was measured, not imagined.
+  def test_only_a_matching_delimiter_closes_a_fence
+    {
+      "a shorter run" => ["````markdown", "```", "## 0.74.4 — 2026-08-01", "````"],
+      "the other delimiter character" => ["```markdown", "~~~", "## 0.74.4 — 2026-08-01", "```"],
+      "a run carrying an info string" => ["```markdown", "```ruby", "## 0.74.4 — 2026-08-01", "```"]
+    }.each do |label, fence|
+      body = ["### Fixed", ""] + fence + ["", "- a trailing bullet"]
+
+      assert_equal body, CL.unreleased_entries(engine(entries: body)), "#{label}: must not close the fence"
+      refute_includes CL.headings(engine(entries: body)).map { |h| h[:line] }, "## 0.74.4 — 2026-08-01",
+                      "#{label}: the heading below it is still inside the fence"
+    end
+  end
+
+  # A BACKTICK FENCE'S INFO STRING MAY NOT CONTAIN A BACKTICK — CommonMark's rule,
+  # and the reason is that such a line is ordinary text rather than a fence. Read
+  # as an opener it would open a block nothing ever closes, and this module would
+  # then REFUSE a perfectly good changelog.
+  def test_a_backtick_run_whose_info_string_holds_a_backtick_is_not_a_fence
+    body = ["### Fixed", "",
+            "```js`x",
+            "- an ordinary line that merely starts with backticks"]
+
+    assert_nil CL.refusal(engine(entries: body), published_version: "0.39.0"),
+               "a non-fence must not be reported as an unterminated one"
+    assert_equal body, CL.unreleased_entries(engine(entries: body))
+  end
+
+  # THE BUCKET INDEX IS FENCE-AWARE TOO, and this is the case that proves the two
+  # halves share one scan. A changelog whose PREAMBLE shows the format quotes
+  # `## Unreleased` above the real bucket. `refusal` reads headings (fence-aware
+  # from the start) and sees one bucket; a `roll` that indexed the first RAW match
+  # would cut at the quoted one instead — the guard and the write looking at two
+  # different files, immediately before an irreversible push.
+  def test_a_quoted_bucket_above_the_real_one_is_not_the_bucket
+    text = ["# Changelog", "",
+            "The bucket this file keeps:", "",
+            "```markdown",
+            "## Unreleased",
+            "```", "",
+            "## Unreleased", "",
+            "- entry one", "",
+            "## 0.39.0 — 2026-08-11", "",
+            "- older entry"].join("\n") + "\n"
+
+    assert_nil CL.refusal(text, published_version: "0.39.0"), "the quoted bucket is not a second bucket"
+    assert_equal ["- entry one"], CL.unreleased_entries(text),
+                 "the entries come from the REAL bucket, not the quoted one"
+    assert_includes CL.roll(text, version: "0.40.0", date: "2026-09-09"),
+                    "## 0.40.0 — 2026-09-09\n\n- entry one"
+  end
+
+  # A fence closes only on a delimiter at least as long as its opener, in the same
+  # character — so a ``` line inside a ```` block is content, and the heading
+  # after it is still inside the fence. Getting this wrong reopens the defect for
+  # exactly the file that quotes a fence inside a fence: this changelog entry.
+  def test_a_longer_fence_is_not_closed_by_a_shorter_delimiter
+    body = ["### Fixed", "",
+            "````markdown",
+            "```ruby",
+            "## 0.74.4 — 2026-09-09",
+            "```",
+            "````", "",
+            "- a trailing bullet"]
+
+    assert_equal body, CL.unreleased_entries(engine(entries: body))
+    refute_includes CL.headings(engine(entries: body)).map { |h| h[:line] }, "## 0.74.4 — 2026-09-09"
+  end
+
+  # The bucket regex scans for `## ` too, so fence blindness cut BOTH ways: a
+  # quoted `## Unreleased` was read as a second live bucket. Worse, `refusal`
+  # counted buckets while `roll` indexed the FIRST one, so the two halves could
+  # disagree about which file they were looking at. One fence map now feeds both.
+  def test_a_fenced_unreleased_heading_is_not_read_as_a_second_bucket
+    body = ["### Fixed", "",
+            "- the bucket this module leaves behind:", "",
+            "```markdown",
+            "## Unreleased",
+            "```", "",
+            "- a trailing bullet"]
+    text = engine(entries: body)
+
+    assert_nil CL.refusal(text, published_version: "0.39.0"), "one live bucket, quoted or not"
+    assert_equal body, CL.unreleased_entries(text)
+  end
+
+  # THE REFUSING HALF OF THE FORK. An unterminated fence has no honest reading —
+  # a renderer treats the rest of the file as code — so this refuses rather than
+  # pick one, and names the line so the fix is a one-line edit rather than a hunt.
+  def test_an_unterminated_fence_is_refused_rather_than_guessed_at
+    body = ["### Fixed", "",
+            "```markdown",
+            "## 0.74.4 — 2026-09-09", "",
+            "- a bullet whose fence was never closed"]
+    text    = engine(entries: body)
+    opener  = text.lines.map(&:chomp).index("```markdown") + 1
+    message = CL.refusal(text, published_version: "0.39.0")
+
+    refute_nil message, "an undecidable parse must not roll"
+    assert_includes message, "unterminated"
+    assert_includes message, "line #{opener}",
+                    "the refusal must name the opener it could not find a close for"
+  end
+
+  # (c) THE GUARD STILL BITES. This is the assertion Carl's reproduction turned
+  # red: with the fenced 0.74.4 read as a heading the drift measured 0 and the
+  # BACKLOG guard returned nil — blind on the very file it exists to refuse.
+  def test_fence_awareness_does_not_blunt_the_backlog_and_ahead_guards
+    text = engine(entries: documented)
+
+    assert_includes CL.refusal(text, published_version: "0.74.4").to_s, "BACKLOG",
+                    "the quoted heading must not be credited as documenting 0.74.4"
+    assert_includes CL.refusal(text, published_version: "0.74.4").to_s, "35 minor version(s)"
+    assert_includes CL.refusal(text, published_version: "0.38.0").to_s, "AHEAD"
+    assert_nil CL.refusal(text, published_version: "0.39.0"), "and a healthy file with a fence still rolls"
+  end
+
   # --- entry detection ---------------------------------------------------------
 
   def test_entries_are_detected_only_when_the_bucket_holds_something

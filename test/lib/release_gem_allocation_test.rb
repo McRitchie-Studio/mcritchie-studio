@@ -401,6 +401,55 @@ class ReleaseGemAllocationTest < Minitest::Test
     end
   end
 
+  # FENCED CODE IS CONTENT, THROUGH THE REAL PUSH PATH. The unit tier owns the
+  # parse matrix (test/models/release/changelog_test.rb); what is proved here is
+  # that the file which actually reaches origin/release carries it. A builder
+  # documenting this very change quotes the heading the roll writes inside a
+  # fenced block; before fence awareness the bucket was cut at that line, a blank
+  # was injected inside the fence, and everything below it was filed under a
+  # version that had already shipped — in the commit that PRECEDES `gem push`.
+  def test_a_fenced_heading_in_the_bucket_is_rolled_whole
+    fenced = ["### Fixed", "",
+              "- prepare rolls the bucket. The heading it writes:", "",
+              "```markdown",
+              "## 0.3.0 — 2026-07-01",
+              "```", "",
+              "- and a trailing bullet"]
+
+    with_root do |root|
+      origin, = build_projects_root(root, changelog: changelog(entries: fenced))
+      out, ok = allocate(root, members: [member(kind: "feature")])
+
+      assert ok, "a quoted heading must not hold the sweep:\n#{out}"
+      rolled = pushed(origin, "CHANGELOG.md")
+
+      assert_equal 1, rolled.scan("## 0.3.0 — 2026-07-01").size,
+                   "the quoted heading must stay quoted — never promoted to a second section"
+      assert_operator rolled.index("## 0.5.0 — #{today}"), :<, rolled.index("- and a trailing bullet"),
+                      "the entry BELOW the fence must land under the new heading, not the old one"
+      assert_includes rolled, "```markdown\n## 0.3.0 — 2026-07-01\n```",
+                      "the fence must arrive byte-for-byte, with nothing written inside it"
+    end
+  end
+
+  # THE REFUSING HALF. An unterminated fence has no honest reading — a renderer
+  # takes the rest of the file as code — so prepare refuses in the DECIDE phase
+  # and origin/release is left exactly as it was found.
+  def test_an_unterminated_fence_refuses_before_anything_is_written
+    unclosed = ["### Fixed", "",
+                "```markdown",
+                "## 0.4.0 — 2026-08-01", "",
+                "- a bullet whose fence was never closed"]
+
+    with_root do |root|
+      origin, = build_projects_root(root, changelog: changelog(entries: unclosed))
+      out = assert_refuses(root, origin, "unterminated fenced code block",
+                           members: [member(kind: "feature")])
+
+      assert_includes out, "```markdown", "the refusal must name the opener it could not find a close for"
+    end
+  end
+
   # A gem that tracks no Gemfile.lock (solana-studio) must still allocate. The
   # lock step is conditional on the file being TRACKED, never on it existing.
   def test_a_gem_without_a_tracked_lockfile_still_allocates
