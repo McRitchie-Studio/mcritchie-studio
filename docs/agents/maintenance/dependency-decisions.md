@@ -189,7 +189,7 @@ falls on its own bump — see the table.
 
 turf-monster **#261** (sidekiq-cron 1.12.0 → 2.4.0) was merge-updated in the same
 wave and stayed red. Its `test` job (run 34422198615, job 102699856611,
-2026-09-10T00:43:45Z) reports `4011 runs, 18985 assertions, 0 failures, 1 errors`
+2026-09-10T00:43:45Z) reports `4011 runs, 18985 assertions, 0 failures, 1 errors, 2 skips`
 — and the single error is:
 
 ```
@@ -202,12 +202,12 @@ NoMethodError: undefined method `enque!' for an instance of Sidekiq::Cron::Job
 sidekiq-cron 2.0.0 renamed `enque!` to `enqueue!`. At `origin/accepted`,
 `git grep -n "enque!"` across `test app lib config` returns **exactly one line** —
 that one. So this is no longer an estimate: the entire migration is one renamed
-method call in one test file, and the other 4010 tests pass on 2.4.0.
+method call in one test file, and the other 4008 tests pass on 2.4.0 (2 skip).
 
 That makes #261 the **best-understood major on the board**, and it is worth more
 than its size: sidekiq-cron 2.0.0 carries PR #510, "Fix detection of ActiveJob in
 Sidekiq v7.3.3+" — the exact bug this ecosystem worked around by stamping
-`active_job: true` on all eight entries of `config/schedule.yml`, after all four
+`active_job: true` on all six entries of `config/schedule.yml`, after all four
 turf-monster crons ran dead in both environments from 2026-08-22 to 2026-08-26,
 the stranded-deposit reconciler among them, while `/admin/jobs` still listed them
 as registered. Upgrading removes the landmine instead of stepping around it.
@@ -345,7 +345,7 @@ apps. Measured 2026-09-10:
 | turf-monster | **10/10** | 3/10 |
 
 Neither app can open another Ruby dependency PR until a slot is freed. The
-backlog is not merely untidy; it is suppressing new updates. Six of the twenty
+backlog is not merely untidy; it is suppressing new updates. Five of the twenty
 bundler slots are held by PRs this record disposes of as CLOSE.
 
 ### CONFIG-3 · Nothing is suppressed by policy — `ignore-conditions` is empty
@@ -430,9 +430,9 @@ buys a slot and loses the reason.** Every CLOSE below is paired with either an
    app sets.
 2. **Close six and add the `ignore` entries** — #707, #253, #1058, #460 (CAUSE-A,
    with major-scoped `ignore` for minitest and redis in both configs), #26 (CAUSE-B), #1245
-   (CAUSE-C). Frees four of the twenty jammed bundler slots and stops three
+   (CAUSE-C). Frees five of the twenty jammed bundler slots and stops three
    changes the Gemfiles already refuse from being re-proposed forever.
-3. **Merge the ten trivials** — turf #258 first (a Rails 8.2 removal blocker with
+3. **Merge the thirteen trivials** — turf #258 first (a Rails 8.2 removal blocker with
    zero migration, already proven in the hub), then the six action bumps
    (#971, #557, #556, #371, #370, #179) and the lock-only gems (#1199, #1098,
    #1099, #457, #458, #461).

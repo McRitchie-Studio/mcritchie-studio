@@ -28,8 +28,9 @@ require "test_helper"
 #
 # What this guard CAN do is two things, and it does both:
 #
-#   1. INTERNAL CONSISTENCY. Every derived number in the record is recomputed from
-#      the rows and compared to the number the prose states. A hand-edit that
+#   1. INTERNAL CONSISTENCY. The tally line, the per-repo tally table and the
+#      section headers are recomputed from the rows (counts in running prose are
+#      NOT — review caught five that had drifted). A hand-edit that
 #      changes rows without changing the tally — the single most likely way this
 #      document rots — fails here. Cause ids are cross-referenced in BOTH
 #      directions, so neither an orphan cause nor a row pointing at a cause that
