@@ -71,20 +71,26 @@ two writers disagree about what a wrong cwd costs you:
 | `turf-monster` · `rolio` · `mcritchie-industries` · `tax-studio` · `chain-ops` | **Hub-absolute only.** The desk has no fast-lane scripts; only the cwd is the desk's |
 | `studio-engine` · `solana-studio` · `turf-vault` | **No `begin`, no `ship`.** `bin/task begin` answers `unknown app` (measured 2026-09-09) — create with `bin/task create`, make the desk with a plain `git worktree add`, and run the handoff steps by hand. The two GEMS still get a cert; see below |
 
-Row 2 is the REGISTRY, not the machine: `tax-studio` and `chain-ops` are registered
-satellites (`config/satellites.yml`) that no checkout exists for yet. They are listed
-because the rule is about where the scripts live, and it will hold the day they land.
+Row 2 is the REGISTRY, not the machine: it names every satellite in
+`config/satellites.yml`, including `tax-studio`, which has no checkout yet. It is
+listed because the rule is about where the scripts live, and it will hold the day
+the repo lands.
 
-**Row 3 is a missing WORKTREE lane, not a missing cert — and the difference matters,
-because a builder who reads "no lane" hand-rolls a cert that already exists.**
-`bin/task begin` cannot desk a gem, so all three get no `begin` and no `ship`. But
+**Row 3 is a missing WORKTREE lane; only turf-vault also lacks a cert lane — and the
+difference matters, because a builder who reads "no lane" hand-rolls a cert that
+already exists, or records a skip for a suite that does.** `bin/task begin` cannot
+desk any of the three, so none of them gets `begin` or `ship`. But
 `bin/fast-check` carries a purpose-built gem branch (`FullSuiteGate.gem_repo?` +
 `FullSuiteGate.release_check_cmd`): from a plain `git worktree add` desk, hub-absolute
 `bin/fast-check <task>` runs the gem's REGISTERED gate as the whole mapped lane —
 `bin/release-check` for **studio-engine** and for **solana-studio** (registered
 2026-08-31), both declared in `config/release_repos.yml` under `gems:`. **turf-vault**
-is the one repo with no cert lane at all: `bin/fast-check` refuses it by name and points
-at `/tasks/turf-vault-needs-ci`.
+HAS real tests — a CI workflow, `anchor test` in `Anchor.toml`, and `yarn test:scripts`
+— but no DECLARED lane in `config/release_repos.yml`, so the hub's cert writers cannot
+run them. `bin/fast-check` refuses it on BEHAVIOUR, not by name: its test-prepare lane
+finds no `bin/rails` to launch and exits 1 (`prepare_res.unlaunchable?`), pointing at
+`/tasks/turf-vault-needs-ci`, which owns declaring one. That is a registry gap, not an
+absence of tests — do not record a skip for a repo that has a suite.
 
 **Pass `--agent <soul>` — it is what makes review able to exclude you.** It stamps
 the task's AUTHOR SET (`devops.built_by` + `devops.builders`) — what
