@@ -1104,8 +1104,17 @@ class CiStatusTest < Minitest::Test
     text = CiStatus.unreadable_remedy("McRitchie-Studio/rolio", cause: :credentials,
                                       cert_route: true, task: "builder-reads-remedy-twice")
 
-    assert_includes text, "certify in full instead: bin/full-suite-check builder-reads-remedy-twice.",
-                    "the gated route must offer the cert, and offer it as a command that can be typed"
+    # KEYED ON THE FILESYSTEM, not the spelling. remedy-hints-second-wave routed this
+    # offer through FastLane.remedy_command, so it now names an ABSOLUTE
+    # bin/full-suite-check; and because an absolute path CONTAINS the bare form, a
+    # substring assertion would pass on either and prove neither.
+    offer = text[/certify in full instead: (\S+) builder-reads-remedy-twice\./, 1]
+
+    refute_nil offer, "the gated route must offer the cert, and offer it as a command that can be typed"
+    assert_equal File.expand_path(offer), offer,
+                 "the offer must be ABSOLUTE — the bare form runs only from a hub desk: #{text}"
+    assert File.executable?(offer), "the offer names #{offer.inspect}, not an executable on this disk"
+    assert_equal "full-suite-check", File.basename(offer)
   end
 
   # WITHOUT A SLUG IT DEGRADES TO A SENTENCE, NEVER TO A BARE COMMAND. `bin/full-suite-

@@ -13,8 +13,21 @@
 # gate's decision table is unit-testable without spawning bin/dor-check against a
 # fixture — see test/lib/dor_check_exempt_ci_test.rb.
 require_relative "ci_status"
+require_relative "fast_lane"
 
 module CiGate
+  # THE ABSOLUTE COMMANDS THIS GATE'S REFUSALS HAND BACK. These compose bin/dor-check's
+  # CI refusals, so they reach exactly the reader remedy-hints-print-bare-paths fixed
+  # for the cert refusals next door — a builder or reviewer who may be standing on a
+  # satellite or gem desk that carries neither script. Resolved from bin/ (this file's
+  # parent) once at load; policy and the desk-vs-hub reasoning: FastLane.remedy_command.
+  #
+  # THE PURITY NOTE IN THE HEADER STILL HOLDS. Resolution reads the FILESYSTEM
+  # (File.executable?) exactly once, at require time, and the verdict functions stay
+  # pure: they interpolate two frozen strings and shell nothing.
+  FULL_SUITE_CMD = FastLane.remedy_command("full-suite-check", File.expand_path("..", __dir__)).freeze
+  TASK_CMD = FastLane.remedy_command("task", File.expand_path("..", __dir__)).freeze
+
   # The states that mean "CI HAS NO VERDICT TO GIVE" — as opposed to a verdict that is
   # bad (:red), settled-negative (:conflicted / :ci_less), still coming (:pending), or
   # not about a live review target (:closed / :merged). This is the ONLY family a full
@@ -234,7 +247,7 @@ module CiGate
       # literals), which is exactly when it is cheap to close.
       cert_escape = if cert_route == true
                       " If checks genuinely cannot settle for this PR, certify in full instead: " \
-                        "`bin/full-suite-check #{slug}`, which runs ci.yml's own command (test:system " \
+                        "`#{FULL_SUITE_CMD} #{slug}`, which runs ci.yml's own command (test:system " \
                         "included) locally, and the gate advances on that cert."
                     else
                       # NAME NO SECOND ROUTE. On the exempt path there is none — see
@@ -281,7 +294,7 @@ module CiGate
                                          end
                       " But no local cert stands in for it here: this is the doc-only path, where the " \
                         "shape/test-tier gate is already waived, so there is no suite to substitute — " \
-                        "`bin/full-suite-check #{slug}` would leave this refusal unchanged. " \
+                        "`#{FULL_SUITE_CMD} #{slug}` would leave this refusal unchanged. " \
                         "#{no_verdict_close}"
                     end
       ["GitHub CI has produced no verdict yet (#{ci[:state]}) — the review gate-zero IS the authoritative CI " \
@@ -295,7 +308,7 @@ module CiGate
       ["devops.pr_url is BLANK, so the review gate-zero has no PR to read a CI verdict from — and review has " \
        "nothing to merge. Submit-side this is silent on purpose (the gate re-runs after the push); a REVIEW that " \
        "cannot name its PR must not advance the task, which is why this refuses rather than passing quietly. " \
-       "Record it: `bin/task update #{slug} --pr-url <url>`.", false]
+       "Record it: `#{TASK_CMD} update #{slug} --pr-url <url>`.", false]
     else
       # THE POINT OF THE ALLOW-LIST. A state nobody has classified is not evidence of
       # health; it is evidence that this gate is out of date with ci_status.rb.

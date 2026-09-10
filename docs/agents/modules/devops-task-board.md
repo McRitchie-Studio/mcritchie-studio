@@ -604,8 +604,8 @@ record `pr_url` → `bin/dor-check` → `move submitted` → read-back verify):
 
 ```bash
 cd <desk>                            # the worktree begin printed
-<desk>/bin/ship <task-slug>          # message defaults to the task title
-<desk>/bin/ship <task-slug> -m "Commit message"
+<ship> <task-slug>                   # <ship> = the absolute path begin printed
+<ship> <task-slug> -m "Commit message"   # message defaults to the task title
 ```
 
 **Both halves of that are load-bearing, and `begin` now prints them for you.**
@@ -620,10 +620,10 @@ running every gate `chdir`'d there; it dies only when no desk resolves on disk.
 Stand in the desk anyway, for the two reasons that are NOT a refusal by ship: a
 re-root is a correction you have to notice and trust rather than the tree you
 chose, and the cert **writers** you run by hand afterwards — `bin/fast-check`,
-`bin/full-suite-check` — genuinely DO refuse a foreign root (`this run roots at
-… which is not <slug>'s tree — refusing to certify it`, which
-`bin/lib/cert_root_guard.rb` labels in source as *the cert writers' refusal
-text*). `bin/task begin` closes by printing the resolved `cd <desk> && <absolute
+`bin/full-suite-check` — refuse ANY foreign root outright (`this run roots at …
+which is not <slug>'s tree — refusing to certify it`). `bin/ship` dies with that
+same text when no desk resolves; it never refuses a root it can re-root from.
+`bin/task begin` closes by printing the resolved `cd <desk> && <absolute
 bin/ship> <task-slug>` line, ready to paste — a hub desk ships its own `bin/`, so
 there it names the desk's script; a satellite desk has none, so there it names
 the hub's.
@@ -1248,11 +1248,21 @@ heartbeat that followed used to take the desk and the authorship with it.
 version line of a gemspec. `bin/dor-check` refuses a PR that does, and the refusal
 names the remedy. This is not a style preference; it is arithmetic.
 
-**`CHANGELOG.md` is NOT gated** — deliberately, for now. The version is safe to
+**`CHANGELOG.md` is NOT gated** — deliberately. The version is safe to
 refuse because it has a working manual path: the release conductor commits it onto
-the gem's `accepted` during the sweep. Nothing yet assembles a changelog from a
+the gem's `accepted` during the sweep. Nothing assembles a changelog from a
 release's members, so refusing changelog edits would leave the file un-editable with
-no writer and no manual path. It becomes release-owned when its assembler ships.
+no writer and no manual path.
+
+**But the HEADING is release-owned, as of 2026-09-09.** Write your entries under
+`## Unreleased` and **never write a version heading yourself**. `bin/release
+prepare` renames that bucket to the version it allocates and opens a fresh empty
+one, in the same commit as the `version_file`
+(`Release::Changelog`, see `docs/agents/modules/deployment.md` step 2) — so a
+heading you write by hand either duplicates the one prepare is about to write or
+sits AHEAD of what has shipped, and the sweep refuses rather than publish over
+it. The entries are yours; the heading is the release's, for the same arithmetic
+reason the version is.
 
 A version is a property of the **release**, not of any PR. N pull requests riding
 one candidate publish exactly **one** version, so no individual PR can know the

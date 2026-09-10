@@ -410,7 +410,10 @@ class TaskBeginFlagGrammarTest < ActiveSupport::TestCase
                     "comment text must not survive the strip"
     assert_includes stripped, %q(lists["repositories"].first if lists.key?("repositories")),
                     "the real reader must survive the strip"
-    assert_includes stripped, %q(`bin/task update #{update_target} #{arg} ...`),
+    # The sample is bin/task's inert-create-flag hint. remedy-hints-second-wave routed it
+    # through SELF_CMD, so it now OPENS with an interpolation as well — a stricter sample
+    # of the same property, not a weaker one.
+    assert_includes stripped, %q(`#{SELF_CMD} update #{update_target} #{arg} ...`),
                     "an interpolation is a `#` the stripper must NOT treat as a comment"
     assert_includes stripped, %q("a resumed task is never re-shaped by begin: pass --title to CREATE one"),
                     "a string literal is not a comment and must survive"

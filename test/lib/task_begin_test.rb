@@ -242,10 +242,10 @@ class TaskBeginTest < Minitest::Test
   # the script named must be an absolute path to an existing executable, and the desk
   # named must be the task's worktree — the cwd is the other half of the instruction
   # (bin/ship roots at the cwd's git toplevel and RE-ROOTS at the desk loudly rather than
-  # refusing, dying only when no desk resolves; the cert WRITERS run by hand afterwards
-  # are the ones that refuse a foreign root). FastLane.handoff_command's own arms are
-  # unit-tested in test/lib/fast_lane_test.rb; THIS test is the wiring, and it is what
-  # reddens if the bare form is ever restored here.
+  # refusing, and dying with the root guard's refusal only when no desk resolves; the cert
+  # WRITERS run by hand afterwards refuse ANY foreign root). FastLane.handoff_command's
+  # own arms are unit-tested in test/lib/fast_lane_test.rb; THIS test is the wiring, and
+  # it is what reddens if the bare form is ever restored here.
   def test_begin_prints_a_handoff_that_resolves_from_the_desk
     _requests, out, err, status, = run_begin([SLUG], existing: building_task)
 
@@ -437,7 +437,16 @@ class TaskBeginTest < Minitest::Test
     _requests, _out, err, status, = run_begin([])
 
     refute status.success?
-    assert_includes err, "usage: bin/task begin"
+    # THE BANNER ECHOES THE INVOCATION. remedy-hints-second-wave gave every usage banner
+    # `$PROGRAM_NAME` — a banner is a synopsis of the grammar the reader JUST TYPED, not
+    # a command handed over — so this run, which reaches bin/task by its ABSOLUTE path,
+    # is told `usage: /…/bin/task begin`. Keyed on the script the banner names rather
+    # than on a bare spelling this harness can never produce.
+    banner = err[/usage: (\S+) begin/, 1]
+
+    refute_nil banner, "the no-title/no-slug door must still print its usage banner:\n#{err}"
+    assert_equal "task", File.basename(banner), "the banner must name THIS program:\n#{err}"
+    assert_equal BIN, banner, "the banner must echo the invocation it was reached by:\n#{err}"
   end
 
   def test_begin_preflight_failure_names_the_resume

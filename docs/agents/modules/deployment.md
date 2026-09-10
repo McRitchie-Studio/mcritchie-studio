@@ -266,7 +266,9 @@ How a gem rides a release:
    cycle): `bin/dor-check` **refuses** a diff that edits one, because N
    PRs riding one candidate publish exactly **one** version, so no single PR can
    know the answer. The **release** owns the number (step 2). Editing
-   `CHANGELOG.md` is *not* refused. Otherwise it is reviewed → `reviewed` like
+   `CHANGELOG.md` is *not* refused — a PR writes its entries under
+   `## Unreleased` as normal; only the **heading** is release-owned (step 2).
+   Otherwise it is reviewed → `reviewed` like
    any other task.
 2. **`bin/release prepare` allocates the version — you do not.** The bump is
    derived from the candidate's membership: any member risk-tagged `breaking` →
@@ -286,6 +288,108 @@ How a gem rides a release:
    stays armed behind it, so a skipped or wrong allocation still aborts loudly.
    When the derived bump is wrong — most often a `chore` that is genuinely
    breaking — the override is `bin/task update <task-slug> --gem-bump major`.
+
+   **That same commit rolls `CHANGELOG.md` — you do not.** `## Unreleased`
+   becomes `## <allocated version> — <date>` and the bucket stays in place,
+   empty, ready for the next cycle. `Release::Changelog`
+   (`app/models/release/changelog.rb`) owns the parse, the transform and the
+   guard; prepare writes the result into the same commit as the `version_file`
+   and the `Gemfile.lock`, so the changelog can never sit on a different SHA
+   from the version it names, and the write lands **before** the irreversible
+   `gem push`. **It writes no prose**: every bullet it moves was authored by a
+   builder and merged through review, and the only new text is the heading —
+   the version the release just allocated and the date it published. **It
+   copies the repo's own dialect** rather than imposing one (`## 0.40.0 —
+   <date>` in studio-engine, `## v0.6.0 (<date>)` in solana-studio), because a
+   second dialect in one file breaks that repo's own structure test and every
+   reader's regex. **An empty bucket still earns its heading**, which keeps one
+   invariant exact — the newest heading names the newest published version —
+   and makes a release that documented nothing visible rather than a silent gap
+   in the numbering.
+
+   **And it REFUSES rather than lie.** In the decide phase — nothing written,
+   nothing published — prepare aborts when the file already carries a
+   **backlog**: the newest heading more than `MAX_MINOR_DRIFT` (2) minors
+   behind the last published version *while the bucket holds entries*. Rolling
+   several releases of history under one new heading would be a bigger false
+   statement than the one it replaces. It also refuses a file it cannot read —
+   a missing or duplicated `## Unreleased`, a bucket that is not the first
+   heading, or any `## ` heading below it that parses as neither a version nor
+   the bucket. That last rule **is** the parse floor, and it is a *property*
+   rather than a count on purpose: a copied heading-count number
+   cannot fire in a smaller repo, so the guard would pass vacuously — the exact
+   failure a floor exists to prevent, reproduced by the act of reuse.
+
+   **Fenced code is content, not structure.** Every scanner in the module reads
+   `## ` at column 0, so a builder who quotes a heading inside a fenced
+   `markdown` block under `## Unreleased` used to cut the bucket short right
+   there. Measured against published 0.74.4: the guard returned **nil**, the
+   bucket read **5 of its 14 lines**, and the roll injected a blank line
+   *inside* the fence and filed everything below it under a version that had
+   already shipped — onto `origin/release`, in the commit that precedes the
+   irreversible `gem push`. It was blind exactly where it mattered, because the
+   drift guard fails closed only outside `MAX_MINOR_DRIFT`: a quoted 0.74.4,
+   0.74.2 or 0.72.0 all passed silently. The scan now skips fenced lines by
+   CommonMark's rules, so it agrees with what renders — backtick or tilde,
+   indented up to three spaces, closing only on the same character at least as
+   long as the opener. A **terminated** fence is ignored as content, because
+   that is the *correct* parse and refusing a well-formed file would charge a
+   held multi-repo sweep for the most ordinary act there is: documenting a
+   change with an example. An **unterminated** fence is **refused**, naming the
+   line it opened on, because there the parse is genuinely undecidable — a
+   renderer reads the rest of the file as code, so every `## ` below it is a
+   heading or not depending on how you read it.
+
+   **And it refuses a promote that would misfile.** The roll lands on
+   `release` only, so `accepted` keeps the un-rolled bucket until it absorbs
+   the `Release <version>` commit, and git merges a bullet added inside an
+   existing `###` subsection there CLEANLY under the heading the roll wrote — a
+   version that shipped without it, and no later roll moves it back. So before
+   `gh pr merge`, prepare predicts each gem's promote with `git merge-tree` and
+   refuses (NOTHING promoted in any repo) when a line either side added to
+   `## Unreleased` would land under a version that already has a `v*` tag, or
+   when the promote would CONFLICT in `CHANGELOG.md` (the same merge's other
+   outcome). The merge is then pinned to the `accepted` head it checked
+   (`--match-head-commit`). The fix, which the refusal prints: merge
+   `origin/release` into a branch off the gem's `accepted`, move every line the
+   merge filed under a shipped version back under `## Unreleased`, and push that
+   merge straight onto the gem's `accepted` — not a PR, which `bin/dor-check`
+   refuses because it carries the release's version bump — then re-run the
+   command that refused. It cannot see a misfile made BEFORE the promote: that
+   line arrives already inside a version section, where it looks exactly like
+   a legitimate post-release edit. Two merges put one there — a builder merging
+   `main` into a branch, and the review merge itself. Once `accepted` absorbs a
+   roll (`advance_accepted`'s fast-forward at ship, or the fix above), a gem PR
+   cut before it that adds a line inside an existing `###` subsection merges
+   CLEAN under the rolled heading, while its diff still shows the line under
+   `## Unreleased`. Check those merges by hand, per the *Check every merge that
+   crosses a roll* rule in studio-engine's `docs/RELEASE.md`.
+
+   **Two gaps, named rather than papered over.** (1) A gem tracking no
+   `CHANGELOG.md` is not refused — the registry declares no `changelog` key, so
+   its absence breaks no stated contract; prepare says so and moves on. (2) The
+   roll runs only on the **allocate** path. `Release::GemVersion` skips
+   allocation whenever the version file is **already ahead of the newest `v*`
+   tag**. A **hand-set version** — the emergency bump onto `accepted` that
+   `publish_gem`'s abort message names — reaches that skip with its entries
+   still under `## Unreleased`: roll it by hand in the same COMMIT that sets the
+   version, since `bin/dor-check` refuses a PR that edits it. A version the
+   sweep allocated reaches the skip already rolled (a re-run after an abort
+   between its `Release <version>` commit and its tag), because the roll rode
+   that commit. The skip is not the state between sweeps: prepare publishes and
+   tags in the same run — studio-engine `0.74.8` on `v0.74.8` at
+   `origin/release`, 2026-09-10. The 2026-09-09 reading of `0.74.7` against
+   `v0.74.6` fell inside one sweep, between its version commit and its tag.
+
+   **History.** Before 2026-09-09 prepare published and tagged without ever
+   touching `CHANGELOG.md`, and nothing failed when it didn't. Measured at
+   `origin/release` that day: studio-engine `VERSION` 0.74.4 against a newest
+   heading of 0.39.0 — **35 minor versions, 2,382 lines** of shipped history
+   still filed as pending — and solana-studio 0.9.1 against `## v0.5.0`, **4
+   minor versions**: the same shape at a smaller scale, from the same shared
+   publisher. turf-vault is the control that proves the cause — registered
+   under `apps`, never published to RubyGems, its version bumped by a human who
+   rolls the block in the same PR — and it carries **no drift at all**.
 3. **Prepare preflights EVERY swept gem, then publishes — before the gate and
    QA.** `bin/release prepare` adds the gem to the release record without
    merging a branch for it (it has none here), then runs the two-phase

@@ -104,7 +104,8 @@ promotes `accepted → release` plus QA, and Steffon's `production-deploy` ships
   only he can supply.
 - **Source-control auth is NOT one of those — it is SELF-SERVICE.** A stale
   `gh`/`git` credential is yours to fix, in one command, and then keep going:
-  `eval "$(bin/gh-auth-refresh --export)"`. Installation tokens expire about
+  `eval "$(/Users/alex/projects/mcritchie-studio/bin/gh-auth-refresh --export)"` — the hub's copy, so it
+  resolves from any desk. Installation tokens expire about
   hourly BY DESIGN and every lane re-mints its own, so "I need you to run `gh
   auth login`" is both the terminal chore this rule forbids and a step that
   would not work (`gh` refuses to store a credential while `GH_TOKEN` is set).
@@ -185,7 +186,7 @@ operator-facing message (chat reply, handoff, task note, PR summary) carries
   himself, and cap the block at 68 columns so the confidence mark never
   truncates. It is the LAST thing in the message.
 
-  ```text
+  ```not-pasteable
   🚀 In Flight: 2:14 PM MDT
   ──────────────────────────────────────────────────────────────────
   carl · review fix-cta-timing  ▰▰▰▰▱▱▱▱▱▱  4m in · ~6m left   rough
@@ -280,12 +281,68 @@ Two wrappers collapse the cycle's bookends into one command each. Reach for
 them first; the long form below is the fallback.
 
 ```bash
-cd /Users/alex/projects/mcritchie-studio
-bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> --agent <soul> \
+/Users/alex/projects/mcritchie-studio/bin/task begin --title "Three To Five Words" --agent <soul> \
+  --repo <app> --kind <kind> \
   --shape <shape> --risk <tags> --accept "criterion" --test "[unit] ..."
-#   ... build in the worktree it prints ...
-bin/ship <task-slug> -m "Commit message"
+
+cd <desk>   #   ... the worktree begin printed; build there ...
+
+/Users/alex/projects/mcritchie-studio/bin/ship <task-slug> -m "Commit message"
 ```
+
+**Name the hub's script; stand in the desk.** Every fast-lane command —
+`bin/task`, `bin/ship`, `bin/ship-wait`, `bin/fast-check`, `bin/full-suite-check`,
+`bin/dor-check` — lives ONLY in `/Users/alex/projects/mcritchie-studio/bin`. A
+**satellite** desk (the table below names all five) carries none of them, so the bare
+`bin/ship` dies there as `nohup: bin/ship: No such file or directory` — instantly,
+and looking like a broken install rather than a wrong path. Only a **hub** desk
+has them, which is the whole reason the bare form reads as correct.
+
+The absolute path alone is NOT the remedy, because the path and the cwd answer
+different questions: **the path picks the SCRIPT, the cwd picks the TREE it acts
+on.** Both halves are load-bearing, so state both — and know that the fast lane's
+two writers disagree about what a wrong cwd costs you:
+
+- **The cert writers REFUSE.** `bin/fast-check` and `bin/full-suite-check` root at
+  the cwd's git toplevel and take `CertRootGuard#refusal`
+  (`bin/lib/cert_root_guard.rb`), so from the hub against a satellite task they
+  exit 1 — measured: *"this run roots at /Users/alex/projects/mcritchie-studio
+  (branch main), which is not <slug>'s tree — refusing to certify it."*
+- **`bin/ship` RE-ROOTS — loudly, not silently.** It reads the same assessment but
+  wants `:resolved_root` rather than the refusal, so when the task's desk is on
+  disk it prints `re-rooting at the task worktree <desk> (you ran from <cwd>)` and
+  carries on THERE. It dies only when no desk resolves — absent from disk, or a
+  multi-repo tie. Every gate it then runs re-verifies the root from its own cwd, so
+  a wrong re-root cannot survive to a recorded verdict. Do not read the cert
+  writers' refusal as ship's behaviour: ship's own comment says it "re-roots rather
+  than refuses when the task's worktree exists on disk — loudly."
+
+| Desk | Fast lane from that desk |
+|------|--------------------------|
+| `mcritchie-studio` | Hub-absolute **or** bare `bin/…` — a hub desk checks the scripts out, so both resolve |
+| `turf-monster` · `rolio` · `mcritchie-industries` · `tax-studio` · `chain-ops` | **Hub-absolute only.** The desk has no fast-lane scripts; only the cwd is the desk's |
+| `studio-engine` · `solana-studio` · `turf-vault` | **No `begin`, no `ship`.** `bin/task begin` answers `unknown app` (measured 2026-09-09) — create with `bin/task create`, make the desk with a plain `git worktree add`, and run the handoff steps by hand. The two GEMS still get a cert; see below |
+
+Row 2 is the REGISTRY, not the machine: it names every satellite in
+`config/satellites.yml`, including `tax-studio`, which has no checkout yet. It is
+listed because the rule is about where the scripts live, and it will hold the day
+the repo lands.
+
+**Row 3 is a missing WORKTREE lane; only turf-vault also lacks a cert lane — and the
+difference matters, because a builder who reads "no lane" hand-rolls a cert that
+already exists, or records a skip for a suite that does.** `bin/task begin` cannot
+desk any of the three, so none of them gets `begin` or `ship`. But
+`bin/fast-check` carries a purpose-built gem branch (`FullSuiteGate.gem_repo?` +
+`FullSuiteGate.release_check_cmd`): from a plain `git worktree add` desk, hub-absolute
+`bin/fast-check <task>` runs the gem's REGISTERED gate as the whole mapped lane —
+`bin/release-check` for **studio-engine** and for **solana-studio** (registered
+2026-08-31), both declared in `config/release_repos.yml` under `gems:`. **turf-vault**
+HAS real tests — a CI workflow, `anchor test` in `Anchor.toml`, and `yarn test:scripts`
+— but no DECLARED lane in `config/release_repos.yml`, so the hub's cert writers cannot
+run them. `bin/fast-check` refuses it on BEHAVIOUR, not by name: its test-prepare lane
+finds no `bin/rails` to launch and exits 1 (`prepare_res.unlaunchable?`), pointing at
+`/tasks/turf-vault-needs-ci`, which owns declaring one. That is a registry gap, not an
+absence of tests — do not record a skip for a repo that has a suite.
 
 **Pass `--agent <soul>` — it is what makes review able to exclude you.** It stamps
 the task's AUTHOR SET (`devops.built_by` + `devops.builders`) — what
@@ -363,8 +420,9 @@ all because it makes no claim.
 
 `bin/task begin` runs steps 1-3 (create → `agent-worktree new` → `bind-task` →
 `move building` → `session-preflight`) and prints the worktree path, port, and
-task URL. `bin/ship`, run from that worktree, runs steps 5-6 (commit →
-`bin/fast-check` → push → **non-draft** PR into `accepted` led by the task URL →
+task URL. `bin/ship` — the HUB's script, run with that worktree as the cwd —
+runs steps 5-6 (commit → `bin/fast-check` → push → **non-draft** PR into
+`accepted` led by the task URL →
 record `pr_url` → **wait for CI to settle** → `bin/dor-check` → `move submitted`
 → read-back verify).
 Re-running either after a failure **resumes** — each skips the steps already
@@ -389,8 +447,9 @@ what some agent harnesses allow one foreground command, so **run it in the
 background — and wait for it with `bin/ship-wait`**:
 
 ```bash
-bin/ship-wait <task-slug> --launch -m "Commit message"   # start the ship, then block
-bin/ship-wait <task-slug>                                # attach to one already running
+cd <desk>   #   ... the worktree begin printed; ship-wait roots the ship at the cwd ...
+/Users/alex/projects/mcritchie-studio/bin/ship-wait <task-slug> --launch -m "Commit message"
+/Users/alex/projects/mcritchie-studio/bin/ship-wait <task-slug>   # attach to one already running
 ```
 
 It exits **0 succeeded · 1 failed · 2 still running at the timeout**, returns
@@ -455,7 +514,10 @@ Before editing a single file:
    changed test still bite?*
 2. **Allocate an isolated worktree** (`bin/agent-worktree new <app> <task>`) on
    an allocated port. Do not edit on a primary checkout.
-3. **Run `bin/session-preflight <task>`** from the worktree before editing. Fix
+3. **Run `/Users/alex/projects/mcritchie-studio/bin/session-preflight <task> --root <desk>`** before editing —
+   the hub's script, pointed at the task's desk. Bare, it inspects the checkout it
+   lives in (`DEFAULT_ROOT`), never your desk; `bin/task begin` passes `--root` for
+   exactly this reason. Fix
    branch drift, latest blocker feedback, generated-doc drift, stale terminology,
    or PR overlap it reports before spending implementation time.
 
@@ -473,7 +535,8 @@ Before handoff:
    (`mcritchie-studio/docs/agents/modules/gates/g1-cert.md`): commit, then run
    `bin/fast-check <task>` (the builder default — diff-mapped tests + core
    spine + rubocop on changed files, ~1 min) or `bin/full-suite-check <task>`
-   (CI-independent).
+   (CI-independent). These are hub scripts too: from a satellite desk name
+   them `/Users/alex/projects/mcritchie-studio/bin/…`, still standing in the desk.
 6. Push, open a PR **into `accepted`** (base `accepted`, not `release`/`main`)
    whose body **leads with the task URL**, then verdict: run **`bin/dor-check
    <task>`** and fix whatever it flags — it refuses an under-tested PR and its
@@ -583,7 +646,8 @@ The default launch flow is:
    the worktree with `bin/agent-worktree bind-task <app> <worktree-slug> <task-slug-or-url>`
    so `whereami`, terminal context, snapshots, and PR bodies can lead from the
    task record.
-6. Run `bin/session-preflight <task-slug>` from the worktree before editing; it
+6. Run `/Users/alex/projects/mcritchie-studio/bin/session-preflight <task-slug> --root <desk>` before editing
+   (the `--root` points it at the desk, not at the hub it lives in); it
    surfaces latest task feedback, release-branch drift, PR state, same-file PR
    overlap, generated-doc drift, stale terminology, and required test tiers.
 7. Use the managed port ranges: McRitchie Studio `3000-3099`, Turf Monster
@@ -617,7 +681,7 @@ and the feature. A good prompt is:
 
 ```text
 Work from /Users/alex/projects. Build this feature in <app>: <feature>.
-Use the fast lane: bin/task begin --title "Three To Five Words" --repo <app> --agent <soul>
+Use the fast lane: /Users/alex/projects/mcritchie-studio/bin/task begin --title "Three To Five Words" --repo <app> --agent <soul>
 --kind feature --shape (ui-only|ui+db|backend|library|onchain|onchain-vertical|docs|test-only)
 --risk <tags> --accept "<criterion>" --test "<tier>". It creates the task,
 allocates the isolated worktree on an allocated port, claims the task, and
@@ -625,12 +689,15 @@ preflights (pinning the worktree via --root). Read the preflight output and fix
 any blockers before implementation.
 Write the test tiers your shape requires as you go (unit-first); record them
 tier-tagged in devops["checks_run"]. Before PR handoff, mark local validation
-with `bin/task update <task> --local-url http://localhost:<port>/<path>
+with `/Users/alex/projects/mcritchie-studio/bin/task update <task> --local-url http://localhost:<port>/<path>
 --approval waiting`, return `Local Demo: http://localhost:<port>/<path>` in
 chat. The request rides through the handoff and keeps pulsing in review, so hand
-off rather than stalling on an answer. Update docs if behavior changes. Then hand off with bin/ship <task> -m "<commit message>" from the
-worktree — it commits, certifies, pushes, opens the non-draft PR into accepted
-led by the task URL, waits for the PR's CI to settle, runs bin/dor-check, and
+off rather than stalling on an answer. Update docs if behavior changes. Then hand
+off, WITH THE DESK AS CWD, using the hub's copy of the script —
+/Users/alex/projects/mcritchie-studio/bin/ship <task> -m "<commit message>" (a
+satellite desk carries no copy of it; only the cwd is the desk's) — it
+commits, certifies, pushes, opens the non-draft PR into accepted
+led by the task URL, waits for the PR's CI to settle, runs dor-check, and
 moves the task to submitted (review's gate-zero still holds the authoritative
 CI verdict). Fall back to
 the long-form commands if the task spans repos or needs a bespoke PR body.
@@ -720,6 +787,7 @@ Do not merge or deploy unless I explicitly assigned that lane.
 | Latest ecosystem audit | `mcritchie-studio/docs/agents/audits/broader-ecosystem-audit-2026-06-14.md` |
 | Delete later ledger | `mcritchie-studio/docs/agents/maintenance/delete-later.md` |
 | Parking lot (kept, not on the board) | `mcritchie-studio/docs/agents/maintenance/parking-lot.md` |
+| Dependency decisions (Dependabot backlog verdicts) | `mcritchie-studio/docs/agents/maintenance/dependency-decisions.md` |
 
 ## SOP Registry
 
@@ -811,7 +879,9 @@ worktree:
 cd /Users/alex/projects/mcritchie-studio
 bin/task begin --title "Three To Five Words" --repo turf-monster --agent <soul> --shape <shape>
 bin/agent-worktree up turf-monster task-slug     # only when you need a live stack
-bin/ship task-slug -m "Commit message"           # from the worktree, at handoff
+
+cd <desk>                                        # the worktree begin printed
+/Users/alex/projects/mcritchie-studio/bin/ship task-slug -m "Commit message"
 ```
 
 `bin/task begin` covers create + `new` + `bind-task` + `move building` +
@@ -819,13 +889,20 @@ bin/ship task-slug -m "Commit message"           # from the worktree, at handoff
 long form stays available for multi-repo work and piecemeal reruns:
 
 ```bash
+cd /Users/alex/projects/mcritchie-studio   # run these from the hub
 bin/agent-worktree plan turf-monster task-slug
 bin/agent-worktree new turf-monster task-slug
 bin/agent-worktree bind-task turf-monster task-slug task-abc123def456
-bin/session-preflight task-slug
+bin/session-preflight task-slug --root <desk>   # the worktree `new` printed
 bin/agent-worktree up turf-monster task-slug
 bin/agent-worktree finish turf-monster task-slug
 ```
+
+`--root` is not optional there. `bin/session-preflight` inspects the checkout it
+LIVES in unless told otherwise (`DEFAULT_ROOT` is the script's own repo), so the
+bare form run from the hub reports on the hub primary whichever task you name —
+never a task's desk — and its own self-defense then flags a WRONG checkout.
+`bin/task begin` passes `--root <worktree>` for exactly this reason.
 
 Return the printed `http://localhost:<port>` URL in the handoff.
 

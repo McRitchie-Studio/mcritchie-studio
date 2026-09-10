@@ -27,6 +27,7 @@ require_relative "lib/ci_status"
 require_relative "lib/code_diff"
 require_relative "lib/migration_collision"
 require_relative "lib/task_board"
+require_relative "lib/fast_lane"
 
 DEFAULT_ROOT = File.expand_path("..", __dir__)
 # HUB HELPERS RESOLVE FROM THE SCRIPT, NEVER FROM --root (task
@@ -41,6 +42,10 @@ DEFAULT_ROOT = File.expand_path("..", __dir__)
 # SAME config the merge gate enforces. The env overrides are the test seam,
 # exactly as in dor-check.
 TASK_BIN = ENV.fetch("SESSION_PREFLIGHT_TASK_BIN", File.expand_path("task", __dir__))
+# The credential fix the gh-auth blocker prescribes, absolute so it pastes from a
+# satellite or gem desk — this preflight is routinely invoked by absolute path from
+# one (`bin/task begin` passes --root). Policy: FastLane.remedy_command.
+GH_AUTH_REFRESH_CMD = FastLane.remedy_command("gh-auth-refresh", __dir__).freeze
 SHAPES_PATH = ENV.fetch("SESSION_PREFLIGHT_SHAPES_PATH", File.join(DEFAULT_ROOT, "config", "feature_shapes.yml"))
 TASK_API_BASE = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
 TASK_CONVERSATION_TYPES = %w[comment qa_feedback handoff clarification].freeze
@@ -158,13 +163,14 @@ def load_task(slug, options)
   if options[:file]
     normalize_task(JSON.parse(File.read(options[:file])))
   else
-    die!("usage: bin/session-preflight <task-slug>") if slug.to_s.strip.empty?
+    die!("usage: #{$PROGRAM_NAME} <task-slug>") if slug.to_s.strip.empty?
 
     # TASK_BIN, not File.join(options[:root], "bin", "task"): the board CLI is a
     # hub tool (cwd-independent — it roots itself at its own __dir__), and a
     # satellite --root has no copy of it.
     ok, out, err = capture(TASK_BIN, "show", slug, "--json", chdir: DEFAULT_ROOT)
-    die!("bin/task show failed: #{compact_lines([err, out].join("\n")).join("; ")}") unless ok
+    die!("could not read the task record (bin/task show): " \
+         "#{compact_lines([err, out].join("\n")).join("; ")}") unless ok
 
     normalize_task(JSON.parse(out))
   end
@@ -329,7 +335,7 @@ def gh_auth_report(root)
 end
 
 GH_AUTH_REMEDY = "this is YOURS to fix, NOT an escalation: run " \
-                 "eval \"$(bin/gh-auth-refresh --export)\" and READ ITS STDERR " \
+                 "eval \"$(#{GH_AUTH_REFRESH_CMD} --export)\" and READ ITS STDERR " \
                  "(eval hides the exit code), then re-run this preflight. " \
                  "Do NOT use `gh auth login`: gh refuses to store a credential while GH_TOKEN is " \
                  "set, and GH_TOKEN outranks the keyring it would write to. " \
@@ -609,7 +615,7 @@ def print_human(report)
 gh_auth = report["gh_auth"] || { "status" => "skipped", "message" => "not probed" }
 case gh_auth["status"]
 when "ok"    then puts "gh auth: ok (#{gh_auth["lane"]} lane)"
-when "stale" then puts "gh auth: STALE (#{gh_auth["lane"]} lane) -> eval \"$(bin/gh-auth-refresh --export)\""
+when "stale" then puts "gh auth: STALE (#{gh_auth["lane"]} lane) -> eval \"$(#{GH_AUTH_REFRESH_CMD} --export)\""
 else              puts "gh auth: skipped (#{gh_auth["message"]})"
 end
 
@@ -702,7 +708,7 @@ options = {
 }
 
 OptionParser.new do |opts|
-  opts.banner = "Usage: bin/session-preflight <task-slug> [options]"
+  opts.banner = "Usage: #{$PROGRAM_NAME} <task-slug> [options]"
   opts.on("--file PATH", "Read task JSON from a local file") { |path| options[:file] = path }
   opts.on("--root PATH", "Repo root to inspect (default: this repo)") { |path| options[:root] = File.expand_path(path) }
   opts.on("--stale-path PATH", "Additional stale-scan path, repeatable") { |path| options[:stale_paths] << path }

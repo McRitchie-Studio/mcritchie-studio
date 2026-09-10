@@ -63,10 +63,12 @@
 #          tree. Aborts loudly on a conflict or a push that did not take.
 #       4d. GEM MEMBERS (publish-gems-before-qa) — two phases, because a RubyGems
 #          push is irreversible: preflight EVERY swept gem (fail-closed fetch,
-#          version bumped, stranded-work guard, a swept consumer declares it;
-#          ANY failure aborts with ZERO gems published), THEN publish each to
-#          RubyGems + commit each consumer's lock bump onto origin/release —
-#          BEFORE the gate and QA (ship's publish stays the idempotent verify).
+#          version bumped, stranded-work guard, changelog rollable, a swept
+#          consumer declares it; ANY failure aborts with ZERO gems published),
+#          THEN publish each to RubyGems + commit each consumer's lock bump onto
+#          origin/release — BEFORE the gate and QA (ship's publish stays the
+#          idempotent verify). The version commit carries version_file +
+#          Gemfile.lock + the CHANGELOG rolled into the allocated version.
 #       5. PRE-QA GATE: run each app's registry `qa_test_cmd` (the integration +
 #          e2e-smoke tier) on origin/release BEFORE deploying; a regression aborts
 #          with eject guidance (`bin/release eject` the offender, keep the rest).
@@ -131,6 +133,7 @@
 
 require "json"
 require_relative "../app/models/release/gem_version"
+require_relative "../app/models/release/changelog"
 require "base64"
 require "open3"
 require "yaml"
@@ -1641,6 +1644,10 @@ def promote_accepted_to_release!(repos, label: nil)
   # this candidate and outranks a fact about the repo's plumbing, so the operator sees
   # the broken tree first when both are true.
   refuse_blind_accepted!(targets) unless DRY
+  # THIRD, and a different kind of fact: not whether `accepted` is green or visible, but
+  # whether merging it would file a new CHANGELOG entry under a version that already
+  # shipped. It returns the `accepted` head it read, and the merge below is pinned to it.
+  checked_heads = DRY ? {} : refuse_misfiled_changelog!(targets)
   targets.each do |repo|
     if DRY
       step("promote #{ACCEPTED_BRANCH} → #{RELEASE_BRANCH} in #{repo}: open/reuse ONE " \
@@ -1678,7 +1685,8 @@ def promote_accepted_to_release!(repos, label: nil)
     # automated conductor that is the correct posture: a `gh` that would have
     # stopped to ask now fails with a message we print, instead of hanging a
     # release on a prompt nobody is watching.
-    merge_out, ok = sh("gh", "pr", "merge", pr_url, "--merge", capture: true)
+    merge_out, ok = sh("gh", "pr", "merge", pr_url, "--merge",
+                       *(checked_heads[repo] ? ["--match-head-commit", checked_heads[repo]] : []), capture: true)
     # The echo of gh's words is decided AFTER the recovery, never before it. It
     # used to sit above this branch gated on `ok` — still false while the fallback
     # was deciding — so the interrupted-run path printed NOTHING, and that is the
@@ -1736,6 +1744,112 @@ def accepted_release_pr_url(repo, label: nil)
            ))
   end
   out.strip
+end
+
+# THE CHANGELOG MISFILE GUARD (/tasks/rolled-changelog-merge-misfiles) — a merge
+# across a roll, refused BEFORE the promote instead of discovered after it.
+#
+# The roll (roll_changelog!) lands on `release` only, in the `Release <version>`
+# commit. `accepted` keeps its un-rolled `## Unreleased` until something merges that
+# commit back, and builders keep writing into it. So the next promote merges an
+# un-rolled bucket into a rolled file, and git either merges a bullet added inside an
+# existing `###` subsection CLEANLY under the heading the roll wrote — a version that
+# shipped without it — or, for a new subsection at the top, CONFLICTS. Measured on
+# studio-engine's real file with the real roll, 2026-09-10. The first is silent and
+# permanent: the next roll moves only what sits under `## Unreleased`.
+#
+# WHY A PREDICTION, AND WHY HERE. The promote is `gh pr merge`: GitHub merges and
+# commits on its own server in one step, so there is no uncommitted merge for prepare
+# to inspect and no merge driver GitHub would ever run. `git merge-tree --write-tree`
+# computes the same merge locally and writes no branch, so this reads the
+# CHANGELOG.md the promote WOULD land, and refuses a line either side added to
+# `## Unreleased` that the merge files under a version already tagged (see
+# Release::Changelog.misfiled_entries). The merge is then pinned to the head read here
+# (`--match-head-commit`), so a commit reaching `accepted` in between makes gh refuse
+# instead of merging content nobody checked.
+#
+# EVERY TARGET FIRST, like refuse_red_accepted!: a refusal means NOTHING was promoted
+# anywhere. Only registered GEMS are read, because only a gem's CHANGELOG is rolled.
+# Returns { repo => the `accepted` SHA it checked }.
+def refuse_misfiled_changelog!(targets)
+  checked = {}
+  failures = []
+  targets.each do |repo|
+    next unless RELEASE_REPOS.dig("gems", repo)
+
+    path = repo_path(repo)
+    next unless Dir.exist?(path) # the promote loop aborts on a missing checkout itself
+
+    head, refusal = changelog_promote_refusal(path)
+    checked[repo] = head if head
+    failures << "gem #{repo}: #{refusal}" if refusal
+  end
+  return checked if failures.empty?
+
+  abort!("the CHANGELOG misfile guard REFUSED the promote — NOTHING was promoted, recorded or deployed:\n  - " +
+         failures.join("\n  - "))
+end
+
+# [the `accepted` SHA read, refusal-or-nil] for one gem checkout. FAILS CLOSED: a
+# promote this cannot predict is refused, because a guard that passes when it could
+# not look is the silent failure it exists to end.
+def changelog_promote_refusal(path)
+  # `--tags` is load-bearing: the tags ARE the published record this judges against.
+  _, fetched = sh("git", "-C", path, "fetch", "origin", RELEASE_BRANCH, ACCEPTED_BRANCH, "--tags", "--quiet",
+                  capture: true)
+  unless fetched
+    return [nil, "git fetch failed, so the guard cannot read what the promote would merge (fail closed) — fix " \
+                 "the remote, then re-run `bin/release prepare`; NOTHING was promoted"]
+  end
+
+  release, release_ok = git_capture("-C", path, "rev-parse", "--verify", "origin/#{RELEASE_BRANCH}^{commit}")
+  accepted, accepted_ok = git_capture("-C", path, "rev-parse", "--verify", "origin/#{ACCEPTED_BRANCH}^{commit}")
+  unless release_ok && accepted_ok
+    return [nil, "could not resolve origin/#{RELEASE_BRANCH} and origin/#{ACCEPTED_BRANCH} (fail closed) — " \
+                 "fetch, then re-run `bin/release prepare`; NOTHING was promoted"]
+  end
+  release = release.strip
+  accepted = accepted.strip
+
+  # Level (the promote loop skips it): there is no merge to predict.
+  _, level = git_capture("-C", path, "merge-base", "--is-ancestor", accepted, release)
+  return [accepted, nil] if level
+
+  out, clean = git_capture("-C", path, "merge-tree", "--write-tree", "--name-only", release, accepted)
+  tree, *rest = out.lines.map(&:chomp)
+  unless tree.to_s.match?(/\A\h{40,64}\z/)
+    return [nil, "git merge-tree could not predict the promote (#{out.strip.lines.first.to_s.strip}) — it needs " \
+                 "git 2.38 or newer; NOTHING was promoted (fail closed)"]
+  end
+
+  unless clean
+    # Any OTHER conflict is not this guard's business: `gh pr merge` refuses it and
+    # quotes GitHub. A CHANGELOG conflict is this defect's other outcome, so it is
+    # named here with the remedy that actually clears it.
+    conflicted = rest.take_while { |line| !line.strip.empty? }
+    return [accepted, nil] unless conflicted.include?(CHANGELOG_FILE)
+
+    return [accepted, "the promote would CONFLICT in #{CHANGELOG_FILE} — the other outcome of a merge across a " \
+                      "roll: `accepted` wrote beside a bucket `release` already rolled. " \
+                      "#{Release::Changelog::MISFILE_REMEDY}"]
+  end
+
+  merged, tracked = git_capture("-C", path, "show", "#{tree}:#{CHANGELOG_FILE}")
+  return [accepted, nil] unless tracked # no changelog, nothing to misfile
+
+  base_sha, based = git_capture("-C", path, "merge-base", release, accepted)
+  base = based ? changelog_text_at(path, base_sha.strip) : ""
+  tags, = git_capture("-C", path, "tag", "--list", "v*")
+  published = tags.lines.map { |tag| tag.strip.delete_prefix("v") }.reject(&:empty?)
+  sides = [changelog_text_at(path, release), changelog_text_at(path, accepted)]
+
+  [accepted, Release::Changelog.misfile_refusal(merged, base: base, sides: sides, published: published)]
+end
+
+# CHANGELOG.md at `rev`, or "" when that commit tracks none.
+def changelog_text_at(path, rev)
+  text, ok = git_capture("-C", path, "show", "#{rev}:#{CHANGELOG_FILE}")
+  ok ? text : ""
 end
 
 def merge
@@ -5052,12 +5166,14 @@ def allocate_gem_versions!(gem_groups)
 
   say("")
   step("gem version allocation (the RELEASE owns the version, not any PR): derive each swept gem's next version " \
-       "from its members, commit it WITH its Gemfile.lock onto origin/#{RELEASE_BRANCH} — before the publish")
+       "from its members, commit it WITH its Gemfile.lock and its rolled CHANGELOG.md onto " \
+       "origin/#{RELEASE_BRANCH} — before the publish")
 
   if DRY
     gem_groups.each do |group|
       step("  gem #{group['repo']}: last published (last v* tag ∪ RubyGems) + the members' bump → rewrite " \
-           "#{gem_meta_for(group['repo'])['version_file']} → `bundle lock` → ONE commit of both onto " \
+           "#{gem_meta_for(group['repo'])['version_file']} → roll CHANGELOG.md's '## Unreleased' into the " \
+           "allocated version → `bundle lock` → ONE commit of all three onto " \
            "origin/#{RELEASE_BRANCH} (skips when already advanced; REFUSES rather than guess)")
     end
     return
@@ -5135,10 +5251,12 @@ def gem_allocation_plan(group, failures)
     return
   end
 
+  live = rubygems_versions(repo)
+
   decision = Release::GemVersion.allocation(
     current: gem_version_from_ref(repo, tip),
     tag_version: tag&.delete_prefix("v"),
-    live_versions: rubygems_versions(repo),
+    live_versions: live,
     ahead_commits: ahead_out.lines.map(&:chomp).reject { |l| l.strip.empty? },
     members: gem_version_members(group)
   )
@@ -5154,7 +5272,46 @@ def gem_allocation_plan(group, failures)
     return nil
   end
 
+  # THE CHANGELOG GUARD, read HERE — in the decide phase, where nothing has been
+  # written and nothing published — and gated on `allocate?` because that is
+  # exactly where the roll below happens. A gem the sweep is not versioning is a
+  # gem this has no business holding up.
+  if (refusal = changelog_refusal(repo, tip, published_version(tag, live)))
+    failures << "gem #{repo}: #{refusal}"
+    return nil
+  end
+
   { "repo" => repo, "tip" => tip, "decision" => decision }
+end
+
+# The version this gem last actually RELEASED — the higher of the last v* tag and
+# the highest version live on RubyGems, the same pair Release::GemVersion derives
+# its floor from. nil when neither record has one (a first publish).
+def published_version(tag, live_versions)
+  Release::GemVersion.highest_version([tag&.delete_prefix("v"), *Release::GemVersion.live_numbers(live_versions)])
+end
+
+# CHANGELOG.md at origin/release, or nil when the repo tracks none.
+#
+# A gem with NO changelog is not refused. The registry declares no `changelog`
+# key, so its absence breaks no stated contract, and holding an irreversible
+# pipeline on an optional file it never promised is over-reach. All three
+# ecosystem repos ship one; this path is the theoretical case, and it says so out
+# loud rather than passing in silence.
+def changelog_at(repo, tip)
+  text, ok = git_capture("-C", repo_path(repo), "show", "#{tip}:CHANGELOG.md")
+  ok ? text : nil
+end
+
+# nil when the gem is safe to roll; the refusal sentence otherwise.
+def changelog_refusal(repo, tip, published)
+  text = changelog_at(repo, tip)
+  unless text
+    say("  gem #{repo}: no CHANGELOG.md at origin/#{RELEASE_BRANCH} — nothing to roll")
+    return nil
+  end
+
+  Release::Changelog.refusal(text, published_version: published)
 end
 
 # The member descriptors Release::GemVersion derives the bump from. The repo plan
@@ -5167,8 +5324,13 @@ def gem_version_members(group)
   end
 end
 
-# PHASE 0b — THE WRITE. version_file + Gemfile.lock in ONE commit, pushed onto
-# origin/release by ref, fast-forward-checked. Built in the gem's ship workspace
+# PHASE 0b — THE WRITE. version_file + Gemfile.lock + the rolled CHANGELOG.md in
+# ONE commit, pushed onto origin/release by ref, fast-forward-checked. The
+# changelog joined this commit on 2026-09-09 (/tasks/release-prepare-skips-changelog);
+# before that prepare published and tagged without ever touching the file, so
+# every release since studio-engine 0.39.0 left its entries filed under
+# '## Unreleased' — thirty-five minor versions of shipped history by 0.74.4, and
+# four in solana-studio. Built in the gem's ship workspace
 # pinned at the release tip — the same never-touch-the-primary mechanics as the
 # consumer lock bump below, which matters more than usual for a gem, because the
 # artifact `gem build` packages is read from that primary checkout.
@@ -5193,9 +5355,13 @@ def commit_gem_version!(repo, tip, decision, failures)
     end
     File.write(ws_version, rewritten)
 
+    rolled = roll_changelog!(repo, workspace, version, failures)
+    next if rolled == :failed
+
     next unless relock_gem_workspace!(repo, workspace, version, failures)
 
-    sh("git", "-C", workspace, "add", "--", *[version_file, lock_tracked?(workspace) ? "Gemfile.lock" : nil].compact)
+    staged = [version_file, lock_tracked?(workspace) ? "Gemfile.lock" : nil, rolled ? CHANGELOG_FILE : nil].compact
+    sh("git", "-C", workspace, "add", "--", *staged)
     _, committed = sh("git", "-C", workspace, "commit", "-m", "Release #{version}", capture: true)
     unless committed
       failures << "gem #{repo}: could not commit #{version} in the ship workspace"
@@ -5214,6 +5380,51 @@ def commit_gem_version!(repo, tip, decision, failures)
     step("  gem #{repo}: allocated #{version} — #{decision.reason}; committed with its lockfile onto " \
          "origin/#{RELEASE_BRANCH}")
   end
+end
+
+CHANGELOG_FILE = "CHANGELOG.md"
+
+# THE ROLL — the step that was missing, and the whole point of this change.
+#
+# `## Unreleased` becomes `## <version> — <date>` with the bucket left in place,
+# empty, ready for the next cycle. It rides the SAME commit as version_file and
+# Gemfile.lock, which is deliberate on two counts: the changelog can never end up
+# on a different SHA from the version it names, and the write lands in phase 0b —
+# a reversible git commit onto origin/release — BEFORE the irreversible `gem
+# push` in phase 2. The published artifact and its v* tag therefore both carry a
+# changelog that already names the release.
+#
+# It writes no prose. Every bullet it moves was authored by a builder and merged
+# through review; the only new text is the heading, which is the version this
+# release just allocated and the date it published. `Release::Changelog` holds
+# the parsing, the dialect and the transform, where tests can hold them.
+#
+# Returns true when CHANGELOG.md was rewritten (stage it), false when there is
+# nothing to roll, and :failed when the file is there but the roll could not be
+# made — which should be unreachable, because gem_allocation_plan already refused
+# every unrollable shape in the decide phase. If the two ever disagree, that is a
+# defect in this pair and it fails LOUDLY here rather than publishing a gem whose
+# changelog quietly stayed behind.
+def roll_changelog!(repo, workspace, version, failures)
+  path = File.join(workspace, CHANGELOG_FILE)
+  return false unless File.exist?(path)
+
+  text   = File.read(path)
+  date   = Time.now.strftime("%Y-%m-%d")
+  rolled = Release::Changelog.roll(text, version: version, date: date)
+  if rolled.nil?
+    failures << "gem #{repo}: CHANGELOG.md could not be rolled into #{version} even though the changelog guard " \
+                "passed — the guard and the roll disagree about this file, which is a defect in bin/release, not " \
+                "in the repo. Nothing was committed"
+    return :failed
+  end
+
+  File.write(path, rolled)
+  heading = Release::Changelog.heading_for(version, date, Release::Changelog.dialect(text))
+  entries = Release::Changelog.unreleased_entries(text).size
+  step("  gem #{repo}: rolled '## Unreleased' into '#{heading}' " \
+       "(#{entries.zero? ? 'no entries — the heading records the release' : "#{entries} line(s)"})")
+  true
 end
 
 # TRAP, and the reason the lock is not optional: studio-engine bundles ITSELF as
