@@ -2,6 +2,7 @@
 
 require "time"
 require_relative "claim_lease"
+require_relative "../bin/lib/fast_lane"
 
 # ClaimHolder — WHO holds this task, in WHAT ROLE, and HOW FRESH is their lease.
 #
@@ -140,6 +141,19 @@ module ClaimHolder
   # Roles on which `--steal` is the correct next move. Positive allowlist, same
   # reason as OBSERVED_FREE: an unknown must never inherit the steal route.
   STEALABLE = [BUILDING].freeze
+
+  # THE ABSOLUTE `bin/task` THIS REFUSAL NAMES. `steal_command` and `retry_command`
+  # arrive from the caller, but the review-claim lines are composed HERE — and they
+  # were bare, so the highest-traffic refusal in the house handed a builder on a
+  # turf-monster, rolio, or gem desk a `bin/task review-claim …` their checkout
+  # cannot resolve, inside the one message whose whole point is "do not guess, ASK
+  # THE BOARD". bin/task lives in mcritchie-studio/bin alone.
+  #
+  # DEFAULTED, NOT REQUIRED. A required kwarg would still let a future caller pass a
+  # bare string; a default that is always absolute means the bare form cannot come
+  # back through this door at all. Callers that resolved their own may pass it.
+  # Policy: FastLane.remedy_command.
+  TASK_COMMAND = FastLane.remedy_command("task", File.expand_path("../bin", __dir__)).freeze
 
   module_function
 
@@ -389,13 +403,13 @@ module ClaimHolder
   #   reviewer         the reviewing soul's slug, when the board named one
   #   reviewer_session the reviewing session id, when the board named one
   def refusal(slug:, claim:, role:, steal_command:, retry_command:,
-              reviewer: nil, reviewer_session: nil, now: Time.now)
+              reviewer: nil, reviewer_session: nil, now: Time.now, task_command: TASK_COMMAND)
     lines = ["task #{slug} is claimed by a DIFFERENT live instance, and that holder is #{headline(role)}."]
     lines << "     build claim: session #{short_session((claim || {})["claimed_session"])}" \
              "  instance #{(claim || {})["claim_nonce"]}  ·  #{render_lease(claim, now: now)}" \
              "#{heartbeat_clause(claim, now: now)}"
     lines << "     review:      #{review_line(role, slug, claim, reviewer, reviewer_session)}"
-    lines.concat(remedy(role, slug, steal_command, retry_command))
+    lines.concat(remedy(role, slug, steal_command, retry_command, task_command))
     lines
   end
 
@@ -449,7 +463,7 @@ module ClaimHolder
   # THE NEXT MOVE, and the argument for it. The stakes paragraph is repeated in the
   # two non-stealable branches rather than stated once and referenced, because the
   # reader this protects is one who reads the remedy line and stops.
-  def remedy(role, slug, steal_command, retry_command)
+  def remedy(role, slug, steal_command, retry_command, task_command = TASK_COMMAND)
     case role
     when BUILDING
       ["     Ship must not hand off another builder's work — take the task over first:",
@@ -461,16 +475,16 @@ module ClaimHolder
        "     conclusions are discarded silently, and the task can then be reviewed by its",
        "     own author. That is not recoverable by re-running anything.",
        "     ASK THE HOLDER TO RELEASE IT instead (they run it, from their session):",
-       "       bin/task review-claim release #{slug}",
+       "       #{task_command} review-claim release #{slug}",
        "     Not sure the review is still alive? This OBSERVES the lease, it does not guess:",
-       "       bin/task review-claim status #{slug}",
+       "       #{task_command} review-claim status #{slug}",
        "     Once it is released, re-run: #{retry_command}"]
     else
       ["     DO NOT STEAL UNTIL YOU KNOW. A reviewer's claim is indistinguishable from a",
        "     builder's here, and stealing one voids the no-self-review guarantee for that",
        "     review and strands its verdict. Ask the board — it OBSERVES the lease:",
-       "       bin/task review-claim status #{slug}",
-       "     A live review  → ask them to release: bin/task review-claim release #{slug}",
+       "       #{task_command} review-claim status #{slug}",
+       "     A live review  → ask them to release: #{task_command} review-claim release #{slug}",
        "     No live review → #{steal_command}",
        "     then re-run: #{retry_command}"]
     end
@@ -482,13 +496,13 @@ module ClaimHolder
   # must be able to proceed. What it must never do is proceed SILENTLY: this is the
   # same posture bin/task's archive gate takes with `--force`, which names the proof
   # it is waiving so the next reader of the log can see which one was skipped.
-  def steal_override_warning(slug, reviewer: nil, reviewer_session: nil)
+  def steal_override_warning(slug, reviewer: nil, reviewer_session: nil, task_command: TASK_COMMAND)
     who = [reviewer.to_s.strip.empty? ? nil : reviewer,
            reviewer_session.to_s.strip.empty? ? nil : "session #{short_session(reviewer_session)}"].compact
     who = ["an unnamed reviewer"] if who.empty?
     ["⚠  --steal: #{slug} is UNDER LIVE REVIEW by #{who.join(" · ")} and you are taking it anyway.",
      "   This VOIDS THE NO-SELF-REVIEW GUARANTEE for that review and STRANDS its verdict:",
      "   the reviewer's gate conclusions are discarded, and this task can now be reviewed",
-     "   by its own author. Tell them — bin/task review-claim release #{slug} is the clean path."]
+     "   by its own author. Tell them — #{task_command} review-claim release #{slug} is the clean path."]
   end
 end

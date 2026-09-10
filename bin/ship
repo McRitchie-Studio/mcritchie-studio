@@ -100,6 +100,28 @@ ROOT = File.expand_path("..", __dir__)
 TASK_BIN = ENV.fetch("SHIP_TASK_BIN", File.expand_path("task", __dir__))
 FAST_CHECK_BIN = ENV.fetch("SHIP_FAST_CHECK_BIN", File.expand_path("fast-check", __dir__))
 DOR_CHECK_BIN = ENV.fetch("SHIP_DOR_CHECK_BIN", File.expand_path("dor-check", __dir__))
+
+# ── remedy forms of the fast-lane scripts ship NAMES in a refusal ─────────────
+# Absolute and resolvable, so a builder standing on a turf-monster, rolio, or gem
+# desk can paste them: bin/ship, bin/task, bin/fast-check, bin/full-suite-check
+# and bin/dor-check all live in mcritchie-studio/bin ALONE, so the bare form ship
+# used to print resolved only from a hub desk and died as `No such file or
+# directory` everywhere else. Resolved from THIS script's own __dir__ — the very
+# ship that is speaking, and its siblings beside it — which is why it can never be
+# mis-pointed; see FastLane.remedy_command for the full policy.
+#
+# DELIBERATELY NOT the *_BIN seams above. Those are the EXECUTION path and are
+# ENV-overridable so tests can point them at stubs; a remedy names the real script
+# the READER is being sent to, and must stay true when the seam is redirected.
+SHIP_CMD = FastLane.remedy_command("ship", __dir__)
+TASK_CMD = FastLane.remedy_command("task", __dir__)
+FAST_CHECK_CMD = FastLane.remedy_command("fast-check", __dir__)
+FULL_SUITE_CMD = FastLane.remedy_command("full-suite-check", __dir__)
+DOR_CHECK_CMD = FastLane.remedy_command("dor-check", __dir__)
+# The token refresh is the one remedy here that is ALREADY self-service house-wide
+# (AGENTS.md prints it bare), but it is a hub-only script like the rest, so the
+# reader on a satellite desk needs the same absolute form.
+GH_AUTH_REFRESH_CMD = FastLane.remedy_command("gh-auth-refresh", __dir__)
 GH_BIN = ENV.fetch("SHIP_GH_BIN", "gh")
 # A minted App installation token, populated only if a gh write refuses on
 # credentials (see gh_capture). Held for THIS run so one mint covers the rest of it.
@@ -186,7 +208,7 @@ end
 # wrapper. Asked before any side effect.
 unless %w[building submitted].include?(stage)
   die!("#{slug} is [#{stage}] — ship hands off a BUILD (building → submitted). " \
-       "Claim it first: bin/task begin #{slug} (or bin/task move #{slug} building), then re-run bin/ship #{slug}.")
+       "Claim it first: #{TASK_CMD} begin #{slug} (or #{TASK_CMD} move #{slug} building), then re-run #{SHIP_CMD} #{slug}.")
 end
 
 # WHETHER A REVIEW LEASE IS HELD ON THIS TASK, and by whom — the second of the two
@@ -253,8 +275,8 @@ unless mover_session.nil?
                             review_claim_live: reviewer["live"])
     warn "ship: " + ClaimHolder.refusal(
       slug: slug, claim: claim, role: role,
-      steal_command: "bin/task begin #{slug} --steal",
-      retry_command: "bin/ship #{slug}",
+      steal_command: "#{TASK_CMD} begin #{slug} --steal",
+      retry_command: "#{SHIP_CMD} #{slug}",
       reviewer: reviewer["agent"], reviewer_session: reviewer["session"]
     ).join("\n")
     exit 1
@@ -395,7 +417,7 @@ else
     # one laundered under a guessed soul is not.
     say "1/8 commit — WARNING: this task names no builder (devops.built_by is blank), so the " \
         "commit carries the checkout's own git identity, not a soul. Attribute future commits " \
-        "with: bin/task move #{slug} building --actor <soul>"
+        "with: #{TASK_CMD} move #{slug} building --actor <soul>"
   end
 end
 
@@ -444,8 +466,8 @@ else
     # reader to hunt a failing lane is the same misdirection the cert keeps stamping out.
     die!("bin/fast-check did NOT certify — read its output above. A RED lane means fix the " \
          "failure. A REFUSAL means this diff cannot be fast-certified at all (it names the " \
-         "command that covers it — usually bin/full-suite-check #{slug}). Either way, re-run " \
-         "bin/ship #{slug} afterwards; it resumes here.")
+         "command that covers it — usually #{FULL_SUITE_CMD} #{slug}). Either way, re-run " \
+         "#{SHIP_CMD} #{slug} afterwards; it resumes here.")
   end
 end
 
@@ -471,10 +493,10 @@ unless pushed
     unless leased
       die!("push refused by --force-with-lease: origin/#{branch} moved under you — someone else pushed a commit " \
            "your branch does not have. This is NOT a rebase, and ship never force-pushes over foreign work. " \
-           "Reconcile first (git fetch origin #{branch}; git rebase origin/#{branch}), then re-run bin/ship #{slug}.\n#{out}")
+           "Reconcile first (git fetch origin #{branch}; git rebase origin/#{branch}), then re-run #{SHIP_CMD} #{slug}.\n#{out}")
     end
   else
-    die!("git push failed — resolve it and re-run bin/ship #{slug}.\n#{out}")
+    die!("git push failed — resolve it and re-run #{SHIP_CMD} #{slug}.\n#{out}")
   end
 end
 
@@ -730,13 +752,13 @@ if CiWait.enabled?(ENV)
   # the operator must be able to tell "CI said no" from "we stopped asking" from
   # "we never got through" — three different facts with three different remedies.
   if wait.timed_out?
-    say "6/8 ci — the DoR verdict below decides; re-run bin/ship #{slug} once CI reports."
+    say "6/8 ci — the DoR verdict below decides; re-run #{SHIP_CMD} #{slug} once CI reports."
   elsif wait.unread?
     # A failed READ, not an absent run — so the remedy is the credential/network, not
     # the repo. Named separately because "re-run once CI reports" is useless advice
     # when the problem is that nobody could ask.
     say "6/8 ci — the DoR verdict below decides; if it cannot read CI either, refresh the " \
-        "token (eval \"$(bin/gh-auth-refresh --export)\") and re-run bin/ship #{slug}."
+        "token (eval \"$(#{GH_AUTH_REFRESH_CMD} --export)\") and re-run #{SHIP_CMD} #{slug}."
   elsif wait.token_refused?
     # THE INVERSION this branch closes (review of ship-waiter-misreports-ci): the
     # advisory above fires on :unverified — a gh/network fault, which a re-run may
@@ -745,7 +767,7 @@ if CiWait.enabled?(ENV)
     # waiting because no amount of waiting mends a credential, and settling quietly
     # is exactly how a blind read gets mistaken for a verdict.
     say "6/8 ci — that read was REFUSED (401/403), which is the TOKEN and not a CI verdict: " \
-        "refresh it (eval \"$(bin/gh-auth-refresh --export)\") and re-run bin/ship #{slug} " \
+        "refresh it (eval \"$(#{GH_AUTH_REFRESH_CMD} --export)\") and re-run #{SHIP_CMD} #{slug} " \
         "if the DoR verdict below is blind too."
   end
 else
@@ -763,11 +785,11 @@ unless system(DOR_CHECK_BIN, slug, chdir: root)
     # say "continuing" needs to read this as the gate doing its job, not as a new fault.
     die!("bin/dor-check refused — and this diff's cert was DEFERRED to CI at step 2, so a GREEN CI is " \
          "the ONLY thing that can satisfy the suite gate for it. Read what it flagged above: a RED CI " \
-         "means fix the failure and push; NO CI / a CI still running means re-run bin/ship #{slug} once " \
-         "it reports; an edit since the deferral means re-run bin/fast-check #{slug} first (the receipt is " \
-         "tree-bound). To settle it locally instead: bin/full-suite-check #{slug}.")
+         "means fix the failure and push; NO CI / a CI still running means re-run #{SHIP_CMD} #{slug} once " \
+         "it reports; an edit since the deferral means re-run #{FAST_CHECK_CMD} #{slug} first (the receipt is " \
+         "tree-bound). To settle it locally instead: #{FULL_SUITE_CMD} #{slug}.")
   end
-  die!("bin/dor-check refused — fix everything it flagged, then re-run bin/ship #{slug} (it resumes here).")
+  die!("bin/dor-check refused — fix everything it flagged, then re-run #{SHIP_CMD} #{slug} (it resumes here).")
 end
 
 # --- 8/8 submit + read-back verify -------------------------------------------
@@ -780,7 +802,7 @@ if stage == "submitted"
   say "8/8 submit — task already [submitted]; verifying."
 else
   say "8/8 submit — bin/task move #{slug} submitted"
-  die!("the move to submitted failed — see above; re-run bin/ship #{slug}.") unless system(TASK_BIN, "move", slug, "submitted")
+  die!("the move to submitted failed — see above; re-run #{SHIP_CMD} #{slug}.") unless system(TASK_BIN, "move", slug, "submitted")
 end
 
 final = fetch_task!(slug)
@@ -788,7 +810,7 @@ final_stage = final["stage"].to_s
 final_pr = final.dig("metadata", "devops", "pr_url").to_s
 unless final_stage == "submitted"
   die!("read-back verify FAILED: the board shows [#{final_stage}], not [submitted]. Do not hand off; " \
-       "re-run bin/ship #{slug} (if it recurs the board write is failing server-side — check ErrorLog).")
+       "re-run #{SHIP_CMD} #{slug} (if it recurs the board write is failing server-side — check ErrorLog).")
 end
 # Pin the EXACT URL this run recorded — never accept any non-empty value. A
 # stale/foreign pr_url left on the board (with the --pr-url write silently
@@ -797,7 +819,7 @@ end
 unless final_pr == pr_url
   die!("read-back verify FAILED: the board holds pr_url #{final_pr.empty? ? "(blank)" : final_pr} — " \
        "not the PR this run recorded (#{pr_url}). The --pr-url write did not land, or a stale/foreign " \
-       "URL sits on the task. Do not hand off; re-run bin/ship #{slug} " \
+       "URL sits on the task. Do not hand off; re-run #{SHIP_CMD} #{slug} " \
        "(if it recurs the board write is failing server-side — check ErrorLog).")
 end
 

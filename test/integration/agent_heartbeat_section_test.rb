@@ -70,7 +70,41 @@ class AgentHeartbeatSectionTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='action'][data-action='share-insights'][data-clip='share-insights']"
     assert_select "[data-test='action'][data-action='full-cycle'][data-clip='full-cycle']"
     assert_match "Grade 10 recent events for quality", response.body
-    assert_match "Share confirmed insights into the docs", response.body
+
+    # SCOPED to the share-insights row, not a bare body match: the caption is what
+    # the operator reads next to the phrase they are about to copy, so assert it
+    # where it is rendered. "banked", not "confirmed" —
+    # Insights::DocGenerator publishes ActionGrade.banked with NO grader filter, and
+    # a `grader: "mcr"` row is McRitchie's audit OF an Alex grade, which the agent
+    # API cannot even write. The old wording told Alex to publish a subset that does
+    # not exist and stood the act down over a full bank
+    # (/tasks/sop-precondition-blocks-sharing, corrected in the docs by PR 1321).
+    assert_select "[data-test='action'][data-action='share-insights'] span",
+                  text: "Share the banked insights into the docs", count: 1
+  end
+
+  # DRIFT GUARD, at the surface the operator actually reads. The docs sweep in
+  # test/docs/share_insights_precondition_docs_test.rb bans this claim across
+  # docs/agents/**; this heartbeat card renders from app/, which that sweep cannot
+  # see — which is why the caption outlived the six-doc correction. Both halves are
+  # now covered.
+  test "the rendered heartbeat card never sells the share act as confirmed-only" do
+    get agent_path("alex")
+    assert_response :success
+
+    card = css_select("[data-test='agent-heartbeat-section'][data-agent='alex']").to_s
+    assert card.present?, "no Alex heartbeat card rendered — this guard would pass vacuously"
+    assert_includes card, "share-insights",
+                     "the Alex card no longer renders the share-insights act, so this guard reads "\
+                     "the wrong markup and its silence means nothing"
+
+    refute_match(/confirmed/i, card,
+                 "the heartbeat card tells the operator the share act publishes a CONFIRMED "\
+                 "subset. It does not: Insights::DocGenerator publishes ActionGrade.banked with "\
+                 "no grader filter, the agent API always grades as `alex`, and the `mcr` row is "\
+                 "an audit OF that grade (writable with no token at all — see "\
+                 "test/integration/heartbeat_grade_auth_test.rb). This wording once stood the SOP "\
+                 "down over a full bank (/tasks/sop-precondition-blocks-sharing).")
   end
 
   test "Steffon's heartbeat soul renders the ship + sweep acts" do

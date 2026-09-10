@@ -494,7 +494,7 @@ def enforce_claim_gate!(slug, devops, mover_session, steal:, task: nil, steal_hi
   reviewer = review_holder(slug)
   role = ClaimHolder.role(review_in_progress: (task || {})["review_in_progress"],
                           review_claim_live: reviewer["live"])
-  takeover = steal_hint || "bin/task move #{slug} building --steal"
+  takeover = steal_hint || "#{ClaimHolder::TASK_COMMAND} move #{slug} building --steal"
 
   # --steal STAYS AVAILABLE — it is the correct remedy for the builder case it was
   # written for, and an operator who has already asked the reviewer must be able to
@@ -2374,7 +2374,7 @@ def begin_step!(label, slug, *cmd, chdir: nil)
   opts = chdir ? { chdir: chdir } : {}
   return if system(*cmd, **opts)
 
-  die!("#{label} failed — fix what it printed above, then re-run: bin/task begin #{slug}   (it resumes).")
+  die!("#{label} failed — fix what it printed above, then re-run: #{ClaimHolder::TASK_COMMAND} begin #{slug}   (it resumes).")
 end
 
 cmd = ARGV.shift || "help"
@@ -2685,7 +2685,7 @@ when "begin"
       raw_argv, also_valid: %w[--title], update_target: slug,
       because: "#{slug} already exists",
       hint_lead: "begin RESUMES an existing task and never re-shapes it",
-      tail: ", then resume with `bin/task begin #{slug}`"
+      tail: ", then resume with `#{ClaimHolder::TASK_COMMAND} begin #{slug}`"
     )
     warn!("begin 1/5 task — #{slug} already exists [#{task["stage"]}]; resuming")
   end
@@ -2710,7 +2710,7 @@ when "begin"
   mover_session = session_identity.first
   if stage == "building" && !mover_session.nil?
     enforce_claim_gate!(slug, dv, mover_session, steal: steal, task: task,
-                        steal_hint: "bin/task begin #{slug} --steal")
+                        steal_hint: "#{ClaimHolder::TASK_COMMAND} begin #{slug} --steal")
   end
 
   # Open the session's ORIENT activity now — after the claim gate admits this

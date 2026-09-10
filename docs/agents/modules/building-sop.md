@@ -294,21 +294,21 @@ never hunts through prose (full recipe:
 
 ```text
 Task: https://mcritchie.studio/tasks/<slug>
-Magic Link: http://localhost:<port>/l/<token>
+Magic Link: http://localhost:<port>/_studio/local_review?return_to=/<path>
 Local Demo: http://localhost:<port>/<path>
 ```
 
-Mint the `Magic Link:` yourself so it lands on the page under review:
+Hand over the stack's own MINT URL, never a token you minted in a console: a
+console mint binds the SHARED development database, not the desk's, and the
+desk server 302s him to `/login` holding a link that is alive nowhere he can
+reach it.
 
 ```bash
-bin/rails runner 'l = Studio::Link.create_magic_link(email: "alex@mcritchie.studio",
-  return_to: "/<path>", ttl: 12.hours); puts "http://localhost:#{ENV.fetch("PORT")}/l/#{l.token}"'
+http://localhost:<port>/_studio/local_review?return_to=/<path>
 ```
 
-**Never click the link you are about to hand over.** This one is a fixed
-single-use token — consuming it to "check that it works" burns it, and Mr.
-McRitchie receives a dead link. `bin/verify-review-hop` is the check, and it is
-safe precisely because the CTA mints a fresh token per click.
+That URL is REUSABLE — each click mints a fresh single-use token — so checking
+it never burns it, and `bin/verify-review-hop` is safe for the same reason.
 
 For email/auth flows, also return `Local Inbox:
 http://localhost:<port>/_studio/local_emails` (worktree stacks default to
@@ -367,13 +367,31 @@ bin/ship <slug> -m "<commit message>"
   longer than some agent harnesses allow a single foreground command to run, and a
   harness that kills the call mid-wait leaves the task in `building` with the PR
   already open — invisible to the review sweep, which only pops `submitted`. So
-  **run it in the background** (or with the longest foreground timeout you have),
-  and if it is cut short, **re-run it** — ship resumes, skips the cert on the
-  unchanged tree, and finishes in seconds once CI has settled.
-  Send its output to a **namespaced** path — `scratchpad/ship-<task-slug>.log`,
-  never the bare `ship.log`. Sibling agents share one scratchpad directory, and
-  on 2026-09-01 two ships on that exact path truncated each other; the agent
-  reading the mixed stream killed his own run. See
+  **run it in the background, and wait for it with `bin/ship-wait`** — the
+  sentence ends with the command, because every builder who was left to invent
+  the wait invented the same broken one:
+
+  ```bash
+  bin/ship-wait <task-slug> --launch -m "Commit message"   # start the ship, then block
+  bin/ship-wait <task-slug>                                # attach to one already running
+  ```
+
+  `bin/ship-wait` exits **0 succeeded · 1 failed · 2 still running at the
+  timeout · 3 usage · 4 nothing to watch**, so the caller branches without
+  re-reading the log. It returns IMMEDIATELY when the ship has already finished,
+  and it takes its verdict from the ship's LOG, never from a process or an exit
+  code — `bin/ship` can exit 0 on a run that never reached the seam.
+  **Do not hand-roll `while pgrep -f "bin/ship <slug>"`.** That pattern also
+  matches every SIBLING watcher shell carrying it, so once two exist neither can
+  ever exit and the wait fires never (measured 2026-09-09: 30+ orphaned shells
+  from one builder). If the wait is cut short, re-run it; if the SHIP is cut
+  short, **re-run `bin/ship`** — it resumes, skips the cert on the unchanged
+  tree, and finishes in seconds once CI has settled.
+  With `--launch` the log path is chosen for you and namespaced by slug. Redirect
+  by hand and it is on you: use `scratchpad/ship-<task-slug>.log`, never the bare
+  `ship.log`. Sibling agents share one scratchpad directory, and on 2026-09-01
+  two ships on that exact path truncated each other; the agent reading the mixed
+  stream killed his own run. See
   [`worktrees.md`](worktrees.md#the-desk-writer-convention).
 - Review's gate-zero still holds the **authoritative** CI verdict — `pr-review`
   bounces a red-CI task back with the failing checks named before any reviewer

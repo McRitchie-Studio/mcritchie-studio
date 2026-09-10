@@ -10,6 +10,18 @@
 # onto origin/release. `bin/release ship` ("Run Deployment") re-verifies each
 # gem idempotently (already-live → skip) before the app deploys.
 #
+# A GEM IS A CONSUMER TOO, and the two halves of this file do not say so on
+# their own. studio-engine is registered below as a `gem` (it publishes) while
+# its Gemfile declares solana-studio (it consumes). The consumer bump above
+# walks `app` members ONLY, so it never reached the engine, and every publish
+# left the engine's lock trailing until its own CI reddened every open PR.
+# bump_producer_locks_for_accepted handles that half — keyed off THIS REGISTRY'S
+# gems list rather than the candidate's members, and committing onto `accepted`
+# rather than `release`. Do NOT "fix" it by moving a gem into the apps half:
+# validate_gems_for_qa treats a non-empty apps list as its no-consumer QUORUM,
+# so a producer sitting there would let a gem publish with nothing deployable
+# ever QA'ing it.
+#
 # Read by:
 #   * Release::Repos (app/models/release/repos.rb) — kind/gem?/app?/gem_meta
 #   * Release::Conductor.member_plan — tags each release member gem vs app

@@ -559,9 +559,11 @@ class AgentActivityCli
 
   # `grade <activity-id> --disposition good|not [--slug …] [--long-form …] [--bank|--discard]`
   # — the bearer AGENT grade of a resolved activity (the CLI half of the Alex heartbeat
-  # grade-events loop; the browser drawer is admin-only). The activity id is the LEADING
-  # positional. The server FORCES the grader to alex (the mcr audit stays admin-only),
-  # so no --grader flag exists. Reports what landed, but ALWAYS exits 0.
+  # grade-events loop; the browser drawer is the other half). The activity id is the
+  # LEADING positional. This endpoint FORCES the grader to alex, so no --grader flag
+  # exists — that is PROVENANCE, not an authenticated boundary: the heartbeat drawer
+  # skips authentication (build-first, 2026-07-03), so an `mcr` audit row is writable
+  # anonymously. Reports what landed, but ALWAYS exits 0.
   def grade_activity(argv, flags)
     first = argv.first.to_s.strip
     activity_id = first.start_with?("--") ? "" : first

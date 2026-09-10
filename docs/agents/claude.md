@@ -133,9 +133,24 @@ old provisional path. Disarm with `SHIP_CI_WAIT=off`.
 
 **Budget for it: a cold `bin/ship` now runs ~12 minutes**, not ~3. That exceeds
 what some agent harnesses allow one foreground command, so **run it in the
-background**; if it is cut short, re-run it (ship resumes and finishes in seconds
-once CI has settled). A killed ship leaves the task in `building` with its PR
-already open, which the review sweep does not pop.
+background — and wait for it with `bin/ship-wait`**:
+
+```bash
+bin/ship-wait <task-slug> --launch -m "Commit message"   # start the ship, then block
+bin/ship-wait <task-slug>                                # attach to one already running
+```
+
+It exits **0 succeeded · 1 failed · 2 still running at the timeout**, returns
+IMMEDIATELY when the ship has already finished, and takes its verdict from the
+ship's LOG — `bin/ship` can exit 0 on a run that never reached the seam, so
+"the process is gone" is never an outcome. **Do not hand-roll a `pgrep`
+watcher.** A pattern naming the ship also matches every sibling watcher shell
+that names it, so the condition is true forever and the wait can never fire
+(measured 2026-09-09: 30+ orphaned shells from one builder, and a session spent
+hand-polling). If a wait is cut short, re-run it; if the SHIP is cut short,
+re-run `bin/ship` (it resumes and finishes in seconds once CI has settled). A
+killed ship leaves the task in `building` with its PR already open, which the
+review sweep does not pop.
 
 **Those minutes are now visible.** The task sits in `building` with its PR open
 while ship waits, and the board card shows that PR's CI meter there — `PR: <n>`,

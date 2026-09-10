@@ -621,7 +621,15 @@ class ShipTest < Minitest::Test
       # "2/8 cert — running bin/fast-check" line would otherwise satisfy this even if
       # ship had died downstream.
       assert_includes err, "bin/fast-check did NOT certify"
-      assert_includes err, "re-run bin/ship #{SLUG}", "the failure must name the resume"
+      # KEYED ON THE DISK, not on the substring. The remedy is now an ABSOLUTE
+      # bin/ship (remedy-hints-print-bare-paths) so a builder on a satellite or gem
+      # desk can paste it, and `assert_includes err, "re-run bin/ship <slug>"` was
+      # blind to the difference in the OTHER direction: an absolute path CONTAINS
+      # "bin/ship <slug>", so the same assertion passed the bare form it was meant
+      # to reject. Ask the filesystem instead.
+      resume = err[%r{re-run (\S*/bin/ship) #{SLUG}}, 1]
+      refute_nil resume, "the failure must name the resume:\n#{err}"
+      assert File.executable?(resume), "the resume must name a runnable script, got #{resume.inspect}"
       assert_equal ["TASK show", "FAST #{SLUG}"], markers(lines), "nothing may run past the red cert"
       _remote = `git -C #{dir} rev-parse origin/#{BRANCH} 2>/dev/null`.strip
       refute $?.success?, "the branch must NOT be pushed on a red cert"
