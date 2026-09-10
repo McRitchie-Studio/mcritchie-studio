@@ -47,6 +47,8 @@
 # Also picked up by the normal `bin/rails test` sweep.
 
 require "minitest/autorun"
+require "pathname"
+require "tmpdir"
 require_relative "../../lib/cert_evidence"
 require_relative "../../bin/lib/full_suite_gate"
 
@@ -100,7 +102,7 @@ class CertLabelVocabularyTest < Minitest::Test
       sources = (Dir.glob(File.join(ROOT, "bin/*")) +
                  Dir.glob(File.join(ROOT, "bin/lib/*.rb")) +
                  Dir.glob(File.join(ROOT, "lib/*.rb"))).select { |f| File.file?(f) }
-      sources.flat_map { |f| File.read(f).scan(HONORED_RE).flatten }.uniq
+      sources.flat_map { |f| read_swept(f).to_s.scan(HONORED_RE).flatten }.uniq
     end
   end
 
@@ -126,9 +128,44 @@ class CertLabelVocabularyTest < Minitest::Test
 
   def each_swept_line
     swept_files.each do |rel|
-      File.readlines(File.join(ROOT, rel)).each_with_index do |line, i|
+      text = read_swept(File.join(ROOT, rel))
+      next if text.nil?
+
+      text.each_line.with_index do |line, i|
         yield rel, i + 1, line
       end
+    end
+  end
+
+  # Read one listed file, tolerating EXACTLY ONE failure: the file was listed by the glob
+  # and is gone by the time we open it (a test fixture's ensure, a parallel worker). Both
+  # read sites above go through here, because both had the race.
+  #
+  # A SKIP IS NEVER SILENT. The vanished file is recorded (vanished_files) and printed, and
+  # the floor test below fails if any of them is a TRACKED file: a tracked file vanishing
+  # mid-suite means the sweep did not read the tree, and a green here would certify air —
+  # the failure this file's floors already exist to stop. Only an untracked transient may
+  # be skipped. Every other error still raises.
+  def read_swept(path)
+    File.read(path)
+  rescue Errno::ENOENT
+    rel = path.delete_prefix("#{ROOT}/")
+    vanished_files << rel
+    warn "cert-label sweep: skipped #{rel} — listed by the glob, gone before the read"
+    nil
+  end
+
+  def vanished_files
+    @vanished_files ||= []
+  end
+
+  # Which of these paths git TRACKS. A vanished tracked file is not a transient.
+  # ONE QUERY PER PATH, deliberately: `git ls-files` aborts the WHOLE batch on a single
+  # path outside the repository and prints nothing, which would make this guard answer
+  # "none tracked" for every file in that batch — a guard that passes by reading nothing.
+  def tracked_among(paths)
+    paths.select do |rel|
+      !IO.popen(["git", "-C", ROOT, "ls-files", "--", rel], err: File::NULL, &:read).to_s.strip.empty?
     end
   end
 
@@ -174,6 +211,45 @@ class CertLabelVocabularyTest < Minitest::Test
 
   # --- the sweep actually happened -----------------------------------------------
 
+  # ── A FILE THAT VANISHES BETWEEN THE GLOB AND THE READ ──────────────────────
+  #
+  # THE RACE, from CI job 102764654211 (rails (4), 2399 runs, 1 ERROR):
+  #   Errno::ENOENT … bin/fast-check-crash-fixture  (cert_label_vocabulary_test.rb, readlines)
+  # test/lib/fast_check_test.rb used to write that fixture BESIDE the real bin/fast-check
+  # and delete it in an ensure. Under parallel workers this sweep's glob listed it and
+  # the read found it gone. It landed on whichever PR happened to be running, blocked the
+  # green-CI-only review pop, and sat red for ~5 hours on a PR it had nothing to do with.
+  #
+  # Reproduced here DETERMINISTICALLY, with the file created and deleted between the
+  # listing and the read — outside the repo, so this test is not a second copy of the
+  # hazard it pins. The path is expressed relative to ROOT, exactly as the glob yields it.
+  def test_a_file_that_vanishes_between_glob_and_read_does_not_crash_the_sweep
+    Dir.mktmpdir("cert-label-vanish") do |dir|
+      path = File.join(dir, "fast-check-crash-fixture")
+      File.write(path, "cert: crash-fixture\n")
+      rel = Pathname.new(path).relative_path_from(Pathname.new(ROOT)).to_s
+      @swept_files = [rel] # the glob listed it...
+      File.delete(path)    # ...and the fixture's ensure removed it before the read
+
+      lines = []
+      each_swept_line { |f, no, line| lines << [f, no, line] }
+
+      assert_empty lines, "a vanished file has no lines to sweep"
+      assert_includes vanished_files, rel,
+                      "and it is NAMED, not silently dropped — a scan that skipped a file without " \
+                      "saying so would read as a clean scan of a tree it never finished reading"
+    end
+  end
+
+  # The guard that keeps a skip honest must itself discriminate, or it is decoration: a
+  # tracked script is named, an untracked transient is not, and a transient in the same
+  # batch cannot blind the query for the tracked one.
+  def test_the_vanished_file_guard_tells_tracked_files_from_transients
+    assert_equal ["bin/fast-check"], tracked_among(["bin/fast-check"])
+    assert_empty tracked_among(["bin/fast-check-crash-fixture"])
+    assert_equal ["bin/fast-check"], tracked_among(["../outside-the-repo", "bin/fast-check"])
+  end
+
   def test_the_sweep_read_the_tree_rather_than_an_empty_glob
     assert_operator swept_files.size, :>=, FILE_FLOOR,
                     "the label sweep matched only #{swept_files.size} files — a glob has stopped " \
@@ -184,6 +260,12 @@ class CertLabelVocabularyTest < Minitest::Test
     assert_operator bare_labels.size, :>=, LABEL_FLOOR,
                     "only #{bare_labels.size} cert-family labels were swept (floor #{LABEL_FLOOR}); " \
                     "the label pattern or the derived vocabulary has stopped matching"
+    honored_hatches # the second read site, so its skips are counted here too
+    tracked = tracked_among(vanished_files)
+    assert_empty tracked,
+                 "TRACKED files vanished between the glob and the read: #{tracked.join(', ')}. The sweep " \
+                 "did not read the tree, so this green would prove nothing. Only untracked transients " \
+                 "may be skipped (read_swept)."
   end
 
   def test_the_vocabulary_is_derived_from_the_emitters_not_copied_here
