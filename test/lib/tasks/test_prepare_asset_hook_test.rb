@@ -36,8 +36,9 @@ require "minitest/mock"
 # a sentence can never catch it drifting, so each link is asserted here instead and the
 # comment points at this file.
 #
-# Measured on ubuntu-latest, each cell deleting app/assets/builds/tailwind.css first
-# (turf-monster run 34382943177):
+# Measured ON CI, each cell deleting app/assets/builds/tailwind.css first — turf-monster
+# run 34382943177, attempt 1 (ubuntu-latest, which resolved to the ubuntu-24.04 image).
+# The attempt is part of the citation: a re-run files a new attempt under the same id.
 #
 #   A. `bin/rails db:test:prepare`                    → stylesheet ABSENT
 #   B. `bin/rails db:test:prepare test`               → PRESENT at 7s
@@ -50,9 +51,11 @@ require "minitest/mock"
 #      which pins the line's shape.)
 #   2. Rake's `test` task carries NO prerequisites — the true half of the old claim, and
 #      the half that made a false conclusion look sound elsewhere.
-#   3. Its BODY is `Rails::TestUnit::Runner.run_from_rake`, i.e. `system("rails", "test",
-#      *argv)`: it SHELLS OUT to the argless `rails test` COMMAND. That is the link
-#      prose keeps skipping.
+#   3. Its BODY is `Rails::TestUnit::Runner.run_from_rake("test", Array(ENV["TEST"]))`
+#      (railties' testing.rake), and run_from_rake is `system("rails", test_command,
+#      *argv, *Shellwords.split(ENV["TESTOPTS"] || ""))` (its runner.rb); both lines read
+#      at railties 8.1.3.1. With TEST and TESTOPTS unset, it SHELLS OUT to the argless
+#      `rails test` COMMAND. That is the link prose keeps skipping.
 #   4. `Rails::Command::TestCommand#perform` calls `run_prepare_task` — and so invokes
 #      `test:prepare` — whenever nothing in `self.args` looks like a path or `-n`.
 #   5. tailwindcss-rails enhances `test:prepare` and NOT `db:test:prepare`, which is the
@@ -61,7 +64,9 @@ require "minitest/mock"
 # Cell C is the one that costs money. Both `ENV["TEST"]` and `ENV["TESTOPTS"]` reach the
 # spawned argv — from different layers — so adding a filter to a CI test line silences
 # the hook WITHOUT CHANGING A VISIBLE WORD of the command. That is why the explicit
-# `test:prepare` steps (bin/ci-shard, bin/fast-check's test-prepare lane) stay.
+# `test:prepare` steps (bin/ci-shard, bin/fast-check's test-prepare lane) stay. The
+# link tests below localise a break; the CELL C test composes them, so any one of the
+# three links failing reddens it too.
 #
 # WHAT THIS FILE DOES NOT COVER, stated rather than implied. It does not spawn
 # `bin/rails db:test:prepare test` and watch the file appear — that is a recursive
@@ -158,9 +163,25 @@ class TestPrepareAssetHookTest < ActiveSupport::TestCase
                    "run_from_rake no longer splices ENV[\"TESTOPTS\"] into the spawned argv, " \
                    "so a TESTOPTS= filter on a CI line no longer silences the tailwind hook."
     end
+  end
 
-    assert_empty prepare_tasks_invoked_by(["test/lib/tasks/test_prepare_asset_hook_test.rb"]),
-                 "the forwarded filter must land in the argv the prepare-task gate reads."
+  # CELL C, whole — the composition the link tests above only imply. It hands the argv the
+  # REAL rake `test` task spawns under each filter to the REAL prepare-task gate, so the
+  # statement "a filter silences the hook" is asserted in one place, not inferred from two
+  # literals happening to match. A break in ENV["TEST"] forwarding, in the TESTOPTS splice,
+  # or in the path/-n gate reddens this test AND the link test that names the cause.
+  test "[unit] a TEST= or TESTOPTS= filter on the rake test task never reaches test:prepare" do
+    { "TEST" => "test/lib/tasks/test_prepare_asset_hook_test.rb",
+      "TESTOPTS" => "-n /some_test/" }.each do |name, value|
+      spawned = with_env({ "TEST" => nil, "TESTOPTS" => nil }.merge(name => value)) do
+        spawn_from_rake_task("test")
+      end
+
+      assert_empty prepare_tasks_invoked_by(spawned.drop(2)),
+                   "with #{name}=#{value} rake's `test` task spawned #{spawned.inspect}, and that " \
+                   "argv still reaches run_prepare_task. A filter no longer silences the tailwind " \
+                   "hook, so cell C in bin/lib/ci_test_command.rb has gone stale."
+    end
   end
 
   # The tier the hub's `system` CI job runs, which the `test` task's story does NOT cover.
