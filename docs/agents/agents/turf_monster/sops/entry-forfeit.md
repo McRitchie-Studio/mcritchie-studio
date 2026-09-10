@@ -39,9 +39,13 @@ no signature, and no multisig:
 | It never enters the prize pool | `settle_contest.rs` header: *"Entry fees are NOT included anymore — they sit in op_rev ATAs, separate from the prize pool"* |
 | Payouts are a **fixed schedule per format**, not a share of fees | `Contest::FORMATS` in `turf-monster/app/models/contest.rb` |
 
-So: the fee is already operator revenue, and the other entrants' prizes do not
-move when one entrant leaves. Forfeiting costs the house nothing and the field
-nothing. **All you are doing is keeping the leaver out of the grading.**
+So: the fee is already operator revenue, and the prize schedule does not shrink
+when one entrant leaves. Forfeiting costs the house nothing and costs the field
+nothing — **nobody is made worse off.** It is not quite a no-op on the field,
+though: every rank below the leaver shifts up one at grading, so a payout can go
+**up**, and if the field falls below the lowest paid rank that rank goes
+unfilled (`Contest#grade!`). **All you are doing is keeping the leaver out of
+the grading.**
 
 ## What you cannot do
 
@@ -172,22 +176,34 @@ Confirm the row, the fill, and — because the two disagree by design — the
 on-chain counter:
 
 ```ruby
-e = Entry.find(<ENTRY_ID>); c = e.contest
+ENTRY_ID = 0                        # from step 1
+
+e = Entry.find(ENTRY_ID)
+c = e.contest
 puts "VERIFY entry=#{e.id} user=#{e.user.email} status=#{e.status} num=#{e.entry_number.inspect} rank=#{e.rank.inspect} payout=#{e.payout_cents} tx_intact=#{e.onchain_tx_signature.present?}"
 puts "VERIFY contest=#{c.slug} status=#{c.status} FILL=#{c.entries.where(status: %w[active complete]).count}/#{c.max_entries} by_status=#{c.entries.group(:status).count}"
-v = Solana::Vault.new; pda = v.contest_pda(c.slug); addr = pda.is_a?(Array) ? pda.first : pda
-b58 = Solana::Keypair.encode_base58(addr) rescue addr.to_s
-info = Solana::Client.new.get_account_info(b58)
-raw  = info.is_a?(Hash) ? (info["data"] || info.dig("value", "data")) : nil
-raw  = raw.first if raw.is_a?(Array)
-bytes = Base64.decode64(raw.to_s)
-puts "VERIFY onchain pda=#{b58} max=#{bytes[372, 4].unpack1('V')} current_entries=#{bytes[376, 4].unpack1('V')}"
+oc = Solana::Vault.new.read_contest(c.slug)
+puts oc ? "VERIFY onchain pda=#{oc[:pda]} max=#{oc[:max_entries]} current=#{oc[:current_entries]} status=#{oc[:status]} locks_at=#{oc[:locks_at] || 'NEVER — no lock scheduled'}" : "VERIFY onchain: no contest account (contest is not on-chain)"
 ```
 
-Byte offsets 372 and 376 are `max_entries` and `current_entries` in the Anchor
-`Contest` account (8 discriminator + 32 contest_id + 32 admin + 32 creator +
-4 season_id + 8 prize_pool + 128 entry_fee_by_currency + 128 entry_fees). If
-`state.rs` gains a field ahead of them, recompute rather than trusting these.
+**Use `Solana::Vault#read_contest`, never a hand-rolled byte slice.** It lives in
+`turf-monster/app/services/solana/vault.rb` and it is the maintained decoder:
+
+- It returns **`nil` cleanly** when the contest has no on-chain account. A
+  hand-rolled slice raises `NoMethodError` on the same input — and it would raise
+  *after* step 2 already flipped the row in production, which under this SOP's own
+  "stdout can vanish" regime is precisely the confusion the split exists to
+  prevent.
+- It Borsh-decodes **field by field**, so a new field landing ahead of
+  `max_entries` shifts nothing silently.
+
+Read three things out of it, not one:
+
+| Field | Why you need it |
+|-------|-----------------|
+| `current_entries` vs `max_entries` | The seat gap — the next section |
+| `status` | `Settled` here is the too-late gate, and the chain is not obliged to agree with the DB |
+| `locks_at` | `nil` means **no lock is scheduled**, which decides whether the seat gap ever closes |
 
 **Expect the two counters to disagree by exactly the entries you have
 forfeited.** That is not a bug you introduced; it is the next section.
@@ -213,7 +229,8 @@ The consequences, in order of who gets hurt:
 
 - **One replacement entrant too many will fail.** Their `enter_contest` is
   rejected by the `current_entries < max_entries` constraint with `ContestFull`.
-  The transaction fails atomically, so **no money is lost** — they see an error.
+  The transaction fails atomically, so **no entry fee is lost** — they see an
+  error, having burned only the transaction's base fee.
 - **Do not promise the seat.** If someone is waiting for a spot, count from the
   on-chain number in step 3, never from the board.
 - **The leaver cannot re-enter that slot.** `Entry#assign_onchain_entry_number!`
@@ -221,8 +238,18 @@ The consequences, in order of who gets hurt:
   slot still reads as taken, so a change of heart consumes a new slot against
   their per-user cap.
 
-The gap closes on its own at the contest's lock time, after which the chain
-refuses new entries regardless.
+**The gap closes on its own only if the contest actually locks — check, do not
+assume.** `enter_contest` enforces the lock **only inside `if lock_ts != 0`**
+(`turf-vault/programs/turf_vault/src/instructions/enter_contest.rs`). A contest
+carrying `lock_timestamp == 0` is never refused on time, so the gap survives
+until the contest settles. Rails mints that zero whenever no start can be
+resolved — `Contest#onchain_params` falls back to `starts_in_at&.to_i || 0` — and
+while the web create form refuses that case for a Turf Totals slate, the fallback
+is still reachable from other create paths.
+
+**Step 3 answers this in the same read.** A `locks_at` time means the gap expires
+then; `locks_at` printing `NEVER — no lock scheduled` means it never does, and
+you must keep counting from the on-chain number until the contest settles.
 
 ## Reversal
 
@@ -230,7 +257,9 @@ While the contest is unsettled, the flip is fully reversible — nothing on-chai
 was touched:
 
 ```ruby
-e = Entry.find(<ENTRY_ID>)
+ENTRY_ID = 0                        # the entry you forfeited
+
+e = Entry.find(ENTRY_ID)
 abort("ABORT: contest settled") if e.contest.settled?
 e.update!(status: :active)
 puts "REVERTED status=#{e.reload.status}"

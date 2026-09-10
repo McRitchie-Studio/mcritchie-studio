@@ -31,6 +31,12 @@ three ordered release actions, a themed glyph on the rest):
   decision is settled in
   [`turf_monster/HEARTBEAT.md`](../agents/turf_monster/HEARTBEAT.md).
 
+  `entry-forfeit` is deliberately NOT a chip either, for a third reason: it is an
+  on-demand incident SOP. It runs when an entrant asks to withdraw from a contest
+  and never otherwise, so there is no cadence for a chip to imply. Registered by
+  name, owned in the prose guard's `ACT_OWNER`, and settled in the same
+  [`turf_monster/HEARTBEAT.md`](../agents/turf_monster/HEARTBEAT.md).
+
   The **card's** own reason is separate, and it is the one worth stating because a
   test can hold it: at 21 characters the slug needs 114px, while a chip's text area
   at the card's 728px cap is 99px — so it clips, losing its last three characters.
@@ -68,7 +74,7 @@ cross-soul map.
 | **Avi** (`avi`) | `Avi Heartbeat` | `qa-release`, `deploy-with-task` (direct-invoke only) | `reviewed` work + `assembled` stragglers to sweep | the RC swept, **live on QA, members `assembled` on QA-green** |
 | **Steffon** (`steffon`) | `Steffon Heartbeat` | `production-deploy`, `clean-infra`, `archive-shipped` (registered, not a chip — production-deploy runs it) | a QA-green (`assembled`) release ready to ship / a machine carrying finished work | the ready release `shipped` (archived on the way out, or no-op); the machine swept |
 | **Alex** (`alex`) | `Alex Heartbeat` | `grade-events`, `share-insights`, `full-cycle` | activities to grade / a non-empty insight bank to share / a full pipeline to run | 10 graded + banked; the bank shared out; or the whole release `shipped` |
-| **Turf Monster** (`turf-monster`) | `Turf Monster Heartbeat` | `live-score-watch`, `contest-rehearsal`, `sleeper-auction-watch` (registered, not a chip — the slug clips the card) | a live NFL slot with the poller deployed, QA reachable on devnet, or a Sleeper auction about to start | the slot final or the window elapsed; the rehearsal contest settled and closed; or the draft board full |
+| **Turf Monster** (`turf-monster`) | `Turf Monster Heartbeat` | `live-score-watch`, `contest-rehearsal`, `sleeper-auction-watch` (registered, not a chip — the slug clips the card), `entry-forfeit` (registered, not a chip — on-demand incident SOP) | a live NFL slot with the poller deployed, QA reachable on devnet, or a Sleeper auction about to start | the slot final or the window elapsed; the rehearsal contest settled and closed; or the draft board full |
 
 > **Direct-drive the mutating acts.** `qa-release`, `production-deploy`, and
 > `archive-shipped` MUTATE shared state across many minutes, so the heartbeat

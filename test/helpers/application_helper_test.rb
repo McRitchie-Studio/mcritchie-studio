@@ -663,6 +663,14 @@ class ApplicationHelperTest < ActionView::TestCase
     # ACTION_DESCRIPTIONS caption, an ACTION_ICONS glyph, and the array above.
     assert_not_includes launchers.flat_map { |l| l[:actions] }, "sleeper-auction-watch"
 
+    # entry-forfeit is NOT a launcher act either, and for a third reason: it is an
+    # on-demand incident SOP. It runs when an entrant asks to withdraw from a
+    # contest and never otherwise, so there is no cadence for a chip to imply.
+    # Registered by name in the SOP registry, owned in the prose guard's ACT_OWNER,
+    # and settled in turf_monster/HEARTBEAT.md; absent HERE on purpose. Flip it to a
+    # chip and you also owe an ACTION_DESCRIPTIONS caption and an ACTION_ICONS glyph.
+    assert_not_includes launchers.flat_map { |l| l[:actions] }, "entry-forfeit"
+
     # Every act on the card carries a caption + an icon, or the row renders bare.
     launchers.flat_map { |l| l[:actions] }.each do |act|
       assert action_description(act).present?, "#{act} has no ACTION_DESCRIPTIONS caption"

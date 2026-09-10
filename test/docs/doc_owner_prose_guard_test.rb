@@ -70,6 +70,7 @@ class DocOwnerProseGuardTest < ActiveSupport::TestCase
     "live-score-watch" => "Turf Monster",  # re-homed 2026-08-26: the judgment it asks for is sports-domain
     "contest-rehearsal" => "Turf Monster",  # registered 2026-09-04 with the second act; the guard is the only thing that keeps a docs claim from drifting
     "sleeper-auction-watch" => "Turf Monster",  # registered 2026-09-09 with the third act. It is deliberately off the launcher card, so no card test can see a wrong-owner claim about it; this row is the whole mechanism
+    "entry-forfeit" => "Turf Monster",  # registered 2026-09-09 with the fourth act. Off the launcher card too (on-demand incident SOP, no cadence to imply), so as with the auction watch this row is the ONLY thing that can catch a wrong-soul claim about it
     "pre-QA gate" => "Avi",
     "production-deploy" => "Steffon",
     "archive-shipped" => "Steffon",
