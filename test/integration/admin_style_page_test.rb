@@ -145,9 +145,23 @@ class AdminStylePageTest < ActionDispatch::IntegrationTest
     assert_select "h3", { text: "Eligibility & entry", count: 0 },
       "the pre-0.27.0 Eligibility & entry heading must not resurface"
 
-    # The walked on-chain entry flow specimen is present and openable.
-    assert_includes @response.body, "$store.dsModals.open('onchain-tx'",
-      "expected the wallet section's on-chain transaction flow specimen"
+    # A specimen from the wallet section is present and openable.
+    #
+    # THIS USED TO PIN `dsModals.open('onchain-tx'` TOO, AND THAT WAS A DEADLOCK
+    # of exactly the shape the heading note above describes, one level over.
+    # studio-engine retired style/modals/_onchain_tx on 2026-09-09: it was a
+    # MIRROR of turf-monster's card, and turf now cards its real partial on its
+    # own host section, so the engine keeps no second copy to drift. Pinning a
+    # specimen the producer is deleting makes THIS suite the thing that blocks
+    # the producer's release — consumer-ci runs it against the engine BRANCH,
+    # while this repo's own CI runs it against the RESOLVED GEM, so no single
+    # spelling of an onchain-tx assertion is green on both sides during the
+    # window between the engine change and its release.
+    #
+    # `entry-confirmed` is the durable replacement and needs no fallback: it is
+    # ENGINE-OWNED (studio/modals/blocks/_entry_confirmed), it lives in the SAME
+    # modals-web3 section, and it is present in every engine this repo supports.
+    # Pin engine-owned specimens here, never a mirror of a consumer's card.
     assert_includes @response.body, "$store.dsModals.open('entry-confirmed'",
       "expected the Contest-entry confirmation flow specimen"
   end
