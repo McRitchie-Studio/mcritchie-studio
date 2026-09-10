@@ -34,7 +34,8 @@ require "test_helper"
 #     which repos can run the fast lane. The registry that decides it lives in THIS repo
 #     (config/satellites.yml), so the table is checked against it on every run, CI
 #     included: register a satellite, or retire one, and the table reddens until it
-#     catches up.
+#     catches up. BOTH directions, and only since 2026-09-09 — see the completeness
+#     assertion inside that test for what the subset checks alone could not see.
 #   * test_no_satellite_checkout_carries_a_fast_lane_script — the same fact read off
 #     disk. If a satellite ever grows a `bin/ship` shim (option (b) in the PR body),
 #     this goes red and the table must be revisited rather than silently going stale.
@@ -43,14 +44,28 @@ require "test_helper"
 #
 # WHY "DESK-RUN" IS THE SCOPE AND NOT "EVERY FAST-LANE COMMAND". The path is only half
 # the instruction; the cwd is the other half, and they answer different questions — the
-# path picks the SCRIPT, the cwd picks the TREE it acts on. bin/fast-check roots its cert
-# at the cwd's git toplevel and CertRootGuard REFUSES when that is not the task's tree,
-# so `cd <hub> && bin/ship <satellite-slug>` fails in the OPPOSITE direction (measured:
-# "this run roots at …/mcritchie-studio (branch main), which is not <slug>'s tree —
-# refusing to certify it"). That is why a `cd <hub>` earlier in the block does NOT excuse
-# a bare form for these four: for a desk-run command, standing in the hub is itself the
-# bug. The HUB-RUN commands (`bin/task begin`, `bin/agent-worktree`) are correctly
-# reachable after a `cd <hub>` and are deliberately left out.
+# path picks the SCRIPT, the cwd picks the TREE it acts on. THE TWO WRITERS DIFFER ON
+# WHAT A WRONG CWD COSTS, and conflating them is a real defect this file shipped once:
+#
+#   * THE CERT WRITERS REFUSE. bin/fast-check and bin/full-suite-check root at the cwd's
+#     git toplevel and take CertRootGuard#refusal — the only two callers of it — so from
+#     the hub against a satellite task they exit 1: "this run roots at
+#     …/mcritchie-studio (branch main), which is not <slug>'s tree — refusing to certify
+#     it."
+#   * bin/ship RE-ROOTS, LOUDLY. It reads CertRootGuard.assess directly because it wants
+#     :resolved_root, prints "re-rooting at the task worktree <desk> (you ran from
+#     <cwd>)" and carries on there; it die!s only when resolved_root is nil (no desk on
+#     disk, or a multi-repo tie). Its own comment says so: ship "re-roots rather than
+#     refuses when the task's worktree exists on disk — loudly". The first draft of this
+#     header attached the cert writers' verbatim refusal to bin/ship, which is the
+#     highest-credibility claim form in this house pointed at the wrong command.
+#
+# Either way a `cd <hub>` earlier in the block does NOT excuse a bare form for these
+# five: for a desk-run command, standing in the hub is at best a re-root and at worst a
+# refusal. The HUB-RUN commands (`bin/task begin`, `bin/agent-worktree`) are correctly
+# reachable after a `cd <hub>` and are deliberately left out — which is a load-bearing
+# exemption, so an edit that leaves a reader standing in a DESK before a hub-run fence
+# has to restore the `cd <hub>` by hand; this guard cannot see it.
 #
 # ITS LIMITS, STATED PLAINLY. (1) The block scan covers ```bash fences only — the shell a
 # reader copies. A ```text fence is prose (the "good prompt" template, the measurement
@@ -70,8 +85,12 @@ class FastLaneHubPathDocsTest < ActiveSupport::TestCase
   HUB_PREFIX = "/Users/alex/projects/mcritchie-studio"
 
   # Commands the docs instruct a builder to run STANDING IN THE TASK'S DESK. For these
-  # the bare `bin/…` form is wrong from every desk but the hub's.
-  DESK_RUN = %w[ship fast-check full-suite-check dor-check].freeze
+  # the bare `bin/…` form is wrong from every desk but the hub's. `ship-wait` is here
+  # because it LAUNCHES bin/ship, so it inherits the cwd contract exactly: it lives only
+  # in the hub, and the docs tell a builder to run it from the desk. It must precede
+  # `ship` in this list — Regexp.union alternates in order, so a leading `ship` would
+  # match the `ship` inside `bin/ship-wait` and report the wrong command in the remedy.
+  DESK_RUN = %w[ship-wait ship fast-check full-suite-check dor-check].freeze
 
   # Every fast-lane script, desk-run or hub-run.
   FAST_LANE = (DESK_RUN + %w[task]).freeze
@@ -141,7 +160,11 @@ class FastLaneHubPathDocsTest < ActiveSupport::TestCase
   def fenced_lines(body, lang:)
     open_lang = nil
     body.each_line.with_index(1).filter_map do |line, number|
-      if line.start_with?("```")
+      # lstrip FIRST. A fence indented inside a list item is still a fence, and matching
+      # on the raw line silently left every such block unparsed — the scan would sail
+      # past an indented ```bash without ever entering it, so a bare `bin/ship` there
+      # was unpinned. Measured on review, 2026-09-09.
+      if line.lstrip.start_with?("```")
         open_lang = open_lang ? nil : line.strip.delete_prefix("```").strip
         next
       end
@@ -251,6 +274,23 @@ class FastLaneHubPathDocsTest < ActiveSupport::TestCase
                         "#{rel} says #{slug} has no fast lane, but it IS a managed app — " \
                         "bin/task begin can desk it, so the table is now wrong"
       end
+
+      # COMPLETENESS — the direction every check above is blind to, because each one only
+      # asks whether a slug the table ALREADY names is classified right. Measured both
+      # ways on 2026-09-09: dropping turf-monster from config/satellites.yml reddens (its
+      # slug is left in the table naming a repo the registry no longer manages), but
+      # ADDING a satellite stayed green forever. That is also why tax-studio and
+      # chain-ops sat un-named in this table with nothing complaining. The header claimed
+      # both directions bite; this is the assertion that makes the claim true.
+      #
+      # A REGISTERED-BUT-UNBUILT app still belongs in the row. The rule the table states
+      # is about where the fast-lane SCRIPTS live, not about what is checked out — it
+      # holds the day the repo lands, and listing it early is how the doc stops lagging
+      # the registry.
+      missing = (managed - ["mcritchie-studio"]) - satellite_row
+      assert_empty missing,
+                   "#{rel}: config/satellites.yml registers #{missing.join(', ')}, which the " \
+                   "fast-lane desk table never names. Add them to the satellite row."
     end
 
     # Non-vacuity: a table scan that matched nothing would satisfy every loop above.

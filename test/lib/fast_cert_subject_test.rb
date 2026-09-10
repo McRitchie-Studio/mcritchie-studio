@@ -501,16 +501,6 @@ class FastCertSubjectTest < Minitest::Test
     # that explains itself lands here.
     # What the assertion is FOR is the LIST: this one known entry and no other. A
     # second path appearing is the regression; this number changing is bookkeeping.
-    #
-    # THAT DISTINCTION WAS EXERCISED ON 2026-09-09, and it worked. The
-    # ship-path-misleads-satellites draft LOADED the release registry, which put a
-    # SECOND path in this list at 16 — one over the cap, which would have collapsed
-    # that registry's mapped lane to the convention twins. This sweep is what caught
-    # it. The fix was to drop the dependency, not to widen this list — and note what
-    # the fix had to include: the mapper greps the path STRING, so removing the
-    # `load_file` while still naming the path in a comment left the count at 16
-    # untouched. Naming those configs by BASENAME is what finally cleared it, which is
-    # also why that task's own test file does not appear in this count.
     assert_equal ["config/test_health.yml (24)"], over,
                  "config/test_health.yml was already over the cap before this clause " \
                  "existed (its PATH matches 24 files); any OTHER entry here means the " \

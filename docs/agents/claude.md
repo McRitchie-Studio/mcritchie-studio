@@ -39,27 +39,52 @@ cd <desk>   #   ... the worktree begin printed; build there ...
 ```
 
 **Name the hub's script; stand in the desk.** Every fast-lane command —
-`bin/task`, `bin/ship`, `bin/fast-check`, `bin/full-suite-check`, `bin/dor-check`
-— lives ONLY in `/Users/alex/projects/mcritchie-studio/bin`. A **satellite** desk
-(turf-monster, rolio, mcritchie-industries) carries none of them, so the bare
+`bin/task`, `bin/ship`, `bin/ship-wait`, `bin/fast-check`, `bin/full-suite-check`,
+`bin/dor-check` — lives ONLY in `/Users/alex/projects/mcritchie-studio/bin`. A
+**satellite** desk (the table below names all five) carries none of them, so the bare
 `bin/ship` dies there as `nohup: bin/ship: No such file or directory` — instantly,
 and looking like a broken install rather than a wrong path. Only a **hub** desk
 has them, which is the whole reason the bare form reads as correct.
 
 The absolute path alone is NOT the remedy, because the path and the cwd answer
 different questions: **the path picks the SCRIPT, the cwd picks the TREE it acts
-on.** The cert writers root at the cwd's git toplevel, and the cert-root guard
-(`bin/lib/cert_root_guard.rb`) REFUSES when that is not the task's tree — so
-`cd /Users/alex/projects/mcritchie-studio && bin/ship <satellite-slug>` fails in the
-opposite direction, measured: *"this run roots at /Users/alex/projects/mcritchie-studio
-(branch main), which is not <slug>'s tree — refusing to certify it."* Both halves
-are load-bearing, so state both.
+on.** Both halves are load-bearing, so state both — and know that the fast lane's
+two writers disagree about what a wrong cwd costs you:
+
+- **The cert writers REFUSE.** `bin/fast-check` and `bin/full-suite-check` root at
+  the cwd's git toplevel and take `CertRootGuard#refusal`
+  (`bin/lib/cert_root_guard.rb`), so from the hub against a satellite task they
+  exit 1 — measured: *"this run roots at /Users/alex/projects/mcritchie-studio
+  (branch main), which is not <slug>'s tree — refusing to certify it."*
+- **`bin/ship` RE-ROOTS — loudly, not silently.** It reads the same assessment but
+  wants `:resolved_root` rather than the refusal, so when the task's desk is on
+  disk it prints `re-rooting at the task worktree <desk> (you ran from <cwd>)` and
+  carries on THERE. It dies only when no desk resolves — absent from disk, or a
+  multi-repo tie. Every gate it then runs re-verifies the root from its own cwd, so
+  a wrong re-root cannot survive to a recorded verdict. Do not read the cert
+  writers' refusal as ship's behaviour: ship's own comment says it "re-roots rather
+  than refuses when the task's worktree exists on disk — loudly."
 
 | Desk | Fast lane from that desk |
 |------|--------------------------|
 | `mcritchie-studio` | Hub-absolute **or** bare `bin/…` — a hub desk checks the scripts out, so both resolve |
-| `turf-monster` · `rolio` · `mcritchie-industries` | **Hub-absolute only.** The desk has no fast-lane scripts; only the cwd is the desk's |
-| `studio-engine` · `solana-studio` · `turf-vault` | **No lane at all.** `bin/task begin` answers `unknown app` (measured 2026-09-09) — create with `bin/task create`, make the desk with a plain `git worktree add`, and run the handoff steps by hand |
+| `turf-monster` · `rolio` · `mcritchie-industries` · `tax-studio` · `chain-ops` | **Hub-absolute only.** The desk has no fast-lane scripts; only the cwd is the desk's |
+| `studio-engine` · `solana-studio` · `turf-vault` | **No `begin`, no `ship`.** `bin/task begin` answers `unknown app` (measured 2026-09-09) — create with `bin/task create`, make the desk with a plain `git worktree add`, and run the handoff steps by hand. The two GEMS still get a cert; see below |
+
+Row 2 is the REGISTRY, not the machine: `tax-studio` and `chain-ops` are registered
+satellites (`config/satellites.yml`) that no checkout exists for yet. They are listed
+because the rule is about where the scripts live, and it will hold the day they land.
+
+**Row 3 is a missing WORKTREE lane, not a missing cert — and the difference matters,
+because a builder who reads "no lane" hand-rolls a cert that already exists.**
+`bin/task begin` cannot desk a gem, so all three get no `begin` and no `ship`. But
+`bin/fast-check` carries a purpose-built gem branch (`FullSuiteGate.gem_repo?` +
+`FullSuiteGate.release_check_cmd`): from a plain `git worktree add` desk, hub-absolute
+`bin/fast-check <task>` runs the gem's REGISTERED gate as the whole mapped lane —
+`bin/release-check` for **studio-engine** and for **solana-studio** (registered
+2026-08-31), both declared in `config/release_repos.yml` under `gems:`. **turf-vault**
+is the one repo with no cert lane at all: `bin/fast-check` refuses it by name and points
+at `/tasks/turf-vault-needs-ci`.
 
 **Pass `--agent <soul>` — it is what makes review able to exclude you.** It stamps
 the task's AUTHOR SET (`devops.built_by` + `devops.builders`) — what
@@ -163,8 +188,9 @@ what some agent harnesses allow one foreground command, so **run it in the
 background — and wait for it with `bin/ship-wait`**:
 
 ```bash
-bin/ship-wait <task-slug> --launch -m "Commit message"   # start the ship, then block
-bin/ship-wait <task-slug>                                # attach to one already running
+cd <desk>   #   ... the worktree begin printed; ship-wait roots the ship at the cwd ...
+/Users/alex/projects/mcritchie-studio/bin/ship-wait <task-slug> --launch -m "Commit message"
+/Users/alex/projects/mcritchie-studio/bin/ship-wait <task-slug>   # attach to one already running
 ```
 
 It exits **0 succeeded · 1 failed · 2 still running at the timeout**, returns
