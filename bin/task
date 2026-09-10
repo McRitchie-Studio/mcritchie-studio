@@ -175,7 +175,17 @@
 #       souls join devops.builders (never built_by). --unnamed records a fix-forward
 #       nobody can attribute: the author set is then INCOMPLETE and reviewer-select
 #       REFUSES until a later --agent names who pushed. )
-#   bin/task heartbeat <slug>                         # renew this instance's build-claim lease (bin/statusline calls it)
+#   bin/task heartbeat <slug> [--desk PATH]           # renew this instance's build-claim lease (bin/statusline calls it)
+#   bin/task claim-renew-loop <slug> --anchor-pid <p> --anchor-start <s> [--desk PATH]   # internal
+#     ( THE DETACHED BUILD-CLAIM RENEWER, started by the claim itself (`move
+#       building` / `begin`) and never invoked by hand. Renewal used to live only in
+#       bin/statusline, which runs when Claude Code PAINTS — and a headless agent
+#       shell paints nothing, so a headless build ran unclaimed from 120s in while a
+#       cold `bin/ship` takes ~12 minutes. It renews on a 30s beat while its ANCHOR
+#       process lives, the task is still `building`, and the holder has not been
+#       shown to have walked away. bin/lib/build_claim_renewer.rb carries the whole
+#       argument. TASK_BUILD_CLAIM_RENEWER=off|on overrides; a SANDBOXED run
+#       (every test process) defaults to off. )
 #   bin/task session-mascot [--persona SLUG|none] [--print]
 #     ( draw this Claude/Codex session's Pokémon marker before a task exists.
 #       --persona jasper temporarily shows a soul instead; --persona none reverts. )
@@ -279,6 +289,7 @@ require "uri"
 require "time"
 require "fileutils"
 require "shellwords"
+require "rbconfig"
 require_relative "../lib/agent_session_usage"
 require_relative "../lib/task_usage_baseline"
 require_relative "../lib/task_usage_sandbox"
@@ -303,6 +314,7 @@ require_relative "lib/bin_helpers"
 require_relative "lib/cert_root_guard"
 require_relative "lib/fast_lane"
 require_relative "lib/stamp_confirmation"
+require_relative "lib/build_claim_renewer"
 
 BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
 SHINY_EMOJI = "✨"
@@ -990,6 +1002,161 @@ def holder_progress_line(task, seconds)
   # ClaimLease owns the formatter (required above): the gate and the board card
   # state the same fact, so they render it through the same code.
   "last durable progress by the holder ~#{ClaimLease.humanize_age(seconds)} ago#{detail}#{quiet}"
+end
+
+# --- ONE renewal, and the loop that repeats it -----------------------------
+#
+# THE DEFECT THIS SECTION CLOSES. Until 2026-09-09 the build claim was renewed by
+# exactly one thing: `bin/statusline`, which runs when Claude Code PAINTS. A
+# HEADLESS AGENT SHELL PAINTS NOTHING, so a headless build renewed nothing and its
+# lease lapsed 120s after the claim — for the rest of the build. Measured that
+# night: one task lapsed ~2 minutes after `begin`, was adopted by another session,
+# and `bin/ship` refused nine minutes on; another was found lapsed 8.6 HOURS while
+# its PR sat open. A cold `bin/ship` now runs ~12 minutes BY DESIGN, so the
+# DEFAULT successful path was six times longer than the lease protecting it.
+#
+# THE RENEWAL IS ONE FUNCTION WITH TWO CALLERS, deliberately. `heartbeat` (the
+# status line, when there is one) and `claim-renew-loop` (the detached renewer,
+# always) must not be two implementations of "may this lease be renewed" — that is
+# how the build gate and the heartbeat would drift into disagreeing about who
+# holds a task. bin/lib/build_claim_renewer.rb owns the loop CONTROL; this
+# function owns the I/O and every guard.
+#
+# THE GUARDS, in the order they must be asked:
+#   stage != building  → :not_building. A build claim is forged ONLY by an explicit
+#                        `move building`; renewing on a `designed` task would forge
+#                        a live claim on work nobody is building.
+#   :held_by_other     → :held_by_other. Never steal a live foreign claim.
+#   may_claim? false   → :declined. A heartbeat RENEWS a lease; it never ACQUIRES
+#                        one, except from a session sitting at the task's BOUND
+#                        desk. (Adopting on a free lease is how a reviewer's
+#                        terminal got recorded as a task's author, 2026-09-04.)
+#   abandoned?         → :declined. The holder walked away — see ClaimLease
+#                        .abandoned?. Declining is the whole mechanism: nothing is
+#                        reclaimed or deleted, the lease simply stops being renewed.
+#
+# EVERY FAILURE IS :cant_run, never a stop. A board we could not reach has told us
+# nothing about the builder, and the loop above treats it as "carry on".
+def renew_build_claim(slug, desk_hint)
+  session = session_identity.first
+  return :cant_run if session.nil?
+
+  current = api(:get, "/api/v1/tasks/#{slug}")["data"] || {}
+  return :not_building unless current["stage"] == "building"
+
+  devops = current.dig("metadata", "devops") || {}
+  decision = ClaimLease.evaluate(ClaimLease.from_devops(devops), session: session, nonce: claim_nonce)
+  return :held_by_other if decision == :held_by_other
+  return :declined unless heartbeat_may_claim?(slug, devops, session, desk_hint)
+  return :declined if heartbeat_abandoned?(slug, current, devops, desk_hint)
+
+  merged = devops.merge(ClaimLease.renewed(session: session, nonce: claim_nonce, prior: devops))
+  api(:patch, "/api/v1/tasks/#{slug}", { "devops" => merged })
+  :renewed
+rescue SystemExit, StandardError
+  :cant_run
+end
+
+# The desk whose file mtimes decide whether this claim is still being WORKED.
+#
+# Resolved from the TASK, not only from the caller's cwd, because the claim is
+# often made somewhere else: `bin/task begin` runs from the hub primary and
+# allocates the desk as a side effect, so a cwd-only answer would hand the renewer
+# no desk on the single most common path. Both candidates go through
+# DeskActivity.desk_root, which REFUSES any directory not carrying an
+# .agent-context.json bound to this very slug — so a wrong guess resolves to nil
+# rather than to somebody else's mtimes, and `--desk` never becomes a universal
+# override. nil is honest and safe: the renewer then rests on the anchor and the
+# stage, which is still strictly more than the nothing it had before.
+def build_claim_desk(slug, devops, fallback = Dir.pwd)
+  dv = devops || {}
+  app = Array(dv["repositories"]).first.to_s.strip
+  worktree = [dv["worktree_slug"], slug].map { |v| v.to_s.strip }.find { |v| !v.empty? }
+  candidates = []
+  candidates << File.join(PROJECTS_DIR, app, ".worktrees", worktree) unless app.empty? || worktree.nil?
+  candidates << fallback
+  candidates.compact.find { |dir| DeskActivity.desk_root(dir, slug) }
+rescue StandardError
+  nil
+end
+
+# May this run start a detached renewer at all? Three states, and the middle one is
+# the interesting one:
+#
+#   TASK_BUILD_CLAIM_RENEWER=off/on  — an explicit answer always wins.
+#   SANDBOXED (TaskUsageSandbox.active?) — DEFAULT OFF. Every test process arms the
+#     sandbox, and a test that claims a task against a THROWAWAY board would otherwise
+#     leave behind a real background process polling an endpoint that no longer exists.
+#     That is not hypothetical: this feature's own first cut left two of them running
+#     on the machine that wrote it, from one unrelated suite file. Default-DENY is the
+#     only version that holds, because annotating the N test files that claim a task
+#     misses the N+1st one written next year — the partial correction this house has
+#     paid for twice.
+#   otherwise — DEFAULT ON. A real build gets a real renewer.
+#
+# A test that means to exercise the renewer opts back in with
+# TASK_BUILD_CLAIM_RENEWER=on (test/commands/build_claim_renewer_integration_test.rb).
+def build_claim_renewer_armed?
+  setting = ENV["TASK_BUILD_CLAIM_RENEWER"].to_s.strip.downcase
+  return false if setting == "off"
+  return true if setting == "on"
+
+  !TaskUsageSandbox.active?
+end
+
+# The process the lease's LIFETIME answers to — the long-lived `claude`/`codex`
+# CLI, the same one its IDENTITY (the nonce) is derived from, so the two cannot
+# drift apart. TASK_BUILD_CLAIM_ANCHOR_PID lets a headless runner (or a test) name
+# its own long-lived owner instead of relying on an agent ancestor being present.
+def build_claim_anchor
+  override = ENV["TASK_BUILD_CLAIM_ANCHOR_PID"].to_s.strip
+  return { pid: override.to_i, start: SessionIdentity.proc_start(override) } unless override.empty?
+
+  SessionIdentity.agent_process
+end
+
+# Start the detached renewer for a claim we just took. Called from BOTH build-claim
+# acquisition sites (`move building` and `begin`'s resume claim), after the write
+# has landed — a renewer for a claim that failed to persist would renew nothing.
+#
+# NO ANCHOR ⇒ NO RENEWER, and we say so rather than implying cover we are not
+# providing. A plain shell or a CI run has no agent process to answer for the
+# lease's lifetime, and starting a background process whose owner we cannot
+# identify is how a phantom holder is born: nothing would ever tell it to stop.
+# That case keeps exactly its previous behavior — the status line, or nothing.
+#
+# Best-effort throughout. A renewer that fails to start must never fail the claim
+# that started it: the task IS claimed either way, and the worst case is today's
+# behavior.
+def start_build_claim_renewer(slug, devops, desk_hint = nil)
+  return nil unless build_claim_renewer_armed?
+
+  session, provider = session_identity
+  return nil if session.to_s.strip.empty?
+
+  anchor = build_claim_anchor
+  if anchor.nil?
+    warn "note: no agent process to anchor a build-claim renewer to; this claim lapses in " \
+         "~#{ClaimLease.humanize_age(ClaimLease::DEFAULT_TTL_SECONDS)} unless a status line renews it."
+    return nil
+  end
+
+  desk = desk_hint || build_claim_desk(slug, devops)
+  argv = [RbConfig.ruby, File.expand_path(__FILE__), "claim-renew-loop", slug,
+          "--anchor-pid", anchor[:pid].to_s, "--anchor-start", anchor[:start].to_s]
+  argv += ["--desk", desk] if desk
+  # The identity the renewer must carry. Once detached it reparents away from the
+  # agent process, so it can no longer walk its way back to either half of the
+  # live-instance identity — and a renewer that GUESSED its nonce would renew
+  # nothing while reporting success, which is indistinguishable from the bug it
+  # exists to fix (bin/lib/review_claim_cli.rb learned this the same way).
+  env = { "TASK_CLAIM_NONCE" => claim_nonce.to_s }
+  env[provider.to_s == "codex" ? "CODEX_THREAD_ID" : "CLAUDE_CODE_SESSION_ID"] = session.to_s
+  pid = Process.spawn(env, *argv, out: File::NULL, err: File::NULL, pgroup: true)
+  Process.detach(pid)
+  pid
+rescue StandardError
+  nil
 end
 
 SCALAR_FLAGS = {
@@ -2766,6 +2933,12 @@ when "begin"
       renewal["event"] = { "source" => "cli", "actor" => builder } unless builder.empty?
       api(:patch, "/api/v1/tasks/#{slug}", renewal)
       seed_usage_baseline(slug)
+      # The RESUME branch takes a claim without going through `move`, so it must
+      # start its own renewer — otherwise a resumed build is exactly the case this
+      # fix exists for (a headless run whose lease lapses 120s later). The
+      # non-resume branch below delegates to a child `bin/task move … building`,
+      # which starts one there; the renewer is detached, so it outlives that child.
+      start_build_claim_renewer(slug, merged)
       write_feature_marker(current.merge("metadata" => { "devops" => merged }))
       warn!("begin 4/5 claim — already [building]; claim renewed for this instance")
     end
@@ -2925,6 +3098,12 @@ when "move"
   # itself is correct and still succeeds; what must not happen is doing it quietly.
   warn_dropped_approval_request!(task, slug, approval_before) if settleable
   verify_abandonment_recorded!(slug, archive_devops[OpenPrGuard::RECORD_KEY]) if archive_devops
+  # A CLAIM WITHOUT A RENEWER LAPSES IN TWO MINUTES. Started here, AFTER the
+  # read-back verify, because a renewer for a claim that did not persist would
+  # renew a lease nobody holds. Best-effort and silent on success: the task is
+  # claimed either way, and a renewer that fails to start degrades to exactly the
+  # status-line-only behavior this change replaces.
+  start_build_claim_renewer(slug, task.dig("metadata", "devops") || {}) if stage == "building" && !mover_session.nil?
   write_feature_marker(task)
   print_task(task)
 when "merged"
@@ -3104,9 +3283,12 @@ when "checkpoint"
   api(:post, "/api/v1/tasks/#{slug}/events/#{name}/#{status == "started" ? "start" : "complete"}", { "event" => event })
   puts "checkpoint #{name} #{status} on #{slug}"
 when "heartbeat"
-  # The live-terminal lease renewal — bin/statusline calls this each render
-  # (throttled) so a crashed/closed session's claim lapses after the TTL and the
-  # task becomes reclaimable. RENEWS THIS INSTANCE'S CLAIM on <slug>, and does no
+  # The STATUS LINE's build-claim renewal — bin/statusline calls this each render
+  # (throttled to 45s). It is now the SECOND renewer, not the only one: since
+  # 2026-09-09 the claim starts a detached renewer of its own (`claim-renew-loop`
+  # below), because a headless agent shell paints no status line and so renewed
+  # nothing at all. This path remains because it costs nothing and covers the
+  # session that has a terminal. RENEWS THIS INSTANCE'S CLAIM on <slug>, and does no
   # more than that: it NEVER steals a live foreign claim, and it does not ADOPT a
   # free one either — an unclaimed or expired lease is acquired only from a session
   # sitting at the task's bound DESK (#heartbeat_may_claim?), because acquiring a
@@ -3132,45 +3314,56 @@ when "heartbeat"
     else unknown_flag!(flag, valid: %w[--desk], context: "heartbeat")
     end
   end
+  # The renewal itself is #renew_build_claim above — ONE implementation, shared with
+  # the detached `claim-renew-loop`. Every guard, and the argument for each, lives
+  # there.
+  #
+  # THE EXIT CODE IS DELIBERATELY 0 WHATEVER HAPPENS, and this is the one place in
+  # the stack where that is right. bin/statusline fires this on every render; a
+  # nonzero exit here would paint a failure into the operator's status line for the
+  # ordinary case of a heartbeat that correctly DECLINED. The renewer needs the
+  # verdict this throws away, which is exactly why the renewer does not shell out to
+  # this command — it calls the shared function and reads the outcome directly.
+  # test/commands/task_heartbeat_claim_test.rb pins both halves of that contract.
   begin
-    session = session_identity.first
-    unless session.nil?
-      current = api(:get, "/api/v1/tasks/#{slug}")["data"] || {}
-      # The heartbeat renews a BUILD claim, and a build claim only exists once the
-      # task is actually `building` — forged solely by an explicit `move building`.
-      # A task still in `designed` (or any non-build stage) is unclaimed by
-      # definition: `bin/task create` repoints the creator's session marker to the
-      # new task, so renewing here would forge a live claim on a task nobody is
-      # building (the creator's mascot ticking on an unowned `designed` task). This
-      # is the authoritative guard — bin/statusline already skips firing for a
-      # non-building per-session marker; this refuses even a stray call.
-      if current["stage"] == "building"
-        devops = current.dig("metadata", "devops") || {}
-        decision = ClaimLease.evaluate(ClaimLease.from_devops(devops), session: session, nonce: claim_nonce)
-        # Don't steal a live foreign claim via a heartbeat — and don't renew a claim
-        # this session has ABANDONED. bin/statusline fires this every ~45s from a
-        # painting terminal, so without the second guard an open terminal renews a
-        # build claim forever whether or not anyone is working: the 2026-08-13 stall,
-        # where a lease ticked 16:05:16Z → 16:06:46Z with three agents queued behind
-        # it and several `claude` processes on this machine days old.
-        #
-        # Declining is the WHOLE mechanism. Nothing is reclaimed, blocked, or
-        # deleted here; the lease simply stops being renewed and lapses on the
-        # ordinary TTL, after which the ordinary gate admits the next claimant. If
-        # this call is wrong, the holder's very next heartbeat re-claims the task —
-        # the mistake heals itself, which is why declining is safe and expiring
-        # eagerly would not be.
-        if decision != :held_by_other &&
-           heartbeat_may_claim?(slug, devops, session, heartbeat_desk) &&
-           !heartbeat_abandoned?(slug, current, devops, heartbeat_desk)
-          merged = devops.merge(ClaimLease.renewed(session: session, nonce: claim_nonce, prior: devops))
-          api(:patch, "/api/v1/tasks/#{slug}", { "devops" => merged })
-        end
-      end
-    end
+    renew_build_claim(slug, heartbeat_desk)
   rescue SystemExit, StandardError
     nil # best-effort: swallow API/transport failures
   end
+when "claim-renew-loop"
+  # THE DETACHED BUILD-CLAIM RENEWER — started by the claim (`move building` /
+  # `begin`), never invoked by hand. It is the answer to a build claim that only a
+  # PAINTING TERMINAL could renew: renewal now belongs to the RUN, so a headless
+  # agent shell holds its task for the whole of a ~12-minute ship instead of losing
+  # it 120 seconds in. bin/lib/build_claim_renewer.rb carries the full argument,
+  # including why the TTL was NOT simply raised and how a dead builder is still
+  # distinguished from a working one.
+  #
+  # It cannot re-derive its own identity (detached, it has reparented away from the
+  # agent process), so the session id and the live-instance nonce ride in from the
+  # spawner's env, and the ANCHOR — the process whose life the lease follows — is
+  # named on the command line.
+  usage = "usage: bin/task claim-renew-loop <slug> --anchor-pid <pid> --anchor-start <start> [--desk PATH]"
+  slug = positional!(ARGV.shift || die!(usage), usage)
+  anchor_pid = nil
+  anchor_start = nil
+  renew_desk = nil
+  while ARGV.any?
+    case (flag = ARGV.shift)
+    when "--anchor-pid"   then anchor_pid = ARGV.shift || die!("--anchor-pid needs a pid")
+    when "--anchor-start" then anchor_start = ARGV.shift || die!("--anchor-start needs a start signature")
+    when "--desk"         then renew_desk = ARGV.shift || die!("--desk needs a path")
+    else unknown_flag!(flag, valid: %w[--anchor-pid --anchor-start --desk], context: "claim-renew-loop")
+    end
+  end
+  die!(usage) if anchor_pid.to_s.strip.empty? || anchor_start.to_s.strip.empty?
+  BuildClaimRenewer.run(
+    alive: -> { SessionIdentity.process_alive?(anchor_pid, anchor_start) },
+    beat: -> { renew_build_claim(slug, renew_desk) },
+    sleeper: ->(seconds) { sleep(seconds) },
+    clock: -> { Time.now },
+    interval: ShiftRenewer.interval_from(ENV["TASK_BUILD_CLAIM_RENEW_INTERVAL"])
+  )
 when "session-mascot"
   # Eagerly paint the session's Pokémon mascot onto the per-session marker so
   # bin/statusline shows it in SECONDS — fired by a SessionStart hook, before any

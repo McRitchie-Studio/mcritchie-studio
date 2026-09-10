@@ -2,8 +2,9 @@
 
 # Renders the two facts a claimed build card must keep separate:
 #
-#   LIVENESS — "a terminal is painting" (the ClaimLease heartbeat, renewed by
-#              bin/statusline every ~5s). It survives a wedged agent.
+#   LIVENESS — "the builder's run is still here" (the ClaimLease lease, renewed on a
+#              30s beat by the detached renewer — bin/lib/build_claim_renewer.rb —
+#              and redundantly by bin/statusline). It survives a wedged agent.
 #   PROGRESS — "this task last produced a durable artifact N ago" (a TaskEvent or
 #              a GateRun — evidence that work actually landed).
 #
@@ -24,8 +25,8 @@ module ClaimProgressHelper
 
   # The hover tooltip spells out what the pulsing dot does and does NOT attest.
   def claim_progress_title(task, seconds = task.progress_seconds_ago)
-    lines = ["A terminal is live on this task (heartbeat ~#{task.claim_heartbeat_seconds_ago}s ago). " \
-             "That attests the TERMINAL is alive — not that the agent is progressing."]
+    lines = ["A build is live on this task (heartbeat ~#{task.claim_heartbeat_seconds_ago}s ago). " \
+             "That attests the builder's RUN is alive — not that the agent is progressing."]
 
     lines << if seconds.nil?
                "No durable artifact recorded yet (no stage move, cert, or gate)."

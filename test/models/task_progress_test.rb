@@ -2,8 +2,8 @@
 
 # The PROGRESS fact, which is not the LIVENESS fact.
 #
-# Task#claim_live? answers "is a terminal painting?" — bin/statusline renews the
-# lease every ~5s, so it stays green through a wedged agent. These tests cover the
+# Task#claim_live? answers "is the builder's run still here?" — the detached renewer
+# renews the lease every 30s, so it stays green through a wedged agent. These tests cover the
 # second, independent fact: what has this task actually PRODUCED, read from the
 # durable evidence we already write (TaskEvents + GateRuns).
 #

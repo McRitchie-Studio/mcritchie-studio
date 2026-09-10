@@ -86,8 +86,8 @@ A claim you never release lapses on its own after **4 hours**, so a crashed
 holder frees the lane the same working day instead of wedging it forever. The
 lease is the backstop; the explicit release is the manners.
 
-That window is fixed, and **nothing renews it for you** — no heartbeat watches
-this lane the way the status line watches a review claim. So a sitting that
+That window is fixed, and **nothing renews it for you** — this lane has no
+detached renewer the way a build claim and a review claim each do. So a sitting that
 genuinely runs past 4 hours goes quiet: the lane reads `FREE`, a second Dev may
 take it, and nothing tells the first Dev they lost it. On a long migration,
 re-run `bin/task migration-lane acquire <task-slug>` to push the window out

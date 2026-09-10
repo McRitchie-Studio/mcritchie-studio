@@ -28,23 +28,37 @@ require "time"
 # reads the clock, the environment, or the process tree.
 module ClaimLease
   # The lease TTL for the BUILD claim and the two ROLE leases (DevopsShift,
-  # ReleaseConductorClaim). Those are renewed by bin/statusline, whose heartbeat is
-  # throttled to 45s (STATUSLINE_HEARTBEAT_THROTTLE) — so 120s is under three beats
-  # of slack: a brief stall or a throttled heartbeat never falsely expires a live
-  # claim, yet a closed/crashed terminal frees the task within two minutes. The
-  # renewer and the reader share this constant, so the "last heartbeat Ns ago" the
-  # gate reports is exact, not an estimate.
+  # ReleaseConductorClaim). Every one of them is now renewed by a DETACHED,
+  # timer-driven renewer on a ShiftRenewer beat of TTL/4 (30s) — four renewals per
+  # lease, so a single missed beat is survivable — with bin/statusline's 45s-throttled
+  # heartbeat surviving only as a SECOND, redundant renewer for the build claim and
+  # the shift. The renewer and the reader share this constant, so the "last heartbeat
+  # Ns ago" the gate reports is exact, not an estimate.
+  #
+  # SO 120s IS THE DEAD-HOLDER BOUND, and reading it as the live holder's coverage is
+  # the mistake this paragraph exists to stop. Until 2026-09-09 the build claim was
+  # renewed ONLY by bin/statusline, which runs when Claude Code PAINTS. A HEADLESS
+  # AGENT SHELL PAINTS NOTHING, so a headless build renewed nothing and ran unclaimed
+  # from two minutes in — while a cold `bin/ship` takes ~12 minutes BY DESIGN
+  # (gate-submit-on-green-ci waits for CI). Measured that night: one task lapsed ~2
+  # minutes after `begin`, was adopted by a second session, and its builder had to
+  # `--steal` his own task back; another was found lapsed 8.6 HOURS while its PR sat
+  # open and green. The fix was a renewer (bin/lib/build_claim_renewer.rb), NOT a
+  # bigger number — raising the TTL buys the live holder coverage only by stranding a
+  # DEAD holder's task for the same span, and this constant is what makes a crash cost
+  # two minutes.
   #
   # THIS IS NOT THE REVIEW LANE'S TTL — see REVIEW_TTL_SECONDS below, and do not
   # re-merge them. It answered for the review lease too until 2026-09-08, justified
-  # by a comment describing a "~5s render cadence" that is wrong twice over: the
-  # status line's RENEWAL is throttled to 45s (not 5s, so ~2.7 beats of slack rather
-  # than the claimed ≈24), and it renews the build claim and the shift lease and
-  # NEVER a review claim. The sentence had been copied widely; this change corrects it
-  # in five places, and four uncorrected copies remain to sweep — app/helpers/
-  # claim_progress_helper.rb, lib/desk_activity.rb, test/models/task_progress_test.rb,
-  # and docs/agents/system/exclusive-lanes.md, which still says the status line watches
-  # a REVIEW claim. Do not cite any of them as the cadence; cite this paragraph.
+  # by a comment describing a "~5s render cadence" that was wrong twice over: the
+  # status line's RENEWAL is throttled to 45s (not 5s), and it renews the build claim
+  # and the shift lease and NEVER a review claim. That sentence had been copied
+  # widely. Its last four copies — app/helpers/claim_progress_helper.rb,
+  # lib/desk_activity.rb, test/models/task_progress_test.rb, and
+  # docs/agents/system/exclusive-lanes.md — were swept on 2026-09-09 alongside the
+  # renewer, because a change that moves the build claim off the status line makes
+  # every one of them describe a mechanism that no longer exists. Cite this
+  # paragraph; the copies are gone, and re-introducing one is the regression.
   DEFAULT_TTL_SECONDS = 120
 
   # --- The review lane's own TTL --------------------------------------------
