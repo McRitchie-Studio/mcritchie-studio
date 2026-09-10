@@ -1029,6 +1029,100 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
                  "age, not a person")
   end
 
+  # THE REGISTRY IS CROSS-APP, so no app-scoped command may write it.
+  #
+  # <projects>/.agents/worktree-registry.json holds every repo's desks, and bin/qa-intake
+  # triages from it. `remove <app>` used to refresh it with a snapshot of THAT app alone, so
+  # removing one turf-monster desk rewrote the file with only turf-monster's desks, and then
+  # handed the desk ledger the same partial snapshot. The ledger counts every open desk a
+  # newer snapshot did not list as vanished, so the Desks panel reported every other app's
+  # live desks as "left without a teardown record". One scoped remove reproduces it; no
+  # race is needed.
+  #
+  # Three repos, one desk each: the hub, a registered satellite, and a DISCOVERED repo (a
+  # repo with desks that is not in satellites.yml, the way the gem repos are). The last one
+  # pins that a fix covering only the registered apps still fails.
+  test "[integration] an app-scoped remove keeps every other app's desk in the registry and the ledger" do
+    write_satellite("second-app", 3300)
+    satellite_desk = add_repo_desk!("second-app", "satellite-task")
+    discovered_desk = add_repo_desk!("gem-lib", "gem-task")
+    mark_worktree_merged_to_origin_main
+    registry = removal_env.fetch("AGENT_WORKTREE_REGISTRY")
+
+    out, err, status = agent_worktree("remove", "mcritchie-studio", @task, "--yes",
+                                      env: removal_env("AGENT_WORKTREE_TASK_JSON" => lapsed_claim_json))
+
+    assert status.success?, "#{out}\n#{err}"
+    refute Dir.exist?(@worktree_dir), "premise: the named desk is actually torn down"
+
+    survivors = [satellite_desk, discovered_desk].sort
+    written = JSON.parse(File.read(registry)).fetch("worktrees").map { |desk| desk.fetch("worktree") }.sort
+    assert_equal survivors, written,
+                 "the registry must still list every other app's desk after one app's desk is removed"
+
+    synced = @desk_ledger.synced.last
+    assert synced, "premise: the remove hands the desk ledger a snapshot"
+    assert_equal survivors, synced.fetch("worktrees").map { |desk| desk.fetch("worktree") }.sort,
+                 "the ledger must be handed every desk still on disk, or it counts them as vanished"
+  end
+
+  # The same property through the command that states the scope most plainly. `snapshot
+  # <app>` without --write only PRINTS, and may keep its app filter. With --write it lands
+  # in the one cross-app file, so it must describe every desk.
+  test "[integration] snapshot <app> --write still writes every app's desks" do
+    write_satellite("second-app", 3300)
+    satellite_desk = add_repo_desk!("second-app", "satellite-task")
+    registry = File.join(@projects_dir, "registry.json")
+
+    printed = JSON.parse(agent_worktree!("snapshot", "mcritchie-studio"))
+    assert_equal [@worktree_dir], printed.fetch("worktrees").map { |desk| desk.fetch("worktree") },
+                 "premise: the printed view is still scoped to the app it names"
+
+    out = agent_worktree!("snapshot", "mcritchie-studio", "--write",
+                          env: { "AGENT_WORKTREE_REGISTRY" => registry,
+                                 "AGENT_WORKTREE_TASK_JSON" => lapsed_claim_json })
+
+    assert_includes out, "wrote 2 worktree record(s)"
+    assert_includes out, "the app argument filters only the printed view",
+                    "an operator who named one app must be told why the write covered them all"
+    written = JSON.parse(File.read(registry)).fetch("worktrees").map { |desk| desk.fetch("worktree") }.sort
+    assert_equal [@worktree_dir, satellite_desk].sort, written
+    assert_equal written, @desk_ledger.synced.last.fetch("worktrees").map { |desk| desk.fetch("worktree") }.sort
+  end
+
+  # [unit] The same contract one level down, on run_snapshot itself: the app argument
+  # reaches snapshot_payload for the printed view and never for a write. Every caller
+  # (remove, the reclaim sweep, the snapshot command) goes through this one function, so
+  # a new caller that passes its app along cannot bring the scoped write back.
+  test "[unit] run_snapshot scopes the printed view but always writes every app" do
+    snippet = <<~RUBY
+      load #{@script.inspect}
+      require "stringio"
+      $asked = []
+      def snapshot_payload(app = nil)
+        $asked << (app && app.fetch("slug"))
+        { "worktrees" => [] }
+      end
+      def sync_desk_ledger(_payload) = nil
+      real, $stdout = $stdout, StringIO.new
+      run_snapshot({ "slug" => "turf-monster" }, write: false)
+      run_snapshot({ "slug" => "turf-monster" }, write: true)
+      $stdout = real
+      puts JSON.generate($asked)
+    RUBY
+    registry = File.join(@projects_dir, "unit-registry.json")
+    out, err, status = Open3.capture3(
+      SessionEnv.neutralized("PROJECTS_DIR" => @projects_dir, "AGENT_WORKTREE_REGISTRY" => registry,
+                             "PATH" => ENV.fetch("PATH", "")),
+      RbConfig.ruby, "-e", snippet
+    )
+
+    assert status.success?, "#{out}\n#{err}"
+    assert_equal ["turf-monster", nil], JSON.parse(out.lines.last),
+                 "the print keeps its app filter; the write asks for every app (nil)"
+    assert_path_exists registry, "premise: the write really landed, in the pinned scratch file"
+  end
+
   # THE REGISTRY AGREES, on both sides. bin/qa-intake builds its Cleanup Candidates section
   # straight off `cleanup_candidate` and prints a `remove … --yes` per entry, so a front door
   # that still nominated a fresh desk would re-open the incident one indirection out — the
@@ -1667,6 +1761,28 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
           port: #{port}
           status: active
     YAML
+  end
+
+  # A second repo under the fixture projects root, with ONE desk of its own: the "other
+  # app" whose desks an app-scoped write used to erase. Real git, like the hub fixture, so
+  # the snapshot reads it through the same stack_record path a live desk takes. Returns the
+  # desk's path. Register the repo with write_satellite to make it an app; leave it out of
+  # satellites.yml and the script discovers it from disk, the way it finds the gem repos.
+  def add_repo_desk!(slug, task)
+    repo = File.join(@projects_dir, slug)
+    FileUtils.mkdir_p(repo)
+    git!(repo, "init")
+    git!(repo, "config", "user.email", "agent-test@example.com")
+    git!(repo, "config", "user.name", "Agent Test")
+    git!(repo, "checkout", "-b", "main")
+    File.write(File.join(repo, ".gitignore"), "/.worktrees/\n")
+    git!(repo, "add", ".gitignore")
+    git!(repo, "commit", "-m", "Initial commit")
+    git!(repo, "remote", "add", "origin", "git@github.com:McRitchie-Studio/#{slug}.git")
+    git!(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+    desk = File.join(repo, ".worktrees", task)
+    git!(repo, "worktree", "add", desk, "-b", "feat/#{task}")
+    desk
   end
 
   # Env for run_remove tests: scratch registry, plus any per-test overrides
