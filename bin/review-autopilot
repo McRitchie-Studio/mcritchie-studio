@@ -38,6 +38,7 @@
 require "json"
 require "optparse"
 require_relative "lib/task_board"
+require_relative "lib/approval_request_notice"
 
 BASE_URL = ENV.fetch("TASK_BOARD_URL", "https://www.mcritchie.studio")
 DOTENV = File.expand_path("../.env", __dir__)
@@ -129,6 +130,9 @@ when "arm"
   puts "armed: #{action["task_slug"]} pr ##{action["pr_number"]} @ #{action["head_sha"][0, 10]}"
   puts "       merges into #{action["base_branch"]} on the recorded #{action["verdict"]} verdict"
   puts "       expires #{action["expires_at"]} — green CI on this exact tree executes it"
+  # An armed merge runs server-side with no reviewer present, so ARM time is the
+  # last moment a person sees a carried approval request. Information, never a gate.
+  ApprovalRequestNotice.lines(task).each { |line| warn line }
 
 when "list"
   path = "/api/v1/review_pending_actions"

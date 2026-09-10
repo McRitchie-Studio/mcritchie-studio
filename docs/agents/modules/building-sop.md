@@ -314,9 +314,20 @@ For email/auth flows, also return `Local Inbox:
 http://localhost:<port>/_studio/local_emails` (worktree stacks default to
 `LOCAL_EMAIL_CAPTURE=1`). Then **give him the chance to answer** before opening the
 PR — this is the point of the step. You do not have to STALL on it: since
-2026-09-09 the request survives `bin/ship` and keeps pulsing in the review column,
-settling only when review merges the work. So if he has not answered by the time
-the work is certified, ship it and let the card keep asking.
+2026-09-09 the request survives `bin/ship` and keeps pulsing in the review column.
+So if he has not answered by the time the work is certified, ship it and let the
+card keep asking.
+
+**Know what happens at the merge: it does NOT wait for him.** Mr. McRitchie decided
+this on 2026-09-10: surface the request, never block on it. The reviewer sees an
+`OPERATOR APPROVAL STILL WAITING` block before merging, with your name, the time,
+your local URL, and your latest handoff note. So make that handoff note say what
+he should look at. Then review merges on its own verdict, and the move to
+`reviewed` settles the request to `none`. The board posts a comment on the task
+addressed to you, saying the work merged with your request unanswered. He can
+still answer afterwards (`--approval approved` or `--approval changes_requested`),
+but by then the code is on `accepted`. If his answer must come BEFORE the merge,
+say so to him directly; the pipeline will not hold the work for it.
 
 **If no**, skip straight to Step 5. Do not set a `local_url` you will not stand
 behind.

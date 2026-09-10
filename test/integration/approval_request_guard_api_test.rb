@@ -145,7 +145,10 @@ class ApprovalRequestGuardApiTest < ActionDispatch::IntegrationTest
 
   # --- the internal settle keeps working: a move is not a request ---
 
-  test "merging a task that carries a live request still settles silently" do
+  # "Silently" used to be this test's word for "without a 422". The settle now
+  # leaves a note addressed to the setter (surface-waiting-request-at-merge), so the
+  # name says only what is asserted: it settles, and the move is never refused.
+  test "merging a task that carries a live request still settles and is never refused" do
     task = task_at("submitted", "approval_status" => "waiting")
 
     patch "/api/v1/tasks/#{task.slug}",

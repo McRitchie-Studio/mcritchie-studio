@@ -39,9 +39,9 @@ class ShipPreservesApprovalRequestTest < ActionDispatch::IntegrationTest
 
   def auth = { "Authorization" => "Bearer #{token}" }
 
-  def building_task
+  def building_task(devops = {})
     Task.create!(title: "Ship Keeps Approval Row", stage: "building",
-                 metadata: { "devops" => { "kind" => "bug" } })
+                 metadata: { "devops" => { "kind" => "bug" }.merge(devops) })
   end
 
   # Exactly what `bin/task update <slug> --local-url U --approval waiting` sends.
@@ -142,6 +142,47 @@ class ShipPreservesApprovalRequestTest < ActionDispatch::IntegrationTest
     assert_not task.waiting_for_operator_approval?
     assert task.devops["approval_request_dropped_at"].present?,
            "and the drop stays auditable at the boundary that still drops"
+  end
+
+  # --- SURFACE IT, DO NOT BLOCK (surface-waiting-request-at-merge, 2026-09-10) ---
+  #
+  # Mr. McRitchie's decision: review may merge while the request is still waiting,
+  # and nothing refuses — but the settle is no longer silent. Driven through the
+  # same three PATCHes the fast lane and review send, in the order they send them.
+
+  test "[integration] merging over a waiting request is never refused and leaves an addressed note" do
+    task = building_task("built_by" => "steffon")
+    request_approval!(task)
+    assert_response :success
+    assert_equal "steffon", task.reload.devops["approval_requested_by"],
+                 "the request names who asked, with no actor on the write"
+
+    ship_handoff!(task)
+    assert_response :success
+    assert_equal "waiting", task.reload.approval_status, "it rides into review, still asking"
+
+    # What `bin/task merged <slug> accepted` sends, then the move. Both answer 2xx:
+    # a waiting request refuses NEITHER step of the merge boundary.
+    patch "/api/v1/tasks/#{task.slug}", params: { merged: "accepted" }, headers: auth, as: :json
+    assert_response :success, "the merged stamp is not refused"
+    review_merge!(task)
+    assert_response :success, "the move to reviewed is not refused"
+
+    task.reload
+    assert_equal "reviewed", task.stage
+    assert_equal "none", task.approval_status
+
+    notes = Activity.for_task(task).where("metadata->>'kind' = ?", "approval_request_unanswered").to_a
+    assert_equal 1, notes.size, "the settle leaves exactly one record"
+    assert_equal "steffon", notes.first.metadata["addressed_to"], "addressed to the setter, not the merger"
+    assert_equal LOCAL_URL, notes.first.metadata["local_url"]
+    assert_includes notes.first.description, "--approval approved", "and says how he can still answer"
+
+    # He still can: the answer is legal past the merge, and it lands.
+    patch "/api/v1/tasks/#{task.slug}", params: { devops: { approval_status: "approved" } },
+                                        headers: auth, as: :json
+    assert_response :success
+    assert_equal "approved", task.reload.approval_status
   end
 
   test "the settle never fabricates an operator grant" do
