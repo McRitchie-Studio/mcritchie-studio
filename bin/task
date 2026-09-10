@@ -3343,7 +3343,7 @@ when "claim-renew-loop"
   # agent process), so the session id and the live-instance nonce ride in from the
   # spawner's env, and the ANCHOR — the process whose life the lease follows — is
   # named on the command line.
-  usage = "usage: bin/task claim-renew-loop <slug> --anchor-pid <pid> --anchor-start <start> [--desk PATH]"
+  usage = "usage: #{$PROGRAM_NAME} claim-renew-loop <slug> --anchor-pid <pid> --anchor-start <start> [--desk PATH]"
   slug = positional!(ARGV.shift || die!(usage), usage)
   anchor_pid = nil
   anchor_start = nil
