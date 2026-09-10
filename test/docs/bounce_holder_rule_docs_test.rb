@@ -155,9 +155,10 @@ class BounceHolderRuleDocsTest < ActiveSupport::TestCase
   # markdown emphasis, and collapse whitespace so a wrapped sentence or a
   # backslash-continued command joins up.
   #
-  # THE WALK IS LINE-AWARE, because two of the rules below need more than the text.
-  # A run must be able to say WHICH SOURCE LINE it starts on — NARRATION keys its
-  # exemptions on that line, so a second site of the same shape cannot inherit one.
+  # THE WALK IS LINE-AWARE, because the rules below need more than the text. A run
+  # must be able to say WHICH SOURCE LINE it starts on — not as an IDENTITY, since
+  # NARRATION keys on the site's own text and carries no line number, but so that a
+  # failure names a site a reader can open.
   # And a command must stop at a closing CODE FENCE — a fence is INVISIBLE once
   # backticks are stripped, and the walk used to march straight out of one into the
   # prose below. Both facts are cheap to record while flattening and impossible to
@@ -355,10 +356,10 @@ class BounceHolderRuleDocsTest < ActiveSupport::TestCase
   # sentence became a SINGLE run and a later agented command masked an earlier bare
   # one. The mutation that reintroduced an un-agented gate-zero bounce — the exact
   # defect this guard exists to catch — SURVIVED that version.
-  # `line` is the run's IDENTITY — the source line its invocation starts on. The
-  # NARRATION inventory keys on it, because a shape is a category and categories
-  # grow: an entry keyed to the shape of a bare remedy silently absorbed the next
-  # site printing that same remedy.
+  # `line` is the source line the run's invocation starts on. It is REPORTING ONLY:
+  # NARRATION keys on the site's own text, never on this number, so that an unrelated
+  # insertion above a site costs nothing. It is what makes a failure name a site a
+  # reader can open.
   # `kind` is the literal kind the run declares, or nil when it declared one as a
   # PLACEHOLDER (`--kind <environment|rework|dependency>`), where no single kind is
   # named. The per-kind floors count literals only, for exactly that reason.
