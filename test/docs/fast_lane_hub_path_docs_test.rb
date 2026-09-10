@@ -71,9 +71,10 @@ require "test_helper"
 # WHICH FENCES ARE PASTEABLE — CHECKED UNLESS EXCUSED (task guard-skips-copy-paste-fences).
 # The first cut scanned ```bash fences only and called a ```text fence prose, admitting
 # "no crisp classifier separates them". That keyed the guard on fence LANGUAGE when the
-# property that matters is COPY-PASTEABILITY — and it regressed within one night:
-# 3617fa35 (ms#1339) put a bare `bin/ship <task> -m` back into the "good prompt" ```text
-# block, which exists to be pasted verbatim into a new session. Three rules were weighed:
+# property that matters is COPY-PASTEABILITY. The "good prompt" ```text block exists to be
+# pasted verbatim into a new session, and 3617fa35 (ms#1339) rewrapped it with a bare
+# `bin/ship <task> -m` still inside while #1334's fix was in review. It undid no landed
+# fix (its parent already had the bare form); the two collided. Three rules were weighed:
 #
 #   * OPT-IN MARKER on pasteable blocks — rejected: it fails OPEN. A new pasteable block
 #     that forgets the marker is unguarded, the same failure the bash-only rule had.
