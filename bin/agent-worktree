@@ -2849,14 +2849,26 @@ def snapshot_payload(app = nil)
   }
 end
 
+# `app` scopes the PRINTED view only. A write always snapshots every app, because the file
+# it lands in is ONE cross-app registry: <projects>/.agents/worktree-registry.json holds
+# every repo's desks, bin/qa-intake triages from it, and sync_desk_ledger hands the same
+# payload to the board, which counts any open desk a newer snapshot does not list as
+# vanished. A scoped write therefore erased every other app's desks from both, after every
+# `remove <app>`, every `cleanup <app> --reclaim --yes` and every `snapshot <app> --write`,
+# and the Desks panel then listed those live desks as "left without a teardown record".
+#
+# Merging the scoped records into the existing file was the other way out, and it is the
+# wrong one: the file would keep a record for any desk that left outside this script,
+# and that is exactly the drift the ledger's vanished count exists to report.
 def run_snapshot(app = nil, write: false)
-  payload = snapshot_payload(app)
-  json = JSON.pretty_generate(payload)
-
   unless write
-    puts json
+    puts JSON.pretty_generate(snapshot_payload(app))
     return
   end
+
+  puts "note: the worktree registry is cross-app, so --write snapshots every app; the app argument filters only the printed view" if app
+  payload = snapshot_payload
+  json = JSON.pretty_generate(payload)
 
   # The registry is cross-repo state under the operator's real <projects>/.agents,
   # resolved by the same env-else-real-root fallback as every other store in this
@@ -3292,7 +3304,8 @@ def run_reclaim(app = nil, yes: false)
     end
     maybe_scale_in
   end
-  run_snapshot(app, write: true)
+  # Unscoped even when the sweep was: the registry is cross-app (see run_snapshot).
+  run_snapshot(write: true)
 
   if freed.empty?
     puts "reclaim: nothing reclaimed (candidates changed under lock)"
@@ -3380,7 +3393,9 @@ def run_remove(app, task, yes: false, force: false)
 
   teardown_worktree(app, dir, record)
   maybe_scale_in
-  run_snapshot(app, write: true)
+  # Unscoped: the registry is cross-app, and a snapshot of `app` alone erased every other
+  # app's desks from it and from the desk ledger (see run_snapshot).
+  run_snapshot(write: true)
 end
 
 def graduation_blockers(record)

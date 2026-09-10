@@ -327,7 +327,11 @@ bin/agent-worktree scale status
   `physical_max`) describing the elastic Redis band.
 - `snapshot --write` writes the same registry to
   `/Users/alex/projects/.agents/worktree-registry.json` for conductor sessions,
-  dashboards, and future automation. Set
+  dashboards, and future automation. That file is cross-app, so every write
+  covers every app's desks: an app argument filters only the printed view, and
+  the refresh after `remove` and `cleanup --reclaim --yes` is never scoped to one
+  app. A scoped write once erased the other apps' desks from the file and from
+  the desk ledger. Set
   `AGENT_WORKTREE_REGISTRY=/tmp/worktree-registry.json` when a sandboxed
   session needs a scratch write instead of the shared projects registry.
 - `cleanup` is a dry run. It prints clean worktree candidates whose branch is
