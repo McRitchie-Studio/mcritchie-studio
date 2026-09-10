@@ -162,7 +162,120 @@ class WorkflowsCardChipFitTest < ApplicationSystemTestCase
     assert_reveal_blames_the_toggle { reveal_compact_rows(wait: 0.5) }
   end
 
+  # THE CERTIFIED-FRAME GUARD. click_when_settled promises the control had stopped moving
+  # when it was clicked. A box is only a claim about the scroll position it was sampled
+  # at, so that promise means something only if the box it CERTIFIED is the box the click
+  # actually landed in — and the driver scrolls as the first step of the click. This asserts
+  # exactly that equality, which is a fact about coordinates and not about how fast the
+  # runner is: it reddens identically on a warm laptop and a starved CI box.
+  #
+  # IT BITES BY CONSTRUCTION: delete the scrollIntoView from click_when_settled and the
+  # certified box is the pre-scroll one (measured y 894) while the click lands at the
+  # post-collapse one (measured y 390), so this goes red naming both.
+  test "the click lands in the very frame click_when_settled certified as settled" do
+    # 700x1000 is the sweep's own narrowest width and it puts the toggle below the fold,
+    # which is what forces the driver to scroll. Asserted, not assumed, below.
+    page.driver.browser.manage.window.resize_to(700, 1000)
+    load_workflows_card
+
+    below_fold = toggle_gap_below_fold
+    assert_operator below_fold, :>, 0,
+                    "the toggle was already fully in view (#{below_fold}px past the fold), so the " \
+                    "driver never had to scroll and this test exercised nothing. Widen the window or " \
+                    "shorten it until the Workflows card sits below the fold again."
+
+    record_pointerdown_box
+    click_when_settled(TOGGLE)
+
+    assert_equal last_settled_box, pointerdown_box,
+                 "click_when_settled certified the toggle settled at #{last_settled_box} but the " \
+                 "click was dispatched at #{pointerdown_box}. The box was measured in a coordinate " \
+                 "frame the click then left: `element.click` scrolls the control into view, and that " \
+                 "scroll collapses this app's sticky nav, sliding everything below it up ~32px. " \
+                 "Certify the geometry AFTER entering the frame the click happens in — a longer wait " \
+                 "before the scroll cannot help, because the box really is stable where it was measured."
+  end
+
+  # THE WITNESS GUARD. The settle loop clears on two identical consecutive samples, so a
+  # runner starved past its 50ms sample interval cannot tell a page that HAS settled from
+  # one that has not moved YET — which is how every previous fix here stayed marginal. So
+  # a swallowed click must be a fact the helper reads, not a risk it estimates.
+  #
+  # The swallow is made DETERMINISTIC rather than waited for: a one-shot pointerdown
+  # handler shoves the toggle 240px down the page, so pointerup lands somewhere else and
+  # the browser fires `click` on the common ancestor — the exact production sequence, on a
+  # handler instead of a runner. The retry then finds a page that is genuinely still.
+  #
+  # IT BITES BY CONSTRUCTION: drop the witness/retry loop from click_when_settled and this
+  # goes red as "the Show All toggle did not open within 10s of the click", which is the CI
+  # failure verbatim.
+  test "a click swallowed under the pointer is retried, not reported as a dead toggle" do
+    load_workflows_card
+    swallow_the_next_click
+
+    reveal_compact_rows
+
+    assert_selector "#{TOGGLE}[aria-expanded='true']", wait: REVEAL_WAIT
+    assert_equal 1, swallowed_clicks,
+                 "the fixture never swallowed a click, so the retry was never asked for and this " \
+                 "test is a green that proves nothing. Check that the pointerdown handler still " \
+                 "moves the toggle further than its own height."
+  end
+
   private
+
+  # How far the toggle's bottom edge sits BELOW the viewport, in px. Positive means the
+  # driver must scroll to reach it, which is the precondition the frame guard needs.
+  def toggle_gap_below_fold
+    page.evaluate_script(<<~JS).to_i
+      (function () {
+        var t = document.querySelector("#{TOGGLE}");
+        return t ? Math.round(t.getBoundingClientRect().bottom - window.innerHeight) : 0;
+      })()
+    JS
+  end
+
+  # Record the toggle's box at the instant pointerdown is dispatched — the coordinate
+  # frame the click really happens in. Capture phase, so nothing downstream can stop it.
+  def record_pointerdown_box
+    page.execute_script(<<~JS)
+      window.__pointerdownBox = null;
+      document.addEventListener('pointerdown', function () {
+        var t = document.querySelector("#{TOGGLE}");
+        if (!t || window.__pointerdownBox) return;
+        var r = t.getBoundingClientRect();
+        window.__pointerdownBox = #{ApplicationSystemTestCase::BOX_JS};
+      }, true);
+    JS
+  end
+
+  def pointerdown_box
+    page.evaluate_script("window.__pointerdownBox")
+  end
+
+  # Move the toggle out from under the pointer, once, on the first pointerdown. 240px is
+  # far more than the button's 13px height, so pointerup cannot land on it and `click` is
+  # dispatched at the common ancestor instead — the swallow, reproduced on a handler.
+  # The shove is left in place: the retry must succeed against a page that has genuinely
+  # stopped moving, not against one that conveniently snapped back.
+  def swallow_the_next_click
+    page.execute_script(<<~JS)
+      window.__swallowed = 0;
+      var shove = function () {
+        var t = document.querySelector("#{TOGGLE}");
+        if (!t) return;
+        document.removeEventListener('pointerdown', shove, true);
+        window.__swallowed += 1;
+        t.parentElement.style.marginTop = '240px';
+        t.getBoundingClientRect();
+      };
+      document.addEventListener('pointerdown', shove, true);
+    JS
+  end
+
+  def swallowed_clicks
+    page.evaluate_script("window.__swallowed").to_i
+  end
 
   def assert_chips_fit_at(width)
     page.driver.browser.manage.window.resize_to(width, 1000)
@@ -221,10 +334,18 @@ class WorkflowsCardChipFitTest < ApplicationSystemTestCase
   #   FONTS  — page text is Montserrat, fetched from fonts.googleapis.com; the files land
   #            AFTER `visit` returns and every glyph is re-measured, which reflows this
   #            grid under the pointer. +click_when_settled+ (application_system_test_case)
-  #            exists for exactly that and carries the measured case: pointerdown and
-  #            pointerup hit different elements and the browser fires `click` on their
-  #            common ancestor. Locally the font is cached and it never reproduces; on a
-  #            CI runner it is a live fetch. That asymmetry is this flake's signature.
+  #            exists for exactly that: pointerdown and pointerup hit different elements
+  #            and the browser fires `click` on their common ancestor.
+  #   THE SCROLL — and this, not the font, is what actually reddened this file. The
+  #            toggle sits BELOW THE FOLD, so `element.click` scrolls to reach it, and on
+  #            this app a scroll collapses the sticky nav: measured 2026-09-09 at 700x1000,
+  #            the header goes 134px -> 102px over ~160ms and drags this 13px-tall button
+  #            up 32px, starting a frame AFTER the scroll with `document.getAnimations()`
+  #            still empty. Certifying the box BEFORE that scroll certifies a coordinate
+  #            frame the click is about to leave, which is why the previous fix here
+  #            stayed marginal: three runs of one unchanged SHA passed at 24.5s of suite
+  #            time and failed at 30.5s and 40.5s. The fix is in click_when_settled, and
+  #            the two tests below hold it.
   #
   # +wait+ is a per-step ceiling, exposed so the guard test above can drive each exit
   # without paying it four times over.
