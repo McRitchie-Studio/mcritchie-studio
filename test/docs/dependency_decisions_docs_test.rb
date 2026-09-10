@@ -38,13 +38,14 @@ require "test_helper"
 #      sentence, which is the acceptance criterion that is easiest to drop when
 #      adding a row in a hurry.
 #
-#   2. TRIPWIRES ON THE RECORD'S OWN ADVICE. The record makes three claims about
+#   2. TRIPWIRES ON THE RECORD'S OWN ADVICE. The record makes two claims about
 #      files that live IN THIS REPO, and each claim is the premise of a
 #      recommendation: `.github/dependabot.yml` carries no `ignore` block
-#      (CONFIG-3, the premise of "close and add ignore entries"), the Gemfile
-#      still pins minitest and redis (CAUSE-A, the premise of those closes), and
-#      the workflows still call actions/upload-artifact@v4 (CONFIG-7, the finding
-#      that a closed PR parked them there). ACTING ON THE ADVICE TURNS THIS TEST
+#      (CONFIG-3, the premise of "close and add ignore entries"), and the Gemfile
+#      still pins minitest and redis (CAUSE-A, the premise of those closes). No
+#      tripwire pins an action version: Dependabot is what bumps those, and a bot
+#      PR cannot refresh this record, so it would only redden a correct bump.
+#      ACTING ON THE ADVICE TURNS THIS TEST
 #      RED. That is the point, and it is why these are asserted rather than merely
 #      described: the moment someone adds the ignore entries or lifts a pin, the
 #      record's reasoning is spent and CI says so instead of letting the paragraph
@@ -258,19 +259,5 @@ class DependencyDecisionsDocsTest < ActiveSupport::TestCase
                       "Dependabot PRs a CLOSE. The Gemfile no longer carries it, so that verdict no longer " \
                       "follows — refresh `### CAUSE-A` in docs/agents/maintenance/dependency-decisions.md"
     end
-  end
-
-  test "CONFIG-7 still describes the parked upload-artifact version" do
-    workflows = Dir.glob(Rails.root.join(".github", "workflows", "*.yml")).flat_map { |f| File.readlines(f) }
-    versions = workflows.filter_map { |l| l[%r{uses:\s*actions/upload-artifact@(\S+)}, 1] }
-
-    refute_empty versions,
-                 "CONFIG-7 rests on this repo calling actions/upload-artifact. No workflow does any more — " \
-                 "refresh `### CONFIG-7` in docs/agents/maintenance/dependency-decisions.md"
-    assert_equal ["v4"], versions.uniq,
-                 "CONFIG-7 records that a CLOSED Dependabot PR (#2) has parked actions/upload-artifact at v4 " \
-                 "and suppressed every later proposal. The workflows now use #{versions.uniq.join(', ')}, so " \
-                 "that park is over — refresh `### CONFIG-7` and re-check whether Dependabot has resumed " \
-                 "proposing upload-artifact bumps."
   end
 end
