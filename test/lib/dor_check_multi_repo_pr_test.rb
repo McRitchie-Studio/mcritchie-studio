@@ -68,7 +68,7 @@ class DorCheckMultiRepoPrTest < Minitest::Test
   # DOR_CHECK_PR_FILES_BY_REPO / DOR_CHECK_CI_STATUS_BY_REPO, each value carrying the
   # SAME token grammar the singular seams take — so the classifier under measurement is
   # the real one, not a hand-built hash.
-  def drive(files:, ci:, role: "review", devops_extra: {}, changed_files: nil)
+  def drive(files:, ci:, role: "review", devops_extra: {}, changed_files: nil, extra_seams: {})
     Dir.mktmpdir do |dir|
       path = File.join(dir, "task.json")
       File.write(path, JSON.generate("slug" => "multi-repo-task", "title" => "T",
@@ -80,6 +80,7 @@ class DorCheckMultiRepoPrTest < Minitest::Test
         "DOR_CHECK_SUITE_EVIDENCE" => "ok"
       }
       seams["DOR_CHECK_CHANGED_FILES"] = changed_files if changed_files
+      seams.merge!(extra_seams)
       out = IO.popen(OutboundSeams.env(seams),
                      "#{BIN} multi-repo-task --file #{path} --json --gate-role #{role} 2>/dev/null", &:read)
       code = $?.exitstatus
@@ -219,6 +220,76 @@ class DorCheckMultiRepoPrTest < Minitest::Test
   end
 
   # ── 4. THE SECOND PR'S CONTENT IS GRADED, not just counted ──────────────────
+
+  # ── A STAGED MERGE (/tasks/gate-zero-blocks-staged-merges) ─────────────────────
+  #
+  # retire-the-last-mirrors, 2026-09-10: the consumer PRs (MS 1351, turf 675) merged into
+  # `accepted` FIRST BY DESIGN, then the engine PR 319 — devops.pr_url, CI green — came to
+  # review. Worst-of ranked :merged below :green, so the landed siblings GOVERNED and gate-
+  # zero refused the exact order the task required, with a cert remedy that could never
+  # clear it. The sibling here is left OUT of the injected CI map, so its verdict comes
+  # through the REAL `gh pr view` parse (a stub answering for that one URL) — the fact the
+  # exemption rests on is GitHub's, never a token a test or a builder typed.
+  def with_view_stub(view_json)
+    Dir.mktmpdir do |dir|
+      stub = File.join(dir, "gh")
+      File.write(stub, <<~SH)
+        #!/bin/sh
+        case "$*" in
+          *"pr view #{SAT_PR} "*) printf '%s' '#{view_json}' ; exit 0 ;;
+        esac
+        echo "gh stub: refused $*" >&2 ; exit 1
+      SH
+      File.chmod(0o755, stub)
+      yield({ "CI_STATUS_GH_BIN" => stub })
+    end
+  end
+
+  def sat_view(state, base) = JSON.generate("state" => state, "baseRefName" => base, "mergeStateStatus" => "UNKNOWN")
+
+  def test_a_sibling_that_landed_on_accepted_by_design_does_not_govern
+    with_view_stub(sat_view("MERGED", "accepted")) do |seams|
+      verdict, code = drive(files: { HUB => HUB_DOC, SAT => SAT_DOC }, ci: { HUB => "green" },
+                            extra_seams: seams)
+
+      assert_equal 0, code,
+                   "gate-zero refused a green review target because a SIBLING merged into accepted first — " \
+                   "the staged order SUCCEEDING, not a fault\n#{verdict.inspect}"
+      sat_row = Array(verdict["pr_coverage"]).find { |row| row["repo"] == SAT }
+      assert_equal "merged into accepted — landed, not governing", sat_row && sat_row["ci"],
+                   "the pass must SAY the landed sibling was excluded, not leave a bare 'merged' beside it"
+    end
+  end
+
+  # CONTROL — the stale-record guard stays. When devops.pr_url ITSELF is merged there is no
+  # live review target, and :merged must still govern and refuse.
+  def test_a_merged_review_target_still_refuses
+    verdict, code = drive(files: { HUB => HUB_DOC, SAT => SAT_DOC },
+                          ci: { HUB => "state:merged", SAT => "green" })
+
+    refute_equal 0, code, "a merged pr_url is a stale record and must refuse\n#{verdict.inspect}"
+  end
+
+  # CONTROL — evidence, not assertion. A sibling merged somewhere OTHER than accepted (a
+  # stack branch) has not put the first half where the second half needs it.
+  def test_a_sibling_merged_off_accepted_still_governs
+    with_view_stub(sat_view("MERGED", "feat/some-stack")) do |seams|
+      verdict, code = drive(files: { HUB => HUB_DOC, SAT => SAT_DOC }, ci: { HUB => "green" },
+                            extra_seams: seams)
+
+      refute_equal 0, code, "a merge into feat/some-stack is not the first half landing\n#{verdict.inspect}"
+    end
+  end
+
+  # CONTROL — only a MERGE qualifies. A closed-unmerged sibling carries nothing onto accepted.
+  def test_a_sibling_closed_unmerged_still_governs
+    with_view_stub(sat_view("CLOSED", "accepted")) do |seams|
+      verdict, code = drive(files: { HUB => HUB_DOC, SAT => SAT_DOC }, ci: { HUB => "green" },
+                            extra_seams: seams)
+
+      refute_equal 0, code, "a closed, unmerged sibling landed nothing\n#{verdict.inspect}"
+    end
+  end
 
   def test_code_in_the_second_pr_refuses_the_doc_only_exemption
     verdict, code = drive(files: { HUB => HUB_DOC, SAT => SAT_CODE },
