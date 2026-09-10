@@ -84,7 +84,7 @@ class Dev::BoardControllerTest < ActionDispatch::IntegrationTest
       "a bare path is refused — which is WHY the beat injects request.base_url, not \"/tasks\""
   end
 
-  test "[integration] the next beat submits and settles the request" do
+  test "[integration] the next beat submits and CARRIES the request into review" do
     post dev_board_generate_path
     # designed -> building -> waiting -> CI run -> submitted. beat: 0 plays the whole
     # scripted run instantly; at its real DEV_CI_BEAT_SECONDS it takes ~50 seconds.
@@ -92,8 +92,20 @@ class Dev::BoardControllerTest < ActionDispatch::IntegrationTest
     task = fixtures.first.reload
 
     assert_equal "submitted", task.stage
+    assert_equal "waiting", task.approval_status,
+      "the toy has to demonstrate what the real handoff does — carry the request, not eat it"
+    assert task.waiting_for_operator_approval?
+  end
+
+  test "[integration] the beat after that merges and settles the request" do
+    post dev_board_generate_path
+    # ...and one more beat to `reviewed`, which is where the request settles now.
+    5.times { post dev_board_move_path, params: { beat: 0 } }
+    task = fixtures.first.reload
+
+    assert_equal "reviewed", task.stage
     assert_equal "none", task.approval_status,
-      "submitting settles the request — the beat exists to demonstrate exactly that"
+      "merging settles the request — the seam the toy walks the tester through"
     assert_not task.waiting_for_operator_approval?
   end
 

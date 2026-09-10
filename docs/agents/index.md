@@ -56,6 +56,7 @@ required execution path. Do not follow a Background reference to run an SOP.
 | `live-score-watch` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/live-score-watch.md` |
 | `contest-rehearsal` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/contest-rehearsal.md` |
 | `sleeper-auction-watch` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/sleeper-auction-watch.md` |
+| `entry-forfeit` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/entry-forfeit.md` |
 | `Turf Monster Heartbeat` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/HEARTBEAT.md` |
 | `production-deploy` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/production-deploy.md` |
 | `archive-shipped` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
@@ -648,6 +649,10 @@ The default launch flow is:
    http://localhost:<port>/<path>` as a top-level line. For email/auth flows,
    also return `Local Inbox: http://localhost:<port>/_studio/local_emails`.
    Waiting-approval tasks float to the top of their stage and pulse on the board.
+   The request SURVIVES the handoff — it stays live through `submitted` and keeps
+   pulsing in the review column, and is settled only when review merges the work
+   (`reviewed`). So ask before you ship, but do not stall the handoff waiting for
+   an answer.
 9. If behavior, workflow, env vars, ports, auth, email, deploys, or agent
    operations change, update the owning active docs in the same pass.
 10. Commit and push the feature branch, and run `bin/agent-worktree finish
@@ -675,11 +680,12 @@ Write the test tiers your shape requires as you go (unit-first); record them
 tier-tagged in devops["checks_run"]. Before PR handoff, mark local validation
 with `bin/task update <task> --local-url http://localhost:<port>/<path>
 --approval waiting`, return `Local Demo: http://localhost:<port>/<path>` in
-chat, and wait for approval or requested changes. Update docs if behavior
-changes. Then hand off, WITH THE DESK AS CWD, using the hub's copy of the
-script — /Users/alex/projects/mcritchie-studio/bin/ship <task> -m "<commit
-message>" (a satellite desk has no bin/ship of its own; only the cwd is the
-desk's) — it commits, certifies, pushes, opens the non-draft PR into accepted
+chat. The request rides through the handoff and keeps pulsing in review, so hand
+off rather than stalling on an answer. Update docs if behavior changes. Then hand
+off, WITH THE DESK AS CWD, using the hub's copy of the script —
+/Users/alex/projects/mcritchie-studio/bin/ship <task> -m "<commit message>" (a
+satellite desk has no bin/ship of its own; only the cwd is the desk's) — it
+commits, certifies, pushes, opens the non-draft PR into accepted
 led by the task URL, waits for the PR's CI to settle, runs bin/dor-check, and
 moves the task to submitted (review's gate-zero still holds the authoritative
 CI verdict). Fall back to
@@ -735,6 +741,7 @@ Do not merge or deploy unless I explicitly assigned that lane.
 | Turf Monster live score watch SOP | `mcritchie-studio/docs/agents/agents/turf_monster/sops/live-score-watch.md` |
 | Turf Monster contest rehearsal SOP (QA devnet lifecycle) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/contest-rehearsal.md` |
 | Turf Monster sleeper auction watch SOP (live draft valuation) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/sleeper-auction-watch.md` |
+| Turf Monster entry forfeit SOP (withdraw one entrant, forfeit fee) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/entry-forfeit.md` |
 | Address a blocker (shared primitive) | `mcritchie-studio/docs/agents/modules/address-blocker.md` |
 | Alex heartbeat launcher | `mcritchie-studio/docs/agents/agents/alex/HEARTBEAT.md` |
 | Alex grade events SOP | `mcritchie-studio/docs/agents/agents/alex/sops/grade-events.md` |
@@ -769,6 +776,7 @@ Do not merge or deploy unless I explicitly assigned that lane.
 | Latest ecosystem audit | `mcritchie-studio/docs/agents/audits/broader-ecosystem-audit-2026-06-14.md` |
 | Delete later ledger | `mcritchie-studio/docs/agents/maintenance/delete-later.md` |
 | Parking lot (kept, not on the board) | `mcritchie-studio/docs/agents/maintenance/parking-lot.md` |
+| Dependency decisions (Dependabot backlog verdicts) | `mcritchie-studio/docs/agents/maintenance/dependency-decisions.md` |
 
 ## SOP Registry
 
@@ -794,6 +802,7 @@ depend on the heartbeat.
 | `live-score-watch` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/live-score-watch.md` |
 | `contest-rehearsal` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/contest-rehearsal.md` |
 | `sleeper-auction-watch` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/sleeper-auction-watch.md` |
+| `entry-forfeit` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/entry-forfeit.md` |
 | `Turf Monster Heartbeat` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/HEARTBEAT.md` |
 | `Steffon Heartbeat` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/HEARTBEAT.md` |
 | `production-deploy` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/production-deploy.md` |

@@ -57,7 +57,14 @@ class BoardTaskRankTest < ActionDispatch::IntegrationTest
     assert_equal "http://localhost:3001/demo", bar["data-local-url"], "the raw local_url rides along as a data-fallback"
   end
 
-  test "[integration] submitted approval-exit card no longer waits for approval" do
+  test "[integration] a submitted card still flashes a carried approval request" do
+    # THE BOARD HALF of the 2026-09-09 fix. This test used to assert the opposite —
+    # that the bar was gone after submit — which was the defect written down as a
+    # guarantee: `bin/ship` discarded requests builders were told to set, and three
+    # PRs in one night reached review with nobody asked. `submitted` is inside
+    # Task::APPROVAL_REQUEST_STAGES now, so the request rides the handoff and the
+    # card asks for Mr. McRitchie's eyes from the review column. No view changed to
+    # make this work: the pulse and the float never had a stage condition.
     task = Task.create!(
       title: "approval exit peer",
       stage: "building",
@@ -74,6 +81,33 @@ class BoardTaskRankTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     assert_includes card_order_in("dropzone-submitted"), "card-#{task.slug}"
+    assert_select "#card-#{task.slug} a[data-test='operator-approval-waiting'][href='#{local_review_task_path(task.slug)}']",
+                  text: "WAITING APPROVAL"
+  end
+
+  test "[integration] the approval bar drops once review merges the work" do
+    # The seam, from the board's side. At `reviewed` the work is on `accepted` and
+    # the desk serving the local demo is reclaimable, so the CTA would link to a
+    # page nobody can open — the bar has to go.
+    task = Task.create!(
+      title: "approval merge peer",
+      stage: "building",
+      metadata: {
+        "devops" => {
+          "approval_status" => "waiting",
+          "local_url" => "http://localhost:3001/demo"
+        }
+      }
+    )
+    task.submit!
+    task.review!
+
+    # The DEPLOYMENTS board, because `reviewed` is not a /tasks column
+    # (Task::TASKS_BOARD_STAGES stops at `submitted`).
+    get deployments_path
+    assert_response :success
+
+    assert_includes card_order_in("dropzone-reviewed"), "card-#{task.slug}"
     assert_select "#card-#{task.slug} [data-test='operator-approval-waiting']", count: 0
   end
 

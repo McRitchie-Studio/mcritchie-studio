@@ -58,17 +58,32 @@
    when :never then waiting_for_approval ? "bg-amber-50 border-amber-300 hover:border-amber-400 hover:bg-amber-100/70 dark:bg-amber-950/35 dark:border-amber-500/70 dark:hover:border-amber-400 dark:hover:bg-amber-900/35" : "bg-surface border-subtle hover:border-primary/40 hover:bg-surface-alt"
    else "bg-surface border-subtle hover:border-primary/40 hover:bg-surface-alt"
    end %>
-<%# WHICH GLOW THIS CARD WEARS, if any. `submitted` is deliberately absent: a task
-    merely waiting in the review queue wears nothing, and the ring appears when a
+<%# WHICH GLOW THIS CARD WEARS, if any. `submitted` is not a glow OF ITS OWN: a task
+    merely sitting in the review queue still wears nothing, and the ring appears when a
     reviewer actually picks it up (review_in_progress? — an open →reviewed intent
     with a LIVE claim). So the ring reads "someone is on this right now", not "this
-    is in the lane", and it leaves with the reviewer, TTL and all. %>
+    is in the lane", and it leaves with the reviewer, TTL and all.
+
+    A SUBMITTED CARD CAN NOW WEAR A GLOW FOR TWO REASONS AT ONCE, which is new as of
+    2026-09-09 (ship-discards-approval-request): a `waiting` operator-approval request
+    used to be cleared by the move to `submitted`, so `approval` and `review` could
+    never both be true. It now SURVIVES the ship, so at `submitted` they can.
+
+    THE LIVE REVIEWER WINS, deliberately — `review_in_progress` is ordered AHEAD of
+    `waiting_for_approval`. The ring is the ONLY tell that a human is on the card
+    right now, and it is ephemeral: it expires with the claim's TTL, and the approval
+    glow comes back by itself the moment it does. The approval request loses only the
+    ring and keeps every other tell it has — the amber card tone above, the WAITING
+    APPROVAL chip, and the float to the top of its column — so the request is still
+    impossible to miss while the reviewer holds it. Pinned by the "live reviewer
+    outranks a carried approval request" case in test/views/task_card_test.rb, which
+    renders ONE task under both values of review_in_progress. %>
 <% card_glow_kind = if block_state == :blocked && !blocked_tint_only
      "blocked"
-   elsif waiting_for_approval
-     "approval"
    elsif review_in_progress
      "review"
+   elsif waiting_for_approval
+     "approval"
    elsif %w[reviewed assembled].include?(task.stage)
      task.stage
    end %>

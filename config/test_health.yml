@@ -203,7 +203,16 @@ frozen_size:
   # file, test/integration/approval_request_guard_api_test.rb (8 cases). Only the
   # stderr-of-the-real-binary cases needed this harness.
   test/lib/task_cli_test.rb: 3102
-  test/models/task_test.rb: 2266
+  # -243 (2026-09-09, ship-discards-approval-request): a LOWERING, which this section
+  # welcomes and never requires. Moving the settle seam from `submitted` to `reviewed`
+  # meant rewriting the whole operator-approval settle suite, and the additions pushed
+  # this file to 2325 — 59 over. Rather than raise the ceiling, the suite went where
+  # the ceiling asks: test/models/task_approval_window_test.rb, 302 lines covering the
+  # request window and its boundary as one coherent property, needing nothing from
+  # task_test.rb's harness. The end-to-end half is a second new file,
+  # test/integration/ship_preserves_approval_request_test.rb. The ceiling is now the
+  # file's real size, so the next addition goes to a new file too.
+  test/models/task_test.rb: 2023
   # +77 (2026-08-27, retire-acquisition-studio-checkout): three CLI-level tests for
   # the origin-unreachable withhold — the error case, the retired-repo (:gone) case,
   # and `cleanup --write` not filing a withheld desk into the delete-later ledger.

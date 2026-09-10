@@ -10,6 +10,8 @@
 
 require "minitest/autorun"
 require "json"
+require "tmpdir"
+require "fileutils"
 require_relative "../../bin/lib/fast_lane"
 require_relative "../../bin/lib/full_suite_gate"
 
@@ -106,5 +108,99 @@ class FastLaneTest < Minitest::Test
     refute FastLane.cert_fresh?(["[unit] bin/rails test test/foo_test.rb"], "abc1234")
     refute FastLane.cert_fresh?(["[fast-cert@abc1234] green"], nil),
            "no fingerprint (unfingerprintable root) must never skip the cert"
+  end
+
+  # --- handoff_command: the line `bin/task begin` prints last -------------------
+  # THE HINT IS A CLAIM ABOUT WHERE A SCRIPT LIVES, and nothing checked it against
+  # the filesystem until this task. These assertions are keyed on the disk, not on
+  # the wording: the command the tool prints must RESOLVE to an existing executable
+  # and must name the desk to run it from. The end-to-end wiring — that `bin/task
+  # begin` actually prints this — is pinned in test/lib/task_begin_test.rb, because a
+  # correct helper the script never calls fixes nothing.
+
+  # The bin/ of the checkout these tests ship in — the real hub bin dir, so the
+  # fallback arm is asserted against the real bin/ship rather than a fixture.
+  HUB_BIN = File.expand_path("../../bin", __dir__)
+
+  # A bare `bin/ship`, and ONLY a bare one: the lookbehind exempts any path form
+  # (/Users/…/bin/ship, ./bin/ship). Same shape as the docs guard in
+  # test/docs/fast_lane_hub_path_docs_test.rb.
+  BARE_SHIP = %r{(?<![\w/.-])bin/ship(?![\w-])}
+
+  # [cd-target, ship, slug] parsed out of `cd <desk> && <ship> <slug>`.
+  def parse_handoff(command)
+    cd, run = command.split(" && ", 2)
+    refute_nil run, "the hint must join a cd and the ship invocation: #{command.inspect}"
+    ship, slug = run.split(" ", 2)
+    [cd.to_s.sub(/\Acd /, ""), ship, slug.to_s.strip]
+  end
+
+  def test_handoff_command_names_an_executable_ship
+    Dir.mktmpdir("desk-without-ship") do |desk|
+      _cd, ship, slug = parse_handoff(FastLane.handoff_command("fix-nav-bug", desk, HUB_BIN))
+
+      assert_equal "fix-nav-bug", slug
+      assert_equal ship, File.expand_path(ship),
+                   "the hint must name an ABSOLUTE ship path — a relative one resolves " \
+                   "only from whichever desk the reader happens to be standing in"
+      assert File.executable?(ship),
+             "begin would print #{ship}, which is not an executable file — the hint " \
+             "names a script that does not exist"
+    end
+  end
+
+  # The defect itself. A satellite desk carries no bin/ship, so the bare form the
+  # hint used to print died as `nohup: bin/ship: No such file or directory`.
+  def test_handoff_command_is_never_bare
+    Dir.mktmpdir("desk-without-ship") do |desk|
+      command = FastLane.handoff_command("fix-nav-bug", desk, HUB_BIN)
+      refute_match BARE_SHIP, command,
+                   "the hint printed a bare bin/ship, which resolves only from a hub desk"
+    end
+    # Non-vacuity: the pattern must really bite the form this test forbids.
+    assert_match BARE_SHIP, "hand off with: bin/ship fix-nav-bug",
+                 "BARE_SHIP does not match the bare form, so the assertion above proves nothing"
+  end
+
+  # The cwd half. bin/ship roots at the cwd's git toplevel and, off a foreign root,
+  # RE-ROOTS at the task's desk loudly rather than refusing (bin/ship's `--- rooting ---`
+  # block); it dies only when no desk resolves. Naming the desk is still half the
+  # instruction: the re-root is a correction the reader must notice, and the cert WRITERS
+  # run by hand next (bin/fast-check, bin/full-suite-check) DO refuse a foreign root —
+  # so a hint that names the script alone trades one failure for its mirror image.
+  def test_handoff_command_stands_in_the_desk
+    Dir.mktmpdir("desk-without-ship") do |desk|
+      cd, = parse_handoff(FastLane.handoff_command("fix-nav-bug", desk, HUB_BIN))
+      assert_equal desk, cd, "the hint must cd to the task's desk before running ship"
+    end
+  end
+
+  # A hub desk ships its own bin/, and it is fresh off `accepted` while a primary
+  # routinely lags it — so the desk's own script wins when there is one.
+  def test_handoff_command_prefers_the_desks_own_ship
+    Dir.mktmpdir("desk-with-ship") do |desk|
+      desk_ship = File.join(desk, "bin", "ship")
+      FileUtils.mkdir_p(File.dirname(desk_ship))
+      File.write(desk_ship, "#!/bin/sh\n")
+      FileUtils.chmod("+x", desk_ship)
+
+      _cd, ship, = parse_handoff(FastLane.handoff_command("fix-nav-bug", desk, HUB_BIN))
+      assert_equal desk_ship, ship, "a desk that carries bin/ship must be handed its own"
+    end
+  end
+
+  # Resolution is by EXECUTABILITY, not mere presence: a non-executable file at that
+  # path cannot be run, so it must not be printed as if it could.
+  def test_handoff_command_ignores_a_non_executable_desk_ship
+    Dir.mktmpdir("desk-with-dud-ship") do |desk|
+      dud = File.join(desk, "bin", "ship")
+      FileUtils.mkdir_p(File.dirname(dud))
+      File.write(dud, "not a program")
+      FileUtils.chmod(0o644, dud)
+
+      _cd, ship, = parse_handoff(FastLane.handoff_command("fix-nav-bug", desk, HUB_BIN))
+      refute_equal dud, ship, "a non-executable desk ship must not be printed"
+      assert File.executable?(ship), "the fallback must be a runnable script"
+    end
   end
 end
