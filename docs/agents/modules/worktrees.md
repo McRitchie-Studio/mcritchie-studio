@@ -146,10 +146,14 @@ When a new agent session starts actual implementation work:
    ```
 
    Waiting approval cards float to the top of their stage and pulse on the board.
-   A `waiting` request is legal only before the `submitted` seam. Past it the PR
-   review flow owns the work, so any save at `submitted` or later settles an open
-   request to `none` — settled, never a fabricated `approved`. After requested
-   changes, set `--approval changes_requested` and keep building.
+   A `waiting` request is legal for as long as the local demo it points at can be
+   served — `designed`, `building` and `submitted` — so it SURVIVES `bin/ship` and
+   keeps pulsing in the review column (fixed 2026-09-09; the seam used to sit at
+   `submitted`, and the documented handoff discarded the request). The window
+   closes at `reviewed`: the work has merged and this desk is reclaimable, so any
+   save at `reviewed` or later settles an open request to `none` — settled, never
+   a fabricated `approved`. After requested changes, set `--approval
+   changes_requested` and keep building.
 11. Commit coherent work on the feature branch.
 12. Run `bin/agent-worktree finish <app> <task-slug>` to produce the PR/QA
    packet.

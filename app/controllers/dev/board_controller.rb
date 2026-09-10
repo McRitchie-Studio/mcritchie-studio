@@ -66,9 +66,12 @@ module Dev
     #      then waits on CI with the task still on the builder's desk. This is the
     #      beat the card's CI meter exists for, and it was previously unreachable
     #      from these buttons: the marks flip and the clock ticks live;
-    #   3. submit — which settles the approval request
-    #      (Task#settle_operator_approval_past_submit) and freezes the meter's clock
-    #      to the run's measured duration.
+    #   3. submit — which CARRIES the approval request into the review column
+    #      (`submitted` is inside Task::APPROVAL_REQUEST_STAGES since 2026-09-09,
+    #      so the card keeps pulsing there) and freezes the meter's clock to the
+    #      run's measured duration. The next beat, `reviewed`, is where the request
+    #      settles (Task#settle_operator_approval_past_request_window) — so the toy
+    #      walks the same two-column life the real request now has.
     #
     # Beats 1 and 2 return before the stage move, so one click = one beat.
     def move

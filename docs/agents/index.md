@@ -595,6 +595,10 @@ The default launch flow is:
    http://localhost:<port>/<path>` as a top-level line. For email/auth flows,
    also return `Local Inbox: http://localhost:<port>/_studio/local_emails`.
    Waiting-approval tasks float to the top of their stage and pulse on the board.
+   The request SURVIVES the handoff — it stays live through `submitted` and keeps
+   pulsing in the review column, and is settled only when review merges the work
+   (`reviewed`). So ask before you ship, but do not stall the handoff waiting for
+   an answer.
 9. If behavior, workflow, env vars, ports, auth, email, deploys, or agent
    operations change, update the owning active docs in the same pass.
 10. Commit and push the feature branch, and run `bin/agent-worktree finish
@@ -622,8 +626,8 @@ Write the test tiers your shape requires as you go (unit-first); record them
 tier-tagged in devops["checks_run"]. Before PR handoff, mark local validation
 with `bin/task update <task> --local-url http://localhost:<port>/<path>
 --approval waiting`, return `Local Demo: http://localhost:<port>/<path>` in
-chat, and wait for approval or requested changes. Update docs if behavior
-changes. Then hand off with bin/ship <task> -m "<commit message>" from the
+chat. The request rides through the handoff and keeps pulsing in review, so hand
+off rather than stalling on an answer. Update docs if behavior changes. Then hand off with bin/ship <task> -m "<commit message>" from the
 worktree — it commits, certifies, pushes, opens the non-draft PR into accepted
 led by the task URL, waits for the PR's CI to settle, runs bin/dor-check, and
 moves the task to submitted (review's gate-zero still holds the authoritative
