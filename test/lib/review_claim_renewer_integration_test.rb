@@ -224,4 +224,30 @@ class ReviewClaimRenewerIntegrationTest < Minitest::Test
                    "and it renews nothing further — the poll that never happens is the whole fix"
     end
   end
+
+  # THE 2026-09-10 INCIDENT, end to end. A review ends in a BOUNCE (`bin/task block`,
+  # stage → `building`), and the loop that was renewing it must end with it. It used
+  # not to: `building` was not a stop stage, so one loop renewed through a bounce, the
+  # rework and the resubmit — and at the resubmit, because a subagent reviewer shares
+  # its session's identity, it went on renewing the NEXT review as if it were its own.
+  # When that reviewer died in the 07:10Z spend-limit 429s, this loop kept the task out
+  # of the review queue while the session that anchored it stayed open.
+  def test_integration_a_live_renewer_self_terminates_when_its_review_ends_in_a_bounce
+    Dir.mktmpdir do |proj|
+      anchor_start = start_anchor
+      @board = StubBoard.new(stage: "submitted")
+      spawn_renewer(proj, anchor_start)
+
+      assert wait_until { @board.renew_count >= 2 },
+             "the control: a live review must be renewing before its silence can mean anything"
+
+      # The reviewer bounces the task. Nothing else changes: no release, no signal.
+      @board.stage = "building"
+
+      assert wait_until { !alive?(@renewer) },
+             "a bounce is a VERDICT — the review is over, and so is the loop renewing it"
+      assert alive?(@anchor),
+             "and it ended with its ANCHOR STILL ALIVE: the session never died in the incident either"
+    end
+  end
 end

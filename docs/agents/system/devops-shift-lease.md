@@ -70,12 +70,13 @@ cost two full days (2026-08-29 and 2026-08-30) before the cause was found.
 
 `ShiftRenewer.run` now takes a third stop condition, `finished:`, asked **before** the
 renew so a loop whose work is done exits having polled the board **zero** further
-times. `bin/lib/review_claim_cli.rb` supplies it as `task_finished?`: a claim on a
-task at `reviewed`, `assembled`, `shipped` or `archived`
-(`ReviewClaimCli::TERMINAL_STAGES`) protects nothing, so the loop exits 0, quietly.
-Two asymmetries are deliberate: `blocked`, `building` and `designed` are NOT terminal
-(a bounced review is often still being written up, and a rework bounce can move a task
-backwards while a real lease is held); and unlike the anchor check, `finished` fails
+times. `bin/lib/review_claim_cli.rb` supplies it as `review_over?`: a review happens
+while a task is `submitted` (`ReviewClaimCli::REVIEW_STAGE`), so any other stage —
+merged, **bounced**, archived — means the review reached its verdict and the loop exits
+0, quietly. The bounce used to be excluded ("a bounced review is often still being
+written up"); that concern is about the LEASE, which the exit leaves alone with a fresh
+3h25m on it, and excluding it let one loop renew through a bounce and a resubmit on
+2026-09-10 (see below). Unlike the anchor check, `finished` fails
 **OPEN** — an unreadable board is not evidence that a review ended, and stopping on a
 network blip would free a live reviewer's task underneath them. A wrong "anchor dead"
 costs a recoverable delay; a wrong "work finished" costs a duplicated review.
@@ -184,10 +185,14 @@ deliberately NOT re-derived from it: `ShiftRenewer::INTERVAL_SECONDS` stays 30s,
 a 51-minute beat would blind `review-claim status`, whose whole instrument is watching
 the expiry move.
 
-The build claim and the two role leases keep `DEFAULT_TTL_SECONDS` (120s) — sized for
-`bin/statusline`'s 45s heartbeat. **`bin/statusline` has never renewed a review
-claim**; the comment that once justified sharing the number described a "~5s render
-cadence" that renews nothing on this lane, and two other files had copied it.
+The build claim and the two role leases keep `DEFAULT_TTL_SECONDS` (120s), and since
+2026-09-09 every one of them is renewed by a **detached renewer** on the same 30s beat
+— the build claim's is `bin/lib/build_claim_renewer.rb`, started by the claim itself.
+So 120s is now the **dead-holder bound**, not the live holder's coverage: a headless
+build holds its task for a whole ~12-minute ship, and a crash still frees it in two
+minutes. **`bin/statusline` has never renewed a review claim**; the comment that once
+justified sharing the number described a "~5s render cadence" that renews nothing on
+any lane, and its last copies were swept alongside the build renewer.
 
 **`bin/task review-claim release` reports what the board did, too.** The longer TTL is
 what made this urgent: a release that quietly dropped nothing used to cost 120s and now
@@ -216,9 +221,22 @@ claim already on the task (`TaskReviewClaim.release_for_new_submission!`), which
 sound for one reason and only at that one transition: a task being offered for review
 NOW cannot be under a review claimed before this submission. **The bounce itself is
 deliberately left alone** — the reviewer who just blocked a task is often still writing
-feedback, which is the same reason `ReviewClaimCli::TERMINAL_STAGES` excludes
-`building`. The stale holder's renewer, if any, stops on its next beat: renewing an
-unclaimed row answers `:no_lease`, the 204 that ends the loop.
+feedback, so the lease keeps its remaining TTL. The stale holder's RENEWER, though, ends
+at the bounce (`ReviewClaimCli::REVIEW_STAGE`): it used to be trusted to stop at the
+resubmit on a 204 `:no_lease`, and on 2026-09-10 it did not — a sibling reviewer in the
+same session claimed the resubmitted task first, a subagent reviewer shares its
+session's id and nonce, and the stale loop adopted the new review as its own.
+
+**A review renewer is also bounded in time** (`ReviewClaimCli::REVIEW_RENEW_WINDOW_SECONDS`
+= `REVIEW_TTL_SECONDS`), because its anchor cannot see a reviewer: a reviewer is a
+subagent, and a subagent is not an OS process — its shells are children of the session's
+`claude` process under the session's own id. So a reviewer that dies inside a living
+session looked alive to the anchor for as long as the session stayed open; two tasks sat
+`review_in_progress` with nobody reviewing them after the 2026-09-10 spend-limit 429s. A
+live continuous review never needs a renewal (the lease outlasts the longest one ever
+measured), so the window gives a dead reviewer's task back within ~6.8h instead of ~15.4h
+while never lapsing a live review before that. The parked-across-a-break band is the case
+given up: a subagent reviewer cannot park.
 
 Surface: `bin/devops-shift acquire|renew|release|status` (+ the internal
 `renew-loop`); the board endpoints
@@ -464,8 +482,9 @@ just candidate selection:
   *automatic* paths refuse.
 
 The **merge** half is a no-op by construction: `bin/release` merges only
-`reviewed`/`assembled` tasks, whose build claims have already lapsed (the status line
-renews only while `building`), so a live-building task never reaches the merge path —
+`reviewed`/`assembled` tasks, whose build claims have already lapsed (a build claim is
+renewed only while `building`, and its renewer exits at the stage change), so a
+live-building task never reaches the merge path —
 the stage gate already prevents it.
 
 ## Follow-ups (separate tasks)

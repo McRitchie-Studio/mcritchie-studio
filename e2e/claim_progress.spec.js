@@ -2,8 +2,9 @@ const { test, expect } = require("@playwright/test");
 
 // [e2e] The claim chip on the board — the happy path for "liveness is not progress".
 //
-// A build claim's pulsing dot means only that a TERMINAL IS PAINTING: bin/statusline
-// renews the lease every ~5s, so it stays green straight through a wedged agent. On
+// A build claim's pulsing dot means only that the BUILDER'S RUN IS STILL HERE: a
+// detached renewer renews the lease every 30s (lib/claim_lease.rb), so it stays green
+// straight through a wedged agent. On
 // 2026-07-13 that green was read as progress for 35 minutes while nothing landed.
 // The chip states the second, independent fact — what the task last PRODUCED — so a
 // reader (or a conductor deciding whether to steal a desk) judges on evidence.

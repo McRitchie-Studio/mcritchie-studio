@@ -299,12 +299,18 @@ class TaskReviewClaim < ApplicationRecord
   # before this submission — during a review that ended when the task left `submitted`.
   # It cannot be a review of this submission, and nothing it could still be protecting
   # is reachable. That is why the hook is on the ENTRY to `submitted` and nowhere else:
-  # on a bounce the lease legitimately still matters (the reviewer may be mid-feedback,
-  # which is why ReviewClaimCli::TERMINAL_STAGES excludes `building`), and clearing
-  # there would take a live review's lease away.
+  # on a bounce the lease legitimately still matters (the reviewer may be mid-feedback),
+  # and clearing there would take a live review's lease away. The bounce does end the
+  # prior holder's RENEWER (ReviewClaimCli::REVIEW_STAGE) — the lease itself is left to
+  # run out on its own TTL, which covers any trailing feedback many times over.
   #
-  # The prior holder's detached renewer, if any, stops on its own next beat: renewing an
-  # unclaimed row answers :no_lease, which the board sends as the 204 that ends the loop.
+  # DO NOT RELY ON THE 204 TO END A STALE RENEWER. This comment used to say the prior
+  # holder's renewer stops on its next beat because renewing an unclaimed row answers
+  # :no_lease. That holds only if the row is STILL unclaimed at that beat, and on
+  # 2026-09-10 it was not: a SIBLING reviewer in the same session claimed the resubmitted
+  # task first, and a subagent reviewer shares its session's id AND nonce, so the stale
+  # loop's renewal read as :same_instance and it adopted the new review as its own. The
+  # loop now ends at the bounce, long before any resubmission can alias it.
   def self.release_for_new_submission!(task_slug)
     row = find_by(task_slug: task_slug.to_s.strip)
     return nil unless row

@@ -5,9 +5,11 @@ require "json"
 
 # DESK ACTIVITY — the liveness signal that survives the status-line problem.
 #
-# The build claim's lease (lib/claim_lease.rb) is renewed by bin/statusline, which
-# paints every ~5s whether or not an agent is doing anything. So the lease attests
-# "a terminal is open", and an open terminal is not a worker: on 2026-08-13 a
+# The build claim's lease (lib/claim_lease.rb) is renewed on a timer for as long as
+# the builder's run is alive — by the detached renewer (bin/lib/build_claim_renewer.rb)
+# on a 30s beat, and redundantly by bin/statusline whenever a terminal happens to be
+# painting. Neither asks whether an agent is doing anything. So the lease attests
+# "the run is still here", and a live run is not a worker: on 2026-08-13 a
 # claim renewed itself 16:05:16Z → 16:06:46Z while its holder produced nothing the
 # board could see for ~40 minutes, and three agents stalled behind it.
 #
@@ -59,7 +61,7 @@ module DeskActivity
   # A hard ceiling on entries examined per walk. A desk that somehow exceeds it
   # answers `nil` (unknown), NOT `false` — an unfinished search must never be
   # reported as a quiet desk, because `false` is the answer that frees a claim.
-  # The budget bounds a heartbeat that runs every ~45s on the operator's laptop;
+  # The budget bounds a renewal beat that runs every ~30s on the operator's laptop;
   # a pruned Rails worktree sits around 3-6k entries, so this is roughly 4x
   # headroom, not a limit real desks meet.
   WALK_BUDGET = 25_000
@@ -161,7 +163,8 @@ module DeskActivity
   end
 
   # Resolve the desk a claim on `slug` should be judged by, and REFUSE to judge it
-  # by any other. `root` is a candidate directory (bin/statusline passes its cwd);
+  # by any other. `root` is a candidate directory (bin/statusline passes its cwd; the
+  # detached renewer passes the desk resolved from the task);
   # it counts only when it carries an .agent-context.json bound to this very task.
   #
   # Without this check the heartbeat would read whichever checkout it happened to

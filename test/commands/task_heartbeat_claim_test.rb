@@ -85,6 +85,23 @@ class TaskHeartbeatClaimTest < ActiveSupport::TestCase
            "and it must actually EXTEND the lease, not merely rewrite it"
   end
 
+  test "[integration] the holder's own LAPSED lease is re-taken on the next renewal" do
+    # THE SELF-HEALING THE DETACHED RENEWER RESTS ON. That renewer beats every 30s
+    # against a 120s TTL, so four missed beats — a board deploy, a slept laptop —
+    # lapse the lease. It must heal on the next beat that lands, and it can only do
+    # that because a lapsed lease that still names THIS session is re-taken, from
+    # no desk at all. lib/claim_lease.rb's review-TTL paragraph states that the
+    # build claim heals this way and the review claim does not; this pins the half
+    # of that argument the build claim owns. (Contrast the EXPIRED FOREIGN case
+    # above, which must write nothing.)
+    result = heartbeat(claim: { session: MINE_SESSION, nonce: MINE_NONCE, in_seconds: -30 })
+
+    refute_empty result[:writes], "a missed beat must not cost a live builder its claim"
+    claim = result[:writes].last["devops"]
+    assert_equal MINE_SESSION, claim["claimed_session"]
+    assert Time.parse(claim["claim_expires_at"]) > Time.now + 60, "and the re-taken lease is a fresh one"
+  end
+
   test "[integration] a bound DESK may still adopt a free lease" do
     # The recovery path a builder depends on: the worktree whose .agent-context.json
     # names this task is evidence that this session is at its workbench, which a
