@@ -38,6 +38,9 @@ gh api repos/McRitchie-Studio/<repo>/actions/jobs/<job-id>/logs
 gh api "repos/McRitchie-Studio/<repo>/actions/runs?per_page=100" \
   --jq '.workflow_runs[] | select(.name|test("Update #")) | "\(.id) \(.name) \(.created_at)"'
 gh api repos/McRitchie-Studio/<repo>/actions/runs/<id>/logs > job.zip   # unzip, read "3_Run Dependabot.txt"
+
+# ADVISORIES — the public GitHub Advisory Database answers even with repo alerts off
+gh api "/advisories?ecosystem=rubygems&affects=<gem>" --jq '.[] | "\(.ghsa_id) \(.severity) \(.summary)"'
 ```
 
 "We cannot see why Dependabot did that" is never a valid conclusion. The update
@@ -138,8 +141,13 @@ its ten extra transitive bumps include:
 ```
 
 A tightened *minimum* on loofah inside a sanitizer bump is the shape an advisory
-fix takes. This ecosystem cannot confirm that from GitHub, because security
-alerts are off everywhere (CONFIG-1) — which is itself the finding.
+fix takes, and the public Advisory Database confirms it despite CONFIG-1 (read in
+review, 2026-09-10): GHSA-cj75-f6xr-r4g7 (rails-html-sanitizer `< 1.7.1`, XSS) and
+GHSA-9wjq-cp2p-hrgf (loofah `< 2.25.2`), both medium. Both apps' `accepted` locks
+carry the vulnerable 1.7.0 / 2.25.1. Neither is reachable today — each needs the
+sanitizer allow-list widened to SVG `<use>` or `<feImage>`, and neither app
+widens it — but in the hub this HOLD is the only PR carrying the fix (turf-monster
+gets it from #258), so see step 1 below.
 
 **Disposition: KEEP #1246, CLOSE #1245.** Taking the smaller diff would discard
 the sanitizer bump for no gain.
@@ -410,7 +418,12 @@ buys a slot and loses the reason.** Every CLOSE below is paired with either an
 
 ## What to do, in order
 
-1. **Escalate CONFIG-1.** It outranks every PR in this record.
+1. **Escalate CONFIG-1.** It outranks every PR in this record. Meanwhile take
+   the patched sanitizer pair in the hub on its own, not behind #1246 (CAUSE-C):
+   `bundle update --conservative rails-html-sanitizer loofah`; turf #258 carries
+   it. puma 7.2.0's two HIGH advisories (GHSA-2vqw-3mp8-cgmx, GHSA-qpgp-93vx-g8v8,
+   fixed in 7.2.1) need `set_remote_address proxy_protocol: :v1`, which neither
+   app sets.
 2. **Close six and add the `ignore` entries** — #707, #253, #1058, #460 (CAUSE-A,
    with `ignore` for minitest and redis in both configs), #26 (CAUSE-B), #1245
    (CAUSE-C). Frees four of the twenty jammed bundler slots and stops three
