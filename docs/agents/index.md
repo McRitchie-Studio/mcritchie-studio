@@ -185,7 +185,7 @@ operator-facing message (chat reply, handoff, task note, PR summary) carries
   himself, and cap the block at 68 columns so the confidence mark never
   truncates. It is the LAST thing in the message.
 
-  ```text
+  ```not-pasteable
   🚀 In Flight: 2:14 PM MDT
   ──────────────────────────────────────────────────────────────────
   carl · review fix-cta-timing  ▰▰▰▰▱▱▱▱▱▱  4m in · ~6m left   rough
@@ -690,9 +690,9 @@ chat. The request rides through the handoff and keeps pulsing in review, so hand
 off rather than stalling on an answer. Update docs if behavior changes. Then hand
 off, WITH THE DESK AS CWD, using the hub's copy of the script —
 /Users/alex/projects/mcritchie-studio/bin/ship <task> -m "<commit message>" (a
-satellite desk has no bin/ship of its own; only the cwd is the desk's) — it
+satellite desk carries no copy of it; only the cwd is the desk's) — it
 commits, certifies, pushes, opens the non-draft PR into accepted
-led by the task URL, waits for the PR's CI to settle, runs bin/dor-check, and
+led by the task URL, waits for the PR's CI to settle, runs dor-check, and
 moves the task to submitted (review's gate-zero still holds the authoritative
 CI verdict). Fall back to
 the long-form commands if the task spans repos or needs a bespoke PR body.
