@@ -72,23 +72,11 @@ The 1Password account is `alex@mcritchie.studio` (account ID `MWOV5OT5BRHATI4EGM
 
 **What it does:** Every managed wallet (`web2_solana_address`) has its Ed25519 secret encrypted at rest with a key derived from `MANAGED_WALLET_ENCRYPTION_KEY` via `ActiveSupport::KeyGenerator`. Rotating the key requires re-encrypting every managed-wallet secret column — a controlled, online operation but disruptive enough to be its own runbook.
 
-**Symptoms of rotation needed:** Suspected key compromise (committed accidentally, leaked from logs). Routine quarterly hygiene tied to the Solana admin-key cadence. Required after any incident affecting the `RAILS_MASTER_KEY` (which seeds the key derivation salt).
+**Symptoms of rotation needed:** Suspected key compromise (committed accidentally, leaked from logs). Routine quarterly hygiene tied to the Solana admin-key cadence. A `RAILS_MASTER_KEY` incident alone does NOT require it: in production the v2 key derives from `MANAGED_WALLET_ENCRYPTION_KEY` only, and the KDF salt is a fixed label (`turf-monster managed wallet v2`), not `secret_key_base`. Only legacy untagged rows — none on production since the 2026-05-20 migration — read `secret_key_base`.
 
-**🚫 THERE IS NO PROCEDURE. DO NOT ROTATE THIS KEY.**
+**The procedure is Phase 2 of the [`credential-rotation`](../agents/steffon/sops/credential-rotation.md) SOP — and it is gated on a DEPLOY.** The code that makes a rotation possible (`managed-wallet-key-rotation`: the decrypt-only `MANAGED_WALLET_ENCRYPTION_KEY_PREVIOUS`, a verified re-seal in `solana:reencrypt_managed_wallets`, and the read-only `solana:verify_managed_wallet_keys`) must be RUNNING on the app before the key is touched. Merged is not deployed. The SOP's Gate 0 proves it on the dyno. Follow that file, not this one; there is deliberately no second copy of the steps here.
 
-This section used to carry a step-by-step rotation. **Every load-bearing step of it was fabricated**, and following it destroys every managed wallet on the platform. Removed 2026-09-09 after verification against `turf-monster` at that date:
-
-| What the old procedure said | What is actually there |
-|---|---|
-| Set `MANAGED_WALLET_ENCRYPTION_KEY_NEW`, "not yet replacing the live one" | **Nothing reads it.** `app/services/solana/keypair.rb:118-125` reads `ENV["MANAGED_WALLET_ENCRYPTION_KEY"]` and only that, then memoizes the derived encryptor. There is no second-key path. |
-| `bin/rails managed_wallets:reencrypt` | **No such task.** There is no `managed_wallets` namespace in `lib/tasks/`. |
-| "decrypts with the OLD key, re-encrypts with the NEW key" | The real task, `solana:reencrypt_managed_wallets` (`lib/tasks/solana.rake:532`), is the OPSEC-015 **legacy→v2 migration**. `Keypair.reencrypt` is `from_encrypted(x).encrypt` — same key, both directions. |
-| "idempotent — safe to re-run" / "tracks progress in `OutboundRequest`-style audit rows" | Idempotent, yes — by **skipping every row already at v2**. It writes no audit rows. On a fully-migrated database it prints `0 migrated, N already v2, 0 failed` and **exits 0**, so "ran to completion" is satisfied having re-encrypted nothing. |
-| Verify with `User.where.not(web2_solana_secret_encrypted: nil)` | No such column. It is `encrypted_web2_solana_private_key` (`db/schema.rb:907`). |
-
-Run the old sequence and you promote a new key, revoke the old one, and discover that every managed wallet's Ed25519 secret was never re-encrypted and is now undecryptable — with a green rake run as the evidence that it worked.
-
-**What has to exist first**, as its own turf-monster task: a decrypt path that accepts a second key, a migration that walks every row from the old key to the new one, and a verification that counts rows rather than trusting an exit code. Until that ships, the answer to "rotate `MANAGED_WALLET_ENCRYPTION_KEY`" is **no** — and if the key is compromised, that is an incident to escalate, not a runbook to follow.
+**History, so nobody restores the old recipe.** Until 2026-09-09 this section carried a step-by-step rotation, and every load-bearing step of it was fabricated. It set a `MANAGED_WALLET_ENCRYPTION_KEY_NEW` that nothing read, and it called a `managed_wallets:reencrypt` task that did not exist. It verified against a `web2_solana_secret_encrypted` column that does not exist either; the real column is `encrypted_web2_solana_private_key`. The real task of that date skipped every row carrying `v2:`, printed `0 migrated, N already v2, 0 failed`, and exited 0 while every wallet became undecryptable. The variable the code reads now is `…_PREVIOUS` (the retiring key), not `…_NEW`.
 
 **Last rotation:** none. The 2026-05-20 run recorded here was the OPSEC-015 legacy→v2 **migration**, which re-encrypted under the key already in use; the key itself has never been rotated.
 

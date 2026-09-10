@@ -88,6 +88,11 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
 
   UNSUBSTITUTED = /<[a-z][a-z _]*>/i
 
+  # §2.1's write, graded like the others. It needs $OLD as well as $NEW: set the
+  # new key without the old one and every existing managed wallet stops opening.
+  MW_HEADING = "### 2.1 `MANAGED_WALLET_ENCRYPTION_KEY` — deploy first, then migrate".freeze
+  OLD_VALUE  = "retiring-managed-wallet-guard-fixture-value".freeze
+
   # The SOP's WRITE lanes: every heading whose fenced shell mutates a real store
   # from `$NEW`, with the substring that picks its writing blocks out and the count
   # there must be. BOTH behavioural lanes below iterate this map.
@@ -99,7 +104,10 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
   # believed. Adding a lane here is how a new write earns the same grading.
   WRITE_LANES = {
     "### 4.2 File it in 1Password FIRST" => ["op item edit", 1],
-    "### 4.4 Write the runtime stores"   => ["$NEW", 2]
+    "### 4.4 Write the runtime stores"   => ["$NEW", 2],
+    # managed-wallet-key-rotation: the one Heroku write that must carry TWO
+    # values -- the new key AND the retiring one -- in a single release.
+    MW_HEADING                           => ["config:set", 1]
   }.freeze
 
   # What counts as MUTATING a store. Any fenced block matching this must live under
@@ -367,6 +375,12 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
       assert_empty emptied,
                    "heroku config:set was called with an EMPTY value: #{emptied.inspect}. On the real " \
                    "fleet that blanks the credential on every app in the list."
+
+      mw = heroku_calls(dir).select { |c| c.include?("MANAGED_WALLET_ENCRYPTION_KEY") }
+
+      assert_empty mw,
+                   "§2.1's managed-wallet write reached heroku with $NEW and $OLD unset: #{mw.inspect}. " \
+                   "That blanks the key every managed wallet is sealed under."
     end
 
     # ── the control: the same blocks MUST write when $NEW is set ────────────
@@ -374,6 +388,7 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
       build_sandbox(dir)
       env = {
         "NEW" => NEW_VALUE,
+        "OLD" => OLD_VALUE,
         "APPS" => "fixture-app-one fixture-app-two",
         "ROTATED_AT" => "2026-09-09T12:00:00Z"
       }
@@ -403,6 +418,39 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
       desk_envs(dir).each do |file|
         assert_includes File.read(file), "OTHER_KEY=untouched",
                         "the desk loop clobbered an unrelated line in #{file}; it must replace only its own"
+      end
+
+      both = calls.select do |c|
+        c.include?("config:set") &&
+          c.include?("MANAGED_WALLET_ENCRYPTION_KEY_PREVIOUS=#{OLD_VALUE}") &&
+          c.include?("MANAGED_WALLET_ENCRYPTION_KEY=#{NEW_VALUE}")
+      end
+
+      assert_equal 1, both.length,
+                   "with $NEW and $OLD set, §2.1 must write BOTH managed-wallet variables in ONE " \
+                   "config:set -- one release, so the app never runs on the new key alone. " \
+                   "Calls seen: #{calls.inspect}"
+    end
+  end
+
+  # §2.1's write has two more ways to go wrong than the generic one: $OLD missing
+  # (the new key goes live with nothing to open the old rows) and $OLD == $NEW (a
+  # "rotation" onto itself). Both must be refused before heroku is reached.
+  test "the managed-wallet write refuses a missing OLD key and a NEW key equal to it" do
+    blocks = write_blocks(MW_HEADING)
+
+    { "OLD unset" => { "NEW" => NEW_VALUE },
+      "OLD == NEW" => { "NEW" => NEW_VALUE, "OLD" => NEW_VALUE } }.each do |label, env|
+      Dir.mktmpdir("crs-mw") do |dir|
+        build_sandbox(dir)
+        blocks.each do |block|
+          result = run_block(block[:body], dir, env)
+
+          refute_equal 0, result[:status], "§2.1's write ran to success with #{label}"
+        end
+
+        assert_empty heroku_calls(dir).select { |c| c.include?("MANAGED_WALLET_ENCRYPTION_KEY") },
+                     "§2.1's write reached heroku with #{label}"
       end
     end
   end
@@ -444,6 +492,10 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
         emptied = heroku_calls(dir).select { |c| c =~ /#{FIXTURE_VAR}=(\s|$)/ }
 
         assert_empty emptied, "interactive #{sh}: heroku config:set ran with an EMPTY value: #{emptied.inspect}"
+
+        mw = heroku_calls(dir).select { |c| c.include?("MANAGED_WALLET_ENCRYPTION_KEY") }
+
+        assert_empty mw, "interactive #{sh}: §2.1's managed-wallet write reached heroku with $NEW unset: #{mw.inspect}"
 
         edits = op_calls(dir).select { |c| c.include?("item edit") }
 
