@@ -155,9 +155,10 @@ class BounceHolderRuleDocsTest < ActiveSupport::TestCase
   # markdown emphasis, and collapse whitespace so a wrapped sentence or a
   # backslash-continued command joins up.
   #
-  # THE WALK IS LINE-AWARE, because two of the rules below need more than the text.
-  # A run must be able to say WHICH SOURCE LINE it starts on — NARRATION keys its
-  # exemptions on that line, so a second site of the same shape cannot inherit one.
+  # THE WALK IS LINE-AWARE, because the rules below need more than the text. A run
+  # must be able to say WHICH SOURCE LINE it starts on — not as an IDENTITY, since
+  # NARRATION keys on the site's own text and carries no line number, but so that a
+  # failure names a site a reader can open.
   # And a command must stop at a closing CODE FENCE — a fence is INVISIBLE once
   # backticks are stripped, and the walk used to march straight out of one into the
   # prose below. Both facts are cheap to record while flattening and impossible to
@@ -355,10 +356,10 @@ class BounceHolderRuleDocsTest < ActiveSupport::TestCase
   # sentence became a SINGLE run and a later agented command masked an earlier bare
   # one. The mutation that reintroduced an un-agented gate-zero bounce — the exact
   # defect this guard exists to catch — SURVIVED that version.
-  # `line` is the run's IDENTITY — the source line its invocation starts on. The
-  # NARRATION inventory keys on it, because a shape is a category and categories
-  # grow: an entry keyed to the shape of a bare remedy silently absorbed the next
-  # site printing that same remedy.
+  # `line` is the source line the run's invocation starts on. It is REPORTING ONLY:
+  # NARRATION keys on the site's own text, never on this number, so that an unrelated
+  # insertion above a site costs nothing. It is what makes a failure name a site a
+  # reader can open.
   # `kind` is the literal kind the run declares, or nil when it declared one as a
   # PLACEHOLDER (`--kind <environment|rework|dependency>`), where no single kind is
   # named. The per-kind floors count literals only, for exactly that reason.
@@ -401,11 +402,15 @@ class BounceHolderRuleDocsTest < ActiveSupport::TestCase
     runs
   end
 
-  # An exemption names ONE SITE: a file plus the SOURCE LINE its bare invocation
-  # starts on. Keying on the matched shape alone is what let a second site inherit
-  # an exemption in silence.
+  # An exemption names ONE SITE by the site's own TEXT. It carries no line number:
+  # a line is an identity that any insertion ABOVE it invalidates, and that drift
+  # is paid by whoever is editing the doc, not by whoever wrote the exemption.
+  # AMBIGUITY IS NOT RESOLVED HERE — this predicate answers "does the entry cover
+  # this run?", and answers yes for EVERY run whose context carries the prose. A
+  # regex that has come to match twice is caught, loudly, by the liveness test
+  # below; silently exempting both is exactly the absorption this guard forbids.
   def narration_covers?(entry, rel, run)
-    entry[:file] == rel && entry[:line] == run.line && run.context.match?(entry[:match])
+    entry[:file] == rel && run.context.match?(entry[:match])
   end
 
   # ---------------------------------------------------------------------------
@@ -699,7 +704,7 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
       "the truncated command must still read as bare, so it is REPORTED rather than acquitted"
   end
 
-  test "[unit] a narration exemption names one site, so a second site of the same shape is not absorbed" do
+  test "[unit] a second site of the same shape is REPORTED, not absorbed" do
     probe = <<~RUBY
       warn! "  bin/task block \#{slug} --kind rework ... --breaker-ack"
       puts "an unrelated line between the two sites"
@@ -708,17 +713,37 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
     bare = block_runs(probe).reject { |run| run.command.include?("--agent") }
 
     assert_equal 2, bare.size, "two identical bare remedy shapes must read as TWO runs"
-    refute_equal bare.first.line, bare.last.line, "the two runs must carry distinct line identities"
 
-    entry = { file: "probe", line: bare.first.line, match: /--kind rework/ }
-    assert narration_covers?(entry, "probe", bare.first),
-      "the entry must still cover the site it names"
-    refute narration_covers?(entry, "probe", bare.last),
-      "one NARRATION entry covered TWO different sites. An entry keyed to a SHAPE absorbs the " \
-      "next site of that shape in silence — measured on bin/task, where appending a second " \
-      "`warn!` printing the same remedy took the file from 2 bare runs to 3 while the covered " \
-      "count rose to match, the uncovered count never moved, and nothing failed. A line number " \
-      "is an identity; a shape is a category, and a category grows"
+    # THE HOLE THIS PINS, measured on bin/task: appending a second `warn!` printing
+    # the same remedy took the file from 2 bare runs to 3 while the covered count
+    # rose to match, the uncovered count never moved, and NOTHING FAILED. The new
+    # site inherited an exemption written for a different one.
+    #
+    # A LINE NUMBER used to close it, by making the entry cover the first site and
+    # not the second. That identity cost more than it saved (see NARRATION's
+    # header), so the hole is now closed the other way: the entry covers BOTH, and
+    # covering both is a LOUD FAILURE rather than a silent pass. The liveness test
+    # below is where that failure is raised; this is the count it raises on.
+    entry = { file: "probe", match: /--kind rework/ }
+    covered = bare.select { |run| narration_covers?(entry, "probe", run) }
+
+    assert_equal 2, covered.size,
+      "an over-broad entry must be VISIBLE as over-broad. If this reads 1, the second site was " \
+      "quietly absorbed — the exemption widened into a blanket pass for its file and a site " \
+      "nobody examined now ships exempt"
+    refute_equal 1, covered.size,
+      "1 is the ONLY count the liveness rule accepts, and it is the count that must not be " \
+      "reachable by absorbing a second site"
+
+    # ...and the remedy the header prescribes must actually work: narrowing `match:`
+    # back to one site restores the accepted count. Without this the test above is
+    # satisfied by an entry that can never match anything at all.
+    narrowed = { file: "probe", match: /an unrelated line between the two sites/ }
+    assert_equal 0, bare.count { |run| narration_covers?(narrowed, "probe", run) },
+      "a context window is BOUNDED — by the first sentence-ending dot, by CONTEXT_WINDOW, and " \
+      "by the NEXT invocation, whichever comes first (here it is the dot inside the command's " \
+      "own `...`). So text sitting between two runs reaches neither of them, and an entry " \
+      "narrowed onto one site cannot silently start covering its neighbour"
   end
   # ---------------------------------------------------------------------------
   # 1. THE GRANT MUST NOT COME BACK (negative).
@@ -823,12 +848,41 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
   # is EXPLICIT: a bare run must be listed here with a reason, or it fails — which is
   # what makes a seventeenth site in a NEW place fail rather than ship.
   #
-  # EACH ENTRY NAMES ONE SITE: a file AND the source `line` its bare invocation
-  # starts on. Keying on the matched SHAPE alone was a measured hole — append a
-  # second `warn!` printing bin/task's remedy and the file went from 2 bare runs to
-  # 3, the covered count rose to match, the uncovered count never moved, and nothing
-  # failed. The new site inherited an exemption written for a different one. A line
-  # is an identity; a shape is a category, and categories grow.
+  # EACH ENTRY NAMES ONE SITE, BY THAT SITE'S OWN TEXT — a file plus a `match:`
+  # regex, and NO line number. Keying on the matched SHAPE alone was a measured
+  # hole: append a second `warn!` printing bin/task's remedy and the file went from
+  # 2 bare runs to 3, the covered count rose to match, the uncovered count never
+  # moved, and nothing failed. The new site inherited an exemption written for a
+  # different one. That hole is still closed — but it is closed by the LIVENESS
+  # TEST below, which fails when an entry matches anything other than exactly one
+  # site, not by a line number.
+  #
+  # WHY THE LINE NUMBER IS GONE. Every entry here already carried a `match:`; the
+  # regex was the identifier and `line:` was redundant precision, so its only live
+  # effect was to fail this file whenever an unrelated PR inserted text ABOVE a
+  # cited line. Measured across three PRs on 2026-09-09:
+  #
+  #   PR 1341  a 15-line doc insert shifted 836 → 849. Two failures, in a ship whose
+  #            own lane could not have caught them — `bin/fast-check` cannot see
+  #            test/docs.
+  #   PR 1346  a 70-line section shifted 836 → 906. Repointed, with the builder
+  #            noting a sibling PR would shift it again.
+  #   PR 1347  THE EXPENSIVE ONE. Rather than pay the shift, the builder CONSTRAINED
+  #            THE FIX: bin/task got only single-line, line-count-neutral edits, a
+  #            constants block was omitted because it would have moved line 928, and
+  #            NINE runnable remedy sites were deferred to a second wave. He verified
+  #            3,530 lines before and after.
+  #
+  # The first two are chores. The third is the argument: a guard that makes a builder
+  # prefer a worse structure to keep a line count stable costs more than the drift it
+  # prevents. An exemption should survive its doc being edited; only the doc going
+  # SILENT should retire it.
+  #
+  # MULTI-MATCH FAILS LOUD — it does not exempt all matches. A regex that has come to
+  # match twice means the file changed in a way this entry's author did not foresee,
+  # and the second site was never examined by anyone. Widening one entry to cover it
+  # is the absorption above, arrived at from the other direction. Narrow `match:` so
+  # it names one site again, or add a SECOND entry with its own `why:`.
   #
   # Read this list as an INVENTORY, not as a proof of completeness. The absolute it
   # used to carry — "a seventeenth site cannot arrive unnoticed, because arriving
@@ -841,9 +895,6 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
   # than by this paragraph. That is the durable lesson: a claim of completeness
   # belongs in a test, never in a header.
   #
-  # A `line` that drifts fails LOUD and prints the lines actually found, so the fix
-  # is mechanical. That is the price of an identity, and it is the right price.
-  #
   # bin/task's BREAKER-ACK REMEDY used to sit in this list, exempted as a SPLIT rather
   # than as narration and tracked at /tasks/breaker-remedy-omits-agent. That task landed:
   # the remedy (and the escalation printed three lines above it, which was the worse of
@@ -851,35 +902,28 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
   # are covered by the RULE and the entry was DELETED rather than repointed. An exemption
   # is the temporary form of a fix; deleting one is what finishing looks like.
   NARRATION = [
-    { file: "app/models/task.rb", line: 3065, match: /lands the task back on building and repoints/,
+    { file: "app/models/task.rb", match: /lands the task back on building and repoints/,
       why: "comment explaining the feature-marker repoint" },
-    { file: "bin/pr-review", line: 29, match: /with the failing checks named/,
+    { file: "bin/pr-review", match: /with the failing checks named/,
       why: "header comment narrating the gate-zero flow" },
-    { file: "bin/task", line: 928, match: /lands the task back on building and ends with write_feature_marker/,
+    { file: "bin/task", match: /lands the task back on building and ends with write_feature_marker/,
       why: "comment explaining the feature-marker repoint" },
-    { file: "docs/agents/agents/carl/sops/pr-review-light.md", line: 139, match: /on its own initiative/,
+    { file: "docs/agents/agents/carl/sops/pr-review-light.md", match: /on its own initiative/,
       why: "cautionary account of turf-monster PR 594, the incident that motivated the gate" },
-    { file: "docs/agents/agents/carl/sops/pr-review.md", line: 322, match: /therefore runs the breaker itself/,
+    { file: "docs/agents/agents/carl/sops/pr-review.md", match: /therefore runs the breaker itself/,
       why: "prose describing what the command does, not an instruction to run it" },
-    # Repointed 836 → 906 → 927 (2026-09-09): first the ship-wait section, then the
-    # handoff-path correction, each added lines ABOVE this prose. The prose is
-    # unchanged; only its line number moved. This entry is line-keyed by design, so
-    # any insertion earlier in the file drifts it — expect to repoint again when a
-    # sibling doc PR lands first. /tasks/exemptions-keyed-by-line (ms#1352) deletes
-    # this entry outright, which is the real fix; until it lands, dropping the
-    # repoint is not an option — the guard fails LOUD on a stale line.
-    { file: "docs/agents/modules/devops-task-board.md", line: 927,
+    { file: "docs/agents/modules/devops-task-board.md",
       match: /lands the task back on building, and three readers/,
       why: "prose describing the stage effect on board readers" },
-    { file: "docs/agents/modules/gates/g2-review.md", line: 93, match: /exits 10\), re-run it/,
+    { file: "docs/agents/modules/gates/g2-review.md", match: /exits 10\), re-run it/,
       why: "prose naming the breaker's exit code" },
-    { file: "docs/agents/modules/pr-review-sop.md", line: 165,
+    { file: "docs/agents/modules/pr-review-sop.md",
       match: /lands the task on building, and every reader/,
       why: "prose describing the stage effect on board readers" },
-    { file: "docs/agents/modules/pr-review-sop.md", line: 333,
+    { file: "docs/agents/modules/pr-review-sop.md",
       match: /runs the same check and refuses the second bounce/,
       why: "prose describing the breaker, not an instruction to run it" },
-    { file: "lib/review_verdict_gate.rb", line: 12,
+    { file: "lib/review_verdict_gate.rb",
       match: /on its own initiative, then reported back to its Carl/,
       why: "header narrating the incident the gate exists to prevent" }
   ].freeze
@@ -927,20 +971,25 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
       matched = bare.select { |run| narration_covers?(entry, entry[:file], run) }
 
       assert_equal 1, matched.size, <<~MSG
-        NARRATION entry #{entry[:file]}:#{entry[:line]} #{entry[:match].inspect}
+        NARRATION entry #{entry[:file]} #{entry[:match].inspect}
         covers #{matched.size} bare `bin/task block` run(s). An exemption must name exactly ONE
         site (#{entry[:why]}).
 
         Bare runs in that file start on line(s): #{bare.map(&:line).inspect}
-        …of which match this entry's prose: #{bare.select { |r| r.context.match?(entry[:match]) }.map(&:line).inspect}
 
-        ZERO means the entry is STALE — the prose moved, or the line drifted to one of the
-        numbers above. Repoint `line:` (or delete the entry if the run is gone); an exemption
-        that matches nothing is a standing hole in the guard.
+        ZERO means the entry is STALE — the prose it names is GONE, reworded, or now carries
+        `--agent` and needs no exemption. Re-read the site and either narrow `match:` onto the
+        prose that is actually there, or DELETE the entry; an exemption that matches nothing is
+        a standing hole in the guard, and deleting one is what finishing looks like.
 
-        TWO OR MORE means two invocations share a line and this entry cannot tell them apart.
-        Split them onto separate lines, or narrow `match:` — never widen an entry to cover a
-        site it was not written for. That absorption is the hole this key exists to close.
+        Editing the file ABOVE these runs is NOT a reason for this to fail. Entries are keyed on
+        the site's own text and carry no line number, precisely so that an unrelated insertion
+        costs nothing. If a mere insertion reddened this, the reader broke — fix the reader.
+
+        TWO OR MORE means the prose this entry names now appears at more than one bare run, and
+        the extra site was never examined by anyone. NARROW `match:` until it names one site
+        again, or add a SECOND entry with its own `why:` — never leave one entry standing over
+        both. Widening is the absorption this rule exists to catch.
       MSG
     end
   end
