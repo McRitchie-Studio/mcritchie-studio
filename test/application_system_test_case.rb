@@ -1,7 +1,12 @@
 require "test_helper"
 
 class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
-  driven_by :selenium, using: :headless_chrome, screen_size: [ 1400, 1400 ]
+  # The window every system test starts in, named so a test that resizes can put it back.
+  # Capybara's session reset does NOT restore the window: a resize persists into every
+  # test that runs after it in the same browser, in whatever order the seed picks.
+  SCREEN_SIZE = [ 1400, 1400 ].freeze
+
+  driven_by :selenium, using: :headless_chrome, screen_size: SCREEN_SIZE
 
   # How long to wait for a control to stop moving before clicking it.
   SETTLE_TIMEOUT = 5
@@ -12,9 +17,9 @@ class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
   # handler did not run and cannot be run twice. A click that DID land is never retried.
   CLICK_ATTEMPTS = 3
 
-  # An element's box, rounded, in ONE canonical shape. Shared so the guard tests can
-  # compare the box this file CERTIFIED as settled against the box the click actually
-  # landed in, instead of re-deriving the rounding and comparing two different numbers.
+  # An element's box, rounded, in ONE canonical shape. Shared so a guard test's failure
+  # message can print the box this file CERTIFIED beside the box the click landed in, in
+  # the same rounding. The guard does NOT compare the two — see last_settled_scroll_y.
   BOX_JS = "[Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height)].join(',')".freeze
 
   # Everything that can still resize the target, plus the target's own box, in one
@@ -32,7 +37,7 @@ class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
       const sheetsReady = Array.from(document.querySelectorAll('link[rel="stylesheet"]'))
         .every((l) => !!l.sheet);
       const settled = fontReady && sheetsReady && document.fonts.status === "loaded";
-      return #{BOX_JS} + "|" + settled;
+      return #{BOX_JS} + "|" + settled + "|" + Math.round(window.scrollY);
     })(arguments[0])
   JS
 
@@ -88,18 +93,24 @@ class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
   #   fetch. Guarded by await_settled_geometry, whose probe waits on that face.
   #
   #   THE DRIVER'S OWN SCROLL. `element.click` SCROLLS the element into view as its
-  #   first step, and on this app a scroll is not free: the sticky nav's hysteresis
-  #   collapses the header and every element below it slides UP. Measured 2026-09-09 on
-  #   /deployments at a 700x1000 window — the Workflows "Show All" toggle, a 13px-tall
-  #   control:
+  #   first step (W3C: block 'end', the minimum distance), and on this app a scroll is
+  #   not free: the sticky nav's hysteresis collapses the header in proportion to the
+  #   scroll, and every element below it slides UP. Measured 2026-09-10 on /deployments
+  #   at a 700x1000 window — the Workflows "Show All" toggle, a 13px-tall control:
   #
-  #     scroll lands   scrollY 0 -> 472   header 134px   toggle y 422   0 animations
-  #     +80ms                             header 114px   toggle y 402
-  #     +160ms                            header 102px   toggle y 390   (settled)
+  #     driver scroll lands   scrollY 0 -> 49   header 134px   toggle y 894 -> 845
+  #     collapse runs                           header ~122px  toggle y ~833
   #
-  #   A 32px slide under a 13px button — two and a half button-heights — beginning about
-  #   one frame AFTER the scroll, with `document.getAnimations()` empty at the instant the
-  #   scroll lands, so there is no pre-signal to read. This is what reddened
+  #   The scroll and landing y are the driver's own click, in every run; the collapse row
+  #   is the same scroll replayed from JS, where it settled within ~80ms, and ~833 is
+  #   where the click lands when certification is left until before the scroll.
+  #   A 12px slide under a 13px button — nearly its whole height — so a pointer aimed at
+  #   its centre is carried off it. A longer scroll collapses the header further: this
+  #   helper's own `block: 'center'` scroll (below) lands at scrollY 472 and the header
+  #   goes 134px -> 102px over ~160ms, toggle y 422 -> 390, a 32px slide, with
+  #   `document.getAnimations()` empty at the instant the scroll lands, so there is no
+  #   pre-signal to read. That is harmless there ONLY because the settle loop now runs
+  #   after the scroll and waits it out. This is what reddened
   #   chip-fit-reveal-races-runner: on three runs of ONE unchanged SHA the system suite
   #   passed at 24.5s and failed at 30.5s and 40.5s, because a slower runner widens the
   #   pointerdown/pointerup gap until it straddles a step of that slide.
@@ -131,7 +142,7 @@ class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
 
     attempts.times do |attempt|
       execute_script(SCROLL_INTO_VIEW_JS, element)
-      @last_settled_box = await_settled_geometry(element, timeout: settle_timeout)
+      await_settled_geometry(element, timeout: settle_timeout)
       execute_script(CLICK_WITNESS_JS, element)
       element.click
       return element unless click_was_swallowed?
@@ -147,10 +158,19 @@ class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
     end
   end
 
-  # The box click_when_settled last certified as settled, "x,y,width,height". The guard
-  # tests compare it against the box the click actually landed in — the two being equal
-  # is the property that makes the certification mean anything.
-  attr_reader :last_settled_box
+  # What the settle loop last certified: the box ("x,y,width,height") and the scroll
+  # position it was sampled at.
+  #
+  # THE GUARD COMPARES THE SCROLL POSITION, NOT THE BOX. The property worth pinning is
+  # that the geometry was certified in the frame the click happens in, and a frame IS a
+  # scroll position: the nav collapse slides the box but never moves window.scrollY. The
+  # box cannot carry that claim. On a runner whose frames arrive late, the settle loop
+  # reads two identical samples BEFORE the collapse's first rAF step, that step then lands
+  # between certification and pointerdown, and the box moves a few pixels while the click
+  # still lands — measured 2026-09-10 with frames delayed 55ms: certified 328,422, clicked
+  # at 328,418, toggle opened, 3 of 3 runs. That is the witness's job, not a frame error.
+  # Deleting the pre-scroll, by contrast, certifies at scrollY 0 and clicks at scrollY 49.
+  attr_reader :last_settled_box, :last_settled_scroll_y
 
   # True ONLY when the witness is still standing there to report that the click never
   # reached the element. Every other reading means DO NOT RETRY, and the distinction is
@@ -169,17 +189,22 @@ class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
   # bearing: stability alone would clear a box that has simply not been re-measured
   # yet, and readiness alone would clear a box mid-animation.
   #
-  # Returns the settled box so the caller can report — and a guard test can pin — WHICH
-  # box was certified. It samples getBoundingClientRect, which is viewport-relative, so
-  # a box is only meaningful together with the scroll position it was taken at: certify
-  # in the frame the click will happen in, never before the scroll that gets there.
+  # Returns the settled box, and records it with the scroll position it was sampled at
+  # (last_settled_box, last_settled_scroll_y) so a guard test can pin WHICH frame was
+  # certified. It samples getBoundingClientRect, which is viewport-relative, so a box is
+  # only meaningful together with that scroll position: certify in the frame the click
+  # will happen in, never before the scroll that gets there.
   def await_settled_geometry(element, timeout: SETTLE_TIMEOUT)
     deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
     previous_box = nil
 
     loop do
-      box, settled = evaluate_script(SETTLE_PROBE_JS, element).to_s.split("|")
-      return box if settled == "true" && previous_box == box
+      box, settled, scroll_y = evaluate_script(SETTLE_PROBE_JS, element).to_s.split("|")
+      if settled == "true" && previous_box == box
+        @last_settled_box = box
+        @last_settled_scroll_y = scroll_y.to_i
+        return box
+      end
 
       previous_box = box
       if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
