@@ -603,9 +603,30 @@ fresh path `--steal` is forwarded to the child move. Handoff (commit → `bin/fa
 record `pr_url` → `bin/dor-check` → `move submitted` → read-back verify):
 
 ```bash
-bin/ship <task-slug>                     # commit message defaults to the task title
-bin/ship <task-slug> -m "Commit message"
+cd <desk>                            # the worktree begin printed
+<desk>/bin/ship <task-slug>          # message defaults to the task title
+<desk>/bin/ship <task-slug> -m "Commit message"
 ```
+
+**Both halves of that are load-bearing, and `begin` now prints them for you.**
+The PATH picks the script: every fast-lane script — `bin/task`, `bin/ship`,
+`bin/fast-check`, `bin/full-suite-check`, `bin/dor-check` — lives in
+mcritchie-studio/bin ALONE, so a bare `bin/ship` on a turf-monster or rolio desk
+dies as `nohup: bin/ship: No such file or directory`. The CWD picks the TREE the
+script acts on — and `bin/ship` does **not refuse** a foreign root. It roots at the
+cwd's git toplevel and then **re-roots at the task's desk, loudly** (`re-rooting at
+the task worktree … (you ran from …)`, `bin/ship`'s `--- rooting ---` block),
+running every gate `chdir`'d there; it dies only when no desk resolves on disk.
+Stand in the desk anyway, for the two reasons that are NOT a refusal by ship: a
+re-root is a correction you have to notice and trust rather than the tree you
+chose, and the cert **writers** you run by hand afterwards — `bin/fast-check`,
+`bin/full-suite-check` — genuinely DO refuse a foreign root (`this run roots at
+… which is not <slug>'s tree — refusing to certify it`, which
+`bin/lib/cert_root_guard.rb` labels in source as *the cert writers' refusal
+text*). `bin/task begin` closes by printing the resolved `cd <desk> && <absolute
+bin/ship> <task-slug>` line, ready to paste — a hub desk ships its own `bin/`, so
+there it names the desk's script; a satellite desk has none, so there it names
+the hub's.
 
 **Both wrappers talk to GitHub, and that credential expires ~hourly BY DESIGN.**
 `bin/ship` pushes, opens the PR, and polls `gh pr checks`; `begin`'s preflight

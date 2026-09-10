@@ -2806,7 +2806,11 @@ when "begin"
   puts "port: #{context["app_port"]}" if context["app_port"]
   puts "url: #{context["local_url"]}" if context["local_url"]
   puts "task: #{BASE_URL}/tasks/#{slug}"
-  puts "next: build in the worktree, then hand off with: bin/ship #{slug}"
+  # Absolute script + the desk to run it from, on its own line so it is
+  # copy-pasteable verbatim. See FastLane.handoff_command for why the bare
+  # `bin/ship <slug>` this replaced was wrong from every desk but the hub's.
+  puts "next: build in the worktree, then hand off with:"
+  puts "  #{FastLane.handoff_command(slug, worktree_dir, __dir__)}"
 when "update"
   usage = "usage: bin/task update <slug> [flags]"
   slug = positional!(ARGV.shift || die!(usage), usage)
