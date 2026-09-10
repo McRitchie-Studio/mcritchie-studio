@@ -56,6 +56,7 @@ required execution path. Do not follow a Background reference to run an SOP.
 | `live-score-watch` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/live-score-watch.md` |
 | `contest-rehearsal` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/contest-rehearsal.md` |
 | `sleeper-auction-watch` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/sleeper-auction-watch.md` |
+| `entry-forfeit` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/entry-forfeit.md` |
 | `Turf Monster Heartbeat` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/HEARTBEAT.md` |
 | `production-deploy` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/production-deploy.md` |
 | `archive-shipped` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
@@ -680,6 +681,7 @@ Do not merge or deploy unless I explicitly assigned that lane.
 | Turf Monster live score watch SOP | `mcritchie-studio/docs/agents/agents/turf_monster/sops/live-score-watch.md` |
 | Turf Monster contest rehearsal SOP (QA devnet lifecycle) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/contest-rehearsal.md` |
 | Turf Monster sleeper auction watch SOP (live draft valuation) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/sleeper-auction-watch.md` |
+| Turf Monster entry forfeit SOP (withdraw one entrant, forfeit fee) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/entry-forfeit.md` |
 | Address a blocker (shared primitive) | `mcritchie-studio/docs/agents/modules/address-blocker.md` |
 | Alex heartbeat launcher | `mcritchie-studio/docs/agents/agents/alex/HEARTBEAT.md` |
 | Alex grade events SOP | `mcritchie-studio/docs/agents/agents/alex/sops/grade-events.md` |
@@ -739,6 +741,7 @@ depend on the heartbeat.
 | `live-score-watch` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/live-score-watch.md` |
 | `contest-rehearsal` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/contest-rehearsal.md` |
 | `sleeper-auction-watch` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/sleeper-auction-watch.md` |
+| `entry-forfeit` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/entry-forfeit.md` |
 | `Turf Monster Heartbeat` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/HEARTBEAT.md` |
 | `Steffon Heartbeat` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/HEARTBEAT.md` |
 | `production-deploy` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/production-deploy.md` |
