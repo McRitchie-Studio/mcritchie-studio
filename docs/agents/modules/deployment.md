@@ -350,9 +350,12 @@ How a gem rides a release:
    `## Unreleased` would land under a version that already has a `v*` tag, or
    when the promote would CONFLICT in `CHANGELOG.md` (the same merge's other
    outcome). The merge is then pinned to the `accepted` head it checked
-   (`--match-head-commit`). The fix: merge `release` into a branch off the gem's
-   `accepted`, keep the shipped sections exactly as `release` has them, put the
-   new lines under `## Unreleased`, land it, and re-run. It cannot see a misfile
+   (`--match-head-commit`). The fix, which the refusal prints: merge
+   `origin/release` into a branch off the gem's `accepted`, move every line the
+   merge filed under a shipped version back under `## Unreleased`, and push that
+   merge straight onto the gem's `accepted` — not a PR, which `bin/dor-check`
+   refuses because it carries the release's version bump — then re-run the
+   command that refused. It cannot see a misfile
    made upstream — a builder merging `main` into a branch before review — because
    that line reaches the promote already inside a version section, where it
    looks exactly like a legitimate post-release edit.

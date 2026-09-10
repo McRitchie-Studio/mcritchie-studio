@@ -451,10 +451,11 @@ class Release
     # The remedy both refusals share — a misfile, and the conflict that is the same
     # merge's other outcome. Once `accepted` carries the rolled file, the merge base
     # includes the roll and the promote is clean.
-    MISFILE_REMEDY = "Bring origin/release's CHANGELOG.md into the gem's `accepted` (merge `release` into a branch " \
-                     "off it), keep every shipped version section exactly as `release` has it, and put the lines " \
-                     "written since under `## Unreleased`. Land that on `accepted`, then re-run `bin/release " \
-                     "prepare` — it resumes, and NOTHING was promoted"
+    MISFILE_REMEDY = "Merge origin/release into a branch off the gem's `accepted`, move every line the merge filed " \
+                     "under a shipped version back under `## Unreleased` (resolve a CHANGELOG.md conflict the same " \
+                     "way), and push that merge straight onto `accepted` — not a PR, which bin/dor-check refuses " \
+                     "because it carries release's version bump. Then re-run the command that refused (`bin/release " \
+                     "prepare` or `bin/release merge`) — it resumes, and NOTHING was promoted"
 
     # Non-blank, non-`###` lines in `side`'s bucket that the base's bucket did not
     # hold (as a multiset, so a second copy of a common line still counts).
