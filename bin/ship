@@ -162,7 +162,7 @@ end
 
 options = { message: nil }
 OptionParser.new do |o|
-  o.banner = "Usage: bin/ship <task-slug> [-m MESSAGE]"
+  o.banner = "Usage: #{$PROGRAM_NAME} <task-slug> [-m MESSAGE]"
   o.on("-m", "--message MESSAGE", "Commit message (default: the task title)") { |v| options[:message] = v }
   o.on("-h", "--help", "Show this help") do
     puts o
@@ -171,7 +171,7 @@ OptionParser.new do |o|
 end.parse!
 
 slug = ARGV.shift
-die!("usage: bin/ship <task-slug> [-m MESSAGE]") if slug.to_s.strip.empty? || slug.start_with?("-")
+die!("usage: #{$PROGRAM_NAME} <task-slug> [-m MESSAGE]") if slug.to_s.strip.empty? || slug.start_with?("-")
 
 # --- the task record ---------------------------------------------------------
 

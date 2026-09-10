@@ -70,43 +70,87 @@ class RemedyHintGuardTest < Minitest::Test
   HUB_ONLY = %w[ship fast-check full-suite-check dor-check task session-preflight
                 agent-worktree pr-review reviewer-select gh-auth-refresh release].freeze
 
-  # bare `bin/<hub-only script>`, optional subcommand words, then an OPERAND —
-  # an interpolation (`#{`) or a `<placeholder>`. The negative lookbehind keeps
-  # an already-absolute path (".../bin/ship") from matching.
-  INSTRUCTION_RE = /(?<![\/\w-])bin\/(#{HUB_ONLY.join('|')})\b((?:\s+[a-z][a-z0-9:_-]*)*)\s+(?:\#\{|<[a-z])/
-
-  # The files this guard sweeps — the scripts that print the most remedies, all
-  # routed through FastLane.remedy_command by remedy-hints-print-bare-paths.
-  # bin/lib/fast_cert.rb composes both certs' zero-evidence refusals; lib/claim_holder.rb
-  # composes the claim refusal BOTH bin/ship and bin/task print — this sweep found two
-  # bare `bin/task review-claim …` lines there that a file-by-file read had missed,
-  # which is the argument for sweeping the composer and not only the caller.
+  # bare `bin/<hub-only script>`, optional subcommand words, then an OPERAND — an
+  # interpolation (`#{`), a `<placeholder>`, or a `--flag`. The negative lookbehind
+  # keeps an already-absolute path (".../bin/ship") from matching.
   #
-  # NOT YET SWEPT, and deliberately so — filed with measured counts rather than half-done:
-  # bin/task (9 remaining instruction sites), bin/pr-review (3), bin/lib/ci_gate.rb (3),
-  # bin/lib/ci_status.rb (1), bin/session-preflight, bin/release.rb. Add a file here as it
-  # is cleaned; the sweep is the thing that keeps it clean afterwards.
+  # THE `--flag` ARM WAS ADDED IN WAVE 2, AND IT WAS NOT COSMETIC. The original rule
+  # took an operand to be a slug — an interpolation or an angle-bracket placeholder —
+  # which is the shape a remedy carrying a TASK has. It is not the only shape a remedy
+  # has. `eval "$(bin/gh-auth-refresh --export)"` is the single most-pasted command in
+  # the house, it is handed over in exactly the same "run this" register, and it was
+  # invisible to this guard: six live sites survived wave 1 untouched in bin/task,
+  # bin/dor-check, bin/lib/ci_status.rb (x2) and bin/session-preflight (x2) — inside
+  # files wave 1 had already swept and declared clean. An operand rule that cannot see
+  # the most common instruction in the corpus is not a definition of "instruction", it
+  # is a description of the examples that happened to be in front of us.
+  INSTRUCTION_RE =
+    /(?<![\/\w-])bin\/(#{HUB_ONLY.join('|')})\b((?:\s+[a-z][a-z0-9:_-]*)*)\s+(?:\#\{|<[a-z]|--[a-z])/
+
+  # The files this guard sweeps. WAVE 1 (remedy-hints-print-bare-paths) routed the four
+  # highest-traffic scripts plus the two shared COMPOSERS: bin/lib/fast_cert.rb composes
+  # both certs' zero-evidence refusals, and lib/claim_holder.rb composes the claim
+  # refusal BOTH bin/ship and bin/task print — sweeping the composer rather than only
+  # the caller is what found two bare `bin/task review-claim …` lines a file-by-file
+  # read had missed.
+  #
+  # WAVE 2 (remedy-hints-second-wave) added the six below it: bin/task (9 runnable
+  # remedies + 19 usage banners), bin/pr-review (the two commands inside the reviewer
+  # SPAWN PROMPT, whose reader is likeliest of all to be on a foreign desk),
+  # bin/lib/ci_gate.rb and bin/lib/ci_status.rb (which compose bin/dor-check's CI
+  # refusals, so they reach the reader wave 1 already fixed for the cert refusals),
+  # bin/session-preflight, and bin/lib/block_recipe.rb (recipes that exist to be PASTED).
+  #
+  # STILL NOT SWEPT, filed with measured counts rather than half-done — 77 instruction
+  # sites, none of them in this task's scope: bin/lib/review_claim_cli.rb (16),
+  # bin/agent-worktree (14), bin/lib/agent_worktree_cli.rb (13), bin/reviewer-select (8),
+  # bin/release.rb (7 — and MOST are correctly bare, since the conductor runs bin/release
+  # from the hub primary by SOP), lib/review_verdict_gate.rb (6), bin/conductor (5),
+  # bin/control-check (4), bin/qa-intake (4), lib/archive_holder_guard.rb (4),
+  # bin/lib/desk_guard.rb (1), bin/ship-wait (1), lib/open_pr_guard.rb (1).
+  # Add a file here as it is cleaned; the sweep is what keeps it clean afterwards.
   SWEPT = %w[bin/ship bin/fast-check bin/full-suite-check bin/dor-check
-             bin/lib/fast_cert.rb lib/claim_holder.rb].freeze
+             bin/lib/fast_cert.rb lib/claim_holder.rb
+             bin/task bin/pr-review bin/lib/ci_gate.rb bin/lib/ci_status.rb
+             bin/session-preflight bin/lib/block_recipe.rb].freeze
+
+  # THE FLOORS. Everything above asserts an ABSENCE — and an absence is precisely what a
+  # BROKEN scanner reports. Point SWEPT at paths that no longer exist, let a file read
+  # back truncated, or narrow INSTRUCTION_RE until it matches nothing, and the sweep goes
+  # green having proved nothing at all. Measured on the shipped tree 2026-09-09: 103
+  # routed sites across 16,391 lines in 12 files. These are FLOORS with headroom, not
+  # equalities — routing more remedies must never redden them.
+  MINIMUM_SWEPT_FILES = 12
+  MINIMUM_SWEPT_LINES = 14_000
+  MINIMUM_ROUTED_SITES = 90
+
+  # A remedy that HAS been routed: the helper called directly, or one of the resolved
+  # constants interpolated into a message. This is the POSITIVE side of the sweep —
+  # what the guard exists to protect, as opposed to what it forbids.
+  ROUTED_RE = /FastLane\.(?:remedy_command|resolve_bin|handoff_command)|
+               \#\{(?:[A-Za-z_][A-Za-z0-9_]*::)?
+               (?:SELF_CMD|TASK_CMD|TASK_COMMAND|FAST_CHECK_CMD|FULL_SUITE_CMD|
+                  DOR_CHECK_CMD|SHIP_CMD|GH_AUTH_REFRESH_CMD)\}/x
 
   # Bare-and-CORRECT sites, each with the reason it is not an instruction. Keyed on
   # a regex over the line's own text (see the header) so an edit elsewhere in the
   # file cannot invalidate it.
+  # THE USAGE BANNERS ARE NO LONGER EXEMPT — THEY WERE FIXED.
+  #
+  # Wave 1 exempted six of them with the note that the right fix for the whole class was
+  # `$PROGRAM_NAME` and that it was "filed, not folded in here". remedy-hints-second-wave
+  # is that filing, so the exemptions are gone rather than merely re-worded: every banner
+  # in the swept set now interpolates $PROGRAM_NAME, which names the program the reader
+  # ACTUALLY invoked — absolute when they reached the script absolutely, bare when they
+  # typed the bare form. That is the correct answer for a synopsis of the grammar the
+  # reader just typed, and it is why a banner never wanted FastLane.remedy_command: a
+  # banner is not a command handed over to run, and printing a 90-character path in front
+  # of every flag list would be a regression in readability that fixes nothing.
+  #
+  # It also means the banners left the guard through the FRONT DOOR. They no longer carry
+  # a literal `bin/<script>`, so INSTRUCTION_RE simply does not see them — an exemption
+  # would now be dead weight, and `test_every_exemption_still_matches_a_real_line` says so.
   EXEMPT = [
-    # --- usage banners ---------------------------------------------------------
-    # A usage line names the command the reader JUST TYPED; it is a synopsis of
-    # this script's own grammar, not a command handed over to run. Absolutising it
-    # would print a 90-character path in front of every flag list. The right fix
-    # for the whole class is `$PROGRAM_NAME`, which is a separate change across
-    # ~25 banners in 8 scripts — filed, not folded in here.
-    { file: "bin/ship", match: /o\.banner = "Usage: bin\/ship/, why: "usage banner (self-synopsis)" },
-    { file: "bin/ship", match: /die!\("usage: bin\/ship/, why: "usage banner (self-synopsis)" },
-    { file: "bin/fast-check", match: /o\.banner = "Usage: bin\/fast-check/, why: "usage banner (self-synopsis)" },
-    { file: "bin/full-suite-check", match: /o\.banner = "Usage: bin\/full-suite-check/,
-      why: "usage banner (self-synopsis)" },
-    { file: "bin/dor-check", match: /o\.banner = "Usage: bin\/dor-check/, why: "usage banner (self-synopsis)" },
-    { file: "bin/dor-check", match: /die!\("usage: bin\/dor-check/, why: "usage banner (self-synopsis)" },
-
     # --- ship's step transcript ------------------------------------------------
     # `say "N/8 <step> — <command>"` ECHOES what ship is about to run, in the same
     # register as its neighbour `say "3/8 push — git push -u origin #{branch}"`.
@@ -125,7 +169,37 @@ class RemedyHintGuardTest < Minitest::Test
     # anywhere. An absolute path there would stamp one laptop's directory layout
     # into shared, durable records.
     { file: "bin/dor-check", match: /"sop" => "dor-check", "cmd" =>/, why: "board-recorded gate evidence, not a hint" },
-    { file: "bin/dor-check", match: /gate_sops = \[\{ "sop" => "dor-check"/, why: "board-recorded gate evidence, not a hint" }
+    { file: "bin/dor-check", match: /gate_sops = \[\{ "sop" => "dor-check"/, why: "board-recorded gate evidence, not a hint" },
+
+    # --- content of a generated git hook ----------------------------------------
+    # bin/full-suite-check's opt-in pre-push installer WRITES a hook file into another
+    # repo's .git/hooks, and `bin/full-suite-check --print` is the line it writes (plus
+    # the marker it greps that file for, and the sentence telling an operator to add
+    # that same line by hand). Bare is not a lapse here, it is REQUIRED, for two
+    # independent reasons. (1) Git runs a hook with the cwd at the top of the repo the
+    # hook belongs to, so the bare form resolves BY CONSTRUCTION and names that repo's
+    # own checker. (2) An absolute path would bake THIS worktree's location into a
+    # different repo's hook file — it would still be pointing here after this desk is
+    # reclaimed. The marker line has a third reason on top: it is matched against hooks
+    # already on disk, so changing its text orphans every hook already installed.
+    { file: "bin/full-suite-check", match: /HOOK_MARKER = "# managed by:/,
+      why: "marker text matched against hooks already on disk — changing it orphans them" },
+    { file: "bin/full-suite-check", match: /"`exec bin\/full-suite-check --print` yourself/,
+      why: "names the literal line the operator must add to a hook file, which must stay bare" },
+    { file: "bin/full-suite-check", match: /^\s*exec bin\/full-suite-check --print$/,
+      why: "body of the generated pre-push hook; git runs it with cwd at that repo's root" },
+
+    # --- text written INTO the board -------------------------------------------
+    # Same rule as dor-check's gate evidence, reached from the other direction. This
+    # string is not printed to a terminal: it is the `--feedback` BODY of the escalation
+    # block bin/pr-review writes to the task (`task_write(["block", slug, …,
+    # "--feedback", feedback, …])`), so it is durable, shared content that other agents
+    # and Mr. McRitchie read back off the record. An absolute path there would stamp ONE
+    # laptop's directory layout into the board permanently — the exact harm the
+    # dor-check exemption above exists to prevent. The reader of a board note is not
+    # standing in a shell at that moment, and the slug is on the record beside it.
+    { file: "bin/pr-review", match: /Read the full trail with: bin\/task bounces/,
+      why: "written into the board as block --feedback, not printed to a reader's terminal" }
   ].freeze
 
   def line_exempt?(file, text)
@@ -165,6 +239,99 @@ class RemedyHintGuardTest < Minitest::Test
     MSG
   end
 
+  # --- the floors: what stops a green sweep from proving nothing ----------------
+
+  def test_the_sweep_reads_a_real_corpus
+    assert_operator SWEPT.size, :>=, MINIMUM_SWEPT_FILES,
+                    "SWEPT lists #{SWEPT.size} file(s) — a shrunken list is a sweep that stopped looking"
+
+    missing = SWEPT.reject { |rel| File.exist?(File.join(REPO, rel)) }
+    assert_empty missing, "swept paths that no longer exist — repoint SWEPT rather than letting the sweep go quiet"
+
+    lines = SWEPT.sum { |rel| File.readlines(File.join(REPO, rel)).size }
+    assert_operator lines, :>=, MINIMUM_SWEPT_LINES,
+                    "the sweep visited only #{lines} lines across #{SWEPT.size} files. Measured 2026-09-09 at " \
+                    "16,391 — a collapse this large means a reader broke, and every ABSENCE asserted above is vacuous"
+  end
+
+  # THE POSITIVE SIDE. The sweep forbids the bare form; this asserts the routed form is
+  # actually THERE. Deleting every remedy from these files would satisfy the sweep
+  # perfectly — no bare instruction can exist in a file that hands back no instructions
+  # at all — so an absence-only guard cannot tell a clean sweep from a gutted one.
+  def test_the_swept_files_still_carry_their_routed_remedies
+    per_file = SWEPT.to_h do |rel|
+      [rel, File.readlines(File.join(REPO, rel)).count { |line| line.match?(ROUTED_RE) }]
+    end
+    total = per_file.values.sum
+
+    assert_operator total, :>=, MINIMUM_ROUTED_SITES,
+                    "only #{total} routed remedy site(s) across the swept set (measured 2026-09-09 at 103). " \
+                    "Either the routing was torn out, or ROUTED_RE stopped recognising it:\n" \
+                    "#{per_file.map { |rel, n| "  #{rel}: #{n}" }.join("\n")}"
+
+    # Named individually because a collapse in ONE file disappears into a healthy total.
+    # bin/session-preflight is deliberately absent: wave 2 fixed its usage banners with
+    # $PROGRAM_NAME and reworded one prose line, and it routes no remedy of its own.
+    %w[bin/ship bin/fast-check bin/full-suite-check bin/dor-check bin/lib/fast_cert.rb
+       lib/claim_holder.rb bin/task bin/pr-review bin/lib/ci_gate.rb bin/lib/ci_status.rb
+       bin/lib/block_recipe.rb].each do |rel|
+      assert_operator per_file.fetch(rel), :>=, 2,
+                      "#{rel} carries #{per_file.fetch(rel)} routed remedy site(s) — it was swept because it " \
+                      "prints remedies, so this near-zero means the file, not the defect, went away"
+    end
+  end
+
+  # A CONSTANT CAN BE RE-POINTED AT THE BARE FORM, AND NO SOURCE-TEXT GUARD CAN SEE IT.
+  #
+  # MEASURED 2026-09-09 while building this wave. Replace
+  #   FULL_SUITE_CMD = FastLane.remedy_command("full-suite-check", File.expand_path(".."))
+  # with
+  #   FULL_SUITE_CMD = "bin/full-suite-check"
+  # and EVERY test above stays green. The call sites still read `#{FULL_SUITE_CMD}`, so
+  # ROUTED_RE still counts them as routed; the declaration itself carries no OPERAND, so
+  # INSTRUCTION_RE correctly declines to read it as an instruction. The refusal then
+  # prints the bare form at runtime — the whole defect restored, through the one door a
+  # guard that reads SOURCE TEXT cannot watch.
+  #
+  # So this asks the VALUE. It is the same move the end-to-end test at the bottom makes
+  # for what bin/ship PRINTS, applied to what the shared COMPOSERS HOLD — and the
+  # composers are where wave 1 argued the leverage is, because bin/dor-check, bin/ship
+  # and bin/task all speak through them. (The two SCRIPTS in the swept set cannot be
+  # required — they run on load — so their constants are pinned from the outside
+  # instead: bin/ship by test_ships_claim_refusal_prints_commands_that_resolve_on_disk
+  # below, bin/task by test/lib/task_begin_test.rb's banner and resume assertions.)
+  COMPOSED_REMEDY_CONSTANTS = {
+    "bin/lib/ci_gate.rb" => ["CiGate", %w[FULL_SUITE_CMD TASK_CMD]],
+    "bin/lib/ci_status.rb" => ["CiStatus", %w[FULL_SUITE_CMD]],
+    "bin/lib/block_recipe.rb" => ["BlockRecipe", %w[TASK_CMD]],
+    "lib/claim_holder.rb" => ["ClaimHolder", %w[TASK_COMMAND]]
+  }.freeze
+
+  def test_every_composed_remedy_constant_resolves_to_an_absolute_executable
+    checked = 0
+    COMPOSED_REMEDY_CONSTANTS.each do |rel, (mod_name, names)|
+      require File.join(REPO, rel.sub(/\.rb\z/, ""))
+      mod = Object.const_get(mod_name)
+
+      names.each do |const|
+        assert mod.const_defined?(const),
+               "#{mod_name}::#{const} is gone — repoint this registry rather than letting the check go quiet"
+        value = mod.const_get(const).to_s
+        script = value.split(" ").first.to_s
+
+        assert_equal File.expand_path(script), script,
+                     "#{rel}: #{mod_name}::#{const} is #{value.inspect} — a BARE command, runnable only from " \
+                     "a hub desk. Route it through FastLane.remedy_command."
+        assert File.executable?(script),
+               "#{rel}: #{mod_name}::#{const} names #{script.inspect}, which is not an executable on this disk"
+        checked += 1
+      end
+    end
+
+    assert_equal COMPOSED_REMEDY_CONSTANTS.values.sum { |(_, names)| names.size }, checked,
+                 "the registry and the walk disagree — some constant was skipped silently"
+  end
+
   # The sweep is worthless if its regex cannot see the defect it was written for.
   # This drives INSTRUCTION_RE over the exact shapes that shipped, and over the
   # prose that must NOT be flagged — so a future loosening of the regex fails here
@@ -176,7 +343,26 @@ class RemedyHintGuardTest < Minitest::Test
       'warn "record by hand: bin/task update #{slug} --checks ..."',
       '"Verify: bin/task show #{slug} -v."',
       'steal_command: "bin/task begin #{slug} --steal"',
-      '"(bin/task update <slug> --pr-url-for <repo>=<url>)"'
+      '"(bin/task update <slug> --pr-url-for <repo>=<url>)"',
+      # The exact shapes remedy-hints-second-wave found and fixed, in their PRE-FIX form,
+      # copied off the lines themselves. A regex narrowed until it stops seeing these is
+      # a regex that would have let this whole wave ship — and the sweep would have gone
+      # green while doing it.
+      '  Re-run: bin/task move #{slug} #{expected_stage}   (if it recurs the board write is failing)',
+      'warn!("  Re-run: bin/task merged #{slug} #{expected}   (check ErrorLog / PG connections).")',
+      'puts "   stage is #{result[:stage]} → consider: bin/task move #{slug} shipped   (or archived)"',
+      '"If the operator already approved in words, record it: bin/task update #{slug} "',
+      'puts "  bin/reviewer-select will REFUSE until: bin/task fix-forward #{slug} --agent <soul>"',
+      '"Run the DoR gate as `bin/dor-check #{task.fetch("slug")} --gate-role review` so your verdict"',
+      '"`bin/task note #{task.fetch("slug")} --comment \"<your finding>\"`, then hand it to the primary."',
+      '"`bin/full-suite-check #{slug}`, which runs ci.yml\'s own command (test:system included)"',
+      '"Record it: `bin/task update #{slug} --pr-url <url>`.", false]',
+      '"certify in full instead: bin/full-suite-check #{cert_task}."',
+      "      bin/task block <slug> --kind dependency --agent <agent> \\",
+      # THE FLAG-OPERAND SHAPE — invisible to the original rule, six live sites.
+      'warn "Usually a stale token: eval \"$(bin/gh-auth-refresh --export)\""',
+      'puts "gh auth: STALE -> eval \"$(bin/gh-auth-refresh --export)\""',
+      '"then run `eval \"$(bin/gh-auth-refresh --export)\"` and retry the exact check read."'
     ]
     prose = [
       'abort "... could not be read (bin/task show), so the receipt ..."',
@@ -186,7 +372,14 @@ class RemedyHintGuardTest < Minitest::Test
       '"which is what bin/reviewer-select reads to keep a soul off their own PR"',
       # already absolute — the fixed form must never re-trip the guard
       'warn "Re-run #{SELF_CMD} #{slug}."',
-      'warn "Re-run /Users/x/mcritchie-studio/bin/fast-check #{slug}."'
+      'warn "Re-run /Users/x/mcritchie-studio/bin/fast-check #{slug}."',
+      # AND THE $PROGRAM_NAME BANNERS, which left through the front door: a banner that
+      # names the invoked program carries no literal `bin/<script>` for the regex to see,
+      # which is why wave 2 could retire six exemptions instead of re-wording them.
+      'o.banner = "Usage: #{$PROGRAM_NAME} <task-slug> [-m MESSAGE]"',
+      'usage = "usage: #{$PROGRAM_NAME} show <slug> [--json | --verbose|-v]"',
+      # the reworded preflight line: a board read that FAILED is a subject, not a command
+      'die!("could not read the task record (bin/task show): #{err}") unless ok'
     ]
 
     instructions.each do |line|

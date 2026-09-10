@@ -194,6 +194,7 @@ CONFIG_PATH = File.join(ROOT, "config", "feature_shapes.yml")
 FAST_CHECK_CMD = FastLane.remedy_command("fast-check", __dir__)
 FULL_SUITE_CMD = FastLane.remedy_command("full-suite-check", __dir__)
 TASK_CMD = FastLane.remedy_command("task", __dir__)
+GH_AUTH_REFRESH_CMD = FastLane.remedy_command("gh-auth-refresh", __dir__)
 # The board CLI the task-root guard reads devops.branch/worktree_slug through when
 # a caller has no task in hand. dor-check always DOES (it just fetched one), so it
 # passes `devops:` and this stays unused on the normal path; tests stub it.
@@ -297,7 +298,7 @@ PR_READ_REFUSAL_PHRASE = "the PR's own file list going unread, so the doc-only e
 PR_READ_SELF_REFUSAL_PHRASE = "the refused PR file-list read this alert reports, which left the artifact this " \
                               "gate judges unread"
 OptionParser.new do |o|
-  o.banner = "Usage: bin/dor-check <task-slug> [--gate merge|build] [--gate-role builder|review] [--json] | bin/dor-check --file task.json"
+  o.banner = "Usage: #{$PROGRAM_NAME} <task-slug> [--gate merge|build] [--gate-role builder|review] [--json] | #{$PROGRAM_NAME} --file task.json"
   o.on("--gate GATE", "Boundary to check: merge (default, submitted→reviewed) or build (designed→building)") { |v| options[:gate] = v }
   o.on("--gate-role ROLE", "Who is running the gate: builder (default; the verdict opens+closes the task's DoR " \
                            "gate `dor`) or review (the primary reviewer's gate-zero; opens+closes `dor_review`)") { |v| options[:gate_role] = v }
@@ -339,7 +340,7 @@ def load_task(slug, file)
     raw = JSON.parse(File.read(file))
     raw["data"] || raw
   else
-    die!("usage: bin/dor-check <task-slug> [--json]") if slug.nil? || slug.empty?
+    die!("usage: #{$PROGRAM_NAME} <task-slug> [--json]") if slug.nil? || slug.empty?
     api(:get, "/api/v1/tasks/#{slug}")["data"] || die!("task #{slug} not found")
   end
 rescue JSON::ParserError => e
@@ -1093,7 +1094,7 @@ def pr_read_alert(cert_route: true)
       "(/tasks/dor-check-reads-one-pr): one repo graded, a verdict that reads as covering the task. So the " \
       "shape/test-tier gate is ENFORCED rather than skipped (fail-closed), in BOTH roles. Fix the read " \
       "(#{pr_file_read[:cause] ? "a credential: " : ""}" \
-      "#{pr_file_read[:cause] ? "eval \"$(bin/gh-auth-refresh --export)\"" : "check the URL recorded in " \
+      "#{pr_file_read[:cause] ? "eval \"$(#{GH_AUTH_REFRESH_CMD} --export)\"" : "check the URL recorded in " \
         "devops.pr_urls and re-run"}), then re-run."
   elsif pr_file_read[:state] == :unreadable
     "#{headline}. The diff this gate judges (shape tiers, the doc-only exemption, migration detection) is the " \

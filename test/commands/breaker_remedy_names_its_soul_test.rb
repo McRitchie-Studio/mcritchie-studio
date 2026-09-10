@@ -249,9 +249,14 @@ class BreakerRemedyNamesItsSoulTest < Minitest::Test
   # Every `bin/task block …` invocation in the printed refusal, with backslash
   # continuations joined back into one line. Anchored on the invocation itself rather
   # than on indentation, so a reflowed message does not silently empty the scan.
+  # A recipe opens with bin/task — printed as an ABSOLUTE path since
+  # remedy-hints-second-wave, because a recipe exists to be PASTED and the bare form
+  # pastes only from a hub desk. So the script is matched by what it IS (a path whose
+  # basename is `task`) rather than by the one bare spelling, which would silently
+  # extract nothing — and RECIPE_COUNT below is what makes that silence fail loudly.
   def block_recipes(text)
     joined = text.gsub(/\\\n\s*/, " ")
-    joined.lines.map(&:strip).select { |line| line.start_with?("bin/task block") }
+    joined.lines.map(&:strip).select { |line| line.match?(%r{\A(?:\S*/)?bin/task block\b}) }
   end
 
   # ── phase 2: run what was printed ───────────────────────────────────────────
@@ -264,7 +269,16 @@ class BreakerRemedyNamesItsSoulTest < Minitest::Test
     refute_includes filled, ELISION, "the elision must be substituted before the recipe can run: #{recipe}"
 
     argv = Shellwords.split(filled)
-    assert_equal ["bin/task", "block", SLUG], argv.first(3),
+    script = argv.first
+
+    # ASKED OF THE DISK, not compared as text: an absolute path CONTAINS the bare
+    # form, so an equality or substring check would be blind in both directions.
+    assert_equal File.expand_path(script), script,
+                 "the recipe opens with a NON-ABSOLUTE command — a reviewer on a satellite or gem " \
+                 "desk cannot paste it: #{recipe}"
+    assert File.executable?(script), "the recipe names #{script.inspect}, not an executable: #{recipe}"
+    assert_equal "task", File.basename(script), "the recipe is not a bin/task invocation: #{recipe}"
+    assert_equal ["block", SLUG], argv[1, 2],
                  "the recipe is not the invocation this test thinks it is: #{recipe}"
     argv.drop(1)
   end

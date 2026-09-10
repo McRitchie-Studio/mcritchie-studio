@@ -322,7 +322,20 @@ def test_stale_gh_auth_blocks_preflight_and_prescribes_self_service_recovery
 
   blocker = report.fetch("errors").find { |e| e.include?("gh auth is STALE") }
   refute_nil blocker, "expected a gh auth blocker in #{report.fetch("errors").inspect}"
-  assert_includes blocker, %(eval "$(bin/gh-auth-refresh --export)")
+  # ABSOLUTE, AND ASKED OF THE DISK. remedy-hints-second-wave routed this through
+  # FastLane.remedy_command: a builder reaches this preflight by its ABSOLUTE path
+  # from a satellite or gem desk (`bin/task begin` passes --root), and the bare form
+  # is exactly what such a desk cannot run — at the moment they are already blocked.
+  # Not a substring check, because an absolute path CONTAINS the bare form and would
+  # satisfy one either way.
+  refresh = blocker[/eval "\$\((\S+) --export\)"/, 1]
+
+  refute_nil refresh, "the blocker must still prescribe the gh-auth-refresh eval: #{blocker}"
+  assert_equal File.expand_path(refresh), refresh,
+               "the self-service remedy must be ABSOLUTE — this preflight is routinely invoked " \
+               "by absolute path from a desk that carries no bin/gh-auth-refresh: #{blocker}"
+  assert File.executable?(refresh), "#{refresh.inspect} is not an executable on this disk: #{blocker}"
+  assert_equal "gh-auth-refresh", File.basename(refresh), blocker
   assert_includes blocker, "NOT an escalation"
   assert_includes blocker, "Do NOT use `gh auth login`"
   assert_includes blocker, "docs/agents/modules/source-control.md"
@@ -649,6 +662,14 @@ end
     FileUtils.mkdir_p(File.join(hub, "config"))
     FileUtils.cp(SCRIPT, File.join(hub, "bin", "session-preflight"))
     FileUtils.cp_r(File.join(ROOT, "bin", "lib"), File.join(hub, "bin", "lib"))
+    # AND THE REPO'S lib/, because bin/lib REACHES BACK INTO IT: full_suite_gate.rb
+    # requires `../../lib/cert_evidence`, and it is pulled in the moment anything on
+    # this path requires bin/lib/fast_lane (ci_status.rb does, for the absolute
+    # remedy commands it composes). A "copied hub" missing lib/ is not a hub — it
+    # LoadErrors on require, which reads as a resolution bug in the thing under test
+    # rather than as a hole in the fixture. Copying it keeps the sandbox faithful to
+    # the layout the assertions below are about.
+    FileUtils.cp_r(File.join(ROOT, "lib"), File.join(hub, "lib"))
     File.write(File.join(hub, "config", "feature_shapes.yml"), <<~YAML)
       defaults:
         required_metadata: [acceptance]

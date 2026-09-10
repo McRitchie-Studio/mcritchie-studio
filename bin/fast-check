@@ -177,7 +177,7 @@ SHAPES_CONFIG = ENV.fetch("FAST_CHECK_SHAPES", File.join(ROOT, "config", "featur
 
 options = { print: false, list: false }
 OptionParser.new do |o|
-  o.banner = "Usage: bin/fast-check <task-slug> [--print] [--list]"
+  o.banner = "Usage: #{$PROGRAM_NAME} <task-slug> [--print] [--list]"
   o.on("--print", "Print the evidence line instead of recording it on the task") { options[:print] = true }
   o.on("--list", "Print the selected test files (mapped + spine) and exit without running") { options[:list] = true }
   o.on("-h", "--help", "Show this help") do
