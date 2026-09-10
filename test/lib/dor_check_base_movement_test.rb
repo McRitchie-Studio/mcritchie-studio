@@ -65,6 +65,10 @@ class DorCheckBaseMovementTest < Minitest::Test
   CI_DONE     = "2026-09-07T07:55:44Z"
   AFTER_RUN   = "2026-09-07T07:59:02Z" # 3.3 minutes later — the incident
   BEFORE_RUN  = "2026-09-07T07:50:00Z" # inside the run's coverage
+  # AFTER GitHub built this PR's merge ref, BEFORE the run finished. The completion clock
+  # calls this "covered"; the tree CI tested never held it (tm#682: merge ref 06:19Z,
+  # tm#677 landed 06:26Z and tm#678 06:40Z, run still going — both waved through).
+  MID_RUN     = "2026-09-07T07:52:00Z"
 
   # ── git fixture ────────────────────────────────────────────────────────────
 
@@ -154,7 +158,7 @@ class DorCheckBaseMovementTest < Minitest::Test
     }
   end
 
-  def check(root, desk_head, ci_completed_at: CI_DONE, review: true, multi_repo: false)
+  def check(root, desk_head, ci_completed_at: CI_DONE, review: true, multi_repo: false, tested_base: nil)
     Dir.mktmpdir do |d|
       path = File.join(d, "task.json")
       File.write(path, JSON.generate(task_json(multi_repo: multi_repo)))
@@ -166,6 +170,7 @@ class DorCheckBaseMovementTest < Minitest::Test
         "DOR_CHECK_PR_FILES" => "",
         "DOR_CHECK_CI_STATUS" => "green",
         "DOR_CHECK_CI_COMPLETED_AT" => ci_completed_at,
+        "DOR_CHECK_CI_TESTED_BASE" => tested_base,
         "DOR_CHECK_PR_HEAD" => desk_head,
         "DOR_BASE_BRANCH" => "accepted",
         "DOR_CHECK_CI_STATUS_BY_REPO" =>
@@ -312,6 +317,43 @@ class DorCheckBaseMovementTest < Minitest::Test
   # go red here. A gate whose timestamp read silently returned nil would fail closed and
   # also go red here. So this row is what stops the refusal above from being credited to
   # a comparison that never happened.
+  # ── THE MID-RUN WINDOW (/tasks/stale-merge-ref-passes-freshness) ─────────────────
+  #
+  # CI tests the merge ref GitHub built when the run was TRIGGERED, and the run then
+  # takes many minutes. A base commit landing inside that window predates the run's
+  # COMPLETION, so a completion clock calls it covered — while the tree CI tested never
+  # held it. The exact question is ancestry, not time: is the commit in the base the
+  # merge ref was built from? DOR_CHECK_CI_TESTED_BASE injects that base, as
+  # DOR_CHECK_CI_COMPLETED_AT injects the clock.
+  def test_integration_a_guard_change_landing_mid_run_is_refused
+    with_desk(base_change: "test/lib/widget_tool_exempt_test.rb", at: MID_RUN) do |dir, head, base_sha|
+      tested = IO.popen(["git", "-C", dir, "rev-parse", "#{base_sha}^"], &:read).to_s.strip
+      verdict, code = check(dir, head, tested_base: tested)
+
+      refute_equal 0, code,
+                   "the review gate returned READY on a guard change that landed at 07:52 — BEFORE the " \
+                   "run completed (07:55:44) but AFTER the merge ref it tested was built on " \
+                   "#{tested[0, 12]}. The green never saw it.\n#{verdict.inspect}"
+      assert_match(/test\/lib\/widget_tool_exempt_test\.rb/, errors_of(verdict),
+                   "the refusal must NAME the guard that moved")
+      assert_match(/#{tested[0, 12]}/, errors_of(verdict),
+                   "…and the base the tested merge ref was built on, the evidence a reviewer checks")
+    end
+  end
+
+  # THE CONTROL. Same commit, same clock, same guard overlap — but the tested merge ref was
+  # built on a base that ALREADY HELD it. Refusing here would mean the new path keys on the
+  # seam being set rather than on ancestry.
+  def test_integration_a_guard_change_inside_the_tested_merge_ref_does_not_refuse
+    with_desk(base_change: "test/lib/widget_tool_exempt_test.rb", at: MID_RUN) do |dir, head, base_sha|
+      verdict, code = check(dir, head, tested_base: base_sha)
+
+      assert_equal 0, code,
+                   "the tested merge ref was built on #{base_sha[0, 12]}, which holds the guard change — " \
+                   "the run covered it, and refusing means ancestry was never consulted\n#{verdict.inspect}"
+    end
+  end
+
   def test_integration_a_guard_change_the_run_already_covered_does_not_refuse
     with_desk(base_change: "test/lib/widget_tool_exempt_test.rb", at: BEFORE_RUN) do |dir, head|
       verdict, code = check(dir, head)
