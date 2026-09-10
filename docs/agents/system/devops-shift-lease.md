@@ -184,10 +184,14 @@ deliberately NOT re-derived from it: `ShiftRenewer::INTERVAL_SECONDS` stays 30s,
 a 51-minute beat would blind `review-claim status`, whose whole instrument is watching
 the expiry move.
 
-The build claim and the two role leases keep `DEFAULT_TTL_SECONDS` (120s) — sized for
-`bin/statusline`'s 45s heartbeat. **`bin/statusline` has never renewed a review
-claim**; the comment that once justified sharing the number described a "~5s render
-cadence" that renews nothing on this lane, and two other files had copied it.
+The build claim and the two role leases keep `DEFAULT_TTL_SECONDS` (120s), and since
+2026-09-09 every one of them is renewed by a **detached renewer** on the same 30s beat
+— the build claim's is `bin/lib/build_claim_renewer.rb`, started by the claim itself.
+So 120s is now the **dead-holder bound**, not the live holder's coverage: a headless
+build holds its task for a whole ~12-minute ship, and a crash still frees it in two
+minutes. **`bin/statusline` has never renewed a review claim**; the comment that once
+justified sharing the number described a "~5s render cadence" that renews nothing on
+any lane, and its last copies were swept alongside the build renewer.
 
 **`bin/task review-claim release` reports what the board did, too.** The longer TTL is
 what made this urgent: a release that quietly dropped nothing used to cost 120s and now
@@ -464,8 +468,9 @@ just candidate selection:
   *automatic* paths refuse.
 
 The **merge** half is a no-op by construction: `bin/release` merges only
-`reviewed`/`assembled` tasks, whose build claims have already lapsed (the status line
-renews only while `building`), so a live-building task never reaches the merge path —
+`reviewed`/`assembled` tasks, whose build claims have already lapsed (a build claim is
+renewed only while `building`, and its renewer exits at the stage change), so a
+live-building task never reaches the merge path —
 the stage gate already prevents it.
 
 ## Follow-ups (separate tasks)

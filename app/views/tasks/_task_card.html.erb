@@ -203,8 +203,9 @@
           class: "text-heading font-semibold text-sm" %>
   </a>
 
-  <%# The claim chip — two facts, never conflated. The pulsing dot means only that a
-      TERMINAL IS PAINTING (bin/statusline heartbeats the lease, throttled to 45s); it survives a
+  <%# The claim chip — two facts, never conflated. The pulsing dot means only that the
+      BUILDER'S RUN IS STILL HERE (a detached renewer heartbeats the lease every 30s, and
+      bin/statusline every 45s when a terminal paints); it survives a
       wedged agent, so on its own it lies about progress. Beside it we state what the
       task has actually PRODUCED — its last durable artifact and how long ago — and let
       the reader judge. No STALLED verdict: measured over 243 real work windows, a

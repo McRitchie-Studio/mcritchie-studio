@@ -943,7 +943,7 @@ used to take that for a build claim by the blocking session:
 
 | Reader | What it recorded | Now |
 |--------|------------------|-----|
-| the build-claim heartbeat (`bin/task heartbeat`, fired by `bin/statusline`) | ADOPTED the free lease, so the reviewer held the desk | renews a lease this session already holds; only a bound DESK may adopt a free one |
+| the build-claim renewal (`bin/task heartbeat` from `bin/statusline`; the detached renewer on its own beat) | ADOPTED the free lease, so the reviewer held the desk | renews a lease this session already holds; only a bound DESK may adopt a free one |
 | `devops.builders_unattributed` | the reviewer's SESSION, so the author set read incomplete | a write from the session holding the task's live `TaskReviewClaim` is not a build claim |
 | `ReviewerSelector#builders` | the blocking SOUL, from the block's `→ building` event | a block's transition carries `blocked: true` and is skipped |
 
@@ -1103,15 +1103,19 @@ deferred now ship. They live in `metadata.devops` and the math is `ClaimLease`
 - `claimed_session` — the agent session holding the desk
 - `claim_nonce` — a per-PROCESS token (two terminals resuming one session id are
   two instances)
-- `claim_expires_at` — a 120s TTL, renewed by the heartbeat in `bin/statusline`,
-  and **declined once the holder can be shown to have gone** (see "A lease is
+- `claim_expires_at` — a 120s TTL, renewed on a 30s beat by the **detached renewer**
+  the claim starts (`bin/lib/build_claim_renewer.rb`) — and redundantly by the
+  heartbeat in `bin/statusline` when a terminal happens to be painting — and
+  **declined once the holder can be shown to have gone** (see "A lease is
   renewed by work" below)
 
-**The lease attests that a terminal is painting, and that nothing has shown the
-holder to be gone.** It does NOT attest that someone is working — the rule is
-negative on purpose, because every unknown keeps the desk. The second half
-arrived on 2026-08-13; before it, the status-line heartbeat
-(throttled to 45s) renewed the claim unconditionally, so the lease stayed green through a
+**The lease attests that the builder's run is still here, and that nothing has shown
+the holder to be gone.** It does NOT attest that someone is working — the rule is
+negative on purpose, because every unknown keeps the desk. Renewal moved off the
+status line on 2026-09-09: a headless agent shell paints nothing, so a headless build
+renewed nothing and ran unclaimed from two minutes in, while a cold `bin/ship` takes
+~12 minutes by design. The declining half arrived on 2026-08-13; before it, the
+status-line heartbeat (throttled to 45s) renewed the claim unconditionally, so the lease stayed green through a
 wedged agent — on 2026-07-13 a session held a perfectly healthy-looking lease for
 35 minutes while producing nothing, and the board's green dot was read as
 progress. It never meant that.

@@ -203,9 +203,10 @@ honest, and **none of them needs a manual flag in the common case**:
   unnamed session closes its own gap: a THIRD soul claiming by name says nothing
   about who the second one was, and clearing on any named claim would hand the
   fail-open straight back. Note it keys on
-  the claiming SESSION, not on the save: the statusline renews the lease every few
-  seconds with no actor, and treating a renewal as a handoff would refuse every
-  task in the fleet. A guard that cries wolf gets routed around.
+  the claiming SESSION, not on the save: the lease is renewed on a timer with no
+  actor (the detached build-claim renewer every 30s, `bin/statusline` every 45s),
+  and treating a renewal as a handoff would refuse every task in the fleet. A guard
+  that cries wolf gets routed around.
   `built_by` itself is **auto-stamped on any build CLAIM**: a bare
   `bin/task move <slug> building` records the task's soul persona, else its
   assigned `agent_slug` (an explicit `--actor <soul>` move wins over both; an

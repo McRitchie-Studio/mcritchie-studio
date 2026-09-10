@@ -2894,9 +2894,10 @@ class Task < ApplicationRecord
   # refuses. It clears when that same session finally identifies itself.
   #
   # Keyed on the live INSTANCE (claimed_session + claim_nonce, ClaimLease's identity)
-  # rather than on the claim save, because the statusline renews the lease every few
-  # seconds with no actor: treating a renewal as an anonymous handoff would refuse
-  # every task in the fleet, and a guard that cries wolf gets routed around.
+  # rather than on the claim save, because the lease is renewed on a timer with no
+  # actor (the detached build-claim renewer every 30s, bin/statusline's heartbeat every
+  # 45s): treating a renewal as an anonymous handoff would refuse every task in the
+  # fleet, and a guard that cries wolf gets routed around.
   #
   # TWO authorship moments, not one. Accumulating on the CLAIM alone still misses the
   # author who never claimed — see the `submit_save?` branch below, which closes that
