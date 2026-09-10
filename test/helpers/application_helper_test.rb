@@ -674,6 +674,31 @@ class ApplicationHelperTest < ActionView::TestCase
     refute_match(/merge/i, launchers[0][:title], "Carl's tooltip stays review-framed, not merge-framed")
   end
 
+  # entry-forfeit is deliberately NOT a launcher act: it is an on-demand incident
+  # SOP. It runs when an entrant asks to withdraw from a contest and never
+  # otherwise, so there is no cadence for a chip to imply. Registered by name in
+  # the SOP registry, owned in the prose guard's ACT_OWNER, and settled in
+  # turf_monster/HEARTBEAT.md.
+  #
+  # WHY ITS OWN TEST, and not another assert_not_includes beside the
+  # archive-shipped and sleeper-auction-watch ones above: every launcher's
+  # :actions array is pinned by an assert_equal EARLIER in that test, so adding
+  # entry-forfeit to any soul's row fails the pinned assertion first and aborts
+  # the method before an absence assertion further down can run. Those two are
+  # therefore unreachable — they document, they do not guard. Standing alone,
+  # this one FAILS INDEPENDENTLY and says WHY the act is off the card, which the
+  # pinned array's array-diff never does. Proven by forcing entry-forfeit into
+  # heartbeat_launchers and watching this test redden on its own message.
+  test "[unit] entry-forfeit stays off the launcher card" do
+    acts = heartbeat_launchers.flat_map { |l| l[:actions] }
+
+    assert_not_includes acts, "entry-forfeit",
+                        "entry-forfeit is an on-demand incident SOP — it runs when an entrant asks " \
+                        "to withdraw and never on a cadence, so it is off the launcher card on purpose. " \
+                        "Putting it on the card also owes an ACTION_DESCRIPTIONS caption, an " \
+                        "ACTION_ICONS glyph, and the pinned :actions array above."
+  end
+
   # The launcher is only useful if the act it names is a REGISTERED SOP — a card
   # button pointing at a phrase no SOP file answers is a dead end the operator
   # only discovers by pressing it.
