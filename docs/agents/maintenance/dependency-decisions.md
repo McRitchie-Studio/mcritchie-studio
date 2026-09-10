@@ -297,7 +297,7 @@ Every MAJOR above, with what it would actually cost. Sorted cheapest first.
 | #462 | sidekiq 7 → 8 | The code is fine and the deploy is the risk: timestamps move from epoch floats to milliseconds, so the queue must be drained before the prod deploy and `/admin/jobs` eyeballed on QA after Sidekiq::Web's CSS rewrite. |
 | #1058 · #460 | redis 5 → 6 | RESP3 becomes the default protocol underneath ActionCable's production WebSocket pub/sub on both apps, which is a deliberate cross-app task and not a lock bump. |
 | #707 | minitest 5 → 6 | An afternoon minimum: `minitest/mock` is now a separate gem, and mcritchie-studio has 177 `.stub(` call sites across 55 files with 19 requiring `minitest/mock`, on top of opt-in plugin loading that threatens `bin/rails test` itself. |
-| #253 | minitest 5 → 6 | The same break at 102 `.stub(` lines across 46 files with 34 requiring `minitest/mock` — **smaller than mcritchie-studio, not larger**, correcting an earlier estimate of 599 call sites. |
+| #253 | minitest 5 → 6 | The same break at roughly 3.5x mcritchie-studio's size — 613 `.stub` call sites across 122 files, most in the paren-less `Klass.stub :name, value do` form a `.stub(` grep misses, with 34 requiring `minitest/mock` — so the earlier 599 estimate stands. |
 
 ---
 
