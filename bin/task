@@ -1549,12 +1549,19 @@ end
 def warn_dropped_approval_request!(task, slug, before)
   return unless move_dropped_approval_request?(task, before)
 
+  # NEVER ADVISE A BACKWARD MOVE. This used to say "move the task back and ask again"
+  # (`move <slug> building`, then `--approval waiting`). From `reviewed` on the code is
+  # already on `accepted`, so that move un-merged nothing: it made the board show
+  # `building` for code that had landed. docs/agents/modules/devops-task-board.md
+  # (Operator Validation Gate, item 8) states the same remedy in prose — change both.
   warn!("warning: this move DISCARDED a pending operator-approval request " \
         "(approval_status waiting → none). Nobody was asked and the board will not pulse. " \
         "If the operator already approved in words, record it: #{SELF_CMD} update #{slug} " \
-        "--approval approved. If you still need his eyes, move the task back and ask " \
-        "again: #{SELF_CMD} move #{slug} building, then #{SELF_CMD} update #{slug} " \
-        "--approval waiting. A request is only actionable in " \
+        "--approval approved; if he asked for changes: #{SELF_CMD} update #{slug} " \
+        "--approval changes_requested. If you still need his eyes on merged work, point him " \
+        "at the QA candidate once the qa-release sweep deploys it. Do not move the task back " \
+        "to re-open the request: from reviewed on the code is on accepted, and a backward move " \
+        "un-merges nothing. A request is only actionable in " \
         "#{APPROVAL_REQUEST_STAGES.join(" or ")}.")
 end
 

@@ -42,7 +42,7 @@ creating a duplicate.
 After the task is created and the isolated worktree is bound, run
 `bin/session-preflight <task-slug>` before editing. It is the start-of-session
 counterpart to `bin/dor-check`: it reads latest task feedback, branch drift
-against `origin/release`, PR merge/check state, same-file overlap with open or
+against `origin/accepted`, PR merge/check state, same-file overlap with open or
 recent PRs, **duplicate migration installs**, installed docs/skills drift, stale
 terminology, and the required test tiers from `config/feature_shapes.yml`.
 Everything there is a warning except the last two and the migration check: two
@@ -102,10 +102,12 @@ Stage movement:
 4. Move to `submitted` only after the branch is pushed, the PR exists, the
    local URL is recorded when applicable, and `checks_run` records actual
    feature-agent verification.
-5. Move to `reviewed` only after the review gate approves the PR.
-6. Move to `assembled` when the PR is merged into `release` and deployed or
-   ready to deploy on the QA candidate. Record QA URL, deployed SHA, and QA
-   checks when available.
+5. `reviewed` is review's move, not yours: on a merge-ready verdict the
+   pr-review primary merges the PR into `accepted`, stamps `merged: accepted`,
+   and moves the task (`reviewed` ⟺ the code is on `accepted`).
+6. `assembled` is the `qa-release` sweep's move: it promotes all of `accepted`
+   onto `release` in one batch PR per repo, deploys QA, and flips members to
+   `assembled` only on QA-green, recording QA URL, release SHA, and checks.
 7. Move to `shipped` only after the final approved target is deployed or otherwise
    complete, post-deploy verification is recorded, and cleanup status is clear.
 8. Use `blocked` for a real blocker that needs new action, and `archived` for
@@ -182,20 +184,21 @@ in review, so a ship no longer costs you the request (fixed 2026-09-09).
    Following the docs produced the discard every time, and the pulse is the only
    mechanism that asks for Mr. McRitchie's attention at all.
 
-8. **Already past `reviewed`? Move the task back and ask again.** Past the window
-   the request is discarded, not deferred, so re-open it — the move first, the
-   request second:
+8. **Already past `reviewed`? Record his answer where you stand — never move the
+   task back.** From `reviewed` on, the code is on `accepted`: moving the task back
+   to `building` un-merges nothing, it only makes the board show `building` for code
+   that already landed, and the desk the request pointed at may already be
+   reclaimed. If he answered in words, record it — `--approval approved` and
+   `--approval changes_requested` are legal at every stage:
 
    ```bash
-   bin/task move <task-slug> building
-   bin/task update <task-slug> --approval waiting
+   bin/task update <task-slug> --approval approved
+   bin/task update <task-slug> --approval changes_requested
    ```
 
-   The card pulses again and the request is live. **The reverse order 422s** —
-   `--approval waiting` at `reviewed` or later is refused, naming the stage and
-   the value. If he already answered in words, skip the move and record the
-   decision where you stand: `--approval approved` and `--approval
-   changes_requested` are legal at every stage. This is the same remedy `bin/task
+   If you still need his eyes on merged work, point him at the QA candidate once
+   the `qa-release` sweep deploys it. `--approval waiting` at `reviewed` or later is
+   refused (a 422 naming the stage and the value). This is the same remedy `bin/task
    move` prints when it announces a discarded request.
 
 ## Task Conversation and QA Feedback
@@ -212,44 +215,27 @@ Use these activity types:
 - `comment` for general coordination notes.
 - `clarification` for non-blocking questions or answers that should not send the
   task back for rework by themselves.
-- `qa_feedback` for Avi or Steffon review findings, QA blockers, failed checks,
-  missing metadata, or changes requested before merge/deploy.
+- `qa_feedback` for review send-backs (the pr-review primary's `bin/task block
+  --kind rework --agent carl` posts one), QA blockers, failed checks, missing metadata, or
+  changes requested before merge/deploy.
 - `handoff` for feature-agent responses, rebase notes, local proof URLs, or
   "ready again" messages after addressing feedback.
 
-Review scouts record their findings as `comment` activities with
-`metadata.kind=scout_report`. This keeps scout evidence visible without
-accidentally turning a scout's recommendation into Avi's final review decision.
-The normal path is:
+Reviewers record their structured verdicts as `comment` activities with
+`metadata.kind=scout_report`, written by `bin/devops-cycle --record-scout-report`,
+which both review role SOPs run
+([primary](../agents/carl/sops/pr-review-primary.md) step 5,
+[light](../agents/carl/sops/pr-review-light.md)). The outcomes are `merge-ready`,
+`wait-for-ci`, `request-changes`, and `conductor-review`.
 
-1. Avi runs `bin/devops-cycle --scout-packets` and gives a packet to a
-   review-only scout session.
-2. The scout reviews the task and PR, then dry-runs a structured report:
-
-   ```bash
-   bin/devops-cycle --record-scout-report task-XXXX \
-     --outcome merge-ready \
-     --summary "No blockers found." \
-     --finding "Diff matches the task acceptance criteria." \
-     --check "Reviewed PR body, changed files, and CI." \
-     --dry-run
-   ```
-
-3. The scout removes `--dry-run` only after the payload is correct.
-4. Avi runs `bin/devops-cycle --scout-reports` to see recorded scout reports
-   alongside the task queue.
-5. Avi makes the final call. If changes are required, Avi leaves
-   `qa_feedback` on the task and usually a PR comment with the code-specific
-   blocker.
-
-Valid scout outcomes are `merge-ready`, `wait-for-ci`, `request-changes`, and
-`conductor-review`. Scouts do not merge, deploy, move task stages, publish
-gems, change providers, rotate credentials, force-push, or take over branches.
-
-When Avi sends work back, Avi should add `qa_feedback` on the task with the
-specific action needed and also comment on the PR when the feedback is tied to
-GitHub review, CI, or changed code. The task thread is the durable handoff for
-the original agent; the PR comment is the code-review surface.
+A report is evidence; the **primary** owns the verdict and acts on it. On
+`merge-ready` it merges the feat PR into `accepted` (`gh pr merge --merge`), stamps
+`bin/task merged <slug> accepted`, and moves the task to `reviewed`. On
+`request-changes` it blocks the task back to the builder with `bin/task block
+<slug> --kind rework --feedback "…" --agent carl`, which posts the `qa_feedback` the builder
+reads — plus a PR comment when the feedback is tied to changed code or CI. Nobody
+in review deploys, publishes a gem, rotates credentials, force-pushes, or takes over
+a branch.
 
 When the feature agent returns, the agent should read the task conversation,
 address each open `qa_feedback` item, add a `handoff` note with what changed,
@@ -301,12 +287,13 @@ counts prior send-backs and refuses to answer a read it could not make.
 
 > **Canonical stages (two-workflow model).** The live board runs **Build**
 > (`designed → building → submitted`) and **Deploy** (`submitted → reviewed →
-> assembled → shipped`), plus `blocked` (side) and `archived` (terminal). Under
-> the persistent-`release` branch model, **`reviewed`** = an approved PR whose
-> base is `release`, and **`assembled`** = that PR merged into `release`
-> (`bin/release merge` flips the task at merge); the conductor then deploys
-> `origin/release` to QA (`bin/release prepare`) and ships by fast-forwarding
-> `release → main` (`bin/release ship`). Full spec:
+> assembled → shipped`), plus `blocked` (side) and `archived` (terminal). The code
+> walks a three-rung ladder, **`accepted` → `release` → `main`**. A feature PR
+> targets **`accepted`**; **`reviewed`** = review merged it there (`reviewed` ⟺
+> code on `accepted`); **`assembled`** = the `qa-release` sweep (`bin/release
+> prepare`) promoted all of `accepted` onto `release` in one batch PR per repo and
+> QA went green; **`shipped`** = `production-deploy` (`bin/release ship`)
+> fast-forwarded `release → main`. Full spec:
 > [`devops-cycle-design.md`](../system/devops-cycle-design.md) §1.
 
 The board stages should mirror the release path, not generic activity buckets:
@@ -315,9 +302,9 @@ The board stages should mirror the release path, not generic activity buckets:
 |---|---|
 | `designed` | Scope and acceptance criteria are clear enough to track |
 | `building` | A feature agent is actively implementing or fixing the task |
-| `submitted` | Branch is pushed and the PR is ready for review |
-| `reviewed` | Review approved the PR for merge into `release` |
-| `assembled` | PR is merged into `release` and included in the QA candidate |
+| `submitted` | Branch is pushed and the PR (into `accepted`) is ready for review |
+| `reviewed` | Review merged the PR into `accepted` — the code is on `accepted` |
+| `assembled` | The sweep promoted `accepted` onto `release` and the QA candidate is green |
 | `shipped` | Production or final approved target is shipped and verified |
 | `archived` | Historical or cleaned-up work that should not appear on the active board |
 
@@ -443,7 +430,7 @@ Supported fields:
 | `kind` | `feature`, `bug`, `chore`, `qa`, `release`, or `cleanup` |
 | `worktree_slug` | Human-readable feature handle used for the worktree path, branch, terminal context, and task binding |
 | `repositories` | Repos touched by this increment, such as `mcritchie-studio` or `turf-monster` |
-| `branch` | The feature branch (opened as a PR with base `release`). The shared integration branch is the persistent per-repo `release` (same name everywhere). |
+| `branch` | The feature branch, opened as a PR into `accepted`. Every repo keeps persistent `accepted` and `release` branches (same names everywhere): review lands feature PRs on `accepted`; `release` is the QA candidate. |
 | `pr_url` | GitHub PR URL |
 | `local_url` | Worktree review URL, rendered as the `Local Demo` card button |
 | `approval_status` | Operator validation state: `waiting`, `approved`, `changes_requested`, or `none`. `waiting` floats and pulses the card, and is legal wherever the local demo it points at can still be served: `designed`, `building` and `submitted`. **Asking for it at `reviewed` or later is REFUSED** — a 422 naming the stage and the value, so `bin/task update <task> --approval waiting` exits NON-ZERO there instead of reporting success for a write that reaches nothing. Ask before the work merges; a request set at `building` SURVIVES `bin/ship` and keeps pulsing through review (fixed 2026-09-09 — the seam used to sit at `submitted`, so the documented ship discarded it). A `waiting` request the task carries past `reviewed` settles silently to `none` (settled, never a fabricated `approved`) — that is a state-machine settle, not a request. `--approval approved` and `--approval changes_requested` stay legal at every stage, so a decision the operator gave in words is always recordable |
@@ -568,7 +555,7 @@ During handoff, the agent updates:
 - release lane flag if the work needs production deploy, gem publish, provider
   config, env vars, or credential handling
 - a `handoff` note on the task conversation summarizing what changed, what was
-  verified, and what Avi should inspect first
+  verified, and what the reviewer should inspect first
 
 ## Fast Lane: `bin/task begin` and `bin/ship`
 
@@ -810,96 +797,32 @@ Fresh Worktree Checklist step 3), and the preflight self-defends that the
 inspected root carries the task's branch, refusing a mismatched checkout. So
 begin's preflight verdict describes the worktree it just created.
 
-## QA / Avi Duties
+## Review, QA and Ship — who owns each step
 
-Avi starts with the task board plus the local PR/worktree tools:
+Review is not Avi's. Each step has one owner and one SOP, and the SOP is where the
+procedure lives:
 
-```bash
-cd /Users/alex/projects/mcritchie-studio
-bin/devops-cycle
-bin/devops-cycle --plan
-bin/devops-cycle --decisions
-bin/devops-cycle --scout-packets
-bin/devops-cycle --write-scout-packets tmp/devops-scouts
-bin/devops-cycle --scout-runs tmp/devops-scouts --max-scouts 3
-bin/devops-cycle --scout-coverage tmp/devops-scouts
-bin/devops-cycle --scout-reports
-bin/devops-cycle --readiness
-bin/qa-intake --refresh --apps mcritchie-studio,turf-monster
-```
+| Step | Owner | SOP | What it does to the task |
+|---|---|---|---|
+| Review | Carl, one per PR, spun by a pr-review session | [`pr-review`](../agents/carl/sops/pr-review.md) (role SOPs: [primary](../agents/carl/sops/pr-review-primary.md), [light](../agents/carl/sops/pr-review-light.md)) | merge-ready: merges the feat PR into `accepted`, stamps `merged: accepted`, moves it to `reviewed`. request-changes: `bin/task block <slug> --kind rework --agent carl` back to the builder |
+| QA release | Avi | [`qa-release`](../agents/avi/sops/qa-release.md) | promotes all of `accepted` onto `release` (one batch PR per repo), deploys QA, flips members to `assembled` only on QA-green |
+| Production | Steffon | [`production-deploy`](../agents/steffon/sops/production-deploy.md) | fast-forwards `release → main`, stamps `merged: main`, moves members to `shipped` |
 
-`bin/devops-cycle` is the first-pass conductor view. It groups active
-`submitted`, `reviewed`, and `assembled` tasks with task URLs, PR URLs,
-local/QA/production URLs, latest task conversation notes, and matching qa-intake
-status when available. `bin/devops-cycle --plan` adds a read-only batch plan
-that separates parallel PR reviews, serialized/high-risk work, blocked returns
-to feature agents, reviewed work ready for release merge, and assembled release
-work waiting for explicit ship authority.
-`bin/devops-cycle --decisions` adds an Avi decision summary for PR-review tasks,
-combining qa-intake status, latest task activity, and scout report outcomes into
-`merge-ready`, `wait-for-ci`, `request-changes`, or `conductor-review`
-recommendations.
-`bin/devops-cycle --scout-packets` turns reviewable PR-review lanes into
-copy-paste prompts for additional review-only sessions. Accurate `repositories`,
-`risk_tags`, `pr_url`, `qa_url`, `acceptance`, `test_plan`, and `checks_run`
-metadata make the plan and packets useful at scale. `bin/devops-cycle
---write-scout-packets tmp/devops-scouts` writes one prompt file per packet plus
-a manifest so Avi can hand files to parallel review sessions without copying
-large prompts through chat. `bin/devops-cycle --scout-reports` shows structured
-scout reports recorded on task comments so Avi can make the final
-merge/request-changes decision from multiple review sessions without losing the
-thread. `bin/qa-intake` remains the raw local worktree and GitHub PR view for
-branch freshness, stack health, and cleanup-state details.
+Production stays gated until Mr. McRitchie explicitly approves release work.
 
-`bin/devops-cycle --scout-runs tmp/devops-scouts --max-scouts 3` is the local
-run-control view for Phase 3B. It reads the launcher manifest and local
-`scout-runs.json`, then prints pending/launched/completed/blocked packet counts
-and the next prompt files that fit inside the concurrency limit. It does not
-spawn agents or update external systems. Avi marks local state with
-`--mark-scout-status scout-task-XXXX:launched` and later `:completed` when a
-scout report is back.
+**What review reads besides the diff.** `devops.post_deploy_cmd` runs verbatim
+against production on ship: reject a bare `db:seed` and require a narrow, idempotent
+command (`bin/dor-check` enforces this, but read it yourself). `risk_tags` decide
+whether an infra gate (Steffon) is needed.
 
-`bin/devops-cycle --scout-coverage tmp/devops-scouts` is the Phase 3C harvest
-view. It compares manifest packets with structured `scout_report` task comments
-and calls out missing reports or conflicting outcomes. `bin/devops-cycle
---readiness` is the Phase 3D conductor view: it groups tasks into
-ready-to-merge, needs-conductor-review, needs-changes, waiting, Ready To
-Assemble, Assembled Release, and scout-gap lanes. These views accelerate
-review; they do not transfer release authority. Avi owns review resolution and
-production ship, while Avi's `qa-release` sweep owns merge plus QA deploy.
-
-Scout reports are supporting evidence. Avi turns blocker findings into
-`qa_feedback` or PR review comments when the work must return to the feature
-agent. Scout reports do not move stages; the active release SOP owns final
-merge, QA deploy, production deploy, and task stage changes (Avi for
-`qa-release`, Steffon for `production-deploy`).
-
-Use the decision recommendations conservatively:
-
-- `request-changes` means Avi should return the task to the feature agent with
-  `qa_feedback` or a PR comment.
-- `wait-for-ci` means the next action is to inspect or wait for checks, not
-  merge.
-- `conductor-review` means the task needs Avi's direct review because it is
-  high-risk, multi-repo, missing local intake, or lacks enough scout signal.
-- `merge-ready` means scout evidence and qa-intake are aligned; Avi still
-  performs the final PR review before moving the task to `reviewed`.
-
-1. Find `submitted` tasks with PR URLs or branches.
-2. Confirm acceptance criteria match the PR body and diff.
-3. **Review `devops.post_deploy_cmd`, not just the diff** — it runs verbatim
-   against prod on ship. Reject a bare `db:seed`; require a narrow, idempotent
-   command (`bin/dor-check` enforces this, but read it yourself).
-4. Check `risk_tags` for Steffon/infra gate needs.
-5. Move only approved PRs to `reviewed`; do not merge during review.
-6. Let Avi's `qa-release` sweep merge reviewed PRs into `release` and deploy QA.
-7. Let the sweep move QA-green tasks to `assembled` with QA URL, release SHA, and `checks_run`.
-8. Leave production ship gated until Mr. McRitchie explicitly approves release work.
-
-If the PR is not ready, Avi leaves `qa_feedback` on the task conversation with
-the exact blocker, expected owner action, and any PR/CI link needed to reproduce
-the issue. Also leave a GitHub PR comment when the blocker is code-review
-specific or should be visible on the PR.
+**`bin/devops-cycle` is a read-only snapshot, not a review process.** It groups
+active `submitted`, `reviewed`, and `assembled` tasks with their URLs, latest notes,
+and qa-intake state. `--decisions` and `--scout-reports` feed `bin/pr-review`, and
+`--record-scout-report` is the writer both review role SOPs use. Its packet flags
+(`--scout-packets`, `--write-scout-packets`, `--scout-runs`, `--mark-scout-status`,
+`--scout-coverage`, `--readiness`) still run, but no registered SOP runs them; read
+their output as a view, never as a verdict. `bin/qa-intake` remains the raw local
+worktree and GitHub PR view.
 
 ## Assignee vs Builder — two facts, two labels
 
@@ -1025,7 +948,8 @@ conductor records or completes a cleanup task with:
 For routine batch cleanup after a wave of PRs land, the conductor can use
 `bin/agent-worktree cleanup --reclaim` as the **scale-down-on-close normal
 flow**: the dry run lists every worktree that is SAFE to auto-release (clean +
-merged-to-`origin/main` or main-equivalent + **unoccupied**, primary checkout
+landed on the repo's integration base — `origin/accepted`, or `origin/release` /
+`origin/main` only for a repo not on the ladder — + **unoccupied**, primary checkout
 excluded) with its Redis DB, and `cleanup --reclaim --yes` runs the same full
 teardown as `remove` for each one, then shrinks the Redis band toward the floor.
 It never touches a dirty or unmerged worktree, and never one somebody is working
@@ -1035,8 +959,8 @@ destroyed a live builder's desk. See
 `remove <app> <task-slug> --yes` when recording a single named cleanup task; use
 `cleanup --reclaim` to reclaim all merged slots at once.
 
-Feature agents keep worktrees and branches until Avi or the release conductor
-confirms the PR was merged or intentionally abandoned.
+Feature agents keep worktrees and branches until review merges the PR into
+`accepted` (the task reads `reviewed`) or the PR is intentionally abandoned.
 
 ## Test Suite Catalog
 
@@ -1185,8 +1109,10 @@ owner is the failure this exists to end.
 
 ### A lease is renewed by work, not by a status line
 
-`bin/statusline` fires `bin/task heartbeat <slug> --desk <desk>` every ~45s. The
-heartbeat renews only when it cannot show the holder has gone; it declines when
+Both renewers — the detached `claim-renew-loop` the claim starts (every 30s) and
+`bin/statusline`'s `bin/task heartbeat <slug> --desk <desk>` (every ~45s, when a
+terminal is painting) — call the same renewal, `renew_build_claim` in `bin/task`.
+It renews only when it cannot show the holder has gone; it declines when
 **every** channel has been silent past `ClaimLease::DESK_IDLE_SECONDS`:
 
 - **desk mtimes** (`DeskActivity`) — authored files under the holder's own desk,
@@ -1231,11 +1157,11 @@ circular — that tail *is* the bug. The guard test asserts both sides: no measu
 working gap may read as abandoned, and the median abandoned gap must still be
 caught.
 
-Nothing here reclaims a desk. The heartbeat simply stops renewing, the TTL lapses,
-and the ordinary claim gate admits the next claimant — and if the call was wrong,
-the holder's next heartbeat re-claims the task, so the mistake heals itself.
+Nothing here reclaims a desk. The renewal simply declines, the TTL lapses, and the
+ordinary claim gate admits the next claimant — and if the call was wrong, the
+holder's next beat re-claims the task, so the mistake heals itself.
 
-**And a heartbeat never ACQUIRES a lease it does not hold.** Everything above is
+**And a renewal never ACQUIRES a lease it does not hold.** Everything above is
 about *keeping* a claim; this is the other end. A claim is made deliberately
 (`bin/task move <slug> building`), never inferred from the fact that a terminal is
 painting — so an `:unclaimed` or `:expired` lease is not adopted just because a
@@ -1253,20 +1179,28 @@ version line of a gemspec. `bin/dor-check` refuses a PR that does, and the refus
 names the remedy. This is not a style preference; it is arithmetic.
 
 **`CHANGELOG.md` is NOT gated** — deliberately. The version is safe to
-refuse because it has a working manual path: the release conductor commits it onto
-the gem's `accepted` during the sweep. Nothing assembles a changelog from a
+refuse because it has writers: `bin/release prepare`'s phase 0 allocates it and
+commits it onto the gem's `origin/release` (below), and when that does not run, the
+STRANDED GEM WORK row in `qa-release.md` is the manual path — a hand commit onto the
+gem's `accepted` that the batch promote carries to `release`. Nothing assembles a changelog from a
 release's members, so refusing changelog edits would leave the file un-editable with
 no writer and no manual path.
 
 **But the HEADING is release-owned, as of 2026-09-09.** Write your entries under
-`## Unreleased` and **never write a version heading yourself**. `bin/release
-prepare` renames that bucket to the version it allocates and opens a fresh empty
-one, in the same commit as the `version_file`
-(`Release::Changelog`, see `docs/agents/modules/deployment.md` step 2) — so a
-heading you write by hand either duplicates the one prepare is about to write or
-sits AHEAD of what has shipped, and the sweep refuses rather than publish over
-it. The entries are yours; the heading is the release's, for the same arithmetic
-reason the version is.
+`## Unreleased` and **never write a version heading yourself**. What prepare does
+with the bucket depends on the gem's allocation outcome, in the shared **ALLOCATE /
+SKIP / REFUSE** terms (`qa-release.md` step 4d):
+
+- **ALLOCATE** — prepare renames `## Unreleased` to the version it allocates and
+  opens a fresh empty bucket, in the same commit as the `version_file`
+  (`Release::Changelog`, see `docs/agents/modules/deployment.md` step 2). A heading
+  you wrote by hand sits AHEAD of the last published version, and here it is
+  **REFUSED** — before anything is written or published.
+- **SKIP** — nothing is allocated, nothing is rolled, and nothing is refused; your
+  entries wait under `## Unreleased` for the next ALLOCATE.
+
+The entries are yours; the heading is the release's, for the same arithmetic reason
+the version is.
 
 A version is a property of the **release**, not of any PR. N pull requests riding
 one candidate publish exactly **one** version, so no individual PR can know the
@@ -1288,9 +1222,14 @@ and unit-tested), from metadata your task already carries:
 | any member with `kind: feature` | minor |
 | otherwise (`bug`, `chore`) | patch |
 
-`next = last published + max(bump across members)`, where **last published** is the
-higher of the last `v*` tag and the highest version live on RubyGems — a tag that
-lags a publish can never re-tread a spent number.
+`Release::GemVersion.allocation` asks two questions against two references:
+
+- **Whether to allocate** is judged against the last `v*` **tag** alone (the highest
+  live RubyGems version only when no tag exists) — the same reference the
+  stranded-work guard uses. A `version_file` already past the tag SKIPs.
+- **What to allocate** is `next = last published + max(bump across members)`, where
+  **last published** is the higher of the tag and the highest version live on
+  RubyGems — so a tag that lags a publish can never re-tread a spent number.
 
 **`bin/release prepare` allocates it at step 4d — nobody sets it by hand**
 (finding-d0621629719b, now closed). Prepare derives the number from the table above,
@@ -1310,9 +1249,11 @@ happens only after `validate_gems_for_qa` has preflighted every gem.
 version, a `version_file` declaring its version twice, or a `bundle lock` that did
 not land the new number each abort the sweep with nothing published — a refusal
 costs a re-run, a wrong allocation costs the RubyGems number forever. Allocation is
-idempotent, so a re-run skips a version already past the last published one. The
-stranded-work guard stays armed behind all of it as the backstop: if allocation is
-ever skipped or wrong, the sweep still aborts for **every** repo, loudly, with
+idempotent: a re-run SKIPs a `version_file` already past the last `v*` tag. The four
+things that reach that SKIP are listed in `qa-release.md` step 4d and in
+studio-engine's `docs/RELEASE.md`. The stranded-work guard stays armed behind all of
+it as the backstop: when allocation did not run, or wrote a version that has not
+advanced past the last tag, the sweep still aborts for **every** repo, loudly, with
 nothing published and nothing deployed.
 
 **The derived bump is a floor for routine work, not a judgment about public
@@ -1355,7 +1296,8 @@ moment they were already stuck.
 | a RE-RUN remedy (`Re-run <abs>/bin/fast-check <slug>`) | absolute script, **no `cd`** | you are already standing in the tree — the root guard proved it before the cert ran |
 | a HANDOFF remedy (`cd <desk> && <abs>/bin/ship <slug>`) | absolute script **and** the desk | it points at a tree you are *not* in; the path picks the script, the cwd picks the tree it acts on |
 | a script named as a SUBJECT (`bin/dor-check credits this receipt only alongside a green CI`) | stays bare | prose, not an instruction — nobody pastes a sentence's subject |
-| a usage banner, a step transcript (`5/8 record — bin/task update …`), a board-recorded `"cmd"` field | stays bare | a synopsis, a transcript, or a durable record — none of them is addressed to a reader standing anywhere |
+| a usage banner | `$PROGRAM_NAME` | it names the program the reader actually invoked — absolute when they reached it absolutely, bare when they typed it bare |
+| a step transcript (`5/8 record — bin/task update …`), a board-recorded `"cmd"` field | stays bare | a transcript or a durable record — neither is addressed to a reader standing anywhere |
 
 **Which copy you are sent to is decided by the disk, never by a repo's name.**
 `FastLane.remedy_command` (`bin/lib/fast_lane.rb`) takes an ordered list of `bin`

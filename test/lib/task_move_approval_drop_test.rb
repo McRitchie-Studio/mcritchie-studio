@@ -315,11 +315,11 @@ class TaskMoveApprovalDropTest < Minitest::Test
     assert_match(/already approved in words, record it/, err,
                  "the governing condition leads — not advice for last time")
 
-    commands = err.scan(%r{bin/task ([^.,\n]+)}).flatten.map(&:split)
+    commands = err.scan(%r{bin/task ([^.,;\n]+)}).flatten.map(&:split)
     # Guard the SCAN before trusting it: a regex that matched nothing would loop zero
     # times and pass silently, certifying a message it never read.
-    assert_equal 3, commands.size,
-                 "expected 3 runnable commands, got #{commands.inspect} from: #{err}"
+    assert_equal 2, commands.size,
+                 "expected 2 runnable commands, got #{commands.inspect} from: #{err}"
 
     commands.each do |argv|
       _r, _o, cmd_err, cmd_status = run_task(argv)
@@ -327,6 +327,23 @@ class TaskMoveApprovalDropTest < Minitest::Test
              "the warning tells the reader to run `bin/task #{argv.join(" ")}`, " \
              "which the CLI itself rejects: #{cmd_err}"
     end
+  end
+
+  # NEVER A BACKWARD MOVE. The remedy used to be `move <slug> building`, then
+  # `--approval waiting`, and it RAN — which is exactly why "every printed command
+  # runs" could not catch it. From `reviewed` on the code is on `accepted`; moving the
+  # task back un-merges nothing and leaves the board showing `building` for landed
+  # code. So the warning may name a move only to say not to make one.
+  def test_the_warning_never_advises_moving_the_task_back
+    _reqs, _out, err, _status = run_task(
+      %W[move #{SLUG} reviewed],
+      stub_devops: { "kind" => "feature", "approval_status" => "waiting" }
+    )
+
+    refute_match(%r{bin/task move \S+ (building|designed|submitted)}, err,
+                 "a discarded request is recorded where you stand, never re-opened by a backward move")
+    assert_match(/--approval changes_requested/, err,
+                 "and both answers the operator can give in words are recordable from here")
   end
 
   # SHAPE 3 — the SAME move run twice. A re-run of a move past the seam is routine
