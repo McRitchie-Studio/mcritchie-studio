@@ -348,8 +348,11 @@ bin/release prepare --yes
         push. Nothing to do: the roll is already in the commit.
      4. **A tag push that failed.** It does not stop the sweep; prepare prints
         `tag v<version> push skipped/failed — push it manually if needed`. Push
-        it (`git -C /Users/alex/projects/<gem-repo> push origin v<version>`):
-        until the tag lands, every sweep SKIPs this gem as allocated already.
+        it (`git -C /Users/alex/projects/<gem-repo> push origin v<version>`).
+        Until it lands, a sweep run from a clone that LACKS the tag (a fresh or
+        different clone) SKIPs this gem as allocated already. The clone that ran
+        the publish keeps the tag locally (`git fetch --tags` never deletes one),
+        so allocation there carries on.
    - **REFUSE** — the decide phase stops the sweep before phase 0 writes
      anything; nothing is published. `Release::GemVersion.allocation` refuses a
      version it cannot derive safely (the GEM VERSION ALLOCATION REFUSED row
