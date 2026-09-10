@@ -49,13 +49,13 @@ class ReviewAutopilotTest < Minitest::Test
       line = client.gets
       (client.close; next) if line.nil?
 
-      _method, path, = line.split(" ")
+      verb, path, = line.split(" ")
       while (h = client.gets) && h != "\r\n"
         # headers drained; this stub asserts nothing about them
       end
 
       body = path == "/api/v1/auth" ? JSON.generate("token" => "stub-token") : payload
-      code = path == "/api/v1/auth" ? "200 OK" : status
+      code = path == "/api/v1/auth" ? "200 OK" : (status.is_a?(Hash) ? status.fetch(verb) : status)
       client.write("HTTP/1.1 #{code}\r\nContent-Type: application/json\r\n" \
                    "Content-Length: #{body.bytesize}\r\nConnection: close\r\n\r\n#{body}")
       client.close
@@ -76,6 +76,15 @@ class ReviewAutopilotTest < Minitest::Test
     assert status.success?, err
     assert_includes out, "armed: t"
     assert_includes err, "OPERATOR APPROVAL STILL WAITING"
+  end
+
+  def test_arm_says_unread_rather_than_nothing_when_the_task_read_fails
+    out, err, = run_list(payload: JSON.generate("data" => ARMED), args: %w[arm t --head abc1234567],
+                         status: { "GET" => "503 Service Unavailable", "POST" => "200 OK" })
+
+    assert_includes out, "armed: t", "the arm itself still lands"
+    assert_includes err, "approval state UNREAD"
+    refute_includes err, "OPERATOR APPROVAL STILL WAITING", "an error body is not a task read"
   end
 
   def test_an_unreadable_registry_refuses_instead_of_printing_nothing_armed
