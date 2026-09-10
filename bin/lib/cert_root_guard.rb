@@ -199,8 +199,10 @@ module CertRootGuard
     }
   end
 
-  # The cert writers' refusal text: where you ARE, where the task's tree IS, and the
-  # concrete `cd` that fixes it when the worktree is on disk.
+  # The root guard's refusal text: where you ARE, where the task's tree IS, and the
+  # concrete `cd` that fixes it when the worktree is on disk. The cert writers die! with
+  # it on ANY foreign root; bin/ship dies with it only when no desk resolves (otherwise
+  # it re-roots) — the three callers #desk_advice names below.
   #
   # `resolved` is the VALIDATED destination when the caller already computed one. It
   # matters because the `cd` line is advice someone will follow: pointing it at a

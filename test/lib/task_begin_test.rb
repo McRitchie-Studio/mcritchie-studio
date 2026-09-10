@@ -242,10 +242,10 @@ class TaskBeginTest < Minitest::Test
   # the script named must be an absolute path to an existing executable, and the desk
   # named must be the task's worktree — the cwd is the other half of the instruction
   # (bin/ship roots at the cwd's git toplevel and RE-ROOTS at the desk loudly rather than
-  # refusing, dying only when no desk resolves; the cert WRITERS run by hand afterwards
-  # are the ones that refuse a foreign root). FastLane.handoff_command's own arms are
-  # unit-tested in test/lib/fast_lane_test.rb; THIS test is the wiring, and it is what
-  # reddens if the bare form is ever restored here.
+  # refusing, and dying with the root guard's refusal only when no desk resolves; the cert
+  # WRITERS run by hand afterwards refuse ANY foreign root). FastLane.handoff_command's
+  # own arms are unit-tested in test/lib/fast_lane_test.rb; THIS test is the wiring, and
+  # it is what reddens if the bare form is ever restored here.
   def test_begin_prints_a_handoff_that_resolves_from_the_desk
     _requests, out, err, status, = run_begin([SLUG], existing: building_task)
 

@@ -148,6 +148,10 @@ class CertRootGuardTest < Minitest::Test
                                      root: primary, projects_dir: empty_projects)
         refute_nil found
         assert_nil found[:resolved_root]
+        # This :message is what bin/ship die!s with when resolved_root is nil — so ship
+        # DOES emit the refusal text, on exactly this path (task
+        # handoff-narration-overclaims-four: a comment once said it never did).
+        assert_includes found[:message], "refusing to certify it"
       end
     end
   end

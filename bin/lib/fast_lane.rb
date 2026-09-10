@@ -72,9 +72,10 @@ module FastLane
   # script (ship, fast-check, full-suite-check, dor-check, task) lives in
   # mcritchie-studio/bin alone, so a builder on a turf-monster or rolio desk who
   # followed the tool's own hint got `nohup: bin/ship: No such file or directory`.
-  # PR #1334 corrected that sentence in the generated entry docs; this is the half
-  # the TOOL speaks — and the tool wins any disagreement, because it speaks last and
-  # at the moment of action.
+  # PR #1334 corrected that sentence in the entry docs (docs/agents/claude.md and
+  # index.md) and pinned it with test/docs/fast_lane_hub_path_docs_test.rb; this is the
+  # half the TOOL speaks — and the tool wins any disagreement, because it speaks last
+  # and at the moment of action.
   #
   # THE PATH IS ONLY HALF THE INSTRUCTION. The path picks the SCRIPT; the cwd picks
   # the TREE it acts on — and ship does NOT refuse a foreign root. It roots at the cwd's
@@ -83,11 +84,12 @@ module FastLane
   # chdir'd to the resolved desk; it dies ONLY when no desk resolves on disk. So the cwd
   # is still half the instruction, for two reasons that are not a refusal by ship: (1) a
   # re-root is a correction the reader has to notice and trust, not the tree they chose;
-  # (2) the cert WRITERS the builder runs by hand afterwards DO refuse outright — "this
-  # run roots at …/mcritchie-studio (branch main), which is not <slug>'s tree — refusing
-  # to certify it" is bin/fast-check's and bin/full-suite-check's text, labelled in
-  # cert_root_guard.rb as "The cert writers' refusal text", and never ship's. A hint that
-  # fixes only the path leaves the builder one by-hand cert from the mirror-image failure.
+  # (2) the cert WRITERS the builder runs by hand afterwards refuse ANY foreign root
+  # outright — "this run roots at …/mcritchie-studio (branch main), which is not <slug>'s
+  # tree — refusing to certify it". That string is CertRootGuard#refusal_message, and ship
+  # dies with the SAME string when no desk resolves (bin/ship: `die!(assessment[:message])
+  # unless resolved`); what ship never does is refuse a root it CAN re-root from. A hint
+  # that fixes only the path leaves the builder one by-hand cert from that refusal.
   # This line names BOTH and is copy-pasteable verbatim: `cd <desk> && <ship> <slug>`.
   #
   # WHY THE FORM IS UNCONDITIONALLY ABSOLUTE — never a bare `bin/ship`, not even for
