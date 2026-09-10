@@ -347,6 +347,26 @@ class PrReviewCommandTest < Minitest::Test
     assert_equal [["move", "older-resubmitted", "reviewed", "--actor", "avi"]], moves
   end
 
+  # surface-waiting-request-at-merge: a carried operator-approval request is SHOWN
+  # before the merge and refuses nothing. Without this, deleting the notice from
+  # move_reviewed turned no test red.
+  def test_a_waiting_approval_request_is_shown_before_the_merge_and_never_refuses_it
+    waiting = { "approval_status" => "waiting", "approval_requested_by" => "steffon" }
+    queued = task("asks-for-eyes", created_at: "2026-06-29T12:00:00Z")
+    reviewed = task("asks-for-eyes", created_at: "2026-06-29T12:00:00Z",
+                                     reports: [report("carl", "merge-ready"), report("shannon", "merge-ready")])
+    [queued, reviewed].each { |t| t["devops"].merge!(waiting) }
+    write_snapshots(snapshot([queued]), snapshot([reviewed]))
+
+    out, err, status = run_heartbeat("--run", "--limit", "1")
+
+    assert status.success?, err
+    assert_includes out, "OPERATOR APPROVAL STILL WAITING"
+    assert_includes out, "asked by: steffon"
+    moves = json_lines(@task_log).select { |args| args.first == "move" }
+    assert_equal [["move", "asks-for-eyes", "reviewed", "--actor", "avi"]], moves, "the merge still lands"
+  end
+
   def test_runs_newest_submitted_pr_first_then_re_queries_before_the_next_review
     old = task("old-pr", created_at: "2026-06-29T10:00:00Z")
     first = task("first-new", created_at: "2026-06-29T11:00:00Z")
