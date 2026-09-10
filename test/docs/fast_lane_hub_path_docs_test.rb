@@ -27,9 +27,10 @@ require "test_helper"
 #   * test_documented_hub_paths_resolve — every hub-absolute path the docs PRINT is
 #     mapped back to this repo and must be an executable file. So the doc cannot name a
 #     script that does not exist.
-#   * test_bash_blocks_name_desk_run_commands_absolutely — the defect itself. A shell
-#     block a builder copies may not invoke a DESK-RUN command by the bare `bin/…` form,
-#     because that form resolves only from a hub desk.
+#   * test_pasteable_fences_name_desk_run_commands_absolutely — the defect itself. A
+#     fenced block a reader copies may not name a DESK-RUN command by the bare `bin/…`
+#     form, because that form resolves only from a hub desk. EVERY fence is pasteable
+#     unless it opts out — see "WHICH FENCES ARE PASTEABLE" below.
 #   * test_the_docs_table_classifies_every_repo_it_names — the docs print a table saying
 #     which repos can run the fast lane. The registry that decides it lives in THIS repo
 #     (config/satellites.yml), so the table is checked against it on every run, CI
@@ -60,18 +61,44 @@ require "test_helper"
 #     header attached the cert writers' verbatim refusal to bin/ship, which is the
 #     highest-credibility claim form in this house pointed at the wrong command.
 #
-# Either way a `cd <hub>` earlier in the block does NOT excuse a bare form for these
-# five: for a desk-run command, standing in the hub is at best a re-root and at worst a
+# Either way a `cd <hub>` earlier in the block does NOT excuse a bare form for any
+# DESK_RUN command: for a desk-run command, standing in the hub is at best a re-root and at worst a
 # refusal. The HUB-RUN commands (`bin/task begin`, `bin/agent-worktree`) are correctly
 # reachable after a `cd <hub>` and are deliberately left out — which is a load-bearing
 # exemption, so an edit that leaves a reader standing in a DESK before a hub-run fence
 # has to restore the `cd <hub>` by hand; this guard cannot see it.
 #
-# ITS LIMITS, STATED PLAINLY. (1) The block scan covers ```bash fences only — the shell a
-# reader copies. A ```text fence is prose (the "good prompt" template, the measurement
-# tables of what each `--agent` form stamps) and naming a bare command there is not
-# always wrong, so no crisp classifier separates them; those sites were corrected by hand
-# and are not pinned. (2) Nothing here proves a corrected sentence is well WORDED — only
+# WHICH FENCES ARE PASTEABLE — CHECKED UNLESS EXCUSED (task guard-skips-copy-paste-fences).
+# The first cut scanned ```bash fences only and called a ```text fence prose, admitting
+# "no crisp classifier separates them". That keyed the guard on fence LANGUAGE when the
+# property that matters is COPY-PASTEABILITY — and it regressed within one night:
+# 3617fa35 (ms#1339) put a bare `bin/ship <task> -m` back into the "good prompt" ```text
+# block, which exists to be pasted verbatim into a new session. Three rules were weighed:
+#
+#   * OPT-IN MARKER on pasteable blocks — rejected: it fails OPEN. A new pasteable block
+#     that forgets the marker is unguarded, the same failure the bash-only rule had.
+#   * LABEL CONVENTION ("A good prompt is:") — rejected as the classifier: it keys the
+#     guard on its own prose, and a relabel silently switches it off. It is used below
+#     only to LOCATE the good-prompt pin, where a missing label fails CLOSED.
+#   * SCAN EVERY FENCE, EXCUSE BY MARKER — chosen: it fails CLOSED. A new fence of any
+#     language is checked by default, and the only way out is visible at the site.
+#
+# THE CRISP RULE. Inside a fence that has not opted out, a guarded script is named
+# hub-absolute EVERY time — instruction or description alike. That removes the per-line
+# judgment the old header called impossible: nobody has to decide whether "runs
+# bin/dor-check" is a command. A paste-reader cannot tell either, so neither does this.
+#
+# THE OPT-OUT is the token `not-pasteable` in the fence's own info string (```text
+# not-pasteable). On the OPENING LINE, not in a comment above it, so an edit cannot
+# separate the excuse from the block it excuses; CommonMark renderers read only the first
+# word as the language, so it changes nothing on screen. Two floors keep it honest: an
+# excused fence must actually contain a bare guarded path (a marker that excuses nothing
+# is a silencer waiting to be copied), and the number of excused fences is capped in
+# MAX_EXCUSED_FENCES, so adding one is a visible diff here too.
+#
+# ITS LIMITS, STATED PLAINLY. (1) PROSE outside any fence is not scanned — a sentence
+# telling the reader to run a bare script is still possible, and those sites are owned by
+# /tasks/entry-docs-bare-hub-commands. (2) Nothing here proves a corrected sentence is well WORDED — only
 # that the command it prints exists. (3) The on-disk shim sweep can only inspect the
 # checkouts a given machine has, so on CI it inspects none — which is why the table
 # test, not the sweep, is what holds this contract there. It is stated as a bonus loop
@@ -90,7 +117,25 @@ class FastLaneHubPathDocsTest < ActiveSupport::TestCase
   # in the hub, and the docs tell a builder to run it from the desk. It must precede
   # `ship` in this list — Regexp.union alternates in order, so a leading `ship` would
   # match the `ship` inside `bin/ship-wait` and report the wrong command in the remedy.
-  DESK_RUN = %w[ship-wait ship fast-check full-suite-check dor-check].freeze
+  #
+  # `gh-auth-refresh` is here for the same reason from a different door: it is run from
+  # WHEREVER the builder stands when a token lapses, and mid-ship that is the desk. It
+  # lives only in the hub (no satellite carries it — the shim sweep below checks), and it
+  # resolves its helper from its own __dir__, so the hub-absolute form works from any cwd.
+  # It is usually wrapped — eval "$(bin/gh-auth-refresh --export)" — and BARE is not
+  # anchored to the line start, so the wrapper does not hide it.
+  DESK_RUN = %w[ship-wait ship fast-check full-suite-check dor-check gh-auth-refresh].freeze
+
+  # The info-string token that excuses a fence from the pasteable scan. See the header.
+  NOT_PASTEABLE = "not-pasteable"
+
+  # Today exactly one fence is excused: the in-flight roster mock-up in the
+  # communication-style section, which illustrates chat OUTPUT (`bin/ship restyle-…`
+  # beside meter glyphs), not a command. Raising this number is a decision, not a fix.
+  MAX_EXCUSED_FENCES = 1
+
+  # The label the good-prompt template sits under — used ONLY to locate the pin below.
+  GOOD_PROMPT_LABEL = "A good prompt is:"
 
   # Every fast-lane script, desk-run or hub-run.
   FAST_LANE = (DESK_RUN + %w[task]).freeze
@@ -156,22 +201,33 @@ class FastLaneHubPathDocsTest < ActiveSupport::TestCase
     path.read
   end
 
-  # Every ```<lang> fence in `body`, as [lang, line_number, line].
-  def fenced_lines(body, lang:)
-    open_lang = nil
-    body.each_line.with_index(1).filter_map do |line, number|
+  Fence = Struct.new(:opened_at, :lang, :tokens, :lines, keyword_init: true) do
+    def excused? = tokens.include?(NOT_PASTEABLE)
+  end
+
+  # Every fence in `body`, whatever its language, with its info string split into the
+  # language (first word) and the remaining tokens. `lines` is [[line_number, line], …].
+  def fences(body)
+    found = []
+    current = nil
+    body.each_line.with_index(1) do |line, number|
       # lstrip FIRST. A fence indented inside a list item is still a fence, and matching
       # on the raw line silently left every such block unparsed — the scan would sail
-      # past an indented ```bash without ever entering it, so a bare `bin/ship` there
-      # was unpinned. Measured on review, 2026-09-09.
+      # past an indented fence without ever entering it, so a bare `bin/ship` there was
+      # unpinned. Measured on review, 2026-09-09.
       if line.lstrip.start_with?("```")
-        open_lang = open_lang ? nil : line.strip.delete_prefix("```").strip
+        if current
+          found << current
+          current = nil
+        else
+          words = line.strip.delete_prefix("```").split
+          current = Fence.new(opened_at: number, lang: words.first.to_s, tokens: words.drop(1), lines: [])
+        end
         next
       end
-      next unless open_lang == lang
-
-      [open_lang, number, line]
+      current&.lines&.push([number, line])
     end
+    found
   end
 
   # --- the fact the instruction rests on ----------------------------------------
@@ -204,21 +260,71 @@ class FastLaneHubPathDocsTest < ActiveSupport::TestCase
   end
 
   # --- the defect: a copy-pasteable bare form ------------------------------------
-  test "bash blocks name desk run commands absolutely" do
+  test "pasteable fences name desk run commands absolutely" do
     offences = []
-    scanned = 0
     DOCS.each do |rel|
-      fenced_lines(read_doc(rel), lang: "bash").each do |(_lang, number, line)|
-        scanned += 1
-        next unless (hit = line.match(BARE))
+      pasteable = fences(read_doc(rel)).reject(&:excused?)
 
-        offences << "#{rel}:#{number} invokes bare `bin/#{hit[1]}` — that resolves only " \
-                    "from a hub desk. Name #{HUB_PREFIX}/bin/#{hit[1]} and " \
-                    "stand in the task's desk."
+      # FLOOR — the widening is live. Each doc carries non-bash fences that must now be
+      # scanned; if the scan ever narrows back to one language, this reddens first.
+      refute_empty pasteable.reject { |f| f.lang == "bash" },
+                   "#{rel}: no non-bash fence was scanned — the guard has narrowed back to " \
+                   "fence LANGUAGE, which is the hole guard-skips-copy-paste-fences closed"
+      assert_operator pasteable.sum { |f| f.lines.size }, :>, 0, "#{rel}: no fenced lines were parsed"
+
+      pasteable.each do |fence|
+        fence.lines.each do |(number, line)|
+          line.scan(BARE) do |(cmd)|
+            offences << "#{rel}:#{number} names bare `bin/#{cmd}` in a pasteable " \
+                        "#{fence.lang.empty? ? 'bare' : fence.lang} fence (opened at line " \
+                        "#{fence.opened_at}). It resolves only from a hub desk — name " \
+                        "#{HUB_PREFIX}/bin/#{cmd}, or reword a description so it names no path. " \
+                        "If the block illustrates OUTPUT rather than something to paste, mark it " \
+                        "```#{fence.lang} #{NOT_PASTEABLE} and raise MAX_EXCUSED_FENCES."
+          end
+        end
       end
     end
-    assert_operator scanned, :>, 0, "no ```bash fences were parsed — the fence scanner is broken"
     assert_empty offences, offences.join("\n")
+  end
+
+  # --- the opt-out may not become a silencer --------------------------------------
+  test "every excused fence is load bearing and the count is capped" do
+    excused = DOCS.flat_map do |rel|
+      fences(read_doc(rel)).select(&:excused?).map { |f| [rel, f] }
+    end
+
+    excused.each do |(rel, fence)|
+      assert fence.lines.any? { |(_, line)| line.match?(BARE) },
+             "#{rel}:#{fence.opened_at} is marked #{NOT_PASTEABLE} but names no bare guarded " \
+             "path — the marker excuses nothing. Remove it; an idle excuse is a silencer."
+    end
+    assert_operator excused.size, :<=, MAX_EXCUSED_FENCES,
+                    "#{excused.size} fences are marked #{NOT_PASTEABLE}, over the cap of " \
+                    "#{MAX_EXCUSED_FENCES}: #{excused.map { |(rel, f)| "#{rel}:#{f.opened_at}" }.join(', ')}"
+    # Non-vacuity: the marker parser must actually find the one known excuse.
+    assert_operator excused.size, :>=, 1, "no #{NOT_PASTEABLE} fence found — the info-string parser is broken"
+  end
+
+  # --- the template that regressed is pinned by name --------------------------------
+  # Criterion 3. The good prompt is pasted verbatim into new sessions, so it must be
+  # SCANNED (never excused) and must carry the hub-absolute ship. Located by its label;
+  # a relabel fails CLOSED here rather than quietly dropping the pin.
+  test "the good prompt template is scanned and names ship absolutely" do
+    body = read_doc("docs/agents/index.md")
+    # end_with?, not ==: the label closes a wrapped prose line ("…and the feature. A good
+    # prompt is:"), and the fence opens two lines below it.
+    label_at = body.lines.index { |line| line.rstrip.end_with?(GOOD_PROMPT_LABEL) }
+    refute_nil label_at, "docs/agents/index.md lost the line #{GOOD_PROMPT_LABEL.inspect} — " \
+                         "re-point GOOD_PROMPT_LABEL so the template stays pinned"
+
+    template = fences(body).find { |f| f.opened_at > label_at + 1 }
+    refute_nil template, "no fence follows #{GOOD_PROMPT_LABEL.inspect}"
+    refute template.excused?, "the good-prompt template is marked #{NOT_PASTEABLE} — it exists " \
+                              "to be pasted, so it may never be excused"
+    text = template.lines.map(&:last).join
+    assert_includes text, "#{HUB_PREFIX}/bin/ship",
+                    "the good-prompt template no longer names #{HUB_PREFIX}/bin/ship"
   end
 
   # Every alternative in BARE must really match its command; an alternative that never

@@ -317,7 +317,7 @@ will see `Bad credentials`, a 401/403, or a `gh auth login` prompt. That is
 **yours to fix**, in one command, and then you continue:
 
 ```bash
-eval "$(bin/gh-auth-refresh --export)"
+eval "$(/Users/alex/projects/mcritchie-studio/bin/gh-auth-refresh --export)"
 ```
 
 Do **not** ask Mr. McRitchie to run `gh auth login`. It is the terminal chore the
