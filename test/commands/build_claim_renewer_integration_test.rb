@@ -235,6 +235,48 @@ class BuildClaimRenewerIntegrationTest < ActiveSupport::TestCase
     end
   end
 
+  # ── ONE RENEWER PER TASK, NOT PER CLAIM ─────────────────────────────────────
+  #
+  # MEASURED in review of ms#1356: three consecutive `move building` calls left THREE
+  # live renewers and 16 lease PATCHes in ~8s. CLAUDE.md documents re-running
+  # `bin/task begin <slug>` as the normal resume path, so N resumes meant N loops, each
+  # polling the board every 30s for up to 12h — the accumulation the review lane paid
+  # for on 2026-08-30.
+  test "[integration] repeated claims by one instance leave ONE renewer" do
+    with_desk do |desk|
+      claim_the_task(desk)
+      2.times { reclaim(desk) }
+
+      assert wait_until { live_renewers.any? }, "the control: a renewer must be running at all"
+      sleep(BEAT.to_i) # any duplicate that was going to start has started
+      assert_equal 1, live_renewers.size,
+                   "three claims by one instance must share one renewer — got #{live_renewers.size}"
+    end
+  end
+
+  # ── A MULTI-REPO TASK'S DESK IS UNDER ANY OF ITS REPOS ──────────────────────
+  #
+  # build_claim_desk read only repositories.FIRST, while its sibling archive_desk_dirs
+  # maps over all of them. So a task whose desk lives under its SECOND repo resolved no
+  # desk — and with no desk the abandonment gate answers "unknown", which never frees a
+  # claim: the renewer then ran for its whole lifetime cap on a builder it could not see.
+  test "[integration] a multi-repo task's renewer finds its desk under the second repo" do
+    with_desk do |_bound|
+      second = File.join(@sandbox, "projects", "repo-b", ".worktrees", SLUG)
+      FileUtils.mkdir_p(second)
+      File.write(File.join(second, ".agent-context.json"), { "task_slug" => SLUG }.to_json)
+      nowhere = Dir.mktmpdir # a cwd bound to no task, like a primary checkout
+
+      claim_the_task(nowhere, devops: { "repositories" => %w[repo-a repo-b] })
+
+      assert wait_until { live_renewers.any? }, "the control: a renewer must be running at all"
+      assert_includes renewer_argv(live_renewers.first), "--desk #{second}",
+                      "the renewer must be judged on the desk under repo-b, the only one that exists"
+    ensure
+      FileUtils.remove_entry(nowhere) if nowhere && File.directory?(nowhere)
+    end
+  end
+
   # ── AND IT MUST NOT LEAK OUT OF THE SUITE ───────────────────────────────────
 
   test "[integration] a sandboxed run starts no renewer unless it asks for one" do
@@ -265,14 +307,36 @@ class BuildClaimRenewerIntegrationTest < ActiveSupport::TestCase
   # and HOME inside a tmpdir — the suite arms TASK_USAGE_SANDBOX process-wide, so an
   # unpinned child ABORTS before it reaches the code under test and every assertion
   # here would pass or fail for the wrong reason.
-  def claim_the_task(desk, renewer: "on")
-    @board = StubBoard.new(stage: "designed", devops: { "kind" => "bug", "worktree_slug" => SLUG })
-    env = child_env(desk).merge("TASK_API_BASE" => @board.url)
-    renewer.nil? ? env.delete("TASK_BUILD_CLAIM_RENEWER") : env["TASK_BUILD_CLAIM_RENEWER"] = renewer
+  def claim_the_task(desk, renewer: "on", devops: {})
+    @board = StubBoard.new(stage: "designed", devops: { "kind" => "bug", "worktree_slug" => SLUG }.merge(devops))
+    env = claim_env(desk, renewer)
     out, err, status = Open3.capture3(env, BIN, "move", SLUG, "building", chdir: desk)
     assert_equal 0, status.exitstatus, "the claim itself must land:\n#{out}\n#{err}"
     assert_equal 1, @board.claim_count, "the move writes exactly one claim; everything after it is renewal"
     @board.claims.first
+  end
+
+  def claim_env(desk, renewer = "on")
+    env = child_env(desk).merge("TASK_API_BASE" => @board.url)
+    renewer.nil? ? env.delete("TASK_BUILD_CLAIM_RENEWER") : env["TASK_BUILD_CLAIM_RENEWER"] = renewer
+    env
+  end
+
+  # A second claim by the SAME live instance on a task it already holds — what a
+  # resumed `bin/task begin <slug>` or a repeated `move building` does.
+  def reclaim(desk)
+    out, err, status = Open3.capture3(claim_env(desk), BIN, "move", SLUG, "building", chdir: desk)
+    assert_equal 0, status.exitstatus, "a re-claim by the holder must land:\n#{out}\n#{err}"
+  end
+
+  # Live `claim-renew-loop <SLUG>` processes. pgrep cannot match this test process: its
+  # own argv never contains the loop's subcommand.
+  def live_renewers
+    IO.popen(["pgrep", "-f", "claim-renew-loop #{SLUG}"], err: File::NULL, &:read).split.map(&:to_i)
+  end
+
+  def renewer_argv(pid)
+    IO.popen(["ps", "-o", "command=", "-p", pid.to_s], err: File::NULL, &:read).to_s.strip
   end
 
   # A desk bound to THIS task, so the renewal is judged on evidence of work at the
