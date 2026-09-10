@@ -185,7 +185,7 @@ operator-facing message (chat reply, handoff, task note, PR summary) carries
   himself, and cap the block at 68 columns so the confidence mark never
   truncates. It is the LAST thing in the message.
 
-  ```text not-pasteable
+  ```not-pasteable
   🚀 In Flight: 2:14 PM MDT
   ──────────────────────────────────────────────────────────────────
   carl · review fix-cta-timing  ▰▰▰▰▱▱▱▱▱▱  4m in · ~6m left   rough

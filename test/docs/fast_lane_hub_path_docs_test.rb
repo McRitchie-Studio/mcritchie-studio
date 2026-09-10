@@ -88,10 +88,10 @@ require "test_helper"
 # judgment the old header called impossible: nobody has to decide whether "runs
 # bin/dor-check" is a command. A paste-reader cannot tell either, so neither does this.
 #
-# THE OPT-OUT is the token `not-pasteable` in the fence's own info string (```text
-# not-pasteable). On the OPENING LINE, not in a comment above it, so an edit cannot
-# separate the excuse from the block it excuses; CommonMark renderers read only the first
-# word as the language, so it changes nothing on screen. Two floors keep it honest: an
+# THE OPT-OUT is `not-pasteable` as the fence's WHOLE info string (```not-pasteable), on
+# the OPENING LINE so no edit can separate the excuse from its block. Never a second
+# word after a language: the in-app viewer (Redcarpet, /docs/*) then drops the fence and
+# prints it as inline code, measured on review. Two floors keep it honest: an
 # excused fence must actually contain a bare guarded path (a marker that excuses nothing
 # is a silencer waiting to be copied), and the number of excused fences is capped in
 # MAX_EXCUSED_FENCES, so adding one is a visible diff here too.
@@ -202,7 +202,7 @@ class FastLaneHubPathDocsTest < ActiveSupport::TestCase
   end
 
   Fence = Struct.new(:opened_at, :lang, :tokens, :lines, keyword_init: true) do
-    def excused? = tokens.include?(NOT_PASTEABLE)
+    def excused? = lang == NOT_PASTEABLE
   end
 
   # Every fence in `body`, whatever its language, with its info string split into the
@@ -280,7 +280,7 @@ class FastLaneHubPathDocsTest < ActiveSupport::TestCase
                         "#{fence.opened_at}). It resolves only from a hub desk — name " \
                         "#{HUB_PREFIX}/bin/#{cmd}, or reword a description so it names no path. " \
                         "If the block illustrates OUTPUT rather than something to paste, mark it " \
-                        "```#{fence.lang} #{NOT_PASTEABLE} and raise MAX_EXCUSED_FENCES."
+                        "```#{NOT_PASTEABLE} and raise MAX_EXCUSED_FENCES."
           end
         end
       end
@@ -304,6 +304,16 @@ class FastLaneHubPathDocsTest < ActiveSupport::TestCase
                     "#{MAX_EXCUSED_FENCES}: #{excused.map { |(rel, f)| "#{rel}:#{f.opened_at}" }.join(', ')}"
     # Non-vacuity: the marker parser must actually find the one known excuse.
     assert_operator excused.size, :>=, 1, "no #{NOT_PASTEABLE} fence found — the info-string parser is broken"
+  end
+
+  # The in-app viewer (app/controllers/docs_controller.rb, Redcarpet) drops a fence whose
+  # info string has a second word; ```text not-pasteable did that to /docs/index.
+  test "the in app docs viewer renders every parsed fence" do
+    DOCS.each do |rel|
+      body = read_doc(rel)
+      shown = DocsController.new.send(:render_markdown, body).scan("<pre>").size
+      assert_equal fences(body).size, shown, "#{rel}: this guard parsed #{fences(body).size} fences; /docs renders #{shown}"
+    end
   end
 
   # --- the template that regressed is pinned by name --------------------------------
