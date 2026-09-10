@@ -861,7 +861,11 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
       why: "cautionary account of turf-monster PR 594, the incident that motivated the gate" },
     { file: "docs/agents/agents/carl/sops/pr-review.md", line: 322, match: /therefore runs the breaker itself/,
       why: "prose describing what the command does, not an instruction to run it" },
-    { file: "docs/agents/modules/devops-task-board.md", line: 849,
+    # Repointed 836 → 906 (2026-09-09): the ship-wait section added ~70 lines
+    # ABOVE this prose. The prose is unchanged; only its line number moved. This
+    # entry is line-keyed by design, so any insertion earlier in the file drifts
+    # it — expect to repoint again when a sibling doc PR lands first.
+    { file: "docs/agents/modules/devops-task-board.md", line: 906,
       match: /lands the task back on building, and three readers/,
       why: "prose describing the stage effect on board readers" },
     { file: "docs/agents/modules/gates/g2-review.md", line: 93, match: /exits 10\), re-run it/,

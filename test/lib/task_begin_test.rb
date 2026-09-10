@@ -444,7 +444,12 @@ class TaskBeginTest < Minitest::Test
       run_begin([SLUG], existing: building_task, env: { "FAIL_PREFLIGHT" => "1" })
 
     refute status.success?, "a red preflight must fail the begin"
-    assert_includes err, "re-run: bin/task begin #{SLUG}", "the failure must name the resume"
+    # Filesystem-keyed for the reason test/lib/remedy_hint_guard_test.rb spells out:
+    # an absolute path CONTAINS "bin/task begin <slug>", so a substring assertion
+    # here passes the bare form as readily as the fixed one.
+    resume = err[%r{re-run: (\S*/bin/task) begin #{SLUG}}, 1]
+    refute_nil resume, "the failure must name the resume:\n#{err}"
+    assert File.executable?(resume), "the resume must name a runnable script, got #{resume.inspect}"
     assert(lines.any? { |l| l[0] == "PREFLIGHT" }, "the preflight must have been attempted")
   end
 end
