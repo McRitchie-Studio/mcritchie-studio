@@ -39,8 +39,9 @@
           <span class="text-xs" x-text="copied ? '✓' : '⧉'" :class="copied ? 'text-mint-300' : 'text-muted'"></span>
         </button>
         <span x-ref="resumeCmd" class="hidden"><%= @task.resume_command %></span>
-        <%# The live dot attests that a TERMINAL IS PAINTING, nothing more — it is
-            renewed by bin/statusline's 45s-throttled heartbeat and so survives a wedged agent.
+        <%# The live dot attests that the BUILDER'S RUN IS STILL HERE, nothing more — it
+            is renewed on a timer (the detached build-claim renewer, and bin/statusline's
+            heartbeat when a terminal paints) and so survives a wedged agent.
             State the progress fact next to it rather than letting "live" be read as
             "progressing" (the 2026-07-13 lie). Informational: no verdict, no reclaim. %>
         <% if @task.claim_live? %>

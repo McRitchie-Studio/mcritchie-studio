@@ -244,7 +244,7 @@ class TaskCliTest < Minitest::Test
 
   # The API projects the PROGRESS fact alongside the claim (see Api::V1::TasksController
   # #task_json), so the claim gate can tell a second agent what the holder has actually
-  # PRODUCED — not merely that its terminal is painting. @stub_progress seeds it.
+  # PRODUCED — not merely that its run is still alive. @stub_progress seeds it.
   def task_response(stage)
     data = {
       "slug" => "demo-task", "stage" => stage, "merged" => @persisted_merged,
@@ -985,7 +985,7 @@ class TaskCliTest < Minitest::Test
   end
 
   # [integration] The refusal must name the PROGRESS fact, not just the heartbeat.
-  # A heartbeat says only "a terminal is painting" — it stayed green through the
+  # A heartbeat says only "the builder's run is still here" — it stayed green through the
   # 2026-07-13 wedge. A second agent deciding whether to --steal needs to know what
   # the holder has actually LANDED, so the gate prints the last durable artifact.
   #

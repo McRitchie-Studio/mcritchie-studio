@@ -9,8 +9,10 @@ require "time"
 #   claim_nonce      — a per-PROCESS-instance token (see bin/task#claim_nonce). Two
 #                      terminals running `claude --resume <same id>` share the
 #                      session id but are different OS processes → different nonce.
-#   claim_expires_at — an ISO8601 TTL lease, renewed by the heartbeat (bin/statusline)
-#                      ONLY while the holder can be shown to be working (see
+#   claim_expires_at — an ISO8601 TTL lease, renewed on a timer by the detached
+#                      renewer the claim starts (bin/lib/build_claim_renewer.rb) and
+#                      redundantly by bin/statusline's heartbeat — in both cases ONLY
+#                      while the holder can be shown to be working (see
 #                      `abandoned?` below). No renewal for > TTL ⇒ the lease lapses
 #                      ⇒ the task is reclaimable. The renewal used to be
 #                      unconditional, which meant an open terminal held a desk
@@ -53,22 +55,30 @@ module ClaimLease
   # by a comment describing a "~5s render cadence" that was wrong twice over: the
   # status line's RENEWAL is throttled to 45s (not 5s), and it renews the build claim
   # and the shift lease and NEVER a review claim. That sentence had been copied
-  # widely. Its last four copies — app/helpers/claim_progress_helper.rb,
-  # lib/desk_activity.rb, test/models/task_progress_test.rb, and
-  # docs/agents/system/exclusive-lanes.md — were swept on 2026-09-09 alongside the
-  # renewer, because a change that moves the build claim off the status line makes
-  # every one of them describe a mechanism that no longer exists. Cite this
-  # paragraph; the copies are gone, and re-introducing one is the regression.
+  # widely. Its last copies were swept on 2026-09-09 alongside the renewer — the four
+  # this paragraph used to list (app/helpers/claim_progress_helper.rb,
+  # lib/desk_activity.rb, test/models/task_progress_test.rb,
+  # docs/agents/system/exclusive-lanes.md) plus a fifth that list had missed
+  # (e2e/claim_progress.spec.js) — because moving the build claim off the status line
+  # makes every one of them describe a mechanism that no longer exists. Cite this
+  # paragraph; re-introducing a copy is the regression.
   DEFAULT_TTL_SECONDS = 120
 
   # --- The review lane's own TTL --------------------------------------------
   #
-  # WHY THE REVIEW LANE NEEDS ITS OWN NUMBER. A build claim and a review claim are
-  # renewed by different machinery and protect different things. The build claim is
-  # heartbeat by a terminal that is rendering. The review claim (TaskReviewClaim) is
-  # held for one unit of WORK — a whole PR review — and is renewed by the DETACHED,
-  # timer-driven ShiftRenewer on a 30s beat. Sharing 120s made the
-  # no-two-reviewers-on-one-PR gate rest entirely on an unbroken chain of ~180
+  # WHY THE REVIEW LANE NEEDS ITS OWN NUMBER. Since 2026-09-09 a build claim and a
+  # review claim are renewed by the SAME machinery — a DETACHED, timer-driven
+  # ShiftRenewer beat of 30s — but they protect different things and FAIL
+  # differently, and that is what the two numbers answer to. A lapsed BUILD claim
+  # heals itself on the renewer's next beat (the lapsed lease still names our
+  # session, so the renewal re-takes it), and exploiting the gap needs a second
+  # agent to run a deliberate `move building` on that very task inside it. A lapsed
+  # REVIEW claim is exploited by MACHINERY: `claim-next-review` pops reviewable
+  # work continuously. And the dead-holder costs run the other way — a stranded
+  # review claim is skipped by `Task.reviewable`, while a stranded build claim
+  # blocks the one agent who would pick the task up. The review claim
+  # (TaskReviewClaim) is held for one unit of WORK — a whole PR review. Sharing
+  # 120s made the no-two-reviewers-on-one-PR gate rest entirely on an unbroken chain of ~180
   # renewals: miss four beats to a board deploy, a throttled API, or a slept laptop
   # and the lease lapses SILENTLY mid-review, after which a second pr-review session
   # can pop the same PR. Measured 2026-09-08: two reviews ended with a `release` that
@@ -253,9 +263,10 @@ module ClaimLease
 
   # --- Progress, which is NOT liveness -------------------------------------
   #
-  # The lease above attests exactly one thing: A TERMINAL IS RENDERING. It is
-  # renewed by bin/statusline's 45s-throttled heartbeat, so it survives a wedged
-  # agent — on 2026-07-13 a session sat 28 minutes making no durable write while
+  # The lease above attests exactly one thing: THE BUILDER'S RUN IS STILL HERE. It
+  # is renewed on a timer (the detached renewer, and bin/statusline's heartbeat when
+  # a terminal is painting), so it survives a wedged agent — on 2026-07-13 a session
+  # sat 28 minutes making no durable write while
   # its lease stayed green, and the board read that green as "progressing".
   # It never meant that. Liveness and progress are two different facts, and the
   # cure is to REPORT BOTH, not to swap one for the other.
@@ -357,11 +368,19 @@ module ClaimLease
   # `quiet?` above reports. THIS decides, and it is the only thing in this file
   # that can cost a holder its desk — so read the argument before touching it.
   #
-  # THE BUG. The lease is renewed by bin/statusline, which paints whether or not
-  # an agent is working. So an open terminal renews a build claim forever: on
+  # THE BUG. The lease was renewed by bin/statusline, which paints whether or not
+  # an agent is working. So an open terminal renewed a build claim forever: on
   # 2026-08-13 a claim ticked 16:05:16Z → 16:06:46Z while three agents stalled
   # behind it, and this machine carries long-lived `claude` processes that have
   # been open for days. A heartbeat proves a TERMINAL IS OPEN. Nothing more.
+  #
+  # THIS GATE IS NOW MORE LOAD-BEARING, NOT LESS. Since 2026-09-09 the build claim
+  # is also renewed by a DETACHED renewer anchored to that same long-lived `claude`
+  # process (bin/lib/build_claim_renewer.rb), which renews whether or not anyone
+  # is working for as long as the process lives. It runs THIS predicate on every
+  # beat, and this predicate is the only thing that stops an open-for-days session
+  # from holding a desk it walked away from. Loosen it and the renewer becomes the
+  # immortal lease the 2026-08-13 fix removed, rebuilt on a timer.
   #
   # THE OBVIOUS FIX IS THE DANGEROUS ONE. "Renew only on durable task writes"
   # would have judged that same holder dead while it was WRITING TEST FILES INTO

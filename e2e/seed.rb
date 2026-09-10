@@ -369,14 +369,14 @@ Task.create!(
 )
 
 # --- The claim chip: liveness and progress, never conflated -------------------
-# Two BUILDING desks, both holding a LIVE claim (a terminal is painting). They
+# Two BUILDING desks, both holding a LIVE claim (the builder's run is alive). They
 # differ only in what they have PRODUCED, which is the whole point of the chip:
 #
 #   quiet    — heartbeating for hours with no durable artifact (the 2026-07-13 lie)
 #   working  — a cert gate open right now (a healthy long build, never flagged)
 #
 # The lease expiry is seeded FAR in the future on purpose. A real lease carries a
-# 120s TTL renewed by bin/statusline; a fixture has no statusline, so a real TTL
+# 120s TTL renewed by its detached renewer; a fixture has no renewer, so a real TTL
 # would lapse between `seed` and the spec run and the chip would vanish (flake).
 def e2e_claim(expires_at: 1.day.from_now)
   {
