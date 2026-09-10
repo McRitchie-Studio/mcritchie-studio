@@ -285,7 +285,7 @@ whether the rotation is a config edit or a migration.
 |---|---|---|
 | Nothing survives — it only ever authenticated | a bearer API key, `HEROKU_API_KEY`, an SES key | Nothing extra. Rotate and move on. |
 | An artefact must be MIGRATED | `RAILS_MASTER_KEY` | A re-encryption step, inside a window where BOTH values are available |
-| The migration machinery DOES NOT EXIST | `MANAGED_WALLET_ENCRYPTION_KEY` | **The rotation does not happen.** See the bullet below and route it to its own task. |
+| An artefact must be MIGRATED, by code that must be DEPLOYED first | `MANAGED_WALLET_ENCRYPTION_KEY` | A two-key window and a verified re-seal — and **no rotation at all** until the running release carries them. See the bullet below. |
 | An artefact DIES | `SECRET_KEY_BASE` | An announced outage: sessions and signed URLs stop verifying |
 | A PUBLIC half is registered elsewhere | a Solana signing keypair, a webhook signing secret | Phase 3 — the registration moves FIRST, and it is the long pole |
 
@@ -321,34 +321,133 @@ The three that cost something, concretely:
   Pick a low-traffic window, tell Mr. McRitchie people will be logged out, and do
   not schedule anything whose verification needs a logged-in session in the same
   window.
-- **`MANAGED_WALLET_ENCRYPTION_KEY` — 🚫 STOP. THIS SOP CANNOT ROTATE IT.** Every
-  managed wallet's Ed25519 secret is encrypted under a key derived from it, and
-  **the two-key window this rotation would need does not exist in the code.** Do
-  not attempt it by this procedure. `secrets-rotation.md` carried a step-by-step
-  recipe for it until 2026-09-09; every load-bearing step was fabricated, and that
-  section is now a refusal that names what was wrong with it. Verified in
-  `turf-monster` 2026-09-09:
-
-  | What a rotation needs | What exists |
-  |---|---|
-  | A second env var the app can decrypt with | `app/services/solana/keypair.rb:118-125` reads `ENV["MANAGED_WALLET_ENCRYPTION_KEY"]` and **only** that, then memoizes it. Nothing reads a `…_NEW`. |
-  | A task that re-encrypts OLD → NEW | `solana:reencrypt_managed_wallets` (`lib/tasks/solana.rake:532`) is the OPSEC-015 **legacy→v2 migration**. `Keypair.reencrypt` is `from_encrypted(x).encrypt` — decrypt and re-encrypt under the **same** key. |
-  | A way to tell it finished the work | It `next`s every row already at v2, prints `0 migrated, N already v2, 0 failed`, and **exits 0**. "Run to completion" is satisfied having re-encrypted nothing. |
-
-  So the sequence "promote the new key, then revoke the old at Phase 6" leaves every
-  managed wallet's secret undecryptable, with a green task run as the evidence that
-  it worked. **Route it to its own task** — building the real two-key window is
-  turf-monster application work (a second env var read at decrypt time, a migration
-  that walks every row from the old key to the new, and a verification that counts
-  rows rather than trusting an exit code), not a step in a runbook. Until that task
-  ships, the only safe answer to "rotate `MANAGED_WALLET_ENCRYPTION_KEY`" is **no**.
+- **`MANAGED_WALLET_ENCRYPTION_KEY` is a migration behind a deploy gate.** Every
+  managed wallet's Ed25519 secret is sealed under a key derived from it. **The code
+  must be DEPLOYED before the key is rotated**: on a release older than
+  `managed-wallet-key-rotation` the app reads one key, and the migration task reports
+  success while every wallet becomes undecryptable. Do not run the generic Phase 4
+  for it — run [§2.1](#21-managed_wallet_encryption_key--deploy-first-then-migrate),
+  which replaces 4.1 through 4.5 for this key.
 
 If the answer is "an artefact must be migrated", the old value stays retrievable
 until the migration is verified. That constraint outranks the urge to revoke early.
-**And if the migration machinery does not exist, the rotation does not happen** —
-you cannot runbook your way around a missing decrypt path. Prove the two-key window
-exists by reading the code that would use it, not by reading a runbook that says it
-does.
+**And if the migration machinery does not exist IN THE RUNNING RELEASE, the
+rotation does not happen** — you cannot runbook your way around a missing decrypt
+path, and merged code is not running code. Prove the two-key window exists on the
+app itself (§2.1's Gate 0 is the shape of that proof), not by reading a runbook
+that says it does.
+
+### 2.1 `MANAGED_WALLET_ENCRYPTION_KEY` — deploy first, then migrate
+
+Until `managed-wallet-key-rotation` shipped, this key had no two-key window, and this
+SOP refused to rotate it. Any release that predates that change still behaves the
+old way:
+
+| What a rotation needs | Before `managed-wallet-key-rotation` | Since |
+|---|---|---|
+| A second key the app can decrypt with | `Solana::Keypair` read `MANAGED_WALLET_ENCRYPTION_KEY` and only that | `MANAGED_WALLET_ENCRYPTION_KEY_PREVIOUS` opens old rows. It never seals. |
+| A task that re-seals OLD → NEW | `solana:reencrypt_managed_wallets` skipped every row carrying `v2:`, which is every row | The same task re-seals each row the current key alone cannot open, reads it back under the current key alone, and writes it by compare-and-swap |
+| A way to tell it finished | None: it printed `0 migrated, N already v2, 0 failed` and exited 0 | It prints `total / migrated / already-new / failed`, recounts every row under the new key alone, and exits 1 unless all of them verify. `solana:verify_managed_wallet_keys` is the read-only count. |
+
+**Gate 0 — the code must be DEPLOYED before the key is rotated.** Merged is not
+deployed. Only the release RUNNING on the app reads the key. On an older release,
+the config write in step 5 leaves every managed wallet undecryptable, and the
+migration reports success. Prove the code is running, per app that holds the key,
+before you mint anything:
+
+```bash
+heroku run --exit-code --app turf-monster-mainnet bin/rails solana:verify_managed_wallet_keys
+heroku run --exit-code --app turf-monster-mainnet bin/rails runner \
+  'puts User.where.not(encrypted_web2_solana_private_key: [nil, ""]).count'
+```
+
+`Don't know how to build task` means the release predates the code: **stop — the
+answer is no** until it is deployed. The gate passes only on the line `VERIFIED --
+N of N row(s) open under the current key alone.` The second command counts the same
+rows a different way, so the verifier is not grading itself; the two numbers must
+match. Write N down: every later count is checked against it. Each app that holds
+the key is its own migration — its own rows, rehearsal, and count.
+
+**1. Mint (replaces 4.1)** straight into the shell, never onto the screen. The
+task refuses anything but 64 hex characters.
+
+```bash
+NEW=$(ruby -e 'require "securerandom"; print SecureRandom.hex(32)')
+printf '%s' "$NEW" | digest
+```
+
+**2. Hold the OLD value, and prove it is the LIVE one.** Step 5 overwrites the only
+copy the rows are sealed under, so a wrong `$OLD` loses the key for good.
+
+```bash
+OLD=$(op item get agent.managed_wallet --vault studio-agents --fields label="encryption key" --reveal)
+printf '%s' "$OLD" | digest
+heroku config --json --app turf-monster-mainnet | jq -r '.["MANAGED_WALLET_ENCRYPTION_KEY"] // empty' | digest
+[[ "$OLD" =~ ^[0-9a-fA-F]{64}$ ]] && echo "OLD: 64 hex" || echo "OLD: NOT 64 hex"
+```
+
+The two digests must match, and neither may print EMPTY. **A mismatch is a stop.**
+If `$OLD` is not 64 hex, stop and route to Jasper: the rehearsal and the rollback
+both need a 64-hex key.
+
+**3. Rehearse with the app untouched.** Hand both keys to ONE one-off dyno; the
+app's config does not change. Both values sit on `heroku run`'s argv for the length
+of the call, the same exposure 4.4 accepts.
+
+```bash
+: "${NEW:?NEW is not set -- go back to step 1}" && : "${OLD:?OLD is not set -- go back to step 2}" &&
+[ "$NEW" != "$OLD" ] &&
+heroku run --exit-code --app turf-monster-mainnet \
+  --env "DRY_RUN=1;MANAGED_WALLET_ENCRYPTION_KEY=$NEW;MANAGED_WALLET_ENCRYPTION_KEY_PREVIOUS=$OLD" \
+  bin/rails solana:reencrypt_managed_wallets
+```
+
+Read the output; the exit code alone proves nothing. The header must say
+`ROTATION`. The counts must read `total: N  would-migrate: N  already-new: 0
+failed: 0`, and the last line must start `DRY RUN CLEAN`. `already-new` above 0 on a
+first rehearsal means the keys are swapped. A `FAILED` line means `$OLD` does not
+open that row. `REFUSED` names the rule the new key broke. In every one of those
+cases, **stop** — nothing has changed yet.
+
+**4. File both (replaces 4.2).** Add a `previous encryption key` field holding `$OLD`
+to `agent.managed_wallet` FIRST. Then replace `encryption key` with `$NEW`, by the
+4.2 recipe. Read both back by digest.
+
+**5. Write the app in ONE command (replaces 4.4) — never the generic loop.** One
+release, one restart, and the app never runs on the new key alone. Two commands
+would open a window in which every existing wallet fails to decrypt.
+
+```bash
+: "${NEW:?refusing -- NEW is empty}" && : "${OLD:?refusing -- OLD is empty}" &&
+[ "$NEW" != "$OLD" ] &&
+heroku config:set "MANAGED_WALLET_ENCRYPTION_KEY_PREVIOUS=$OLD" \
+  "MANAGED_WALLET_ENCRYPTION_KEY=$NEW" --app turf-monster-mainnet
+```
+
+From this moment new wallets are sealed under `$NEW`, so **`$NEW` never leaves the
+app again** — not even in a rollback.
+
+**6. Migrate (replaces 4.5).** Dry-run once more from the app's own config, then run
+it for real:
+
+```bash
+heroku run --exit-code --app turf-monster-mainnet --env "DRY_RUN=1" bin/rails solana:reencrypt_managed_wallets
+heroku run --exit-code --app turf-monster-mainnet bin/rails solana:reencrypt_managed_wallets
+```
+
+The real run is complete only on all three of: `total: T  migrated: M  already-new:
+A  failed: 0` with M + A = T; the line `Read-back: T of T row(s) open under the
+current key alone`; and a last line starting `COMPLETE`. T may exceed N by the
+wallets minted since step 5; those count as already-new. `NOT COMPLETE` is safe:
+every row is whole, and both keys still open it. Read the `FAILED` lines and re-run.
+It is never a reason to go on to Phase 6.
+
+Phase 5 and Phase 6 for this key are their rows in those tables. Know, too, what a
+rotation does NOT do: it re-seals the envelope, never a wallet's private key. Every
+ciphertext sealed under the old key stays openable with it forever — in a Postgres
+backup, a fork, a follower, or a dump. So a COMPROMISED key is an incident, not a
+rotation: rotate, move funds to fresh wallets, destroy the pre-rotation backups, and
+escalate to Mr. McRitchie.
 
 ---
 
@@ -741,7 +840,10 @@ dashboard is not a proof.
 
 **Heroku, per app.** From the shell variable, so the value never appears in the
 command you type — and behind the guard, so an empty `$NEW` refuses instead of
-blanking the variable on every app in the list:
+blanking the variable on every app in the list. **Not for
+`MANAGED_WALLET_ENCRYPTION_KEY`:** this loop sets the new key alone and strands every
+existing wallet. That key is written by §2.1 step 5 — both variables, one
+command.
 
 ```bash
 : "${NEW:?refusing to write — NEW is empty and this would blank <VAR> on every app}" &&
@@ -824,6 +926,7 @@ loop and record in the receipt that you kept them and why.
 
 Phase 2's answer, executed now — the re-encryption, or the announced invalidation.
 Do it before Phase 6: every migration in Phase 2 needs the OLD value to still work.
+For `MANAGED_WALLET_ENCRYPTION_KEY` this is §2.1 step 6.
 
 ---
 
@@ -855,6 +958,7 @@ moves. Never re-run the comparison with a bare `shasum` to get a digest out of i
 | GitHub Dependabot | the Dependabot tab shows the secret updated today, and the next Dependabot PR's `consumer-ci` run is green |
 | `.env` / desks | per-file `digest` match, from the sweep in Phase 1.2, none EMPTY |
 | Registration | one signed request the far side ACCEPTS, or the account read back on-chain |
+| Managed-wallet ciphertexts | `heroku run --exit-code --app <app> bin/rails solana:verify_managed_wallet_keys` prints `still-previous-key: 0` and `VERIFIED -- T of T`, with T equal to §2.1 Gate 0's second count run again; AND the running app opens a wallet: `heroku run --exit-code --app <app> bin/rails runner 'u = User.where.not(encrypted_web2_solana_private_key: [nil, ""]).first; puts u.solana_keypair.to_base58 == u.web2_solana_address'` prints `true` |
 
 The digest match proves the store holds the value you minted. It does **not** prove
 the running process uses it — that is what the second column of the Heroku row is
@@ -914,6 +1018,7 @@ confirmed normal operation first.
 | On-chain signer (`VaultState`) | **already done in 4.3** — the whole-set `update_signers` evicted the old pubkey in the same transaction. There is no second eviction. Reversible only by another 2-of-3 `update_signers`, so keep the old secret filed until Phase 5 passes. |
 | Squads membership (upgrade authority) | **a SEPARATE eviction, also in 4.3** — `update_signers` does not touch it. If your Phase 1 list has a Squads row and 4.3 did not clear it, the old key still holds upgrade authority and Phase 6 has not retired it. |
 | 1Password field | already overwritten in 4.2 — **still recoverable via item history**, so this is not the point of no return |
+| `MANAGED_WALLET_ENCRYPTION_KEY` (the old value) | after Phase 5 passed AND 24-48 hours of normal operation: `heroku config:unset MANAGED_WALLET_ENCRYPTION_KEY_PREVIOUS --app <app>`, then the verifier again — it must still read `VERIFIED -- T of T`, now with no old key to lean on. Keep the `previous encryption key` field for as long as a pre-rotation Postgres backup could be restored: a restored backup brings back rows sealed under the old key, and the only way back from that is this procedure again, with the old key as `…_PREVIOUS`. |
 
 Then clear the shell: `unset NEW` (and `unset T` if Mr. McRitchie still holds one).
 
@@ -941,6 +1046,9 @@ The half-done shapes, and the way out of each:
 | The app authenticates but the far side rejects it | config moved before the registration | put the OLD value back on the app, finish Phase 4.3, then re-flip |
 | The app boots but cannot read credentials | new `RAILS_MASTER_KEY` against old ciphertext | restore the old key; redo Phase 2's re-encryption so key and `.enc` deploy together |
 | A desk fails while production is healthy | a stale desk `.env` | re-run the desk loop in 4.4, or reclaim the desk |
+| Every managed-wallet read fails right after the config write | the new key went live without `MANAGED_WALLET_ENCRYPTION_KEY_PREVIOUS`, or with a value that is not the live old key | one `config:set` of `MANAGED_WALLET_ENCRYPTION_KEY_PREVIOUS=$OLD`, keeping the new key. No row has been re-sealed yet, so every read comes back. Then rehearse again (§2.1 step 3). Never remove the new key: wallets minted since the write are sealed under it. |
+| The managed-wallet migration prints `NOT COMPLETE` | a row failed its read-back or changed mid-run | nothing to undo: every row is whole, and both keys are still configured. Read the `FAILED` lines, re-run, and keep the old key until the verifier reads `VERIFIED`. |
+| You want to abandon a managed-wallet rotation | — | swap the roles in ONE command (`MANAGED_WALLET_ENCRYPTION_KEY=$OLD`, `MANAGED_WALLET_ENCRYPTION_KEY_PREVIOUS=$NEW`) and run the migration: it re-seals every row back under the old key. Unset `…_PREVIOUS` only once the verifier reads `VERIFIED -- T of T`. |
 | Nothing works and the old value is gone | Phase 6 ran before Phase 5 passed | forward only — mint again; this is why Phase 6 is last |
 | Every store reads `<VAR>=` and Phase 5 said MATCH | Phase 4 ran with an empty `$NEW`, and two empty values digest alike | you still hold the OLD value (Phase 6 has not run): put it back everywhere from the Phase 1 list, then restart 4.1 with the guards. If Phase 6 HAS run, this is an outage — mint again. |
 
