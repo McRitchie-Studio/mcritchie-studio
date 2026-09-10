@@ -79,6 +79,7 @@ require_relative "lib/projects_root"
 require_relative "lib/zap_revalidation"
 require_relative "lib/merge_command"
 require_relative "lib/acting_identity"
+require_relative "lib/approval_request_notice"
 require_relative "lib/fast_lane"
 
 ROOT = File.expand_path("..", __dir__)
@@ -769,6 +770,10 @@ end
 #      a no-op, the stamp is idempotent), NEVER the forbidden (reviewed, unstamped)
 #      the sweep would drop as a HELD anomaly.
 def move_reviewed(slug, task, reviewers, reports, reviewed_head: nil, zap_head: nil)
+  # A carried operator-approval request is SHOWN before the merge and never refuses
+  # it (surface-waiting-request-at-merge). The move below settles it and the board
+  # leaves a note addressed to whoever asked.
+  ApprovalRequestNotice.lines((task || {}).merge("slug" => slug)).each { |line| puts "  #{line}" }
   # Pin the merge to the head we revalidated: the zapped head when a zap advanced it,
   # else the head the reviewers saw. finish_review already proved this head's CI green.
   return false unless merge_feature_pr(slug, task&.dig("devops", "pr_url"), merge_head: zap_head || reviewed_head)

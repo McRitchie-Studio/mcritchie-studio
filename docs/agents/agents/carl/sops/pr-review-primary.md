@@ -268,6 +268,7 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
 
      ```bash
      gh api user   # WHO am I merging as? 403 "not accessible by integration" = the App. STOP on a 200.
+     bin/task show <task-slug>   # an OPERATOR APPROVAL STILL WAITING block on stderr? relay it (below), then merge anyway
      gh pr view <feat-pr> --json headRefOid --jq .headRefOid   # equal to the recorded head → merge; moved → revalidate the new head's CI, merge only if green
      gh pr merge <feat-pr> --merge --match-head-commit <validated-head>   # feat → accepted (retarget a mis-based PR first)
      bin/task merged <task-slug> accepted     # stamp the git-location BEFORE the stage move
@@ -283,6 +284,19 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
      and falls back to its keyring. Refuse on a 200, and on any answer you cannot
      read. `bin/pr-review` does this automatically before every merge write
      (`bin/lib/acting_identity.rb`); this line covers the hand-run sequence.
+
+     **A waiting operator-approval request never holds the merge.** Mr. McRitchie
+     decided it on 2026-09-10: surface it, do not block. When the builder asked
+     for his eyes (`approval_status: waiting`) and he has not answered,
+     `bin/task show` prints an `OPERATOR APPROVAL STILL WAITING` block on stderr
+     naming who asked, when, the local demo URL, and the latest handoff note.
+     Merge anyway, and put one line in your step-6 handoff note: "Merged with the
+     operator's approval request from <setter> unanswered." The move to `reviewed`
+     then settles the request to `none` (never a fabricated `approved`), and the
+     board posts a comment on the task addressed to the setter. He can still
+     answer afterwards with `--approval approved` or `--approval changes_requested`,
+     which are legal at every stage. `bin/pr-review` prints the same block before
+     its own merge, and `bin/review-autopilot arm` prints it at arm time.
 
      `bin/task merged` verifies its own write, so a silent success IS the stamp.
      If you double-check it anyway, read the **top-level** field — `merged` is a
