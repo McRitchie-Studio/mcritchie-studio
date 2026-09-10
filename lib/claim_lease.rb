@@ -110,7 +110,13 @@ module ClaimLease
   # a break, an operator wait, or a rework conversation, and that band has no ceiling
   # at all — 8h, 11h, and bounded above only by the 12h cut. A TTL cannot cover an
   # unbounded tail, and stretching one to try is how the dead-holder bound becomes
-  # absurd. The renewer covers that band; covering it is what the renewer is for.
+  # absurd. The renewer was meant to cover that band — and since 2026-09-10 it covers
+  # it only up to ReviewClaimCli::REVIEW_RENEW_WINDOW_SECONDS (one REVIEW_TTL of
+  # renewing), because the band turned out to be where DEAD reviewers hide: a reviewer
+  # is a subagent, a subagent is not an OS process, and a renewer anchored to the
+  # session renewed a dead reviewer's lease for as long as the session stayed open. A
+  # subagent cannot park across a break; it runs to a verdict or dies. See that
+  # constant for the full trade.
   #
   # The cut is not eyeballed. A SECOND, INDEPENDENT instrument that CANNOT span a
   # break — the `g2a_primary` GateRun, ONE attempt of the primary review lane, n=259
@@ -126,8 +132,13 @@ module ClaimLease
   REVIEW_TTL_SECONDS = (MEASURED_REVIEW_WINDOW_SECONDS[:sitting_max] * REVIEW_TTL_SAFETY_FACTOR).ceil # 12_275
 
   # WHAT IT COSTS, stated rather than hidden. REVIEW_TTL_SECONDS is ALSO the bound on
-  # reclaiming a genuinely DEAD reviewer's task, and that bound moves from 2 minutes
-  # to 3h25m. The trade is taken deliberately, and it is the cheap side: a stranded
+  # reclaiming a genuinely DEAD reviewer's task once renewal stops. That bound moved
+  # from 2 minutes to 3h25m — and this paragraph used to stop there, which was wrong
+  # while a renewer was running: the renewer, anchored to a SESSION that outlives its
+  # reviewer, kept renewing for up to 12h first, so a dead reviewer's task was held
+  # ~15.4h (measured 2026-09-10: two tasks held overnight with nobody reviewing them).
+  # The renewer is now bounded to one REVIEW_TTL of renewing, so the dead-reviewer
+  # bound is 2 x REVIEW_TTL, ~6.8h. The trade is taken deliberately, and it is the cheap side: a stranded
   # review claim does not block the pipeline — `Task.reviewable` skips it and the
   # sweep reviews something else — so the cost is one task missing a review wave,
   # against a duplicated review whose cost is the whole review plus a stranded
