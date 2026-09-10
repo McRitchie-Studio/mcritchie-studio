@@ -4,21 +4,23 @@ require "test_helper"
 # REFUSED at the fold, never accepted-and-settled in silence.
 #
 # THE DEFECT THIS CLOSES, reproduced 2026-09-07 across the full matrix. Same slug,
-# same stage `submitted`, minutes apart:
+# same stage `submitted`, minutes apart (that stage is now INSIDE the request window
+# — see the note under the settle-stage tests — so re-run the pair at `reviewed` to
+# watch it today; the RULE the pair isolates is what this file pins and is unchanged):
 #
 #   bin/task update <slug> --approval waiting   -> exit 0, read-back "none"      DROPPED
 #   bin/task update <slug> --approval approved  -> exit 0, read-back "approved"  LANDED
 #
 # The discriminator is neither the stage alone (the first filing's theory) nor the
 # TRANSITION (none->waiting vs none->approved). It is the CONJUNCTION of stage and
-# VALUE: #settle_operator_approval_past_submit rewrites ONLY "waiting", and only
+# VALUE: #settle_operator_approval_past_request_window rewrites ONLY "waiting", and only
 # outside APPROVAL_REQUEST_STAGES. Proven by the prior-value control below — the
 # settle fires from prior "approved", "changes_requested", "none" and nil alike, so
 # the incoming transition is irrelevant.
 #
 # THE SETTLE IS CORRECT AND STAYS. It holds a real invariant (a waiting badge may
 # exist only in a stage that can act on it) and it closes three documented leaks —
-# see #settle_operator_approval_past_submit and the "later wholesale devops echo"
+# see #settle_operator_approval_past_request_window and the "later wholesale devops echo"
 # tests in task_test.rb, which must keep self-healing SILENTLY. What was wrong is
 # narrower: a caller that explicitly ASKS for "waiting" where it cannot be honoured
 # got HTTP 200 / exit 0 for a write that reached nothing.
@@ -44,7 +46,7 @@ class TaskApprovalRequestGuardTest < ActiveSupport::TestCase
   # --- the ALLOW half of the matrix: where a request IS actionable ---
 
   test "[unit] a waiting request folds cleanly in every stage that can act on it" do
-    assert_equal %w[designed building], Task::APPROVAL_REQUEST_STAGES,
+    assert_equal %w[designed building submitted], Task::APPROVAL_REQUEST_STAGES,
                  "the allow-list moved; this matrix must move with it"
 
     Task::APPROVAL_REQUEST_STAGES.each do |stage|
@@ -65,14 +67,14 @@ class TaskApprovalRequestGuardTest < ActiveSupport::TestCase
       # The message must carry BOTH halves of the discriminator, because either
       # alone misdirects the reader: the stage alone reads as a blanket metadata
       # lock (it is not — see the value matrix below), and the value alone reads as
-      # "waiting is never writable" (it is, in designed and building).
+      # "waiting is never writable" (it is, everywhere in APPROVAL_REQUEST_STAGES).
       assert_includes error.message, stage, "#{stage}: the refusal must name the stage"
       assert_includes error.message, "waiting", "#{stage}: the refusal must name the value"
     end
   end
 
   test "[unit] the refusal points at the two ways forward" do
-    error = assert_raises(ArgumentError) { fold(stage: "submitted", approval_status: "waiting") }
+    error = assert_raises(ArgumentError) { fold(stage: "reviewed", approval_status: "waiting") }
 
     assert_includes error.message, "designed", "name a stage where the request WOULD land"
     assert_includes error.message, "building", "name a stage where the request WOULD land"
@@ -98,7 +100,7 @@ class TaskApprovalRequestGuardTest < ActiveSupport::TestCase
   # printed order is the only order that works.
 
   def refusal_commands
-    error = assert_raises(ArgumentError) { fold(stage: "submitted", approval_status: "waiting") }
+    error = assert_raises(ArgumentError) { fold(stage: "reviewed", approval_status: "waiting") }
     commands = error.message.scan(%r{bin/task [^,.]+}).map(&:strip)
 
     # FLOOR. An extraction that matched nothing would pass every assertion below
@@ -130,7 +132,7 @@ class TaskApprovalRequestGuardTest < ActiveSupport::TestCase
     # Reverse the two and you land right back on this refusal. That is why the move
     # is printed first, and why "just ask again" is not the advice on its own.
     assert_raises(ArgumentError, "asking again before moving only repeats the refusal") do
-      fold(stage: "submitted", approval_status: "waiting")
+      fold(stage: "reviewed", approval_status: "waiting")
     end
   end
 
@@ -139,7 +141,7 @@ class TaskApprovalRequestGuardTest < ActiveSupport::TestCase
 
     # It is offered WITHOUT a move for a reason: recording a decision the operator
     # already gave is legal at the very stage that just refused the request.
-    merged = fold(stage: "submitted", approval_status: "approved")
+    merged = fold(stage: "reviewed", approval_status: "approved")
 
     assert_equal "approved", merged.dig("devops", "approval_status"),
                  "the shortcut has to work where it is printed, or it is not a shortcut"
@@ -157,10 +159,10 @@ class TaskApprovalRequestGuardTest < ActiveSupport::TestCase
     end
   end
 
-  test "[unit] an approved grant still lands at submitted" do
+  test "[unit] an approved grant still lands past the request window" do
     # The coordinator's SECOND row, kept green: this is the half that already
     # worked, and a fix that broke it would be a worse bug than the one it closed.
-    merged = fold(stage: "submitted", approval_status: "approved")
+    merged = fold(stage: "reviewed", approval_status: "approved")
 
     assert_equal "approved", merged.dig("devops", "approval_status")
   end
@@ -181,7 +183,7 @@ class TaskApprovalRequestGuardTest < ActiveSupport::TestCase
     # means the whole write is refused, so the caller retries the whole thing —
     # rather than landing local_url and dropping the request, which is the split
     # outcome that made the original defect so hard to see.
-    task = Task.create!(title: "Approval Guard Atomic Write", stage: "submitted",
+    task = Task.create!(title: "Approval Guard Atomic Write", stage: "reviewed",
                         metadata: { "devops" => { "kind" => "bug" } })
 
     assert_raises(ArgumentError) do
@@ -214,18 +216,23 @@ class TaskApprovalRequestGuardTest < ActiveSupport::TestCase
 
   test "[unit] the stage argument is positional and still guards" do
     assert_raises(ArgumentError) do
-      Task.merge_devops_into_metadata({}, { "approval_status" => "waiting" }, "submitted")
+      Task.merge_devops_into_metadata({}, { "approval_status" => "waiting" }, "reviewed")
     end
   end
 
   # --- the DROP RECEIPT: the transition clear must stop being silent ---
   #
-  # The sequence the coordinator measured on 2026-09-07, reproduced here in full,
-  # because it is the one that bites on the NORMAL path: set the request while
-  # building, read it back, ship. Steps 1-3 are unchanged behaviour; what is new is
-  # that step 3 now leaves a receipt instead of nothing.
+  # The sequence the coordinator measured on 2026-09-07, reproduced here in full —
+  # against the boundary that still drops. Set the request while building, read it
+  # back, hand off, and let review MERGE it: the drop happens at `reviewed`, and it
+  # leaves a receipt instead of nothing.
+  #
+  # THE HANDOFF ITSELF NO LONGER DROPS ANYTHING (2026-09-09). `submitted` joined
+  # APPROVAL_REQUEST_STAGES, so step 3 is now the merge, not the ship. The test that
+  # holds that half is in test/integration/ship_preserves_approval_request_test.rb,
+  # which drives the real PATCH `bin/ship` issues.
 
-  test "[unit] shipping a task drops its pending request and says so on the record" do
+  test "[unit] merging a task drops its pending request and says so on the record" do
     task = Task.create!(title: "Approval Drop Receipt Row", stage: "building",
                         metadata: { "devops" => { "kind" => "bug" } })
 
@@ -236,11 +243,16 @@ class TaskApprovalRequestGuardTest < ActiveSupport::TestCase
     assert_equal "waiting", task.reload.approval_status, "step 2: the request lands at building"
     assert_nil task.devops["approval_request_dropped_at"], "nothing dropped yet"
 
-    task.submit! # step 3: what bin/ship does
+    task.submit! # step 3: what bin/ship does — and it must NOT drop the request
+    assert_equal "waiting", task.reload.approval_status,
+                 "the handoff carries the request into review; this is the 2026-09-09 fix"
+    assert_nil task.devops["approval_request_dropped_at"], "so there is nothing to receipt yet"
 
-    assert_equal "none", task.reload.approval_status, "the handoff still settles the request"
+    task.review! # step 4: what review does when it merges the PR
+
+    assert_equal "none", task.reload.approval_status, "the merge settles the request"
     assert task.devops["approval_request_dropped_at"].present?,
-           "but the drop must now be AUDITABLE — this is the silence the operator loop paid for"
+           "and the drop must be AUDITABLE — this is the silence the operator loop paid for"
     assert_equal "http://localhost:3011/demo", task.devops["local_url"],
                  "local_url still survives the move, which is what made the drop look like success"
   end
@@ -252,6 +264,7 @@ class TaskApprovalRequestGuardTest < ActiveSupport::TestCase
                         metadata: { "devops" => { "kind" => "bug" } })
 
     task.submit!
+    task.review!
 
     assert_nil task.reload.devops["approval_request_dropped_at"]
   end
@@ -285,9 +298,10 @@ class TaskApprovalRequestGuardTest < ActiveSupport::TestCase
                         metadata: { "devops" => { "approval_status" => "approved" } })
 
     task.submit!
+    task.review!
 
     task.reload
-    assert_equal "approved", task.approval_status, "a real grant survives the handoff"
+    assert_equal "approved", task.approval_status, "a real grant survives the merge"
     assert_nil task.devops["approval_request_dropped_at"], "and nothing was discarded"
   end
 
@@ -301,6 +315,7 @@ class TaskApprovalRequestGuardTest < ActiveSupport::TestCase
     task = Task.create!(title: "Approval Guard Settle Intact", stage: "building",
                         metadata: { "devops" => { "approval_status" => "waiting" } })
     task.submit!
+    task.review!
     assert_equal "none", task.reload.approval_status
 
     stale = task.metadata.deep_dup
@@ -311,23 +326,32 @@ class TaskApprovalRequestGuardTest < ActiveSupport::TestCase
                  "the model settle stays the invariant holder; the guard only fronts the fold"
   end
 
-  test "[unit] carrying a live request through the submit move still settles" do
+  test "[unit] carrying a live request through the merge move still settles" do
     # The legitimate internal settle: the request EXISTED and the stage moved under
     # it. Nobody asked for anything on this save, so nothing may raise.
     task = Task.create!(title: "Approval Guard Carry Through", stage: "building",
                         metadata: { "devops" => { "approval_status" => "waiting" } })
 
-    assert_nothing_raised { task.submit! }
+    task.submit!
+
+    assert_nothing_raised { task.review! }
     assert_equal "none", task.reload.approval_status
   end
   # --- the copies of this rule that live OUTSIDE the model ---
   #
-  # [unit] APPROVAL_REQUEST_STAGES is the settle's whole trigger, and two places
+  # [unit] APPROVAL_REQUEST_STAGES is the settle's whole trigger, and THREE places
   # outside app/models/task.rb now decide behaviour from their own copy of it:
   # bin/task, whose move warning refuses to announce a drop on a destination that
-  # can HOLD a request, and the CLI test's stub board, which models the settle so a
-  # drop can be told apart from a stamp already on the record. A copy that drifts
-  # does not fail loudly — it silently certifies a rule the board no longer holds.
+  # can HOLD a request, and the stub board in EACH of the two CLI-driving test files
+  # (test/lib/task_move_approval_drop_test.rb and test/docs/approval_drop_warning_docs_test.rb),
+  # which model the settle so a drop can be told apart from a stamp already on the
+  # record. A copy that drifts does not fail loudly — it silently certifies a rule
+  # the board no longer holds.
+  #
+  # The docs-matrix copy went UNPINNED until 2026-09-09, found while moving the seam
+  # from `submitted` to `reviewed`: two of the three copies were pinned and the note
+  # here said "two places", so the count itself read as complete. A drift guard that
+  # covers all but one copy is the worst of both — it certifies that the copies agree.
   #
   # Pinned HERE rather than beside either copy because test/lib/task_move_approval_drop_test.rb
   # is deliberately standalone (no Rails, no network) and cannot see Task at all: the
@@ -343,6 +367,12 @@ class TaskApprovalRequestGuardTest < ActiveSupport::TestCase
   def test_the_cli_stub_board_models_the_real_approval_request_stages
     assert_equal Task::APPROVAL_REQUEST_STAGES.map(&:to_s).sort,
                  stage_literal_in("test/lib/task_move_approval_drop_test.rb",
+                                 /^\s*SETTLE_EXEMPT_STAGES = %w\[([^\]]*)\]/)
+  end
+
+  def test_the_docs_matrix_stub_board_models_the_real_approval_request_stages
+    assert_equal Task::APPROVAL_REQUEST_STAGES.map(&:to_s).sort,
+                 stage_literal_in("test/docs/approval_drop_warning_docs_test.rb",
                                  /^\s*SETTLE_EXEMPT_STAGES = %w\[([^\]]*)\]/)
   end
 

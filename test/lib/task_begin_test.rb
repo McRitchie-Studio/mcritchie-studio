@@ -230,6 +230,52 @@ class TaskBeginTest < Minitest::Test
                  "preflight's --root must be the task worktree, not the primary checkout"
   end
 
+  # [integration] THE LAST LINE BEGIN PRINTS IS AN INSTRUCTION, AND IT MUST RESOLVE.
+  # begin used to close with `hand off with: bin/ship <slug>` — the BARE form, which
+  # resolves only from a hub desk. Every fast-lane script lives in mcritchie-studio/bin
+  # alone, so a builder on a turf-monster or rolio desk who followed the tool's own
+  # hint got `nohup: bin/ship: No such file or directory`. PR #1334 fixed the same
+  # sentence in the docs; this pins the half the TOOL speaks, which is the half that
+  # wins, because it speaks last and at the moment of action.
+  #
+  # THE ASSERTION IS KEYED ON THE FILESYSTEM, NOT THE WORDING: whatever begin prints,
+  # the script named must be an absolute path to an existing executable, and the desk
+  # named must be the task's worktree — the cwd is the other half of the instruction
+  # (bin/ship roots at the cwd's git toplevel and RE-ROOTS at the desk loudly rather than
+  # refusing, dying only when no desk resolves; the cert WRITERS run by hand afterwards
+  # are the ones that refuse a foreign root). FastLane.handoff_command's own arms are
+  # unit-tested in test/lib/fast_lane_test.rb; THIS test is the wiring, and it is what
+  # reddens if the bare form is ever restored here.
+  def test_begin_prints_a_handoff_that_resolves_from_the_desk
+    _requests, out, err, status, = run_begin([SLUG], existing: building_task)
+
+    assert status.success?, "expected green begin, got:\n#{err}"
+
+    line = out.lines.map(&:strip).find { |l| l.start_with?("cd ") }
+    assert line, "begin must print a copy-pasteable `cd <desk> && <ship> <slug>` handoff; got:\n#{out}"
+
+    cd, run = line.split(" && ", 2)
+    refute_nil run, "the handoff must name the ship invocation as well as the desk: #{line.inspect}"
+    ship, slug_arg = run.split(" ", 2)
+
+    worktree = File.realpath(File.join(sandbox_root, "fake-projects", APP, ".worktrees", SLUG))
+    assert_equal worktree, File.realpath(cd.sub(/\Acd /, "")),
+                 "the handoff must stand the builder in the task's desk"
+    assert_equal SLUG, slug_arg.to_s.strip
+
+    assert_equal ship, File.expand_path(ship),
+                 "the handoff must name an ABSOLUTE ship path; #{ship.inspect} resolves " \
+                 "only from a desk that happens to carry it"
+    assert File.executable?(ship),
+           "begin printed #{ship}, which is not an executable file — the tool is naming " \
+           "a script that does not exist"
+
+    bare = %r{(?<![\w/.-])bin/ship(?![\w-])}
+    refute_match bare, line, "begin printed a bare bin/ship — that is the defect"
+    assert_match bare, "hand off with: bin/ship #{SLUG}",
+                 "the bare pattern does not match the form it forbids, so this proves nothing"
+  end
+
   # --- resume ------------------------------------------------------------------
 
   def test_begin_resumes_an_existing_building_task_without_duplicating

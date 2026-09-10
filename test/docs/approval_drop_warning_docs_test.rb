@@ -42,8 +42,10 @@ class ApprovalDropWarningDocsTest < Minitest::Test
   DOC = File.join(ROOT, "docs", "agents", "modules", "devops-task-board.md")
   SLUG = "demo-slug"
   # The stub board's copy of Task::APPROVAL_REQUEST_STAGES — a save landing
-  # anywhere else settles a waiting request.
-  SETTLE_EXEMPT_STAGES = %w[designed building].freeze
+  # anywhere else settles a waiting request. Pinned against the real constant by
+  # test/models/task_approval_request_guard_test.rb, which runs in a lane that HAS
+  # Rails; this file drives the CLI as a subprocess and never reads Task itself.
+  SETTLE_EXEMPT_STAGES = %w[designed building submitted].freeze
   # A FIXED stamp, not Time.now: the same-second collision below has to be exact,
   # and seeding it off a real clock would make the case a coin flip on the second
   # boundary. The CLI compares the two renderings as strings; identical strings
@@ -57,50 +59,50 @@ class ApprovalDropWarningDocsTest < Minitest::Test
   # cannot see) fall out of the measurement rather than being asserted by hand.
   SCENARIOS = {
     pre_read_waiting_and_receipt: {
-      drop: true, dest: "submitted",
+      drop: true, dest: "reviewed",
       opts: { devops: { "kind" => "feature", "approval_status" => "waiting" } }
     },
     pre_read_waiting_and_no_receipt: {
-      drop: true, dest: "submitted",
+      drop: true, dest: "reviewed",
       opts: { devops: { "kind" => "feature", "approval_status" => "waiting" }, stamps_receipt: false }
     },
     unreadable_pre_read_and_receipt: {
-      drop: true, dest: "submitted",
+      drop: true, dest: "reviewed",
       opts: { devops: { "kind" => "feature", "approval_status" => "waiting" }, fail_get: 503 }
     },
     unreadable_pre_read_and_no_receipt: {
-      drop: true, dest: "submitted",
+      drop: true, dest: "reviewed",
       opts: { devops: { "kind" => "feature", "approval_status" => "waiting" }, fail_get: 503,
               stamps_receipt: false }
     },
     racing_writer_and_moved_stamp: {
-      drop: true, dest: "submitted",
+      drop: true, dest: "reviewed",
       opts: { devops: { "kind" => "feature", "approval_status" => "none",
                         "approval_request_dropped_at" => EARLIER_STAMP },
               devops_after: { "kind" => "feature", "approval_status" => "none",
                               "approval_request_dropped_at" => STAMP } }
     },
     racing_writer_and_identical_stamp: {
-      drop: true, dest: "submitted",
+      drop: true, dest: "reviewed",
       opts: { devops: { "kind" => "feature", "approval_status" => "none",
                         "approval_request_dropped_at" => STAMP },
               devops_after: { "kind" => "feature", "approval_status" => "none",
                               "approval_request_dropped_at" => STAMP } }
     },
     racing_writer_and_no_receipt: {
-      drop: true, dest: "submitted",
+      drop: true, dest: "reviewed",
       opts: { devops: { "kind" => "feature", "approval_status" => "none" },
               devops_after: { "kind" => "feature", "approval_status" => "none" } }
     },
     no_request_at_all: {
-      drop: false, dest: "submitted",
+      drop: false, dest: "reviewed",
       opts: { devops: { "kind" => "feature" } }
     },
     move_into_a_stage_that_holds_requests: {
       drop: false, dest: "building",
       opts: { devops: { "kind" => "feature", "approval_status" => "none",
                         "approval_request_dropped_at" => STAMP },
-              stub_stage: "submitted" }
+              stub_stage: "reviewed" }
     }
   }.freeze
 
@@ -170,12 +172,13 @@ class ApprovalDropWarningDocsTest < Minitest::Test
     assert(commands.all? { |c| c.start_with?("bin/task ") }, "both are bin/task commands: #{commands.inspect}")
 
     # Run them IN THE PRINTED ORDER against one board that starts where a stranded
-    # operator actually is — `submitted` — and judge the END STATE, not the
+    # operator actually is — `reviewed`, the first stage past the request window
+    # since `submitted` joined it on 2026-09-09 — and judge the END STATE, not the
     # commands. The order is the whole remedy: the move has to land the task where
     # a request is legal before the request can stick, and the stub enforces
     # Task.guard_approval_request_stage! so the reverse order 422s here exactly as
     # it does against the real board.
-    with_stub_board(stub_stage: "submitted", devops: { "kind" => "feature" }) do |run|
+    with_stub_board(stub_stage: "reviewed", devops: { "kind" => "feature" }) do |run|
       commands.each do |command|
         args = command.sub("bin/task ", "").split(" ").map { |a| a.gsub("<task-slug>", SLUG) }
         _out, err, status = run.call(args)
@@ -213,7 +216,13 @@ class ApprovalDropWarningDocsTest < Minitest::Test
     section = doc_body[/^## Operator Validation Gate$.*?(?=^## )/m].to_s
 
     refute_empty section, "no Operator Validation Gate section in #{rel(DOC)}"
-    step = section[/^\d+\.\s+\*\*Already handed off\?.*?\z/m].to_s
+    # Anchored on the REMEDY'S OWN WORDS, not on the condition that precedes them.
+    # The first cut matched the literal "**Already handed off?" and went empty the
+    # day the condition changed — `submitted` joined the request window on
+    # 2026-09-09, so a handoff no longer strands anybody and the step became
+    # "Already past `reviewed`?". What the step IS never changed: move the task
+    # back and ask again.
+    step = section[/^\d+\.\s+\*\*[^\n]*Move the task back and ask again.*?\z/m].to_s
     refute_empty step, "the gate never tells a stranded operator how to ask again"
     step[/```bash\n(.*?)```/m].to_s.lines.map(&:strip).grep(/\Abin\/task /)
   end
@@ -335,7 +344,7 @@ class ApprovalDropWarningDocsTest < Minitest::Test
     ["200 OK", task_response]
   end
 
-  # The board's settle rule, MODELLED: Task#settle_operator_approval_past_submit
+  # The board's settle rule, MODELLED: Task#settle_operator_approval_past_request_window
   # resolves a WAITING request to "none" on any save landing outside
   # APPROVAL_REQUEST_STAGES, and stamps approval_request_dropped_at as the receipt.
   def settle_approval_request!(stage)

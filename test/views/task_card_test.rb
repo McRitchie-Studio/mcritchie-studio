@@ -180,7 +180,10 @@ class TaskCardTest < ActionView::TestCase
     assert_equal "http://localhost:3001/demo", bar["data-local-url"], "local_url is the data-fallback handle"
   end
 
-  test "[component] submitted approval-exit card drops the waiting bar" do
+  test "[component] a submitted card keeps the approval glow and bar" do
+    # The card never had a stage condition on the approval treatment, which is why
+    # carrying the request past the handoff (2026-09-09) needed no view change: the
+    # glow and the bar follow #waiting_for_operator_approval? wherever the card sits.
     task = Task.create!(
       title: "Approval exit card",
       stage: "building",
@@ -196,8 +199,89 @@ class TaskCardTest < ActionView::TestCase
     render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :build }
 
     card = css_select("#card-#{task.slug}").first
-    assert_nil card["data-stage-glow"],
-      "approval left with the submit, and a queued submitted card glows for nothing"
+    assert_equal "approval", card["data-stage-glow"],
+      "the request rode the handoff, so the card still asks for the operator's eyes"
+    assert_includes card["class"], "task-card-stage-glow-approval"
+    assert_select "[data-test='operator-approval-waiting']", count: 1
+  end
+
+  test "[component] a live reviewer outranks a carried approval request for the glow" do
+    # THE COLLISION THE CARRIED REQUEST CREATED. Before 2026-09-09 the move to
+    # `submitted` cleared a `waiting` request, so `waiting_for_approval` and
+    # `review_in_progress` could never both be true and the glow branch's order
+    # between them never decided anything. Now they can both be true — at
+    # `submitted`, exactly where a reviewer picks the card up — so the order is a
+    # real decision, and this pins it.
+    #
+    # THE DECISION: the reviewer wins. The ring is the ONLY tell that a human is on
+    # the card right now, and it is ephemeral (it leaves with the claim's TTL, and
+    # the approval glow returns by itself). The request keeps the amber card tone,
+    # the WAITING APPROVAL bar, and the float — three tells to the ring's one.
+    #
+    # ONE TASK, RENDERED TWICE, so the only thing that differs between the two
+    # assertions is the flag. ActionView::TestCase accumulates `rendered` across
+    # renders, hence `.last` rather than `.first`.
+    task = Task.create!(
+      title: "Approval under review card",
+      stage: "building",
+      metadata: {
+        "devops" => {
+          "approval_status" => "waiting",
+          "local_url" => "http://localhost:3001/demo"
+        }
+      }
+    )
+    task.submit!
+    task = task.reload
+    assert task.waiting_for_operator_approval?,
+      "the fixture has to actually carry the request, or this test pins nothing"
+
+    render partial: "tasks/task_card",
+           locals: { task: task, agents: @agents, crew_board: :deploy, review_in_progress: false }
+    unattended = css_select("#card-#{task.slug}").last
+    assert_equal "approval", unattended["data-stage-glow"],
+      "with nobody on it, the carried request is what the card should be shouting"
+
+    render partial: "tasks/task_card",
+           locals: { task: task, agents: @agents, crew_board: :deploy, review_in_progress: true }
+    attended = css_select("#card-#{task.slug}").last
+
+    assert_equal "review", attended["data-stage-glow"],
+      "a live reviewer outranks the request: the green ring is the only tell that " \
+      "someone is on this card right now, and it expires on its own"
+    assert_includes attended["class"], "task-card-review-glow"
+    assert_not_includes attended["class"], "task-card-stage-glow-approval"
+
+    # WHAT THE REQUEST KEEPS. Losing the ring is only acceptable because these
+    # survive; if a later change strips one of them, the precedence above stops
+    # being safe and this assertion is what says so.
+    assert_equal 1, attended.css("[data-test='operator-approval-waiting']").size,
+      "the WAITING APPROVAL bar is the tell that outlives the ring"
+    assert_includes attended["class"], "bg-amber-50",
+      "the amber card tone is the second tell that outlives the ring"
+  end
+
+  test "[component] a reviewed card drops the waiting bar" do
+    # The seam, on the card. Past `reviewed` the desk serving the local demo is
+    # reclaimable, so a CTA that mints a link into it would land on nothing.
+    task = Task.create!(
+      title: "Approval merged card",
+      stage: "building",
+      metadata: {
+        "devops" => {
+          "approval_status" => "waiting",
+          "local_url" => "http://localhost:3001/demo"
+        }
+      }
+    )
+    task.submit!
+    task.review!
+
+    render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :deploy }
+
+    card = css_select("#card-#{task.slug}").first
+    assert_not_equal "approval", card["data-stage-glow"],
+      "approval left with the merge, and a reviewed card glows for nothing"
     assert_not_includes card["class"], "task-card-stage-glow-approval"
     assert_select "[data-test='operator-approval-waiting']", count: 0
   end

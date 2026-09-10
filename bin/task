@@ -1218,9 +1218,10 @@ def die!(msg, code: 1)
 end
 
 # A stage move OUT of the approval-request stages SETTLES a pending operator-approval
-# request to "none" (Task#settle_operator_approval_past_submit). That rule is
-# deliberate — past `submitted` the PR review flow owns the work, so a local-preview
-# approval is moot — but it used to happen in SILENCE, and the silence is the defect.
+# request to "none" (Task#settle_operator_approval_past_request_window). That rule is
+# deliberate — past `reviewed` the work has merged and the desk serving the local
+# demo is reclaimable, so the request points at a page nobody can open — but it used
+# to happen in SILENCE, and the silence is the defect this warning closes.
 #
 # Reproduced 2026-09-07: an agent set --approval waiting at `building`, read it back
 # as "waiting", then ran bin/ship. The handoff move cleared it, `local_url` from the
@@ -1228,14 +1229,26 @@ end
 # the board never pulsed, and Mr. McRitchie was never asked — a human gate that
 # reports success and does nothing.
 #
+# THAT REPRODUCTION IS HISTORY AS OF 2026-09-09, and it is the SECOND fix to the
+# same wound. This warning was the first: it made the drop loud. Making it loud then
+# made it countable, and it was counted — three times in one night (turf PRs 644,
+# 647, 653), every one of them a builder who followed the documented flow exactly.
+# A defect that reproduces on the documented path is not a reporting problem, so
+# `submitted` joined APPROVAL_REQUEST_STAGES and the ship handoff now drops nothing
+# to announce. The warning stays, aimed at the boundary that is still real: a move
+# to `reviewed` or past it, where the local demo genuinely has gone away.
+#
 # THE WARNING ASKS ABOUT THIS MOVE'S EFFECT, NOT ABOUT A CLOCK. The first cut
 # compared the drop receipt against the instant the move began, with a 300s grace
 # for board-vs-laptop skew, and a clock cannot answer the question the warning
 # asks. Measured 2026-09-07 against the real binary: with a 60-second-old stamp,
 # `bin/task move <slug> building` announced a discarded request — on a move INTO
-# one of the two stages where a request is ACTIONABLE, where the settle provably
+# one of the stages where a request is ACTIONABLE, where the settle provably
 # never runs — and a re-run `move <slug> submitted` (the documented killed-ship
-# resume) announced the SAME single drop a second time. Every one of those was a
+# resume) announced the SAME single drop a second time. Neither example routes here
+# at all any more — `submitted` joined the actionable stages in 2026-09-09, so both
+# are now `settleable == false` — but the conclusion they forced is what survives:
+# the warning asks what THIS move did, and never how old a stamp is. Every one of those was a
 # stamp the move did not write. So the grace window is gone, and with it the skew
 # problem it existed to paper over: nothing is compared against this machine's
 # clock any more.
@@ -1247,7 +1260,7 @@ end
 # not reasoned.
 #
 #   1. THE PRE-STATE PREDICTED IT — the request read "waiting" before the PATCH and
-#      the destination cannot hold one. That is Task#settle_operator_approval_past_submit's
+#      the destination cannot hold one. That is Task#settle_operator_approval_past_request_window's
 #      own rule, so it fires even against a board too old to write the receipt at all
 #      (this CLI has to stay correct against a board that has not taken that fix).
 #      It is also the ONLY half that catches the SAME-SECOND COLLISION, where the
@@ -1302,7 +1315,17 @@ end
 # test at the call site is the single place that decision is made, so the message can
 # no longer contradict itself by naming `building` as a stage where a request is fine
 # while warning about the move INTO it.
-APPROVAL_REQUEST_STAGES = %w[designed building].freeze
+#
+# A MIRROR of Task::APPROVAL_REQUEST_STAGES, kept in sync by
+# test/models/task_approval_request_guard_test.rb, which reads this literal out of
+# this file. It is duplicated rather than imported because this CLI is an HTTP
+# client with no Rails boot, and it must stay correct against a board that has not
+# taken the latest fix.
+#
+# `submitted` JOINED THE LIST ON 2026-09-09, which is why the most common move this
+# warning ever fired on — the `bin/ship` handoff — is now silent: it no longer drops
+# anything. The warning's remaining job is the merge boundary, `reviewed` and past.
+APPROVAL_REQUEST_STAGES = %w[designed building submitted].freeze
 
 # A GET that DEGRADES instead of aborting. The move itself is correct and must
 # still succeed when the board is briefly unreadable; only the warning's accuracy
@@ -2783,7 +2806,11 @@ when "begin"
   puts "port: #{context["app_port"]}" if context["app_port"]
   puts "url: #{context["local_url"]}" if context["local_url"]
   puts "task: #{BASE_URL}/tasks/#{slug}"
-  puts "next: build in the worktree, then hand off with: bin/ship #{slug}"
+  # Absolute script + the desk to run it from, on its own line so it is
+  # copy-pasteable verbatim. See FastLane.handoff_command for why the bare
+  # `bin/ship <slug>` this replaced was wrong from every desk but the hub's.
+  puts "next: build in the worktree, then hand off with:"
+  puts "  #{FastLane.handoff_command(slug, worktree_dir, __dir__)}"
 when "update"
   usage = "usage: bin/task update <slug> [flags]"
   slug = positional!(ARGV.shift || die!(usage), usage)
@@ -2881,7 +2908,7 @@ when "move"
     body["devops"] = merged
   end
   # Can this move settle a pending approval request at all? That is
-  # Task#settle_operator_approval_past_submit's own first line, and it is asked ONCE:
+  # Task#settle_operator_approval_past_request_window's own first line, and it is asked ONCE:
   # a destination that can HOLD a request discarded nothing, so there is no warning
   # to consider and no read to spend on dating one. Everything downstream — whether
   # to read, whether to warn — hangs off this single test.
