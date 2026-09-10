@@ -17,8 +17,8 @@ require_relative "../support/desk_ledger_sink"
 # `cleanup <app> --reclaim --yes` and `snapshot <app> --write` did the same. One scoped
 # write reproduces it; no race is needed.
 #
-# Its own file because test/commands/agent_worktree_test.rb is a frozen append hotspot
-# (config/test_health.yml). The harness below is the slice of that file's fixture these
+# Its own file because test/commands/agent_worktree_test.rb is a frozen append hotspot:
+# the test-health ratchet caps its length. The harness below is the slice of its fixture these
 # tests need: a real hub repo with one desk, a real board on localhost for the ledger,
 # and the same outbound floor.
 class AgentWorktreeRegistryScopeTest < ActiveSupport::TestCase
