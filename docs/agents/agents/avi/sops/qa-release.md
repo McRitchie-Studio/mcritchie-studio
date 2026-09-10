@@ -307,19 +307,81 @@ bin/release prepare --yes
    The lockfile rides in the same commit because studio-engine bundles itself as
    a path gem and CI installs frozen: a version commit without its lock fails
    `bundle install` before a single test runs. The **changelog** rides it because
-   prepare used never to touch that file at all, so every release since
-   studio-engine 0.39.0 left its entries filed under `## Unreleased` — 35 minor
-   versions of shipped history by 0.74.4, and 4 in solana-studio. Phase 0 now
-   turns `## Unreleased` into `## <allocated version> — <date>` in the repo's own
-   heading dialect, leaves the bucket in place and empty, and **refuses** to roll
-   a file that already carries a backlog or that its parser cannot read (see the
-   CHANGELOG BACKLOG row below). Phase 0 decides for EVERY gem
-   before writing to ANY of them, and it **refuses rather than guesses** — an
-   unreadable `gem_bump`, an unparseable last version, a `version_file`
-   declaring its version twice, or a `bundle lock` that did not land the number
-   all abort with nothing written and nothing published (see the GEM VERSION
-   ALLOCATION REFUSED row below). It is idempotent: a version already past the
-   last published one is left alone, so re-runs never burn a second number.
+   prepare once ignored that file entirely, leaving every release since
+   studio-engine 0.39.0 filed under `## Unreleased`. Phase 0 decides for EVERY
+   gem before writing to ANY of them.
+
+   **The changelog roll.** A swept gem is a `gems:` entry in
+   `config/release_repos.yml` that a release member touches — studio-engine and
+   solana-studio today. turf-vault is registered under `apps`, so prepare never
+   versions or rolls it. Each swept gem gets exactly one of three outcomes, named
+   for `Release::GemVersion.allocation`'s decisions:
+
+   - **ALLOCATE** — version written and bucket rolled, in one commit.
+     `Release::Changelog.roll` writes `## <version> — <date>` in the file's own
+     heading form (`<date>` is the day prepare ran) directly under
+     `## Unreleased`, and moves the bucket's entries beneath it. `## Unreleased`
+     stays the first heading, now empty. **An empty bucket still gets its
+     heading**, with nothing under it, and prepare prints `no entries — the
+     heading records the release`. A gem with no `CHANGELOG.md` is not refused:
+     prepare prints `nothing to roll` and commits the version and lock alone.
+   - **SKIP** — nothing allocated, nothing rolled. Prepare prints `gem <repo>:
+     <reason> — nothing allocated`, for one of three reasons:
+     `no commits past the last published tag — nothing to publish`;
+     `no published version yet (no v* tag, nothing on RubyGems) — first publish`;
+     `<current> already advanced past <reference> — allocated already`. The last
+     compares the `version_file` at `origin/release` with the last `v*` TAG (the
+     highest live version only when no tag exists), so a re-run never burns a
+     second number. It is not the resting state: once a sweep completes and its
+     tag push lands, the version equals its tag. Four things reach it:
+     1. **A version set by hand** — the STRANDED GEM WORK row, or the remedy a
+        failed `gem push` prints. It rolls NOTHING, so roll the changelog by
+        hand in that same commit. Otherwise its entries stay under
+        `## Unreleased` until the next ALLOCATE files them under the NEXT
+        version, or refuses them as a BACKLOG once the newest heading trails by
+        more than two minors or a major.
+     2. **A re-run after the sweep aborted between the version commit and its
+        tag push** (a red gem CI gate, say). The roll already rode the version
+        commit. Work the re-run promotes ships in that version too, but prepare
+        rolls none of it; git's merge decides where its entries land.
+     3. **The window inside one sweep** between the version commit and its tag
+        push. Nothing to do: the roll is already in the commit.
+     4. **A tag push that failed.** It does not stop the sweep; prepare prints
+        `tag v<version> push skipped/failed — push it manually if needed`. Push
+        it (`git -C /Users/alex/projects/<gem-repo> push origin v<version>`).
+        Until it lands, a sweep run from a clone that LACKS the tag (a fresh or
+        different clone) SKIPs this gem as allocated already. The clone that ran
+        the publish keeps the tag locally (`git fetch --tags` never deletes one),
+        so allocation there carries on.
+   - **REFUSE** — the decide phase stops the sweep before phase 0 writes
+     anything; nothing is published. `Release::GemVersion.allocation` refuses a
+     version it cannot derive safely (the GEM VERSION ALLOCATION REFUSED row
+     below). `Release::Changelog.refusal`, read only for an ALLOCATE, refuses a
+     changelog the roll would misfile (the CHANGELOG BACKLOG row below).
+
+   A write-phase failure is not a REFUSE. A `version_file` that does not declare
+   exactly one version, a `bundle lock` that did not land the number, or a
+   rejected push stops the sweep mid-write, so an earlier gem's version commit
+   may already sit on `origin/release`. Leave it: the re-run SKIPs it as
+   allocated already and publishes it.
+
+   **Check the roll** in each swept gem repo once phase 0 has run:
+
+   ```bash
+   git -C /Users/alex/projects/<gem-repo> fetch origin --quiet
+   git -C /Users/alex/projects/<gem-repo> show origin/release:CHANGELOG.md | grep -m 2 '^## '
+   ```
+
+   The first line must read `## Unreleased`. After an ALLOCATE, the second must
+   name the version prepare printed as `allocated <version>`; anything else is a
+   defect in `bin/release`, so report it rather than hand-edit the file. After
+   an `allocated already` SKIP, the second must name `<current>` from the SKIP
+   line. An older version there means a hand-set version is shipping unrolled:
+   land a docs PR on the gem's `accepted` that adds its heading under
+   `## Unreleased`, in the form of the newest dated heading, and moves its
+   entries beneath it. Write a version heading by hand only for a version
+   already published, or in the same commit that sets it. Any other
+   hand-written heading is AHEAD, and the next ALLOCATE refuses it.
 
    Phase 1 **preflights EVERY swept gem before the first push**: a fail-closed
    fetch of `origin/release` (a stale ref must never drive an irreversible
@@ -511,9 +573,9 @@ must not reflexively re-run. Each abort names its own case and its own fix:
 | Abort | Fix FIRST | Then |
 |---|---|---|
 | **A GEM'S `version_file` MOVED AND THE SWEEP ABORTS EITHER WAY** (either "gem <repo>: <version_file> does not declare EXACTLY ONE version literal" — **phase 0b, the WRITE, not the phase-0 refusal one row down** — OR "promote refused — <repo> (suite workflow …) cannot certify `accepted`") | **The registry and the gem tree must move TOGETHER, and `bin/release.rb` reads the registry from the CONDUCTOR'S OWN checkout** (`RELEASE_REPOS`, `bin/release.rb:267`) — not from the candidate. So a self-shipping RC driven from `origin/main` reads the OLD registry against a NEW gem tree. Both mismatches fail closed and neither publishes, but **they abort in different places and say different things**, which is what makes this hard to look up:<br>**OLD registry + NEW gem tree** → allocation SUCCEEDS (it derives 0.5.0 quite happily); the failure lands one phase later, in `commit_gem_version!` at `bin/release.rb:4838`, when `rewrite_version` finds no literal to rewrite. Its message interpolates the `version_file` — so it names the **gemspec**, which is misleading once the version has moved out of it. **⚠ Do not follow that abort's own remedy here.** It says "set it to <version> by hand and commit it onto `release`", which in THIS case means hardcoding a literal back into the gemspec — re-introducing the very coupling the move exists to remove, and hand-setting a version the row below rightly warns against. The fix is to land the hub registry change.<br>**NEW registry + OLD gem tree** → the **promote** aborts in `refuse_blind_accepted!`, taking every repo in the candidate with it. This one never mentions the gemspec: it names the repo and its suite workflow, and **reads identically to the A REPO CANNOT CERTIFY `accepted` row below**. Do not apply that row's remedy here. The difference is that here the workflow is **already correct** (`gem-ci.yml` declares `push: branches: [accepted, release, main]`) and it is the GEM TREE that has not landed — editing `on.push.branches` changes a correct file and leaves the real cause untouched.<br>**Only NEW+NEW works.** Land the gem-side move and the `config/release_repos.yml` change in the SAME release, gem repo first (its workflow must be on the gem's `accepted` before the map points at it), and drive the sweep from a checkout carrying the new registry.<br>**AND EXPECT THE BUILDER'S GATE TO LOOK CIRCULAR WHILE YOU DO.** `bin/dor-check` reads the registry from ITS OWN checkout too (`bin/dor-check:991`), so until the hub change lands, the gem PR's edit to the old version_file stays REFUSED — the gem must merge first for the sweep, yet cannot clear dor-check until the hub half exists. It is not a deadlock: run dor-check from a checkout that already carries the registry change (the hub worktree holding it), and land the two together | land both, then re-run `prepare`; nothing was published |
-| **CHANGELOG BACKLOG / UNREADABLE CHANGELOG** (step 4d phase 0 — "gem `<repo>`: CHANGELOG.md carries a BACKLOG" or "…parse as neither a version nor the Unreleased bucket") | **Nothing was written and nothing published** — this refusal is in the decide phase. Prepare rolls `## Unreleased` into the allocated version on every gem publish, and it refuses when that roll would LIE: the file's newest heading is more than two minor versions behind what already shipped *while the bucket holds entries*, so one new heading would file several releases of history as a single release. The fix is a normal docs PR in the GEM repo: attribute those entries to the versions that actually shipped them (studio-engine's `docs/RELEASE.md`, *Rolling `Unreleased` into a version*), land it on that repo's `accepted`. The unreadable variant names the exact line it could not parse — fix that heading to the file's own dialect. A third variant, "**has an unterminated fenced code block**", names the line a fence opened on and was never closed for: a `## ` below an unclosed fence is a heading or code depending on how the file is read, so prepare refuses to pick — close the fence in a docs PR on the gem's `accepted`. (A *closed* fence is never refused; its contents are read as content, quoted headings included.) **Do not delete the entries to get past this** | re-run `prepare`; it resumes |
-| **GEM VERSION ALLOCATION REFUSED** (step 4d phase 0 — "REFUSING to allocate a version") | **Do not set a version by hand to route around this.** The refusal names its own cause and each has a one-line fix: an unreadable override → `bin/task update <task> --gem-bump patch\|minor\|major` (or clear it); an unparseable last published version → fix the gem's `v*` tag or its `version_file` by hand; a `version_file` declaring its version twice → make it declare one; `bundle lock` failed or left the lock on the old version → fix the bundle in the gem repo (a stale resolution is usually RubyGems propagation — wait, as in the CONSUMER LOCK BUMP row below). Nothing was written to any release branch, so there is nothing to undo | re-run `prepare`; allocation resumes |
-| **STRANDED GEM WORK** (gem `origin/release` ahead of its last `v*` tag, version not advanced past it — unbumped, BACKWARD, or unparseable) | **Rare now — step 4d allocates the version, so reaching this guard means allocation did not run or was wrong.** Check the run's phase-0 output first: if it *refused*, fix that (row above) rather than the version. If you must set the number yourself, compute `next = <the tag the abort names> + bump`, where bump is **major** if any member of this candidate is risk-tagged `breaking`, else **minor** if any member has `kind: feature`, else **patch** (a member's `gem_bump` overrides). Commit it straight onto the gem repo's `accepted` — not a PR, which `bin/dor-check` refuses; no gem rung is branch-protected, and the batch promote carries it to `release`:<br>`cd /Users/alex/projects/<gem-repo> && git checkout accepted && git pull`<br>edit the `version_file` (`lib/studio/version.rb` for studio-engine, `lib/solana_studio/version.rb` for solana-studio — it moved off the gemspec on 2026-08-20; read the registry rather than trusting this parenthetical)<br>`bundle lock` **← REQUIRED when the repo tracks a `Gemfile.lock`**: studio-engine bundles itself as a path gem, so its lock names its own version and CI installs frozen — a version commit without its lock fails `bundle install` before running a test, and it is invisible locally because a plain `bundle install` regenerates it<br>`git commit -am "Release <next>" && git push origin accepted`<br>A **backward** version — the abort says `DOWNGRADE` — means a version conflict was resolved the wrong way on a merge into `release`; fix the version file forward, don't force it through | re-run `prepare`; nothing was published or deployed |
+| **CHANGELOG BACKLOG / UNREADABLE CHANGELOG** (step 4d phase 0 — "gem `<repo>`: CHANGELOG.md carries a BACKLOG" or "…parse as neither a version nor the Unreleased bucket" or "…is AHEAD of the last published version") | **Nothing was written and nothing published** — this refusal is in the decide phase. Prepare rolls `## Unreleased` into the allocated version on every ALLOCATE (a SKIP rolls nothing), and it refuses when that roll would LIE: the file's newest heading is more than two minor versions behind what already shipped *while the bucket holds entries*, so one new heading would file several releases of history as a single release. The fix is a normal docs PR in the GEM repo: attribute those entries to the versions that actually shipped them (studio-engine's `docs/RELEASE.md`, *Rolling `Unreleased` into a version*), land it on that repo's `accepted`. The unreadable variant names the exact line it could not parse — fix that heading to the file's own dialect. A third variant, "**has an unterminated fenced code block**", names the line a fence opened on and was never closed for: a `## ` below an unclosed fence is a heading or code depending on how the file is read, so prepare refuses to pick — close the fence in a docs PR on the gem's `accepted`. (A *closed* fence is never refused; its contents are read as content, quoted headings included.) The **AHEAD** variant means someone wrote a heading, by hand, for a version that has not published — usually the old manual roll. In a docs PR on the gem's `accepted`, move that heading's entries back under `## Unreleased` and delete the heading; the ALLOCATE writes it. Every other variant (the bucket missing, doubled or not first; no `## ` headings at all; no version heading on a published gem) names its own fix. **Do not delete the entries to get past this** | re-run `prepare`; it resumes |
+| **GEM VERSION ALLOCATION REFUSED** (step 4d phase 0 — "REFUSING to allocate a version") | **Do not set a version by hand to route around this.** The refusal names its own cause and each has a one-line fix: an unreadable override → `bin/task update <task> --gem-bump patch\|minor\|major` (or clear it); an unparseable last published version → fix the gem's `v*` tag or its `version_file` by hand; a `version_file` declaring its version twice → make it declare one; `bundle lock` failed or left the lock on the old version → fix the bundle in the gem repo (a stale resolution is usually RubyGems propagation — wait, as in the CONSUMER LOCK BUMP row below). A REFUSE writes nothing. The `version_file` and `bundle lock` causes are write-phase failures, so an earlier gem's version commit may already sit on `release`: leave it, because the re-run SKIPs it as allocated already and publishes it | re-run `prepare`; allocation resumes |
+| **STRANDED GEM WORK** (gem `origin/release` ahead of its last `v*` tag, version not advanced past it — unbumped, BACKWARD, or unparseable) | **Rare now — step 4d allocates the version, so reaching this guard means allocation did not run or was wrong.** Check the run's phase-0 output first: if it *refused*, fix that (row above) rather than the version. If you must set the number yourself, compute `next = <the tag the abort names> + bump`, where bump is **major** if any member of this candidate is risk-tagged `breaking`, else **minor** if any member has `kind: feature`, else **patch** (a member's `gem_bump` overrides). Commit it straight onto the gem repo's `accepted` — not a PR, which `bin/dor-check` refuses; no gem rung is branch-protected, and the batch promote carries it to `release`:<br>`cd /Users/alex/projects/<gem-repo> && git checkout accepted && git pull`<br>edit the `version_file` (`lib/studio/version.rb` for studio-engine, `lib/solana_studio/version.rb` for solana-studio — it moved off the gemspec on 2026-08-20; read the registry rather than trusting this parenthetical)<br>roll `CHANGELOG.md` in the same commit, because a hand-set version SKIPs and a SKIP rolls nothing: add `## <next> — <date>` in the file's own heading form directly under `## Unreleased` (even when the bucket is empty), and move the bucket's entries beneath it<br>`bundle lock` **← REQUIRED when the repo tracks a `Gemfile.lock`**: studio-engine bundles itself as a path gem, so its lock names its own version and CI installs frozen — a version commit without its lock fails `bundle install` before running a test, and it is invisible locally because a plain `bundle install` regenerates it<br>`git commit -am "Release <next>" && git push origin accepted`<br>A **backward** version — the abort says `DOWNGRADE` — means a version conflict was resolved the wrong way on a merge into `release`; fix the version file forward, don't force it through | re-run `prepare`; nothing was published or deployed |
 | **Pre-QA gate red — a member REGRESSION** | `bin/release eject <task> --feedback "<failing evidence>"`, then revert its merge commit on `release` (the abort prints the guidance) — as the eject step above says | re-run `prepare`; the rest of the RC rides |
 | **Pre-QA gate red — ENV/toolchain** (unsatisfied bundle, Postgres down, Ruby divergence) | **Nothing to eject or revert.** Fix the environment exactly as the abort names it | re-run `prepare` |
 | **QA DEPLOY NEVER DISPATCHED** (step 6 — "`<workflow>` was dispatched but GitHub registered NO run for it — the deploy NEVER RAN") | **Do not touch the app — it was never redeployed, and it is not at fault.** `gh workflow run` can accept a dispatch, exit 0, print nothing, and leave GitHub with no run at all (measured on rel-20260907-14cff2). The abort names the workflow, the SHA, and the exact dispatch command; run that command by hand and confirm a run registers (`gh run list --workflow <workflow> --limit 3`). **Do NOT reach for `bin/qa-server deploy`, and do NOT lengthen the boot poll** — before this abort existed, this failure surfaced as the boot row below ("never returned /up 200") and sent an hour into a healthy app. **The QA DEPLOY is the only thing missing — this is NOT a clean slate.** The abort lands at step 6, so the `accepted → release` promote (step 4) and the gem publish (`publish_gems_for_qa`, step 4d) have ALREADY happened, which is why the ABORT intro above says members are left `reviewed` + `merged: release`. A re-run resumes over that published work; treating this as "nothing happened, start over" is exactly what superseded the already-published studio-engine 0.71.0 in this same incident | re-run `prepare` once a manual dispatch registers a run |

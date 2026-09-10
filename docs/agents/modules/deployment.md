@@ -281,7 +281,8 @@ How a gem rides a release:
    one commit onto `origin/release`, and does it BEFORE the publish
    (finding-d0621629719b, now closed). There is nothing for you to run.
    Allocation is idempotent — a re-run reads a version already past the last
-   published one and skips — and it **refuses rather than guesses**: an
+   `v*` tag (the highest live version only when no tag exists) and skips — and
+   it **refuses rather than guesses**: an
    unreadable `--gem-bump`, an unparseable last version, a `version_file` that
    declares its version twice, or a `bundle lock` that did not land the new
    number all abort the sweep with **nothing published**. The stranded-work guard
