@@ -1421,7 +1421,17 @@ def publish_gem(repo, version)
   step("git tag #{tag} in #{repo}")
   sh("git", "-C", path, "tag", "-a", tag, "-m", "Release #{repo} #{tag}")
   _, tagged = sh("git", "-C", path, "push", "origin", tag, capture: true)
-  say("  (tag #{tag} push #{tagged ? 'ok' : 'skipped/failed — push it manually if needed'})") unless DRY
+  # NON-FATAL on purpose: the gem is already live, so aborting here would strand
+  # this sweep's consumer lock bumps and QA for a publish that succeeded. But it
+  # is no longer quiet: the tag is the record every later allocation reads, and
+  # without it on origin the next sweep from any clone lacking it REFUSES this gem
+  # (Release::GemVersion.allocation) rather than skipping it forever.
+  if tagged || DRY
+    say("  (tag #{tag} push ok)") unless DRY
+  else
+    say("  ⚠ tag #{tag} did NOT reach origin — push it now: git -C #{path} push origin #{tag}. Until it " \
+        "lands, a sweep from any clone without it REFUSES #{repo} (/tasks/untagged-gem-publish-strands-work)")
+  end
 end
 
 # --- init ------------------------------------------------------------------

@@ -624,4 +624,82 @@ class ReleaseGemAllocationTest < Minitest::Test
                       "0.5.0 and 0.6.0 are published and can never be re-pushed"
     end
   end
+
+  # --- a publish whose tag push failed (/tasks/untagged-gem-publish-strands-work)
+  #
+  # publish_gem pushes the gem, then tags and pushes the tag, and a failed tag push
+  # is NON-FATAL. The gem is live; origin has no tag. From any clone without that
+  # tag, allocation reads version > tag and SKIPs as "allocated already", phase 2
+  # skips the already-live publish, and the work promoted after it never ships.
+  # This rebuilds that state for real: origin REJECTS the tag push.
+  def publish_without_tag(origin, repo, version:)
+    File.write(File.join(repo, "lib", "studio", "version.rb"), %(module Studio\n  VERSION = "#{version}"\nend\n))
+    File.write(File.join(repo, "Gemfile.lock"), lockfile(version))
+    git(repo, "add", "-A")
+    git(repo, "commit", "--quiet", "-m", "Release #{version}")
+    git(repo, "push", "--quiet", "origin", "release")
+
+    hook = File.join(origin, "hooks", "pre-receive")
+    File.write(hook, "#!/bin/sh\nwhile read old new ref; do case \"$ref\" in refs/tags/*) " \
+                     "echo \"tag pushes refused\" >&2; exit 1;; esac; done\n")
+    FileUtils.chmod(0o755, hook)
+    git(repo, "tag", "-a", "v#{version}", "-m", "Release studio-engine v#{version}")
+    _, pushed = Open3.capture2e("git", "-C", repo, "push", "origin", "v#{version}")
+    refute pushed.success?, "the harness must really fail the tag push"
+
+    File.write(File.join(repo, "lib", "studio", "later.rb"), "# promoted after the publish\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "--quiet", "-m", "work promoted after #{version} published")
+    git(repo, "push", "--quiet", "origin", "release")
+  end
+
+  def test_a_publish_whose_tag_push_failed_refuses_instead_of_skipping
+    with_root do |root|
+      origin, repo = build_projects_root(root)
+      publish_without_tag(origin, repo, version: "0.5.0")
+      git(repo, "tag", "-d", "v0.5.0") # a clone that lacks the tag, as origin does
+      before = git(origin, "rev-parse", "release").strip
+
+      out, ok = allocate(root, members: [member], live: %w[0.4.0 0.5.0])
+
+      refute ok, "a live version with no tag must stop the sweep, not skip it:\n#{out}"
+      assert_includes out, "REFUSING to allocate"
+      assert_includes out, "v0.5.0"
+      refute_includes out, "nothing allocated", "the silent SKIP is the defect"
+      assert_equal before, git(origin, "rev-parse", "release").strip, "a refusal writes nothing"
+    end
+  end
+
+  # Why the refusal has to live in allocation: the stranded-work guard, the
+  # documented backstop, is blind to this state by construction (it fires only
+  # when the version did NOT advance past the tag).
+  def test_the_stranded_work_guard_does_not_see_a_failed_tag_push
+    with_root do |root|
+      origin, repo = build_projects_root(root)
+      publish_without_tag(origin, repo, version: "0.5.0")
+      git(repo, "tag", "-d", "v0.5.0")
+      tip = git(origin, "rev-parse", "release").strip
+      script = "ENV['PROJECTS_DIR'] = #{root.inspect}\nload #{BIN.inspect}\n" \
+               "p stranded_gem_failure('studio-engine', #{repo.inspect}, #{tip.inspect}, '0.5.0')"
+
+      out, status = Open3.capture2e(child_env(root, install_bundle_stub(root)), RbConfig.ruby, "-W0", "-e", script)
+
+      assert status.success?, out
+      assert_equal "nil", out.strip.lines.last.to_s.strip, "the guard passes this state — which is the hole"
+    end
+  end
+
+  # The control: the clone that ran the publish keeps its tag locally, reads
+  # version == tag, and allocates the next number normally.
+  def test_the_publishing_clone_that_kept_its_tag_still_allocates
+    with_root do |root|
+      origin, repo = build_projects_root(root)
+      publish_without_tag(origin, repo, version: "0.5.0")
+
+      out, ok = allocate(root, members: [member], live: %w[0.4.0 0.5.0])
+
+      assert ok, out
+      assert_includes out, "allocated 0.6.0"
+    end
+  end
 end

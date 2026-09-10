@@ -1307,13 +1307,17 @@ What it writes is a git commit (reversible); the irreversible `gem push` still
 happens only after `validate_gems_for_qa` has preflighted every gem.
 
 **It refuses rather than guesses.** An unreadable `--gem-bump`, an unparseable last
-version, a `version_file` declaring its version twice, or a `bundle lock` that did
-not land the new number each abort the sweep with nothing published — a refusal
-costs a re-run, a wrong allocation costs the RubyGems number forever. Allocation is
-idempotent, so a re-run skips a version already past the last published one. The
-stranded-work guard stays armed behind all of it as the backstop: if allocation is
-ever skipped or wrong, the sweep still aborts for **every** repo, loudly, with
-nothing published and nothing deployed.
+version, a `version_file` declaring its version twice, a `bundle lock` that did not
+land the new number, or a version already live on RubyGems whose `v*` tag never
+reached origin each abort the sweep with nothing published — a refusal costs a
+re-run, a wrong allocation costs the RubyGems number forever. Allocation is
+idempotent, so a re-run skips a version already past the last `v*` tag. The
+stranded-work guard stays armed behind all of it as the backstop, but only for the
+state it can see: work past the tag while the version did NOT advance. There it
+aborts the sweep for **every** repo, loudly, with nothing published and nothing
+deployed. A version that DID advance is invisible to it by construction, which is
+why allocation itself refuses the one advanced state that strands work — a live
+version whose tag push failed (/tasks/untagged-gem-publish-strands-work).
 
 **The derived bump is a floor for routine work, not a judgment about public
 surface.** The table reads a task's `kind`; it cannot know that a `bug` also
