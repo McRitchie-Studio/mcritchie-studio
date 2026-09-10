@@ -170,8 +170,8 @@ class WorkflowsCardChipFitTest < ApplicationSystemTestCase
   # runner is: it reddens identically on a warm laptop and a starved CI box.
   #
   # IT BITES BY CONSTRUCTION: delete the scrollIntoView from click_when_settled and the
-  # certified box is the pre-scroll one (measured y 894) while the click lands at the
-  # post-collapse one (measured y 390), so this goes red naming both.
+  # certified box is the pre-scroll one (measured y 894) while the click lands where the
+  # driver's own scroll puts it (measured y 833-841), so this goes red naming both.
   test "the click lands in the very frame click_when_settled certified as settled" do
     # 700x1000 is the sweep's own narrowest width and it puts the toggle below the fold,
     # which is what forces the driver to scroll. Asserted, not assumed, below.
