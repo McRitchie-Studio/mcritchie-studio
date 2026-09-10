@@ -340,20 +340,46 @@ How a gem rides a release:
    renderer reads the rest of the file as code, so every `## ` below it is a
    heading or not depending on how you read it.
 
+   **And it refuses a promote that would misfile.** The roll lands on
+   `release` only, so `accepted` keeps the un-rolled bucket until it absorbs
+   the `Release <version>` commit, and git merges a bullet added inside an
+   existing `###` subsection there CLEANLY under the heading the roll wrote — a
+   version that shipped without it, and no later roll moves it back. So before
+   `gh pr merge`, prepare predicts each gem's promote with `git merge-tree` and
+   refuses (NOTHING promoted in any repo) when a line either side added to
+   `## Unreleased` would land under a version that already has a `v*` tag, or
+   when the promote would CONFLICT in `CHANGELOG.md` (the same merge's other
+   outcome). The merge is then pinned to the `accepted` head it checked
+   (`--match-head-commit`). The fix, which the refusal prints: merge
+   `origin/release` into a branch off the gem's `accepted`, move every line the
+   merge filed under a shipped version back under `## Unreleased`, and push that
+   merge straight onto the gem's `accepted` — not a PR, which `bin/dor-check`
+   refuses because it carries the release's version bump — then re-run the
+   command that refused. It cannot see a misfile made BEFORE the promote: that
+   line arrives already inside a version section, where it looks exactly like
+   a legitimate post-release edit. Two merges put one there — a builder merging
+   `main` into a branch, and the review merge itself. Once `accepted` absorbs a
+   roll (`advance_accepted`'s fast-forward at ship, or the fix above), a gem PR
+   cut before it that adds a line inside an existing `###` subsection merges
+   CLEAN under the rolled heading, while its diff still shows the line under
+   `## Unreleased`. Check those merges by hand, per the *Check every merge that
+   crosses a roll* rule in studio-engine's `docs/RELEASE.md`.
+
    **Two gaps, named rather than papered over.** (1) A gem tracking no
    `CHANGELOG.md` is not refused — the registry declares no `changelog` key, so
    its absence breaks no stated contract; prepare says so and moves on. (2) The
-   roll runs only on the **allocate** path, and that path is skipped more often
-   than "by hand" suggests. `Release::GemVersion` skips allocation whenever the
-   version file is **already ahead of the newest `v*` tag** — which covers the
-   emergency hand-bump onto `accepted` that `publish_gem`'s abort message names,
-   but *also* the ordinary state a **prior sweep leaves behind** once it has
-   allocated a number. Measured at `origin/release` on 2026-09-09: studio-engine
-   `0.74.7` against tag `v0.74.6`, solana-studio `0.9.3` against `v0.9.2` — both
-   sitting in the skip branch, and therefore both unrolled. So the roll reaches
-   the gem this sweep allocates, not one already carrying an
-   allocated-but-unpublished number; roll that one by hand in the same PR that
-   bumps the version.
+   roll runs only on the **allocate** path. `Release::GemVersion` skips
+   allocation whenever the version file is **already ahead of the newest `v*`
+   tag**. A **hand-set version** — the emergency bump onto `accepted` that
+   `publish_gem`'s abort message names — reaches that skip with its entries
+   still under `## Unreleased`: roll it by hand in the same COMMIT that sets the
+   version, since `bin/dor-check` refuses a PR that edits it. A version the
+   sweep allocated reaches the skip already rolled (a re-run after an abort
+   between its `Release <version>` commit and its tag), because the roll rode
+   that commit. The skip is not the state between sweeps: prepare publishes and
+   tags in the same run — studio-engine `0.74.8` on `v0.74.8` at
+   `origin/release`, 2026-09-10. The 2026-09-09 reading of `0.74.7` against
+   `v0.74.6` fell inside one sweep, between its version commit and its tag.
 
    **History.** Before 2026-09-09 prepare published and tagged without ever
    touching `CHANGELOG.md`, and nothing failed when it didn't. Measured at

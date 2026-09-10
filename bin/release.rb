@@ -1644,6 +1644,10 @@ def promote_accepted_to_release!(repos, label: nil)
   # this candidate and outranks a fact about the repo's plumbing, so the operator sees
   # the broken tree first when both are true.
   refuse_blind_accepted!(targets) unless DRY
+  # THIRD, and a different kind of fact: not whether `accepted` is green or visible, but
+  # whether merging it would file a new CHANGELOG entry under a version that already
+  # shipped. It returns the `accepted` head it read, and the merge below is pinned to it.
+  checked_heads = DRY ? {} : refuse_misfiled_changelog!(targets)
   targets.each do |repo|
     if DRY
       step("promote #{ACCEPTED_BRANCH} → #{RELEASE_BRANCH} in #{repo}: open/reuse ONE " \
@@ -1681,7 +1685,8 @@ def promote_accepted_to_release!(repos, label: nil)
     # automated conductor that is the correct posture: a `gh` that would have
     # stopped to ask now fails with a message we print, instead of hanging a
     # release on a prompt nobody is watching.
-    merge_out, ok = sh("gh", "pr", "merge", pr_url, "--merge", capture: true)
+    merge_out, ok = sh("gh", "pr", "merge", pr_url, "--merge",
+                       *(checked_heads[repo] ? ["--match-head-commit", checked_heads[repo]] : []), capture: true)
     # The echo of gh's words is decided AFTER the recovery, never before it. It
     # used to sit above this branch gated on `ok` — still false while the fallback
     # was deciding — so the interrupted-run path printed NOTHING, and that is the
@@ -1739,6 +1744,112 @@ def accepted_release_pr_url(repo, label: nil)
            ))
   end
   out.strip
+end
+
+# THE CHANGELOG MISFILE GUARD (/tasks/rolled-changelog-merge-misfiles) — a merge
+# across a roll, refused BEFORE the promote instead of discovered after it.
+#
+# The roll (roll_changelog!) lands on `release` only, in the `Release <version>`
+# commit. `accepted` keeps its un-rolled `## Unreleased` until something merges that
+# commit back, and builders keep writing into it. So the next promote merges an
+# un-rolled bucket into a rolled file, and git either merges a bullet added inside an
+# existing `###` subsection CLEANLY under the heading the roll wrote — a version that
+# shipped without it — or, for a new subsection at the top, CONFLICTS. Measured on
+# studio-engine's real file with the real roll, 2026-09-10. The first is silent and
+# permanent: the next roll moves only what sits under `## Unreleased`.
+#
+# WHY A PREDICTION, AND WHY HERE. The promote is `gh pr merge`: GitHub merges and
+# commits on its own server in one step, so there is no uncommitted merge for prepare
+# to inspect and no merge driver GitHub would ever run. `git merge-tree --write-tree`
+# computes the same merge locally and writes no branch, so this reads the
+# CHANGELOG.md the promote WOULD land, and refuses a line either side added to
+# `## Unreleased` that the merge files under a version already tagged (see
+# Release::Changelog.misfiled_entries). The merge is then pinned to the head read here
+# (`--match-head-commit`), so a commit reaching `accepted` in between makes gh refuse
+# instead of merging content nobody checked.
+#
+# EVERY TARGET FIRST, like refuse_red_accepted!: a refusal means NOTHING was promoted
+# anywhere. Only registered GEMS are read, because only a gem's CHANGELOG is rolled.
+# Returns { repo => the `accepted` SHA it checked }.
+def refuse_misfiled_changelog!(targets)
+  checked = {}
+  failures = []
+  targets.each do |repo|
+    next unless RELEASE_REPOS.dig("gems", repo)
+
+    path = repo_path(repo)
+    next unless Dir.exist?(path) # the promote loop aborts on a missing checkout itself
+
+    head, refusal = changelog_promote_refusal(path)
+    checked[repo] = head if head
+    failures << "gem #{repo}: #{refusal}" if refusal
+  end
+  return checked if failures.empty?
+
+  abort!("the CHANGELOG misfile guard REFUSED the promote — NOTHING was promoted, recorded or deployed:\n  - " +
+         failures.join("\n  - "))
+end
+
+# [the `accepted` SHA read, refusal-or-nil] for one gem checkout. FAILS CLOSED: a
+# promote this cannot predict is refused, because a guard that passes when it could
+# not look is the silent failure it exists to end.
+def changelog_promote_refusal(path)
+  # `--tags` is load-bearing: the tags ARE the published record this judges against.
+  _, fetched = sh("git", "-C", path, "fetch", "origin", RELEASE_BRANCH, ACCEPTED_BRANCH, "--tags", "--quiet",
+                  capture: true)
+  unless fetched
+    return [nil, "git fetch failed, so the guard cannot read what the promote would merge (fail closed) — fix " \
+                 "the remote, then re-run `bin/release prepare`; NOTHING was promoted"]
+  end
+
+  release, release_ok = git_capture("-C", path, "rev-parse", "--verify", "origin/#{RELEASE_BRANCH}^{commit}")
+  accepted, accepted_ok = git_capture("-C", path, "rev-parse", "--verify", "origin/#{ACCEPTED_BRANCH}^{commit}")
+  unless release_ok && accepted_ok
+    return [nil, "could not resolve origin/#{RELEASE_BRANCH} and origin/#{ACCEPTED_BRANCH} (fail closed) — " \
+                 "fetch, then re-run `bin/release prepare`; NOTHING was promoted"]
+  end
+  release = release.strip
+  accepted = accepted.strip
+
+  # Level (the promote loop skips it): there is no merge to predict.
+  _, level = git_capture("-C", path, "merge-base", "--is-ancestor", accepted, release)
+  return [accepted, nil] if level
+
+  out, clean = git_capture("-C", path, "merge-tree", "--write-tree", "--name-only", release, accepted)
+  tree, *rest = out.lines.map(&:chomp)
+  unless tree.to_s.match?(/\A\h{40,64}\z/)
+    return [nil, "git merge-tree could not predict the promote (#{out.strip.lines.first.to_s.strip}) — it needs " \
+                 "git 2.38 or newer; NOTHING was promoted (fail closed)"]
+  end
+
+  unless clean
+    # Any OTHER conflict is not this guard's business: `gh pr merge` refuses it and
+    # quotes GitHub. A CHANGELOG conflict is this defect's other outcome, so it is
+    # named here with the remedy that actually clears it.
+    conflicted = rest.take_while { |line| !line.strip.empty? }
+    return [accepted, nil] unless conflicted.include?(CHANGELOG_FILE)
+
+    return [accepted, "the promote would CONFLICT in #{CHANGELOG_FILE} — the other outcome of a merge across a " \
+                      "roll: `accepted` wrote beside a bucket `release` already rolled. " \
+                      "#{Release::Changelog::MISFILE_REMEDY}"]
+  end
+
+  merged, tracked = git_capture("-C", path, "show", "#{tree}:#{CHANGELOG_FILE}")
+  return [accepted, nil] unless tracked # no changelog, nothing to misfile
+
+  base_sha, based = git_capture("-C", path, "merge-base", release, accepted)
+  base = based ? changelog_text_at(path, base_sha.strip) : ""
+  tags, = git_capture("-C", path, "tag", "--list", "v*")
+  published = tags.lines.map { |tag| tag.strip.delete_prefix("v") }.reject(&:empty?)
+  sides = [changelog_text_at(path, release), changelog_text_at(path, accepted)]
+
+  [accepted, Release::Changelog.misfile_refusal(merged, base: base, sides: sides, published: published)]
+end
+
+# CHANGELOG.md at `rev`, or "" when that commit tracks none.
+def changelog_text_at(path, rev)
+  text, ok = git_capture("-C", path, "show", "#{rev}:#{CHANGELOG_FILE}")
+  ok ? text : ""
 end
 
 def merge
