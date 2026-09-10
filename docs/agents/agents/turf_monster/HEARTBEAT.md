@@ -14,9 +14,18 @@ attribution and routes to its act SOPs:
 - [`sleeper-auction-watch`](sops/sleeper-auction-watch.md) - sit beside Mr.
   McRitchie through a live Sleeper auction draft: value every player under the
   league's own scoring, then call a max bid as each one comes up.
+- [`entry-forfeit`](sops/entry-forfeit.md) - withdraw one entrant from one
+  contest at their own request, forfeiting the entry fee: one status flip before
+  grading, plus the on-chain seat gap it leaves behind.
 
 Use this file when Mr. McRitchie invokes `Turf Monster Heartbeat`. When he
 invokes a single act directly, read that act's SOP file.
+
+`entry-forfeit` is deliberately NOT a chip, and for a third reason again: it is
+an on-demand incident SOP. Nothing schedules it and nothing should — it runs when
+an entrant asks to withdraw, and never otherwise. It stays a registered
+invocation by name, owned here and in the prose guard's `ACT_OWNER`. Written down
+so this stays a decision rather than an oversight.
 
 **The heartbeat itself composes only `live-score-watch`.**
 [`contest-rehearsal`](sops/contest-rehearsal.md) and

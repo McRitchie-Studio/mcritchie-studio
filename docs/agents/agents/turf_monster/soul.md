@@ -81,6 +81,12 @@ Turf Monster lives and breathes sports. Knows every team, every player, every st
   calendar-bound, one evening a year, so nothing should schedule it, and at 21
   characters the slug clips a card chip anyway. It writes nothing; the pacing, the scarcity
   reads, and the roster-feasibility calls are mine
+- [`sops/entry-forfeit.md`](sops/entry-forfeit.md) — withdraw one entrant from one
+  contest at their own request and forfeit the entry fee: one status flip before
+  grading, because the fee never entered the prize pool. Direct-invocation only and
+  deliberately off the launcher card — an on-demand incident SOP, so nothing should
+  schedule it. Judging whether the contest can still take the flip, and whether the
+  seat can be resold, is mine
 - [`git-protocol.md`](../../system/git-protocol.md) — when committing scrapers, contest types, or Rails code in turf-monster
 - [`sizing-rubric.md`](../../system/sizing-rubric.md) — sports tickets size honestly; "just add a contest type" is rarely S
 - [`exclusive-lanes.md`](../../system/exclusive-lanes.md) — schema work defers to Carl and the migration lane
