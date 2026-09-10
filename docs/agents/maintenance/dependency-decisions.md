@@ -392,7 +392,7 @@ mcritchie-studio and turf-monster are on `@v7`.
 Two apps, the same ActionCable RESP3 exposure, one guard. redis 6 can walk into
 turf-monster on any bundle resolve. Add the ceiling before lifting redis anywhere.
 
-### CONFIG-7 · A closed Dependabot PR is a permanent, invisible suppression
+### CONFIG-7 · A closed Dependabot PR suppresses that release, not the dependency
 
 From mcritchie-studio's own Dependabot update job, run 34438891868, today at
 2026-09-10T04:53:52Z:
@@ -402,19 +402,16 @@ Latest version is 7
 Pull request #2 already exists for actions/upload-artifact with latest version 7
 ```
 
-**PR #2 was closed, unmerged, on 2026-05-24.** Dependabot still counts it as
-existing and will not open another. Both mcritchie-studio and turf-monster use
-`actions/upload-artifact@v4` in four workflow steps each, and both are parked
-there by that close — in a `github_actions` lane holding **3 of 10** slots, with
-seven free.
-
-This corrects the earlier record, which said Dependabot had never proposed an
-upload-artifact bump. It proposed one and someone closed it, and nothing anywhere
-records that decision or its reason. The same is true of turf #3
-(`actions/setup-node` 4 → 6) and of every other close in the census.
+**PR #2 (upload-artifact 4 → 7) was closed, unmerged, on 2026-05-24** with Mr.
+McRitchie's reason on the thread ("workflow action bumps not prioritized right
+now"), and Dependabot replied that it would not notify again "about this release,
+but will get in touch when a new version is available." Both apps keep
+`actions/upload-artifact@v4` in four steps each until v8 ships. It is not
+permanent: turf #3 (`actions/setup-node` 4 → 6) was closed the same day, and
+Dependabot opened turf #179 (4 → 7) on 2026-07-14.
 
 The consequence for this record's own advice: **CLOSE without an `ignore` entry
-buys a slot and loses the reason.** Every CLOSE below is paired with either an
+buys a slot only until the next release.** Every CLOSE below is paired with either an
 `ignore` entry (CAUSE-A, a standing policy) or a written supersession
 (CAUSE-B/CAUSE-C, a one-time fact).
 
@@ -442,8 +439,8 @@ buys a slot and loses the reason.** Every CLOSE below is paired with either an
    (#462, a deploy-time queue drain) · sentry 7 (#1246, a logs/PII decision) ·
    image_processing 2 (#1247, a variant eyeball) · redis 6 across both apps,
    after CONFIG-6.
-5. **File the follow-ons**: upload-artifact is parked at v4 in both apps by a
-   closed PR (CONFIG-7), and rolio needs a `dependabot.yml` plus a CI generation
+5. **File the follow-ons**: upload-artifact waits at v4 in both apps until
+   Dependabot proposes v8 (CONFIG-7), and rolio needs a `dependabot.yml` plus a CI generation
    refresh (CONFIG-5).
 
 ## What this record cannot tell you
