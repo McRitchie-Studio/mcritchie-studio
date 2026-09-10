@@ -23,6 +23,8 @@
 #   ruby -Itest test/models/release/changelog_test.rb
 
 require "minitest/autorun"
+require "open3"
+require "tmpdir"
 require_relative "../../../app/models/release/changelog"
 
 class ReleaseChangelogTest < Minitest::Test
@@ -521,5 +523,114 @@ class ReleaseChangelogTest < Minitest::Test
     assert CL.entries?(engine)
     refute CL.entries?(engine(entries: []))
     refute CL.entries?("# Changelog\n\n## 0.39.0 — 2026-08-11\n\n- older\n"), "no bucket means no entries"
+  end
+
+  # --- the misfile guard: a merge across a roll ---------------------------------
+  #
+  # THE DEFECT, measured 2026-09-10 on studio-engine's real CHANGELOG with the real
+  # roll (/tasks/rolled-changelog-merge-misfiles). The roll lands on `release` only;
+  # `accepted` keeps the un-rolled bucket until something merges the release commit
+  # back. So the next promote three-way-merges an un-rolled bucket into a rolled
+  # file, and git merges a bullet added INSIDE an existing `###` subsection CLEANLY
+  # — straight under the heading the roll just wrote, a version that shipped
+  # without it. Nothing fails, and the next roll moves only what sits under
+  # `## Unreleased`, so the entry stays mis-filed for good.
+  #
+  # These tests rebuild that merge with REAL `git merge-file`, so they exercise
+  # git's actual placement rather than a hand-written guess at it.
+
+  PUBLISHED = "0.40.0"
+
+  def merge_file(ours, base, theirs)
+    Dir.mktmpdir("changelog-merge") do |dir|
+      paths = { "ours" => ours, "base" => base, "theirs" => theirs }.to_h do |name, text|
+        path = File.join(dir, name)
+        File.write(path, text)
+        [name, path]
+      end
+      out, status = Open3.capture2("git", "merge-file", "-p", paths["ours"], paths["base"], paths["theirs"])
+      [out, status.exitstatus]
+    end
+  end
+
+  # base: the bucket the promote forked from. release: that base, rolled and
+  # published as 0.40.0 (the file at tag v0.40.0). accepted: the same base plus one
+  # bullet written after the roll, inside the existing `### Fixed`.
+  def across_a_roll
+    base     = engine
+    release  = CL.roll(base, version: PUBLISHED, date: "2026-09-11")
+    accepted = engine(entries: ["### Fixed", "", "- entry two", "- entry one"])
+    merged, status = merge_file(release, base, accepted)
+    [release, merged, status]
+  end
+
+  def section_of(text, line)
+    CL.headings(text).select { |h| h[:number] < text.lines.index { |l| l.chomp == line }.to_i + 1 }.last[:line]
+  end
+
+  # The precondition, pinned so a future git cannot quietly make this suite vacuous:
+  # the merge really is CLEAN, and the new bullet really lands under the release.
+  def test_git_merges_a_bullet_across_a_roll_cleanly_under_the_published_heading
+    _release, merged, status = across_a_roll
+
+    assert_equal 0, status, "git merge-file must merge this CLEAN — that is what makes the misfile silent"
+    assert_equal "## #{PUBLISHED} — 2026-09-11", section_of(merged, "- entry two"),
+                 "the bullet written after the release must land under the release's own heading"
+  end
+
+  def misfiled(merged, sides:, published: [PUBLISHED])
+    CL.misfiled_entries(merged, base: engine, sides: sides, published: published)
+  end
+
+  def test_a_bullet_merged_under_a_published_heading_is_named_as_misfiled
+    release, merged, = across_a_roll
+    accepted = engine(entries: ["### Fixed", "", "- entry two", "- entry one"])
+
+    found = misfiled(merged, sides: [release, accepted])
+
+    assert_equal [[PUBLISHED, "- entry two"]], found.map { |m| [m[:version], m[:line]] }
+    refusal = CL.misfile_refusal(merged, base: engine, sides: [release, accepted], published: [PUBLISHED])
+    assert_includes refusal.to_s, "- entry two", "the refusal must name the mis-filed line"
+    assert_includes refusal.to_s, PUBLISHED, "and the shipped version it landed under"
+    assert_includes refusal.to_s, "NOTHING was promoted"
+  end
+
+  # The control: the same bullet, merged by an `accepted` that already carries the
+  # roll, sits in the bucket where it belongs.
+  def test_the_same_bullet_under_unreleased_is_not_a_misfile
+    release, = across_a_roll
+    healthy = release.sub("## Unreleased\n\n", "## Unreleased\n\n### Fixed\n\n- entry two\n\n")
+
+    assert_empty misfiled(healthy, sides: [release, healthy])
+    assert_nil CL.misfile_refusal(healthy, base: engine, sides: [release, healthy], published: [PUBLISHED])
+  end
+
+  # A re-run after an abort between the version commit and its tag ships the
+  # promoted work IN that version, so landing under it is correct until it has a tag.
+  def test_a_line_under_a_version_not_yet_published_is_not_judged
+    release, merged, = across_a_roll
+    accepted = engine(entries: ["### Fixed", "", "- entry two", "- entry one"])
+
+    assert_empty misfiled(merged, sides: [release, accepted], published: [])
+  end
+
+  # THE FALSE POSITIVE THAT SHAPED THIS RULE. Published entries get reworded after
+  # release here, on purpose (solana-studio's 0.4.0, studio-engine's 0.36.0 and
+  # 0.37.0 on 2026-09-10). An edit to a shipped section is not a bucket addition.
+  def test_rewording_a_shipped_entry_is_not_a_misfile
+    release = CL.roll(engine, version: PUBLISHED, date: "2026-09-11")
+    reworded = release.sub("- entry one\n", "- entry one, reworded after release\n")
+
+    assert_empty CL.misfiled_entries(reworded, base: release, sides: [release, reworded], published: [PUBLISHED])
+  end
+
+  # Moving a SHIPPED entry out of the bucket and under its version is the documented
+  # hand attribution (studio-engine docs/RELEASE.md): the bucket LOSES a line.
+  def test_a_line_moved_out_of_the_bucket_is_attribution_not_a_misfile
+    before = engine(entries: ["- shipped late"])
+    after = before.sub("## Unreleased\n\n- shipped late\n\n", "## Unreleased\n\n")
+                  .sub("## 0.39.0 — 2026-08-11\n\n", "## 0.39.0 — 2026-08-11\n\n- shipped late\n")
+
+    assert_empty CL.misfiled_entries(after, base: before, sides: [before, after], published: ["0.39.0"])
   end
 end

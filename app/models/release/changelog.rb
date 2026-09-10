@@ -381,6 +381,109 @@ class Release
       "#{rolled.join("\n").rstrip}\n"
     end
 
+    # --- the misfile guard: a merge across a roll ------------------------------
+
+    # Lines one side of a merge ADDED to `## Unreleased` that the merge RESULT
+    # files under a version that has ALREADY SHIPPED — the signature of a merge
+    # across a roll. Returns [{ version:, number:, line: }]; empty when honest.
+    #
+    #   merged    — the file the merge would produce
+    #   base      — the file at the merge base
+    #   sides     — the file on each side being merged
+    #   published — version strings ("0.40.0") that carry a v* tag
+    #
+    # THE DEFECT. The roll lands on `release` only, so an `accepted` that has not
+    # absorbed the `Release <version>` commit still holds the un-rolled bucket, and
+    # git merges a bullet added INSIDE one of its `###` subsections cleanly under
+    # the heading the roll just wrote. The entry never reaches `## Unreleased`, so
+    # no later roll moves it: it is mis-filed under a version that shipped without
+    # it, for good.
+    #
+    # WHY THE BUCKET, AND NOT THE PUBLISHED RECORD. The first cut of this guard held
+    # every published section to the file at its own v* tag, which would also have
+    # caught a misfile made upstream (a builder merging `main` into a branch). Run
+    # against the real gems on 2026-09-10 it REFUSED BOTH: 106 lines in
+    # studio-engine (0.36.0, 0.37.0) and 1 in solana-studio (0.4.0) — published
+    # entries reworded after release, which this ecosystem does on purpose. A
+    # section can change after it ships; what cannot happen honestly is a line a
+    # builder just added to the BUCKET coming out of a merge under a shipped
+    # heading. That is exactly the defect, and nothing legitimate produces it.
+    #
+    # NOT JUDGED, on purpose:
+    #   * a line that lands under a version NOT yet published — a re-run after an
+    #     abort between the version commit and its tag ships that work IN that
+    #     version, so there it is filed correctly;
+    #   * `###` subsection headings, which repeat in every section and name no
+    #     entry of their own;
+    #   * edits to shipped sections, attribution out of the bucket, errata — none
+    #     of them is a bucket ADDITION.
+    def misfiled_entries(merged, base:, sides:, published:)
+      shipped = Array(published).map(&:to_s)
+      added = Array(sides).flat_map { |side| bucket_additions(side, base) }.uniq
+      return [] if added.empty?
+
+      lines = body_lines(merged)
+      in_bucket = unreleased_entries(merged).map(&:rstrip)
+      owner = section_owners(merged)
+
+      lines.each_with_index.filter_map do |line, i|
+        text = line.rstrip
+        next unless added.include?(text) && !in_bucket.include?(text)
+
+        version = owner[i]
+        next unless version && shipped.include?(version)
+
+        { version: version, number: i + 1, line: line }
+      end
+    end
+
+    # A sentence refusing the promote, or nil when nothing is misfiled.
+    def misfile_refusal(merged, base:, sides:, published:)
+      found = misfiled_entries(merged, base: base, sides: sides, published: published)
+      return nil if found.empty?
+
+      named = found.first(3).map { |m| "line #{m[:number]} under #{m[:version]}: #{m[:line].strip.inspect}" }.join("; ")
+      more = found.size > 3 ? " (+#{found.size - 3} more)" : ""
+      "CHANGELOG.md would file #{found.size} line(s) written under '## Unreleased' beneath a version that already " \
+        "shipped without them (#{named}#{more}) — a merge across a roll. #{MISFILE_REMEDY}"
+    end
+
+    # The remedy both refusals share — a misfile, and the conflict that is the same
+    # merge's other outcome. Once `accepted` carries the rolled file, the merge base
+    # includes the roll and the promote is clean.
+    MISFILE_REMEDY = "Bring origin/release's CHANGELOG.md into the gem's `accepted` (merge `release` into a branch " \
+                     "off it), keep every shipped version section exactly as `release` has it, and put the lines " \
+                     "written since under `## Unreleased`. Land that on `accepted`, then re-run `bin/release " \
+                     "prepare` — it resumes, and NOTHING was promoted"
+
+    # Non-blank, non-`###` lines in `side`'s bucket that the base's bucket did not
+    # hold (as a multiset, so a second copy of a common line still counts).
+    def bucket_additions(side, base)
+      remaining = unreleased_entries(base).map(&:rstrip).tally
+      unreleased_entries(side).map(&:rstrip).filter_map do |text|
+        next if text.strip.empty? || text.start_with?("###")
+
+        if remaining[text].to_i.positive?
+          remaining[text] -= 1
+          next
+        end
+        text
+      end
+    end
+
+    # line index → the version ("0.40.0") whose section holds it; nil above the
+    # first version heading and inside the bucket. Fence-aware through `headings`.
+    def section_owners(text)
+      owners = Array.new(body_lines(text).size)
+      current = nil
+      marks = headings(text).to_h { |h| [h[:number] - 1, h[:version]&.join(".")] }
+      owners.each_index do |i|
+        current = marks[i] if marks.key?(i)
+        owners[i] = current
+      end
+      owners
+    end
+
     # --- internals -----------------------------------------------------------
 
     def body_lines(text)

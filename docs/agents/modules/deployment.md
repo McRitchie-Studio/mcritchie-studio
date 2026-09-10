@@ -340,6 +340,23 @@ How a gem rides a release:
    renderer reads the rest of the file as code, so every `## ` below it is a
    heading or not depending on how you read it.
 
+   **And it refuses a promote that would misfile.** The roll lands on
+   `release` only, so `accepted` keeps the un-rolled bucket until it absorbs
+   the `Release <version>` commit, and git merges a bullet added inside an
+   existing `###` subsection there CLEANLY under the heading the roll wrote — a
+   version that shipped without it, and no later roll moves it back. So before
+   `gh pr merge`, prepare predicts each gem's promote with `git merge-tree` and
+   refuses (NOTHING promoted in any repo) when a line either side added to
+   `## Unreleased` would land under a version that already has a `v*` tag, or
+   when the promote would CONFLICT in `CHANGELOG.md` (the same merge's other
+   outcome). The merge is then pinned to the `accepted` head it checked
+   (`--match-head-commit`). The fix: merge `release` into a branch off the gem's
+   `accepted`, keep the shipped sections exactly as `release` has them, put the
+   new lines under `## Unreleased`, land it, and re-run. It cannot see a misfile
+   made upstream — a builder merging `main` into a branch before review — because
+   that line reaches the promote already inside a version section, where it
+   looks exactly like a legitimate post-release edit.
+
    **Two gaps, named rather than papered over.** (1) A gem tracking no
    `CHANGELOG.md` is not refused — the registry declares no `changelog` key, so
    its absence breaks no stated contract; prepare says so and moves on. (2) The
