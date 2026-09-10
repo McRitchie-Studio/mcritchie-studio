@@ -104,7 +104,8 @@ promotes `accepted → release` plus QA, and Steffon's `production-deploy` ships
   only he can supply.
 - **Source-control auth is NOT one of those — it is SELF-SERVICE.** A stale
   `gh`/`git` credential is yours to fix, in one command, and then keep going:
-  `eval "$(bin/gh-auth-refresh --export)"`. Installation tokens expire about
+  `eval "$(/Users/alex/projects/mcritchie-studio/bin/gh-auth-refresh --export)"` — the hub's copy, so it
+  resolves from any desk. Installation tokens expire about
   hourly BY DESIGN and every lane re-mints its own, so "I need you to run `gh
   auth login`" is both the terminal chore this rule forbids and a step that
   would not work (`gh` refuses to store a credential while `GH_TOKEN` is set).
@@ -513,7 +514,10 @@ Before editing a single file:
    changed test still bite?*
 2. **Allocate an isolated worktree** (`bin/agent-worktree new <app> <task>`) on
    an allocated port. Do not edit on a primary checkout.
-3. **Run `bin/session-preflight <task>`** from the worktree before editing. Fix
+3. **Run `/Users/alex/projects/mcritchie-studio/bin/session-preflight <task> --root <desk>`** before editing —
+   the hub's script, pointed at the task's desk. Bare, it inspects the checkout it
+   lives in (`DEFAULT_ROOT`), never your desk; `bin/task begin` passes `--root` for
+   exactly this reason. Fix
    branch drift, latest blocker feedback, generated-doc drift, stale terminology,
    or PR overlap it reports before spending implementation time.
 
@@ -642,7 +646,8 @@ The default launch flow is:
    the worktree with `bin/agent-worktree bind-task <app> <worktree-slug> <task-slug-or-url>`
    so `whereami`, terminal context, snapshots, and PR bodies can lead from the
    task record.
-6. Run `bin/session-preflight <task-slug>` from the worktree before editing; it
+6. Run `/Users/alex/projects/mcritchie-studio/bin/session-preflight <task-slug> --root <desk>` before editing
+   (the `--root` points it at the desk, not at the hub it lives in); it
    surfaces latest task feedback, release-branch drift, PR state, same-file PR
    overlap, generated-doc drift, stale terminology, and required test tiers.
 7. Use the managed port ranges: McRitchie Studio `3000-3099`, Turf Monster
@@ -676,7 +681,7 @@ and the feature. A good prompt is:
 
 ```text
 Work from /Users/alex/projects. Build this feature in <app>: <feature>.
-Use the fast lane: bin/task begin --title "Three To Five Words" --repo <app> --agent <soul>
+Use the fast lane: /Users/alex/projects/mcritchie-studio/bin/task begin --title "Three To Five Words" --repo <app> --agent <soul>
 --kind feature --shape (ui-only|ui+db|backend|library|onchain|onchain-vertical|docs|test-only)
 --risk <tags> --accept "<criterion>" --test "<tier>". It creates the task,
 allocates the isolated worktree on an allocated port, claims the task, and
@@ -684,7 +689,7 @@ preflights (pinning the worktree via --root). Read the preflight output and fix
 any blockers before implementation.
 Write the test tiers your shape requires as you go (unit-first); record them
 tier-tagged in devops["checks_run"]. Before PR handoff, mark local validation
-with `bin/task update <task> --local-url http://localhost:<port>/<path>
+with `/Users/alex/projects/mcritchie-studio/bin/task update <task> --local-url http://localhost:<port>/<path>
 --approval waiting`, return `Local Demo: http://localhost:<port>/<path>` in
 chat. The request rides through the handoff and keeps pulsing in review, so hand
 off rather than stalling on an answer. Update docs if behavior changes. Then hand
