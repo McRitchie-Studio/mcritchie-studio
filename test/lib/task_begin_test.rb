@@ -437,7 +437,16 @@ class TaskBeginTest < Minitest::Test
     _requests, _out, err, status, = run_begin([])
 
     refute status.success?
-    assert_includes err, "usage: bin/task begin"
+    # THE BANNER ECHOES THE INVOCATION. remedy-hints-second-wave gave every usage banner
+    # `$PROGRAM_NAME` — a banner is a synopsis of the grammar the reader JUST TYPED, not
+    # a command handed over — so this run, which reaches bin/task by its ABSOLUTE path,
+    # is told `usage: /…/bin/task begin`. Keyed on the script the banner names rather
+    # than on a bare spelling this harness can never produce.
+    banner = err[/usage: (\S+) begin/, 1]
+
+    refute_nil banner, "the no-title/no-slug door must still print its usage banner:\n#{err}"
+    assert_equal "task", File.basename(banner), "the banner must name THIS program:\n#{err}"
+    assert_equal BIN, banner, "the banner must echo the invocation it was reached by:\n#{err}"
   end
 
   def test_begin_preflight_failure_names_the_resume

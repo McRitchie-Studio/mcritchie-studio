@@ -69,7 +69,19 @@ class BlockRecipeTest < Minitest::Test
     each_recipe(agent: SOUL) do |name, recipe|
       argv = Shellwords.split(recipe.gsub(/\\\n\s*/, " "))
 
-      assert_equal ["bin/task", "block", SLUG], argv.first(3),
+      script, subcommand, target = argv.first(3)
+
+      # ABSOLUTE BY CONSTRUCTION (remedy-hints-second-wave). A recipe is pasted, and the
+      # bare `bin/task` pastes only from a hub desk — so this asks the DISK rather than
+      # comparing text: an absolute path CONTAINS "bin/task", which is exactly why a
+      # substring or bare-equality assertion cannot see this defect.
+      assert_equal File.expand_path(script), script,
+                   "#{name} opens with a NON-ABSOLUTE command — a reviewer on a satellite or gem " \
+                   "desk cannot paste it:\n#{recipe}"
+      assert File.executable?(script),
+             "#{name} opens with #{script.inspect}, which is not an executable on this disk:\n#{recipe}"
+      assert_equal "task", File.basename(script), "#{name} does not open as `bin/task`:\n#{recipe}"
+      assert_equal ["block", SLUG], [subcommand, target],
                    "#{name} does not open as `bin/task block <slug>`:\n#{recipe}"
       assert_includes argv, "--kind", "#{name} names no block kind:\n#{recipe}"
     end

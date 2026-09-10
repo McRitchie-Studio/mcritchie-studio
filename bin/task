@@ -304,6 +304,26 @@ require_relative "lib/cert_root_guard"
 require_relative "lib/fast_lane"
 require_relative "lib/stamp_confirmation"
 
+# THE ABSOLUTE `bin/task` A REFUSAL HANDS BACK — this very script, resolved from its
+# OWN __dir__. A RE-RUN remedy names the script for the tree the reader is ALREADY
+# standing in, so it passes one directory and carries no `cd`; FastLane.remedy_command
+# holds the full policy, including why the form is unconditionally absolute even on a
+# hub desk. The bare `bin/task` this replaced resolves ONLY from a hub desk — bin/task
+# lives in mcritchie-studio/bin alone, so a builder on a turf-monster, rolio or gem
+# desk reached this script through its ABSOLUTE path and could not run the bare form
+# back. Pinned by test/lib/remedy_hint_guard_test.rb, which keys on the FILESYSTEM
+# (File.executable?) rather than on what the line says, because an absolute path
+# CONTAINS the bare form and a substring assertion is blind to this defect.
+#
+# USAGE BANNERS DELIBERATELY DO NOT USE THIS. A banner is a synopsis of the grammar the
+# reader JUST TYPED, not a command handed over to run, so it echoes the invocation with
+# $PROGRAM_NAME: absolute when they reached this script absolutely, bare when they typed
+# the bare form, and never a 90-character path in front of every flag list.
+SELF_CMD = FastLane.remedy_command("task", __dir__).freeze
+# The self-service credential fix every lane is told to run itself. Same reasoning,
+# and bin/ship has carried the routed form since wave 1 (GH_AUTH_REFRESH_CMD there).
+GH_AUTH_REFRESH_CMD = FastLane.remedy_command("gh-auth-refresh", __dir__).freeze
+
 BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
 SHINY_EMOJI = "✨"
 
@@ -1364,9 +1384,9 @@ def warn_dropped_approval_request!(task, slug, before)
 
   warn!("warning: this move DISCARDED a pending operator-approval request " \
         "(approval_status waiting → none). Nobody was asked and the board will not pulse. " \
-        "If the operator already approved in words, record it: bin/task update #{slug} " \
+        "If the operator already approved in words, record it: #{SELF_CMD} update #{slug} " \
         "--approval approved. If you still need his eyes, move the task back and ask " \
-        "again: bin/task move #{slug} building, then bin/task update #{slug} " \
+        "again: #{SELF_CMD} move #{slug} building, then #{SELF_CMD} update #{slug} " \
         "--approval waiting. A request is only actionable in " \
         "#{APPROVAL_REQUEST_STAGES.join(" or ")}.")
 end
@@ -1889,7 +1909,7 @@ def render_stale(result)
   case result[:status]
   when :on_main
     puts "⚠  #{slug}: work already on main — origin/#{branch} is an ancestor of origin/main"
-    puts "   stage is #{result[:stage]} → consider: bin/task move #{slug} shipped   (or archived)"
+    puts "   stage is #{result[:stage]} → consider: #{SELF_CMD} move #{slug} shipped   (or archived)"
   when :not_merged
     puts "#{slug}: origin/#{branch} not yet on main (active — not stale)"
   when :no_branch
@@ -2269,7 +2289,7 @@ def verify_move_persisted!(slug, expected_stage)
 
   warn!("✗ move NOT persisted: #{slug} → #{expected_stage} reported success, but a fresh read of the board still shows [#{persisted}].")
   warn!("  The stage-transition write did not land — the task has NOT moved. Do not hand it off as #{expected_stage}.")
-  warn!("  Re-run: bin/task move #{slug} #{expected_stage}   (if it recurs the board write is failing server-side — check ErrorLog).")
+  warn!("  Re-run: #{SELF_CMD} move #{slug} #{expected_stage}   (if it recurs the board write is failing server-side — check ErrorLog).")
   exit 1
 end
 
@@ -2308,7 +2328,7 @@ def verify_merged_persisted!(slug, expected)
   shown = last.nil? ? "unreadable" : (last.empty? ? "nil" : last)
   warn!("✗ merged NOT persisted: #{slug} → merged:#{expected} reported success, but the read-back shows merged:[#{shown}].")
   warn!("  A failed read is NOT a confirmation — the git-location write did not land (or the board is unreadable); the sweep treats an unstamped `reviewed` member as an anomaly and leaves it behind.")
-  warn!("  Re-run: bin/task merged #{slug} #{expected}   (if it recurs the board write is failing server-side — check ErrorLog / PG connections).")
+  warn!("  Re-run: #{SELF_CMD} merged #{slug} #{expected}   (if it recurs the board write is failing server-side — check ErrorLog / PG connections).")
   exit 1
 end
 
@@ -2350,7 +2370,7 @@ def refuse_inert_create_flags!(raw_argv, because:, hint_lead:, also_valid: [], u
 
     unknown_flag!(arg, valid: valid, context: "begin's resume form (#{because})",
                   hint: "#{hint_lead} — set it on the existing task with " \
-                        "`bin/task update #{update_target} #{arg} ...`#{tail}")
+                        "`#{SELF_CMD} update #{update_target} #{arg} ...`#{tail}")
   end
 end
 
@@ -2440,7 +2460,7 @@ when "list"
     puts "(#{tasks.size} task(s))"
   end
 when "show"
-  usage = "usage: bin/task show <slug> [--json | --verbose|-v]"
+  usage = "usage: #{$PROGRAM_NAME} show <slug> [--json | --verbose|-v]"
   slug = positional!(ARGV.shift || die!(usage), usage)
   show_flags = %w[--json --verbose -v]
   ARGV.each { |arg| unknown_flag!(arg, valid: show_flags, context: "show") unless show_flags.include?(arg) }
@@ -2473,7 +2493,7 @@ when "field"
   # The shadow is unwritable server-side now (Task::DEVOPS_COLUMN_KEYS), so this is
   # belt-and-braces — but it is the belt that makes the CLI honest against a row
   # written before that landed.
-  usage = "usage: bin/task field <slug> <devops-key-or-column>"
+  usage = "usage: #{$PROGRAM_NAME} field <slug> <devops-key-or-column>"
   slug = positional!(ARGV.shift || die!(usage), usage)
   key  = positional!(ARGV.shift || die!(usage), usage)
   record = api(:get, "/api/v1/tasks/#{slug}")["data"] || {}
@@ -2511,7 +2531,7 @@ when "stale"
   # out-of-band). One `git fetch` then a local ancestry check. With a slug, check
   # that one task; with none, scan every open task and list the stale ones.
   slug = ARGV.shift
-  slug = positional!(slug, "usage: bin/task stale [<slug>]") if slug
+  slug = positional!(slug, "usage: #{$PROGRAM_NAME} stale [<slug>]") if slug
   git("fetch", "-q", "origin")
   if slug
     render_stale(stale_check(api(:get, "/api/v1/tasks/#{slug}")["data"]))
@@ -2554,7 +2574,7 @@ when "orphan-prs"
       # A failed read is not a clean read. Say which repo went unchecked, or the
       # summary line below silently understates the board.
       warn "warning: #{repo}: could not list open PRs — NOT checked. " \
-           "Usually a stale token: eval \"$(bin/gh-auth-refresh --export)\""
+           "Usually a stale token: eval \"$(#{GH_AUTH_REFRESH_CMD} --export)\""
       next
     end
     numbers.each { |number| findings << index["#{repo}##{number}"] if index["#{repo}##{number}"] }
@@ -2609,8 +2629,8 @@ when "begin"
   # `move building` (which enforces it), and a resume of an already-`building`
   # task runs the SAME gate inline below — a resume must never bypass a live
   # foreign build claim. bin/ship is the handoff twin at the other end.
-  usage = "usage: bin/task begin --title \"Three To Five Words\" [--repo APP] [--agent SOUL] [--steal] [create flags]  |  " \
-          "bin/task begin <slug> [--agent SOUL] [--dev-size SIZE] [--steal]"
+  usage = "usage: #{$PROGRAM_NAME} begin --title \"Three To Five Words\" [--repo APP] [--agent SOUL] [--steal] [create flags]  |  " \
+          "#{$PROGRAM_NAME} begin <slug> [--agent SOUL] [--dev-size SIZE] [--steal]"
   # --steal: the house build-claim override, same meaning as on `move` — take
   # over a task a DIFFERENT live instance holds. Honored by the resume gate
   # below and forwarded to the child `move building`. Stripped before
@@ -2638,7 +2658,7 @@ when "begin"
   # task already exists) necessarily runs after the lookup — see below.
   if top["title"].to_s.strip.empty?
     refuse_inert_create_flags!(
-      raw_argv, because: "bin/task begin <slug>",
+      raw_argv, because: "#{$PROGRAM_NAME} begin <slug>",
       hint_lead: "a resumed task is never re-shaped by begin: pass --title to CREATE one"
     )
   end
@@ -2812,7 +2832,7 @@ when "begin"
   puts "next: build in the worktree, then hand off with:"
   puts "  #{FastLane.handoff_command(slug, worktree_dir, __dir__)}"
 when "update"
-  usage = "usage: bin/task update <slug> [flags]"
+  usage = "usage: #{$PROGRAM_NAME} update <slug> [flags]"
   slug = positional!(ARGV.shift || die!(usage), usage)
   _pos, scalars, lists, top = parse_flags(ARGV, context: "update")
   current = api(:get, "/api/v1/tasks/#{slug}")["data"]
@@ -2824,7 +2844,7 @@ when "update"
   die!("nothing to update") if body.empty?
   print_task(api(:patch, "/api/v1/tasks/#{slug}", body)["data"])
 when "move"
-  usage = "usage: bin/task move <slug> <stage>"
+  usage = "usage: #{$PROGRAM_NAME} move <slug> <stage>"
   slug = positional!(ARGV.shift || die!(usage), usage)
   stage = positional!(ARGV.shift || die!(usage), usage)
   validate_stage!(stage)
@@ -2942,7 +2962,7 @@ when "merged"
   # confirm it persisted — a 200 is not persistence, and a dropped stamp would
   # strand the task off every RC (the sweep leaves a merged:"" `reviewed` member
   # behind as a HELD anomaly).
-  usage = "usage: bin/task merged <slug> <accepted|release|main>"
+  usage = "usage: #{$PROGRAM_NAME} merged <slug> <accepted|release|main>"
   slug = positional!(ARGV.shift || die!(usage), usage)
   state = positional!(ARGV.shift || die!(usage), usage)
   valid = %w[accepted release main]
@@ -2972,7 +2992,7 @@ when "fix-forward"
   # APPENDS. The list is read, unioned, and re-posted, so a second zap by a different
   # soul cannot drop the first — and naming a soul CLEARS a prior --unnamed marker,
   # which is the whole resolution path out of the refusal.
-  usage = "usage: bin/task fix-forward <slug> --agent <soul>[,<soul>] | --unnamed"
+  usage = "usage: #{$PROGRAM_NAME} fix-forward <slug> --agent <soul>[,<soul>] | --unnamed"
   slug = positional!(ARGV.shift || die!(usage), usage)
   souls = []
   unnamed = false
@@ -3027,7 +3047,7 @@ when "fix-forward"
   end
   if unnamed
     puts "fix-forward recorded on #{slug}: UNNAMED — the author set is now INCOMPLETE and"
-    puts "  bin/reviewer-select will REFUSE until: bin/task fix-forward #{slug} --agent <soul>"
+    puts "  bin/reviewer-select will REFUSE until: #{SELF_CMD} fix-forward #{slug} --agent <soul>"
   else
     puts "fix-forward recorded on #{slug}: #{souls.join(", ")} (authors: #{authors.join(", ")})"
   end
@@ -3042,7 +3062,7 @@ when "intent"
   # avi) and Steffon ship (--to shipped --actor steffon) intents; the review pair
   # (--to reviewed) is normally recorded by `bin/reviewer-select` (which records
   # by default).
-  usage = "usage: bin/task intent <slug> --to <stage> [--actor SLUG] [--reviewer slug:weight ...]"
+  usage = "usage: #{$PROGRAM_NAME} intent <slug> --to <stage> [--actor SLUG] [--reviewer slug:weight ...]"
   slug = positional!(ARGV.shift || die!(usage), usage)
   to_stage = nil
   actor = nil
@@ -3058,7 +3078,7 @@ when "intent"
     else unknown_flag!(flag, valid: %w[--to --actor --reviewer], context: "intent")
     end
   end
-  die!("usage: bin/task intent <slug> --to <stage> [--actor SLUG] [--reviewer slug:weight ...]") if to_stage.to_s.empty?
+  die!("usage: #{$PROGRAM_NAME} intent <slug> --to <stage> [--actor SLUG] [--reviewer slug:weight ...]") if to_stage.to_s.empty?
   validate_stage!(to_stage)
   body = { "to_stage" => to_stage, "event" => { "source" => "cli" } }
   body["actor"] = actor if actor
@@ -3079,9 +3099,9 @@ when "checkpoint"
   # `checkpoint <slug> cert --status started` then `--status completed`. POSTs to the
   # same events/<name>/{start,complete} endpoints the API checkpoint path uses;
   # source defaults to "system" so it skips the usage gate (a marker, not agent work).
-  usage = "usage: bin/task checkpoint <slug> <name> --status started|completed [--source S] [--message M]"
+  usage = "usage: #{$PROGRAM_NAME} checkpoint <slug> <name> --status started|completed [--source S] [--message M]"
   slug = positional!(ARGV.shift || die!(usage), usage)
-  name = positional!(ARGV.shift || die!("checkpoint needs a <name>: bin/task checkpoint <slug> <name> --status started|completed"), usage)
+  name = positional!(ARGV.shift || die!("checkpoint needs a <name>: #{$PROGRAM_NAME} checkpoint <slug> <name> --status started|completed"), usage)
   status = nil
   source = "system"
   message = nil
@@ -3117,7 +3137,7 @@ when "heartbeat"
   # lease is a claim of authorship and a painting terminal is not. Fully
   # best-effort: no session, no slug, or any API error → silent no-op (a heartbeat
   # must never disrupt the status line). Prints nothing on success.
-  usage = "usage: bin/task heartbeat <slug> [--desk PATH]"
+  usage = "usage: #{$PROGRAM_NAME} heartbeat <slug> [--desk PATH]"
   slug = positional!(ARGV.shift || die!(usage), usage)
   # The desk whose file mtimes decide whether this claim is still being WORKED, and
   # whether it may be ACQUIRED at all. bin/statusline passes its cwd when that cwd
@@ -3248,7 +3268,7 @@ when "session-mascot"
     nil # best-effort: never disrupt session start
   end
 when "bounces"
-  usage = "usage: bin/task bounces <slug>"
+  usage = "usage: #{$PROGRAM_NAME} bounces <slug>"
   slug = positional!(ARGV.shift || die!(usage), usage)
   unknown_flag!(ARGV[0], valid: [], context: "bounces") unless ARGV.empty?
   begin
@@ -3264,7 +3284,7 @@ when "bounces"
   print_bounce_verdict(slug, verdict)
   exit(verdict.tripped? ? EXIT_BREAKER_TRIPPED : 0)
 when "block"
-  usage = "usage: bin/task block <slug> [--kind environment|rework|dependency] [--summary \"4-6 words\"] [--feedback \"...\"] [--agent A] [--breaker-ack \"reason\"]"
+  usage = "usage: #{$PROGRAM_NAME} block <slug> [--kind environment|rework|dependency] [--summary \"4-6 words\"] [--feedback \"...\"] [--agent A] [--breaker-ack \"reason\"]"
   slug = positional!(ARGV.shift || die!(usage), usage)
   kind = feedback = summary = agent = breaker_ack = nil
   i = 0
@@ -3400,7 +3420,7 @@ when "block"
   write_feature_marker(task)
   print_task(task)
 when "note"
-  usage = "usage: bin/task note <slug> --handoff|--qa-feedback|--clarification|--comment \"...\" [--agent A] [--resolves-feedback]"
+  usage = "usage: #{$PROGRAM_NAME} note <slug> --handoff|--qa-feedback|--clarification|--comment \"...\" [--agent A] [--resolves-feedback]"
   slug = positional!(ARGV.shift || die!(usage), usage)
   notes = []
   agent = nil
@@ -3425,7 +3445,7 @@ when "note"
   die!("note needs one of: #{NOTE_FLAGS.keys.join(", ")}") if notes.empty?
   if resolves_feedback && notes.none? { |activity_type, _| activity_type == "handoff" }
     die!("--resolves-feedback marks handoff notes as explicitly addressing open QA feedback; " \
-         "use: bin/task note <slug> --handoff \"...\" --resolves-feedback")
+         "use: #{SELF_CMD} note <slug> --handoff \"...\" --resolves-feedback")
   end
   notes.each do |activity_type, description|
     body = { "task_slug" => slug, "activity_type" => activity_type, "description" => description }
@@ -3489,7 +3509,7 @@ when "migration-lane"
   # who to ask. Exit codes: 0 acquired / lane reported · 10 refused (a live holder)
   # · 1 error. 10 is distinct from 1 because "someone else is migrating" is a normal
   # outcome a script should branch on, not a failure.
-  usage = "usage: bin/task migration-lane <acquire|release|status> [<task-slug>] [--label L] [--agent A]"
+  usage = "usage: #{$PROGRAM_NAME} migration-lane <acquire|release|status> [<task-slug>] [--label L] [--agent A]"
   sub = positional!(ARGV.shift || die!(usage), usage)
   die!(usage) unless %w[acquire release status].include?(sub)
 

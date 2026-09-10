@@ -124,7 +124,7 @@ LANE_SCOPES = {
 
 options = { print: false }
 OptionParser.new do |o|
-  o.banner = "Usage: bin/full-suite-check <task-slug> [--print] | --install-hook | --uninstall-hook"
+  o.banner = "Usage: #{$PROGRAM_NAME} <task-slug> [--print] | --install-hook | --uninstall-hook"
   o.on("--print", "Print the evidence lines instead of recording them on the task") { options[:print] = true }
   o.on("--install-hook", "Install an opt-in pre-push hook that runs this gate before each push") { options[:install_hook] = true }
   o.on("--uninstall-hook", "Remove the pre-push hook installed by --install-hook") { options[:uninstall_hook] = true }

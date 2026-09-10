@@ -5,6 +5,7 @@ require "open3"
 require "time"
 require "shellwords"
 require_relative "gh_auth_retry"
+require_relative "fast_lane"
 
 # The REAL GitHub CI state of a PR, reduced to one verdict so bin/dor-check's merge
 # gate can refuse to hand a red PR to review — the #1 blocker class (a PR green
@@ -69,6 +70,19 @@ require_relative "gh_auth_retry"
 # release tip belongs to no PR). Both fold into the states above. See the
 # SHA-addressed section below.
 module CiStatus
+  # THE ABSOLUTE `bin/full-suite-check` THE UNREADABLE-CI REMEDY OFFERS. The gated route
+  # hands the reader a command to TYPE, and the bare form types only from a hub desk;
+  # this offer is read by a builder who is already blocked, which is the worst moment to
+  # hand back `No such file or directory`. Resolved from bin/ (this file's parent) once
+  # at load. Policy: FastLane.remedy_command; pinned by
+  # test/lib/remedy_hint_guard_test.rb on the FILESYSTEM, not on the text.
+  FULL_SUITE_CMD = FastLane.remedy_command("full-suite-check", File.expand_path("..", __dir__)).freeze
+  # The credential fix these refusals prescribe. It is the most-pasted command in the
+  # house and was the last bare one left in the swept set — the operand is a FLAG
+  # (`--export`) rather than a slug, which is the shape the guard's original operand
+  # rule could not see. See INSTRUCTION_RE in test/lib/remedy_hint_guard_test.rb.
+  GH_AUTH_REFRESH_CMD = FastLane.remedy_command("gh-auth-refresh", File.expand_path("..", __dir__)).freeze
+
   TOKENS = %w[green red pending none unverified unreadable no_pr closed merged conflicted ci_less].freeze
 
   # THE SEAM'S ESCAPE HATCH: "state:<name>" injects an ARBITRARY verdict state,
@@ -703,7 +717,7 @@ module CiStatus
             "GitHub rejected the active credential for #{where}, and the automatic App-token retry could not " \
               "replace it. Installation tokens live ~1h, and `gh`'s keyring is a SEPARATE store from " \
               "bin/gh-token's cache — nothing refreshes it, so the ambient login goes stale mid-session. Fix: " \
-              "confirm 1Password is unlocked (`op whoami`), then run `eval \"$(bin/gh-auth-refresh --export)\"` " \
+              "confirm 1Password is unlocked (`op whoami`), then run `eval \"$(#{GH_AUTH_REFRESH_CMD} --export)\"` " \
               "and retry the exact check read. That command refreshes BOTH stores for THIS session's lane " \
               "(agent, or deployer when GH_APP_ITEM says so) and reports the identity it installed; do NOT pipe " \
               "bin/gh-token into `gh auth login`, which `gh` refuses outright whenever GH_TOKEN is set. Verify " \
@@ -712,7 +726,7 @@ module CiStatus
           when :authentication
             "No accepted GitHub credential reached #{where}, and no App token could be minted to replace it. " \
               "Fix: confirm 1Password is unlocked (`op whoami`), then run " \
-              "`eval \"$(bin/gh-auth-refresh --export)\"` (it refreshes this session's lane identity and prints " \
+              "`eval \"$(#{GH_AUTH_REFRESH_CMD} --export)\"` (it refreshes this session's lane identity and prints " \
               "what it installed, never the token) and retry the exact check read. Verify with " \
               "`gh api rate_limit`."
           when :rate_limit
@@ -806,7 +820,7 @@ module CiStatus
                 "certify in full instead: bin/full-suite-check, run with this task's slug — the bare " \
                   "command certifies the tree but records no evidence this gate can read."
               else
-                "certify in full instead: bin/full-suite-check #{cert_task}."
+                "certify in full instead: #{FULL_SUITE_CMD} #{cert_task}."
               end
             end
     "#{UNREADABLE_REMEDY_HEADER} #{fix} " \

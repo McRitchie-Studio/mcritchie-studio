@@ -534,9 +534,24 @@ class DorCheckDeferredCertTest < Minitest::Test
         # in full: bin/full-suite-check <slug>" — so a bare `bin/full-suite-check #{SLUG}`
         # assertion is satisfied by the neighbour and says nothing about the remedy.
         # Measured: deleting the offer from ci_status.rb left that looser form GREEN.
-        assert_includes printed, "certify in full instead: bin/full-suite-check #{SLUG}.",
-                        "#{role}: the offer must survive AND name THIS task — deleting it would satisfy " \
-                        "the placeholder half while losing the route the gate honours:\n#{printed}"
+        # STILL SCOPED TO THE REMEDY'S OWN CLAUSE (see above), but no longer keyed on the
+        # BARE spelling: remedy-hints-second-wave routed this offer through
+        # FastLane.remedy_command, so the clause now carries an ABSOLUTE
+        # bin/full-suite-check a satellite or gem desk can actually run. Keyed on the
+        # FILESYSTEM rather than on the text, for the reason
+        # test/lib/remedy_hint_guard_test.rb spells out: an absolute path CONTAINS the
+        # bare form, so a substring assertion is blind in BOTH directions.
+        offer = printed[/certify in full instead: (\S+) #{Regexp.escape(SLUG)}\./, 1]
+        refute_nil offer,
+                   "#{role}: the offer must survive AND name THIS task — deleting it would satisfy " \
+                   "the placeholder half while losing the route the gate honours:\n#{printed}"
+        assert_equal File.expand_path(offer), offer,
+                     "#{role}: the cert offer must be an ABSOLUTE command — a builder on a satellite " \
+                     "or gem desk cannot run the bare form:\n#{printed}"
+        assert File.executable?(offer),
+               "#{role}: the cert offer names #{offer.inspect}, which is not an executable on this disk:\n#{printed}"
+        assert_equal "full-suite-check", File.basename(offer),
+                     "#{role}: the offer must name the FULL cert, not #{File.basename(offer)}:\n#{printed}"
       end
     end
   end

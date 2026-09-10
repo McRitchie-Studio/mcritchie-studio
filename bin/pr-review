@@ -79,8 +79,18 @@ require_relative "lib/projects_root"
 require_relative "lib/zap_revalidation"
 require_relative "lib/merge_command"
 require_relative "lib/acting_identity"
+require_relative "lib/fast_lane"
 
 ROOT = File.expand_path("..", __dir__)
+
+# THE ABSOLUTE COMMANDS THIS SCRIPT HANDS A REVIEWER — resolved from bin/pr-review's
+# OWN __dir__ (the RE-RUN shape: the reviewer runs them against the same hub tree that
+# spawned them, so the path picks the SCRIPT and no `cd` is owed). These reach a
+# reviewer through a SPAWN PROMPT, which is the reason the bare form was wrong here:
+# the reviewer reading it may be standing on a satellite or gem desk that carries no
+# bin/dor-check and no bin/task at all. Policy: FastLane.remedy_command.
+DOR_CHECK_CMD = FastLane.remedy_command("dor-check", __dir__).freeze
+TASK_CMD = FastLane.remedy_command("task", __dir__).freeze
 PROJECTS_ROOT = ProjectsRoot.default_projects_dir(ROOT)
 DEFAULT_APPS = %w[mcritchie-studio turf-monster rolio].freeze
 SCOUT_OUTCOMES = %w[merge-ready wait-for-ci request-changes conductor-review].freeze
@@ -339,7 +349,7 @@ def reviewer_prompt(task, reviewer, role, reviewers)
     if role == "primary"
       "As the PRIMARY you are the review OWNER: you run the gates (dor-check / cert / CI / acceptance match) " \
         "and you DRIVE the verdict (merge-ready or request-changes). Your deep review is the driving recommendation. " \
-        "Run the DoR gate as `bin/dor-check #{task.fetch("slug")} --gate-role review` so your gate-zero verdict " \
+        "Run the DoR gate as `#{DOR_CHECK_CMD} #{task.fetch("slug")} --gate-role review` so your gate-zero verdict " \
         "lands as a SOP on the task's G2a Primary gate run instead of closing the builder's G1 Cert."
     else
       "As the LIGHT you are a focused second read through your domain lens. You do NOT run the gates and do NOT " \
@@ -347,7 +357,7 @@ def reviewer_prompt(task, reviewer, role, reviewers)
         "the review claim's holder, and that is not you: do NOT run `bin/task block` on this task. During a live " \
         "review claim a `--kind rework` block by any soul other than the claim's holder is REFUSED with exit 11 " \
         "and writes nothing. Record a finding WITHOUT spending the bounce — any reviewer may do this — with " \
-        "`bin/task note #{task.fetch("slug")} --comment \"<your finding>\"`, then hand it to the primary."
+        "`#{TASK_CMD} note #{task.fetch("slug")} --comment \"<your finding>\"`, then hand it to the primary."
     end
 
   <<~PROMPT
