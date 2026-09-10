@@ -315,6 +315,7 @@ require_relative "lib/cert_root_guard"
 require_relative "lib/fast_lane"
 require_relative "lib/stamp_confirmation"
 require_relative "lib/build_claim_renewer"
+require_relative "lib/session_markers"
 require_relative "lib/approval_request_notice"
 
 # THE ABSOLUTE `bin/task` A REFUSAL HANDS BACK — this very script, resolved from its
@@ -1087,14 +1088,21 @@ end
 # DeskActivity.desk_root, which REFUSES any directory not carrying an
 # .agent-context.json bound to this very slug — so a wrong guess resolves to nil
 # rather than to somebody else's mtimes, and `--desk` never becomes a universal
-# override. nil is honest and safe: the renewer then rests on the anchor and the
-# stage, which is still strictly more than the nothing it had before.
+# override. nil is honest, and it is NOT free: with no desk the abandonment check
+# answers "unknown", which never frees a claim, so the renewer can no longer tell a
+# dead builder from a live one. That is why a desk-less renewer runs on a shorter
+# leash (BuildClaimRenewer::DESKLESS_LIFETIME_SECONDS) rather than the full cap.
+#
+# EVERY repository, not the first. A multi-repo task's desk can live under any repo it
+# names, and this used to read `repositories.first` while its sibling archive_desk_dirs
+# mapped over all of them — so a task whose desk sat under its SECOND repo resolved no
+# desk, the abandonment gate answered "unknown" (which never frees a claim), and the
+# renewer ran for its whole lifetime on a builder it could not see.
 def build_claim_desk(slug, devops, fallback = Dir.pwd)
   dv = devops || {}
-  app = Array(dv["repositories"]).first.to_s.strip
   worktree = [dv["worktree_slug"], slug].map { |v| v.to_s.strip }.find { |v| !v.empty? }
-  candidates = []
-  candidates << File.join(PROJECTS_DIR, app, ".worktrees", worktree) unless app.empty? || worktree.nil?
+  candidates = Array(dv["repositories"]).map { |repo| repo.to_s.strip }.reject(&:empty?)
+                                        .map { |repo| File.join(PROJECTS_DIR, repo, ".worktrees", worktree) }
   candidates << fallback
   candidates.compact.find { |dir| DeskActivity.desk_root(dir, slug) }
 rescue StandardError
@@ -1163,6 +1171,18 @@ def start_build_claim_renewer(slug, devops, desk_hint = nil)
   end
 
   desk = desk_hint || build_claim_desk(slug, devops)
+  # ONE RENEWER PER TASK, NOT PER CLAIM. Every build claim lands here — `move building`
+  # and `begin`'s resume — and a resume is the documented normal path, so without this
+  # N resumes left N loops renewing one lease (measured in review of ms#1356: three
+  # moves, three live loops, 16 PATCHes in ~8s). A live loop already renewing THIS
+  # instance's lease from THIS desk is reused; any other one on this task is stopped
+  # and replaced, so exactly one is left either way.
+  existing = recorded_build_claim_renewer(session, slug)
+  if existing
+    return existing[:pid] if existing[:nonce] == claim_nonce.to_s && existing[:desk] == desk.to_s
+
+    terminate_build_claim_renewer(existing[:pid])
+  end
   argv = [RbConfig.ruby, File.expand_path(__FILE__), "claim-renew-loop", slug,
           "--anchor-pid", anchor[:pid].to_s, "--anchor-start", anchor[:start].to_s]
   argv += ["--desk", desk] if desk
@@ -1175,9 +1195,42 @@ def start_build_claim_renewer(slug, devops, desk_hint = nil)
   env[provider.to_s == "codex" ? "CODEX_THREAD_ID" : "CLAUDE_CODE_SESSION_ID"] = session.to_s
   pid = Process.spawn(env, *argv, out: File::NULL, err: File::NULL, pgroup: true)
   Process.detach(pid)
+  SessionMarkers.write(session, PROJECTS_DIR, build_claim_renewer_marker(slug),
+                       "#{pid}\t#{claim_nonce}\t#{desk}\n", env: ENV)
   pid
 rescue StandardError
   nil
+end
+
+# The per-(session, task) marker naming the renewer this session started for a task.
+# Slugs are validated kebab-case on the board; sanitised anyway, like every marker.
+def build_claim_renewer_marker(slug)
+  "build-claim-renewer-#{slug.to_s.gsub(/[^A-Za-z0-9._-]/, "")}"
+end
+
+# The renewer this session recorded for `slug`, as { pid:, nonce:, desk: } — or nil
+# when there is none, it has exited, or the pid now belongs to some other process.
+# A pid alone is not identity: pids are reused, so the live process must still BE
+# this task's `claim-renew-loop` (the trailing space keeps `foo` from matching
+# `foo-bar`) before anything is reused or signalled.
+def recorded_build_claim_renewer(session, slug)
+  text = SessionMarkers.read(session, PROJECTS_DIR, build_claim_renewer_marker(slug)).to_s
+  pid_text, nonce, desk = text.chomp.split("\t", 3)
+  pid = pid_text.to_i
+  return nil unless pid.positive?
+
+  command = IO.popen(["ps", "-o", "command=", "-p", pid.to_s], err: File::NULL, &:read).to_s
+  return nil unless command.include?("claim-renew-loop #{slug} ")
+
+  { pid: pid, nonce: nonce.to_s, desk: desk.to_s }
+rescue StandardError
+  nil
+end
+
+def terminate_build_claim_renewer(pid)
+  Process.kill("TERM", pid.to_i)
+rescue StandardError
+  nil # already gone
 end
 
 SCALAR_FLAGS = {
@@ -3414,7 +3467,8 @@ when "claim-renew-loop"
     beat: -> { renew_build_claim(slug, renew_desk) },
     sleeper: ->(seconds) { sleep(seconds) },
     clock: -> { Time.now },
-    interval: ShiftRenewer.interval_from(ENV["TASK_BUILD_CLAIM_RENEW_INTERVAL"])
+    interval: ShiftRenewer.interval_from(ENV["TASK_BUILD_CLAIM_RENEW_INTERVAL"]),
+    max_lifetime: BuildClaimRenewer.lifetime_for(desk: renew_desk)
   )
 when "session-mascot"
   # Eagerly paint the session's Pokémon mascot onto the per-session marker so

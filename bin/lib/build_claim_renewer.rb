@@ -120,7 +120,32 @@ module BuildClaimRenewer
   # orders short of the 12h safety cap that would otherwise bound this.
   UNREACHABLE_GRACE_SECONDS = 30 * 60
 
+  # HOW LONG A RENEWER WITH NO DESK MAY RUN. The abandonment check's decisive evidence
+  # is the desk, and with none it answers "unknown" — which, by this house's rule, never
+  # frees a claim. So a desk-less renewer used to run for ShiftRenewer's full 12h cap on a
+  # builder it could not see: a dead subagent inside a living session held its task for
+  # half a day.
+  #
+  # The bound is ClaimLease::PROGRESS_QUIET_SECONDS (3h07m30s), not a new number: it is
+  # the house's own derived ceiling on how long HEALTHY work goes without a durable
+  # artifact (the quietest measured healthy window, cleared by half again). Holding a
+  # claim we cannot observe for longer than healthy work is ever observed to go quiet
+  # asserts more than the evidence carries. A dead desk-less builder's task is now
+  # freed within ~3h10m instead of ~12h.
+  #
+  # WHAT IT COSTS, stated: a LIVE build that resolves no desk and runs past that ceiling
+  # loses its lease, and headless, nothing re-adopts it. That is the rare case now —
+  # multi-repo tasks resolve their desk under any repo — and it is the cost of refusing
+  # to hold a claim on no evidence at all.
+  DESKLESS_LIFETIME_SECONDS = ClaimLease::PROGRESS_QUIET_SECONDS
+
   module_function
+
+  # The renewer's lifetime cap: ShiftRenewer's full cap when a desk can vouch for the
+  # holder, the desk-less bound when nothing can.
+  def lifetime_for(desk:)
+    desk.to_s.strip.empty? ? DESKLESS_LIFETIME_SECONDS : ShiftRenewer::MAX_LIFETIME_SECONDS
+  end
 
   # Keep beating? Only a different LIVE instance taking the claim says no.
   def continue?(outcome)

@@ -726,18 +726,23 @@ class ReviewClaimCli
   # REVIEW_STAGE? Asked once per cycle BEFORE the renew, so a loop whose review has
   # ended exits without posting another heartbeat at all.
   #
-  # FAILS OPEN, on purpose and in the opposite direction from the anchor check. A
-  # board we cannot read, a stage we cannot parse, an error page — none of those are
-  # evidence that the review FINISHED, and treating them as such would drop a live
-  # reviewer's lease every time the network hiccuped and let a second session claim
-  # the task underneath them. Silence means "carry on"; only the board plainly naming
-  # a terminal stage stops the loop.
+  # FAILS OPEN on NO ANSWER, on purpose and in the opposite direction from the anchor
+  # check. A board we cannot read, an error page, or a reply that carries no stage at
+  # all is not evidence that the review FINISHED, and treating it as such would drop a
+  # live reviewer's lease every time the network hiccuped. Silence means "carry on".
+  #
+  # AN ANSWER ENDS IT. Any readable stage other than REVIEW_STAGE — `reviewed`, a bounce
+  # to `building`/`blocked`, `archived`, or a stage this file has never heard of — means
+  # the task is no longer being offered for review, and the loop exits. That costs the
+  # lease nothing: it keeps the REVIEW_TTL it already carries. The stage is compared
+  # after trimming and down-casing, because `"submitted "` or `"SUBMITTED"` is the same
+  # stage differently formatted, not a verdict (measured in review of ms#1367, where
+  # both ended a live review's renewal).
   def review_over?(slug)
     res = get(base(slug))
     return false unless ok?(res)
 
-    stage = parse_data(res)["stage"].to_s
-    # A reply with no stage in it is no answer, and no answer never ends a live review.
+    stage = parse_data(res)["stage"].to_s.strip.downcase
     !stage.empty? && stage != REVIEW_STAGE
   end
 

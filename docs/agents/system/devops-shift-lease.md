@@ -58,7 +58,8 @@ only one.
 
 **A renewer also dies with its WORK, not only with its holder** (fixed 2026-08-30).
 The anchor answers "is my holder still here?" — it does not answer "is the thing I
-am protecting still a thing?", and for the per-TASK review claim (section C) that is
+am protecting still a thing?", and for the per-TASK review claim (section A, *The
+review lane left this lease*) that is
 the condition that actually ends the job. A session reviews MANY tasks, so anchoring
 alone accumulated one immortal renewer per task: at 05:25Z on 2026-08-30 five
 `review-claim renew-loop` processes were running and **four were renewing claims on
@@ -177,8 +178,11 @@ again, the same margin this file's other derived thresholds use.
 
 What it buys and what it costs, both plainly. A normal review now holds its task with
 **zero** renewals, so the renewer is redundancy rather than the guarantee. And the TTL
-is ALSO the bound on reclaiming a genuinely dead reviewer's task, which moves from 2
-minutes to 3h25m — the cheap side of the trade, because a stranded claim does not
+is ALSO the bound on reclaiming a genuinely dead reviewer's task once renewal stops.
+With the renewer itself bounded to one REVIEW_TTL of renewing
+(`ReviewClaimCli::REVIEW_RENEW_WINDOW_SECONDS`, 2026-09-10), a dead reviewer's task is
+freed within 2 × REVIEW_TTL, **~6.8h** — it was 2 minutes before the TTL rose, and
+~15.4h while an unbounded renewer ran on. That is the cheap side of the trade, because a stranded claim does not
 block the pipeline (`Task.reviewable` skips it and the sweep reviews something else),
 while a duplicated review costs the whole review plus a stranded verdict. The beat is
 deliberately NOT re-derived from it: `ShiftRenewer::INTERVAL_SECONDS` stays 30s, since
