@@ -104,6 +104,16 @@ class TaskUnansweredApprovalRecordTest < ActiveSupport::TestCase
     assert_equal "steffon", note.metadata["addressed_to"]
   end
 
+  test "[unit] archiving over a waiting request does not claim the work merged" do
+    task = built_task
+    request_approval!(task)
+    task.archive!
+
+    note = unanswered_notes(task).sole
+    assert_includes note.description, "It was archived"
+    refute_includes note.description, "Review merged it", "nothing merged on an archive"
+  end
+
   test "[unit] a later save posts no second note" do
     task = built_task
     request_approval!(task)

@@ -3470,9 +3470,10 @@ class Task < ApplicationRecord
 
   def self.unanswered_approval_note(slug, request)
     setter = request["requested_by"] || "the soul who asked (no setter on record)"
+    # Archiving settles a request too (Task#archive! has no stage guard), and nothing merged.
+    how = request["stage"] == "archived" ? "It was archived" : "Review merged it without waiting (merging never blocks on a request)"
     "To #{setter}: this work reached `#{request["stage"]}` with your operator-approval " \
-      "request UNANSWERED. Review merged it without waiting (merging never blocks on a " \
-      "request), so the request settled to none. Requested at " \
+      "request UNANSWERED. #{how}, so the request settled to none. Requested at " \
       "#{request["requested_at"] || "an unrecorded time"} for " \
       "#{request["local_url"] || "no local URL"}. Mr. McRitchie can still answer: " \
       "bin/task update #{slug} --approval approved, or --approval changes_requested."
