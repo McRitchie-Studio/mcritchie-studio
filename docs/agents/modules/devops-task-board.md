@@ -1198,6 +1198,8 @@ SKIP / REFUSE** terms (`qa-release.md` step 4d):
   **REFUSED** — before anything is written or published.
 - **SKIP** — nothing is allocated, nothing is rolled, and nothing is refused; your
   entries wait under `## Unreleased` for the next ALLOCATE.
+- **REFUSE** — the sweep stops before anything is written: nothing is rolled and
+  nothing is published.
 
 The entries are yours; the heading is the release's, for the same arithmetic reason
 the version is.
@@ -1226,7 +1228,8 @@ and unit-tested), from metadata your task already carries:
 
 - **Whether to allocate** is judged against the last `v*` **tag** alone (the highest
   live RubyGems version only when no tag exists) — the same reference the
-  stranded-work guard uses. A `version_file` already past the tag SKIPs.
+  stranded-work guard uses. A `version_file` already past the tag is not allocated
+  again; `qa-release.md` step 4d lists what reaches that state and how each resolves.
 - **What to allocate** is `next = last published + max(bump across members)`, where
   **last published** is the higher of the tag and the highest version live on
   RubyGems — so a tag that lags a publish can never re-tread a spent number.
@@ -1249,11 +1252,9 @@ happens only after `validate_gems_for_qa` has preflighted every gem.
 version, a `version_file` declaring its version twice, or a `bundle lock` that did
 not land the new number each abort the sweep with nothing published — a refusal
 costs a re-run, a wrong allocation costs the RubyGems number forever. Allocation is
-idempotent: a re-run SKIPs a `version_file` already past the last `v*` tag. The four
-things that reach that SKIP are listed in `qa-release.md` step 4d and in
-studio-engine's `docs/RELEASE.md`. The stranded-work guard stays armed behind all of
-it as the backstop: when allocation did not run, or wrote a version that has not
-advanced past the last tag, the sweep still aborts for **every** repo, loudly, with
+idempotent, so a re-run skips a version already past the last published one. The
+stranded-work guard stays armed behind all of it as the backstop: if allocation is
+ever skipped or wrong, the sweep still aborts for **every** repo, loudly, with
 nothing published and nothing deployed.
 
 **The derived bump is a floor for routine work, not a judgment about public
