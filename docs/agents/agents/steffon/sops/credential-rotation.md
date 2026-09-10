@@ -361,8 +361,9 @@ heroku run --exit-code --app turf-monster-mainnet bin/rails runner \
   'puts User.where.not(encrypted_web2_solana_private_key: [nil, ""]).count'
 ```
 
-`Don't know how to build task` means the release predates the code: **stop — the
-answer is no** until it is deployed. The gate passes only on the line `VERIFIED --
+`Unrecognized command "solana:verify_managed_wallet_keys"` (Rails 8.1's wording, exit
+1) means the release predates the code: **stop — the answer is no** until it is
+deployed. The gate passes only on the line `VERIFIED --
 N of N row(s) open under the current key alone.` The second command counts the same
 rows a different way, so the verifier is not grading itself; the two numbers must
 match. Write N down: every later count is checked against it. Each app that holds
