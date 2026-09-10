@@ -355,10 +355,15 @@ How a gem rides a release:
    merge filed under a shipped version back under `## Unreleased`, and push that
    merge straight onto the gem's `accepted` — not a PR, which `bin/dor-check`
    refuses because it carries the release's version bump — then re-run the
-   command that refused. It cannot see a misfile
-   made upstream — a builder merging `main` into a branch before review — because
-   that line reaches the promote already inside a version section, where it
-   looks exactly like a legitimate post-release edit.
+   command that refused. It cannot see a misfile made BEFORE the promote: that
+   line arrives already inside a version section, where it looks exactly like
+   a legitimate post-release edit. Two merges put one there — a builder merging
+   `main` into a branch, and the review merge itself. Once `accepted` absorbs a
+   roll (`advance_accepted`'s fast-forward at ship, or the fix above), a gem PR
+   cut before it that adds a line inside an existing `###` subsection merges
+   CLEAN under the rolled heading, while its diff still shows the line under
+   `## Unreleased`. Check those merges by hand, per the *Check every merge that
+   crosses a roll* rule in studio-engine's `docs/RELEASE.md`.
 
    **Two gaps, named rather than papered over.** (1) A gem tracking no
    `CHANGELOG.md` is not refused — the registry declares no `changelog` key, so
