@@ -114,6 +114,41 @@ class TaskPrSetTest < Minitest::Test
   # Each rung of the table, shown to outrank green. Asserting only red would leave the
   # rest of the ordering unmeasured, and the no-verdict family is exactly the half a
   # sibling's green must never be allowed to paper over.
+  # ── the staged-merge exception (/tasks/gate-zero-blocks-staged-merges) ─────────────
+
+  def primary(state, base: nil) = { target: { url: "u-primary", repo: "engine", recorded_as: nil },
+                                    ci: { state: state, base: base }.compact }
+  def sibling(state, base: nil, key: "turf-monster") = { target: { url: "u-#{key}", repo: key, recorded_as: key },
+                                                         ci: { state: state, base: base }.compact }
+
+  def test_a_sibling_merged_into_accepted_does_not_govern
+    got = TaskPrSet.governing([primary(:green), sibling(:merged, base: "accepted"),
+                               sibling(:merged, base: "accepted", key: "mcritchie-studio")])
+    assert_equal :green, got[:ci][:state], "landed staged siblings governed a green review target"
+    assert_equal "u-primary", got[:target][:url]
+  end
+
+  def test_a_merged_review_target_still_governs
+    assert_equal :merged, TaskPrSet.governing([primary(:merged, base: "accepted"), sibling(:green)])[:ci][:state]
+  end
+
+  def test_only_a_merge_into_accepted_qualifies
+    assert_equal :merged, TaskPrSet.governing([primary(:green), sibling(:merged, base: "release")])[:ci][:state]
+    assert_equal :merged, TaskPrSet.governing([primary(:green), sibling(:merged)])[:ci][:state],
+                 "a merged verdict with NO recorded base is not evidence of landing"
+    assert_equal :closed, TaskPrSet.governing([primary(:green), sibling(:closed, base: "accepted")])[:ci][:state]
+  end
+
+  def test_a_landed_sibling_never_hides_a_live_failure
+    got = TaskPrSet.governing([primary(:green), sibling(:merged, base: "accepted"), sibling(:red, key: "rolio")])
+    assert_equal :red, got[:ci][:state]
+  end
+
+  def test_a_set_with_no_live_target_left_still_governs
+    got = TaskPrSet.governing([sibling(:merged, base: "accepted"), sibling(:merged, base: "accepted", key: "rolio")])
+    assert_equal :merged, got[:ci][:state], "nothing left to review must refuse, not return nil or pass"
+  end
+
   def test_every_non_green_state_outranks_a_green_sibling
     %i[red conflicted ci_less closed merged pending unreadable unverified no_pr none].each do |state|
       governing = TaskPrSet.governing([entry(:green), entry(state)])

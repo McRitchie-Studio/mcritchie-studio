@@ -991,7 +991,10 @@ module CiStatus
 
       return { state: :unverified, reason: raw.to_s.lines.first.to_s.strip[0, 140] }
     end
-    return { state: state.downcase.to_sym } unless state == "OPEN"
+    # base rides along on a dead PR too: WHERE it merged is the evidence TaskPrSet reads to
+    # tell a staged sibling that landed on `accepted` from a stale review target
+    # (/tasks/gate-zero-blocks-staged-merges). Same field, same call — no new round trip.
+    return { state: state.downcase.to_sym, base: data["baseRefName"].to_s } unless state == "OPEN"
     # Carry the PR's base so conflicted_remedy can name the RIGHT branch to merge —
     # feature PRs target `accepted`, not a hardcoded `release`
     # (conflict-remedy-names-wrong-branch). Same field ci_less_verdict surfaces.

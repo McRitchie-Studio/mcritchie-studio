@@ -751,12 +751,18 @@ end
 # both are memoized. NEVER call it at the build gate, which must not shell to gh.
 def pr_coverage
   pr_file_read # force the reads, so @pr_file_reads is populated
-  ci_by_url = task_ci_reads.each_with_object({}) { |entry, acc| acc[entry[:target][:url]] = entry[:ci] }
+  entry_by_url = task_ci_reads.each_with_object({}) { |entry, acc| acc[entry[:target][:url]] = entry }
   Array(@pr_file_reads).map do |target, read|
-    ci = ci_by_url[target[:url]]
+    entry = entry_by_url[target[:url]]
+    ci = entry && entry[:ci]
+    # A staged sibling that landed on accepted is EXCLUDED from the governing verdict
+    # (TaskPrSet.governing) — so the row says so, rather than printing a bare "merged"
+    # beside a pass and leaving the reader to wonder whether it was weighed at all.
+    ci_text = ci && ci[:state].to_s
+    ci_text = "merged into #{TaskPrSet::LANDING_BASE} — landed, not governing" if entry && TaskPrSet.landed_sibling?(entry)
     { repo: target[:repo], pr_url: target[:url], read: read[:state].to_s,
       files: Array(read[:files]).size, file_sample: Array(read[:files]).first(3),
-      ci: ci && ci[:state].to_s }.compact
+      ci: ci_text }.compact
   end
 end
 
