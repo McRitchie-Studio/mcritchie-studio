@@ -315,6 +315,7 @@ require_relative "lib/cert_root_guard"
 require_relative "lib/fast_lane"
 require_relative "lib/stamp_confirmation"
 require_relative "lib/build_claim_renewer"
+require_relative "lib/approval_request_notice"
 
 # THE ABSOLUTE `bin/task` A REFUSAL HANDS BACK — this very script, resolved from its
 # OWN __dir__. A RE-RUN remedy names the script for the tree the reader is ALREADY
@@ -1927,6 +1928,32 @@ def print_task(task)
   pairs = map_pairs(dv["pr_urls"])
   puts "  pr_urls: #{pairs.join("  ")}" if pairs.any?
   puts "  acceptance: #{Array(dv["acceptance"]).size} item(s)  risk: #{Array(dv["risk_tags"]).join(", ")}"
+  print_approval_request_notice(task)
+end
+
+# THE MERGE-TIME SURFACE for a carried operator-approval request
+# (surface-waiting-request-at-merge). Review may merge while it is waiting, and
+# nothing refuses; this makes sure the person merging SEES it. It rides the task
+# header, so it prints wherever a reviewer reads a task: `show` (the pre-merge line
+# in pr-review-primary.md step 6), and `merged` (after the merge, before the move
+# that settles it). STDERR, so a caller capturing stdout parses what it always did.
+def print_approval_request_notice(task)
+  return unless ApprovalRequestNotice.waiting?(task)
+
+  ApprovalRequestNotice.lines(task, note: latest_handoff_note(task["slug"])).each { |line| warn!(line) }
+end
+
+# The latest handoff note: the builder's words beside the request. Soft — an
+# unreadable board prints "no handoff note on record" rather than failing the command.
+def latest_handoff_note(slug)
+  query = URI.encode_www_form(task_slug: slug, activity_type: "handoff", per_page: 1)
+  res = TaskBoard.request(:get, "/api/v1/activities?#{query}", base_url: BASE_URL, token: token)
+  return nil unless res.code.to_i.between?(200, 299)
+
+  row = Array(TaskBoard.parse_body(res)["data"]).first
+  row.is_a?(Hash) ? row["description"] : nil
+rescue StandardError
+  nil
 end
 
 # Print a labeled bullet list (the actual acceptance/test_plan/checks lines), or
@@ -2012,7 +2039,8 @@ def print_task_verbose(task)
   # drift into disagreeing about the same lease.
   puts "  claim: session #{dv["claimed_session"] || "-"} · #{ClaimHolder.render_lease(ClaimLease.from_devops(dv))}"
   print_author_fields(task)
-  puts "  approval_status: #{dv["approval_status"] || "-"}"
+  puts "  approval_status: #{dv["approval_status"] || "-"}   requested_by: #{dv["approval_requested_by"] || "-"}   " \
+       "requested_at: #{dv["approval_requested_at"] || "-"}   dropped_at: #{dv["approval_request_dropped_at"] || "-"}"
   puts "  pr_url: #{dv["pr_url"] || "-"}   local_url: #{dv["local_url"] || "-"}"
   # ALWAYS emitted, "-" when empty — the same rule print_column_fields is built
   # on, for the same reason. This is the surface an operator confirms a

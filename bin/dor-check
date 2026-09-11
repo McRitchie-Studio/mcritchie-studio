@@ -1705,8 +1705,10 @@ def base_movement_detail(movement, base_branch, ambiguous_clock: false)
   else
     if movement[:late].empty?
       detail << if movement[:clock] == :merge_ref
-                  " All of it is in the base this PR's CI tested — its merge ref was built on " \
-                    "#{movement[:tested_base][0, 12]} — so the run did cover this tree."
+                  # By CONTENT, not ancestry: a back-merge can land commits the tested base is not
+                  # an ancestor of while changing no file it lacks (D1) — true in both cases.
+                  " Everything it changed is already in the tree this PR's CI tested — its merge ref " \
+                    "was built on #{movement[:tested_base][0, 12]} — so the run did cover this tree."
                 else
                   " All of it predates this PR's CI completion (#{movement[:cutoff].iso8601}) — which bounds " \
                     "what the run saw from ABOVE and does not show it covered this tree."
@@ -1755,10 +1757,17 @@ end
 # the merge ref and before the run ended reads as covered. That is the hole, so it is
 # declared every time it is open rather than left for a reviewer to know about.
 def window_unchecked_sentence(movement)
-  " THE MID-RUN WINDOW WENT UNCHECKED: the base this PR's merge ref was built on could not be " \
-    "resolved (#{MergeRefBase.reason_text(movement[:window_reason])}), so a base commit that landed " \
-    "after GitHub built that ref but before the run finished would read as covered here. Not a " \
-    "freshness certificate."
+  cause = if movement[:window_reason] == :not_local && movement[:tested_base]
+            # S1: GitHub DID resolve it — only this checkout lacks the commit, and that one has
+            # a remedy. "Could not be resolved" would be false here.
+            "this PR's merge ref was built on #{movement[:tested_base][0, 12]}, which is not in this " \
+              "checkout — run `git fetch origin` and re-check."
+          else
+            "the base this PR's merge ref was built on could not be resolved " \
+              "(#{MergeRefBase.reason_text(movement[:window_reason])}), so a base commit that landed after " \
+              "GitHub built that ref but before the run finished would read as covered here."
+          end
+  " THE MID-RUN WINDOW WENT UNCHECKED: #{cause} Not a freshness certificate."
 end
 
 # PART B — THE REFUSAL, for the one shape disjointness cannot settle.
@@ -1791,7 +1800,16 @@ end
 def stale_green_clause(movement, base_branch)
   return "landed AFTER this PR's CI completed at #{movement[:cutoff].iso8601}" unless movement[:clock] == :merge_ref
 
-  ran = movement[:cutoff] ? " — the run completed #{movement[:cutoff].iso8601}, so a completion clock calls them covered" : ""
+  # D2 (/tasks/freshness-verdict-states-falsehoods): claim a completion clock "would have called
+  # them covered" ONLY for the commits that landed at or before completion. A commit after it is
+  # one that clock would have CAUGHT, and saying otherwise is disprovable from two printed times.
+  blind = movement[:completion_blind].to_i
+  ran = if movement[:cutoff] && blind.positive?
+          " — #{blind} of #{movement[:late].size} landed before the run completed at " \
+            "#{movement[:cutoff].iso8601}, so a completion clock would have called #{blind == 1 ? 'it' : 'them'} covered"
+        else
+          ""
+        end
   "are NOT in the base this PR's CI tested: its merge ref was built on " \
     "origin/#{base_branch}@#{movement[:tested_base][0, 12]}#{ran}"
 end
