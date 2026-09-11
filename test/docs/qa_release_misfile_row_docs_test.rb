@@ -19,12 +19,18 @@ class QaReleaseMisfileRowDocsTest < ActiveSupport::TestCase
     @row ||= SOP.read.lines.find { |line| line.start_with?("| **CHANGELOG MISFILE GUARD REFUSED THE PROMOTE**") }
   end
 
-  # The literal before an interpolation or line continuation, from the first
-  # source line that contains `anchor`.
+  # The static fragment containing `anchor`, joined across a continued string.
   def literal(path, anchor)
-    line = path.read.lines.find { |l| l.include?(anchor) }
-    assert line, "#{path.basename} no longer contains #{anchor.inspect} — the scan broke, or the message moved"
-    line[/"([^"#]*)/, 1].to_s.strip
+    lines = path.read.lines
+    index = lines.index { |line| line.include?(anchor) }
+    assert index, "#{path.basename} no longer contains #{anchor.inspect} — the scan broke, or the message moved"
+
+    source = [lines[index]]
+    source << lines[index + source.length] while source.last.rstrip.end_with?("\\")
+    fragments = source.join.scan(/"((?:\\.|[^"])*)"/m).flatten.join.split(/#\{[^}]+\}/)
+    fragment = fragments.find { |part| part.include?(anchor) }
+    assert fragment, "#{path.basename} no longer quotes #{anchor.inspect} in that source string"
+    fragment.squish
   end
 
   test "[static] the abort table has a row for the promote-time misfile guard" do
@@ -33,8 +39,10 @@ class QaReleaseMisfileRowDocsTest < ActiveSupport::TestCase
 
   test "[static] the row quotes the abort headline and both per-gem refusals the code prints" do
     headline = literal(RELEASE, "the CHANGELOG misfile guard REFUSED the promote").split(":").first
-    misfile  = literal(CHANGELOG, "written under '## Unreleased' beneath a version").sub(/\A.*?line\(s\) /, "")
-    conflict = literal(RELEASE, "the promote would CONFLICT in")
+    misfile  = literal(CHANGELOG, "written under '## Unreleased' beneath a version").delete_suffix("(").strip
+    filename = RELEASE.read[/^CHANGELOG_FILE = "([^"]+)"/, 1]
+    assert filename, "bin/release.rb no longer declares CHANGELOG_FILE as a literal"
+    conflict = "#{literal(RELEASE, "the promote would CONFLICT in")} #{filename}"
 
     [headline, misfile, conflict].each do |fragment|
       assert_operator fragment.length, :>, 15, "a source fragment came back implausibly short: #{fragment.inspect}"
