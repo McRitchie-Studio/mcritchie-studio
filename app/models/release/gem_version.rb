@@ -213,6 +213,22 @@ class Release
       # not (a repo whose tags never came down still has a reference).
       reference = tag_version.to_s.strip.empty? ? highest_version(live) : tag_version
       if newer?(current, reference)
+        # ...UNLESS that version is already LIVE. Then it was published, and its
+        # tag never reached origin (publish_gem's tag push is non-fatal): the
+        # published record is broken, not pending. A SKIP here is silent and
+        # permanent — phase 2 skips the already-live publish, every commit promoted
+        # after it rides no version, the stranded-work guard is blind to it (it
+        # fires only on version <= tag), and every later sweep reads the same state
+        # and skips again. REFUSE burns no number either, and it says what to push.
+        # (/tasks/untagged-gem-publish-strands-work)
+        if live.include?(current.to_s.strip.sub(/\Av/, ""))
+          return refuse_decision("#{current} is already live on RubyGems, but the last v* tag reachable from " \
+                                 "origin/release is #{reference}: v#{current} never reached origin, so a SKIP " \
+                                 "here would strand every commit promoted after it. Push that tag from the " \
+                                 "clone that published it (`git push origin v#{current}`), or tag the " \
+                                 "`Release #{current}` commit on origin/release and push it")
+        end
+
         return skip_decision("#{current} already advanced past #{reference} — allocated already")
       end
 

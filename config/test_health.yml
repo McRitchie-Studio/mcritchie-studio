@@ -137,7 +137,10 @@ frozen_size:
   # seed precedes the first line that can raise, plus a mutation proof over both
   # the reverted and corrected source — extends the EXISTING owner of this method's
   # claims, test/docs/ship_docs_sync_docs_test.rb, rather than appending here.
-  test/lib/release_cli_test.rb: 7669
+  test/lib/release_cli_test.rb: 7671
+  # +2 (2026-09-10, untagged-gem-publish-strands-work): gem_publish_stub gained tag:/ahead:, because the
+  # re-run fixture modelled a LIVE version with a trailing tag, which allocation now REFUSES. The new tests
+  # live in their own files; only the two-line note on the existing helper landed here.
   # +27 (2026-09-07, conflicted-remedy-misreads-ci): ONE case pinning the text of
   # the conflicted blocker. The message inferred "the head SHA has ZERO check-runs"
   # from mergeStateStatus DIRTY alone — independent facts — and it was measured

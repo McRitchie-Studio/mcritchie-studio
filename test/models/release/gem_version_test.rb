@@ -170,15 +170,22 @@ class ReleaseGemVersionTest < Minitest::Test
     assert_equal GV::SKIP, allocation(current: "2.0.0").action
   end
 
-  # A publish that landed while its tag push did not. The version IS live, so
-  # phase 2 skips it — and allocating a fresh number here would burn one on every
-  # re-run for a release that already happened. Whether to allocate is judged
-  # against the TAG; only the number itself consults the live list.
-  def test_skips_a_version_that_is_published_but_whose_tag_lagged
+  # A publish that landed while its tag push did not (/tasks/untagged-gem-publish-
+  # strands-work). This test used to assert SKIP, reasoning that allocating a fresh
+  # number would burn one on every re-run — true, and still honoured: nothing is
+  # allocated. But a SKIP here is SILENT and PERMANENT. The version is live, so
+  # phase 2 skips the publish; every commit promoted after it rides no version; the
+  # stranded-work guard cannot see it (it fires only on version <= tag); and every
+  # later sweep reads the same state and skips again. The gem stops publishing and
+  # nothing says so. The honest answer is REFUSE: the published record is broken,
+  # and one pushed tag fixes it.
+  def test_refuses_a_published_version_whose_tag_never_landed
     decision = allocation(current: "1.0.0", tag: "0.4.0", live: %w[0.4.0 1.0.0])
 
-    assert_equal GV::SKIP, decision.action
-    assert_includes decision.reason, "already advanced"
+    assert_equal GV::REFUSE, decision.action
+    assert_nil decision.version, "and still burns no number"
+    assert_includes decision.reason, "v1.0.0"
+    assert_includes decision.reason, "live on RubyGems"
   end
 
   # With no tag at all the live list becomes the reference, so a repo whose tags
