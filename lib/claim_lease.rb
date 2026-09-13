@@ -142,8 +142,8 @@ module ClaimLease
   # review claim does not block the pipeline — `Task.reviewable` skips it and the
   # sweep reviews something else — so the cost is one task missing a review wave,
   # against a duplicated review whose cost is the whole review plus a stranded
-  # verdict. The bound stays inside one working session and well inside the renewer's
-  # 12h safety cap, exactly as MigrationLaneClaim's 4h does.
+  # verdict. The ~6.8h bound stays inside one working session, as MigrationLaneClaim's
+  # 4h does.
   #
   # THE BEAT IS DELIBERATELY NOT RE-DERIVED FROM THIS. ShiftRenewer::INTERVAL_SECONDS
   # stays TTL/4 of the SHARED constant (30s). Re-deriving it here would beat once per

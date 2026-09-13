@@ -32,7 +32,11 @@
 # sleep, so twelve hours of renewal run in milliseconds and the defect reads as a
 # count rather than as a hang.
 #
-#   ruby -Itest test/lib/review_renewer_lifetime_test.rb
+#   bundle exec ruby -Itest test/lib/review_renewer_lifetime_test.rb
+#
+# `bundle exec` is not optional: this file requires minitest/mock, and bare `ruby` loads
+# the system minitest (6.x), which no longer ships it — the run dies on a LoadError
+# before a test starts. The bundle pins 5.27, which does.
 
 require "minitest/autorun"
 require "minitest/mock"
