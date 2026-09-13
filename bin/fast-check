@@ -55,9 +55,12 @@
 #                     PATHS, and Rails skips its own test:prepare whenever an argument
 #                     looks like a path — so on a virgin worktree nothing would ever
 #                     build the CSS and every view-rendering test would error with `The
-#                     asset "tailwind.css" is not present in the asset pipeline`. (An
-#                     ARGLESS `bin/rails test` — CI, bin/full-suite-check — fires the hook
-#                     for free, which is why THIS lane was the first to break. The release
+#                     asset "tailwind.css" is not present in the asset pipeline`. (A run
+#                     that INVOKES `test:prepare`, or that names a rake TEST TASK whose
+#                     spawned `rails <task>` carries no path and no `-n`, gets the hook for
+#                     free — those are the two routes CI and bin/full-suite-check take, and
+#                     neither is an argless `bin/rails test`. THIS lane was the first to
+#                     break because it takes neither. The release
 #                     gate workspaces were the other path-arg victim; fixed by
 #                     gate-workspace-skips-test-prepare (PR #522): prepare_gate_workspace!
 #                     now runs db:test:prepare test:prepare itself, whatever shape the
@@ -366,10 +369,13 @@ rubocop_cmd = ENV.fetch("FAST_CHECK_RUBOCOP_CMD", "bin/rubocop")
 # The prepare lane is db:test:prepare AND test:prepare, in one boot. test:prepare is
 # Rails' standard pre-test hook, which tailwindcss-rails enhances with tailwindcss:build
 # (cssbundling/jsbundling enhance it the same way) — it is what BUILDS the gitignored
-# app/assets/builds/tailwind.css. An ARGLESS `bin/rails test` runs that hook itself, which
-# is why CI and bin/full-suite-check are green on a virgin tree (the release gate
-# workspaces prep their own env the same way since gate-workspace-skips-test-prepare,
-# PR #522; see docs/agents/modules/testing.md) — but THIS cert's lanes pass explicit test paths, and
+# app/assets/builds/tailwind.css. TWO routes reach that task, and CI and
+# bin/full-suite-check are green on a virgin tree because they take them: a caller either
+# INVOKES `test:prepare` itself (CI's Rails shards, inside bin/ci-shard; the release gate
+# workspaces since gate-workspace-skips-test-prepare, PR #522), or it names a rake TEST
+# TASK whose spawned `rails <task>` carries no path and no `-n` (CI's system job;
+# bin/full-suite-check's rake-routed line). No CI invocation is an argless `bin/rails
+# test` — see docs/agents/modules/testing.md — but THIS cert's lanes pass explicit test paths, and
 # Rails::Command::TestCommand
 # runs the hook only `if self.args.none?(EXACT_TEST_ARGUMENT_PATTERN)`, so a path argument
 # SKIPS it. db:test:prepare alone does not build the CSS either (tailwindcss enhances it
