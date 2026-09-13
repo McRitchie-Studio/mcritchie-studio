@@ -3410,7 +3410,7 @@ def prepare
   #     happy path. Ordering is the same fail-closed rule as everything else
   #     here: the version must be settled and pushed BEFORE the first
   #     irreversible `gem push`, never after.
-  allocate_gem_versions!(gem_groups)
+  allocate_gem_versions!(gem_groups, label: slug)
   gem_plan = validate_gems_for_qa(gem_groups, app_groups)
   # BIND the publish map. It is the authoritative record of what each gem actually
   # published (or was already live at), and the member-provenance line below needs
@@ -5161,20 +5161,21 @@ end
 # we just wrote. A refusal costs a re-run; a wrong allocation costs the number
 # forever. The decision itself is pure and unit-tested (Release::GemVersion
 # .allocation) — the shell here only supplies the git + RubyGems reads.
-def allocate_gem_versions!(gem_groups)
+def allocate_gem_versions!(gem_groups, label: nil)
   return if gem_groups.empty?
 
   say("")
   step("gem version allocation (the RELEASE owns the version, not any PR): derive each swept gem's next version " \
        "from its members, commit it WITH its Gemfile.lock and its rolled CHANGELOG.md onto " \
-       "origin/#{RELEASE_BRANCH} — before the publish")
+       "origin/#{ACCEPTED_BRANCH}, then promote that onto origin/#{RELEASE_BRANCH} — before the publish")
 
   if DRY
     gem_groups.each do |group|
       step("  gem #{group['repo']}: last published (last v* tag ∪ RubyGems) + the members' bump → rewrite " \
            "#{gem_meta_for(group['repo'])['version_file']} → roll CHANGELOG.md's '## Unreleased' into the " \
            "allocated version → `bundle lock` → ONE commit of all three onto " \
-           "origin/#{RELEASE_BRANCH} (skips when already advanced; REFUSES rather than guess)")
+           "origin/#{ACCEPTED_BRANCH} → batch promote onto origin/#{RELEASE_BRANCH} " \
+           "(skips when already advanced; REFUSES rather than guess)")
     end
     return
   end
@@ -5199,6 +5200,14 @@ def allocate_gem_versions!(gem_groups)
 
   plan.each { |entry| commit_gem_version!(entry["repo"], entry["tip"], entry["decision"], failures) }
   abort_allocation!(failures)
+
+  # AND THE SAME ONE-WAY PROMOTE CARRIES IT UP. The commit is written on `accepted`,
+  # so `release` — which phase 1 preflights and phase 2 publishes from — receives it
+  # the only way anything reaches that branch: the batch `accepted → release` PR, with
+  # every guard that rides it (a RED `accepted`, a blind one, and the misfile guard).
+  # Nothing is ever carried DOWN from `release`; that direction was weighed and rejected.
+  promoted = plan.map { |entry| entry["repo"] }.uniq
+  promote_accepted_to_release!(promoted, label: label) if promoted.any?
 end
 
 def abort_allocation!(failures)
@@ -5230,14 +5239,31 @@ def gem_allocation_plan(group, failures)
     return
   end
 
-  out, ok = git_capture("-C", path, "rev-parse", "origin/#{RELEASE_BRANCH}")
+  # THE RUNG THIS READS AND WRITES IS `accepted` (/tasks/carry-release-commit-onto-accepted,
+  # operator decision 2026-09-13). The version, its lockfile and the rolled CHANGELOG.md
+  # are committed onto `accepted` and reach `release` through the ordinary batch promote,
+  # so the ladder stays one-way and both branches inherit the roll from the SAME commit.
+  # Writing onto `release` instead left `accepted` un-rolled, and the next promote then
+  # merged an un-rolled bucket into a rolled file — a CHANGELOG conflict, or a silent
+  # misfile that refuse_misfiled_changelog! now refuses (/tasks/rolled-changelog-merge-misfiles).
+  out, ok = git_capture("-C", path, "rev-parse", "origin/#{ACCEPTED_BRANCH}")
   unless ok
-    failures << "could not resolve origin/#{RELEASE_BRANCH} in #{repo} for the version allocation — fetch, then re-run"
+    failures << "could not resolve origin/#{ACCEPTED_BRANCH} in #{repo} for the version allocation — fetch, then re-run"
     return
   end
   tip = out.strip
 
-  tag_out, tag_ok = git_capture("-C", path, "describe", "--tags", "--abbrev=0", "--match", "v*", tip)
+  # THE TAG BASELINE STAYS ON `release`, and that is not an oversight: publish tags sit
+  # on release-side commits (the publish tags the release tip), which `accepted` does not
+  # contain, so `git describe` from `accepted` would walk past the newest tag and read a
+  # stale floor — the one input that must never be stale, because it decides the number.
+  release_tip, release_ok = git_capture("-C", path, "rev-parse", "origin/#{RELEASE_BRANCH}")
+  unless release_ok
+    failures << "could not resolve origin/#{RELEASE_BRANCH} in #{repo} for the version allocation's tag " \
+                "baseline — fetch, then re-run"
+    return
+  end
+  tag_out, tag_ok = git_capture("-C", path, "describe", "--tags", "--abbrev=0", "--match", "v*", release_tip.strip)
   tag = tag_ok ? tag_out.strip : nil
 
   # The same range the stranded-work guard reads, capped: allocation only needs to
@@ -5246,7 +5272,7 @@ def gem_allocation_plan(group, failures)
   # first-publish skip.
   ahead_out, ahead_ok = git_capture("-C", path, "log", "--oneline", "--max-count=20", tag ? "#{tag}..#{tip}" : tip)
   unless ahead_ok
-    failures << "could not read #{repo} #{tag ? "#{tag}..origin/#{RELEASE_BRANCH}" : RELEASE_BRANCH} for the " \
+    failures << "could not read #{repo} #{tag ? "#{tag}..origin/#{ACCEPTED_BRANCH}" : ACCEPTED_BRANCH} for the " \
                 "version allocation — fetch, then re-run `bin/release prepare`"
     return
   end
@@ -5368,17 +5394,17 @@ def commit_gem_version!(repo, tip, decision, failures)
       next
     end
 
-    # Fast-forward-checked (no --force): a release branch that moved under us
-    # fails closed HERE, before anything is published against a version this
-    # commit is not part of.
-    _, pushed = sh("git", "-C", workspace, "push", "origin", "HEAD:refs/heads/#{RELEASE_BRANCH}", capture: true)
+    # Fast-forward-checked (no --force): an `accepted` that moved under us fails closed
+    # HERE, before anything is published against a version this commit is not part of —
+    # and, on this rung, before it could ever displace a merge review just landed.
+    _, pushed = sh("git", "-C", workspace, "push", "origin", "HEAD:refs/heads/#{ACCEPTED_BRANCH}", capture: true)
     unless pushed
-      failures << "gem #{repo}: could not push #{version} to origin/#{RELEASE_BRANCH} (did #{RELEASE_BRANCH} move?)"
+      failures << "gem #{repo}: could not push #{version} to origin/#{ACCEPTED_BRANCH} (did #{ACCEPTED_BRANCH} move?)"
       next
     end
 
     step("  gem #{repo}: allocated #{version} — #{decision.reason}; committed with its lockfile onto " \
-         "origin/#{RELEASE_BRANCH}")
+         "origin/#{ACCEPTED_BRANCH}")
   end
 end
 

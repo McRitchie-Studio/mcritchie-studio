@@ -640,7 +640,7 @@ class ReleaseCliTest < Minitest::Test
   # behaviour is driven against REAL git in test/lib/release_gem_allocation_test.rb.
   def gem_publish_stub(version: "1.0.0", live: [], lock_dirty: true, allocate: true)
     GATE_GIT_STUB +
-      (allocate ? "" : %(def allocate_gem_versions!(_groups) = nil\n)) +
+      (allocate ? "" : %(def allocate_gem_versions!(_groups, label: nil) = nil\n)) +
       %(ENV["RELEASE_CI_STATUS"] = "green"\n) +
       %(def repo_path(_repo) = #{self.class.stub_repo.inspect}\n) +
       %(def gem_version_from_ref(_repo, _ref) = #{version.inspect}\n) +

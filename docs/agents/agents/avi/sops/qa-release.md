@@ -303,7 +303,13 @@ bin/release prepare --yes
    overrides), advances the **last published** version — the higher of the last
    `v*` tag and the highest version live on RubyGems — and commits the
    `version_file` **together with its `Gemfile.lock` and its rolled
-   `CHANGELOG.md`** onto `origin/release`.
+   `CHANGELOG.md`** onto `origin/accepted`, then promotes that gem's `accepted`
+   onto `release` with the ordinary batch PR. The rung is `accepted` because the
+   roll must be authored where builders write: land it on `release` alone and the
+   NEXT promote merges an un-rolled bucket into a rolled file, which conflicts or
+   mis-files — and `refuse_misfiled_changelog!` refuses that promote rather than
+   land it. Nothing is ever carried back DOWN from `release`; the ladder stays
+   one-way.
    The lockfile rides in the same commit because studio-engine bundles itself as
    a path gem and CI installs frozen: a version commit without its lock fails
    `bundle install` before a single test runs. The **changelog** rides it because

@@ -1,0 +1,36 @@
+Run options: --seed 20611
+
+# Running:
+
+.F....F.F..........F....
+
+Finished in 160.965463s, 0.1491 runs/s, 0.8263 assertions/s.
+
+  1) Failure:
+ReleaseGemAllocationTest#test_nothing_is_promoted_when_nothing_was_allocated [test/lib/release_gem_allocation_test.rb:294]:
+Expected "\n→ gem version allocation (the RELEASE owns the version, not any PR): derive each swept gem's next version from its members, commit it WITH its Gemfile.lock and its rolled CHANGELOG.md onto origin/accepted, then promote that onto origin/release — before the publish\n  gem studio-engine: no CHANGELOG.md at origin/release — nothing to roll\n→   gem studio-engine: allocated 0.10.0 — 0.9.0 + minor (minor from engine-task) → 0.10.0; committed with its lockfile onto origin/accepted\nPROMOTE studio-engine\n" to include "nothing allocated".
+
+  2) Failure:
+ReleaseGemAllocationTest#test_the_version_commit_carries_the_rolled_changelog [test/lib/release_gem_allocation_test.rb:367]:
+--- expected
++++ actual
+@@ -1 +1 @@
+-["CHANGELOG.md", "Gemfile.lock", "lib/studio/version.rb"]
++["lib/studio/feature.rb"]
+
+
+  3) Failure:
+ReleaseGemAllocationTest#test_the_version_commit_carries_the_gemfile_lock [test/lib/release_gem_allocation_test.rb:324]:
+one commit, both files — not a version commit with the lock trailing behind.
+--- expected
++++ actual
+@@ -1 +1 @@
+-["Gemfile.lock", "lib/studio/version.rb"]
++["lib/studio/feature.rb"]
+
+
+  4) Failure:
+ReleaseGemAllocationTest#test_a_refusal_on_one_gem_writes_nothing_to_the_other [test/lib/release_gem_allocation_test.rb:611]:
+Expected "\n→ gem version allocation (the RELEASE owns the version, not any PR): derive each swept gem's next version from its members, commit it WITH its Gemfile.lock and its rolled CHANGELOG.md onto origin/accepted, then promote that onto origin/release — before the publish\n  gem studio-engine: no CHANGELOG.md at origin/release — nothing to roll\n✗ gem version allocation FAILED — NOTHING was published or deployed (a RubyGems version can never be re-pushed, so allocation refuses rather than guesses):\n  - could not resolve origin/accepted in solana-studio for the version allocation — fetch, then re-run\n" to include "mnior".
+
+24 runs, 133 assertions, 4 failures, 0 errors, 0 skips

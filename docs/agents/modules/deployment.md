@@ -278,7 +278,10 @@ How a gem rides a release:
    re-tread a spent number). `Release::GemVersion`
    (`app/models/release/gem_version.rb`) encodes those rules, and prepare's step
    4d calls it, writes the `version_file` **together with its `Gemfile.lock`** in
-   one commit onto `origin/release`, and does it BEFORE the publish
+   one commit onto `origin/accepted` — the rung builders write, so the roll it
+   carries is authored where the next promote's merge base can see it — then
+   promotes that onto `origin/release` with the ordinary batch PR, and does it
+   BEFORE the publish
    (finding-d0621629719b, now closed). There is nothing for you to run.
    Allocation is idempotent — a re-run reads a version already past the last
    `v*` tag (the highest live version only when no tag exists) and skips — and
@@ -327,7 +330,7 @@ How a gem rides a release:
    there. Measured against published 0.74.4: the guard returned **nil**, the
    bucket read **5 of its 14 lines**, and the roll injected a blank line
    *inside* the fence and filed everything below it under a version that had
-   already shipped — onto `origin/release`, in the commit that precedes the
+   already shipped — onto `origin/accepted`, in the commit that precedes the
    irreversible `gem push`. It was blind exactly where it mattered, because the
    drift guard fails closed only outside `MAX_MINOR_DRIFT`: a quoted 0.74.4,
    0.74.2 or 0.72.0 all passed silently. The scan now skips fenced lines by
