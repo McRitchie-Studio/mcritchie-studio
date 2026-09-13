@@ -368,11 +368,27 @@ class FastCheckTest < Minitest::Test
 
   def test_an_unrescued_crash_closes_the_g1_attempt_failed
     with_repo do |dir, _|
-      # BESIDE the real script, not in the fixture dir: bin/fast-check does
-      # `require_relative "lib/..."`, so a copy anywhere else dies on a LoadError
-      # before it ever opens the attempt — which is a different failure than the
-      # one under test, and reads exactly like "the attempt never opened".
-      crashing = File.join(File.dirname(BIN), "fast-check-crash-fixture")
+      # A MIRROR OF THE TREE, never the tree. bin/fast-check resolves `require_relative
+      # "lib/..."` (bin/lib, whose own requires reach ../../lib) and ROOT/config from its
+      # OWN location, so a bare copy anywhere else dies on a LoadError before it opens the
+      # attempt — a different failure than the one under test, and one that reads exactly
+      # like "the attempt never opened".
+      #
+      # The copy used to live BESIDE the real script for that reason, and that placement
+      # was the bug: every sweep that globs bin/* could list it and then find it deleted
+      # by the ensure below. CI job 102764654211 (rails (4)) went red on exactly that, in
+      # test/docs/cert_label_vocabulary_test.rb, on a PR that had nothing to do with it.
+      # So the copy now lives in a throwaway tree whose bin/lib, lib and config are
+      # symlinks to the real ones: the script resolves everything it would in place, and
+      # nothing that reads the repository can ever see it.
+      real_root = File.expand_path("..", File.dirname(BIN))
+      mirror = Dir.mktmpdir("fast-check-crash-mirror")
+      FileUtils.mkdir_p(File.join(mirror, "bin"))
+      links = { File.join(mirror, "bin", "lib") => File.join(real_root, "bin", "lib"),
+                File.join(mirror, "lib") => File.join(real_root, "lib"),
+                File.join(mirror, "config") => File.join(real_root, "config") }
+      links.each { |link, target| File.symlink(target, link) }
+      crashing = File.join(mirror, "bin", "fast-check-crash-fixture")
       src = File.read(BIN).sub("unless skip_test_prepare", "raise \"boom\"\nunless skip_test_prepare")
       File.write(crashing, src)
       File.chmod(0o755, crashing)
@@ -390,7 +406,10 @@ class FastCheckTest < Minitest::Test
         "whose --failed row becomes the verdict"
       assert_includes closes.flatten, "--failed"
     ensure
-      FileUtils.rm_f(crashing) if crashing
+      # Unlink the symlinks BEFORE removing the mirror, so nothing here can ever walk
+      # into the real bin/lib, lib or config — whatever rm_rf's policy on links.
+      links&.each_key { |link| File.unlink(link) if File.symlink?(link) }
+      FileUtils.rm_rf(mirror) if mirror
     end
   end
 

@@ -952,6 +952,13 @@ class ReviewClaimCliTest < Minitest::Test
 
       refute cli(projects_dir: proj, data: { "stage" => "submitted" }).review_over?(SLUG),
              "submitted: the task is still being offered for review — stopping would free it under its reviewer"
+
+      # MEASURED in review of ms#1367: a stage differing only in case or surrounding
+      # whitespace ended a LIVE review's renewal. That is formatting, not a verdict.
+      ["submitted ", " submitted", "SUBMITTED", "Submitted"].each do |stage|
+        refute cli(projects_dir: proj, data: { "stage" => stage }).review_over?(SLUG),
+               "#{stage.inspect}: the same stage, differently formatted, is not a verdict"
+      end
     end
   end
 

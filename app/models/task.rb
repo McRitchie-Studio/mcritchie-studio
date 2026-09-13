@@ -492,6 +492,12 @@ class Task < ApplicationRecord
   # approval_status actually changes (a wholesale devops rewrite that echoes the
   # same value is not a change, so `bin/task update --checks` never spams the board).
   after_update_commit :broadcast_operator_approval_change, if: :saved_change_to_approval_status?
+  # The settle at `reviewed` leaves a NOTE addressed to whoever set the request, so
+  # merging over an unanswered request is on the record rather than silent. After
+  # COMMIT, and rescued, so a failed note can never roll back or refuse the move
+  # (Mr. McRitchie, 2026-09-10: surface it, do not block). See
+  # #record_unanswered_approval_request.
+  after_commit :record_unanswered_approval_request, on: %i[create update], if: -> { @settled_approval_request }
   # A block/unblock changes no stage and records NO TaskEvent — Task#block! is a bare
   # update! — so the live board never heard about it and a blocked card sat unchanged
   # until something else forced a re-render. That is the one state an operator most
@@ -3376,6 +3382,14 @@ class Task < ApplicationRecord
 
     merged = metadata.deep_dup
     settled = (merged["devops"] ||= {})
+    # Capture the request BEFORE it settles: the after_commit note needs who asked,
+    # when, and for which page. See #record_unanswered_approval_request.
+    @settled_approval_request = {
+      "requested_by" => settled["approval_requested_by"].to_s.strip.presence || approval_requester_fallback,
+      "requested_at" => settled["approval_requested_at"].to_s.strip.presence,
+      "local_url" => settled["local_url"].to_s.strip.presence,
+      "stage" => stage
+    }
     settled["approval_status"] = OPERATOR_APPROVAL_NONE
     # LEAVE A RECEIPT. The settle itself is right, but it used to happen in total
     # silence, and the silence is what cost the operator loop. Reproduced 2026-09-07:
@@ -3386,12 +3400,12 @@ class Task < ApplicationRecord
     # made it look like the write had worked.
     #
     # This stamp is the durable half of the remedy: every caller that drops a request
-    # (CLI, JSON API, board form) leaves it on the record. It has exactly ONE reader
-    # today — bin/task's move warning, which compares it ACROSS the stage PATCH to
-    # tell a drop this move caused from one already sitting here. So it is a receipt
-    # a reader can go find, not yet a fact any view surfaces: it is absent from
-    # print_task_verbose beside approval_status, from the task show page, and from
-    # the card. Surfacing it is worth doing; claiming it is already surfaced is not.
+    # (CLI, JSON API, board form) leaves it on the record. Its one COMPARING reader is
+    # bin/task's move warning, which compares it ACROSS the stage PATCH to tell a drop
+    # this move caused from one already sitting here. Since 2026-09-10 `bin/task show
+    # --verbose` also prints it beside approval_status, and the settle posts a note
+    # addressed to the setter (#record_unanswered_approval_request). It is still
+    # absent from the task show page's fields and from the card.
     # Overwritten on each drop on purpose — the useful fact is the LAST time a
     # request was discarded, not the first.
     settled["approval_request_dropped_at"] = Time.current.iso8601
@@ -3406,7 +3420,63 @@ class Task < ApplicationRecord
     merged = metadata.deep_dup
     approval = (merged["devops"] ||= {})
     approval["approval_requested_at"] ||= Time.current.iso8601
+    # WHO ASKED. The field existed, but no writer ever filled it — bin/task update
+    # sends no actor — so every request reached review anonymous, and the note the
+    # settle leaves had nobody to address. A caller-supplied value still wins.
+    approval["approval_requested_by"] = approval["approval_requested_by"].to_s.strip.presence ||
+                                        approval_requester_to_stamp
     self.metadata = merged
+  end
+
+  # The soul who opened a request: an explicit soul actor on the write, else the
+  # task's recorded builder (Step 4 of building-sop.md is the BUILDER's step), else
+  # its persona or assignee. nil when none is a known soul — never a guess.
+  def approval_requester_to_stamp
+    actor = Current.task_event_actor.presence
+    return actor if actor && self.class.soul?(actor)
+
+    approval_requester_fallback
+  end
+
+  # The fallback WITHOUT the actor. At the settle the actor is whoever MERGED, not
+  # whoever asked, so the settle may only use this half.
+  def approval_requester_fallback
+    [devops["built_by"].to_s, devops["persona"].to_s, agent_slug.to_s].find { |slug| self.class.soul?(slug) }
+  end
+
+  # THE SETTLE IS NO LONGER SILENT (surface-waiting-request-at-merge, 2026-09-10).
+  # Mr. McRitchie's decision: review may merge while a request is still `waiting` —
+  # nothing refuses — but the merge must not swallow the question. This leaves one
+  # comment on the task, ADDRESSED to the soul that asked, saying the work merged
+  # with the request unanswered and how the operator can still answer. Answering
+  # stays legal at every stage (`--approval approved|changes_requested`).
+  #
+  # Posted after COMMIT, so the note can only follow a settle that really landed,
+  # and rescued to ErrorLog, so a failed note never rolls back the move. The ivar is
+  # cleared first, so a later save of the same object cannot post it twice.
+  def record_unanswered_approval_request
+    request = @settled_approval_request
+    @settled_approval_request = nil
+    Activity.create!(task_slug: slug, activity_type: "comment",
+                     description: self.class.unanswered_approval_note(slug, request),
+                     metadata: { "kind" => "approval_request_unanswered",
+                                 "addressed_to" => request["requested_by"] }.merge(request))
+  rescue StandardError => e
+    log = ErrorLog.capture!(e)
+    log.target = self
+    log.target_name = slug
+    log.save!
+  end
+
+  def self.unanswered_approval_note(slug, request)
+    setter = request["requested_by"] || "the soul who asked (no setter on record)"
+    # Archiving settles a request too (Task#archive! has no stage guard), and nothing merged.
+    how = request["stage"] == "archived" ? "It was archived" : "Review merged it without waiting (merging never blocks on a request)"
+    "To #{setter}: this work reached `#{request["stage"]}` with your operator-approval " \
+      "request UNANSWERED. #{how}, so the request settled to none. Requested at " \
+      "#{request["requested_at"] || "an unrecorded time"} for " \
+      "#{request["local_url"] || "no local URL"}. Mr. McRitchie can still answer: " \
+      "bin/task update #{slug} --approval approved, or --approval changes_requested."
   end
 
   # The durable close of the operator-acceptance approval window — stamped the

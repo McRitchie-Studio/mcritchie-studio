@@ -28,7 +28,7 @@ class ReviewAutopilotTest < Minitest::Test
 
   # Serves `payload` verbatim for the registry GET (auth is always canned JSON),
   # so a test can serve exactly what a broken hop puts on the wire.
-  def run_list(payload:, status: "200 OK")
+  def run_list(payload:, status: "200 OK", args: %w[list])
     server = TCPServer.new("127.0.0.1", 0)
     port = server.addr[1]
     thread = Thread.new { serve(server, payload, status) }
@@ -37,7 +37,7 @@ class ReviewAutopilotTest < Minitest::Test
       "TASK_BOARD_URL" => "http://127.0.0.1:#{port}",
       "AGENT_API_SECRET" => "test-secret"
     )
-    Open3.capture3(env, RbConfig.ruby, BIN, "list")
+    Open3.capture3(env, RbConfig.ruby, BIN, *args)
   ensure
     server&.close
     thread&.join(1)
@@ -49,19 +49,42 @@ class ReviewAutopilotTest < Minitest::Test
       line = client.gets
       (client.close; next) if line.nil?
 
-      _method, path, = line.split(" ")
+      verb, path, = line.split(" ")
       while (h = client.gets) && h != "\r\n"
         # headers drained; this stub asserts nothing about them
       end
 
       body = path == "/api/v1/auth" ? JSON.generate("token" => "stub-token") : payload
-      code = path == "/api/v1/auth" ? "200 OK" : status
+      code = path == "/api/v1/auth" ? "200 OK" : (status.is_a?(Hash) ? status.fetch(verb) : status)
       client.write("HTTP/1.1 #{code}\r\nContent-Type: application/json\r\n" \
                    "Content-Length: #{body.bytesize}\r\nConnection: close\r\n\r\n#{body}")
       client.close
     end
   rescue IOError, Errno::EBADF, Errno::ECONNRESET
     # server closed — stop serving
+  end
+
+  # surface-waiting-request-at-merge: ARM is the last moment a person sees a carried
+  # approval request before the unattended merge. One body serves the GET and the POST.
+  ARMED = { "slug" => "t", "task_slug" => "t", "pr_number" => 42, "head_sha" => "abc1234567",
+            "base_branch" => "accepted", "verdict" => "merge-ready", "expires_at" => "later",
+            "metadata" => { "devops" => { "approval_status" => "waiting", "approval_requested_by" => "steffon" } } }.freeze
+
+  def test_arm_shows_a_waiting_approval_request
+    out, err, status = run_list(payload: JSON.generate("data" => ARMED), args: %w[arm t --head abc1234567])
+
+    assert status.success?, err
+    assert_includes out, "armed: t"
+    assert_includes err, "OPERATOR APPROVAL STILL WAITING"
+  end
+
+  def test_arm_says_unread_rather_than_nothing_when_the_task_read_fails
+    out, err, = run_list(payload: JSON.generate("data" => ARMED), args: %w[arm t --head abc1234567],
+                         status: { "GET" => "503 Service Unavailable", "POST" => "200 OK" })
+
+    assert_includes out, "armed: t", "the arm itself still lands"
+    assert_includes err, "approval state UNREAD"
+    refute_includes err, "OPERATOR APPROVAL STILL WAITING", "an error body is not a task read"
   end
 
   def test_an_unreadable_registry_refuses_instead_of_printing_nothing_armed

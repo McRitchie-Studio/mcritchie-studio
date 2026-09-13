@@ -123,6 +123,13 @@ class CiStatusTest < Minitest::Test
     assert_equal :merged, CiStatus.view_verdict(view("MERGED", "UNKNOWN"))[:state]
   end
 
+  # WHERE a dead PR merged is the evidence the staged-merge exception reads
+  # (/tasks/gate-zero-blocks-staged-merges), so the base must survive the early return.
+  def test_view_verdict_carries_the_base_a_merged_pr_landed_on
+    raw = JSON.generate("state" => "MERGED", "mergeStateStatus" => "UNKNOWN", "baseRefName" => "accepted")
+    assert_equal({ state: :merged, base: "accepted" }, CiStatus.view_verdict(raw))
+  end
+
   def test_view_verdict_unverified_on_a_gh_error_body
     v = CiStatus.view_verdict("gh: Not Found (HTTP 404)")
     assert_equal :unverified, v[:state]

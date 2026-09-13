@@ -187,6 +187,30 @@ class BuildClaimRenewerTest < Minitest::Test
                  "forever — the cap is the belt-and-braces bound, not the design"
   end
 
+  # ── A RENEWER THAT CANNOT SEE ITS BUILDER IS BOUNDED ────────────────────────
+  #
+  # With no desk, the abandonment check answers "unknown", and unknown never frees a
+  # claim — so a desk-less renewer used to run the full 12h cap on a builder it could
+  # not see. It is now bounded by the house's own derived quiet ceiling.
+  def test_a_renewer_with_no_desk_is_bounded_below_the_lifetime_cap
+    assert_equal ShiftRenewer::MAX_LIFETIME_SECONDS, BuildClaimRenewer.lifetime_for(desk: "/a/bound/desk"),
+                 "a desk can vouch for the holder, so the ordinary cap applies"
+    bound = BuildClaimRenewer.lifetime_for(desk: nil)
+    assert_operator bound, :<, ShiftRenewer::MAX_LIFETIME_SECONDS, "no desk must mean a SHORTER leash"
+    assert_equal ClaimLease::PROGRESS_QUIET_SECONDS, bound,
+                 "derived from the measured quiet ceiling, not typed next to it"
+    assert_equal bound, BuildClaimRenewer.lifetime_for(desk: "  "), "a blank desk is no desk"
+  end
+
+  def test_the_loop_is_wired_to_the_desk_aware_lifetime
+    # A bound that no caller passes is decoration. The detached loop is started with
+    # `--desk` only when one resolved, so the loop must choose its cap from that.
+    source = File.read(File.expand_path("../../bin/task", __dir__))
+    loop_body = source[/when "claim-renew-loop".*?BuildClaimRenewer\.run\((.*?)\n  \)/m, 1].to_s
+    refute_empty loop_body, "could not find the claim-renew-loop's BuildClaimRenewer.run call"
+    assert_match(/max_lifetime:\s*BuildClaimRenewer\.lifetime_for\(desk: renew_desk\)/, loop_body)
+  end
+
   # ── THE MAPPING ITSELF, so the two predicates cannot silently swap ──────────
 
   def test_only_a_live_foreign_holder_stops_the_beat

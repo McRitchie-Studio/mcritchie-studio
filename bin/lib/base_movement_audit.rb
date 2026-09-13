@@ -100,16 +100,30 @@ module BaseMovementAudit
   # On :moved:
   #   :commits  — [{ sha:, at:, subject: }], oldest first, that the branch has not taken
   #   :files    — every file the base gained across all of them
-  #   :clock    — :read when the run's completion time parsed, else :unreadable
-  #   :late     — the subset of :commits committed AFTER the run completed ([] when
-  #               :clock is :unreadable — an unmade comparison yields no findings)
+  #   :clock    — :merge_ref when ancestry against the TESTED base answered (exact);
+  #               :read when only the run's completion time parsed; else :unreadable
+  #   :window   — :exact on :merge_ref; :unchecked otherwise — the mid-run window (base
+  #               commits landing after the merge ref was built, before the run ended)
+  #               was NOT asked, and the caller must say so
+  #   :tested_base — the base SHA the tested merge ref was built on, when resolved
+  #   :late     — on :merge_ref, the subset of :commits NOT in the tested base; on :read,
+  #               those committed AFTER the run completed (a LOWER bound — sound when it
+  #               finds something, blind to the mid-run window); [] when :unreadable
   #   :late_files — files carried by those commits ONLY, i.e. what CI provably never saw
   #   :guards   — [{ test:, guarding: [...] }] — the SHARED-GUARD intersection: a file in
   #               :late_files that grades a file this PR changes and that this PR does
   #               not itself change. NON-EMPTY IS THE REFUSABLE SHAPE.
   #
   # `changed_files` is the PR's own diff. `ci_completed_at` is when the run finished.
-  def assess(root:, branch:, base:, changed_files:, ci_completed_at:)
+  # `tested_base` is the base SHA the run's merge ref was built on (MergeRefBase), or nil.
+  #
+  # WHY ANCESTRY, NOT A BETTER CLOCK (/tasks/stale-merge-ref-passes-freshness). The run
+  # tested the merge ref GitHub built when it was TRIGGERED; completion is minutes later,
+  # so a completion clock calls every commit landing inside the run "covered" — measured
+  # on tm#682, where two merges landed mid-run and the gate passed. Swapping in the start
+  # time would only shrink that window, and committer dates are not landing order anyway.
+  # "Is this commit an ancestor of the base the merge ref was built on?" has no window.
+  def assess(root:, branch:, base:, changed_files:, ci_completed_at:, tested_base: nil)
     base_sha = rev(root, "origin/#{base}", base)
     head_sha = rev(root, "origin/#{branch}", branch)
     return { state: :unobservable, reason: :no_ref } if base_sha.nil? || head_sha.nil?
@@ -122,15 +136,40 @@ module BaseMovementAudit
     return { state: :unobservable, reason: :no_log } if commits.nil? || commits.empty?
 
     cutoff = parse_time(ci_completed_at)
-    clock = cutoff ? :read : :unreadable
-    late = cutoff ? commits.select { |c| c[:time] && c[:time] > cutoff } : []
+    tested = tested_base.to_s.strip
+    exact = !tested.empty? && commit?(root, tested)
+    if exact
+      clock = :merge_ref
+      late = commits.reject { |c| ancestor?(root, c[:sha], tested) }
+      # THE FILES CI NEVER SAW ARE diff(tested, tip) — exact by construction
+      # (/tasks/freshness-verdict-states-falsehoods, D1). Deriving a "covered tip" from the
+      # first-parent walk breaks when the tested base sits OFF that walk — the release
+      # back-merge, tip = merge(release, accepted) with the tested base the SECOND parent:
+      # every first-parent commit is a non-ancestor, the covered tip fell back to
+      # fork_point, and late_files swept in what the tested base itself contributed.
+      late_files = late.empty? ? [] : diff_files(root, tested, base_sha)
+      # Non-ancestor commits that change NO file relative to the tested tree (a back-merge
+      # of content CI already had) left the green nothing unseen. Keeping them "late" would
+      # print "the green never saw" over an empty list — true of no file at all.
+      late = [] if late_files.empty?
+    else
+      # The completion clock stays as a LOWER BOUND: anything it flags truly landed after
+      # the run, so its refusals are sound (the PR #1258 shape). What it cannot do is call
+      # anything COVERED, and :window :unchecked is how the caller learns that.
+      clock = cutoff ? :read : :unreadable
+      late = cutoff ? commits.select { |c| c[:time] && c[:time] > cutoff } : []
 
-    # The files CI provably never saw: everything between the newest commit it COULD
-    # have seen and the base tip. A two-point diff rather than a per-commit walk, so a
-    # MERGE commit (which is how `accepted` actually advances, and whose --name-only is
-    # empty by default) contributes its files like any other.
-    covered_tip = late.empty? ? base_sha : (commits - late).last&.dig(:sha) || fork_point
-    late_files = late.empty? ? [] : diff_files(root, covered_tip, base_sha)
+      # The files CI provably never saw: everything between the newest commit it COULD
+      # have seen and the base tip. A two-point diff rather than a per-commit walk, so a
+      # MERGE commit (which is how `accepted` actually advances, and whose --name-only is
+      # empty by default) contributes its files like any other.
+      covered_tip = late.empty? ? base_sha : (commits - late).last&.dig(:sha) || fork_point
+      late_files = late.empty? ? [] : diff_files(root, covered_tip, base_sha)
+    end
+    # How many late commits a COMPLETION clock would have called covered — the ones that
+    # landed at or before the run finished. Counted so the refusal can say it only when it
+    # is true (D2): a commit after completion is one that clock would have CAUGHT.
+    completion_blind = cutoff ? late.count { |c| c[:time] && c[:time] <= cutoff } : 0
 
     {
       state: :moved,
@@ -138,6 +177,11 @@ module BaseMovementAudit
       commits: commits.map { |c| c.reject { |k, _| k == :time } },
       files: diff_files(root, fork_point, base_sha),
       clock: clock, cutoff: cutoff,
+      window: exact ? :exact : :unchecked,
+      # Kept when GitHub named a base this checkout lacks, so the verdict can name it (S1).
+      tested_base: tested.empty? ? nil : tested,
+      completion_blind: completion_blind,
+      window_reason: exact || tested.empty? ? nil : :not_local,
       late: late.map { |c| c.reject { |k, _| k == :time } },
       late_files: late_files,
       guards: shared_guards(root, changed_files, late_files)
@@ -228,6 +272,16 @@ module BaseMovementAudit
   end
 
   # --- git reads (never fetches — same rule as ReviewTreeGuard) -------------------
+
+  def commit?(root, sha)
+    system("git", "-C", root.to_s, "cat-file", "-e", "#{sha}^{commit}", out: File::NULL, err: File::NULL)
+  end
+
+  # Is `sha` the tested base or reachable from it — i.e. was it in the tree CI tested?
+  def ancestor?(root, sha, tested)
+    system("git", "-C", root.to_s, "merge-base", "--is-ancestor", sha, tested,
+           out: File::NULL, err: File::NULL)
+  end
 
   def rev(root, *refs)
     refs.flatten.compact.map(&:to_s).reject(&:empty?).each do |ref|

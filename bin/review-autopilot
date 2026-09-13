@@ -38,6 +38,7 @@
 require "json"
 require "optparse"
 require_relative "lib/task_board"
+require_relative "lib/approval_request_notice"
 
 BASE_URL = ENV.fetch("TASK_BOARD_URL", "https://www.mcritchie.studio")
 DOTENV = File.expand_path("../.env", __dir__)
@@ -108,7 +109,7 @@ case command
 when "arm"
   die("usage: bin/review-autopilot arm <task-slug> [--head <sha>]", 2) if slug.to_s.empty?
 
-  _, task_body = api(:get, "/api/v1/tasks/#{slug}")
+  task_res, task_body = api(:get, "/api/v1/tasks/#{slug}")
   task = task_body["data"] || {}
   devops = task.dig("metadata", "devops") || {}
   head = options[:head] || live_head(devops["pr_url"])
@@ -129,6 +130,14 @@ when "arm"
   puts "armed: #{action["task_slug"]} pr ##{action["pr_number"]} @ #{action["head_sha"][0, 10]}"
   puts "       merges into #{action["base_branch"]} on the recorded #{action["verdict"]} verdict"
   puts "       expires #{action["expires_at"]} — green CI on this exact tree executes it"
+  # An armed merge runs server-side with no reviewer present, so ARM time is the
+  # last moment a person sees a carried approval request. Information, never a gate,
+  # but an UNREAD task is not "nothing waiting", so say which one this is.
+  if task_res.is_a?(Net::HTTPSuccess)
+    ApprovalRequestNotice.lines(task).each { |line| warn line }
+  else
+    warn "!! approval state UNREAD (task read -> HTTP #{task_res.code}): run bin/task show #{slug} before you walk away."
+  end
 
 when "list"
   path = "/api/v1/review_pending_actions"

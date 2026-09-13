@@ -124,10 +124,37 @@ module TaskPrSet
   # `entries` is [{target:, ci:}]; returns the whole entry, because the caller needs
   # the PR URL the verdict came from — every remedy this gate prints names a repo, and
   # naming the wrong one is the same cross-repo confusion in a different coat.
+  #
+  # ONE EXCEPTION, AND IT IS OBSERVED, NEVER ASSERTED (/tasks/gate-zero-blocks-staged-merges).
+  # A multi-repo change can REQUIRE its halves to land in order — retire-the-last-mirrors
+  # merged its consumer PRs (MS 1351, turf 675) into `accepted` FIRST, then brought engine
+  # PR 319 to review. Worst-of ranked those :merged siblings below the green target, so
+  # they governed and gate-zero refused the very order the task required, with a cert
+  # remedy that could never clear it. A sibling that MERGED INTO `accepted` is the staging
+  # succeeding: its code is already where this task's code is going, and there is nothing
+  # left in it to review. So it drops out of the fold — when ALL of these hold, each read
+  # from GitHub or fixed by the record's shape, none typed as a claim:
+  #   * it is a SIBLING, not devops.pr_url (recorded_as non-nil) — a merged pr_url is the
+  #     stale-record case and still governs;
+  #   * GitHub reports it MERGED (a closed-unmerged PR landed nothing);
+  #   * its merge target was `accepted` (a merge into a stack branch is not the first half
+  #     landing where the second half needs it).
+  # Removing a merged PR can never hide a live failure: red/pending/conflicted siblings
+  # are untouched, and a set with no live target left falls back to the full fold.
   def self.governing(entries)
     list = Array(entries)
     return nil if list.empty?
 
-    list.each_with_index.min_by { |entry, index| [severity(entry[:ci][:state]), index] }.first
+    live = list.reject { |entry| landed_sibling?(entry) }
+    live = list if live.empty?
+    live.each_with_index.min_by { |entry, index| [severity(entry[:ci][:state]), index] }.first
+  end
+
+  LANDING_BASE = "accepted"
+
+  def self.landed_sibling?(entry)
+    target = entry[:target] || {}
+    ci = entry[:ci] || {}
+    !target[:recorded_as].nil? && ci[:state].to_s == "merged" && ci[:base].to_s == LANDING_BASE
   end
 end
