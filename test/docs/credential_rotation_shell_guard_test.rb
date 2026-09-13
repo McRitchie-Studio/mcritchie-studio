@@ -694,12 +694,16 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
                     "rotation in both the mechanism paragraph and the ordered step 4, so this scan has " \
                     "gone blind and would pass on nothing."
 
-    bare = calls.reject { |c| c.include?("Permissions.all") }
+    # WHICH mask is no longer a constant (narrow-bot-squads-permissions,
+    # 2026-09-13): squad-upgrade.js stopped approving as the bot, so the bot needs
+    # Initiate|Execute = 5, while a key ROTATION still grants whatever the outgoing
+    # key holds. Assert a mask is NAMED, in either form the SOP legitimately uses.
+    bare = calls.reject { |c| c.include?("Permissions.all") || c.match?(/mask:\s*\d+/) }
 
     assert_empty bare,
                  "these addMember calls name no permission mask: #{bare.inspect}. The operator then " \
-                 "accepts whatever app.squads.so had checked, and `squad-upgrade.js` needs all three " \
-                 "bits (Initiate :155, Vote :161, Execute :172). Write Permissions.all()."
+                 "accepts whatever app.squads.so had checked. Write `Permissions.all()` or an explicit " \
+                 "`{ mask: <n> }` — the bot's is 5 (Initiate|Execute) once the narrowing ceremony runs."
   end
 
   # ── Finding E: the coverage claim, made self-enforcing ────────────────────

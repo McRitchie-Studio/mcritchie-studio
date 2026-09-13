@@ -487,31 +487,36 @@ inline so you need not leave this file: propose **one** config transaction doing
 threshold 2, approve with the **two clean members** (never with the key being
 rotated out), execute.
 
-**Name the permission mask, and make it 7.** `addMember` is not symmetric with
-`removeMember`: remove takes a bare pubkey, add takes a `Member { key, permissions:
-{ mask: u8 } }`, so a mask is ALWAYS chosen — by you, or by whatever the Squads UI
-had checked when you were not looking. Which bits this key needs is decided by
-`turf-vault/scripts/squad-upgrade.js`, the only thing that signs upgrades, and it
-uses all three:
+**Name the permission mask, and grant the mask the OUTGOING key holds.**
+`addMember` is not symmetric with `removeMember`: remove takes a bare pubkey, add
+takes a `Member { key, permissions: { mask: u8 } }`, so a mask is ALWAYS chosen —
+by you, or by whatever the Squads UI had checked when you were not looking. Read
+the outgoing key's mask off the on-chain `Multisig` account (the read-back helper
+below prints every member's mask) and grant that same value. **A rotation swaps a
+key; it does not re-scope authority** — do one thing, so a later failure has one
+candidate cause. Re-scoping is [its own ceremony](#the-mask-narrowing-ceremony-two-humans-separate-act) below, a separate act.
+
+Which bits the bot needs is decided by `turf-vault/scripts/squad-upgrade.js`, the
+only thing that signs upgrades. Recomputed 2026-09-13, after
+`narrow-bot-squads-permissions` stopped it voting as the bot:
 
 | Bit | Value | Where `squad-upgrade.js` needs it |
 |---|---|---|
-| `Initiate` | 1 | `:155` `vaultTransactionCreate({ creator: alexBot })` and `:158` `proposalCreate({ creator: alexBot })` |
-| `Vote` | 2 | `:161` `proposalApprove({ member: alexBot })` |
-| `Execute` | 4 | `:172` `vaultTransactionExecute({ member: alexBot })` |
+| `Initiate` | 1 | `:188` `vaultTransactionCreate({ creator: alexBot.publicKey })` |
+| `Vote` | 2 | **NOT USED.** `:199` and `:202` approve as the two HUMANS (`member: alex`, `member: mason`); `:196` `proposalCreate` is opened by a human too |
+| `Execute` | 4 | `:210` `vaultTransactionExecute({ member: alexBot.publicKey })` |
 
-`Initiate | Vote | Execute` = **mask 7** = `Permissions.all()`. The bit values are
-`@sqds/multisig`'s own (`Permission.Initiate = 0b001`, `Vote = 0b010`,
-`Execute = 0b100`), measured against 2.1.4, the version turf-vault pins. Grant
-anything narrower and the rotation still "succeeds" — the break lands at the NEXT
+`Initiate | Execute` = **mask 5**. The bit values are `@sqds/multisig`'s own
+(`Permission.Initiate = 0b001`, `Vote = 0b010`, `Execute = 0b100`), measured
+against 2.1.4, the version turf-vault pins. Grant anything narrower than what the
+script uses and the rotation still "succeeds" — the break lands at the NEXT
 upgrade, in whichever call lost its bit, weeks later and far from this SOP.
 
-Grant 7 because the tooling provably needs 7, **not** because the other two members
-happen to hold it. Those are different claims, and only the first one survives a
-change to the script: if `squad-upgrade.js` ever stops approving as Alex Bot, or
-splits create from execute across two keys, recompute this table and grant the
-narrower mask then. A rotation is the wrong moment to also re-scope authority — do
-one thing, so a later failure has one candidate cause.
+**The live mask and the needed mask are not the same number today.** The bot
+still holds 7 on chain; the script needs 5. Narrowing it is the ceremony below, run AFTER this
+rotation and never inside it. So a rotation performed before it grants **7**
+(what the outgoing key holds) and one performed after grants **5** — in both
+cases: the mask you read off the chain, never the mask you remember.
 
 **There is no ConfigAction that edits an existing member's permissions.** The seven
 variants are add member, remove member, change threshold, set timelock, add spending
@@ -673,6 +678,9 @@ squads_members() {
 # broken property and exits non-zero; a silent PASS is the only success.
 NEW_MEMBER=<new pubkey>
 OLD_MEMBER=<old pubkey>
+# The mask the OUTGOING key holds. 7 is what it holds today; read it with
+# squads_members BEFORE you propose rather than trusting this line, and use 5
+# once the mask-narrowing ceremony below has run.
 WANT_MASK=7
 
 check_squads_rotation() {
@@ -695,7 +703,7 @@ check_squads_rotation() {
   [ -z "$old_hit" ] || { printf 'FAIL  the rotated-out key is STILL a member\n'; bad=1; }
   [ -n "$new_mask" ] || { printf 'FAIL  the new key is NOT a member\n'; bad=1; }
   [ "$new_mask" = "$WANT_MASK" ] || {
-    printf 'FAIL  new member mask is %s, expected %s (Initiate|Vote|Execute). squad-upgrade.js will break at the NEXT upgrade, not now.\n' "${new_mask:-none}" "$WANT_MASK"
+    printf 'FAIL  new member mask is %s, expected %s (the mask the outgoing key held). squad-upgrade.js will break at the NEXT upgrade, not now.\n' "${new_mask:-none}" "$WANT_MASK"
     bad=1
   }
 
@@ -711,6 +719,82 @@ their wallets, by re-running step 4 with the correct mask. Discovered at the nex
 upgrade instead, it is the same two-human ceremony scheduled from cold — which is
 the entire reason this reads the mask rather than the member list.
 
+
+### The mask-narrowing ceremony (two humans, separate act)
+
+> **This is not part of a rotation.** It re-scopes authority instead of swapping
+> a key, and Mr. McRitchie's decision (2026-09-10) puts it AFTER the end-of-week
+> credential rotation, never folded into it: a rotation must be
+> behaviour-preserving, or a later failure has two candidate causes.
+
+**What it does.** Drops `Vote` from the Alex Bot member of the turf-vault Squads
+2-of-3 (mask 7 → **5**, `Initiate|Execute`). The bot key lives in Heroku config
+AND on disk; while it can vote, a LEAKED BOT KEY PLUS ANY ONE HUMAN KEY reaches
+quorum over mainnet upgrade authority. After this, every upgrade needs BOTH
+humans. There is no third human — that was considered and declined.
+
+**PRECONDITION, and it is the whole reason this is its own act.** The deployed
+`turf-vault/scripts/squad-upgrade.js` on `main` must already approve as the two
+HUMANS. Narrowing first would ship a permission the tooling violates, and the
+break would land at the next upgrade with an operator holding a buffer. Prove it
+before you propose anything — no output means the bot still votes, and you stop:
+
+```bash
+grep -n 'proposalApprove' -A3 /Users/alex/projects/turf-vault/scripts/squad-upgrade.js |
+  grep -c 'member: alexBot'    # must print 0
+grep -n 'member: alex,\|member: mason,' /Users/alex/projects/turf-vault/scripts/squad-upgrade.js  # must print two lines
+```
+
+**The moves.** Same mechanism as the rotation above, at `app.squads.so`, and the
+same one-transaction rule:
+
+1. **One config transaction**, never two: `removeMember(<bot pubkey>)` +
+   `addMember(<bot pubkey>, { mask: 5 })`, threshold unchanged at 2. There is no
+   ConfigAction that edits an existing member's permissions — the seven variants
+   are add member, remove member, change threshold, set timelock, add spending
+   limit, remove spending limit, set rent collector — so a mask change costs a
+   remove plus an add. Split them and the multisig sits at 2 members / threshold
+   2 between executes, a 2-of-2 where losing either key is unrecoverable, and the
+   pending add is STALE (`0x1777` = 6007).
+2. **The two HUMANS approve** — never the bot, whose authority is the subject of
+   the transaction.
+3. **Execute**, then stop and verify. Executing any config transaction sets
+   `stale_transaction_index`, so **any upgrade proposal already in flight dies**:
+   land or abandon those first.
+4. **Read the mask back off the chain** with the grader below. A wrong mask is
+   repairable right now, while both humans are still at their wallets; discovered
+   at the next upgrade it is this whole ceremony again, from cold.
+5. **The next upgrade is the real proof.** Run one (devnet first if one is due)
+   with both humans present: `squad-upgrade.js` prints its own quorum line
+   (`quorum: 2 human approval(s) vs threshold 2`) from the ON-CHAIN masks before
+   it spends, and refuses if a bit it needs is gone.
+
+```bash
+# After execute. Reuses squads_members() from the rotation section above.
+BOT_MEMBER=<bot pubkey>
+check_squads_mask() {
+  local ms bad=0 threshold count bot_mask
+  ms=$(squads_members) || { printf 'FAIL  could not read the Multisig account — this verification is VOID\n' >&2; return 1; }
+  threshold=$(printf '%s\n' "$ms" | awk '$1=="threshold" {print $2}')
+  count=$(printf '%s\n' "$ms" | awk '$1!="threshold"' | wc -l | tr -d ' ')
+  bot_mask=$(printf '%s\n' "$ms" | awk -v k="$BOT_MEMBER" '$1==k {print $2}')
+
+  [ "$count" = 3 ]     || { printf 'FAIL  %s members, expected 3\n' "$count"; bad=1; }
+  [ "$threshold" = 2 ] || { printf 'FAIL  threshold %s, expected 2\n' "$threshold"; bad=1; }
+  [ "$bot_mask" = 5 ]  || { printf 'FAIL  bot mask is %s, expected 5 (Initiate|Execute). A 7 means the narrowing did not land; a 1 or 4 breaks the next upgrade.\n' "${bot_mask:-none}"; bad=1; }
+  printf '%s\n' "$ms" | awk '$1!="threshold" && $1!="'"$BOT_MEMBER"'" && $2!=7 { print "FAIL  human member " $1 " holds mask " $2 ", expected 7"; exit 1 }' || bad=1
+
+  [ "$bad" = 0 ] && printf 'PASS  3 members, threshold 2, bot mask 5, both humans mask 7\n'
+  return "$bad"
+}
+
+check_squads_mask
+```
+
+**Receipt.** Its own row in the rotation log, described as a permission change and
+not as a rotation, naming the mask before and after. If it is run in the same week
+as a credential rotation, the two rows stay separate — that separation is the
+record that the rotation was behaviour-preserving.
 
 ### The second shape: one identity, many consumers
 
