@@ -16,9 +16,71 @@ class Release::ArtifactCommitTest < ActiveSupport::TestCase
     assert A.safe_to_commit?(" M #{LEDGER}\n", LEDGER)
   end
 
-  test "safe to commit when the tree is otherwise clean" do
-    assert A.safe_to_commit?("", DOC)
-    assert A.safe_to_commit?("?? #{DOC}", DOC) # trailing-newline-free porcelain
+  test "a trailing-newline-free porcelain still parses" do
+    assert A.safe_to_commit?("?? #{DOC}", DOC)
+  end
+
+  # ── the whole decision, as a table ──────────────────────────────────────────
+  #
+  # THE PIN THIS REPLACES. Until 2026-09-13 this file asserted
+  # `assert A.safe_to_commit?("", DOC)` under the name "safe to commit when the
+  # tree is otherwise clean" — and that pin is what made the defect permanent.
+  # `safe_to_commit?` was `other_dirty_paths(...).empty?`, which a CLEAN tree
+  # satisfies vacuously, while the comment above it always claimed the stronger
+  # conjunction ("the expected doc(s) are the ONLY things dirty"). So the caller
+  # flipped the SHARED primary checkout — `checkout release`, a `git commit` that
+  # silently did nothing, `ensure { checkout main }` — on every run with nothing
+  # to commit: 191 measured flip pairs on 2026-09-10 with ZERO commits behind
+  # them. The code moved to meet the comment; this table is the comment made
+  # executable.
+  {
+    "clean tree — nothing to do, and no reason to flip a shared checkout" =>
+      { porcelain: "", safe: false, nothing: true },
+    "expected doc modified" =>
+      { porcelain: " M #{DOC}\n", safe: true, nothing: false },
+    "expected doc UNTRACKED — a first run must still commit, not no-op" =>
+      { porcelain: "?? #{DOC}\n", safe: true, nothing: false },
+    "expected doc staged" =>
+      { porcelain: "A  #{DOC}\n", safe: true, nothing: false },
+    "only OTHER paths dirty — refuse, and there is nothing of ours anyway" =>
+      { porcelain: " M app/models/pokemon.rb\n", safe: false, nothing: true },
+    "expected AND other dirty — the original refusal, unchanged" =>
+      { porcelain: "?? #{DOC}\n M app/models/pokemon.rb\n", safe: false, nothing: false }
+  }.each do |name, row|
+    test "decision table: #{name}" do
+      assert_equal row[:safe], A.safe_to_commit?(row[:porcelain], DOC),
+                   "safe_to_commit? disagrees with the table for: #{name}"
+      assert_equal row[:nothing], A.nothing_to_commit?(row[:porcelain], DOC),
+                   "nothing_to_commit? disagrees with the table for: #{name}"
+    end
+  end
+
+  # The two refusals are DIFFERENT and the caller reports them differently — one
+  # is "no work", the other is "unrelated work present". Collapsing them would
+  # have the archive beat tell an operator that a clean tree has other changes.
+  test "a clean tree and a dirty-elsewhere tree refuse for different reasons" do
+    assert A.nothing_to_commit?("", DOC)
+    assert_empty A.other_dirty_paths("", DOC)
+
+    assert A.nothing_to_commit?(" M app/models/pokemon.rb\n", DOC)
+    assert_equal ["app/models/pokemon.rb"], A.other_dirty_paths(" M app/models/pokemon.rb\n", DOC)
+  end
+
+  test "a rename of an expected path counts as dirty by its NEW name" do
+    porcelain = "R  docs/agents/audits/old.md -> #{DOC}\n"
+
+    assert_equal [DOC], A.expected_dirty_paths(porcelain, DOC)
+    assert A.safe_to_commit?(porcelain, DOC)
+    refute A.nothing_to_commit?(porcelain, DOC)
+  end
+
+  test "a batch is dirty when ANY of its expected paths is" do
+    porcelain = " M #{LEDGER}\n"
+    expected = ["docs/agents/archive/audits/a-2026-05-01.md", LEDGER]
+
+    assert_equal [LEDGER], A.expected_dirty_paths(porcelain, expected)
+    assert A.safe_to_commit?(porcelain, expected),
+           "a partially-dirty batch still has work to commit; only an ENTIRELY clean one does not"
   end
 
   test "NOT safe when any other file is dirty — leave it for the preflight" do
