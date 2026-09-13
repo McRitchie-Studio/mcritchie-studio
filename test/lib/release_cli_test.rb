@@ -3043,6 +3043,81 @@ class ReleaseCliTest < Minitest::Test
     end
   end
 
+  # How many times HEAD has MOVED, read from the reflog.
+  #
+  # WHY NOT `rev-parse --abbrev-ref HEAD`. The dance restores `main` in an
+  # `ensure`, so the end state is `main` whether it flipped or not — an
+  # end-state assertion cannot tell "never left" from "left and came back",
+  # which is the entire distinction under test. The reflog remembers.
+  def head_moves(clone)
+    out, = Open3.capture2("git", "-C", clone, "reflog", "--format=%gs")
+    out.lines.count { |line| line.start_with?("checkout: moving") }
+  end
+
+  # [integration] NOTHING TO COMMIT MUST NOT FLIP THE CHECKOUT.
+  #
+  # The generated doc usually regenerates to the same bytes. The dance used to
+  # check out `release`, run a `git commit` that silently did nothing, and
+  # `ensure` its way back to `main` to discover that — measured on the hub
+  # primary 2026-09-10 as 191 flip pairs with ZERO `commit:` entries behind them,
+  # median dwell on `release` 1s. The checkout is SHARED, and each flip leaves
+  # every tracked file briefly absent (~0.4-0.7s, ~68% of a checkout), which is
+  # what blinds desk-side commands and git's credential helper.
+  def test_commit_artifact_to_release_does_not_flip_a_clean_checkout
+    Dir.mktmpdir do |dir|
+      clone = build_sibling_fixture(dir)
+      doc = File.join(clone, "retro.md")
+      # The REAL case: the artifact is already committed and regenerated
+      # identically, so the working tree is clean. Not merely absent — the guard
+      # must not depend on the file being missing.
+      File.write(doc, "retro fixture")
+      system("git", "-C", clone, "add", "retro.md", out: File::NULL, err: File::NULL)
+      system("git", "-C", clone, "commit", "-qm", "seed the artifact", out: File::NULL, err: File::NULL)
+      File.write(doc, "retro fixture") # regenerated, byte-identical
+
+      status, = Open3.capture2("git", "-C", clone, "status", "--porcelain")
+      assert_empty status.strip, "test setup: the tree must be CLEAN for this to be the case under test"
+      before = head_moves(clone)
+
+      setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
+              %(def repo_path(_repo) = #{clone.inspect})
+      out = run_cli(["--yes"], setup: setup,
+                    call: %{commit_artifact_to_release("sibling", #{doc.inspect}, "retro: fixture"); puts("DONE")})
+
+      assert_equal before, head_moves(clone),
+                   "the dance flipped HEAD with nothing to commit — that is the 191-flips-a-day defect, and " \
+                   "each flip blinds every command reading this checkout for ~0.4-0.7s"
+      assert_includes out, "nothing to commit", "the skip must SAY so; every other arm of this method reports"
+      refute_includes out, "other changes present",
+                      "a clean tree has no other changes — reporting it as one sends the operator hunting"
+      assert_includes out, "DONE", "the skip stays NON-FATAL (archive/retro ride on)"
+    end
+  end
+
+  # [integration] …and the fix must not turn the dance into a no-op. A DIRTY
+  # artifact still flips, commits and pushes exactly as before. Without this leg
+  # the test above is satisfied by a method that does nothing at all.
+  def test_commit_artifact_to_release_still_flips_and_commits_when_the_artifact_is_dirty
+    Dir.mktmpdir do |dir|
+      clone = build_sibling_fixture(dir)
+      doc = File.join(clone, "retro.md")
+      File.write(doc, "retro fixture") # UNTRACKED — the first-run case
+      before = head_moves(clone)
+
+      setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
+              %(def repo_path(_repo) = #{clone.inspect})
+      out = run_cli(["--yes"], setup: setup,
+                    call: %{commit_artifact_to_release("sibling", #{doc.inspect}, "retro: fixture"); puts("DONE")})
+
+      assert_operator head_moves(clone), :>, before,
+                      "a dirty artifact MUST still flip to release — an untracked first run that no-ops " \
+                      "would strand the doc forever"
+      assert_includes out, "committed retro.md to release"
+      count, = Open3.capture2("git", "-C", clone, "rev-list", "--count", "origin/release")
+      assert_equal "2", count.strip, "the artifact commit is pushed onto origin/release"
+    end
+  end
+
   # --- the ship's own checkout: main advances by REF PUSH, not by ff -----------
   #
   # HISTORY (2026-07-12). ship used to advance `main` by flipping the SHARED PRIMARY
