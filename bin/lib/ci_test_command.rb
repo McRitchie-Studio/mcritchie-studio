@@ -137,12 +137,17 @@ require "yaml"
 #     `test:prepare` when no argument looks like a PATH or `-n`; tailwindcss-rails
 #     enhances `test:prepare` with `tailwindcss:build`, which builds the gitignored
 #     app/assets/builds/tailwind.css. So the tiers pay for the CSS, and a virgin
-#     worktree needs no setup step. TWO EDGES, both measured on ubuntu-latest with
-#     the stylesheet deleted first (turf run 34382943177):
+#     worktree needs no setup step. TWO EDGES, both measured ON CI with the
+#     stylesheet deleted first — turf-monster run 34382943177, attempt 1
+#     (ubuntu-latest, which resolved to the ubuntu-24.04 image). Cite the attempt:
+#     a re-run files a new attempt under the same run id. The receipt is turf's; it
+#     carries over because the mechanism is gem code both repos load, and the hub's
+#     OWN rake graph is asserted by the guard named below.
 #       · `bin/rails db:test:prepare` alone → stylesheet ABSENT. That line is
-#         rake-routed AND path-free and still misses the hook: tailwindcss-rails
-#         enhances `test:prepare`, and falls back to `db:test:prepare` only when
-#         `test:prepare` is undefined, which in a Rails app it never is.
+#         rake-routed AND path-free and still misses the hook: tailwindcss-rails'
+#         build.rake enhances the FIRST of `test:prepare`, `spec:prepare`,
+#         `db:test:prepare` that is defined, and railties always defines
+#         `test:prepare` — so in a Rails app `db:test:prepare` is never enhanced.
 #       · `TEST=<path> bin/rails db:test:prepare test` → ABSENT. Two layers feed
 #         that argv: the rake `test` task passes `ENV["TEST"]` POSITIONALLY
 #         (railties' testing.rake) and `run_from_rake` splices `ENV["TESTOPTS"]`
