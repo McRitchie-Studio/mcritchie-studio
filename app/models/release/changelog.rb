@@ -51,7 +51,7 @@ class Release
   #
   # AND THE EXCEPTION, which is where (b) is right: `refusal` REFUSES when the
   # roll would LIE. A file already carrying a backlog cannot be rolled honestly —
-  # stamping thirty-five releases of entries with one new version is a bigger
+  # stamping thirty-five minor versions of entries with one new version is a bigger
   # false statement than the one it replaces. So: roll when the roll is true,
   # refuse when it would not be, and never publish unguarded.
   #
@@ -145,7 +145,7 @@ class Release
     #
     # NOT ZERO, and the reason is measured: a release that ships no entry at all
     # is legitimate (studio-engine 0.74.4 was one of thirty-four such). Two is the
-    # same tolerance studio-engine's own test/lib/changelog_structure_test.rb
+    # same tolerance studio-engine's own test/docs/changelog_structure_test.rb
     # carries, deliberately, so the two guards agree about the SIZE of drift they
     # tolerate. They are not the same guard and must not be described as one: this
     # one measures against the last PUBLISHED version and only refuses when the

@@ -20,9 +20,10 @@
 >
 > **Landed since:** the `Release` singleton model; the persistent-`release`
 > branch CLI — `bin/release init|merge|prepare|ship` (§1.1); and
-> `bin/agent-worktree`'s release-aware base default — `new` cuts the feature
-> branch from `origin/release` (falling back to `origin/main` where no `release`
-> branch exists) and `finish --pr` opens the PR with `--base release`.
+> `bin/agent-worktree`'s ladder-aware base default — `new` cuts the feature
+> branch from `origin/accepted` and `finish --pr` opens the PR into `accepted`
+> (both resolved by `base_ref_for`, which falls back to `release`, then `main`,
+> only for a repo not on the ladder).
 >
 > **Still to land (each its own task):** the Discord progress webhook (§5). Where
 > this doc describes it, it is the spec for the follow-up.
