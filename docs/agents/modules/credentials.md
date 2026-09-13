@@ -153,10 +153,24 @@ so the two can never disagree about which identity a session is.
 
 ### Wiring (global, one time)
 
+**Never point `~/.gitconfig` at a path inside a working tree.** `git checkout`
+unlinks and recreates a file whose content differs between two commits, so for a
+window the helper DOES NOT EXIST and any git operation needing credentials dies
+with `gh-app-git-credential: No such file or directory` — measured four times on
+2026-09-10 while the hub primary moved. Install a snapshot outside every working
+tree instead, and wire THAT path:
+
 ```bash
-git config --global credential."https://github.com".helper \
-  "/Users/alex/projects/mcritchie-studio/bin/gh-app-git-credential"
+cd /Users/alex/projects/mcritchie-studio
+bin/install-git-credential-helper            # prints the exact git config command
+bin/install-git-credential-helper --check    # what is installed, and whether it is stale
 ```
+
+The installer copies the helper's whole closure into
+`~/.mcritchie/git-credential/versions/<digest>/` and points a stable `current`
+symlink at it, so the wired path never moves. Re-run it after any change to the
+helper or anything it reaches (`--check` says when that is due). Mechanics and
+the reasoning: `bin/lib/credential_helper_install.rb`.
 
 Confirm access with a **real** read/write — not the repo permissions API, which
 reflects the *account's* access, not the *token's* grant (this once masked a

@@ -147,7 +147,16 @@ class StateStoreContainmentTest < Minitest::Test
                                      "enforce!s; log_path is private so no caller can take the raw path"],
     "bin/lib/op-meter.sh" => [:bash, "BASH `op` wrapper, sourced by bin/secret, bin/gh-app-git-credential, " \
                                      "bin/ecosystem-build and bin/setup-1pass-token — LAYER 2 cannot read " \
-                                     "it; LAYER 3 executes it"]
+                                     "it; LAYER 3 executes it"],
+    "bin/lib/credential_helper_install.rb" => [:ruby, "credential-helper snapshot: it NAMES the op-reads " \
+                                                      "log to write that path as a STRING into the " \
+                                                      "snapshot's env stamp, because a snapshot's __dir__ " \
+                                                      "is not the repo and OpMeter would otherwise log " \
+                                                      "inside the snapshot. It performs no IO on the " \
+                                                      "store — the only file it writes is under the " \
+                                                      "install root — and the stamp DEFAULT-assigns, so " \
+                                                      "OpMeter.append's enforce! is still the seam that " \
+                                                      "decides whether a write lands"]
   }.freeze
 
   # THE ENTIRE EXEMPTION SURFACE of LAYER 2 — every method allowed to hold a raw store
@@ -210,6 +219,17 @@ class StateStoreContainmentTest < Minitest::Test
     "bin/lib/op_meter.rb" => {
       "log_path" => "BUILDER — private; append launders it at the write seam",
       "records" => "READ — parses the log for bin/op-reads; append is the only writer"
+    },
+    # A THIRD shape, named rather than filed under one it does not fit. EMITS is
+    # not BUILDER (it returns no store path: it returns the env file's own path,
+    # under the install root) and not READ (it reads nothing). It serialises the
+    # path into a file the snapshot sources. Why that is safe: the store is never
+    # touched here, and the value only reaches OpMeter, whose `append` enforce!s.
+    # A sandboxed process running the snapshot therefore still aborts at the
+    # write seam instead of appending to the operator's real log.
+    "bin/lib/credential_helper_install.rb" => {
+      "stamp_snapshot_env!" => "EMITS — private; writes the resolved log path as a string into " \
+                               "<install root>/bin/snapshot-env.sh and performs no IO on the store"
     },
     # EMPTY, and that is the point: bin/gh-token holds no raw store path anywhere.
     # `store_path` returns the ENFORCED path and every reader/writer calls it, so
