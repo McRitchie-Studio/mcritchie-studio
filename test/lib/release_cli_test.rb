@@ -638,7 +638,9 @@ class ReleaseCliTest < Minitest::Test
   # the happy path — so the two guard tests below drive the state the guard
   # actually exists for: allocation skipped, refused, or wrong. Allocation's own
   # behaviour is driven against REAL git in test/lib/release_gem_allocation_test.rb.
-  def gem_publish_stub(version: "1.0.0", live: [], lock_dirty: true, allocate: true)
+  # tag/ahead: what git describe and git log <tag>.. answer. A re-run AFTER a publish passes the published tag
+  # and no commits: a live version whose tag trails is REFUSED (/tasks/untagged-gem-publish-strands-work).
+  def gem_publish_stub(version: "1.0.0", live: [], lock_dirty: true, allocate: true, tag: "v0.10.0", ahead: "abc123 stranded engine commit")
     GATE_GIT_STUB +
       (allocate ? "" : %(def allocate_gem_versions!(_groups) = nil\n)) +
       %(ENV["RELEASE_CI_STATUS"] = "green"\n) +
@@ -647,7 +649,7 @@ class ReleaseCliTest < Minitest::Test
       %(def rubygems_versions(_gem) = #{live.inspect}\n) +
       %(LOCK_DIRTY = #{lock_dirty.inspect}\n) +
       %(PUBLISHED_VERSION = #{version.inspect}\n) +
-      %(STALE_LOCK_VERSION = "0.10.0"\n) + <<~'RUBY'
+      %(STALE_LOCK_VERSION = "0.10.0"\nDESCRIBED_TAG = #{tag.inspect}\nAHEAD_LOG = #{ahead.inspect}\n) + <<~'RUBY'
         def conductor(ruby, read_only: false)
           return { "tasks" => [], "release" => { "slug" => "rel-gempub", "state" => "assembling" }, "screen" => {} } if ruby.include?("sweep_candidates")
           return { "state" => "assembled" } if ruby.include?("qa_green!")
@@ -660,8 +662,8 @@ class ReleaseCliTest < Minitest::Test
         def repo_git_state(repo, _path) = { "repo" => repo, "branch" => "main", "dirty" => false, "dirty_files" => [], "tracked_dirty" => [] }
         def git_capture(*a)
           j = a.join(" ")
-          return ["v0.10.0", true] if j.include?("describe")
-          return ["abc123 stranded engine commit", true] if j.include?("log --oneline")
+          return [DESCRIBED_TAG, true] if j.include?("describe")
+          return [AHEAD_LOG, true] if j.include?("log --oneline")
           return [(LOCK_DIRTY ? " M Gemfile\n M Gemfile.lock" : ""), true] if j.include?("status --porcelain")
           # Phase 1's consumer-coverage read: the swept app's Gemfile AT origin/release.
           return [%(gem "studio-engine", "~> 0.10"\n), true] if j.include?(":Gemfile")
@@ -818,7 +820,7 @@ class ReleaseCliTest < Minitest::Test
   # test_bundle_lock_retries_a_stale_resolution_then_aborts_naming_the_compact_index.)
   def test_prepare_passes_the_published_version_to_bundle_lock_as_expect
     out = run_cli(["--yes"], call: "prepare",
-                  setup: gem_publish_stub(version: "1.0.0", live: ["1.0.0"], lock_dirty: false))
+                  setup: gem_publish_stub(version: "1.0.0", live: ["1.0.0"], lock_dirty: false, tag: "v1.0.0", ahead: ""))
 
     assert_includes out, "BUNDLE-LOCK studio-engine conservative=true expect=1.0.0",
                     "prepare must tell bundle_lock which version has to land: #{out}"
@@ -921,7 +923,7 @@ class ReleaseCliTest < Minitest::Test
   # bumped → publish and commit both skip, and the QA half still runs.
   def test_prepare_gem_publish_and_lock_bump_are_idempotent_on_a_re_run
     out = run_cli(["--yes"], call: "prepare",
-                  setup: gem_publish_stub(version: "1.0.0", live: [{ "number" => "1.0.0" }], lock_dirty: false))
+                  setup: gem_publish_stub(version: "1.0.0", live: [{ "number" => "1.0.0" }], lock_dirty: false, tag: "v1.0.0", ahead: ""))
 
     assert_includes out, "already live on RubyGems — skip publish", "an already-published version skips"
     assert_includes out, "nothing to commit (idempotent re-run)", "an already-bumped lock commits nothing"

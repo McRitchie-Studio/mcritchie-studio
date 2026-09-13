@@ -284,9 +284,13 @@ How a gem rides a release:
    `v*` tag (the highest live version only when no tag exists) and skips — and
    it **refuses rather than guesses**: an
    unreadable `--gem-bump`, an unparseable last version, a `version_file` that
-   declares its version twice, or a `bundle lock` that did not land the new
-   number all abort the sweep with **nothing published**. The stranded-work guard
-   stays armed behind it, so a skipped or wrong allocation still aborts loudly.
+   declares its version twice, a `bundle lock` that did not land the new
+   number, or a version already live on RubyGems whose `v*` tag never reached
+   origin (a publish whose tag push failed — push the tag) all abort the sweep
+   with **nothing published**. The stranded-work guard stays armed behind it,
+   but it fires only when work sits past the tag while the version did NOT
+   advance; it cannot see a version that advanced, which is why allocation
+   refuses the live-but-untagged case itself.
    When the derived bump is wrong — most often a `chore` that is genuinely
    breaking — the override is `bin/task update <task-slug> --gem-bump major`.
 
