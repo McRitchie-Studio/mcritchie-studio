@@ -711,6 +711,34 @@ bin/ship-wait <task-slug>                                # attach to one already
 bin/ship-wait <task-slug> --log <path> --pid <pid>       # attach to one you launched yourself
 ```
 
+**Run the DESK's copy, not the hub primary's.** The bare form above already does
+that from a hub desk, and `bin/task begin` prints the desk's absolute path in its
+`next:` line. Reaching for the hub's absolute path instead
+(`/Users/alex/projects/mcritchie-studio/bin/ship-wait`) puts the script in a
+checkout that OTHER PROCESSES MOVE: `git checkout` unlinks each file and
+recreates it, so a tracked file is absent for ~0.4-0.7s of every checkout
+(measured 2026-09-13, ~68% of the operation), and a command starting in that
+window dies with `cannot load such file` or exit 127. That is four measured
+failures on 2026-09-10 alone. `bin/ship` and `bin/ship-wait` now HAND OFF to the
+desk's own copy when you invoke the hub's — they announce it on stderr, and
+`MCR_SKIP_DESK_HANDOFF=1` opts out — but the handoff cannot save you if the hub's
+copy is itself mid-rewrite when the shell goes to exec it. Naming the desk path
+can.
+
+**It does not cover a satellite.** Only `mcritchie-studio` ships these scripts
+(verified 2026-09-13: `bin/ship` present in 31/32 hub desks, **0/32 turf desks**),
+so a turf-monster, rolio or gem desk has no copy to hand off to and every one of
+its ships runs the hub's script. Those runs stay exposed; what they get instead
+is the diagnosis below.
+
+**When it does bite, the error now says so.** A `cannot load such file` from a
+moved checkout prints `THE HUB CHECKOUT MOVED UNDER THIS COMMAND`, the file, the
+repo's last HEAD move from the reflog, and the remedy — **re-run it**. There is
+no retry anywhere in this path, deliberately: a retry cannot tell a checkout
+window from a genuinely missing file, and the diagnosis stays SILENT for a file
+that was never in `HEAD` so a typo is never dressed up as a moved tree. Owned by
+`bin/lib/hub_move_diagnosis.rb`.
+
 **Exit codes — branch on these, never re-parse the log:**
 
 | Code | Means | Do |
