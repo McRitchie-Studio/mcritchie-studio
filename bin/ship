@@ -633,10 +633,45 @@ if existing
     ready_out, ready = gh_capture(root, "pr", "ready", number)
     die!("gh pr ready #{number} failed:\n#{ready_out.strip}") unless ready
   end
+  # A NON-`accepted` BASE IS TWO DIFFERENT SITUATIONS, and until 2026-09-13 this treated
+  # both as the mis-based one (/tasks/ship-retargets-stacked-prs).
+  #
+  #   the base is ANOTHER OPEN PR's head  → a DELIBERATE STACK. Leave it alone.
+  #   anything else                       → mis-based. Repair it, as before.
+  #
+  # MEASURED on turf #701, stacked on turf #624 by the operator's decision: retargeting it
+  # to `accepted` produced three false refusals from one action — the test-only shape claim
+  # broke because the observed diff then carried the PARENT's six files, GitHub could not
+  # compute a merge so it queued NO run (dor-check: "waiting can never clear the conflict"),
+  # and the [control] line "named no file from this diff". The ship had to be finished by
+  # hand. Nothing about the PR was wrong; the base was the point.
+  #
+  # WHY "OPEN" IS THE WHOLE TEST. A merged parent is already gone — GitHub retargets its
+  # children onto the parent's own base when it merges — and a closed-unmerged parent, or a
+  # deleted branch, is a stack whose premise has evaporated: the child would wait forever
+  # for a branch nobody is shipping. None of those is OPEN, so all of them still get
+  # repaired, which is the behaviour this self-heal was written for. `release` and `main`,
+  # the dangerous mis-bases, are never an open PR's head either.
+  #
+  # AN UNREADABLE PROBE FALLS BACK TO THE REPAIR, and says so. Nothing downstream repairs a
+  # mis-based PR — no gate reads baseRefName for this — so leaving one alone on an
+  # unanswered question is the costlier error. A wrongly-retargeted stack is loud and
+  # recoverable (`gh pr edit <n> --base <parent>`); an unrepaired mis-base is silent.
   if existing["baseRefName"] != BASE_BRANCH
-    say "4/8 pr — PR ##{number} is based on #{existing["baseRefName"].inspect}; retargeting to #{BASE_BRANCH}."
-    retarget_out, retargeted = gh_capture(root, "pr", "edit", number, "--base", BASE_BRANCH)
-    die!("gh pr edit #{number} --base #{BASE_BRANCH} failed:\n#{retarget_out.strip}") unless retargeted
+    parent_base = existing["baseRefName"].to_s
+    parent_json, parent_listed = gh_capture(root, "pr", "list", "--head", parent_base,
+                                            "--state", "open", "--json", "number,url")
+    parent = parent_listed ? FastLane.open_pr(parent_json) : nil
+    if parent
+      say "4/8 pr — PR ##{number} is based on #{parent_base.inspect}, which is open PR " \
+          "##{parent["number"]}'s branch — a deliberate STACK, so the base stands. " \
+          "##{parent["number"]} merges FIRST; GitHub retargets this to #{BASE_BRANCH} when it does."
+    else
+      why = parent_listed ? "no OPEN PR has that head" : "could not read whether an open PR has that head"
+      say "4/8 pr — PR ##{number} is based on #{parent_base.inspect} (#{why}); retargeting to #{BASE_BRANCH}."
+      retarget_out, retargeted = gh_capture(root, "pr", "edit", number, "--base", BASE_BRANCH)
+      die!("gh pr edit #{number} --base #{BASE_BRANCH} failed:\n#{retarget_out.strip}") unless retargeted
+    end
   end
 else
   say "4/8 pr — opening a non-draft PR into #{BASE_BRANCH}"
