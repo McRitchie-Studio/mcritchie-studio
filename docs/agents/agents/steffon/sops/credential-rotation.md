@@ -473,7 +473,7 @@ the key you just rotated out:
 |---|---|---|
 | turf-vault `VaultState.signers` — contest/treasury 2-of-3 | `update_signers` (on-chain, 2-of-3) | `turf-monster/docs/SOLANA.md` signer list |
 | turf-vault **Squads V4 2-of-3 — MAINNET PROGRAM UPGRADE AUTHORITY** | a **Squads config transaction**, at `app.squads.so` | `turf-vault/scripts/squad.json` → `members.alex_bot` |
-| `scripts/squad-upgrade.js`, which signs upgrades as `ALEX_BOT_KEY` | supplied per run from 1Password, not a stored config var | `squad-upgrade.js:86` `loadKey("ALEX_BOT_KEY")` |
+| `scripts/squad-upgrade.js`, which the bot SIGNS for (`ALEX_BOT_KEY`) but no longer VOTES with — the two approvals are `ALEX_KEY` and `MASON_KEY` | all three supplied per run from 1Password, not stored config vars | `squad-upgrade.js:102-104` `loadKey("ALEX_BOT_KEY")` / `loadKey("ALEX_KEY")` / `loadKey("MASON_KEY")` |
 
 **`update_signers` does not touch Squads membership.** They are separate systems
 that happen to share a pubkey: one is turf-vault's own in-program multisig, the
@@ -502,9 +502,14 @@ only thing that signs upgrades. Recomputed 2026-09-13, after
 
 | Bit | Value | Where `squad-upgrade.js` needs it |
 |---|---|---|
-| `Initiate` | 1 | `:188` `vaultTransactionCreate({ creator: alexBot.publicKey })` |
-| `Vote` | 2 | **NOT USED.** `:199` and `:202` approve as the two HUMANS (`member: alex`, `member: mason`); `:196` `proposalCreate` is opened by a human too |
-| `Execute` | 4 | `:210` `vaultTransactionExecute({ member: alexBot.publicKey })` |
+| `Initiate` | 1 | `:190` `creator: alexBot.publicKey` (the `vaultTransactionCreate` call) |
+| `Vote` | 2 | **NOT USED.** `:211` `member: alex,` and `:214` `member: mason,` cast both approvals; `:207` `creator: alex.publicKey` opens the proposal (with `rentPayer: alexBot.publicKey`, so the bot still pays its rent) |
+| `Execute` | 4 | `:222` `member: alexBot.publicKey` (the `vaultTransactionExecute` call) |
+
+Every citation above names the line the ARGUMENT is on, not the line the call
+opens — the convention this table has used since it was written, stated because
+the two differ by two to four lines in this script and a reader who checks one
+expecting the other concludes the table has rotted.
 
 `Initiate | Execute` = **mask 5**. The bit values are `@sqds/multisig`'s own
 (`Permission.Initiate = 0b001`, `Vote = 0b010`, `Execute = 0b100`), measured
@@ -736,14 +741,41 @@ humans. There is no third human — that was considered and declined.
 **PRECONDITION, and it is the whole reason this is its own act.** The deployed
 `turf-vault/scripts/squad-upgrade.js` on `main` must already approve as the two
 HUMANS. Narrowing first would ship a permission the tooling violates, and the
-break would land at the next upgrade with an operator holding a buffer. Prove it
-before you propose anything — no output means the bot still votes, and you stop:
+break would land at the next upgrade with an operator holding a buffer.
+
+**READ `main`, NOT YOUR CHECKOUT.** A local working tree is the wrong artefact
+for a claim about what is deployed, and on this ladder it is the DANGEROUS wrong
+artefact: `accepted` and `release` carry the two-human script days before `main`
+does, and this ceremony is scheduled into exactly that window. Measured
+2026-09-13 — the turf-vault checkout was 15 commits behind `origin/main`, and
+grepping it would have reported PASS for a script `main` does not have. The
+grader below fetches `main` and reads the file out of it, and refuses when the
+file is missing rather than printing the PASS value for an empty stream
+(`grep -c` prints `0` for no input, which is exactly what PASS looks like):
 
 ```bash
-grep -n 'proposalApprove' -A3 /Users/alex/projects/turf-vault/scripts/squad-upgrade.js |
-  grep -c 'member: alexBot'    # must print 0
-grep -n 'member: alex,\|member: mason,' /Users/alex/projects/turf-vault/scripts/squad-upgrade.js  # must print two lines
+check_upgrade_script_votes_human() {
+  local repo=/Users/alex/projects/turf-vault script bot humans
+  git -C "$repo" fetch -q origin main || { printf 'FAIL  could not fetch origin/main — this check is VOID\n'; return 1; }
+  script=$(git -C "$repo" show origin/main:scripts/squad-upgrade.js) || {
+    printf 'FAIL  origin/main has no scripts/squad-upgrade.js — renamed or moved; find it before you narrow anything\n'
+    return 1
+  }
+  [ -n "$script" ] || { printf 'FAIL  origin/main:scripts/squad-upgrade.js is EMPTY; this check is VOID\n'; return 1; }
+
+  bot=$(printf '%s\n' "$script" | grep -A3 'proposalApprove' | grep -c 'member: alexBot')
+  humans=$(printf '%s\n' "$script" | grep -c 'member: alex,\|member: mason,')
+
+  [ "$bot" = 0 ] || { printf 'FAIL  origin/main still approves as the bot (%s site(s)) — do NOT narrow the mask yet\n' "$bot"; return 1; }
+  [ "$humans" = 2 ] || { printf 'FAIL  origin/main casts %s human approval(s), expected 2\n' "$humans"; return 1; }
+
+  printf 'PASS  origin/main approves as two humans and never as the bot\n'
+}
+
+check_upgrade_script_votes_human
 ```
+
+A `FAIL` here is the answer: stop, and ship the script half to `main` first.
 
 **The moves.** Same mechanism as the rotation above, at `app.squads.so`, and the
 same one-transaction rule:
@@ -782,7 +814,12 @@ check_squads_mask() {
   [ "$count" = 3 ]     || { printf 'FAIL  %s members, expected 3\n' "$count"; bad=1; }
   [ "$threshold" = 2 ] || { printf 'FAIL  threshold %s, expected 2\n' "$threshold"; bad=1; }
   [ "$bot_mask" = 5 ]  || { printf 'FAIL  bot mask is %s, expected 5 (Initiate|Execute). A 7 means the narrowing did not land; a 1 or 4 breaks the next upgrade.\n' "${bot_mask:-none}"; bad=1; }
-  printf '%s\n' "$ms" | awk '$1!="threshold" && $1!="'"$BOT_MEMBER"'" && $2!=7 { print "FAIL  human member " $1 " holds mask " $2 ", expected 7"; exit 1 }' || bad=1
+  # Every wrong human, not just the first: two bad names is a different problem
+  # from one, and finding the second only after fixing the first is another
+  # two-human ceremony from cold.
+  printf '%s\n' "$ms" | awk -v bot="$BOT_MEMBER" '
+    $1!="threshold" && $1!=bot && $2!=7 { printf "FAIL  human member %s holds mask %s, expected 7\n", $1, $2; n++ }
+    END { exit (n ? 1 : 0) }' || bad=1
 
   [ "$bad" = 0 ] && printf 'PASS  3 members, threshold 2, bot mask 5, both humans mask 7\n'
   return "$bad"

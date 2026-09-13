@@ -78,6 +78,7 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
   # `vault` and CREATE one named `<field>[concealed]=<the value>`. A placeholder
   # this map has not learned about must stop the harness, not be executed.
   PLACEHOLDERS = {
+    "<bot pubkey>" => NEW_MEMBER,
     "<VAR>"        => FIXTURE_VAR,
     "<item>"       => FIXTURE_ITEM,
     "<vault>"      => FIXTURE_VAULT,
@@ -90,6 +91,9 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
 
   # §2.1's write, graded like the others. It needs $OLD as well as $NEW: set the
   # new key without the old one and every existing managed wallet stops opening.
+  # The bot's Squads mask-narrowing ceremony (narrow-bot-squads-permissions).
+  MASK_CEREMONY_HEADING = "### The mask-narrowing ceremony (two humans, separate act)".freeze
+
   MW_HEADING = "### 2.1 `MANAGED_WALLET_ENCRYPTION_KEY` — deploy first, then migrate".freeze
   OLD_VALUE  = "retiring-managed-wallet-guard-fixture-value".freeze
 
@@ -644,11 +648,11 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
       # The three partial masks are each a REAL call site in squad-upgrade.js
       # losing its bit — they are the whole reason the mask is checked at all.
       {
-        "mask 3 — Initiate|Vote, no Execute (vaultTransactionExecute :172 breaks)" =>
+        "mask 3 — Initiate|Vote, no Execute (vaultTransactionExecute :222 breaks)" =>
           ["threshold 2", "#{NEW_MEMBER} 3", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
-        "mask 5 — Initiate|Execute, no Vote (proposalApprove :161 breaks)" =>
+        "mask 5 — Initiate|Execute, no Vote; correct AFTER the narrowing ceremony, wrong for a plain rotation" =>
           ["threshold 2", "#{NEW_MEMBER} 5", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
-        "mask 6 — Vote|Execute, no Initiate (vaultTransactionCreate :155 breaks)" =>
+        "mask 6 — Vote|Execute, no Initiate (vaultTransactionCreate :190 breaks)" =>
           ["threshold 2", "#{NEW_MEMBER} 6", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
         "the rotated-out key is STILL a member" =>
           ["threshold 2", "#{NEW_MEMBER} 7", "#{OLD_MEMBER} 7", "#{KEEP_MEMBER_A} 7"],
@@ -704,6 +708,106 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
                  "these addMember calls name no permission mask: #{bare.inspect}. The operator then " \
                  "accepts whatever app.squads.so had checked. Write `Permissions.all()` or an explicit " \
                  "`{ mask: <n> }` — the bot's is 5 (Initiate|Execute) once the narrowing ceremony runs."
+  end
+
+  # THE NARROWING CEREMONY'S GRADER, graded (2026-09-13, Carl's review of PR 31).
+  # It shipped beside a sibling with seven break-states, in a file whose own
+  # comment argues that a false coverage claim is worse than a missing one — so it
+  # got the same treatment: a control that must PASS, and every state it exists to
+  # refuse. Two of these are the defects found by inspection: a bot left at 7 (the
+  # narrowing silently not landing) and BOTH humans wrong, which its awk used to
+  # report one of and then stop.
+  test "the mask-narrowing grader passes a narrowed multisig and refuses every other shape" do
+    block = blocks_under(MASK_CEREMONY_HEADING).find { |b| b[:body].include?("check_squads_mask()") }
+
+    refute_nil block,
+               "the ceremony no longer defines `check_squads_mask()`. Its step 4 is then back to trusting " \
+               "the checkboxes clicked at app.squads.so, which is what the read-back exists to replace."
+
+    stub = lambda do |lines|
+      "squads_members() { printf '%s\\n' " + lines.map { |l| "'#{l}'" }.join(" ") + "; }\n" \
+      "BOT_MEMBER=#{NEW_MEMBER}\n"
+    end
+
+    narrowed = ["threshold 2", "#{NEW_MEMBER} 5", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"]
+
+    Dir.mktmpdir("crs-mask") do |dir|
+      ok = run_block(stub.call(narrowed) + block[:body], dir, {})
+
+      assert_equal 0, ok[:status],
+                   "the grader REJECTED a correctly narrowed multisig (bot 5, both humans 7, threshold 2). " \
+                   "Every refusal below would then prove only that the grader is broken.\n" \
+                   "stdout: #{ok[:out]}\nstderr: #{ok[:err]}"
+      assert_includes ok[:out], "PASS", "a passing grader printed no PASS line: #{ok[:out].inspect}"
+
+      {
+        "the bot is still at mask 7 — the narrowing did not land" =>
+          ["threshold 2", "#{NEW_MEMBER} 7", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
+        "the bot lost Execute as well (mask 1)" =>
+          ["threshold 2", "#{NEW_MEMBER} 1", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
+        "the bot lost Initiate (mask 4)" =>
+          ["threshold 2", "#{NEW_MEMBER} 4", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
+        "the bot is not a member at all" =>
+          ["threshold 2", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
+        "a human cannot vote (mask 5)" =>
+          ["threshold 2", "#{NEW_MEMBER} 5", "#{KEEP_MEMBER_A} 5", "#{KEEP_MEMBER_B} 7"],
+        "BOTH humans are wrong" =>
+          ["threshold 2", "#{NEW_MEMBER} 5", "#{KEEP_MEMBER_A} 5", "#{KEEP_MEMBER_B} 3"],
+        "threshold moved off 2" =>
+          ["threshold 3", "#{NEW_MEMBER} 5", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
+        "the multisig is down to a 2-of-2" =>
+          ["threshold 2", "#{NEW_MEMBER} 5", "#{KEEP_MEMBER_A} 7"]
+      }.each do |label, lines|
+        result = run_block(stub.call(lines) + block[:body], dir, {})
+
+        refute_equal 0, result[:status],
+                     "the grader PASSED on: #{label}. stdout: #{result[:out]}"
+        assert_includes result[:out], "FAIL", "#{label}: refused without a FAIL line: #{result[:out].inspect}"
+      end
+
+      # The awk used to `exit 1` on the FIRST bad human, so the second was found
+      # only after another ceremony from cold.
+      both = run_block(
+        stub.call(["threshold 2", "#{NEW_MEMBER} 5", "#{KEEP_MEMBER_A} 5", "#{KEEP_MEMBER_B} 3"]) + block[:body],
+        dir, {}
+      )
+      assert_includes both[:out], KEEP_MEMBER_A
+      assert_includes both[:out], KEEP_MEMBER_B,
+                      "the grader reported only the first wrong human: #{both[:out].inspect}"
+
+      # An unreadable account is not a pass.
+      void = run_block("squads_members() { return 1; }\nBOT_MEMBER=#{NEW_MEMBER}\n" + block[:body], dir, {})
+      refute_equal 0, void[:status], "an unreadable Multisig account read as a PASS"
+      assert_match(/VOID|FAIL/, void[:out] + void[:err])
+    end
+  end
+
+  # THE PRECONDITION MUST READ THE ARTEFACT IT NAMES (2026-09-13, Steffon's find
+  # in Carl's review). The ceremony's claim is about `main`; it proved it by
+  # grepping a local working tree, which in that checkout was FIFTEEN commits
+  # behind origin/main. On this ladder that is the dangerous direction: accepted
+  # and release carry the two-human script days before main does, and the ceremony
+  # is scheduled into exactly that window.
+  #
+  # STRUCTURAL, and said so: executing the grader needs a git repo with an
+  # origin/main to read, which this suite does not build. What it catches is the
+  # check drifting back onto a working tree — the shape the defect had.
+  test "the ceremony's precondition reads origin/main, never a local working tree" do
+    block = blocks_under(MASK_CEREMONY_HEADING)
+            .find { |b| b[:body].include?("check_upgrade_script_votes_human") }
+
+    refute_nil block, "the ceremony no longer defines a precondition grader for the deployed script"
+
+    assert_includes block[:body], "origin/main:scripts/squad-upgrade.js",
+                    "the precondition does not read the script out of origin/main, so it cannot be " \
+                    "checking what is DEPLOYED"
+    assert_includes block[:body], "fetch", "it reads a ref it never fetched — a stale origin/main answers"
+    assert_match(/FAIL/, block[:body], "a refusal that prints no FAIL line reads as a pass")
+
+    offending = block[:body].lines.grep(%r{grep[^|]*/Users/alex/projects/turf-vault/scripts/squad-upgrade\.js})
+    assert_empty offending,
+                 "the precondition greps a local working tree: #{offending.inspect}. A checkout on " \
+                 "accepted or release reports PASS for a script main does not have."
   end
 
   # ── Finding E: the coverage claim, made self-enforcing ────────────────────
