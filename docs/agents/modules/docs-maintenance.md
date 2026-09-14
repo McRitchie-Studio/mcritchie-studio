@@ -142,7 +142,7 @@ The rules, in order:
    both halves rot independently. The guard resolves and counts both, so a continuation
    buys nothing: it costs the same ratchet toll as spelling the path out twice. Until
    2026-09-14 it cost nothing because no lane could see it, which is how three of them
-   came to be pointing at the wrong line at once.
+   came to be live in this repo at once — two of them pointing at the wrong line.
 
 `test/docs/citation_resolution_guard_test.rb` is the teeth. It keys on **resolution**
 — it opens the cited file and looks — never on the wording around the citation, so
