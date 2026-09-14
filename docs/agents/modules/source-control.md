@@ -122,10 +122,21 @@ Wire the git leg once, globally. **Point it at the INSTALLED helper, never at
 the copy in the repo** — see the box below:
 
 ```bash
-bin/install-git-credential-helper      # installs the snapshot, prints the wiring
-git config --global credential."https://github.com".helper \
-  "$HOME/.mcritchie/git-credential/current/bin/gh-app-git-credential"
+bin/install-git-credential-helper      # installs the snapshot, then PRINTS the wiring command
+# what it prints — run it as printed:
+git config --global --replace-all credential."https://github.com".helper \
+  "$HOME/.mcritchie/git-credential/current/bin/gh-app-git-credential" '/gh-app-git-credential$'
 ```
+
+Both halves of that command are load-bearing, measured 2026-09-14 on an isolated
+copy of the real `~/.gitconfig`. `[credential "https://github.com"]` already holds
+TWO values there — an empty reset, then the in-tree path — so a plain
+`git config … helper "<path>"` exits 5 with *cannot overwrite multiple values
+with a single value*, and a bare `--replace-all` collapses both, dropping the
+empty reset that stops the generic `[credential] helper = osxkeychain` answering
+github.com. The value-pattern matches only this helper's own lines, wherever they
+point, so running the command again converges on one value instead of appending a
+second. The installer is the source: `bin/lib/credential_helper_install.rb`.
 
 > **Why not `<repo>/bin/gh-app-git-credential`?** Because that path is inside a
 > WORKING TREE, and a working tree moves. `git checkout` does not rewrite a file

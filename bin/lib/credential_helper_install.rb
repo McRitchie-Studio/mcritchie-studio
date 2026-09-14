@@ -405,6 +405,12 @@ module CredentialHelperInstall
   # today, and the one the wiring command below must target.
   IN_TREE_HELPER = "/Users/alex/projects/mcritchie-studio/bin/gh-app-git-credential"
 
+  # The value-PATTERN both wiring commands below carry — every value that names
+  # THIS helper, wherever it currently points: the in-tree path, an installed
+  # snapshot path, or a stale snapshot from an earlier install. It is deliberately
+  # not the in-tree path alone; see the note on re-runs below.
+  HELPER_VALUE_PATTERN = "/gh-app-git-credential$"
+
   # The exact commands the operator runs. Kept here so the CLI, the tests and
   # docs/agents/modules/source-control.md all quote one source.
   #
@@ -418,12 +424,21 @@ module CredentialHelperInstall
   #   * a bare `--replace-all` SUCCEEDS and collapses both into one, dropping the
   #     empty reset that stops the generic [credential] helper = osxkeychain from
   #     answering github.com. osxkeychain would then answer first.
-  # The value-pattern replaces ONLY the in-tree line and leaves the reset alone.
-  # On a config with one value or none, git adds the line instead — measured, so
-  # the same command serves a fresh machine.
+  # The value-pattern replaces only the lines naming this helper and leaves the
+  # reset alone. On a config with one value or none, git adds the line instead —
+  # measured, so the same command serves a fresh machine.
+  #
+  # WHY THE PATTERN IS NOT THE IN-TREE PATH ALONE. `--replace-all <key> <value>
+  # <pattern>` replaces what MATCHES and ADDS when nothing does. Anchored on the
+  # in-tree path it is correct exactly once: the first run consumes that line, and
+  # every re-run matches nothing and APPENDS another helper. Three runs, three
+  # helpers — measured 2026-09-14 on an isolated copy. git would then run the
+  # helper once per value, and `--check` cannot see it because `--get` returns
+  # only the LAST value. Matching any `…/gh-app-git-credential` makes the command
+  # converge instead: it collapses whatever this helper's lines are to one.
   def git_config_command(root = DEFAULT_ROOT)
     %(git config --global --replace-all credential."https://github.com".helper ) +
-      %("#{helper_path(root)}" '^#{IN_TREE_HELPER}$')
+      %("#{helper_path(root)}" '#{HELPER_VALUE_PATTERN}')
   end
 
   # ONE prior value, hard-coded: the in-tree path this install replaces. On a
@@ -432,9 +447,11 @@ module CredentialHelperInstall
   # true prior value changes the CLI's contract, and bin/install-git-credential-helper
   # --check already reads it — but said out loud here so nobody reads the name as
   # a promise. Filed with the source-control.md symptom-table gap.
+  # Carries the SAME value-pattern, for the same reason: a revert re-run must
+  # converge on one in-tree line rather than append a second.
   def git_config_revert_command
     %(git config --global --replace-all credential."https://github.com".helper ) +
-      %("#{IN_TREE_HELPER}" '^#{Regexp.escape(File.join(Dir.home, ".mcritchie"))}.*gh-app-git-credential$')
+      %("#{IN_TREE_HELPER}" '#{HELPER_VALUE_PATTERN}')
   end
 
   def copy_tree(source_root, dest, files)
