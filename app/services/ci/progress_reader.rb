@@ -56,7 +56,7 @@ module Ci
     # has no `release` branch (two-rung ladder)". THAT PREMISE WAS FALSE FOR EVERY
     # REGISTERED GEM: studio-engine and solana-studio BOTH declare `ladder: three-rung`
     # and both answer `git ls-remote origin release` (checked 2026-08-30). A three-rung
-    # gem's version bump is pushed straight onto `release` by the sweep — which is why
+    # gem's version bump lands on `accepted` and is promoted onto `release` — which is why
     # engine-ci.yml and consumer-ci.yml carry `push: branches: [main, release]` — and
     # `main` only takes that code at G4 SHIP. So reading `main` reported the LAST
     # SHIPPED commit's CI as this candidate's verdict, and the Assembling meter could

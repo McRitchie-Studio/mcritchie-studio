@@ -45,7 +45,7 @@ class Release
   #      held on a prose edit the whole time.
   #   3. THE ROLL IS REVERSIBLE AND LANDS BEFORE THE IRREVERSIBLE ACT. It rides
   #      the same commit as version_file + Gemfile.lock, pushed onto
-  #      origin/release in phase 0b — BEFORE any `gem push`. So the published
+  #      origin/accepted in phase 0b — BEFORE any `gem push`. So the published
   #      artifact and its tag carry a changelog that already names the version,
   #      and the worst failure is "revert a commit", never "un-push a gem".
   #

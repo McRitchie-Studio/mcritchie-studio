@@ -334,7 +334,7 @@ How a gem rides a release:
    there. Measured against published 0.74.4: the guard returned **nil**, the
    bucket read **5 of its 14 lines**, and the roll injected a blank line
    *inside* the fence and filed everything below it under a version that had
-   already shipped — onto `origin/accepted`, in the commit that precedes the
+   already shipped — onto `origin/release`, in the commit that precedes the
    irreversible `gem push`. It was blind exactly where it mattered, because the
    drift guard fails closed only outside `MAX_MINOR_DRIFT`: a quoted 0.74.4,
    0.74.2 or 0.72.0 all passed silently. The scan now skips fenced lines by
