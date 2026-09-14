@@ -836,7 +836,7 @@ end
 # the current sweep is never read there at all, and everything in between creation and
 # the next sweep. It would also have charged a multi-repo QA hold for a prose defect,
 # which is the cost Release::Changelog's own (a)/(b) fork already declined to pay.
-def report_upstream_changelog_misfile(pr_url)
+def report_upstream_changelog_misfile(pr_url, merged_head: nil)
   return unless OPTIONS.fetch(:run)
 
   repo = pr_url.to_s[%r{github\.com/[^/\s]+/([^/\s]+)/pull/}, 1].to_s
@@ -850,9 +850,16 @@ def report_upstream_changelog_misfile(pr_url)
   end
 
   # The merge just landed on GitHub; this checkout has not seen it. `--tags` is
-  # load-bearing — the tags ARE the record of what shipped.
-  run_capture(["git", "-C", path, "fetch", "origin", ACCEPTED_BRANCH, "--tags", "--quiet"])
-  result = UpstreamMisfile.audit(path: path, rev: "origin/#{ACCEPTED_BRANCH}")
+  # load-bearing — the tags ARE the record of what shipped. AND REFRESHING IS NOT
+  # ENOUGH: a stale remote-tracking ref still RESOLVES, so a discarded fetch
+  # failure does not reach a skip branch — it reads the PRE-merge tree, finds nothing,
+  # and prints a clean verdict carrying a real `judged` count, certifying the wrong
+  # tree (/tasks/audit-certifies-a-stale-tree). So the refresh reports a VERDICT:
+  # `bin/lib/upstream_misfile.rb#refresh_or_skip` reads the fetch's exit status and
+  # proves the merged head reached this tree, handing back a skip sentence when it
+  # cannot — which the branch below prints, so this give-up is NAMED like every other.
+  result = UpstreamMisfile.refresh_or_skip(path: path, branch: ACCEPTED_BRANCH, merged_head: merged_head) ||
+           UpstreamMisfile.audit(path: path, rev: "origin/#{ACCEPTED_BRANCH}")
 
   if result.skipped?
     puts "  changelog audit SKIPPED for #{repo}: #{result.skipped}"
@@ -901,7 +908,7 @@ def move_reviewed(slug, task, reviewers, reports, reviewed_head: nil, zap_head: 
   handed_off = ok && task_write(["note", slug, "--handoff", note, "--agent", "avi"])
   # LAST, and advisory: the merge above is exactly where an upstream changelog misfile
   # is created, and it cannot be un-made by failing this verdict.
-  report_upstream_changelog_misfile(task&.dig("devops", "pr_url"))
+  report_upstream_changelog_misfile(task&.dig("devops", "pr_url"), merged_head: zap_head || reviewed_head)
   handed_off
 end
 

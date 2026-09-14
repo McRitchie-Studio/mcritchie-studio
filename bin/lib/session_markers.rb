@@ -83,9 +83,10 @@ require_relative "../../lib/task_usage_sandbox"
 #
 # WHO ELSE TOUCHES THIS STORE, precisely — do not let this list rot (the
 # containment test above will catch you if you do):
-#   bin/task           WRITES <id>.json. Resolves its own path (PROJECTS_DIR is a
-#                      load-time constant off ENV) but guards it at the SAME
-#                      TaskUsageSandbox seam (bin/task:631, :1139), so it is
+#   bin/task           WRITES <id>.json. Resolves its own path (bin/task#PROJECTS_DIR is
+#                      a load-time constant off ENV) but guards it at the SAME
+#                      TaskUsageSandbox seam — bin/task#write_feature_marker for this
+#                      store, bin/task#usage_dir for the task-usage one — so it is
 #                      fail-closed already.
 #   bin/statusline     WRITES the .heartbeat/.shift-heartbeat/.mascot-heal
 #                      throttles. Bash, so it cannot call this module; it enforces

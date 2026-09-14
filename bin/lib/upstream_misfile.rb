@@ -11,7 +11,8 @@ require_relative "../../app/models/release/changelog"
 #
 #   1. which versions carry a `v*` tag (what SHIPPED),
 #   2. what CHANGELOG.md was at each of those tags (the baseline),
-#   3. what it was at the commit that WROTE a given line (where its author filed it).
+#   3. what it was at the commit that WROTE a given line (where its author filed it),
+#   4. whether the tree about to be read is the one the merge actually landed on.
 #
 # ONE TREE, NO SECOND SIDE. That is the whole difference from the promote guard in
 # bin/release.rb, which predicts a merge with `git merge-tree` and is blind by
@@ -50,6 +51,59 @@ module UpstreamMisfile
     end
   rescue StandardError
     ->(_args) { ["", false] }
+  end
+
+  # Refresh `path`'s copy of `remote`/`branch` and PROVE the tree `audit` is about to
+  # read actually carries the merge. Returns nil when the tree is proven fresh, or a
+  # skip Result when it cannot be — which the caller PRINTS, exactly like every other
+  # give-up here (/tasks/audit-certifies-a-stale-tree).
+  #
+  # WHY A STALE TREE IS WORSE THAN AN UNREADABLE ONE. A stale `origin/<branch>` still
+  # RESOLVES, so `audit` never reaches a skip branch at all: it reads the PRE-merge
+  # tree, finds nothing, and returns a clean verdict carrying a real, non-zero
+  # `judged`. That count is this detector's credibility device — it exists so that
+  # "zero found" reads as a measurement rather than a vacuum — so a stale tree does
+  # not merely lose the finding, it certifies the WRONG TREE with a number. Measured
+  # on the shipped path: a failed fetch gave `skipped=nil found=false judged=1` while
+  # the real post-merge tree gave `found=true judged=2`.
+  #
+  # TWO CHECKS, AND EACH CATCHES WHAT THE OTHER CANNOT (measured, real git):
+  #
+  #   1. THE FETCH'S EXIT STATUS — the mechanism. Catches the refresh that never
+  #      landed: a dead token, an unreachable remote, no network (exit 128). It also
+  #      catches the PARTIAL refresh that check 2 is structurally blind to: a
+  #      force-moved tag is refused (exit 1) while the branch updates anyway, leaving
+  #      the branch correct and the local v* tags behind. The tags are this detector's
+  #      baseline for what SHIPPED, so stale tags are a wrong verdict — and the
+  #      ancestor test passes happily, because the branch really did move.
+  #   2. THE MERGE IS AN ANCESTOR — the property. Catches a tree that does not carry
+  #      the merge even though the fetch exited 0: replication lag, a checkout
+  #      resolved to a different fork, a squash that left no such commit. Check 1 can
+  #      only ever test the mechanism that usually delivers the property; this tests
+  #      the property itself, which is why it is the stronger of the two.
+  #
+  # A BLANK `merged_head` disables check 2 and leaves check 1 guarding alone. That is
+  # deliberate: the defect above needs a FAILED fetch, which check 1 sees, so not
+  # knowing the head is no reason to stop judging a tree that refreshed cleanly.
+  def refresh_or_skip(path:, branch:, merged_head: nil, remote: "origin", git: default_git)
+    run = ->(*args) { git.call(["-C", path.to_s, *args.map(&:to_s)]) }
+
+    _out, fetched = run.call("fetch", remote, branch, "--tags", "--quiet")
+    unless fetched
+      return skip("could not refresh #{remote}/#{branch} in #{path}, so the tree here may pre-date the merge " \
+                  "and its v* tags may pre-date the release — nothing read from it would be about #{branch}")
+    end
+
+    head = merged_head.to_s.strip
+    return nil if head.empty?
+
+    _out, carried = run.call("merge-base", "--is-ancestor", head, "#{remote}/#{branch}")
+    return nil if carried
+
+    skip("#{remote}/#{branch} in #{path} does not carry the merged head #{head[0, 7]} — the refresh reported " \
+         "success, but the tree readable here is not the one the merge landed on")
+  rescue StandardError => e
+    skip("the freshness check raised #{e.class} (#{e.message}) — the tree could not be proven fresh")
   end
 
   # Audit ONE checkout at ONE revision.
