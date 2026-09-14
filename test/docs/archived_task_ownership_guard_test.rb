@@ -43,6 +43,12 @@ class ArchivedTaskOwnershipGuardTest < ActiveSupport::TestCase
   # Where a pointer like this actually hurts: prose every agent reads at session
   # start (the two GENERATED root docs among it), the gate modules, and the scripts
   # that print messages on screen mid-run.
+  #
+  # `test/` IS DELIBERATELY NOT SCANNED, and not to spare this file. A test that
+  # names a task is describing a defect's history to whoever reads the failure —
+  # it routes nobody anywhere — and the fixtures BELOW are literally the forbidden
+  # sentences, which a self-inclusive scan would flag forever. If a test ever does
+  # start routing a reader at a task slug, that is a review catch, not this one's.
   SCANNED_GLOBS = [
     "docs/**/*.md",
     "config/*.yml",
