@@ -142,8 +142,10 @@ class Release
     # re-run; a wrong allocation costs the number forever.
     #
     # STILL PURE: the caller supplies the git and network reads (the version at
-    # origin/release, the last v* tag, RubyGems' live list, the commits past the
-    # tag), so every branch below is unit-testable without touching either.
+    # origin/accepted, the last v* tag reachable from origin/release, RubyGems'
+    # live list, the commits past the tag), so every branch below is unit-testable
+    # without touching either. The two rungs are deliberate, not a typo — see the
+    # argument list below.
     ALLOCATE = "allocate"
     SKIP     = "skip"
     REFUSE   = "refuse"
@@ -164,10 +166,14 @@ class Release
 
     # The allocation decision for ONE swept gem.
     #
-    #   current       — the version declared at origin/release ("" / garbage is fine)
-    #   tag_version   — the last v* tag reachable from that tip, without the "v"
+    #   current       — the version declared at origin/accepted, the rung the
+    #                   allocator writes ("" / garbage is fine)
+    #   tag_version   — the last v* tag reachable from origin/release, without the
+    #                   "v" — the baseline stays on `release` because publish tags
+    #                   sit on release-side commits `accepted` does not contain
+    #                   (`gem_allocation_plan` flags the mixed state this admits)
     #   live_versions — what RubyGems already has (strings, or the versions-API hashes)
-    #   ahead_commits — the commits between that tag and the tip
+    #   ahead_commits — the commits between that tag and the `accepted` tip
     #   members       — this gem's candidate members (kind / risk_tags / gem_bump)
     #
     # SKIP is the answer whenever allocation has no business acting, and the two

@@ -6066,11 +6066,15 @@ end
 #      bump commits onto `release` because the pre-QA gate, QA and prod all read
 #      that tree — it is a DEPLOY fact. The engine's problem is a DEVELOPMENT
 #      fact: its PRs are based on `accepted`, and studio-engine's consumer-ci lane
-#      (`bin/gem-drift-check`) reads the lock in the PR's tree. `bin/release` never
-#      writes `accepted` — it only promotes accepted → release — and nothing merges
-#      release or main back DOWN. So a bump landing on the engine's `release` would
-#      leave every open engine PR exactly as red as before. Same operation, opposite
-#      destination: that cannot be one loop.
+#      (`bin/gem-drift-check`) reads the lock in the PR's tree. The ladder is
+#      ONE-WAY — the sweep promotes accepted → release and nothing merges release
+#      or main back DOWN — so a bump landing on the engine's `release` would leave
+#      every open engine PR exactly as red as before. Same operation, opposite
+#      destination: that cannot be one loop. (`bin/release` writes `accepted` in
+#      two other places — the sweep's version commit in `commit_gem_version!`, at
+#      its `HEAD:refs/heads/#{ACCEPTED_BRANCH}` push, and the post-ship rebaseline
+#      in `advance_accepted` — but each is a deliberate, narrow writer and neither
+#      carries a consumer lock, so neither can deliver this bump.)
 #
 #   4. MEMBERSHIP SCOPE IS DIFFERENT. solana-studio is self-gated, so it MAY
 #      release alone with no app member at all (validate_gems_for_qa says so in
