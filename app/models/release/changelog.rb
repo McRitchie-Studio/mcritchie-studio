@@ -45,7 +45,7 @@ class Release
   #      held on a prose edit the whole time.
   #   3. THE ROLL IS REVERSIBLE AND LANDS BEFORE THE IRREVERSIBLE ACT. It rides
   #      the same commit as version_file + Gemfile.lock, pushed onto
-  #      origin/release in phase 0b — BEFORE any `gem push`. So the published
+  #      origin/accepted in phase 0b — BEFORE any `gem push`. So the published
   #      artifact and its tag carry a changelog that already names the version,
   #      and the worst failure is "revert a commit", never "un-push a gem".
   #
@@ -392,8 +392,9 @@ class Release
     #   sides     — the file on each side being merged
     #   published — version strings ("0.40.0") that carry a v* tag
     #
-    # THE DEFECT. The roll lands on `release` only, so an `accepted` that has not
-    # absorbed the `Release <version>` commit still holds the un-rolled bucket, and
+    # THE DEFECT. An `accepted` that has not absorbed the `Release <version>` commit
+    # still holds the un-rolled bucket — prepare now WRITES the roll there and promotes
+    # it, so this is a rung a sweep missed rather than the resting state — and
     # git merges a bullet added INSIDE one of its `###` subsections cleanly under
     # the heading the roll just wrote. The entry never reaches `## Unreleased`, so
     # no later roll moves it: it is mis-filed under a version that shipped without

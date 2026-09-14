@@ -278,7 +278,10 @@ How a gem rides a release:
    re-tread a spent number). `Release::GemVersion`
    (`app/models/release/gem_version.rb`) encodes those rules, and prepare's step
    4d calls it, writes the `version_file` **together with its `Gemfile.lock`** in
-   one commit onto `origin/release`, and does it BEFORE the publish
+   one commit onto `origin/accepted` — the rung builders write, so the roll it
+   carries is authored where the next promote's merge base can see it — then
+   promotes that onto `origin/release` with the ordinary batch PR, and does it
+   BEFORE the publish
    (finding-d0621629719b, now closed). There is nothing for you to run.
    Allocation is idempotent — a re-run reads a version already past the last
    `v*` tag (the highest live version only when no tag exists) and skips — and
@@ -346,8 +349,10 @@ How a gem rides a release:
    heading or not depending on how you read it.
 
    **And it refuses a promote that would misfile.** The roll lands on
-   `release` only, so `accepted` keeps the un-rolled bucket until it absorbs
-   the `Release <version>` commit, and git merges a bullet added inside an
+   `accepted` and reaches `release` through the ordinary batch promote, so a
+   completed sweep leaves the two rungs agreeing about which entries shipped.
+   The guard stays armed for the `accepted` that did NOT absorb a roll, because
+   git merges a bullet added inside an
    existing `###` subsection there CLEANLY under the heading the roll wrote — a
    version that shipped without it, and no later roll moves it back. So before
    `gh pr merge`, prepare predicts each gem's promote with `git merge-tree` and

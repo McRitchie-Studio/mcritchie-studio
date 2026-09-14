@@ -1208,7 +1208,7 @@ names the remedy. This is not a style preference; it is arithmetic.
 
 **`CHANGELOG.md` is NOT gated** — deliberately. The version is safe to
 refuse because it has writers: `bin/release prepare`'s phase 0 allocates it and
-commits it onto the gem's `origin/release` (below), and when that does not run, the
+commits it onto the gem's `origin/accepted` (below), and when that does not run, the
 STRANDED GEM WORK row in `qa-release.md` is the manual path — a hand commit onto the
 gem's `accepted` that the batch promote carries to `release`. Nothing assembles a changelog from a
 release's members, so refusing changelog edits would leave the file un-editable with
@@ -1264,8 +1264,9 @@ and unit-tested), from metadata your task already carries:
 
 **`bin/release prepare` allocates it at step 4d — nobody sets it by hand**
 (finding-d0621629719b, now closed). Prepare derives the number from the table above,
-writes the `version_file` **with its `Gemfile.lock` in the same commit** onto
-`origin/release`, and does it before the publish. The lockfile is not optional:
+writes the `version_file` **with its `Gemfile.lock` and its rolled `CHANGELOG.md` in
+the same commit** onto `origin/accepted`, promotes that onto `origin/release` with the
+ordinary batch PR, and does it before the publish. The lockfile is not optional:
 studio-engine bundles itself as a path gem, so its own lock names its own version,
 and CI installs frozen — a version commit without its lock fails `bundle install`
 before a single test runs.

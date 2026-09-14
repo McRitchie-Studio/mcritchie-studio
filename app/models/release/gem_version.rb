@@ -328,7 +328,7 @@ class Release
     # THE DEFECT THIS REPLACES: prepare printed that line from the version read out
     # of the PRIMARY CHECKOUT, which sits on `main`. Since version allocation
     # landed, `main` is ONE RELEASE BEHIND BY CONSTRUCTION at that point — the
-    # allocator commits the bump to origin/release and nothing fast-forwards `main`
+    # allocator commits the bump to origin/accepted and nothing fast-forwards `main`
     # until `bin/release ship`. So the line was not occasionally wrong, it was
     # GUARANTEED wrong on every gem-bearing release: rel-20260812-3f1f9b printed
     # "studio-engine 0.40.0" a few lines after printing "allocated 0.41.0" and
