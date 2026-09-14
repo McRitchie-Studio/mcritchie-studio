@@ -813,8 +813,8 @@ its own**; takeover is `bin/task begin <task-slug> --steal`, then ship — and
 only against a **builder**, never against a live review. Neither
 wrapper writes your tests. And `bin/ship` is **not** `bin/release ship`: despite
 the name collision, `bin/release ship` is the **G4 production deploy**
-(`release → main`, ship-authority only), while `bin/ship:79` pins
-`BASE_BRANCH=accepted` and halts at `submitted`. The collision is fail-safe in
+(`release → main`, ship-authority only), while `bin/ship#BASE_BRANCH` pins
+it to `accepted` and halts at `submitted`. The collision is fail-safe in
 the dangerous direction — reaching for `bin/ship` when you meant production does
 strictly less — but it has already caused one false alarm in a review brief, so
 name the distinction rather than assume it.

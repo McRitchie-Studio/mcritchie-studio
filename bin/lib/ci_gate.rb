@@ -117,7 +117,8 @@ module CiGate
   # row should vanish, for three measured reasons:
   #
   #   1. OMISSION IS NOT REACHABLE FROM HERE. Both callers append the row on `if ci`,
-  #      not on this method's return (bin/dor-check:3930 and :2777), and `ci` is
+  #      not on this method's return (`bin/dor-check#ci_gate_result` and
+  #      `bin/dor-check#exempt_ci_result`), and `ci` is
   #      `{state: :no_pr}` — truthy. Returning nil persists `"result" => null`, and
   #      `nil.to_s` is "", which falls to the gates card's ✓ DEFAULT. The omission
   #      route's failure mode IS the inversion trap this family exists to stop.

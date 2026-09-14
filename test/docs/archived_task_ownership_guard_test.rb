@@ -63,7 +63,11 @@ class ArchivedTaskOwnershipGuardTest < ActiveSupport::TestCase
   ].freeze
 
   # The floor exists so a glob that silently stops matching cannot pass as a clean
-  # scan. Measured 2026-09-14: 185 citations across 281 files.
+  # scan. Measured 2026-09-14 at 564c21e9, by running this file's own scan_files:
+  # 180 citations across 241 files (259/195 counting the archive this scan excludes).
+  # The earlier "185 across 281" matched no run of it; a later editor measuring 241
+  # against a stated 281 would conclude 40 files had silently stopped matching —
+  # the exact false alarm this floor exists to prevent.
   MINIMUM_CITATIONS = 120
 
   def test_no_hub_document_or_script_claims_a_task_OWNS_a_live_gap

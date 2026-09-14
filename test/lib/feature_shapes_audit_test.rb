@@ -268,7 +268,7 @@ class FeatureShapesAuditTest < ActiveSupport::TestCase
   # THE CORPUS IS THE GATE'S WHOLE LOADED SOURCE, NOT bin/dor-check ALONE. The first version of
   # this guard read that one file, and the fix it watches for would never have touched it.
   # bin/dor-check:167 calls Dor::Checks.load!, a DIRECTORY GLOB over bin/lib/dor/checks/*.rb
-  # (bin/lib/dor/checks.rb:58), and that file states the architecture in capitals at :18-22 —
+  # (bin/lib/dor/checks.rb#load!), and that file states the architecture in capitals in its header —
   # "A DIRECTORY GLOB HAS NO MERGE CONFLICT, A LIST OF REQUIRES DOES ... adding a check is a
   # PURE FILE ADD - no registry line, no require line, no hook." So the per-repo check, built
   # the way this repo INSTRUCTS, arrives as bin/lib/dor/checks/per_repo_tier_collectability.rb

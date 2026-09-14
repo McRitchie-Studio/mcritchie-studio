@@ -301,7 +301,7 @@ module FullSuiteGate
   # studio-engine both resolve to commands that repo does not ship: the test lane
   # to `bin/rails` (CiTestCommand::DEFAULT — the engine has engine-ci.yml, not the
   # ci.yml the resolver reads) and the lint lane to `bin/rubocop`. It then dies on
-  # an unrescued Errno::ENOENT in bin/lib/cert_process.rb:88 before recording
+  # an unrescued Errno::ENOENT in bin/lib/cert_process.rb#run_bounded before recording
   # anything, so a task naming the engine still cannot PRODUCE the full-suite line
   # this gate now asks it for. Verified 2026-08-25 reviewing PR #1004; fixing the
   # writer is a separate task. Do not read this waiver as "the engine is now
@@ -355,7 +355,10 @@ module FullSuiteGate
   #
   # WHY THE SECTION CHECK STAYS IN THE `||`. Both registered gems declare a
   # release_check, so on today's registry the two predicates agree on every repo
-  # and this is behaviour-preserving (pinned by full_suite_gate_test). They can
+  # and this is behaviour-preserving — pinned by test/lib/fast_check_test.rb's
+  # test_registry_gated_is_keyed_on_the_declaration_not_the_section and by
+  # test/lib/cert_lint_lane_waiver_test.rb. (There is no full_suite_gate_test; this
+  # comment named one until 2026-09-14.) They can
   # diverge exactly two ways, and the OR is the right answer to both: a GEM that
   # omits release_check still has no test database and no bin/rails, so it must
   # KEEP the skip; and an `apps` row that declares one — turf-vault — must now

@@ -66,11 +66,13 @@ module AgentWorktreeCli
   #                        reads that registry to build the conductor queue. A
   #                        zero-exit probe hands it a STALE registry it believes is
   #                        fresh.
-  #   bin/release.rb:6999  `restore-primary <repo>`; the arm already exits 1 to mean
+  #   bin/release.rb#restore_primaries
+  #                        `restore-primary <repo>`; the arm already exits 1 to mean
   #                        "REFUSED, primary left as-is", which the ship reports as a
   #                        warning. Exit 0 there asserts the primary was returned to
   #                        a clean `main`.
-  #   bin/release.rb:7047  `cleanup --reclaim [--yes]`; exit 0 means the reclaim ran,
+  #   bin/release.rb#reclaim_worktrees
+  #                        `cleanup --reclaim [--yes]`; exit 0 means the reclaim ran,
   #                        and the ship parses its output for a reclaimed count.
   #
   # There is a fifth reader that is not a script: `shell-hook zsh` is consumed as

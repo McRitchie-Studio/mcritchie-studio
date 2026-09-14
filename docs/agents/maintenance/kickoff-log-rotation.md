@@ -54,12 +54,12 @@ after someone reorders an initializer and breaks the behavior.
 
 ## Task 2 — mcritchie-studio: the sweep, on the archive beat
 
-`bin/release archive` **already reclaims worktree disk** — see `def archive` at
-`bin/release.rb:5622`:
+`bin/release archive` **already reclaims worktree disk** — see
+`bin/release.rb#archive`:
 
 ```ruby
-step("worktree reclaim preview: bin/agent-worktree cleanup --reclaim")   # :5646, --dry-run
-step("worktree reclaim: bin/agent-worktree cleanup --reclaim --yes")     # :5672, --yes
+step("worktree reclaim preview: bin/agent-worktree cleanup --reclaim")   # the --dry-run arm
+step("worktree reclaim: bin/agent-worktree cleanup --reclaim --yes")     # the --yes arm
 ```
 
 Extend that pattern. Three changes:
