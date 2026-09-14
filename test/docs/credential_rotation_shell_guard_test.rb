@@ -72,6 +72,29 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
   KEEP_MEMBER_A = "GuardFixtureSurvivorA"
   KEEP_MEMBER_B = "GuardFixtureSurvivorB"
 
+  INVENTORY = Rails.root.join("docs/agents/modules/credential-inventory.md")
+
+  # The 1Password item holding the key `squad-upgrade.js` signs with as the BOT.
+  # Derived 2026-09-14 by reading this item's private key into an env var and
+  # deriving ONLY the public key: `8K81…`, which `turf-vault/scripts/squad.json`
+  # and `docs/CURRENT_DEPLOYMENT.md` both name "Alex Bot signer". That is what
+  # makes the SOP row's "supplied per run from 1Password" true OF THIS KEY.
+  BOT_KEY_ITEM = "agent.alex.solana"
+
+  # Every Solana credential the inventory FILES, as of 2026-09-14. This set is a
+  # TRIPWIRE, not a catalogue: the SOP's registration row claims the human Alex
+  # key (`7ZDJ…`) has "no filed item at all", and the only mechanical way to
+  # notice that claim going stale is to notice a Solana item appearing. Add,
+  # rename or remove one and this test fails, which is the point — the failure
+  # sends a human back to that row to re-read it.
+  FILED_SOLANA_ITEMS = %w[
+    agent.solana
+    agent.alex.solana
+    agent.mack.solana
+    agent.mason.solana
+    agent.turf.solana
+  ].freeze
+
   # Every angle-bracket placeholder the harness knows how to make safe. Substituted
   # before execution, and anything left over REFUSES the run: `--vault <vault>` is
   # not a literal to bash, it is a REDIRECT PAIR — it would read a file named
@@ -654,11 +677,11 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
       # The three partial masks are each a REAL call site in squad-upgrade.js
       # losing its bit — they are the whole reason the mask is checked at all.
       {
-        "mask 3 — Initiate|Vote, no Execute (vaultTransactionExecute :222 breaks)" =>
+        "mask 3 — Initiate|Vote, no Execute (vaultTransactionExecute :193 breaks)" =>
           ["threshold 2", "#{NEW_MEMBER} 3", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
-        "mask 5 — Initiate|Execute, no Vote; correct AFTER the narrowing ceremony, wrong for a plain rotation" =>
+        "mask 5 — Initiate|Execute, no Vote; the DECLINED narrowing's mask, wrong for any rotation" =>
           ["threshold 2", "#{NEW_MEMBER} 5", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
-        "mask 6 — Vote|Execute, no Initiate (vaultTransactionCreate :190 breaks)" =>
+        "mask 6 — Vote|Execute, no Initiate (vaultTransactionCreate :176 breaks)" =>
           ["threshold 2", "#{NEW_MEMBER} 6", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
         "the rotated-out key is STILL a member" =>
           ["threshold 2", "#{NEW_MEMBER} 7", "#{OLD_MEMBER} 7", "#{KEEP_MEMBER_A} 7"],
@@ -704,14 +727,13 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
                     "rotation in both the mechanism paragraph and the ordered step 4, so this scan has " \
                     "gone blind and would pass on nothing."
 
-    # WHICH mask is no longer a constant (narrow-bot-squads-permissions,
-    # 2026-09-13): squad-upgrade.js stopped approving as the bot, so the bot needs
-    # Initiate|Execute = 5, while a key ROTATION still grants whatever the outgoing
-    # key holds. Assert a mask is NAMED, in either form the SOP legitimately uses.
-    # A SHELL VARIABLE counts, and that is the point after 2026-09-13: the
-    # rotation's mask is read off the chain into $WANT_MASK precisely so one
-    # procedure serves both the pre- and post-ceremony states. What must never
-    # appear is an addMember with no mask named at all.
+    # WHICH mask is no longer a constant: a key ROTATION grants whatever the
+    # OUTGOING key holds, read off the chain on the day, so no literal can be
+    # right in advance. Assert a mask is NAMED, in either form the SOP
+    # legitimately uses. A SHELL VARIABLE counts, and that is the point: the
+    # rotation's mask goes into $WANT_MASK precisely so one procedure serves the
+    # multisig as it actually is. What must never appear is an addMember with no
+    # mask named at all.
     bare = calls.reject { |c| c.match?(/mask:\s*(\d+|\$[A-Za-z_]\w*)/) }
 
     assert_empty bare,
@@ -729,34 +751,86 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
 
     assert_empty all_sites,
                  "Permissions.all() appears at #{all_sites.join(', ')}. It is mask 7 by another name, and " \
-                 "this SOP has to serve a multisig whose correct mask is 7 today and 5 after the narrowing " \
-                 "ceremony. Name $WANT_MASK (read from the chain) or the explicit mask that state requires."
+                 "this SOP has to grant what the OUTGOING key held on the day, which a literal cannot do — " \
+                 "7 today, and whatever a future re-scope makes it. Name $WANT_MASK (read from the chain) " \
+                 "or the explicit mask that state requires."
   end
 
   # WHOSE KEYS 1PASSWORD ACTUALLY HOLDS (2026-09-14). A draft of this SOP widened
   # "supplied per run from 1Password" — true of the BOT key — into a claim about
   # all of squad-upgrade.js's signing keys. It is false for the human Alex key
   # (7ZDJ…), a Phantom export with no filed item, and a rotation runbook that
-  # tells an operator to fetch a key from a vault it is not in stops them mid-
-  # ceremony. The claim is checkable against the inventory, so it is checked.
+  # tells an operator to fetch a key from a vault it is not in stops them
+  # mid-rotation. The claim is checkable against the inventory, so it is checked.
+  #
+  # THE PREVIOUS VERSION OF THIS GUARD COULD NOT FAIL, and the replacement is the
+  # whole reason this test was rewritten. It ended in
+  # `refute_match(/7ZDJ/, inventory)` — "fail when the human key gets filed". But
+  # the inventory spells NO pubkey anywhere: it names every credential by ITEM
+  # SLUG, and a search for base58 returns zero hits (the only prefix-ellipsis
+  # tokens in the file are hex Heroku authorization IDs). So the day that key IS
+  # filed it will be filed as a slug, /7ZDJ/ still will not match, and the guard
+  # goes green on the exact state it exists to catch. MEASURED 2026-09-14: filing
+  # the human key as `agent.alex.phantom.solana` left the old assertions at
+  # "1 runs, 7 assertions, 0 failures".
+  #
+  # What replaces it is a TRIPWIRE ON THE SLUG SET, which is the vocabulary the
+  # file actually speaks. A filed human key is necessarily a new Solana row, so
+  # the set changes, so this fails and a human re-reads the row.
   test "the Squads row claims 1Password only for keys the inventory actually lists" do
     row = SOP.read.lines.find { |l| l.include?("scripts/squad-upgrade.js") && l.include?("1Password") }
 
     refute_nil row, "the registration table no longer says where squad-upgrade.js's keys come from"
-    assert_match(/BOT key/, row, "the row must scope the 1Password claim to the key that is filed")
-    refute_match(/all (?:three|the signing keys)[^|]*1Password/i, row,
+
+    # Case-INSENSITIVE on purpose: rewording the row to "the bot key" is a style
+    # edit, and a guard that reddens on it teaches the reader to distrust it.
+    assert_match(/bot key/i, row,
+                 "the row must scope the 1Password claim to the key that is actually filed: #{row.strip}")
+
+    # The row must keep NAMING the exception, not merely avoid overclaiming. This
+    # is the load-bearing half: a blacklist of overclaiming phrasings is
+    # unbounded ("all three", "every signing key", "both keys", "the BOT key and
+    # Alex key both come from 1Password" — that last one satisfies /bot key/ too),
+    # whereas a row that still says WHICH key is unfiled cannot be read as a
+    # claim about all of them.
+    assert_match(/7ZDJ/, row,
+                 "the row no longer names the human Alex key, so nothing scopes the 1Password claim " \
+                 "away from it: #{row.strip}")
+    assert_match(/no filed item/i, row,
+                 "the row no longer states that the human Alex key has no filed item. That sentence is " \
+                 "what stops an operator hunting a vault for it mid-rotation: #{row.strip}")
+
+    # Belt to that braces: the universal-quantifier family, bounded to ONE table
+    # cell so a neighbouring cell's wording cannot trip it.
+    refute_match(/\b(?:all|every|both)\b[^|]*1Password/i, row,
                  "the row claims every signing key comes from 1Password. The human Alex key is a Phantom " \
                  "export with no filed item: #{row.strip}")
 
-    # The checkable half of "7ZDJ is not in the vault": the inventory names no item
-    # for it. (A blanket count of Solana items would break on any unrelated agent
-    # wallet — measured: there are six.) If the key is ever filed, this fails and
-    # the row above may finally say so.
-    inventory = Rails.root.join("docs/agents/modules/credential-inventory.md").read
+    # ── the checkable half: what the inventory actually files ──────────────────
+    # Read the FIRST COLUMN of table rows only. `agent.jasper.solana` also appears
+    # in this file, under the naming convention, as an EXAMPLE of the
+    # `agent.<name>.<service>` shape — it is not a filed item, and a scan of the
+    # whole file would pin it and then redden the day someone rewrote an
+    # illustration. (That example is also why the earlier "there are six Solana
+    # items" measurement overcounted: the table files five.)
+    filed = INVENTORY.read.lines.filter_map { |line|
+      next unless line.start_with?("|")
 
-    refute_match(/7ZDJ/, inventory,
-                 "the human Alex Solana key now appears in the credential inventory. Re-read the Squads " \
-                 "row above: it says that key is a Phantom export with no filed item.")
+      item = line.split("|")[1].to_s.strip[/\A`([^`]+)`\z/, 1]
+      item if item&.end_with?("solana")
+    }.sort
+
+    assert_includes filed, BOT_KEY_ITEM,
+                    "the inventory no longer files `#{BOT_KEY_ITEM}`, the item the Squads row above points " \
+                    "an operator at for the BOT key. The row's \"supplied per run from 1Password\" now " \
+                    "names nothing. Filed Solana items: #{filed.inspect}"
+
+    assert_equal FILED_SOLANA_ITEMS.sort, filed,
+                 "the inventory's filed Solana items changed. This is a TRIPWIRE, not a failure: go read " \
+                 "the Squads registration row in #{SOP.basename}, which claims the human Alex key " \
+                 "(`7ZDJ…`) has \"no filed item at all\". If one of these new items IS that key, that " \
+                 "claim is now false and the row must say so. If it is unrelated, add it to " \
+                 "FILED_SOLANA_ITEMS."
   end
 
   # ONE CONSTANT, READ FROM THE CHAIN (2026-09-13, Mr. McRitchie's ruling on
@@ -765,8 +839,11 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
   # is now READ off the chain from the OUTGOING member, before the config
   # transaction is proposed, and every site — the mechanism paragraph, step 4,
   # step 5 and the grader — uses that one value. The narrowing that would have made
-  # 7 and 5 both live was declined; this survives it, because a rotation must grant
-  # what was live on the day rather than what someone typed.
+  # 7 and 5 both live was DECLINED (Mr. McRitchie, 2026-09-14), so 7 is the only
+  # live mask today; this test survives that, because a rotation must grant what
+  # was live on the day rather than what someone typed. The 5 case below is a
+  # HYPOTHETICAL, kept to prove the derivation reads the chain rather than a
+  # literal — it is not a scheduled state.
   #
   # This walks the SOP's own two blocks end to end against a synthetic chain that
   # CHANGES between them, exactly as the real one does: the derivation sees the
@@ -788,13 +865,13 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
 
     Dir.mktmpdir("crs-want-mask") do |dir|
       {
-        "BEFORE the ceremony: the outgoing key holds 7" => {
+        "the outgoing key holds 7 (what the live multisig grants today)" => {
           before: ["threshold 2", "#{OLD_MEMBER} 7", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
           right: ["threshold 2", "#{NEW_MEMBER} 7", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
           wrong: ["threshold 2", "#{NEW_MEMBER} 5", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
           granted: "7"
         },
-        "AFTER the ceremony: the outgoing key holds 5" => {
+        "the outgoing key holds 5 (a hypothetical future re-scope)" => {
           before: ["threshold 2", "#{OLD_MEMBER} 5", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
           right: ["threshold 2", "#{NEW_MEMBER} 5", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
           wrong: ["threshold 2", "#{NEW_MEMBER} 7", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
