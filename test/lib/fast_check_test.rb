@@ -293,7 +293,8 @@ class FastCheckTest < Minitest::Test
   # vacuous: fast-check emits ONE [fast-cert@...] line and no per-lane evidence at
   # all, so that assertion was true no matter what ran. A mutation proved it — and
   # then proved something better, that the lint-waiver branch it was written for was
-  # unreachable code, since the only lint_lane:none repo is also a gem.
+  # unreachable code, since every lint_lane:none repo also takes the registry-gate
+  # branch, which omits the rubocop lane before a waiver could be consulted.
   def test_a_gem_repo_invokes_no_rubocop_lane_at_all
     with_repo_named("studio-engine", release_check: GEM_GATE_OK) do |dir|
       # fail_token makes the rubocop stub FAIL if it is ever invoked, so a lane that

@@ -358,12 +358,13 @@ registry_gate = FullSuiteGate.registry_gated?(cert_repo)
 
 # NO LINT-WAIVER BRANCH HERE, deliberately. bin/full-suite-check needs one because it
 # runs a rubocop lane for every repo; this script does not reach that question for
-# any repo that declares `lint_lane: none`. studio-engine and solana-studio (added
-# 2026-08-31) both declare it, and the registry-gate branch below omits the rubocop
-# lane before a waiver could be consulted — so a waiver check on this path would be
-# code no repo can currently execute. turf-vault (registry-gated 2026-09-14) takes the
-# same branch and is right to: it lints with prettier, not rubocop, and its declared
-# command does not include that lane because CI runs prettier only on `lint:fix`.
+# any repo that declares `lint_lane: none` — studio-engine, solana-studio (added
+# 2026-08-31) and turf-vault (2026-09-14). All three take the registry-gate branch
+# below, which omits the rubocop lane before a waiver could be consulted, so a waiver
+# check on THIS path would be code no repo can currently execute. The two facts are
+# independent even so, and turf-vault is why: bin/full-suite-check runs a lint lane
+# for every repo and reads the declaration, so without `lint_lane: none` its declared
+# gate went green and the cert still died on `bin/rubocop` one lane later.
 #
 # It was written, and removed after a mutation proved the point: flipping
 # FullSuiteGate.lint_waived? to false changed nothing observable, because the gem

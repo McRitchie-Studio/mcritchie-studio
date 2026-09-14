@@ -19,8 +19,10 @@ require Rails.root.join("bin/lib/lint_waiver_guard").to_s
 # So the direction is the thing to guard: this module may REVOKE a waiver and may
 # never GRANT one. Most of what follows tries to make it grant something.
 class LintWaiverGuardTest < ActiveSupport::TestCase
-  # The two repos that actually declare `lint_lane: none`. Read from the registry
-  # rather than hard-coded, so this file cannot drift out of step with it.
+  # A repo that DOES declare `lint_lane: none` and one that does not. Three repos
+  # declare it as of 2026-09-14 — studio-engine, solana-studio and turf-vault, which
+  # ships no Ruby at all — and the fixture guard below reads the registry rather than
+  # trusting this comment, so the pair cannot drift out of step with it.
   WAIVED = "solana-studio"
   UNWAIVED = "turf-monster"
 

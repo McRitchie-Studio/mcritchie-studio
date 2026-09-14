@@ -514,6 +514,20 @@ apps:
     # replace the chain with it and both problems go away.
     release_check: npm run check:doc-op-refs && npm run test:scripts && cargo check --workspace --all-targets --locked && cargo clippy --workspace --all-targets --locked -- -D clippy::correctness
     #
+    # AND THE LINT LANE IS DECLARED ABSENT, which `release_check` alone does not cover.
+    # bin/fast-check omits rubocop on this branch by construction, but bin/full-suite-check
+    # runs a lint lane for EVERY repo and consults this key first — so without this line
+    # the declared gate went GREEN (`full-suite: PASS`) and the cert still died one lane
+    # later on `bin/rubocop: No such file or directory`. Measured 2026-09-14.
+    #
+    # VERIFIED, NOT ASSUMED, because the script's own message warns against using this to
+    # dodge a rubocop that merely fails: turf-vault ships NO Ruby at all — no .rubocop.yml,
+    # no bin/ directory, no Gemfile, no gemspec, and not one `.rb` file in the tree. It
+    # lints JavaScript with prettier (`npm run lint`), which is not this lane. Same
+    # DECLARED-never-inferred rule as everywhere else here; studio-engine and solana-studio
+    # are the existing cases.
+    lint_lane: none
+    #
     # WHAT THIS KEY DOES NOT DO, stated because the same word means two things here.
     # `release_check` is ALSO the gems' pre-publish gate and the thing that makes a gem
     # SELF-GATED — but both of those readers are gems-ONLY, reaching the registry
