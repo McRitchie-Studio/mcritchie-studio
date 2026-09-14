@@ -1139,7 +1139,11 @@ end
 # never is in a Rails app), and neither does a test run that passes explicit paths:
 # Rails::Command::TestCommand runs the prepare task only `if self.args.none?(
 # EXACT_TEST_ARGUMENT_PATTERN)`, so `bin/rails test test/models/x_test.rb` SKIPS it while
-# an argless `bin/rails test` (CI, bin/full-suite-check) gets it for free. (The release
+# a run whose spawned `rails <task>` carries no path and no `-n` gets it for free. That
+# spawn is what a rake TEST TASK produces, and it is how CI's system job and
+# bin/full-suite-check reach the hook; CI's Rails shards take the other route and invoke
+# `test:prepare` themselves (bin/ci-shard). No CI invocation is an argless `bin/rails
+# test`. (The release
 # gate workspaces prep their own env the same way as this method — `db:test:prepare
 # test:prepare` in prepare_gate_workspace! since PR #522.)
 # Without this, `bin/agent-worktree test <app> <task> <file>` and every

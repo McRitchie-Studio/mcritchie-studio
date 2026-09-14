@@ -1581,9 +1581,11 @@ class FastCheckTest < Minitest::Test
   # Regression (build-assets-on-worktree-bringup): fast-check's test lanes pass EXPLICIT
   # FILE PATHS, and Rails SKIPS its own test:prepare whenever an argument looks like a
   # path -- Rails::Command::TestCommand runs it only `if self.args.none?(
-  # EXACT_TEST_ARGUMENT_PATTERN)`. So the bundler hook that an ARGLESS `bin/rails test`
-  # fires for free (CI, bin/full-suite-check -- all green; the release gate workspaces
-  # prep their own env since gate-workspace-skips-test-prepare, PR #522) never fires
+  # EXACT_TEST_ARGUMENT_PATTERN)`. So the bundler hook that CI and bin/full-suite-check
+  # reach -- CI's Rails shards by invoking test:prepare themselves (bin/ci-shard), CI's
+  # system job and full-suite-check's rake-routed line by naming a rake TEST TASK whose
+  # spawned `rails <task>` carries no path and no -n; the release gate workspaces prep
+  # their own env since gate-workspace-skips-test-prepare, PR #522 -- never fires
   # here, and on a virgin worktree every
   # view-rendering test errored with
   # `The asset "tailwind.css" is not present in the asset pipeline`: ~77 red on a
