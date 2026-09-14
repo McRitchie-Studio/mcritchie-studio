@@ -95,7 +95,7 @@ class ArchivedTaskOwnershipGuardTest < ActiveSupport::TestCase
   HISTORICAL_OFFENDERS = [
     "with its own test surface, owned by /tasks/turf-vault-needs-ci. An inert",
     "# answer. /tasks/turf-vault-needs-ci owns it.",
-    'way a gem declares its test lane — see /tasks/turf-vault-needs-ci, which owns that decision. ',
+    "way a gem declares its test lane — see /tasks/turf-vault-needs-ci, which owns that decision. ",
     "`/tasks/turf-vault-needs-ci`, which owns declaring one. That is a registry gap, not an",
     "one, and `/tasks/turf-vault-needs-ci` owns what that lane should be. The"
   ].freeze

@@ -417,7 +417,10 @@ class CertLabelVocabularyTest < Minitest::Test
                  "turf-vault's ci.yml no longer runs any of the lanes this cert declares — the " \
                  "declared chain must be re-derived from the workflow"
     covered.each do |run_cmd|
-      subject = run_cmd.split[0, 2].join(" ")
+      # `npm run <script>` needs THREE words to identify a lane — two would reduce
+      # every npm step to "npm run" and quietly cover a script CI added and this
+      # chain does not run. `cargo <subcommand>` is identified by two.
+      subject = run_cmd.split[0, run_cmd.start_with?("npm run") ? 3 : 2].join(" ")
       assert declared.include?(subject),
              "turf-vault's CI runs `#{run_cmd}` and the declared cert lane does not cover #{subject.inspect}. " \
              "config/release_repos.yml's release_check has drifted from .github/workflows/ci.yml; " \

@@ -504,15 +504,22 @@ apps:
     # is the better shape: it keeps the gate's definition next to the code it gates.
     # turf-vault has no bin/ directory at all, and creating one is a turf-vault change,
     # not a hub change. The cost of declaring the chain here instead is DRIFT — if
-    # ci.yml gains or renames a lane, this string does not follow. Pinned by
-    # test/docs/cert_label_vocabulary_test.rb, which reads both and fails when they
-    # disagree. The day this repo grows a `bin/release-check`, replace the chain with it.
+    # ci.yml gains or renames a lane, this string does not follow.
+    # test/docs/cert_label_vocabulary_test.rb watches for that, and its reach is
+    # LIMITED ON PURPOSE: it reads the sibling turf-vault checkout when one is on
+    # disk and SKIPS when none is, so it is a local tripwire for whoever edits
+    # either side and NOT a hub-CI gate (hub CI clones this repo alone). The same
+    # file also pins this row's prose against the chain below, which needs no
+    # sibling and does run everywhere. The day this repo grows a `bin/release-check`,
+    # replace the chain with it and both problems go away.
     release_check: npm run check:doc-op-refs && npm run test:scripts && cargo check --workspace --all-targets --locked && cargo clippy --workspace --all-targets --locked -- -D clippy::correctness
     #
     # WHAT THIS KEY DOES NOT DO, stated because the same word means two things here.
     # `release_check` is ALSO the gems' pre-publish gate and the thing that makes a gem
-    # SELF-GATED — but both of those readers are gems-ONLY (`dig("gems", repo)`:
-    # bin/release.rb:4296/4305, app/models/release/repos.rb:90). On this `apps` row the
+    # SELF-GATED — but both of those readers are gems-ONLY, reaching the registry
+    # through a `dig("gems", repo)` helper rather than the flattened view
+    # (`gem_meta_for` / `self_gated_gem?` in bin/release.rb, `Release::Repos.gem_meta`
+    # and its `self_gated_gem?` in app/models/release/repos.rb). On this `apps` row the
     # key is read by exactly one consumer, FullSuiteGate.release_check_cmd, and it
     # CANNOT make turf-vault self-gated, cannot publish it to RubyGems, and does not
     # touch the `test_cmd` / `qa_test_cmd` gate workspace refused above — those still
