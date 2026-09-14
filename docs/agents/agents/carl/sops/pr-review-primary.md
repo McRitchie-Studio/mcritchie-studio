@@ -270,7 +270,7 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
      gh api user   # WHO am I merging as? 403 "not accessible by integration" = the App. STOP on a 200.
      bin/task show <task-slug>   # an OPERATOR APPROVAL STILL WAITING block on stderr? relay it (below), then merge anyway
      gh pr view <feat-pr> --json headRefOid --jq .headRefOid   # equal to the recorded head → merge; moved → revalidate the new head's CI, merge only if green
-     gh pr merge <feat-pr> --merge --match-head-commit <validated-head>   # feat → accepted (retarget a mis-based PR first)
+     gh pr merge <feat-pr> --merge --match-head-commit <validated-head>   # feat → accepted (a mis-based PR retargets first; a PR based on another OPEN PR is a STACK and is refused, parent named)
      bin/task merged <task-slug> accepted     # stamp the git-location BEFORE the stage move
      bin/task move <task-slug> reviewed
      bin/task note <task-slug> --handoff "Carl review approved; merged into accepted; ready for Avi's qa-release sweep." --agent carl

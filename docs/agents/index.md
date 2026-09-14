@@ -560,7 +560,8 @@ branch ladder — **`accepted` → `release` → `main`**:
   `accepted`**: on a merge-ready verdict `pr-review` `gh pr merge`s it, stamps
   `merged: "accepted"`, then moves the task `reviewed` (invariant: `reviewed` ⟺
   code-on-`accepted`; a merge failure leaves it `submitted`, a mis-based PR
-  self-heals by retargeting to `accepted`) — or `bin/task block <task> --kind
+  self-heals by retargeting to `accepted`, unless its base is another OPEN PR's
+  head — a deliberate STACK, which review REFUSES and names the parent of) — or `bin/task block <task> --kind
   rework --feedback "…" --agent carl` (back to you). Review still never touches
   `release`/`main` and never deploys. Avi's self-healing `qa-release` sweep
   (`bin/release prepare`) then **promotes ALL of `accepted` onto `release` via

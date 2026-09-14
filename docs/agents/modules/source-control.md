@@ -257,7 +257,11 @@ the transport view.
 Two rules that are about source control, not process:
 
 - **Feature PRs target `accepted`.** Never `release`, never `main`. `bin/ship`
-  pins the base for you.
+  pins the base for you — except on a DELIBERATE STACK, where the base is another
+  OPEN PR's head. There `bin/ship` leaves the base alone and `bin/pr-review`
+  refuses to merge, both naming the parent, because retargeting a stack moves what
+  the PR merges without moving its head. Everything else (a merged parent, a closed
+  one, a deleted branch, `release`, `main`) still self-heals.
 - **A pushed branch preserves code; `main` does not.** `main` is for shipped
   integration, not backup.
 

@@ -78,6 +78,7 @@ require_relative "lib/bin_helpers"
 require_relative "lib/projects_root"
 require_relative "lib/zap_revalidation"
 require_relative "lib/merge_command"
+require_relative "lib/stacked_pr"
 require_relative "lib/acting_identity"
 require_relative "lib/approval_request_notice"
 require_relative "lib/fast_lane"
@@ -733,13 +734,41 @@ def merge_feature_pr(slug, pr_url, merge_head: nil)
     return false
   end
 
+  # A NON-`accepted` BASE IS TWO SITUATIONS, AND ONLY ONE OF THEM SELF-HEALS
+  # (/tasks/review-guards-stacked-prs). This used to retarget ANY of them and merge one line
+  # later — no probe, no diff re-read, no gate re-run. `--match-head-commit` does not protect
+  # against it, because retargeting moves what the PR MERGES while leaving its head exactly
+  # where the reviewer validated it.
+  #
+  # MEASURED 2026-09-13: turf #701 sat stacked on turf #624 while #624 was HELD for a
+  # credential rotation. Popping #701 here would have retargeted it to `accepted` and merged
+  # it, dragging the held signing-key change onto `accepted` ahead of the rotation — the exact
+  # outcome the stack was built to prevent.
+  #
+  # SO A STACK IS REFUSED, NOT SILENTLY RE-AIMED. The reviewer is not the one who can decide a
+  # merge ORDER: the parent has to land first, and whether it may is the parent's own review
+  # (or the operator's hold) to answer. The task stays `submitted` and the refusal NAMES the
+  # parent, so the next reader knows what to wait on rather than re-deriving it. Everything
+  # else still self-heals — a merged parent, a closed-unmerged one, a deleted branch,
+  # `release`, `main` — and an unreadable or EMPTY base falls to the repair too, because
+  # `gh pr list --head ""` is NO FILTER to gh and would name the first open PR by coincidence.
+  #
+  # The predicate is shared with bin/ship (StackedPr) so the builder and reviewer halves
+  # cannot drift apart again, which is how this one survived the ship-side fix.
   base, base_ok = gh_capture("pr", "view", pr_url, "--json", "baseRefName", "-q", ".baseRefName")
-  if base_ok && !base.empty? && base != ACCEPTED_BRANCH
-    puts "  retarget #{slug} PR base #{base} → #{ACCEPTED_BRANCH} (mis-based feat PR self-heals)"
-    unless gh_write("pr", "edit", pr_url, "--base", ACCEPTED_BRANCH)
-      puts "  could not retarget #{pr_url} base → #{ACCEPTED_BRANCH} — leaving #{slug} submitted"
-      return false
-    end
+  if base_ok
+    repo_slug = pr_url.to_s[%r{github\.com/([^/\s]+/[^/\s]+)/pull/}, 1].to_s
+    outcome = StackedPr.guard_base(
+      base: base, accepted: ACCEPTED_BRANCH, slug: slug, pr_url: pr_url,
+      list: lambda do |head|
+        args = ["pr", "list", "--head", head, "--state", "open", "--json", "number,url"]
+        args += ["--repo", repo_slug] unless repo_slug.empty?
+        gh_capture(*args)
+      end,
+      edit: ->(_head) { gh_write("pr", "edit", pr_url, "--base", ACCEPTED_BRANCH) },
+      say: ->(line) { puts line }
+    )
+    return false unless %i[proceed retargeted].include?(outcome)
   end
 
   # Pin the merge to the exact head the supervisor REVALIDATED. If the head advanced again
