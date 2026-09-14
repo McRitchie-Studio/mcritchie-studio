@@ -11,9 +11,15 @@ require "minitest/mock"
 # a CI runner — starts with NO built tailwind.css, and every view-rendering test
 # would error with `The asset "tailwind.css" is not present in the asset pipeline`.
 #
-# What saves an ARGLESS `bin/rails test` (CI, bin/full-suite-check) is that Rails runs
-# `test:prepare` first, and tailwindcss-rails enhances that task with
-# `tailwindcss:build`. Runs that pass EXPLICIT TEST PATHS do not get it for free —
+# What saves a runner is `test:prepare`, which tailwindcss-rails enhances with
+# `tailwindcss:build`. A run reaches that task by exactly TWO routes: it INVOKES
+# `test:prepare` itself, or it names a rake TEST TASK (`test`, `test:system`) whose
+# spawned `rails <task>` carries no path and no `-n`. CI uses both — its Rails shards
+# invoke the task (bin/ci-shard), its system job takes the spawn route — and
+# bin/full-suite-check's rake-routed line takes the spawn route too. NO CI INVOCATION
+# IS AN ARGLESS `bin/rails test`; naming the routes rather than a command line is what
+# keeps this paragraph true the next time CI's invocation changes.
+# Runs that pass EXPLICIT TEST PATHS do not get it for free —
 # Rails::Command::TestCommand skips the prepare task whenever an argument looks like a
 # path — so every path-arg caller invokes `test:prepare` ITSELF: bin/fast-check's
 # lanes, `bin/agent-worktree test <file>` (see bin/agent-worktree#prepare_test_env),

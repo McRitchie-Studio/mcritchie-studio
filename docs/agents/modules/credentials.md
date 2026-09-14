@@ -153,10 +153,49 @@ so the two can never disagree about which identity a session is.
 
 ### Wiring (global, one time)
 
+**Never point `~/.gitconfig` at a path inside a working tree.** `git checkout`
+unlinks and recreates a file whose content differs between two commits, so for a
+window the helper DOES NOT EXIST and any git operation needing credentials dies
+with `gh-app-git-credential: No such file or directory` — measured four times on
+2026-09-10 while the hub primary moved. Install a snapshot outside every working
+tree instead, and wire THAT path:
+
 ```bash
-git config --global credential."https://github.com".helper \
-  "/Users/alex/projects/mcritchie-studio/bin/gh-app-git-credential"
+cd /Users/alex/projects/mcritchie-studio
+bin/install-git-credential-helper            # installs, then prints the git config command to run
+bin/install-git-credential-helper --check    # what is installed, and whether it is stale
 ```
+
+The installer copies the helper's whole closure into
+`~/.mcritchie/git-credential/versions/<digest>/` and points a stable `current`
+symlink at it, so the wired path never moves.
+
+**Install FIRST, then run the command it prints, as printed.** The wired path
+points inside `~/.mcritchie/`, which does not exist until the installer creates
+it — wiring first would aim github.com at a missing file, and the empty reset
+this command preserves means `osxkeychain` will not answer in its place:
+
+```bash
+bin/install-git-credential-helper            # creates ~/.mcritchie/... and prints the line below
+git config --global --replace-all credential."https://github.com".helper \
+  "$HOME/.mcritchie/git-credential/current/bin/gh-app-git-credential" '/gh-app-git-credential$'
+```
+
+It is a `--replace-all` carrying a value-pattern, because `[credential "https://github.com"]` already holds TWO
+values here — an empty reset, then the in-tree path — and (measured 2026-09-14 on
+an isolated copy of `~/.gitconfig`) a plain `git config … helper "<path>"` fails
+with *cannot overwrite multiple values with a single value*, while a bare
+`--replace-all` succeeds and collapses both, dropping the empty reset that stops
+the generic `[credential] helper = osxkeychain` answering github.com. The pattern
+matches only this helper's own lines — the in-tree path today, an installed
+snapshot on a later run — so the command converges on one value instead of
+appending a second. On a machine with one value or none, git adds it. Mechanics
+and the reasoning: `bin/lib/credential_helper_install.rb`.
+
+**Re-run the INSTALLER after any change to the helper or anything it reaches** —
+`bin/install-git-credential-helper`, and `--check` says when that is due. It
+re-prints the wiring command; the wired path itself does not move, so there is
+usually nothing to re-wire.
 
 Confirm access with a **real** read/write — not the repo permissions API, which
 reflects the *account's* access, not the *token's* grant (this once masked a

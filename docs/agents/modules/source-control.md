@@ -118,12 +118,43 @@ confusion here.
 | **`git`** (https push/fetch) | The global credential helper `bin/gh-app-git-credential` answers from the **shared session** `bin/gh-token` holds, and mints only on a cache miss. Nothing to refresh BY HAND — a token git rejects comes back to the helper as `erase`, which retires that one session so the next call mints once. (It minted per call until 2026-08-29; that cost three 1Password reads per git operation and once spent the daily quota.) |
 | **`gh`** (and any API caller) | Reads an ambient credential. **Goes stale hourly.** This is the one you fix |
 
-Wire the git leg once, globally:
+Wire the git leg once, globally. **Point it at the INSTALLED helper, never at
+the copy in the repo** — see the box below:
 
 ```bash
-git config --global credential."https://github.com".helper \
-  "/Users/alex/projects/mcritchie-studio/bin/gh-app-git-credential"
+bin/install-git-credential-helper      # installs the snapshot, then PRINTS the wiring command
+# what it prints — run it as printed:
+git config --global --replace-all credential."https://github.com".helper \
+  "$HOME/.mcritchie/git-credential/current/bin/gh-app-git-credential" '/gh-app-git-credential$'
 ```
+
+Both halves of that command are load-bearing, measured 2026-09-14 on an isolated
+copy of the real `~/.gitconfig`. `[credential "https://github.com"]` already holds
+TWO values there — an empty reset, then the in-tree path — so a plain
+`git config … helper "<path>"` exits 5 with *cannot overwrite multiple values
+with a single value*, and a bare `--replace-all` collapses both, dropping the
+empty reset that stops the generic `[credential] helper = osxkeychain` answering
+github.com. The value-pattern matches only this helper's own lines, wherever they
+point, so running the command again converges on one value instead of appending a
+second. The installer is the source: `bin/lib/credential_helper_install.rb`.
+
+> **Why not `<repo>/bin/gh-app-git-credential`?** Because that path is inside a
+> WORKING TREE, and a working tree moves. `git checkout` does not rewrite a file
+> in place — it unlinks the path and creates it afresh — so while the hub
+> primary moves, the helper briefly does not exist, and a `git push` landing in
+> that window dies with `gh-app-git-credential: No such file or directory`.
+> Measured four times on 2026-09-10 across three sessions, once with the
+> helper's mtime matching the push to the second while the primary moved
+> fbae68f0 → 50cfea07. `bin/install-git-credential-helper` copies the helper's
+> whole closure into `~/.mcritchie/git-credential/versions/<digest>/` and points
+> a stable `current` symlink at it, so no checkout can take it away.
+>
+> It is a SNAPSHOT, so it can go stale. `bin/install-git-credential-helper
+> --check` reports the installed digest, whether it matches this repo, and
+> whether git is wired to it; re-run the installer after any change to
+> `bin/gh-token`, `bin/gh-app-git-credential`, or anything they reach. Nothing
+> in that command edits `~/.gitconfig` — it prints the one-line change and its
+> revert, and you run them.
 
 ### Three stores, and they rank
 
@@ -237,7 +268,14 @@ the transport view.
 Two rules that are about source control, not process:
 
 - **Feature PRs target `accepted`.** Never `release`, never `main`. `bin/ship`
-  pins the base for you.
+  pins the base for you — except on a DELIBERATE STACK, where the base is another
+  OPEN PR's head. There `bin/ship` leaves the base alone and `bin/pr-review`
+  refuses to merge, both naming the parent, because retargeting a stack moves what
+  the PR merges without moving its head. A base PROVEN unclaimed (a merged parent, a
+  closed one, a deleted branch, `release`, `main`) still self-heals — but the two
+  differ on DOUBT, and deliberately: where the guard cannot prove either way (an
+  unreadable probe, a failed base read, an empty base), `bin/ship` repairs and
+  `bin/pr-review` REFUSES, because review's next step is a merge.
 - **A pushed branch preserves code; `main` does not.** `main` is for shipped
   integration, not backup.
 

@@ -80,9 +80,71 @@
 require "json"
 require "open3"
 require "optparse"
+
+# ── DESK HANDOFF — runs BEFORE the first require_relative, on purpose ─────────
+#
+# This script loads its libraries from the checkout it LIVES IN. Invoked by its
+# hub-primary absolute path, that is a checkout other processes move: a tracked
+# file is absent for ~0.4-0.7s of every checkout (measured 2026-09-13), and a
+# command that starts inside that window dies with `cannot load such file`.
+# Measured four times on 2026-09-10 across three sessions.
+#
+# A desk does not have that problem — it is pinned to its own branch and nobody
+# moves it under you — and a HUB desk carries its own bin/ship. So when cwd sits
+# in a checkout that has its own copy, hand off to it. This is not a new policy:
+# FastLane.handoff_command (bin/lib/fast_lane.rb:115) already resolves the same
+# way, by existence. This only makes the choice hold no matter how the script
+# was reached.
+#
+# IT ANNOUNCES ITSELF. Handing off changes WHICH code runs — the desk's copy is
+# its branch's, not the hub's — so a silent switch could run stale tooling. The
+# warning line is the whole mitigation; MCR_SKIP_DESK_HANDOFF=1 opts out.
+#
+# IT DOES NOT HELP A SATELLITE. Only mcritchie-studio ships bin/ship, so a
+# turf-monster, rolio or gem desk finds no copy to hand off to (verified
+# 2026-09-13: present in 31/32 hub desks, 0/32 turf desks). Those runs stay on
+# the hub script and are covered by the LOAD GUARD below, not by this.
+if ENV["MCR_SKIP_DESK_HANDOFF"].to_s.strip.empty?
+  begin
+    own_path = File.realpath(__FILE__)
+    script_name = File.basename(__FILE__)
+    search = Dir.pwd
+    local_copy = nil
+    loop do
+      candidate = File.join(search, "bin", script_name)
+      if File.executable?(candidate)
+        local_copy = candidate
+        break
+      end
+      parent = File.dirname(search)
+      break if parent == search
+
+      search = parent
+    end
+    if local_copy && File.realpath(local_copy) != own_path
+      warn "#{script_name}: handing off to this checkout's own copy (#{local_copy}) — the hub primary " \
+           "moves under running commands. Set MCR_SKIP_DESK_HANDOFF=1 to run #{own_path} instead."
+      exec(local_copy, *ARGV)
+    end
+  rescue StandardError
+    # A handoff that cannot be decided must never block the command it exists to
+    # protect. Fall through and load from here.
+    nil
+  end
+end
+
+# ── LOAD GUARD — say WHOSE bug a `cannot load such file` is ───────────────────
+# Diagnosis only, never a retry: a retry cannot tell a checkout window from a
+# genuinely missing file. Loaded FIRST so it is armed before the requires it
+# explains, and it swallows nothing — the original LoadError still prints and
+# the process still fails. See bin/lib/hub_move_diagnosis.rb.
+require_relative "lib/hub_move_diagnosis"
+HubMoveDiagnosis.install!(root: File.expand_path("..", __dir__), command: File.basename(__FILE__))
+
 require_relative "lib/repo_root"
 require_relative "lib/cert_root_guard"
 require_relative "lib/fast_lane"
+require_relative "lib/stacked_pr"
 require_relative "lib/fast_cert"
 require_relative "lib/gh_auth_retry"
 require_relative "lib/pr_overlap"
@@ -572,10 +634,49 @@ if existing
     ready_out, ready = gh_capture(root, "pr", "ready", number)
     die!("gh pr ready #{number} failed:\n#{ready_out.strip}") unless ready
   end
+  # A NON-`accepted` BASE IS TWO DIFFERENT SITUATIONS, and until 2026-09-13 this treated
+  # both as the mis-based one (/tasks/ship-retargets-stacked-prs).
+  #
+  #   the base is ANOTHER OPEN PR's head  → a DELIBERATE STACK. Leave it alone.
+  #   anything else                       → mis-based. Repair it, as before.
+  #
+  # MEASURED on turf #701, stacked on turf #624 by the operator's decision: retargeting it
+  # to `accepted` produced three false refusals from one action — the test-only shape claim
+  # broke because the observed diff then carried the PARENT's six files, GitHub could not
+  # compute a merge so it queued NO run (dor-check: "waiting can never clear the conflict"),
+  # and the [control] line "named no file from this diff". The ship had to be finished by
+  # hand. Nothing about the PR was wrong; the base was the point.
+  #
+  # WHY "OPEN" IS THE WHOLE TEST. A merged parent is already gone — GitHub retargets its
+  # children onto the parent's own base when it merges — and a closed-unmerged parent, or a
+  # deleted branch, is a stack whose premise has evaporated: the child would wait forever
+  # for a branch nobody is shipping. None of those is OPEN, so all of them still get
+  # repaired, which is the behaviour this self-heal was written for. `release` and `main`,
+  # the dangerous mis-bases, are never an open PR's head either.
+  #
+  # AN UNREADABLE PROBE FALLS BACK TO THE REPAIR, and says so. A wrongly-retargeted stack is
+  # loud and recoverable (`gh pr edit <n> --base <parent>`); an unrepaired mis-base is quiet.
+  # An earlier version of this comment justified that by saying "nothing downstream repairs a
+  # mis-based PR — no gate reads baseRefName for this", and that was FALSE when it was written:
+  # bin/pr-review's merge_feature_pr read baseRefName and retargeted THEN MERGED, which is the
+  # reviewer half of this same bug (/tasks/review-guards-stacked-prs). Both halves now ask
+  # StackedPr, so they cannot answer differently again.
   if existing["baseRefName"] != BASE_BRANCH
-    say "4/8 pr — PR ##{number} is based on #{existing["baseRefName"].inspect}; retargeting to #{BASE_BRANCH}."
-    retarget_out, retargeted = gh_capture(root, "pr", "edit", number, "--base", BASE_BRANCH)
-    die!("gh pr edit #{number} --base #{BASE_BRANCH} failed:\n#{retarget_out.strip}") unless retargeted
+    parent_base = existing["baseRefName"].to_s
+    stack = StackedPr.assess(parent_base) do |branch|
+      gh_capture(root, "pr", "list", "--head", branch, "--state", "open", "--json", "number,url")
+    end
+    parent = stack[:parent]
+    if parent
+      say "4/8 pr — PR ##{number} is based on #{parent_base.inspect}, which is open PR " \
+          "##{parent["number"]}'s branch — a deliberate STACK, so the base stands. " \
+          "##{parent["number"]} merges FIRST; GitHub retargets this to #{BASE_BRANCH} when it does."
+    else
+      why = StackedPr.why(stack)
+      say "4/8 pr — PR ##{number} is based on #{parent_base.inspect} (#{why}); retargeting to #{BASE_BRANCH}."
+      retarget_out, retargeted = gh_capture(root, "pr", "edit", number, "--base", BASE_BRANCH)
+      die!("gh pr edit #{number} --base #{BASE_BRANCH} failed:\n#{retarget_out.strip}") unless retargeted
+    end
   end
 else
   say "4/8 pr — opening a non-draft PR into #{BASE_BRANCH}"

@@ -164,30 +164,34 @@ class ApprovalDropWarningDocsTest < Minitest::Test
   # `bin/task move <slug> building --approval waiting`, a flag `move` does not
   # have, so the one command a stuck reader would paste died on unknown_flag!.
 
+  # THIS TEST USED TO PIN THE DEFECT. It asserted the recovery landed the task on
+  # `building` with the request `waiting` again — "move the task back and ask again".
+  # From `reviewed` on the code is already on `accepted`: that move un-merged nothing and
+  # left the board showing `building` for landed code (board-doc-teaches-old-ladder,
+  # 2026-09-10). The remedy is now to RECORD the operator's answer where the task
+  # stands, and the end state judged here is the one that matters: the answer is on
+  # the record and the task never moved backwards.
   def test_the_recovery_step_prints_commands_that_actually_run
     commands = recovery_commands
 
     # FLOOR — an extraction that matched nothing would pass the loop vacuously.
-    assert_equal 2, commands.size, "the recovery step names the move and the re-request"
-    assert(commands.all? { |c| c.start_with?("bin/task ") }, "both are bin/task commands: #{commands.inspect}")
+    assert_equal 2, commands.size, "the recovery step names both answers the operator can give"
+    assert(commands.all? { |c| c.start_with?("bin/task update ") },
+           "every recovery command records an answer in place — none moves the task: #{commands.inspect}")
 
-    # Run them IN THE PRINTED ORDER against one board that starts where a stranded
-    # operator actually is — `reviewed`, the first stage past the request window
-    # since `submitted` joined it on 2026-09-09 — and judge the END STATE, not the
-    # commands. The order is the whole remedy: the move has to land the task where
-    # a request is legal before the request can stick, and the stub enforces
-    # Task.guard_approval_request_stage! so the reverse order 422s here exactly as
-    # it does against the real board.
-    with_stub_board(stub_stage: "reviewed", devops: { "kind" => "feature" }) do |run|
-      commands.each do |command|
+    # Each is an ALTERNATIVE, so each runs on its own board, starting where a stranded
+    # operator actually is: `reviewed`, the first stage past the request window.
+    commands.each do |command|
+      with_stub_board(stub_stage: "reviewed", devops: { "kind" => "feature" }) do |run|
         args = command.sub("bin/task ", "").split(" ").map { |a| a.gsub("<task-slug>", SLUG) }
         _out, err, status = run.call(args)
 
         assert status.success?, "`#{command}` failed: #{err}"
+        assert_equal "reviewed", @persisted_stage,
+                     "`#{command}` moved the task — the code is on `accepted` and stays there"
+        assert_equal command[/--approval (\S+)/, 1], @stub_devops["approval_status"],
+                     "`#{command}` has to leave the operator's answer on the record"
       end
-
-      assert_equal "building", @persisted_stage, "the remedy has to land the task where a request is legal"
-      assert_equal "waiting", @stub_devops["approval_status"], "the remedy has to leave the request LIVE"
     end
   end
 
@@ -216,13 +220,11 @@ class ApprovalDropWarningDocsTest < Minitest::Test
     section = doc_body[/^## Operator Validation Gate$.*?(?=^## )/m].to_s
 
     refute_empty section, "no Operator Validation Gate section in #{rel(DOC)}"
-    # Anchored on the REMEDY'S OWN WORDS, not on the condition that precedes them.
-    # The first cut matched the literal "**Already handed off?" and went empty the
-    # day the condition changed — `submitted` joined the request window on
-    # 2026-09-09, so a handoff no longer strands anybody and the step became
-    # "Already past `reviewed`?". What the step IS never changed: move the task
-    # back and ask again.
-    step = section[/^\d+\.\s+\*\*[^\n]*Move the task back and ask again.*?\z/m].to_s
+    # Anchored on the REMEDY'S OWN WORDS, not on the condition that precedes them. The
+    # first cut matched the literal "**Already handed off?" and went empty the day the
+    # condition changed; the second matched "Move the task back and ask again", which
+    # was the defect itself. What the step IS now: record the answer where you stand.
+    step = section[/^\d+\.\s+\*\*[^\n]*Record his answer where you stand.*?\z/m].to_s
     refute_empty step, "the gate never tells a stranded operator how to ask again"
     step[/```bash\n(.*?)```/m].to_s.lines.map(&:strip).grep(/\Abin\/task /)
   end

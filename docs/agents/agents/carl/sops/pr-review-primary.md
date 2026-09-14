@@ -270,7 +270,9 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
      gh api user   # WHO am I merging as? 403 "not accessible by integration" = the App. STOP on a 200.
      bin/task show <task-slug>   # an OPERATOR APPROVAL STILL WAITING block on stderr? relay it (below), then merge anyway
      gh pr view <feat-pr> --json headRefOid --jq .headRefOid   # equal to the recorded head → merge; moved → revalidate the new head's CI, merge only if green
-     gh pr merge <feat-pr> --merge --match-head-commit <validated-head>   # feat → accepted (retarget a mis-based PR first)
+     gh pr view <feat-pr> --json baseRefName --jq .baseRefName   # base ≠ accepted? PROBE before you touch it
+     gh pr list --repo <owner/repo> --head <that-base> --state open --json number,url   # ANY hit = a STACK: do NOT retarget, do NOT merge
+     gh pr merge <feat-pr> --merge --match-head-commit <validated-head>   # feat → accepted; pin the head you validated (retarget ONLY a base PROVEN unclaimed — at a merge anything unproven REFUSES, all five arms; see below)
      bin/task merged <task-slug> accepted     # stamp the git-location BEFORE the stage move
      bin/task move <task-slug> reviewed
      bin/task note <task-slug> --handoff "Carl review approved; merged into accepted; ready for Avi's qa-release sweep." --agent carl
@@ -297,6 +299,21 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
      answer afterwards with `--approval approved` or `--approval changes_requested`,
      which are legal at every stage. `bin/pr-review` prints the same block before
      its own merge, and `bin/review-autopilot arm` prints it at arm time.
+
+     **A base that is another OPEN PR's head is a STACK — REFUSE it, never
+     retarget it.** Retargeting changes what the PR MERGES without moving its
+     head, so `--match-head-commit` cannot see it and the parent's unmerged work
+     rides onto `accepted` with the merge. Leave the task `submitted`, NAME the
+     parent in your report, and re-review once the parent lands — GitHub
+     retargets the child itself when it does. The merge ORDER is the parent's
+     review to decide, not yours. Everything else still self-heals ONLY when the guard can PROVE it: a merged or
+     closed parent, a deleted branch, `release`, `main`. If it cannot prove it — the
+     base read failed, the probe could not be read, the base came back EMPTY, or you
+     cannot tell which repo to probe — REFUSE. At a merge, unproven is not
+     mis-based: five conditions refuse and only a proven-unclaimed base retargets. `bin/pr-review` does
+     this automatically (`bin/lib/stacked_pr.rb`, shared with `bin/ship`); the
+     two probe lines above cover the hand-run sequence — and if either probe
+     ERRORS rather than answering, that is a refusal too, not a retarget.
 
      `bin/task merged` verifies its own write, so a silent success IS the stamp.
      If you double-check it anyway, read the **top-level** field — `merged` is a
