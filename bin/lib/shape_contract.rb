@@ -78,7 +78,7 @@ module ShapeContract
     # value Psych::DisallowedClass, and a non-Hash root a NoMethodError. Every one is a
     # StandardError, and every one must fail CLOSED rather than crash the cert runner.
     # Breadth is safe here precisely because the fallback is the STRICT answer: a
-    # swallowed bug costs a suite run, never a waived one. (bin/dor-check:2134 reads
+    # swallowed bug costs a suite run, never a waived one. (bin/dor-check#CONFIG_PATH is read
     # the same file with no rescue at all, so this stays the more robust of the two.)
     nil
   end

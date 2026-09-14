@@ -122,7 +122,7 @@ writes two independent facts, and only one of them is what review reads:
   resume branch builds no `top_body`, so `--agent` reaches the claim as
   `--actor` and never lands on the column. That is a property of the code
   path, not a policy of sparing top-level columns — the same resume PATCH
-  writes `dev_size` (`bin/task:2694`).
+  writes `dev_size` (`bin/task#renewal`, the PATCH body it builds).
 
 Measured 2026-09-08 on throwaway tasks — no single write sets both:
 

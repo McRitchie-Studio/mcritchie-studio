@@ -220,9 +220,10 @@
 #                      mapped lane and skips the Rails test-prepare it implies (see
 #                      turf-vault below, which is an `apps` row using exactly this).
 #                    * THE PUBLISH READERS ARE GEMS-ONLY. bin/release.rb's
-#                      `gem_meta_for` / `self_gated_gem?` (bin/release.rb:4296,4305)
-#                      and Release::Repos.gem_meta (app/models/release/repos.rb:90)
-#                      all `dig("gems", repo)`. So declaring this on an `apps` row
+#                      `bin/release.rb#gem_meta_for` / `bin/release.rb#self_gated_gem?`
+#                      and `app/models/release/repos.rb#gem_meta` each read the `gems`
+#                      section and nothing else — the first two by `dig("gems", repo)`,
+#                      the third by `config.fetch("gems", {})`. So declaring this on an `apps` row
 #                      CANNOT make the repo self-gated and CANNOT push it to RubyGems.
 #                  For a GEM it is additionally the pre-publish gate run with
 #                  `--build` (syntax + unit + build) before the artifact is pushed.
@@ -507,7 +508,8 @@ apps:
     # ci.yml gains or renames a lane, this string does not follow.
     # test/docs/cert_label_vocabulary_test.rb watches for that, and its reach is
     # LIMITED ON PURPOSE: it reads the sibling turf-vault checkout when one is on
-    # disk and SKIPS when none is, so it is a local tripwire for whoever edits
+    # disk and RETURNS EARLY when none is — a silent `return unless`, not a recorded
+    # minitest skip — so it is a local tripwire for whoever edits
     # either side and NOT a hub-CI gate (hub CI clones this repo alone). The same
     # file also pins this row's prose against the chain below, which needs no
     # sibling and does run everywhere. The day this repo grows a `bin/release-check`,

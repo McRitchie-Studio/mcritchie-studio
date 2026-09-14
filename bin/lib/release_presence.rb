@@ -79,8 +79,9 @@ require_relative "presence_claim"
 # loaded gun pointed at a production deploy, and it is NOT made safe by choosing a
 # primary checkout over a desk — an earlier version of this header claimed exactly that
 # and was FALSE (review, 2026-09-02). `CertRootGuard.refusal` is gated on a slug
-# (`bin/fast-check:180`, `bin/full-suite-check:204`) while the orphan preflight is
-# UNCONDITIONAL (`bin/fast-check:372`, `bin/full-suite-check:448`), so every slug-less
+# (`bin/fast-check#wrong_root`, `bin/full-suite-check#wrong_root`) while the orphan
+# preflight is UNCONDITIONAL (`bin/lib/cert_orphan_guard.rb#preflight`, which both
+# certs call), so every slug-less
 # cert skips the root guard and preflights anyway — including the
 # `bin/full-suite-check --print` that `--install-hook` writes into
 # `.git/hooks/pre-push`. The correct defence is the one the namespace gives for free:

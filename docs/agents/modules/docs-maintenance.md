@@ -98,6 +98,45 @@ the wrong source tree (`test/docs/ship_docs_sync_docs_test.rb`). Three guards,
 three predicates: any mention in an **executed** doc, the wrong **source tree**
 anywhere, and an **unscoped command** anywhere.
 
+## Citing Code From Prose
+
+**Cite the SEAM, not the line.** A line number is true only at the SHA it was
+written against, and nothing re-reads one: every commit to a cited file silently
+rots every citation below its edit point. A rotted citation does not look rotted —
+it reads exactly like the truth and routes the next reader to whatever happens to
+sit at that offset today.
+
+That is measured, not feared. On 2026-09-14 eight `bin/release.rb:<line>` citations
+were spot-checked after one ordinary commit shifted that file, and **all eight were
+already pointing at unrelated lines**, one at a blank line. Two more sat in a single
+table cell of the QA-release SOP, eleven words from the sentence announcing this very
+discipline.
+
+| Form | Write it as | Rots? | Checked by |
+|------|-------------|-------|------------|
+| **Seam** (preferred) | `bin/release.rb#commit_gem_version!` | No | lane 2 — the file must DEFINE that symbol |
+| **Prose seam** | "in `commit_gem_version!` — at its `rewrite_version` refusal" | No | review |
+| **Line** (last resort) | `bin/fast-check:300` | **Yes** | lane 1 — the line must be substantive; lane 3 caps the population |
+
+The rules, in order:
+
+1. **Name a definition the reader can search for** — a method, a constant, a class,
+   a YAML key. `path#symbol` is the written form; the enclosing definition is the
+   right seam for a line of code inside one.
+2. **Spend a `path:line` only where the line itself is the unit** — top-level script
+   code with no enclosing definition is the honest case. Say what is ON the line, so
+   a reader who lands somewhere else knows immediately.
+3. **Never renumber from a stale start.** Re-derive the number on your own tree, or
+   convert the citation to a seam. Renumbering is its own error, and the next commit
+   re-rots it.
+4. **A Ruby backtrace frame is evidence, not a citation.** `foo.rb:118:in '...'` in a
+   fixture is what the interpreter said at the SHA it crashed on. Leave it alone.
+
+`test/docs/citation_resolution_guard_test.rb` is the teeth. It keys on **resolution**
+— it opens the cited file and looks — never on the wording around the citation, so
+no rephrasing gets past it. It states its own three limits in its header; read them
+before trusting a green run to mean more than it does.
+
 ## Drift Review
 
 When finishing a meaningful feature:

@@ -535,7 +535,7 @@ end
   # --- [unit] the CPU sample: the GROUP, not its idling leader ---------------------------
 
   def test_cpu_is_summed_across_the_group_not_read_off_the_leader
-    # bin/lib/cert_process.rb:191 read `live.find { |p| p[:pid] == pgid } || live.first` —
+    # bin/lib/cert_process.rb#hang_signature read `live.find { |p| p[:pid] == pgid } || live.first` —
     # the group LEADER. A cert lane's leader is a WRAPPER (sh -c, bin/rails, an Open3
     # parent) that idles BY DESIGN while its child does the work. Measured 2026-09-01:
     # leader 0.05s, real runner 52s, verdict "PARKED".

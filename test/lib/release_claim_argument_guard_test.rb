@@ -99,7 +99,7 @@ class ReleaseClaimArgumentGuardTest < Minitest::Test
     { source: "bin/release.rb:717 acquire_conductor_claim!",
       argv: ["acquire", SLUG, "--role", "deployer"],
       command: "acquire", slug: SLUG, flags: { "role" => "deployer" } },
-    { source: "bin/release.rb:743 release_conductor_claim!",
+    { source: "bin/release.rb#release_conductor_claim!",
       argv: ["release", SLUG, "--role", "assembler"],
       command: "release", slug: SLUG, flags: { "role" => "assembler" } },
     { source: "bin/release.rb:1595 the __forming__ sentinel (same call site, sentinel slug)",
@@ -284,7 +284,7 @@ class ReleaseClaimArgumentGuardTest < Minitest::Test
 
   # WHY HELP EXITS 1 AND NOT 0, diverging from ReviewClaimCli (PR 974), deliberately:
   # in THIS CLI exit 0 is not "the command worked", it is a claim-state ASSERTION —
-  # `acquire` 0 means "you hold the lease" (bin/release.rb:722 then records a held
+  # `acquire` 0 means "you hold the lease" (bin/release.rb#acquire_conductor_claim! then records a held
   # claim it would have to release) and `any-live` 0 means "a release is live, withhold
   # the workspaces". Answering a help probe with 0 states a fact about the world that
   # is not true, which is the exact class of bug this task closes. CANT_RUN is where
