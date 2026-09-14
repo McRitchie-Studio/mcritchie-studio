@@ -96,13 +96,14 @@ class ReleaseClaimArgumentGuardTest < Minitest::Test
   # acquire in test_the_detached_renewers_own_argv_survives_the_guard_it_reenters,
   # because a hand copy proves the transcription, not the code.
   REAL_ARGV = [
-    { source: "bin/release.rb:717 acquire_conductor_claim!",
+    { source: "bin/release.rb#acquire_conductor_claim!",
       argv: ["acquire", SLUG, "--role", "deployer"],
       command: "acquire", slug: SLUG, flags: { "role" => "deployer" } },
     { source: "bin/release.rb#release_conductor_claim!",
       argv: ["release", SLUG, "--role", "assembler"],
       command: "release", slug: SLUG, flags: { "role" => "assembler" } },
-    { source: "bin/release.rb:1595 the __forming__ sentinel (same call site, sentinel slug)",
+    { source: "bin/release.rb#acquire_conductor_claim! with bin/lib/release_claim_cli.rb#FORMING_SLUG " \
+              "(the same call site, handed the sentinel slug)",
       argv: ["acquire", ReleaseClaimCli::FORMING_SLUG, "--role", "assembler"],
       command: "acquire", slug: ReleaseClaimCli::FORMING_SLUG, flags: { "role" => "assembler" } },
     { source: "bin/agent-worktree:3092 role_claim_liveness (the reclaim guard)",
