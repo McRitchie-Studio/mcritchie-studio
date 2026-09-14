@@ -62,22 +62,32 @@ class CertLintLaneWaiverTest < ActiveSupport::TestCase
   end
 
   # bin/fast-check carries NO lint-waiver branch, and says so in a comment whose
-  # reasoning is "every declaring repo is a gem, and the gem branch above already
-  # omitted the lane". That is only true while it is true. Asserting it here means a
-  # NON-gem repo declaring the waiver reddens this test instead of silently turning
-  # that paragraph into a lie and leaving fast-check running `bin/rubocop` against a
-  # repo the registry says has none.
-  test "every repo declaring the waiver is a gem, which is what lets fast-check skip the branch" do
+  # reasoning is "every declaring repo already takes a branch that omitted the lane".
+  # That is only true while it is true. Asserting it here means a repo that declares
+  # the waiver WITHOUT taking that branch reddens this test instead of silently
+  # turning that paragraph into a lie and leaving fast-check running `bin/rubocop`
+  # against a repo the registry says has none.
+  #
+  # THE PROPERTY IS THE BRANCH, NOT THE SECTION (corrected 2026-09-14). This asked
+  # "is every declaring repo a GEM?", which was a PROXY for the real question and
+  # stopped being a true one the moment turf-vault declared the waiver: it is an
+  # `apps` row, it is not a gem, and it takes the whole-gate branch anyway because
+  # bin/fast-check now keys that on the DECLARED command
+  # (FullSuiteGate.registry_gated?). The proxy would have failed a correct tree.
+  # Asking the branch question directly is both accurate and stricter — it is the
+  # condition the comment in bin/fast-check actually depends on.
+  test "every repo declaring the waiver takes the branch that already omits the lane" do
     registry = YAML.safe_load_file(Rails.root.join("config/release_repos.yml"))
     declaring = %w[gems apps].flat_map do |section|
       (registry[section] || {}).select { |_, row| row.is_a?(Hash) && row["lint_lane"].to_s == "none" }
-                               .keys.map { |slug| [section, slug] }
+                               .keys
     end
 
     assert declaring.any?, "the waiver must still be declared by someone, or every test here is vacuous"
-    assert_equal [], declaring.reject { |section, _| section == "gems" },
-                 "a NON-gem repo now declares lint_lane: none — bin/fast-check's gem branch no longer " \
-                 "covers it, so give that script the waiver branch its comment defers"
+    assert_equal [], declaring.reject { |slug| FullSuiteGate.registry_gated?(slug) },
+                 "a repo declares lint_lane: none but does NOT take bin/fast-check's registry-gate " \
+                 "branch, so that script still reaches its rubocop lane for it — give it the waiver " \
+                 "branch its comment defers, or declare the repo's gate command"
   end
 
   # FAIL CLOSED. A gate that waives a lane for an input it does not recognise is

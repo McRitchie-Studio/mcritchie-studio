@@ -347,6 +347,28 @@ module FullSuiteGate
     repo_sections[slug] == "gems"
   end
 
+  # TRUE for a repo that DECLARES ITS OWN GATE COMMAND — the general form of the
+  # rule `gem_repo?` carried alone until 2026-09-14. A declared `release_check`
+  # says "this command IS this repo's suite", so the cert runs it as the whole
+  # mapped lane and the Rails test-prepare that precedes a mapped lane does not
+  # apply to it.
+  #
+  # WHY THE SECTION CHECK STAYS IN THE `||`. Both registered gems declare a
+  # release_check, so on today's registry the two predicates agree on every repo
+  # and this is behaviour-preserving (pinned by full_suite_gate_test). They can
+  # diverge exactly two ways, and the OR is the right answer to both: a GEM that
+  # omits release_check still has no test database and no bin/rails, so it must
+  # KEEP the skip; and an `apps` row that declares one — turf-vault — must now
+  # GET it. Keying on the section alone was the defect this replaces; keying on
+  # the command alone would silently re-arm a Rails lane against a gem.
+  #
+  # DECLARED, NEVER INFERRED, like every other rule in this file: nothing here
+  # probes a checkout for bin/rails or sniffs a Gemfile. A repo whose registry row
+  # says nothing owes the ordinary Rails lanes, which fails CLOSED.
+  def registry_gated?(repo)
+    gem_repo?(repo) || !release_check_cmd(repo).nil?
+  end
+
   def repo_sections
     @repo_sections ||= begin
       path = File.expand_path("../../config/release_repos.yml", __dir__)
