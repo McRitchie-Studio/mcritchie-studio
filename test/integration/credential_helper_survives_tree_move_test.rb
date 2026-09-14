@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require "digest"
 require "fileutils"
 require "open3"
 require "tmpdir"
@@ -27,7 +28,7 @@ require Rails.root.join("bin/lib/credential_helper_install").to_s
 # _a_tree_that_is_actively_moving` then does the racy thing for real: it flips
 # the sandbox repo between two commits whose helper content differs, in a
 # background thread, while invoking the installed helper, and proves from the
-# file's own inode that the tree really churned during the run.
+# BYTES git leaves at that path that the tree really churned during the run.
 #
 # NOTHING HERE TOUCHES THE REAL HUB PRIMARY, a live desk, ~/.gitconfig, or the
 # operator's token cache. The repo is a throwaway `git init` in a tmpdir, the
@@ -117,39 +118,81 @@ class CredentialHelperSurvivesTreeMoveTest < ActiveSupport::TestCase
 
   # The racy version of the same thing: a tree genuinely churning under a
   # running helper.
+  #
+  # THE NON-VACUITY CHECK, AND WHY IT NO LONGER WATCHES THE INODE. Until
+  # 2026-09-14 this proved the tree had churned by asserting the in-tree
+  # helper's INODE NUMBER changed across the window. A changed number is not
+  # something git or POSIX promises: unlink(2) frees the number, and the next
+  # create(2) on that filesystem may hand the very same one back, so a genuine
+  # unlink-and-recreate can legitimately keep ONE number. That makes the number
+  # a fact about the filesystem's allocator, not about the tree. Measured both
+  # ways on 2026-09-13: 200 unlink+create cycles on this Mac's APFS produced 200
+  # DISTINCT, monotonically increasing numbers — so the assertion could not fail
+  # on any desk, no matter how broken the setup got — while the Linux CI runner
+  # recycles freed numbers and reddened `accepted` in run 34795300460, at the
+  # same SHA (2d4922fd) that had passed 25 minutes earlier in run 34793924026.
+  # An assertion that is unfalsifiable where it is written and a coin-flip where
+  # it runs is measuring the wrong thing.
+  #
+  # What "the tree moved" MEANS is that the bytes at the helper's path changed,
+  # and that git does promise. So the rewrite is now FORCED and OBSERVED rather
+  # than hoped for. Forced: the two branches the mover alternates between are
+  # shown to differ AT THAT PATH before the race starts, so no checkout between
+  # them can be a no-op for the file. Observed: the mover reads the path back
+  # after each of its own checkouts, which is a measurement taken inside the
+  # window rather than an inference about it. Given those two, `> 1` distinct
+  # revisions follows from `flips > 1` deterministically — there is no timing to
+  # lose. Do not "restore" the inode form; it is the flake, not the guard.
   def test_the_installed_helper_survives_a_tree_that_is_actively_moving
     CredentialHelperInstall.install!(source_root: @repo, root: @install_root)
     installed = CredentialHelperInstall.helper_path(@install_root)
     in_tree = File.join(@repo, CredentialHelperInstall::HELPER_RELATIVE)
 
+    # FORCE IT. Reading `main` last leaves the tree where the mover's first flip
+    # expects it, so flip 0 is itself a real content change.
+    rewritten = bytes_on(in_tree, "rewritten-helper")
+    shipped = bytes_on(in_tree, "main")
+    refute_equal shipped, rewritten,
+                 "`main` and `rewritten-helper` hold identical bytes at " \
+                 "#{CredentialHelperInstall::HELPER_RELATIVE}, so a checkout between them never rewrites " \
+                 "the file and the race below would exercise nothing"
+    committed = [Digest::SHA256.hexdigest(shipped), Digest::SHA256.hexdigest(rewritten)].sort
+
     stop = false
-    inodes = []
+    observed = Thread::Queue.new
     flips = 0
     mover = Thread.new do
       until stop
         git!(@repo, "checkout", "--quiet", flips.even? ? "rewritten-helper" : "main")
+        observed << revision_on_disk(in_tree)
         flips += 1
       end
     rescue StandardError
-      # A checkout losing a race with teardown must not mask the assertion below.
+      # A checkout losing a race with teardown must not mask the assertions below.
       nil
     end
 
     failures = []
     30.times do
-      inodes << (File.stat(in_tree).ino rescue nil)
       _out, err, status = run_helper(installed)
       failures << err unless status.success?
     end
     stop = true
     mover.join(20)
 
+    seen = []
+    seen << observed.pop until observed.empty?
+
     assert_empty failures,
                  "the installed helper failed #{failures.size}/30 times while the tree moved under it"
     assert_operator flips, :>, 1, "the mover never flipped the tree; the concurrency was not exercised"
-    assert_operator inodes.compact.uniq.size, :>, 1,
-                    "the in-tree helper kept ONE inode across #{flips} checkouts, so git never actually " \
-                    "rewrote the file and this test proved nothing about a moving tree"
+    assert_operator seen.uniq.size, :>, 1,
+                    "the in-tree helper held the SAME bytes across #{flips} checkouts, so git never " \
+                    "actually rewrote the file and this test proved nothing about a moving tree"
+    assert_equal committed, seen.uniq.sort,
+                 "the bytes at the in-tree helper during the window were not the two committed revisions " \
+                 "(saw #{seen.uniq.sort.inspect}); the path went missing mid-window or something other " \
+                 "than the mover wrote it, either of which voids the measurement"
   end
 
   # An UPGRADE must not rebuild the very window this closes.
@@ -245,6 +288,23 @@ class CredentialHelperSurvivesTreeMoveTest < ActiveSupport::TestCase
 
     git!(@repo, "checkout", "--quiet", "main")
     assert_path_exists helper, "the seed left main without the helper; every install below would refuse"
+  end
+
+  # Land on `ref` and read back what git actually put on disk. The sandbox tree
+  # has exactly one writer, so this is a measurement rather than a sample of a
+  # race — which is the whole point of doing it before the mover starts.
+  def bytes_on(path, ref)
+    git!(@repo, "checkout", "--quiet", ref)
+    File.binread(path)
+  end
+
+  # Which committed revision is at `path` right now. A missing file is reported
+  # as its own value instead of raising, so the mover cannot die silently and
+  # leave the non-vacuity assertions reading a short list as agreement.
+  def revision_on_disk(path)
+    File.exist?(path) ? Digest::SHA256.hexdigest(File.binread(path)) : "ABSENT"
+  rescue SystemCallError => e
+    "UNREADABLE: #{e.class}"
   end
 
   def commit!(message)

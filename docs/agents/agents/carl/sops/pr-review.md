@@ -252,7 +252,7 @@ doc).
 
   ```bash
   gh api user   # WHO am I about to merge as? 403 "not accessible by integration" = the App. STOP on a 200.
-  gh pr merge <feat-pr> --merge --match-head-commit <validated-head>   # feat → accepted; pin the head you validated (retarget a mis-based PR first)
+  gh pr merge <feat-pr> --merge --match-head-commit <validated-head>   # feat → accepted; pin the head you validated (a mis-based PR retargets first; a STACK on another open PR is refused, not retargeted — see the merge-ready bullett)
   bin/task merged <task> accepted      # stamp the git-location BEFORE the stage move
   bin/task move <task> reviewed
   bin/task note <task> --handoff "Carl review approved; merged into accepted; ready for Avi's qa-release sweep." --agent carl
@@ -275,7 +275,20 @@ doc).
   is on `accepted` (invariant: `reviewed` ⟺ code-on-`accepted`). If the `gh pr
   merge` FAILS, leave the task `submitted` and UNSTAMPED (never move to
   `reviewed`) — resolve the conflict/checks on GitHub, then re-review. A mis-based
-  feat PR (base ≠ `accepted`) self-heals: retarget it to `accepted`, then merge.
+  feat PR (base ≠ `accepted`) self-heals ONLY when the guard can PROVE the base is
+  unclaimed: retarget it to `accepted`, then merge. **At a merge, anything unproven
+  REFUSES** — the base read failed, the probe was unreadable, the base came back
+  empty, the repo to probe could not be derived, or the base is another OPEN PR's
+  head, which is a deliberate STACK.
+  `bin/pr-review` REFUSES those and names the parent: retargeting a stack changes
+  what the PR MERGES without moving its head, so `--match-head-commit` cannot see
+  it, and merging would drag the parent's unmerged work onto `accepted`. Leave the
+  task `submitted` and re-review once the parent lands (GitHub retargets the child
+  itself when it does). The merge ORDER is the parent's review to decide, not this
+  one's. The other four refuse for the same reason in different clothes: a base the
+  guard could not judge is not a base it may retarget into a merge. `bin/ship` is
+  deliberately the opposite on those — it repairs on a doubt, because it never
+  merges and a wrong retarget there is loud and recoverable.
 
   A reviewer who finds a zappable defect **fixes it forward** — lease-push a
   bounded `zap:` commit to the PR branch — and leaves the verdict merge-ready;

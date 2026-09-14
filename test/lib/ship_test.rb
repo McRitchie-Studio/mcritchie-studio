@@ -110,7 +110,7 @@ class ShipTest < Minitest::Test
       if "#{marker}" == "GH" && ARGV[0, 2] == %w[pr list]
         head_at = ARGV.index("--head")
         head = head_at ? ARGV[head_at + 1] : nil
-        if head.nil?
+        if head.nil? || head.empty?
           puts ENV.fetch("GH_PR_LIST_SIBLINGS_JSON", "[]")
         elsif head == "#{BRANCH}"
           puts ENV.fetch("GH_PR_LIST_JSON", "[]")
@@ -619,6 +619,27 @@ class ShipTest < Minitest::Test
       refute(lines.any? { |l| l[0] == "GH" && l[1, 2] == %w[pr edit] },
              "step 4/8 retargeted a PR based on open PR #624's branch — that is a deliberate " \
              "stack, and retargeting it strands the ship exactly as it did on turf #701")
+    end
+  end
+
+  # AN EMPTY baseRefName IS NOT A STACK (/tasks/review-guards-stacked-prs, third item).
+  # `gh pr list --head "" --state open` is NO FILTER to real gh and returns EVERY open PR, so
+  # an unread or absent base would make the probe name the FIRST open PR as this PR's parent
+  # and preserve a MIS-BASED PR on the strength of a coincidence. No answer falls to the repair.
+  def test_an_empty_base_ref_falls_to_the_repair_not_to_a_coincidental_parent
+    with_repo do |dir|
+      assert system("git -C #{dir} add -A >/dev/null 2>&1 && git -C #{dir} commit -q -m done")
+      siblings = JSON.generate([{ "number" => 42, "url" => "https://github.com/o/r/pull/42" }])
+
+      _out, err, status, lines = run_ship(dir, extra_env: {
+        "GH_PR_LIST_JSON" => stacked_pr(""),
+        "GH_PR_LIST_SIBLINGS_JSON" => siblings
+      })
+
+      assert status.success?, "an empty base must not abort the ship, got:\n#{err}"
+      edit = lines.find { |l| l[0] == "GH" && l[1, 2] == %w[pr edit] }
+      assert edit, "an empty base is not a stack — it must still be retargeted"
+      assert_equal "accepted", edit[edit.index("--base") + 1]
     end
   end
 
