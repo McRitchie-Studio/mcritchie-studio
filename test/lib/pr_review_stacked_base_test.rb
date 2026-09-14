@@ -45,6 +45,19 @@ class PrReviewStackedBaseTest < Minitest::Test
   end
 
   # The retarget still exists for the mis-based case — the fix must not become "never retarget".
+  # THE FAILED BASE READ IS HANDED DOWN, not acted on here. It used to gate the whole block,
+  # so a failed read skipped the base check entirely and merged — and no test could see it,
+  # because a source test cannot watch a branch that never runs (/tasks/review-refuses-unread-base).
+  def test_the_base_read_result_is_handed_to_the_guard_rather_than_gating_it
+    body = merge_body
+    assert_match(/base_read_ok: base_ok/, body,
+                 "the read result must be JUDGED in the lib, where a spy can drive it")
+    refute_match(/if base_ok\n/, body,
+                 "gating the block on base_ok is what let a failed read merge unchecked")
+    assert_match(/repo_scope: repo_slug/, body,
+                 "the probe's repo scope is the caller's fact too, and a blank one must refuse")
+  end
+
   def test_the_repair_arm_is_still_wired
     assert_match(/gh_write\("pr", "edit", pr_url, "--base", ACCEPTED_BRANCH\)/, merge_body,
                  "a merged parent, a closed one, a deleted branch, release and main still self-heal")

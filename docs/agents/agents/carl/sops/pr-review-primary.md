@@ -272,7 +272,7 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
      gh pr view <feat-pr> --json headRefOid --jq .headRefOid   # equal to the recorded head → merge; moved → revalidate the new head's CI, merge only if green
      gh pr view <feat-pr> --json baseRefName --jq .baseRefName   # base ≠ accepted? PROBE before you touch it
      gh pr list --repo <owner/repo> --head <that-base> --state open --json number,url   # ANY hit = a STACK: do NOT retarget, do NOT merge
-     gh pr merge <feat-pr> --merge --match-head-commit <validated-head>   # feat → accepted (retarget a mis-based PR first — but see the STACK note below)
+     gh pr merge <feat-pr> --merge --match-head-commit <validated-head>   # feat → accepted (retarget only a base PROVEN unclaimed; a stack, an unreadable probe or an empty base all REFUSE — see below)
      bin/task merged <task-slug> accepted     # stamp the git-location BEFORE the stage move
      bin/task move <task-slug> reviewed
      bin/task note <task-slug> --handoff "Carl review approved; merged into accepted; ready for Avi's qa-release sweep." --agent carl
@@ -306,10 +306,14 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
      rides onto `accepted` with the merge. Leave the task `submitted`, NAME the
      parent in your report, and re-review once the parent lands — GitHub
      retargets the child itself when it does. The merge ORDER is the parent's
-     review to decide, not yours. Everything else still self-heals: a merged or
-     closed parent, a deleted branch, `release`, `main`. `bin/pr-review` does
+     review to decide, not yours. Everything else still self-heals ONLY when the guard can PROVE it: a merged or
+     closed parent, a deleted branch, `release`, `main`. If it cannot prove it — the
+     base read failed, the probe could not be read, the base came back EMPTY, or you
+     cannot tell which repo to probe — REFUSE. At a merge, unproven is not
+     mis-based: five conditions refuse and only a proven-unclaimed base retargets. `bin/pr-review` does
      this automatically (`bin/lib/stacked_pr.rb`, shared with `bin/ship`); the
-     two probe lines above cover the hand-run sequence.
+     two probe lines above cover the hand-run sequence — and if either probe
+     ERRORS rather than answering, that is a refusal too, not a retarget.
 
      `bin/task merged` verifies its own write, so a silent success IS the stamp.
      If you double-check it anyway, read the **top-level** field — `merged` is a
