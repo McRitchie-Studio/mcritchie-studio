@@ -328,21 +328,24 @@ Row 2 is the REGISTRY, not the machine: it names every satellite in
 listed because the rule is about where the scripts live, and it will hold the day
 the repo lands.
 
-**Row 3 is a missing WORKTREE lane; only turf-vault also lacks a cert lane — and the
-difference matters, because a builder who reads "no lane" hand-rolls a cert that
-already exists, or records a skip for a suite that does.** `bin/task begin` cannot
-desk any of the three, so none of them gets `begin` or `ship`. But
-`bin/fast-check` carries a purpose-built gem branch (`FullSuiteGate.gem_repo?` +
-`FullSuiteGate.release_check_cmd`): from a plain `git worktree add` desk, hub-absolute
-`bin/fast-check <task>` runs the gem's REGISTERED gate as the whole mapped lane —
-`bin/release-check` for **studio-engine** and for **solana-studio** (registered
-2026-08-31), both declared in `config/release_repos.yml` under `gems:`. **turf-vault**
-HAS real tests — a CI workflow, `anchor test` in `Anchor.toml`, and `yarn test:scripts`
-— but no DECLARED lane in `config/release_repos.yml`, so the hub's cert writers cannot
-run them. `bin/fast-check` refuses it on BEHAVIOUR, not by name: its test-prepare lane
-finds no `bin/rails` to launch and exits 1 (`prepare_res.unlaunchable?`), pointing at
-`/tasks/turf-vault-needs-ci`, which owns declaring one. That is a registry gap, not an
-absence of tests — do not record a skip for a repo that has a suite.
+**Row 3 is a missing WORKTREE lane — NOT a missing cert lane. All three of these
+repos can be certified today.** `bin/task begin` cannot desk any of the three, so
+none of them gets `begin` or `ship`. But `bin/fast-check` carries a REGISTRY-GATE
+branch (`FullSuiteGate.registry_gated?` + `FullSuiteGate.release_check_cmd`): from a
+plain `git worktree add` desk, hub-absolute `bin/fast-check <task>` runs the repo's
+DECLARED gate as the whole mapped lane, skipping the Rails prepare lane that does not
+apply. Three repos declare one in `config/release_repos.yml`: `bin/release-check` for
+**studio-engine** and **solana-studio** (under `gems:`, registered 2026-08-31), and
+**turf-vault**'s four real CI lanes — `check:doc-op-refs`, `test:scripts`, `cargo
+check`, `cargo clippy` — as one `&&` chain (under `apps:`, declared 2026-09-14;
+measured ~6s warm, 56/56 node:test assertions).
+
+**Never record a "no tests" skip for turf-vault.** It has a suite and now has a lane
+to run it. Until 2026-09-14 it had the suite but no lane, because this branch keyed on
+the `gems` SECTION rather than on the DECLARED command — and the docs routed readers
+to a task that had already shipped the repo's first CI workflow and been ARCHIVED. If
+a repo ever again hits `COULD NOT RUN` here, the remedy is a `release_check:` on its
+registry row, not a task to go and ask.
 
 **Pass `--agent <soul>` — it is what makes review able to exclude you.** It stamps
 the task's AUTHOR SET (`devops.built_by` + `devops.builders`) — what

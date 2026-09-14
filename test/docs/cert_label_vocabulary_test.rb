@@ -335,20 +335,105 @@ class CertLabelVocabularyTest < Minitest::Test
     assert_includes reset_cmd, "bin/rails",
                     "bin/full-suite-check's first lane no longer shells out to bin/rails"
 
-    refute FullSuiteGate.gem_repo?("turf-vault"),
-           "turf-vault is now filed under `gems`, so full-suite-check SKIPS its bin/rails lane and the " \
-           "turf-vault entry's explanation no longer holds"
+    # THE CLAIM IS ABOUT A REPO THAT STILL OWES THE RAILS LANE. It used to name
+    # turf-vault, which stopped being an example on 2026-09-14: turf-vault now
+    # DECLARES a release_check, so full-suite-check skips its reset lane too
+    # (skip_test_db_reset reads registry_gated?, not gem_repo?). Asserting the old
+    # fact would have kept passing — turf-vault is still not a gem — while the
+    # sentence it vouched for had become false. turf-monster is the control: a real
+    # Rails app, declaring nothing, which must keep meeting this lane.
+    refute FullSuiteGate.registry_gated?("turf-monster"),
+           "turf-monster now declares its own gate, so full-suite-check SKIPS its bin/rails lane and " \
+           "this script is no longer the one that meets the missing runner — re-verify the prose"
+    assert FullSuiteGate.registry_gated?("turf-vault"),
+           "turf-vault no longer declares a cert lane. It has a real suite (56/56 node:test, plus both " \
+           "Rust lanes), so an absent declaration means builders are back to having no way to certify " \
+           "it — the exact gap /tasks/cert-lane-owner-is-archived closed"
   end
 
   # --- the site that was wrong, and the distinction it must keep ------------------
 
-  def test_turf_vault_entry_names_the_deferral_receipt
-    # assert_includes would dump the whole (long) entry into the failure; the useful
-    # report is which label is missing, not the paragraph it is missing from.
-    assert turf_vault_entry.include?(CertEvidence::DEFER_LANE),
-           "config/release_repos.yml's turf-vault entry does not name #{CertEvidence::DEFER_LANE} — " \
-           "the receipt bin/fast-check actually records for that path. It named a " \
-           "#{FullSuiteGate::BYPASS_TAG} until 2026-09-08, which is a different door entirely."
+  # --- turf-vault's DECLARED cert lane -------------------------------------------
+  #
+  # This slot used to assert the entry named CertEvidence::DEFER_LANE, because the
+  # honest description of turf-vault's cert path was "it defers before any lane".
+  # That stopped being true on 2026-09-14, when the row declared a `release_check`
+  # and bin/fast-check started keying its whole-gate branch on the DECLARATION
+  # rather than on the `gems` section. The deferral guard is not weakened, it is
+  # RELOCATED: the label vocabulary tests above still pin CertEvidence::DEFER_LANE
+  # to its emitter for every repo that does defer.
+
+  def test_turf_vault_declares_a_cert_lane
+    assert FullSuiteGate.registry_gated?("turf-vault"),
+           "turf-vault must reach bin/fast-check's whole-gate branch. Without this it has a real " \
+           "suite and no way for a builder to run it, and the docs drift back to routing readers " \
+           "at a task to go and decide — which is how this pointed at an ARCHIVED task for months."
+
+    cmd = FullSuiteGate.release_check_cmd("turf-vault").to_s
+    refute_empty cmd, "turf-vault's registry row declares no release_check command"
+  end
+
+  # THE ENTRY MUST DOCUMENT THE COMMAND IT DECLARES. A `&&` chain in a YAML scalar
+  # is easy to extend and easy to leave undescribed, and this row's prose is what a
+  # reader trusts about what the cert covers. Keyed on the chain's own members, so
+  # adding a lane to the command without describing it fails HERE.
+  def test_turf_vault_entry_documents_every_lane_it_declares
+    entry = turf_vault_entry
+    lanes = FullSuiteGate.release_check_cmd("turf-vault").to_s.split("&&").map(&:strip)
+
+    assert_operator lanes.size, :>=, 2, "expected a multi-lane chain, got #{lanes.inspect}"
+    lanes.each do |lane|
+      # The distinguishing token, not the whole invocation: the prose names lanes
+      # readably ("cargo clippy", "test:scripts") rather than quoting every flag.
+      token = lane[/\b(?:npm run |yarn )?([a-z][a-z0-9:_-]*)/i, 1]
+      subject = lane.include?("cargo") ? lane.split[0, 2].join(" ") : token
+      assert entry.include?(subject),
+             "the turf-vault entry declares `#{lane}` but its prose never mentions #{subject.inspect} — " \
+             "a reader cannot tell what this repo's cert actually covers"
+    end
+  end
+
+  # DRIFT, MEASURED WHERE IT CAN BE. The declared chain is a hub-side copy of
+  # turf-vault's own CI lanes, because that repo ships no bin/release-check for the
+  # registry to point at. If ci.yml gains or renames a lane, this string does not
+  # follow it and the cert silently covers less than CI does.
+  #
+  # ITS LIMIT, STATED PLAINLY: this reads a SIBLING checkout, so it can only run
+  # where one exists. It resolves from any ancestor of Rails.root (which is how it
+  # works from a worktree desk, whose parent is `.worktrees`, not the projects
+  # root) and SKIPS when turf-vault is not checked out — as on hub CI, which clones
+  # this repo alone. It is a local tripwire for the builder editing either side,
+  # not a CI gate, and must not be described as one.
+  def test_turf_vault_cert_lane_covers_its_ci_lanes_when_the_checkout_is_readable
+    ci = turf_vault_ci_workflow
+    skip "turf-vault is not checked out beside this repo — drift cannot be measured here" unless ci
+
+    declared = FullSuiteGate.release_check_cmd("turf-vault").to_s
+    # Every `run:` step in the workflow, reduced to the command it invokes.
+    runs = ci.scan(/^\s*run:\s*(.+)$/).flatten.map(&:strip)
+    covered = runs.select { |r| r.start_with?("npm run", "cargo check", "cargo clippy") }
+
+    refute_empty covered,
+                 "turf-vault's ci.yml no longer runs any of the lanes this cert declares — the " \
+                 "declared chain must be re-derived from the workflow"
+    covered.each do |run_cmd|
+      subject = run_cmd.split[0, 2].join(" ")
+      assert declared.include?(subject),
+             "turf-vault's CI runs `#{run_cmd}` and the declared cert lane does not cover #{subject.inspect}. " \
+             "config/release_repos.yml's release_check has drifted from .github/workflows/ci.yml; " \
+             "re-derive it (or give the repo a bin/release-check and point the row at that)."
+    end
+  end
+
+  # Walk up from Rails.root looking for a projects root that holds turf-vault. A
+  # worktree desk sits two levels below the hub primary, so Rails.root.parent is
+  # `.worktrees` and the naive sibling lookup finds nothing.
+  def turf_vault_ci_workflow
+    Pathname.new(Rails.root).ascend do |dir|
+      candidate = dir.join("turf-vault", ".github", "workflows", "ci.yml")
+      return candidate.read if candidate.file?
+    end
+    nil
   end
 
   def test_turf_vault_entry_keeps_the_author_hatch_distinct_from_the_deferral

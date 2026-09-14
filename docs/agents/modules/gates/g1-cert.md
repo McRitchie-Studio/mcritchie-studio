@@ -158,7 +158,9 @@ impossible by construction rather than by every repo remembering to ignore `tmp/
      there is no fix, because there is nothing to prepare. The cert **refuses**
      rather than skipping the lane, since a skipped prepare certifies a repo
      whose tests never ran; a repo whose cert lane is not Rails has to DECLARE
-     one, and `/tasks/turf-vault-needs-ci` owns what that lane should be. The
+     one — a `release_check:` on its row in `config/release_repos.yml`, which is
+     the remedy the refusal itself now names. turf-vault declared exactly that on
+     2026-09-14, so it no longer reaches this refusal at all. The
      same split applies to the later lanes: a missing command is reported as
      `lane(s) COULD NOT RUN`, never `lane(s) RED`.
      Both tasks, one boot: the test DB, and
@@ -168,17 +170,24 @@ impossible by construction rather than by every repo remembering to ignore `tmp/
      like a path — so without this lane a fresh worktree red-flags every
      view-rendering test with `The asset "tailwind.css" is not present in the
      asset pipeline`. See `docs/agents/modules/testing.md`.
-   - **A GEM REPO TAKES A DIFFERENT ROUTE ENTIRELY.** The three lanes below are
-     Rails-app assumptions — `bin/rails`, `bin/rubocop` — and a gem has neither, so
-     an unaided `bin/fast-check` used to die on an unrescued `Errno::ENOENT` before
-     running a single test. A repo the registry files under `gems`
-     (`config/release_repos.yml`) now runs **its own gate command** from that row's
-     `release_check` (studio-engine: `bin/release-check`, measured 2026-08-26 at ~215s for 102 files /
-     1491 runs), skips the Rails prepare lane that does not apply to it, and runs
-     no rubocop lane. There is no diff-mapped shortcut for a gem — the registry
-     command IS the suite — and the evidence line says so rather than reporting a
-     subset that was never selected. So a studio-engine builder CAN use the fast
-     route; this doc previously implied they could not.
+   - **A REGISTRY-GATED REPO TAKES A DIFFERENT ROUTE ENTIRELY.** The three lanes
+     below are Rails-app assumptions — `bin/rails`, `bin/rubocop` — and a gem or an
+     Anchor repo has neither, so an unaided `bin/fast-check` used to die on an
+     unrescued `Errno::ENOENT` before running a single test. A repo whose registry
+     row (`config/release_repos.yml`) DECLARES a `release_check` now runs **its own
+     gate command** instead, skips the Rails prepare lane that does not apply to it,
+     and runs no rubocop lane. There is no diff-mapped shortcut for such a repo — the
+     declared command IS the suite — and the evidence line says so rather than
+     reporting a subset that was never selected.
+
+     **It is keyed on the DECLARATION, not on the `gems` section** (`FullSuiteGate.registry_gated?`,
+     changed 2026-09-14). While it keyed on the section, an `apps` row could never
+     reach this branch however completely it declared its lane — which is why
+     turf-vault had four real CI lanes and no local cert for months. Declared today:
+     studio-engine and solana-studio (`bin/release-check`; studio-engine measured
+     2026-08-26 at ~215s for 102 files / 1491 runs) and turf-vault (its four CI lanes
+     as one `&&` chain, measured 2026-09-14 at ~6s warm). So a studio-engine OR a
+     turf-vault builder CAN use the fast route.
    - `mapped-tests` — `bin/rails test <files the branch diff maps to>` (path
      convention, falling back to a grep for the SUBJECT'S IDENTITY — a script's
      path and quoted command name, a config's path and quoted basename, an app

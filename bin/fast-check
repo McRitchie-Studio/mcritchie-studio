@@ -348,14 +348,22 @@ cert_repo = CertRootGuard.repo_of_checkout(root)
 # implying a subset was chosen. It is fast enough to be the builder default:
 # studio-engine's bin/release-check covers 100 files / 1456 runs.
 registry_test_cmd = FullSuiteGate.release_check_cmd(cert_repo)
-gem_repo = FullSuiteGate.gem_repo?(cert_repo)
+# KEYED ON THE DECLARATION, NOT THE SECTION (changed 2026-09-14). This branch used
+# to ask `gem_repo?`, which meant an `apps` row could never reach it however
+# completely it declared its lane — so turf-vault, an Anchor repo with four real CI
+# lanes, had no local cert at all and every reader was routed to a task to decide
+# it. `registry_gated?` is the same rule stated over the DECLARED COMMAND, and it
+# is behaviour-identical for both gems (each declares one).
+registry_gate = FullSuiteGate.registry_gated?(cert_repo)
 
 # NO LINT-WAIVER BRANCH HERE, deliberately. bin/full-suite-check needs one because it
 # runs a rubocop lane for every repo; this script does not reach that question for
-# EITHER repo that declares `lint_lane: none`. studio-engine and solana-studio (added
-# 2026-08-31) are both GEMS, and the gem branch below omits the rubocop lane before a
-# waiver could be consulted — so a waiver check on this path would be code no repo can
-# currently execute.
+# any repo that declares `lint_lane: none`. studio-engine and solana-studio (added
+# 2026-08-31) both declare it, and the registry-gate branch below omits the rubocop
+# lane before a waiver could be consulted — so a waiver check on this path would be
+# code no repo can currently execute. turf-vault (registry-gated 2026-09-14) takes the
+# same branch and is right to: it lints with prettier, not rubocop, and its declared
+# command does not include that lane because CI runs prettier only on `lint:fix`.
 #
 # It was written, and removed after a mutation proved the point: flipping
 # FullSuiteGate.lint_waived? to false changed nothing observable, because the gem
@@ -384,10 +392,12 @@ rubocop_cmd = ENV.fetch("FAST_CHECK_RUBOCOP_CMD", "bin/rubocop")
 # in the asset pipeline`: a RED G1 cert on a docs-only or ci.yml-only diff. A cert that
 # reports an ENV GAP as a test regression is lying — so the cert closes the gap itself.
 test_prepare_cmd = ENV.fetch("FAST_CHECK_TEST_PREPARE_CMD", "bin/rails db:test:prepare test:prepare")
-# A gem has no test database and no bin/rails to prepare one with, so this lane does
-# not APPLY to it — it is not "skipped" in the opt-out sense. Declared from the
-# registry's gems section, never inferred from whether bin/rails happens to exist.
-skip_test_prepare = ENV.fetch("FAST_CHECK_SKIP_TEST_PREPARE", "") == "1" || gem_repo
+# A REPO THAT DECLARES ITS OWN GATE HAS NO RAILS TEST DATABASE TO PREPARE, so this
+# lane does not APPLY to it — it is not "skipped" in the opt-out sense. True of a
+# gem (no bin/rails at all) and equally of turf-vault (Anchor/Rust). Declared from
+# the registry, never inferred from whether bin/rails happens to exist: a skip
+# inferred from a missing binary turns every broken install into a silent pass.
+skip_test_prepare = ENV.fetch("FAST_CHECK_SKIP_TEST_PREPARE", "") == "1" || registry_gate
 
 # --- the zero-evidence guard ---------------------------------------------------
 # A CERT THAT EXECUTES NO TESTS MUST NOT REPORT GREEN. The cap can skip the mapped
@@ -416,10 +426,14 @@ skip_test_prepare = ENV.fetch("FAST_CHECK_SKIP_TEST_PREPARE", "") == "1" || gem_
 # nothing. Deciding it first also costs the builder ~0s instead of a
 # db:test:prepare they are going to have to redo under another command anyway.
 #
-# NOT FOR A GEM. A gem's registry command IS its suite and runs as the mapped
-# lane, so a gem never has an empty mapped lane to refuse — reading `mapped_only`
-# for one would refuse the repo that runs the MOST.
-unless gem_repo
+# NOT FOR A REGISTRY-GATED REPO. Its declared command IS its suite and runs as the
+# mapped lane, so it never has an empty mapped lane to refuse — reading `mapped_only`
+# for one would refuse the repo that runs the MOST. This is also the guard that used
+# to DEFER every turf-vault run before any lane could execute: a satellite checkout
+# resolves none of the hub-anchored spine, so a diff mapping to no test exited here
+# with a `[cert-deferred]` receipt. With a lane declared there is a suite to run, so
+# turf-vault now certifies instead of deferring.
+unless registry_gate
   # THE REMEDY IS RESOLVED ONCE, HERE, and handed to whichever verdict fires — because the
   # builder reading either one asks the same question, and a remedy stated twice is a remedy
   # that drifts. bin/full-suite-check lives ONLY in the hub (measured 2026-09-07: absent from
@@ -723,15 +737,26 @@ unless skip_test_prepare
       # prepare lane for any repo that happens to lack bin/rails would hand back
       # a GREEN cert for a repo whose tests never ran — silently certifying the
       # untested, which is worse than refusing to certify at all. A repo whose
-      # cert lane is not Rails has to DECLARE one, the way a gem declares its
-      # test lane in config/release_repos.yml; what that lane should BE for an
-      # Anchor repo is a real design question and it is not this script's to
-      # answer. /tasks/turf-vault-needs-ci owns it.
+      # cert lane is not Rails has to DECLARE one: a `release_check:` on its row
+      # in config/release_repos.yml, which FullSuiteGate.registry_gated? reads to
+      # run that command as the whole lane and skip this one.
+      #
+      # THE REMEDY IS NAMED, NOT DELEGATED (2026-09-14). This sentence used to end
+      # by routing the reader to a task slug and calling that task the holder of
+      # the decision. That task had shipped turf-vault's first CI WORKFLOW and been
+      # ARCHIVED, so the one moment this pointer was load-bearing — a builder
+      # stopped mid-cert, reading this line on screen — sent them to a terminal
+      # task nobody held. Never route a live refusal at a task slug: a task's state
+      # is board data that this string cannot track. Name the mechanism instead,
+      # which is a file in the reader's own checkout and is always current.
+      # Guarded by test/docs/archived_task_ownership_guard_test.rb.
       warn "fast-check: the test-env prepare command COULD NOT RUN — #{prepare_res.detail}. " \
            "NOTHING was certified, and this is NOT a diff problem and NOT an env gap you can fix: " \
            "this checkout (#{root}) has no such runner, so there was never a test database to prepare. " \
-           "If this repo's cert lane is not Rails, it has to DECLARE one in config/release_repos.yml the " \
-           "way a gem declares its test lane — see /tasks/turf-vault-needs-ci, which owns that decision. " \
+           "If this repo's cert lane is not Rails, DECLARE one: add a `release_check:` to its row in " \
+           "config/release_repos.yml naming the command that IS its suite (`&&`-chain it if the repo " \
+           "ships no single gate script), and this script will run that as the whole lane instead. " \
+           "config/release_repos.yml's turf-vault row is a worked example. " \
            "Refusing rather than skipping: a skipped prepare lane certifies a repo whose tests never ran."
     else
       warn "fast-check: test-env prepare failed — see the output above. USUALLY an ENV gap (the test " \
@@ -745,13 +770,14 @@ unless skip_test_prepare
   end
 end
 
-# A GEM RUNS ITS WHOLE GATE AS THE "MAPPED" LANE. There is no diff-mapped subset to
-# choose — the registry command IS the suite — so the lane label stays honest by
-# naming the command, and the spine lane below is left to skip itself (a gem has no
-# spine entries). Anything else would report a subset that was never selected.
-if gem_repo
-  mapped_res = run_lane("gem-gate", test_cmd, root, gate_slug: gate_slug)
-  spine_res  = skip_lane("spine", "gem repo — its registry gate above is the whole suite",
+# A REGISTRY-GATED REPO RUNS ITS WHOLE GATE AS THE "MAPPED" LANE. There is no
+# diff-mapped subset to choose — the declared command IS the suite — so the lane
+# label stays honest by naming the command, and the spine lane below is left to skip
+# itself (neither a gem nor an Anchor repo has hub spine entries). Anything else
+# would report a subset that was never selected.
+if registry_gate
+  mapped_res = run_lane("registry-gate", test_cmd, root, gate_slug: gate_slug)
+  spine_res  = skip_lane("spine", "registry-gated repo — its declared gate above is the whole suite",
                          gate_slug: gate_slug)
   rubocop_res = nil
 else
@@ -846,7 +872,7 @@ emit_cert_checkpoint(slug, "completed") unless options[:print]
 
 total = Process.clock_gettime(Process::CLOCK_MONOTONIC) - overall_started
 
-lanes = { (gem_repo ? "gem-gate" : "mapped-tests") => mapped_res, "spine" => spine_res }
+lanes = { (registry_gate ? "registry-gate" : "mapped-tests") => mapped_res, "spine" => spine_res }
 lanes["rubocop-changed"] = rubocop_res if rubocop_res
 unless lanes.each_value.all?(&:ok)
   # A HUNG lane and a RED lane are DIFFERENT VERDICTS and must never share a sentence.
@@ -916,15 +942,15 @@ mapped_detail =
   end
 
 # THE EVIDENCE MUST DESCRIBE WHAT ACTUALLY RAN. The app wording counts diff-mapped
-# paths, which for a gem are all zero — so the first draft of this fix emitted
-# "0 mapped + 0 spine test path(s), rubocop on 0 changed file(s)" after running the
-# repo's ENTIRE gate. Every number was true and the sentence was false: it reads as a
-# cert that tested nothing. A reader deciding whether to trust this line is exactly
+# paths, which for a registry-gated repo are all zero — so the first draft of this fix
+# emitted "0 mapped + 0 spine test path(s), rubocop on 0 changed file(s)" after running
+# the repo's ENTIRE gate. Every number was true and the sentence was false: it reads as
+# a cert that tested nothing. A reader deciding whether to trust this line is exactly
 # who that would mislead.
 detail =
-  if gem_repo
+  if registry_gate
     "fast cert green: #{test_cmd} — the repo's whole registry gate, no diff-mapped " \
-      "subset exists for a gem (#{format('%.1fs', total)}; the same command runs on CI)"
+      "subset exists for it (#{format('%.1fs', total)}; the same command runs on CI)"
   else
     "fast cert green: #{mapped_detail} + #{spine.size} spine test path(s), " \
       "rubocop on #{lintable.size} changed file(s) " \
