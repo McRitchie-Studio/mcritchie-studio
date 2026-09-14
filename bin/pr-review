@@ -718,9 +718,12 @@ def pr_head_oid(pr_url)
   ok && !oid.to_s.strip.empty? ? oid.strip : nil
 end
 
-# Merge the feature PR into `accepted` — the accepted-ladder's first rung. Self-heals
-# a mis-based feat PR (base != accepted) by retargeting it before merging, so a PR
-# opened against release/main is corrected rather than stranded. Returns true when
+# Merge the feature PR into `accepted` — the accepted-ladder's first rung. A base that is
+# not `accepted` is JUDGED before anything merges: it self-heals by retargeting only when
+# the base is PROVEN unclaimed (a merged parent, a closed-unmerged one, a deleted branch,
+# `release`, `main`), so a PR mis-opened against release/main is corrected rather than
+# stranded. Anything the guard cannot prove REFUSES instead, and there are FIVE such arms —
+# enumerated at the guard below and in StackedPr#guard_base. Returns true when
 # the code is on `accepted` (freshly merged OR already merged on a prior run), false
 # on ANY failure — the caller then leaves the task `submitted` and UNSTAMPED,
 # preserving the invariant reviewed ⟺ code-on-accepted.

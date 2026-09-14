@@ -562,7 +562,8 @@ branch ladder — **`accepted` → `release` → `main`**:
   code-on-`accepted`; a merge failure leaves it `submitted`, a mis-based PR
   self-heals by retargeting to `accepted` only when the base is PROVEN unclaimed;
   a deliberate STACK on another open PR's head, an unreadable probe, a failed base
-  read or an empty base all make review REFUSE and name what it could not prove) — or `bin/task block <task> --kind
+  read, an empty base, or a repo to probe that could not be derived all make review
+  REFUSE and name what it could not prove) — or `bin/task block <task> --kind
   rework --feedback "…" --agent carl` (back to you). Review still never touches
   `release`/`main` and never deploys. Avi's self-healing `qa-release` sweep
   (`bin/release prepare`) then **promotes ALL of `accepted` onto `release` via

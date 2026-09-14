@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require "open3"
 require "fileutils"
 require "tmpdir"
 require "shellwords"
@@ -227,13 +228,90 @@ class CredentialHelperInstallTest < ActiveSupport::TestCase
 
   # ── the wiring the operator runs ────────────────────────────────────────────
 
-  test "the printed git config command names the stable path and nothing in a working tree" do
+  # TIGHTENED AND RENAMED (credential-helper-claims-overclaim, 2026-09-14). The old
+  # name — "and nothing in a working tree" — is no longer the property: the command
+  # must NAME the in-tree path, as the value-PATTERN it replaces. What must never
+  # be in a working tree is the VALUE git ends up holding, which is what this now
+  # separates. It also runs the command, because the previous version asserted
+  # about a string and the string was unrunnable on the machine it was written for.
+  test "the printed command sets the stable path as the VALUE, and names a working tree only as the pattern it replaces" do
     command = CredentialHelperInstall.git_config_command(@root)
+    value = command[/\.helper "([^"]+)"/, 1]
+    pattern = command[/'([^']+)'\s*\z/, 1]
 
-    assert_includes command, CredentialHelperInstall.helper_path(@root)
-    assert_includes command, 'credential."https://github.com".helper'
-    refute_includes command, "/projects/mcritchie-studio/bin/",
+    assert_equal CredentialHelperInstall.helper_path(@root), value,
+                 "the value git would hold is not the stable path"
+    refute_includes value, "/projects/mcritchie-studio/bin/",
                     "the wiring still points into the hub primary's working tree"
+    assert_includes command, 'credential."https://github.com".helper'
+    assert_includes command, "--replace-all",
+                     "a single-value set FAILS on a config that already holds two values — measured on a " \
+                     "copy of the real ~/.gitconfig: 'cannot overwrite multiple values with a single value'"
+    assert_equal CredentialHelperInstall::HELPER_VALUE_PATTERN, pattern,
+                 "the value-pattern must target this helper's own lines. With no pattern at all --replace-all " \
+                 "collapses EVERY value, dropping the empty reset that stops osxkeychain answering github.com; " \
+                 "anchored on the in-tree path alone it appends a duplicate on every re-run."
+    assert_match(/#{pattern}/, CredentialHelperInstall::IN_TREE_HELPER,
+                 "the pattern no longer matches the in-tree line this install replaces")
+    assert_match(/#{pattern}/, CredentialHelperInstall.helper_path(@root),
+                 "the pattern no longer matches an ALREADY-installed helper, so a re-run appends instead of " \
+                 "replacing — the duplication regression")
+  end
+
+  # The behavioural half: the command is run against a COPY of the two-value shape
+  # a real ~/.gitconfig has. Nothing global is touched — `git config --file`.
+  test "the printed command rewires a two-value config and keeps the empty reset" do
+    config = File.join(@root, "gitconfig")
+    File.write(config, <<~INI)
+      [credential]
+      \thelper = osxkeychain
+      [credential "https://github.com"]
+      \thelper =
+      \thelper = #{CredentialHelperInstall::IN_TREE_HELPER}
+    INI
+
+    command = CredentialHelperInstall.git_config_command(@root)
+                                     .sub("git config --global", "git config --file #{config}")
+    assert system(command, out: File::NULL, err: File::NULL),
+           "the printed wiring command FAILED on a config holding two values — the shape a real " \
+           "~/.gitconfig has, and the reason the snapshot went unwired"
+
+    values = `git config --file #{config} --get-all credential."https://github.com".helper`.split("\n", -1)[0..1]
+    assert_equal ["", CredentialHelperInstall.helper_path(@root)], values,
+                 "the empty reset must survive — it is what stops the generic [credential] osxkeychain " \
+                 "helper answering github.com first — and the in-tree line must be the one replaced"
+    assert_equal "osxkeychain", `git config --file #{config} credential.helper`.strip,
+                 "the generic helper was touched; this command must only rewrite one URL's value"
+  end
+
+  # THE RE-RUN. `--replace-all <key> <value> <value-pattern>` replaces the lines
+  # that MATCH and ADDS one when nothing does. So a pattern naming only the
+  # in-tree path is correct exactly once: after the first run that line is gone,
+  # every re-run matches nothing, and git appends another stable-path line. Three
+  # runs, three helpers — measured on an isolated copy, never the real config.
+  #
+  # It is not cosmetic. `--check` cannot see it (`--get` returns only the LAST
+  # value), and the runbook tells the operator to re-run after a rebuild, so the
+  # duplicates accumulate silently under the one command that is supposed to be
+  # the safe one.
+  test "running the printed command three times leaves ONE helper, not three" do
+    config = File.join(@root, "gitconfig")
+    File.write(config, <<~INI)
+      [credential]
+      \thelper = osxkeychain
+      [credential "https://github.com"]
+      \thelper =
+      \thelper = #{CredentialHelperInstall::IN_TREE_HELPER}
+    INI
+
+    command = CredentialHelperInstall.git_config_command(@root)
+                                     .sub("git config --global", "git config --file #{config}")
+    3.times { |i| assert system(command, out: File::NULL, err: File::NULL), "run #{i + 1} of the wiring command failed" }
+
+    values = `git config --file #{config} --get-all credential."https://github.com".helper`.split("\n", -1)[0..-2]
+    assert_equal ["", CredentialHelperInstall.helper_path(@root)], values,
+                 "re-running the wiring command duplicated the helper: #{values.inspect}. git would then run " \
+                 "the helper once per value, and --check cannot see it because --get reads only the last."
   end
 
   # REWORDED, not tightened (credential-snapshot-guards-overclaim, 2026-09-13).
@@ -281,6 +359,76 @@ class CredentialHelperInstallTest < ActiveSupport::TestCase
                    "for a window on every checkout — the defect this snapshot closes — and a doc that " \
                    "carries both wirings sends a fresh machine to the broken one."
     end
+  end
+
+  # The doc guard above checks the PATH the docs wire. This one checks the
+  # COMMAND, which was the other half of the same disagreement: source-control.md
+  # carried a single-value `git config … helper "<path>"` (measured exit 5 against
+  # the real config's two-value shape — "cannot overwrite multiple values with a
+  # single value"), while credentials.md described the --replace-all form. A doc
+  # that names the right path with a command that cannot run is still a doc the
+  # operator stops at. "All quote one source" has to be enforced to be true.
+  test "the wiring docs print a command that runs, not a single-value set" do
+    WIRING_DOCS.each do |rel|
+      doc = Rails.root.join(rel).read
+
+      assert_includes doc, "--replace-all",
+                      "#{rel} wires credential.helper without --replace-all. That set FAILS (exit 5) on the " \
+                      "two-value [credential \"https://github.com\"] a real ~/.gitconfig holds."
+      assert_includes doc, CredentialHelperInstall::HELPER_VALUE_PATTERN,
+                      "#{rel} omits the value-pattern #{CredentialHelperInstall::HELPER_VALUE_PATTERN.inspect}. " \
+                      "A bare --replace-all collapses every value, dropping the empty reset that stops " \
+                      "osxkeychain answering github.com."
+
+      bare_set = doc.lines.each_with_index.filter_map do |line, i|
+        next unless line.include?('credential."https://github.com".helper')
+        next if line.include?("--replace-all") || line.lstrip.start_with?(">")
+
+        "#{rel}:#{i + 1}"
+      end
+      assert_empty bare_set,
+                   "#{bare_set.join(', ')} still carries a single-value set of credential.helper — the " \
+                   "command that exits 5 on this machine and leaves the snapshot unwired."
+    end
+  end
+
+  # ── --check reads the whole key, not the last line ──────────────────────────
+  #
+  # WHY THIS EXISTS. The duplication above went unseen because `--check` read the
+  # wiring with `git config --get`, which returns only the LAST value. A config
+  # holding three helpers and a config holding one printed the identical line and
+  # the identical OK. So the check is now `--get-all`, and more than one value is
+  # a FAIL naming the count.
+  #
+  # GIT_CONFIG_GLOBAL redirects `--global` at a file, so this runs the REAL CLI
+  # against an isolated config. Nothing writes to ~/.gitconfig.
+  def check_cli(config)
+    Open3.capture2e(
+      { "GIT_CONFIG_GLOBAL" => config },
+      Rails.root.join("bin/install-git-credential-helper").to_s, "--check", "--root", @root
+    ).first
+  end
+
+  def write_config(values)
+    File.join(@root, "gitconfig").tap do |path|
+      File.write(path, ["[credential \"https://github.com\"]", "\thelper =", *values.map { |v| "\thelper = #{v}" }].join("\n") + "\n")
+    end
+  end
+
+  test "--check reports a duplicated helper instead of printing only the last value" do
+    helper = CredentialHelperInstall.helper_path(@root)
+    output = check_cli(write_config([helper, helper, helper]))
+
+    assert_match(/FAIL.*3 helper values/, output,
+                 "--check passed over a key holding three helper values. git runs the helper once per " \
+                 "value; reading only the last is what made the re-run duplication invisible. Got:\n#{output}")
+  end
+
+  test "--check does not cry duplicate over a single wired helper" do
+    output = check_cli(write_config([CredentialHelperInstall.helper_path(@root)]))
+
+    refute_match(/helper values/, output,
+                 "--check reported a duplicate on a correctly wired config:\n#{output}")
   end
 
   # ── two installs at once ────────────────────────────────────────────────────
@@ -383,18 +531,127 @@ class CredentialHelperInstallTest < ActiveSupport::TestCase
     expected = File.join(ProjectsRoot.default_projects_dir(SOURCE), ".agents", "op-reads.log")
     assert_includes stamp, expected,
                     "the snapshot does not carry the projects root, so OpMeter.log_path falls back to " \
-                    "ProjectsRoot inside the snapshot and bin/op-reads reports zero reads from the " \
-                    "installed helper"
+                    "ProjectsRoot inside the snapshot and bin/op-reads loses every read bin/gh-token " \
+                    "makes from the installed helper"
     refute_includes stamp, File.join(@root, "versions"),
                     "the stamp names a path inside the snapshot — that is the defect, written down"
+  end
+
+  # WHICH METER LOSES WHAT — pinned, because NINE sites said the wrong thing
+  # (credential-helper-claims-overclaim). The claim that bin/op-reads sees nothing
+  # at all from the installed helper was measured false: there are two meters and
+  # only one of them drifts.
+  #
+  #   BASH  bin/lib/op-meter.sh   ${CLAUDE_PROJECTS_DIR:-$HOME/projects}  →  the REAL log, from a snapshot too
+  #   RUBY  bin/lib/op_meter.rb   ProjectsRoot.default_projects_dir       →  inside the snapshot
+  #
+  # So the helper's own `op item get` was never lost; what was lost is every read
+  # its Ruby child bin/gh-token makes, which is where the shared token session
+  # spends its quota.
+  #
+  # WHY THE PATTERN LOOKS LIKE THIS. A first version scanned line by line with
+  # `[^.\n]` between the words, and the reviewer measured it at 7 of 9 against
+  # the pre-fix tree: it missed a PAST-tense form ("showed none") and every site
+  # where a comment WRAPPED between the words, which is most of them. So the text
+  # is flattened first — every newline becomes a space, and line numbers are kept
+  # alongside — the verbs allow their tenses, and the gap between words allows the
+  # comment markers a wrap inserts. The `[^.]` bound stays: it stops a match
+  # running across a sentence boundary into an unrelated claim.
+  #
+  # And it is BUILT from parts rather than written out, so this guard can never
+  # match itself. The earlier version needed two `# …-ok` exemption markers, and
+  # the reviewer found both were dead — neither line could have matched anyway.
+  WRAP_GAP = '[\s#*\/>]*'
+  ZERO_READS_WORDING = Regexp.new(
+    "op-reads[^.]{0,140}?(?:" \
+    "zero#{WRAP_GAP}reads|" \
+    "show(?:s|ed)?#{WRAP_GAP}(?:none|zero)|" \
+    "report(?:s|ed)?#{WRAP_GAP}(?:zero|none)|" \
+    "sees#{WRAP_GAP}(?:none|zero)" \
+    ")",
+    Regexp::IGNORECASE
+  )
+
+  CLAIM_FILES = %w[
+    bin/gh-app-git-credential
+    bin/install-git-credential-helper
+    bin/lib/credential_helper_install.rb
+    test/lib/credential_helper_install_test.rb
+  ].freeze
+
+  # Flatten newlines to spaces so a wrapped comment reads as one sentence, and
+  # keep a line number for every character so an offender can be NAMED.
+  def flattened_with_line_numbers(text)
+    flat = +""
+    lines = []
+    line_no = 1
+    text.each_char do |ch|
+      flat << (ch == "\n" ? " " : ch)
+      lines << line_no
+      line_no += 1 if ch == "\n"
+    end
+    [flat, lines]
+  end
+
+  def zero_reads_offenders(text, label)
+    flat, lines = flattened_with_line_numbers(text)
+    offsets = []
+    flat.scan(ZERO_READS_WORDING) { offsets << Regexp.last_match.begin(0) }
+    offsets.map { |at| "#{label}:#{lines[at]}" }
+  end
+
+  test "the two meters still differ exactly as the comments say, and no file overstates what is lost" do
+    bash = Rails.root.join("bin/lib/op-meter.sh").read
+    ruby = Rails.root.join("bin/lib/op_meter.rb").read
+
+    assert_match(/CLAUDE_PROJECTS_DIR:-\$HOME\/projects/, bash,
+                 "the bash meter no longer falls back to $HOME/projects. If it derives the root from its own " \
+                 "location now, the helper's OWN reads drift inside a snapshot too and every comment this " \
+                 "guard protects has to be rewritten — starting with this one.")
+    assert_match(/ProjectsRoot\.default_projects_dir/, ruby,
+                 "the Ruby meter no longer resolves through ProjectsRoot — re-derive which half drifts")
+
+    offenders = CLAIM_FILES.flat_map { |rel| zero_reads_offenders(Rails.root.join(rel).read, rel) }
+
+    assert_empty offenders,
+                 "these lines still say bin/op-reads sees nothing at all from the installed helper: " \
+                 "#{offenders.join(', ')}. Measured false — the bash meter's reads land in the real log " \
+                 "from a snapshot. Name what is actually lost: every read bin/gh-token makes."
+  end
+
+  # The guard's own floor: run it against the tree BEFORE this sweep and it must
+  # find every site the sweep corrected. A pattern that catches some of them is
+  # how the ninth survived eleven lines from one that was fixed.
+  #
+  # PINNED TO A SHA, never `origin/accepted` (zap, in review). The baseline must be
+  # the tree that CARRIED the nine sites, and `origin/accepted` is the branch this
+  # very sweep merges INTO — so the moment it lands, that ref holds the CORRECTED
+  # files, `found` falls to 0, and this assertion reddens every later rails shard.
+  # Measured both sides in review: 9 at the pin, 0 at the fix. The pin is an
+  # ancestor of accepted forever and the rails job checks out `fetch-depth: 0`, so
+  # CI always resolves it; an unresolvable one yields 0 and FAILS here rather than
+  # passing, so the degradation stays closed.
+  PRE_FIX_TREE = "ca4c5fda5fbad32f48a3b036e79c909aa0932a09"
+
+  test "the pattern finds every site the pre-fix tree carried" do
+    found = CLAIM_FILES.sum do |rel|
+      text = `git -C #{Rails.root} show #{PRE_FIX_TREE}:#{rel} 2>/dev/null`
+      next 0 if text.empty?
+
+      zero_reads_offenders(text, rel).length
+    end
+
+    assert_operator found, :>=, 9,
+                    "the pattern finds #{found} of the 9 sites #{PRE_FIX_TREE[0, 7]} carries. It is then a " \
+                    "partial sweep wearing a guard's name — the exact shape this task exists to remove."
   end
 
   # NOTHING VERIFIED OR MAINTAINED THE STAMP (2026-09-13, the reviewer's measurement).
   # `stamp_snapshot_env!` sat inside install!'s "already built?" branch, so an
   # unchanged closure never re-stamped, and `stale?` never looked at the stamp at
-  # all: deleting it left `--check` printing "installed … current" while the
-  # installed helper logged its 1Password reads inside the snapshot and
-  # `bin/op-reads` showed none. A property nothing checks is not a property.
+  # all: deleting it left `--check` printing "installed … current" while the reads
+  # bin/gh-token makes from the installed helper landed inside the snapshot and
+  # `bin/op-reads` never saw them. A property nothing checks is not a property.
 
   test "a deleted stamp makes the install STALE rather than current" do
     CredentialHelperInstall.install!(source_root: SOURCE, root: @root)
@@ -405,7 +662,8 @@ class CredentialHelperInstallTest < ActiveSupport::TestCase
     assert_equal :missing, CredentialHelperInstall.stamp_state(source_root: SOURCE, root: @root)
     assert CredentialHelperInstall.stale?(source_root: SOURCE, root: @root),
            "a snapshot with no op-reads stamp reported as current. The operator then reads OK while " \
-           "bin/op-reads shows zero reads from the installed helper — the exact symptom, reported healthy."
+           "bin/op-reads is missing every read bin/gh-token makes from the installed helper — the exact " \
+           "symptom, reported healthy."
   end
 
   test "a reinstall restores a deleted stamp, though the closure is unchanged" do
@@ -479,6 +737,6 @@ class CredentialHelperInstallTest < ActiveSupport::TestCase
 
     refute_empty sourcing,
                  "the helper computes the stamp's path but never sources it, so stamping it changes nothing " \
-                 "and bin/op-reads still reports zero reads from the installed helper"
+                 "and bin/op-reads still loses every read bin/gh-token makes from the installed helper"
   end
 end
