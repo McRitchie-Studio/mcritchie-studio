@@ -494,8 +494,9 @@ symmetric with `removeMember`: remove takes a bare pubkey, add takes a
 or by whatever the Squads UI had checked when you were not looking. **A rotation
 swaps a key; it does not re-scope authority**, so the mask to grant is the one the
 OUTGOING key already holds. Re-scoping is a separate act, and would be a separate
-procedure — one was written for narrowing the bot and was declined before it ran
-(see the table below).
+procedure — one was written for narrowing the bot and was **declined before it
+ran**; the reasoning is under **NARROWING THE BOT WAS PROPOSED AND DECLINED**
+below, not in the bit table that follows immediately.
 
 So this procedure names no mask literal anywhere: ONE constant, read from the
 chain, grants whatever is live on the day. Run it BEFORE you propose — the
@@ -515,8 +516,8 @@ else and the rotation still "succeeds" — the break lands at the NEXT upgrade, 
 whichever call lost its bit, weeks later and far from this SOP.
 
 Which bits the bot needs is decided by `turf-vault/scripts/squad-upgrade.js`, the
-only thing that signs upgrades. Recomputed 2026-09-13, after
-`narrow-bot-squads-permissions` stopped it voting as the bot:
+only thing that signs upgrades. Re-verified 2026-09-14 against the script as it
+stands on `accepted`, which approves as the bot:
 
 | Bit | Value | Where `squad-upgrade.js` needs it |
 |---|---|---|
@@ -659,8 +660,9 @@ and mainnet at once. The correct order:
    transaction doing `removeMember(old)` + `addMember(new, { mask: $WANT_MASK })` at
    `app.squads.so` against the live `multisigPda` in `scripts/squad.json`, threshold
    stays 2, approved by the two clean members. **`$WANT_MASK` is the value you read
-   off the chain above — 7 before the narrowing ceremony, 5 after. The UI will
-   happily give you a different one.** This step does **not** move program
+   off the chain above — never a number you type. It is 7 today and stays 7 until
+   someone deliberately re-scopes the bot; the UI will happily give you a
+   different one.** This step does **not** move program
    upgrade authority: that authority is the Squads vault PDA before and after, and
    is unchanged by a membership edit. What it moves is **who can direct it** — which
    is the whole of the power, and is a separate 2-of-3 on a separate system that
