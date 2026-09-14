@@ -305,11 +305,19 @@ test_cmd = ENV.fetch("FULL_SUITE_TEST_CMD") do
 end
 rubocop_cmd = ENV.fetch("FULL_SUITE_RUBOCOP_CMD", "bin/rubocop")
 test_db_reset_cmd = ENV.fetch("FULL_SUITE_TEST_DB_RESET_CMD", "bin/rails db:test:purge db:test:prepare")
-# A gem has no test database and no bin/rails to purge one with, so the reset lane
-# is not "skipped" for it in the opt-out sense — it does not APPLY. Declared from
-# the registry section, never inferred from whether bin/rails happens to exist.
+# A REPO THAT DECLARES ITS OWN GATE has no test database and no bin/rails to purge
+# one with, so the reset lane is not "skipped" for it in the opt-out sense — it does
+# not APPLY. Declared from the registry, never inferred from whether bin/rails
+# happens to exist.
+#
+# KEYED ON THE DECLARATION, NOT THE SECTION (2026-09-14), to stay in step with
+# bin/fast-check. Asking `gem_repo?` here meant this script met the bin/rails wall
+# UNCONDITIONALLY for turf-vault — `bin/rails db:test:purge db:test:prepare` was its
+# FIRST lane and nothing certified ahead of it — even once that repo declared a
+# complete gate. Both gems answer identically to either predicate, so this changes
+# nothing for them.
 skip_test_db_reset = ENV.fetch("FULL_SUITE_SKIP_TEST_DB_RESET", "") == "1" ||
-                     FullSuiteGate.gem_repo?(cert_repo)
+                     FullSuiteGate.registry_gated?(cert_repo)
 
 # --- system-tier browser guard -------------------------------------------------
 # The test lane now carries the SYSTEM tier, and system tests drive a real headless

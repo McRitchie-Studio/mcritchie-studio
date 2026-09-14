@@ -350,7 +350,7 @@ class ReleaseGemVersionTest < Minitest::Test
   #
   # The line that answers "what version did this task ship in?". It used to read
   # the LOCAL checkout, which sits on `main` — one release behind by construction
-  # once the allocator commits the bump to origin/release. These pin it to the
+  # once the allocator commits the bump to origin/accepted. These pin it to the
   # version that was actually published.
 
   # THE INCIDENT (rel-20260812-3f1f9b), with its real numbers: publish pushed

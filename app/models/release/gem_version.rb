@@ -142,8 +142,10 @@ class Release
     # re-run; a wrong allocation costs the number forever.
     #
     # STILL PURE: the caller supplies the git and network reads (the version at
-    # origin/release, the last v* tag, RubyGems' live list, the commits past the
-    # tag), so every branch below is unit-testable without touching either.
+    # origin/accepted, the last v* tag reachable from origin/release, RubyGems'
+    # live list, the commits past the tag), so every branch below is unit-testable
+    # without touching either. The two rungs are deliberate, not a typo — see the
+    # argument list below.
     ALLOCATE = "allocate"
     SKIP     = "skip"
     REFUSE   = "refuse"
@@ -164,10 +166,14 @@ class Release
 
     # The allocation decision for ONE swept gem.
     #
-    #   current       — the version declared at origin/release ("" / garbage is fine)
-    #   tag_version   — the last v* tag reachable from that tip, without the "v"
+    #   current       — the version declared at origin/accepted, the rung the
+    #                   allocator writes ("" / garbage is fine)
+    #   tag_version   — the last v* tag reachable from origin/release, without the
+    #                   "v" — the baseline stays on `release` because publish tags
+    #                   sit on release-side commits `accepted` does not contain
+    #                   (`gem_allocation_plan` flags the mixed state this admits)
     #   live_versions — what RubyGems already has (strings, or the versions-API hashes)
-    #   ahead_commits — the commits between that tag and the tip
+    #   ahead_commits — the commits between that tag and the `accepted` tip
     #   members       — this gem's candidate members (kind / risk_tags / gem_bump)
     #
     # SKIP is the answer whenever allocation has no business acting, and the two
@@ -328,7 +334,7 @@ class Release
     # THE DEFECT THIS REPLACES: prepare printed that line from the version read out
     # of the PRIMARY CHECKOUT, which sits on `main`. Since version allocation
     # landed, `main` is ONE RELEASE BEHIND BY CONSTRUCTION at that point — the
-    # allocator commits the bump to origin/release and nothing fast-forwards `main`
+    # allocator commits the bump to origin/accepted and nothing fast-forwards `main`
     # until `bin/release ship`. So the line was not occasionally wrong, it was
     # GUARANTEED wrong on every gem-bearing release: rel-20260812-3f1f9b printed
     # "studio-engine 0.40.0" a few lines after printing "allocated 0.41.0" and

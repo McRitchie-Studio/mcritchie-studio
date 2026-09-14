@@ -136,6 +136,10 @@ class ReleaseGemAllocationTest < Minitest::Test
     git(repo, "add", "-A")
     git(repo, "commit", "--quiet", "-m", "add a feature")
     git(repo, "push", "--quiet", "origin", "release")
+    # `accepted` is the rung prepare WRITES (/tasks/carry-release-commit-onto-accepted);
+    # the batch promote carries it to `release`. Both start level, as they are after a
+    # promote, so the fixture is the state a sweep actually finds.
+    git(repo, "push", "--quiet", "origin", "release:refs/heads/accepted")
     [origin, repo]
   end
 
@@ -181,6 +185,10 @@ class ReleaseGemAllocationTest < Minitest::Test
       load #{BIN.inspect}
       # The one network read, stubbed. Redefining after load overrides the real one.
       def rubygems_versions(_gem) = JSON.parse(#{live.to_json.inspect})
+      # The promote is `gh` (network). Stub it and report what allocation handed it.
+      def promote_accepted_to_release!(repos, label: nil)
+        $stdout.puts("PROMOTE " + Array(repos).join(","))
+      end
       allocate_gem_versions!([{ "repo" => "studio-engine", "members" => #{members.inspect} }])
     RUBY
     out, status = Open3.capture2e(child_env(root, stub_bin), RbConfig.ruby, "-W0", "-e", script)
@@ -191,10 +199,12 @@ class ReleaseGemAllocationTest < Minitest::Test
     { "slug" => slug, "task_kind" => kind, "risk_tags" => risk, "gem_bump" => bump }
   end
 
-  # What origin/release actually holds now — read from the BARE repo, so this
-  # asserts what was PUSHED, never what a local tree happens to say.
-  def pushed(origin, path)
-    git(origin, "show", "release:#{path}")
+  # What the written rung actually holds now — read from the BARE repo, so this
+  # asserts what was PUSHED, never what a local tree happens to say. The version
+  # commit lands on `accepted`; `release` receives it from the batch promote, which
+  # is `gh` and is stubbed in the child.
+  def pushed(origin, path, branch = "accepted")
+    git(origin, "show", "#{branch}:#{path}")
   end
 
   def with_root
@@ -230,7 +240,7 @@ class ReleaseGemAllocationTest < Minitest::Test
 
   # --- the happy path ----------------------------------------------------------
 
-  def test_allocates_the_members_bump_and_pushes_it_to_origin_release
+  def test_allocates_the_members_bump_and_pushes_it_to_origin_accepted
     with_root do |root|
       origin, = build_projects_root(root)
       out, ok = allocate(root, members: [member(kind: "feature")])
@@ -239,6 +249,52 @@ class ReleaseGemAllocationTest < Minitest::Test
       assert_includes pushed(origin, "lib/studio/version.rb"), %(VERSION = "0.5.0"),
                       "a feature member earns a minor over the published 0.4.0"
       assert_includes out, "allocated 0.5.0"
+    end
+  end
+
+  # THE LADDER (/tasks/carry-release-commit-onto-accepted, operator decision
+  # activity-8874): prepare writes the version commit onto ACCEPTED and the ordinary
+  # batch promote carries it to `release`. Before this, the commit landed on
+  # `release` and `accepted` never saw it — so the next promote merged an un-rolled
+  # bucket into a rolled file, and ms1363 refused it.
+  def test_the_version_commit_lands_on_accepted_and_release_waits_for_the_promote
+    with_root do |root|
+      origin, = build_projects_root(root)
+      release_before = git(origin, "rev-parse", "release").strip
+
+      out, ok = allocate(root, members: [member(kind: "feature")])
+
+      assert ok, out
+      assert_includes pushed(origin, "lib/studio/version.rb", "accepted"), %(VERSION = "0.5.0")
+      assert_equal release_before, git(origin, "rev-parse", "release").strip,
+                   "allocation writes ONE rung: `release` must move only through the promote"
+      assert_includes pushed(origin, "lib/studio/version.rb", "release"), %(VERSION = "0.4.0")
+    end
+  end
+
+  def test_the_allocation_hands_the_written_repo_to_the_ordinary_promote
+    with_root do |root|
+      build_projects_root(root)
+
+      out, ok = allocate(root, members: [member(kind: "feature")])
+
+      assert ok, out
+      assert_includes out, "PROMOTE studio-engine",
+                      "the version commit reaches `release` the one-way way: the batch promote"
+    end
+  end
+
+  def test_nothing_is_promoted_when_nothing_was_allocated
+    with_root do |root|
+      build_projects_root(root)
+      _, first = allocate(root, members: [member(kind: "feature")]) # allocates 0.5.0 onto accepted
+      assert first
+
+      out, ok = allocate(root, members: [member(kind: "feature")])  # the re-run SKIPs
+
+      assert ok, out
+      assert_includes out, "already advanced"
+      refute_includes out, "PROMOTE", "a SKIP writes nothing, so it has nothing to promote"
     end
   end
 
@@ -266,7 +322,7 @@ class ReleaseGemAllocationTest < Minitest::Test
       assert_includes pushed(origin, "Gemfile.lock"), "studio-engine (0.5.0)",
                       "the self-bundled PATH spec must move with the version"
 
-      files = git(origin, "show", "--name-only", "--format=", "release").split("\n").map(&:strip).reject(&:empty?)
+      files = git(origin, "show", "--name-only", "--format=", "accepted").split("\n").map(&:strip).reject(&:empty?)
       assert_equal %w[Gemfile.lock lib/studio/version.rb], files.sort,
                    "one commit, both files — not a version commit with the lock trailing behind"
     end
@@ -309,7 +365,7 @@ class ReleaseGemAllocationTest < Minitest::Test
       # each file's contents) is the load-bearing half — two commits would satisfy
       # a contents-only check while letting the changelog land on a SHA whose
       # version contradicts it.
-      files = git(origin, "show", "--name-only", "--format=", "release").split("\n").map(&:strip).reject(&:empty?)
+      files = git(origin, "show", "--name-only", "--format=", "accepted").split("\n").map(&:strip).reject(&:empty?)
       assert_equal %w[CHANGELOG.md Gemfile.lock lib/studio/version.rb], files.sort
     end
   end
@@ -469,13 +525,13 @@ class ReleaseGemAllocationTest < Minitest::Test
       origin, = build_projects_root(root)
       _, ok = allocate(root, members: [member(kind: "feature")])
       assert ok
-      first = git(origin, "rev-parse", "release").strip
+      first = git(origin, "rev-parse", "accepted").strip
 
       out, ok2 = allocate(root, members: [member(kind: "feature")])
 
       assert ok2
       assert_includes out, "already advanced"
-      assert_equal first, git(origin, "rev-parse", "release").strip,
+      assert_equal first, git(origin, "rev-parse", "accepted").strip,
                    "a re-run must not burn a second version number"
     end
   end
@@ -487,13 +543,14 @@ class ReleaseGemAllocationTest < Minitest::Test
   # pushed something would be no refusal at all.
 
   def assert_refuses(root, origin, expected, **allocate_args)
-    before = git(origin, "rev-parse", "release").strip
+    before = git(origin, "rev-parse", "accepted").strip
     out, ok = allocate(root, **allocate_args)
 
     refute ok, "expected the sweep to abort:\n#{out}"
     assert_includes out, expected
-    assert_equal before, git(origin, "rev-parse", "release").strip,
-                 "a refusal must leave origin/release exactly as it found it"
+    assert_equal before, git(origin, "rev-parse", "accepted").strip,
+                 "a refusal must leave origin/accepted exactly as it found it"
+    refute_includes out, "PROMOTE", "and a refusal promotes nothing"
     out
   end
 
@@ -592,6 +649,7 @@ class ReleaseGemAllocationTest < Minitest::Test
     git(repo, "add", "-A")
     git(repo, "commit", "--quiet", "-m", "add a feature")
     git(repo, "push", "--quiet", "origin", "release")
+    git(repo, "push", "--quiet", "origin", "release:refs/heads/accepted")
     origin
   end
 
@@ -638,6 +696,10 @@ class ReleaseGemAllocationTest < Minitest::Test
     git(repo, "add", "-A")
     git(repo, "commit", "--quiet", "-m", "Release #{version}")
     git(repo, "push", "--quiet", "origin", "release")
+    # The version commit reaches `accepted` too: prepare WRITES it there and the
+    # batch promote carries it to `release`, so a published gem leaves the two rungs
+    # level. Pushing only `release` here would model a rung this code no longer has.
+    git(repo, "push", "--quiet", "origin", "release:refs/heads/accepted")
 
     hook = File.join(origin, "hooks", "pre-receive")
     File.write(hook, "#!/bin/sh\nwhile read old new ref; do case \"$ref\" in refs/tags/*) " \
@@ -651,6 +713,7 @@ class ReleaseGemAllocationTest < Minitest::Test
     git(repo, "add", "-A")
     git(repo, "commit", "--quiet", "-m", "work promoted after #{version} published")
     git(repo, "push", "--quiet", "origin", "release")
+    git(repo, "push", "--quiet", "origin", "release:refs/heads/accepted")
   end
 
   def test_a_publish_whose_tag_push_failed_refuses_instead_of_skipping

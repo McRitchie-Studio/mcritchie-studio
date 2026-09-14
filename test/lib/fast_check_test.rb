@@ -293,7 +293,8 @@ class FastCheckTest < Minitest::Test
   # vacuous: fast-check emits ONE [fast-cert@...] line and no per-lane evidence at
   # all, so that assertion was true no matter what ran. A mutation proved it — and
   # then proved something better, that the lint-waiver branch it was written for was
-  # unreachable code, since the only lint_lane:none repo is also a gem.
+  # unreachable code, since every lint_lane:none repo also takes the registry-gate
+  # branch, which omits the rubocop lane before a waiver could be consulted.
   def test_a_gem_repo_invokes_no_rubocop_lane_at_all
     with_repo_named("studio-engine", release_check: GEM_GATE_OK) do |dir|
       # fail_token makes the rubocop stub FAIL if it is ever invoked, so a lane that
@@ -357,6 +358,94 @@ class FastCheckTest < Minitest::Test
       assert_match(/COULD NOT RUN/, out,
         "and it must name the COMMAND as the problem, not the diff:\n#{out}")
     end
+  end
+
+  # --- a REGISTRY-GATED `apps` REPO --------------------------------------------
+  #
+  # The whole-gate branch used to key on the `gems` SECTION, so an `apps` row could
+  # never reach it however completely it declared its lane. turf-vault is the repo
+  # that cost: an Anchor program with four real CI lanes (56/56 node:test assertions
+  # plus both Rust lanes) and NO way for a builder to certify it — while six hub
+  # sites routed the reader to a task that had shipped the repo's first CI workflow
+  # and then been ARCHIVED. Keying on the DECLARATION closes it, and these execute
+  # that path: every gem test above would still pass with the `apps` half broken.
+  #
+  # The declared command is STUBBED here on purpose. Its real value (an `&&` chain
+  # of npm + cargo) needs a Node and Rust toolchain and the actual turf-vault
+  # checkout, neither of which belongs in a unit fixture; that the registry supplies
+  # it is proven by FullSuiteGate.release_check_cmd below, and that it runs is proven
+  # by running bin/fast-check in the real repo. What these pin is the BRANCH.
+
+  def test_a_registry_gated_app_repo_runs_its_declared_gate_and_no_rails_lane
+    with_repo_named("turf-vault") do |dir|
+      log = File.join(dir, "stub.log")
+      # The prepare command is a tripwire: an Anchor repo has no test DB and no
+      # bin/rails, so the lane must not APPLY — not merely be skippable.
+      out, code, lines = run_check(dir, fail_token: "RUBOCOP", extra_env: {
+        "FAST_CHECK_TEST_PREPARE_CMD" => "sh -c 'echo PREPARE >> #{log.shellescape}'"
+      })
+
+      assert_equal 0, code, "a registry-gated apps repo must certify:\n#{out}"
+      refute_match(/PREPARE/, File.exist?(log) ? File.read(log) : "",
+        "turf-vault has no Rails test database; the prepare lane must not apply to it")
+      assert_empty lane_calls(lines, "RUBOCOP"),
+        "turf-vault lints with prettier, not rubocop; the lane must never be invoked"
+      refute_match(/cert-deferred/, out,
+        "with a lane declared there is a suite to run, so the zero-evidence guard must " \
+        "no longer DEFER this repo before any lane:\n#{out}")
+    end
+  end
+
+  # THE LANE MUST BE ABLE TO FAIL. A cert that cannot go red is worth nothing — the
+  # exact reasoning turf-vault's own ci.yml records for adding its scripts suite.
+  def test_a_registry_gated_app_repo_reddens_when_its_declared_gate_fails
+    with_repo_named("turf-vault") do |dir|
+      out, code = run_check(dir, fail_token: "TEST", args: ["task-x"], merge_stderr: true,
+                                 extra_env: { "TASK_SHOW_JSON" => SHOW_JSON })
+
+      refute_equal 0, code, "a red declared gate must fail the cert:\n#{out}"
+      refute_match(/\[fast-cert@/, out, "and must record NO evidence:\n#{out}")
+    end
+  end
+
+  # An app that declares NOTHING is the control: it must keep its diff-mapped lane
+  # and its Rails prepare. Without this, "every repo now takes the registry path"
+  # would pass every other assertion here.
+  def test_an_app_that_declares_no_gate_keeps_the_rails_path
+    with_repo_named("turf-monster") do |dir|
+      log = File.join(dir, "stub.log")
+      out, code = run_check(dir, extra_env: {
+        "FAST_CHECK_TEST_PREPARE_CMD" => "sh -c 'echo PREPARE >> #{log.shellescape}'"
+      })
+
+      assert_equal 0, code, "no app repo may regress:\n#{out}"
+      assert_match(/PREPARE/, File.exist?(log) ? File.read(log) : "",
+        "a Rails app with no declared gate still owes its test-DB prepare — the registry " \
+        "path must not quietly become the answer for every repo")
+    end
+  end
+
+  # --- the predicate itself ------------------------------------------------------
+
+  def test_registry_gated_is_keyed_on_the_declaration_not_the_section
+    assert FullSuiteGate.registry_gated?("turf-vault"),
+           "turf-vault declares a release_check and is an `apps` row — the section must not decide this"
+    refute FullSuiteGate.gem_repo?("turf-vault"),
+           "and it must reach the branch WITHOUT being reclassified as a gem, which would make the " \
+           "release conductor try to publish an Anchor program to RubyGems"
+
+    assert FullSuiteGate.registry_gated?("studio-engine"), "a gem must be unchanged by the generalisation"
+    refute FullSuiteGate.registry_gated?("turf-monster"), "a Rails app declaring nothing owes the Rails lanes"
+    refute FullSuiteGate.registry_gated?("mcritchie-studio"), "the hub itself must never take this branch"
+  end
+
+  def test_turf_vault_declared_command_is_supplied_by_the_registry
+    cmd = FullSuiteGate.release_check_cmd("turf-vault").to_s
+
+    refute_empty cmd, "turf-vault's registry row declares no cert command"
+    assert_includes cmd, "test:scripts",
+                    "the declared lane must carry the repo's node:test suite — the lane that catches " \
+                    "the config-shape defects its Rust lanes are structurally blind to"
   end
 
   # --- acceptance 3: the attempt closes on a crash path ------------------------

@@ -315,7 +315,7 @@ class ReleaseChangelogTest < Minitest::Test
   # OUTSIDE MAX_MINOR_DRIFT, so a fenced 0.74.4 / 0.74.2 / 0.72.0 all passed
   # silently while only 0.60.0 hit BACKLOG. Quoting a RECENT heading — the likely
   # case — was the one that slipped through. And the rolled file rides the same
-  # commit as version_file + Gemfile.lock onto origin/release BEFORE `gem push`,
+  # commit as version_file + Gemfile.lock onto origin/accepted BEFORE `gem push`,
   # so the artifact and its v* tag would carry the mis-filed history.
   #
   # THE FORK, and it was a real one: IGNORE a fenced `## ` as content, or REFUSE a
@@ -528,9 +528,10 @@ class ReleaseChangelogTest < Minitest::Test
   # --- the misfile guard: a merge across a roll ---------------------------------
   #
   # THE DEFECT, measured 2026-09-10 on studio-engine's real CHANGELOG with the real
-  # roll (/tasks/rolled-changelog-merge-misfiles). The roll lands on `release` only;
-  # `accepted` keeps the un-rolled bucket until something merges the release commit
-  # back. So the next promote three-way-merges an un-rolled bucket into a rolled
+  # roll (/tasks/rolled-changelog-merge-misfiles). An `accepted` that has not absorbed
+  # the `Release <version>` commit keeps the un-rolled bucket — prepare now writes the
+  # roll onto `accepted` and promotes it from there, so this is a rung a sweep missed
+  # rather than the resting state. Such a promote three-way-merges an un-rolled bucket into a rolled
   # file, and git merges a bullet added INSIDE an existing `###` subsection CLEANLY
   # — straight under the heading the roll just wrote, a version that shipped
   # without it. Nothing fails, and the next roll moves only what sits under

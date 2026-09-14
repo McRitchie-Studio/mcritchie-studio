@@ -72,8 +72,11 @@ class ReleaseProducerLockBumpTest < Minitest::Test
   # based on `accepted` and that is the tree `bin/gem-drift-check` reads. Retarget
   # this at `release` — the branch the consumer bump correctly uses — and every
   # open engine PR stays exactly as red as before, while the sweep reports success.
-  # `bin/release` writes `accepted` NOWHERE else, and nothing merges `release` back
-  # down, so there is no second path by which the fix could arrive.
+  # Nothing merges `release` back down, so there is no second path by which the fix
+  # could arrive. `bin/release`'s other `accepted` writers — the sweep's version
+  # commit in `commit_gem_version!`, and the post-ship rebaseline in
+  # `advance_accepted` — carry a version or a frozen SHA, never a consumer lock,
+  # so neither can deliver this bump either.
   def test_it_commits_the_producer_bump_onto_accepted_not_release
     out = run_release(STUB, %(bump_producer_locks_for_accepted({ "solana-studio" => "0.9.1" })))
 

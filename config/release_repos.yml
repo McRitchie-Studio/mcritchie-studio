@@ -207,10 +207,29 @@
 #                    studio-engine → lib/studio/version.rb  (VERSION = "x.y.z")
 #                    solana-studio → lib/solana_studio/version.rb (VERSION = "x.y.z")
 #   gemspec      — the .gemspec `gem build` packages (defaults to <repo>.gemspec).
-#   release_check — optional repo-relative pre-publish gate run with `--build`
-#                   (syntax + unit + build) before the artifact is pushed.
 #   build_cmd    — human-readable build command (documentation; bin/release
 #                  drives release_check/gem build directly).
+#
+# cert fields — READ FOR A ROW IN EITHER SECTION:
+#   release_check — THE REPO'S OWN DECLARED GATE COMMAND, and the one key whose
+#                  readers are deliberately scoped two different ways. Read the
+#                  split before adding one to an `apps` row:
+#                    * THE CERT READER IS SECTION-BLIND. FullSuiteGate.release_check_cmd
+#                      flattens `apps` + `gems`, so ANY row that declares one gets a
+#                      LOCAL CERT LANE: bin/fast-check runs that command as the whole
+#                      mapped lane and skips the Rails test-prepare it implies (see
+#                      turf-vault below, which is an `apps` row using exactly this).
+#                    * THE PUBLISH READERS ARE GEMS-ONLY. bin/release.rb's
+#                      `gem_meta_for` / `self_gated_gem?` (bin/release.rb:4296,4305)
+#                      and Release::Repos.gem_meta (app/models/release/repos.rb:90)
+#                      all `dig("gems", repo)`. So declaring this on an `apps` row
+#                      CANNOT make the repo self-gated and CANNOT push it to RubyGems.
+#                  For a GEM it is additionally the pre-publish gate run with
+#                  `--build` (syntax + unit + build) before the artifact is pushed.
+#                  The command is spawned as a STRING, so a `&&` chain is honoured
+#                  by the shell — a repo that ships no single gate script can still
+#                  declare its real lanes. DECLARED, NEVER INFERRED, the same rule
+#                  lint_lane states below: nothing probes a tree for a test runner.
 #   lint_lane    — optional. `none` DECLARES that this repo ships no rubocop, so
 #                  the cert reader (FullSuiteGate.required_lanes) stops asking it
 #                  for a `[rubocop@<fp>]` line and it owes only `[full-suite@<fp>]`.
@@ -386,10 +405,14 @@ apps:
     # a ship on 2026-08-22). UNSET is the correct declaration: the pre-QA gate
     # and the ship gate both skip a repo that registers no command.
     #
-    # There is also no single command to register. CI here is three lanes across
-    # two toolchains (`cargo check --workspace --all-targets --locked`, `cargo
-    # clippy … -D clippy::correctness`, and `npm run check:doc-op-refs`), not one
-    # suite invocation.
+    # THE RAILS GATE WORKSPACE IS THE WHOLE REASON, and it is not "there is no
+    # command to run" — the `release_check:` key below registers this repo's four
+    # real CI lanes as a single `&&` chain, so such a command demonstrably exists.
+    # The difference is WHO RUNS IT: `release_check` is spawned in the checkout by
+    # bin/fast-check, while `test_cmd`/`qa_test_cmd` are spawned by
+    # Release::GateWorkspace#prepare_gate_workspace!, which runs `bin/rails
+    # db:test:prepare test:prepare` FIRST and dies on ENOENT before reaching the
+    # registered command. Do not "fix" that by copying the chain into these keys.
     #
     # NO qa_deploy / QA ENV, and none is needed. Release::Repos.qa_app defaults
     # the key to the repo slug, turf-vault is absent from
@@ -450,47 +473,78 @@ apps:
     # [main, release, accepted] with no path filter — so the sweep's accepted-rung
     # guard can certify it. That is why no workflow override belongs here.
     #
-    # ⚠ WHAT THIS ENTRY DOES **NOT** FIX: turf-vault still has no LOCAL cert lane.
-    # Both cert scripts are Rails-shaped and this repo is Anchor/Rust with no
-    # bin/rails. The Rails-lane skip is DECLARED only for the `gems` SECTION
-    # (FullSuiteGate.gem_repo?) and never inferred from a declared command, so this
-    # `apps` row cannot reach the gem whole-gate branch either. WHICH WALL A RUN
-    # HITS DEPENDS ON THE SCRIPT, and the outcomes are not the same thing:
+    # ✅ THE LOCAL CERT LANE, DECLARED — and it is this `release_check:` key.
     #
-    #   * `bin/fast-check` normally DEFERS, BEFORE ANY LANE. Its zero-evidence
-    #     guard is decided at the SELECTION and exits there, ahead of the
-    #     test-prepare lane, which the run never reaches: a satellite checkout
-    #     resolves NONE of the hub-anchored spine, so a diff that maps to no test
-    #     records a fingerprint-bound `[cert-deferred@<fp>]` receipt
-    #     (CertEvidence::DEFER_LANE) and exits 2. `bin/ship` still pushes and opens
-    #     the PR, and `bin/dor-check` then demands a GREEN CI as the only evidence.
-    #     THAT RECEIPT is what a turf-vault ship normally documents.
-    #   * When the diff DOES map to a test the guard stays silent, the run reaches
-    #     the test-prepare lane, and fast-check REFUSES there because `bin/rails`
-    #     is not present (measured 2026-08-29 shipping a turf-vault task). Refusing
-    #     rather than skipping is deliberate: a skipped prepare lane would hand back
-    #     a GREEN cert for a repo whose tests never ran.
-    #   * `bin/full-suite-check` meets that wall unconditionally. gem_repo? is
-    #     false, so skip_test_db_reset is false and `bin/rails db:test:purge
-    #     db:test:prepare` is its FIRST lane. Nothing certifies ahead of it.
+    # Until 2026-09-14 this entry recorded the ABSENCE as a known gap and routed
+    # readers to a task to decide it. That task (/tasks/turf-vault-needs-ci) had
+    # already shipped the repo's FIRST CI WORKFLOW and been archived, so the gap it
+    # was cited for had no owner and every turf-vault builder was sent to a terminal
+    # task. The gap is now closed here instead of re-pointed.
     #
-    # So a `release_check:` key here would be READ (FullSuiteGate.release_check_cmd
-    # feeds fast-check's test_cmd) and still never RUN: the deferral exits before
-    # any lane, and the path that does reach a lane dies at test-prepare, which runs
-    # ahead of the mapped lane that would carry the declared command. Fixing that
-    # needs a change to bin/fast-check itself (key the skip + the whole-gate branch
-    # on the DECLARED command rather than on section membership) — a separate task
-    # with its own test surface, owned by /tasks/turf-vault-needs-ci. An inert
-    # `release_check:` line that LOOKS like the fix is worse than no line at all, so
-    # there isn't one.
+    # WHAT MADE IT CLOSABLE. The blocker was never "this repo has no tests" — it has
+    # four real lanes, measured 2026-09-14 on the committed tree: 56/56 node:test
+    # assertions, the doc op:// guard, and both Rust lanes. The blocker was that the
+    # whole-gate branch in bin/fast-check keyed on SECTION MEMBERSHIP (gem_repo?)
+    # rather than on a declared command, so an `apps` row could not reach it. That is
+    # now keyed on the DECLARATION (FullSuiteGate.registry_gated?), which is what this
+    # key supplies. One registry entry plus that generalisation, not a new subsystem.
+    #
+    # WHY THESE FOUR, IN THIS ORDER. They are exactly .github/workflows/ci.yml's two
+    # jobs — `guards` (check:doc-op-refs, test:scripts) and `program` (cargo check,
+    # cargo clippy) — so bin/fast-check's "the same command runs on CI" evidence line
+    # stays literally true for this repo. CI runs the two jobs in parallel; a local
+    # lane is serial, so the sub-second Node pair goes FIRST and a prose or config-shape
+    # break surfaces in ~0.5s instead of behind a Rust compile. Measured warm on this
+    # laptop 2026-09-14: 0.3s + 0.5s + 3.5s + 1.5s ≈ 6s total, which is inside the
+    # builder-default budget fast-check is held to. A COLD `target/` pays a full
+    # compile on the first run, the same way a gem's first bundle does.
+    #
+    # ⚠ IT IS A `&&` CHAIN BECAUSE THIS REPO SHIPS NO GATE SCRIPT. studio-engine and
+    # solana-studio each declare `bin/release-check`, a script the REPO owns, and that
+    # is the better shape: it keeps the gate's definition next to the code it gates.
+    # turf-vault has no bin/ directory at all, and creating one is a turf-vault change,
+    # not a hub change. The cost of declaring the chain here instead is DRIFT — if
+    # ci.yml gains or renames a lane, this string does not follow.
+    # test/docs/cert_label_vocabulary_test.rb watches for that, and its reach is
+    # LIMITED ON PURPOSE: it reads the sibling turf-vault checkout when one is on
+    # disk and SKIPS when none is, so it is a local tripwire for whoever edits
+    # either side and NOT a hub-CI gate (hub CI clones this repo alone). The same
+    # file also pins this row's prose against the chain below, which needs no
+    # sibling and does run everywhere. The day this repo grows a `bin/release-check`,
+    # replace the chain with it and both problems go away.
+    release_check: npm run check:doc-op-refs && npm run test:scripts && cargo check --workspace --all-targets --locked && cargo clippy --workspace --all-targets --locked -- -D clippy::correctness
+    #
+    # AND THE LINT LANE IS DECLARED ABSENT, which `release_check` alone does not cover.
+    # bin/fast-check omits rubocop on this branch by construction, but bin/full-suite-check
+    # runs a lint lane for EVERY repo and consults this key first — so without this line
+    # the declared gate went GREEN (`full-suite: PASS`) and the cert still died one lane
+    # later on `bin/rubocop: No such file or directory`. Measured 2026-09-14.
+    #
+    # VERIFIED, NOT ASSUMED, because the script's own message warns against using this to
+    # dodge a rubocop that merely fails: turf-vault ships NO Ruby at all — no .rubocop.yml,
+    # no bin/ directory, no Gemfile, no gemspec, and not one `.rb` file in the tree. It
+    # lints JavaScript with prettier (`npm run lint`), which is not this lane. Same
+    # DECLARED-never-inferred rule as everywhere else here; studio-engine and solana-studio
+    # are the existing cases.
+    lint_lane: none
+    #
+    # WHAT THIS KEY DOES NOT DO, stated because the same word means two things here.
+    # `release_check` is ALSO the gems' pre-publish gate and the thing that makes a gem
+    # SELF-GATED — but both of those readers are gems-ONLY, reaching the registry
+    # through a `dig("gems", repo)` helper rather than the flattened view
+    # (`gem_meta_for` / `self_gated_gem?` in bin/release.rb, `Release::Repos.gem_meta`
+    # and its `self_gated_gem?` in app/models/release/repos.rb). On this `apps` row the
+    # key is read by exactly one consumer, FullSuiteGate.release_check_cmd, and it
+    # CANNOT make turf-vault self-gated, cannot publish it to RubyGems, and does not
+    # touch the `test_cmd` / `qa_test_cmd` gate workspace refused above — those still
+    # run `bin/rails` first and must stay unset. See the `cert fields` note at the top.
     #
     # NOT A BYPASS — a different door, and still a live one. `[full-suite-bypass]`
     # (FullSuiteGate::BYPASS_TAG) is an AUTHOR record: a human's reasoned
     # `[full-suite-bypass] <why>` checks_run line that bin/dor-check honours and
     # flags loudly. Neither cert script emits it. Do not use it to describe this
     # path — this entry did until 2026-09-08, which named the wrong receipt AND the
-    # wrong mechanism (it blamed a Rails prepare lane that the deferral never
-    # reaches). Guarded by test/docs/cert_label_vocabulary_test.rb.
+    # wrong mechanism. Guarded by test/docs/cert_label_vocabulary_test.rb.
   rolio:
     # DORMANT — parked 2026-07 (satellites.yml carries status: reserved) and its
     # GitHub remote no longer resolves for the agent identity, so a sweep that

@@ -642,7 +642,7 @@ class ReleaseCliTest < Minitest::Test
   # and no commits: a live version whose tag trails is REFUSED (/tasks/untagged-gem-publish-strands-work).
   def gem_publish_stub(version: "1.0.0", live: [], lock_dirty: true, allocate: true, tag: "v0.10.0", ahead: "abc123 stranded engine commit")
     GATE_GIT_STUB +
-      (allocate ? "" : %(def allocate_gem_versions!(_groups) = nil\n)) +
+      (allocate ? "" : %(def allocate_gem_versions!(_groups, label: nil) = nil\n)) +
       %(ENV["RELEASE_CI_STATUS"] = "green"\n) +
       %(def repo_path(_repo) = #{self.class.stub_repo.inspect}\n) +
       %(def gem_version_from_ref(_repo, _ref) = #{version.inspect}\n) +

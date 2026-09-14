@@ -104,9 +104,22 @@ class CertFailureExitContractTest < Minitest::Test
                  "an absent command is not an env gap the reader can close")
     refute_match(/lane\(s\) RED/, out,
                  "no test ran, so no lane is red")
-    assert_match(/turf-vault-needs-ci/, out,
-                 "and it must name the task that owns what a non-Rails cert lane should be, " \
-                 "rather than leaving the reader with a refusal and no next step")
+    # THE REFUSAL MUST HAND BACK A REMEDY, and it must be a remedy that cannot go
+    # stale. This assertion used to demand a TASK SLUG here (/tasks/turf-vault-needs-ci,
+    # "which owns that decision") — and that task had already delivered turf-vault's
+    # first CI WORKFLOW and been ARCHIVED, so this test was actively holding a pointer
+    # to a terminal task inside the one message a builder reads mid-cert. A task's
+    # state is board data no string in this repo can track; the MECHANISM is a file in
+    # the reader's own checkout. So the contract is now the mechanism.
+    assert_match(/release_check:/, out,
+                 "the refusal must name the key that DECLARES a non-Rails cert lane, rather than " \
+                 "leaving the reader with a refusal and no next step")
+    assert_match(/config\/release_repos\.yml/, out,
+                 "and it must name the file that key lives in — the reader is stopped mid-cert and " \
+                 "needs somewhere to go, not a concept")
+    refute_match(%r{/tasks/[a-z0-9-]+}, out,
+                 "a live refusal must never route at a task slug: a task can be archived, and this " \
+                 "message cannot know that it was. Name the mechanism instead.")
   end
 
   # Refusing, not skipping — the distinction the whole task turns on. A cert that
