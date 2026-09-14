@@ -622,16 +622,27 @@ class CredentialHelperInstallTest < ActiveSupport::TestCase
   # The guard's own floor: run it against the tree BEFORE this sweep and it must
   # find every site the sweep corrected. A pattern that catches some of them is
   # how the ninth survived eleven lines from one that was fixed.
+  #
+  # PINNED TO A SHA, never `origin/accepted` (zap, in review). The baseline must be
+  # the tree that CARRIED the nine sites, and `origin/accepted` is the branch this
+  # very sweep merges INTO — so the moment it lands, that ref holds the CORRECTED
+  # files, `found` falls to 0, and this assertion reddens every later rails shard.
+  # Measured both sides in review: 9 at the pin, 0 at the fix. The pin is an
+  # ancestor of accepted forever and the rails job checks out `fetch-depth: 0`, so
+  # CI always resolves it; an unresolvable one yields 0 and FAILS here rather than
+  # passing, so the degradation stays closed.
+  PRE_FIX_TREE = "ca4c5fda5fbad32f48a3b036e79c909aa0932a09"
+
   test "the pattern finds every site the pre-fix tree carried" do
     found = CLAIM_FILES.sum do |rel|
-      text = `git -C #{Rails.root} show origin/accepted:#{rel} 2>/dev/null`
+      text = `git -C #{Rails.root} show #{PRE_FIX_TREE}:#{rel} 2>/dev/null`
       next 0 if text.empty?
 
       zero_reads_offenders(text, rel).length
     end
 
     assert_operator found, :>=, 9,
-                    "the pattern finds #{found} of the 9 sites origin/accepted carries. It is then a " \
+                    "the pattern finds #{found} of the 9 sites #{PRE_FIX_TREE[0, 7]} carries. It is then a " \
                     "partial sweep wearing a guard's name — the exact shape this task exists to remove."
   end
 
