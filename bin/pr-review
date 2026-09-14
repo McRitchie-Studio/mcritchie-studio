@@ -71,6 +71,7 @@ require "open3"
 require "optparse"
 require "shellwords"
 require "time"
+require "yaml"
 require_relative "lib/ci_status"
 require_relative "lib/code_diff"
 require_relative "lib/gh_auth_retry"
@@ -82,6 +83,8 @@ require_relative "lib/stacked_pr"
 require_relative "lib/acting_identity"
 require_relative "lib/approval_request_notice"
 require_relative "lib/fast_lane"
+require_relative "lib/repo_checkout"
+require_relative "lib/upstream_misfile"
 
 ROOT = File.expand_path("..", __dir__)
 
@@ -109,6 +112,16 @@ GATE_BIN = BinHelpers.bin_for("GATE_BIN", "gate")
 # through PATH (the 2026-07-19 wave stranded 4 merge-ready verdicts when it didn't).
 GH_BIN = BinHelpers.bin_for("GH_BIN", "gh")
 ACCEPTED_BRANCH = "accepted"
+
+# The registered GEMS (config/release_repos.yml) — the only repos whose CHANGELOG
+# `bin/release prepare` rolls, and therefore the only ones that can carry an upstream
+# misfile. Read, never written, here.
+GEM_REPOS = begin
+  (YAML.load_file(File.expand_path("../config/release_repos.yml", __dir__))["gems"] || {}).keys
+rescue StandardError
+  []
+end
+
 # start_review → gate key per launch role (the G2 review lanes, GateRun::GATES).
 G2_LANE_KEYS = { "primary" => "g2a_primary", "light" => "g2b_light" }.freeze
 CODEX_BIN = ENV["CODEX_BIN"].to_s.strip.empty? ? "codex" : ENV["CODEX_BIN"].strip
@@ -801,6 +814,60 @@ def merge_feature_pr(slug, pr_url, merge_head: nil)
   ok
 end
 
+# THE UPSTREAM CHANGELOG DETECTOR, run WHERE THE HAZARD IS CREATED
+# (/tasks/detect-upstream-changelog-misfiles).
+#
+# A branch that forks BEFORE the gem's `accepted` absorbs a roll, keeps writing
+# bullets into its own `## Unreleased`, and is merged AFTER puts those bullets inside
+# a version section that already shipped without them. THAT MERGE IS THIS ONE — feat
+# → accepted — not the promote, which is why the detector lives here and not beside
+# its differential sibling in bin/release.rb. Two things follow from the seam:
+#
+#   * IT RUNS AFTER THE MERGE, because the mis-filed state does not exist until the
+#     merge lands. Neither side carries it before: the branch has no version heading
+#     for the rolled version, and `accepted` has no bullet. So this is a DETECTOR and
+#     never a gate on this merge — there is nothing here for a gate to refuse.
+#   * IT NEVER FAILS THE REVIEW. Its subject is a false sentence in a document, not
+#     an unsafe deploy; the pipeline downstream is untouched while it stands. Every
+#     give-up (no sibling checkout, an unreadable blame) PRINTS its reason, so a skip
+#     reads as a skip and never as a clean audit.
+#
+# The promote seam would have missed two whole classes of it: a gem with no member in
+# the current sweep is never read there at all, and everything in between creation and
+# the next sweep. It would also have charged a multi-repo QA hold for a prose defect,
+# which is the cost Release::Changelog's own (a)/(b) fork already declined to pay.
+def report_upstream_changelog_misfile(pr_url)
+  return unless OPTIONS.fetch(:run)
+
+  repo = pr_url.to_s[%r{github\.com/[^/\s]+/([^/\s]+)/pull/}, 1].to_s
+  # Only a GEM's CHANGELOG is rolled, so only a gem can carry this defect.
+  return unless GEM_REPOS.include?(repo)
+
+  path = RepoCheckout.resolve(ProjectsRoot.default_projects_dir, repo)
+  unless Dir.exist?(path)
+    puts "  changelog audit SKIPPED for #{repo}: no sibling checkout at #{path}"
+    return
+  end
+
+  # The merge just landed on GitHub; this checkout has not seen it. `--tags` is
+  # load-bearing — the tags ARE the record of what shipped.
+  run_capture(["git", "-C", path, "fetch", "origin", ACCEPTED_BRANCH, "--tags", "--quiet"])
+  result = UpstreamMisfile.audit(path: path, rev: "origin/#{ACCEPTED_BRANCH}")
+
+  if result.skipped?
+    puts "  changelog audit SKIPPED for #{repo}: #{result.skipped}"
+  elsif result.found?
+    puts "  ⚠ UPSTREAM CHANGELOG MISFILE on #{repo}'s `#{ACCEPTED_BRANCH}` — #{result.findings.size} line(s), " \
+         "#{result.judged} judged"
+    puts "    #{result.notice}"
+  else
+    puts "  changelog audit clean for #{repo}: #{result.judged} entry line(s) judged on " \
+         "`#{ACCEPTED_BRANCH}`, none mis-filed"
+  end
+rescue StandardError => e
+  puts "  changelog audit SKIPPED: #{e.class} (#{e.message}) — the review is unaffected"
+end
+
 # The merge-ready verdict handoff — the accepted-ladder's first rung. Merge the
 # feat PR into `accepted`, stamp merged:"accepted", then move the task `reviewed`
 # and leave the Avi-QA handoff note. ORDER is load-bearing:
@@ -831,7 +898,11 @@ def move_reviewed(slug, task, reviewers, reports, reviewed_head: nil, zap_head: 
          "#{reviewers.map { |r| r["slug"] }.join(" + ")} reported merge-ready. Left for Avi QA " \
          "(the sweep promotes accepted→release).#{zap_line}\n\n" \
          "Reports:\n#{reports.map { |r| "- #{report_summary(r)}" }.join("\n")}"
-  ok && task_write(["note", slug, "--handoff", note, "--agent", "avi"])
+  handed_off = ok && task_write(["note", slug, "--handoff", note, "--agent", "avi"])
+  # LAST, and advisory: the merge above is exactly where an upstream changelog misfile
+  # is created, and it cannot be un-made by failing this verdict.
+  report_upstream_changelog_misfile(task&.dig("devops", "pr_url"))
+  handed_off
 end
 
 # TRUE when the two-bounce circuit breaker refuses another send-back on this task
