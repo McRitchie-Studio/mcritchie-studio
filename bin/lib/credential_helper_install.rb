@@ -81,12 +81,21 @@ require_relative "projects_root"
 #      value still wins, and it is written per install — move the projects
 #      directory and reinstall.
 #   2. `TaskUsageSandbox.real_state_dir` names the snapshot root rather than
-#      `<projects>/.agents`. That only weakens the sandbox's rule 2 (OUTSIDE),
-#      and only for a process running the SNAPSHOT under TASK_USAGE_SANDBOX —
-#      which no test does, because tests run the repo copy. Rule 1 (PINNED) is
-#      unaffected. Still recorded rather than worked around: the workaround
-#      (teaching ProjectsRoot a pin) touches every consumer of a shared
-#      primitive to fix nothing that is broken.
+#      `<projects>/.agents`. That weakens the sandbox's rule 2 (a path pinned
+#      back INSIDE the real store aborts) for a process running the SNAPSHOT
+#      under TASK_USAGE_SANDBOX — which no test does, because tests run the repo
+#      copy. Still recorded rather than worked around: the workaround (teaching
+#      ProjectsRoot a pin) touches every consumer of a shared primitive to fix
+#      nothing that is broken.
+#
+# THE TWO ARE COUPLED, and were written here as if they were not (corrected
+# 2026-09-13). The stamp in (1) sets MCR_OP_READS_LOG on every snapshot
+# invocation, and `op_meter_refused` (bin/lib/op-meter.sh:91) proceeds whenever
+# that is set — so the BASH meter's rule 1 can no longer fire from a snapshot,
+# and (2) is why rule 2 does not fire there either. What keeps a sandboxed run
+# off the operator's real log is therefore not the guard but the fact that a
+# sandboxed run executes the repo copy, never the install. Fix (2) and rule 2
+# starts applying to the stamped path: re-read this note before doing so.
 #
 # This module does NOT touch ~/.gitconfig. Wiring a global config file is
 # operator-visible and reversible by hand, so the CLI PRINTS the exact commands
@@ -213,8 +222,15 @@ module CredentialHelperInstall
 
   # Does the installed snapshot differ from the source tree? A missing install
   # counts as stale — there is nothing to answer with.
+  #
+  # The STAMP counts too. It is not part of the digest (it is generated, not
+  # copied), so a digest comparison alone reports a snapshot with a deleted or
+  # moved-root stamp as current — and that snapshot logs its 1Password reads
+  # inside itself. A property nothing verifies is a property you do not have.
   def stale?(source_root:, root: DEFAULT_ROOT)
-    installed_digest(root) != digest(source_root)
+    return true if installed_digest(root) != digest(source_root)
+
+    stamp_state(source_root: source_root, root: root) != :ok
   end
 
   # Install the snapshot and repoint `current`. Returns the digest.
@@ -244,13 +260,20 @@ module CredentialHelperInstall
         staging = "#{target}.staging.#{Process.pid}"
         FileUtils.rm_rf(staging)
         copy_tree(source_root, staging, files)
-        stamp_snapshot_env!(staging, source_root)
         File.write(File.join(staging, MANIFEST_FILE),
                    "#{JSON.pretty_generate('digest' => id, 'files' => files, 'source_root' => source_root)}\n")
         FileUtils.rm_rf(target)
         FileUtils.mkdir_p(File.dirname(target))
         File.rename(staging, target)
       end
+
+      # OUTSIDE the `unless`, deliberately. The stamp is not part of the digest,
+      # so an unchanged closure skips the whole build above — and when the stamp
+      # was written in there, a reinstall could not repair a deleted or stale one.
+      # Measured before this moved: delete the stamp, reinstall, and it stayed
+      # gone while `--check` reported the install current. Stamping the TARGET on
+      # every install is what makes "reinstall fixes it" true.
+      stamp_snapshot_env!(target, source_root)
 
       point_current_at!(root, id)
     end
@@ -272,19 +295,62 @@ module CredentialHelperInstall
     end
   end
 
+  # The projects directory this source resolves — NOT a store path, which is the
+  # point: everything public compares projects ROOTS, so the only place in this
+  # file that ever builds `<projects>/.agents/...` is the private writer below
+  # (LAYER 2a of test/lib/state_store_containment_test.rb: a raw store path must
+  # not escape the file that built it, and a public method that reaches one is
+  # how it escapes).
+  def projects_root_for(source_root)
+    env = ENV["CLAUDE_PROJECTS_DIR"].to_s.strip
+    return File.expand_path(env) unless env.empty?
+
+    ProjectsRoot.default_projects_dir(File.expand_path(source_root))
+  end
+
+  # The projects root the INSTALLED stamp records, or nil when there is no
+  # readable stamp. Read off the stamp's own marker line.
+  def stamped_projects_root(root = DEFAULT_ROOT)
+    path = File.join(current_link(root), SNAPSHOT_ENV_RELATIVE)
+    return nil unless File.file?(path)
+
+    File.read(path)[/^# projects-root: (.+)$/, 1]
+  rescue SystemCallError
+    nil
+  end
+
+  # :ok, :missing (deleted, or installed before stamping existed) or :wrong_root
+  # (the projects directory moved since the install). Anything but :ok is stale:
+  # without the stamp the helper logs its 1Password reads INSIDE the snapshot and
+  # `bin/op-reads` reports zero reads from it — the symptom this file exists to
+  # remove, which must never read as healthy.
+  def stamp_state(source_root:, root: DEFAULT_ROOT)
+    stamped = stamped_projects_root(root)
+    return :missing if stamped.nil?
+
+    stamped == projects_root_for(source_root) ? :ok : :wrong_root
+  end
+
   # The projects root this snapshot was installed FROM, written where the helper
   # can source it. Default-assignment (`:=`), so an explicitly exported value —
   # a fixture's, or an operator's — still wins.
-  def stamp_snapshot_env!(staging, source_root)
-    projects = ENV["CLAUDE_PROJECTS_DIR"].to_s.strip
-    projects = ProjectsRoot.default_projects_dir(File.expand_path(source_root)) if projects.empty?
-    log = File.join(File.expand_path(projects), ".agents", "op-reads.log")
-    path = File.join(staging, SNAPSHOT_ENV_RELATIVE)
+  #
+  # WRITTEN THROUGH A RENAME, not in place. This lands in a directory `current`
+  # already points into, and `git push` reads the helper without taking the
+  # install lock — so a torn read is a `set -u` failure on the credential path.
+  # rename(2) makes the swap atomic: a reader sees the old stamp or the new one.
+  def stamp_snapshot_env!(dir, source_root)
+    projects = projects_root_for(source_root)
+    log = File.join(projects, ".agents", "op-reads.log")
+    path = File.join(dir, SNAPSHOT_ENV_RELATIVE)
+    tmp = "#{path}.tmp.#{Process.pid}"
 
     FileUtils.mkdir_p(File.dirname(path))
-    File.write(path, <<~SH)
-      # Generated by bin/install-git-credential-helper. Do not edit: reinstalling
-      # rewrites it, and it is not part of the snapshot digest.
+    File.write(tmp, <<~SH)
+      # Generated by bin/install-git-credential-helper. Do not edit: every install
+      # rewrites it, and `--check` reports a deleted or moved-root stamp as stale.
+      # It is not part of the snapshot digest.
+      # projects-root: #{projects}
       #
       # A snapshot's __dir__ is not the repo, so anything that derives the
       # projects root from its own location resolves INSIDE the snapshot. The
@@ -293,7 +359,8 @@ module CredentialHelperInstall
       : "\${MCR_OP_READS_LOG:=#{log}}"
       export MCR_OP_READS_LOG
     SH
-    File.chmod(0o644, path)
+    File.chmod(0o644, tmp)
+    File.rename(tmp, path)
     path
   end
   private_class_method :stamp_snapshot_env!

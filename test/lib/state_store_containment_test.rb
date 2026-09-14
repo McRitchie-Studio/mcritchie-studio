@@ -223,13 +223,30 @@ class StateStoreContainmentTest < Minitest::Test
     # A THIRD shape, named rather than filed under one it does not fit. EMITS is
     # not BUILDER (it returns no store path: it returns the env file's own path,
     # under the install root) and not READ (it reads nothing). It serialises the
-    # path into a file the snapshot sources. Why that is safe: the store is never
-    # touched here, and the value only reaches OpMeter, whose `append` enforce!s.
-    # A sandboxed process running the snapshot therefore still aborts at the
-    # write seam instead of appending to the operator's real log.
+    # path into a file the snapshot sources.
+    #
+    # WHAT MAKES IT SAFE, stated exactly, because an earlier version of this note
+    # claimed a protection that is not there (measured 2026-09-13): "a sandboxed
+    # process running the snapshot still aborts at the write seam" is FALSE both
+    # ways. The BASH meter's rule 1 (armed but unpinned → skip) is UNREACHABLE
+    # from a snapshot, because op-meter.sh:91 proceeds whenever MCR_OP_READS_LOG
+    # is set and the stamp sets it on every invocation. The RUBY meter's enforce!
+    # is rule 2 (pinned back INSIDE the real store → abort), and inside a snapshot
+    # TaskUsageSandbox.real_state_dir is ProjectsRoot-derived, so it names the
+    # SNAPSHOT rather than <projects>/.agents and does not recognise the stamped
+    # path as the real store either.
+    #
+    # So the containment that holds here is not the guard: it is that a sandboxed
+    # run does not execute the INSTALLED snapshot — tests run the repo copy, where
+    # no stamp exists and both rules apply as written. THOSE TWO FACTS ARE
+    # COUPLED: teaching ProjectsRoot a pin (consumer #2 in
+    # bin/lib/credential_helper_install.rb's header, deliberately not fixed) would
+    # make rule 2 see the stamped path and abort. Change one, re-read the other.
     "bin/lib/credential_helper_install.rb" => {
       "stamp_snapshot_env!" => "EMITS — private; writes the resolved log path as a string into " \
-                               "<install root>/bin/snapshot-env.sh and performs no IO on the store"
+                               "<install root>/bin/snapshot-env.sh and performs no IO on the store. It is the ONLY method here " \
+                               "that builds one: everything public compares projects ROOTS, so no raw store " \
+                               "path reaches a public method to escape through (LAYER 2a)"
     },
     # EMPTY, and that is the point: bin/gh-token holds no raw store path anywhere.
     # `store_path` returns the ENFORCED path and every reader/writer calls it, so

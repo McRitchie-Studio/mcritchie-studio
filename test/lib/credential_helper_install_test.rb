@@ -28,6 +28,17 @@ class CredentialHelperInstallTest < ActiveSupport::TestCase
     FileUtils.remove_entry(@root) if @root && File.directory?(@root)
   end
 
+  # CLAUDE_PROJECTS_DIR is what the stamp resolves from when it is set, so this
+  # is how a "the operator moved their projects directory" case is staged.
+  def with_projects_dir(dir)
+    had = ENV.key?("CLAUDE_PROJECTS_DIR")
+    previous = ENV["CLAUDE_PROJECTS_DIR"]
+    ENV["CLAUDE_PROJECTS_DIR"] = dir
+    yield
+  ensure
+    had ? ENV["CLAUDE_PROJECTS_DIR"] = previous : ENV.delete("CLAUDE_PROJECTS_DIR")
+  end
+
   # ── the manifest cannot rot ─────────────────────────────────────────────────
 
   test "the manifest is the helper's whole transitive require closure" do
@@ -73,10 +84,23 @@ class CredentialHelperInstallTest < ActiveSupport::TestCase
     manifest = CredentialHelperInstall.manifest(SOURCE)
 
     normalised = helper.gsub(SIBLING_DIR_IDIOM, "$SCRIPT_DIR")
-    assert_operator normalised.scan("$SCRIPT_DIR").length, :>=, 4,
-                    "fewer sibling references than this helper has always had — either the scan or the " \
-                    "normalisation of the $(cd $(dirname BASH_SOURCE) && pwd) idiom has gone blind, and " \
-                    "every assertion below would then grade an empty set"
+
+    # WHY `> raw` AND NOT `>= 4` (2026-09-13, the reviewer's mutation). The floor
+    # was 4 and the RAW count is already 4 — the helper writes `$SCRIPT_DIR`
+    # literally four times — so a dead SIBLING_DIR_IDIOM satisfied it and the
+    # comment claiming this caught the normalisation going blind was false.
+    # Comparing the two counts is what catches it: blind the idiom and they are
+    # equal. (Coverage never depended on this line; the named-form assertions
+    # below are what failed in that mutation.)
+    raw = helper.scan("$SCRIPT_DIR").length
+    normalised_count = normalised.scan("$SCRIPT_DIR").length
+
+    assert_operator normalised_count, :>, raw,
+                    "the $(cd $(dirname BASH_SOURCE) && pwd) normalisation matched nothing — the inline " \
+                    "form is invisible to this scan again, which is exactly how op-meter.sh went unguarded"
+    assert_operator normalised_count, :>=, 6,
+                    "fewer sibling references than this helper has ever had — the scan itself has gone " \
+                    "blind, and every assertion below would then grade an empty set"
 
     reached = normalised.scan(/\$SCRIPT_DIR\)?\/([A-Za-z0-9_.\/-]+)/).flatten.uniq
     refute_empty reached, "found no sibling references at all — this guard has stopped looking"
@@ -363,6 +387,73 @@ class CredentialHelperInstallTest < ActiveSupport::TestCase
                     "installed helper"
     refute_includes stamp, File.join(@root, "versions"),
                     "the stamp names a path inside the snapshot — that is the defect, written down"
+  end
+
+  # NOTHING VERIFIED OR MAINTAINED THE STAMP (2026-09-13, the reviewer's measurement).
+  # `stamp_snapshot_env!` sat inside install!'s "already built?" branch, so an
+  # unchanged closure never re-stamped, and `stale?` never looked at the stamp at
+  # all: deleting it left `--check` printing "installed … current" while the
+  # installed helper logged its 1Password reads inside the snapshot and
+  # `bin/op-reads` showed none. A property nothing checks is not a property.
+
+  test "a deleted stamp makes the install STALE rather than current" do
+    CredentialHelperInstall.install!(source_root: SOURCE, root: @root)
+    assert_not CredentialHelperInstall.stale?(source_root: SOURCE, root: @root), "control: a fresh install is current"
+
+    File.delete(File.join(CredentialHelperInstall.current_link(@root), CredentialHelperInstall::SNAPSHOT_ENV_RELATIVE))
+
+    assert_equal :missing, CredentialHelperInstall.stamp_state(source_root: SOURCE, root: @root)
+    assert CredentialHelperInstall.stale?(source_root: SOURCE, root: @root),
+           "a snapshot with no op-reads stamp reported as current. The operator then reads OK while " \
+           "bin/op-reads shows zero reads from the installed helper — the exact symptom, reported healthy."
+  end
+
+  test "a reinstall restores a deleted stamp, though the closure is unchanged" do
+    CredentialHelperInstall.install!(source_root: SOURCE, root: @root)
+    stamp = File.join(CredentialHelperInstall.current_link(@root), CredentialHelperInstall::SNAPSHOT_ENV_RELATIVE)
+    before = File.read(stamp)
+    File.delete(stamp)
+
+    CredentialHelperInstall.install!(source_root: SOURCE, root: @root)
+
+    assert_path_exists stamp,
+                       "the reinstall did not restore the stamp. The digest is unchanged, so install! skips " \
+                       "the build — stamping has to happen outside that branch or `reinstall to fix it` is false."
+    assert_equal before, File.read(stamp)
+    assert_not CredentialHelperInstall.stale?(source_root: SOURCE, root: @root)
+  end
+
+  test "a stamp naming a different projects root is stale, and a reinstall moves it" do
+    with_projects_dir("/tmp/projects-A") { CredentialHelperInstall.install!(source_root: SOURCE, root: @root) }
+    assert_includes CredentialHelperInstall.stamped_projects_root(@root), "/tmp/projects-A"
+
+    with_projects_dir("/tmp/projects-B-MOVED") do
+      assert_equal :wrong_root, CredentialHelperInstall.stamp_state(source_root: SOURCE, root: @root)
+      assert CredentialHelperInstall.stale?(source_root: SOURCE, root: @root),
+             "the projects directory moved and the install still reported current"
+
+      CredentialHelperInstall.install!(source_root: SOURCE, root: @root)
+
+      assert_includes CredentialHelperInstall.stamped_projects_root(@root), "/tmp/projects-B-MOVED",
+                      "reinstalling after a move did not rewrite the stamp — both the module comment and " \
+                      "the generated file's own header promise that it does"
+      assert_not CredentialHelperInstall.stale?(source_root: SOURCE, root: @root)
+    end
+  end
+
+  # STRUCTURAL, and only structural: a torn read is a race this suite cannot
+  # stage. What it pins is the shape that makes the race impossible — the stamp
+  # lands in a directory `current` already points into, and `git push` reads the
+  # helper without taking the install lock, so the write must be a rename(2).
+  test "the stamp is written through a rename, never in place" do
+    source = File.read(Rails.root.join("bin/lib/credential_helper_install.rb"))
+    body = source[/def stamp_snapshot_env!.*?\n  end\n/m]
+
+    refute_nil body, "stamp_snapshot_env! could not be located; this guard would grade nothing"
+    assert_match(/File\.rename\(tmp, path\)/, body,
+                 "the stamp is written in place. A reader in the window sees a truncated file, which on a " \
+                 "credential path is a `set -u` failure mid-push.")
+    assert_no_match(/File\.write\(path,/, body, "the final path is written directly rather than renamed onto")
   end
 
   test "the helper sources the stamp, and an exported value still wins" do
