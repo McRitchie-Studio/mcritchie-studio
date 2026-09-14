@@ -170,9 +170,13 @@ The installer copies the helper's whole closure into
 `~/.mcritchie/git-credential/versions/<digest>/` and points a stable `current`
 symlink at it, so the wired path never moves.
 
-**Run the printed command as printed:**
+**Install FIRST, then run the command it prints, as printed.** The wired path
+points inside `~/.mcritchie/`, which does not exist until the installer creates
+it — wiring first would aim github.com at a missing file, and the empty reset
+this command preserves means `osxkeychain` will not answer in its place:
 
 ```bash
+bin/install-git-credential-helper            # creates ~/.mcritchie/... and prints the line below
 git config --global --replace-all credential."https://github.com".helper \
   "$HOME/.mcritchie/git-credential/current/bin/gh-app-git-credential" '/gh-app-git-credential$'
 ```
