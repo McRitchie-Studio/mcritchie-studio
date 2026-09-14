@@ -118,12 +118,32 @@ confusion here.
 | **`git`** (https push/fetch) | The global credential helper `bin/gh-app-git-credential` answers from the **shared session** `bin/gh-token` holds, and mints only on a cache miss. Nothing to refresh BY HAND — a token git rejects comes back to the helper as `erase`, which retires that one session so the next call mints once. (It minted per call until 2026-08-29; that cost three 1Password reads per git operation and once spent the daily quota.) |
 | **`gh`** (and any API caller) | Reads an ambient credential. **Goes stale hourly.** This is the one you fix |
 
-Wire the git leg once, globally:
+Wire the git leg once, globally. **Point it at the INSTALLED helper, never at
+the copy in the repo** — see the box below:
 
 ```bash
+bin/install-git-credential-helper      # installs the snapshot, prints the wiring
 git config --global credential."https://github.com".helper \
-  "/Users/alex/projects/mcritchie-studio/bin/gh-app-git-credential"
+  "$HOME/.mcritchie/git-credential/current/bin/gh-app-git-credential"
 ```
+
+> **Why not `<repo>/bin/gh-app-git-credential`?** Because that path is inside a
+> WORKING TREE, and a working tree moves. `git checkout` does not rewrite a file
+> in place — it unlinks the path and creates it afresh — so while the hub
+> primary moves, the helper briefly does not exist, and a `git push` landing in
+> that window dies with `gh-app-git-credential: No such file or directory`.
+> Measured four times on 2026-09-10 across three sessions, once with the
+> helper's mtime matching the push to the second while the primary moved
+> fbae68f0 → 50cfea07. `bin/install-git-credential-helper` copies the helper's
+> whole closure into `~/.mcritchie/git-credential/versions/<digest>/` and points
+> a stable `current` symlink at it, so no checkout can take it away.
+>
+> It is a SNAPSHOT, so it can go stale. `bin/install-git-credential-helper
+> --check` reports the installed digest, whether it matches this repo, and
+> whether git is wired to it; re-run the installer after any change to
+> `bin/gh-token`, `bin/gh-app-git-credential`, or anything they reach. Nothing
+> in that command edits `~/.gitconfig` — it prints the one-line change and its
+> revert, and you run them.
 
 ### Three stores, and they rank
 

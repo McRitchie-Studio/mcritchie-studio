@@ -80,9 +80,10 @@ class FeatureShapeTiersTest < Minitest::Test
   # Every pattern here is matched against a runner's real command string below, and
   # test_unit_every_known_tier_has_a_command_pattern keeps the table total.
   #
-  #   unit/component/integration — all three live in test/**, and the ARGLESS
-  #     `bin/rails test` sweep (CI's `test` job; bin/full-suite-check's full lane) runs
-  #     every file there. One pattern, three tiers: the minitest suite does not
+  #   unit/component/integration — all three live in test/**, and the minitest sweep runs
+  #     every file there: CI's four `rails` shards (their union audited by
+  #     bin/rails-executed-set-check) plus its `system` job, and bin/full-suite-check's
+  #     full lane. One pattern, three tiers: the minitest suite does not
   #     distinguish them, and neither can a command matcher. The tier TAG is the
   #     builder's claim about WHICH file they wrote; the LANE is what proves the file
   #     runs. This guard is about the lane.
@@ -176,7 +177,9 @@ class FeatureShapeTiersTest < Minitest::Test
     assert_empty required_tiers("shapes:\n  chore:\n    description: no tests\n")
   end
 
-  def test_unit_recognizes_the_argless_rails_suite_as_the_minitest_lane
+  # Named for the command it actually matches: the rake-routed suite line, not an argless
+  # one. Nothing runs `bin/rails test` bare in this ecosystem's lanes.
+  def test_unit_recognizes_the_rake_routed_rails_suite_as_the_minitest_lane
     # The other half of the vacuity trap: if these patterns do not match the REAL
     # commands, every assertion below passes over an empty set and this guard is
     # decorative — which is the bug it exists to prevent, committed by its own author.

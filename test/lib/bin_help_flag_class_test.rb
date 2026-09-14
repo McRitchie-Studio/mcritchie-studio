@@ -102,6 +102,11 @@ class BinHelpFlagClassTest < Minitest::Test
     # a security finding.
     "importmap-audit-ci"     => :optparse,
     "reap-cert-databases"    => :cli_arg_guard,
+    # COPIES the credential helper's whole closure to disk and repoints a symlink,
+    # so it is guarded like the rest of the mutating flat scripts. Its --check and
+    # --print-config arms install nothing, but the DEFAULT arm (no flags at all)
+    # installs — which is exactly the shape where an unaccounted `--help` mutates.
+    "install-git-credential-helper" => :cli_arg_guard,
     # THE READ-ONLY ONE, and the only :cli_arg_guard entry with no FIRST_MUTATION
     # row — deliberately, because it has no mutation to precede. bin/agent-presence
     # writes no file, signals no process and takes no lock. It is guarded anyway, and
@@ -514,7 +519,11 @@ class BinHelpFlagClassTest < Minitest::Test
     # not own: Chrome's Local State, com.apple.dock, ~/Applications, and the running
     # browser itself. Anchored on `case ARGV.first` rather than on any one call so a
     # sixth subcommand cannot be added below the guard without this staying true.
-    "chrome-profiles"     => "case ARGV.first"
+    "chrome-profiles"     => "case ARGV.first",
+    # Anchored on the INSTALL call rather than on the `case options[:mode]`
+    # dispatcher above it, because that dispatcher's other two arms print and exit
+    # — this is the one line that writes to disk, and the guard has to precede it.
+    "install-git-credential-helper" => "CredentialHelperInstall.install!"
   }.freeze
 
   def test_the_guard_runs_before_the_first_mutation

@@ -1421,7 +1421,17 @@ def publish_gem(repo, version)
   step("git tag #{tag} in #{repo}")
   sh("git", "-C", path, "tag", "-a", tag, "-m", "Release #{repo} #{tag}")
   _, tagged = sh("git", "-C", path, "push", "origin", tag, capture: true)
-  say("  (tag #{tag} push #{tagged ? 'ok' : 'skipped/failed — push it manually if needed'})") unless DRY
+  # NON-FATAL on purpose: the gem is already live, so aborting here would strand
+  # this sweep's consumer lock bumps and QA for a publish that succeeded. But it
+  # is no longer quiet: the tag is the record every later allocation reads, and
+  # without it on origin the next sweep from any clone lacking it REFUSES this gem
+  # (Release::GemVersion.allocation) rather than skipping it forever.
+  if tagged || DRY
+    say("  (tag #{tag} push ok)") unless DRY
+  else
+    say("  ⚠ tag #{tag} did NOT reach origin — push it now: git -C #{path} push origin #{tag}. Until it " \
+        "lands, a sweep from any clone without it REFUSES #{repo} (/tasks/untagged-gem-publish-strands-work)")
+  end
 end
 
 # --- init ------------------------------------------------------------------
@@ -6372,8 +6382,30 @@ def commit_artifact_to_release(repo, abs_path, message)
   rel  = rels.length == 1 ? rels.first : "#{rels.length} doc(s)"
 
   status, ok = git_capture("-C", path, "status", "--porcelain")
-  unless ok && Release::ArtifactCommit.safe_to_commit?(status, rels)
-    step("left #{rel} uncommitted (#{ok ? 'other changes present' : 'git status failed'}) — commit it via a docs PR")
+  unless ok
+    step("left #{rel} uncommitted (git status failed) — commit it via a docs PR")
+    return
+  end
+
+  # NOTHING TO COMMIT IS NOT A REFUSAL — and it must be answered BEFORE the
+  # flip. The generated doc usually regenerates to the same bytes, and the dance
+  # used to check out `release`, run a `git commit` that silently did nothing,
+  # and `ensure` its way back to `main` to establish that. Measured on the hub
+  # primary 2026-09-10: 191 such flip pairs, ZERO commits. The checkout is
+  # SHARED, and each flip blinds every desk-side command and git's credential
+  # helper for ~0.4-0.7s.
+  #
+  # It says one line rather than skipping silently: every other outcome of this
+  # method reports, so a silent arm would be the only way for an operator
+  # reading an archive log to be unable to tell the dance from a crash. Nothing
+  # is lost by saying it — this path never committed anything.
+  if Release::ArtifactCommit.nothing_to_commit?(status, rels)
+    step("#{rel} unchanged — nothing to commit, and the checkout was not flipped")
+    return
+  end
+
+  unless Release::ArtifactCommit.safe_to_commit?(status, rels)
+    step("left #{rel} uncommitted (other changes present) — commit it via a docs PR")
     return
   end
 

@@ -108,7 +108,19 @@ class ShipTest < Minitest::Test
         puts(moved && ENV["TASK_SHOW_JSON_MOVED"] ? ENV["TASK_SHOW_JSON_MOVED"] : ENV["TASK_SHOW_JSON"])
       end
       if "#{marker}" == "GH" && ARGV[0, 2] == %w[pr list]
-        puts ENV.fetch(ARGV.include?("--head") ? "GH_PR_LIST_JSON" : "GH_PR_LIST_SIBLINGS_JSON", "[]")
+        head_at = ARGV.index("--head")
+        head = head_at ? ARGV[head_at + 1] : nil
+        if head.nil?
+          puts ENV.fetch("GH_PR_LIST_SIBLINGS_JSON", "[]")
+        elsif head == "#{BRANCH}"
+          puts ENV.fetch("GH_PR_LIST_JSON", "[]")
+        else
+          # A THIRD question, and it must be able to answer differently from the other
+          # two: is the base this PR sits on another OPEN PR's head — a deliberate
+          # stack — or a branch nobody is shipping, which is the mis-based case?
+          exit 1 if ENV["FAIL_GH_PARENT_LIST"] == "1"
+          puts ENV.fetch("GH_PR_PARENT_JSON", "[]")
+        end
       end
       if "#{marker}" == "GH" && ARGV[0, 2] == %w[pr create]
         puts "#{PR_URL}"
@@ -577,6 +589,76 @@ class ShipTest < Minitest::Test
   end
 
   # --- idempotent resume -------------------------------------------------------
+
+  # ── A DELIBERATE STACK IS NOT A MISTAKE (/tasks/ship-retargets-stacked-prs) ────
+  #
+  # MEASURED 2026-09-13 on turf #701, stacked on turf #624 by the operator's decision:
+  # step 4/8 retargeted it to `accepted` because the base was not `accepted`, and that
+  # ONE action produced three false refusals — the test-only claim broke (the observed
+  # diff swelled to the parent's 6 files), the PR went DIRTY so GitHub queued no run at
+  # all, and the [control] line "named no file from this diff". The ship had to be
+  # finished by hand.
+  #
+  # The tell is on GitHub, not in the record: a base that is ANOTHER OPEN PR'S HEAD is a
+  # stack. A merged parent, a closed-unmerged one, or a deleted branch is not — none of
+  # them is open — so those stay repaired, which is what the retarget exists for.
+  def stacked_pr(base) = JSON.generate([{ "number" => 999, "url" => PR_URL, "isDraft" => false,
+                                          "baseRefName" => base }])
+
+  def test_a_pr_based_on_an_open_prs_head_keeps_its_base
+    with_repo do |dir|
+      assert system("git -C #{dir} add -A >/dev/null 2>&1 && git -C #{dir} commit -q -m done")
+      parent = JSON.generate([{ "number" => 624, "url" => "https://github.com/o/r/pull/624" }])
+
+      _out, err, status, lines = run_ship(dir, extra_env: {
+        "GH_PR_LIST_JSON" => stacked_pr("feat/qa-shares-production-signing-key"),
+        "GH_PR_PARENT_JSON" => parent
+      })
+
+      assert status.success?, "a stacked ship must complete, got:\n#{err}"
+      refute(lines.any? { |l| l[0] == "GH" && l[1, 2] == %w[pr edit] },
+             "step 4/8 retargeted a PR based on open PR #624's branch — that is a deliberate " \
+             "stack, and retargeting it strands the ship exactly as it did on turf #701")
+    end
+  end
+
+  # THE OTHER ARM, so the fix cannot become "never retarget". A base nobody has an open
+  # PR for is the mis-based case the self-heal exists to repair.
+  def test_a_pr_based_on_a_branch_with_no_open_pr_is_still_repaired
+    with_repo do |dir|
+      assert system("git -C #{dir} add -A >/dev/null 2>&1 && git -C #{dir} commit -q -m done")
+
+      _out, err, status, lines = run_ship(dir, extra_env: {
+        "GH_PR_LIST_JSON" => stacked_pr("feat/parent-already-merged-and-deleted"),
+        "GH_PR_PARENT_JSON" => "[]"
+      })
+
+      assert status.success?, "the repair path must still complete, got:\n#{err}"
+      edit = lines.find { |l| l[0] == "GH" && l[1, 2] == %w[pr edit] }
+      assert edit, "a base with no open PR is mis-based and must still be retargeted"
+      assert_equal "accepted", edit[edit.index("--base") + 1]
+    end
+  end
+
+  # AN UNREADABLE PROBE MUST NOT SILENTLY PRESERVE. Nothing downstream repairs a
+  # mis-based PR — this retarget is the only thing that does — so an unanswered question
+  # falls back to the repair, and says which way it fell.
+  def test_an_unreadable_parent_probe_still_repairs_and_says_so
+    with_repo do |dir|
+      assert system("git -C #{dir} add -A >/dev/null 2>&1 && git -C #{dir} commit -q -m done")
+
+      out, err, status, lines = run_ship(dir, extra_env: {
+        "GH_PR_LIST_JSON" => stacked_pr("feat/unknown"),
+        "FAIL_GH_PARENT_LIST" => "1"
+      })
+
+      assert status.success?, "an unreadable probe must not abort the ship, got:\n#{err}"
+      assert(lines.any? { |l| l[0] == "GH" && l[1, 2] == %w[pr edit] },
+             "an unanswered probe must fall back to the repair")
+      assert_match(/could not read whether an open PR/, "#{out}#{err}",
+                   "the ship must say the probe failed, not imply it checked")
+    end
+  end
 
   def test_resume_repairs_a_draft_misbased_pr_and_skips_landed_steps
     with_repo do |dir|
