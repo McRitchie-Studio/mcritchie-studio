@@ -2064,26 +2064,33 @@ class Task < ApplicationRecord
     return if posted.nil?
     return unless posted.last.to_s.strip.downcase == OPERATOR_APPROVAL_WAITING
 
-    # THE REMEDY COMES FIRST, and it is a move the caller can make NOW. This body
-    # used to open with advice for last time ("ask BEFORE handing off") and name no
-    # way out, while bin/task's warning for the SAME situation printed a recovery
-    # path — two messages, one situation, different shapes. The order below is the
-    # whole remedy: `building` is in APPROVAL_REQUEST_STAGES, so the move returns
-    # early from #settle_operator_approval_past_request_window, and this guard then permits
-    # "waiting" there — which re-pulses the card, because the pulse reads
-    # approval_status (#waiting_for_operator_approval?), not the request stamp. The
-    # reverse order lands back here. Pinned by test/models/task_approval_request_guard_test.rb.
+    # THE REMEDY COMES FIRST, and it is a write the caller can make NOW — WITHOUT
+    # moving the task. This body twice told the reader the wrong thing. It first
+    # opened with advice for last time ("ask BEFORE handing off") and named no way
+    # out; the fix for that borrowed bin/task's recovery path, which was "move the
+    # task back and ask again" — and ms#1375 retired that from bin/task's warning and
+    # from the board doc as WRONG, because from `reviewed` on the code is already on
+    # `accepted`: the backward move un-merges nothing and only makes the board show
+    # `building` for landed code. This file was not in that diff, so the 422 an agent
+    # RECEIVES kept teaching the move its own CLI and doc had stopped teaching.
+    #
+    # THREE SURFACES, ONE SENTENCE: this message, bin/task's
+    # #warn_dropped_approval_request!, and the board doc's Operator Validation Gate
+    # item 8. Change one and you have made two of them lie — which is exactly how this
+    # one got missed. Pinned verbatim by test/models/task_approval_request_guard_test.rb.
     raise ArgumentError,
           "devops.approval_status cannot be set to #{OPERATOR_APPROVAL_WAITING.inspect} at stage " \
           "#{stage} — an approval request is only actionable in " \
           "#{APPROVAL_REQUEST_STAGES.join(" or ")}, so this save would settle it to " \
-          "#{OPERATOR_APPROVAL_NONE.inspect} and the board would never pulse. If you still need " \
-          "the operator's eyes, move the task back and ask again: bin/task move <task-slug> " \
-          "building, then bin/task update <task-slug> --approval #{OPERATOR_APPROVAL_WAITING}. If " \
-          "he already approved in words, record that instead: bin/task update <task-slug> " \
-          "--approval " \
-          "#{OPERATOR_APPROVAL_APPROVED}. Next time, ask BEFORE the work merges — a request " \
-          "now survives the handoff to submitted and pulses through review."
+          "#{OPERATOR_APPROVAL_NONE.inspect} and the board would never pulse. Record the " \
+          "operator's answer where you stand: bin/task update <task-slug> --approval " \
+          "#{OPERATOR_APPROVAL_APPROVED}, or bin/task update <task-slug> --approval " \
+          "#{OPERATOR_APPROVAL_CHANGES_REQUESTED} — both are legal at every stage. If you still " \
+          "need his eyes on merged work, point him at the QA candidate once the qa-release sweep " \
+          "deploys it. Do not move the task back to re-open the request: a backward move " \
+          "un-merges nothing — from reviewed on, the code is already on accepted. Next time, ask " \
+          "BEFORE the work merges — a request now survives the handoff to submitted and pulses " \
+          "through review."
   end
 
   def self.normalize_devops_metadata(raw)
