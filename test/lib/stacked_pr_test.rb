@@ -68,15 +68,16 @@ class StackedPrTest < Minitest::Test
   def spies(list_json, list_ok = true)
     said = []
     edited = []
-    { said: said, edited: edited,
-      list: ->(_head) { [list_json, list_ok] },
+    listed = []
+    { said: said, edited: edited, listed: listed,
+      list: ->(head) { listed << head; [list_json, list_ok] },
       edit: ->(head) { edited << head; true },
       say: ->(line) { said << line } }
   end
 
   def guard(base, sp, accepted: "accepted")
-    StackedPr.guard_base(base: base, accepted: accepted, slug: "demo-task",
-                         pr_url: "https://github.com/o/r/pull/701",
+    StackedPr.guard_base(base: base, base_read_ok: true, repo_scope: "o/r", accepted: accepted,
+                         slug: "demo-task", pr_url: "https://github.com/o/r/pull/701",
                          list: sp[:list], edit: sp[:edit], say: sp[:say])
   end
 
@@ -105,23 +106,67 @@ class StackedPrTest < Minitest::Test
     assert_empty sp[:said], "the ordinary case must be silent"
   end
 
-  def test_an_empty_base_proceeds_without_asking_gh
+  # ── AT A MERGE, ANYTHING UNPROVEN REFUSES (/tasks/review-refuses-unread-base) ────
+  #
+  # These two INVERT the answers bin/ship gets, deliberately, and the inversion is the
+  # point. ship calls StackedPr.assess and repairs on a doubt: a wrongly-retargeted stack
+  # is loud and recoverable (`gh pr edit <n> --base <parent>`) and ship never merges, so
+  # guessing wrong costs a retarget. guard_base is REVIEW's caller, and there the retarget
+  # is followed one line later by a MERGE — so guessing wrong costs the parent's unmerged
+  # work on `accepted`, which `bin/release prepare` then promotes to QA and production.
+  # The cost asymmetry inverts at the merge, so the decision inverts with it.
+  #
+  # This deliberately contradicts ms#1391's bullet "Empty or unread base falls to the
+  # repair path". That bullet was written for bin/ship's arm and is still right there.
+  def test_an_unreadable_probe_REFUSES_rather_than_retargeting
+    sp = spies("gh: 502 Bad Gateway", false)
+
+    assert_equal :refused, guard("feat/unknown", sp)
+    assert_empty sp[:edited], "a base the guard could not READ must not be retargeted into a merge"
+    assert_match(/could not read/, sp[:said].join("\n"), "the refusal must name the question that went unasked")
+  end
+
+  def test_an_empty_base_REFUSES_at_a_merge
     sp = spies(OPEN_PARENT)
 
-    assert_equal :proceed, guard("", sp)
+    assert_equal :refused, guard("", sp)
+    assert_empty sp[:edited]
+    assert_empty sp[:listed], "an empty base must not be sent to gh, where --head means NO FILTER"
+  end
+
+  # The base READ itself failing was not even reaching the guard: merge_feature_pr skipped
+  # the whole block on base_ok=false and merged with no base check at all.
+  def test_a_failed_base_read_refuses_before_anything_is_asked
+    sp = spies(OPEN_PARENT)
+    outcome = StackedPr.guard_base(base: "feat/parent", base_read_ok: false, repo_scope: "o/r",
+                                   accepted: "accepted", slug: "demo-task",
+                                   pr_url: "https://github.com/o/r/pull/701",
+                                   list: sp[:list], edit: sp[:edit], say: sp[:say])
+
+    assert_equal :refused, outcome
+    assert_empty sp[:listed], "a base that could not be read is not a base to probe against"
     assert_empty sp[:edited]
   end
 
-  def test_an_unreadable_probe_still_retargets
-    sp = spies("gh: 403", false)
+  # The probe is repo-scoped from a regex on the PR url. If that misses, an unscoped
+  # `gh pr list` runs against the CWD repo (the hub) and a real satellite stack comes back
+  # :not_stacked with ok=true — a false NEGATIVE that never even surfaces as unreadable.
+  def test_an_unresolvable_repo_scope_refuses_rather_than_probing_the_wrong_repo
+    sp = spies(OPEN_PARENT)
+    outcome = StackedPr.guard_base(base: "feat/parent", base_read_ok: true, repo_scope: "",
+                                   accepted: "accepted", slug: "demo-task",
+                                   pr_url: "https://github.com/o/r/pull/701",
+                                   list: sp[:list], edit: sp[:edit], say: sp[:say])
 
-    assert_equal :retargeted, guard("feat/unknown", sp)
-    assert_equal ["feat/unknown"], sp[:edited]
+    assert_equal :refused, outcome
+    assert_empty sp[:listed], "asking the WRONG repo answers a different question than the one owed"
+    assert_empty sp[:edited]
   end
 
   def test_a_failed_retarget_reports_itself
     said = []
-    outcome = StackedPr.guard_base(base: "feat/x", accepted: "accepted", slug: "demo-task",
+    outcome = StackedPr.guard_base(base: "feat/x", base_read_ok: true, repo_scope: "o/r",
+                                   accepted: "accepted", slug: "demo-task",
                                    pr_url: "https://github.com/o/r/pull/701",
                                    list: ->(_h) { ["[]", true] }, edit: ->(_h) { false },
                                    say: ->(l) { said << l })

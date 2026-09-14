@@ -758,21 +758,24 @@ def merge_feature_pr(slug, pr_url, merge_head: nil)
   #
   # The predicate is shared with bin/ship (StackedPr) so the builder and reviewer halves
   # cannot drift apart again, which is how this one survived the ship-side fix.
+  # EVERY ARM OF THIS DECISION IS IN THE LIB, INCLUDING THE FAILED READ. base_ok used to gate
+  # the whole block, so a failed base read SKIPPED the check and merged with no base judgement
+  # at all — and no test could see it, because this script has no execution harness. The read
+  # result is now a FACT HANDED DOWN (base_read_ok:), judged where a spy can drive it.
   base, base_ok = gh_capture("pr", "view", pr_url, "--json", "baseRefName", "-q", ".baseRefName")
-  if base_ok
-    repo_slug = pr_url.to_s[%r{github\.com/([^/\s]+/[^/\s]+)/pull/}, 1].to_s
-    outcome = StackedPr.guard_base(
-      base: base, accepted: ACCEPTED_BRANCH, slug: slug, pr_url: pr_url,
-      list: lambda do |head|
-        args = ["pr", "list", "--head", head, "--state", "open", "--json", "number,url"]
-        args += ["--repo", repo_slug] unless repo_slug.empty?
-        gh_capture(*args)
-      end,
-      edit: ->(_head) { gh_write("pr", "edit", pr_url, "--base", ACCEPTED_BRANCH) },
-      say: ->(line) { puts line }
-    )
-    return false unless %i[proceed retargeted].include?(outcome)
-  end
+  repo_slug = pr_url.to_s[%r{github\.com/([^/\s]+/[^/\s]+)/pull/}, 1].to_s
+  outcome = StackedPr.guard_base(
+    base: base, base_read_ok: base_ok, repo_scope: repo_slug,
+    accepted: ACCEPTED_BRANCH, slug: slug, pr_url: pr_url,
+    # The probe MUST carry --repo: pr-review reviews PRs in other repos by URL, and an
+    # unscoped `gh pr list` asks the CWD repo instead — which answers :not_stacked with
+    # ok=true, a false negative that never surfaces. A blank scope refuses in the lib above,
+    # so this lambda is only ever reached with one.
+    list: ->(head) { gh_capture("pr", "list", "--head", head, "--state", "open", "--json", "number,url", "--repo", repo_slug) },
+    edit: ->(_head) { gh_write("pr", "edit", pr_url, "--base", ACCEPTED_BRANCH) },
+    say: ->(line) { puts line }
+  )
+  return false unless %i[proceed retargeted].include?(outcome)
 
   # Pin the merge to the exact head the supervisor REVALIDATED. If the head advanced again
   # between revalidation and this merge (a late zap, a racing push), --match-head-commit makes
