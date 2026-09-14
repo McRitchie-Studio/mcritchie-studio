@@ -165,8 +165,9 @@ class BinHelpFlagClassTest < Minitest::Test
     # Its per-subcommand dictionary is AgentWorktreeCli::COMMANDS. Help exits 1 and the
     # refusal 2, because exit 0 from this script is read as a FACT by four callers:
     # bin/task:1869 as "THE WORKTREE WAS CREATED" (begin_step! die!s on anything else),
-    # bin/qa-intake:56 as "the registry was refreshed", and bin/release.rb:6999/:7047 as
-    # "the primary was restored" / "the reclaim ran". A fifth reader is not a script —
+    # bin/qa-intake:56 as "the registry was refreshed", and bin/release.rb#restore_primaries
+    # / bin/release.rb#reclaim_worktrees as "the primary was restored" / "the reclaim
+    # ran". A fifth reader is not a script —
     # `shell-hook zsh` is consumed as eval "$(...)" from the login shell — which is why
     # usage goes to stderr.
     #

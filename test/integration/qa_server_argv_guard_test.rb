@@ -120,8 +120,8 @@ class QaServerArgvGuardTest < ActionDispatch::IntegrationTest
   end
 
   # The other half, and the one that wedges a lane if it is wrong: the real calls
-  # must still be handed to the dispatcher. bin/release.rb:3198 shells the deploy
-  # line on every `prepare`.
+  # must still be handed to the dispatcher. bin/release.rb#prepare shells the deploy
+  # line on every sweep.
   test "the documented invocations are still handed to the dispatcher" do
     lines = [
       %w[list],

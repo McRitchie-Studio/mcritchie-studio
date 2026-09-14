@@ -538,7 +538,7 @@ class Release::MultiRepoMemberTest < ActiveSupport::TestCase
 
   # THE FENCE, part 4 — SCOPE. The QA exemption must not reach the `shipped` stamp.
   # `bin/release ship` genuinely fast-forwards turf-vault's release → main and
-  # records the sha at the push chokepoint (bin/release.rb:4314) whether or not a
+  # records the sha at the push chokepoint (bin/release.rb#push_frozen_main) whether or not a
   # deploy adapter fires — so ship evidence for this repo is REAL, and honouring
   # the exemption there would disarm a guard that currently works.
   test "[integration] the QA exemption does NOT extend to `shipped` — main must really move" do

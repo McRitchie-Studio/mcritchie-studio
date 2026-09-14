@@ -7,8 +7,8 @@ require "test_helper"
 # Found 2026-09-14 across three reviews in one day. Eight `bin/release.rb:<line>`
 # citations elsewhere in this repo were spot-checked after one ordinary commit
 # shifted that file; ALL EIGHT were already pointing at unrelated lines, one at a
-# blank line. Two more sat in a single table cell of the QA-release SOP, eleven
-# words from the sentence announcing the cite-the-seam discipline. A third review
+# blank line. Two more sat in the same table cell of the QA-release SOP as the
+# sentence announcing the cite-the-seam discipline. A third review
 # found a dead pointer inside the very change whose thesis was dead pointers.
 #
 # 8/8 is not carelessness. It is a format with no feedback loop: every commit to a
@@ -42,7 +42,7 @@ require "test_helper"
 # itself is the unit (top-level script code with no enclosing definition), and expect
 # the ratchet to ask you to pay for it.
 #
-# ITS LIMITS, STATED PLAINLY — three, and none of them is closable by resolution:
+# ITS LIMITS, STATED PLAINLY — four, and none of them is closable by resolution:
 #
 #   A. A citation that points at the WRONG SUBSTANTIVE LINE still passes lane 1.
 #      Deciding that `bin/release.rb:267` should have been `:293` needs the citation's
@@ -52,6 +52,9 @@ require "test_helper"
 #      a correct PAIR whose two anchors the heuristic crossed. A lane with that error
 #      rate teaches readers to ignore it. Lane 3 is the answer instead: the format that
 #      can rot this way stops growing, and shrinks as sites convert.
+#      LANE 2 HAS THE SAME CEILING: `definition?` is deliberately broad, so a seam can
+#      resolve while naming the wrong landmark in the right file. Resolution proves the
+#      symbol is THERE, never that it is the one the sentence is about.
 #   B. A citation whose FILE was renamed away is SKIPPED, not flagged. Lane 1 fires
 #      only on paths that resolve, because this repo's prose legitimately cites the
 #      engine gem (`lib/studio.rb`), Ruby stdlib (`lib/net/protocol.rb`), gem internals
@@ -63,6 +66,12 @@ require "test_helper"
 #      docs that teach the naming convention (`x_test.rb`, `foo_test.rb`,
 #      `widget_test.rb`). A placeholder is spelled exactly like a real name on purpose,
 #      so resolution cannot tell them apart, and 441 false positives is not a guard.
+#   D. LANE 3 IS A TOLL BOOTH, NOT A BAN — and its monotonicity is a CONVENTION, not a
+#      mechanism. `LINE_CITATION_CEILING` is a plain constant, and nothing here compares
+#      it against the value on `accepted`; a diff that raises it is legal and merely
+#      visible. That is the intended design — it makes the seam form the cheap path and
+#      forces any exception onto a reviewable line — but it is enforced by REVIEW, so do
+#      not read a green lane 3 as proof that nobody bought their way past it.
 class CitationResolutionGuardTest < ActiveSupport::TestCase
   # The directories a citation into THIS repo can start with. A token that starts
   # anywhere else is not addressed to this checkout and is none of this guard's
@@ -74,12 +83,23 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
 
   # A RUBY BACKTRACE FRAME IS EVIDENCE, NOT A POINTER. `foo.rb:118:in 'block in
   # apply_moves!'` inside a fixture is a captured crash — what the interpreter said
-  # at the SHA it crashed on. Two such frames live in the archive-failure fixtures,
-  # and flagging them would push the next editor to renumber a recorded backtrace,
-  # i.e. to falsify the evidence the test exists to pin. The exemption is the
-  # interpreter's own frame GRAMMAR (`:<line>:in `), not a phrase, so it cannot be
-  # borrowed by prose that merely wants to be excused.
-  BACKTRACE_FRAME = /\A:in\s/
+  # at the SHA it crashed on. FIVE such frames live here, across three files
+  # (test/lib/docs_archive_failure_report_test.rb,
+  # test/lib/release_archive_docs_diagnosis_test.rb and
+  # test/lib/release_consumer_checkout_test.rb), and flagging them would push the
+  # next editor to renumber a recorded backtrace, i.e. to falsify the evidence the
+  # test exists to pin.
+  #
+  # THE QUOTE IS WHAT MAKES THIS A GRAMMAR AND NOT A PHRASE. Ruby prints
+  # `:<line>:in ` and then the frame label IN QUOTES — backtick-quote on older
+  # rubies, straight quotes on 3.4 — and both spellings are in this tree. An
+  # earlier draft required only `:in `, which exempted any sentence that typed
+  # those characters after a line number: "See bin/ship:128:in question for the
+  # discarded status." was measured exempt. That is worse than a lane-1 miss,
+  # because an exempted citation leaves the CENSUS entirely — lane 3 stops
+  # counting it too, so prose could mint rotting pointers under the ratchet.
+  # Requiring the quote costs nothing: all five real frames carry one.
+  BACKTRACE_FRAME = /\A:in\s+["'`]/
   SEAM_CITATION = %r{\b((?:#{DIRS_RE})/[A-Za-z0-9_./-]*[A-Za-z0-9_])\#([A-Za-z_][A-Za-z0-9_]*[!?]?)}
 
   # A line carrying nothing but a block terminator. Citing one is always rot: nobody
@@ -132,17 +152,20 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
   # SUM is invariant under conversion: a site that changes form still counts once, and
   # only a rotted pattern or a dead glob can drop it.
   #
-  # Measured 2026-09-14 at 564c21e9, after this task's conversions: 1561 files,
-  # 77 `path:line` + 72 `path#seam` = 149 citations.
+  # Measured 2026-09-14 on this branch merged onto accepted ae5e2901, after this
+  # task's conversions: 1564 files, 63 `path:line` + 91 `path#seam` = 154 citations.
   MINIMUM_FILES = 1200
   MINIMUM_CITATIONS = 100
 
   # LANE 3 — THE RATCHET. The count of `path:line` citations whose path resolves.
-  # THIS NUMBER ONLY EVER MOVES DOWN. It is a BOUND, not a measurement, so unlike a
-  # stated count it cannot go quietly stale in the dangerous direction — a tree that
-  # drifts under it fails loudly, and one that improves under it simply passes. This
-  # task took it from 112 to 77 by converting 35 citations to seams.
-  LINE_CITATION_CEILING = 77
+  # THIS NUMBER IS ONLY EVER LOWERED — by convention, enforced in review, not by any
+  # check here (limit D). It is a BOUND, not a measurement, so unlike a stated count it
+  # cannot go quietly stale in the dangerous direction — a tree that drifts under it
+  # fails loudly, and one that improves under it simply passes. This task took it from
+  # 107 to 63, while the seam population rose from 36 to 91 over the same diff. (The
+  # pre-task figure was first written here as 112 — itself an unverified number, in
+  # this file. Both ends are re-derivable by running this lane's own census.)
+  LINE_CITATION_CEILING = 63
 
   def test_every_path_line_citation_lands_on_a_substantive_line
     offenders = census[:line].filter_map do |c|
@@ -274,6 +297,63 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
              "the verdict changed with the WORDING, which is the hole this guard was " \
              "built to avoid: #{sentence.inspect}"
     end
+  end
+
+  # THE BACKTRACE EXEMPTION IS THE ONE WAY OUT OF THE CENSUS, so it is the one rule
+  # worth attacking. An exempted citation is not merely unchecked by lane 1 — it is
+  # never counted by lane 3 either, so a wide exemption is a hole in the ratchet, not
+  # just in the resolution check.
+  #
+  # The real frames are taken from the archive-failure fixtures VERBATIM, in both
+  # spellings this tree contains (backtick-quote and straight-quote). The evasions are
+  # the shapes a sentence can reach for: the bare `:in ` the first draft accepted, and
+  # the same words with the frame's quote pushed out of reach.
+  REAL_FRAMES = [":in `git': git ls-files", ":in 'DocsArchive.git': git mv",
+                 ":in 'block in apply_moves!'"].freeze
+  NOT_FRAMES = [":in question for the discarded status.", ":in the sweep", ":inbound",
+                ":in  — see above", ":in the release, 'quoted' later"].freeze
+
+  def test_the_backtrace_exemption_requires_the_frames_own_quote
+    REAL_FRAMES.each do |tail|
+      assert BACKTRACE_FRAME.match?(tail),
+             "#{tail.inspect} is what the interpreter prints; exempting it is the whole point"
+    end
+
+    NOT_FRAMES.each do |tail|
+      refute BACKTRACE_FRAME.match?(tail),
+             "#{tail.inspect} is prose, not a frame — exempting it would let a sentence " \
+             "carry a rotting pointer out of the census entirely, past lane 3 as well as lane 1"
+    end
+  end
+
+  # AND THE EXEMPTION MUST STILL COVER EVERY FRAME ACTUALLY IN THE TREE. This is the
+  # measurement that made tightening safe rather than a guess: if a future fixture
+  # records a frame in a spelling the rule does not know, this fails HERE — naming the
+  # file — instead of quietly re-flagging a recorded backtrace as a dead citation.
+  def test_every_recorded_frame_in_this_repo_is_still_exempt
+    seen = 0
+
+    scan_files.each do |path|
+      body = read_text(path) or next
+
+      body.to_enum(:scan, LINE_CITATION).each do
+        m = Regexp.last_match
+        next unless target_lines(m[1])
+
+        tail = body[m.end(0), 8].to_s
+        next unless /\A:in\s/.match?(tail)
+
+        seen += 1
+        assert BACKTRACE_FRAME.match?(tail),
+               "#{relative(path)} records #{m[0]}#{tail.inspect}, which reads as an interpreter " \
+               "frame but carries no quote — decide whether it is evidence (widen the rule) or " \
+               "prose (rewrite it), because right now it is escaping the census"
+      end
+    end
+
+    assert_operator seen, :>=, 5,
+                    "found only #{seen} backtrace frames (expected >= 5); the fixtures that " \
+                    "motivated this exemption have moved, so a green run here proves nothing"
   end
 
   # THE OTHER HALF, and the one a blunter rule fails: real code must NOT read as a

@@ -108,9 +108,8 @@ sit at that offset today.
 
 That is measured, not feared. On 2026-09-14 eight `bin/release.rb:<line>` citations
 were spot-checked after one ordinary commit shifted that file, and **all eight were
-already pointing at unrelated lines**, one at a blank line. Two more sat in a single
-table cell of the QA-release SOP, eleven words from the sentence announcing this very
-discipline.
+already pointing at unrelated lines**, one at a blank line. Two more sat in the same
+table cell of the QA-release SOP as the sentence announcing this very discipline.
 
 | Form | Write it as | Rots? | Checked by |
 |------|-------------|-------|------------|
@@ -134,8 +133,9 @@ The rules, in order:
 
 `test/docs/citation_resolution_guard_test.rb` is the teeth. It keys on **resolution**
 — it opens the cited file and looks — never on the wording around the citation, so
-no rephrasing gets past it. It states its own three limits in its header; read them
-before trusting a green run to mean more than it does.
+no rephrasing gets past it. It states its own four limits in its header; read them
+before trusting a green run to mean more than it does — in particular limit D, which
+says the ratchet is a toll booth kept monotonic by REVIEW, not by a check.
 
 ## Drift Review
 
