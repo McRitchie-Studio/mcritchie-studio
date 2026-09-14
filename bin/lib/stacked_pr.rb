@@ -19,12 +19,14 @@ require_relative "fast_lane"
 # ONE PREDICATE, TWO CALLERS. bin/ship (the builder half) and bin/pr-review (the reviewer
 # half) ask the same question and must not answer it differently; the reviewer half was
 # filed precisely because the two had drifted for a release. What each caller DOES with the
-# answer still differs — ship re-roots, review refuses — and that stays theirs.
+# answer still differs — ship leaves the base alone, review refuses — and that stays theirs.
 #
 # AN EMPTY BASE IS NOT AN ANSWER. `gh pr list --head "" --state open` is NO FILTER to real
 # gh and returns EVERY open PR, so an unread or absent base would otherwise name the first
-# open PR as the parent and preserve a mis-based PR on a coincidence. :no_base, like
-# :unreadable, falls to the repair.
+# open PR as the parent and preserve a mis-based PR on a coincidence. :no_base therefore
+# never reaches gh. What the callers then DO with it is NOT the same: bin/ship repairs it,
+# while guard_base PROCEEDS, leaving bin/pr-review's long-standing empty-base behaviour
+# exactly as it was. :unreadable falls to the repair in both.
 module StackedPr
   module_function
 

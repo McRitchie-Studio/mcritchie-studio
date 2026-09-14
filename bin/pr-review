@@ -750,8 +750,11 @@ def merge_feature_pr(slug, pr_url, merge_head: nil)
   # (or the operator's hold) to answer. The task stays `submitted` and the refusal NAMES the
   # parent, so the next reader knows what to wait on rather than re-deriving it. Everything
   # else still self-heals — a merged parent, a closed-unmerged one, a deleted branch,
-  # `release`, `main` — and an unreadable or EMPTY base falls to the repair too, because
-  # `gh pr list --head ""` is NO FILTER to gh and would name the first open PR by coincidence.
+  # `release`, `main` — and so does an UNREADABLE probe. An EMPTY base is the one arm that
+  # does neither: it proceeds here unprobed and UNREPAIRED, exactly as the old `!base.empty?`
+  # line did, and it never reaches gh, where `--head ""` is NO FILTER and would name the
+  # first open PR as a parent by coincidence. bin/ship REPAIRS an empty base instead — the
+  # two halves differ there, and only there.
   #
   # The predicate is shared with bin/ship (StackedPr) so the builder and reviewer halves
   # cannot drift apart again, which is how this one survived the ship-side fix.
