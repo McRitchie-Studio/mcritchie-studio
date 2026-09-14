@@ -91,7 +91,7 @@ class Release
     # filed everything below it — the trailing bullet and a whole `### Docs`
     # section — under `## 0.74.4`, a version that had already shipped. The rolled
     # file rides the same commit as version_file + Gemfile.lock onto
-    # origin/release BEFORE `gem push`, so the artifact and its v* tag would carry
+    # origin/accepted BEFORE `gem push`, so the artifact and its v* tag would carry
     # that mis-filed history.
     #
     # It was blind exactly where it matters: the drift guard fails closed only

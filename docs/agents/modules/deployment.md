@@ -429,8 +429,10 @@ How a gem rides a release:
    to leave the engine's lock behind and redden EVERY open engine PR through
    its own `bin/gem-drift-check` lane. `bump_producer_locks_for_accepted`
    closes that, committing onto **`origin/accepted`** (where those PRs are
-   based; `bin/release` never otherwise writes `accepted`, and nothing merges
-   `release` back down). `assert_no_lock_drift!` then refuses to leave any repo
+   based, and nothing merges `release` back down). The sweep's other
+   `accepted` write is the step 2 version commit (`commit_gem_version!`) — a
+   version and its lockfile, never a consumer lock — so neither step stands in
+   for the other. `assert_no_lock_drift!` then refuses to leave any repo
    resolving a just-published gem older than what was published.
 
 Operational notes:
