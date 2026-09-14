@@ -355,10 +355,10 @@ module FullSuiteGate
   #
   # WHY THE SECTION CHECK STAYS IN THE `||`. Both registered gems declare a
   # release_check, so on today's registry the two predicates agree on every repo
-  # and this is behaviour-preserving (pinned by
-# test/lib/fast_check_test.rb#test_registry_gated_is_keyed_on_the_declaration_not_the_section
-# and by test/lib/cert_lint_lane_waiver_test.rb — there is no full_suite_gate_test).
-# They can
+  # and this is behaviour-preserving — pinned by test/lib/fast_check_test.rb's
+  # test_registry_gated_is_keyed_on_the_declaration_not_the_section and by
+  # test/lib/cert_lint_lane_waiver_test.rb. (There is no full_suite_gate_test; this
+  # comment named one until 2026-09-14.) They can
   # diverge exactly two ways, and the OR is the right answer to both: a GEM that
   # omits release_check still has no test database and no bin/rails, so it must
   # KEEP the skip; and an `apps` row that declares one — turf-vault — must now
