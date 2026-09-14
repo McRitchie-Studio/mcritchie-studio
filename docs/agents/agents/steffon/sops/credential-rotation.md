@@ -473,7 +473,7 @@ the key you just rotated out:
 |---|---|---|
 | turf-vault `VaultState.signers` — contest/treasury 2-of-3 | `update_signers` (on-chain, 2-of-3) | `turf-monster/docs/SOLANA.md` signer list |
 | turf-vault **Squads V4 2-of-3 — MAINNET PROGRAM UPGRADE AUTHORITY** | a **Squads config transaction**, at `app.squads.so` | `turf-vault/scripts/squad.json` → `members.alex_bot` |
-| `scripts/squad-upgrade.js`, which the bot SIGNS for (`ALEX_BOT_KEY`) but no longer VOTES with — the two approvals are `ALEX_KEY` and `MASON_KEY` | all three supplied per run from 1Password, not stored config vars | `squad-upgrade.js:102-104` `loadKey("ALEX_BOT_KEY")` / `loadKey("ALEX_KEY")` / `loadKey("MASON_KEY")` |
+| `scripts/squad-upgrade.js`, which signs upgrades as `ALEX_BOT_KEY` (one of the two approvals; Mason casts the other as `MASON_KEY`) | the BOT key is supplied per run from 1Password, not a stored config var — Mason's is his own, and the human Alex key (`7ZDJ…`) is a Phantom export with no filed item at all | `squad-upgrade.js:87-88` `loadKey("ALEX_BOT_KEY")` / `loadKey("MASON_KEY")` |
 
 **`update_signers` does not touch Squads membership.** They are separate systems
 that happen to share a pubkey: one is turf-vault's own in-program multisig, the
@@ -493,14 +493,14 @@ symmetric with `removeMember`: remove takes a bare pubkey, add takes a
 `Member { key, permissions: { mask: u8 } }`, so a mask is ALWAYS chosen — by you,
 or by whatever the Squads UI had checked when you were not looking. **A rotation
 swaps a key; it does not re-scope authority**, so the mask to grant is the one the
-OUTGOING key already holds. Re-scoping is
-[its own ceremony](#the-mask-narrowing-ceremony-two-humans-separate-act) below, a
-separate act.
+OUTGOING key already holds. Re-scoping is a separate act, and would be a separate
+procedure — one was written for narrowing the bot and was declined before it ran
+(see the table below).
 
-That number is **7 today and 5 after that ceremony has run**, which is why this
-procedure names no literal anywhere: ONE constant, read from the chain, serves
-both states. Run this BEFORE you propose — the outgoing key must still be a member
-for it to answer, and after the execute it is gone:
+So this procedure names no mask literal anywhere: ONE constant, read from the
+chain, grants whatever is live on the day. Run it BEFORE you propose — the
+outgoing key must still be a member for it to answer, and after the execute it is
+gone:
 
 ```bash
 # Reuses squads_members() from "Verifying the Squads rotation" below.
@@ -520,27 +520,34 @@ only thing that signs upgrades. Recomputed 2026-09-13, after
 
 | Bit | Value | Where `squad-upgrade.js` needs it |
 |---|---|---|
-| `Initiate` | 1 | `:190` `creator: alexBot.publicKey` (the `vaultTransactionCreate` call) |
-| `Vote` | 2 | **NOT USED.** `:211` `member: alex,` and `:214` `member: mason,` cast both approvals; `:207` `creator: alex.publicKey` opens the proposal (with `rentPayer: alexBot.publicKey`, so the bot still pays its rent) |
-| `Execute` | 4 | `:222` `member: alexBot.publicKey` (the `vaultTransactionExecute` call) |
+| `Initiate` | 1 | `:176` `creator: alexBot.publicKey` (`vaultTransactionCreate`) and `:179` `creator: alexBot` (`proposalCreate`) |
+| `Vote` | 2 | `:182` `member: alexBot,` — the bot casts ONE of the two approvals; Mason casts the other at `:185` |
+| `Execute` | 4 | `:193` `member: alexBot.publicKey` (`vaultTransactionExecute`) |
 
 Every citation above names the line the ARGUMENT is on, not the line the call
 opens — the convention this table has used since it was written, stated because
 the two differ by two to four lines in this script and a reader who checks one
 expecting the other concludes the table has rotted.
 
-`Initiate | Execute` = **mask 5**. The bit values are `@sqds/multisig`'s own
+`Initiate | Vote | Execute` = **mask 7**. The bit values are `@sqds/multisig`'s own
 (`Permission.Initiate = 0b001`, `Vote = 0b010`, `Execute = 0b100`), measured
 against 2.1.4, the version turf-vault pins. Grant anything narrower than what the
 script uses and the rotation still "succeeds" — the break lands at the NEXT
 upgrade, in whichever call lost its bit, weeks later and far from this SOP.
 
-**The live mask and the needed mask are not the same number today.** The bot
-still holds 7 on chain; the script needs 5. Narrowing it is the ceremony below,
-run AFTER this rotation and never inside it. That is exactly why the rotation
-reads `$WANT_MASK` off the chain instead of naming a number: walked today it
-grants and grades **7**, walked after the ceremony it grants and grades **5**, and
-the procedure does not change between them.
+**NARROWING THE BOT WAS PROPOSED AND DECLINED** (Mr. McRitchie, 2026-09-14), so
+7 is not a number in transition — it is the answer, for a reason worth keeping
+here. Squads validates the threshold against the members holding **Vote**, so
+approvals count only from voters. Dropping the bot's Vote would leave exactly TWO
+voters against threshold 2: lose either human key and upgrade authority freezes
+permanently, with no quorum left to add a replacement. The spare was judged worth
+more than the narrowing, knowing that a leaked bot key plus one human key still
+reaches quorum.
+
+The rotation still reads `$WANT_MASK` off the chain rather than naming 7,
+because a rotation must grant what the outgoing key HELD — whatever that is on
+the day — and a literal cannot do that. It is also what keeps this procedure
+correct if the mask ever does change.
 
 **There is no ConfigAction that edits an existing member's permissions.** The seven
 variants are add member, remove member, change threshold, set timelock, add spending
@@ -745,152 +752,6 @@ their wallets, by re-running step 4 with the correct mask. Discovered at the nex
 upgrade instead, it is the same two-human ceremony scheduled from cold — which is
 the entire reason this reads the mask rather than the member list.
 
-
-### The mask-narrowing ceremony (two humans, separate act)
-
-> **This is not part of a rotation.** It re-scopes authority instead of swapping
-> a key, and Mr. McRitchie's decision (2026-09-10) puts it AFTER the end-of-week
-> credential rotation, never folded into it: a rotation must be
-> behaviour-preserving, or a later failure has two candidate causes.
-
-**What it does.** Drops `Vote` from the Alex Bot member of the turf-vault Squads
-2-of-3 (mask 7 → **5**, `Initiate|Execute`). The bot key lives in Heroku config
-AND on disk; while it can vote, a LEAKED BOT KEY PLUS ANY ONE HUMAN KEY reaches
-quorum over mainnet upgrade authority. After this, every upgrade needs BOTH
-humans. There is no third human — that was considered and declined.
-
-**PRECONDITION, and it is the whole reason this is its own act.** The deployed
-`turf-vault/scripts/squad-upgrade.js` on `main` must already approve as the two
-HUMANS. Narrowing first would ship a permission the tooling violates, and the
-break would land at the next upgrade with an operator holding a buffer.
-
-**READ `main`, NOT YOUR CHECKOUT.** A local working tree is the wrong artefact
-for a claim about what is deployed, and on this ladder it is the DANGEROUS wrong
-artefact: `accepted` and `release` carry the two-human script days before `main`
-does, and this ceremony is scheduled into exactly that window. Measured
-2026-09-13 — the turf-vault checkout was 15 commits behind `origin/main`, and
-grepping it would have reported PASS for a script `main` does not have. The
-grader below fetches `main` and reads the file out of it, and refuses when the
-file is missing rather than printing the PASS value for an empty stream
-(`grep -c` prints `0` for no input, which is exactly what PASS looks like):
-
-```bash
-check_upgrade_script_votes_human() {
-  local repo=/Users/alex/projects/turf-vault script bot humans
-  git -C "$repo" fetch -q origin main || { printf 'FAIL  could not fetch origin/main — this check is VOID\n'; return 1; }
-  script=$(git -C "$repo" show origin/main:scripts/squad-upgrade.js) || {
-    printf 'FAIL  origin/main has no scripts/squad-upgrade.js — renamed or moved; find it before you narrow anything\n'
-    return 1
-  }
-  [ -n "$script" ] || { printf 'FAIL  origin/main:scripts/squad-upgrade.js is EMPTY; this check is VOID\n'; return 1; }
-
-  bot=$(printf '%s\n' "$script" | grep -A3 'proposalApprove' | grep -c 'member: alexBot')
-  humans=$(printf '%s\n' "$script" | grep -c 'member: alex,\|member: mason,')
-
-  [ "$bot" = 0 ] || { printf 'FAIL  origin/main still approves as the bot (%s site(s)) — do NOT narrow the mask yet\n' "$bot"; return 1; }
-  [ "$humans" = 2 ] || { printf 'FAIL  origin/main casts %s human approval(s), expected 2\n' "$humans"; return 1; }
-
-  printf 'PASS  origin/main approves as two humans and never as the bot\n'
-}
-
-check_upgrade_script_votes_human
-```
-
-A `FAIL` here is the answer: stop, and ship the script half to `main` first.
-
-**SECOND PRECONDITION — A DEVNET REHEARSAL MUST HAVE PASSED.** Mr. McRitchie's
-ruling, 2026-09-13: this ceremony does not run on mainnet until the whole of it
-has been walked on devnet first. The reason is specific, not ceremonial — three
-questions decide whether mask 5 works at all, and NONE of them can be answered
-from the vendored IDL, which carries no per-instruction permission docs, or from
-the Rust program, which is not vendored here:
-
-1. Does `proposalCreate` require `Initiate`, or `Vote`? (The script sidesteps it
-   by having a human open the proposal, but the ceremony should know.)
-2. Is `Initiate` alone enough for `vaultTransactionCreate`, and `Execute` alone
-   enough for `vaultTransactionExecute`, at the pinned @sqds/multisig 2.1.4?
-3. Can a member at mask 5 still initiate and execute an upgrade end to end?
-
-The rehearsal answers them by experiment:
-
-1. Create a NEW Squads multisig on devnet — throwaway keys, not the operator's.
-2. Seed three members at mask 7, threshold 2, mirroring mainnet.
-3. Run the remove-plus-add above against the devnet bot member, narrowing it to
-   mask 5, approved by the two other members.
-4. Deploy a turf-vault build to devnet, set its upgrade authority to that
-   multisig's vault PDA, and run a REAL upgrade end to end through
-   `turf-vault/scripts/squad-upgrade.js` with the bot at mask 5.
-5. Record the multisig address, the signatures and the outcome on the task.
-
-A rehearsal that stops before step 4 answers 1 and 2 but not 3.
-
-**Attempted 2026-09-13 and NOT completed, recorded so the gate is not mistaken
-for done.** The tooling is here (`solana` 3.1.15, `anchor`, a built
-`target/deploy/turf_vault.so` at 543,608 bytes) and devnet is not mainnet, so
-there was no policy obstacle — but there is no funded devnet payer. Both faucets
-refused (`solana airdrop 2 --url devnet` and the same through the configured
-Helius devnet endpoint: "airdrop request failed ... rate limit"), and a program
-of that size needs roughly 3.8 SOL of rent for ProgramData plus as much again for
-the buffer. The only funded devnet keys on this machine are the operator's own
-(Alex Bot, Alex, Mason), and the humans' keys are exactly what an agent must not
-hold. So the rehearsal is the OPERATOR's to run, and until it has, this ceremony
-does not start.
-
-**The moves.** Same mechanism as the rotation above, at `app.squads.so`, and the
-same one-transaction rule:
-
-1. **One config transaction**, never two: `removeMember(<bot pubkey>)` +
-   `addMember(<bot pubkey>, { mask: 5 })`, threshold unchanged at 2. There is no
-   ConfigAction that edits an existing member's permissions — the seven variants
-   are add member, remove member, change threshold, set timelock, add spending
-   limit, remove spending limit, set rent collector — so a mask change costs a
-   remove plus an add. Split them and the multisig sits at 2 members / threshold
-   2 between executes, a 2-of-2 where losing either key is unrecoverable, and the
-   pending add is STALE (`0x1777` = 6007).
-2. **The two HUMANS approve** — never the bot, whose authority is the subject of
-   the transaction.
-3. **Execute**, then stop and verify. Executing any config transaction sets
-   `stale_transaction_index`, so **any upgrade proposal already in flight dies**:
-   land or abandon those first.
-4. **Read the mask back off the chain** with the grader below. A wrong mask is
-   repairable right now, while both humans are still at their wallets; discovered
-   at the next upgrade it is this whole ceremony again, from cold.
-5. **The next upgrade is the real proof.** Run one (devnet first if one is due)
-   with both humans present: `squad-upgrade.js` prints its own quorum line
-   (`quorum: 2 human approval(s) vs threshold 2`) from the ON-CHAIN masks before
-   it spends, and refuses if a bit it needs is gone.
-
-```bash
-# After execute. Reuses squads_members() from the rotation section above.
-BOT_MEMBER=<bot pubkey>
-check_squads_mask() {
-  local ms bad=0 threshold count bot_mask
-  ms=$(squads_members) || { printf 'FAIL  could not read the Multisig account — this verification is VOID\n' >&2; return 1; }
-  threshold=$(printf '%s\n' "$ms" | awk '$1=="threshold" {print $2}')
-  count=$(printf '%s\n' "$ms" | awk '$1!="threshold"' | wc -l | tr -d ' ')
-  bot_mask=$(printf '%s\n' "$ms" | awk -v k="$BOT_MEMBER" '$1==k {print $2}')
-
-  [ "$count" = 3 ]     || { printf 'FAIL  %s members, expected 3\n' "$count"; bad=1; }
-  [ "$threshold" = 2 ] || { printf 'FAIL  threshold %s, expected 2\n' "$threshold"; bad=1; }
-  [ "$bot_mask" = 5 ]  || { printf 'FAIL  bot mask is %s, expected 5 (Initiate|Execute). A 7 means the narrowing did not land; a 1 or 4 breaks the next upgrade.\n' "${bot_mask:-none}"; bad=1; }
-  # Every wrong human, not just the first: two bad names is a different problem
-  # from one, and finding the second only after fixing the first is another
-  # two-human ceremony from cold.
-  printf '%s\n' "$ms" | awk -v bot="$BOT_MEMBER" '
-    $1!="threshold" && $1!=bot && $2!=7 { printf "FAIL  human member %s holds mask %s, expected 7\n", $1, $2; n++ }
-    END { exit (n ? 1 : 0) }' || bad=1
-
-  [ "$bad" = 0 ] && printf 'PASS  3 members, threshold 2, bot mask 5, both humans mask 7\n'
-  return "$bad"
-}
-
-check_squads_mask
-```
-
-**Receipt.** Its own row in the rotation log, described as a permission change and
-not as a rotation, naming the mask before and after. If it is run in the same week
-as a credential rotation, the two rows stay separate — that separation is the
-record that the rotation was behaviour-preserving.
 
 ### The second shape: one identity, many consumers
 
