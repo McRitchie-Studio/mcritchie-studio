@@ -696,6 +696,10 @@ class ReleaseGemAllocationTest < Minitest::Test
     git(repo, "add", "-A")
     git(repo, "commit", "--quiet", "-m", "Release #{version}")
     git(repo, "push", "--quiet", "origin", "release")
+    # The version commit reaches `accepted` too: prepare WRITES it there and the
+    # batch promote carries it to `release`, so a published gem leaves the two rungs
+    # level. Pushing only `release` here would model a rung this code no longer has.
+    git(repo, "push", "--quiet", "origin", "release:refs/heads/accepted")
 
     hook = File.join(origin, "hooks", "pre-receive")
     File.write(hook, "#!/bin/sh\nwhile read old new ref; do case \"$ref\" in refs/tags/*) " \
@@ -709,6 +713,7 @@ class ReleaseGemAllocationTest < Minitest::Test
     git(repo, "add", "-A")
     git(repo, "commit", "--quiet", "-m", "work promoted after #{version} published")
     git(repo, "push", "--quiet", "origin", "release")
+    git(repo, "push", "--quiet", "origin", "release:refs/heads/accepted")
   end
 
   def test_a_publish_whose_tag_push_failed_refuses_instead_of_skipping

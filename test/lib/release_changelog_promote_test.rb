@@ -4,10 +4,12 @@
 # a new CHANGELOG entry under a version heading that already shipped — against
 # real git (/tasks/rolled-changelog-merge-misfiles).
 #
-# THE DEFECT. The roll (Release::Changelog.roll) lands on `release` only, in the
-# `Release <version>` commit. `accepted` keeps its un-rolled `## Unreleased` until
-# something merges that commit back, and builders keep writing into it. So the
-# next promote merges an un-rolled bucket into a rolled file, and git does one of
+# THE DEFECT. An `accepted` that has not absorbed the `Release <version>` commit keeps
+# its un-rolled `## Unreleased` while builders keep writing into it. Prepare now writes
+# the roll (Release::Changelog.roll) onto `accepted` and promotes it from there
+# (/tasks/carry-release-commit-onto-accepted), so this is a rung a sweep missed rather
+# than the resting state it once was — and the guard stays armed for it. That
+# promote merges an un-rolled bucket into a rolled file, and git does one of
 # two things (measured on studio-engine's real file with the real roll):
 #
 #   * a bullet added INSIDE an existing `###` subsection merges CLEAN and lands

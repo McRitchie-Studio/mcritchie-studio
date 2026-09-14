@@ -1759,9 +1759,11 @@ end
 # THE CHANGELOG MISFILE GUARD (/tasks/rolled-changelog-merge-misfiles) — a merge
 # across a roll, refused BEFORE the promote instead of discovered after it.
 #
-# The roll (roll_changelog!) lands on `release` only, in the `Release <version>`
-# commit. `accepted` keeps its un-rolled `## Unreleased` until something merges that
-# commit back, and builders keep writing into it. So the next promote merges an
+# The roll (roll_changelog!) lands on `accepted`, in the `Release <version>` commit,
+# and reaches `release` through THIS promote — so a completed sweep leaves both rungs
+# agreeing about which entries shipped. The guard stays armed for every `accepted` that
+# did NOT absorb a roll: a rung a sweep never reached, or a branch that forked before
+# one and merged its bucket back in. That promote merges an
 # un-rolled bucket into a rolled file, and git either merges a bullet added inside an
 # existing `###` subsection CLEANLY under the heading the roll wrote — a version that
 # shipped without it — or, for a new subsection at the top, CONFLICTS. Measured on
@@ -3413,7 +3415,8 @@ def prepare
   #     idempotent verify (already-live → skip).
   #
   #     PHASE 0 leads: ALLOCATE each swept gem's version from its members and
-  #     commit it (with its Gemfile.lock) onto origin/release. It runs above
+  #     commit it (with its Gemfile.lock and its rolled CHANGELOG.md) onto
+  #     origin/accepted, then promote that onto origin/release. It runs above
   #     phase 1 because phase 1's stranded-work guard is the BACKSTOP for
   #     allocation not happening — the guard stays armed and still aborts when
   #     the version has not advanced, it just has nothing left to catch on the
@@ -5192,7 +5195,7 @@ def allocate_gem_versions!(gem_groups, label: nil)
 
   # TWO PHASES, for the same reason phase 1 below has two: DECIDE for every swept
   # gem before WRITING to any of them. Deciding is a pure read; writing pushes a
-  # commit onto origin/release. Interleaving them would let gem A's version land
+  # commit onto origin/accepted. Interleaving them would let gem A's version land
   # while gem B's decision is still unknown — the "mutate before validate"
   # objection that got allocation descoped when the module first shipped
   # (finding-d0621629719b). Splitting the loop answers it: a refusal anywhere
@@ -5201,9 +5204,12 @@ def allocate_gem_versions!(gem_groups, label: nil)
   # And the residual risk is bounded by design. What phase 0 writes is a git
   # commit, which is REVERSIBLE; the irreversible act — `gem push` — still
   # happens only after phase 1 has validated every gem. A write-phase failure on
-  # a later gem therefore leaves an earlier gem's version commit on `release`,
-  # and that is self-healing rather than stranded: the next run reads it as
-  # "already advanced", skips it, and publishes it once the sweep completes.
+  # a later gem therefore leaves an earlier gem's version commit on `accepted`,
+  # and that is self-healing rather than stranded: the next run reads `accepted`,
+  # reads it as "already advanced", skips it, and publishes it once the sweep
+  # completes. Leaving it on `accepted` is also what keeps it visible: a version
+  # commit moved onto `release` ALONE is the mixed state phase 0a skips silently
+  # over (see the tag-baseline note in gem_allocation_plan).
   failures = []
   plan = gem_groups.filter_map { |group| gem_allocation_plan(group, failures) }
   abort_allocation!(failures)
@@ -5267,6 +5273,16 @@ def gem_allocation_plan(group, failures)
   # on release-side commits (the publish tags the release tip), which `accepted` does not
   # contain, so `git describe` from `accepted` would walk past the newest tag and read a
   # stale floor — the one input that must never be stale, because it decides the number.
+  #
+  # ⚠ THE MIXED STATE THIS SPLIT ADMITS, AND NOTHING REFUSES IT YET. `current` comes from
+  # `accepted` (above) while the tag floor comes from `release` (here). On a `release` that
+  # carries a `Release <version>` commit `accepted` does NOT contain — a hand-set version
+  # pushed to `release` alone, or a legacy pre-2026-09-13 allocation — the tag lands ahead
+  # of `accepted`, `tag..accepted` is empty, and the run prints "no commits past the last
+  # published tag — nothing to publish" and SKIPS. The skip is silent and reads exactly
+  # like a gem with no work in it. The split is deliberate; the silence is a known gap
+  # (/tasks/carry-release-commit-onto-accepted). Until something refuses it, the remedy is
+  # the SOP's: never leave a version commit on `release` alone — qa-release.md step 4d.
   release_tip, release_ok = git_capture("-C", path, "rev-parse", "origin/#{RELEASE_BRANCH}")
   unless release_ok
     failures << "could not resolve origin/#{RELEASE_BRANCH} in #{repo} for the version allocation's tag " \
@@ -5327,7 +5343,7 @@ def published_version(tag, live_versions)
   Release::GemVersion.highest_version([tag&.delete_prefix("v"), *Release::GemVersion.live_numbers(live_versions)])
 end
 
-# CHANGELOG.md at origin/release, or nil when the repo tracks none.
+# CHANGELOG.md at the allocation tip (origin/accepted), or nil when the repo tracks none.
 #
 # A gem with NO changelog is not refused. The registry declares no `changelog`
 # key, so its absence breaks no stated contract, and holding an irreversible
@@ -5343,7 +5359,7 @@ end
 def changelog_refusal(repo, tip, published)
   text = changelog_at(repo, tip)
   unless text
-    say("  gem #{repo}: no CHANGELOG.md at origin/#{RELEASE_BRANCH} — nothing to roll")
+    say("  gem #{repo}: no CHANGELOG.md at origin/#{ACCEPTED_BRANCH} — nothing to roll")
     return nil
   end
 
@@ -5361,13 +5377,14 @@ def gem_version_members(group)
 end
 
 # PHASE 0b — THE WRITE. version_file + Gemfile.lock + the rolled CHANGELOG.md in
-# ONE commit, pushed onto origin/release by ref, fast-forward-checked. The
+# ONE commit, pushed onto origin/accepted by ref, fast-forward-checked, and carried
+# to origin/release by the ordinary batch promote. The
 # changelog joined this commit on 2026-09-09 (/tasks/release-prepare-skips-changelog);
 # before that prepare published and tagged without ever touching the file, so
 # every release since studio-engine 0.39.0 left its entries filed under
 # '## Unreleased' — thirty-five minor versions of shipped history by 0.74.4, and
 # four in solana-studio. Built in the gem's ship workspace
-# pinned at the release tip — the same never-touch-the-primary mechanics as the
+# pinned at the accepted tip — the same never-touch-the-primary mechanics as the
 # consumer lock bump below, which matters more than usual for a gem, because the
 # artifact `gem build` packages is read from that primary checkout.
 def commit_gem_version!(repo, tip, decision, failures)
@@ -5378,7 +5395,7 @@ def commit_gem_version!(repo, tip, decision, failures)
     workspace  = ship_workspace!(repo, tip)
     ws_version = File.join(workspace, version_file)
     unless File.exist?(ws_version)
-      failures << "gem #{repo}: #{version_file} is missing at origin/#{RELEASE_BRANCH} — check its `version_file` " \
+      failures << "gem #{repo}: #{version_file} is missing at origin/#{ACCEPTED_BRANCH} — check its `version_file` " \
                   "in config/release_repos.yml"
       next
     end
@@ -5386,7 +5403,7 @@ def commit_gem_version!(repo, tip, decision, failures)
     rewritten = Release::GemVersion.rewrite_version(File.read(ws_version), version)
     if rewritten.nil?
       failures << "gem #{repo}: #{version_file} does not declare EXACTLY ONE version literal — refusing to " \
-                  "rewrite it blind; set it to #{version} by hand and commit it onto #{RELEASE_BRANCH}, then re-run"
+                  "rewrite it blind; set it to #{version} by hand and commit it onto #{ACCEPTED_BRANCH}, then re-run"
       next
     end
     File.write(ws_version, rewritten)
@@ -5426,7 +5443,7 @@ CHANGELOG_FILE = "CHANGELOG.md"
 # empty, ready for the next cycle. It rides the SAME commit as version_file and
 # Gemfile.lock, which is deliberate on two counts: the changelog can never end up
 # on a different SHA from the version it names, and the write lands in phase 0b —
-# a reversible git commit onto origin/release — BEFORE the irreversible `gem
+# a reversible git commit onto origin/accepted — BEFORE the irreversible `gem
 # push` in phase 2. The published artifact and its v* tag therefore both carry a
 # changelog that already names the release.
 #

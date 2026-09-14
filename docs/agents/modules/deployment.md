@@ -349,8 +349,10 @@ How a gem rides a release:
    heading or not depending on how you read it.
 
    **And it refuses a promote that would misfile.** The roll lands on
-   `release` only, so `accepted` keeps the un-rolled bucket until it absorbs
-   the `Release <version>` commit, and git merges a bullet added inside an
+   `accepted` and reaches `release` through the ordinary batch promote, so a
+   completed sweep leaves the two rungs agreeing about which entries shipped.
+   The guard stays armed for the `accepted` that did NOT absorb a roll, because
+   git merges a bullet added inside an
    existing `###` subsection there CLEANLY under the heading the roll wrote — a
    version that shipped without it, and no later roll moves it back. So before
    `gh pr merge`, prepare predicts each gem's promote with `git merge-tree` and

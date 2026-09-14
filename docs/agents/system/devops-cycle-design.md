@@ -469,7 +469,10 @@ Gems and apps are handled differently at both ends of the Deploy workflow:
   prepare` allocates it at step 4d**: it derives the number from the membership,
   writes the `version_file` **with its `Gemfile.lock` and its rolled
   `CHANGELOG.md`** in one commit onto
-  `origin/release`, and does that BEFORE the publish. The conductor sets no
+  `origin/accepted` — the rung builders write, so the roll is authored where the
+  next promote's merge base can see it — then promotes that onto `origin/release`
+  with the ordinary batch PR, and does that BEFORE the publish. Nothing is ever
+  carried back DOWN the ladder. The conductor sets no
   version by hand on the happy path (finding-d0621629719b, now closed);
   `member_plan` then *reads* it for the publish + the board's `💎 gem` badge.
   Allocation refuses rather than guesses — an unreadable `--gem-bump`, an
