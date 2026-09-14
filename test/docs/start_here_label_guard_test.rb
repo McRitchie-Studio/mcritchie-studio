@@ -384,9 +384,17 @@ class StartHereLabelGuardTest < ActiveSupport::TestCase
     live = "docs/agents/agents/steffon/sops/clean-infra.md"
     dead = "docs/agents/agents/steffon/sops/bucket-provision.md"
 
+    # THE LINE NUMBERS ARE FIXTURE VALUES, NOT CITATIONS — but the expected message
+    # necessarily spells one as `docs/agents/index.md:<n>`, and
+    # test/docs/citation_resolution_guard_test.rb's census cannot tell the two apart:
+    # it reads that string as a pointer into the real file and requires the line to be
+    # substantive. So they point at the TOP of index.md (1 = its H1, 3 = its first
+    # sentence), where an edit further down cannot rot them. They were 621/622 and did
+    # rot, on 2026-09-14, when an unrelated three-line insertion higher up in that doc
+    # slid line 622 onto a blank.
     rows = [
-      { label: "Steffon clean infra SOP", path: live, soul: "steffon", sop: "clean-infra", line: 621 },
-      { label: "Steffon bucket provision SOP", path: dead, soul: "steffon", sop: "bucket-provision", line: 622 }
+      { label: "Steffon clean infra SOP", path: live, soul: "steffon", sop: "clean-infra", line: 1 },
+      { label: "Steffon bucket provision SOP", path: dead, soul: "steffon", sop: "bucket-provision", line: 3 }
     ]
 
     violations = corpus_violations(rows, [ live ])
@@ -394,7 +402,7 @@ class StartHereLabelGuardTest < ActiveSupport::TestCase
     assert_empty violations[:unrowed],
       "a deleted file must not surface as unrowed — that is the direction already covered, and " \
       "reading it that way is how the miss stayed invisible"
-    assert_equal [ "docs/agents/index.md:622  — #{dead} is not on disk" ], violations[:dead],
+    assert_equal [ "docs/agents/index.md:3  — #{dead} is not on disk" ], violations[:dead],
       "a row outliving its file must be flagged, and the failure must name the row's line"
   end
 
