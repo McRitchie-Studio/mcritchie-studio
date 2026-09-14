@@ -57,8 +57,9 @@ class Release
     # owns Release::BRANCH — but this file loads in BOTH worlds, and in the
     # Rails-free one `Release` is a bare class with no BRANCH at all. So it
     # carries its own copies rather than reaching for a constant that exists in
-    # only one of them. Keep them in step with bin/release.rb:224 + :232 and
-    # Release::BRANCH (app/models/release.rb:17).
+    # only one of them. Keep them in step with bin/release.rb#RELEASE_BRANCH,
+    # bin/release.rb#ACCEPTED_BRANCH and bin/release.rb#ACCEPTED_MERGED, and with
+    # app/models/release.rb#BRANCH.
     RELEASE_RUNG = "release"
     ACCEPTED_RUNG = "accepted"
     ACCEPTED_MERGED_STAMP = "accepted"

@@ -19,8 +19,12 @@ require "test_helper"
 # WHAT THIS GUARD DOES, in three lanes. Each asks only "does this RESOLVE?" — it
 # opens the cited file and looks. None of them reads the prose around the citation,
 # which is the whole design: a guard keyed on WORDING is evaded by rephrasing, and a
-# sibling guard measured exactly that hole against twelve phrasings (see the limit it
-# states in its own header). There is no phrasing of a dead pointer that resolves.
+# sibling guard keyed on VERBS was measured against twelve of them by its reviewer,
+# slipping on plurals, noun forms, participles and synonyms alike. THAT MEASUREMENT IS
+# RESTATED AT REPHRASINGS BELOW, which is where it lives — it is not what the sibling's
+# own header states as its limit, and this sentence used to say it was. (Its header
+# states a different limit entirely: that it cannot tell a live task from an archived
+# one.) There is no phrasing of a dead pointer that resolves.
 #
 #   1. `path:line` must land on a SUBSTANTIVE line — the file exists, the line is
 #      inside it, and the line is neither blank nor a lone delimiter (`end`, `}`).
@@ -36,6 +40,18 @@ require "test_helper"
 # two compose exactly as the record predicted: verify the ones that must be lines,
 # and stop minting new ones everywhere else.
 #
+# A CONTINUATION ANCHOR IS A CITATION TOO, and until 2026-09-14 it was invisible to ALL
+# THREE LANES. `bin/release.rb:224 + :232`, `bin/task:631, :1139`, `bin/statusline:229,231`
+# — the second anchor carries no path of its own, so the census never saw it: unchecked by
+# lane 1 AND uncounted by lane 3, which made the shape a silent way out of the ratchet as
+# well as the check. All three of those sites were live in this repo, and two of them were
+# pointing at the wrong line the day it was measured. The census now INHERITS the preceding
+# path and treats the anchor as a full citation — same row, same lanes, indistinguishable
+# downstream, which is the point of parsing the shape rather than stating a limit about it.
+# Measured: parsed onto the tree at 24890a10, before this task's conversions, those three
+# anchors took the population from 63 to 66 — past a ceiling of 63, which is the red that
+# proved the lane bites. The grammar is deliberately narrow; see CONTINUATION_ANCHOR.
+#
 # THE HOUSE CONVENTION this enforces is stated once, in
 # docs/agents/modules/docs-maintenance.md under "Citing Code From Prose"; this file is
 # its teeth. In short: prefer `path#seam`; spend a `path:line` only where the line
@@ -50,8 +66,13 @@ require "test_helper"
 #      being rejected: the nearest code token to the citation flags 46 sites, of which
 #      a hand audit found roughly a third false — including `(bin/release.rb:4296,4305)`,
 #      a correct PAIR whose two anchors the heuristic crossed. A lane with that error
-#      rate teaches readers to ignore it. Lane 3 is the answer instead: the format that
-#      can rot this way stops growing, and shrinks as sites convert.
+#      rate teaches readers to ignore it. Lane 3 is the answer instead — and LIMIT D IS
+#      THE AUTHORITY ON WHAT KIND OF ANSWER IT IS. Read it before this paragraph: lane 3
+#      prices the rotting format rather than proving anything about it, so the population
+#      falls as sites convert only because a reviewer keeps making it fall. This sentence
+#      used to assert that shrinking as a MECHANISM, which limit D then retracted three
+#      paragraphs later — two authorities in one header, in the guard whose whole subject
+#      is prose that confidently states what nothing checks.
 #      LANE 2 HAS THE SAME CEILING: `definition?` is deliberately broad, so a seam can
 #      resolve while naming the wrong landmark in the right file. Resolution proves the
 #      symbol is THERE, never that it is the one the sentence is about.
@@ -80,6 +101,34 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
   DIRS_RE = REPO_DIRS.join("|")
 
   LINE_CITATION = %r{\b((?:#{DIRS_RE})/[A-Za-z0-9_./-]*[A-Za-z0-9_]):(\d+)(?:-(\d+))?\b}
+
+  # THE SECOND ANCHOR OF A CONTINUATION — a line number that inherits its path from the
+  # citation it follows. Matched ONLY against the text immediately after a resolving
+  # citation, never free-standing, so it can mean nothing except "another line of the file
+  # just named".
+  #
+  # TWO SPELLINGS, AND THEY ARE NOT EQUALLY SAFE. That is why this accepts a bare number
+  # after one punctuation mark and a connective word only when a colon disambiguates it:
+  #   · COLON-PREFIXED (`, :1139`, ` + :232`) — unambiguous. Nothing in English prose
+  #     spells a colon-then-digits, so any connective may introduce one.
+  #   · BARE (`:229,231`) — ambiguous with a thousands separator, so only the tightest
+  #     spelling this tree actually contains is accepted: a comma with nothing around it.
+  #     An earlier draft allowed a bare number after `and`, which read `foo.rb:12 and 3
+  #     others` as a citation to line 3 — inventing a pointer nobody wrote, which is
+  #     strictly worse than missing one, because a reader cannot tell it from the real
+  #     thing and no author will recognise it as theirs.
+  #
+  # MEASURED 2026-09-14 across all 1564 scanned files: this grammar matches three sites and
+  # nothing else. The loose version (any connective, colon optional) matched the same three,
+  # so narrowing costs no coverage today and buys back every ambiguous shape.
+  # test_the_continuation_grammar_invents_no_anchor pins the near misses that were actually
+  # sitting after citations in this repo when that was measured.
+  #
+  # ITS LIMIT, STATED PLAINLY: a continuation spelled some other way — "lines 224 and 232 of
+  # bin/release.rb", a prose range, a bulleted list under one path — is NOT matched and is
+  # not counted. Resolution can only follow a pointer it can see, and widening this to catch
+  # prose would re-import the wording-keyed error rate limit A rejects.
+  CONTINUATION_ANCHOR = /\A(?:[ \t]*(?:[,+&]|\band\b|\bor\b)[ \t]*:|,)(\d+)(?:-(\d+))?\b/
 
   # A RUBY BACKTRACE FRAME IS EVIDENCE, NOT A POINTER. `foo.rb:118:in 'block in
   # apply_moves!'` inside a fixture is a captured crash — what the interpreter said
@@ -152,8 +201,11 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
   # SUM is invariant under conversion: a site that changes form still counts once, and
   # only a rotted pattern or a dead glob can drop it.
   #
-  # Measured 2026-09-14 on this branch merged onto accepted ae5e2901, after this
-  # task's conversions: 1564 files, 63 `path:line` + 91 `path#seam` = 154 citations.
+  # Measured 2026-09-14 on accepted 24890a10, after the follow-up task's conversions and
+  # with continuation anchors counted: 1564 files, 57 `path:line` + 102 `path#seam` = 159
+  # citations. (The shipped guard recorded 63 + 91 = 154 on ae5e2901. Six citations moved
+  # across — nine ANCHORS, because three of the six carried a continuation — and the
+  # census widened under them in the same commit.)
   MINIMUM_FILES = 1200
   MINIMUM_CITATIONS = 100
 
@@ -165,7 +217,18 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
   # 107 to 63, while the seam population rose from 36 to 91 over the same diff. (The
   # pre-task figure was first written here as 112 — itself an unverified number, in
   # this file. Both ends are re-derivable by running this lane's own census.)
-  LINE_CITATION_CEILING = 63
+  #
+  # 63 → 57 on the follow-up (close-the-citation-guard-gaps), and WHAT IT COUNTS WIDENED
+  # in the same commit, which is the one thing to understand before comparing the two
+  # numbers: continuation anchors are census rows now, so 57 covers pointers 63 never
+  # did. The arithmetic closes from either end. On the unconverted tree the widened
+  # census read 66 — the old 63 plus the three anchors it had been hiding — over a
+  # ceiling of 63, and that RED is the proof the continuation lane bites; it is
+  # reproducible at 24890a10 with this file's census and nothing else changed. Converting
+  # six citations then removed nine anchors (three of them carried a continuation),
+  # leaving 57, which is also 63 − 6. The seam population rose 91 → 102 over the same
+  # diff: every anchor that left became a named landmark rather than a deletion.
+  LINE_CITATION_CEILING = 57
 
   def test_every_path_line_citation_lands_on_a_substantive_line
     offenders = census[:line].filter_map do |c|
@@ -250,6 +313,68 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
       assert(was.strip.empty? || DELIMITER_ONLY.match?(was.strip),
              "the substance rule no longer rejects #{was.inspect}, which is what #{citation} " \
              "pointed at before this task — the guard would have passed the pre-fix tree")
+    end
+  end
+
+  # THE CONTINUATION SHAPES, VERBATIM, as this repo wrote them before this task converted
+  # all three to seams. They cannot be proved by the tree any more — that is what
+  # converting them means — so they are pinned here, in the file the census excludes.
+  # Each pair is (the citation, the text that followed it).
+  CONTINUATION_SHAPES = [
+    ["bin/release.rb:224", " + :232"],
+    ["bin/task:631", ", :1139"],
+    ["bin/statusline:229", ",231"]
+  ].freeze
+
+  def test_the_continuation_grammar_sees_every_shape_this_repo_wrote
+    CONTINUATION_SHAPES.each do |head, tail|
+      assert_match LINE_CITATION, head, "the pattern no longer recognises #{head}"
+
+      c = CONTINUATION_ANCHOR.match(tail)
+      refute_nil c, "#{tail.inspect} continues #{head} and must parse as a second anchor — " \
+                    "unparsed, it is invisible to lane 1 AND to the lane 3 census, which is " \
+                    "the hole this shape used to be"
+      assert_operator c[1].to_i, :>, 0
+    end
+  end
+
+  # AND IT MUST INVENT NONE. Every tail here was MEASURED sitting immediately after a real
+  # citation in this repo on 2026-09-14 (the last two are the shapes the grammar has to
+  # stay away from rather than tree samples). Reading any of them as a line number would
+  # mint a pointer no author wrote, which is worse than missing one: nobody will recognise
+  # it as theirs, and the failure names a file they never cited.
+  NOT_CONTINUATIONS = [", and turf HAS", " + system/devops-shift-lease.md:87", " says `--gate-",
+                       ") and\n# `settl", ", the PUBLIC a", ":in 'block in apply_moves!'",
+                       " and 3 others", " or 5 of them"].freeze
+
+  def test_the_continuation_grammar_invents_no_anchor
+    NOT_CONTINUATIONS.each do |tail|
+      refute CONTINUATION_ANCHOR.match?(tail),
+             "#{tail.inspect} follows a real citation in this repo and is NOT a second " \
+             "anchor — parsing it would put a pointer in the census that nobody wrote"
+    end
+  end
+
+  # THE WHOLE CHAIN, ON A REAL DEAD LINE — grammar plus substance rule, because either half
+  # alone passes vacuously. `bin/ship:128` is the bare `end` the rephrasing probe below is
+  # already anchored on; written as a CONTINUATION in any of the three spellings this repo
+  # uses, it was invisible to every lane before this task and is caught by all of them now.
+  def test_a_continuation_onto_a_dead_line_is_caught
+    target = target_lines("bin/ship")
+    refute_nil target, "bin/ship is the subject here"
+
+    ["bin/ship:100 + :128", "bin/ship:100, :128", "bin/ship:100,128"].each do |sentence|
+      m = LINE_CITATION.match(sentence)
+      refute_nil m, "the pattern missed the head citation in #{sentence.inspect}"
+
+      c = CONTINUATION_ANCHOR.match(sentence[m.end(0)..])
+      refute_nil c, "the continuation in #{sentence.inspect} was not seen"
+      assert_equal 128, c[1].to_i
+
+      assert DELIMITER_ONLY.match?(target[c[1].to_i - 1].to_s.strip),
+             "this test is anchored on bin/ship:128 being a bare delimiter; it now reads " \
+             "#{target[127].to_s.strip.inspect}, so re-anchor it on another one rather than " \
+             "deleting it"
     end
   end
 
@@ -420,10 +545,21 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
           target = target_lines(m[1]) or next
           next if BACKTRACE_FRAME.match?(body[m.end(0), 8].to_s)
 
-          first = m[2].to_i
-          line << { where: where.(m), text: m[0], path: m[1], first: first,
-                    last: (m[3] || m[2]).to_i, size: target.size,
-                    content: (target[first - 1] if first >= 1 && first <= target.size) }
+          line << census_anchor(where.(m), m[0], m[1], m[2], m[3], target)
+
+          # THE CONTINUATION WALK. Each anchor hands the next one its own end, so a chain
+          # (`:10, :20, :30`) is counted to the end rather than stopping at the first. It
+          # runs only INSIDE this block, which is what makes the inheritance sound: the
+          # path is known to resolve and the citation is known not to be a backtrace frame,
+          # so a continuation can never resurrect either exemption.
+          pos = m.end(0)
+          while (c = CONTINUATION_ANCHOR.match(body[pos, 48].to_s))
+            # `m[0] + c[0]` is what the AUTHOR TYPED, separator and all. A bare `:232` in
+            # the failure message would send the reader hunting for a citation that is
+            # written nowhere in the file.
+            line << census_anchor(where.(m), m[0] + c[0], m[1], c[1], c[2], target)
+            pos += c.end(0)
+          end
         end
 
         body.to_enum(:scan, SEAM_CITATION).each do
@@ -436,6 +572,16 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
 
       { files: files, line: line, seam: seam }
     end
+  end
+
+  # ONE CENSUS ROW FOR ONE ANCHOR — the citation's own, or a continuation that inherited
+  # its path. Deliberately identical: lanes 1 and 3 cannot tell the two apart, which is the
+  # whole reason gap 1 is closed by PARSING the shape rather than by stating a limit about
+  # it. A limit would have left the shape working exactly as it did.
+  def census_anchor(where, text, path, first, last, target)
+    n = first.to_i
+    { where: where, text: text, path: path, first: n, last: (last || first).to_i,
+      size: target.size, content: (target[n - 1] if n >= 1 && n <= target.size) }
   end
 
   # Exit-blindness, closed once for all three lanes: a rotted glob or a rotted pattern

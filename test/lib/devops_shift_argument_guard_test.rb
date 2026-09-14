@@ -127,7 +127,7 @@ class DevopsShiftArgumentGuardTest < Minitest::Test
     { source: "docs/agents/agents/alex/sops/clean-up.md:319 + system/devops-shift-lease.md:87 — the bare read",
       argv: %w[status],
       command: "status", lane: nil, flags: {} },
-    { source: "bin/statusline:229,231 — the render-time heartbeat (the second renewer)",
+    { source: "bin/statusline#heartbeat_shift — the render-time heartbeat (the second renewer)",
       argv: %w[renew avi],
       command: "renew", lane: "avi", flags: {} },
     { source: "bin/devops-shift header:8 — acquire with the documented optional --label",

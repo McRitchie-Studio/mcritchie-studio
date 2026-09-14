@@ -106,16 +106,23 @@ rots every citation below its edit point. A rotted citation does not look rotted
 it reads exactly like the truth and routes the next reader to whatever happens to
 sit at that offset today.
 
-That is measured, not feared. On 2026-09-14 eight `bin/release.rb:<line>` citations
-were spot-checked after one ordinary commit shifted that file, and **all eight were
-already pointing at unrelated lines**, one at a blank line. Two more sat in the same
-table cell of the QA-release SOP as the sentence announcing this very discipline.
+That is measured, not feared. On 2026-09-14, on `accepted` at **b811daae** — the commit
+before the guard below landed — eight `bin/release.rb:<line>` citations were spot-checked
+after one ordinary commit shifted that file, and **all eight were already pointing at
+unrelated lines**, one at a blank line. Two more sat in the same table cell of the
+QA-release SOP as the sentence announcing this very discipline.
+
+Do not try to re-derive those ten on today's tree. The same change converted every one of
+them to a seam, so the population they were drawn from is gone; the SHA is where they are
+still visible, and it is named here for exactly that reason. The number that IS live is
+the ratchet's — run `bin/rails test test/docs/citation_resolution_guard_test.rb` and lane
+3 censuses the tree in front of you.
 
 | Form | Write it as | Rots? | Checked by |
 |------|-------------|-------|------------|
 | **Seam** (preferred) | `bin/release.rb#commit_gem_version!` | No | lane 2 — the file must DEFINE that symbol |
 | **Prose seam** | "in `commit_gem_version!` — at its `rewrite_version` refusal" | No | review |
-| **Line** (last resort) | `bin/fast-check:300` | **Yes** | lane 1 — the line must be substantive; lane 3 caps the population |
+| **Line** (last resort) | `bin/fast-check:300` — the `wrong_root = CertRootGuard.refusal(…)` cert-root refusal | **Yes** | lane 1 — the line must be substantive; lane 3 caps the population |
 
 The rules, in order:
 
@@ -130,6 +137,12 @@ The rules, in order:
    re-rots it.
 4. **A Ruby backtrace frame is evidence, not a citation.** `foo.rb:118:in '...'` in a
    fixture is what the interpreter said at the SHA it crashed on. Leave it alone.
+5. **A second anchor is a second citation.** `<file>:224 + :232` and `<file>:229,231` are
+   TWO pointers each — the continuation inherits the path of the citation it follows, and
+   both halves rot independently. The guard resolves and counts both, so a continuation
+   buys nothing: it costs the same ratchet toll as spelling the path out twice. Until
+   2026-09-14 it cost nothing because no lane could see it, which is how three of them
+   came to be pointing at the wrong line at once.
 
 `test/docs/citation_resolution_guard_test.rb` is the teeth. It keys on **resolution**
 — it opens the cited file and looks — never on the wording around the citation, so
