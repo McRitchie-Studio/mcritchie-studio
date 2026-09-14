@@ -626,11 +626,21 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
       "squads_members() { printf '%s\\n' " + lines.map { |l| "'#{l}'" }.join(" ") + "; }\n"
     end
 
+    # WANT_MASK is no longer a literal in the SOP (Mr. McRitchie's ruling,
+    # 2026-09-13): it is read off the chain from the OUTGOING member before the
+    # config transaction is proposed. So every run below walks the derivation
+    # first, against the PRE-rotation members, then the grader against the
+    # post-rotation ones — the order the operator walks them in.
+    derivation = bash_blocks.find { |b| b[:body].include?("WANT_MASK=$(squads_members") }
+    refute_nil derivation, "the SOP no longer derives WANT_MASK from the chain"
+    pre = ["threshold 2", "#{OLD_MEMBER} 7", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"]
+    walk = ->(post) { stub.call(pre) + derivation[:body] + stub.call(post) + block[:body] }
+
     healthy = ["threshold 2", "#{NEW_MEMBER} 7", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"]
 
     Dir.mktmpdir("crs-squads") do |dir|
       # ── the control: a correct rotation must PASS ─────────────────────────
-      ok = run_block(stub.call(healthy) + block[:body], dir, {})
+      ok = run_block(walk.call(healthy), dir, {})
 
       assert_equal 0, ok[:status],
                    "the Squads check REJECTED a CORRECT rotation (3 members, threshold 2, new key at " \
@@ -644,11 +654,11 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
       # The three partial masks are each a REAL call site in squad-upgrade.js
       # losing its bit — they are the whole reason the mask is checked at all.
       {
-        "mask 3 — Initiate|Vote, no Execute (vaultTransactionExecute :172 breaks)" =>
+        "mask 3 — Initiate|Vote, no Execute (vaultTransactionExecute :222 breaks)" =>
           ["threshold 2", "#{NEW_MEMBER} 3", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
-        "mask 5 — Initiate|Execute, no Vote (proposalApprove :161 breaks)" =>
+        "mask 5 — Initiate|Execute, no Vote; correct AFTER the narrowing ceremony, wrong for a plain rotation" =>
           ["threshold 2", "#{NEW_MEMBER} 5", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
-        "mask 6 — Vote|Execute, no Initiate (vaultTransactionCreate :155 breaks)" =>
+        "mask 6 — Vote|Execute, no Initiate (vaultTransactionCreate :190 breaks)" =>
           ["threshold 2", "#{NEW_MEMBER} 6", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
         "the rotated-out key is STILL a member" =>
           ["threshold 2", "#{NEW_MEMBER} 7", "#{OLD_MEMBER} 7", "#{KEEP_MEMBER_A} 7"],
@@ -659,7 +669,7 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
         "the multisig is down to a 2-of-2" =>
           ["threshold 2", "#{NEW_MEMBER} 7", "#{KEEP_MEMBER_A} 7"]
       }.each do |label, lines|
-        result = run_block(stub.call(lines) + block[:body], dir, {})
+        result = run_block(walk.call(lines), dir, {})
 
         refute_equal 0, result[:status],
                      "the Squads check PASSED on a broken rotation (#{label}). That is the audited " \
@@ -673,7 +683,7 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
       # The mask failure must NAME the mask it found. "Wrong permissions" sends the
       # operator back to app.squads.so with nothing to compare against.
       wrong = run_block(
-        stub.call(["threshold 2", "#{NEW_MEMBER} 3", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"]) + block[:body],
+        walk.call(["threshold 2", "#{NEW_MEMBER} 3", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"]),
         dir, {}
       )
 
@@ -694,12 +704,127 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
                     "rotation in both the mechanism paragraph and the ordered step 4, so this scan has " \
                     "gone blind and would pass on nothing."
 
-    bare = calls.reject { |c| c.include?("Permissions.all") }
+    # WHICH mask is no longer a constant (narrow-bot-squads-permissions,
+    # 2026-09-13): squad-upgrade.js stopped approving as the bot, so the bot needs
+    # Initiate|Execute = 5, while a key ROTATION still grants whatever the outgoing
+    # key holds. Assert a mask is NAMED, in either form the SOP legitimately uses.
+    # A SHELL VARIABLE counts, and that is the point after 2026-09-13: the
+    # rotation's mask is read off the chain into $WANT_MASK precisely so one
+    # procedure serves both the pre- and post-ceremony states. What must never
+    # appear is an addMember with no mask named at all.
+    bare = calls.reject { |c| c.match?(/mask:\s*(\d+|\$[A-Za-z_]\w*)/) }
 
     assert_empty bare,
                  "these addMember calls name no permission mask: #{bare.inspect}. The operator then " \
-                 "accepts whatever app.squads.so had checked, and `squad-upgrade.js` needs all three " \
-                 "bits (Initiate :155, Vote :161, Execute :172). Write Permissions.all()."
+                 "accepts whatever app.squads.so had checked. Write `{ mask: $WANT_MASK }` in the rotation " \
+                 "(read off the chain) or an explicit `{ mask: <n> }` where the procedure fixes one state."
+
+    # `Permissions.all()` IS a literal 7 wearing a constant's name, and a rotation
+    # must grant what the OUTGOING key held — read from the chain, whatever it is
+    # that day. A site that says "all" grants 7 regardless, and nothing downstream
+    # notices until the next upgrade. (The narrowing that would have made the two
+    # numbers differ was declined; the rule survives it, because "preserve what is
+    # live" is what makes a rotation behaviour-preserving.)
+    all_sites = SOP.read.lines.each_with_index.filter_map { |l, i| "line #{i + 1}" if l.include?("Permissions.all(") }
+
+    assert_empty all_sites,
+                 "Permissions.all() appears at #{all_sites.join(', ')}. It is mask 7 by another name, and " \
+                 "this SOP has to serve a multisig whose correct mask is 7 today and 5 after the narrowing " \
+                 "ceremony. Name $WANT_MASK (read from the chain) or the explicit mask that state requires."
+  end
+
+  # WHOSE KEYS 1PASSWORD ACTUALLY HOLDS (2026-09-14). A draft of this SOP widened
+  # "supplied per run from 1Password" — true of the BOT key — into a claim about
+  # all of squad-upgrade.js's signing keys. It is false for the human Alex key
+  # (7ZDJ…), a Phantom export with no filed item, and a rotation runbook that
+  # tells an operator to fetch a key from a vault it is not in stops them mid-
+  # ceremony. The claim is checkable against the inventory, so it is checked.
+  test "the Squads row claims 1Password only for keys the inventory actually lists" do
+    row = SOP.read.lines.find { |l| l.include?("scripts/squad-upgrade.js") && l.include?("1Password") }
+
+    refute_nil row, "the registration table no longer says where squad-upgrade.js's keys come from"
+    assert_match(/BOT key/, row, "the row must scope the 1Password claim to the key that is filed")
+    refute_match(/all (?:three|the signing keys)[^|]*1Password/i, row,
+                 "the row claims every signing key comes from 1Password. The human Alex key is a Phantom " \
+                 "export with no filed item: #{row.strip}")
+
+    # The checkable half of "7ZDJ is not in the vault": the inventory names no item
+    # for it. (A blanket count of Solana items would break on any unrelated agent
+    # wallet — measured: there are six.) If the key is ever filed, this fails and
+    # the row above may finally say so.
+    inventory = Rails.root.join("docs/agents/modules/credential-inventory.md").read
+
+    refute_match(/7ZDJ/, inventory,
+                 "the human Alex Solana key now appears in the credential inventory. Re-read the Squads " \
+                 "row above: it says that key is a Phantom export with no filed item.")
+  end
+
+  # ONE CONSTANT, READ FROM THE CHAIN (2026-09-13, Mr. McRitchie's ruling on
+  # activity-8988). `WANT_MASK=7` was a literal, and a comment on a different
+  # constant does not change what an operator pastes into the Squads UI. The mask
+  # is now READ off the chain from the OUTGOING member, before the config
+  # transaction is proposed, and every site — the mechanism paragraph, step 4,
+  # step 5 and the grader — uses that one value. The narrowing that would have made
+  # 7 and 5 both live was declined; this survives it, because a rotation must grant
+  # what was live on the day rather than what someone typed.
+  #
+  # This walks the SOP's own two blocks end to end against a synthetic chain that
+  # CHANGES between them, exactly as the real one does: the derivation sees the
+  # pre-rotation members, the grader sees the post-rotation members.
+  test "the rotation grants and grades whatever mask the outgoing key held, 7 or 5" do
+    derivation = bash_blocks.find { |b| b[:body].include?("WANT_MASK=$(squads_members") }
+    grader = blocks_under("#### Verifying the Squads rotation")
+             .find { |b| b[:body].include?("check_squads_rotation()") }
+
+    refute_nil derivation, "the SOP no longer derives WANT_MASK from the chain — a literal is back"
+    refute_nil grader, "the SOP no longer defines check_squads_rotation()"
+
+    stub = lambda do |lines|
+      "squads_members() { printf '%s\\n' " + lines.map { |l| "'#{l}'" }.join(" ") + "; }\n"
+    end
+    walk = lambda do |before, after|
+      stub.call(before) + derivation[:body] + stub.call(after) + grader[:body]
+    end
+
+    Dir.mktmpdir("crs-want-mask") do |dir|
+      {
+        "BEFORE the ceremony: the outgoing key holds 7" => {
+          before: ["threshold 2", "#{OLD_MEMBER} 7", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
+          right: ["threshold 2", "#{NEW_MEMBER} 7", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
+          wrong: ["threshold 2", "#{NEW_MEMBER} 5", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
+          granted: "7"
+        },
+        "AFTER the ceremony: the outgoing key holds 5" => {
+          before: ["threshold 2", "#{OLD_MEMBER} 5", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
+          right: ["threshold 2", "#{NEW_MEMBER} 5", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
+          wrong: ["threshold 2", "#{NEW_MEMBER} 7", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
+          granted: "5"
+        }
+      }.each do |label, chain|
+        ok = run_block(walk.call(chain[:before], chain[:right]), dir, {})
+
+        assert_equal 0, ok[:status],
+                     "#{label}: the rotation it should accept was REFUSED.\nstdout: #{ok[:out]}\nstderr: #{ok[:err]}"
+        assert_includes ok[:out], "grant the new key mask #{chain[:granted]}",
+                        "#{label}: the procedure did not tell the operator which mask to grant"
+        assert_includes ok[:out], "PASS"
+
+        bad = run_block(walk.call(chain[:before], chain[:wrong]), dir, {})
+
+        refute_equal 0, bad[:status],
+                     "#{label}: the OTHER state's mask passed. One procedure serving two chains only works " \
+                     "if each refuses the other's number.\nstdout: #{bad[:out]}"
+        assert_includes bad[:out], "FAIL"
+      end
+
+      # The derivation cannot answer once the outgoing key is gone — it must refuse
+      # rather than hand the grader an empty WANT_MASK, which would grade nothing.
+      gone = run_block(
+        stub.call(["threshold 2", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"]) + derivation[:body],
+        dir, {}
+      )
+      refute_equal 0, gone[:status], "the derivation returned an empty mask instead of refusing: #{gone.inspect}"
+    end
   end
 
   # ── Finding E: the coverage claim, made self-enforcing ────────────────────
