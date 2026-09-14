@@ -70,10 +70,19 @@ require_relative "projects_root"
 #   1. `OpMeter.log_path` (bin/lib/op_meter.rb) falls back to
 #      `ProjectsRoot.default_projects_dir` when CLAUDE_PROJECTS_DIR is unset,
 #      which an ordinary shell is. In a snapshot that resolved to
-#      `<root>/versions/.agents/op-reads.log`, so `bin/op-reads` showed ZERO
-#      reads from the installed helper — and that report is the first thing
-#      gh-app-git-credential's own header tells you to run when a 1Password
-#      quota spend needs explaining. FIXED, not recorded: `install!` stamps the
+#      `<root>/versions/.agents/op-reads.log`, so `bin/op-reads` lost every read
+#      the RUBY child `bin/gh-token` made from the installed helper — and that
+#      report is the first thing gh-app-git-credential's own header tells you to
+#      run when a 1Password quota spend needs explaining.
+#
+#      NOT "zero reads", which is what this said until 2026-09-14 and is what the
+#      other six sites said with it. The helper's OWN `op` calls go through the
+#      BASH meter, and op-meter.sh:72 falls back to
+#      `${CLAUDE_PROJECTS_DIR:-$HOME/projects}` — $HOME, never ProjectsRoot — so
+#      they landed in the real log from a snapshot all along. (`bin/gh-app-mint-token`
+#      meters nothing at all, so it logs nowhere either way.) The blast radius was
+#      the Ruby half; the fix below is unchanged and still worth having, because
+#      the Ruby half is where the shared token session spends its quota. FIXED, not recorded: `install!` stamps the
 #      resolved projects root into the snapshot as
 #      `bin/snapshot-env.sh` (SNAPSHOT_ENV_RELATIVE), which the helper sources,
 #      and both meters already honour `MCR_OP_READS_LOG` (bin/lib/op-meter.sh:70,
@@ -251,10 +260,20 @@ module CredentialHelperInstall
     id = digest(source_root)
     target = version_dir(root, id)
 
-    # EVERYTHING that reads or writes the version directories happens under the
-    # lock, INCLUDING the "already installed?" test. Testing outside it is what
-    # let two installs of one digest both decide to build, and the second one
-    # `rm_rf` the directory `current` was already pointing into.
+    # EVERY INSTALL runs under the lock, INCLUDING its "already installed?" test.
+    # Testing outside it is what let two installs of one digest both decide to
+    # build, and the second one `rm_rf` the directory `current` was already
+    # pointing into.
+    #
+    # NOT "everything that reads the version directories" — which is what this
+    # said until 2026-09-14, and is contradicted twenty lines below: `git push`
+    # resolves the helper through `current` WITHOUT taking this lock, which is
+    # the whole reason `current` is repointed by rename(2). The residual that
+    # leaves is narrow and the lock never closed it: point `current` at a version
+    # directory whose manifest.json is missing, and the install below rm_rf's that
+    # directory — a reader in that window sees the helper gone. It needs a
+    # corrupted install to reach, and a reader that hits it gets the same ENOENT
+    # a re-run repairs.
     with_install_lock(root) do
       unless File.file?(File.join(target, MANIFEST_FILE))
         staging = "#{target}.staging.#{Process.pid}"
@@ -321,9 +340,10 @@ module CredentialHelperInstall
 
   # :ok, :missing (deleted, or installed before stamping existed) or :wrong_root
   # (the projects directory moved since the install). Anything but :ok is stale:
-  # without the stamp the helper logs its 1Password reads INSIDE the snapshot and
-  # `bin/op-reads` reports zero reads from it — the symptom this file exists to
-  # remove, which must never read as healthy.
+  # without the stamp the snapshot's RUBY reads (bin/gh-token) land INSIDE the
+  # snapshot and `bin/op-reads` loses them — the symptom this file exists to
+  # remove, which must never read as healthy. The helper's own bash-metered reads
+  # are unaffected either way (op-meter.sh falls back to $HOME/projects).
   def stamp_state(source_root:, root: DEFAULT_ROOT)
     stamped = stamped_projects_root(root)
     return :missing if stamped.nil?
@@ -354,8 +374,10 @@ module CredentialHelperInstall
       #
       # A snapshot's __dir__ is not the repo, so anything that derives the
       # projects root from its own location resolves INSIDE the snapshot. The
-      # 1Password read-attribution log is the one that matters here: without
-      # this stamp, `bin/op-reads` shows zero reads from the installed helper.
+      # 1Password read-attribution log is the one that matters here: without this
+      # stamp, the reads bin/gh-token makes from this snapshot land inside it and
+      # bin/op-reads never sees them. (This script's own bash-metered reads are
+      # unaffected: op-meter.sh falls back to $HOME/projects.)
       : "\${MCR_OP_READS_LOG:=#{log}}"
       export MCR_OP_READS_LOG
     SH
@@ -379,10 +401,44 @@ module CredentialHelperInstall
     File.rename(tmp, link)
   end
 
+  # The in-tree path this install replaces — the value a real ~/.gitconfig holds
+  # today, and the one the wiring command below must target.
+  IN_TREE_HELPER = "/Users/alex/projects/mcritchie-studio/bin/gh-app-git-credential"
+
+  # The value-PATTERN both wiring commands below carry — every value that names
+  # THIS helper, wherever it currently points: the in-tree path, an installed
+  # snapshot path, or a stale snapshot from an earlier install. It is deliberately
+  # not the in-tree path alone; see the note on re-runs below.
+  HELPER_VALUE_PATTERN = "/gh-app-git-credential$"
+
   # The exact commands the operator runs. Kept here so the CLI, the tests and
   # docs/agents/modules/source-control.md all quote one source.
+  #
+  # --replace-all WITH A VALUE-PATTERN, and both halves are load-bearing (measured
+  # 2026-09-14 against an isolated copy of the real ~/.gitconfig). That file holds
+  # TWO values under [credential "https://github.com"]: an empty reset, then the
+  # in-tree path. So:
+  #   * a plain `git config … helper "<path>"` FAILS — "cannot overwrite multiple
+  #     values with a single value"; the operator reads an error and stops, which
+  #     is why the snapshot is still not wired on this machine;
+  #   * a bare `--replace-all` SUCCEEDS and collapses both into one, dropping the
+  #     empty reset that stops the generic [credential] helper = osxkeychain from
+  #     answering github.com. osxkeychain would then answer first.
+  # The value-pattern replaces only the lines naming this helper and leaves the
+  # reset alone. On a config with one value or none, git adds the line instead —
+  # measured, so the same command serves a fresh machine.
+  #
+  # WHY THE PATTERN IS NOT THE IN-TREE PATH ALONE. `--replace-all <key> <value>
+  # <pattern>` replaces what MATCHES and ADDS when nothing does. Anchored on the
+  # in-tree path it is correct exactly once: the first run consumes that line, and
+  # every re-run matches nothing and APPENDS another helper. Three runs, three
+  # helpers — measured 2026-09-14 on an isolated copy. git would then run the
+  # helper once per value, and `--check` cannot see it because `--get` returns
+  # only the LAST value. Matching any `…/gh-app-git-credential` makes the command
+  # converge instead: it collapses whatever this helper's lines are to one.
   def git_config_command(root = DEFAULT_ROOT)
-    %(git config --global credential."https://github.com".helper "#{helper_path(root)}")
+    %(git config --global --replace-all credential."https://github.com".helper ) +
+      %("#{helper_path(root)}" '#{HELPER_VALUE_PATTERN}')
   end
 
   # ONE prior value, hard-coded: the in-tree path this install replaces. On a
@@ -391,9 +447,11 @@ module CredentialHelperInstall
   # true prior value changes the CLI's contract, and bin/install-git-credential-helper
   # --check already reads it — but said out loud here so nobody reads the name as
   # a promise. Filed with the source-control.md symptom-table gap.
+  # Carries the SAME value-pattern, for the same reason: a revert re-run must
+  # converge on one in-tree line rather than append a second.
   def git_config_revert_command
-    %(git config --global credential."https://github.com".helper ) +
-      %("/Users/alex/projects/mcritchie-studio/bin/gh-app-git-credential")
+    %(git config --global --replace-all credential."https://github.com".helper ) +
+      %("#{IN_TREE_HELPER}" '#{HELPER_VALUE_PATTERN}')
   end
 
   def copy_tree(source_root, dest, files)
