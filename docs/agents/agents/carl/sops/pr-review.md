@@ -258,6 +258,18 @@ doc).
   bin/task note <task> --handoff "Carl review approved; merged into accepted; ready for Avi's qa-release sweep." --agent carl
   ```
 
+  **A gem's merge then gets one more read — a DETECTOR, not a gate.** For a
+  registered gem, `bin/pr-review` audits that gem's `accepted` right after the
+  merge (`UpstreamMisfile.audit`). This merge is exactly where a branch that
+  forked BEFORE a changelog roll files its `## Unreleased` bullets under a version
+  that already shipped, and from then on both sides carry those lines, so the
+  promote-time misfile guard in `bin/release.rb` cannot see them. The audit asks
+  one tree an absolute question instead, prints how many entry lines it judged,
+  and never fails the review — the mis-filed state does not exist until the merge
+  lands, so there is nothing here to refuse. On a finding, move the named lines
+  back under `## Unreleased` on the gem's `accepted` in a CHANGELOG-only PR;
+  nothing downstream is held meanwhile.
+
   **The first line is not optional, and it is not advice.** A 200 with a `login`
   means `gh` would merge as a PERSON, and the merge would carry that human's name
   forever. On 2026-08-29 two merges landed under Mr. McRitchie's own account

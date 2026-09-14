@@ -486,6 +486,144 @@ class Release
       owners
     end
 
+    # --- the UPSTREAM misfile detector: absolute, not differential -------------
+
+    # THE HAZARD THE GUARD ABOVE CANNOT SEE, and the reason is structural rather
+    # than a gap in its rules. `misfiled_entries` PREDICTS a merge and compares the
+    # result against the two sides, so it can only ever see a line ONE side brought.
+    # An entry that arrived mis-filed UPSTREAM is on BOTH sides, the diff shows
+    # nothing, and it reads as an ordinary post-release edit. Widening that guard
+    # cannot reach it: it would either never fire, or smuggle an absolute check
+    # inside a merge predictor, which is a worse design than a second reader.
+    #
+    # SO THIS ONE ASKS ONE TREE, and takes no second side at all: does any entry
+    # sitting under a SHIPPED heading post-date that version's v* tag? A branch that
+    # forks BEFORE `accepted` absorbs a roll, keeps writing bullets into its own
+    # `## Unreleased` and is then merged puts them inside a version section that
+    # already shipped without them — and no later roll moves them, because a roll
+    # only moves what sits under the bucket. The CHANGELOG then tells users a
+    # shipped release contained work it did not.
+    #
+    # THE NAIVE FORM OF THAT QUESTION IS UNUSABLE, MEASURED. Asked of every line
+    # under every shipped heading, "absent from the file at that version's tag"
+    # reports 158 lines across 12 versions in studio-engine and 11 across 3 in
+    # solana-studio (2026-09-14, at origin/accepted) — the same refusal the promote
+    # guard's first cut hit on
+    # 2026-09-10 and rejected. Two large, legitimate populations produce it, and
+    # each is excluded here by a condition of its own:
+    #
+    #   REWORDING. A shipped section edited after release — errata, a clarified
+    #   sentence, a re-wrapped paragraph. This ecosystem does that on purpose.
+    #   Excluded by L3: a reword's own commit already has the line under the VERSION
+    #   heading, not under the bucket.
+    #
+    #   BACKFILL. The documented remedy for a backlog ("attribute them to their real
+    #   versions first") inserts a version heading ABOVE entries written under
+    #   `## Unreleased` long before — 48 of studio-engine's 105 SHIPPED sections and 12 of
+    #   solana-studio's 20 were filed that way, including the whole 0.74.x run. Those
+    #   entries pre-date their heading BY DESIGN, so the tag's file is no baseline for
+    #   them at all. Excluded by S2.
+    #
+    # With both conditions the detector judges 1,442 entry lines across the 57
+    # studio-engine sections that DO have a baseline, and 42 across 8 in solana-studio, at `accepted`, `release` AND `main`,
+    # and reports NOTHING. That population is the point: a detector for a hazard this
+    # quiet is worth having only if its silence is a measurement rather than a vacuum,
+    # which is why `upstream_judged_entries` is public and the CLI prints its size.
+    #
+    # DELIBERATELY STILL PURE. Git answers three questions — which versions carry a
+    # tag, what the file was at a tag, what it was at the commit that WROTE a line —
+    # and they arrive as `published`, `at_tag` and `origin`, so every RULE below stays
+    # unit-testable with plain strings. bin/lib/upstream_misfile.rb is the git side.
+    #
+    #   text      — ONE tree's CHANGELOG.md.
+    #   published — version strings carrying a v* tag ("0.40.0").
+    #   at_tag    — ->(version) { CHANGELOG.md at v<version>, or nil }
+    #   origin    — ->(line_number) { CHANGELOG.md at the commit that WROTE that
+    #               line, or nil }
+    #
+    # Returns [{ version:, number:, line: }]; empty when the file is honest.
+    def upstream_misfiled_entries(text, published:, at_tag:, origin:)
+      upstream_judged_entries(text, published: published, at_tag: at_tag).filter_map do |entry|
+        text_of = entry[:line].rstrip
+
+        # L2 — it post-dates the release: the shipped file did not carry this line.
+        next if entry[:baseline].key?(text_of)
+
+        # L3 — and its author filed it under the BUCKET. See REWORDING above.
+        written = origin.call(entry[:number])
+        next unless written
+        next unless unreleased_entries(written).any? { |pending| pending.rstrip == text_of }
+
+        entry.slice(:version, :number, :line)
+      end
+    end
+
+    # Every entry line this detector is willing to JUDGE, with the baseline it will
+    # be judged against — the shared scan under both readers, and the population the
+    # silence above is a statement about.
+    #
+    #   S1 — SHIPPED only. A heading with no tag yet is the in-flight version, and
+    #        entries under it ship IN it, which is correct filing (the promote guard
+    #        declines to judge them for the same reason).
+    #   S2 — the tag's file must carry the heading, or there is no honest baseline.
+    def upstream_judged_entries(text, published:, at_tag:)
+      shipped = Array(published).map(&:to_s)
+      owner = section_owners(text)
+      baselines = {}
+
+      body_lines(text).each_with_index.filter_map do |line, i|
+        version = owner[i]
+        next unless version && shipped.include?(version)
+        next if line.strip.empty? || line.start_with?("#")
+
+        baseline = baselines.fetch(version) { baselines[version] = tag_baseline(version, at_tag) }
+        next unless baseline
+
+        { version: version, number: i + 1, line: line, baseline: baseline }
+      end
+    end
+
+    # A sentence naming an upstream misfile, or nil when the tree is honest.
+    #
+    # A NOTICE, NOT A REFUSAL, and the name says so. The defect is a false sentence
+    # in a document — serious, but not a reason to hold a merge or a multi-repo QA
+    # sweep, which is the same proportionality this module already applied when it
+    # chose to ROLL rather than refuse. Nothing downstream is unsafe while it stands;
+    # it is simply wrong, and the fix is an ordinary CHANGELOG edit.
+    #
+    # It takes the FINDINGS rather than the text, because every caller that wants a
+    # sentence also wants the list, and re-deriving it would run the whole scan twice.
+    def upstream_misfile_notice(found)
+      found = Array(found)
+      return nil if found.empty?
+
+      named = found.first(3).map { |m| "line #{m[:number]} under #{m[:version]}: #{m[:line].strip.inspect}" }.join("; ")
+      more = found.size > 3 ? " (+#{found.size - 3} more)" : ""
+      "CHANGELOG.md files #{found.size} line(s) written under '## Unreleased' beneath a version that already " \
+        "shipped without them (#{named}#{more}) — an UPSTREAM misfile: a branch forked before the roll and was " \
+        "merged after it, so BOTH sides carry the line and no merge guard can see it. #{UPSTREAM_MISFILE_REMEDY}"
+    end
+
+    UPSTREAM_MISFILE_REMEDY = "Move those lines back under '## Unreleased' on the gem's `accepted` (a " \
+                              "CHANGELOG-only PR; nothing else in the pipeline is held meanwhile), and the next " \
+                              "`bin/release prepare` rolls them into the version that actually ships them. Leave " \
+                              "them and that shipped version's section keeps claiming work it did not carry"
+
+    # The lines the file carried at `version`'s own v* tag, as a lookup — or nil
+    # when that tree did NOT already carry the heading (see BACKFILL above). "There
+    # is no honest baseline" has to stay distinct from "the baseline is empty":
+    # collapsing them would make every backfilled section the loudest thing in the
+    # file, which is the exact false alarm this detector was measured into avoiding.
+    def tag_baseline(version, at_tag)
+      tagged = at_tag.call(version)
+      return nil unless tagged
+
+      parts = version.to_s.split(".").map(&:to_i)
+      return nil unless versions(tagged).any? { |h| h[:version] == parts }
+
+      body_lines(tagged).each_with_object({}) { |line, seen| seen[line.rstrip] = true }
+    end
+
     # --- internals -----------------------------------------------------------
 
     def body_lines(text)

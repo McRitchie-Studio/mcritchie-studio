@@ -367,6 +367,11 @@ deep review carries the most weight, the LIGHT adds a focused second perspective
   merge-ready verdict = go** — the sweep follows promptly, and `accepted`/`release`
   are recoverable by revert. The **sweep → QA → ship** pipeline continues from there
   (`devops-cycle-design.md` §1.4).
+  For a registered **gem**, the merge is followed by a read-only **upstream-changelog
+  audit** of that gem's `accepted` (`UpstreamMisfile.audit`): this merge is where a
+  pre-roll fork files its `## Unreleased` bullets under a version that already
+  shipped, and both sides then carry them, so the promote-time guard is blind. It
+  prints a finding and never fails the review.
 - **Any block** → the task is at `blocked` (Step 3), out of the pipeline until the
   builder resubmits.
 - **Low confidence** (humility valve) → a reviewer marks `conductor-review` and
