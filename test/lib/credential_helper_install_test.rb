@@ -227,13 +227,54 @@ class CredentialHelperInstallTest < ActiveSupport::TestCase
 
   # ── the wiring the operator runs ────────────────────────────────────────────
 
-  test "the printed git config command names the stable path and nothing in a working tree" do
+  # TIGHTENED AND RENAMED (credential-helper-claims-overclaim, 2026-09-14). The old
+  # name — "and nothing in a working tree" — is no longer the property: the command
+  # must NAME the in-tree path, as the value-PATTERN it replaces. What must never
+  # be in a working tree is the VALUE git ends up holding, which is what this now
+  # separates. It also runs the command, because the previous version asserted
+  # about a string and the string was unrunnable on the machine it was written for.
+  test "the printed command sets the stable path as the VALUE, and names a working tree only as the pattern it replaces" do
     command = CredentialHelperInstall.git_config_command(@root)
+    value = command[/\.helper "([^"]+)"/, 1]
+    pattern = command[/'([^']+)'\s*\z/, 1]
 
-    assert_includes command, CredentialHelperInstall.helper_path(@root)
-    assert_includes command, 'credential."https://github.com".helper'
-    refute_includes command, "/projects/mcritchie-studio/bin/",
+    assert_equal CredentialHelperInstall.helper_path(@root), value,
+                 "the value git would hold is not the stable path"
+    refute_includes value, "/projects/mcritchie-studio/bin/",
                     "the wiring still points into the hub primary's working tree"
+    assert_includes command, 'credential."https://github.com".helper'
+    assert_includes command, "--replace-all",
+                     "a single-value set FAILS on a config that already holds two values — measured on a " \
+                     "copy of the real ~/.gitconfig: 'cannot overwrite multiple values with a single value'"
+    assert_equal "^#{CredentialHelperInstall::IN_TREE_HELPER}$", pattern,
+                 "the value-pattern must target the in-tree line exactly. Without it --replace-all collapses " \
+                 "EVERY value, dropping the empty reset that stops osxkeychain answering github.com."
+  end
+
+  # The behavioural half: the command is run against a COPY of the two-value shape
+  # a real ~/.gitconfig has. Nothing global is touched — `git config --file`.
+  test "the printed command rewires a two-value config and keeps the empty reset" do
+    config = File.join(@root, "gitconfig")
+    File.write(config, <<~INI)
+      [credential]
+      \thelper = osxkeychain
+      [credential "https://github.com"]
+      \thelper =
+      \thelper = #{CredentialHelperInstall::IN_TREE_HELPER}
+    INI
+
+    command = CredentialHelperInstall.git_config_command(@root)
+                                     .sub("git config --global", "git config --file #{config}")
+    assert system(command, out: File::NULL, err: File::NULL),
+           "the printed wiring command FAILED on a config holding two values — the shape a real " \
+           "~/.gitconfig has, and the reason the snapshot went unwired"
+
+    values = `git config --file #{config} --get-all credential."https://github.com".helper`.split("\n", -1)[0..1]
+    assert_equal ["", CredentialHelperInstall.helper_path(@root)], values,
+                 "the empty reset must survive — it is what stops the generic [credential] osxkeychain " \
+                 "helper answering github.com first — and the in-tree line must be the one replaced"
+    assert_equal "osxkeychain", `git config --file #{config} credential.helper`.strip,
+                 "the generic helper was touched; this command must only rewrite one URL's value"
   end
 
   # REWORDED, not tightened (credential-snapshot-guards-overclaim, 2026-09-13).
@@ -383,10 +424,58 @@ class CredentialHelperInstallTest < ActiveSupport::TestCase
     expected = File.join(ProjectsRoot.default_projects_dir(SOURCE), ".agents", "op-reads.log")
     assert_includes stamp, expected,
                     "the snapshot does not carry the projects root, so OpMeter.log_path falls back to " \
-                    "ProjectsRoot inside the snapshot and bin/op-reads reports zero reads from the " \
-                    "installed helper"
+                    "ProjectsRoot inside the snapshot and bin/op-reads loses every read bin/gh-token " \
+                    "makes from the installed helper"
     refute_includes stamp, File.join(@root, "versions"),
                     "the stamp names a path inside the snapshot — that is the defect, written down"
+  end
+
+  # WHICH METER LOSES WHAT — pinned, because seven sites said the wrong thing
+  # (credential-helper-claims-overclaim, 2026-09-14). The claim that bin/op-reads
+  # shows zero reads from the installed helper was measured FALSE: there are two # zero-reads-wording-ok
+  # meters and only one of them drifts.
+  #
+  #   BASH  bin/lib/op-meter.sh   ${CLAUDE_PROJECTS_DIR:-$HOME/projects}  →  the REAL log, from a snapshot too
+  #   RUBY  bin/lib/op_meter.rb   ProjectsRoot.default_projects_dir       →  inside the snapshot
+  #
+  # So the helper's own `op item get` was never lost; what was lost is every read
+  # its Ruby child bin/gh-token makes, which is where the shared token session
+  # spends its quota. This guard reads BOTH meters rather than restating them, so
+  # a change to either falls in here, and refuses the old wording anywhere in the
+  # helper's own files.
+  ZERO_READS_WORDING = /op-reads[^.\n]{0,80}(?:zero reads|shows none|reports none)/i # zero-reads-wording-ok
+
+  CLAIM_FILES = %w[
+    bin/gh-app-git-credential
+    bin/install-git-credential-helper
+    bin/lib/credential_helper_install.rb
+    test/lib/credential_helper_install_test.rb
+  ].freeze
+
+  test "the two meters still differ exactly as the comments say, and no file claims ZERO reads" do
+    bash = Rails.root.join("bin/lib/op-meter.sh").read
+    ruby = Rails.root.join("bin/lib/op_meter.rb").read
+
+    assert_match(/CLAUDE_PROJECTS_DIR:-\$HOME\/projects/, bash,
+                 "the bash meter no longer falls back to $HOME/projects. If it derives the root from its own " \
+                 "location now, the helper's OWN reads drift inside a snapshot too and every comment this " \
+                 "guard protects has to be rewritten — starting with this one.")
+    assert_match(/ProjectsRoot\.default_projects_dir/, ruby,
+                 "the Ruby meter no longer resolves through ProjectsRoot — re-derive which half drifts")
+
+    offenders = CLAIM_FILES.flat_map do |rel|
+      Rails.root.join(rel).read.lines.each_with_index.filter_map do |line, i|
+        next if line.include?("zero-reads-wording-ok") # this guard QUOTES the banned wording
+
+        "#{rel}:#{i + 1}" if line.match?(ZERO_READS_WORDING)
+      end
+    end
+
+    assert_empty offenders,
+                 "these lines still claim the installed helper's op reads are ALL missing from " \
+                 "bin/op-reads: #{offenders.join(', ')}. Measured false — the bash meter's reads land " \
+                 "in the real log " \
+                 "from a snapshot. Name what is actually lost: every read bin/gh-token makes."
   end
 
   # NOTHING VERIFIED OR MAINTAINED THE STAMP (2026-09-13, the reviewer's measurement).
@@ -405,7 +494,8 @@ class CredentialHelperInstallTest < ActiveSupport::TestCase
     assert_equal :missing, CredentialHelperInstall.stamp_state(source_root: SOURCE, root: @root)
     assert CredentialHelperInstall.stale?(source_root: SOURCE, root: @root),
            "a snapshot with no op-reads stamp reported as current. The operator then reads OK while " \
-           "bin/op-reads shows zero reads from the installed helper — the exact symptom, reported healthy."
+           "bin/op-reads is missing every read bin/gh-token makes from the installed helper — the exact " \
+           "symptom, reported healthy."
   end
 
   test "a reinstall restores a deleted stamp, though the closure is unchanged" do
@@ -479,6 +569,6 @@ class CredentialHelperInstallTest < ActiveSupport::TestCase
 
     refute_empty sourcing,
                  "the helper computes the stamp's path but never sources it, so stamping it changes nothing " \
-                 "and bin/op-reads still reports zero reads from the installed helper"
+                 "and bin/op-reads still loses every read bin/gh-token makes from the installed helper"
   end
 end

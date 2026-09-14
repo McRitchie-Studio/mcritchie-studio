@@ -162,13 +162,22 @@ tree instead, and wire THAT path:
 
 ```bash
 cd /Users/alex/projects/mcritchie-studio
-bin/install-git-credential-helper            # prints the exact git config command
+bin/install-git-credential-helper            # installs, then prints the git config command to run
 bin/install-git-credential-helper --check    # what is installed, and whether it is stale
 ```
 
 The installer copies the helper's whole closure into
 `~/.mcritchie/git-credential/versions/<digest>/` and points a stable `current`
-symlink at it, so the wired path never moves. Re-run it after any change to the
+symlink at it, so the wired path never moves.
+
+**Run the printed command as printed.** It is a `--replace-all` carrying a
+value-pattern, because `[credential "https://github.com"]` already holds TWO
+values here — an empty reset, then the in-tree path — and (measured 2026-09-14 on
+an isolated copy of `~/.gitconfig`) a plain `git config … helper "<path>"` fails
+with *cannot overwrite multiple values with a single value*, while a bare
+`--replace-all` succeeds and collapses both, dropping the empty reset that stops
+the generic `[credential] helper = osxkeychain` answering github.com. The pattern
+replaces only the in-tree line. On a machine with one value or none, git adds it. Re-run it after any change to the
 helper or anything it reaches (`--check` says when that is due). Mechanics and
 the reasoning: `bin/lib/credential_helper_install.rb`.
 
