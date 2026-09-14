@@ -126,6 +126,27 @@ class StackedPrTest < Minitest::Test
     assert_match(/could not read/, sp[:said].join("\n"), "the refusal must name the question that went unasked")
   end
 
+  # The refusal must name the call that actually DIED. The base read SUCCEEDED on this arm —
+  # it returned the branch — and only the PROBE failed, so saying "the base could not be read"
+  # would send the reader to the wrong gh call.
+  def test_the_unreadable_refusal_names_the_probe_not_the_base_read
+    sp = spies("gh: 502 Bad Gateway", false)
+    guard("feat/parent", sp)
+    said = sp[:said].join("\n")
+
+    assert_match(/whether feat\/parent is another open PR's head/, said)
+    refute_match(/base could not be READ/, said, "the base read fine on this arm; the probe did not")
+  end
+
+  # A gate that says only "no" is one reviewers route around. Each arm refuses for a different
+  # reason, so each names a different way forward.
+  def test_every_refusal_carries_a_remedy
+    [["feat/parent", spies(OPEN_PARENT)], ["", spies(OPEN_PARENT)], ["feat/x", spies("gh: 502", false)]].each do |base, sp|
+      guard(base, sp)
+      assert_match(/^  → /, sp[:said].join("\n"), "the #{base.inspect} refusal named no way forward")
+    end
+  end
+
   def test_an_empty_base_REFUSES_at_a_merge
     sp = spies(OPEN_PARENT)
 
