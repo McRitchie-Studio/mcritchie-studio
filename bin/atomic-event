@@ -139,11 +139,11 @@ class AgentActivityCli
   # read as "the registry is fresh"). It carries none here, and that was TRACED
   # rather than assumed — every caller of this CLI:
   #
-  #   bin/task:368              system(ACTIVITY_BIN, *args, out: NULL, err: NULL)  result discarded
-  #   bin/ship:128              system(ACTIVITY_BIN, *args, out: NULL, err: NULL)  result discarded
-  #   bin/release.rb:689        system(AGENT_ACTIVITY, *args, …)  "The command itself always exits 0"
-  #   bin/full-suite-check:351  system(AGENT_ACTIVITY, "action", …)  "the verb always exits 0"
-  #   bin/ci-scope-capture:205  system(*argv, …)  "there is no caller to fail"
+  #   bin/task#narrate                      system(ACTIVITY_BIN, *args, out: NULL, err: NULL)  discarded
+  #   bin/ship#narrate                      system(ACTIVITY_BIN, *args, out: NULL, err: NULL)  discarded
+  #   bin/release.rb#agent_activity         system(AGENT_ACTIVITY, *args, …)  "always exits 0"
+  #   bin/full-suite-check#emit_test_scope  system(AGENT_ACTIVITY, "action", …)  "the verb always exits 0"
+  #   bin/ci-scope-capture#emit_ci_scope    system(*argv, …)  "there is no caller to fail"
   #   ~/.claude/settings.json   SessionEnd hook: `bin/agent-activity close-open`
   #
   # Every one discards the status inside `rescue StandardError; nil`, and three say

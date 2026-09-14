@@ -2456,14 +2456,13 @@ end
 # candidate's membership (breaking → major, feature → minor, else patch), and
 # `bin/release prepare` ALLOCATES it at step 4d — writing the version_file, its
 # Gemfile.lock and the rolled CHANGELOG.md onto origin/accepted in one commit,
-# before the publish. (It was
-# unwired when this gate shipped, so the conductor set the number by hand;
-# finding-d0621629719b recorded that gap and it is now closed.) The ordinary batch
-# promote then carries that commit on to origin/release, so the version lands on
-# the SAME rung your PR is based on — which is why the remedy below restores the
-# file from it rather than from `release`. The conductor no
-# longer touches a version_file on the happy path, and the stranded-work guard
-# stays armed behind allocation as the backstop.
+# before the publish. (It was unwired when this gate shipped, so the conductor set
+# the number by hand; finding-d0621629719b recorded that gap and it is now closed.)
+# THAT ACCEPTED WRITE is what puts the version on the same rung your PR is based on,
+# which is why the remedy below restores the file from `accepted`. The ordinary batch
+# promote afterwards only carries the same commit onward to origin/release. The
+# conductor no longer touches a version_file on the happy path, and the stranded-work
+# guard stays armed behind allocation as the backstop.
 # This gate is what makes that safe: it turns "don't guess a version" from a discipline
 # every builder must remember into a rule they cannot break — the requirement was,
 # verbatim, "I don't want my builder to get caught up in version control hell."

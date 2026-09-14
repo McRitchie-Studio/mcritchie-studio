@@ -35,7 +35,8 @@ module QaServerCli
   # WHY EXIT 1 AND NEVER 0 — this is the load-bearing decision in the file, and it
   # is not the shared guard's default.
   #
-  # bin/qa-server is not only run by hand. bin/release.rb:3198 shells it:
+  # bin/qa-server is not only run by hand. bin/release.rb#prepare shells it, in
+  # the QA-deploy step it runs per app:
   #
   #     _, qa_ok = sh("bin/qa-server", "deploy", qa_app, "origin/release", "--yes")
   #

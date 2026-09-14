@@ -23,7 +23,7 @@
 # THE HALF THAT IS EASY TO GET WRONG. A guard that refuses everything is
 # indistinguishable from a guard that works, and it fails silently and expensively:
 # refuse `deploy <app> origin/release --yes` and Avi's whole QA sweep aborts, since
-# bin/release.rb:3198 shells exactly that line. So the DISPATCH cases below — every
+# bin/release.rb#prepare shells exactly that line. So the DISPATCH cases below — every
 # distinct invocation shape found in a sweep of the repos and docs — carry as much
 # weight as the refusals.
 #
@@ -101,7 +101,7 @@ class QaServerCliTest < Minitest::Test
   end
 
   # EXIT 0 IS THE ONE ANSWER THIS SCRIPT MUST NEVER GIVE, and it is not the shared
-  # guard's default. bin/release.rb:3198 shells `bin/qa-server deploy <app>
+  # guard's default. bin/release.rb#prepare shells `bin/qa-server deploy <app>
   # origin/release --yes` and reads system()'s boolean into `qa_ok`, which gates the
   # /up smoke and whether the RC's members flip `reviewed → assembled`. A help or a
   # refusal exiting 0 would hand the sweep a green QA deploy it never performed.
@@ -175,7 +175,7 @@ class QaServerCliTest < Minitest::Test
     end
   end
 
-  # The exact line bin/release.rb:3198 shells, kept as its own case because it is
+  # The exact line bin/release.rb#prepare shells, kept as its own case because it is
   # the one invocation no human is watching when it runs.
   def test_the_release_sweeps_own_deploy_line_dispatches
     parsed = guard(%w[deploy mcritchie-studio origin/release --yes])

@@ -220,9 +220,10 @@
 #                      mapped lane and skips the Rails test-prepare it implies (see
 #                      turf-vault below, which is an `apps` row using exactly this).
 #                    * THE PUBLISH READERS ARE GEMS-ONLY. bin/release.rb's
-#                      `gem_meta_for` / `self_gated_gem?` (bin/release.rb:4296,4305)
-#                      and Release::Repos.gem_meta (app/models/release/repos.rb:90)
-#                      all `dig("gems", repo)`. So declaring this on an `apps` row
+#                      `bin/release.rb#gem_meta_for` / `bin/release.rb#self_gated_gem?`
+#                      and `app/models/release/repos.rb#gem_meta` each read the `gems`
+#                      section and nothing else — the first two by `dig("gems", repo)`,
+#                      the third by `config.fetch("gems", {})`. So declaring this on an `apps` row
 #                      CANNOT make the repo self-gated and CANNOT push it to RubyGems.
 #                  For a GEM it is additionally the pre-publish gate run with
 #                  `--build` (syntax + unit + build) before the artifact is pushed.
@@ -417,8 +418,9 @@ apps:
     # NO qa_deploy / QA ENV, and none is needed. Release::Repos.qa_app defaults
     # the key to the repo slug, turf-vault is absent from
     # config/qa_environments.yml, and `bin/release prepare` warns + skips the QA
-    # deploy for an app with no registered QA environment (bin/release.rb:3164) —
-    # the same path tax-studio and chain-ops take. An Anchor program has no dyno
+    # deploy for an app with no registered QA environment — bin/release.rb#prepare
+    # gates that deploy on bin/release.rb#qa_registered? — the same path tax-studio
+    # and chain-ops take. An Anchor program has no dyno
     # to boot and no /up to smoke.
     #
     # ⛔ AND THEREFORE — DECLARED QA-EVIDENCE EXEMPT. Read this before deleting it.
@@ -456,7 +458,7 @@ apps:
     # SCOPE — QA ONLY. This key does NOT exempt turf-vault from SHIP evidence, and
     # must not be widened to. `bin/release ship` really does fast-forward this
     # repo's `release → main`, and records the sha at the push chokepoint
-    # (bin/release.rb:4314) whether or not a deploy adapter fires. So
+    # (bin/release.rb#push_frozen_main) whether or not a deploy adapter fires. So
     # metadata["shipped_shas"] carries a truthful turf-vault entry, the `shipped`
     # stamp is backed by real evidence, and exempting it there would disarm a
     # guard that currently works.
@@ -507,7 +509,8 @@ apps:
     # ci.yml gains or renames a lane, this string does not follow.
     # test/docs/cert_label_vocabulary_test.rb watches for that, and its reach is
     # LIMITED ON PURPOSE: it reads the sibling turf-vault checkout when one is on
-    # disk and SKIPS when none is, so it is a local tripwire for whoever edits
+    # disk and RETURNS EARLY when none is — a silent `return unless`, not a recorded
+    # minitest skip — so it is a local tripwire for whoever edits
     # either side and NOT a hub-CI gate (hub CI clones this repo alone). The same
     # file also pins this row's prose against the chain below, which needs no
     # sibling and does run everywhere. The day this repo grows a `bin/release-check`,
@@ -653,12 +656,21 @@ apps:
     # ⛔ DO NOT FLIP THIS TO THREE-RUNG YET. The remaining blocker is NOT the
     # migration and NOT the unset qa_test_cmd (that one is a non-issue —
     # pre_qa_gate self-gates and skips, and a missing QA env warns and skips).
-    # It is `prod_deploy` below: it declares `command: bin/deploy`, and
-    # chain-ops/bin/deploy DOES NOT EXIST. `bin/release ship` aborts on it at
-    # bin/release.rb:6137 — AFTER push_frozen_main has already advanced
-    # origin/main at :6053. Flipping the ladder therefore wedges G4 mid-ship,
-    # leaving main advanced and the deploy un-run. chain-ops also has no
-    # test_cmd, so there is no G4 suite either.
+    # It is the missing production TARGET: chain-ops has no production app, so
+    # there is nothing for a `prod_deploy` adapter to name. The one it used to
+    # declare named `command: bin/deploy`, which chain-ops does not have; that
+    # entry is gone (the NO prod_deploy note below records what it cost).
+    #
+    # Re-declaring a target like that would NOT wedge G4 mid-ship today. Ship
+    # probes every registered repo_script command at the frozen SHA and refuses
+    # before any ref is pushed — the deploy-target preflight inside
+    # bin/release.rb#ship (app/models/release/ship_sequence.rb#missing_deploy_commands),
+    # which runs ahead of bin/release.rb#deploy_app and the
+    # bin/release.rb#push_frozen_main that advances origin/main. Its abort says
+    # so in as many words: "Nothing has moved."
+    #
+    # What flipping the ladder still buys is a repo riding G4 with nothing to
+    # deploy and no G4 suite: chain-ops has no test_cmd either.
     #
     # To enroll, IN THIS ORDER: give chain-ops a real production deployment
     # target (a Heroku app + a prod_deploy adapter that names it) → register a

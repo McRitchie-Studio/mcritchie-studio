@@ -324,8 +324,9 @@ process group a `cert-run.json` names — so a release-lane claim in that slot p
 a reaper at a production deploy, and makes a concurrent cert print a `kill -TERM`
 line naming it. **Rooting at a primary checkout does not make that safe, and an
 earlier version of this section said it did.** `CertRootGuard.refusal` is gated on
-a slug (`bin/fast-check:180`, `bin/full-suite-check:204`) while the orphan preflight
-is unconditional (`:372`, `:448`), so every slug-less cert skips the root guard and
+a slug (`bin/fast-check#wrong_root`, `bin/full-suite-check#wrong_root`) while the orphan
+preflight is unconditional (`bin/lib/cert_orphan_guard.rb#preflight`, which both certs
+call), so every slug-less cert skips the root guard and
 preflights anyway — including the `bin/full-suite-check --print` that
 `--install-hook` writes into `.git/hooks/pre-push`. The defence is the namespace,
 not the path within it.

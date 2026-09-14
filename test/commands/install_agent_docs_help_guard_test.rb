@@ -171,8 +171,9 @@ class InstallAgentDocsHelpGuardTest < Minitest::Test
                    "root. A help probe must copy no doc, mirror no skill, and rewrite no profile.\n" \
                    "new paths: #{(published_paths - before).join(', ')}"
       refute status.success?,
-             "`#{argv.join(' ')}` exited 0. bin/release.rb:7030 reads this script's exit status as " \
-             "\"the installed agent docs were synced\" and bin/session-preflight:478 reads `check`'s " \
+             "`#{argv.join(' ')}` exited 0. bin/release.rb#sync_agent_docs reads this script's exit " \
+             "status as \"the installed agent docs were synced\" and " \
+             "bin/session-preflight#install_docs_check reads `check`'s " \
              "as \"no docs drift\" — a probe that establishes neither must not answer with success"
       assert_equal 1, status.exitstatus, "help exits 1 on this script (see the exit-code note in bin/install-agent-docs)"
       assert_match(/Usage: bin\/install-agent-docs/, err + out, "a help probe must still print the usage it asked for")
@@ -248,7 +249,7 @@ class InstallAgentDocsHelpGuardTest < Minitest::Test
       refute File.exist?(@spy_log),
              "`bin/agent-runtime #{argv.join(' ')}` EXEC'd the installer — the flag was handed " \
              "straight down and the docs/skills/profile were published"
-      assert_equal 1, status.exitstatus, "help exits 1: bin/ecosystem-build:488 reads 0 from this script as \"installed\""
+      assert_equal 1, status.exitstatus, "help exits 1: bin/ecosystem-build#phase_agent_docs reads 0 from this script as \"installed\""
       assert_match(/Usage:/, err, "a help probe must print usage on stderr, since its exit is non-zero")
     end
   end

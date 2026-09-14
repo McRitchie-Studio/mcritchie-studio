@@ -43,7 +43,7 @@
 #
 # WHY NOT OMIT THE ROW — the alternative that was seriously considered. Three reasons,
 # each measured: (1) both callers append on `if ci`, not on gate_row's return
-# (bin/dor-check:3930 and :2777), so a nil persists `"result":null`, and `nil.to_s` is
+# (bin/dor-check#ci_gate_result and bin/dor-check#exempt_ci_result), so a nil persists `"result":null`, and `nil.to_s` is
 # "" — which falls to the gates card's ✓ DEFAULT, i.e. the omission route's failure mode
 # IS the inversion trap; (2) an absent ci row already MEANS something else — `--gate
 # build` writes none (bin/dor-check:3101); (3) omitting would make the fleet's most

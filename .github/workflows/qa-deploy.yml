@@ -1,5 +1,5 @@
 # Phase 2 (DevOps v2) — QA deploy, moved into GitHub Actions.
-# Mirrors today's bin/qa-server:477 force-push mechanic. Runs only once the `qa`
+# Mirrors today's bin/qa-server#run_deploy force-push mechanic. Runs only once the `qa`
 # Environment + HEROKU_API_KEY secret exist (see PHASE2-PLAN.md).
 name: QA Deploy
 

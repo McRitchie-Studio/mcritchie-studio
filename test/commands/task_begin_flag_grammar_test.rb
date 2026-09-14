@@ -618,7 +618,7 @@ class TaskBeginFlagGrammarTest < ActiveSupport::TestCase
 
       # The resume fact stays, but WITHOUT the disproved rationale it shipped with
       # ("A RESUME NEVER WRITES IT, by design ... the assignee holds ONE value").
-      # A resume does not spare top-level columns — bin/task:2694 sends `dev_size`
+      # A resume does not spare top-level columns — bin/task#renewal sends `dev_size`
       # on that same PATCH. The honest statement is the code path: the resume
       # branch never builds a `top_body`, and `top_body` is the only thing that
       # maps `--agent` onto the agent_slug column.

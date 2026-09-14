@@ -45,7 +45,7 @@ class Current < ActiveSupport::CurrentAttributes
   attribute :task_event_review_bypass
   # The Claude/Codex SESSION id of the conductor running `bin/release`, injected
   # into every conductor record op's `heroku run rails runner` payload (see
-  # bin/release#conductor_payload) — local shell env doesn't cross the heroku-run
+  # bin/release.rb#conductor_payload) — local shell env doesn't cross the heroku-run
   # boundary, so the CLI passes it in-band. Release::Conductor (sweep!/curate!/
   # ship!) drains it onto the release via Release#stamp_conductor_mascot!, so the
   # deployment wears the SESSION's Pokémon mascot — the agent working it.
