@@ -92,12 +92,22 @@ module StackedPr
   # This contradicts ms#1391's bullet "Empty or unread base falls to the repair path"; that
   # bullet was written for ship's arm and remains correct there.
   #
-  # FOUR THINGS MUST BE PROVEN before a merge continues, and each one refuses on its own:
+  # FIVE THINGS MUST BE PROVEN before a merge continues, and each one refuses on its own.
+  # They are listed in the order this method asks them, so the first item that fails is the
+  # refusal the reviewer actually reads:
   #   1. the base READ succeeded              — otherwise there is no base to judge;
-  #   2. the probe is aimed at the RIGHT repo — an unscoped `gh pr list` runs against the cwd
+  #   2. the base is not empty                — `gh pr list --head ""` is NO FILTER to gh;
+  #   3. the probe is aimed at the RIGHT repo — an unscoped `gh pr list` runs against the cwd
   #      repo and answers :not_stacked with ok=true, a false NEGATIVE that never surfaces;
-  #   3. the base is not empty                — `gh pr list --head ""` is NO FILTER to gh;
-  #   4. the base is not another OPEN PR's head.
+  #   4. the probe could be READ              — :unreadable says nothing about the base. The
+  #      base read fine; the PROBE did not, and the next step here is a MERGE;
+  #   5. the base is not another OPEN PR's head — that is a deliberate STACK, and the parent
+  #      merges first.
+  #
+  # 4 AND 5 ARE ONE gh CALL BUT TWO ARMS, and splitting them is the point: the probe answering
+  # "no" and the probe not answering at all are different facts, and folding them into a single
+  # "not another open PR's head" item is how :unreadable went missing from this list while
+  # #guard_base was already refusing on it.
   #
   # `list`, `edit` and `say` are the caller's own gh reader, gh writer, and printer.
   # => :proceed | :refused | :retargeted | :retarget_failed

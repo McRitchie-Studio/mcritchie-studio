@@ -272,7 +272,7 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
      gh pr view <feat-pr> --json headRefOid --jq .headRefOid   # equal to the recorded head → merge; moved → revalidate the new head's CI, merge only if green
      gh pr view <feat-pr> --json baseRefName --jq .baseRefName   # base ≠ accepted? PROBE before you touch it
      gh pr list --repo <owner/repo> --head <that-base> --state open --json number,url   # ANY hit = a STACK: do NOT retarget, do NOT merge
-     gh pr merge <feat-pr> --merge --match-head-commit <validated-head>   # feat → accepted (retarget only a base PROVEN unclaimed; a stack, an unreadable probe or an empty base all REFUSE — see below)
+     gh pr merge <feat-pr> --merge --match-head-commit <validated-head>   # feat → accepted; pin the head you validated (retarget ONLY a base PROVEN unclaimed — at a merge anything unproven REFUSES, all five arms; see below)
      bin/task merged <task-slug> accepted     # stamp the git-location BEFORE the stage move
      bin/task move <task-slug> reviewed
      bin/task note <task-slug> --handoff "Carl review approved; merged into accepted; ready for Avi's qa-release sweep." --agent carl
