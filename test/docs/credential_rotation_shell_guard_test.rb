@@ -630,11 +630,21 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
       "squads_members() { printf '%s\\n' " + lines.map { |l| "'#{l}'" }.join(" ") + "; }\n"
     end
 
+    # WANT_MASK is no longer a literal in the SOP (Mr. McRitchie's ruling,
+    # 2026-09-13): it is read off the chain from the OUTGOING member before the
+    # config transaction is proposed. So every run below walks the derivation
+    # first, against the PRE-rotation members, then the grader against the
+    # post-rotation ones — the order the operator walks them in.
+    derivation = bash_blocks.find { |b| b[:body].include?("WANT_MASK=$(squads_members") }
+    refute_nil derivation, "the SOP no longer derives WANT_MASK from the chain"
+    pre = ["threshold 2", "#{OLD_MEMBER} 7", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"]
+    walk = ->(post) { stub.call(pre) + derivation[:body] + stub.call(post) + block[:body] }
+
     healthy = ["threshold 2", "#{NEW_MEMBER} 7", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"]
 
     Dir.mktmpdir("crs-squads") do |dir|
       # ── the control: a correct rotation must PASS ─────────────────────────
-      ok = run_block(stub.call(healthy) + block[:body], dir, {})
+      ok = run_block(walk.call(healthy), dir, {})
 
       assert_equal 0, ok[:status],
                    "the Squads check REJECTED a CORRECT rotation (3 members, threshold 2, new key at " \
@@ -663,7 +673,7 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
         "the multisig is down to a 2-of-2" =>
           ["threshold 2", "#{NEW_MEMBER} 7", "#{KEEP_MEMBER_A} 7"]
       }.each do |label, lines|
-        result = run_block(stub.call(lines) + block[:body], dir, {})
+        result = run_block(walk.call(lines), dir, {})
 
         refute_equal 0, result[:status],
                      "the Squads check PASSED on a broken rotation (#{label}). That is the audited " \
@@ -677,7 +687,7 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
       # The mask failure must NAME the mask it found. "Wrong permissions" sends the
       # operator back to app.squads.so with nothing to compare against.
       wrong = run_block(
-        stub.call(["threshold 2", "#{NEW_MEMBER} 3", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"]) + block[:body],
+        walk.call(["threshold 2", "#{NEW_MEMBER} 3", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"]),
         dir, {}
       )
 
@@ -702,12 +712,123 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
     # 2026-09-13): squad-upgrade.js stopped approving as the bot, so the bot needs
     # Initiate|Execute = 5, while a key ROTATION still grants whatever the outgoing
     # key holds. Assert a mask is NAMED, in either form the SOP legitimately uses.
-    bare = calls.reject { |c| c.include?("Permissions.all") || c.match?(/mask:\s*\d+/) }
+    # A SHELL VARIABLE counts, and that is the point after 2026-09-13: the
+    # rotation's mask is read off the chain into $WANT_MASK precisely so one
+    # procedure serves both the pre- and post-ceremony states. What must never
+    # appear is an addMember with no mask named at all.
+    bare = calls.reject { |c| c.match?(/mask:\s*(\d+|\$[A-Za-z_]\w*)/) }
 
     assert_empty bare,
                  "these addMember calls name no permission mask: #{bare.inspect}. The operator then " \
-                 "accepts whatever app.squads.so had checked. Write `Permissions.all()` or an explicit " \
-                 "`{ mask: <n> }` — the bot's is 5 (Initiate|Execute) once the narrowing ceremony runs."
+                 "accepts whatever app.squads.so had checked. Write `{ mask: $WANT_MASK }` in the rotation " \
+                 "(read off the chain) or an explicit `{ mask: <n> }` where the procedure fixes one state."
+
+    # `Permissions.all()` IS a literal 7 wearing a constant's name, and it was one
+    # of the five sites serving two states (Mr. McRitchie's ruling, 2026-09-13).
+    # A rotation walked after the narrowing ceremony must grant 5; a site that says
+    # "all" re-widens the bot to 7 and nothing downstream notices until the next
+    # upgrade. So it is banned here rather than accepted as "a mask is named".
+    all_sites = SOP.read.lines.each_with_index.filter_map { |l, i| "line #{i + 1}" if l.include?("Permissions.all(") }
+
+    assert_empty all_sites,
+                 "Permissions.all() appears at #{all_sites.join(', ')}. It is mask 7 by another name, and " \
+                 "this SOP has to serve a multisig whose correct mask is 7 today and 5 after the narrowing " \
+                 "ceremony. Name $WANT_MASK (read from the chain) or the explicit mask that state requires."
+  end
+
+  # THE DEVNET REHEARSAL IS A GATE, so the SOP has to say so (Mr. McRitchie's
+  # ruling, 2026-09-13: he will not take the narrowing to mainnet on a review with
+  # no Solana second read). PRESENCE, and only presence: this asserts the ceremony
+  # STATES the precondition and describes the rehearsal. Whether a rehearsal has
+  # actually been run is a fact about the world that no test in this repo can see —
+  # the task record carries it.
+  test "the ceremony states the devnet rehearsal as a precondition of running it" do
+    section = SOP.read[/### The mask-narrowing ceremony.*?\n### /m]
+
+    refute_nil section, "the mask-narrowing ceremony section is gone — re-derive this guard"
+    assert_match(/DEVNET REHEARSAL MUST HAVE PASSED/i, section,
+                 "the ceremony no longer states the rehearsal as a precondition. It is the only thing that " \
+                 "answers, by experiment, whether mask 5 can still initiate and execute an upgrade.")
+    assert_match(/throwaway keys/, section, "the rehearsal does not say to use throwaway keys, not the operator's")
+    # SCOPED to the rehearsal's own steps, not the whole section: the FIRST
+    # precondition also names squad-upgrade.js, so a section-wide match passed
+    # while the rehearsal itself stopped short of an upgrade (measured — that
+    # mutation survived until this line was narrowed).
+    rehearsal = section[/SECOND PRECONDITION.*?(?=\n\*\*The moves)/m]
+    refute_nil rehearsal, "the rehearsal block could not be isolated; re-derive this guard"
+    assert_match(/REAL upgrade end to end[\s\S]{0,120}squad-upgrade\.js/, rehearsal,
+                 "the rehearsal stops before a real upgrade through the script — then it answers whether a " \
+                 "mask-5 member can be ADDED, not whether it can still initiate and execute one")
+    assert_match(/NOT completed|rehearsal has been run/i, section,
+                 "the ceremony neither records the rehearsal as outstanding nor as done — a gate whose state " \
+                 "nobody wrote down is a gate nobody checks")
+  end
+
+  # ONE CONSTANT, TWO STATES (2026-09-13, Mr. McRitchie's ruling on activity-8988).
+  # `WANT_MASK=7` was a literal in a procedure that has to serve two chains: the bot
+  # holds 7 today and 5 after the narrowing ceremony, and a comment on a different
+  # constant does not change what an operator pastes into the Squads UI. The mask is
+  # now READ off the chain from the OUTGOING member, before the config transaction
+  # is proposed, and every site — the mechanism paragraph, step 4, step 5 and the
+  # grader — uses that one value.
+  #
+  # This walks the SOP's own two blocks end to end against a synthetic chain that
+  # CHANGES between them, exactly as the real one does: the derivation sees the
+  # pre-rotation members, the grader sees the post-rotation members.
+  test "the rotation grants and grades the mask the outgoing key held — 7 before the ceremony, 5 after" do
+    derivation = bash_blocks.find { |b| b[:body].include?("WANT_MASK=$(squads_members") }
+    grader = blocks_under("#### Verifying the Squads rotation")
+             .find { |b| b[:body].include?("check_squads_rotation()") }
+
+    refute_nil derivation, "the SOP no longer derives WANT_MASK from the chain — a literal is back"
+    refute_nil grader, "the SOP no longer defines check_squads_rotation()"
+
+    stub = lambda do |lines|
+      "squads_members() { printf '%s\\n' " + lines.map { |l| "'#{l}'" }.join(" ") + "; }\n"
+    end
+    walk = lambda do |before, after|
+      stub.call(before) + derivation[:body] + stub.call(after) + grader[:body]
+    end
+
+    Dir.mktmpdir("crs-want-mask") do |dir|
+      {
+        "BEFORE the ceremony: the outgoing key holds 7" => {
+          before: ["threshold 2", "#{OLD_MEMBER} 7", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
+          right: ["threshold 2", "#{NEW_MEMBER} 7", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
+          wrong: ["threshold 2", "#{NEW_MEMBER} 5", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
+          granted: "7"
+        },
+        "AFTER the ceremony: the outgoing key holds 5" => {
+          before: ["threshold 2", "#{OLD_MEMBER} 5", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
+          right: ["threshold 2", "#{NEW_MEMBER} 5", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
+          wrong: ["threshold 2", "#{NEW_MEMBER} 7", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
+          granted: "5"
+        }
+      }.each do |label, chain|
+        ok = run_block(walk.call(chain[:before], chain[:right]), dir, {})
+
+        assert_equal 0, ok[:status],
+                     "#{label}: the rotation it should accept was REFUSED.\nstdout: #{ok[:out]}\nstderr: #{ok[:err]}"
+        assert_includes ok[:out], "grant the new key mask #{chain[:granted]}",
+                        "#{label}: the procedure did not tell the operator which mask to grant"
+        assert_includes ok[:out], "PASS"
+
+        bad = run_block(walk.call(chain[:before], chain[:wrong]), dir, {})
+
+        refute_equal 0, bad[:status],
+                     "#{label}: the OTHER state's mask passed. One procedure serving two chains only works " \
+                     "if each refuses the other's number.\nstdout: #{bad[:out]}"
+        assert_includes bad[:out], "FAIL"
+      end
+
+      # The derivation cannot answer once the outgoing key is gone — it must refuse
+      # rather than hand the grader an empty WANT_MASK, which would grade nothing.
+      gone = run_block(
+        stub.call(["threshold 2", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"]) + derivation[:body],
+        dir, {}
+      )
+      refute_equal 0, gone[:status], "the derivation returned an empty mask instead of refusing: #{gone.inspect}"
+    end
   end
 
   # THE NARROWING CEREMONY'S GRADER, graded (2026-09-13, Carl's review of PR 31).

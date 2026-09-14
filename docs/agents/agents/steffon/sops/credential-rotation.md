@@ -483,18 +483,36 @@ the mainnet program** — a strictly larger power than the one you just took awa
 
 The Squads half is mutable and is an operator act at `app.squads.so`. The mechanism,
 inline so you need not leave this file: propose **one** config transaction doing
-`removeMember(<old pubkey>)` + `addMember(<new pubkey>, Permissions.all())`, keep
+`removeMember(<old pubkey>)` + `addMember(<new pubkey>, { mask: $WANT_MASK })`, keep
 threshold 2, approve with the **two clean members** (never with the key being
-rotated out), execute.
+rotated out), execute. `$WANT_MASK` is **read off the chain**, not typed — see
+the next paragraph.
 
-**Name the permission mask, and grant the mask the OUTGOING key holds.**
-`addMember` is not symmetric with `removeMember`: remove takes a bare pubkey, add
-takes a `Member { key, permissions: { mask: u8 } }`, so a mask is ALWAYS chosen —
-by you, or by whatever the Squads UI had checked when you were not looking. Read
-the outgoing key's mask off the on-chain `Multisig` account (the read-back helper
-below prints every member's mask) and grant that same value. **A rotation swaps a
-key; it does not re-scope authority** — do one thing, so a later failure has one
-candidate cause. Re-scoping is [its own ceremony](#the-mask-narrowing-ceremony-two-humans-separate-act) below, a separate act.
+**Name the permission mask, and READ IT — do not type it.** `addMember` is not
+symmetric with `removeMember`: remove takes a bare pubkey, add takes a
+`Member { key, permissions: { mask: u8 } }`, so a mask is ALWAYS chosen — by you,
+or by whatever the Squads UI had checked when you were not looking. **A rotation
+swaps a key; it does not re-scope authority**, so the mask to grant is the one the
+OUTGOING key already holds. Re-scoping is
+[its own ceremony](#the-mask-narrowing-ceremony-two-humans-separate-act) below, a
+separate act.
+
+That number is **7 today and 5 after that ceremony has run**, which is why this
+procedure names no literal anywhere: ONE constant, read from the chain, serves
+both states. Run this BEFORE you propose — the outgoing key must still be a member
+for it to answer, and after the execute it is gone:
+
+```bash
+# Reuses squads_members() from "Verifying the Squads rotation" below.
+OLD_MEMBER=<old pubkey>
+WANT_MASK=$(squads_members | awk -v k="$OLD_MEMBER" '$1==k { print $2 }')
+: "${WANT_MASK:?the outgoing key is not a member of this multisig — read the Multisig account again before proposing anything}"
+printf 'grant the new key mask %s (what %s holds now)\n' "$WANT_MASK" "$OLD_MEMBER"
+```
+
+Every step below, and the grader in step 5, use that one value. Grant anything
+else and the rotation still "succeeds" — the break lands at the NEXT upgrade, in
+whichever call lost its bit, weeks later and far from this SOP.
 
 Which bits the bot needs is decided by `turf-vault/scripts/squad-upgrade.js`, the
 only thing that signs upgrades. Recomputed 2026-09-13, after
@@ -518,10 +536,11 @@ script uses and the rotation still "succeeds" — the break lands at the NEXT
 upgrade, in whichever call lost its bit, weeks later and far from this SOP.
 
 **The live mask and the needed mask are not the same number today.** The bot
-still holds 7 on chain; the script needs 5. Narrowing it is the ceremony below, run AFTER this
-rotation and never inside it. So a rotation performed before it grants **7**
-(what the outgoing key holds) and one performed after grants **5** — in both
-cases: the mask you read off the chain, never the mask you remember.
+still holds 7 on chain; the script needs 5. Narrowing it is the ceremony below,
+run AFTER this rotation and never inside it. That is exactly why the rotation
+reads `$WANT_MASK` off the chain instead of naming a number: walked today it
+grants and grades **7**, walked after the ceremony it grants and grades **5**, and
+the procedure does not change between them.
 
 **There is no ConfigAction that edits an existing member's permissions.** The seven
 variants are add member, remove member, change threshold, set timelock, add spending
@@ -630,17 +649,18 @@ and mainnet at once. The correct order:
    cosigners survived. "The transaction succeeded" does not distinguish the
    rotation you wanted from the one that evicted the wrong slot.
 4. Update registration **two of two — the Squads membership**: propose ONE config
-   transaction doing `removeMember(old)` + `addMember(new, Permissions.all())` at
+   transaction doing `removeMember(old)` + `addMember(new, { mask: $WANT_MASK })` at
    `app.squads.so` against the live `multisigPda` in `scripts/squad.json`, threshold
-   stays 2, approved by the two clean members. **Mask 7 — see the table above; the
-   UI will happily give you a narrower one.** This step does **not** move program
+   stays 2, approved by the two clean members. **`$WANT_MASK` is the value you read
+   off the chain above — 7 before the narrowing ceremony, 5 after. The UI will
+   happily give you a different one.** This step does **not** move program
    upgrade authority: that authority is the Squads vault PDA before and after, and
    is unchanged by a membership edit. What it moves is **who can direct it** — which
    is the whole of the power, and is a separate 2-of-3 on a separate system that
    step 2 does not touch and cannot.
 5. VERIFY it — with the block under **Verifying the Squads rotation** below, not by
    eye. Four properties, and the member list shows only two of them: three members,
-   threshold 2, the new pubkey present **with mask 7**, the old pubkey gone. A
+   threshold 2, the new pubkey present **with `$WANT_MASK`**, the old pubkey gone. A
    verification that stops at "the right pubkeys are listed" passes over a member
    who cannot execute, and the first thing that tells you is a failed upgrade.
 6. ONLY THEN set the config var on each consuming app.
@@ -682,11 +702,12 @@ squads_members() {
 # The grader. Substitute the two pubkeys, then run it. It prints one FAIL line per
 # broken property and exits non-zero; a silent PASS is the only success.
 NEW_MEMBER=<new pubkey>
-OLD_MEMBER=<old pubkey>
-# The mask the OUTGOING key holds. 7 is what it holds today; read it with
-# squads_members BEFORE you propose rather than trusting this line, and use 5
-# once the mask-narrowing ceremony below has run.
-WANT_MASK=7
+# OLD_MEMBER and WANT_MASK come from the mask paragraph above, READ OFF THE CHAIN
+# before the config transaction was proposed. Do not re-type either here: a
+# literal is what made one number serve two states, and the wrong one passes
+# this grader silently.
+: "${OLD_MEMBER:?set it in the mask step above}"
+: "${WANT_MASK:?read it from the chain in the mask step above, before the outgoing key was removed}"
 
 check_squads_rotation() {
   local ms
@@ -776,6 +797,44 @@ check_upgrade_script_votes_human
 ```
 
 A `FAIL` here is the answer: stop, and ship the script half to `main` first.
+
+**SECOND PRECONDITION — A DEVNET REHEARSAL MUST HAVE PASSED.** Mr. McRitchie's
+ruling, 2026-09-13: this ceremony does not run on mainnet until the whole of it
+has been walked on devnet first. The reason is specific, not ceremonial — three
+questions decide whether mask 5 works at all, and NONE of them can be answered
+from the vendored IDL, which carries no per-instruction permission docs, or from
+the Rust program, which is not vendored here:
+
+1. Does `proposalCreate` require `Initiate`, or `Vote`? (The script sidesteps it
+   by having a human open the proposal, but the ceremony should know.)
+2. Is `Initiate` alone enough for `vaultTransactionCreate`, and `Execute` alone
+   enough for `vaultTransactionExecute`, at the pinned @sqds/multisig 2.1.4?
+3. Can a member at mask 5 still initiate and execute an upgrade end to end?
+
+The rehearsal answers them by experiment:
+
+1. Create a NEW Squads multisig on devnet — throwaway keys, not the operator's.
+2. Seed three members at mask 7, threshold 2, mirroring mainnet.
+3. Run the remove-plus-add above against the devnet bot member, narrowing it to
+   mask 5, approved by the two other members.
+4. Deploy a turf-vault build to devnet, set its upgrade authority to that
+   multisig's vault PDA, and run a REAL upgrade end to end through
+   `turf-vault/scripts/squad-upgrade.js` with the bot at mask 5.
+5. Record the multisig address, the signatures and the outcome on the task.
+
+A rehearsal that stops before step 4 answers 1 and 2 but not 3.
+
+**Attempted 2026-09-13 and NOT completed, recorded so the gate is not mistaken
+for done.** The tooling is here (`solana` 3.1.15, `anchor`, a built
+`target/deploy/turf_vault.so` at 543,608 bytes) and devnet is not mainnet, so
+there was no policy obstacle — but there is no funded devnet payer. Both faucets
+refused (`solana airdrop 2 --url devnet` and the same through the configured
+Helius devnet endpoint: "airdrop request failed ... rate limit"), and a program
+of that size needs roughly 3.8 SOL of rent for ProgramData plus as much again for
+the buffer. The only funded devnet keys on this machine are the operator's own
+(Alex Bot, Alex, Mason), and the humans' keys are exactly what an agent must not
+hold. So the rehearsal is the OPERATOR's to run, and until it has, this ceremony
+does not start.
 
 **The moves.** Same mechanism as the rotation above, at `app.squads.so`, and the
 same one-transaction rule:
