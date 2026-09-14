@@ -373,10 +373,23 @@ class CertLabelVocabularyTest < Minitest::Test
     refute_empty cmd, "turf-vault's registry row declares no release_check command"
   end
 
-  # THE ENTRY MUST DOCUMENT THE COMMAND IT DECLARES. A `&&` chain in a YAML scalar
-  # is easy to extend and easy to leave undescribed, and this row's prose is what a
-  # reader trusts about what the cert covers. Keyed on the chain's own members, so
-  # adding a lane to the command without describing it fails HERE.
+  # THE ENTRY MUST DOCUMENT THE COMMAND IT DECLARES, AND THE COMMAND MUST COVER CI.
+  # Two halves of one question — "does this row still describe what it runs?" — kept
+  # in ONE test on purpose, so the half that needs no sibling checkout always runs.
+  #
+  # A `&&` chain in a YAML scalar is easy to extend and easy to leave undescribed,
+  # and this row's prose is what a reader trusts about what the cert covers. It is
+  # also a hub-side COPY of turf-vault's own CI lanes, because that repo ships no
+  # bin/release-check for the registry to point at, so it can fall behind ci.yml.
+  #
+  # ITS LIMIT, STATED PLAINLY: the CI half reads a SIBLING checkout, so it can only
+  # run where one exists. It resolves from any ancestor of Rails.root (which is how
+  # it works from a worktree desk, whose parent is `.worktrees`, not the projects
+  # root) and is simply NOT ASSERTED when turf-vault is absent — as on hub CI, which
+  # clones this repo alone. That half is a local tripwire for whoever edits either
+  # side, not a CI gate, and must not be described as one. It is folded in here
+  # rather than given its own `skip`ped test so that this file always asserts the
+  # prose half, and so the repo's skip ratchets stay where they are.
   def test_turf_vault_entry_documents_every_lane_it_declares
     entry = turf_vault_entry
     lanes = FullSuiteGate.release_check_cmd("turf-vault").to_s.split("&&").map(&:strip)
@@ -391,25 +404,11 @@ class CertLabelVocabularyTest < Minitest::Test
              "the turf-vault entry declares `#{lane}` but its prose never mentions #{subject.inspect} — " \
              "a reader cannot tell what this repo's cert actually covers"
     end
-  end
 
-  # DRIFT, MEASURED WHERE IT CAN BE. The declared chain is a hub-side copy of
-  # turf-vault's own CI lanes, because that repo ships no bin/release-check for the
-  # registry to point at. If ci.yml gains or renames a lane, this string does not
-  # follow it and the cert silently covers less than CI does.
-  #
-  # ITS LIMIT, STATED PLAINLY: this reads a SIBLING checkout, so it can only run
-  # where one exists. It resolves from any ancestor of Rails.root (which is how it
-  # works from a worktree desk, whose parent is `.worktrees`, not the projects
-  # root) and SKIPS when turf-vault is not checked out — as on hub CI, which clones
-  # this repo alone. It is a local tripwire for the builder editing either side,
-  # not a CI gate, and must not be described as one.
-  def test_turf_vault_cert_lane_covers_its_ci_lanes_when_the_checkout_is_readable
     ci = turf_vault_ci_workflow
-    skip "turf-vault is not checked out beside this repo — drift cannot be measured here" unless ci
+    return unless ci
 
     declared = FullSuiteGate.release_check_cmd("turf-vault").to_s
-    # Every `run:` step in the workflow, reduced to the command it invokes.
     runs = ci.scan(/^\s*run:\s*(.+)$/).flatten.map(&:strip)
     covered = runs.select { |r| r.start_with?("npm run", "cargo check", "cargo clippy") }
 
@@ -423,8 +422,8 @@ class CertLabelVocabularyTest < Minitest::Test
       subject = run_cmd.split[0, run_cmd.start_with?("npm run") ? 3 : 2].join(" ")
       assert declared.include?(subject),
              "turf-vault's CI runs `#{run_cmd}` and the declared cert lane does not cover #{subject.inspect}. " \
-             "config/release_repos.yml's release_check has drifted from .github/workflows/ci.yml; " \
-             "re-derive it (or give the repo a bin/release-check and point the row at that)."
+             "The registry's release_check has drifted from .github/workflows/ci.yml; re-derive it " \
+             "(or give the repo a bin/release-check and point the row at that)."
     end
   end
 

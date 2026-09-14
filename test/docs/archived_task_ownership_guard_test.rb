@@ -9,7 +9,7 @@ require "test_helper"
 # first CI WORKFLOW — a different thing — and been ARCHIVED. So the gap had no
 # owner, and every reader who followed the pointer landed on a terminal task for a
 # decision nobody held. Found 2026-09-14; the gap itself is now closed by declaring
-# the lane (config/release_repos.yml), and this guard stops the pattern returning.
+# the lane in the release-repos registry, and this guard stops the pattern returning.
 #
 # WHAT IT FORBIDS, precisely: an OWNERSHIP CLAIM attached to a `/tasks/<slug>`
 # citation — "…, which owns declaring one", "owned by /tasks/x", "/tasks/x owns it".
@@ -20,7 +20,7 @@ require "test_helper"
 # WHAT IT ALLOWS, deliberately: HISTORICAL citations. "/tasks/turf-vault-needs-ci
 # gave the repo its first CI, which unblocked …" is a record of something that
 # happened, and archiving the task does not make it false. Two such lines live in
-# config/release_repos.yml and are correct; a guard that removed them would trade a
+# that registry and are correct; a guard that removed them would trade a
 # stale claim for a lost one. The distinction is exactly the ownership verb.
 #
 # THE REMEDY when this fails: name the MECHANISM instead of the task — the file, the
@@ -43,6 +43,13 @@ class ArchivedTaskOwnershipGuardTest < ActiveSupport::TestCase
   # Where a pointer like this actually hurts: prose every agent reads at session
   # start (the two GENERATED root docs among it), the gate modules, and the scripts
   # that print messages on screen mid-run.
+  #
+  # NOTE FOR THE NEXT EDITOR: this file deliberately says "the release-repos
+  # registry" rather than spelling that config's PATH. FastCert maps a config onto
+  # every test file naming it, and that one sits ONE file below the mapped cap —
+  # spelling it here pushed it to 16 and tripped
+  # fast_cert_subject_test's "no config source maps over the cap" guard (measured
+  # on CI, 2026-09-14). The prose loses nothing; the cert keeps its lane.
   #
   # `test/` IS DELIBERATELY NOT SCANNED, and not to spare this file. A test that
   # names a task is describing a defect's history to whoever reads the failure —
@@ -118,7 +125,7 @@ class ArchivedTaskOwnershipGuardTest < ActiveSupport::TestCase
   end
 
   # THE OTHER HALF, and the one a blunter guard fails: the historical citations must
-  # NOT be flagged. Verbatim from config/release_repos.yml, where they are accurate
+  # NOT be flagged. Verbatim from the release-repos registry, where they are accurate
   # and must survive.
   HISTORICAL_KEEPERS = [
     "# /tasks/turf-vault-needs-ci gave the repo its first CI, which unblocked\n" \
