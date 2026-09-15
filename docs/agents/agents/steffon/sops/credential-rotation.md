@@ -15,6 +15,15 @@ lane may write, and the digest read-back are all
 exists and REPLACES its value; where it needs a vault write it says so and does
 not restate that recipe.
 
+**Rotation is admin work.** Its vault writes and its `studio-agents-admin` reads
+run on the admin lane, which you are expected to hold — so an admin token that is
+absent or refused here is a setup gap on THIS MACHINE, not a lane closed to you.
+`source ~/.zprofile.admin` when the file is on disk but missing from this shell;
+`bin/setup-1pass-token --admin`, once, when the machine has no such file at all —
+only that second one is Mr. McRitchie's. Source it **without a pipe**: a pipeline
+runs `source` in a subshell, so the token lands in a child that exits and the
+lane reads ABSENT while fully present.
+
 **The dangerous half of a rotation is not the new value. It is the old one —
 still accepted, still sitting in a store nobody enumerated.** A credential that
 is live in four places and dead in a fifth is worse than a stale one: the stale
