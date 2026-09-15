@@ -82,6 +82,13 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
   # Renamed from `agent.alex.solana` on 2026-09-15 AND moved to the
   # `studio-agents-admin` vault. The inventory row records the vault; this pin
   # only needs the item name the Squads row sends an operator to.
+  #
+  # IT DID NOT MOVE AGAIN on 2026-09-15's second restructure. The Turf Monster
+  # admin identity became `solana.turf.admin`, but that is a 1Password filing,
+  # not on-chain membership — `squad-upgrade.js` still signs as `8K81…` because
+  # no Squads config transaction has replaced it. Repointing this pin at
+  # `solana.turf.admin` would make the Squads row describe a key that has never
+  # approved anything.
   BOT_KEY_ITEM = "agent.xan.solana"
 
   # Every Solana credential the inventory FILES, as of 2026-09-14. This set is a
@@ -101,6 +108,9 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
     agent.mack.solana
     agent.mason.solana
     agent.turf.solana
+    solana.turf.admin
+    solana.turf.system
+    solana.turf.system.devnet
   ].freeze
 
   # Every angle-bracket placeholder the harness knows how to make safe. Substituted
@@ -820,12 +830,22 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
     # `agent.<name>.<service>` shape — it is not a filed item, and a scan of the
     # whole file would pin it and then redden the day someone rewrote an
     # illustration. (That example is also why the earlier "there are six Solana
-    # items" measurement overcounted: the table files five.)
+    # items" measurement overcounted: the table filed five then, and files
+    # eight now.)
+    # TWO NAMING SCHEMES, SO TWO TESTS. `end_with?("solana")` was the whole
+    # predicate until 2026-09-15, and on that day the turf keys were refiled
+    # ENTITY-FIRST — solana.turf.admin, solana.turf.system,
+    # solana.turf.system.devnet. Not one of them ends in "solana", so a tripwire
+    # whose entire job is to notice a Solana credential appearing would have
+    # watched three of them appear and stayed green. A detector tuned to the old
+    # spelling is not a weaker tripwire, it is an absent one.
     filed = INVENTORY.read.lines.filter_map { |line|
       next unless line.start_with?("|")
 
       item = line.split("|")[1].to_s.strip[/\A`([^`]+)`\z/, 1]
-      item if item&.end_with?("solana")
+      next unless item
+
+      item if item.end_with?("solana") || item.start_with?("solana.")
     }.sort
 
     assert_includes filed, BOT_KEY_ITEM,

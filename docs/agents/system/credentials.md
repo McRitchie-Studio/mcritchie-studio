@@ -1,6 +1,6 @@
 # Credentials
 
-> **Restoring credentials on a fresh Mac?** `bin/ecosystem-build` does this automatically: it pulls `RAILS_MASTER_KEY` and other env vars from `heroku config` and `SOLANA_ADMIN_KEY` from 1Password (`agent.xan.solana`, in `studio-agents-admin` — needs the admin token), then writes `.env` for both Rails apps. See [house-burn-down.md](house-burn-down.md). This doc is legacy system context while the neutral modules in `docs/agents/modules/` become canonical.
+> **Restoring credentials on a fresh Mac?** `bin/ecosystem-build` does this automatically: it pulls `RAILS_MASTER_KEY` and other env vars from `heroku config` and `SOLANA_ADMIN_KEY` from 1Password (`solana.turf.admin`, in `studio-agents` — the ordinary agent token reads it; no admin token needed since 2026-09-15), then writes `.env` for both Rails apps. See [house-burn-down.md](house-burn-down.md). This doc is legacy system context while the neutral modules in `docs/agents/modules/` become canonical.
 
 ## Environment Variables
 
@@ -84,7 +84,9 @@ Each agent has a dedicated Solana wallet. Credentials stored in 1Password. The t
 | Alex Human | `7ZDJp7FUHhuceAqcW9CHe81hCiaMTjgWAXfprBM59Tcr` | Backup vault admin (recovery only) |
 | Mason | `CytJS23p1zCM2wvUUngiDePtbMB484ebD7bK4nDqWjrR` | Vault signer (third 2-of-3 cosigner) |
 | Mack | `foUuRyeibadQoGdKXZ9pBGDqmkb1jY1jYsu8dZ29nds` | Agent wallet |
-| Turf Monster | `BLSBw8fXHzZc5pbaYCKMpMSsrtXBTbWXpUPVzMrXx9oo` | Agent wallet |
+| Turf Monster admin | `BLSBw8fXHzZc5pbaYCKMpMSsrtXBTbWXpUPVzMrXx9oo` | Agent governance identity (`solana.turf.admin`) |
+| Turf Monster system | `7auwTLSvNniSUeAgL6v9RStMXJhWrrUhSJgwFWLpcqC` | Server operational key, MAINNET (`solana.turf.system`) — **0 SOL as of 2026-09-15** |
+| Turf Monster system (devnet) | `2eGs8G3wzhEeNQQU2Q86BmmA2xTpDbMMae3Y1bvpZfx9` | Server operational key, devnet/QA (`solana.turf.system.devnet`) |
 
 ### 1Password CLI Access
 
@@ -129,20 +131,30 @@ op item get "agent.mason.solana" --vault "studio-agents" --account MWOV5OT5BRHAT
 # Mack
 op item get "agent.mack.solana" --vault "studio-agents" --account MWOV5OT5BRHATI4EGMN26C5DPA --fields "private key"
 
-# Turf Monster
-op item get "agent.turf.solana" --vault "studio-agents" --account MWOV5OT5BRHATI4EGMN26C5DPA --fields "private key"
+# Turf Monster — the three solana.turf.* items spell their labels with HYPHENS
+# (`private-key`, `wallet-address`), unlike every agent.* item above. `op` fails
+# the whole read on one wrong label rather than falling back, so the spelling is
+# not transferable between these two groups.
+op item get "solana.turf.admin" --vault "studio-agents" --account MWOV5OT5BRHATI4EGMN26C5DPA --fields "private-key"
+op item get "solana.turf.system" --vault "studio-agents" --account MWOV5OT5BRHATI4EGMN26C5DPA --fields "private-key"
+op item get "solana.turf.system.devnet" --vault "studio-agents" --account MWOV5OT5BRHATI4EGMN26C5DPA --fields "private-key"
 ```
+
+> **`agent.turf.solana` is gone as an address.** Two items still carry that exact
+> title and `op` refuses with "More than one item matches"; both are superseded
+> and awaiting a deletion only Mr. McRitchie can perform (the agent service
+> account is read-only). Use the three titles above.
 
 **Set as env var (one-liner)**:
 ```bash
-export SOLANA_ADMIN_KEY=$(op item get "agent.xan.solana" --vault "studio-agents-admin" --account MWOV5OT5BRHATI4EGMN26C5DPA --fields "private key")  # ADMIN token
+export SOLANA_ADMIN_KEY=$(op item get "solana.turf.admin" --vault "studio-agents" --account MWOV5OT5BRHATI4EGMN26C5DPA --fields "private-key")  # agent token; local/dev value
 ```
 
 **Item fields**: Each wallet entry contains `recovery phrase`, `private key` (base58), and `wallet address` (base58 public key).
 
 ### Onchain Admin
 
-Xan is the primary admin for routine TurfVault operations. Mr. McRitchie is the backup/admin cosigner. Deployment identity for both clusters lives in `turf-vault/docs/CURRENT_DEPLOYMENT.md`: each of its `## Devnet` and `## Mainnet` tables carries that cluster's program ID, Squads upgrade authority, threshold and three signer rows. **Read the heading you mean** — the two signer sets happen to agree today, but nothing in the program ties them together, so an address alone cannot tell you which cluster you are on. `turf-vault/scripts/squad.json` (`members`) is provenance and a script input — `scripts/initialize-mainnet.js` builds its `initialize` signer array from it — not the deployment record. Confirm the live set on-chain from `VaultState` (`seeds = [b"vault"]` against that cluster's program ID) rather than from any file. The `SOLANA_ADMIN_KEY` env var in Turf Monster's `.env` holds the Xan private key from `agent.xan.solana` (vault `studio-agents-admin`).
+Xan is the primary admin for routine TurfVault operations. Mr. McRitchie is the backup/admin cosigner. Deployment identity for both clusters lives in `turf-vault/docs/CURRENT_DEPLOYMENT.md`: each of its `## Devnet` and `## Mainnet` tables carries that cluster's program ID, Squads upgrade authority, threshold and three signer rows. **Read the heading you mean** — the two signer sets happen to agree today, but nothing in the program ties them together, so an address alone cannot tell you which cluster you are on. `turf-vault/scripts/squad.json` (`members`) is provenance and a script input — `scripts/initialize-mainnet.js` builds its `initialize` signer array from it — not the deployment record. Confirm the live set on-chain from `VaultState` (`seeds = [b"vault"]` against that cluster's program ID) rather than from any file. The `SOLANA_ADMIN_KEY` env var in Turf Monster's **local** `.env` holds `solana.turf.admin` (`BLSBw8fX…`, vault `studio-agents`, hyphenated labels) — that is what `bin/ecosystem-build` writes. **Production still holds a different key**: `turf-monster-mainnet`'s `SOLANA_ADMIN_KEY` is Xan (`8K81…`, `agent.xan.solana`, vault `studio-agents-admin`), and the move onto `solana.turf.system` is a separate task gated on funding that wallet. Local and deployed differ on purpose.
 
 ## AWS — S3 + Amazon SES
 
