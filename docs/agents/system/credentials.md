@@ -159,7 +159,32 @@ export SOLANA_ADMIN_KEY=$(op item get "solana.turf.admin" --vault "studio-agents
 | Authority | What it controls | Live set |
 |---|---|---|
 | Squads V4 multisig (mainnet `4H3fP3ot…`, devnet `7nRuVw3V…`) | the program **upgrade** authority | **3-of-4** — `3Qj4v9…`, `7ZDJ…`, `9gACbz…`, `BLSBw8…` (all mask 7) |
-| `VaultState.signers` (`seeds = [b"vault"]`, deployed v0.25.0) | treasury + governance ops | **2-of-3** — `8K81…`, `7ZDJ…`, `CytJ…`, unchanged |
+| `VaultState.signers` (`seeds = [b"vault"]`, deployed v0.25.0) | treasury + governance ops — *the money* | **2-of-3** — `8K81…`, `7ZDJ…`, `CytJ…`, unchanged |
+
+**They are two different SETS, differing by exactly one wallet, and they are not meant to converge.** Squads is **four** and live; `VaultState` is **five** and is the target once `update_signers` runs:
+
+| Wallet | Squads (upgrade) | `VaultState.signers` (the money) |
+|---|---|---|
+| system `7auwTL…` (`solana.turf.system`) | **excluded, deliberately** | slot 1 |
+| admin `BLSBw8…` (`solana.turf.admin`) | ✅ | slot 2 |
+| Alex Phantom `7ZDJ…` | ✅ | slot 3 |
+| Alex two `3Qj4v9…` | ✅ | slot 4 |
+| Alex three `9gACbz…` | ✅ | slot 5 |
+
+**Why the system key is off Squads:** it is the app's HOT operational key — it lives in Heroku config on a running web dyno and signs on every entry and every payout. That makes it the most exposed key in the system and the last one that should hold program upgrade authority, and it has no job there anyway: upgrading a program is a rare, deliberate, human act, never something the server does unattended.
+
+So the agent holds **1 of 4 on Squads** and, once rotated, **2 of 5 on the vault**. Four seats rather than five keeps an attacker two signatures short of threshold instead of one; five would survive Mr. McRitchie losing two personal keys. He has that trade and chose four — changeable later with one config transaction, since he holds 3 of 4.
+
+**The five-member vault set is blocked on a PROGRAM UPGRADE, not on a ceremony.** Deployed v0.25.0 declares `update_signers(new_signers: [Pubkey; 3])` against `signers: [Pubkey; 3]` — it can only ever write three, and it replaces the whole set. turf-vault's `accepted` widens it to `[Pubkey; MAX_SIGNERS]` alongside `signers_ext`. The order is therefore forced:
+
+1. **Restore a working upgrade path.** `squad-upgrade.js` signs as `8K81…` and cosigns with `CytJ…`, both removed from Squads on 2026-09-15, so it cannot drive an upgrade today. A current member must sign — the agent holds `BLSBw8…` — with three of four approving.
+2. **Deploy v0.26**, which is what puts `signers_ext` on-chain.
+3. **Re-pin `EXPECTED_IDL_HASH`** on `turf-monster-mainnet` from the BUILT IDL; the v0.26 change alters the IDL.
+4. **Only then `update_signers`** with the five-member set.
+
+Attempting step 4 first does not fail harmlessly — it spends a ceremony and Mr. McRitchie's signatures on a transaction the live program cannot accept.
+
+⚠ **Never write "the multisig" unqualified.** Say *Squads* or *`VaultState`* every time. The unqualified form is exactly what produced the stale claims this section replaces, twice in one day.
 
 The 09:41 config transaction removed Xan (`8K81…`) and Mason (`CytJ…`) from BOTH multisigs; it touched no `VaultState`. So Xan is no longer a routine TurfVault upgrade admin — `squad-upgrade.js`, which signs as `8K81…`, can no longer approve anything — while remaining a live `VaultState` cosigner. A change to one authority is never a change to the other; read the one you mean.
 
