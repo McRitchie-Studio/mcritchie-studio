@@ -229,7 +229,14 @@
 #                  `--build` (syntax + unit + build) before the artifact is pushed.
 #                  The command is spawned as a STRING, so a `&&` chain is honoured
 #                  by the shell — a repo that ships no single gate script can still
-#                  declare its real lanes. DECLARED, NEVER INFERRED, the same rule
+#                  declare its real lanes. NO ROW DOES TODAY, and the one that did
+#                  is why the capability is described rather than recommended:
+#                  turf-vault declared its four CI lanes here as a chain for one day
+#                  (2026-09-14) before growing its own `bin/release-check`, and a
+#                  chain in this file is a COPY of another repo's CI that drifts
+#                  from it. Prefer a script the repo owns; reach for the chain only
+#                  to unblock a repo that cannot take one yet.
+#                  DECLARED, NEVER INFERRED, the same rule
 #                  lint_lane states below: nothing probes a tree for a test runner.
 #   lint_lane    — optional. `none` DECLARES that this repo ships no rubocop, so
 #                  the cert reader (FullSuiteGate.required_lanes) stops asking it
@@ -407,13 +414,13 @@ apps:
     # and the ship gate both skip a repo that registers no command.
     #
     # THE RAILS GATE WORKSPACE IS THE WHOLE REASON, and it is not "there is no
-    # command to run" — the `release_check:` key below registers this repo's four
-    # real CI lanes as a single `&&` chain, so such a command demonstrably exists.
-    # The difference is WHO RUNS IT: `release_check` is spawned in the checkout by
-    # bin/fast-check, while `test_cmd`/`qa_test_cmd` are spawned by
+    # command to run" — the `release_check:` key below registers this repo's own
+    # gate script, so such a command demonstrably exists. The difference is WHO RUNS
+    # IT: `release_check` is spawned in the checkout by bin/fast-check, while
+    # `test_cmd`/`qa_test_cmd` are spawned by
     # Release::GateWorkspace#prepare_gate_workspace!, which runs `bin/rails
     # db:test:prepare test:prepare` FIRST and dies on ENOENT before reaching the
-    # registered command. Do not "fix" that by copying the chain into these keys.
+    # registered command. Do not "fix" that by copying the gate into these keys.
     #
     # NO qa_deploy / QA ENV, and none is needed. Release::Repos.qa_app defaults
     # the key to the repo slug, turf-vault is absent from
@@ -484,38 +491,41 @@ apps:
     # task. The gap is now closed here instead of re-pointed.
     #
     # WHAT MADE IT CLOSABLE. The blocker was never "this repo has no tests" — it has
-    # four real lanes, measured 2026-09-14 on the committed tree: 56/56 node:test
-    # assertions, the doc op:// guard, and both Rust lanes. The blocker was that the
-    # whole-gate branch in bin/fast-check keyed on SECTION MEMBERSHIP (gem_repo?)
-    # rather than on a declared command, so an `apps` row could not reach it. That is
-    # now keyed on the DECLARATION (FullSuiteGate.registry_gated?), which is what this
-    # key supplies. One registry entry plus that generalisation, not a new subsystem.
+    # four real CI lanes and a suite of 61 node:test cases behind one of them. The
+    # blocker was that the whole-gate branch in bin/fast-check keyed on SECTION
+    # MEMBERSHIP (gem_repo?) rather than on a declared command, so an `apps` row could
+    # not reach it. That is now keyed on the DECLARATION
+    # (FullSuiteGate.registry_gated?), which is what this key supplies. One registry
+    # entry plus that generalisation, not a new subsystem.
     #
-    # WHY THESE FOUR, IN THIS ORDER. They are exactly .github/workflows/ci.yml's two
-    # jobs — `guards` (check:doc-op-refs, test:scripts) and `program` (cargo check,
-    # cargo clippy) — so bin/fast-check's "the same command runs on CI" evidence line
-    # stays literally true for this repo. CI runs the two jobs in parallel; a local
-    # lane is serial, so the sub-second Node pair goes FIRST and a prose or config-shape
-    # break surfaces in ~0.5s instead of behind a Rust compile. Measured warm on this
-    # laptop 2026-09-14: 0.3s + 0.5s + 3.5s + 1.5s ≈ 6s total, which is inside the
-    # builder-default budget fast-check is held to. A COLD `target/` pays a full
-    # compile on the first run, the same way a gem's first bundle does.
+    # THE VALUE IS A SCRIPT THE REPO OWNS, which is the whole point of the key and was
+    # not true for its first day. Until 2026-09-14 this row spelled turf-vault's four
+    # lanes out as a `&&` chain, because the repo shipped no bin/ directory to point
+    # at. That was a hub-side COPY of another repo's CI, and copies drift: if ci.yml
+    # gained or renamed a lane, the string here did not follow, and the local cert
+    # quietly covered less than the CI verdict it is credited against. turf-vault now
+    # ships `bin/release-check` (its PR #34), so this row names it — the same shape
+    # studio-engine and solana-studio use under `gems:` — and the gate's definition
+    # lives beside the code it gates.
     #
-    # ⚠ IT IS A `&&` CHAIN BECAUSE THIS REPO SHIPS NO GATE SCRIPT. studio-engine and
-    # solana-studio each declare `bin/release-check`, a script the REPO owns, and that
-    # is the better shape: it keeps the gate's definition next to the code it gates.
-    # turf-vault has no bin/ directory at all, and creating one is a turf-vault change,
-    # not a hub change. The cost of declaring the chain here instead is DRIFT — if
-    # ci.yml gains or renames a lane, this string does not follow.
-    # test/docs/cert_label_vocabulary_test.rb watches for that, and its reach is
-    # LIMITED ON PURPOSE: it reads the sibling turf-vault checkout when one is on
-    # disk and RETURNS EARLY when none is — a silent `return unless`, not a recorded
-    # minitest skip — so it is a local tripwire for whoever edits
-    # either side and NOT a hub-CI gate (hub CI clones this repo alone). The same
-    # file also pins this row's prose against the chain below, which needs no
-    # sibling and does run everywhere. The day this repo grows a `bin/release-check`,
-    # replace the chain with it and both problems go away.
-    release_check: npm run check:doc-op-refs && npm run test:scripts && cargo check --workspace --all-targets --locked && cargo clippy --workspace --all-targets --locked -- -D clippy::correctness
+    # WHAT THE SCRIPT RUNS, and who keeps that true. Exactly the lanes
+    # .github/workflows/ci.yml runs, cheapest-first and fail-fast: the two pure-Node
+    # guards, then the two Rust lanes (as of 2026-09-14: check:doc-op-refs,
+    # test:scripts, cargo check, cargo clippy — but the SCRIPT is the authority here,
+    # not this sentence). Measured warm on this laptop 2026-09-14: ~1s total, and a
+    # COLD `target/` pays a full compile on the first run the way a gem's first bundle
+    # does. The parity is ENFORCED, in turf-vault, by
+    # scripts/tests/release-check-covers-ci.test.js: it executes `bin/release-check
+    # --list`, extracts every gate lane from that workflow, and fails in either
+    # direction. That guard is pure node:test, so it runs inside turf-vault's own
+    # `guards` job on every push and PR — a real gate, where the hub-side tripwire it
+    # replaces could only fire for someone with turf-vault checked out beside this
+    # repo. test/docs/cert_label_vocabulary_test.rb keeps the hub's end honest: the
+    # declaration must stay a repo-owned script rather than a chain, this prose must
+    # name it, and — when a sibling turf-vault checkout is on disk — that script and
+    # that guard must both really be there, so the hub cannot go on believing parity
+    # is enforced somewhere it no longer is.
+    release_check: bin/release-check
     #
     # AND THE LINT LANE IS DECLARED ABSENT, which `release_check` alone does not cover.
     # bin/fast-check omits rubocop on this branch by construction, but bin/full-suite-check
@@ -525,7 +535,9 @@ apps:
     #
     # VERIFIED, NOT ASSUMED, because the script's own message warns against using this to
     # dodge a rubocop that merely fails: turf-vault ships NO Ruby at all — no .rubocop.yml,
-    # no bin/ directory, no Gemfile, no gemspec, and not one `.rb` file in the tree. It
+    # no Gemfile, no gemspec, and not one `.rb` file in the tree. Its bin/ directory holds
+    # exactly one entry, the bash `bin/release-check` this row names (re-verified
+    # 2026-09-14, when that directory came into existence). It
     # lints JavaScript with prettier (`npm run lint`), which is not this lane. Same
     # DECLARED-never-inferred rule as everywhere else here; studio-engine and solana-studio
     # are the existing cases.

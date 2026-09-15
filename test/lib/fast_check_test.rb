@@ -370,11 +370,12 @@ class FastCheckTest < Minitest::Test
   # and then been ARCHIVED. Keying on the DECLARATION closes it, and these execute
   # that path: every gem test above would still pass with the `apps` half broken.
   #
-  # The declared command is STUBBED here on purpose. Its real value (an `&&` chain
-  # of npm + cargo) needs a Node and Rust toolchain and the actual turf-vault
-  # checkout, neither of which belongs in a unit fixture; that the registry supplies
-  # it is proven by FullSuiteGate.release_check_cmd below, and that it runs is proven
-  # by running bin/fast-check in the real repo. What these pin is the BRANCH.
+  # The declared command is STUBBED here on purpose. Its real value (that repo's own
+  # bin/release-check, which runs npm + cargo lanes) needs a Node and Rust toolchain
+  # and the actual turf-vault checkout, neither of which belongs in a unit fixture;
+  # that the registry supplies it is proven by FullSuiteGate.release_check_cmd below,
+  # and that it runs is proven by running bin/fast-check in the real repo. What these
+  # pin is the BRANCH.
 
   def test_a_registry_gated_app_repo_runs_its_declared_gate_and_no_rails_lane
     with_repo_named("turf-vault") do |dir|
@@ -439,13 +440,22 @@ class FastCheckTest < Minitest::Test
     refute FullSuiteGate.registry_gated?("mcritchie-studio"), "the hub itself must never take this branch"
   end
 
+  # WHAT THIS ASSERTS CHANGED WITH THE DECLARATION (2026-09-14). It used to require the
+  # string "test:scripts", because the row spelled turf-vault's four CI lanes out as an
+  # `&&` chain and the lane list was readable right here. The row now names that repo's
+  # own `bin/release-check` — the shape studio-engine and solana-studio use — so the
+  # lanes are no longer in this repo to assert, and the naming is the property this
+  # registry can still hold: a chain here would be a COPY of another repo's CI that
+  # drifts from it. WHICH lanes the script runs is enforced where both artifacts live,
+  # by turf-vault's own scripts/tests/release-check-covers-ci.test.js, inside its CI.
   def test_turf_vault_declared_command_is_supplied_by_the_registry
     cmd = FullSuiteGate.release_check_cmd("turf-vault").to_s
 
     refute_empty cmd, "turf-vault's registry row declares no cert command"
-    assert_includes cmd, "test:scripts",
-                    "the declared lane must carry the repo's node:test suite — the lane that catches " \
-                    "the config-shape defects its Rust lanes are structurally blind to"
+    assert_equal "bin/release-check", cmd,
+                 "turf-vault's declared gate must be the script that repo owns. A command chain here is a " \
+                 "hub-side copy of its ci.yml and drifts from it; the local cert then covers less than the " \
+                 "CI verdict it is credited against."
   end
 
   # --- acceptance 3: the attempt closes on a crash path ------------------------

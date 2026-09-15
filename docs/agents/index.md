@@ -334,11 +334,14 @@ none of them gets `begin` or `ship`. But `bin/fast-check` carries a REGISTRY-GAT
 branch (`FullSuiteGate.registry_gated?` + `FullSuiteGate.release_check_cmd`): from a
 plain `git worktree add` desk, hub-absolute `bin/fast-check <task>` runs the repo's
 DECLARED gate as the whole mapped lane, skipping the Rails prepare lane that does not
-apply. Three repos declare one in `config/release_repos.yml`: `bin/release-check` for
-**studio-engine** and **solana-studio** (under `gems:`, registered 2026-08-31), and
-**turf-vault**'s four real CI lanes — `check:doc-op-refs`, `test:scripts`, `cargo
-check`, `cargo clippy` — as one `&&` chain (under `apps:`, declared 2026-09-14;
-measured ~6s warm, 56/56 node:test assertions).
+apply. Three repos declare one in `config/release_repos.yml`, and all three name the SAME
+thing — `bin/release-check`, a script that repo owns: **studio-engine** and
+**solana-studio** (under `gems:`, registered 2026-08-31) and **turf-vault** (under
+`apps:`, declared 2026-09-14 and repointed at its own script the same day; it runs
+that repo's four CI lanes, ~1s warm, 61 `node:test` cases among them). A registry row
+CAN declare a raw command chain instead, and turf-vault did for a day — but a chain
+in the hub is a copy of another repo's CI that drifts from it, so it is the unblock
+path, not the shape to copy.
 
 **Never record a "no tests" skip for turf-vault.** It has a suite and now has a lane
 to run it. Until 2026-09-14 it had the suite but no lane, because this branch keyed on
