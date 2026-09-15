@@ -461,15 +461,24 @@ The naive order — set the new value, then update everything else — inverts t
 and breaks the app for the length of the gap. The gap is never as short as
 planned, because the registration step is usually the one with another party in it.
 
-### The worked example: the Alex Bot signing key
+### The worked example: the Xan signing key
 
-The Alex Bot key is `SOLANA_ADMIN_KEY` on `turf-monster-qa` and
+> **Renamed and re-vaulted 2026-09-15.** The item is `agent.xan.solana` in
+> **`studio-agents-admin`** — not `agent.alex.solana` in `studio-agents`. An
+> ordinary agent token cannot see that vault BY DESIGN (it is what leaves an
+> agent at 1-of-3 on both Squads multisigs), so `source ~/.zprofile.admin`
+> before any read here. The field label is SPACED: `private key`.
+> The turf-vault identifiers below (`members.alex_bot`, `ALEX_BOT_KEY`) still
+> spell the OLD name — they are code in another repo, not stale prose, and
+> renaming them here would make this table wrong.
+
+The Xan key is `SOLANA_ADMIN_KEY` on `turf-monster-qa` and
 `turf-monster-mainnet`. Its PUBLIC half is registered in **two independent places**,
 and its SECRET half is consumed by a third. Phase 1 must list all three, because
 each is updated by a different mechanism and missing one leaves real authority with
 the key you just rotated out:
 
-| Where the Alex Bot key is registered or consumed | Updated by | Verified 2026-09-09 |
+| Where the Xan key is registered or consumed | Updated by | Verified 2026-09-09 |
 |---|---|---|
 | turf-vault `VaultState.signers` — contest/treasury 2-of-3 | `update_signers` (on-chain, 2-of-3) | `turf-monster/docs/SOLANA.md` signer list |
 | turf-vault **Squads V4 2-of-3 — MAINNET PROGRAM UPGRADE AUTHORITY** | a **Squads config transaction**, at `app.squads.so` | `turf-vault/scripts/squad.json` → `members.alex_bot` |
@@ -604,7 +613,7 @@ Now the on-chain signer half. Read the program, not the intuition
   are three legal rotations, one per choice of cosigning pair.
 - The set must also contain no duplicates and no `Pubkey::default()`.
 
-> **The key you are rotating out must not supply either signature.** Alex Bot is
+> **The key you are rotating out must not supply either signature.** Xan is
 > the SERVER key that normally partial-signs as `admin`, so the tooling and the
 > instinct both point at it — and continuity then requires it to SURVIVE the
 > update it authorized. Two outcomes, and the second is the dangerous one: the
@@ -631,7 +640,7 @@ not recognise. That is not "isolated"; it is BROKEN, and it is broken for both Q
 and mainnet at once. The correct order:
 
 1. Mint the new keypair, **and fund it**. Nothing is live yet, and an unfunded
-   key is not a working replacement: Alex Bot is the FEE PAYER, not just an
+   key is not a working replacement: Xan is the FEE PAYER, not just an
    identity. It pays all five transactions in `squad-upgrade.js` — including
    Mason's approval (`:164`) — signs and pays the permissionless `extendProgram`
    (`:119`, `:123`), and is the payer slot for `create_contest`,
