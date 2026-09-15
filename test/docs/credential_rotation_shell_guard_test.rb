@@ -79,7 +79,10 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
   # deriving ONLY the public key: `8K81…`, which `turf-vault/scripts/squad.json`
   # and `docs/CURRENT_DEPLOYMENT.md` both name "Alex Bot signer". That is what
   # makes the SOP row's "supplied per run from 1Password" true OF THIS KEY.
-  BOT_KEY_ITEM = "agent.alex.solana"
+  # Renamed from `agent.alex.solana` on 2026-09-15 AND moved to the
+  # `studio-agents-admin` vault. The inventory row records the vault; this pin
+  # only needs the item name the Squads row sends an operator to.
+  BOT_KEY_ITEM = "agent.xan.solana"
 
   # Every Solana credential the inventory FILES, as of 2026-09-14. This set is a
   # TRIPWIRE, not a catalogue: the SOP's registration row claims the human Alex
@@ -87,9 +90,14 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
   # notice that claim going stale is to notice a Solana item appearing. Add,
   # rename or remove one and this test fails, which is the point — the failure
   # sends a human back to that row to re-read it.
+  # Updated 2026-09-15: agent.alex.solana -> agent.xan.solana. The tripwire fired
+  # exactly as designed and sent a human back to the Squads registration row,
+  # which was re-read and still scopes its 1Password claim away from the human
+  # Alex key (`7ZDJ…`, "no filed item at all") — that claim is unaffected by the
+  # rename, so the pin moves rather than the row.
   FILED_SOLANA_ITEMS = %w[
     agent.solana
-    agent.alex.solana
+    agent.xan.solana
     agent.mack.solana
     agent.mason.solana
     agent.turf.solana
