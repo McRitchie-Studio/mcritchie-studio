@@ -83,12 +83,15 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
   # `studio-agents-admin` vault. The inventory row records the vault; this pin
   # only needs the item name the Squads row sends an operator to.
   #
-  # IT DID NOT MOVE AGAIN on 2026-09-15's second restructure. The Turf Monster
-  # admin identity became `solana.turf.admin`, but that is a 1Password filing,
-  # not on-chain membership — `squad-upgrade.js` still signs as `8K81…` because
-  # no Squads config transaction has replaced it. Repointing this pin at
-  # `solana.turf.admin` would make the Squads row describe a key that has never
-  # approved anything.
+  # THE PIN IS THE ITEM THE SOP NAMES, NOT A CLAIM THAT THE PATH STILL WORKS.
+  # Two things happened on 2026-09-15 and neither moves this pin. The Turf
+  # Monster admin identity became `solana.turf.admin` — a 1Password filing, not
+  # on-chain membership. Then at 09:41 a Squads config transaction REMOVED
+  # `8K81…` from both multisigs, so `squad-upgrade.js` can no longer approve
+  # anything; the inventory row says so. The pin still names `agent.xan.solana`
+  # because that is the item the SOP's Squads row sends an operator to and the
+  # inventory still files it. Repointing it at `solana.turf.admin` would make
+  # this guard assert against a row that does not describe that key.
   BOT_KEY_ITEM = "agent.xan.solana"
 
   # Every Solana credential the inventory FILES, as of 2026-09-14. This set is a

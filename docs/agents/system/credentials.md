@@ -13,7 +13,7 @@ All sensitive credentials are stored as environment variables, never in code.
 - `GOOGLE_CLIENT_ID` — Google OAuth client ID
 - `GOOGLE_CLIENT_SECRET` — Google OAuth client secret
 - `RAILS_MASTER_KEY` — Rails encrypted credentials key
-- `SOLANA_ADMIN_KEY` — Xan's Solana private key (base58), used by Turf Monster for onchain operations
+- `SOLANA_ADMIN_KEY` — Turf Monster's onchain signing key (base58). **Two different keys wear this name**: on the Heroku dynos it is Xan (`8K81…`, `agent.xan.solana`); in a local `.env` written by `bin/ecosystem-build` it is `solana.turf.admin` (`BLSBw8fX…`). See **Onchain Admin** below
 - `ANTHROPIC_API_KEY` — Claude API key for AI chat (McRitchie Studio)
 - `X_BEARER_TOKEN` — X (Twitter) API bearer token for News intake (McRitchie Studio). See `docs/agents/system/news-pipeline.md` for setup.
 
@@ -150,11 +150,22 @@ op item get "solana.turf.system.devnet" --vault "studio-agents" --account MWOV5O
 export SOLANA_ADMIN_KEY=$(op item get "solana.turf.admin" --vault "studio-agents" --account MWOV5OT5BRHATI4EGMN26C5DPA --fields "private-key")  # agent token; local/dev value
 ```
 
-**Item fields**: Each wallet entry contains `recovery phrase`, `private key` (base58), and `wallet address` (base58 public key).
+**Item fields**: this is NOT uniform, and assuming it is breaks the read — `op` fails the whole call on one wrong label rather than falling back. The older `agent.*` wallets carry `recovery phrase`, `private key` and `wallet address`, SPACED. The three `solana.turf.*` items above carry `private-key` and `wallet-address`, HYPHENATED, plus `phantom-email` / `phantom-password`, and no recovery phrase (verified 2026-09-15). `phantom.turf` mixes the two spellings on one item. When in doubt read `--format json` and pick whichever spelling is present, which is what `KeyStore#op_read_item` does.
 
 ### Onchain Admin
 
-Xan is the primary admin for routine TurfVault operations. Mr. McRitchie is the backup/admin cosigner. Deployment identity for both clusters lives in `turf-vault/docs/CURRENT_DEPLOYMENT.md`: each of its `## Devnet` and `## Mainnet` tables carries that cluster's program ID, Squads upgrade authority, threshold and three signer rows. **Read the heading you mean** — the two signer sets happen to agree today, but nothing in the program ties them together, so an address alone cannot tell you which cluster you are on. `turf-vault/scripts/squad.json` (`members`) is provenance and a script input — `scripts/initialize-mainnet.js` builds its `initialize` signer array from it — not the deployment record. Confirm the live set on-chain from `VaultState` (`seeds = [b"vault"]` against that cluster's program ID) rather than from any file. The `SOLANA_ADMIN_KEY` env var in Turf Monster's **local** `.env` holds `solana.turf.admin` (`BLSBw8fX…`, vault `studio-agents`, hyphenated labels) — that is what `bin/ecosystem-build` writes. **Production still holds a different key**: `turf-monster-mainnet`'s `SOLANA_ADMIN_KEY` is Xan (`8K81…`, `agent.xan.solana`, vault `studio-agents-admin`), and the move onto `solana.turf.system` is a separate task gated on funding that wallet. Local and deployed differ on purpose.
+**TWO AUTHORITIES, AND SINCE 2026-09-15 09:41 THEY DISAGREE.** Both were measured on-chain at `finalized` that day:
+
+| Authority | What it controls | Live set |
+|---|---|---|
+| Squads V4 multisig (mainnet `4H3fP3ot…`, devnet `7nRuVw3V…`) | the program **upgrade** authority | **3-of-4** — `3Qj4v9…`, `7ZDJ…`, `9gACbz…`, `BLSBw8…` (all mask 7) |
+| `VaultState.signers` (`seeds = [b"vault"]`, deployed v0.25.0) | treasury + governance ops | **2-of-3** — `8K81…`, `7ZDJ…`, `CytJ…`, unchanged |
+
+The 09:41 config transaction removed Xan (`8K81…`) and Mason (`CytJ…`) from BOTH multisigs; it touched no `VaultState`. So Xan is no longer a routine TurfVault upgrade admin — `squad-upgrade.js`, which signs as `8K81…`, can no longer approve anything — while remaining a live `VaultState` cosigner. A change to one authority is never a change to the other; read the one you mean.
+
+⚠ `3Qj4v9…` and `9gACbz…` are Mr. McRitchie's **personal** wallets. They are already seated and are deliberately filed in **no vault** — never file them into an agent-readable vault to unblock a ceremony. The agent holds exactly one of the four seats (`BLSBw8…`), and that is the separation.
+
+Deployment identity for both clusters lives in `turf-vault/docs/CURRENT_DEPLOYMENT.md`: each of its `## Devnet` and `## Mainnet` tables carries that cluster's program ID, Squads upgrade authority, threshold and three signer rows. **Read the heading you mean** — the two `VaultState` signer sets agree on both clusters today, but nothing in the program ties them together, so an address alone cannot tell you which cluster you are on. `turf-vault/scripts/squad.json` (`members`) is provenance and a script input — `scripts/initialize-mainnet.js` builds its `initialize` signer array from it — not the deployment record. Confirm the live set on-chain from `VaultState` (`seeds = [b"vault"]` against that cluster's program ID) rather than from any file. The `SOLANA_ADMIN_KEY` env var in Turf Monster's **local** `.env` holds `solana.turf.admin` (`BLSBw8fX…`, vault `studio-agents`, hyphenated labels) — that is what `bin/ecosystem-build` writes. **Production still holds a different key**: `turf-monster-mainnet`'s `SOLANA_ADMIN_KEY` is Xan (`8K81…`, `agent.xan.solana`, vault `studio-agents-admin`), and the move onto `solana.turf.system` is a separate task gated on funding that wallet. Local and deployed differ on purpose.
 
 ## AWS — S3 + Amazon SES
 

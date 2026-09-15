@@ -475,11 +475,18 @@ planned, because the registration step is usually the one with another party in 
 > that same day the Turf Monster keys were refiled entity-first into
 > `solana.turf.admin`, `solana.turf.system` and `solana.turf.system.devnet`, all
 > agent-readable in `studio-agents` with HYPHENATED labels. That moved the
-> agent's Turf Monster admin identity and local `SOLANA_ADMIN_KEY`; it moved no
-> on-chain membership. `8K81…` is still the Squads signer and still production's
-> `SOLANA_ADMIN_KEY`, so this worked example rotates the key it always did.
-> Mr. McRitchie decided that day to retire `8K81…` from the signer set — when
-> that is actually transacted, this example is the procedure that does it.
+>
+> **THE SQUADS HALF OF THIS EXAMPLE IS NOW HISTORY, AND THE REST STILL RUNS.**
+> At 09:41 that day a Squads config transaction REMOVED `8K81…` and `CytJ…` from
+> both multisigs, which are now **3-of-4** (`3Qj4v9…`, `7ZDJ…`, `9gACbz…`,
+> `BLSBw8…`) — measured on-chain at `finalized`. So `squad-upgrade.js`, which
+> signs as `ALEX_BOT_KEY`/`8K81…` and cosigns with `MASON_KEY`/`CytJ…`, can no
+> longer approve anything, and the "rotate it on Squads too" step below does not
+> apply to this key any more. What `8K81…` still IS: production's
+> `SOLANA_ADMIN_KEY` and a live `VaultState.signers` entry (2-of-3, untouched on
+> both clusters). Those are the parts this example still rotates. The two
+> authorities moved independently, which is exactly why this SOP insists on
+> reading each one live rather than inferring it from the other.
 
 The Xan key is `SOLANA_ADMIN_KEY` on `turf-monster-qa` and
 `turf-monster-mainnet`. Its PUBLIC half is registered in **two independent places**,
