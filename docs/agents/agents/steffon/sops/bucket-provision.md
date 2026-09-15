@@ -33,6 +33,12 @@ ask).
 
 ## 1. Open the lane
 
+Provisioning is **admin work** — the lane below is one you are expected to hold,
+so an admin token that is absent or refused here is a setup gap on THIS MACHINE,
+not a lane closed to you. `source ~/.zprofile.admin` when the file is on disk but
+missing from this shell; `bin/setup-1pass-token --admin`, once, when the machine
+has no such file at all — only that second one is Mr. McRitchie's.
+
 ```bash
 source ~/.zprofile.admin
 export OP_SERVICE_ACCOUNT_TOKEN="$OP_ADMIN_SERVICE_ACCOUNT_TOKEN"
@@ -44,7 +50,9 @@ aws sts get-caller-identity   # must answer arn:...:user/studio-agents-admin
 
 A refused `op` read here usually means the shell skipped
 `~/.zprofile.admin`, or the 1Password daily quota is spent — check
-`op service-account ratelimit` before escalating.
+`op service-account ratelimit` before escalating. Source it without a pipe:
+a pipeline runs `source` in a subshell, so the token lands in a child that exits
+and the lane reads ABSENT while fully present.
 
 ## 2. Create the pair
 
@@ -105,8 +113,14 @@ done
 
 ## 4. Store the keys — the one manual seam
 
-The admin service account's vault grant is **read-only**, so this SOP cannot
-write 1Password items. Each pair is in `$HOME/.mcr-$APP-<env>.key` from step 3
+**The admin lane CAN write 1Password items** — `studio-agents*` has been
+admin-lane read+write since 2026-09-02 — so file the record with
+[`credential-filing`](credential-filing.md) §4 rather than routing around it, and
+read a refusal here as a symptom rather than the expected result. (This step
+claimed the grant was read-only until 2026-09-15, contradicting both
+`credential-filing` §4 and `credential-inventory.md`.) What stays manual is the
+ROUTING below: the values must reach two stores without passing through a
+transcript. Each pair is in `$HOME/.mcr-$APP-<env>.key` from step 3
 (id, then secret). Route it to its stores without printing it into a transcript:
 
 - **Deployed app:** set `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` on the
@@ -158,6 +172,8 @@ stop. Do not create empty buckets on spec.
 
 Approved rule set, credential tiers, legacy shared-identity migration, and the
 public-read exceptions: [`../../../modules/object-storage.md`](../../../modules/object-storage.md).
+Why an admin lane is meant to hold admin credentials, and the two ways a
+credential CHECK lies: [`../../../modules/credentials.md`](../../../modules/credentials.md).
 The 2026-09-01 fleet audit that produced these standards found six of nine
 buckets world-readable (including the empty Industries pair now flipped
 private) and zero versioning anywhere — the census table records the after
