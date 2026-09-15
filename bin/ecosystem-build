@@ -336,14 +336,18 @@ phase_secrets() {
   # agent_vault_visible (top of file), which is where the exact-match and
   # fail-closed rules live.
   #
-  # IT RESOLVES AT THREE SITES IN THIS FUNCTION, and only this one binds a
-  # variable: here; the Heroku item read below; and the SOLANA_ADMIN_KEY entry in
-  # the op_secrets map. The other two expand
-  # ${MCR_OP_VAULT_AGENT:-studio-agents} again instead of reading $agent_vault,
-  # so changing the default HERE alone leaves them pointed at the old vault — the
-  # guard would then report the new vault visible while the real reads went
+  # IT RESOLVES AT TWO SITES IN THIS FUNCTION, and only this one binds a
+  # variable: here, and the Heroku item read below, which expands
+  # ${MCR_OP_VAULT_AGENT:-studio-agents} again instead of reading $agent_vault.
+  # So changing the default HERE alone leaves that one pointed at the old vault —
+  # the guard would then report the new vault visible while the real read went
   # somewhere else, which is the defect class this guard exists to catch. Change
-  # all three, or pass $agent_vault down to them.
+  # both, or pass $agent_vault down.
+  #
+  # IT USED TO BE THREE. The SOLANA_ADMIN_KEY entry in the op_secrets map was the
+  # third, and on 2026-09-15 it moved OFF the agent vault on purpose — see the
+  # note above that map. Do not count it back in: this guard's verdict says
+  # nothing about whether that key is reachable, and it is not meant to.
   #
   # THREE OUTCOMES, NOT TWO. Splitting "op/jq missing" out of "vault not
   # visible" is the point of the case below: the old single else-branch sent
@@ -429,8 +433,22 @@ phase_secrets() {
   # 1Password-only secrets that aren't in Heroku config but the app needs for full
   # functionality. Mapping: env_var_name -> "vault/item/field". Always re-fetched
   # (cheap) so rotated tokens propagate without manual intervention.
+  #
+  # SOLANA_ADMIN_KEY IS DELIBERATELY NOT IN THE AGENT VAULT, and this line must
+  # not be "corrected" back to $MCR_OP_VAULT_AGENT. On 2026-09-15 the item was
+  # renamed agent.alex.solana -> agent.xan.solana AND moved to
+  # studio-agents-admin, which an ordinary agent service account cannot see. That
+  # inaccessibility IS the control: it is what leaves an agent at 1-of-3 instead
+  # of 2-of-3 on both Squads multisigs. A version of this line that an agent
+  # token could read would mean the key had been moved back — the exact thing the
+  # separation exists to prevent. Fill it in by running this phase under the
+  # admin service account: `source ~/.zprofile.admin`.
+  #
+  # The field label is SPACED ("private key"), verified against the item on
+  # 2026-09-15; `op read "op://$admin_vault/agent.xan.solana/private key"` returns it.
+  local admin_vault="${MCR_OP_VAULT_ADMIN:-studio-agents-admin}"
   local op_secrets=(
-    "turf-monster|SOLANA_ADMIN_KEY|${MCR_OP_VAULT_AGENT:-studio-agents}/agent.alex.solana/private key"
+    "turf-monster|SOLANA_ADMIN_KEY|$admin_vault/agent.xan.solana/private key"
   )
   for entry in "${op_secrets[@]}"; do
     IFS='|' read -r app var ref <<< "$entry"
@@ -439,7 +457,12 @@ phase_secrets() {
     local value
     value=$(op_metered op read "op://$ref" 2>/dev/null)
     if [ -z "$value" ]; then
-      log_fail "$var (op://$ref)" "not retrievable — does the token have read on that vault?"
+      if [ "${ref#"$admin_vault"/}" != "$ref" ]; then
+        log_fail "$var (op://$ref)" \
+                 "not retrievable — that is the ADMIN vault, which an agent token cannot see by design; re-run after: source ~/.zprofile.admin"
+      else
+        log_fail "$var (op://$ref)" "not retrievable — does the token have read on that vault?"
+      fi
       continue
     fi
     sed -i '' "/^$var=/d" "$env_path"
