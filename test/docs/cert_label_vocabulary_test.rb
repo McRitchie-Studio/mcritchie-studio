@@ -373,67 +373,99 @@ class CertLabelVocabularyTest < Minitest::Test
     refute_empty cmd, "turf-vault's registry row declares no release_check command"
   end
 
-  # THE ENTRY MUST DOCUMENT THE COMMAND IT DECLARES, AND THE COMMAND MUST COVER CI.
+  # THE DECLARATION MUST STAY A SCRIPT THE REPO OWNS, AND THE PROSE MUST NAME IT.
   # Two halves of one question — "does this row still describe what it runs?" — kept
   # in ONE test on purpose, so the half that needs no sibling checkout always runs.
   #
-  # A `&&` chain in a YAML scalar is easy to extend and easy to leave undescribed,
-  # and this row's prose is what a reader trusts about what the cert covers. It is
-  # also a hub-side COPY of turf-vault's own CI lanes, because that repo ships no
-  # bin/release-check for the registry to point at, so it can fall behind ci.yml.
+  # WHAT THIS GUARD USED TO DO, AND WHY IT CHANGED. Until 2026-09-14 this row spelled
+  # turf-vault's four CI lanes out as a `&&` chain, so this test could read the lanes
+  # straight off the declaration: it asserted the prose named each one, and — when a
+  # sibling checkout was on disk — that the chain covered every lane ci.yml runs. The
+  # chain is gone. turf-vault ships `bin/release-check` and the row names it, so there
+  # are no lanes in this file to enumerate, and the CI-parity check has MOVED TO THE
+  # REPO THAT OWNS BOTH ARTIFACTS: turf-vault's scripts/tests/release-check-covers-ci.test.js
+  # runs `bin/release-check --list`, extracts every gate lane from its own ci.yml, and
+  # fails in either direction. That is a strict upgrade — it is pure node:test, so it
+  # runs inside turf-vault's `guards` job on every push and PR, where this half could
+  # only ever fire for someone with that repo checked out beside this one.
   #
-  # ITS LIMIT, STATED PLAINLY: the CI half reads a SIBLING checkout, so it can only
-  # run where one exists. It resolves from any ancestor of Rails.root (which is how
-  # it works from a worktree desk, whose parent is `.worktrees`, not the projects
-  # root) and is simply NOT ASSERTED when turf-vault is absent — as on hub CI, which
-  # clones this repo alone. That half is a local tripwire for whoever edits either
-  # side, not a CI gate, and must not be described as one. It is folded in here
-  # rather than given its own `skip`ped test so that this file always asserts the
-  # prose half, and so the repo's skip ratchets stay where they are.
-  def test_turf_vault_entry_documents_every_lane_it_declares
+  # SO THIS GUARD NOW PINS THE HUB'S END OF THE ARRANGEMENT, which is the half that can
+  # rot here: the declaration must stay a repo-owned script rather than drifting back
+  # into a copy of someone else's CI, and the prose must name the script a reader has
+  # to open to learn what the cert covers.
+  #
+  # ITS SIBLING HALF, AND THAT HALF'S LIMIT, STATED PLAINLY. When a turf-vault checkout
+  # is on disk AND CARRIES the script this row names, the guard this prose credits must
+  # be there beside it — a script kept while its parity guard is deleted is exactly how
+  # the drift check gets retired in silence, and it is the one thing this side can still
+  # prove. A checkout that does NOT carry the script proves nothing either way: it may
+  # simply sit on a branch older than the declaration (it did while turf-vault PR #34
+  # was open), so that case is silent rather than red, the same as no checkout at all —
+  # as on hub CI, which clones this repo alone. A missing script is not a quiet failure
+  # in any case: the cert itself dies COULD NOT RUN, naming the command. A local
+  # tripwire, never a CI gate, and it must not be described as one. It is folded in here
+  # rather than given its own `skip`ped test so that this file always asserts the prose
+  # half, and so the repo's skip ratchets stay where they are.
+  #
+  # IT RESOLVES FROM THIS FILE, NOT FROM `Rails.root` — fixed 2026-09-14, because the
+  # old spelling could not run. This is a standalone minitest file (it requires
+  # minitest/autorun and two scripts, never test_helper), so nothing boots the
+  # application when it is run ALONE — which is precisely what bin/fast-check's
+  # diff-mapped lane does to it — and `Rails.root` raised NoMethodError there. It only
+  # ever worked when some other file in the same run booted Rails first. ROOT is this
+  # repo's own toplevel and needs nothing loaded.
+  def test_turf_vault_entry_documents_the_gate_it_declares
     entry = turf_vault_entry
-    lanes = FullSuiteGate.release_check_cmd("turf-vault").to_s.split("&&").map(&:strip)
-
-    assert_operator lanes.size, :>=, 2, "expected a multi-lane chain, got #{lanes.inspect}"
-    lanes.each do |lane|
-      # The distinguishing token, not the whole invocation: the prose names lanes
-      # readably ("cargo clippy", "test:scripts") rather than quoting every flag.
-      token = lane[/\b(?:npm run |yarn )?([a-z][a-z0-9:_-]*)/i, 1]
-      subject = lane.include?("cargo") ? lane.split[0, 2].join(" ") : token
-      assert entry.include?(subject),
-             "the turf-vault entry declares `#{lane}` but its prose never mentions #{subject.inspect} — " \
-             "a reader cannot tell what this repo's cert actually covers"
-    end
-
-    ci = turf_vault_ci_workflow
-    return unless ci
-
     declared = FullSuiteGate.release_check_cmd("turf-vault").to_s
-    runs = ci.scan(/^\s*run:\s*(.+)$/).flatten.map(&:strip)
-    covered = runs.select { |r| r.start_with?("npm run", "cargo check", "cargo clippy") }
 
-    refute_empty covered,
-                 "turf-vault's ci.yml no longer runs any of the lanes this cert declares — the " \
-                 "declared chain must be re-derived from the workflow"
-    covered.each do |run_cmd|
-      # `npm run <script>` needs THREE words to identify a lane — two would reduce
-      # every npm step to "npm run" and quietly cover a script CI added and this
-      # chain does not run. `cargo <subcommand>` is identified by two.
-      subject = run_cmd.split[0, run_cmd.start_with?("npm run") ? 3 : 2].join(" ")
-      assert declared.include?(subject),
-             "turf-vault's CI runs `#{run_cmd}` and the declared cert lane does not cover #{subject.inspect}. " \
-             "The registry's release_check has drifted from .github/workflows/ci.yml; re-derive it " \
-             "(or give the repo a bin/release-check and point the row at that)."
-    end
+    refute_includes declared, "&&",
+                    "turf-vault's row is spelling its lanes out again (#{declared.inspect}). A command chain " \
+                    "here is a COPY of that repo's ci.yml living in this one, and it drifts: the local cert " \
+                    "then covers less than the CI verdict it is credited against. Name the repo's own script."
+    assert_match %r{\Abin/[\w.-]+\z}, declared,
+                 "turf-vault's declared gate must be a script the REPO owns (got #{declared.inspect}), the " \
+                 "shape studio-engine and solana-studio use — so the gate's definition lives beside the code " \
+                 "it gates and cannot be edited in a different repo from the one it grades."
+    assert entry.include?(declared),
+           "the turf-vault entry declares `#{declared}` but its prose never names it — a reader cannot tell " \
+           "where this repo's cert is actually defined."
+    assert entry.include?(TURF_VAULT_PARITY_GUARD),
+           "the turf-vault entry no longer credits #{TURF_VAULT_PARITY_GUARD} with holding that script equal " \
+           "to ci.yml. That credit is the whole reason this row can name a script without enumerating what it " \
+           "runs; if the guard moved, say where it moved to."
+
+    root = turf_vault_checkout
+    return unless root
+
+    script = root.join(declared)
+    # NOT `assert script.file?` — see the limit above: a checkout older than the
+    # declaration is not evidence, and the cert reports a missing command itself.
+    return unless script.file?
+
+    assert script.stat.mode.anybits?(0o111),
+           "#{script} is not executable, so the cert would die EACCES — a failure that looks nothing like its cause"
+
+    guard = root.join(TURF_VAULT_PARITY_GUARD)
+    assert guard.file?,
+           "#{root} no longer carries #{TURF_VAULT_PARITY_GUARD}, the guard this row credits with keeping " \
+           "`#{declared}` equal to that repo's ci.yml. With it gone there is NO drift check anywhere: the hub " \
+           "stopped enumerating the lanes precisely because that file enforces them. Restore it, or re-derive " \
+           "the lanes here and rewrite this entry to say so."
   end
 
-  # Walk up from Rails.root looking for a projects root that holds turf-vault. A
-  # worktree desk sits two levels below the hub primary, so Rails.root.parent is
-  # `.worktrees` and the naive sibling lookup finds nothing.
-  def turf_vault_ci_workflow
-    Pathname.new(Rails.root).ascend do |dir|
-      candidate = dir.join("turf-vault", ".github", "workflows", "ci.yml")
-      return candidate.read if candidate.file?
+  # The guard, inside turf-vault, that holds bin/release-check equal to that repo's
+  # ci.yml. Named once: the prose above must credit it and the sibling half must find
+  # it, and those two must not be able to disagree.
+  TURF_VAULT_PARITY_GUARD = "scripts/tests/release-check-covers-ci.test.js"
+
+  # Walk up from THIS repo's toplevel looking for a projects root that holds
+  # turf-vault. A worktree desk sits two levels below the hub primary, so the naive
+  # `../turf-vault` lookup finds nothing from one. Resolved by its ci.yml so an empty
+  # or unrelated directory of the same name cannot answer.
+  def turf_vault_checkout
+    Pathname.new(ROOT).ascend do |dir|
+      candidate = dir.join("turf-vault")
+      return candidate if candidate.join(".github", "workflows", "ci.yml").file?
     end
     nil
   end

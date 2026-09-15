@@ -137,12 +137,15 @@ The rules, in order:
    re-rots it.
 4. **A Ruby backtrace frame is evidence, not a citation.** `foo.rb:118:in '...'` in a
    fixture is what the interpreter said at the SHA it crashed on. Leave it alone.
-5. **A second anchor is a second citation.** `<file>:224 + :232` and `<file>:229,231` are
-   TWO pointers each — the continuation inherits the path of the citation it follows, and
-   both halves rot independently. The guard resolves and counts both, so a continuation
-   buys nothing: it costs the same ratchet toll as spelling the path out twice. Until
-   2026-09-14 it cost nothing because no lane could see it, which is how three of them
-   came to be live in this repo at once — two of them pointing at the wrong line.
+5. **A second anchor is a second citation, and it needs its own colon.** `<file>:224 + :232`
+   and `<file>:631, :1139` are TWO pointers each — the continuation inherits the path of the
+   citation it follows, and both halves rot independently. The guard resolves and counts
+   both, so a continuation buys nothing: it costs the same ratchet toll as spelling the path
+   out twice. Until 2026-09-14 it cost nothing because no lane could see it, which is how
+   three of them came to be live in this repo at once — two of them pointing at the wrong
+   line. **Write the colon.** A bare `<file>:229,231` is the same string as a thousands
+   separator, so the guard refuses to read it either way: it will not count your second
+   anchor, and it will not mint one out of somebody's `<file>:8,370`. Spell it `:229, :231`.
 
 `test/docs/citation_resolution_guard_test.rb` is the teeth. It keys on **resolution**
 — it opens the cited file and looks — never on the wording around the citation, so

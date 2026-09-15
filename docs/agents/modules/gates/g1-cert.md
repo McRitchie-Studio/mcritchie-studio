@@ -183,11 +183,11 @@ impossible by construction rather than by every repo remembering to ignore `tmp/
      **It is keyed on the DECLARATION, not on the `gems` section** (`FullSuiteGate.registry_gated?`,
      changed 2026-09-14). While it keyed on the section, an `apps` row could never
      reach this branch however completely it declared its lane — which is why
-     turf-vault had four real CI lanes and no local cert for months. Declared today:
-     studio-engine and solana-studio (`bin/release-check`; studio-engine measured
-     2026-08-26 at ~215s for 102 files / 1491 runs) and turf-vault (its four CI lanes
-     as one `&&` chain, measured 2026-09-14 at ~6s warm). So a studio-engine OR a
-     turf-vault builder CAN use the fast route.
+     turf-vault had four real CI lanes and no local cert for months. Declared today,
+     all three naming a `bin/release-check` their own repo owns: studio-engine and
+     solana-studio (studio-engine measured 2026-08-26 at ~215s for 102 files / 1491
+     runs) and turf-vault (its four CI lanes, measured 2026-09-14 at ~1s warm). So a
+     studio-engine OR a turf-vault builder CAN use the fast route.
    - `mapped-tests` — `bin/rails test <files the branch diff maps to>` (path
      convention, falling back to a grep for the SUBJECT'S IDENTITY — a script's
      path and quoted command name, a config's path and quoted basename, an app

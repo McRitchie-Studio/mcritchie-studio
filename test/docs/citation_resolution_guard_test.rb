@@ -50,7 +50,12 @@ require "test_helper"
 # downstream, which is the point of parsing the shape rather than stating a limit about it.
 # Measured: parsed onto the tree at 24890a10, before this task's conversions, those three
 # anchors took the population from 63 to 66 — past a ceiling of 63, which is the red that
-# proved the lane bites. The grammar is deliberately narrow; see CONTINUATION_ANCHOR.
+# proved the lane bites. The grammar is deliberately narrow — narrower now than the day it
+# landed, because its bare-comma branch read `bin/release.rb:8,370` as two anchors and
+# `bin/ship:100,128` and `bin/statusline:229,231` are the same string as a thousands
+# separator. `bin/statusline:229,231` is therefore the one of those three shapes this
+# grammar no longer reads, and it is pinned as a known miss in UNREAD_CONTINUATIONS. See
+# CONTINUATION_ANCHOR for the measurement behind that trade.
 #
 # THE HOUSE CONVENTION this enforces is stated once, in
 # docs/agents/modules/docs-maintenance.md under "Citing Code From Prose"; this file is
@@ -107,28 +112,56 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
   # citation, never free-standing, so it can mean nothing except "another line of the file
   # just named".
   #
-  # TWO SPELLINGS, AND THEY ARE NOT EQUALLY SAFE. That is why this accepts a bare number
-  # after one punctuation mark and a connective word only when a colon disambiguates it:
-  #   · COLON-PREFIXED (`, :1139`, ` + :232`) — unambiguous. Nothing in English prose
-  #     spells a colon-then-digits, so any connective may introduce one.
-  #   · BARE (`:229,231`) — ambiguous with a thousands separator, so only the tightest
-  #     spelling this tree actually contains is accepted: a comma with nothing around it.
-  #     An earlier draft allowed a bare number after `and`, which read `foo.rb:12 and 3
-  #     others` as a citation to line 3 — inventing a pointer nobody wrote, which is
-  #     strictly worse than missing one, because a reader cannot tell it from the real
-  #     thing and no author will recognise it as theirs.
+  # A COLON IS REQUIRED. The connective may be anything a sentence reaches for — `, :1139`,
+  # ` + :232`, ` and :44` — but the number itself must be introduced by a colon, because
+  # nothing in English prose spells a colon-then-digits and everything else does.
   #
-  # MEASURED 2026-09-14 across all 1564 scanned files: this grammar matches three sites and
-  # nothing else. The loose version (any connective, colon optional) matched the same three,
-  # so narrowing costs no coverage today and buys back every ambiguous shape.
+  # AN EARLIER DRAFT ALSO ACCEPTED A BARE NUMBER AFTER A COMMA (`:229,231`), justified here
+  # as "the tightest spelling this tree actually contains". That justification was wrong in
+  # the one way that mattered: it named the thousands separator as the hazard the narrowing
+  # defends against, and `,231` IS the thousands separator — the two are the same string,
+  # with no feature of either that tells them apart. What the narrowing actually removed was
+  # the `and 3 others` case below. Measured on the shipped grammar, the bare branch invented:
+  #   · `bin/release.rb:8,370` → anchors at line 8 AND line 370. Both resolve, so no lane
+  #     says a word and the ratchet silently charges two tolls for one pointer.
+  #   · `bin/ship:100,000`     → anchor at line 0, which lane 1 then reds as "outside
+  #     bin/ship" — the guard accusing correct prose, the worst failure it has.
+  #   · `x.rb:1,2,3`           → two phantom anchors chained off one citation.
+  # Reachability is ordinary: 132 comma-grouped numbers already sit in the scanned corpus,
+  # and 8 of the 46 files this repo cites by line are over 999 lines long, so a separator is
+  # the NATURAL spelling of a line number in them.
+  #
+  # DROPPING IT COST ONE DETECTION, EVER. Measured across all 1565 scanned files today the
+  # bare branch matches nothing; measured across the 1564 files at 24890a10, before the
+  # sites converted, its entire yield in the history of this repo was ONE — the
+  # `bin/statusline:229,231` in test/lib/devops_shift_argument_guard_test.rb — and review
+  # re-derived both of its anchors as CORRECT. So the branch has never caught rot, and an
+  # invention is strictly worse than a miss: nobody will recognise the pointer as theirs,
+  # and the failure names a file they never cited.
+  #
+  # A VERSION NUMBER IS NOT A LINE NUMBER either. `(?!\.\d)` is why ` and :3.4.1` no longer
+  # mints an anchor at line 3; a sentence-ending `:232.` is untouched, because the guard
+  # looks for a digit after the dot, not for the dot.
+  #
+  # MEASURED 2026-09-14 across all 1565 scanned files: this grammar matches nothing at all —
+  # every continuation this repo ever wrote is now a seam. That is exactly why
+  # test_the_continuation_walk_follows_a_chain_to_its_end drives it from fixtures instead of
+  # from the tree, and why CONTINUATION_SHAPES pins the spellings verbatim.
   # test_the_continuation_grammar_invents_no_anchor pins the near misses that were actually
   # sitting after citations in this repo when that was measured.
   #
-  # ITS LIMIT, STATED PLAINLY: a continuation spelled some other way — "lines 224 and 232 of
-  # bin/release.rb", a prose range, a bulleted list under one path — is NOT matched and is
-  # not counted. Resolution can only follow a pointer it can see, and widening this to catch
-  # prose would re-import the wording-keyed error rate limit A rejects.
-  CONTINUATION_ANCHOR = /\A(?:[ \t]*(?:[,+&]|\band\b|\bor\b)[ \t]*:|,)(\d+)(?:-(\d+))?\b/
+  # ITS LIMIT, STATED PLAINLY: a continuation spelled some other way — the bare `:229,231`
+  # above, "lines 224 and 232 of bin/release.rb", a prose range, a bulleted list under one
+  # path — is NOT matched and is not counted. Those shapes stay a silent way past lane 3,
+  # which is a real hole and is the price of never inventing. Resolution can only follow a
+  # pointer it can see, and widening this to catch prose would re-import the wording-keyed
+  # error rate limit A rejects.
+  CONTINUATION_ANCHOR = /\A[ \t]*(?:[,+&]|\band\b|\bor\b)[ \t]*:(\d+)(?:-(\d+))?(?!\.\d)\b/
+
+  # How much text after a citation is offered to CONTINUATION_ANCHOR. It is a WINDOW, not
+  # the rest of the line, so a number further down the sentence can never be adopted as a
+  # second anchor; the pattern is anchored at `\A` against it.
+  WINDOW = 48
 
   # A RUBY BACKTRACE FRAME IS EVIDENCE, NOT A POINTER. `foo.rb:118:in 'block in
   # apply_moves!'` inside a fixture is a captured crash — what the interpreter said
@@ -201,11 +234,16 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
   # SUM is invariant under conversion: a site that changes form still counts once, and
   # only a rotted pattern or a dead glob can drop it.
   #
-  # Measured 2026-09-14 on accepted 24890a10, after the follow-up task's conversions and
-  # with continuation anchors counted: 1564 files, 57 `path:line` + 102 `path#seam` = 159
-  # citations. (The shipped guard recorded 63 + 91 = 154 on ae5e2901. Six citations moved
-  # across — nine ANCHORS, because three of the six carried a continuation — and the
-  # census widened under them in the same commit.)
+  # Measured 2026-09-14 on accepted 9c5c25ab, after the follow-up task's conversions and
+  # with continuation anchors counted: 1565 files, 57 `path:line` + 103 `path#seam` = 160
+  # citations. (This paragraph first recorded 1564 / 57 / 102 against **24890a10** — which
+  # is the BASE the follow-up branched from, where the real figures are 1564 / 66 / 91.
+  # 57 + 102 was the branch HEAD; the merge added a file and a seam. A count and the SHA it
+  # was taken at rot apart exactly like a citation and its line, which is why the floors
+  # below are the mechanism and this sentence is only a record.
+  # The shipped guard recorded 63 + 91 = 154 on ae5e2901. Six citations moved across — nine
+  # ANCHORS, because three of the six carried a continuation — and the census widened under
+  # them in the same commit.)
   MINIMUM_FILES = 1200
   MINIMUM_CITATIONS = 100
 
@@ -223,11 +261,14 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
   # numbers: continuation anchors are census rows now, so 57 covers pointers 63 never
   # did. The arithmetic closes from either end. On the unconverted tree the widened
   # census read 66 — the old 63 plus the three anchors it had been hiding — over a
-  # ceiling of 63, and that RED is the proof the continuation lane bites; it is
-  # reproducible at 24890a10 with this file's census and nothing else changed. Converting
-  # six citations then removed nine anchors (three of them carried a continuation),
-  # leaving 57, which is also 63 − 6. The seam population rose 91 → 102 over the same
-  # diff: every anchor that left became a named landmark rather than a deletion.
+  # ceiling of 63, and that RED is the proof the continuation lane bites. It is still
+  # reproducible at 24890a10 with this file's census and nothing else changed, but it reads
+  # 65 THERE NOW, not 66: one of those three was the bare `bin/statusline:229,231`, which
+  # this grammar no longer reads (see CONTINUATION_ANCHOR). 65 over 63 is the same red for
+  # the same reason. Converting six citations then removed nine anchors (three of them
+  # carried a continuation), leaving 57, which is also 63 − 6. The seam population rose
+  # 91 → 102 over the same diff, and 103 once it merged: every anchor that left became a
+  # named landmark rather than a deletion.
   LINE_CITATION_CEILING = 57
 
   def test_every_path_line_citation_lands_on_a_substantive_line
@@ -316,14 +357,13 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
     end
   end
 
-  # THE CONTINUATION SHAPES, VERBATIM, as this repo wrote them before this task converted
-  # all three to seams. They cannot be proved by the tree any more — that is what
+  # THE CONTINUATION SHAPES, VERBATIM, as this repo wrote them before the conversions turned
+  # all three into seams. They cannot be proved by the tree any more — that is what
   # converting them means — so they are pinned here, in the file the census excludes.
   # Each pair is (the citation, the text that followed it).
   CONTINUATION_SHAPES = [
     ["bin/release.rb:224", " + :232"],
-    ["bin/task:631", ", :1139"],
-    ["bin/statusline:229", ",231"]
+    ["bin/task:631", ", :1139"]
   ].freeze
 
   def test_the_continuation_grammar_sees_every_shape_this_repo_wrote
@@ -336,6 +376,40 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
                     "the hole this shape used to be"
       assert_operator c[1].to_i, :>, 0
     end
+  end
+
+  # THE SPELLING THIS GRAMMAR DELIBERATELY CANNOT READ, and the third shape this repo once
+  # wrote. `bin/statusline:229,231` was a real, CORRECT pair of anchors — and it is the same
+  # string as a thousands separator, so reading it means reading `bin/release.rb:8,370` too.
+  # It is pinned as a KNOWN MISS rather than deleted, because the honest record is that
+  # closing the invention cost this one shape, and a future reader weighing the trade needs
+  # the price in front of them. Fixing it in prose is one colon: write `:229, :231`.
+  UNREAD_CONTINUATIONS = [
+    [",231", "the bare comma — indistinguishable from a thousands separator"],
+    [",370", "what bin/release.rb:8,370 puts after the citation"],
+    [",000", "what bin/ship:100,000 puts after the citation"],
+    [",2,3", "what x.rb:1,2,3 puts after the citation — it chained TWO phantom anchors"],
+    [" and :3.4.1", "a version number, which minted an anchor at line 3"]
+  ].freeze
+
+  def test_the_continuation_grammar_reads_no_thousands_separator
+    invented = UNREAD_CONTINUATIONS.filter_map do |tail, why|
+      c = CONTINUATION_ANCHOR.match(tail)
+      "#{tail.inspect} (#{why}) minted line #{c[1].to_i}" if c
+    end
+
+    assert_empty invented, <<~MSG
+      #{invented.size} shape(s) this grammar must not read were parsed as a second anchor:
+
+      #{invented.join("\n      ")}
+
+      A comma with a number on each side is a THOUSANDS SEPARATOR as often as it is a
+      continuation, and nothing in either string tells them apart. Minting an anchor from
+      one is worse than missing a citation: both halves of `bin/release.rb:8,370` resolve,
+      so no lane says a word while the ratchet charges two tolls for one pointer — and
+      `bin/ship:100,000` reds lane 1 with "line 0 is outside bin/ship" on correct prose.
+      Require the colon.
+    MSG
   end
 
   # AND IT MUST INVENT NONE. Every tail here was MEASURED sitting immediately after a real
@@ -355,27 +429,96 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
     end
   end
 
-  # THE WHOLE CHAIN, ON A REAL DEAD LINE — grammar plus substance rule, because either half
-  # alone passes vacuously. `bin/ship:128` is the bare `end` the rephrasing probe below is
-  # already anchored on; written as a CONTINUATION in any of the three spellings this repo
-  # uses, it was invisible to every lane before this task and is caught by all of them now.
+  # THE WHOLE CHAIN, ON A REAL DEAD LINE — the real walk, the real row builder and the real
+  # substance rule, because every one of those alone passes vacuously. `bin/ship:128` is the
+  # bare `end` the rephrasing probe below is already anchored on; written as a CONTINUATION
+  # it was invisible to every lane before the continuation task and is caught by all of them
+  # now. It runs through `continuation_anchors` rather than matching the regex against a
+  # hand-cut tail: the tail this took before was `sentence[m.end(0)..]`, the UNBOUNDED rest
+  # of the string, which is not what the census offers the pattern.
   def test_a_continuation_onto_a_dead_line_is_caught
-    target = target_lines("bin/ship")
-    refute_nil target, "bin/ship is the subject here"
+    refute_nil target_lines("bin/ship"), "bin/ship is the subject here"
 
-    ["bin/ship:100 + :128", "bin/ship:100, :128", "bin/ship:100,128"].each do |sentence|
+    ["bin/ship:100 + :128", "bin/ship:100, :128", "bin/ship:100 and :128"].each do |sentence|
       m = LINE_CITATION.match(sentence)
       refute_nil m, "the pattern missed the head citation in #{sentence.inspect}"
 
-      c = CONTINUATION_ANCHOR.match(sentence[m.end(0)..])
-      refute_nil c, "the continuation in #{sentence.inspect} was not seen"
-      assert_equal 128, c[1].to_i
+      walked = continuation_anchors(sentence, m)
+      assert_equal 1, walked.size, "the continuation in #{sentence.inspect} was not seen"
 
-      assert DELIMITER_ONLY.match?(target[c[1].to_i - 1].to_s.strip),
+      text, first, last = walked.first
+      assert_equal sentence, text
+      row = census_anchor("fixture", text, m[1], first, last, target_lines(m[1]))
+      assert_equal 128, row[:first]
+
+      assert DELIMITER_ONLY.match?(row[:content].to_s.strip),
              "this test is anchored on bin/ship:128 being a bare delimiter; it now reads " \
-             "#{target[127].to_s.strip.inspect}, so re-anchor it on another one rather than " \
-             "deleting it"
+             "#{row[:content].to_s.strip.inspect}, so re-anchor it on another one rather " \
+             "than deleting it"
     end
+  end
+
+  # THE WALK ITSELF, DRIVEN. Everything above tests the PATTERN against a literal string;
+  # this is the only test that runs `continuation_anchors` — `body[pos, WINDOW]`, the
+  # `pos += c.end(0)` advance and the text slice — and until it existed those three lines
+  # executed ZERO times in a green run, because the shipping tree carries no continuation
+  # for the census to find. An unexercised parser inside a guard is the vacuity this whole
+  # family exists to prevent.
+  #
+  # THE TEXT ASSERTION IS THE POINT OF THE CHAIN. Each printed text must be findable in the
+  # body with a grep. Building it as `head + separator` — what this did until
+  # harden-the-continuation-grammar — printed "bin/ship:1, :3" and "bin/ship:1, :4" for the
+  # body below: strings that are nowhere in it, which is exactly the harm the reconstruction
+  # comment says it exists to prevent.
+  def test_the_continuation_walk_follows_a_chain_to_its_end
+    body = "see bin/ship:1, :2, :3, :4 for the lot\n"
+    m = LINE_CITATION.match(body)
+    refute_nil m
+
+    walked = continuation_anchors(body, m)
+
+    assert_equal %w[2 3 4], walked.map { |(_t, first, _l)| first },
+                 "the walk must follow the chain to its end, not stop at the first link"
+
+    walked.each do |(text, _first, _last)|
+      assert_includes body, text,
+                      "#{text.inspect} is what a lane would print as the offending citation, " \
+                      "and it is NOT in the body — a reader cannot grep for it and no author " \
+                      "will recognise it as theirs. Slice the body; do not rebuild the string."
+    end
+
+    assert_equal ["bin/ship:1, :2", "bin/ship:1, :2, :3", "bin/ship:1, :2, :3, :4"],
+                 walked.map(&:first)
+  end
+
+  # AND IT MUST STOP. Three ways: a number the grammar does not read, a newline (`[ \t]*`
+  # rather than `\s*` in the pattern is what does that), and the far side of WINDOW — which
+  # is the only thing keeping a continuation local to the citation it follows.
+  #
+  # THE LAST PAIR IS MEASURED IN WINDOWS, NOT IN CHARACTERS, deliberately: it asserts that
+  # the bound is HONOURED, not that it is 48. Retuning the constant is a judgement call and
+  # should not have to come here for permission. What it cannot catch is the bound being
+  # REMOVED, since a fixture derived from WINDOW scales with it — so that is pinned by
+  # mutation instead: `body[pos, WINDOW]` → `body[pos..]` fails this test with the full
+  # 53-space gap adopted as a continuation.
+  def test_the_continuation_walk_stops_at_the_windows_edge
+    m = ->(body) { LINE_CITATION.match(body) }
+
+    assert_empty continuation_anchors("bin/ship:1, 2 more follow", m.("bin/ship:1, 2 more follow")),
+                 "a bare number is not an anchor, so the walk has nothing to follow"
+
+    across = "bin/ship:1\n, :2 on the next line"
+    assert_empty continuation_anchors(across, m.(across)),
+                 "a continuation may not cross a newline — the citation above it is a " \
+                 "different sentence in a different paragraph"
+
+    near = "bin/ship:1#{" " * (WINDOW - 5)}, :2"
+    far  = "bin/ship:1#{" " * (WINDOW + 5)}, :2"
+    assert_equal 1, continuation_anchors(near, m.(near)).size,
+                 "a continuation inside the window is the shape this lane exists for"
+    assert_empty continuation_anchors(far, m.(far)),
+                 "past WINDOW the number belongs to some other clause; adopting it would " \
+                 "put a pointer in the census that continues nothing"
   end
 
   # THE PROPERTY THIS GUARD EXISTS FOR, made checkable. The sibling ownership guard
@@ -547,18 +690,8 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
 
           line << census_anchor(where.(m), m[0], m[1], m[2], m[3], target)
 
-          # THE CONTINUATION WALK. Each anchor hands the next one its own end, so a chain
-          # (`:10, :20, :30`) is counted to the end rather than stopping at the first. It
-          # runs only INSIDE this block, which is what makes the inheritance sound: the
-          # path is known to resolve and the citation is known not to be a backtrace frame,
-          # so a continuation can never resurrect either exemption.
-          pos = m.end(0)
-          while (c = CONTINUATION_ANCHOR.match(body[pos, 48].to_s))
-            # `m[0] + c[0]` is what the AUTHOR TYPED, separator and all. A bare `:232` in
-            # the failure message would send the reader hunting for a citation that is
-            # written nowhere in the file.
-            line << census_anchor(where.(m), m[0] + c[0], m[1], c[1], c[2], target)
-            pos += c.end(0)
+          continuation_anchors(body, m).each do |text, first, last|
+            line << census_anchor(where.(m), text, m[1], first, last, target)
           end
         end
 
@@ -572,6 +705,45 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
 
       { files: files, line: line, seam: seam }
     end
+  end
+
+  # THE CONTINUATION WALK. Each anchor hands the next one its own end, so a chain
+  # (`:10, :20, :30`) is counted to the end rather than stopping at the first. Returns
+  # `[text, first, last]` per continuation, in the order the author wrote them.
+  #
+  # IT IS A METHOD SO A TEST CAN DRIVE IT. Inline in `census` it was unreachable except by
+  # scanning the tree, and the tree carries ZERO continuations — so every green run entered
+  # this loop zero times and proved nothing about it. That is this guard's own
+  # exit-blindness argument turned on its newest lane, and
+  # test_the_continuation_walk_follows_a_chain_to_its_end is what closes it.
+  #
+  # `WINDOW` is what keeps a continuation local to its citation: only the text immediately
+  # after the anchor is offered, so an unrelated number further down the sentence can never
+  # be adopted. `[ \t]*` rather than `\s*` in the pattern keeps it on one line as well.
+  #
+  # The caller runs this only INSIDE the block that has already resolved the path and
+  # cleared the backtrace exemption, which is what makes the inheritance sound: a
+  # continuation can never resurrect either exemption for the citation it follows. It does
+  # NOT work the other way round — a continuation whose OWN tail is a backtrace frame is
+  # not re-tested against BACKTRACE_FRAME, so `foo.rb:12, :118:in 'boom'` would count the
+  # frame as an anchor. Nothing in this tree spells that, and Ruby never elides the path
+  # between frames, so it is stated here rather than coded against.
+  def continuation_anchors(body, match)
+    found = []
+    pos = match.end(0)
+
+    while (c = CONTINUATION_ANCHOR.match(body[pos, WINDOW].to_s))
+      pos += c.end(0)
+      # THE TEXT IS A SLICE OF THE BODY, never a reconstruction. It has to be something a
+      # reader can find with a grep: a bare `:232` in the failure message would send them
+      # hunting for a citation written nowhere in the file, and `head + separator` — what
+      # this used to build — is WORSE than bare past the first link, because
+      # `see bin/ship:1, :2, :3` printed "bin/ship:1, :3", a string that is not in the body
+      # at all and that no author will recognise as theirs.
+      found << [body[match.begin(0)...pos], c[1], c[2]]
+    end
+
+    found
   end
 
   # ONE CENSUS ROW FOR ONE ANCHOR — the citation's own, or a continuation that inherited
