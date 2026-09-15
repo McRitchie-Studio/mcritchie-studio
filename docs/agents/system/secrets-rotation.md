@@ -84,24 +84,37 @@ The 1Password account is `alex@mcritchie.studio` (account ID `MWOV5OT5BRHATI4EGM
 
 ---
 
-## Solana admin key (`SOLANA_ADMIN_KEY` / `agent.xan.solana`)
+## Solana admin key (`SOLANA_ADMIN_KEY`)
 
-**Store:** 1Password item `agent.xan.solana` in **`studio-agents-admin`** (field `private key`, SPACED, base58-encoded Ed25519 secret) + Heroku config on `turf-monster-mainnet` + `.env` locally.
+**Store:** two different items, because local and production hold DIFFERENT KEYS today.
 
-> **Renamed and re-vaulted 2026-09-15**, from `agent.alex.solana` in `studio-agents`. An ordinary agent token cannot see the admin vault by design — `source ~/.zprofile.admin` first.
+| Where | Item | Vault | Field label |
+|---|---|---|---|
+| Local `.env` (written by `bin/ecosystem-build`) | `solana.turf.admin` (`BLSBw8fX…`) | `studio-agents` | `private-key`, HYPHENATED |
+| `turf-monster-mainnet` + `turf-monster-qa` Heroku config | `agent.xan.solana` (`8K81…`) | `studio-agents-admin` | `private key`, SPACED |
+
+> **That split is deliberate and temporary (2026-09-15).** The turf keys were
+> refiled entity-first into three agent-readable items — `solana.turf.admin`
+> (governance), `solana.turf.system` (server, mainnet) and
+> `solana.turf.system.devnet` (server, devnet/QA). Local bringup moved onto the
+> first immediately. **Production has NOT moved**, because `7auwTL…` held 0 SOL
+> on mainnet that day and repointing an unfunded fee payer breaks settlement.
+> Prod and QA also still SHARE one key until `solana.turf.system.devnet` lands
+> on QA. Rotating the key production actually uses means rotating
+> `agent.xan.solana`, and that needs `source ~/.zprofile.admin`.
 
 **Symptoms of rotation needed:** Suspected wallet compromise. Routine quarterly hygiene. Adding/removing a multisig signer.
 
 **Procedure:**
 1. Generate a new keypair: `solana-keygen new --no-bip39-passphrase --silent --outfile /tmp/new-admin.json`.
-2. Get the base58 secret: `cat /tmp/new-admin.json | jq -r '. | map(.) | @json'` (the JSON array IS the secret), then convert with `bin/rails runner "puts Solana::Keypair.from_bytes(JSON.parse(File.read('/tmp/new-admin.json'))).secret_key_base58"`.
+2. Convert the keypair file to the base58 form the env var and 1Password both hold: `bin/rails runner "require 'json'; puts Solana::Keypair.encode_base58(JSON.parse(File.read('/tmp/new-admin.json')).pack('C*'))"` — 88 characters. **There is no `secret_key_base58` method**; this step named one until 2026-09-15 and an operator following it mid-rotation got `NoMethodError`. `to_base58` is the PUBLIC key, and `encode_base58` needs a packed binary String, not the parsed array — verified round-tripping through `from_base58` on 2026-09-15.
 3. Get the public address: `solana-keygen pubkey /tmp/new-admin.json`.
 4. **Before rotating**, run the on-chain `update_signers` instruction to swap the new pubkey into `VaultState.signers`. This requires 2-of-3 cosign. **Confirm the signer set for the cluster you are rotating** — this procedure ends on `turf-monster-mainnet` (step 6), so assume mainnet unless you have checked. `turf-vault/docs/CURRENT_DEPLOYMENT.md` records the program ID, upgrade authority, threshold and signer set for each cluster under its own heading — read `## Mainnet`, not `## Devnet`. (`turf-vault/scripts/squad.json`'s `members` is what `scripts/initialize-mainnet.js` builds its `initialize` signer array from; it is a script input and the historical record, not the deployment record.) Verify live truth on-chain before signing: `solana program show <PROGRAM_ID> --url <mainnet-beta|devnet>` for the upgrade authority, then read `VaultState` (`seeds = [b"vault"]` against that program ID) for the signers and threshold. `turf-vault/docs/KEY_ROTATION.md` is a SUPERSEDED plan — read it for background, never as the procedure.
-5. Update 1Password `agent.xan.solana` (vault `studio-agents-admin`, admin token) -> field `private key` -> paste the new base58 secret. Save.
+5. Update 1Password `agent.xan.solana` (vault `studio-agents-admin`, admin token) -> field `private key` -> paste the new base58 secret. Save. **Mind which item you are in**: the `solana.turf.*` items in `studio-agents` spell the field `private-key`, and pasting a mainnet secret into one of those files it in a vault every agent can read.
 6. `heroku config:set SOLANA_ADMIN_KEY=<new_base58> --app turf-monster-mainnet`.
 7. Re-run `bin/ecosystem-build` → Phase 4 re-fetches from 1P and writes to local `.env`.
 8. Delete `/tmp/new-admin.json` (it contains the unencrypted secret). "Securely" is not available here: macOS has no `shred`, and `man rm` says `-P` "has no effect". On APFS the guarantee is *unlinked*, not *erased* — so keep the window short and treat the plaintext as exposed if the disk is ever suspect.
-9. **`update_signers` is not the only registration.** This pubkey is also a member of the Squads V4 2-of-3 that holds the turf-vault **mainnet program upgrade authority** (`turf-vault/scripts/squad.json` top level), and `update_signers` does not touch Squads membership. Rotate it there too — a config transaction at https://app.squads.so doing `removeMember(old)` + `addMember(new)`, threshold stays 2, approved by the two CLEAN members — or the rotated-out key keeps upgrade authority over the deployed program. The `credential-rotation` SOP's worked example carries the full order and the proofs.
+9. **`update_signers` is not the only registration — but as of 2026-09-15 this key is no longer on the other one.** Xan (`8K81…`) WAS a member of the Squads V4 multisig holding the turf-vault program upgrade authority; the 09:41 config transaction removed it from both clusters, which are now **3-of-4** (`3Qj4v9…`, `7ZDJ…`, `9gACbz…`, `BLSBw8…`) — measured on-chain at `finalized`. `turf-vault/scripts/squad.json` still lists the old three and is provenance only. So rotating `SOLANA_ADMIN_KEY` no longer requires a paired Squads rotation. **Check before assuming either way**: read the live multisig rather than this sentence, because `update_signers` and a Squads config transaction are different authorities and one moving has never implied the other. If the key you are rotating IS seated, the Squads half is a config transaction at https://app.squads.so doing `removeMember(old)` + `addMember(new)` approved by the CLEAN members; the `credential-rotation` SOP's worked example carries the full order and the proofs.
 10. There is no second `update_signers`. `signers` is `[Pubkey; 3]` and the instruction does `vault.signers = new_signers` — a whole-set replace across three fixed slots — so step 4 already evicted the old pubkey in the same transaction. The only way to hold old and new at once is to evict a third signer for the duration; see the `credential-rotation` SOP's worked example before choosing that.
 
 **Verify:** `bin/rails runner 'puts Solana::Keypair.from_base58(ENV["SOLANA_ADMIN_KEY"]).address'` matches the new pubkey. A test contest settlement completes successfully (admin signs as `admin`, human cosigns).

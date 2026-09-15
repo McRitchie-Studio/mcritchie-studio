@@ -41,18 +41,27 @@ vault too.
 
 ## The cast
 
-Three wallets whose keys are filed in 1Password `studio-agents`:
+Four wallets are filed in 1Password `studio-agents`; three of them PLAY:
 
 | Slug | 1Password item | Plays as |
 |---|---|---|
 | `mason` | `agent.mason.solana` | mason-3 |
 | `mack` | `agent.mack.solana` | mack-4 |
 | `turf` | `phantom.turf` | regal-parsley-167 |
+| `turf-admin` | `solana.turf.admin` | — drives the admin HTTP surface; cannot play (see below) |
+
+> **`turf-admin` was repointed on 2026-09-15** — from `agent.turf.solana`, which
+> it reached by a pinned item id. The item was recreated under the unique title
+> `solana.turf.admin` and the old id died with it, so every `turf-admin` read
+> failed outright until the pin was replaced by the title. Same wallet
+> (`BLSBw8fX…`) throughout; the item moved, the identity did not. Field labels
+> on it are HYPHENATED (`private-key`, `wallet-address`), unlike the `agent.*`
+> items beside it.
 
 Two exclusions, and neither is a preference:
 
 - **Xan cannot play, and is no longer filed for it.** Xan (`8K81…`, called
-  "Xan" until 2026-09-15) is the fee payer and contest creator, and when
+  "Alex Bot" until 2026-09-15) is the fee payer and contest creator, and when
   the player is also the fee payer the transaction needs one signature slot,
   not two — `prepare_entry` refuses. Since 2026-09-15 `KeyStore::ITEMS` files
   NO key for it: the item became `agent.xan.solana` in `studio-agents-admin`,

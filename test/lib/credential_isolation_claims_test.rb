@@ -343,10 +343,17 @@ class CredentialIsolationClaimsTest < Minitest::Test
       # THE FORM, NOT A BLESSED SPELLING — which is what the sibling guard above
       # already asks of every script, and what this one meant all along. It used
       # to demand the AGENT override literally, and that was fine only while
-      # every bringup secret lived in one vault. SOLANA_ADMIN_KEY stopped doing
-      # so on 2026-09-15: the Xan key moved to the ADMIN vault precisely so an
-      # agent token could NOT read it, so demanding the agent override here
-      # would have forced the map to lie about where the item is.
+      # every bringup secret lived in one vault.
+      #
+      # SOLANA_ADMIN_KEY spent one day breaking that assumption: on 2026-09-15
+      # the Xan key moved to the ADMIN vault, and demanding the agent override
+      # would have forced the map to lie about where the item was. Later the
+      # same day the turf keys were refiled agent-readable and the map went back
+      # to the agent vault, so every entry names it again TODAY. The loosened
+      # check stays anyway — it was correct on the day it was needed, and
+      # re-tightening it to one blessed vault would re-create exactly the bind
+      # that made it necessary. Asking for the form costs nothing and survives
+      # the next move.
       #
       # Two shapes pass, and a bare literal still fails either way:
       #   ${MCR_OP_VAULT_<NAME>:-default}/...   — resolved inline
