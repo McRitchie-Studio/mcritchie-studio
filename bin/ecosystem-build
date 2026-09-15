@@ -434,21 +434,34 @@ phase_secrets() {
   # functionality. Mapping: env_var_name -> "vault/item/field". Always re-fetched
   # (cheap) so rotated tokens propagate without manual intervention.
   #
-  # SOLANA_ADMIN_KEY IS DELIBERATELY NOT IN THE AGENT VAULT, and this line must
-  # not be "corrected" back to $MCR_OP_VAULT_AGENT. On 2026-09-15 the item was
-  # renamed agent.alex.solana -> agent.xan.solana AND moved to
-  # studio-agents-admin, which an ordinary agent service account cannot see. That
-  # inaccessibility IS the control: it is what leaves an agent at 1-of-3 instead
-  # of 2-of-3 on both Squads multisigs. A version of this line that an agent
-  # token could read would mean the key had been moved back — the exact thing the
-  # separation exists to prevent. Fill it in by running this phase under the
-  # admin service account: `source ~/.zprofile.admin`.
+  # SOLANA_ADMIN_KEY READS THE AGENT VAULT AGAIN as of 2026-09-15. The turf keys
+  # were recreated under unique, role-specific titles, all three in the AGENT
+  # vault and all three readable by an ordinary agent service account:
   #
-  # The field label is SPACED ("private key"), verified against the item on
-  # 2026-09-15; `op read "op://$admin_vault/agent.xan.solana/private key"` returns it.
-  local admin_vault="${MCR_OP_VAULT_ADMIN:-studio-agents-admin}"
+  #   solana.turf.admin          BLSBw8fX…  agent governance identity   <- this one
+  #   solana.turf.system         7auwTLSv…  server operational key, MAINNET
+  #   solana.turf.system.devnet  2eGs8G3w…  server operational key, devnet/QA
+  #
+  # THE FIELD LABEL IS HYPHENATED ("private-key"), verified against the item on
+  # 2026-09-15. The older agent.* items in the same vault spell it with a SPACE,
+  # so this is not a detail that can be copied from a neighbouring line — and
+  # `op` fails the whole read on one wrong label rather than falling back.
+  #
+  # THE ADMIN-VAULT BRANCH WENT WITH IT. This table was the only thing in this
+  # script that reached studio-agents-admin, so a fresh Mac no longer needs
+  # `source ~/.zprofile.admin` to finish Phase 4. That is scoped to THIS SCRIPT
+  # and is not a claim about the vault: studio-agents-admin still holds
+  # github.mcritchie-deployer, AWS and heroku.studio.admin, and the ship and
+  # provisioning lanes still need the admin token to read them.
+  #
+  # ⚠ THIS IS NOT WHAT PRODUCTION SIGNS WITH. turf-monster-mainnet's
+  # SOLANA_ADMIN_KEY is still Xan (8K81…, agent.xan.solana, admin vault), and
+  # the on-chain signer set is unchanged. Moving prod onto solana.turf.system is
+  # a separate task gated on funding that wallet — it held 0 SOL on mainnet on
+  # 2026-09-15, and an unfunded fee payer breaks settlement. Local .env and the
+  # dyno differ on purpose; do not "reconcile" them here.
   local op_secrets=(
-    "turf-monster|SOLANA_ADMIN_KEY|$admin_vault/agent.xan.solana/private key"
+    "turf-monster|SOLANA_ADMIN_KEY|${MCR_OP_VAULT_AGENT:-studio-agents}/solana.turf.admin/private-key"
   )
   for entry in "${op_secrets[@]}"; do
     IFS='|' read -r app var ref <<< "$entry"
@@ -457,12 +470,11 @@ phase_secrets() {
     local value
     value=$(op_metered op read "op://$ref" 2>/dev/null)
     if [ -z "$value" ]; then
-      if [ "${ref#"$admin_vault"/}" != "$ref" ]; then
-        log_fail "$var (op://$ref)" \
-                 "not retrievable — that is the ADMIN vault, which an agent token cannot see by design; re-run after: source ~/.zprofile.admin"
-      else
-        log_fail "$var (op://$ref)" "not retrievable — does the token have read on that vault?"
-      fi
+      # Every ref in the table above is in the AGENT vault now, so there is no
+      # longer an "you need the admin token" case to distinguish here. A failure
+      # is a real one: a missing grant, a spent quota, or a refiled item.
+      log_fail "$var (op://$ref)" \
+               "not retrievable — check the token has read on that vault, that the item title still exists (\`op item list --vault ${MCR_OP_VAULT_AGENT:-studio-agents}\`), and that the field label matches"
       continue
     fi
     sed -i '' "/^$var=/d" "$env_path"

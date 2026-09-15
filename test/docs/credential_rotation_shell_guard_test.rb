@@ -82,6 +82,16 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
   # Renamed from `agent.alex.solana` on 2026-09-15 AND moved to the
   # `studio-agents-admin` vault. The inventory row records the vault; this pin
   # only needs the item name the Squads row sends an operator to.
+  #
+  # THE PIN IS THE ITEM THE SOP NAMES, NOT A CLAIM THAT THE PATH STILL WORKS.
+  # Two things happened on 2026-09-15 and neither moves this pin. The Turf
+  # Monster admin identity became `solana.turf.admin` — a 1Password filing, not
+  # on-chain membership. Then at 09:41 a Squads config transaction REMOVED
+  # `8K81…` from both multisigs, so `squad-upgrade.js` can no longer approve
+  # anything; the inventory row says so. The pin still names `agent.xan.solana`
+  # because that is the item the SOP's Squads row sends an operator to and the
+  # inventory still files it. Repointing it at `solana.turf.admin` would make
+  # this guard assert against a row that does not describe that key.
   BOT_KEY_ITEM = "agent.xan.solana"
 
   # Every Solana credential the inventory FILES, as of 2026-09-14. This set is a
@@ -101,6 +111,9 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
     agent.mack.solana
     agent.mason.solana
     agent.turf.solana
+    solana.turf.admin
+    solana.turf.system
+    solana.turf.system.devnet
   ].freeze
 
   # Every angle-bracket placeholder the harness knows how to make safe. Substituted
@@ -820,12 +833,22 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
     # `agent.<name>.<service>` shape — it is not a filed item, and a scan of the
     # whole file would pin it and then redden the day someone rewrote an
     # illustration. (That example is also why the earlier "there are six Solana
-    # items" measurement overcounted: the table files five.)
+    # items" measurement overcounted: the table filed five then, and files
+    # eight now.)
+    # TWO NAMING SCHEMES, SO TWO TESTS. `end_with?("solana")` was the whole
+    # predicate until 2026-09-15, and on that day the turf keys were refiled
+    # ENTITY-FIRST — solana.turf.admin, solana.turf.system,
+    # solana.turf.system.devnet. Not one of them ends in "solana", so a tripwire
+    # whose entire job is to notice a Solana credential appearing would have
+    # watched three of them appear and stayed green. A detector tuned to the old
+    # spelling is not a weaker tripwire, it is an absent one.
     filed = INVENTORY.read.lines.filter_map { |line|
       next unless line.start_with?("|")
 
       item = line.split("|")[1].to_s.strip[/\A`([^`]+)`\z/, 1]
-      item if item&.end_with?("solana")
+      next unless item
+
+      item if item.end_with?("solana") || item.start_with?("solana.")
     }.sort
 
     assert_includes filed, BOT_KEY_ITEM,
