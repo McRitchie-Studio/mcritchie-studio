@@ -51,9 +51,13 @@ Three wallets whose keys are filed in 1Password `studio-agents`:
 
 Two exclusions, and neither is a preference:
 
-- **Alex cannot play.** `agent.alex.solana` IS the Alex Bot wallet — the fee
-  payer and contest creator. When the player is also the fee payer the
-  transaction needs one signature slot, not two, and `prepare_entry` refuses.
+- **Xan cannot play, and is no longer filed for it.** Xan (`8K81…`, called
+  "Xan" until 2026-09-15) is the fee payer and contest creator, and when
+  the player is also the fee payer the transaction needs one signature slot,
+  not two — `prepare_entry` refuses. Since 2026-09-15 `KeyStore::ITEMS` files
+  NO key for it: the item became `agent.xan.solana` in `studio-agents-admin`,
+  which this service account cannot read. The server still signs as Xan from
+  `SOLANA_ADMIN_KEY` on the dyno; the rehearsal simply cannot.
 - **turf-5 cannot play.** Its username is the reserved on-chain prefix `turf`
   and it has no `UserAccount`, so the program refuses to register it. It stays
   on as the admin HTTP actor, where no `UserAccount` is needed.
@@ -160,7 +164,7 @@ bin/qa-contest-rehearsal conclude --cosign agent    # unattended, Mason's key
 ```
 
 Grades the contest, ranks the entries, and builds the 2-of-3 settle transaction.
-The server has already signed as Alex Bot; the second signature is yours.
+The server has already signed as Xan; the second signature is yours.
 
 ```text
 Magic Link:   https://qa.turfmonster.media/l/<token>   → /admin/pending_transactions

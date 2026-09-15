@@ -205,7 +205,7 @@ solana config set --url devnet
 solana address  # confirm your new pubkey
 ```
 
-This is a **local dev keypair**, NOT one of the agent vault wallets. The agent wallets (Alex Bot, Mason, Mack, Turf Monster) stay in 1Password.
+This is a **local dev keypair**, NOT one of the agent vault wallets. The agent wallets (Xan, Mason, Mack, Turf Monster) stay in 1Password.
 
 ---
 
@@ -366,7 +366,7 @@ SES_REGION=us-east-2
 RAILS_MASTER_KEY=$(heroku config:get RAILS_MASTER_KEY --app turf-monster-mainnet)
 GOOGLE_CLIENT_ID=...                  # may differ from mcritchie-studio
 GOOGLE_CLIENT_SECRET=...
-SOLANA_ADMIN_KEY=$(op item get "agent.alex.solana" --vault studio-agents --fields "private key")
+SOLANA_ADMIN_KEY=$(op item get "agent.xan.solana" --vault studio-agents-admin --fields "private key")  # needs the ADMIN token: source ~/.zprofile.admin
 SOLANA_RPC_URL=https://api.devnet.solana.com   # or paid provider if rate-limited
 AWS_ACCESS_KEY_ID=...
 AWS_SECRET_ACCESS_KEY=...

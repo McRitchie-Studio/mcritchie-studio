@@ -1,6 +1,6 @@
 # Credentials
 
-> **Restoring credentials on a fresh Mac?** `bin/ecosystem-build` does this automatically: it pulls `RAILS_MASTER_KEY` and other env vars from `heroku config` and `SOLANA_ADMIN_KEY` from 1Password (`agent.alex.solana`), then writes `.env` for both Rails apps. See [house-burn-down.md](house-burn-down.md). This doc is legacy system context while the neutral modules in `docs/agents/modules/` become canonical.
+> **Restoring credentials on a fresh Mac?** `bin/ecosystem-build` does this automatically: it pulls `RAILS_MASTER_KEY` and other env vars from `heroku config` and `SOLANA_ADMIN_KEY` from 1Password (`agent.xan.solana`, in `studio-agents-admin` — needs the admin token), then writes `.env` for both Rails apps. See [house-burn-down.md](house-burn-down.md). This doc is legacy system context while the neutral modules in `docs/agents/modules/` become canonical.
 
 ## Environment Variables
 
@@ -13,7 +13,7 @@ All sensitive credentials are stored as environment variables, never in code.
 - `GOOGLE_CLIENT_ID` — Google OAuth client ID
 - `GOOGLE_CLIENT_SECRET` — Google OAuth client secret
 - `RAILS_MASTER_KEY` — Rails encrypted credentials key
-- `SOLANA_ADMIN_KEY` — Alex Bot's Solana private key (base58), used by Turf Monster for onchain operations
+- `SOLANA_ADMIN_KEY` — Xan's Solana private key (base58), used by Turf Monster for onchain operations
 - `ANTHROPIC_API_KEY` — Claude API key for AI chat (McRitchie Studio)
 - `X_BEARER_TOKEN` — X (Twitter) API bearer token for News intake (McRitchie Studio). See `docs/agents/system/news-pipeline.md` for setup.
 
@@ -74,13 +74,13 @@ note under the table):
 
 ## Solana Wallets
 
-Each agent has a dedicated Solana wallet. Credentials stored in 1Password. The three vault-admin identities below (Alex Bot, Alex Human, Mason) are **the same keys on devnet and mainnet** — verified 2026-09-05 as the `VaultState.signers` set on both clusters — so a rotation of any of them is a mainnet event, not a devnet one. The other rows were not part of that verification: check the cluster before assuming any of them is devnet-only.
+Each agent has a dedicated Solana wallet. Credentials stored in 1Password. The three vault-admin identities below (Xan, Alex Human, Mason) are **the same keys on devnet and mainnet** — verified 2026-09-05 as the `VaultState.signers` set on both clusters — so a rotation of any of them is a mainnet event, not a devnet one. The other rows were not part of that verification: check the cluster before assuming any of them is devnet-only.
 
 ### Wallet Addresses
 
 | Agent | Address | Role |
 |-------|---------|------|
-| Alex Bot | `8K81w4e6UcB7TiANhM9N8sAgijJvTxxybRi8AENRaRYd` | Rotated vault admin (signs routine onchain ops) |
+| Xan | `8K81w4e6UcB7TiANhM9N8sAgijJvTxxybRi8AENRaRYd` | Rotated vault admin (signs routine onchain ops) |
 | Alex Human | `7ZDJp7FUHhuceAqcW9CHe81hCiaMTjgWAXfprBM59Tcr` | Backup vault admin (recovery only) |
 | Mason | `CytJS23p1zCM2wvUUngiDePtbMB484ebD7bK4nDqWjrR` | Vault signer (third 2-of-3 cosigner) |
 | Mack | `foUuRyeibadQoGdKXZ9pBGDqmkb1jY1jYsu8dZ29nds` | Agent wallet |
@@ -120,8 +120,8 @@ cd ~/projects/turf-monster && bin/setup-cdp-key   # no args → reads the key fr
 
 **Retrieve a wallet's private key** (items renamed 2026-05-03 to `agent.*` convention):
 ```bash
-# Alex Bot
-op item get "agent.alex.solana" --vault "studio-agents" --account MWOV5OT5BRHATI4EGMN26C5DPA --fields "private key"
+# Xan (needs the ADMIN token — source ~/.zprofile.admin)
+op item get "agent.xan.solana" --vault "studio-agents-admin" --account MWOV5OT5BRHATI4EGMN26C5DPA --fields "private key"
 
 # Mason
 op item get "agent.mason.solana" --vault "studio-agents" --account MWOV5OT5BRHATI4EGMN26C5DPA --fields "private key"
@@ -135,14 +135,14 @@ op item get "agent.turf.solana" --vault "studio-agents" --account MWOV5OT5BRHATI
 
 **Set as env var (one-liner)**:
 ```bash
-export SOLANA_ADMIN_KEY=$(op item get "agent.alex.solana" --vault "studio-agents" --account MWOV5OT5BRHATI4EGMN26C5DPA --fields "private key")
+export SOLANA_ADMIN_KEY=$(op item get "agent.xan.solana" --vault "studio-agents-admin" --account MWOV5OT5BRHATI4EGMN26C5DPA --fields "private key")  # ADMIN token
 ```
 
 **Item fields**: Each wallet entry contains `recovery phrase`, `private key` (base58), and `wallet address` (base58 public key).
 
 ### Onchain Admin
 
-Alex Bot is the primary admin for routine TurfVault operations. Mr. McRitchie is the backup/admin cosigner. Deployment identity for both clusters lives in `turf-vault/docs/CURRENT_DEPLOYMENT.md`: each of its `## Devnet` and `## Mainnet` tables carries that cluster's program ID, Squads upgrade authority, threshold and three signer rows. **Read the heading you mean** — the two signer sets happen to agree today, but nothing in the program ties them together, so an address alone cannot tell you which cluster you are on. `turf-vault/scripts/squad.json` (`members`) is provenance and a script input — `scripts/initialize-mainnet.js` builds its `initialize` signer array from it — not the deployment record. Confirm the live set on-chain from `VaultState` (`seeds = [b"vault"]` against that cluster's program ID) rather than from any file. The `SOLANA_ADMIN_KEY` env var in Turf Monster's `.env` holds the Alex Bot private key from `agent.alex.solana`.
+Xan is the primary admin for routine TurfVault operations. Mr. McRitchie is the backup/admin cosigner. Deployment identity for both clusters lives in `turf-vault/docs/CURRENT_DEPLOYMENT.md`: each of its `## Devnet` and `## Mainnet` tables carries that cluster's program ID, Squads upgrade authority, threshold and three signer rows. **Read the heading you mean** — the two signer sets happen to agree today, but nothing in the program ties them together, so an address alone cannot tell you which cluster you are on. `turf-vault/scripts/squad.json` (`members`) is provenance and a script input — `scripts/initialize-mainnet.js` builds its `initialize` signer array from it — not the deployment record. Confirm the live set on-chain from `VaultState` (`seeds = [b"vault"]` against that cluster's program ID) rather than from any file. The `SOLANA_ADMIN_KEY` env var in Turf Monster's `.env` holds the Xan private key from `agent.xan.solana` (vault `studio-agents-admin`).
 
 ## AWS — S3 + Amazon SES
 

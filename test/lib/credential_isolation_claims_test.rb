@@ -338,10 +338,33 @@ class CredentialIsolationClaimsTest < Minitest::Test
     refute_empty entries, "an empty map would pass this test vacuously"
     entries.each do |entry|
       ref = entry.delete('"').split("|")[2].to_s
+      vault = ref.split("/").first.to_s
 
-      assert ref.start_with?("${MCR_OP_VAULT_AGENT:-studio-agents}/"),
-             "every op_secrets ref must resolve its vault through the override — it is fed " \
-             "straight into `op read \"op://$ref\"`. Found: #{ref.inspect}"
+      # THE FORM, NOT A BLESSED SPELLING — which is what the sibling guard above
+      # already asks of every script, and what this one meant all along. It used
+      # to demand the AGENT override literally, and that was fine only while
+      # every bringup secret lived in one vault. SOLANA_ADMIN_KEY stopped doing
+      # so on 2026-09-15: the Xan key moved to the ADMIN vault precisely so an
+      # agent token could NOT read it, so demanding the agent override here
+      # would have forced the map to lie about where the item is.
+      #
+      # Two shapes pass, and a bare literal still fails either way:
+      #   ${MCR_OP_VAULT_<NAME>:-default}/...   — resolved inline
+      #   $var/...                              — resolved by a binding above,
+      #                                           which must itself come from an
+      #                                           MCR_OP_VAULT_* override
+      if (m = vault.match(/\A\$([A-Za-z_][A-Za-z0-9_]*)\z/))
+        binding_line = /(?:local\s+)?#{Regexp.escape(m[1])}="\$\{MCR_OP_VAULT_[A-Z_]+:-[^}]+\}"/
+        assert_match binding_line, body,
+                     "op_secrets resolves its vault from $#{m[1]}, but nothing in " \
+                     "bin/ecosystem-build binds that name from an MCR_OP_VAULT_* override — " \
+                     "so it is a literal wearing a variable's clothes."
+      else
+        assert_match(/\A\$\{MCR_OP_VAULT_[A-Z_]+:-[^}]+\}\z/, vault,
+                     "every op_secrets ref must resolve its vault through an MCR_OP_VAULT_* " \
+                     "override — it is fed straight into `op read \"op://$ref\"`. " \
+                     "Found: #{ref.inspect}")
+      end
     end
   end
 
