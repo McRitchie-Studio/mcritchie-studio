@@ -280,12 +280,21 @@ module Ci
     #
     # THE LIST FORM MATTERS FOR THE COMPARISON, not just the query. A caller now hands
     # in `suite_workflows_for(repo)`, which for MOST apps is the single-element `["CI"]`
-    # (turf-vault is the exception — it also declares "Anchor Suite", and so gives up
-    # this fallback exactly as a gem does; see the progress-reader test of that name).
-    # Compared naively against the bare string that array is "not CI", and every app
-    # SHA whose jobs had not been ingested would have lost its API fallback and gone
-    # BLANK — a scope widening quietly turning into a data loss for the majority case.
-    # Normalising both sides is what keeps `["CI"]` and `"CI"` the same request.
+    # (turf-vault is the exception — it also declares "Anchor Suite"). Compared naively
+    # against the bare string that array is "not CI", and every app SHA whose jobs had
+    # not been ingested would have lost its API fallback and gone BLANK — a scope
+    # widening quietly turning into a data loss for the majority case. Normalising both
+    # sides is what keeps `["CI"]` and `"CI"` the same request.
+    #
+    # WHICH CALLERS ACTUALLY LOSE THE FALLBACK — worth stating, because getting it wrong
+    # is what put an extra mark on a turf-vault card (/tasks/board-counts-anchor-lane-twice).
+    # The multi-element scope arrives from exactly TWO sites, both on the RELEASE track:
+    # #for_release and #release_ci_slot_for. There the refusal is right — a blended bar
+    # is a verdict nobody gave. The TASK CARD is not one of them: #task_progress passes
+    # the SINGULAR .ci_workflow_for(repo), which is "CI" for every `apps` row including
+    # turf-vault, so the card's scope stays exactly ["CI"] and KEEPS this fallback. A
+    # second declared lane therefore does NOT cost an `apps` repo its card fallback the
+    # way it costs a gem — the gem's PRIMARY name is itself not "CI".
     def for_sha(nwo, sha, workflow_name = nil)
       nwo = nwo.to_s
       sha = sha.to_s
@@ -335,7 +344,8 @@ module Ci
       rows = CiCheckJob.progress_rows(nwo, sha, workflow_name)
       return nil if rows.empty?
 
-      CheckProgress.from_check_runs(rows, sha: sha, run_started_at: run_started_at_for(nwo, sha, workflow_name))
+      CheckProgress.from_check_runs(rows, sha: sha, source: :jobs,
+                                    run_started_at: run_started_at_for(nwo, sha, workflow_name))
     rescue StandardError => e
       ErrorLog.capture!(e)
       nil
@@ -374,7 +384,7 @@ module Ci
         client.get("repos/#{nwo}/commits/#{sha}/check-runs", params: { per_page: 100 })
       end
       runs = body.is_a?(Hash) ? body["check_runs"] : body
-      CheckProgress.from_check_runs(runs, sha: sha, run_started_at: run_started_at_for(nwo, sha))
+      CheckProgress.from_check_runs(runs, sha: sha, source: :api, run_started_at: run_started_at_for(nwo, sha))
     rescue StandardError => e
       ErrorLog.capture!(e)
       CheckProgress.blank(sha: sha)
@@ -477,12 +487,46 @@ module Ci
     # the gate votes the queued primary run this bar could not see. That is the same
     # green-reads-as-a-lie this fold exists to prevent, pointed the other way, so an
     # empty base short-circuits exactly like an empty sibling set.
+    #
+    # SIBLINGS DECORATE A SCOPED BASE ONLY — the invariant this fold turns on, and the
+    # one it was missing. `for_sha` answers from one of two sources and they do not
+    # need the same help. A :jobs base is folded from CiCheckJob rows filtered to
+    # `workflow`, so it has genuinely never seen another lane and the sibling marks are
+    # the only way that lane reaches the card. An :api base comes from
+    # `repos/:nwo/commits/:sha/check-runs`, which is workflow-BLIND: it already returns
+    # EVERY lane's checks on the sha. Appending to THAT counts the lane twice.
+    #
+    # THE CARD KEEPS THE BLIND FALLBACK, which is the part that made this bug possible
+    # and is easy to misread. #for_sha refuses the blind API for a scope that is not
+    # exactly ["CI"] — but this path passes the SINGULAR .ci_workflow_for(repo), and
+    # turf-vault is an `apps` row, so its scope here is "CI" and the fallback stands.
+    # (The multi-element scope reaches #for_sha only on the RELEASE track, where losing
+    # the fallback is correct and unchanged.) Measured 2026-09-15 on a turf-vault head
+    # with a queued primary and both lanes' check runs live: GitHub served 2 runs
+    # (ci-build ✓, anchor-test ✗) and the card drew 3 — the extra a run-grain "Anchor
+    # Suite" mark stacked on the anchor-test it already held.
+    #
+    # WHAT THE SKIP COSTS, stated rather than discovered: a sibling lane with NO check
+    # runs anywhere loses its one run-grain mark while the base stays blind, and one
+    # ingested primary job closes that window. Usually the lane is merely QUEUED — it
+    # has produced no verdict, so the colour cannot move. But a lane that COMPLETED
+    # without ever starting a job (`startup_failure`, `cancelled` while queued) has no
+    # check runs either, and there the dropped mark IS a verdict: measured 2026-09-15
+    # on a seeded head (primary CI green and un-ingested, "Anchor Suite" completed
+    # `startup_failure`) the card read :green while Ci::ReviewGate read :red. So the
+    # #1419 case is untouched whenever the sibling actually RAN — a blind base already
+    # carries its jobs, red, under their real names — and only that jobless conjunction
+    # is given up. Nothing merges on it (the gate folds RUN rows, not check runs), and
+    # it is the narrower wrong than counting the lane twice on every card.
     def task_progress(nwo, repo, sha, workflow)
       base = for_sha(nwo, sha, workflow)
-      siblings = sibling_lane_checks(nwo, repo, sha, workflow)
-      return base if siblings.empty? || base.checks.empty?
+      return base if base.checks.empty? || base.source == :api
 
-      CheckProgress.new(checks: base.checks + siblings, sha: sha, run_started_at: base.run_started_at)
+      siblings = sibling_lane_checks(nwo, repo, sha, workflow)
+      return base if siblings.empty?
+
+      CheckProgress.new(checks: base.checks + siblings, sha: sha,
+                        run_started_at: base.run_started_at, source: base.source)
     end
 
     # One Ci::CheckProgress::Check per DECLARED sibling suite lane on this head, or
@@ -646,16 +690,16 @@ module Ci
       value = @fixtures[sha.to_s]
       case value
       when Array
-        CheckProgress.from_check_runs(value, sha: sha)
+        CheckProgress.from_check_runs(value, sha: sha, source: :fixture)
       when Hash
         CheckProgress.new(
           passed: value["passed"] || value[:passed],
           failed: value["failed"] || value[:failed],
           pending: value["pending"] || value[:pending],
-          sha: sha
+          sha: sha, source: :fixture
         )
       else
-        CheckProgress.blank(sha: sha)
+        CheckProgress.blank(sha: sha, source: :fixture)
       end
     end
   end

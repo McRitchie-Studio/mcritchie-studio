@@ -690,14 +690,20 @@ class Ci::ProgressReaderTest < ActiveSupport::TestCase
 
   # THE CONSEQUENCE OF DECLARING A SECOND LANE, pinned deliberately rather than left
   # to be discovered. #for_sha refuses the workflow-BLIND check-runs API for any scope
-  # that is not exactly ["CI"], so turf-vault — now ["CI", "Anchor Suite"] — reads
-  # blank on a sha with no ingested jobs where it once fell back. That is the RIGHT
-  # trade and the same one studio-engine already makes: the blind API returns every
-  # workflow's checks on the sha, so keeping the fallback here would blend UNDECLARED
-  # runs into turf-vault's card — precisely the deny-list behaviour the allow-list
-  # exists to prevent. A blank bar reads as "no data"; a blended one reads as a
-  # verdict nobody gave. Plain apps are untouched.
-  test "[unit] turf-vault's second lane costs it the blind-API fallback, by design" do
+  # that is not exactly ["CI"], so a MULTI-ELEMENT scope reads blank on a sha with no
+  # ingested jobs where it once fell back. That is the RIGHT trade and the same one
+  # studio-engine already makes: the blind API returns every workflow's checks on the
+  # sha, so keeping the fallback under a narrower scope would blend UNDECLARED runs in
+  # — precisely the deny-list behaviour the allow-list exists to prevent. A blank bar
+  # reads as "no data"; a blended one reads as a verdict nobody gave.
+  #
+  # SCOPED TO THE CALL SHAPE, NOT TO THE REPO — the distinction this comment used to
+  # blur, at a cost. turf-vault hands in ["CI", "Anchor Suite"] from the RELEASE track
+  # (#for_release, #release_ci_slot_for) and is refused here. Its TASK CARD hands in the
+  # singular "CI" and is NOT: the card keeps the blind fallback, which is why
+  # /tasks/board-counts-anchor-lane-twice had to stop the sibling append from stacking a
+  # second mark on a lane that base already held. Plain apps are untouched either way.
+  test "[unit] a multi-lane scope costs turf-vault the blind-API fallback, by design" do
     reader = build_reader(&ok([{ "status" => "completed", "conclusion" => "success" }]))
 
     vault = reader.for_sha(TURF_VAULT_NWO, "no-jobs-vault",
@@ -710,6 +716,115 @@ class Ci::ProgressReaderTest < ActiveSupport::TestCase
     assert app.present?,
             "a plain app is still exactly [\"CI\"] and MUST keep its fallback — losing it " \
             "would blank the majority case"
+  end
+
+  # ── the blind API already counts every lane ───────────────────────────────────
+  #
+  # THE REGRESSION. #1419 gave turf-vault's "Anchor Suite" a run-grain mark on the task
+  # card, which was right — the board had been drawing GREEN on a commit the promote
+  # refuses. It appended that mark unconditionally, on a belief about #for_sha that does
+  # not hold for this path: that turf-vault, declaring two lanes, had lost the
+  # workflow-blind check-runs fallback "exactly as a gem does". It has not. #task_progress
+  # passes the SINGULAR .ci_workflow_for(repo) — "CI" for an `apps` row — so the card's
+  # scope is exactly ["CI"] and the fallback stands. The multi-element scope reaches
+  # #for_sha only on the RELEASE track.
+  #
+  # So in the window before the primary lane's jobs are ingested, the base is the blind
+  # API's — every lane's checks on the sha, Anchor Suite's included — and the sibling
+  # mark landed on top of a lane already counted.
+  #
+  # ASSERT THE COUNT, NOT THE COLOUR. The colour never inverted: the sibling mark
+  # duplicates a verdict the base already held, so it can only restate red as red. A
+  # test pinned to `state` would have passed throughout.
+  test "[unit] a blind-API base never re-counts a declared sibling lane" do
+    task = turf_vault_task(branch: "feat/vault-dbl")
+    # The primary lane's RUN row resolves the sha. NO CiCheckJob rows anywhere, which is
+    # what sends #for_sha to the workflow-blind API.
+    seed_run(branch: "feat/vault-dbl", sha: "sha-dbl", repo: TURF_VAULT_NWO, workflow: "CI",
+             status: "completed", conclusion: "failure")
+    seed_run(branch: "feat/vault-dbl", sha: "sha-dbl", repo: TURF_VAULT_NWO, workflow: "Anchor Suite",
+             status: "completed", conclusion: "failure")
+
+    # GitHub's truth for this sha: ONE check run per lane.
+    reader = build_reader(&ok([
+      { "name" => "ci-build",    "status" => "completed", "conclusion" => "success" },
+      { "name" => "anchor-test", "status" => "completed", "conclusion" => "failure" }
+    ]))
+
+    progress = reader.for_task(task)
+
+    assert_equal 2, progress.total,
+                 "GitHub reports 2 check runs on this sha; the card counted the Anchor Suite " \
+                 "lane twice — once inside the blind-API base, once as a sibling mark"
+    assert_equal 1, progress.failed
+    assert_equal 1, progress.passed
+    assert_equal %w[anchor-test ci-build], progress.checks.map(&:name).sort
+    assert_equal :red, progress.state,
+                 "dropping the duplicate must not drop the verdict — the blind base holds the " \
+                 "failing anchor lane under its own job name"
+  end
+
+  # THE CONTROL, and the reason the fix keys on PROVENANCE rather than on the repo. A
+  # base folded from ingested CiCheckJob rows is scoped to `workflow` and has genuinely
+  # never seen another lane, so it still needs its sibling marks. Fix the double count
+  # by skipping the append outright and this test goes red — which is the point of it.
+  test "[unit] a declared-rows base still gets its sibling mark" do
+    task = turf_vault_task(branch: "feat/vault-rows")
+    seed_run(branch: "feat/vault-rows", sha: "sha-rows", repo: TURF_VAULT_NWO, workflow: "CI")
+    # Ingested primary-lane jobs -> the scoped :jobs base, NOT the blind API.
+    seed_check_job(repo: TURF_VAULT_NWO, sha: "sha-rows", workflow: "CI",
+                   conclusion: "success", branch: "feat/vault-rows")
+    seed_run(branch: "feat/vault-rows", sha: "sha-rows", repo: TURF_VAULT_NWO, workflow: "Anchor Suite",
+             status: "completed", conclusion: "failure")
+
+    # An API that would SHOUT if it were consulted: three passing runs. A scoped base
+    # must never reach it, so these must not appear in the fold.
+    reader = build_reader(&ok([{ "status" => "completed", "conclusion" => "success" }] * 3))
+
+    progress = reader.for_task(task)
+
+    assert_equal :jobs, reader.for_sha(TURF_VAULT_NWO, "sha-rows", "CI").source,
+                 "this path must be served by the ingested rows, or the control proves nothing"
+    assert_equal 2, progress.total, "one ingested primary job + one run-grain sibling mark"
+    assert_includes progress.checks.map(&:name), "Anchor Suite",
+                    "the sibling lane must STILL be nameable on a scoped base — removing the " \
+                    "mark would re-open the green-on-a-refused-commit bug #1419 closed"
+    assert_equal :red, progress.state
+  end
+
+  # PROVENANCE IS THE SIGNAL, so pin it directly rather than only through its effect.
+  # nil is a real value — Ci::LadderRung builds a CheckProgress without one, and an
+  # object marshalled into the cache before the field existed thaws with nil — and it
+  # must read as "unknown", never as :api.
+  test "[unit] for_sha reports which source folded the progress" do
+    reader = build_reader(&ok([{ "status" => "completed", "conclusion" => "success" }]))
+    seed_check_job(repo: "nwo/x", sha: "src-jobs", workflow: "CI", conclusion: "success")
+
+    assert_equal :jobs, reader.for_sha("nwo/x", "src-jobs", "CI").source
+    assert_equal :api,  reader.for_sha("nwo/x", "src-api", "CI").source
+    assert_nil Ci::CheckProgress.blank.source, "an unmarked fold is unknown, not blind"
+    assert_nil Ci::CheckProgress.new(checks: []).source
+  end
+
+  # THE RELEASE TRACK IS NOT PART OF THIS FIX. Both its #for_sha calls pass the
+  # MULTI-element .suite_workflows_for scope and so never see the blind API at all; the
+  # sibling append does not run there either (it is the task card's fold alone). Pinned
+  # because the fix touches a reader four things call, and "unchanged" is a claim.
+  test "[integration] the release track is untouched by the task card's sibling rule" do
+    rel = release_with_members("turf-vault")
+    seed_run(branch: Release::BRANCH, sha: "sha-rel", repo: TURF_VAULT_NWO, workflow: "CI")
+    seed_run(branch: Release::BRANCH, sha: "sha-rel", repo: TURF_VAULT_NWO, workflow: "Anchor Suite",
+             status: "completed", conclusion: "failure")
+    reader = build_reader(&ok([{ "status" => "completed", "conclusion" => "success" }]))
+
+    track = reader.for_release(rel)["turf-vault"]
+
+    assert_not track.present?,
+               "a multi-lane scope still refuses the blind API on the release track — a blended " \
+               "bar is a verdict nobody gave, and blank is the honest answer"
+    assert_equal ["turf-vault", track.sha], [*reader.release_ci_slot_for(rel, TURF_VAULT_NWO, Release::BRANCH).first,
+                                             reader.release_ci_slot_for(rel, TURF_VAULT_NWO, Release::BRANCH).last.sha],
+                 "the live slot and the rendered track must stay the same fold"
   end
 
   private

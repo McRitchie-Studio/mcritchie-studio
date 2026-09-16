@@ -50,23 +50,34 @@ module Ci
     # (the source rows come back in Postgres heap order and reshuffle as they update).
     MARK_RANK = { failed: 0, pending: 1, passed: 2 }.freeze
 
-    attr_reader :passed, :failed, :pending, :total, :sha, :checks, :run_started_at
+    # WHERE this fold came from — :jobs (ingested CiCheckJob rows, scoped to the
+    # workflow the caller asked for), :api (the workflow-BLIND check-runs endpoint,
+    # which returns EVERY lane's checks on the sha), :fixture (the demo/test seam) or
+    # nil (constructed by a caller that does not track provenance, e.g. Ci::LadderRung).
+    #
+    # IT EXISTS BECAUSE :api AND :jobs ANSWER DIFFERENT QUESTIONS. A :jobs fold sees one
+    # lane and needs a caller to decorate it with the others; an :api fold has already
+    # seen them all, so decorating THAT double-counts. Ci::ProgressReader#task_progress
+    # is the caller that has to tell them apart. nil means "unknown", and every reader
+    # must treat it as the pre-existing behaviour rather than as either answer — a
+    # CheckProgress marshalled into the cache before this field existed thaws with nil.
+    attr_reader :passed, :failed, :pending, :total, :sha, :checks, :run_started_at, :source
 
     # The always-safe "nothing to show" datum — no PR yet, no CI run, an
     # unreadable/absent payload. `present?` is false, so the bar renders nothing.
-    def self.blank(sha: nil)
-      new(passed: 0, failed: 0, pending: 0, sha: sha)
+    def self.blank(sha: nil, source: nil)
+      new(passed: 0, failed: 0, pending: 0, sha: sha, source: source)
     end
 
     # PURE. A check-runs array (each `{ "status" =>, "conclusion" =>, "name" => }`)
     # -> a per-check datum. Accepts the raw GitHub run objects; unknown/blank rows
     # fold to `pending` rather than being dropped, so `total` always equals the rows
     # seen. Each run's `name` rides along so the symbolic row can title its glyph.
-    def self.from_check_runs(runs, sha: nil, run_started_at: nil)
+    def self.from_check_runs(runs, sha: nil, run_started_at: nil, source: nil)
       checks = Array(runs).map do |run|
         Check.new(bucket_for(run), run_name(run), run_time(run, "started_at"), run_time(run, "completed_at"))
       end
-      new(checks: checks, sha: sha, run_started_at: run_started_at)
+      new(checks: checks, sha: sha, run_started_at: run_started_at, source: source)
     end
 
     # PURE. One run's status+conclusion -> :passed / :failed / :pending.
@@ -102,7 +113,7 @@ module Ci
     # passed/failed/pending counts from the count-only fixture seam, which
     # synthesize nameless checks so a symbolic row still renders the right glyph
     # mix. The checks list is the single source of truth — counts derive FROM it.
-    def initialize(passed: 0, failed: 0, pending: 0, sha: nil, checks: nil, run_started_at: nil)
+    def initialize(passed: 0, failed: 0, pending: 0, sha: nil, checks: nil, run_started_at: nil, source: nil)
       @checks  = checks ? checks.map { |check| coerce_check(check) } : synthesize_checks(passed, failed, pending)
       @passed  = @checks.count(&:passed?)
       @failed  = @checks.count(&:failed?)
@@ -112,6 +123,7 @@ module Ci
       # The RUN's own start (github_workflow_runs.run_started_at) outranks the checks'
       # — a job that queued late still belongs to a run that began earlier.
       @run_started_at = run_started_at
+      @source = source
     end
 
     # Something worth drawing a bar for — at least one check exists. A zero-check
