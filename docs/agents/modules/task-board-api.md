@@ -794,7 +794,7 @@ TOKEN="$(auth)"
 api() { curl -sS -X "$1" "$BASE$2" -H "Authorization: Bearer $TOKEN" \
   ${3:+-H 'Content-Type: application/json' -d "$3"}; }
 
-# 1. Create (list values are arrays; commas inside an item are preserved)
+# 1. Create (list values are arrays; the KEY decides commas: footgun 2)
 api POST /api/v1/tasks '{
   "title": "Add sticky header to admin users table",
   "priority": 1,
@@ -874,7 +874,8 @@ grep -n "STAGES\|DEVOPS_KEYS\|normalize_devops" app/models/task.rb   # stages + 
 remember which stages have transition endpoints. It reads the secret from `ENV`
 or the repo `.env` (the vault only on a machine that has neither), does devops
 **read-merge-write** (partial updates never wipe
-fields), and sends list flags as arrays so comma-containing items stay intact.
+fields), and sends list flags as arrays, one element per flag. A comma is refused
+in `--repo`/`--risk` and kept in prose flags; the server's rule is footgun 2.
 
 ```bash
 bin/task list [--stage S] [--agent A]
