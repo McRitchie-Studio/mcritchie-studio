@@ -30,9 +30,18 @@ threads threads_count, threads_count
 # speed and debuggability, matching the Rails-generated production gate.
 #
 # WEB_CONCURRENCY defaults to 2 EXPLICITLY, never to processor count — Heroku
-# dynos report the host's vCPUs (8 on Basic), and 8 workers would blow both the
-# 512MB dyno and the connection ceiling below. Puma auto-enables preload_app
-# (copy-on-write) whenever workers > 1.
+# dynos report the host's vCPUs, not the dyno's share (8 on both Basic and
+# Standard-2X, measured), and 8 workers would blow the connection ceiling below
+# on any dyno. Puma auto-enables preload_app (copy-on-write) whenever workers > 1.
+#
+# THE DYNO IS NOT THE LIMIT — DO NOT "USE THE HEADROOM". Web and worker moved
+# from Basic (512MB) to Standard-2X (1GB) on 2026-09-16, and Puma still boots
+# 2 workers x 3 threads there. Measured: WEB_CONCURRENCY is unset inside the
+# dyno (the Node.js buildpack's memory-derived .profile.d/WEB_CONCURRENCY.sh
+# ships empty after the Ruby buildpack), so this file's default governs. The
+# doubled memory could hold a third worker; the database cannot: 3 x 3 = 9 web
+# connections takes the budget below to 21, past the hard 20. More workers need
+# a larger Postgres plan first, not a larger dyno.
 #
 # THE CEILING THAT SIZES THIS: the board Postgres is Heroku essential-0 with a
 # HARD 20-connection limit, shared by every process that boots this app. Worst

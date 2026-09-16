@@ -8,23 +8,62 @@ Production app: `mcritchie-studio`
 Canonical URL: `https://mcritchie.studio`
 Legacy app URL: `https://app.mcritchie.studio`
 
+### How Production Deploys
+
+The hub does **not** deploy with `git push heroku main`. `bin/release ship`
+(Steffon's `production-deploy` SOP,
+`docs/agents/agents/steffon/sops/production-deploy.md`) fast-forwards
+`release → main`, then dispatches the GitHub Actions workflow
+`.github/workflows/prod-deploy.yml` with the frozen SHA — the hub's `strategy:
+github_actions` row in `config/release_repos.yml`. What the ship runs:
+
 ```bash
-git push heroku main
-heroku run bin/rails db:migrate --app mcritchie-studio
+gh workflow run prod-deploy.yml -f sha=<frozen-sha>
+```
+
+The workflow force-pushes that SHA to the Heroku app and hard-gates a
+production `/up` smoke. It triggers on `workflow_dispatch`, never `push: [main]`,
+so the ship's own `release → main` ref-push cannot fire a second deploy.
+Migrations run in the Heroku release phase (`Procfile`: `release: bin/rails
+db:migrate`), not in a follow-up `heroku run`. Verified 2026-09-16: releases v445
+(`c1ba9fa2`) and v446 (`ddd15ce7`) both came from `workflow_dispatch` runs of
+Production Deploy.
+
+### Dynos: Web and Worker Change Tier Together
+
+Production runs **one Standard-2X web dyno** (`puma`) and **one Standard-2X
+worker dyno** (`bin/jobs`, Solid Queue), 1 GB each. Both moved from Basic
+(512 MB) on 2026-09-16, after the archived-board R15 memory outage.
+
+**Resize web and worker in one command.** Heroku does not let an app on the
+Eco or Basic tier mix dyno types — every process type must use the same type —
+so moving `web` alone onto or off Basic is not allowed. The rollback is the same
+command with `basic` on both sides:
+
+```bash
+heroku ps:type web=standard-2x worker=standard-2x --app mcritchie-studio
 ```
 
 ### Web Concurrency and the Connection Budget
 
 `config/puma.rb` runs cluster mode in production: `WEB_CONCURRENCY` defaults to
-2 workers × 3 threads (`RAILS_MAX_THREADS`) = 6 concurrent requests on the one
-Basic web dyno (raised from 3 after the 2026-08-09 H12 outage). The sizing
-authority is the worst-case connection budget beside the `workers` line in
-`config/puma.rb`: the board Postgres is essential-0 with a hard 20-connection
-limit shared by web, the Solid Queue dyno, and agent CLI sessions — budgeted
-6 + 7 + 5 = 18 of 20. `test/lib/puma_config_contract_test.rb` re-derives that
-budget from the parsed configs and fails the suite if it reaches the ceiling.
-Re-prove the math there before raising `WEB_CONCURRENCY`, `RAILS_MAX_THREADS`,
-or `JOB_CONCURRENCY` on Heroku.
+2 workers × 3 threads (`RAILS_MAX_THREADS`) = 6 concurrent requests on the web
+dyno (raised from 3 after the 2026-08-09 H12 outage).
+
+**The resize did not change that, and the new memory is not headroom for more
+workers.** Measured 2026-09-16 on Standard-2X: `WEB_CONCURRENCY` is unset inside
+the dyno — the Node.js buildpack's memory-derived `.profile.d/WEB_CONCURRENCY.sh`
+ships empty after the Ruby buildpack — so Puma boots the `config/puma.rb` default
+of 2.
+
+The sizing authority is the database, not the dyno: the worst-case connection
+budget beside the `workers` line in `config/puma.rb`. The board Postgres is
+essential-0 with a hard 20-connection limit shared by web, the Solid Queue dyno,
+and agent CLI sessions — budgeted 6 + 7 + 5 = 18 of 20. A third web worker adds
+3 connections and makes it 21. `test/lib/puma_config_contract_test.rb` re-derives
+that budget from the parsed configs and fails the suite if it reaches the
+ceiling. Re-prove the math there before raising `WEB_CONCURRENCY`,
+`RAILS_MAX_THREADS`, or `JOB_CONCURRENCY` on Heroku.
 
 ### Root-Domain Launch
 
