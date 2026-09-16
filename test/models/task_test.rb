@@ -791,13 +791,13 @@ class TaskTest < ActiveSupport::TestCase
     assert_equal "task-board-contract", metadata["worktree_slug"]
   end
 
-  test "array-form devops lists keep commas; string-form still splits on commas" do
+  test "array-form PROSE lists keep commas; string-form still splits on commas" do
     metadata = Task.normalize_devops_metadata(
       "acceptance" => ["Header stays pinned, even while scrolling", "Email still works"],
       "risk_tags" => "auth, deploy"
     )
 
-    # Array items are preserved verbatim — a comma inside a sentence is kept.
+    # PROSE array items are kept verbatim; the identifier keys split their array form too — see Task::DEVOPS_IDENTIFIER_LIST_KEYS and test/models/task_devops_identifier_lists_test.rb.
     assert_equal ["Header stays pinned, even while scrolling", "Email still works"], metadata["acceptance"]
     # String (UI free-text) fields still split on comma and newline.
     assert_equal ["auth", "deploy"], metadata["risk_tags"]

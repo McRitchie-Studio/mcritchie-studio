@@ -282,6 +282,79 @@ class Task < ApplicationRecord
   # whole defect the open-PR gate closes.
   DEVOPS_LIST_KEYS = %w[repositories risk_tags acceptance test_plan checks_run abandoned_prs
                         fix_forward].freeze
+  # The list keys whose entries are IDENTIFIERS — a name something else looks up —
+  # so a comma inside one entry is always a JOINED LIST and never content. These
+  # split on commas in ARRAY form too; every other list key is stored as posted.
+  #
+  # WHY THE SERVER NEEDS A RULE OF ITS OWN. bin/task already refuses `--repo a,b` at
+  # the terminal (COMMA_FREE_LIST_FLAGS), and that stays the FIRST home: only the CLI
+  # can name the offending FLAG and print a copyable corrected line, and it is where
+  # every joined entry the 2026-09-15 census found had been typed. It guards only
+  # callers that go through it. Anything POSTing /api/v1/tasks directly was
+  # unguarded, and the cost is
+  # measured: a joined `repositories` entry resolves to a phantom repo and ABORTED a
+  # live QA release sweep at step 3a (2026-09-15, sweep-stale-signer-claims) with
+  # nothing promoted, recorded or deployed; a joined `risk_tags` entry matches
+  # Release::BuilderPolicy's blocked_risk_tags and ReviewerSelector::RISK_DOMAINS
+  # never — both compare EXACTLY — so two gates fail OPEN in silence.
+  #
+  # THE VALUE CANNOT BE JUDGED HERE; THE KEY CAN. `["a,b"]` from --repo and `["one
+  # thing, then another"]` from --accept are both one-element arrays, which is why the
+  # CLI reasons about flags. normalize_devops_metadata branches on the KEY, and
+  # bin/task's LIST_FLAGS maps 1:1 onto those keys — so the flag is not a fact this
+  # layer is missing. Measured 2026-09-15: a key-scoped rule fires on --repo's shape,
+  # is silent on --accept's, and is silent on the board form's string (already split).
+  #
+  # WHY SPLIT HERE, WHERE THE CLI REFUSES — a different verdict, argued rather than
+  # inherited, because the CLI's reason does not survive the trip:
+  #   1. The CLI refuses because it can TEACH. It names the flag, prints the corrected
+  #      line, and a human is at the keyboard at the one moment the fix is free. A 422
+  #      teaches a raw caller nothing: the key may be generated rather than typed,
+  #      there is no command line to correct, and there may be no human reading.
+  #   2. A refusal costs the WHOLE write, not the offending key. Both controllers
+  #      rescue into a 422, so a create carrying one joined entry stores NOTHING — a
+  #      caller that does not check the status is left with no task at all, which is a
+  #      second silent failure rather than a lesson.
+  #   3. This method ALREADY splits the same key's STRING form on commas (the board
+  #      form's path). Refusing the array form would make one key's answer depend on
+  #      the JSON type of the payload — a distinction no caller intends and no doc
+  #      states. Splitting converges the two shapes, which is what `normalize` is for.
+  #   4. A split cannot be WRONG for these keys: no repo name, risk tag or PR url
+  #      contains a comma. bin/task's comment concedes this and refuses anyway, on the
+  #      teaching argument — precisely the argument that does not reach this layer.
+  # The two verdicts never contradict each other in practice, because the CLI refusal
+  # runs FIRST for every caller holding a terminal: nobody can learn "this CLI takes
+  # comma lists" from a split they cannot reach. This is a BACKSTOP and does not make
+  # the CLI guard redundant — test/lib/task_comma_list_flags_test.rb pins that one.
+  #
+  # WHAT IS DELIBERATELY LEFT ALONE, and why each:
+  #   acceptance / test_plan / checks_run — PROSE, where a comma is ordinary
+  #     punctuation. 291 / 230 / 1605 board TASKS carry one (360 / 309 / 5883 entries,
+  #     measured 2026-09-16 against production); a blanket rule would shred 6552 real
+  #     entries into fragments, a worse defect than the one being fixed.
+  #   abandoned_prs — the archive override's RECEIPT: prose a human reads months
+  #     later, written by exactly one internal path (OpenPrGuard#record) and never by
+  #     a flag or a form. Splitting one would read as more abandonments than happened,
+  #     the mirror of the newline hazard that writer already defends against.
+  #   fix_forward — identifier-shaped, and a split would be safe. Left alone anyway
+  #     because its joined entry fails CLOSED: ReviewerSelector#builder_known? needs
+  #     fix_forward_unnamed empty, so "carl,steffon" makes the selector REFUSE and a
+  #     human looks. Repairing it quietly would trade a loud stall for a silent
+  #     auto-correct on the no-self-review guarantee.
+  # The rule is ASSERTED, not merely described here:
+  # test/models/task_devops_identifier_lists_test.rb asks the prose question over the
+  # COMPLEMENT of this constant, so a key wrongly added here fails there as well.
+  #
+  # WHAT IT DOES NOT DO IS BACKFILL. Normalization runs on WRITE, so the 1103 board
+  # tasks already carrying a joined `risk_tags` entry (measured 2026-09-16;
+  # `repositories` is at 0, its one incident having been repaired by hand) stay joined
+  # until something rewrites that key, and their auto-QA and reviewer-domain gates keep
+  # failing open until then. The READ path (#devops_list) is left alone deliberately,
+  # not by omission: splitting there would repair those gates by making the record and
+  # the read disagree, and it would silently re-tag 1103 historical tasks on a
+  # release-gating path. That is a backfill someone signs off on, not a side effect of
+  # a write guard.
+  DEVOPS_IDENTIFIER_LIST_KEYS = %w[repositories risk_tags].freeze
   # Repo-keyed MAPS: { "<repo>" => "<value>" }. `pr_urls` is the per-repo PR url
   # register — the multi-repo answer to the single-valued `pr_url`.
   #
@@ -2102,7 +2175,10 @@ class Task < ApplicationRecord
         if DEVOPS_MAP_KEYS.include?(key)
           normalize_devops_map(value)
         elsif DEVOPS_LIST_KEYS.include?(key)
-          normalize_devops_list(value)
+          # The comma rule is KEY-SCOPED, exactly as bin/task's is FLAG-scoped — see
+          # DEVOPS_IDENTIFIER_LIST_KEYS for which keys, and for why this layer splits
+          # where the CLI refuses.
+          normalize_devops_list(value, split_commas: DEVOPS_IDENTIFIER_LIST_KEYS.include?(key))
         else
           value.to_s.strip
         end
@@ -2150,7 +2226,19 @@ class Task < ApplicationRecord
       if value.is_a?(Hash)
         value.to_h.map { |repo, url| normalize_devops_map_pair(repo, url) }
       else
-        normalize_devops_list(value).map { |url| normalize_devops_map_pair(nil, url) }
+        # A PR URL IS AN IDENTIFIER, so the list branch splits commas for the same
+        # reason DEVOPS_IDENTIFIER_LIST_KEYS does — and here the joined form LOST
+        # data rather than mangling it. Measured 2026-09-16 before this argument was
+        # passed: ["<turf url>,<hub url>"] stored { "turf-monster" => "<turf
+        # url>,<hub url>" } — turf's url joined into something no reader resolves,
+        # and the HUB'S PR DROPPED ENTIRELY, because one element yields one pair.
+        # That is the 2026-08-13 half-ship shape again (a repo whose PR has nowhere
+        # to live), with #repos_missing_pr_url reporting turf covered by a non-url.
+        #
+        # The HASH branch needs no rule of its own: a pair is keyed by the repo its
+        # URL names, and a key that disagrees already raises below — a comma-joined
+        # key can never agree with the one repo a url names.
+        normalize_devops_list(value, split_commas: true).map { |url| normalize_devops_map_pair(nil, url) }
       end
 
     pairs.compact.to_h
@@ -2191,15 +2279,20 @@ class Task < ApplicationRecord
     url.to_s[PR_URL_REPO_PATTERN, 1]
   end
 
-  def self.normalize_devops_list(value)
-    # Array input (the JSON API / bin/task) is already delimited — each element
-    # is one item, so split ONLY on newlines. Commas are legitimate inside
-    # acceptance/test_plan sentences and must be preserved. String input (UI
-    # free-text fields) keeps the newline+comma split so a single field can
-    # carry several comma-separated entries.
+  def self.normalize_devops_list(value, split_commas: false)
+    # String input (UI free-text fields) always splits on newline AND comma, so one
+    # field can carry several entries. Array input (the JSON API / bin/task) is
+    # already delimited, so each element is one item and splits only on newlines —
+    # a comma inside an acceptance sentence is content and must survive.
+    #
+    # UNLESS THE KEY SAYS OTHERWISE. `split_commas` is the caller's statement that
+    # this key's entries are IDENTIFIERS, where a comma can only be a joined list
+    # (DEVOPS_IDENTIFIER_LIST_KEYS carries the argument and the measurements). For
+    # those keys the two input shapes converge: `"a,b"` and `["a,b"]` both store two.
+    delimiter = split_commas ? /[\n,]/ : "\n"
     parts =
       if value.is_a?(Array)
-        value.flat_map { |item| item.to_s.split("\n") }
+        value.flat_map { |item| item.to_s.split(delimiter) }
       else
         value.to_s.split(/[\n,]/)
       end

@@ -2961,8 +2961,8 @@ class TaskCliTest < Minitest::Test
   # `--accept`, `--test` and `--checks` carry free PROSE, where a comma is
   # ordinary punctuation. Guarding them would refuse (or, worse, silently split)
   # legitimate acceptance criteria — a bigger defect than the one being fixed.
-  # 290 acceptance entries, 230 test_plan entries and 1602 checks_run entries on
-  # the board contain a comma, and every one of them is correct.
+  # 291 / 230 / 1605 board TASKS carry a comma in acceptance / test_plan / checks_run,
+  # which is 6552 individual ENTRIES (re-measured 2026-09-16) — every one correct.
   def test_prose_list_flags_keep_their_commas_and_are_never_split
     requests, _out, err, status = run_task(
       ["create", "--title", "Prose control task",
