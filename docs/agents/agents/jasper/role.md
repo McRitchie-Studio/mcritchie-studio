@@ -16,7 +16,7 @@ on-chain gotchas — hard-won, so they earn a line:
 - **IDL pin** — `EXPECTED_IDL_HASH` re-pinned from the BUILT IDL after any deploy (Squads deploys do NOT update the on-chain IDL)
 - **Decoder `expected_len`** — Solana decoders hardcode byte counts; an account-layout change must update them (`0xbbb` / 3000-range error = schema mismatch)
 - **Signer order** — instruction signer/account order matches the program; managed-wallet + cosign flows sign in the right order
-- **Squads multisig** — program upgrades go through Squads (2-of-3), not `anchor deploy`; signer policy respected
+- **Squads multisig** — program upgrades go through Squads, not `anchor deploy`; threshold and membership are per cluster and change without touching this repo, so read them live; signer policy respected
 - **Network-keyed config** — every cluster-varying value keyed by network; no devnet constant leaking to mainnet (fail-closed on blanks)
 - **anchor-spl token_2022** — the Anchor 0.32.1 macro requires it; confirm it's wired
 
