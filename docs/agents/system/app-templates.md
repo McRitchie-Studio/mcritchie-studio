@@ -202,7 +202,7 @@ current fact from it is not.)
 **The chain is the authoritative confirmation, not any file.** `VaultState` is
 `seeds = [b"vault"]` against the cluster's program ID — that derivation comes
 from the program source, which `initialize-mainnet.js` mirrors. Re-read
-2026-09-16 at `finalized`: mainnet `GBu44HFJjq61WnS9UV1twcSrCC6SkuXHK8RM6tUKsWzV` (program
+2026-09-05: mainnet `GBu44HFJjq61WnS9UV1twcSrCC6SkuXHK8RM6tUKsWzV` (program
 `DaFv83yo…`) and devnet `J7b5g9uS5M2Nog1Ly1UATXTDMtXdpXK3JffRAHXGHkK2` (program
 `EQGFJAcA…`) both carry the same three signers at the same offsets, and
 `threshold = 2`. That agreement is an observation, never a guarantee: each
