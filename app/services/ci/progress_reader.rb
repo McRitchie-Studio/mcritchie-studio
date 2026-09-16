@@ -506,14 +506,18 @@ module Ci
     # (ci-build ✓, anchor-test ✗) and the card drew 3 — the extra a run-grain "Anchor
     # Suite" mark stacked on the anchor-test it already held.
     #
-    # WHAT THE SKIP COSTS, stated rather than discovered: a sibling lane that is QUEUED
-    # with no check runs anywhere yet loses its one pending mark for as long as the
-    # base stays blind. That is the narrow case — the lane contributes no verdict
-    # because it has produced none, and the moment the primary's jobs are ingested the
-    # base turns :jobs and the mark returns. The case #1419 exists for, a COMPLETED red
-    # sibling, is untouched: a completed lane always has check runs, so a blind base
-    # already carries them, red, under their real job names. The card still cannot draw
-    # green on a commit the promote refuses.
+    # WHAT THE SKIP COSTS, stated rather than discovered: a sibling lane with NO check
+    # runs anywhere loses its one run-grain mark while the base stays blind, and one
+    # ingested primary job closes that window. Usually the lane is merely QUEUED — it
+    # has produced no verdict, so the colour cannot move. But a lane that COMPLETED
+    # without ever starting a job (`startup_failure`, `cancelled` while queued) has no
+    # check runs either, and there the dropped mark IS a verdict: measured 2026-09-15
+    # on a seeded head (primary CI green and un-ingested, "Anchor Suite" completed
+    # `startup_failure`) the card read :green while Ci::ReviewGate read :red. So the
+    # #1419 case is untouched whenever the sibling actually RAN — a blind base already
+    # carries its jobs, red, under their real names — and only that jobless conjunction
+    # is given up. Nothing merges on it (the gate folds RUN rows, not check runs), and
+    # it is the narrower wrong than counting the lane twice on every card.
     def task_progress(nwo, repo, sha, workflow)
       base = for_sha(nwo, sha, workflow)
       return base if base.checks.empty? || base.source == :api
