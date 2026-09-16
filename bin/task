@@ -1325,18 +1325,24 @@ LIST_FLAGS = { "--repo" => "repositories", "--risk" => "risk_tags", "--accept" =
 # paid by the operator who was already wrong, at the only moment it is still free.
 #
 # WHY THE GUARD LIVES HERE — AND WHY IT IS NOT THE ONLY ONE.
-# Task.normalize_devops_list splits STRING input on newlines AND commas — the board
-# form's path, so its "auth, solana, migration" text field files three tags
-# correctly. ARRAY input (this CLI, the JSON API) splits on newlines only, because
-# commas are legitimate inside an acceptance sentence. So the VALUE alone cannot be
-# judged: `["a,b"]` from --repo and `["one thing, then another"]` from --accept are
-# both one-element arrays.
+# The VALUE alone cannot be judged: `["a,b"]` from --repo and `["one thing, then
+# another"]` from --accept are both one-element arrays, and the board form posts the
+# same two shapes as strings.
 #
-# The KEY still can be, and SINCE 2026-09-16 IT IS. normalize_devops_metadata
-# branches per key (DEVOPS_LIST_KEYS) and LIST_FLAGS maps 1:1 onto those keys, so
-# Task::DEVOPS_IDENTIFIER_LIST_KEYS now carries the same rule scoped to
-# `repositories`/`risk_tags` — the backstop for the raw JSON API, which this file
-# cannot see at all. Do NOT read that as making this one redundant: the server
+# The KEY can be, and SINCE 2026-09-16 IT IS. normalize_devops_metadata branches per
+# key (DEVOPS_LIST_KEYS) and LIST_FLAGS maps 1:1 onto those keys, so
+# Task::DEVOPS_IDENTIFIER_LIST_KEYS carries the same rule scoped to
+# `repositories`/`risk_tags` — splitting a joined entry there, never in prose,
+# WHATEVER SHAPE THE PAYLOAD ARRIVES IN. That last clause was the second half of the
+# fix and landed a day late: Task.normalize_devops_list decided by INPUT SHAPE, so
+# scoping the array branch to the key left the string branch splitting for every key,
+# and the board form's "One criterion per line" TEXTAREAS still shredded any criterion
+# carrying a comma. The identifier keys do still split on that branch — it is how the
+# form's own "auth, solana, migration" text field files three tags — but because the
+# KEY says so now, not because the value arrived as a string.
+#
+# That server rule is the backstop for the raw JSON API, which this file cannot see
+# at all. Do NOT read it as making this guard redundant: the server
 # SPLITS where this REFUSES, deliberately and for reasons argued at that constant (a
 # 422 teaches a scripted caller nothing, and costs it the whole write). This is
 # where the lesson gets taught, and where all 1104 joined entries the 2026-09-15

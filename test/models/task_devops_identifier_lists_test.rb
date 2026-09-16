@@ -99,6 +99,91 @@ class TaskDevopsIdentifierListsTest < ActiveSupport::TestCase
     assert_equal [bullet, "Email still works"], metadata["acceptance"]
   end
 
+
+  # --- the STRING branch: the board form's own path ----------------------------
+
+  # THE DEFECT THIS FILE WAS EXTENDED FOR, and it is the INVERSE of the
+  # inconsistency argued above. The key-scoped rule landed on the ARRAY branch
+  # only; the STRING branch ignored `split_commas` and split for EVERY key. So
+  # after that change the same argument ran the other way — a prose key's answer
+  # depended on the JSON type of the payload, with the shredding now on the
+  # string side. Measured on the merged head before this fix:
+  #
+  #   normalize_devops_metadata("acceptance" => "Header stays pinned, even while scrolling")
+  #     => ["Header stays pinned", "even while scrolling"]
+  #
+  # AND IT WAS REACHABLE FROM THE UI, not just the raw API: the board form posts
+  # the three prose keys as TEXTAREAS (app/views/tasks/_form.html.erb, the
+  # "One criterion per line" fields), and a textarea's value arrives here as a
+  # STRING. An operator typing a criterion with a comma got two criteria.
+  #
+  # Asked over the COMPLEMENT, for the same reason the array-form control above
+  # is: a prose key added to DEVOPS_LIST_KEYS is covered the day it lands.
+  test "[unit] a comma inside a prose list entry posted as a string is never split" do
+    prose = Task::DEVOPS_LIST_KEYS - Task::DEVOPS_IDENTIFIER_LIST_KEYS
+
+    assert_equal %w[acceptance test_plan checks_run abandoned_prs fix_forward], prose,
+                 "the unguarded remainder is the list this rule promises never to touch"
+
+    prose.each do |key|
+      entry = "Header stays pinned, even while scrolling"
+      metadata = Task.normalize_devops_metadata(key => entry)
+
+      assert_equal [entry], metadata[key],
+                   "devops.#{key} arrived from the board form as one string and was shredded"
+    end
+  end
+
+  # The two shapes CONVERGE for prose too, which is the whole property: one key
+  # list, one answer, whatever the payload's JSON type. The mirror of "the array
+  # and string forms of an identifier key agree" — that test and this one are the
+  # pair that pins the rule to the KEY rather than to the input shape.
+  test "[unit] the array and string forms of a prose key agree" do
+    prose = Task::DEVOPS_LIST_KEYS - Task::DEVOPS_IDENTIFIER_LIST_KEYS
+
+    prose.each do |key|
+      entry = "The sweep promotes accepted, deploys QA, and flips members assembled"
+
+      assert_equal [entry], Task.normalize_devops_metadata(key => [entry])[key]
+      assert_equal [entry], Task.normalize_devops_metadata(key => entry)[key],
+                   "the array branch's prose rule is what the string branch now matches"
+    end
+  end
+
+  # THE TEXTAREA AT FULL SIZE. One entry proves the branch; the posted shape is
+  # several criteria newline-joined, each free to carry commas. A blanket split
+  # turns these two bullets into six fragments — and dor-check counts acceptance
+  # bullets, so the shredding inflates the count it gates on.
+  test "[unit] a board textarea of prose lines splits on newlines only" do
+    typed = "Header stays pinned, even while scrolling\n" \
+            "The sweep promotes accepted, deploys QA, and flips members assembled"
+
+    metadata = Task.normalize_devops_metadata("acceptance" => typed)
+
+    assert_equal ["Header stays pinned, even while scrolling",
+                  "The sweep promotes accepted, deploys QA, and flips members assembled"],
+                 metadata["acceptance"]
+  end
+
+  # THE CONTROL THAT DECIDES THE SHAPE OF THE FIX, and the reason it is NOT
+  # "stop the string branch splitting". The board form joins both identifier
+  # fields with ", " before posting them as single-line text_fields
+  # (_form.html.erb, `value: list.join(", ")`), so the comma split on THIS branch
+  # is load-bearing: kill it and "auth, solana, migration" files ONE tag that
+  # ReviewerSelector::RISK_DOMAINS can never look up. Held here as well as in
+  # "the array and string forms of an identifier key agree" because that test
+  # reads as an argument about the array branch; this one names the branch that
+  # must keep splitting.
+  test "[unit] an identifier key posted as the form's joined string still splits" do
+    Task::DEVOPS_IDENTIFIER_LIST_KEYS.each do |key|
+      joined, split = JOINED.fetch(key)
+      spaced = joined.split(",").join(", ")
+
+      assert_equal split, Task.normalize_devops_metadata(key => spaced)[key],
+                   "devops.#{key} is a joined text_field on the board form and must still split"
+    end
+  end
+
   # --- the guarded set itself -------------------------------------------------
 
   # A typo'd entry in the constant would be INERT — the exact failure mode this rule
@@ -122,6 +207,17 @@ class TaskDevopsIdentifierListsTest < ActiveSupport::TestCase
   # #repos_missing_pr_url reporting turf covered by a value that is not a url.
   test "[unit] a joined list of pr urls files both repos" do
     metadata = Task.normalize_devops_metadata("pr_urls" => ["#{TURF_PR},#{HUB_PR}"])
+
+    assert_equal({ "turf-monster" => TURF_PR, "mcritchie-studio" => HUB_PR }, metadata["pr_urls"])
+  end
+
+  # The map's OWN string path, which must keep splitting for the same reason the
+  # identifier keys do — normalize_devops_map asks for `split_commas: true`
+  # explicitly, so a joined string of urls is a LIST of urls and not one mangled
+  # value. Pinned because the string branch now honours that flag rather than
+  # splitting unconditionally: before, this passed for the wrong reason.
+  test "[unit] a joined string of pr urls files both repos" do
+    metadata = Task.normalize_devops_metadata("pr_urls" => "#{TURF_PR},#{HUB_PR}")
 
     assert_equal({ "turf-monster" => TURF_PR, "mcritchie-studio" => HUB_PR }, metadata["pr_urls"])
   end

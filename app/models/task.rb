@@ -2280,21 +2280,39 @@ class Task < ApplicationRecord
   end
 
   def self.normalize_devops_list(value, split_commas: false)
-    # String input (UI free-text fields) always splits on newline AND comma, so one
-    # field can carry several entries. Array input (the JSON API / bin/task) is
-    # already delimited, so each element is one item and splits only on newlines —
-    # a comma inside an acceptance sentence is content and must survive.
+    # THE COMMA RULE IS THE KEY'S, NOT THE PAYLOAD'S. `split_commas` is the caller's
+    # statement that this key's entries are IDENTIFIERS, where a comma can only be a
+    # joined list (DEVOPS_IDENTIFIER_LIST_KEYS carries the argument and the
+    # measurements). Everything else is PROSE, where a comma is ordinary punctuation
+    # and splitting shreds a real entry into fragments. Newlines delimit in both
+    # cases, so the flag chooses the delimiter and nothing else — and BOTH input
+    # shapes read the same flag, so `"a,b"` and `["a,b"]` always agree.
     #
-    # UNLESS THE KEY SAYS OTHERWISE. `split_commas` is the caller's statement that
-    # this key's entries are IDENTIFIERS, where a comma can only be a joined list
-    # (DEVOPS_IDENTIFIER_LIST_KEYS carries the argument and the measurements). For
-    # those keys the two input shapes converge: `"a,b"` and `["a,b"]` both store two.
+    # THE SHAPE USED TO DECIDE, AND IT WAS THE WRONG AXIS — twice, in opposite
+    # directions. Originally both branches were blanket: array split on newlines
+    # only, string on newline AND comma, so the same key answered differently
+    # depending on the JSON type of the payload. Scoping the ARRAY branch to the key
+    # fixed the identifier half and left the string branch blanket, which merely
+    # inverted the inconsistency: `{"acceptance" => "Header stays pinned, even while
+    # scrolling"}` still came back as two criteria. That was REACHABLE FROM THE BOARD,
+    # not just the raw API — app/views/tasks/_form.html.erb posts acceptance,
+    # test_plan and checks_run as "One criterion per line" TEXTAREAS, whose values
+    # arrive here as strings. 292 / 231 / 1616 board tasks carry a legal comma in those
+    # three keys — 6,599 individual entries (measured 2026-09-16 against production),
+    # every one of which a blanket split shreds into fragments.
+    #
+    # WHAT THE STRING BRANCH MUST KEEP DOING: the same form posts `repositories` and
+    # `risk_tags` as single-line text_fields JOINED with ", " (`value: list.join(", ")`),
+    # so those keys still split here — that is what `split_commas: true` is for, and
+    # normalize_devops_map asks for it explicitly so a joined string of PR urls stays a
+    # list of urls. The fix was never "stop the string branch splitting"; it was to
+    # give both branches the one key list.
     delimiter = split_commas ? /[\n,]/ : "\n"
     parts =
       if value.is_a?(Array)
         value.flat_map { |item| item.to_s.split(delimiter) }
       else
-        value.to_s.split(/[\n,]/)
+        value.to_s.split(delimiter)
       end
     parts.map(&:strip)
          .reject(&:blank?)
