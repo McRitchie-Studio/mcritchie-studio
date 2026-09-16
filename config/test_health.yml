@@ -205,28 +205,28 @@ frozen_size:
   # test.rb (14 cases, including the drop receipt), and the HTTP-status half to a NEW
   # file, test/integration/approval_request_guard_api_test.rb (8 cases). Only the
   # stderr-of-the-real-binary cases needed this harness.
-#
-# +62 (2026-09-15, comma-repo-list-aborts-sweep): six cases for the comma refusal on
-# the repeatable IDENTIFIER flags. `bin/task create --repo a,b` stored a ONE-ELEMENT
-# array holding the joined string; nothing refused it and nothing rendered it
-# differently, so it surfaced only when a release sweep RESOLVED an entry — and it
-# aborted a live QA sweep at step 3a with nothing promoted, recorded or deployed.
-#
-# THEY STAY IN THIS FILE for the reason this ceiling already accepts twice above:
-# the property is WHAT GOES ON THE WIRE — that a refused line issues ZERO requests,
-# and, the half that matters more, that `--accept "one thing, then another"` still
-# POSTs as ONE unsplit entry. Both are only observable by driving the real binary
-# against this file's private stub server (`run_task`), and a new file could reach
-# them only by duplicating that server and would then be testing its own copy.
-#
-# What DID go elsewhere, which is what this ceiling asks for: every harness-free
-# claim to a NEW file, test/lib/task_comma_list_flags_test.rb (6 cases) — the
-# guarded set read out of the script, the check that each guarded flag is a real
-# LIST_FLAGS key (a typo'd entry would be inert, the exact failure mode under
-# repair), the proof that BOTH parse branches call the refusal, and the ordering
-# pair against an unroutable board: the joined form never reaches the network while
-# the correctly-spelled one does, which is what makes the first one's silence mean
-# something.
+  #
+  # +62 (2026-09-15, comma-repo-list-aborts-sweep): six cases for the comma refusal on
+  # the repeatable IDENTIFIER flags. `bin/task create --repo a,b` stored a ONE-ELEMENT
+  # array holding the joined string; nothing refused it and nothing rendered it
+  # differently, so it surfaced only when a release sweep RESOLVED an entry — and it
+  # aborted a live QA sweep at step 3a with nothing promoted, recorded or deployed.
+  #
+  # THEY STAY IN THIS FILE for the reason this ceiling already accepts twice above:
+  # the property is WHAT GOES ON THE WIRE — that a refused line issues ZERO requests,
+  # and, the half that matters more, that `--accept "one thing, then another"` still
+  # POSTs as ONE unsplit entry. Both are only observable by driving the real binary
+  # against this file's private stub server (`run_task`), and a new file could reach
+  # them only by duplicating that server and would then be testing its own copy.
+  #
+  # What DID go elsewhere, which is what this ceiling asks for: every harness-free
+  # claim to a NEW file, test/lib/task_comma_list_flags_test.rb (6 cases) — the
+  # guarded set read out of the script, the check that each guarded flag is a real
+  # LIST_FLAGS key (a typo'd entry would be inert, the exact failure mode under
+  # repair), the proof that BOTH parse branches call the refusal, and the ordering
+  # pair against an unroutable board: the joined form never reaches the network while
+  # the correctly-spelled one does, which is what makes the first one's silence mean
+  # something.
   test/lib/task_cli_test.rb: 3164
   # -243 (2026-09-09, ship-discards-approval-request): a LOWERING, which this section
   # welcomes and never requires. Moving the settle seam from `submitted` to `reviewed`

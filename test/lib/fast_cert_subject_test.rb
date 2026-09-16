@@ -504,11 +504,16 @@ class FastCertSubjectTest < Minitest::Test
     # accounts for four of the five increments is the pattern working, not drifting —
     # the freeze exists to push new tests into new files, and each one that explains
     # itself lands here.
+    # 25 → 26 on 2026-09-15 (comma-repo-list-aborts-sweep), the SIXTH increment and the
+    # fifth with this same cause: test/lib/task_comma_list_flags_test.rb was split out of
+    # the frozen hotspot test/lib/task_cli_test.rb when six new cases ran it 81 lines past
+    # its ceiling, and its header cites this config to say why it is a new file rather than
+    # an append.
     # What the assertion is FOR is the LIST: this one known entry and no other. A
     # second path appearing is the regression; this number changing is bookkeeping.
-    assert_equal ["config/test_health.yml (25)"], over,
+    assert_equal ["config/test_health.yml (26)"], over,
                  "config/test_health.yml was already over the cap before this clause " \
-                 "existed (its PATH matches 25 files); any OTHER entry here means the " \
+                 "existed (its PATH matches 26 files); any OTHER entry here means the " \
                  "config spelling re-opened a cap trip"
   end
 end
