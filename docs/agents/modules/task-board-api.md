@@ -715,13 +715,19 @@ See footgun 4 for the full set of fields that live outside `devops`.
    send every `[unit] …` / `[integration] …` line you want kept. Supplying a
    `[<lane>@<fingerprint>]` line by hand is not a legitimate write — it forges a
    certification; run `bin/fast-check` / `bin/full-suite-check` instead.
-2. **List delimiting differs by input type.** `normalize_devops_list` treats
-   **array** input (the JSON API / `bin/task`) as already-delimited and splits it
-   **only on newlines** — so commas inside an `acceptance`/`test_plan` sentence
-   are preserved. **String** input (UI free-text fields) still splits on both
-   commas and newlines, so one field can carry several entries. Practical rule:
-   from the API/`bin/task`, **always pass list values as arrays** (one element
-   per item) and commas are safe.
+2. **List delimiting is decided by the KEY, not by the payload's type.**
+   `normalize_devops_list` splits every list value on **newlines**. It *also*
+   splits on **commas** for the two IDENTIFIER keys — `repositories` and
+   `risk_tags` (`Task::DEVOPS_IDENTIFIER_LIST_KEYS`), where a comma can only be a
+   joined list — and **never** for the PROSE keys (`acceptance`, `test_plan`,
+   `checks_run`, `abandoned_prs`, `fix_forward`), where a comma is ordinary
+   punctuation. The rule holds for **both input shapes**: `{"risk_tags":
+   "auth,solana"}` and `{"risk_tags": ["auth,solana"]}` both store two tags, and
+   an acceptance criterion keeps its commas whichever way you send it. This used
+   to differ by input type — string input split on commas for every key, which is
+   how the board form's "One criterion per line" textareas shredded any criterion
+   containing one. Passing list values as arrays (one element per item) is still
+   the clearest form, but it is no longer what makes a comma safe.
 3. **Unsupported `devops` keys are silently dropped.** Anything not in
    `DEVOPS_KEYS` is discarded by the normalizer. To stash extra data, write it
    under `metadata` directly instead of `devops`.
