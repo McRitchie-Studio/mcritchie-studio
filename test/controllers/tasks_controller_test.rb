@@ -910,7 +910,49 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "#dropzone-designed", count: 0
   end
 
-  test "[integration] the older link on a capped column lands on that stage uncapped" do
+  # HOTFIX 2026-09-16 (archived-board-crashes-prod). An explicit ?stage= used to be
+  # uncapped, and it is public. A crawler hit /tasks?stage=archived twice: one
+  # request ran 23,994ms / 3,834 queries, and together they took the 512MB web dyno
+  # to 1,220MB and an R15 SIGKILL — production down, twice in 38 seconds. This pins
+  # the load, not just the drawing: the trimmed rows must never reach the page.
+  test "[integration] an explicit stage view is capped so a crawler cannot load the whole archive" do
+    limit = Task::BOARD_STAGE_LIMIT
+    archived = (limit + 3).times.map { |i| Task.create!(title: "crawler cap archived #{i}", stage: "archived") }
+    total = Task.where(stage: "archived").count
+
+    [tasks_path(stage: "archived"), deployments_path(stage: "archived")].each do |path|
+      get path
+
+      assert_response :success
+      assert_select "div[id^='card-'][data-stage='archived']", count: limit,
+                    message: "#{path} must draw at most BOARD_STAGE_LIMIT archived cards"
+      assert_select "#card-#{archived.last.slug}"
+      # The slug, not just the card: a row that was loaded but not drawn would still
+      # leak into an attribute or a count, and loading it is the cost being capped.
+      assert_not_includes response.body, archived.first.slug,
+                          "#{path} loaded an archived task the cap should have left in the database"
+    end
+
+    # /deployments shows a stage count. It must report the TRUE total, and a filtered
+    # page must never offer an "older" link — that link is url_for(stage:), which on
+    # this page is the page itself.
+    get deployments_path(stage: "archived")
+    assert_select "[data-stage-count='archived']", text: /#{total}/
+    assert_select "a[data-test='stage-older-link']", count: 0
+  end
+
+  test "[unit] robots.txt keeps crawlers off the task board" do
+    robots = Rails.public_path.join("robots.txt").read
+    # The rule must sit INSIDE the `User-agent: *` group. A blank line ends a group for
+    # older parsers, so a Disallow after one is orphaned — and a bare line match would
+    # stay green while crawlers ignored it.
+    group = robots[/^User-agent: \*\n(?:(?:Disallow|Allow): .*\n?)+/]
+    assert group, "robots.txt has no contiguous User-agent: * group"
+    assert_match(%r{^Disallow: /tasks$}, group,
+                 "the board is public and its explicit-stage view crashed production under a crawler")
+  end
+
+  test "[integration] the older link on a capped column lands on that stage past the default cap" do
     limit = Task::BOARD_SHIPPED_LIMIT
     shipped = (limit + 3).times.map { |i| Task.create!(title: "older link shipped #{i}", stage: "shipped") }
 

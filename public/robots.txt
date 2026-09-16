@@ -5,7 +5,13 @@
 # session x page), so a crawler that follows those links walks an effectively
 # unbounded set of addresses. Auth already refuses them; this keeps well-behaved
 # crawlers from spending the request at all, and drops the paths from the index.
+# The task board is public, and its explicit-stage view (?stage=archived) reaches
+# the whole archive. A crawler requesting it took production down on 2026-09-16
+# (R15, twice in 38s). The view is now capped; this also keeps well-behaved
+# crawlers off the board and task pages. It is NOT access control. Every Disallow
+# stays inside the one User-agent group — a blank line ends a group for older parsers.
 User-agent: *
 Disallow: /agents/activities
 Disallow: /alex/heartbeat
+Disallow: /tasks
 Disallow: /*?*sessions=
