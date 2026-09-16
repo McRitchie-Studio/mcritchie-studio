@@ -31,7 +31,7 @@ bookends below into one command each:
 ```bash
 /Users/alex/projects/mcritchie-studio/bin/task begin --title "Three To Five Words" --agent <soul> \
   --repo <app> --kind <kind> \
-  --shape <shape> --risk <tags> --accept "criterion" --test "[unit] ..."
+  --shape <shape> --risk <tag> --accept "criterion" --test "[unit] ..."
 
 cd <desk>   #   ... the worktree begin printed; build there ...
 
@@ -243,7 +243,7 @@ way, do **not** start editing files until you have:
 
 1. **Created the production task** —
    `cd /Users/alex/projects/mcritchie-studio && bin/task create --title "<feature>"
-   --kind feature --shape <shape> --repo <app> --risk <tags>
+   --kind feature --shape <shape> --repo <app> --risk <tag>
    --accept "<criterion>" --test "<tier>"`. **Title = 3-5 words** (the create API
    rejects otherwise); the slug derives from it (`/tasks/<slug>`, seeds
    `worktree_slug` + `feat/<slug>`) — pass `--slug` only to override.

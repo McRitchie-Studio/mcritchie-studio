@@ -71,6 +71,11 @@
 #     for the repo it names. `--pr-url-for <repo>=none` removes one entry.
 #     RECORDING ONLY: nothing refuses an incomplete record yet — the sweep's
 #     refusal ships with /tasks/merge-promotes-every-repo. )
+#   ( --repo and --risk are REPEATABLE and take ONE value each — `--repo a --repo b`.
+#     A comma in either is REFUSED: `--repo a,b` used to store the single joined
+#     entry "a,b", which reads like the correct pair everywhere and resolves for
+#     nobody (it aborted a live QA sweep). The prose flags --accept / --test /
+#     --checks are repeatable too but are NOT guarded — a comma is legal there. )
 #   ( --shape feeds bin/dor-check: one of the keys in config/feature_shapes.yml )
 #   ( --no-claim files the task WITHOUT repointing this session's active-feature
 #     marker at it — filing a task is not building it. Use it when a conductor /
@@ -1261,6 +1266,71 @@ SCALAR_FLAGS = {
   "--persona" => "persona"
 }.freeze
 LIST_FLAGS = { "--repo" => "repositories", "--risk" => "risk_tags", "--accept" => "acceptance", "--test" => "test_plan", "--checks" => "checks_run" }.freeze
+# The LIST_FLAGS whose values are IDENTIFIERS rather than prose, and which
+# therefore REFUSE a comma. Read the per-flag reasoning before adding a sixth:
+# this set is deliberately smaller than LIST_FLAGS, and growing it wrongly is a
+# worse defect than the one it fixes.
+#
+# THE DEFECT. Every LIST_FLAG is repeatable (`--repo a --repo b`), so `--repo a,b`
+# is user error. The defect was that it was accepted SILENTLY, storing a
+# one-element array holding the joined string — and producing a record that reads
+# correctly everywhere except where it matters. `bin/task show` prints
+# `repos: a,b` for the joined entry and for the correct pair alike, so nothing at
+# create time, and nothing on the board, can tell them apart.
+#
+# WHERE IT SURFACES, measured 2026-09-15 across the production board (2066 tasks):
+#   repositories  the LOUD reader, and the one that cost a sweep. Release::
+#                 Conductor resolves each entry to a repo, finds a phantom with no
+#                 PR, and refuses at step 3a — the guard added after the
+#                 2026-08-13 half-ship. It ABORTED a live QA release sweep on
+#                 /tasks/sweep-stale-signer-claims: nothing promoted, recorded or
+#                 deployed, repaired by hand and re-run. A SECOND instance was
+#                 typed the same night, by the operator who had just watched the
+#                 first one abort. The failure mode does not teach, because the
+#                 record looks right — which is the whole argument for a guard.
+#   risk_tags     the SILENT readers, and 1117 tasks already carry a joined entry.
+#                 Release::BuilderPolicy intersects the tags with auto_qa's
+#                 blocked_risk_tags and ReviewerSelector looks each tag up in
+#                 RISK_DOMAINS: BOTH match EXACTLY, so a joined entry matches
+#                 nothing and the gate fails OPEN. 31 tasks would have hit the
+#                 auto-QA block and did not; 464 would have pulled a domain
+#                 reviewer light and did not. (Release::GemVersion is the one
+#                 reader unharmed — BREAKING_TAG is a substring regex.)
+#
+# WHY THESE TWO AND NOT THE OTHER THREE. `--accept`, `--test` and `--checks` carry
+# free PROSE, where a comma is ordinary punctuation — 290, 230 and 1602 board
+# entries respectively contain one, and every one is correct. Guarding them would
+# refuse legitimate acceptance criteria, and SPLITTING them would silently shred
+# an acceptance bullet into fragments. That is a worse defect than the one being
+# fixed, and it is exactly why this is a per-flag decision and not one blanket
+# rule. The invariant is asserted, not merely written here:
+# test_the_comma_guard_covers_identifier_flags_and_never_prose in
+# test/lib/task_cli_test.rb reads this constant out of this file.
+#
+# WHY REFUSE RATHER THAN SPLIT. Splitting cannot be WRONG — no legal repo name or
+# risk tag contains a comma — so it was the live alternative. It loses on two
+# counts. First, consistency: every other value this parser cannot honor dies
+# here (`--agent Steffon`, `--depends-on "Adopt Modal Primitive"`, a malformed
+# `--pr-url-for` pair, an unknown flag), each with the same stated reason — die
+# where a human can still fix it. A single flag that silently rewrites what the
+# operator typed, sitting among four that refuse, is its own trap. Second, and
+# decisive: splitting teaches the WRONG lesson. An agent whose `--repo a,b`
+# quietly works has learned that this CLI takes comma lists, and will next type
+# `--accept "one thing, then another"` expecting two criteria — which must stay
+# ONE, and will. Refusing states the flag's shape once, and the lesson transfers
+# to the flags that can never be guarded. The cost is one retyped command line,
+# paid by the operator who was already wrong, at the only moment it is still free.
+#
+# WHY THE GUARD LIVES HERE AND NOT IN THE MODEL. Task.normalize_devops_list
+# already splits STRING input on newlines AND commas — that is the board form's
+# path, so the "auth, solana, migration" text field files three tags correctly.
+# ARRAY input (this CLI, the JSON API) splits on newlines only, deliberately, because
+# commas are legitimate inside an acceptance sentence. So by the time a value
+# reaches the server it is a one-element array either way, and `["a,b"]` from
+# --repo is indistinguishable from `["one thing, then another"]` from --accept.
+# Only the CLI still knows WHICH FLAG produced the entry, which makes this the
+# last layer that can tell user error from prose. Do not "fix" it downstream.
+COMMA_FREE_LIST_FLAGS = %w[--repo --risk].freeze
 # REPEATABLE repo-keyed MAP flags: `--pr-url-for <repo>=<url>`, one per repo.
 #
 # `--pr-url` holds ONE url, and the release lane parses that url for the repo it
@@ -1719,6 +1789,34 @@ def validate_agent_slug!(flag, value)
        "which is what bin/reviewer-select reads to keep a soul off their own PR.")
 end
 
+# A comma inside the value of a repeatable IDENTIFIER flag — the `--repo a,b`
+# defect. The full argument (which flags, why refuse rather than split, and what
+# a joined entry costs downstream) lives at COMMA_FREE_LIST_FLAGS; this is the
+# one refusal every guarded call site shares.
+#
+# `remedy` is the corrected command line, built from the value the operator
+# ACTUALLY typed rather than described in the abstract, so the fix is copyable.
+# The list flags default to repeating the flag per entry; `--pr-url-for` passes
+# its own, because a repo-keyed map cannot be split (two repos, one url).
+def refuse_comma_list!(flag, value, remedy: nil)
+  return unless value.to_s.include?(",")
+
+  entries = value.to_s.split(",").map(&:strip).reject(&:empty?)
+  remedy ||= entries.map { |entry| "#{flag} #{entry}" }.join(" ")
+  # A value of "," alone splits to nothing; name the SHAPE rather than print an
+  # empty remedy, which would read as "pass it once per entry: " and teach zero.
+  remedy = "#{flag} <entry> #{flag} <entry>" if remedy.strip.empty?
+
+  die!("#{flag} #{value.to_s.inspect} is ONE value containing a comma, not a list — and no repo " \
+       "name or risk tag contains a comma. #{flag} is REPEATABLE; pass it once per entry:\n" \
+       "  #{remedy}\n" \
+       "Accepted as typed it stores a single joined entry that renders identically to the correct " \
+       "pair (`bin/task show` prints both as `a,b`) and is read correctly by nothing: the release " \
+       "conductor resolves it to a phantom repo and ABORTS the sweep, Release::BuilderPolicy's " \
+       "blocked_risk_tags never matches it, and ReviewerSelector::RISK_DOMAINS pulls no light. " \
+       "The prose flags — --accept, --test, --checks — are NOT guarded: a comma is legal there.")
+end
+
 # The gem bump override (patch|minor|major). Never required — bin/release derives the
 # bump from the candidate's members; this only overrides it.
 def validate_gem_bump!(flag, value)
@@ -1804,7 +1902,11 @@ def parse_flags(argv, context: nil)
       validate_gem_bump!(arg, value) if key == "gem_bump"
       scalars[key] = value; i += 2
     elsif LIST_FLAGS.key?(arg)
-      lists[LIST_FLAGS[arg]] << (argv[i + 1] || die!("#{arg} needs a value")); i += 2
+      value = argv[i + 1] || die!("#{arg} needs a value")
+      # Identifier flags only (COMMA_FREE_LIST_FLAGS) — the prose flags keep their
+      # commas. A no-op for the other three, so the branch keeps one shape.
+      refuse_comma_list!(arg, value) if COMMA_FREE_LIST_FLAGS.include?(arg)
+      lists[LIST_FLAGS[arg]] << value; i += 2
     elsif MAP_FLAGS.key?(arg)
       # `<repo>=<url>`. Split on the FIRST `=` only — the url carries none, but a
       # query string could. A malformed pair dies here rather than writing half a
@@ -1820,6 +1922,13 @@ def parse_flags(argv, context: nil)
       repo = repo.to_s.strip
       url = url.to_s.strip
       die!("#{arg} expects <repo>=<pr-url>, got #{pair.inspect}") if repo.empty? || url.empty?
+      # The repo KEY is an identifier, and Task#release_repos folds these keys into
+      # the task's release identity — so a comma here reaches the release plan as a
+      # phantom repo by the other door. Splitting is not even available (two repos,
+      # one url), which makes refusing the only answer rather than the chosen one.
+      refuse_comma_list!(arg, repo,
+                         remedy: repo.split(",").map(&:strip).reject(&:empty?)
+                                     .map { |name| "#{arg} #{name}=<that repo's own pr url>" }.join(" "))
       url = nil if MAP_CLEAR_VALUES.include?(url.downcase)
       (maps[MAP_FLAGS[arg]] ||= {})[repo] = url; i += 2
     elsif SIZE_FLAGS.key?(arg)

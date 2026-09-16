@@ -2885,6 +2885,131 @@ class TaskCliTest < Minitest::Test
     assert_match(/unknown flag "--bogus"/, err)
   end
 
+  # --- A comma inside a repeatable IDENTIFIER flag ----------------------------
+  # `--repo` and `--risk` are REPEATABLE (`--repo a --repo b`), so `--repo a,b`
+  # used to store a ONE-ELEMENT array holding the joined string. Nothing refused
+  # it and nothing rendered it differently — `bin/task show` prints
+  # `repos: a,b` for the joined entry and the correct pair alike — so the record
+  # read right up until a reader tried to resolve an entry.
+  #
+  # MEASURED 2026-09-15 against the production board (2066 tasks):
+  #   repositories — the LOUD reader. Release::Conductor resolves each entry to a
+  #     repo, finds a phantom with no PR, and REFUSES at step 3a. It aborted a
+  #     live QA sweep on /tasks/sweep-stale-signer-claims: nothing promoted,
+  #     recorded or deployed.
+  #   risk_tags — the SILENT ones, and there were 1117 of them. Both readers
+  #     match EXACTLY, so a joined entry fails OPEN: 31 tasks would have hit
+  #     Release::BuilderPolicy's auto-QA `blocked_risk_tags` and did not, and 464
+  #     would have pulled a ReviewerSelector::RISK_DOMAINS reviewer light and did
+  #     not.
+  #
+  # The refusal must fire in parse_flags — before auth, before any request — so a
+  # rejected line leaves no half-written record behind it.
+
+  def test_create_refuses_a_comma_joined_repo_value
+    requests, _out, err, status = run_task(
+      ["create", "--title", "Two repo task", "--repo", "turf-monster,mcritchie-studio"]
+    )
+
+    refute status.success?, "a comma-joined --repo must exit nonzero, not store one joined entry"
+    assert_empty requests, "the refusal precedes every request — no task is created"
+    assert_match(/--repo/, err, "the error names the offending flag")
+    assert_match(/repeatable/i, err, "and teaches that the flag is repeatable")
+    assert_match(/--repo turf-monster --repo mcritchie-studio/, err,
+                 "and spells the corrected line out of the value actually given")
+  end
+
+  def test_create_refuses_a_comma_joined_risk_value
+    requests, _out, err, status = run_task(
+      ["create", "--title", "Risky joined task", "--risk", "devops,release,data-integrity"]
+    )
+
+    refute status.success?, "a joined risk tag matches no blocked tag and pulls no reviewer light"
+    assert_empty requests
+    assert_match(/--risk devops --risk release --risk data-integrity/, err)
+  end
+
+  # The same value arriving by `update` is the same defect — it is the command
+  # the two instances found on 2026-09-15 were REPAIRED with, so it must not be
+  # able to re-create the shape it is repairing.
+  def test_update_refuses_a_comma_joined_repo_value
+    requests, _out, err, status = run_task(
+      ["update", "demo-task", "--repo", "turf-monster,mcritchie-studio"]
+    )
+
+    refute status.success?
+    assert_empty requests, "no PATCH — the joined list never reaches the board"
+    assert_match(/--repo turf-monster --repo mcritchie-studio/, err)
+  end
+
+  # `--pr-url-for <repo>=<url>` is repo-keyed, and Task#release_repos folds its
+  # KEYS into the task's release identity — so a comma in the repo half reaches
+  # the release plan as a phantom repo by the other door. Splitting is not even
+  # available here (two repos, one url), so refusing is the only answer.
+  def test_pr_url_for_refuses_a_comma_joined_repo_key
+    requests, _out, err, status = run_task(
+      ["update", "demo-task", "--pr-url-for", "turf-monster,mcritchie-studio=https://github.com/x/y/pull/1"]
+    )
+
+    refute status.success?
+    assert_empty requests
+    assert_match(/--pr-url-for/, err)
+    assert_match(/turf-monster/, err, "the remedy names each repo it found")
+  end
+
+  # THE CONTROL, and the reason this is a per-flag decision rather than one rule:
+  # `--accept`, `--test` and `--checks` carry free PROSE, where a comma is
+  # ordinary punctuation. Guarding them would refuse (or, worse, silently split)
+  # legitimate acceptance criteria — a bigger defect than the one being fixed.
+  # 290 acceptance entries, 230 test_plan entries and 1602 checks_run entries on
+  # the board contain a comma, and every one of them is correct.
+  def test_prose_list_flags_keep_their_commas_and_are_never_split
+    requests, _out, err, status = run_task(
+      ["create", "--title", "Prose control task",
+       "--accept", "Refuse the joined form, then name the fix",
+       "--test", "[unit] a,b is refused before any write"]
+    )
+
+    assert status.success?, "a comma is LEGAL in prose flags (#{err})"
+    create = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/tasks" }
+    refute_nil create, "the create must go through untouched"
+    devops = devops_of(create)
+    assert_equal ["Refuse the joined form, then name the fix"], devops["acceptance"],
+                 "acceptance prose must arrive as ONE entry, unsplit and unrefused"
+    assert_equal ["[unit] a,b is refused before any write"], devops["test_plan"]
+  end
+
+  def test_checks_keeps_its_commas_on_update
+    requests, _out, err, status = run_task(
+      ["update", "demo-task", "--checks", "[unit] parse_flags, build_devops, and the refusal"]
+    )
+
+    assert status.success?, "--checks is prose too (#{err})"
+    patch = requests.find { |r| r[:method] == "PATCH" }
+    refute_nil patch
+    assert_includes JSON.parse(patch[:body]).dig("devops", "checks_run"),
+                    "[unit] parse_flags, build_devops, and the refusal"
+  end
+
+  # The guarded set is a CONSTANT, and the whole design rests on it naming the
+  # identifier flags and nothing else. Read it out of the script rather than
+  # restating it here: a future hand adding `--accept` to the list would start
+  # mangling acceptance criteria, and only this assertion would notice.
+  def test_the_comma_guard_covers_identifier_flags_and_never_prose
+    source = File.read(BIN)
+    literal = source[/^COMMA_FREE_LIST_FLAGS = (%w\[[^\]]*\])\.freeze$/, 1]
+    refute_nil literal, "COMMA_FREE_LIST_FLAGS must be a single-line %w[] constant"
+    guarded = literal.scan(/--[a-z-]+/)
+
+    assert_equal %w[--repo --risk], guarded,
+                 "only the identifier flags are guarded; a repo name and a risk tag can never " \
+                 "contain a comma, and prose can"
+    %w[--accept --test --checks].each do |prose|
+      refute_includes guarded, prose,
+                      "#{prose} is free prose — guarding it would refuse legitimate copy"
+    end
+  end
+
   # --- --help / -h print usage from any position; a flag is never a slug ------
   # `bin/task update --help` used to parse "--help" as the SLUG and 404 against
   # GET /api/v1/tasks/--help — actively misleading the one agent already confused

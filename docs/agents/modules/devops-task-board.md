@@ -580,6 +580,24 @@ bin/task begin --title "Three To Five Words" --repo <app> --agent <soul> --shape
 bin/task begin <task-slug>        # resume a partial begin
 ```
 
+**`--repo` and `--risk` are REPEATABLE and take ONE value each — a comma in
+either is REFUSED.** Two repos is `--repo a --repo b`; three risk tags is
+`--risk a --risk b --risk c`. `--repo a,b` used to be accepted and stored the
+single joined entry `"a,b"`, which renders exactly like the correct pair (`show`
+prints `repos: a,b` either way) and resolves for nobody: the release conductor
+reads it as a phantom repo and ABORTS the sweep — measured 2026-09-15 on
+`/tasks/sweep-stale-signer-claims`, where nothing was promoted, recorded or
+deployed. The same shape in `--risk` fails silently instead of loudly, and 1117
+board tasks were carrying it: `Release::BuilderPolicy`'s `blocked_risk_tags` and
+`ReviewerSelector::RISK_DOMAINS` both match EXACTLY, so a joined tag misses both
+and the gate fails open (31 tasks slipped the auto-QA block; 464 lost a domain
+reviewer light).
+
+The prose flags — `--accept`, `--test`, `--checks` — are repeatable too but are
+**not** guarded, because a comma is ordinary punctuation inside a criterion. That
+asymmetry is deliberate and per-flag: splitting prose would shred an acceptance
+bullet into fragments, which is a worse defect than the one the guard fixes.
+
 The slug is derived from the title client-side and passed explicitly, so the
 same `begin` rerun finds the task it created. A resume of an already-`building`
 task runs the **same build-claim gate** as `bin/task move building`, before any
