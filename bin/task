@@ -1321,15 +1321,20 @@ LIST_FLAGS = { "--repo" => "repositories", "--risk" => "risk_tags", "--accept" =
 # to the flags that can never be guarded. The cost is one retyped command line,
 # paid by the operator who was already wrong, at the only moment it is still free.
 #
-# WHY THE GUARD LIVES HERE AND NOT IN THE MODEL. Task.normalize_devops_list
-# already splits STRING input on newlines AND commas — that is the board form's
-# path, so the "auth, solana, migration" text field files three tags correctly.
-# ARRAY input (this CLI, the JSON API) splits on newlines only, deliberately, because
-# commas are legitimate inside an acceptance sentence. So by the time a value
-# reaches the server it is a one-element array either way, and `["a,b"]` from
-# --repo is indistinguishable from `["one thing, then another"]` from --accept.
-# Only the CLI still knows WHICH FLAG produced the entry, which makes this the
-# last layer that can tell user error from prose. Do not "fix" it downstream.
+# WHY THE GUARD LIVES HERE. Task.normalize_devops_list splits STRING input on
+# newlines AND commas — the board form's path, so its "auth, solana, migration"
+# text field files three tags correctly. ARRAY input (this CLI, the JSON API)
+# splits on newlines only, because commas are legitimate inside an acceptance
+# sentence. So the VALUE alone cannot be judged: `["a,b"]` from --repo and
+# `["one thing, then another"]` from --accept are both one-element arrays.
+#
+# The KEY still can be. normalize_devops_metadata branches per key
+# (DEVOPS_LIST_KEYS) and LIST_FLAGS maps 1:1 onto those keys, so a server guard
+# scoped to `repositories`/`risk_tags` IS possible — measured 2026-09-15: fires
+# on --repo "a,b", silent on --accept prose, silent on the board form's string
+# (already split). It would also cover the raw JSON API, which this does not.
+# The CLI is home because only it can name the FLAG and print a copyable remedy,
+# and it is where all 1104 joined entries were typed — guard here FIRST, not only.
 COMMA_FREE_LIST_FLAGS = %w[--repo --risk].freeze
 # REPEATABLE repo-keyed MAP flags: `--pr-url-for <repo>=<url>`, one per repo.
 #
