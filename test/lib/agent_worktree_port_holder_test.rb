@@ -97,6 +97,24 @@ class AgentWorktreePortHolderTest < Minitest::Test
     assert_equal '[["TERM", 4242]]', out.lines.last
   end
 
+  # [unit] REAL PATHS, COMPARED WHOLE. A prefix check signals desk-bar's server when desk
+  # stops; an unresolved one refuses the desk's own server reached through a symlink.
+  def test_unit_desk_match_spares_a_sibling_and_follows_a_symlink
+    sibling = FileUtils.mkdir_p("#{@desk}-bar").first
+    link = File.join(@tmp, "link").tap { |path| File.symlink(@tmp, path) }
+    out, = run_in_script(<<~RUBY)
+      def port_pid(_port) = "4242"
+      def process_cwd(_pid) = #{sibling.inspect}
+      stop_generic_rails(#{@desk.inspect}, "39999")
+      def port_pid(_port) = "5353"
+      def process_cwd(_pid) = #{@desk.inspect}
+      stop_generic_rails(#{File.join(link, "desk").inspect}, "39999")
+      print KILLS.inspect
+    RUBY
+
+    assert_equal '[["TERM", 5353]]', out.lines.last, "spare pid 4242 (sibling); stop pid 5353 (desk via symlink)"
+  end
+
   # [unit] The same guard on the STALE-PIDFILE branch: the pidfile's own pid is dead, so the
   # port holder is the only candidate, and it gets the same ownership check.
   def test_unit_a_stale_pidfile_does_not_license_signalling_a_foreign_holder
