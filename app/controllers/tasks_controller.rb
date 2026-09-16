@@ -323,14 +323,18 @@ class TasksController < ApplicationController
 
     stage_filter = params[:stage].presence
     if Task::STAGES.include?(stage_filter)
-      # An explicit stage is a deliberate ask — hand back the whole column,
-      # uncapped, archive included. @stage_filter also REPLACES the board's column
-      # list (see the board partials): without that the page would load the rows
-      # and then have nowhere to draw them, which is exactly what happened to
-      # ?stage=archived the moment the Archived column came out.
+      # An explicit stage is a deliberate ask — it reaches the archive — but it is
+      # NOT uncapped any more. The board is public, and a crawler requesting
+      # ?stage=archived loaded the whole column with every task's events: 3,834
+      # queries in one request, and an R15 kill that took production down
+      # (HOTFIX archived-board-crashes-prod, 2026-09-16). It draws the newest
+      # BOARD_STAGE_LIMIT and reports the true total. @stage_filter also REPLACES
+      # the board's column list (see the board partials): without that the page
+      # would load the rows and then have nowhere to draw them, which is exactly
+      # what happened to ?stage=archived the moment the Archived column came out.
       @stage_filter = stage_filter
-      tasks = scope.where(stage: stage_filter).to_a
-      @capped_stage_totals = {}
+      tasks = Task.board_stage_tasks(scope, stage_filter)
+      @capped_stage_totals = Task.board_stage_capped_totals(base, stage_filter)
     else
       @stage_filter = nil
       tasks = Task.board_default_tasks(scope)

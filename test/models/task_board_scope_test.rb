@@ -68,4 +68,40 @@ class TaskBoardScopeTest < ActiveSupport::TestCase
     assert_equal({ "shipped" => Task::BOARD_SHIPPED_LIMIT + 4 },
                  Task.board_capped_stage_totals(Task.where(agent_slug: "avi")))
   end
+
+  # --- an explicit ?stage= view ------------------------------------------------
+  #
+  # HOTFIX 2026-09-16 (archived-board-crashes-prod). `?stage=archived` used to load
+  # the WHOLE column with every task's events and gate runs. A crawler requested it
+  # twice on production: one request ran 23,994ms / 3,834 queries, and two of them
+  # took a 512MB dyno to 1,220MB and an R15 SIGKILL, twice in 38 seconds.
+
+  test "[unit] board_stage_tasks caps an explicit stage at the newest BOARD_STAGE_LIMIT" do
+    Task.delete_all
+    limit = Task::BOARD_STAGE_LIMIT
+    archived = (limit + 3).times.map { |i| Task.create!(title: "stage cap archived #{i}", stage: "archived") }
+    live = Task.create!(title: "stage cap live one", stage: "building")
+
+    drawn = Task.board_stage_tasks(Task.ordered, "archived")
+
+    assert_equal limit, drawn.size
+    assert(drawn.all? { |task| task.stage == "archived" }, "an explicit stage returns only that stage")
+    assert_not_includes drawn.map(&:slug), live.slug
+    # `ordered` floats the freshest to the top, so the cap keeps the NEWEST.
+    assert_includes drawn.map(&:slug), archived.last.slug
+    assert_not_includes drawn.map(&:slug), archived.first.slug
+  end
+
+  test "[unit] board_stage_capped_totals reports a trimmed explicit stage, and nothing else" do
+    Task.delete_all
+    Task::BOARD_STAGE_LIMIT.times { |i| Task.create!(title: "stage totals archived #{i}", stage: "archived") }
+
+    # Exactly at the limit nothing was trimmed, so there is nothing to report.
+    assert_empty Task.board_stage_capped_totals(Task.all, "archived")
+
+    Task.create!(title: "stage totals one over", stage: "archived")
+
+    assert_equal({ "archived" => Task::BOARD_STAGE_LIMIT + 1 },
+                 Task.board_stage_capped_totals(Task.all, "archived"))
+  end
 end

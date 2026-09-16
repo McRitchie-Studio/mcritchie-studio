@@ -788,6 +788,14 @@ class Task < ApplicationRecord
   # RENDER, never the record: `?stage=shipped` still returns every one.
   BOARD_SHIPPED_LIMIT = 12
 
+  # How many cards an EXPLICIT `?stage=<stage>` view draws. That view is the one path
+  # that still reaches the archive, and the board is public, so it must be bounded
+  # too. HOTFIX 2026-09-16 (archived-board-crashes-prod): uncapped, a crawler's two
+  # requests for `?stage=archived` took the 512MB web dyno to 1,220MB and an R15
+  # SIGKILL — production down, twice in 38 seconds (one request: 23,994ms, 3,834
+  # queries). Well above BOARD_SHIPPED_LIMIT, because this is a deliberate ask.
+  BOARD_STAGE_LIMIT = 100
+
   # The board's default task set: live work in full, plus the freshest slice of
   # `shipped`, and NEVER `archived`.
   #
@@ -814,6 +822,21 @@ class Task < ApplicationRecord
   def self.board_capped_stage_totals(scope = all)
     shipped = scope.where(stage: "shipped").count
     shipped > BOARD_SHIPPED_LIMIT ? { "shipped" => shipped } : {}
+  end
+
+  # An explicit `?stage=<stage>` view: that column only, the newest BOARD_STAGE_LIMIT.
+  # Capped in SQL for the same reason `shipped` is — the preloaded TaskEvents and
+  # GateRuns are the expensive half, so the trimmed rows must never be instantiated.
+  # Returns an Array, like board_default_tasks.
+  def self.board_stage_tasks(scope, stage)
+    scope.where(stage: stage).limit(BOARD_STAGE_LIMIT).to_a
+  end
+
+  # { stage => true total } when board_stage_tasks trimmed that stage, else empty —
+  # the explicit-stage twin of board_capped_stage_totals. Pass the same filtered scope.
+  def self.board_stage_capped_totals(scope, stage)
+    total = scope.where(stage: stage).count
+    total > BOARD_STAGE_LIMIT ? { stage.to_s => total } : {}
   end
 
   # WIP — how much work is open right now, the DevOps card's sixth tile:
