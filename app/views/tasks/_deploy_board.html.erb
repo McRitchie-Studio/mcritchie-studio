@@ -21,13 +21,16 @@
     stage), so there is never a standalone Blocked column on either page. Nor is
     there an Archived one: archiving removes the card, which is what the broadcaster
     has always said, and archived work lives at /deployments?stage=archived. %>
-<%# An explicit ?stage= is a single-column view of that stage, uncapped — the one
-    path that still reaches archived work, and where the capped Shipped column's
-    "older" link lands. %>
+<%# An explicit ?stage= is a single-column view of that stage — the one path that
+    still reaches archived work, and where the capped Shipped column's "older" link
+    lands. It is CAPPED and PAGED too: one Task::BOARD_STAGE_LIMIT page per request,
+    loaded in SQL, with tasks/_stage_pager for the rest. %>
 <% columns = @stage_filter.present? ? [@stage_filter] : stages %>
-<%# Columns the loader capped ({ stage => true total }); today only `shipped`. A
-    capped column shows the TRUE count and links to the uncapped stage view, so the
-    trim never reads as work that vanished. %>
+<%# Columns the loader capped ({ stage => true total }): `shipped` on the default
+    board, or the filtered stage once it outgrows one page. A capped column shows the
+    TRUE count, publishes how many of it sit off this page (data-stage-offscreen, so
+    updateCounts can add them back), and on the default board links to that stage's
+    own paged view, so the trim never reads as work that vanished. %>
 <% capped_stage_totals = @capped_stage_totals || {} %>
 <%# Mascot lookup — the 151 are tiny, so one query beats an N+1 across cards. %>
 <% pokemon_by_slug = Pokemon.all.index_by(&:slug) %>
@@ -352,13 +355,18 @@ function kanbanBoard(live) {
       return document.getElementById('dropzone-' + stage);
     },
 
+    // A capped column's badge is the TRUE total, and the cards drawn are only part of
+    // it. Recounting the dropzone alone rewrote a 31 shipped badge to 12 (and a 130
+    // archived one to 100) on the first live update, so the server stamps how many sit
+    // OFF this page and the recount adds them back: drawn now + offscreen. The empty
+    // state still follows the drawn cards — it is about this column, not the stage.
     updateCounts() {
       document.querySelectorAll('[data-stage-count]').forEach(badge => {
         const stage = badge.dataset.stageCount;
         const zone = document.getElementById('dropzone-' + stage);
         if (zone) {
           const count = zone.querySelectorAll('.kanban-card').length;
-          badge.textContent = count;
+          badge.textContent = count + (Number(badge.dataset.stageOffscreen) || 0);
           const empty = zone.querySelector('.kanban-empty');
           if (empty) empty.style.display = count === 0 ? 'flex' : 'none';
         }
@@ -602,6 +610,13 @@ document.addEventListener('turbo:before-cache', function() {
     </div>
   <% end %>
 
+  <% if @stage_filter.present? %>
+    <% stage_pager = { stage: @stage_filter, page: @stage_page, page_count: @stage_page_count,
+                       drawn: Task.board_column_tasks(@tasks_by_stage, @stage_filter).size } %>
+    <% stage_pager[:total] = capped_stage_totals[@stage_filter] || stage_pager[:drawn] %>
+    <%= render "stage_pager", **stage_pager, position: "top" %>
+  <% end %>
+
   <!-- Kanban Board -->
   <%# THE SCROLLER IS MEASURED ON, AND THAT IS WHAT LETS THE LANE HEADERS PIN.
 
@@ -695,10 +710,15 @@ document.addEventListener('turbo:before-cache', function() {
                 12 over a stage holding 31 would be a quieter lie than the slow page
                 this cap replaced. %>
             <% stage_total = capped_stage_totals[stage] %>
+            <% stage_page = @stage_filter.present? ? @stage_page.to_i : 1 %>
+            <% if stage_total %>
+              <% first_shown = ((stage_page - 1) * Task::BOARD_STAGE_LIMIT) + 1 %>
+              <% stage_title = stage_page > 1 ? "showing #{first_shown}–#{first_shown + column_tasks.size - 1} of #{stage_total}" : "showing the newest #{column_tasks.size} of #{stage_total}" %>
+            <% end %>
             <span class="stage-count inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-xs font-bold
               <%= task_stage_count_classes(stage) %>"
               data-stage-count="<%= stage %>"
-              <% if stage_total %>title="showing the newest <%= column_tasks.size %> of <%= stage_total %>"<% end %>>
+              <% if stage_total %>data-stage-offscreen="<%= stage_total - column_tasks.size %>" title="<%= stage_title %>"<% end %>>
               <%= stage_total || column_tasks.size %>
             </span>
           </div>
@@ -775,6 +795,9 @@ document.addEventListener('turbo:before-cache', function() {
       </div>
     <% end %>
   </div>
+  <% if @stage_filter.present? %>
+    <%= render "stage_pager", **stage_pager, position: "bottom" %>
+  <% end %>
 
   <!-- Toasts -->
   <div class="fixed top-4 right-4 z-50 space-y-2">

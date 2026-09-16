@@ -785,12 +785,14 @@ class Task < ApplicationRecord
   # How many `shipped` cards a board draws by default. Shipped is HISTORY, and it
   # was the biggest column on either board — 31 of the 57 cards /deployments drew —
   # carrying the heaviest crew markup (the 4-slot crew cluster). The cap trims the
-  # RENDER, never the record: `?stage=shipped` still returns every one.
+  # RENDER, never the record: the column's "older" link leads to `?stage=shipped`,
+  # which reaches the rest a BOARD_STAGE_LIMIT page at a time.
   BOARD_SHIPPED_LIMIT = 12
 
-  # How many cards an EXPLICIT `?stage=<stage>` view draws. That view is the one path
-  # that still reaches the archive, and the board is public, so it must be bounded
-  # too. HOTFIX 2026-09-16 (archived-board-crashes-prod): uncapped, a crawler's two
+  # How many cards an EXPLICIT `?stage=<stage>` view draws PER PAGE. That view is the
+  # one path that still reaches the archive, and the board is public, so every page
+  # must be bounded too. It is also the page size, and the only one: no request
+  # parameter can raise it. HOTFIX 2026-09-16 (archived-board-crashes-prod): uncapped, a crawler's two
   # requests for `?stage=archived` took the 512MB web dyno to 1,220MB and an R15
   # SIGKILL — production down, twice in 38 seconds (one request: 23,994ms, 3,834
   # queries). Well above BOARD_SHIPPED_LIMIT, because this is a deliberate ask.
@@ -824,18 +826,40 @@ class Task < ApplicationRecord
     shipped > BOARD_SHIPPED_LIMIT ? { "shipped" => shipped } : {}
   end
 
-  # An explicit `?stage=<stage>` view: that column only, the newest BOARD_STAGE_LIMIT.
-  # Capped in SQL for the same reason `shipped` is — the preloaded TaskEvents and
-  # GateRuns are the expensive half, so the trimmed rows must never be instantiated.
-  # Returns an Array, like board_default_tasks.
-  def self.board_stage_tasks(scope, stage)
-    scope.where(stage: stage).limit(BOARD_STAGE_LIMIT).to_a
+  # An explicit `?stage=<stage>` view: that column only, one BOARD_STAGE_LIMIT page of
+  # it — page 1 is the newest, each later page the next-older slice. Capped in SQL for
+  # the same reason `shipped` is: the preloaded TaskEvents and GateRuns are the
+  # expensive half, so a row off this page must never be instantiated. Paging is what
+  # keeps the older archive browsable WITHOUT a wider read; a crawler that follows the
+  # links walks many bounded pages, never one huge one.
+  #
+  # `id` breaks ties in `ordered` (position and created_at can both repeat), so an
+  # OFFSET page can neither skip a task nor draw one twice. Pass a page already
+  # clamped by board_stage_page. Returns an Array, like board_default_tasks.
+  def self.board_stage_tasks(scope, stage, page: 1)
+    offset = ([page.to_i, 1].max - 1) * BOARD_STAGE_LIMIT
+    scope.where(stage: stage).order(id: :desc).limit(BOARD_STAGE_LIMIT).offset(offset).to_a
   end
 
-  # { stage => true total } when board_stage_tasks trimmed that stage, else empty —
-  # the explicit-stage twin of board_capped_stage_totals. Pass the same filtered scope.
-  def self.board_stage_capped_totals(scope, stage)
-    total = scope.where(stage: stage).count
+  # How many BOARD_STAGE_LIMIT pages a stage holding `total` tasks spans. Never below
+  # 1, so an empty stage still draws its (empty) page.
+  def self.board_stage_page_count(total)
+    [(total.to_i + BOARD_STAGE_LIMIT - 1) / BOARD_STAGE_LIMIT, 1].max
+  end
+
+  # A requested `?page=` clamped into the pages that exist. Blank, zero, negative,
+  # non-numeric and array params read as page 1; past the end reads as the last page,
+  # so a guessed 10**30 can never hand SQL an OFFSET past bigint.
+  def self.board_stage_page(requested, total)
+    requested = requested.is_a?(String) || requested.is_a?(Integer) ? requested.to_s.to_i : 1
+    requested.clamp(1, board_stage_page_count(total))
+  end
+
+  # { stage => true total } when an explicit stage holds more than one page, else
+  # empty — the explicit-stage twin of board_capped_stage_totals. Pass the same
+  # filtered scope, or `total:` when the caller already counted it.
+  def self.board_stage_capped_totals(scope, stage, total: nil)
+    total ||= scope.where(stage: stage).count
     total > BOARD_STAGE_LIMIT ? { stage.to_s => total } : {}
   end
 

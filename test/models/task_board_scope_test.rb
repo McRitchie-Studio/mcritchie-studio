@@ -104,4 +104,49 @@ class TaskBoardScopeTest < ActiveSupport::TestCase
     assert_equal({ "archived" => Task::BOARD_STAGE_LIMIT + 1 },
                  Task.board_stage_capped_totals(Task.all, "archived"))
   end
+
+  # --- paging the explicit-stage view ------------------------------------------
+  #
+  # The hotfix capped ?stage= at one page and left 1,926 of 2,026 archived tasks
+  # unreachable from the board. Paging brings them back WITHOUT a wider read: every
+  # page is BOARD_STAGE_LIMIT rows, capped in SQL, and there is no page-size input
+  # anywhere for a caller (or a crawler) to raise.
+
+  test "[unit] board_stage_tasks pages through the older slice, never more than a page" do
+    Task.delete_all
+    limit = Task::BOARD_STAGE_LIMIT
+    archived = (limit + 3).times.map { |i| Task.create!(title: "stage page archived #{i}", stage: "archived") }
+
+    first = Task.board_stage_tasks(Task.ordered, "archived", page: 1)
+    second = Task.board_stage_tasks(Task.ordered, "archived", page: 2)
+
+    assert_equal limit, first.size
+    assert_equal 3, second.size
+    # Newest first, then the next-older slice — together every task, exactly once.
+    assert_includes first.map(&:slug), archived.last.slug
+    assert_includes second.map(&:slug), archived.first.slug
+    assert_empty first.map(&:slug) & second.map(&:slug), "a task drawn on two pages means paging skips another"
+    assert_equal archived.map(&:slug).sort, (first + second).map(&:slug).sort
+  end
+
+  test "[unit] board_stage_page clamps any requested page into the pages that exist" do
+    limit = Task::BOARD_STAGE_LIMIT
+    total = (limit * 2) + 1 # three pages
+
+    assert_equal 3, Task.board_stage_page_count(total)
+    assert_equal 1, Task.board_stage_page_count(0), "an empty stage still draws one (empty) page"
+    assert_equal 1, Task.board_stage_page_count(limit)
+
+    assert_equal 1, Task.board_stage_page(nil, total)
+    assert_equal 1, Task.board_stage_page("", total)
+    assert_equal 1, Task.board_stage_page("0", total)
+    assert_equal 1, Task.board_stage_page("-4", total)
+    assert_equal 1, Task.board_stage_page("abc", total)
+    assert_equal 1, Task.board_stage_page(["2"], total), "an array param must not raise"
+    assert_equal 2, Task.board_stage_page("2", total)
+    # Past the end lands on the last page. An unclamped 10**30 would hand SQL an
+    # OFFSET past bigint and 500 the page.
+    assert_equal 3, Task.board_stage_page("4", total)
+    assert_equal 3, Task.board_stage_page("9" * 30, total)
+  end
 end
