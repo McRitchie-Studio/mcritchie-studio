@@ -283,7 +283,7 @@ them first; the long form below is the fallback.
 ```bash
 /Users/alex/projects/mcritchie-studio/bin/task begin --title "Three To Five Words" --agent <soul> \
   --repo <app> --kind <kind> \
-  --shape <shape> --risk <tags> --accept "criterion" --test "[unit] ..."
+  --shape <shape> --risk <tag> --accept "criterion" --test "[unit] ..."
 
 cd <desk>   #   ... the worktree begin printed; build there ...
 
@@ -692,7 +692,7 @@ and the feature. A good prompt is:
 Work from /Users/alex/projects. Build this feature in <app>: <feature>.
 Use the fast lane: /Users/alex/projects/mcritchie-studio/bin/task begin --title "Three To Five Words" --repo <app> --agent <soul>
 --kind feature --shape (ui-only|ui+db|backend|library|onchain|onchain-vertical|docs|test-only)
---risk <tags> --accept "<criterion>" --test "<tier>". It creates the task,
+--risk <tag> --accept "<criterion>" --test "<tier>". It creates the task,
 allocates the isolated worktree on an allocated port, claims the task, and
 preflights (pinning the worktree via --root). Read the preflight output and fix
 any blockers before implementation.
