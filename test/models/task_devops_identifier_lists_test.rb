@@ -211,9 +211,6 @@ class TaskDevopsIdentifierListsTest < ActiveSupport::TestCase
     assert_equal({ "turf-monster" => TURF_PR, "mcritchie-studio" => HUB_PR }, metadata["pr_urls"])
   end
 
-  # The HASH form needs no comma rule of its own, and this pins WHY so nobody adds a
-  # redundant second guard: the entry is keyed by the repo its URL names, and a key
-  # that disagrees already raises. A joined key can never agree with one repo.
   # The map's OWN string path, which must keep splitting for the same reason the
   # identifier keys do — normalize_devops_map asks for `split_commas: true`
   # explicitly, so a joined string of urls is a LIST of urls and not one mangled
@@ -225,6 +222,9 @@ class TaskDevopsIdentifierListsTest < ActiveSupport::TestCase
     assert_equal({ "turf-monster" => TURF_PR, "mcritchie-studio" => HUB_PR }, metadata["pr_urls"])
   end
 
+  # The HASH form needs no comma rule of its own, and this pins WHY so nobody adds a
+  # redundant second guard: the entry is keyed by the repo its URL names, and a key
+  # that disagrees already raises. A joined key can never agree with one repo.
   test "[unit] a joined pr_urls hash key still raises on the repo it disagrees with" do
     error = assert_raises(ArgumentError) do
       Task.normalize_devops_metadata("pr_urls" => { "turf-monster,mcritchie-studio" => TURF_PR })
