@@ -640,6 +640,78 @@ class Ci::ProgressReaderTest < ActiveSupport::TestCase
     assert_equal "sha-ma", by_slug[app.slug]&.sha
   end
 
+  # ── turf-vault's "Anchor Suite" ───────────────────────────────────────────────
+  #
+  # THE BUG THIS PAIR PINS. turf-vault grew a SECOND suite workflow on 2026-09-15,
+  # deliberately split from "CI" so a flaky validator lane cannot block
+  # Release::AcceptedCertification. Both GATES saw it immediately — bin/lib/ci_status.rb
+  # reads `gh pr checks` and refuse_red_accepted! folds /check-runs, and neither
+  # filters by workflow — but the BOARD did not: this reader and Ci::LadderRung
+  # allow-list .suite_workflows_for, which named only the gem. A red Anchor Suite
+  # blocked the promote while landing NO mark on a card, which is the one place an
+  # operator looks to find out why.
+  TURF_VAULT_NWO = "McRitchie-Studio/turf-vault"
+
+  test "[integration] a turf-vault task card folds the Anchor Suite sibling lane" do
+    task = turf_vault_task(branch: "feat/vault-red")
+    seed_run(branch: "feat/vault-red", sha: "sha-vault", repo: TURF_VAULT_NWO, workflow: "CI")
+    seed_check_job(repo: TURF_VAULT_NWO, sha: "sha-vault", workflow: "CI",
+                   conclusion: "success", branch: "feat/vault-red")
+    seed_run(branch: "feat/vault-red", sha: "sha-vault", repo: TURF_VAULT_NWO, workflow: "Anchor Suite",
+             status: "completed", conclusion: "failure")
+
+    progress = build_reader.for_task(task)
+
+    assert_equal :red, progress.state, "a red Anchor Suite must colour the card's meter"
+    assert_equal 1, progress.failed
+    assert_equal 2, progress.total, "the Anchor Suite lane earns one mark at run grain"
+    assert_includes progress.checks.map(&:name), "Anchor Suite",
+                    "the failing lane must be NAMEABLE on the card — an unnamed red is a card that " \
+                    "says something is wrong without saying what"
+  end
+
+  # THE CONTROL, and the reason this stays an ALLOW-LIST. Declaring a lane must admit
+  # exactly that lane. A deny-list once let turf-monster's "Devnet Nightly" redden a CI
+  # rung for 36 hours (2026-08-20); if this assertion ever fails, the filter was
+  # widened rather than the lane declared.
+  test "[unit] an undeclared turf-vault workflow still never lands a mark" do
+    task = turf_vault_task(branch: "feat/vault-noise")
+    seed_run(branch: "feat/vault-noise", sha: "sha-vnoise", repo: TURF_VAULT_NWO, workflow: "CI")
+    seed_check_job(repo: TURF_VAULT_NWO, sha: "sha-vnoise", workflow: "CI",
+                   conclusion: "success", branch: "feat/vault-noise")
+    seed_run(branch: "feat/vault-noise", sha: "sha-vnoise", repo: TURF_VAULT_NWO,
+             workflow: "Devnet Nightly", status: "completed", conclusion: "failure")
+
+    progress = build_reader.for_task(task)
+
+    assert_equal :green, progress.state, "an undeclared lane is not a suite verdict"
+    assert_equal 1, progress.total
+  end
+
+  # THE CONSEQUENCE OF DECLARING A SECOND LANE, pinned deliberately rather than left
+  # to be discovered. #for_sha refuses the workflow-BLIND check-runs API for any scope
+  # that is not exactly ["CI"], so turf-vault — now ["CI", "Anchor Suite"] — reads
+  # blank on a sha with no ingested jobs where it once fell back. That is the RIGHT
+  # trade and the same one studio-engine already makes: the blind API returns every
+  # workflow's checks on the sha, so keeping the fallback here would blend UNDECLARED
+  # runs into turf-vault's card — precisely the deny-list behaviour the allow-list
+  # exists to prevent. A blank bar reads as "no data"; a blended one reads as a
+  # verdict nobody gave. Plain apps are untouched.
+  test "[unit] turf-vault's second lane costs it the blind-API fallback, by design" do
+    reader = build_reader(&ok([{ "status" => "completed", "conclusion" => "success" }]))
+
+    vault = reader.for_sha(TURF_VAULT_NWO, "no-jobs-vault",
+                           GithubWorkflowRun.suite_workflows_for("turf-vault"))
+    app = reader.for_sha("McRitchie-Studio/mcritchie-studio", "no-jobs-app",
+                         GithubWorkflowRun.suite_workflows_for("mcritchie-studio"))
+
+    assert_not vault.present?,
+               "a multi-lane scope must not be served by the workflow-blind API"
+    assert app.present?,
+            "a plain app is still exactly [\"CI\"] and MUST keep its fallback — losing it " \
+            "would blank the majority case"
+  end
+
   private
 
   def seed_jobs(repo, sha, passed: 0, failed: 0, pending: 0)
@@ -699,6 +771,18 @@ class Ci::ProgressReaderTest < ActiveSupport::TestCase
         "branch" => branch,
         "repositories" => ["studio-engine"],
         "pr_url" => "https://github.com/McRitchie-Studio/studio-engine/pull/195"
+      } }
+    )
+  end
+
+  # A task whose PR is in turf-vault — an APP repo that also declares a sibling lane.
+  def turf_vault_task(branch:)
+    Task.create!(
+      title: "vault meter #{SecureRandom.hex(3)}", stage: "submitted",
+      metadata: { "devops" => {
+        "branch" => branch,
+        "repositories" => ["turf-vault"],
+        "pr_url" => "https://github.com/McRitchie-Studio/turf-vault/pull/42"
       } }
     )
   end
