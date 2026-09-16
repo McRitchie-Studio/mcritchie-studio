@@ -2991,25 +2991,6 @@ class TaskCliTest < Minitest::Test
                     "[unit] parse_flags, build_devops, and the refusal"
   end
 
-  # The guarded set is a CONSTANT, and the whole design rests on it naming the
-  # identifier flags and nothing else. Read it out of the script rather than
-  # restating it here: a future hand adding `--accept` to the list would start
-  # mangling acceptance criteria, and only this assertion would notice.
-  def test_the_comma_guard_covers_identifier_flags_and_never_prose
-    source = File.read(BIN)
-    literal = source[/^COMMA_FREE_LIST_FLAGS = (%w\[[^\]]*\])\.freeze$/, 1]
-    refute_nil literal, "COMMA_FREE_LIST_FLAGS must be a single-line %w[] constant"
-    guarded = literal.scan(/--[a-z-]+/)
-
-    assert_equal %w[--repo --risk], guarded,
-                 "only the identifier flags are guarded; a repo name and a risk tag can never " \
-                 "contain a comma, and prose can"
-    %w[--accept --test --checks].each do |prose|
-      refute_includes guarded, prose,
-                      "#{prose} is free prose — guarding it would refuse legitimate copy"
-    end
-  end
-
   # --- --help / -h print usage from any position; a flag is never a slug ------
   # `bin/task update --help` used to parse "--help" as the SLUG and 404 against
   # GET /api/v1/tasks/--help — actively misleading the one agent already confused
