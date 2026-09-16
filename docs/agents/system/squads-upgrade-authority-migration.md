@@ -40,40 +40,60 @@
 > **Carried-over caveat, as written on 2026-05-23:** operating the Squad with
 > Alex Bot + Mason keys both in 1Password makes the 2-of-3 single-trust-domain
 > until the human signers hold keys in separate domains. Both of those keys have
-> since left both Squads; the trust-domain question itself is live and belongs
-> with the docs named at the top of this file, not here.
+> since left both live Squads (not every Squad — see **How it resolved**); the
+> trust-domain question itself is live and belongs with the docs named at the top
+> of this file, not here.
 
 ## How it resolved
 
 > **Read this before anything below it.** The mainnet half recorded above as
 > "still pending" is **done**. Every bullet here was re-derived directly from
 > chain at `finalized` on **2026-09-16**; nothing in it was taken from this file
-> or from any other doc.
+> or from any other doc. Two claims first written here were corrected the same
+> day by `/tasks/rollout-checklist-asserts-undone-work`, each against a
+> transaction rather than an inference: a devnet slot that had been credited to
+> the wrong program, and a transfer date that had been inferred from a deploy
+> slot, which cannot bound it.
 >
 > - **Mainnet program `DaFv83yo…` already holds its upgrade authority on the
 >   Squads vault `Bk9sS7ii…`** — Step 4's whole objective. That vault is
 >   **derived**, as index 0 of multisig `4H3fP3ot…` under the Squads V4 program;
 >   it is a different account from the multisig and will never equal it, so
->   derive it rather than comparing addresses. Mainnet's last deploy landed at
->   2026-06-11T15:15:51Z (slot `425788802`), which bounds the migration: the
->   authority was already on the vault by then. Devnet's last deploy was nine
->   minutes earlier (slot `468716417`, 2026-06-11T15:06:34Z), on the Squads
->   vault `BW13kgfi…`.
-> - **Both Squads read threshold 3 of FIVE members today**, every member mask 7
+>   derive it rather than comparing addresses. **The transfer is dated by its own
+>   transaction:** a `SetAuthority` on `DaFv83yo…`'s ProgramData account moved
+>   the authority from the deploy key `8K81…` to `Bk9sS7ii…` at
+>   2026-06-02T19:14:10Z (slot `423870782`), 17 seconds after `DaFv83yo…`'s first
+>   deploy (slot `423870742`). Two upgrades have since executed through that
+>   Squad; the later one is `DaFv83yo…`'s last deploy, 2026-06-11T15:15:51Z (slot
+>   `425788802`).
+> - **Devnet runs a program this file never names.** The live devnet program is
+>   `EQGFJAcA…`, last deployed at 2026-06-11T15:06:34Z (slot `468716417`), nine
+>   minutes before mainnet. `Dx8u…GaCT`, the program named at the top of this
+>   file, is orphaned; its last deploy was 2026-05-25T19:20:11Z (slot
+>   `464879124`). The Squads vault `BW13kgfi…` is the upgrade authority of both.
+> - **Both live Squads — `4H3fP3ot…` on mainnet, `7nRuVw3V…` on devnet — read
+>   threshold 3 of FIVE members today**, every member mask 7
 >   (Initiate|Vote|Execute) — not the 2-of-3 this file plans for.
 > - **The two clusters carry different membership**, and neither carries the
 >   three seats named in Step 1. Derive the set per cluster; never carry one
 >   cluster's roster or vault address to the other.
 > - **`F6f8…KzhZ`, the "Alex Bot" key Step 1 pastes, is retired** — it was the
 >   leaked key of the 2026-06 Alex Bot compromise
->   (`turf-vault/docs/KEY_ROTATION.md`). It sits on neither Squad, and it must
->   never be placed on a multisig again.
+>   (`turf-vault/docs/KEY_ROTATION.md`). It sits on neither live Squad and in
+>   neither live `VaultState`, and it must never be placed on a multisig again.
+>   **It is not gone from the chain, though.** The first mainnet program,
+>   `mnzowM2F…`, is still open under Squad `9dCLMZct…`, which was created on
+>   2026-05-26 with the three members Step 1 names. That Squad still reads 2-of-3
+>   with `F6f8…` seated. The program holds no USDC or USDT. `turf-vault/docs/KEY_ROTATION.md` §7 and §8
+>   are the steps that retire it, and neither has run.
 >
 > The live rosters are deliberately kept out of this file — a second copy is a
 > second thing to go stale, and this file going stale is what put it on the
-> board. Read `turf-vault/docs/CURRENT_DEPLOYMENT.md` for deployment identity
-> and `turf-monster/MAINNET_LAUNCH.md` for the per-cluster Squads membership,
-> and re-derive from chain before you act on either.
+> board. Read `turf-vault/docs/CURRENT_DEPLOYMENT.md` for deployment identity,
+> including the first mainnet deployment that is still open. Read the per-cluster
+> Squads membership from chain with `node scripts/squad-inventory.js` in
+> `turf-vault`, which reads it live and needs no keys; every written roster,
+> including the one in `turf-monster/MAINNET_LAUNCH.md`, is a snapshot.
 
 > **When to read this — as framed on 2026-05-23:** You're about to move `turf-vault`'s program upgrade authority from a single keypair to a Squads multisig. Do this BEFORE mainnet launch.
 >
@@ -125,8 +145,9 @@ Via web UI (https://app.squads.so):
    - Alex Bot: `F6f8…KzhZ` — **RETIRED (leaked, 2026-06). Never place this key
      on a multisig again.** The full address is redacted from this step
      deliberately: a pasteable address sitting in an imperative "add members"
-     line is exactly how a retired key gets re-seated. It is on neither Squad
-     today.
+     line is exactly how a retired key gets re-seated. It is on neither live
+     Squad today, but it is still seated on the first mainnet Squad
+     `9dCLMZct…` (see **How it resolved**).
    - Alex: `7ZDJp7FUHhuceAqcW9CHe81hCiaMTjgWAXfprBM59Tcr`
    - Mason: `CytJS23p1zCM2wvUUngiDePtbMB484ebD7bK4nDqWjrR`
 4. Confirm and note the **Squad vault PDA** (this will be the new upgrade authority).
@@ -190,7 +211,7 @@ solana program show 7Hy8GmJWPMdt6bx3VG4BLFnpNX9TBwkPt87W6bkHgr2J
 solana program close $BUFFER_ADDR
 ```
 
-## Step 4 — Do it on mainnet ✅ DONE (2026-06-11 at the latest), NOT AS PLANNED
+## Step 4 — Do it on mainnet ✅ DONE (2026-06-02), NOT AS PLANNED
 
 > **This step is closed — there is nothing here left to perform.** Mainnet's
 > upgrade authority is already the Squads vault `Bk9sS7ii…` (index 0 of multisig
@@ -205,9 +226,11 @@ After devnet rehearsal succeeds:
 3. ~~Create a mainnet Squad with the same 3 signers (Alex Bot / Alex / Mason).~~
    **SUPERSEDED — do not do this.** The mainnet Squad exists and is **3-of-5**,
    and two of those three names are off it: `F6f8…KzhZ` is retired and must
-   never be re-seated, and Mason's key sits on neither cluster. The clusters
-   carry different membership. Derive each cluster's set from chain, or read the
-   per-cluster table in `turf-monster/MAINNET_LAUNCH.md`; never reuse the roster
+   never be re-seated, and Mason's key sits on neither live Squad. (Mason is
+   still a `VaultState` signer on both clusters — a different authority, and
+   correct as it stands.) The clusters
+   carry different membership. Derive each cluster's set from chain
+   (`node scripts/squad-inventory.js` in `turf-vault`); never reuse the roster
    in Step 1.
 4. Transfer authority:
    ```bash
@@ -232,7 +255,7 @@ If the migration breaks something — e.g. the Squad vault address was wrong —
 
 ## Verification checklist
 
-> **The 2026-05-23 design, not a check to run.** Both Squads read threshold
+> **The 2026-05-23 design, not a check to run.** Both live Squads read threshold
 > **3 of 5** today (every member mask 7), so the quorum and member-count lines
 > below record what was planned rather than what to verify.
 
@@ -259,7 +282,7 @@ Update `turf-vault/docs/CURRENT_DEPLOYMENT.md` and `turf-vault/README.md` after 
 ## Open questions to resolve before mainnet
 
 > **Recorded, not open.** Mainnet launched, and events overtook at least the
-> second of these: both Squads now seat five members, not three. Raise current
+> second of these: both live Squads now seat five members, not three. Raise current
 > governance questions against the live docs named at the top of this file.
 
 - Do we want a "break-glass" emergency upgrade keypair held by Alex only, paired with a strict legal/governance policy on when it can be used? Pros: faster response to exploits. Cons: re-introduces single-key risk.

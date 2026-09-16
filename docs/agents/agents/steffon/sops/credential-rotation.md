@@ -685,7 +685,7 @@ and mainnet at once. The correct order:
    `turf-vault/docs/KEY_ROTATION.md` §2 is the recipe: read the old key's balance
    and transfer it across, less dust. Take the MOVE from it, not its `4.55` — that
    figure is sized for the v0.20 migration, which front-loaded ~3.5 SOL of one-time
-   ProgramData rent for a NEW program deploy (`KEY_ROTATION.md:341`, `:347`). A
+   ProgramData rent for a NEW program deploy (`KEY_ROTATION.md` §3's rent note and §9's cost table). A
    rotation onto an already-deployed program owes no such rent. **If the old key is
    COMPROMISED, do not plan on sweeping it** — whoever holds it can drain it first.
    Fund the new key from a key you control, and treat any balance still there as a
