@@ -174,9 +174,12 @@ hub's own parked admin identities (Xan `8K81w4e6…`, Alex `7ZDJp7FU…`, Mason
 **Those signer addresses are the MAINNET set, and
 `turf-vault/docs/CURRENT_DEPLOYMENT.md` is where to read them.** Its
 `## Mainnet` table records the program ID, the Squads upgrade authority
-(`Bk9sS7ii…`), the 2-of-3 threshold and all three signer rows, beside the
-matching `## Devnet` table — so cite that file, and cite the cluster heading you
-mean. `turf-vault/scripts/squad.json` is provenance, not the citation: it was the
+(`Bk9sS7ii…`), a threshold row and the signer rows, beside the matching
+`## Devnet` table — so cite that file, and cite the cluster heading you mean.
+⚠ **Its threshold rows are stale as of 2026-09-15**: both tables still read
+"2-of-3" while each live Squads multisig is threshold 3 of five. That repo is
+outside this one's sweep; re-derive from chain, and read
+`turf-monster/docs/SOLANA.md` for the current statement. `turf-vault/scripts/squad.json` is provenance, not the citation: it was the
 in-repo mainnet record back when only the devnet table carried signers, and it
 stays load-bearing as an INPUT rather than as a record —
 `scripts/initialize-mainnet.js` builds `signers` from its `members`

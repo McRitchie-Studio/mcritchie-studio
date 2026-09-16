@@ -236,7 +236,7 @@ class Release::ReposTest < ActiveSupport::TestCase
 
   test "[unit] turf-vault declares NO production deploy target" do
     assert_nil Release::Repos.prod_deploy("turf-vault"),
-               "turf-vault is an Anchor program upgraded BY HAND through a Squads 2-of-3 multisig " \
+               "turf-vault is an Anchor program upgraded BY HAND through a Squads multisig " \
                "(scripts/squad-upgrade.js, gated by docs/MAINNET_LAUNCH.md). No automated path has ever " \
                "deployed it. Declaring an adapter makes `bin/release ship` attempt that act against a " \
                "program custodying real USDC — and a no-op script is worse still, because ship then " \

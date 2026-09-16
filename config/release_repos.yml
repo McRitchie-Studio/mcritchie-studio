@@ -391,7 +391,7 @@ apps:
     # vaults. It is not a deployable app and there is no automated path that has
     # EVER deployed it: nothing in bin/ or app/ contains `anchor deploy` or
     # `program deploy`. The program is upgraded by hand through
-    # scripts/squad-upgrade.js against a Squads 2-of-3 multisig, gated by
+    # scripts/squad-upgrade.js against a Squads multisig, gated by
     # docs/MAINNET_LAUNCH.md and docs/VERIFICATION_MATRIX.md — a human, multi-
     # signer act that a release conductor must never attempt on its own.
     #
@@ -455,7 +455,7 @@ apps:
     # question — did this candidate's code get DEPLOYED somewhere a human can
     # review it before production? For an Anchor program the honest answer is that
     # the question does not apply: there is no dyno, no URL, and no deploy of any
-    # kind (the program is upgraded by hand through a Squads 2-of-3 multisig).
+    # kind (the program is upgraded by hand through a Squads multisig).
     # This repo's `cargo check` / `clippy` / doc-op lanes DO run — on every push
     # to accepted, release and main — but they are CI, and the sweep already reads
     # them at the accepted rung through Release::AcceptedCertification (see SUITE

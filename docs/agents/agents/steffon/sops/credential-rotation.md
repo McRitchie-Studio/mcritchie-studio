@@ -484,14 +484,24 @@ planned, because the registration step is usually the one with another party in 
 > that same day the Turf Monster keys were refiled entity-first into
 > `solana.turf.admin`, `solana.turf.system` and `solana.turf.system.devnet`, all
 > agent-readable in `studio-agents` with HYPHENATED labels. That moved the
+> agent's Turf Monster identity, and nothing else — a 1Password refiling is not
+> an on-chain event, so it changed neither `VaultState.signers` nor any Squads
+> membership. This example still rotates `8K81…`.
 >
 > **THE SQUADS HALF OF THIS EXAMPLE IS NOW HISTORY, AND THE REST STILL RUNS.**
-> At 09:41 that day a Squads config transaction REMOVED `8K81…` and `CytJ…` from
-> both multisigs, which are now **3-of-4** (`3Qj4v9…`, `7ZDJ…`, `9gACbz…`,
-> `BLSBw8…`) — measured on-chain at `finalized`. So `squad-upgrade.js`, which
-> signs as `ALEX_BOT_KEY`/`8K81…` and cosigns with `MASON_KEY`/`CytJ…`, can no
-> longer approve anything, and the "rotate it on Squads too" step below does not
-> apply to this key any more. What `8K81…` still IS: production's
+> That day TWO Squads config ceremonies ran, five minutes apart — devnet
+> executed **09:41:25 MDT**, mainnet **09:46:51-55 MDT**. Not one transaction
+> across both clusters, and the difference matters here: they REMOVED `CytJ…`
+> from both, but `8K81…` **from mainnet only**. Re-measured on-chain at
+> `finalized` 2026-09-15, each cluster reads **threshold 3 of FIVE**, all mask 7,
+> and the fives differ — mainnet `4H3fP3ot…` is `7auwTL…`, `3Qj4v9…`, `7ZDJ…`,
+> `9gACbz…`, `BLSBw8…`; devnet `7nRuVw3V…` is `2eGs8G3w…`, `3Qj4v9…`, `7ZDJ…`,
+> **`8K81…`**, `BLSBw8…`. So `squad-upgrade.js`, which signs as
+> `ALEX_BOT_KEY`/`8K81…` and cosigns with `MASON_KEY`/`CytJ…`, can approve
+> nothing on mainnet; on devnet `8K81…` can still cast one of the three
+> approvals but `CytJ…` cannot, so the script cannot reach threshold there
+> either. **The "rotate it on Squads too" step below still applies on DEVNET**,
+> where this key is seated, and no longer on mainnet. What `8K81…` still IS: production's
 > `SOLANA_ADMIN_KEY` and a live `VaultState.signers` entry (2-of-3, untouched on
 > both clusters). Those are the parts this example still rotates. The two
 > authorities moved independently, which is exactly why this SOP insists on
@@ -506,7 +516,7 @@ the key you just rotated out:
 | Where the Xan key is registered or consumed | Updated by | Verified 2026-09-09 |
 |---|---|---|
 | turf-vault `VaultState.signers` — contest/treasury 2-of-3 | `update_signers` (on-chain, 2-of-3) | `turf-monster/docs/SOLANA.md` signer list |
-| turf-vault **Squads V4 2-of-3 — MAINNET PROGRAM UPGRADE AUTHORITY** | a **Squads config transaction**, at `app.squads.so` | `turf-vault/scripts/squad.json` → `members.alex_bot` |
+| turf-vault **Squads V4 — PROGRAM UPGRADE AUTHORITY, one multisig PER CLUSTER** | a **Squads config transaction**, at `app.squads.so` | the live multisig account, read with `squads_members` below — `turf-vault/scripts/squad.json` → `members.alex_bot` is provenance only |
 | `scripts/squad-upgrade.js`, which signs upgrades as `ALEX_BOT_KEY` (one of the two approvals; Mason casts the other as `MASON_KEY`) | the BOT key is supplied per run from 1Password, not a stored config var — Mason's is his own, and the human Alex key (`7ZDJ…`) is a Phantom export with no filed item at all | `squad-upgrade.js:87-88` `loadKey("ALEX_BOT_KEY")` / `loadKey("MASON_KEY")` |
 
 **`update_signers` does not touch Squads membership.** They are separate systems
@@ -714,6 +724,16 @@ and mainnet at once. The correct order:
    it off your Phase 1 list, which is why the list is the rotation.**
 
 #### Verifying the Squads rotation
+
+> ⚠ **THE GRADER BELOW STILL EXPECTS THE PRE-2026-09-15 SHAPE — 3 members at
+> threshold 2 — AND BOTH LIVE SQUADS ARE NOW 5 AT THRESHOLD 3.** Run it unchanged
+> against either cluster today and it prints two FAIL lines for a perfectly
+> healthy multisig. Re-derive the expected count and threshold from `squads_members`
+> BEFORE the config transaction is proposed, exactly as `$WANT_MASK` already is,
+> and compare against those. Parameterising the two literals is tracked
+> separately — the guard test in `test/docs/credential_rotation_shell_guard_test.rb`
+> pins this grader's fixtures at 3/2, so the fix is a paired change, not an edit
+> here.
 
 Step 5's four properties, graded against the on-chain `Multisig` account. The
 reader is separate from the grader on purpose: the read is the part that talks to

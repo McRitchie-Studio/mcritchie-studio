@@ -457,8 +457,12 @@ phase_secrets() {
   # ⚠ THIS IS NOT WHAT PRODUCTION SIGNS WITH. turf-monster-mainnet's
   # SOLANA_ADMIN_KEY is still Xan (8K81…, agent.xan.solana, admin vault), and
   # the on-chain signer set is unchanged. Moving prod onto solana.turf.system is
-  # a separate task gated on funding that wallet — it held 0 SOL on mainnet on
-  # 2026-09-15, and an unfunded fee payer breaks settlement. Local .env and the
+  # a separate task gated on funding that wallet. READ THE BALANCE rather than a
+  # number in this comment: it read 0 SOL on mainnet at 09:12 on 2026-09-15 and
+  # was funded at 09:20 the same morning (1.0000 SOL at finalized later that
+  # day). The cutover turns on whether it is sufficient for SUSTAINED fee
+  # payment, not merely non-zero, and an underfunded fee payer breaks
+  # settlement. Local .env and the
   # dyno differ on purpose; do not "reconcile" them here.
   local op_secrets=(
     "turf-monster|SOLANA_ADMIN_KEY|${MCR_OP_VAULT_AGENT:-studio-agents}/solana.turf.admin/private-key"

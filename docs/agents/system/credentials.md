@@ -85,7 +85,7 @@ Each agent has a dedicated Solana wallet. Credentials stored in 1Password. The t
 | Mason | `CytJS23p1zCM2wvUUngiDePtbMB484ebD7bK4nDqWjrR` | Vault signer (third 2-of-3 cosigner) |
 | Mack | `foUuRyeibadQoGdKXZ9pBGDqmkb1jY1jYsu8dZ29nds` | Agent wallet |
 | Turf Monster admin | `BLSBw8fXHzZc5pbaYCKMpMSsrtXBTbWXpUPVzMrXx9oo` | Agent governance identity (`solana.turf.admin`) |
-| Turf Monster system | `7auwTLSvNniSUeAgL6v9RStMXJhWrrUhSJgwFWLpcqC` | Server operational key, MAINNET (`solana.turf.system`) — **0 SOL as of 2026-09-15** |
+| Turf Monster system | `7auwTLSvNniSUeAgL6v9RStMXJhWrrUhSJgwFWLpcqC` | Server operational key, MAINNET (`solana.turf.system`) — **read the balance, do not quote one.** 0 SOL at 09:12 on 2026-09-15, funded at 09:20 that morning; `1000000000` lamports (1.0000 SOL) at `finalized` later the same day |
 | Turf Monster system (devnet) | `2eGs8G3wzhEeNQQU2Q86BmmA2xTpDbMMae3Y1bvpZfx9` | Server operational key, devnet/QA (`solana.turf.system.devnet`) |
 
 ### 1Password CLI Access
@@ -154,30 +154,30 @@ export SOLANA_ADMIN_KEY=$(op item get "solana.turf.admin" --vault "studio-agents
 
 ### Onchain Admin
 
-**TWO AUTHORITIES, AND SINCE 2026-09-15 09:41 THEY DISAGREE.** Both were measured on-chain at `finalized` that day:
+**TWO AUTHORITIES, AND SINCE 2026-09-15 THEY DISAGREE.** Both re-measured on-chain at `finalized` on 2026-09-15, through two independent RPC providers:
 
 | Authority | What it controls | Live set |
 |---|---|---|
-| Squads V4 multisig (mainnet `4H3fP3ot…`, devnet `7nRuVw3V…`) | the program **upgrade** authority | **3-of-4** — `3Qj4v9…`, `7ZDJ…`, `9gACbz…`, `BLSBw8…` (all mask 7) |
-| `VaultState.signers` (`seeds = [b"vault"]`, deployed v0.25.0) | treasury + governance ops — *the money* | **2-of-3** — `8K81…`, `7ZDJ…`, `CytJ…`, unchanged |
+| Squads V4 multisig — **one per cluster, and they differ** | the program **upgrade** authority | **threshold 3 of FIVE**, all mask 7. mainnet `4H3fP3ot…`: `7auwTL…`, `3Qj4v9…`, `7ZDJ…`, `9gACbz…`, `BLSBw8…`. devnet `7nRuVw3V…`: `2eGs8G3w…`, `3Qj4v9…`, `7ZDJ…`, `8K81…`, `BLSBw8…` |
+| `VaultState.signers` (`seeds = [b"vault"]`, deployed v0.25.0) | treasury + governance ops — *the money* | **2-of-3** — `8K81…`, `7ZDJ…`, `CytJ…`, unchanged on both clusters |
 
-**They are two different SETS, differing by exactly one wallet, and they are not meant to converge.** Squads is **four** and live; `VaultState` is **five** and is the target once `update_signers` runs:
+**They are two different authorities with different thresholds — but on mainnet their MEMBERSHIP has converged, and not by design.** Both are five wallets; Squads is live at threshold 3, `VaultState` is the target at threshold 2 once `update_signers` runs:
 
-| Wallet | Squads (upgrade) | `VaultState.signers` (the money) |
+| Wallet | Squads mainnet (upgrade) | `VaultState.signers` (the money) |
 |---|---|---|
-| system `7auwTL…` (`solana.turf.system`) | **excluded, deliberately** | slot 1 |
+| system `7auwTL…` (`solana.turf.system`) | ✅ **seated, mask 7 — against policy** | slot 1 |
 | admin `BLSBw8…` (`solana.turf.admin`) | ✅ | slot 2 |
 | Alex Phantom `7ZDJ…` | ✅ | slot 3 |
 | Alex two `3Qj4v9…` | ✅ | slot 4 |
 | Alex three `9gACbz…` | ✅ | slot 5 |
 
-**Why the system key is off Squads:** it is the app's HOT operational key — it lives in Heroku config on a running web dyno and signs on every entry and every payout. That makes it the most exposed key in the system and the last one that should hold program upgrade authority, and it has no job there anyway: upgrading a program is a rare, deliberate, human act, never something the server does unattended.
+⚠ **THE SYSTEM KEY WAS MEANT TO BE OFF SQUADS. ON CHAIN IT IS NOT.** The policy is right and unchanged: `7auwTL…` is the app's HOT operational key — it lives in Heroku config on a running web dyno and signs on every entry and every payout. That makes it the most exposed key in the system and the last one that should hold program upgrade authority, and it has no job there anyway, since upgrading a program is a rare, deliberate, human act and never something the server does unattended. **What the chain says is the opposite:** `7auwTL…` holds `Initiate|Vote|Execute` on the mainnet Squad, and `2eGs8G3w…` (`solana.turf.system.devnet`) holds the same on devnet. This document asserted the policy as fact for a day. Closing the gap is a **Squads config transaction** with Mr. McRitchie's signature on it — its own task, not an edit here — and until it runs, treat a compromise of the mainnet web dyno as reaching program upgrade authority too.
 
-So the agent holds **1 of 4 on Squads** and, once rotated, **2 of 5 on the vault**. Four seats rather than five keeps an attacker two signatures short of threshold instead of one; five would survive Mr. McRitchie losing two personal keys. He has that trade and chose four — changeable later with one config transaction, since he holds 3 of 4.
+So the agent holds **2 of 5 on mainnet Squads** (`BLSBw8…`, plus the agent-readable `7auwTL…`) against a threshold of 3 — one short, so a mainnet upgrade still needs Mr. McRitchie. On devnet the agent reaches **3 of 5** (`BLSBw8…`, `8K81…`, `2eGs8G3w…`) and can act alone. Once `update_signers` runs the agent holds **2 of 5 on the vault** as well. Five seats against a threshold of three keeps an attacker two signatures short.
 
-**The five-member vault set is blocked on a PROGRAM UPGRADE, not on a ceremony.** Deployed v0.25.0 declares `update_signers(new_signers: [Pubkey; 3])` against `signers: [Pubkey; 3]` — it can only ever write three, and it replaces the whole set. turf-vault's `accepted` widens it to `[Pubkey; MAX_SIGNERS]` alongside `signers_ext`. The order is therefore forced:
+**The five-member vault set is blocked on a PROGRAM UPGRADE, not on a ceremony.** Deployed v0.25.0 declares `update_signers(new_signers: [Pubkey; 3])` against `signers: [Pubkey; 3]` — it can only ever write three, and it replaces the whole set. turf-vault's `accepted` does NOT widen that array: it keeps `signers: [Pubkey; 3]` at offset 0 and **APPENDS `signers_ext: [Pubkey; 2]` at offset 1443**, reading the whole set through **`all_signers()`** — five slots, appended rather than widened so the upgrade stays layout-compatible on a `zero_copy` singleton. So slots 4 and 5 are never in `VaultState.signers`; a reader that only looks there sees three and is not wrong, it is looking at the wrong field. "Three" and "five" are each true of a different build, and that gap is the design, not a discrepancy — check what the cluster runs before trusting any count. The order is therefore forced:
 
-1. **Restore a working upgrade path.** `squad-upgrade.js` signs as `8K81…` and cosigns with `CytJ…`, both removed from Squads on 2026-09-15, so it cannot drive an upgrade today. A current member must sign — the agent holds `BLSBw8…` — with three of four approving.
+1. **Restore a working upgrade path.** `squad-upgrade.js` signs as `8K81…` and cosigns with `CytJ…`, both removed from Squads on 2026-09-15, so it cannot drive an upgrade today. A current member must sign — the agent holds `BLSBw8…` — with three of the five approving.
 2. **Deploy v0.26**, which is what puts `signers_ext` on-chain.
 3. **Re-pin `EXPECTED_IDL_HASH`** on `turf-monster-mainnet` from the BUILT IDL; the v0.26 change alters the IDL.
 4. **Only then `update_signers`** with the five-member set.
@@ -186,9 +186,11 @@ Attempting step 4 first does not fail harmlessly — it spends a ceremony and Mr
 
 ⚠ **Never write "the multisig" unqualified.** Say *Squads* or *`VaultState`* every time. The unqualified form is exactly what produced the stale claims this section replaces, twice in one day.
 
-The 09:41 config transaction removed Xan (`8K81…`) and Mason (`CytJ…`) from BOTH multisigs; it touched no `VaultState`. So Xan is no longer a routine TurfVault upgrade admin — `squad-upgrade.js`, which signs as `8K81…`, can no longer approve anything — while remaining a live `VaultState` cosigner. A change to one authority is never a change to the other; read the one you mean.
+**It was TWO ceremonies, five minutes apart — not one transaction across both clusters.** Signature history: devnet executed **09:41:25 MDT**, mainnet **09:46:51-55 MDT**, on 2026-09-15. Writing it as a single transaction is what hid the per-cluster difference below, so say which cluster you mean.
 
-⚠ `3Qj4v9…` and `9gACbz…` are Mr. McRitchie's **personal** wallets. They are already seated and are deliberately filed in **no vault** — never file them into an agent-readable vault to unblock a ceremony. The agent holds exactly one of the four seats (`BLSBw8…`), and that is the separation.
+They removed Mason (`CytJ…`) from BOTH multisigs — verified absent from each account. **Xan (`8K81…`) was removed from MAINNET ONLY and is still a seated devnet member**, so "removed from both" is false and was written down here for a day. Neither ceremony touched any `VaultState`. `squad-upgrade.js` signs as `8K81…` and cosigns as `CytJ…`, so it cannot drive a mainnet upgrade at all, and on devnet it can cast one of the three approvals but not reach threshold. Xan remains a live `VaultState` cosigner throughout. A change to one authority is never a change to the other; read the one you mean, on the cluster you mean.
+
+⚠ `3Qj4v9…` and `9gACbz…` are Mr. McRitchie's **personal** wallets. They are already seated and are deliberately filed in **no vault** — never file them into an agent-readable vault to unblock a ceremony. The agent holds one seat by name (`BLSBw8…`) and reaches a second through the server key (`7auwTL…`), two of five against a threshold of three — so a mainnet upgrade still needs one of Mr. McRitchie's, and that is the separation.
 
 Deployment identity for both clusters lives in `turf-vault/docs/CURRENT_DEPLOYMENT.md`: each of its `## Devnet` and `## Mainnet` tables carries that cluster's program ID, Squads upgrade authority, threshold and three signer rows. **Read the heading you mean** — the two `VaultState` signer sets agree on both clusters today, but nothing in the program ties them together, so an address alone cannot tell you which cluster you are on. `turf-vault/scripts/squad.json` (`members`) is provenance and a script input — `scripts/initialize-mainnet.js` builds its `initialize` signer array from it — not the deployment record. Confirm the live set on-chain from `VaultState` (`seeds = [b"vault"]` against that cluster's program ID) rather than from any file. The `SOLANA_ADMIN_KEY` env var in Turf Monster's **local** `.env` holds `solana.turf.admin` (`BLSBw8fX…`, vault `studio-agents`, hyphenated labels) — that is what `bin/ecosystem-build` writes. **Production still holds a different key**: `turf-monster-mainnet`'s `SOLANA_ADMIN_KEY` is Xan (`8K81…`, `agent.xan.solana`, vault `studio-agents-admin`), and the move onto `solana.turf.system` is a separate task gated on funding that wallet. Local and deployed differ on purpose.
 
