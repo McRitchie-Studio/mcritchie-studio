@@ -1341,7 +1341,8 @@ LIST_FLAGS = { "--repo" => "repositories", "--risk" => "risk_tags", "--accept" =
 # form's own "auth, solana, migration" text field files three tags — but because the
 # KEY says so now, not because the value arrived as a string.
 #
-# This one is the backstop for the raw JSON API, which this file cannot see at all. Do NOT read that as making this one redundant: the server
+# That server rule is the backstop for the raw JSON API, which this file cannot see
+# at all. Do NOT read it as making this guard redundant: the server
 # SPLITS where this REFUSES, deliberately and for reasons argued at that constant (a
 # 422 teaches a scripted caller nothing, and costs it the whole write). This is
 # where the lesson gets taught, and where all 1104 joined entries the 2026-09-15
