@@ -694,6 +694,54 @@ module Api
         assert_equal ["Header stays pinned, even while scrolling", "Email still works as expected"], created.devops_acceptance
       end
 
+      # === THE COMMA RULE ON THIS ROUTE (`server-guard-misses-raw-api`) ===
+      #
+      # The case ABOVE is one half of a pair and only reads as a control beside the
+      # other. bin/task REFUSES `--repo a,b` at the terminal, but nothing guarded this
+      # route: `{"repositories": ["a,b"]}` stored a one-element array holding the
+      # joined string, which resolves to a phantom repo and ABORTED a live QA sweep at
+      # step 3a (2026-09-15, /tasks/sweep-stale-signer-claims). The CLI cannot see this
+      # caller at all. The key-scoped split is the backstop, and the argument for
+      # splitting here rather than refusing lives at Task::DEVOPS_IDENTIFIER_LIST_KEYS.
+      test "[integration] create splits a joined identifier list posted as an array" do
+        post api_v1_tasks_path,
+             params: {
+               title: "Joined Repo List Probe",
+               devops: {
+                 repositories: ["turf-monster,mcritchie-studio"],
+                 risk_tags: ["auth,migration"],
+                 acceptance: ["The sweep promotes, deploys, and flips members"]
+               }
+             },
+             headers: @headers,
+             as: :json
+
+        assert_response :created
+        created = Task.find_by!(slug: JSON.parse(response.body).dig("data", "slug"))
+
+        assert_equal %w[turf-monster mcritchie-studio], created.devops_repositories
+        assert_equal %w[auth migration], created.devops_risk_tags
+        # The control, in the SAME payload: the prose key travelling beside them keeps
+        # its commas. A blanket rule would have shredded this bullet into three.
+        assert_equal ["The sweep promotes, deploys, and flips members"], created.devops_acceptance
+      end
+
+      # The other write verb on this route. An UPDATE is how a joined list most often
+      # arrives — a task created clean, then handed a repo list by a later caller.
+      test "[integration] update splits a joined identifier list and leaves prose whole" do
+        patch api_v1_task_path(@task.slug),
+              params: { devops: { repositories: ["turf-monster,mcritchie-studio"],
+                                  checks_run: ["bin/rails test, then bin/rubocop"] } },
+              headers: @headers,
+              as: :json
+
+        assert_response :success
+        @task.reload
+
+        assert_equal %w[turf-monster mcritchie-studio], @task.devops_repositories
+        assert_equal ["bin/rails test, then bin/rubocop"], @task.devops_checks_run
+      end
+
       test "create with a custom slug sets a readable slug and trickles to worktree_slug + branch" do
         post api_v1_tasks_path,
              params: { slug: "Readable Handle Here", title: "valid four word title", devops: { repositories: ["mcritchie-studio"] } },
