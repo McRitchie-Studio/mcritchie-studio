@@ -1298,8 +1298,11 @@ LIST_FLAGS = { "--repo" => "repositories", "--risk" => "risk_tags", "--accept" =
 #                 reader unharmed — BREAKING_TAG is a substring regex.)
 #
 # WHY THESE TWO AND NOT THE OTHER THREE. `--accept`, `--test` and `--checks` carry
-# free PROSE, where a comma is ordinary punctuation — 290, 230 and 1602 board
-# entries respectively contain one, and every one is correct. Guarding them would
+# free PROSE, where a comma is ordinary punctuation — 291, 230 and 1605 board TASKS
+# respectively carry one, and those are 360, 309 and 5883 individual ENTRIES
+# (re-measured 2026-09-16; the first cut of this sentence printed the TASK counts and
+# called them entries — what a blanket rule would shred is the 6552 entries, not the
+# 2126 tasks). Every one of those entries is correct. Guarding them would
 # refuse legitimate acceptance criteria, and SPLITTING them would silently shred
 # an acceptance bullet into fragments. That is a worse defect than the one being
 # fixed, and it is exactly why this is a per-flag decision and not one blanket
@@ -1321,20 +1324,24 @@ LIST_FLAGS = { "--repo" => "repositories", "--risk" => "risk_tags", "--accept" =
 # to the flags that can never be guarded. The cost is one retyped command line,
 # paid by the operator who was already wrong, at the only moment it is still free.
 #
-# WHY THE GUARD LIVES HERE. Task.normalize_devops_list splits STRING input on
-# newlines AND commas — the board form's path, so its "auth, solana, migration"
-# text field files three tags correctly. ARRAY input (this CLI, the JSON API)
-# splits on newlines only, because commas are legitimate inside an acceptance
-# sentence. So the VALUE alone cannot be judged: `["a,b"]` from --repo and
-# `["one thing, then another"]` from --accept are both one-element arrays.
+# WHY THE GUARD LIVES HERE — AND WHY IT IS NOT THE ONLY ONE.
+# Task.normalize_devops_list splits STRING input on newlines AND commas — the board
+# form's path, so its "auth, solana, migration" text field files three tags
+# correctly. ARRAY input (this CLI, the JSON API) splits on newlines only, because
+# commas are legitimate inside an acceptance sentence. So the VALUE alone cannot be
+# judged: `["a,b"]` from --repo and `["one thing, then another"]` from --accept are
+# both one-element arrays.
 #
-# The KEY still can be. normalize_devops_metadata branches per key
-# (DEVOPS_LIST_KEYS) and LIST_FLAGS maps 1:1 onto those keys, so a server guard
-# scoped to `repositories`/`risk_tags` IS possible — measured 2026-09-15: fires
-# on --repo "a,b", silent on --accept prose, silent on the board form's string
-# (already split). It would also cover the raw JSON API, which this does not.
-# The CLI is home because only it can name the FLAG and print a copyable remedy,
-# and it is where all 1104 joined entries were typed — guard here FIRST, not only.
+# The KEY still can be, and SINCE 2026-09-16 IT IS. normalize_devops_metadata
+# branches per key (DEVOPS_LIST_KEYS) and LIST_FLAGS maps 1:1 onto those keys, so
+# Task::DEVOPS_IDENTIFIER_LIST_KEYS now carries the same rule scoped to
+# `repositories`/`risk_tags` — the backstop for the raw JSON API, which this file
+# cannot see at all. Do NOT read that as making this one redundant: the server
+# SPLITS where this REFUSES, deliberately and for reasons argued at that constant (a
+# 422 teaches a scripted caller nothing, and costs it the whole write). This is
+# where the lesson gets taught, and where all 1104 joined entries the 2026-09-15
+# census found were typed — guard here FIRST, not only. The two never disagree in
+# front of a human, because this refusal runs before any request goes out.
 COMMA_FREE_LIST_FLAGS = %w[--repo --risk].freeze
 # REPEATABLE repo-keyed MAP flags: `--pr-url-for <repo>=<url>`, one per repo.
 #

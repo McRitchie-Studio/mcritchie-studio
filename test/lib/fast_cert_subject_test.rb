@@ -509,11 +509,15 @@ class FastCertSubjectTest < Minitest::Test
     # the frozen hotspot test/lib/task_cli_test.rb when six new cases ran it 81 lines past
     # its ceiling, and its header cites this config to say why it is a new file rather than
     # an append.
+    # 26 → 27 on 2026-09-16 (server-guard-misses-raw-api), the SEVENTH increment and
+    # the sixth with this same cause: test/models/task_devops_identifier_lists_test.rb
+    # is a new file rather than an append to the frozen hotspot test/models/task_test.rb
+    # (2023, at its ceiling), and its header cites this config to say why.
     # What the assertion is FOR is the LIST: this one known entry and no other. A
     # second path appearing is the regression; this number changing is bookkeeping.
-    assert_equal ["config/test_health.yml (26)"], over,
+    assert_equal ["config/test_health.yml (27)"], over,
                  "config/test_health.yml was already over the cap before this clause " \
-                 "existed (its PATH matches 26 files); any OTHER entry here means the " \
+                 "existed (its PATH matches 27 files); any OTHER entry here means the " \
                  "config spelling re-opened a cap trip"
   end
 end
