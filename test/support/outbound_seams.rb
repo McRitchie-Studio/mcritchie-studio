@@ -41,7 +41,7 @@
 # test/lib/dor_check_browser_evidence_test.rb, which pins a loopback sink AND
 # drives the dangerous shape through it to prove the sink received the request.
 #
-# TWO KINDS OF PIN, because there are two kinds of reach:
+# THREE KINDS OF PIN, because there are three kinds of reach:
 #
 #   FAIL-CLOSED (the board)  — TASK_API_BASE/ATOMIC_CAPTURE_URL point at an
 #     unroutable loopback port. Nothing listens, so a board call is refused
@@ -55,6 +55,18 @@
 #     STDOUT — deliberately: an empty body is not auth-shaped, so it cannot arm
 #     the GhAuthRetry mint chain described above. GH_AUTH_TOKEN_BIN is sealed as
 #     well, so even a mint that IS somehow armed never reaches 1Password.
+#   SEALED READERS (the machine's ports) — bin/agent-worktree asks lsof who
+#     listens on a desk's APP_PORT and curls its /up, through the named seams
+#     AGENT_WORKTREE_LSOF_BIN and AGENT_WORKTREE_CURL_BIN. Both point here, at a
+#     recording stub whose silent exit 1 is lsof's own "nothing listens" answer
+#     and reads as `down` for /up. A port is shared with every process on the
+#     runner, so an unsealed probe reads whatever ELSE is there. On hub CI run
+#     35092204659 (2026-09-16) something else listened on the fixture port 39999:
+#     one test read `port-busy`, and a worker died mid-test (`result not
+#     reported`). A test worker holding that port reproduces both, because a
+#     teardown test signals the holder.
+#     The stubs are named port-lsof and port-curl, NOT lsof and curl, so they
+#     shadow nothing on PATH for the other bin/ scripts.
 #
 # A TEST MAY STILL OVERRIDE ANY OF IT. `env` merges the caller's hash last, so a
 # test that plants its own fake `gh` on PATH, or points TASK_API_BASE at a stub
@@ -85,8 +97,9 @@ module OutboundSeams
   # bin/ scripts shell directly.
   # `task-cli` is not a PATH lookup: it is the stub a harness points a named
   # task-binary seam at (AGENT_WORKTREE_TASK_BIN), so a board read through the
-  # hub's CLI is refused AND recorded rather than merely misrouted.
-  SEALED_COMMANDS = %w[gh gh-token op heroku ssh git-askpass task-cli].freeze
+  # hub's CLI is refused AND recorded rather than merely misrouted. `port-lsof` and
+  # `port-curl` are the same kind: the port readers' named seams point at them.
+  SEALED_COMMANDS = %w[gh gh-token op heroku ssh git-askpass task-cli port-lsof port-curl].freeze
 
   module_function
 
@@ -140,6 +153,8 @@ module OutboundSeams
       "GIT_SSH_COMMAND" => stub("ssh"),
       "GIT_ASKPASS" => stub("git-askpass"),
       "GIT_TERMINAL_PROMPT" => "0",
+      "AGENT_WORKTREE_LSOF_BIN" => stub("port-lsof"),
+      "AGENT_WORKTREE_CURL_BIN" => stub("port-curl"),
       "OUTBOUND_SEAM_LOG" => log_path,
       # THE SESSION-MARKER STORE, pinned for every child built from this env.
       #
