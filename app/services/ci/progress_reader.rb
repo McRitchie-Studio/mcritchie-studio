@@ -279,7 +279,9 @@ module Ci
     # an app track reads, so the blind API cannot blend anything there.
     #
     # THE LIST FORM MATTERS FOR THE COMPARISON, not just the query. A caller now hands
-    # in `suite_workflows_for(repo)`, which for an APP is the single-element `["CI"]`.
+    # in `suite_workflows_for(repo)`, which for MOST apps is the single-element `["CI"]`
+    # (turf-vault is the exception — it also declares "Anchor Suite", and so gives up
+    # this fallback exactly as a gem does; see the progress-reader test of that name).
     # Compared naively against the bare string that array is "not CI", and every app
     # SHA whose jobs had not been ingested would have lost its API fallback and gone
     # BLANK — a scope widening quietly turning into a data loss for the majority case.
