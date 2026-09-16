@@ -29,7 +29,8 @@ require_relative "../support/desk_ledger_sink"
 # to end:
 #   * the port readers (lsof, curl) are named seams, and the OutboundSeams floor answers
 #     them for every harness, so no command test reads a real port by default;
-#   * a teardown signals a port holder only when that process is rooted in the desk.
+#   * a teardown signals a port holder only when that process is rooted in the desk, and
+#     the pid a desk's pidfile names takes the same check (the OS recycles pids).
 #
 # Its own file because test/commands/agent_worktree_test.rb is a frozen hotspot at its
 # line ceiling. The fixture is the slice of that file's harness these tests need.
@@ -115,7 +116,42 @@ class AgentWorktreePortIsolationTest < ActiveSupport::TestCase
     assert_equal Signal.list.fetch("TERM"), stranger_exit_signal, "the desk's server gets SIGTERM"
   end
 
+  # [integration] A RECYCLED PID, end to end. The desk's pidfile names a live process that is
+  # not the desk's server: the server died and the OS handed its pid to something else. It
+  # must survive a real teardown. On the pre-fix script the pidfile branch signals it.
+  test "[integration] remove --yes leaves a stranger holding the pidfile's pid running" do
+    write_web_pidfile(@stranger.fetch(:pid))
+    lsof = write_fake_lsof(pid: @stranger.fetch(:pid), cwd: @projects_dir)
+
+    out, err, status = remove_desk(lsof)
+
+    assert status.success?, "#{out}\n#{err}"
+    refute Dir.exist?(@worktree_dir), "premise: the teardown really ran"
+    assert stranger_alive?, "the teardown signalled pid #{@stranger.fetch(:pid)}, which the desk's pidfile " \
+                            "names but which runs from #{@projects_dir}\n#{out}\n#{err}"
+    assert_includes err, "web pidfile names pid #{@stranger.fetch(:pid)} (cwd #{@projects_dir})"
+  end
+
+  # [integration] THE CONTROL. The same pidfile naming a process rooted IN the desk is the
+  # desk's own server, and the pidfile branch (not the port fallback) must still stop it.
+  test "[integration] remove --yes still stops the desk's own server named by its pidfile" do
+    write_web_pidfile(@stranger.fetch(:pid))
+    lsof = write_fake_lsof(pid: @stranger.fetch(:pid), cwd: @worktree_dir)
+
+    out, err, status = remove_desk(lsof)
+
+    assert status.success?, "#{out}\n#{err}"
+    assert_match(/^stopped web pid #{@stranger.fetch(:pid)}$/, out, "stopped through the pidfile, not the port")
+    assert_equal Signal.list.fetch("TERM"), stranger_exit_signal, "the desk's server gets SIGTERM"
+  end
+
   private
+
+  def write_web_pidfile(pid)
+    pidfile = File.join(@worktree_dir, "tmp", "pids", "agent-web.pid")
+    FileUtils.mkdir_p(File.dirname(pidfile))
+    File.write(pidfile, "#{pid}\n")
+  end
 
   def port = @stranger.fetch(:port)
 
@@ -194,7 +230,7 @@ class AgentWorktreePortIsolationTest < ActiveSupport::TestCase
     git!(@hub_dir, "config", "user.email", "agent-test@example.com")
     git!(@hub_dir, "config", "user.name", "Agent Test")
     git!(@hub_dir, "checkout", "-b", "main")
-    File.write(File.join(@hub_dir, ".gitignore"), ".env.agent-stack\n.agent-context.json\n/.worktrees/\n")
+    File.write(File.join(@hub_dir, ".gitignore"), ".env.agent-stack\n.agent-context.json\n/.worktrees/\n/tmp/\n")
     git!(@hub_dir, "add", ".gitignore")
     git!(@hub_dir, "commit", "-m", "Initial commit")
     git!(@hub_dir, "remote", "add", "origin", "git@github.com:McRitchie-Studio/mcritchie-studio.git")
