@@ -318,6 +318,44 @@ module Ci
                       "Production Deploy", "and it must not be named as a lane either"
     end
 
+    # --- turf-vault's second suite workflow ----------------------------------
+
+    # THE RUNG HALF of the same 2026-09-15 bug. turf-vault split "Anchor Suite" out of
+    # "CI" so a flaky validator lane cannot block certification; both GATES fold every
+    # check-run unfiltered and saw it at once, but this rung allow-lists
+    # .suite_workflows_for and that named only studio-engine. A red Anchor Suite on
+    # `accepted` therefore coloured NOTHING while refuse_red_accepted! blocked the
+    # promote — the board disagreeing with the gate about the same commit.
+    test "[unit] a red Anchor Suite reddens turf-vault's rung and is named as a lane" do
+      GithubWorkflowRun.delete_all
+      sha = "anchor00aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      wf_run(repo: "turf-vault", branch: "accepted", sha: sha, workflow: "CI",
+             conclusion: "success", id: 30)
+      wf_run(repo: "turf-vault", branch: "accepted", sha: sha, workflow: "Anchor Suite",
+             conclusion: "failure", id: 31)
+
+      rung = Ci::LadderRung.for(repo: "turf-vault", branch: "accepted")
+
+      assert_equal :red, rung.state, "a red declared suite lane must colour the rung"
+      assert_includes rung.lanes.map { |l| l[:name] }, "Anchor Suite",
+                      "and the rung must NAME it — the operator's next question is which lane"
+    end
+
+    # THE CONTROL. Declaring a lane must admit exactly that lane and nothing else. If
+    # this fails, someone widened the filter instead of declaring the workflow — the
+    # deny-list mistake that let "Devnet Nightly" hold a CI rung red for 36 hours.
+    test "[unit] an undeclared turf-vault workflow still cannot redden its rung" do
+      GithubWorkflowRun.delete_all
+      sha = "anchor01aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      wf_run(repo: "turf-vault", branch: "accepted", sha: sha, workflow: "CI",
+             conclusion: "success", id: 32)
+      wf_run(repo: "turf-vault", branch: "accepted", sha: sha, workflow: "Devnet Nightly",
+             conclusion: "failure", id: 33)
+
+      assert_equal :green, Ci::LadderRung.for(repo: "turf-vault", branch: "accepted").state,
+                   "an undeclared workflow is not a suite verdict"
+    end
+
     # --- the three the review named as missing -------------------------------
 
     # BLOCKER 1. `skipped` and `neutral` certify as "skipping" in CiStatus, not as a

@@ -102,7 +102,17 @@ class Release
     # test verdict by default. Measured 2026-08-20: "Devnet Nightly" (turf-monster, a
     # daily schedule) slipped exactly such a deny-list and reddened a CI rung for 36
     # hours. An allow-list fails closed on the next one instead of admitting it.
-    SIBLING_SUITE_WORKFLOWS = { "studio-engine" => ["Consumer CI"].freeze }.freeze
+    # turf-vault runs "Anchor Suite" (the Anchor/validator lanes) BESIDES its "CI".
+    # Deliberately a second workflow: `certified?` refuses a `CI` carrying `paths:`,
+    # and a flaky validator lane must not be able to block certification. But it IS a
+    # test suite, so the same reader rule applies — declare it, or the board cannot
+    # show it. Measured 2026-09-15: a red Anchor Suite blocked both gates (they fold
+    # every check-run, unfiltered) while landing NO mark on a task card and colouring
+    # NO rung, because these readers allow-list this hash and it named only the gem.
+    SIBLING_SUITE_WORKFLOWS = {
+      "studio-engine" => ["Consumer CI"].freeze,
+      "turf-vault" => ["Anchor Suite"].freeze
+    }.freeze
 
     # EVERY suite workflow for `repo`: the verdict-carrying one plus any declared
     # siblings. The set a reader may treat as "this ran tests". Empty when the repo
