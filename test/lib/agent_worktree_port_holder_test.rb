@@ -14,6 +14,9 @@
 #   * the health probe read the same real port, so a concurrent test read `port-busy`
 #     where it asserted `down`.
 #
+# A PIDFILE is a record, not a name, for the same reason: the OS recycles the pid it holds,
+# so the pidfile branches take the port branch's ownership check (cwd_is_desk?).
+#
 # This file pins the decisions in-process. The end-to-end proof, a real signal to a real
 # process through `remove --yes`, lives in test/commands/agent_worktree_port_isolation_test.rb.
 #   ruby -Itest test/lib/agent_worktree_port_holder_test.rb
@@ -133,6 +136,75 @@ class AgentWorktreePortHolderTest < Minitest::Test
     assert_equal "[]", out.lines.last
     assert_includes err, "held by pid 4242"
     refute_path_exists pidfile, "the stale pidfile is still cleared"
+  end
+
+  # [unit] A PIDFILE IS A RECORD, NOT A NAME. The OS recycles pids, so once the desk's server
+  # dies, the live pid its pidfile names can belong to anything. A pid rooted elsewhere, or
+  # one whose cwd cannot be read, is left running and named, even when run from inside the
+  # desk. On the pre-fix script the pidfile branch signalled both without looking.
+  def test_unit_a_live_pidfile_does_not_license_signalling_a_stranger
+    pidfile = File.join(@desk, "tmp", "pids", "agent-web.pid")
+    FileUtils.mkdir_p(File.dirname(pidfile))
+
+    out, err = run_in_script(<<~RUBY, chdir: @desk)
+      def pid_alive?(_pid) = true
+      def port_pid(_port) = ""
+      def process_cwd(pid) = { "4242" => "/Applications/Stranger.app", "5353" => "" }.fetch(pid)
+      [4242, 5353].each do |pid|
+        File.write(#{pidfile.inspect}, pid.to_s)
+        stop_generic_rails(#{@desk.inspect}, "39999")
+      end
+      print KILLS.inspect
+    RUBY
+
+    assert_equal "[]", out.lines.last, "a recycled pid is not the desk's server"
+    assert_includes err, "web pidfile names pid 4242 (cwd /Applications/Stranger.app)"
+    assert_includes err, "web pidfile names pid 5353 (cwd unreadable)"
+    assert_includes err, "not this desk's stack"
+    refute_path_exists pidfile, "the pidfile naming a stranger is still cleared"
+  end
+
+  # [unit] THE CONTROL, and REAL PATHS COMPARED WHOLE on the pidfile branch too. desk-bar's
+  # server is spared when desk stops (a prefix check signals it); the desk's own server,
+  # reached through a symlink, is stopped (an unresolved compare spares it and orphans it).
+  def test_unit_a_live_pidfile_stops_the_desks_own_server_and_spares_a_sibling
+    sibling = FileUtils.mkdir_p("#{@desk}-bar").first
+    link = File.join(@tmp, "link").tap { |path| File.symlink(@tmp, path) }
+    out, = run_in_script(<<~RUBY)
+      def pid_alive?(_pid) = true
+      def port_pid(_port) = ""
+      def process_cwd(pid) = { "4242" => #{sibling.inspect}, "5353" => #{@desk.inspect} }.fetch(pid)
+      { 4242 => #{@desk.inspect}, 5353 => #{File.join(link, "desk").inspect} }.each do |pid, dir|
+        FileUtils.mkdir_p(File.join(dir, "tmp", "pids"))
+        File.write(File.join(dir, "tmp", "pids", "agent-web.pid"), pid.to_s)
+        stop_generic_rails(dir, "39999")
+      end
+      print KILLS.inspect
+    RUBY
+
+    assert_includes out, "stopped web pid 5353"
+    assert_equal '[["TERM", 5353]]', out.lines.last, "spare pid 4242 (sibling); stop pid 5353 (desk via symlink)"
+  end
+
+  # [unit] The tm stack's pidfiles take the same check. bin/tm spawns web and sidekiq from
+  # the desk, so a live pid rooted anywhere else is a stranger's.
+  def test_unit_tm_pidfiles_signal_only_a_process_rooted_in_the_desk
+    pids = File.join(@desk, "tmp", "pids")
+    FileUtils.mkdir_p(pids)
+    File.write(File.join(pids, "tm-web.pid"), "4242")
+    File.write(File.join(pids, "tm-sidekiq.pid"), "5353")
+
+    out, err = run_in_script(<<~RUBY)
+      def pid_alive?(_pid) = true
+      def port_pid(_port) = ""
+      def process_cwd(pid) = { "4242" => "/somewhere/else", "5353" => #{@desk.inspect} }.fetch(pid)
+      stop_stack_for_removal({ "stack" => "tm", "sidekiq" => true }, #{@desk.inspect}, { env_exists: false, port: nil })
+      print KILLS.inspect
+    RUBY
+
+    assert_equal '[["TERM", 5353]]', out.lines.last, "spare tm web pid 4242 (elsewhere); stop tm sidekiq pid 5353 (desk)"
+    assert_includes err, "tm web pidfile names pid 4242 (cwd /somewhere/else)"
+    assert_includes out, "stopped tm sidekiq pid 5353"
   end
 
   # [unit] The shared ownership check keeps the adoption guard's answers, and gains the

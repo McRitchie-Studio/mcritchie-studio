@@ -2493,15 +2493,34 @@ def stop_generic_rails(dir, port = nil)
   end
 
   pid = File.read(pidfile).strip
-  if pid_alive?(pid)
-    Process.kill("TERM", pid.to_i)
-    puts "stopped web pid #{pid}"
-  elsif port && !(live_pid = port_pid(port)).empty?
-    stop_port_holder(dir, port, live_pid)
-  else
-    puts "web not running"
+  unless pid_alive?(pid) && stop_recorded_pid(dir, pid, "web")
+    if port && !(live_pid = port_pid(port)).empty?
+      stop_port_holder(dir, port, live_pid)
+    else
+      puts "web not running"
+    end
   end
   FileUtils.rm_f(pidfile)
+end
+
+# A PIDFILE IS A RECORD, NOT A NAME. The OS recycles pids, so once a desk's server dies the
+# live pid its pidfile names can belong to any process. SIGTERM goes only to a pid rooted in
+# the desk, by the same cwd_is_desk? check stop_port_holder makes; anything else is left
+# running and named. False when it was left alone, so the caller treats the pidfile as stale.
+def stop_recorded_pid(dir, pid, label)
+  cwd = process_cwd(pid)
+  unless cwd_is_desk?(cwd, dir)
+    warn "#{label} pidfile names pid #{pid} (#{cwd.empty? ? "cwd unreadable" : "cwd #{cwd}"}), " \
+         "not this desk's stack at #{dir} — leaving it running"
+    return false
+  end
+
+  Process.kill("TERM", pid.to_i)
+  puts "stopped #{label} pid #{pid}"
+  true
+rescue Errno::ESRCH
+  puts "#{label} pid #{pid} already exited"
+  true
 end
 
 # A PORT IS A HINT, NOT A NAME. Without a live pidfile, the process listening on the
@@ -3218,13 +3237,12 @@ def registered_worktree?(app, dir)
   ok && out.lines.any? { |line| line.chomp == "worktree #{dir}" }
 end
 
-def stop_pidfile(path, label)
+def stop_pidfile(dir, path, label)
   return unless File.exist?(path)
 
   pid = File.read(path).strip
   if pid_alive?(pid)
-    Process.kill("TERM", pid.to_i)
-    puts "stopped #{label} pid #{pid}"
+    stop_recorded_pid(dir, pid, label)
   else
     puts "#{label} not running"
   end
@@ -3263,8 +3281,8 @@ def stop_stack_for_removal(app, dir, record)
     stop_generic_rails(dir, record[:port])
   end
 
-  stop_pidfile(File.join(dir, "tmp", "pids", "tm-web.pid"), "tm web") if app.fetch("stack") == "tm"
-  stop_pidfile(File.join(dir, "tmp", "pids", "tm-sidekiq.pid"), "tm sidekiq") if app.fetch("sidekiq")
+  stop_pidfile(dir, File.join(dir, "tmp", "pids", "tm-web.pid"), "tm web") if app.fetch("stack") == "tm"
+  stop_pidfile(dir, File.join(dir, "tmp", "pids", "tm-sidekiq.pid"), "tm sidekiq") if app.fetch("sidekiq")
 end
 
 def delete_local_branch_if_safe(app, branch)
