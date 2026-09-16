@@ -941,6 +941,95 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "a[data-test='stage-older-link']", count: 0
   end
 
+  # The draw assertions above pin what REACHES the page, and that is not the cost.
+  # Carl's mutation M7 proved it: the controller loaded the whole column, the view
+  # drew only the first BOARD_STAGE_LIMIT, and every assertion above stayed green,
+  # because a loaded-but-undrawn row leaves no trace in the body. The memory and
+  # the 3,834 queries were spent on INSTANTIATING those rows (with their events and
+  # gate runs), so count exactly that.
+  test "[integration] an explicit stage view never instantiates more than one page of tasks" do
+    limit = Task::BOARD_STAGE_LIMIT
+    # Enough rows that a whole-column load cannot hide inside the allowance below.
+    (limit + 30).times { |i| Task.create!(title: "instantiation cap archived #{i}", stage: "archived") }
+    assert_operator Task.where(stage: "archived").count, :>, limit + 20
+
+    paths = [tasks_path(stage: "archived"), deployments_path(stage: "archived"),
+             tasks_path(stage: "archived", page: 2),
+             # There is no page-size input. A crawler guessing at one gets a page.
+             tasks_path(stage: "archived", per_page: 100_000, limit: 100_000, page_size: 100_000)]
+    paths.each do |path|
+      instantiated = Hash.new(0)
+      counter = ->(*, payload) { instantiated[payload[:class_name]] += payload[:record_count] }
+      ActiveSupport::Notifications.subscribed(counter, "instantiation.active_record") { get path }
+
+      assert_response :success
+      # One page of the column. The allowance covers the handful of live tasks the
+      # layout and release chrome read on their own; it is far below the 30 extra
+      # archived rows a whole-column load instantiates.
+      assert_operator instantiated["Task"], :<=, limit + 10,
+                      "#{path} instantiated #{instantiated['Task']} tasks — one page is #{limit}"
+    end
+  end
+
+  test "[integration] the tasks board badge reports a capped stage's true total" do
+    limit = Task::BOARD_STAGE_LIMIT
+    (limit + 3).times { |i| Task.create!(title: "badge total archived #{i}", stage: "archived") }
+    total = Task.where(stage: "archived").count
+
+    # /deployments has always counted what exists; /tasks fell back to the drawn
+    # size, so the page the dashboard links to (and the crawler hit) read 100.
+    get tasks_path(stage: "archived")
+    assert_response :success
+    assert_select "[data-board-count='archived']", text: total.to_s
+    # A live update recounts the drawn cards, so each board also publishes how many
+    # of the column are NOT on this page — the recount adds them back.
+    assert_select "[data-test='kanban-board'][data-board-offscreen=?]", { "archived" => total - limit }.to_json
+
+    get deployments_path(stage: "archived")
+    assert_select "[data-stage-count='archived'][data-stage-offscreen='#{total - limit}']", text: /\A\s*#{total}\s*\z/
+  end
+
+  test "[integration] older archived tasks are browsable a bounded page at a time" do
+    limit = Task::BOARD_STAGE_LIMIT
+    archived = (limit + 3).times.map { |i| Task.create!(title: "paging archived #{i}", stage: "archived") }
+    total = Task.where(stage: "archived").count
+    assert_operator total, :<=, limit * 2, "the fixture set must leave page 2 the last page"
+
+    [tasks_path(stage: "archived"), deployments_path(stage: "archived")].each do |path|
+      get path
+      assert_response :success
+      assert_select "[data-test='stage-pager-newer'][href]", count: 0
+      older = css_select("a[data-test='stage-pager-older']").first
+      assert older, "#{path} must offer a way to the tasks past the first page"
+
+      get older["href"]
+      assert_response :success
+      assert_select "#card-#{archived.first.slug}"
+      assert_select "#card-#{archived.last.slug}", count: 0
+      assert_select "div[id^='card-'][data-stage='archived']", count: total - limit
+      # Still the TRUE total on a later page, and still no link from a filtered page
+      # to itself.
+      assert_select "[data-board-count='archived'], [data-stage-count='archived']", text: /\A\s*#{total}\s*\z/
+      assert_select "a[data-test='stage-older-link']", count: 0
+      assert_select "a[data-test='stage-pager-older']", count: 0
+      assert_select "a[data-test='stage-pager-newer']"
+    end
+  end
+
+  test "[integration] a requested page is clamped, never widened" do
+    limit = Task::BOARD_STAGE_LIMIT
+    archived = (limit + 3).times.map { |i| Task.create!(title: "clamp archived #{i}", stage: "archived") }
+
+    { "0" => archived.last, "-3" => archived.last, "abc" => archived.last,
+      "9" * 30 => archived.first, "4000" => archived.first }.each do |page, expected|
+      get tasks_path(stage: "archived", page: page)
+
+      assert_response :success, "?page=#{page} must not error"
+      assert_select "#card-#{expected.slug}", 1, "?page=#{page} landed on the wrong page"
+      assert_operator css_select("div[id^='card-'][data-stage='archived']").size, :<=, limit
+    end
+  end
+
   test "[unit] robots.txt keeps crawlers off the task board" do
     robots = Rails.public_path.join("robots.txt").read
     # The rule must sit INSIDE the `User-agent: *` group. A blank line ends a group for

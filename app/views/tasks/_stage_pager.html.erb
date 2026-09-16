@@ -1,0 +1,47 @@
+<%# tasks/_stage_pager — the Newer / Older row of an explicit ?stage= view, shared by
+    /tasks (tasks/_board) and /deployments (tasks/_deploy_board).
+
+    That view draws ONE Task::BOARD_STAGE_LIMIT page of its stage, capped in SQL
+    (Task.board_stage_tasks). Paging is how the rest of the archive stays browsable
+    without a wider read: every link here names a page, never a page size, so a
+    crawler following them walks many bounded pages rather than one unbounded one.
+
+    Page 1 links without `page=` so the canonical ?stage= URL stays the first page.
+    The agent filter rides along, so paging a filtered column stays filtered.
+    Renders nothing when the stage fits on one page.
+
+    Locals: stage, page, page_count, total, drawn, position ("top" | "bottom"). %>
+<% if page_count.to_i > 1 %>
+  <%
+    page_url = lambda do |number|
+      url_for(stage: stage,
+              page: (number == 1 ? nil : number),
+              agent_slug: params[:agent_slug].presence,
+              agent: params[:agent].presence)
+    end
+    first_shown = ((page - 1) * Task::BOARD_STAGE_LIMIT) + 1
+    last_shown  = first_shown + drawn - 1
+    link_class  = "inline-flex items-center rounded-lg border border-subtle px-2.5 py-1.5 text-xs font-medium text-secondary hover:text-heading hover:bg-surface-alt transition"
+    idle_class  = "inline-flex items-center rounded-lg border border-subtle px-2.5 py-1.5 text-xs font-medium text-muted opacity-40"
+  %>
+  <nav class="flex items-center justify-between gap-2 <%= position == "bottom" ? "mt-2" : "mb-4" %>"
+       aria-label="<%= Task::STAGE_LABELS.fetch(stage, stage) %> pages"
+       data-test="stage-pager"
+       data-pager-position="<%= position %>">
+    <% if page > 1 %>
+      <%= link_to "← Newer", page_url.call(page - 1), rel: "prev", class: link_class, "data-test": "stage-pager-newer" %>
+    <% else %>
+      <span class="<%= idle_class %>" aria-disabled="true">← Newer</span>
+    <% end %>
+    <span class="text-center text-xs text-muted" data-test="stage-pager-status">
+      <%= number_with_delimiter(first_shown) %>–<%= number_with_delimiter(last_shown) %>
+      of <%= number_with_delimiter(total) %>
+      <span class="hidden sm:inline">· page <%= page %> of <%= page_count %></span>
+    </span>
+    <% if page < page_count %>
+      <%= link_to "Older →", page_url.call(page + 1), rel: "next", class: link_class, "data-test": "stage-pager-older" %>
+    <% else %>
+      <span class="<%= idle_class %>" aria-disabled="true">Older →</span>
+    <% end %>
+  </nav>
+<% end %>

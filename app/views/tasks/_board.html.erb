@@ -15,7 +15,8 @@
     default. This partial used to carry a handler whose whole job was to INTERCEPT
     that remove and re-parent the card into a toggle-hidden Archived column; the
     column is gone, so the interception is too, and the two halves now agree.
-    Archived tasks stay reachable at /tasks?stage=archived and by direct URL.
+    Archived tasks stay reachable at /tasks?stage=archived, a page at a time, and by
+    direct URL.
 
     Locals: stages, title, current_page:, live_updates: (default true). %>
 <%# The shared, install-once elapsed ticker (tasks/_release_ticker). /deployments
@@ -37,9 +38,20 @@
 <% current_page = local_assigns.fetch(:current_page, "tasks") %>
 <% stages       = local_assigns.fetch(:stages, Task::TASKS_BOARD_STAGES) %>
 <% live_updates = local_assigns.fetch(:live_updates, true) %>
-<%# An explicit ?stage= is a single-column view of that stage, uncapped — the one
-    path that still reaches archived work now that no board carries the column. %>
+<%# An explicit ?stage= is a single-column view of that stage, the one path that
+    still reaches archived work now that no board carries the column. It is CAPPED
+    and PAGED: one Task::BOARD_STAGE_LIMIT page per request, loaded in SQL, with
+    tasks/_stage_pager for the rest. %>
 <% column_keys  = @stage_filter.present? ? [@stage_filter] : stages %>
+<%# Columns the loader capped ({ stage => true total }). Their badge reports what
+    EXISTS, not what this page drew, and board_offscreen carries the difference so
+    a client-side recount can add it back (see keepTrueCounts below). %>
+<% capped_stage_totals = @capped_stage_totals || {} %>
+<% board_offscreen = column_keys.each_with_object({}) do |stage, offscreen|
+     next unless (stage_total = capped_stage_totals[stage])
+
+     offscreen[stage] = stage_total - Task.board_column_tasks(@tasks_by_stage, stage).size
+   end %>
 <%# Mascot + type-colour maps built once — the 151 are tiny, so one query beats an
     N+1 across cards (each card's data-glow is then a hash lookup). %>
 <% pokemon_by_slug = Pokemon.all.index_by(&:slug) %>
@@ -61,14 +73,45 @@ function taskBoardChrome() {
     agentFilter: '',
     hiddenApps: [],
     _pending: {},
+    _trueCounts: false,
     stageLabels: <%= raw Task::STAGE_LABELS.to_json %>,
 
     init() {
       // $nextTick, not synchronous: x-init runs mid directive-walk, so the filter
       // chips' @click aren't bound yet here. The flag then means "interactive".
       this.$nextTick(() => {
+        this.keepTrueCounts();
         this.$el.dataset.alpineReady = 'true';
       });
+    },
+
+    // A capped column's badge counts what EXISTS; the engine primitive's
+    // updateCounts counts what is DRAWN. It recounts the dropzone after every live
+    // Turbo update, drag and archive, so on its own it drops a 130 badge to 100 the
+    // first time anything on the page moves. The server publishes how many of each
+    // capped column sit OFF this page (data-board-offscreen), and this wraps THIS
+    // board instance's recount to add them back — drawn now + offscreen, so a card
+    // archived here still takes one off the true total. The instance, never the
+    // shared window.studioBoard factory; the primitive has no offset hook of its own.
+    keepTrueCounts() {
+      if (this._trueCounts) return;
+      let offscreen;
+      try { offscreen = JSON.parse(this.$el.dataset.boardOffscreen || '{}'); } catch (e) { return; }
+      const keys = Object.keys(offscreen || {});
+      const board = this.boardData();
+      if (!keys.length || !board || typeof board.updateCounts !== 'function') return;
+      const recountDrawn = board.updateCounts;
+      const cardSelector = board.cardSelector || '.kanban-card';
+      board.updateCounts = function () {
+        recountDrawn.apply(this, arguments);
+        keys.forEach((key) => {
+          const badge = document.querySelector('[data-board-count="' + key + '"]');
+          const zone = document.getElementById('dropzone-' + key);
+          if (!badge || !zone) return;
+          badge.textContent = zone.querySelectorAll(cardSelector).length + (Number(offscreen[key]) || 0);
+        });
+      };
+      this._trueCounts = true;
     },
 
     // NO archive exit-stream handler here on purpose. The engine primitive's
@@ -188,7 +231,8 @@ document.addEventListener('turbo:before-cache', function() {
 });
 </script>
 
-<section x-data="taskBoardChrome()" data-test="kanban-board" class="min-h-screen">
+<section x-data="taskBoardChrome()" data-test="kanban-board" class="min-h-screen"
+         data-board-offscreen="<%= board_offscreen.to_json %>">
   <%# TEST-ONLY board hook: hands the Playwright e2e suite a signed API token so a
       spec can POST /api/v1/tasks and drive real board behavior. Gated to the test
       env — never rendered in development or production. %>
@@ -250,13 +294,21 @@ document.addEventListener('turbo:before-cache', function() {
       preloaded per-card locals the board loop always passed. A cross-column drop
       PATCHes { task: { stage } } (the update action); a reorder POSTs the DOM-
       ordered slugs to the shared reorder action. %>
+  <% if @stage_filter.present? %>
+    <% stage_pager = { stage: @stage_filter, page: @stage_page, page_count: @stage_page_count,
+                       drawn: Task.board_column_tasks(@tasks_by_stage, @stage_filter).size } %>
+    <% stage_pager[:total] = capped_stage_totals[@stage_filter] || stage_pager[:drawn] %>
+    <%= render "stage_pager", **stage_pager, position: "top" %>
+  <% end %>
+  <%# `count:` only on a capped column. The primitive reads it with fetch, so a key
+      present with nil would print an empty badge instead of the drawn size. %>
   <%= render "studio/board/board",
         columns: column_keys.map { |stage|
           {
             key: stage,
             label: Task::STAGE_LABELS.fetch(stage),
             cards: Task.board_column_tasks(@tasks_by_stage, stage)
-          }
+          }.merge(capped_stage_totals[stage] ? { count: capped_stage_totals[stage] } : {})
         },
         card_partial: "tasks/task_card",
         card_as: :task,
@@ -288,4 +340,7 @@ document.addEventListener('turbo:before-cache', function() {
         live_channel: (live_updates ? "deployments" : nil),
         toasts: true,
         empty_label: "Drop tasks here" %>
+  <% if @stage_filter.present? %>
+    <%= render "stage_pager", **stage_pager, position: "bottom" %>
+  <% end %>
 </section>

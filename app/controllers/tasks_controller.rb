@@ -311,7 +311,8 @@ class TasksController < ApplicationController
   #
   # `?stage=<stage>` remains the explicit opt-in, and is the one path that still
   # reaches the archive — so archived tasks keep a browsable index instead of being
-  # reachable only by direct URL.
+  # reachable only by direct URL. It is paged (`&page=`), one BOARD_STAGE_LIMIT at a
+  # time, and nothing a request sends can widen a page.
   def load_board
     base = Task.all
     agent_filter = params[:agent_slug].presence || params[:agent].presence
@@ -328,13 +329,19 @@ class TasksController < ApplicationController
       # ?stage=archived loaded the whole column with every task's events: 3,834
       # queries in one request, and an R15 kill that took production down
       # (HOTFIX archived-board-crashes-prod, 2026-09-16). It draws the newest
-      # BOARD_STAGE_LIMIT and reports the true total. @stage_filter also REPLACES
-      # the board's column list (see the board partials): without that the page
-      # would load the rows and then have nowhere to draw them, which is exactly
-      # what happened to ?stage=archived the moment the Archived column came out.
+      # BOARD_STAGE_LIMIT per page and reports the true total. The page is clamped
+      # into the pages that exist, and there is deliberately NO page-size param:
+      # the limit is the page size, so no query string can reintroduce the
+      # whole-column read. @stage_filter also REPLACES the board's column list (see
+      # the board partials): without that the page would load the rows and then
+      # have nowhere to draw them, which is exactly what happened to
+      # ?stage=archived the moment the Archived column came out.
       @stage_filter = stage_filter
-      tasks = Task.board_stage_tasks(scope, stage_filter)
-      @capped_stage_totals = Task.board_stage_capped_totals(base, stage_filter)
+      stage_total = base.where(stage: stage_filter).count
+      @stage_page_count = Task.board_stage_page_count(stage_total)
+      @stage_page = Task.board_stage_page(params[:page], stage_total)
+      tasks = Task.board_stage_tasks(scope, stage_filter, page: @stage_page)
+      @capped_stage_totals = Task.board_stage_capped_totals(base, stage_filter, total: stage_total)
     else
       @stage_filter = nil
       tasks = Task.board_default_tasks(scope)
