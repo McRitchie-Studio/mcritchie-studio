@@ -186,6 +186,10 @@ stays load-bearing as an INPUT rather than as a record —
 (`[members.alex_bot, members.alex, members.mason]`, passed to
 `.initialize(signers, threshold, treasuryAuth)`), and `scripts/squad-upgrade.js`
 takes its cluster from that file's top-level `network`/`programId`/`vaultPda`.
+`members.alex_bot` is Xan (`8K81…`): the JSON key predates the identity's
+2026-09-15 rename and is live turf-vault code, not stale prose, so this page
+quotes it as the file spells it — the same bridge `credential-inventory.md`
+draws under `agent.xan.solana`.
 Read `squad.json` to predict what a script will do; read `CURRENT_DEPLOYMENT.md`
 to learn what is deployed. Do **not** cite
 `turf-vault/docs/KEY_ROTATION.md` as an authority for any live signer fact — it
