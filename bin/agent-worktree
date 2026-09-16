@@ -498,12 +498,33 @@ def env_truthy?(value)
   %w[1 true yes on].include?(value.to_s.strip.downcase)
 end
 
+# THE PORT READERS ARE SEAMS, because a port is shared with every process on the
+# machine. AGENT_WORKTREE_LSOF_BIN and AGENT_WORKTREE_CURL_BIN name the binaries that
+# answer "who listens on this port" and "what does its /up say"; unset or blank, they
+# are the real lsof and curl.
+#
+# Seen on CI (hub run 35092204659, 2026-09-16): the command tests' fixture desk uses
+# APP_PORT 39999, inside Linux's ephemeral range, and something else was listening
+# there. One test's probe read `port-busy`, and a worker in the same job died mid-test.
+# Holding 39999 from a test worker reproduces both, and every command test runs a
+# port-0 listener inside its worker. test/support/outbound_seams.rb now answers both
+# readers for every harness, so a test child reads no real port.
+def lsof_bin
+  override = ENV["AGENT_WORKTREE_LSOF_BIN"].to_s.strip
+  override.empty? ? "lsof" : override
+end
+
+def curl_bin
+  override = ENV["AGENT_WORKTREE_CURL_BIN"].to_s.strip
+  override.empty? ? "curl" : override
+end
+
 def port_listening?(port)
-  system("lsof", "-nP", "-iTCP:#{port}", "-sTCP:LISTEN", out: File::NULL, err: File::NULL)
+  system(lsof_bin, "-nP", "-iTCP:#{port}", "-sTCP:LISTEN", out: File::NULL, err: File::NULL)
 end
 
 def port_pid(port)
-  ok, out, = capture_status("lsof", "-tiTCP:#{port}", "-sTCP:LISTEN")
+  ok, out, = capture_status(lsof_bin, "-tiTCP:#{port}", "-sTCP:LISTEN")
   ok ? out.lines.first.to_s.strip : ""
 end
 
@@ -513,11 +534,19 @@ end
 def process_cwd(pid)
   return "" if pid.to_s.empty?
 
-  ok, out, = capture_status("lsof", "-a", "-p", pid.to_s, "-d", "cwd", "-Fn")
+  ok, out, = capture_status(lsof_bin, "-a", "-p", pid.to_s, "-d", "cwd", "-Fn")
   return "" unless ok
 
   line = out.lines.find { |l| l.start_with?("n") }
   line ? line[1..].to_s.strip : ""
+end
+
+# True when `cwd` (a process's working directory, as process_cwd reads it) is `dir`.
+# An UNREADABLE cwd is never a match: File.expand_path("") is the CALLER's cwd, so
+# comparing expanded paths once answered "ours" for any process lsof could not see
+# into whenever this script ran from inside the desk.
+def cwd_is_desk?(cwd, dir)
+  !cwd.to_s.empty? && canonical_path(cwd) == canonical_path(dir)
 end
 
 # True when the process listening on `port` is THIS worktree's stack — i.e. its
@@ -528,7 +557,7 @@ def own_stack_on_port?(port, dir)
   pid = port_pid(port)
   return false if pid.empty?
 
-  File.expand_path(process_cwd(pid)) == File.expand_path(dir)
+  cwd_is_desk?(process_cwd(pid), dir)
 end
 
 # Refuse to adopt a server we didn't start: if the live process on `port` isn't
@@ -566,7 +595,7 @@ end
 def http_code(port)
   return "?" if port.to_s.empty? || port.to_s == "?"
 
-  out, = Open3.capture3("curl", "-sS", "-o", "/dev/null", "-m", "2", "-w", "%{http_code}", "http://localhost:#{port}/up")
+  out, = Open3.capture3(curl_bin, "-sS", "-o", "/dev/null", "-m", "2", "-w", "%{http_code}", "http://localhost:#{port}/up")
   out.to_s.strip.empty? ? "down" : out.to_s.strip
 rescue StandardError
   "down"
@@ -1266,7 +1295,7 @@ def wait_for_url(port)
   url = "http://localhost:#{port}/up"
   last_code = nil
   30.times do
-    out, = Open3.capture3("curl", "-sS", "-o", "/dev/null", "-m", "2", "-w", "%{http_code}", url)
+    out, = Open3.capture3(curl_bin, "-sS", "-o", "/dev/null", "-m", "2", "-w", "%{http_code}", url)
     code = out.strip
     last_code = code unless code.empty?
     return code if code == "200"
@@ -2459,22 +2488,63 @@ def stop_generic_rails(dir, port = nil)
       return
     end
 
-    Process.kill("TERM", live_pid.to_i)
-    puts "stopped web pid #{live_pid} on port #{port}"
+    stop_port_holder(dir, port, live_pid)
     return
   end
 
   pid = File.read(pidfile).strip
-  if pid_alive?(pid)
-    Process.kill("TERM", pid.to_i)
-    puts "stopped web pid #{pid}"
-  elsif port && !(live_pid = port_pid(port)).empty?
-    Process.kill("TERM", live_pid.to_i)
-    puts "stopped web pid #{live_pid} on port #{port}"
-  else
-    puts "web not running"
+  unless pid_alive?(pid) && stop_recorded_pid(dir, pid, "web")
+    if port && !(live_pid = port_pid(port)).empty?
+      stop_port_holder(dir, port, live_pid)
+    else
+      puts "web not running"
+    end
   end
   FileUtils.rm_f(pidfile)
+end
+
+# A PIDFILE IS A RECORD, NOT A NAME. The OS recycles pids, so once a desk's server dies the
+# live pid its pidfile names can belong to any process. SIGTERM goes only to a pid rooted in
+# the desk, by the same cwd_is_desk? check stop_port_holder makes; anything else is left
+# running and named. False when it was left alone, so the caller treats the pidfile as stale.
+def stop_recorded_pid(dir, pid, label)
+  cwd = process_cwd(pid)
+  unless cwd_is_desk?(cwd, dir)
+    warn "#{label} pidfile names pid #{pid} (#{cwd.empty? ? "cwd unreadable" : "cwd #{cwd}"}), " \
+         "not this desk's stack at #{dir} — leaving it running"
+    return false
+  end
+
+  Process.kill("TERM", pid.to_i)
+  puts "stopped #{label} pid #{pid}"
+  true
+rescue Errno::ESRCH
+  puts "#{label} pid #{pid} already exited"
+  true
+end
+
+# A PORT IS A HINT, NOT A NAME. Without a live pidfile, the process listening on the
+# desk's APP_PORT is only a CANDIDATE for the desk's server. SIGTERM is irreversible, so
+# it goes only to a process rooted in the desk (the server is always spawned with
+# chdir: dir). Anything else is left running and named.
+#
+# The CI case, hub run 35092204659 (2026-09-16): a test worker died mid-test (`result not
+# reported`) while something else listened on the fixture port 39999. A test worker that
+# holds that port dies exactly that way, reproduced locally, because a teardown test
+# signals whatever holds it. The same shape on a laptop is an unrelated app that took a
+# dead desk's port.
+def stop_port_holder(dir, port, pid)
+  cwd = process_cwd(pid)
+  unless cwd_is_desk?(cwd, dir)
+    warn "port #{port} is held by pid #{pid} (#{cwd.empty? ? "cwd unreadable" : "cwd #{cwd}"}), " \
+         "not this desk's stack at #{dir} — leaving it running"
+    return
+  end
+
+  Process.kill("TERM", pid.to_i)
+  puts "stopped web pid #{pid} on port #{port}"
+rescue Errno::ESRCH
+  puts "web pid #{pid} on port #{port} already exited"
 end
 
 def list_worktrees(app = nil)
@@ -3167,13 +3237,12 @@ def registered_worktree?(app, dir)
   ok && out.lines.any? { |line| line.chomp == "worktree #{dir}" }
 end
 
-def stop_pidfile(path, label)
+def stop_pidfile(dir, path, label)
   return unless File.exist?(path)
 
   pid = File.read(path).strip
   if pid_alive?(pid)
-    Process.kill("TERM", pid.to_i)
-    puts "stopped #{label} pid #{pid}"
+    stop_recorded_pid(dir, pid, label)
   else
     puts "#{label} not running"
   end
@@ -3212,8 +3281,8 @@ def stop_stack_for_removal(app, dir, record)
     stop_generic_rails(dir, record[:port])
   end
 
-  stop_pidfile(File.join(dir, "tmp", "pids", "tm-web.pid"), "tm web") if app.fetch("stack") == "tm"
-  stop_pidfile(File.join(dir, "tmp", "pids", "tm-sidekiq.pid"), "tm sidekiq") if app.fetch("sidekiq")
+  stop_pidfile(dir, File.join(dir, "tmp", "pids", "tm-web.pid"), "tm web") if app.fetch("stack") == "tm"
+  stop_pidfile(dir, File.join(dir, "tmp", "pids", "tm-sidekiq.pid"), "tm sidekiq") if app.fetch("sidekiq")
 end
 
 def delete_local_branch_if_safe(app, branch)

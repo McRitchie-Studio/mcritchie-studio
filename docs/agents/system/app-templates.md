@@ -167,9 +167,10 @@ the program's **upgrade** authority — **per cluster**, and the two are differe
 keys. On **mainnet** (program `DaFv83yo…`) it is
 `Bk9sS7iiSRL18vuo2KVzkeGw7EekKqxMCjrdoyGGdJm`; on **devnet** (program
 `EQGFJAcA…`) it is `BW13kgfiG2koFn3WRkte21NW9TFygsD1ge2fNJdjH6kC`. The signer
-set is a different authority entirely: three individual wallets, which are the
-hub's own parked admin identities (Xan `8K81w4e6…`, Alex `7ZDJp7FU…`, Mason
-`CytJS23p…`). Two different authorities, two different transactions.
+set is a different authority entirely: three individual wallets. Two are the
+hub's own parked admin identities (Xan `8K81w4e6…`, Mason `CytJS23p…`); the
+third, `7ZDJ…`, is Mr. McRitchie's personal Phantom wallet, filed in no vault.
+Two different authorities, two different transactions.
 
 **Those signer addresses are the MAINNET set, and
 `turf-vault/docs/CURRENT_DEPLOYMENT.md` is where to read them.** Its

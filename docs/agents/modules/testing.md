@@ -345,9 +345,20 @@ end
 `OutboundSeams.env` is `SessionEnv.neutralized` plus the floor: the three board
 URLs at an unroutable loopback port, a recording refusal first on `PATH` for
 `gh` / `op` / `heroku`, the named binary seams (`CI_STATUS_GH_BIN`,
-`GH_AUTH_TOKEN_BIN`), and `GIT_SSH_COMMAND` / `GIT_ASKPASS` for git's two reach
-paths. Your overrides merge **last**, so a test that plants its own fake or
-points at a stub server it owns still wins.
+`GH_AUTH_TOKEN_BIN`), `GIT_SSH_COMMAND` / `GIT_ASKPASS` for git's two reach
+paths, and `bin/agent-worktree`'s port readers (`AGENT_WORKTREE_LSOF_BIN`,
+`AGENT_WORKTREE_CURL_BIN`). Your overrides merge **last**, so a test that plants
+its own fake or points at a stub server it owns still wins.
+
+**A port is part of the world too.** A test runner is a shared machine, so a child
+that reads a fixture port reads whatever else is listening there. On hub CI run
+35092204659 something else listened on the fixture desk's port 39999: one test read
+`port-busy` where it asserted `down`, and a worker died mid-test as
+`RuntimeError: result not reported`. A test worker holding that port reproduces
+both, because a teardown test sends SIGTERM to whatever holds it.
+The floor now answers both readers with "nothing listens". A test that needs a busy
+port plants a fake reader rather than probing a real one
+(`test/commands/agent_worktree_port_isolation_test.rb` shows both shapes).
 
 **Why.** `bin/task` resolves `ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")`
 — **production is the default** — so an unpinned child authenticates against and

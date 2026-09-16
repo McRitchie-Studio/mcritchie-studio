@@ -106,7 +106,7 @@ class ReleaseClaimArgumentGuardTest < Minitest::Test
               "(the same call site, handed the sentinel slug)",
       argv: ["acquire", ReleaseClaimCli::FORMING_SLUG, "--role", "assembler"],
       command: "acquire", slug: ReleaseClaimCli::FORMING_SLUG, flags: { "role" => "assembler" } },
-    { source: "bin/agent-worktree:3092 role_claim_liveness (the reclaim guard)",
+    { source: "bin/agent-worktree#role_claim_liveness (the reclaim guard)",
       argv: ["any-live", "--role", "assembler"],
       command: "any-live", slug: nil, flags: { "role" => "assembler" } },
     { source: "bin/lib/release_claim_cli.rb header — the documented hand `renew`",
