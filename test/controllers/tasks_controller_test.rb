@@ -1532,6 +1532,53 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_equal ["review-workflow", "review-followup"], task.devops_risk_tags
   end
 
+  # === the board form's comma rule, end to end ===
+  #
+  # The unit contract lives in test/models/task_devops_identifier_lists_test.rb.
+  # THIS is the surface that made it a live defect rather than an API curiosity:
+  # _form.html.erb posts the three PROSE keys as "One criterion per line"
+  # TEXTAREAS and the two IDENTIFIER keys as single-line text_fields joined with
+  # ", ". Both arrive at Task.normalize_devops_list as STRINGS, which used to
+  # split on commas unconditionally — so an operator typing a criterion with a
+  # comma on the board silently got two criteria, and dor-check counted them.
+  # One post, both directions, through the real controller.
+
+  test "[integration] a board edit keeps prose commas and still splits joined identifier fields" do
+    log_in_as(@admin)
+    pinned = "Header stays pinned, even while scrolling"
+    sweep  = "The sweep promotes accepted, deploys QA, and flips members assembled"
+
+    patch task_path(@new_task.slug), params: {
+      task: {
+        devops: {
+          # exactly what the form serializes: textareas newline-joined, text_fields
+          # comma-joined (`value: list.join(", ")`).
+          acceptance: "#{pinned}\n#{sweep}",
+          test_plan: "[unit] a comma survives, and the entry stays whole",
+          checks_run: "[integration] board edit, one post, both directions",
+          repositories: "mcritchie-studio, turf-monster",
+          risk_tags: "auth, solana, migration"
+        }
+      }
+    }
+
+    assert_redirected_to task_path(@new_task.slug)
+    devops = @new_task.reload.devops
+
+    # PROSE: the comma is content. Two bullets in, two bullets out — a blanket
+    # split would have filed five.
+    assert_equal [pinned, sweep], devops["acceptance"]
+    assert_equal ["[unit] a comma survives, and the entry stays whole"], devops["test_plan"]
+    assert_equal ["[integration] board edit, one post, both directions"], devops["checks_run"]
+
+    # IDENTIFIERS: the comma is the delimiter the form itself wrote. These must
+    # still split, or "auth, solana, migration" files ONE tag that
+    # ReviewerSelector::RISK_DOMAINS and auto_qa's blocked_risk_tags — both exact
+    # matchers — can never look up, and the gate fails open.
+    assert_equal %w[mcritchie-studio turf-monster], devops["repositories"]
+    assert_equal %w[auth solana migration], devops["risk_tags"]
+  end
+
   # === devops.pr_urls through the WEB path ===
   #
   # `pr_urls` is a repo-keyed hash of arbitrary keys, and strong params treats a
