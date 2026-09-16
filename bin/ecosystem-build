@@ -463,7 +463,13 @@ phase_secrets() {
   #
   # ⚠ THIS IS NOT WHAT PRODUCTION SIGNS WITH. turf-monster-mainnet's
   # SOLANA_ADMIN_KEY is still Xan (8K81…, agent.xan.solana, admin vault), and
-  # the on-chain signer set is unchanged. Moving prod onto solana.turf.system is
+  # the on-chain VaultState signer set is unchanged: 2-of-3, 8K81… still seated,
+  # on both clusters (read at finalized 2026-09-16). NAME THE AUTHORITY whenever
+  # this is repeated. The Squads multisig — the program's UPGRADE authority — is
+  # a different one, and its membership DID change: 8K81… is no longer a mainnet
+  # Squads member. Re-read both rather than trusting this note: turf-vault's
+  # scripts/check-signer-slots.js (VaultState) and scripts/squad-inventory.js
+  # (Squads). Moving prod onto solana.turf.system is
   # a separate task gated on funding that wallet. READ THE BALANCE rather than a
   # number in this comment: it read 0 SOL on mainnet at 09:12 on 2026-09-15 and
   # was funded at 09:20 the same morning (1.0000 SOL at finalized later that
