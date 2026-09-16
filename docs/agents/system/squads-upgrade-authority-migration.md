@@ -1,12 +1,21 @@
-# Squads Upgrade-Authority Migration Runbook
+# Squads Upgrade-Authority Migration — 2026-05-23 Record (archive)
 
-> **ARCHIVE-ONLY MIGRATION RECORD.** This captured the 2026-05-23 Squads
-> migration work before the current mainnet program existed. Current authority,
-> signer, deployment, and upgrade rules live in
+> **ARCHIVE-ONLY MIGRATION RECORD — NO STEP IN THIS FILE IS LIVE PROCEDURE.**
+> This captured the 2026-05-23 Squads migration work before the current mainnet
+> program existed. The migration it describes has since **completed on both
+> clusters** — see **How it resolved** below. Execute nothing from this file, and
+> read no address in it as current identity. Current authority, signer,
+> deployment, and upgrade rules live in
 > `turf-vault/docs/CURRENT_DEPLOYMENT.md`; key-rotation procedure lives in
 > `turf-vault/docs/KEY_ROTATION.md`.
 
-> **STATUS (2026-05-23): DEVNET COMPLETE ✓ — MAINNET STILL PENDING (no mainnet program yet).**
+> **STATUS AS RECORDED ON 2026-05-23: DEVNET COMPLETE ✓ — MAINNET PENDING (no mainnet program yet).**
+>
+> Everything in this file except the **How it resolved** section below is the
+> record of that day, kept as written apart from the two places where the
+> retired Alex Bot key had to be defused — Step 1's member list and Step 4's
+> item 3. Both edits are marked inline. For what is true now, read
+> **How it resolved**.
 >
 > Devnet upgrade authority for turf-vault `Dx8u…GaCT` is the Squads V4 vault
 > `BW13kgfiG2koFn3WRkte21NW9TFygsD1ge2fNJdjH6kC` (multisig PDA
@@ -22,15 +31,53 @@
 > - MANAGED_WALLET_ENCRYPTION_KEY (OPSEC-015) deployed to prod v80; reencrypt ran clean.
 > - turf-monster verifies `EXPECTED_IDL_HASH` at boot + during `assets:precompile` (OPSEC-014).
 >
-> Remaining work (the **mainnet** migration) is **still pending** because
-> there is no mainnet program yet — see Step 4 below. The steps in this doc
-> apply verbatim once the mainnet deploy is ready.
+> Remaining work (the **mainnet** migration) was **still pending on
+> 2026-05-23**, because there was no mainnet program yet — see Step 4 below.
+> The steps in this doc were expected to apply verbatim once the mainnet deploy
+> was ready. They no longer apply: the mainnet migration completed, and the
+> world moved twice after it. See **How it resolved**.
 >
-> **Carried-over caveat:** operating the Squad with Alex Bot + Mason keys
-> both in 1Password makes the 2-of-3 single-trust-domain until the human
-> signers hold keys in separate domains.
+> **Carried-over caveat, as written on 2026-05-23:** operating the Squad with
+> Alex Bot + Mason keys both in 1Password makes the 2-of-3 single-trust-domain
+> until the human signers hold keys in separate domains. Both of those keys have
+> since left both Squads; the trust-domain question itself is live and belongs
+> with the docs named at the top of this file, not here.
 
-> **When to read this:** You're about to move `turf-vault`'s program upgrade authority from a single keypair to a Squads multisig. Do this BEFORE mainnet launch.
+## How it resolved
+
+> **Read this before anything below it.** The mainnet half recorded above as
+> "still pending" is **done**. Every bullet here was re-derived directly from
+> chain at `finalized` on **2026-09-16**; nothing in it was taken from this file
+> or from any other doc.
+>
+> - **Mainnet program `DaFv83yo…` already holds its upgrade authority on the
+>   Squads vault `Bk9sS7ii…`** — Step 4's whole objective. That vault is
+>   **derived**, as index 0 of multisig `4H3fP3ot…` under the Squads V4 program;
+>   it is a different account from the multisig and will never equal it, so
+>   derive it rather than comparing addresses. Mainnet's last deploy landed at
+>   2026-06-11T15:15:51Z (slot `425788802`), which bounds the migration: the
+>   authority was already on the vault by then. Devnet's last deploy was nine
+>   minutes earlier (slot `468716417`, 2026-06-11T15:06:34Z), on the Squads
+>   vault `BW13kgfi…`.
+> - **Both Squads read threshold 3 of FIVE members today**, every member mask 7
+>   (Initiate|Vote|Execute) — not the 2-of-3 this file plans for.
+> - **The two clusters carry different membership**, and neither carries the
+>   three seats named in Step 1. Derive the set per cluster; never carry one
+>   cluster's roster or vault address to the other.
+> - **`F6f8…KzhZ`, the "Alex Bot" key Step 1 pastes, is retired** — it was the
+>   leaked key of the 2026-06 Alex Bot compromise
+>   (`turf-vault/docs/KEY_ROTATION.md`). It sits on neither Squad, and it must
+>   never be placed on a multisig again.
+>
+> The live rosters are deliberately kept out of this file — a second copy is a
+> second thing to go stale, and this file going stale is what put it on the
+> board. Read `turf-vault/docs/CURRENT_DEPLOYMENT.md` for deployment identity
+> and `turf-monster/MAINNET_LAUNCH.md` for the per-cluster Squads membership,
+> and re-derive from chain before you act on either.
+
+> **When to read this — as framed on 2026-05-23:** You're about to move `turf-vault`'s program upgrade authority from a single keypair to a Squads multisig. Do this BEFORE mainnet launch.
+>
+> **When to read it now:** only to see how that move was designed and rehearsed. If you are about to perform or approve an upgrade, read `turf-vault/docs/CURRENT_DEPLOYMENT.md` and `turf-vault/docs/KEY_ROTATION.md` instead.
 
 ## Why this matters
 
@@ -75,7 +122,11 @@ Via web UI (https://app.squads.so):
 1. Connect Phantom as Alex (or Alex Bot if you have its keypair handy).
 2. "Create a Squad" → 2 of 3 threshold.
 3. Add members:
-   - Alex Bot: `F6f8h5yynbnkgWvU5abQx3RJxJpe8EoQmeFBuNKdKzhZ`
+   - Alex Bot: `F6f8…KzhZ` — **RETIRED (leaked, 2026-06). Never place this key
+     on a multisig again.** The full address is redacted from this step
+     deliberately: a pasteable address sitting in an imperative "add members"
+     line is exactly how a retired key gets re-seated. It is on neither Squad
+     today.
    - Alex: `7ZDJp7FUHhuceAqcW9CHe81hCiaMTjgWAXfprBM59Tcr`
    - Mason: `CytJS23p1zCM2wvUUngiDePtbMB484ebD7bK4nDqWjrR`
 4. Confirm and note the **Squad vault PDA** (this will be the new upgrade authority).
@@ -139,13 +190,25 @@ solana program show 7Hy8GmJWPMdt6bx3VG4BLFnpNX9TBwkPt87W6bkHgr2J
 solana program close $BUFFER_ADDR
 ```
 
-## Step 4 — Do it on mainnet
+## Step 4 — Do it on mainnet ✅ DONE (2026-06-11 at the latest), NOT AS PLANNED
+
+> **This step is closed — there is nothing here left to perform.** Mainnet's
+> upgrade authority is already the Squads vault `Bk9sS7ii…` (index 0 of multisig
+> `4H3fP3ot…`), re-derived on chain 2026-09-16. The plan is reproduced below as
+> the record of what was intended, with the one instruction that would now be
+> dangerous struck through.
 
 After devnet rehearsal succeeds:
 
 1. Deploy the audited program to mainnet (this happens with the single key still as authority).
 2. Smoke-test the mainnet deployment with the single key (a controlled deploy + verify).
-3. Create a mainnet Squad with the same 3 signers (Alex Bot / Alex / Mason).
+3. ~~Create a mainnet Squad with the same 3 signers (Alex Bot / Alex / Mason).~~
+   **SUPERSEDED — do not do this.** The mainnet Squad exists and is **3-of-5**,
+   and two of those three names are off it: `F6f8…KzhZ` is retired and must
+   never be re-seated, and Mason's key sits on neither cluster. The clusters
+   carry different membership. Derive each cluster's set from chain, or read the
+   per-cluster table in `turf-monster/MAINNET_LAUNCH.md`; never reuse the roster
+   in Step 1.
 4. Transfer authority:
    ```bash
    solana config set --url mainnet-beta
@@ -169,6 +232,10 @@ If the migration breaks something — e.g. the Squad vault address was wrong —
 
 ## Verification checklist
 
+> **The 2026-05-23 design, not a check to run.** Both Squads read threshold
+> **3 of 5** today (every member mask 7), so the quorum and member-count lines
+> below record what was planned rather than what to verify.
+
 After migration, run through this checklist before declaring done:
 
 - [ ] `solana program show <program_id>` → `Authority: <Squad vault PDA>`
@@ -190,6 +257,10 @@ solana program write-buffer target/deploy/turf_vault.so   # any signer can do th
 Update `turf-vault/docs/CURRENT_DEPLOYMENT.md` and `turf-vault/README.md` after any authority change. Do not update `turf-vault/CLAUDE.md`; it is migration context only.
 
 ## Open questions to resolve before mainnet
+
+> **Recorded, not open.** Mainnet launched, and events overtook at least the
+> second of these: both Squads now seat five members, not three. Raise current
+> governance questions against the live docs named at the top of this file.
 
 - Do we want a "break-glass" emergency upgrade keypair held by Alex only, paired with a strict legal/governance policy on when it can be used? Pros: faster response to exploits. Cons: re-introduces single-key risk.
 - Are we comfortable with the existing 3 signers, or do we want to add a 4th (e.g. cold storage) before mainnet?
