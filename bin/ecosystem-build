@@ -103,9 +103,10 @@ command -v op_metered >/dev/null 2>&1 || op_metered() { local __b="$1"; shift; "
 #
 # Is the 1Password vault named "$1" VISIBLE to the token in this environment?
 # Lives here, at top level and taking the name as an argument, for two reasons:
-# the vault name resolves inside ONE FUNCTION (phase_secrets, mirroring
-# bin/lib/op_vaults.rb — at three sites within it, enumerated there), and a
-# guard that is a function can be EXECUTED by a test. The version this replaces
+# the vault name resolves inside ONE FUNCTION (phase_secrets, mirroring the
+# default in bin/lib/op_vaults.rb — the note above the guard's call in
+# phase_secrets says how to find every site, and deliberately gives no count),
+# and a guard that is a function can be EXECUTED by a test. The version this replaces
 # could only ever be read, and reading it is what missed the bug: `op vault list | grep -qw agents` PASSED against
 # `studio-agents`, because -w treats the hyphen as a word boundary. The guard
 # reported the credential lane healthy for as long as the vault it guarded had
@@ -336,18 +337,24 @@ phase_secrets() {
   # agent_vault_visible (top of file), which is where the exact-match and
   # fail-closed rules live.
   #
-  # IT RESOLVES AT TWO SITES IN THIS FUNCTION, and only this one binds a
-  # variable: here, and the Heroku item read below, which expands
-  # ${MCR_OP_VAULT_AGENT:-studio-agents} again instead of reading $agent_vault.
-  # So changing the default HERE alone leaves that one pointed at the old vault —
-  # the guard would then report the new vault visible while the real read went
-  # somewhere else, which is the defect class this guard exists to catch. Change
-  # both, or pass $agent_vault down.
+  # ONLY THIS SITE BINDS A VARIABLE. The vault reads further down expand
+  # ${MCR_OP_VAULT_AGENT:-studio-agents} inline instead of reading $agent_vault,
+  # and some of this function's hints name the default outright. So changing the
+  # default HERE alone leaves the rest pointed at the old vault — the guard would
+  # then report the new vault visible while the real reads went somewhere else,
+  # which is the defect class this guard exists to catch. To move it, grep this
+  # function for the default's own spelling, `studio-agents`, and change every
+  # non-comment hit that is not `studio-agents-admin` — or pass $agent_vault down.
   #
-  # IT USED TO BE THREE. The SOLANA_ADMIN_KEY entry in the op_secrets map was the
-  # third, and on 2026-09-15 it moved OFF the agent vault on purpose — see the
-  # note above that map. Do not count it back in: this guard's verdict says
-  # nothing about whether that key is reachable, and it is not meant to.
+  # NO SITE COUNT, ON PURPOSE. This note carried one, and so did the guard's
+  # header, and both went stale while the sentences around them still read as
+  # true. Non-comment expansions of MCR_OP_VAULT_AGENT measured 3 at 9c518e57
+  # (2026-08-30), 2 at 60eda368 (2026-09-15, SOLANA_ADMIN_KEY moved to the admin
+  # vault), and 4 at 5da94bbb seven hours later (it moved back — see the note
+  # above the op_secrets map). The grep is the enumeration.
+  #
+  # The guard's verdict is about the VAULT, not about any item in it: a green
+  # guard says nothing about whether the op_secrets reads below will land.
   #
   # THREE OUTCOMES, NOT TWO. Splitting "op/jq missing" out of "vault not
   # visible" is the point of the case below: the old single else-branch sent

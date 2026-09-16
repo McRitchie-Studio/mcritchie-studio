@@ -98,9 +98,13 @@ Three rules, and each one is there because its absence cost something:
 
 - **The vault name comes from `MCR_OP_VAULT_AGENT`, defaulting to
   `studio-agents`** — mirroring `bin/lib/op_vaults.rb`, which is the single
-  source. Phase 4 expands that default at three sites and only the guard's binds
-  a variable — the Heroku item read and the `SOLANA_ADMIN_KEY` secret map each
-  expand it again, so a new default has to be set in all three.
+  source. Only the guard binds that default to a variable; Phase 4's other vault
+  reads expand it inline, and some of its hints name it outright. So a new
+  default has to be set at every non-comment `studio-agents` in `phase_secrets`
+  (skipping `studio-agents-admin`), not only at the guard. Neither this page nor
+  the script gives a site count, deliberately: the count went from three to two
+  to four between 2026-08-30 and 2026-09-15, as `SOLANA_ADMIN_KEY` left the
+  agent vault and came back, and each stated number outlived its truth.
 - **The name is matched EXACTLY.** The guard read `op vault list | grep -qw
   agents` until 2026-08-29 and passed against `studio-agents`, because `-w`
   treats a hyphen as a word boundary — so it reported the credential lane
