@@ -757,8 +757,9 @@ document.addEventListener('turbo:before-cache', function() {
           <% end %>
 
           <%# The rest of a capped column, one click away — the same ?stage= opt-in
-              that keeps the archive reachable. %>
-          <% if stage_total %>
+              that keeps the archive reachable. Never on a page that IS that filter:
+              url_for(stage:) there is this page, so the link would lead nowhere. %>
+          <% if stage_total && @stage_filter.nil? %>
             <%= link_to "#{stage_total - column_tasks.size} older →",
                   url_for(stage: stage),
                   class: "block rounded-lg border border-subtle px-2 py-1.5 text-center text-xs font-medium text-muted hover:text-heading hover:bg-surface-alt transition",
