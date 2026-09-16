@@ -75,6 +75,81 @@ A `bin/gh-token --identity deployer` that fails naming
 `OP_ADMIN_SERVICE_ACCOUNT_TOKEN` is the isolation WORKING — do not route around
 it by granting the agent token access to the admin vault.
 
+### An admin lane is MEANT to hold admin credentials
+
+Everything above says what an ordinary agent shell **cannot** do. It never says
+what the admin lanes **can**, and that omission has a cost: a lane entitled to
+admin access reads its own credential failure as a locked door and escalates,
+rather than fixing a machine it is entitled to fix.
+
+So state the other half. **`production-deploy` is an admin act**, and the agent
+running it holds the `deployer` lane — the admin token and the
+`github.mcritchie-deployer` identity — exactly as a build lane holds the agent
+one. Admin credentials are withheld from **ordinary shells**, not from the admin
+lanes.
+
+That makes the decision rule one line: **on an admin lane, an admin credential
+that is absent or refused is a SETUP gap on this machine — not a sign that the
+lane is closed to you.** WHICH gap decides who closes it, and
+`OpVaults#diagnose` already prints the right one rather than guessing:
+
+| State of the machine | Remedy | Whose |
+|---|---|---|
+| `~/.zprofile.admin` on disk, absent from THIS shell | `source ~/.zprofile.admin`, then retry | **yours** |
+| no `~/.zprofile.admin` at all — never provisioned | `bin/setup-1pass-token --admin`, once | **Mr. McRitchie's** — the install reads the token off his clipboard |
+
+The second row is the **only** credential step on either lane that is his
+([`token-session.md`](token-session.md) → *The one honest escalation*). Never
+reach for it without testing the first. On 2026-08-30 an agent read a deployer
+refusal as the never-provisioned case and put a repeated hand-mint chore on Mr.
+McRitchie while a production deploy waited; the token had been on disk for two
+days and sourcing it worked on the first try. Handing a deploy back to him
+because a credential failed is the operator toil `AGENTS.md` forbids.
+
+#### Two ways the CHECK lies
+
+Both were measured on 2026-09-15, after a session read the SOP, measured the
+admin token as absent, and reported production blocked. The token was present the
+whole time, with the deployer item reading cleanly.
+
+**1. A pipe runs `source` in a subshell.** Every stage of a pipeline is its own
+process, so the export lands in a child that exits before the next command reads
+it — the token measures ABSENT while being perfectly present:
+
+```bash
+source ~/.zprofile.admin 2>&1 | head -3    # ✗ the export dies with the subshell
+source ~/.zprofile.admin                   # ✓
+[ -n "$OP_ADMIN_SERVICE_ACCOUNT_TOKEN" ] && \
+  echo "admin token: set (${#OP_ADMIN_SERVICE_ACCOUNT_TOKEN} chars)"
+```
+
+Report a token by LENGTH, never by value — and never probe with
+`echo "${VAR:-absent}"`. The `:-` form substitutes only when the variable is
+EMPTY, so the one case it is meant to detect is the case that prints the secret.
+
+**2. A bare `op` tests the AGENT lane, whatever you sourced.** `op` takes its
+credential from `OP_SERVICE_ACCOUNT_TOKEN` and no other variable, so a direct
+read in a shell that HAS sourced `~/.zprofile.admin` still authenticates as the
+agent:
+
+```text
+$ op item get github.mcritchie-deployer --vault studio-agents-admin --fields label=app-id
+[ERROR] "studio-agents-admin" isn't a vault in this account.
+```
+
+That answer is about the token in hand — not about the vault, and not about your
+grant. It is also indistinguishable by text from the same error raised by a
+genuinely wrong vault name, which the 2026-09-02 entity-first rename left behind
+in code still asking for a bare `agents`. The `bin/` stack never hits this
+because `OpVaults.op_env` swaps the lane's token in for the child `op`; do the
+same by hand for a direct read:
+
+```bash
+OP_SERVICE_ACCOUNT_TOKEN="$OP_ADMIN_SERVICE_ACCOUNT_TOKEN" \
+  op item get github.mcritchie-deployer --vault studio-agents-admin \
+  --fields label=app-id >/dev/null && echo "admin vault: readable"
+```
+
 ### Who spent the quota
 
 The daily read cap is **1,000, account-wide** — shared by every service account

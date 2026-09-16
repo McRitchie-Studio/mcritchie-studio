@@ -64,6 +64,14 @@ CANNOT: <the acts the scope refuses, one line>
 
 ## 4. Activate the writing lane
 
+Filing is **admin work**: the writing lane below is one you are expected to hold,
+so an admin token that is absent or refused here is a setup gap on THIS MACHINE,
+not a lane closed to you. `source ~/.zprofile.admin` when the file is on disk but
+missing from this shell; `bin/setup-1pass-token --admin`, once, when the machine
+has no such file at all — only that second one is Mr. McRitchie's. Source it
+**without a pipe**: a pipeline runs `source` in a subshell, so the token lands in
+a child that exits and the lane reads ABSENT while fully present.
+
 `op` reads exactly ONE variable — `OP_SERVICE_ACCOUNT_TOKEN`. Sourcing
 `~/.zprofile.admin` puts the lane tokens in the environment under OTHER names,
 so a lane does nothing until you ASSIGN it into that one variable.
@@ -109,7 +117,9 @@ account-wide 1Password quota — `op service-account ratelimit` — because the
 daily cap is shared by EVERY lane and a spent quota refuses exactly like a
 missing grant; then confirm the assignment above actually ran (`(101)` under
 the ambient agent token is this SOP's most common failure); then switch
-lanes. Escalate to Mr. McRitchie only when no lane has the grant, naming the
+lanes. If this machine has no `~/.zprofile.admin` at all, the one-time install
+is his — `bin/setup-1pass-token --admin` — but check the file's absence before
+saying so. Escalate to Mr. McRitchie only when no lane has the grant, naming the
 vault and the missing grant.
 
 ## 5. Operator-supplied secrets never touch chat

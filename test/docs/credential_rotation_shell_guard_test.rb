@@ -86,9 +86,11 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
   # THE PIN IS THE ITEM THE SOP NAMES, NOT A CLAIM THAT THE PATH STILL WORKS.
   # Two things happened on 2026-09-15 and neither moves this pin. The Turf
   # Monster admin identity became `solana.turf.admin` — a 1Password filing, not
-  # on-chain membership. Then at 09:41 a Squads config transaction REMOVED
-  # `8K81…` from both multisigs, so `squad-upgrade.js` can no longer approve
-  # anything; the inventory row says so. The pin still names `agent.xan.solana`
+  # on-chain membership. Then TWO Squads config ceremonies ran five minutes apart
+  # (devnet 09:41:25 MDT, mainnet 09:46:51-55 MDT) and REMOVED `8K81…` from
+  # MAINNET ONLY — it is still a seated devnet member, re-measured at `finalized`
+  # 2026-09-15 — so `squad-upgrade.js` can approve nothing on mainnet and cannot
+  # reach threshold on devnet either; the inventory row says so. The pin still names `agent.xan.solana`
   # because that is the item the SOP's Squads row sends an operator to and the
   # inventory still files it. Repointing it at `solana.turf.admin` would make
   # this guard assert against a row that does not describe that key.

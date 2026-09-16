@@ -19,6 +19,25 @@ session.
 
 ## Entry
 
+**Production deploy is admin work.** It is the one act in the operating model
+that runs on ADMIN credentials, and it needs two that no build, review, or QA
+lane holds:
+
+| What | Where it comes from |
+|------|---------------------|
+| `OP_ADMIN_SERVICE_ACCOUNT_TOKEN` — the only token that reads the `studio-agents-admin` vault | `~/.zprofile.admin`, installed once per machine by `bin/setup-1pass-token --admin` |
+| `github.mcritchie-deployer` — the ship GitHub App identity | that vault, selected with `export GH_APP_ITEM=github.mcritchie-deployer` |
+
+Running this SOP means you are **expected to hold both**. They are withheld from
+ordinary agent shells, *not* from this lane — so an admin credential that is
+absent or refused here is a gap in THIS MACHINE's setup, never evidence that the
+lane is closed to you, and never grounds to hand the ship back to Mr. McRitchie.
+Two remedies, and only the second is his: **`source ~/.zprofile.admin`** when the
+file is on disk but absent from this shell, and **`bin/setup-1pass-token
+--admin`**, once, when the machine has never been given one — that install reads
+the token off his clipboard, which makes it the only credential step on either
+lane that is his. Check which one you need before naming either.
+
 Run this SOP from the McRitchie Studio primary checkout, **under the deployer
 GitHub App identity**:
 
@@ -37,6 +56,26 @@ and the `source` comes first because `github.mcritchie-deployer` lives in the
 `studio-agents-admin` vault, which only `OP_ADMIN_SERVICE_ACCOUNT_TOKEN` can read. Without
 it the mint refuses and names that variable; that refusal is the isolation working
 (`bin/setup-1pass-token --admin` installs the token once per machine).
+
+Confirm the lane actually loaded before you reach the gate — and check it
+**without a pipe**. A pipeline runs every stage in a subshell, so `source
+~/.zprofile.admin | head` sets the token in a child that exits before the next
+command reads it, and the lane measures ABSENT while being perfectly present
+(measured 2026-09-15, which is what this SOP's admin framing was written for):
+
+```bash
+source ~/.zprofile.admin
+[ -n "$OP_ADMIN_SERVICE_ACCOUNT_TOKEN" ] && \
+  echo "admin token: set (${#OP_ADMIN_SERVICE_ACCOUNT_TOKEN} chars)"
+```
+
+Report it by LENGTH, never by value, and never probe with `echo "${VAR:-absent}"`
+— `:-` substitutes only when the variable is EMPTY, so the one case you are
+testing for is the case that prints the token. A bare `op --vault
+studio-agents-admin` is not a test of this lane either: `op` takes its credential
+from `OP_SERVICE_ACCOUNT_TOKEN` and no other variable, so it answers as the AGENT
+whatever you sourced, and reports the admin vault as *not a vault in this
+account* — an answer about the token in hand, not about your grant.
 
 If a credential goes stale mid-ship, it is **yours to fix**:
 `eval "$(bin/gh-auth-refresh --export)"` re-mints on **this** lane (deployer, per
@@ -610,3 +649,7 @@ needs closing out.
 
 - [`../../../system/devops-cycle-design.md`](../../../system/devops-cycle-design.md)
   §1.4 - release atom model and production gate (architecture).
+- [`../../../modules/credentials.md`](../../../modules/credentials.md) →
+  *An admin lane is MEANT to hold admin credentials* — the same property stated
+  once for every admin lane, the who-fixes-what split, and the two ways a
+  credential CHECK lies (a piped `source`; a bare `op`).
