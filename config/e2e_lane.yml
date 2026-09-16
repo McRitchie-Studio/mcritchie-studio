@@ -191,7 +191,16 @@
 # replacement and fails on any frame the strip is unpinned. Coverage ADDED;
 # `quarantined` is untouched.
 # MEASURED with the lister: `npx playwright test --list` => 148.
-total_specs: 148
+#
+# 148 -> 149 on 2026-09-16: e2e/board_stage_paging.spec.js, ONE spec. A capped
+# column's badge reports the TRUE total, but both boards recount their dropzones on
+# every live update, and a recount sees only the drawn cards — so the first broadcast
+# rewrote 130 to 100. The server-rendered number is byte-identical either way, so only
+# a browser can see it; the spec removes a drawn card and fails on 99, and it pages the
+# archive. It seeds its own archived tasks through the API (the shortfall only), never
+# e2e/seed.rb. Coverage ADDED; `quarantined` is untouched.
+# MEASURED with the lister: `npx playwright test --list` => 149.
+total_specs: 149
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
@@ -302,7 +311,13 @@ quarantined: 10
 # Re-derived on THIS tree with the lister, never by arithmetic:
 #   npx playwright test --list                           => 148
 #   npx playwright test --list --grep-invert @quarantine => 138
-executed: 138
+#
+# 138 -> 139 on 2026-09-16: the board_stage_paging spec above. Coverage ADDED;
+# `quarantined` untouched.
+# Re-derived on THIS tree with the lister, never by arithmetic:
+#   npx playwright test --list                           => 149
+#   npx playwright test --list --grep-invert @quarantine => 139
+executed: 139
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to
