@@ -71,6 +71,13 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
   OLD_MEMBER    = "GuardFixtureOldMember"
   KEEP_MEMBER_A = "GuardFixtureSurvivorA"
   KEEP_MEMBER_B = "GuardFixtureSurvivorB"
+  KEEP_MEMBER_C = "GuardFixtureSurvivorC"
+  KEEP_MEMBER_D = "GuardFixtureSurvivorD"
+
+  # The live shape of BOTH Squads since 2026-09-15 (read at `finalized`
+  # 2026-09-16): five members at threshold 3. The outgoing key plus the four who
+  # stay; a rotation swaps one key and keeps both numbers.
+  SURVIVORS = [KEEP_MEMBER_A, KEEP_MEMBER_B, KEEP_MEMBER_C, KEEP_MEMBER_D].freeze
 
   INVENTORY = Rails.root.join("docs/agents/modules/credential-inventory.md")
 
@@ -89,24 +96,25 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
   # on-chain membership. Then TWO Squads config ceremonies ran five minutes apart
   # (devnet 09:41:25 MDT, mainnet 09:46:51-55 MDT) and REMOVED `8K81…` from
   # both; devnet Squads transaction #18 added it back at 14:02:10 MDT, so it is
-  # seated on devnet and absent on mainnet (read at `finalized` 2026-09-16) —
-  # so `squad-upgrade.js` can approve nothing on mainnet and cannot
-  # reach threshold on devnet either; the inventory row says so. The pin still names `agent.xan.solana`
+  # seated on devnet and absent on mainnet (read at `finalized` 2026-09-16). The
+  # rebuilt `squad-upgrade.js` (turf-vault 280cebf) follows that: it signs with
+  # this key as one of three DEVNET seats and never on mainnet; the inventory row
+  # says so. The pin still names `agent.xan.solana`
   # because that is the item the SOP's Squads row sends an operator to and the
   # inventory still files it. Repointing it at `solana.turf.admin` would make
   # this guard assert against a row that does not describe that key.
   BOT_KEY_ITEM = "agent.xan.solana"
 
   # Every Solana credential the inventory FILES, as of 2026-09-14. This set is a
-  # TRIPWIRE, not a catalogue: the SOP's registration row claims the human Alex
+  # TRIPWIRE, not a catalogue: the SOP's registration row claims Mr. McRitchie's
   # key (`7ZDJ…`) has "no filed item at all", and the only mechanical way to
   # notice that claim going stale is to notice a Solana item appearing. Add,
   # rename or remove one and this test fails, which is the point — the failure
   # sends a human back to that row to re-read it.
   # Updated 2026-09-15: agent.alex.solana -> agent.xan.solana. The tripwire fired
   # exactly as designed and sent a human back to the Squads registration row,
-  # which was re-read and still scopes its 1Password claim away from the human
-  # Alex key (`7ZDJ…`, "no filed item at all") — that claim is unaffected by the
+  # which was re-read and still scopes its 1Password claim away from Mr.
+  # McRitchie's key (`7ZDJ…`, "no filed item at all") — that claim is unaffected by the
   # rename, so the pin moves rather than the row.
   FILED_SOLANA_ITEMS = %w[
     agent.solana
@@ -199,6 +207,12 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
       end
       blocks
     end
+  end
+
+  # The ONE chain read the rotation takes before proposing: it yields WANT_MASK,
+  # WANT_COUNT and WANT_THRESHOLD, which the grader then compares against.
+  def want_derivation
+    bash_blocks.find { |b| b[:body].include?("WANT_MASK=") && b[:body].include?("$(squads_members)") }
   end
 
   def blocks_under(heading)
@@ -678,19 +692,19 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
     # config transaction is proposed. So every run below walks the derivation
     # first, against the PRE-rotation members, then the grader against the
     # post-rotation ones — the order the operator walks them in.
-    derivation = bash_blocks.find { |b| b[:body].include?("WANT_MASK=$(squads_members") }
+    derivation = want_derivation
     refute_nil derivation, "the SOP no longer derives WANT_MASK from the chain"
-    pre = ["threshold 2", "#{OLD_MEMBER} 7", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"]
+    pre = ["threshold 3", "#{OLD_MEMBER} 7", *SURVIVORS.map { |m| "#{m} 7" }]
     walk = ->(post) { stub.call(pre) + derivation[:body] + stub.call(post) + block[:body] }
 
-    healthy = ["threshold 2", "#{NEW_MEMBER} 7", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"]
+    healthy = ["threshold 3", "#{NEW_MEMBER} 7", *SURVIVORS.map { |m| "#{m} 7" }]
 
     Dir.mktmpdir("crs-squads") do |dir|
       # ── the control: a correct rotation must PASS ─────────────────────────
       ok = run_block(walk.call(healthy), dir, {})
 
       assert_equal 0, ok[:status],
-                   "the Squads check REJECTED a CORRECT rotation (3 members, threshold 2, new key at " \
+                   "the Squads check REJECTED a CORRECT rotation (5 members, threshold 3, new key at " \
                    "mask 7, old key gone). Every refusal below then proves only that the check is " \
                    "broken.\nstdout: #{ok[:out]}\nstderr: #{ok[:err]}"
       assert_includes ok[:out], "PASS",
@@ -700,21 +714,22 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
       # ── the states it exists to catch ─────────────────────────────────────
       # The three partial masks are each a REAL call site in squad-upgrade.js
       # losing its bit — they are the whole reason the mask is checked at all.
+      survivors = SURVIVORS.map { |m| "#{m} 7" }
       {
-        "mask 3 — Initiate|Vote, no Execute (vaultTransactionExecute :193 breaks)" =>
-          ["threshold 2", "#{NEW_MEMBER} 3", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
+        "mask 3 — Initiate|Vote, no Execute (vaultTransactionExecute :772 breaks)" =>
+          ["threshold 3", "#{NEW_MEMBER} 3", *survivors],
         "mask 5 — Initiate|Execute, no Vote; the DECLINED narrowing's mask, wrong for any rotation" =>
-          ["threshold 2", "#{NEW_MEMBER} 5", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
-        "mask 6 — Vote|Execute, no Initiate (vaultTransactionCreate :176 breaks)" =>
-          ["threshold 2", "#{NEW_MEMBER} 6", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
+          ["threshold 3", "#{NEW_MEMBER} 5", *survivors],
+        "mask 6 — Vote|Execute, no Initiate (vaultTransactionCreate :660 breaks)" =>
+          ["threshold 3", "#{NEW_MEMBER} 6", *survivors],
         "the rotated-out key is STILL a member" =>
-          ["threshold 2", "#{NEW_MEMBER} 7", "#{OLD_MEMBER} 7", "#{KEEP_MEMBER_A} 7"],
+          ["threshold 3", "#{NEW_MEMBER} 7", "#{OLD_MEMBER} 7", *survivors.first(3)],
         "the new key never landed" =>
-          ["threshold 2", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
-        "threshold moved off 2" =>
-          ["threshold 3", "#{NEW_MEMBER} 7", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
-        "the multisig is down to a 2-of-2" =>
-          ["threshold 2", "#{NEW_MEMBER} 7", "#{KEEP_MEMBER_A} 7"]
+          ["threshold 3", *survivors],
+        "threshold moved off 3" =>
+          ["threshold 2", "#{NEW_MEMBER} 7", *survivors],
+        "the multisig lost a member (3 of 4)" =>
+          ["threshold 3", "#{NEW_MEMBER} 7", *survivors.first(3)]
       }.each do |label, lines|
         result = run_block(walk.call(lines), dir, {})
 
@@ -730,7 +745,7 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
       # The mask failure must NAME the mask it found. "Wrong permissions" sends the
       # operator back to app.squads.so with nothing to compare against.
       wrong = run_block(
-        walk.call(["threshold 2", "#{NEW_MEMBER} 3", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"]),
+        walk.call(["threshold 3", "#{NEW_MEMBER} 3", *survivors]),
         dir, {}
       )
 
@@ -782,7 +797,7 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
 
   # WHOSE KEYS 1PASSWORD ACTUALLY HOLDS (2026-09-14). A draft of this SOP widened
   # "supplied per run from 1Password" — true of the BOT key — into a claim about
-  # all of squad-upgrade.js's signing keys. It is false for the human Alex key
+  # all of squad-upgrade.js's signing keys. It is false for Mr. McRitchie's key
   # (7ZDJ…), a Phantom export with no filed item, and a rotation runbook that
   # tells an operator to fetch a key from a vault it is not in stops them
   # mid-rotation. The claim is checkable against the inventory, so it is checked.
@@ -818,16 +833,16 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
     # whereas a row that still says WHICH key is unfiled cannot be read as a
     # claim about all of them.
     assert_match(/7ZDJ/, row,
-                 "the row no longer names the human Alex key, so nothing scopes the 1Password claim " \
+                 "the row no longer names Mr. McRitchie's key, so nothing scopes the 1Password claim " \
                  "away from it: #{row.strip}")
     assert_match(/no filed item/i, row,
-                 "the row no longer states that the human Alex key has no filed item. That sentence is " \
+                 "the row no longer states that Mr. McRitchie's key has no filed item. That sentence is " \
                  "what stops an operator hunting a vault for it mid-rotation: #{row.strip}")
 
     # Belt to that braces: the universal-quantifier family, bounded to ONE table
     # cell so a neighbouring cell's wording cannot trip it.
     refute_match(/\b(?:all|every|both)\b[^|]*1Password/i, row,
-                 "the row claims every signing key comes from 1Password. The human Alex key is a Phantom " \
+                 "the row claims every signing key comes from 1Password. Mr. McRitchie's key is a Phantom " \
                  "export with no filed item: #{row.strip}")
 
     # ── the checkable half: what the inventory actually files ──────────────────
@@ -861,7 +876,7 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
 
     assert_equal FILED_SOLANA_ITEMS.sort, filed,
                  "the inventory's filed Solana items changed. This is a TRIPWIRE, not a failure: go read " \
-                 "the Squads registration row in #{SOP.basename}, which claims the human Alex key " \
+                 "the Squads registration row in #{SOP.basename}, which claims Mr. McRitchie's key " \
                  "(`7ZDJ…`) has \"no filed item at all\". If one of these new items IS that key, that " \
                  "claim is now false and the row must say so. If it is unrelated, add it to " \
                  "FILED_SOLANA_ITEMS."
@@ -883,7 +898,7 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
   # CHANGES between them, exactly as the real one does: the derivation sees the
   # pre-rotation members, the grader sees the post-rotation members.
   test "the rotation grants and grades whatever mask the outgoing key held, 7 or 5" do
-    derivation = bash_blocks.find { |b| b[:body].include?("WANT_MASK=$(squads_members") }
+    derivation = want_derivation
     grader = blocks_under("#### Verifying the Squads rotation")
              .find { |b| b[:body].include?("check_squads_rotation()") }
 
@@ -900,9 +915,9 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
     Dir.mktmpdir("crs-want-mask") do |dir|
       {
         "the outgoing key holds 7 (what the live multisig grants today)" => {
-          before: ["threshold 2", "#{OLD_MEMBER} 7", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
-          right: ["threshold 2", "#{NEW_MEMBER} 7", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
-          wrong: ["threshold 2", "#{NEW_MEMBER} 5", "#{KEEP_MEMBER_A} 7", "#{KEEP_MEMBER_B} 7"],
+          before: ["threshold 3", "#{OLD_MEMBER} 7", *SURVIVORS.map { |m| "#{m} 7" }],
+          right: ["threshold 3", "#{NEW_MEMBER} 7", *SURVIVORS.map { |m| "#{m} 7" }],
+          wrong: ["threshold 3", "#{NEW_MEMBER} 5", *SURVIVORS.map { |m| "#{m} 7" }],
           granted: "7"
         },
         "the outgoing key holds 5 (a hypothetical future re-scope)" => {
@@ -935,6 +950,93 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
         dir, {}
       )
       refute_equal 0, gone[:status], "the derivation returned an empty mask instead of refusing: #{gone.inspect}"
+    end
+  end
+
+  # THE COUNT AND THRESHOLD ARE READ, NOT TYPED (hub-docs-match-squad-upgrade,
+  # 2026-09-16). The grader used to hardcode "3 members, threshold 2" — the Squads
+  # shape before 2026-09-15 — so against either live Squad (five members at
+  # threshold 3) it printed two FAIL lines for a healthy rotation, and a banner
+  # told the operator to ignore them. A check that must be ignored is not a check.
+  # The derivation now records WANT_COUNT and WANT_THRESHOLD from the same read as
+  # WANT_MASK, and the grader compares against those.
+  #
+  # So this walks TWO chains through the same two blocks — today's 5-at-3 and the
+  # old 3-at-2 — and requires each to pass its own healthy rotation AND to refuse
+  # the other's shape. A literal can satisfy one chain; only a read satisfies both.
+  test "the grader expects the member count and threshold read before the rotation, 5-at-3 or 3-at-2" do
+    derivation = want_derivation
+    grader = blocks_under("#### Verifying the Squads rotation")
+             .find { |b| b[:body].include?("check_squads_rotation()") }
+
+    refute_nil derivation, "the SOP no longer derives WANT_MASK, WANT_COUNT and WANT_THRESHOLD from the chain"
+    refute_nil grader, "the SOP no longer defines check_squads_rotation()"
+
+    stub = lambda do |lines|
+      "squads_members() { printf '%s\\n' " + lines.map { |l| "'#{l}'" }.join(" ") + "; }\n"
+    end
+    walk = lambda do |before, after|
+      stub.call(before) + derivation[:body] + stub.call(after) + grader[:body]
+    end
+
+    five = SURVIVORS.map { |m| "#{m} 7" }
+    three = SURVIVORS.first(2).map { |m| "#{m} 7" }
+    chains = {
+      "today's Squads: 5 members at threshold 3" => {
+        before: ["threshold 3", "#{OLD_MEMBER} 7", *five],
+        right: ["threshold 3", "#{NEW_MEMBER} 7", *five],
+        expect: "expect 5 members at threshold 3"
+      },
+      "the pre-2026-09-15 Squads: 3 members at threshold 2" => {
+        before: ["threshold 2", "#{OLD_MEMBER} 7", *three],
+        right: ["threshold 2", "#{NEW_MEMBER} 7", *three],
+        expect: "expect 3 members at threshold 2"
+      }
+    }
+
+    Dir.mktmpdir("crs-want-shape") do |dir|
+      chains.each do |label, chain|
+        ok = run_block(walk.call(chain[:before], chain[:right]), dir, {})
+
+        assert_equal 0, ok[:status],
+                     "#{label}: a healthy rotation was REFUSED — the grader is comparing against a shape " \
+                     "it did not read.\nstdout: #{ok[:out]}\nstderr: #{ok[:err]}"
+        assert_includes ok[:out], chain[:expect],
+                        "#{label}: the derivation did not tell the operator which shape to expect afterwards"
+        assert_includes ok[:out], "PASS"
+      end
+
+      # Each chain must REFUSE the other's post-rotation shape. This is the half a
+      # hardcoded pair can never pass: whichever literal it holds, one of these two
+      # runs goes green on the wrong multisig.
+      [["today's Squads: 5 members at threshold 3", "the pre-2026-09-15 Squads: 3 members at threshold 2"],
+       ["the pre-2026-09-15 Squads: 3 members at threshold 2", "today's Squads: 5 members at threshold 3"]].each do |mine, theirs|
+        bad = run_block(walk.call(chains[mine][:before], chains[theirs][:right]), dir, {})
+
+        refute_equal 0, bad[:status],
+                     "#{mine}: the grader PASSED the other shape (#{theirs}) after the rotation. It is not " \
+                     "comparing against what it read.\nstdout: #{bad[:out]}"
+        assert_includes bad[:out], "FAIL"
+      end
+
+      # A read with no threshold line must stop the derivation, not hand the grader
+      # an empty WANT_THRESHOLD that every multisig then "fails" for no reason.
+      thresholdless = run_block(
+        stub.call(["#{OLD_MEMBER} 7", *five]) + derivation[:body],
+        dir, {}
+      )
+      refute_equal 0, thresholdless[:status],
+                   "the derivation accepted a read with no threshold: #{thresholdless.inspect}"
+
+      # And the grader must refuse to grade at all without the two expectations —
+      # run on its own with only the mask set, it may not print PASS.
+      bare = run_block(
+        stub.call(["threshold 3", "#{NEW_MEMBER} 7", *five]) + grader[:body],
+        dir, { "OLD_MEMBER" => OLD_MEMBER, "WANT_MASK" => "7" }
+      )
+      refute_equal 0, bare[:status],
+                   "the grader ran with WANT_COUNT and WANT_THRESHOLD unset: #{bare.inspect}"
+      refute_includes bare[:out], "PASS"
     end
   end
 

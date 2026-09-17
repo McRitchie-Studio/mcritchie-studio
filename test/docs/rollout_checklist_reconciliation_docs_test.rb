@@ -28,7 +28,8 @@ require "test_helper"
 #   2. A THRESHOLD WITHOUT ITS MULTISIG. Three authorities share the word
 #      "multisig" here: the Squads multisig holding the upgrade authority (3-of-5
 #      on both live Squads since 2026-09-15), `VaultState`'s own signer set (2-of-3
-#      on the deployed v0.25), and a first mainnet Squad that still reads 2-of-3.
+#      on the deployed v0.25), and a first mainnet Squad that read 2-of-3 until its
+#      retirement on 2026-09-16.
 #      About 180 "2-of-3" mentions across these repos are CORRECT because they
 #      describe `VaultState`. A bare N-of-M cannot be checked, and "correcting" a
 #      right one is the likeliest regression, so every N-of-M must name

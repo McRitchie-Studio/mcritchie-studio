@@ -40,7 +40,7 @@
 > **Carried-over caveat, as written on 2026-05-23:** operating the Squad with
 > Alex Bot + Mason keys both in 1Password makes the 2-of-3 single-trust-domain
 > until the human signers hold keys in separate domains. Both of those keys have
-> since left both live Squads (not every Squad — see **How it resolved**); the
+> since left every Squad that controls anything (see **How it resolved**); the
 > trust-domain question itself is live and belongs with the docs named at the top
 > of this file, not here.
 
@@ -81,16 +81,22 @@
 >   leaked key of the 2026-06 Alex Bot compromise
 >   (`turf-vault/docs/KEY_ROTATION.md`). It sits on neither live Squad and in
 >   neither live `VaultState`, and it must never be placed on a multisig again.
->   **It is not gone from the chain, though.** The first mainnet program,
->   `mnzowM2F…`, is still open under Squad `9dCLMZct…`, which was created on
->   2026-05-26 with the three members Step 1 names. That Squad still reads 2-of-3
->   with `F6f8…` seated. The program holds no USDC or USDT. `turf-vault/docs/KEY_ROTATION.md` §7 and §8
->   are the steps that retire it, and neither has run.
+>   **Its last Squads seat went on 2026-09-16.** The first mainnet program,
+>   `mnzowM2F…`, had stayed open under Squad `9dCLMZct…`, created on 2026-05-26
+>   with the three members Step 1 names and still a Squads 2-of-3 with `F6f8…`
+>   seated. That evening Mr. McRitchie signed two Squads transactions on
+>   `9dCLMZct…`. Vault transaction #1 closed `mnzowM2F…` and swept its rent to
+>   `Bk9sS7ii…` (8:27 PM MDT). Config transaction #2 removed `F6f8…` and `CytJ…`
+>   and set the threshold to 1 (8:38 PM MDT, `2026-09-17T02:38:50Z`). Read at
+>   `finalized` afterwards: `9dCLMZct…` seats `7ZDJ…` alone, `mnzowM2F…`'s
+>   ProgramData is gone, and its program account is a 36-byte stub. Squads cannot
+>   close a multisig account, so `9dCLMZct…` persists and controls nothing. The dead
+>   program's `VaultState` keeps `F6f8…`'s bytes, but a closed program cannot act on
+>   them.
 >
 > The live rosters are deliberately kept out of this file — a second copy is a
 > second thing to go stale, and this file going stale is what put it on the
-> board. Read `turf-vault/docs/CURRENT_DEPLOYMENT.md` for deployment identity,
-> including the first mainnet deployment that is still open. Read the per-cluster
+> board. Read `turf-vault/docs/CURRENT_DEPLOYMENT.md` for deployment identity. Read the per-cluster
 > Squads membership from chain with `node scripts/squad-inventory.js` in
 > `turf-vault`, which reads it live and needs no keys; every written roster,
 > including the one in `turf-monster/MAINNET_LAUNCH.md`, is a snapshot.
@@ -145,9 +151,9 @@ Via web UI (https://app.squads.so):
    - Alex Bot: `F6f8…KzhZ` — **RETIRED (leaked, 2026-06). Never place this key
      on a multisig again.** The full address is redacted from this step
      deliberately: a pasteable address sitting in an imperative "add members"
-     line is exactly how a retired key gets re-seated. It is on neither live
-     Squad today, but it is still seated on the first mainnet Squad
-     `9dCLMZct…` (see **How it resolved**).
+     line is exactly how a retired key gets re-seated. It is on no Squad today:
+     the first mainnet Squad `9dCLMZct…` removed it on 2026-09-16 (see **How it
+     resolved**).
    - Alex: `7ZDJp7FUHhuceAqcW9CHe81hCiaMTjgWAXfprBM59Tcr`
    - Mason: `CytJS23p1zCM2wvUUngiDePtbMB484ebD7bK4nDqWjrR`
 4. Confirm and note the **Squad vault PDA** (this will be the new upgrade authority).
