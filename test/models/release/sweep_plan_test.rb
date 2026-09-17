@@ -216,4 +216,96 @@ class Release::SweepPlanTest < ActiveSupport::TestCase
     assert_empty plan["blocked"]
     assert_equal ["legacy-shaped-row"], plan["sweep"]
   end
+
+  # --- the PARKED-repo hold (sweep-ignores-parked-repos) -----------------------
+  #
+  # A registered repo whose ladder is anything but three-rung (rolio `dormant`,
+  # tax-studio `planned`, chain-ops `blocked`) is not the conductor's to promote or
+  # deploy. Before this partition the sweep took every `reviewed` task with no repo
+  # filter, so a task naming a parked repo would have been promoted and deployed.
+  # It is now HELD: kept out of record/sweep, reported with its repo and ladder, and
+  # left in its stage. The map is a fixture — these tests pin the RULE, not which
+  # real repos happen to be parked today.
+  PARKED = { "parked-app" => "dormant", "future-app" => "planned" }.freeze
+
+  def parked_row(slug, repos:, merged: "accepted", stage: "reviewed")
+    row(slug, merged: merged, stage: stage, repo: repos.first)
+      .merge("repos" => repos, "pr_urls" => repos.to_h { |r| [ r, "https://github.com/McRitchie-Studio/#{r}/pull/1" ] })
+  end
+
+  test "[unit] a row naming a parked repo is HELD off the sweep, naming the repo and its ladder" do
+    plan = Release::SweepPlan.compute([ parked_row("rolio-feature", repos: ["parked-app"]), row("hub-feature") ],
+                                      parked: PARKED)
+
+    assert_equal ["hub-feature"], plan["sweep"], "the neighbour still rides"
+    refute_includes plan["record"].map { |r| r["slug"] }, "rolio-feature"
+    assert_empty plan["held"], "a parked hold is its own partition, not the unstamped-merge anomaly"
+    assert_equal [ { "slug" => "rolio-feature", "stage" => "reviewed", "repos" => ["parked-app"],
+                     "parked" => { "parked-app" => "dormant" }, "live" => [] } ],
+                 plan["parked"]
+  end
+
+  test "[unit] a MIXED row (one live repo, one parked) holds the WHOLE task, never the live half" do
+    mixed = parked_row("span-hub-and-rolio", repos: %w[mcritchie-studio parked-app])
+
+    plan = Release::SweepPlan.compute([ mixed ], parked: PARKED)
+
+    assert_empty plan["sweep"], "half-shipping a task breaks the assembled invariant — the whole task holds"
+    assert_equal ["mcritchie-studio"], plan["parked"].first["live"]
+    assert_equal({ "parked-app" => "dormant" }, plan["parked"].first["parked"])
+  end
+
+  test "[unit] a parked row is held BEFORE the coverage refusal — it cannot abort a sweep it is not in" do
+    # Names two repos with a PR for only one: on its own this is the 2026-08-13
+    # refusal, which aborts the whole run. But a task naming a parked repo is not a
+    # member of this sweep at all, so it has no promote to be wrong about.
+    incomplete = row("span-hub-and-rolio", merged: "accepted")
+                   .merge("repos" => %w[mcritchie-studio parked-app],
+                          "pr_urls" => { "mcritchie-studio" => "https://github.com/McRitchie-Studio/mcritchie-studio/pull/2" })
+
+    plan = Release::SweepPlan.compute([ incomplete ], parked: PARKED)
+
+    assert_empty plan["blocked"]
+    assert_equal ["span-hub-and-rolio"], plan["parked"].map { |p| p["slug"] }
+  end
+
+  test "[unit] an unstamped row on a parked repo reports as parked, not as the merge anomaly" do
+    plan = Release::SweepPlan.compute([ parked_row("rolio-unstamped", repos: ["parked-app"], merged: "") ],
+                                      parked: PARKED)
+
+    assert_empty plan["held"]
+    assert_equal ["rolio-unstamped"], plan["parked"].map { |p| p["slug"] }
+  end
+
+  # The control: the hold must be CAUSED by the ladder map. The identical row with
+  # no parked repos declared sweeps, so the partition above is not an accident of
+  # the row's shape.
+  test "[unit] CONTROL: the same row sweeps when no repo it names is parked" do
+    plan = Release::SweepPlan.compute([ parked_row("rolio-feature", repos: ["parked-app"]) ], parked: {})
+
+    assert_equal ["rolio-feature"], plan["sweep"]
+    assert_empty plan["parked"]
+  end
+
+  test "[unit] parked_hold_line names the task, the parked repo, its ladder and the stage it keeps" do
+    line = Release::SweepPlan.parked_hold_line(
+      "slug" => "rolio-feature", "stage" => "reviewed", "parked" => { "parked-app" => "dormant" }, "live" => []
+    )
+
+    assert_includes line, "HELD rolio-feature"
+    assert_includes line, "parked-app (ladder: dormant)"
+    assert_includes line, "left `reviewed`"
+    assert_includes line, "never promoted or deployed"
+  end
+
+  test "[unit] parked_hold_line on a mixed task says why its live repo does not ride either" do
+    line = Release::SweepPlan.parked_hold_line(
+      "slug" => "span", "stage" => "assembled", "parked" => { "future-app" => "planned" }, "live" => ["mcritchie-studio"]
+    )
+
+    assert_includes line, "future-app (ladder: planned)"
+    assert_includes line, "whole task"
+    assert_includes line, "mcritchie-studio"
+    assert_includes line, "left `assembled`", "a straggler keeps ITS stage, not `reviewed`"
+  end
 end

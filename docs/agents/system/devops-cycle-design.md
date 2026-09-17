@@ -942,7 +942,10 @@ ONE deterministic verb — **`bin/release prepare --yes [--task SLUG ...]
 1. **Detect.** Every `reviewed` task + any `assembled` straggler not riding the
    current RC (`Release::Conductor.sweep_candidates`). Nothing detected and no
    active release → **idempotent no-op** (report + exit 0). `--task` narrows the
-   sweep to the named slugs (operator curation).
+   sweep to the named slugs (operator curation). A task naming a **parked** repo
+   (any registry ladder but `three-rung`) is HELD instead of swept: it gets a
+   `⚠ HELD` line naming the repo and its ladder, keeps its stage, and the rest of
+   the sweep proceeds. A task naming a live repo AND a parked one is held whole.
 2. **Ensure a candidate.** Use the in-flight release, else open one
    (`Release.current_or_open!`; `--slug` names a fresh one).
 3. **Sweep + merge (BATCHED).** Per detected task: verify its PR base is
@@ -1112,12 +1115,18 @@ deploy command:** each app ships by the `prod_deploy.strategy` on its
 All three deploying apps migrate in their Heroku release phase (`release:` in
 each Procfile). The registry parks the rest: `rolio` (`git_push_heroku`, `ladder:
 dormant`) and `tax-studio` (`repo_script`, `ladder: planned`) declare adapters, and
-`chain-ops` (`ladder: blocked`) declares none. **The ladder is not a deploy
-guard.** `app/models/release/ladder.rb#sweepable` scopes `bin/release init`, the
-ladder guards and the unwired-CI warning, but neither the sweep
-(`app/models/release/conductor.rb#sweep_candidates`) nor `deploy_app` reads it, so
-a `reviewed` task naming a parked repo would still ship through that repo's
-adapter. After every app deploys + smokes (and before the
+`chain-ops` (`ladder: blocked`) declares none. **A parked repo never reaches
+those adapters.** `app/models/release/ladder.rb#sweepable` scopes `bin/release
+init`, the ladder guards and the unwired-CI warning, and the sweep reads the
+ladder too: a task naming any parked repo is HELD
+at detection (`app/models/release/conductor.rb#sweep_candidates`) and in the
+pure plan (`app/models/release/sweep_plan.rb#compute`), whole even when it also
+names a live repo, so it is never promoted, recorded or deployed. Two backstops
+refuse one that arrives by another door: record time
+(`app/models/release/conductor.rb#validate_member_repos_sweepable!`) and the
+deploy half's entry gate (`bin/release.rb#verify_release_carries_accepted!`).
+`deploy_app` itself still does not read the ladder; nothing parked is left in
+the plan it is handed. After every app deploys + smokes (and before the
 `shipped` record), the **post-deploy hook** runs each member's
 `devops.post_deploy_cmd` on its **production app** via `heroku run` (duplicate
 commands fold to one run, as on QA), records the

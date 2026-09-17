@@ -13,13 +13,34 @@ class Release
     # plus any `assembled` STRAGGLER — a member of no/another release (a prior RC
     # shipped/aborted without it) that must re-ride the current candidate. A PURE
     # read, so the CLI previews it under --dry-run. Returns
-    # { "reviewed" => [tasks], "stragglers" => [tasks] } in board order.
-    # Both lists empty + no active release ⇒ qa-deploy is an idempotent no-op.
+    # { "reviewed" => [tasks], "stragglers" => [tasks], "parked" => [tasks] } in
+    # board order. Both sweepable lists empty + no active release ⇒ qa-deploy is an
+    # idempotent no-op.
+    #
+    # PARKED REPOS ARE HELD, NOT SWEPT. A task naming ANY repo the registry parks
+    # (Release::Ladder.parked: rolio `dormant`, tax-studio `planned`, chain-ops
+    # `blocked`) is withheld from both sweepable lists and reported under "parked"
+    # instead, so curate! — which sweeps reviewed + stragglers — cannot attach it,
+    # and nothing downstream (repo_plan, the promote, the deploy) ever sees its repo.
+    # A task that ALSO names a live repo is held whole: sweeping only its live half
+    # would stamp it assembled/shipped for a repo that never moved. `bin/release
+    # prepare` reads "parked" to print the HELD line (Release::SweepPlan#compute).
     def sweep_candidates(release = Release.current)
+      reviewed, parked_reviewed = Task.where(stage: "reviewed").order(:position).to_a
+                                      .partition { |task| parked_repos(task).empty? }
+      stragglers, parked_stragglers = straggler_tasks(release).partition { |task| parked_repos(task).empty? }
       {
-        "reviewed"   => Task.where(stage: "reviewed").order(:position).to_a,
-        "stragglers" => straggler_tasks(release)
+        "reviewed"   => reviewed,
+        "stragglers" => stragglers,
+        "parked"     => parked_reviewed + parked_stragglers
       }
+    end
+
+    # { repo => ladder } for every repo this task names that the registry parks —
+    # empty for a task the conductor may sweep. One rule for detection and for the
+    # record-time backstop (validate_member_repos_sweepable!).
+    def parked_repos(task)
+      Release::Ladder.parked(Release::Repos.config).slice(*task.release_repos)
     end
 
     # The `assembled` tasks NOT riding the given (current) release: a prior
@@ -372,7 +393,30 @@ class Release
     # run landed nothing for.
     def validate_members!(release)
       validate_member_repos_known!(release)
+      validate_member_repos_sweepable!(release)
       validate_member_pr_coverage!(release)
+    end
+
+    # THE PARKED-REPO BACKSTOP. The sweep HOLDS a task naming a parked repo before it
+    # is ever attached (sweep_candidates here, Release::SweepPlan in the CLI), so a
+    # member reaching this check came in by another door: `curate!` or `bin/release
+    # merge` naming it explicitly, or a caller that skipped the plan. Refused here,
+    # inside the sweep's transaction, so the attach rolls back and the task stays
+    # where it was — the conductor never promotes or deploys a repo it does not sweep.
+    def validate_member_repos_sweepable!(release)
+      named = release.ordered_members.filter_map do |task|
+        parked = parked_repos(task)
+        next if parked.empty?
+
+        "#{task.slug} (#{parked.map { |repo, ladder| "#{repo} (ladder: #{ladder})" }.join(', ')})"
+      end
+      return if named.none?
+
+      raise ArgumentError,
+            "release #{release.slug} refuses member(s) naming a parked repo: #{named.join('; ')} — the " \
+            "conductor sweeps three-rung repos only (Release::Ladder.sweepable), and the self-healing sweep " \
+            "HOLDS such a task at its stage. Re-ladder the repo in config/release_repos.yml, or drop it " \
+            "from the task's devops.repositories."
     end
 
     # An :unknown repo is in neither registry section of config/release_repos.yml,
