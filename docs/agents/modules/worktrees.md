@@ -632,12 +632,12 @@ bin/agent-worktree scale status
   that still has an open connection is left in place — files the desk record on the
   board **before** any of it, removes the Git worktree, deletes the stale local branch, shrinks the Redis band toward
   the floor when slots free up, and refreshes the registry.
-- **A spared process is a leak, and the teardown reports it.** The stop signals a
-  pid only when `lsof` puts its cwd inside the desk (`cwd_is_desk?`): a pidfile's pid
-  can be recycled, a port holder can be any app, and SIGTERM cannot be undone. So a
-  process the teardown cannot prove is the desk's is left running. Until 2026-09-16
-  that left only a stderr line: the command exited 0 and the ledger read `removed`,
-  while the process kept its port and its memory. Now each spared process:
+- **A spared process is a leak, and the teardown reports it.** The generic Rails stop
+  signals a pid only when `lsof` puts its cwd inside the desk (`cwd_is_desk?`): a
+  pidfile's pid can be recycled, a port holder can be any app, and SIGTERM cannot be
+  undone. So a process the teardown cannot prove is the desk's is left running. Until
+  2026-09-16 that left only a stderr line: the command exited 0 and the ledger read
+  `removed`, while the process kept its port and its memory. Now each spared process:
   - prints `teardown-leak: <app>/<desk> pid <pid> (web pidfile, port <n>, cwd <dir>) is
     still running …` (`port holder` in place of `pidfile` when only the port named it);
   - closes the desk's record as **`leaked`**, with the evidence in `leaked_processes`
@@ -653,6 +653,12 @@ bin/agent-worktree scale status
   stop it by hand only if it is the desk's. `down` spares the same way but only warns,
   because it tears nothing down and has no outcome to record.
   `test/commands/agent_worktree_teardown_leak_test.rb` holds this end to end.
+
+  **None of this covers a turf-monster desk yet.** One with a stack env stops through
+  its own `bin/tm down` (in `remove`, the reclaim and `down` alike). That script
+  signals a pidfile's pid when its command matches `puma|rails|ruby`, never checks
+  the cwd or the port holder, and deletes the pidfiles, so the checks after it find
+  nothing. When it succeeds, the teardown still exits 0 and records `removed`.
 - `scale status` prints the Redis band: floor, step, current band + DB range,
   used, free, and the physical ceiling (`databases` from Redis). `scale out` /
   `scale in` are manual nudges (respect floor and physical ceiling). `scale
