@@ -108,6 +108,12 @@ bin/agent-worktree cleanup --reclaim --yes   # full teardown + Redis band shrink
   channel gets fixed before the batch is approved.
 - **Trust the gate over the description.** If the count you were told and the
   count the dry run finds disagree, surface the discrepancy and believe the gate.
+- **Exit 3 is a finished sweep that left a process running, not a failure.** A
+  teardown spares a process it cannot prove is the desk's, prints a
+  `teardown-leak:` line per spared pid, closes that desk's ledger record `leaked`,
+  runs on through the batch, and exits 3 once at the end. Read each pid with
+  `ps -o pid,command -p <pid>` and stop it by hand only if it is the desk's. Exit 0
+  is not proof on a turf-monster desk: its `bin/tm down` reports no leaks yet.
 - **`_ship` and `_gate` are infrastructure, not desks.** Safe to reclaim BETWEEN
   releases (`bin/release.rb` re-creates them on demand); withheld automatically
   while any conductor claim is live in either role. Re-run once the release
@@ -280,6 +286,7 @@ The machine is carrying only live work. Report:
   plainly that its local logs are still growing to Rails' 100 MB default
 - any app the audit could not boot, with the reason
 - stale pids killed, orphaned databases dropped
+- **any `teardown-leak:` pid** the reclaim left running, and what `ps` said it was
 - anything appended to the ledger rather than removed
 
 On a clean run, report "nothing to reclaim" — and note that a no-op reclaim can

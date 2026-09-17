@@ -417,18 +417,27 @@ api POST /api/v1/desk_records '{
 }'
 ```
 
-**`status` is `live` | `candidate` | `removed`**, and the episode rule is the markdown
-ledger's, unchanged: a `removed` record is DATED and immutable; anything else is the
-**open** episode for that desk path, updated in place. A second teardown of a **recycled**
+**`status` is `live` | `candidate` | `removing` | `removed` | `leaked`**, and the episode
+rule is the markdown ledger's, unchanged: a `removed` or `leaked` record is DATED and
+immutable; anything else is the **open** episode for that desk path, updated in place.
+A teardown opens its episode as `removing` before it destroys anything and closes it as
+`removed`, or as `leaked` when it left running a process it could not prove was the
+desk's. A `leaked` post must carry `leaked_processes` (`[{pid, label, via, port, cwd}]`);
+one without it, or leak evidence on any other status, answers **422
+`INVALID_DESK_RECORD`**. A second teardown of a **recycled**
 path (`_ship` goes every release cycle) opens a NEW episode beside the resolved one. An
 attempt to rewrite a resolved episode answers **409 `RESOLVED_RECORD_IMMUTABLE`** — a
 distinguishable code on purpose, because a poster reading a 422 would retry a write that
 must never succeed.
 
 **This endpoint is on the DESTROY path, so it is NOT fire-and-forget.**
-`bin/agent-worktree` posts here *before* it stops a stack or drops a worktree and aborts
-the teardown on anything but a 2xx. There is deliberately no local queue: a spool that
-flushes "on next contact" is the same *somebody must remember* the move removes.
+`bin/agent-worktree` posts here *before* it stops a stack or drops a worktree, and that
+FIRST (`removing`) write aborts the teardown on anything but a 2xx. Two writes do not: a
+board that predates `removing` refuses it by name, and the teardown files one `removed`
+record instead; the closing `removed`/`leaked` write lands after the desk is gone, so a
+failure there warns and the record keeps reading `removing`. There is deliberately no
+local queue: a spool that flushes "on next contact" is the same *somebody must remember*
+the move removes.
 
 ### Review Check-In API
 

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_05_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_16_210000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -536,6 +536,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_05_120000) do
     t.string "health"
     t.string "label"
     t.datetime "last_seen_at"
+    t.jsonb "leaked_processes", default: [], null: false
     t.string "local_url"
     t.boolean "merged", default: false, null: false
     t.jsonb "payload", default: {}, null: false

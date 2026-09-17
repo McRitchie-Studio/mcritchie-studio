@@ -8,7 +8,9 @@ module Api
     # no desk is destroyed without a durable record already committed. So a non-2xx here
     # is not a dropped telemetry beat, it is a REFUSED TEARDOWN — which is the posture we
     # want, and the reason this controller never degrades a failed write into an
-    # accepted-but-unrecorded 204 the way the fire-and-forget producers do.
+    # accepted-but-unrecorded 204 the way the fire-and-forget producers do. That is the
+    # teardown's FIRST (`removing`) write. Its closing `removed`/`leaked` write lands after
+    # the desk is gone, so the CLI only warns when that one fails.
     #
     # THE CALLER POSTS THE REGISTRY RECORD VERBATIM, not a hand-mapped set of columns.
     # `bin/agent-worktree snapshot` already builds exactly this hash
@@ -58,6 +60,10 @@ module Api
                                   status: status,
                                   resolved_on: desk_params[:resolved_on].presence)
         render_data(record, status: :created)
+      rescue ActiveRecord::RecordInvalid => e
+        # A write the model refuses, such as a `leaked` close that names no process. The open
+        # episode is untouched, and the poster needs the reason, not a 500.
+        render_error(e.record.errors.full_messages.to_sentence, error_code: "INVALID_DESK_RECORD")
       rescue DeskRecord::ResolvedRecordImmutable => e
         # A caller trying to rewrite history is a BUG in the writer, not a bad request
         # that would pass on retry — say so in its own error_code and status rather than
@@ -121,10 +127,12 @@ module Api
       # The narrative fields the SWEEP owns and the registry does not carry: why this
       # desk was safe to take (`reason`), what label that safety wears, and the
       # condition cell the markdown ledger used to print. `compact` so an absent field
-      # never blanks a value the registry already supplied.
+      # never blanks a value the registry already supplied. `leaked_processes` is the
+      # teardown's own evidence: the processes it spared on a `leaked` close.
       OVERRIDE_FIELDS = %i[
         label app_slug desk_slug task_slug task_url source actor
         safety reason rationale withheld_reason safe_delete_condition
+        leaked_processes
       ].freeze
 
       def overrides
@@ -147,7 +155,7 @@ module Api
           :label, :app_slug, :desk_slug, :task_slug, :task_url,
           :safety, :reason, :rationale, :withheld_reason, :safe_delete_condition,
           :import_key, :branch, :head,
-          registry: {}, payload: {}
+          registry: {}, payload: {}, leaked_processes: %i[pid label via port cwd]
         )
       end
 

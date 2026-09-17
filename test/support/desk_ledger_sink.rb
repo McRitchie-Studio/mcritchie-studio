@@ -22,18 +22,27 @@ require "socket"
 #
 # It answers exactly the two paths the ledger writes and 404s everything else: a stray
 # caller must fail loudly here, not receive a fabricated success.
+#
+# AN OLDER BOARD, ON DEMAND. `refuse_statuses:` makes the sink answer a desk write whose
+# status it names exactly as a board that predates that status does — the controller's own
+# 422 and message — because this CLI ships in worktrees while the board deploys on its own
+# cadence, and a teardown must survive the two being out of step.
 class DeskLedgerSink
   SECRET = "desk-ledger-sink-secret"
   TOKEN = "desk-ledger-sink-token"
 
   attr_reader :posts
 
-  def self.start
-    new.tap(&:start)
+  # The statuses the real board knew before the teardown-outcome states existed.
+  LEGACY_STATUSES = %w[live candidate removed].freeze
+
+  def self.start(refuse_statuses: [])
+    new(refuse_statuses: refuse_statuses).tap(&:start)
   end
 
-  def initialize
+  def initialize(refuse_statuses: [])
     @posts = []
+    @refuse_statuses = Array(refuse_statuses).map(&:to_s)
     @mutex = Mutex.new
   end
 
@@ -67,9 +76,15 @@ class DeskLedgerSink
     @mutex.synchronize { @posts.select { |post| post[:path] == "/api/v1/desk_records/sync" }.map { |post| post[:body]["registry"] } }
   end
 
-  # The record filed for one desk path, or nil.
+  # The record the board holds for one desk path, or nil: the LAST write, because a write
+  # to an open episode updates it in place (a teardown opens `removing` and then closes it).
   def desk_for(worktree_path)
-    desks.find { |desk| desk["worktree_path"] == worktree_path }
+    desks_for(worktree_path).last
+  end
+
+  # Every write filed for one desk path, in the order the CLI made them.
+  def desks_for(worktree_path)
+    desks.select { |desk| desk["worktree_path"] == worktree_path }
   end
 
   private
@@ -109,6 +124,13 @@ class DeskLedgerSink
     when "/api/v1/auth"
       write(client, 200, { "token" => TOKEN, "expires_at" => (Time.now + 3600).utc.iso8601 })
     when "/api/v1/desk_records", "/api/v1/desk_records/sync"
+      status = body.dig("desk", "status").to_s
+      if path == "/api/v1/desk_records" && @refuse_statuses.include?(status)
+        # Api::V1::DeskRecordsController#create's own refusal, word for word.
+        return write(client, 422, { "error" => "unknown status #{status.inspect} (one of: #{LEGACY_STATUSES.join(", ")})",
+                                    "error_code" => "INVALID_DESK_STATUS" })
+      end
+
       @mutex.synchronize { @posts << { path: path, body: body } }
       write(client, 201, { "data" => { "desks" => Array(body.dig("registry", "worktrees")).size, "vanished" => 0 } })
     else

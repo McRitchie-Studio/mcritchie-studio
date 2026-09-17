@@ -116,6 +116,42 @@ module Api
         assert_equal 0, DeskRecord.count
       end
 
+      # ---- [integration] a teardown's outcome -------------------------------------
+
+      # bin/agent-worktree opens `removing` before it destroys anything and closes the same
+      # episode with what it saw. A process it could not prove was the desk's survives, and
+      # the close names it, so the Desks panel and any reader can tell it from a clean one.
+      test "[integration] a teardown that spared a process closes its episode as leaked" do
+        leak = [{ "pid" => 4242, "label" => "web", "via" => "pidfile", "port" => 3024, "cwd" => "/elsewhere" }]
+
+        post api_v1_desk_records_url,
+             params: { desk: { registry: registry_desk, status: "removing", source: "remove" } },
+             headers: @headers, as: :json
+        assert_response :created
+        post api_v1_desk_records_url,
+             params: { desk: { registry: registry_desk, status: "leaked", source: "remove", leaked_processes: leak } },
+             headers: @headers, as: :json
+
+        assert_response :created
+        record = DeskRecord.sole
+        assert_equal "leaked", record.status
+        assert_equal Date.current, record.resolved_on
+        assert_equal leak, record.leaked_processes
+      end
+
+      test "[integration] a leaked post that names no process is refused, not stored" do
+        post api_v1_desk_records_url,
+             params: { desk: { registry: registry_desk, status: "removing", source: "remove" } },
+             headers: @headers, as: :json
+        post api_v1_desk_records_url,
+             params: { desk: { registry: registry_desk, status: "leaked", source: "remove" } },
+             headers: @headers, as: :json
+
+        assert_response :unprocessable_entity
+        assert_equal "INVALID_DESK_RECORD", response.parsed_body["error_code"]
+        assert_equal "removing", DeskRecord.sole.status, "the open episode is left exactly as it was"
+      end
+
       # ---- [integration] history is not rewritable over HTTP --------------------
 
       # A resolved episode is immutable in the model; this asserts the endpoint cannot talk

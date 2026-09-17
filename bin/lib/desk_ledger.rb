@@ -19,7 +19,9 @@ require_relative "task_board"
 #   file!  — the DESTROY path (`remove`, `cleanup --reclaim --yes`, `cleanup --write`).
 #            Returns a Result; a failure MUST abort the teardown. bin/agent-worktree
 #            calls this BEFORE it stops a stack or drops a worktree, so a refusal costs
-#            a retry and nothing else. This is the FAIL-CLOSED half.
+#            a retry and nothing else. This is the FAIL-CLOSED half. The teardown's
+#            SECOND write (closing its `removing` episode `removed` or `leaked`) comes
+#            after the desk is gone, so it warns on failure rather than aborting.
 #   sync   — the READ-ONLY refresh (`snapshot --write`). Best-effort: the local registry
 #            file is still written, nothing is destroyed, so a board outage degrades to
 #            a loud warning rather than blocking an operator who is only looking.
@@ -56,9 +58,10 @@ module DeskLedger
 
   # File ONE desk record. `desk` is the registry record verbatim — the same hash
   # `bin/agent-worktree snapshot` builds — so the mapping onto columns lives once, on
-  # the server (DeskRecord.registry_attributes).
+  # the server (DeskRecord.registry_attributes). `leaked_processes` is the evidence a
+  # `leaked` close carries: each process the teardown spared.
   def file(desk:, status:, source:, dotenv: nil, env: ENV, resolved_on: nil,
-           actor: nil, safety: nil, reason: nil, safe_delete_condition: nil)
+           actor: nil, safety: nil, reason: nil, safe_delete_condition: nil, leaked_processes: nil)
     body = {
       desk: {
         worktree_path: desk["worktree"],
@@ -69,7 +72,8 @@ module DeskLedger
         actor: actor,
         safety: safety,
         reason: reason,
-        safe_delete_condition: safe_delete_condition
+        safe_delete_condition: safe_delete_condition,
+        leaked_processes: leaked_processes
       }.compact
     }
 

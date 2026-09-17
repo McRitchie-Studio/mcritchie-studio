@@ -115,6 +115,22 @@ class DeskPanelTest < ActionView::TestCase
     assert_includes css_select("[data-test='desk-removed-reason']").first.text, "contained in origin/accepted"
   end
 
+  # A LEAKED teardown is a finished desk too, and the one a reader most needs to see: the
+  # desk is gone but a process it could not prove was its own is still running. Its reason
+  # leads with that process, so the panel shows the leak without any new markup.
+  test "[component] a leaked teardown is listed with the finished desks and names the process" do
+    DeskRecord.file!(worktree_path: SHIP, status: "leaked", resolved_on: Date.new(2026, 9, 16),
+                     label: "mcritchie-studio/_ship",
+                     leaked_processes: [{ "pid" => 4242, "label" => "web", "via" => "pidfile" }],
+                     reason: "LEFT RUNNING: pid 4242 (web pidfile, cwd /elsewhere) — not provably this desk's.")
+    DeskRecord.sync!(registry(desks: []))
+
+    render_panel
+
+    assert_includes css_select("[data-test='desk-removed-row']").first.text, "leaked 2026-09-16"
+    assert_includes css_select("[data-test='desk-removed-reason']").first.text, "LEFT RUNNING: pid 4242"
+  end
+
   # ---- [component] the defect detector ----------------------------------------------
 
   test "[component] a desk that left without a teardown record is called out loudly" do
