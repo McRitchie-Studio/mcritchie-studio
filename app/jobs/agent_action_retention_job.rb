@@ -64,10 +64,13 @@ class AgentActionRetentionJob < ApplicationJob
 
   Result = Struct.new(:cutoff, :deleted, :batches, :drained, :retained, keyword_init: true)
 
-  # The moment a row must be OLDER than to be deleted. The app runs in UTC, so this is
-  # exactly 45 * 86,400 seconds, with no DST hour to gain or lose.
+  # The moment a row must be OLDER than to be deleted: exactly 45 * 86,400 = 3,888,000
+  # seconds ago, in EVERY time zone. `now - 45.days` would count CALENDAR days in the
+  # zone ActiveJob restores from enqueue, so in a DST zone (America/Denver across a
+  # spring-forward) it lands an hour late and deletes rows YOUNGER than 45 days.
+  # Subtracting plain seconds leaves no DST hour to gain or lose.
   def self.cutoff(now: Time.current)
-    now - RETENTION_WINDOW
+    now - RETENTION_WINDOW.in_seconds
   end
 
   # Every row the job may delete: older than the cutoff AND read by nothing durable.
