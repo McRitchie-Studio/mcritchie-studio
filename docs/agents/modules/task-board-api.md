@@ -431,9 +431,13 @@ distinguishable code on purpose, because a poster reading a 422 would retry a wr
 must never succeed.
 
 **This endpoint is on the DESTROY path, so it is NOT fire-and-forget.**
-`bin/agent-worktree` posts here *before* it stops a stack or drops a worktree and aborts
-the teardown on anything but a 2xx. There is deliberately no local queue: a spool that
-flushes "on next contact" is the same *somebody must remember* the move removes.
+`bin/agent-worktree` posts here *before* it stops a stack or drops a worktree, and that
+FIRST (`removing`) write aborts the teardown on anything but a 2xx. Two writes do not: a
+board that predates `removing` refuses it by name, and the teardown files one `removed`
+record instead; the closing `removed`/`leaked` write lands after the desk is gone, so a
+failure there warns and the record keeps reading `removing`. There is deliberately no
+local queue: a spool that flushes "on next contact" is the same *somebody must remember*
+the move removes.
 
 ### Review Check-In API
 

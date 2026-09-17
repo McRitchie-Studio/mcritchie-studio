@@ -8,7 +8,9 @@ module Api
     # no desk is destroyed without a durable record already committed. So a non-2xx here
     # is not a dropped telemetry beat, it is a REFUSED TEARDOWN — which is the posture we
     # want, and the reason this controller never degrades a failed write into an
-    # accepted-but-unrecorded 204 the way the fire-and-forget producers do.
+    # accepted-but-unrecorded 204 the way the fire-and-forget producers do. That is the
+    # teardown's FIRST (`removing`) write. Its closing `removed`/`leaked` write lands after
+    # the desk is gone, so the CLI only warns when that one fails.
     #
     # THE CALLER POSTS THE REGISTRY RECORD VERBATIM, not a hand-mapped set of columns.
     # `bin/agent-worktree snapshot` already builds exactly this hash
