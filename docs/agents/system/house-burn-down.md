@@ -498,7 +498,7 @@ These are the surprises from the last burn-down. Pre-baked into the steps above;
 
 5. **System Ruby 2.6 is unusable** — macOS ships with ancient Ruby. Don't run `bundle` against it. mise's shims (`~/.local/share/mise/shims`) must be earlier on PATH than `/usr/bin`.
 
-6. **Heroku LFS gotcha** — `mcritchie-studio` repo has LFS pointers in history (retired 2026-04-30) but Heroku's git remote doesn't speak LFS. Push with `git push heroku main --no-verify` to skip the LFS pre-push hook.
+6. **Heroku LFS gotcha (break-glass pushes only)** — production never deploys by hand push; `bin/release ship` dispatches `prod-deploy.yml` ([How Production Deploys](../modules/deployment.md#how-production-deploys)). If an emergency forces a manual push anyway: the `mcritchie-studio` repo has LFS pointers in history (retired 2026-04-30) but Heroku's git remote doesn't speak LFS, so push with `--no-verify` to skip the LFS pre-push hook. Push an explicit SHA rather than a local branch that may lag `origin/main` — `git push heroku <sha>:refs/heads/main --no-verify`, the ref shape the workflow pushes. A hand push skips the G4 gate and the release record.
 
 7. **Public devnet RPC is rate-limited** — `SOLANA_RPC_URL` defaults to public devnet which 429s under load. Use a paid provider (QuickNode, Helius) for serious work.
 

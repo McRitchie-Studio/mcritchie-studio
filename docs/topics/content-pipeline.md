@@ -116,5 +116,5 @@ Three options: (A) trending sound — only via human in TikTok Studio/app since 
 ### Form gotcha
 When adding new workflow values to `Content::WORKFLOWS`, also add them to the `<select>` in `app/views/contents/_form.html.erb`. Otherwise the edit form silently falls back to "video" on save and wipes the workflow.
 
-### Heroku LFS gotcha
-Repo has LFS pointers in history (retired 2026-04-30) but Heroku's git remote doesn't speak LFS. Push with `git push heroku main --no-verify` to skip the LFS pre-push hook.
+### Heroku LFS gotcha (break-glass pushes only)
+Production never deploys by hand push; `bin/release ship` dispatches `prod-deploy.yml` ([How Production Deploys](../agents/modules/deployment.md#how-production-deploys)). If an emergency forces a manual push anyway: the repo has LFS pointers in history (retired 2026-04-30) but Heroku's git remote doesn't speak LFS, so push with `--no-verify` to skip the LFS pre-push hook. Push an explicit SHA rather than a local branch that may lag `origin/main` — `git push heroku <sha>:refs/heads/main --no-verify`, the ref shape the workflow pushes. A hand push skips the G4 gate and the release record.
