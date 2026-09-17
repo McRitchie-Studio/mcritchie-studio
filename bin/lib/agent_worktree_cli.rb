@@ -55,7 +55,7 @@ module AgentWorktreeCli
   # Exit 0 from bin/agent-worktree is read as a FACT by four callers, and in every
   # one of them the fact is something a probe never established:
   #
-  #   bin/task:1869-1889   `begin_step!` runs `new <app> <slug>` then
+  #   bin/task#begin_step! runs `new <app> <slug>` then
   #                        `bind-task <app> <slug> <task>`, and `die!`s on non-zero.
   #                        Exit 0 means "THE WORKTREE WAS CREATED" and "the task is
   #                        bound" — so a help probe answering 0 would let

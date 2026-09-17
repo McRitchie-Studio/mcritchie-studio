@@ -164,7 +164,7 @@ class AgentWorktreeArgvGuardTest < ActionDispatch::IntegrationTest
   end
 
   # The other half, and the one that wedges every lane if it is wrong: the real
-  # calls must still be handed to the dispatcher. bin/task:1869 shells `new` and
+  # calls must still be handed to the dispatcher. bin/task#begin_step! shells `new` and
   # `bind-task` on EVERY `bin/task begin`; bin/release.rb shells `restore-primary`
   # and `cleanup --reclaim --yes` on every ship; bin/qa-intake shells
   # `snapshot --write` on every refresh.

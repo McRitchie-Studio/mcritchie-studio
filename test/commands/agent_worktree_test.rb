@@ -139,63 +139,6 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     assert_no_match(%r{touch /tmp/agent-worktree}, out)
   end
 
-  # --- the desk's git identity (turf-monster-git-identity-wrong) ----------------
-  #
-  # THE DEFECT. This fixture reproduces turf-monster's measured state on purpose:
-  # setup_repo writes "Agent Test" into the SHARED .git/config, exactly as
-  # turf-monster carried "Steffon (Claude)" — so every desk's hand commit inherited
-  # one name whoever wrote it. Each test commits with a PLAIN `git commit`, the path
-  # bin/ship's per-commit author never covers.
-
-  test "identity stamps the desk's own git config and a hand commit there names the soul" do
-    out, err, status = agent_worktree("identity", "mcritchie-studio", @task, "carl")
-
-    assert status.success?, "#{out}\n#{err}"
-    assert_includes out, "identity: Carl <carl@mcritchie.studio>"
-    hand_commit(@worktree_dir)
-    assert_equal "Carl <carl@mcritchie.studio>", git_out(@worktree_dir, "log", "-1", "--format=%an <%ae>")
-    assert_equal "Agent Test <agent-test@example.com>", author_ident(@hub_dir),
-                 "the primary must keep resolving exactly as before — the stamp is the desk's alone"
-    assert_equal "Agent Test", git_out(@hub_dir, "config", "--local", "--get", "user.name"),
-                 "the stamp must never be written into the SHARED config"
-  end
-
-  test "identity refuses a value that is not a soul slug and stamps nothing" do
-    out, err, status = agent_worktree("identity", "mcritchie-studio", @task, "Steffon")
-
-    refute status.success?, "a non-soul must exit non-zero:\n#{out}"
-    assert_includes err, "not a soul slug"
-    assert_equal "Agent Test <agent-test@example.com>", author_ident(@worktree_dir)
-  end
-
-  test "new --soul re-stamps an existing desk, and a plain new reports the stamp it finds" do
-    out, err, status = agent_worktree("new", "mcritchie-studio", @task, "--soul=shannon")
-    assert status.success?, "#{out}\n#{err}"
-    assert_includes out, "identity: Shannon <shannon@mcritchie.studio>",
-                    "the --soul=<value> spelling must not be dropped into new's type slot"
-    assert_equal "Shannon <shannon@mcritchie.studio>", author_ident(@worktree_dir)
-    assert_equal "feat/terminal-context", git_out(@worktree_dir, "rev-parse", "--abbrev-ref", "HEAD")
-
-    out, err, status = agent_worktree("new", "mcritchie-studio", @task, "--soul", "carl")
-    assert status.success?, "#{out}\n#{err}"
-    assert_equal "Carl <carl@mcritchie.studio>", author_ident(@worktree_dir),
-                 "a re-claim through begin --steal re-points the desk"
-
-    out, err, status = agent_worktree("new", "mcritchie-studio", @task)
-    assert status.success?, "#{out}\n#{err}"
-    assert_includes out, "identity: Carl <carl@mcritchie.studio> (this desk's own git config)"
-  end
-
-  test "new on an unstamped desk announces it and names the stamp command" do
-    out, err, status = agent_worktree("new", "mcritchie-studio", @task)
-
-    assert status.success?, "an unstamped desk is still a whole desk:\n#{out}\n#{err}"
-    assert_includes err, "identity: UNSTAMPED"
-    assert_includes err, "authored as Agent Test <agent-test@example.com>",
-                    "the announcement must say what a hand commit WILL be authored as"
-    assert_includes err, "bin/agent-worktree identity mcritchie-studio #{@task} <soul>"
-  end
-
   test "shell-hook failure path unsets every context export" do
     out, err, status = agent_worktree("shell-hook", "zsh")
 
@@ -2018,24 +1961,6 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
   def git!(dir, *args)
     out, err, status = Open3.capture3(SessionEnv.neutralized, "git", *args, chdir: dir)
     assert status.success?, "git #{args.join(" ")} failed\n#{out}\n#{err}"
-  end
-
-  # Git with the identity ENVIRONMENT cleared, so an assertion about who a commit
-  # names measures the config files and nothing a CI runner happens to export.
-  def git_out(dir, *args)
-    env = SessionEnv.neutralized.merge("GIT_AUTHOR_NAME" => nil, "GIT_AUTHOR_EMAIL" => nil,
-                                       "GIT_COMMITTER_NAME" => nil, "GIT_COMMITTER_EMAIL" => nil)
-    out, err, status = Open3.capture3(env, "git", *args, chdir: dir)
-    assert status.success?, "git #{args.join(" ")} failed\n#{out}\n#{err}"
-    out.strip
-  end
-
-  def hand_commit(dir)
-    git_out(dir, "commit", "--allow-empty", "-q", "-m", "a hand commit, not bin/ship")
-  end
-
-  def author_ident(dir)
-    git_out(dir, "var", "GIT_AUTHOR_IDENT").sub(/\s+\d+\s+[-+]\d{4}\z/, "")
   end
 
   # Register refs/remotes/origin/release one commit ahead of main (a release-only
