@@ -88,8 +88,9 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
   # Monster admin identity became `solana.turf.admin` — a 1Password filing, not
   # on-chain membership. Then TWO Squads config ceremonies ran five minutes apart
   # (devnet 09:41:25 MDT, mainnet 09:46:51-55 MDT) and REMOVED `8K81…` from
-  # MAINNET ONLY — it is still a seated devnet member, re-measured at `finalized`
-  # 2026-09-15 — so `squad-upgrade.js` can approve nothing on mainnet and cannot
+  # both; devnet Squads transaction #18 added it back at 14:02:10 MDT, so it is
+  # seated on devnet and absent on mainnet (read at `finalized` 2026-09-16) —
+  # so `squad-upgrade.js` can approve nothing on mainnet and cannot
   # reach threshold on devnet either; the inventory row says so. The pin still names `agent.xan.solana`
   # because that is the item the SOP's Squads row sends an operator to and the
   # inventory still files it. Repointing it at `solana.turf.admin` would make
