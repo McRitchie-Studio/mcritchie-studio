@@ -24,7 +24,9 @@
 # pin the rule and survive the day rolio is re-laddered.
 #
 # A NEW FILE, not an addition to test/lib/release_cli_test.rb — that file is frozen at
-# its ceiling in config/test_health.yml, and this is the out it names.
+# its ceiling by the suite's frozen-hotspot ratchet, and this is the out it names. (The
+# ratchet's config is deliberately not named by path here: nothing below reads it, and
+# a path citation would map this file to every edit of that config in bin/fast-check.)
 require "minitest/autorun"
 require "open3"
 require "tmpdir"
