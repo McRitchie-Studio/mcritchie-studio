@@ -11,7 +11,7 @@ documents (the Commercial Welding data room + LOI) were filed with it.
 It stands alone — every command inline. The knowledge layer's storage rules
 live in [`object-storage.md`](object-storage.md); this module owns the FLOW.
 
-## The four mouths, one funnel
+## The five mouths, one funnel
 
 | Source | How it arrives |
 |---|---|
@@ -19,6 +19,7 @@ live in [`object-storage.md`](object-storage.md); this module owns the FLOW.
 | **File drop** | `mcritchie-industries/business-data/_inbox/` — folders, zips, anything; do not pre-sort |
 | **Chat** | hand a path or paste content to a session and say what it is |
 | **UI upload** | the entity app's `/admin/knowledge` intake form |
+| **Slack** | `bin/rails slack:pull` in the entity app — one JSON archive per channel per calendar month. Connecting, reading and categorizing a channel is its own SOP: [`slack-capture.md`](slack-capture.md) |
 
 Everything converges on the same protocol below. Email specifics:
 
