@@ -524,8 +524,11 @@ the key you just rotated out:
 **`update_signers` does not touch Squads membership.** They are separate systems
 that happen to share a pubkey: one is turf-vault's own in-program multisig, the
 other is the Squads V4 multisig that owns the program's upgrade authority. Rotate
-the first and stop, and the rotated-out key still holds **upgrade authority over
-the mainnet program** — a strictly larger power than the one you just took away.
+the first and stop, and the rotated-out key keeps its seat on **every Squad that
+seats it** — a share of that cluster's program upgrade authority, a strictly larger
+power than the one you just took away. Read the seats per cluster: `8K81…` today
+sits on the **devnet** Squad alone, where transaction #18 re-seated it, and is off
+mainnet's (read at `finalized` 2026-09-16).
 
 The Squads half is mutable and is an operator act at `app.squads.so`. The mechanism,
 inline so you need not leave this file: propose **one** config transaction doing
