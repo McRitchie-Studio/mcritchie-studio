@@ -114,7 +114,12 @@ module Gmail
 
         parsed.slice(*REQUIRED_KEYS).transform_values { |value| value.to_s.strip }
       rescue JSON::ParserError => e
-        raise Malformed, "#{ITEM} is not valid JSON: #{e.message}"
+        # NEVER interpolate e.message: it echoes the input from the failure
+        # point to end of stream, so a paste broken INSIDE a value carries live
+        # token bytes — and this lands in ErrorLog, which stores .message
+        # verbatim into Postgres and forwards it to Sentry. Position only.
+        raise Malformed, "#{ITEM} is not valid JSON (#{e.message[/at line \d+ column \d+/] || 'position unreported'}) " \
+                         "— re-copy the object from bin/gmail-oauth-mint; a pasted line break inside a value is the usual cause"
       end
 
       # Bounded on purpose — Open3.capture3 has no timeout of its own, so the

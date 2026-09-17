@@ -70,6 +70,24 @@ class GmailCredentialsTest < ActiveSupport::TestCase
     assert_includes error.message, "not valid JSON"
   end
 
+  test "a broken paste never carries credential bytes into the exception message" do
+    # The minted object soft-wraps at 80 columns, so a copy can land a newline
+    # INSIDE the token. JSON::ParserError echoes the input to end of stream, and
+    # this reaches ErrorLog — stored verbatim in Postgres, forwarded to Sentry.
+    secret = "AA-SECRET-TAIL-MUST-NOT-LEAK-zzzz"
+    Gmail::Credentials.op_reader = lambda do |_item|
+      %({"client_id": "cid", "client_secret": "GOCSPX-x", "refresh_token": "1//0gHEAD\n#{secret}"})
+    end
+
+    error = assert_raises(Gmail::Credentials::Malformed) { Gmail::Credentials.credential }
+
+    refute_includes error.message, secret,
+      "the refresh-token tail rode out in the exception — straight into ErrorLog and Sentry"
+    refute_includes error.message, "GOCSPX-x", "the client secret must not ride out either"
+    assert_includes error.message, "not valid JSON", "the diagnostic itself must survive"
+    assert_includes error.message, "bin/gmail-oauth-mint", "and it must still name the remedy"
+  end
+
   test "a bare refresh token in the field is caught by SHAPE, not by the parse" do
     # "1//abc" parses — as the number 1 followed by a comment — so only the
     # Hash check catches it. This is the likeliest way the item gets misfiled.
