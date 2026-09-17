@@ -141,6 +141,14 @@ class TaskBeginTest < Minitest::Test
     when "PATCH"
       parsed = JSON.parse(body)
       @task["stage"] = parsed["stage"] if parsed["stage"]
+      # Rule 1 of Task#builder_to_stamp, and ONLY rule 1: an explicit soul actor on
+      # the claim becomes devops.built_by. The desk-identity tests read it back, so
+      # a stub that never stamped would make every "which soul did begin stamp"
+      # assertion vacuous.
+      actor = parsed.dig("event", "actor").to_s
+      if actor.match?(/\A[a-z]+(?:-[a-z]+)*\z/)
+        (@task["metadata"] ||= {})["devops"] = (@task.dig("metadata", "devops") || {}).merge("built_by" => actor)
+      end
       ["200 OK", JSON.generate("data" => @task)]
     else
       ["404 Not Found", JSON.generate("error" => "Not found")]
@@ -385,6 +393,73 @@ class TaskBeginTest < Minitest::Test
     move = patches_of(requests).find { |r| JSON.parse(r[:body])["stage"] == "building" }
     assert move, "the child move must have claimed the task"
     assert_equal SESSION, JSON.parse(move[:body]).dig("devops", "claimed_session")
+  end
+
+  # --- the desk's git identity (turf-monster-git-identity-wrong) ----------------
+  # A hand commit in a desk never passes through bin/ship's per-commit author, so
+  # begin stamps the desk itself: `new --soul` at the moment it is cut, then a
+  # read-back of the RECORDED claim settles any case --agent did not name.
+
+  def identity_calls(lines)
+    lines.select { |l| l[0] == "WORKTREE" && l[1] == "identity" }
+  end
+
+  def test_begin_with_agent_stamps_the_desk_as_it_is_cut
+    _requests, _out, err, status, lines =
+      run_begin(["--title", "Add Widget Cache", "--shape", "backend", "--repo", APP, "--agent", "carl"])
+
+    assert status.success?, "expected green begin, got:\n#{err}"
+    new_call = lines.find { |l| l[0] == "WORKTREE" && l[1] == "new" }
+    soul_at = new_call.index("--soul")
+    assert soul_at, "begin must hand --soul to `new`, got argv: #{new_call.inspect}"
+    assert_equal "carl", new_call[soul_at + 1]
+    assert_empty identity_calls(lines),
+                 "the claim recorded carl, which `new` already stamped — a second stamp is noise"
+  end
+
+  def test_begin_without_agent_stamps_the_builder_the_claim_recorded
+    # A resume with no --agent keeps the builder already on record (rule 2), so the
+    # desk must be stamped with THAT soul — the one bin/ship will author as.
+    existing = building_task
+    existing["metadata"]["devops"]["built_by"] = "shannon"
+
+    _requests, _out, err, status, lines = run_begin([SLUG], existing: existing)
+
+    assert status.success?, "expected green begin, got:\n#{err}"
+    refute_includes lines.find { |l| l[0] == "WORKTREE" && l[1] == "new" }, "--soul",
+                    "with no --agent begin was told no builder, so `new` must not guess one"
+    assert_equal [["WORKTREE", "identity", APP, SLUG, "shannon"]], identity_calls(lines).map { |l| l[0, 5] }
+  end
+
+  def test_begin_with_no_builder_on_record_says_unstamped_and_stamps_nothing
+    _requests, _out, err, status, lines = run_begin([SLUG], existing: building_task)
+
+    assert status.success?, "an unstamped desk is still a whole desk — begin must not die:\n#{err}"
+    assert_empty identity_calls(lines), "no soul on record means nothing to stamp — never a guess"
+    assert_match(/UNSTAMPED/, err, "the unstamped desk must be announced, not left silent")
+    # The worktree bin begin shells is the harness stub here, so key on ITS path —
+    # the remedy must name the same executable begin itself runs.
+    assert_includes err, "#{File.join(sandbox_root, "worktree-stub")} identity #{APP} #{SLUG} <soul>",
+                    "the announcement must name the stamp command"
+  end
+
+  def test_a_failed_stamp_warns_and_begin_still_completes
+    existing = building_task
+    existing["metadata"]["devops"]["built_by"] = "shannon"
+    stub = File.join(sandbox_root, "failing-identity-worktree-stub")
+    File.write(stub, <<~RUBY)
+      #!#{RbConfig.ruby}
+      File.open(ENV.fetch("STUB_LOG"), "a") { |f| f.puts(["WORKTREE", *ARGV, Dir.pwd].join("\\t")) }
+      exit(ARGV.first == "identity" ? 1 : 0)
+    RUBY
+    FileUtils.chmod("+x", stub)
+
+    _requests, _out, err, status, lines =
+      run_begin([SLUG], existing: existing, env: { "TASK_BEGIN_WORKTREE_BIN" => stub })
+
+    assert status.success?, "a stamp that did not land must not fail a begin past its claim:\n#{err}"
+    assert_includes err, "desk identity did not land"
+    assert(lines.any? { |l| l[0] == "PREFLIGHT" }, "begin must still preflight the desk")
   end
 
   # --- narration (fast-lane-narrates-activities) -------------------------------
