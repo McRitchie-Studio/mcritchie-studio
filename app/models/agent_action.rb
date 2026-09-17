@@ -6,6 +6,12 @@
 # rolls up under the TaskEvent that closes that stage. There is no historical
 # backfill; capture starts the moment this ships and only ever moves forward.
 #
+# RETENTION: rows are kept for 45 days. AgentActionRetentionJob (nightly, config/
+# recurring.yml) deletes rows whose occurred_at is OLDER than 45 days, except a row an
+# ActionGrade targets or a CI test-scope row Task::TestingPhases reads.
+# A new reader that needs older rows belongs on that job's keep list, or on a durable
+# projection.
+#
 # Capture is BEST-EFFORT (backend discipline): AgentAction.capture writes one row
 # and NEVER lets a telemetry failure break the calling action — any exception is
 # swallowed into an ErrorLog and capture returns nil. Telemetry must not be able

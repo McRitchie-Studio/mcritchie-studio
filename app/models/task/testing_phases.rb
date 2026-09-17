@@ -107,6 +107,10 @@ class Task
     # failures it produced were the only sign that a data-compatibility break was in the
     # diff. Retiring a slug from the WRITER (bin/ci-scope-capture) and from the READER are
     # two different decisions, and only the first one is safe to make on a rename.
+    #
+    # AgentActionRetentionJob KEEPS old rows carrying these slugs past its 45-day window,
+    # because #ci_phase rebuilds from them. It reads this constant, so a slug added or
+    # retired here moves that guard too.
     CI_SCOPES = %w[ci_rails ci_rails_executed_set ci_system ci_static ci_lint ci_scan_ruby ci_scan_js ci_test].freeze
     # The task-grain review gates whose first attempt marks actual review start.
     REVIEW_GATE_KEYS = %w[g2a_primary g2b_light].freeze
