@@ -1658,6 +1658,104 @@ class AgentWorktreeTest < Minitest::Test
     assert_includes text, "bin/agent-worktree remove mcritchie-studio _ship --yes"
   end
 
+  # THE OUTCOME IS WRITTEN LAST, on the episode the record-first write opened. The teardown
+  # only learns whether it spared a process while it stops the stack, which is after the
+  # first write, and a resolved record can never be amended. So the first write opens
+  # `removing` and the last one closes it.
+  def test_a_teardown_opens_removing_first_and_closes_removed_last
+    out = run_in_script(<<~RUBY)
+      #{TEARDOWN_HARNESS}
+      module DeskLedger
+        def self.file(status:, **_kw); STEPS << [:ledger, status]; Result.new(ok: true); end
+      end
+      def puts(*); end
+      teardown_worktree(APP, RECORD[:dir], RECORD)
+      $stdout.print STEPS.inspect
+    RUBY
+
+    steps = eval(out) # rubocop:disable Security/Eval -- the child prints its own Array#inspect
+
+    assert_equal [:ledger, "removing"], steps.first, "the record still lands before anything is destroyed"
+    assert_equal [:ledger, "removed"], steps.last, "and the outcome lands after the git worktree is gone"
+    assert_operator steps.index(:"git-remove"), :<, steps.index([:ledger, "removed"])
+  end
+
+  # A spared process turns the outcome into `leaked`, carries the evidence, and comes back
+  # to the caller, which owns the exit code and the per-desk report.
+  def test_a_spared_process_closes_the_record_as_leaked_and_is_returned
+    out = run_in_script(<<~RUBY)
+      #{TEARDOWN_HARNESS}
+      POSTS = []
+      module DeskLedger
+        def self.file(status:, leaked_processes: nil, **_kw); POSTS << [status, leaked_processes]; Result.new(ok: true); end
+      end
+      def stop_stack_for_removal(_app, _dir, _record, spared: nil)
+        spared << { "pid" => 4242, "label" => "web", "via" => "pidfile", "cwd" => "/elsewhere" }
+      end
+      def puts(*); end
+      spared = teardown_worktree(APP, RECORD[:dir], RECORD)
+      $stdout.print [POSTS, spared.map { |entry| entry["pid"] }].inspect
+    RUBY
+
+    posts, returned = eval(out) # rubocop:disable Security/Eval -- the child prints its own Array#inspect
+
+    assert_equal ["removing", nil], posts.first
+    assert_equal "leaked", posts.last.first
+    assert_equal [4242], posts.last.last.map { |entry| entry["pid"] }
+    assert_equal [4242], returned
+  end
+
+  # The desk is already gone when the closing write happens, so a board that fails it cannot
+  # be a reason to abort: that would report a finished teardown as a refused one. It warns,
+  # and the episode stays `removing`, which the vanished detector surfaces.
+  def test_a_failed_closing_write_neither_aborts_nor_undoes_the_teardown
+    _out, err, status = Open3.capture3(SessionEnv.neutralized, "ruby", "-e", <<~RUBY)
+      load #{BIN.inspect}
+      #{TEARDOWN_HARNESS}
+      module DeskLedger
+        def self.file(status:, **_kw)
+          STEPS << [:ledger, status]
+          status == "removing" ? Result.new(ok: true) : Result.new(ok: false, error: "POST /api/v1/desk_records -> 503")
+        end
+      end
+      def puts(*); end
+      teardown_worktree(APP, RECORD[:dir], RECORD)
+      $stderr.puts "STEPS=\#{STEPS.inspect}"
+    RUBY
+
+    assert_predicate status, :success?, err
+    assert_includes err, "could not close"
+    assert_includes err, "-> 503"
+    assert_includes err, ':"git-remove"', "the teardown ran to the end"
+  end
+
+  # AN OLDER BOARD refuses `removing` by name. That is not an outage, and a fail-closed abort
+  # would refuse every teardown until the board deploys. The teardown files the removal the
+  # old way instead, one record written first, and makes no closing write.
+  def test_a_board_that_predates_removing_gets_the_legacy_record_first
+    out = run_in_script(<<~RUBY)
+      #{TEARDOWN_HARNESS}
+      module DeskLedger
+        def self.file(status:, **_kw)
+          STEPS << [:ledger, status]
+          return Result.new(ok: true) unless status == "removing"
+
+          Result.new(ok: false, error: 'POST /api/v1/desk_records -> 422: unknown status "removing" (one of: live, candidate, removed)')
+        end
+      end
+      def puts(*); end
+      def warn(*); end
+      teardown_worktree(APP, RECORD[:dir], RECORD)
+      $stdout.print STEPS.inspect
+    RUBY
+
+    steps = eval(out) # rubocop:disable Security/Eval -- the child prints its own Array#inspect
+
+    assert_equal [[:ledger, "removing"], [:ledger, "removed"]], steps.first(2),
+                 "the legacy record is still written BEFORE anything is destroyed"
+    assert_equal 2, steps.count { |step| step.is_a?(Array) }, "a resolved legacy record gets no closing write"
+  end
+
   # `cleanup --write` was the ledger's OTHER writer and shares the defect, so it moved too.
   # It destroys nothing, so it warns rather than aborting — the fail-closed rule is scoped
   # to the destroy path, which is where it buys something.

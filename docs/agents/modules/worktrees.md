@@ -215,7 +215,9 @@ started the stack, `status … --help` wrote the marker, and `scale out --help`
 grew the persisted Redis band. Fixed by
 [`/tasks/worktree-subcommand-drops-help`](https://mcritchie.studio/tasks/worktree-subcommand-drops-help).
 
-**Exit codes, and why help is never 0.** Help exits **1**; a refusal exits **2**.
+**Exit codes, and why help is never 0.** Help exits **1**; a refusal exits **2**;
+a teardown (`remove … --yes`, `cleanup --reclaim --yes`) that finished but left a
+process running exits **3** (see *A spared process is a leak* under Lifecycle).
 Exit 0 from this launcher is read as a *fact* by four callers, and a probe
 establishes none of them:
 
@@ -224,7 +226,7 @@ establishes none of them:
 | `bin/task` (`begin_step!`, on `new` + `bind-task`) | the worktree was created, and the task is bound |
 | `bin/qa-intake` (`snapshot --write`) | the worktree registry was refreshed |
 | `bin/release.rb` (`restore-primary`) | the primary was returned to a clean `main` |
-| `bin/release.rb` (`cleanup --reclaim`) | the reclaim ran |
+| `bin/release.rb` (`cleanup --reclaim`) | the reclaim ran (the ship counts reclaimed desks from the output and ignores the code, so a **3** still counts) |
 
 Usage goes to **stderr**, never stdout, because `shell-hook zsh` is consumed as
 `eval "$(bin/agent-worktree shell-hook zsh)"` from the login shell.
@@ -361,7 +363,9 @@ bin/agent-worktree scale status
   cycle at the same path — so every teardown opens its own record, carrying its own
   HEAD SHA and its own date. The only record a write may edit is an **open** one for
   that path: a `candidate` being resolved into `removed <date>`, which is one episode
-  changing state. A record carrying `resolved_on` is history and is never rewritten —
+  changing state. A teardown writes to its episode twice: it opens it as `removing`
+  before it destroys anything, then closes it as `removed <date>`, or as `leaked <date>`
+  when it spared a process (see *A spared process is a leak* below). A record carrying `resolved_on` is history and is never rewritten —
   `DeskRecord` raises `ResolvedRecordImmutable` on an update or a destroy, which is a
   stronger guarantee than the file could offer because this medium has exactly ONE
   writer. `test/models/desk_record_test.rb` holds it.
@@ -375,6 +379,12 @@ bin/agent-worktree scale status
   fails closed is the explicit single-desk `remove … --yes`. `snapshot --write` is
   the other way round: it destroys nothing, so a failed sync warns loudly and the
   local registry file is still written.
+  Only the teardown's FIRST write fails closed. The closing write lands after the desk
+  is gone, so a failure there warns instead, and the record keeps reading `removing`
+  until a snapshot misses the desk and lists it as vanished. A board that predates
+  `removing` refuses it by name (`unknown status "removing"`); the teardown then files
+  one `removed` record first, the old way, rather than refusing every teardown until
+  the board deploys. A leak is still reported on the command line and in the exit code.
 - **The markdown ledger and its archive are TRACKED HISTORY. Do not delete either.**
   They hold every row filed before the cutover, `bin/archive-docs` still rolls
   resolved rows between them on the `archive-shipped` beat, and `bin/ledger-guard`
@@ -622,6 +632,27 @@ bin/agent-worktree scale status
   that still has an open connection is left in place — files the desk record on the
   board **before** any of it, removes the Git worktree, deletes the stale local branch, shrinks the Redis band toward
   the floor when slots free up, and refreshes the registry.
+- **A spared process is a leak, and the teardown reports it.** The stop signals a
+  pid only when `lsof` puts its cwd inside the desk (`cwd_is_desk?`): a pidfile's pid
+  can be recycled, a port holder can be any app, and SIGTERM cannot be undone. So a
+  process the teardown cannot prove is the desk's is left running. Until 2026-09-16
+  that left only a stderr line: the command exited 0 and the ledger read `removed`,
+  while the process kept its port and its memory. Now each spared process:
+  - prints `teardown-leak: <app>/<desk> pid <pid> (web pidfile, port <n>, cwd <dir>) is
+    still running …` (`port holder` in place of `pidfile` when only the port named it);
+  - closes the desk's record as **`leaked`**, with the evidence in `leaked_processes`
+    (`pid`, `label`, `via`, `port`, `cwd`) and a reason that leads with `LEFT RUNNING:`,
+    so the Desks panel's Finished list shows it. `GET /api/v1/desk_records?status=leaked`
+    lists every leak;
+  - makes the command exit **3** (`TEARDOWN_LEAK_EXIT`). `cleanup --reclaim --yes`
+    tears down every candidate first, marks the leaking desk's `reclaimed …` line,
+    prints `reclaim: N of M reclaimed desk(s) left a process running: …`, and exits 3
+    once at the end. One leak never stops the batch.
+
+  The process is still never signalled. Check it with `ps -o pid,command -p <pid>` and
+  stop it by hand only if it is the desk's. `down` spares the same way but only warns,
+  because it tears nothing down and has no outcome to record.
+  `test/commands/agent_worktree_teardown_leak_test.rb` holds this end to end.
 - `scale status` prints the Redis band: floor, step, current band + DB range,
   used, free, and the physical ceiling (`databases` from Redis). `scale out` /
   `scale in` are manual nudges (respect floor and physical ceiling). `scale

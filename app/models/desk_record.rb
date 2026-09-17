@@ -27,17 +27,34 @@
 # is one writer, this class, and it refuses a destructive write at the source. The guard
 # keeps covering the markdown rows it always covered — see bin/ledger-guard's own header
 # for the split.
+#
+# A TEARDOWN HAS TWO OUTCOMES, AND IT WRITES TWICE TO SAY WHICH. `bin/agent-worktree` spares
+# a process it cannot prove runs from the desk (a pid is recycled, a port is only a hint, and
+# SIGTERM cannot be undone), and it only learns that while it stops the stack. That is after
+# its record-first write, and a resolved row can never be amended. So a teardown opens the
+# episode as `removing` before it destroys anything, then closes that same episode `removed`
+# or `leaked`. Until 2026-09-16 a spared process left only a stderr line: the command exited
+# 0 and this table said `removed` while the process kept its port and its memory.
 class DeskRecord < ApplicationRecord
   # `live` — the desk exists and no sweep has nominated it.
   # `candidate` — a sweep filed it for approval (the file's "pending approval").
+  # `removing` — a teardown has started and has not recorded its outcome. Open. One left
+  #   standing means the teardown died or its closing write failed; once the desk is gone
+  #   the next snapshot reports it as vanished, which is the honest reading.
   # `removed` — torn down (the file's "removed <date>"); carries resolved_on.
-  STATUSES = %w[live candidate removed].freeze
+  # `leaked` — torn down, but a process the teardown could not prove was the desk's is
+  #   still running. Resolved (the desk is gone) and carries `leaked_processes`.
+  STATUSES = %w[live candidate removing removed leaked].freeze
 
   # Where the write came from, so a row filed by a batch sweep is legible as such next
   # to one an operator typed by hand.
   SOURCES = %w[snapshot cleanup remove reclaim import].freeze
 
   RESOLVED_STATUS = "removed"
+  LEAKED_STATUS = "leaked"
+
+  # The statuses that close an episode. Each carries resolved_on, and nothing else may.
+  RESOLVED_STATUSES = [RESOLVED_STATUS, LEAKED_STATUS].freeze
 
   # Raised when a write would rewrite or destroy a resolved episode. It is a refusal,
   # not a validation failure: the caller asked for something that must never happen, and
@@ -47,6 +64,7 @@ class DeskRecord < ApplicationRecord
   validates :worktree_path, presence: true
   validates :status, inclusion: { in: STATUSES }
   validate :resolution_agrees_with_status
+  validate :leak_names_its_evidence
 
   before_update :refuse_rewriting_history
   before_destroy :refuse_destroying_history
@@ -56,6 +74,7 @@ class DeskRecord < ApplicationRecord
   scope :live, -> { where(status: "live") }
   scope :candidates, -> { where(status: "candidate") }
   scope :removed, -> { where(status: RESOLVED_STATUS) }
+  scope :leaked, -> { where(status: LEAKED_STATUS) }
   scope :for_app, ->(slug) { where(app_slug: slug) }
   scope :newest_first, -> { order(Arel.sql("COALESCE(recorded_at, created_at) DESC"), id: :desc) }
 
@@ -67,6 +86,7 @@ class DeskRecord < ApplicationRecord
     safety reason rationale withheld_reason safe_delete_condition cleanup_candidate
     branch head commit_subject base_ref dirty merged ahead behind
     health local_url app_port redis_db database payload last_seen_at
+    leaked_processes
   ].freeze
 
   # The OPEN episode for a desk path, or nil. `newest_first` so the most recent open row
@@ -78,15 +98,15 @@ class DeskRecord < ApplicationRecord
 
   # EVERY write goes through here.
   #
-  # `status:` is what the caller is asserting about the desk right now. A `removed`
-  # write CLOSES the open episode (or opens one already closed, for a desk this board
+  # `status:` is what the caller is asserting about the desk right now. A `removed` or
+  # `leaked` write CLOSES the open episode (or opens one already closed, for a desk this board
   # never saw live); any other status updates the open episode in place, or opens one.
   # A resolved row is never the target: it is history, and a second teardown of a
   # recycled path appends BESIDE it.
   def self.file!(worktree_path:, status: "live", resolved_on: nil, **attrs)
     raise ArgumentError, "unknown status #{status.inspect}" unless STATUSES.include?(status.to_s)
 
-    resolving = status.to_s == RESOLVED_STATUS
+    resolving = RESOLVED_STATUSES.include?(status.to_s)
     # A removal with no date supplied is dated NOW rather than left open — an undated
     # `removed` row would read as an open item forever, which is precisely the state the
     # file's own "a teardown closes its own pending row" rule exists to prevent.
@@ -229,8 +249,14 @@ class DeskRecord < ApplicationRecord
 
   # The Status cell the markdown ledger showed — kept so a reader moving between the
   # archive and this panel is reading one vocabulary.
+  #
+  # A finished desk reads its outcome (`removed` or `leaked`) beside the date, and an
+  # unfinished teardown reads as `removing`, never as a live desk.
   def status_label
-    resolved? ? "removed #{resolved_on.strftime('%Y-%m-%d')}" : (status == "candidate" ? "pending approval" : "live")
+    return "#{status} #{resolved_on.strftime('%Y-%m-%d')}" if resolved?
+    return "pending approval" if status == "candidate"
+
+    status == "removing" ? "removing" : "live"
   end
 
   # The safety argument in one sentence: why this desk was safe to take, or why it was
@@ -253,10 +279,21 @@ class DeskRecord < ApplicationRecord
   private
 
   def resolution_agrees_with_status
-    if status == RESOLVED_STATUS && resolved_on.blank?
-      errors.add(:resolved_on, "is required for a removed desk")
-    elsif status != RESOLVED_STATUS && resolved_on.present?
-      errors.add(:status, "must be #{RESOLVED_STATUS} once resolved_on is set")
+    resolving = RESOLVED_STATUSES.include?(status)
+    if resolving && resolved_on.blank?
+      errors.add(:resolved_on, "is required for a #{status} desk")
+    elsif !resolving && resolved_on.present?
+      errors.add(:status, "must be #{RESOLVED_STATUSES.join(' or ')} once resolved_on is set")
+    end
+  end
+
+  # A leak is a claim about a real process, so it never stands without the pid; and a row
+  # naming a surviving process under any other status would say two opposite things.
+  def leak_names_its_evidence
+    if status == LEAKED_STATUS && leaked_processes.blank?
+      errors.add(:leaked_processes, "must name the process a leaked teardown left running")
+    elsif status != LEAKED_STATUS && leaked_processes.present?
+      errors.add(:status, "must be #{LEAKED_STATUS} when a teardown left a process running")
     end
   end
 

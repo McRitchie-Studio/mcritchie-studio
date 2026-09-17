@@ -115,6 +115,54 @@ class DeskRecordTest < ActiveSupport::TestCase
     assert_raises(ArgumentError) { DeskRecord.file!(worktree_path: SHIP, status: "torn-down") }
   end
 
+  # ---- [unit] a teardown's OUTCOME: removed, or leaked --------------------------------
+  #
+  # bin/agent-worktree SPARES a process it cannot prove belongs to the desk. The teardown
+  # only learns that while it stops the stack, which is AFTER its record-first write, and a
+  # resolved row can never be amended. So the teardown opens a `removing` episode first and
+  # closes that same episode with the outcome it saw.
+
+  LEAK = [{ "pid" => 4242, "label" => "web", "via" => "pidfile", "port" => 3021, "cwd" => "/elsewhere" }].freeze
+
+  test "[unit] a removing episode is open and closes in place as leaked" do
+    removing = file(status: "removing", head: "c46790dc")
+
+    assert_nil removing.resolved_on, "a teardown in progress has no outcome yet"
+    assert_equal removing.id, DeskRecord.open_for(SHIP).id
+
+    leaked = file(status: "leaked", leaked_processes: LEAK)
+
+    assert_equal removing.id, leaked.id, "the outcome closes the SAME episode the teardown opened"
+    assert_equal Date.current, leaked.resolved_on, "the desk is gone, so a leaked episode is dated"
+    assert_equal [4242], leaked.reload.leaked_processes.map { |entry| entry["pid"] }
+    assert_equal [leaked.id], DeskRecord.leaked.pluck(:id), "a leak is findable without reading prose"
+    assert_raises(DeskRecord::ResolvedRecordImmutable) do
+      leaked.update!(leaked_processes: LEAK + [{ "pid" => 1, "label" => "web", "via" => "port" }])
+    end
+  end
+
+  test "[unit] a leaked episode must name the process it left running" do
+    record = DeskRecord.new(worktree_path: SHIP, status: "leaked", resolved_on: Date.current)
+
+    refute_predicate record, :valid?
+    assert_includes record.errors[:leaked_processes].join, "must name"
+  end
+
+  test "[unit] leak evidence on any other status is refused" do
+    record = DeskRecord.new(worktree_path: SHIP, status: "removed", resolved_on: Date.current,
+                            leaked_processes: LEAK)
+
+    refute_predicate record, :valid?, "a `removed` row naming a surviving process says two opposite things"
+    assert_includes record.errors[:status].join, "leaked"
+  end
+
+  test "[unit] a finished teardown reads its outcome in the status label" do
+    assert_equal "removing", file(status: "removing").status_label
+    assert_equal "leaked 2026-09-16",
+                 file(path: "#{SHIP}-2", status: "leaked", resolved_on: Date.new(2026, 9, 16),
+                      leaked_processes: LEAK).status_label
+  end
+
   # ---- [unit] the registry mapping ------------------------------------------------
 
   REGISTRY_DESK = {

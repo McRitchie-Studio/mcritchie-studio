@@ -417,9 +417,14 @@ api POST /api/v1/desk_records '{
 }'
 ```
 
-**`status` is `live` | `candidate` | `removed`**, and the episode rule is the markdown
-ledger's, unchanged: a `removed` record is DATED and immutable; anything else is the
-**open** episode for that desk path, updated in place. A second teardown of a **recycled**
+**`status` is `live` | `candidate` | `removing` | `removed` | `leaked`**, and the episode
+rule is the markdown ledger's, unchanged: a `removed` or `leaked` record is DATED and
+immutable; anything else is the **open** episode for that desk path, updated in place.
+A teardown opens its episode as `removing` before it destroys anything and closes it as
+`removed`, or as `leaked` when it left running a process it could not prove was the
+desk's. A `leaked` post must carry `leaked_processes` (`[{pid, label, via, port, cwd}]`);
+one without it, or leak evidence on any other status, answers **422
+`INVALID_DESK_RECORD`**. A second teardown of a **recycled**
 path (`_ship` goes every release cycle) opens a NEW episode beside the resolved one. An
 attempt to rewrite a resolved episode answers **409 `RESOLVED_RECORD_IMMUTABLE`** — a
 distinguishable code on purpose, because a poster reading a 422 would retry a write that
