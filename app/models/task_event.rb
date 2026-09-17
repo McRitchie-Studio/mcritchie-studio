@@ -47,6 +47,13 @@ class TaskEvent < ApplicationRecord
   validates :occurred_at, presence: true
   validates :kind, inclusion: { in: KINDS }
 
+  # Usage counters are TELEMETRY riding on the transition spine. This row is
+  # written from Task's `after_update` callback, inside the task's own save
+  # transaction, so a raise here rolls back the STAGE CHANGE — which is exactly
+  # what happened on 2026-09-17 when a cumulative cache_read passed int4. Clamp
+  # to whatever the column can hold (and log it) rather than veto the move.
+  clamps_integer_columns :tokens_in, :tokens_out, :cache_creation_tokens, :cache_read_tokens
+
   scope :chronological, -> { order(occurred_at: :asc, id: :asc) }
   scope :transitions, -> { where(kind: TRANSITION) }
   scope :intents, -> { where(kind: INTENT) }

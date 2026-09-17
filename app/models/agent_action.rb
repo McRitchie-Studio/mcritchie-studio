@@ -58,6 +58,10 @@ class AgentAction < ApplicationRecord
   # derived from the bash call's description.
   include HasKeyMethod
 
+  # Usage counters are telemetry: too wide for the column clamps and logs rather
+  # than failing the narration write. See IntegerColumnRange.
+  clamps_integer_columns :tokens_in, :tokens_out, :cache_read_tokens
+
   MAX_SUMMARY_LENGTH = 160
 
   before_validation { self.summary = summary.to_s.strip.presence&.first(MAX_SUMMARY_LENGTH) }

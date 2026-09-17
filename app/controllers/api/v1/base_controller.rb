@@ -41,6 +41,32 @@ module Api
         render json: body, status: status
       end
 
+      # Render a rescued exception. Prefer this over `render_error(e.message)` at
+      # a bare `rescue StandardError` site: a raw message alone is what made the
+      # 2026-09-17 archive failure opaque — the operator got
+      #
+      #   422: 2231911675 is out of range for ActiveModel::Type::Integer with limit 4 bytes
+      #
+      # with no table, no column, and no task. The message half is now fixed in
+      # the model layer (IntegerColumnRange names the column); this adds the
+      # machine-readable code so `bin/task` and the board can tell a column-width
+      # overflow apart from an ordinary validation refusal without parsing prose.
+      ERROR_CODES = {
+        "IntegerColumnRange::OutOfRangeColumnError" => "VALUE_OUT_OF_RANGE",
+        "ActiveModel::RangeError" => "VALUE_OUT_OF_RANGE",
+        "ActiveRecord::RecordInvalid" => "RECORD_INVALID",
+        "ActiveRecord::RecordNotFound" => "NOT_FOUND"
+      }.freeze
+
+      def render_exception(exception, status: :unprocessable_entity)
+        render_error(exception.message, status: status, error_code: error_code_for(exception))
+      end
+
+      def error_code_for(exception)
+        ERROR_CODES[exception.class.name] ||
+          ERROR_CODES.find { |name, _| exception.class.ancestors.any? { |a| a.name == name } }&.last
+      end
+
       def not_found
         render_error("Not found", status: :not_found, error_code: "NOT_FOUND")
       end
