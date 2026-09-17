@@ -11,7 +11,7 @@ documents (the Commercial Welding data room + LOI) were filed with it.
 It stands alone — every command inline. The knowledge layer's storage rules
 live in [`object-storage.md`](object-storage.md); this module owns the FLOW.
 
-## The five mouths, one funnel
+## The six mouths, one funnel
 
 | Source | How it arrives |
 |---|---|
@@ -20,6 +20,7 @@ live in [`object-storage.md`](object-storage.md); this module owns the FLOW.
 | **Chat** | hand a path or paste content to a session and say what it is |
 | **UI upload** | the entity app's `/admin/knowledge` intake form |
 | **Slack** | `bin/rails slack:pull` in the entity app — one JSON archive per channel per calendar month. Connecting, reading and categorizing a channel is its own SOP: [`slack-capture.md`](slack-capture.md) |
+| **Gmail** | `bin/rails gmail:pull` on the hub — a READ-ONLY pull of query-matching mail from Mr. McRitchie's own mailbox into this same desk queue, so deal correspondence arrives without a hand-forward. Connecting, reading and revoking it is its own SOP: [`gmail-capture.md`](gmail-capture.md) |
 
 Everything converges on the same protocol below. Email specifics:
 
@@ -32,6 +33,13 @@ Everything converges on the same protocol below. Email specifics:
   trusted blindly.
 - The arrivals queue is `/admin/desk` on the hub; the model is
   `DeskCaptureItem` (`awaiting_sweep` scope).
+- **`source` says which door an item came through, and the allowlist above is
+  the PUBLIC door's rule only.** A `gmail` item is trusted by construction —
+  it was already in Mr. McRitchie's mailbox and matched a query we control, so
+  a counterparty in `From:` is the expected truth there rather than a stranger
+  at a guessable address. Read `source` before reading a `received` status as
+  an allowlist decision. Trust is keyed on the transport our code passes, never
+  on a header in the mail.
 
 ## The intake protocol (per item — runs at ARRIVAL, never batched)
 
