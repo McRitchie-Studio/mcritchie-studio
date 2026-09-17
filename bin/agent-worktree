@@ -3354,7 +3354,8 @@ def delete_local_branch_if_safe(app, branch)
 end
 
 # THE LEAK EXIT. A teardown that finished but left a process running exits 3: distinct from
-# 1 (refused or aborted, and for `remove` nothing was destroyed) and 2 (an argument refusal),
+# 1 (refused before anything was destroyed, or aborted part-way, e.g. `git worktree remove`
+# failing after the stack, Redis DB and databases are already gone) and 2 (an argument refusal),
 # because a caller must be able to tell "the desk is gone and something outlived it" from
 # both. A reclaim batch finishes every desk first and exits 3 once at the end, so one leak
 # never stops the sweep.
