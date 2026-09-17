@@ -1092,8 +1092,7 @@ it fast-forwards each repo's `main` up to `release` (so `release` collapses into
 each ff lands (best-effort; the interrupted-run skip signal — a re-run's ffs
 no-op and `ship!` re-stamps it regardless) — then deploys. **There is no single
 deploy command:** each app ships by the `prod_deploy.strategy` on its
-`config/release_repos.yml` row (`bin/release.rb#deploy_app`), and only
-`three-rung` repos reach this step (`app/models/release/ladder.rb#sweepable`):
+`config/release_repos.yml` row (`bin/release.rb#deploy_app`):
 
 - **`github_actions` — `mcritchie-studio`.** Dispatches `gh workflow run
   prod-deploy.yml -f sha=<frozen>` and watches the run. The workflow pushes that
@@ -1111,9 +1110,14 @@ deploy command:** each app ships by the `prod_deploy.strategy` on its
   through Squads, never through ship.
 
 All three deploying apps migrate in their Heroku release phase (`release:` in
-each Procfile). `rolio` (`git_push_heroku`, `ladder: dormant`) and `tax-studio`
-(`repo_script`, `ladder: planned`) declare adapters but never reach this step;
-`chain-ops` (`ladder: blocked`) declares none. After every app deploys + smokes (and before the
+each Procfile). The registry parks the rest: `rolio` (`git_push_heroku`, `ladder:
+dormant`) and `tax-studio` (`repo_script`, `ladder: planned`) declare adapters, and
+`chain-ops` (`ladder: blocked`) declares none. **The ladder is not a deploy
+guard.** `app/models/release/ladder.rb#sweepable` scopes `bin/release init`, the
+ladder guards and the unwired-CI warning, but neither the sweep
+(`app/models/release/conductor.rb#sweep_candidates`) nor `deploy_app` reads it, so
+a `reviewed` task naming a parked repo would still ship through that repo's
+adapter. After every app deploys + smokes (and before the
 `shipped` record), the **post-deploy hook** runs each member's
 `devops.post_deploy_cmd` on its **production app** via `heroku run` (duplicate
 commands fold to one run, as on QA), records the
