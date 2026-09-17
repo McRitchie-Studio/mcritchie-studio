@@ -1203,6 +1203,41 @@ class AgentWorktreeTest < Minitest::Test
     end
   end
 
+  # --- identity's missing-desk remedy: a command that can actually cut the desk --
+  #
+  # `identity` resolves through sweep_app_for, so it reaches repos `new` cannot desk:
+  # `new` resolves through app_for, the registry, and answers "unknown app" for a gem
+  # lane (studio-engine, solana-studio, turf-vault). A missing gem-lane desk was told to
+  # run `new` anyway, the one remedy guaranteed to fail on the lanes whose docs send
+  # builders to `identity`. The lane is read off the registry lookup `new` uses, so a
+  # registered app keeps `new` and anything else gets the `git worktree add` that cuts
+  # the desk where identity looks, sibling tree included.
+  def test_missing_desk_remedy_follows_the_registry_new_resolves_through
+    Dir.mktmpdir do |root|
+      out = run_in_script(<<~RUBY, env: { "PROJECTS_DIR" => root })
+        gem = { "slug" => "studio-engine", "repo" => File.join(PROJECTS_DIR, "studio-engine") }
+        sibling = gem.merge("slug" => "studio-engine.sibling",
+                            "worktrees_dir" => File.join(PROJECTS_DIR, "studio-engine.worktrees"))
+        print [missing_desk_remedy(apps.fetch("mcritchie-studio"), "t", "carl"),
+               missing_desk_remedy(gem, "t", "carl"),
+               missing_desk_remedy(sibling, "t", "carl")].join("|||")
+      RUBY
+      app, gem, sibling = out.split("|||")
+
+      assert_includes app, "agent-worktree new mcritchie-studio t --soul carl",
+                      "control: a registered app keeps `new`, which can cut its desk"
+      refute_includes app, "worktree add"
+
+      assert_includes gem, "git -C #{root}/studio-engine worktree add #{root}/studio-engine/.worktrees/t " \
+                           "-b feat/t origin/accepted"
+      assert_includes gem, "agent-worktree identity studio-engine t carl", "the remedy re-runs identity"
+      refute_includes gem, " new ", "`new` answers unknown app for an unregistered repo"
+
+      assert_includes sibling, "worktree add #{root}/studio-engine.worktrees/t -b feat/t",
+                      "the path is the one identity resolves, not a hard-coded layout"
+    end
+  end
+
   # --- sweep scale: board reads must not scale with desk count ----------------
   #
   # reclaim_evidence resolves the build claim per desk, and task_record_for_pr spawns

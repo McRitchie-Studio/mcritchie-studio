@@ -163,7 +163,7 @@ cp <desk>/.env.test.local "$ZAP"/                     # REQUIRED before any test
 cd "$ZAP"
 BASE=$(git rev-parse HEAD)                            # the head you zap FROM — pin the lease to it
 # ...one bounded fix...
-# Name the ZAPPING soul (on a review zap, the reviewer), not the builder's stamp this throwaway inherited:
+# Name the ZAPPING soul (on a review zap, the reviewer), not the builder's stamp this throwaway may have inherited:
 git -c user.name="<Soul>" -c user.email=<soul>@mcritchie.studio \
   commit -m "zap: <what was broken, one line>"
 git push --force-with-lease=refs/heads/feat/<slug>:$BASE origin HEAD:refs/heads/feat/<slug>

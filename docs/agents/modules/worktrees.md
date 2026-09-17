@@ -213,7 +213,7 @@ How it works, and what it will not do:
   desk and the primary resolve exactly as before. The one shared write is the
   switch `extensions.worktreeConfig = true`, once per repo.
 - **Nothing here writes `~/.gitconfig`, and no soul identity may land there.**
-  No `user.*` key goes into the operator's global file, by script or by hand.
+  No agent writes a `user.*` key there, by script or by hand.
   Its one sanctioned global write is the credential-helper wiring that
   `bin/install-git-credential-helper` prints and you run once
   ([source-control.md](source-control.md#how-the-two-tools-are-wired--differently));

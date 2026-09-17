@@ -2,6 +2,7 @@ require "test_helper"
 require "fileutils"
 require "open3"
 require "rbconfig"
+require "shellwords"
 require "tmpdir"
 require_relative "../support/desk_ledger_sink"
 
@@ -24,6 +25,7 @@ require_relative "../support/desk_ledger_sink"
 # cleared for each git read, so nothing touches a real desk or the operator's config.
 class AgentWorktreeIdentityTest < ActiveSupport::TestCase
   TASK = "identity-desk".freeze
+  GEM_TASK = "gem-desk".freeze
 
   def setup
     @projects_dir = File.realpath(Dir.mktmpdir("agent-worktree-identity"))
@@ -90,7 +92,66 @@ class AgentWorktreeIdentityTest < ActiveSupport::TestCase
     assert_includes err, "bin/agent-worktree identity mcritchie-studio #{TASK} <soul>"
   end
 
+  # identity-hint-for-gem-desks. `identity` reaches a gem-lane repo (it resolves through
+  # sweep_app_for), but a MISSING desk there was told to run `new`, which answers
+  # "unknown app" for studio-engine, solana-studio and turf-vault. The remedy printed
+  # must be one that runs: this test pastes it, then re-runs identity on the desk it cut.
+  test "[integration] a missing gem-lane desk names git worktree add, and pasting it lets identity stamp" do
+    gem_repo = init_gem_repo("studio-engine")
+    missing = File.join(gem_repo, ".worktrees", GEM_TASK)
+
+    out, err, status = agent_worktree("identity", "studio-engine", GEM_TASK, "carl", env: scratch_git_env)
+
+    refute status.success?, "a missing desk must exit non-zero:\n#{out}"
+    assert_includes err, "missing worktree: #{missing}"
+    remedy = err.lines.map(&:strip).find { |line| line.start_with?("git -C ") }
+    assert_equal "git -C #{gem_repo} worktree add #{missing} -b feat/#{GEM_TASK} origin/accepted", remedy,
+                 "a gem-lane desk is cut with git, at the path identity resolves:\n#{err}"
+    refute_includes err, "agent-worktree new studio-engine", "`new` answers unknown app for a gem lane"
+    assert_includes err, "agent-worktree identity studio-engine #{GEM_TASK} carl"
+
+    # Pasted as printed (`-C` and all), from a directory that is not itself a repo.
+    git_out(@projects_dir, *Shellwords.split(remedy).drop(1), env: scratch_git_env)
+    out, err, status = agent_worktree("identity", "studio-engine", GEM_TASK, "carl", env: scratch_git_env)
+
+    assert status.success?, "the pasted remedy must leave a desk identity can stamp:\n#{out}\n#{err}"
+    assert_equal "Carl <carl@mcritchie.studio>", author_ident(missing, env: scratch_git_env)
+    assert_equal "feat/#{GEM_TASK}", git_out(missing, "rev-parse", "--abbrev-ref", "HEAD", env: scratch_git_env)
+  end
+
+  test "[integration] a missing app desk still names new, which can cut a registered app's desk" do
+    out, err, status = agent_worktree("identity", "mcritchie-studio", "no-such-desk", "carl", env: scratch_git_env)
+
+    refute status.success?, "a missing desk must exit non-zero:\n#{out}"
+    assert_includes err, "missing worktree: #{File.join(@hub_dir, ".worktrees", "no-such-desk")}"
+    assert_includes err, "agent-worktree new mcritchie-studio no-such-desk --soul carl"
+    refute_includes err, "worktree add", "a registered app keeps the command that allocates its port and stack"
+  end
+
   private
+
+  # A gem-lane repo the way it sits on disk: not in the registry, a `.worktrees` tree
+  # (what makes sweep_app_for discover it), and an origin/accepted to cut from.
+  def init_gem_repo(name)
+    repo = File.join(@projects_dir, name)
+    FileUtils.mkdir_p(File.join(repo, ".worktrees"))
+    git_out(repo, "init", "-q", env: scratch_git_env)
+    git_out(repo, "config", "user.email", "agent-test@example.com", env: scratch_git_env)
+    git_out(repo, "config", "user.name", "Agent Test", env: scratch_git_env)
+    File.write(File.join(repo, ".gitignore"), "/.worktrees/\n")
+    git_out(repo, "add", ".gitignore", env: scratch_git_env)
+    git_out(repo, "commit", "-q", "-m", "Initial commit", env: scratch_git_env)
+    git_out(repo, "update-ref", "refs/remotes/origin/accepted", "HEAD", env: scratch_git_env)
+    repo
+  end
+
+  # HOME and the global git config pointed at throwaway paths, so neither the operator's
+  # ~/.gitconfig nor anything a runner exports can answer for these repos.
+  def scratch_git_env
+    home = File.join(@projects_dir, ".scratch-home")
+    FileUtils.mkdir_p(home)
+    { "HOME" => home, "GIT_CONFIG_GLOBAL" => File.join(home, ".gitconfig") }
+  end
 
   def init_hub
     FileUtils.mkdir_p(@hub_dir)
@@ -127,9 +188,9 @@ class AgentWorktreeIdentityTest < ActiveSupport::TestCase
 
   # Git with the identity ENVIRONMENT cleared, so an assertion about who a commit names
   # measures the config files and nothing a CI runner happens to export.
-  def git_out(dir, *args)
+  def git_out(dir, *args, env: {})
     env = SessionEnv.neutralized.merge("GIT_AUTHOR_NAME" => nil, "GIT_AUTHOR_EMAIL" => nil,
-                                       "GIT_COMMITTER_NAME" => nil, "GIT_COMMITTER_EMAIL" => nil)
+                                       "GIT_COMMITTER_NAME" => nil, "GIT_COMMITTER_EMAIL" => nil).merge(env)
     out, err, status = Open3.capture3(env, "git", *args, chdir: dir)
     assert status.success?, "git #{args.join(" ")} failed\n#{out}\n#{err}"
     out.strip
@@ -139,11 +200,11 @@ class AgentWorktreeIdentityTest < ActiveSupport::TestCase
     git_out(dir, "commit", "--allow-empty", "-q", "-m", "a hand commit, not bin/ship")
   end
 
-  def author_ident(dir)
-    git_out(dir, "var", "GIT_AUTHOR_IDENT").sub(/\s+\d+\s+[-+]\d{4}\z/, "")
+  def author_ident(dir, env: {})
+    git_out(dir, "var", "GIT_AUTHOR_IDENT", env: env).sub(/\s+\d+\s+[-+]\d{4}\z/, "")
   end
 
-  def agent_worktree(*args)
+  def agent_worktree(*args, env: {})
     command_env = OutboundSeams.env({
       "PROJECTS_DIR" => @projects_dir,
       "AGENT_REDIS_CAPACITY_FILE" => File.join(@projects_dir, ".agents", "redis-capacity.json"),
@@ -151,7 +212,7 @@ class AgentWorktreeIdentityTest < ActiveSupport::TestCase
       "AGENT_WORKTREE_REGISTRY" => File.join(@projects_dir, ".agents", "registry.json"),
       "AGENT_WORKTREE_ORIGIN_FETCH" => "ok",
       "AGENT_WORKTREE_TASK_BIN" => OutboundSeams.stub("task-cli")
-    }.merge(@desk_ledger.env))
+    }.merge(@desk_ledger.env)).merge(env)
     Open3.capture3(command_env, RbConfig.ruby, @script, *args, chdir: Rails.root.to_s)
   end
 end
