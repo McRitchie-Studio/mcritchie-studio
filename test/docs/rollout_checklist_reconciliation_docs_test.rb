@@ -63,10 +63,15 @@ class RolloutChecklistReconciliationDocsTest < ActiveSupport::TestCase
     File.read(Rails.root.join(path))
   end
 
-  # A checkbox in EVERY spelling GitHub renders as one: any bullet (`-`, `*`, `+`)
-  # or ordered marker (`1.`, `1)`), at any indent, holding a space, `x` or `X`, and
-  # followed by whitespace. Blockquote markers are stripped first (QUOTE), so
-  # `> - [ ]` and `> > * [ ]` are boxes too.
+  # A checkbox is a line that STARTS with a box: any bullet (`-`, `*`, `+`) or
+  # ordered marker (`1.`, `1)`), at any indent, holding a space, `x` or `X`, and
+  # followed by whitespace or the end of the file. Blockquote markers are stripped
+  # first (QUOTE), so `> - [ ]` and `> > * [ ]` are boxes too.
+  #
+  # That is not every box GitHub renders. A box that opens a container NESTED in a
+  # list item — `- - [ ]`, `- > - [ ]`, or a `> - [ ]` indented four or more spaces
+  # under its parent item — renders as a checkbox and is invisible here. The guarded
+  # doc had none on 2026-09-16; teach the pattern that spelling before using it.
   #
   # WIDENED 2026-09-16 (rollout-guard-misses-checkbox-forms). The first version
   # knew one spelling, `- [ ]` / `- [x]`. An unmarked `* [ ]`, `- [X]` or `> - [ ]`
