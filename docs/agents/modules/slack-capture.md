@@ -137,7 +137,7 @@ cursor=""
 while :; do
   page=$(slack_curl conversations.list \
            -d types=public_channel,private_channel -d limit=200 \
-           -d exclude_archived=true -d "cursor=${cursor}")
+           -d exclude_archived=true --data-urlencode "cursor=${cursor}")
   echo "$page" | python3 -c '
 import json,sys
 d=json.load(sys.stdin)
