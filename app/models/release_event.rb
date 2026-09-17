@@ -20,6 +20,10 @@ class ReleaseEvent < ApplicationRecord
   validates :step, inclusion: { in: STEPS }
   validates :status, inclusion: { in: STATUSES }
   validates :tokens_in, :tokens_out, numericality: { only_integer: true, greater_than_or_equal_to: 0 }, allow_nil: true
+  # The numericality check above catches a NEGATIVE count; it cannot catch one
+  # too WIDE for the column, because the range check happens at serialize time
+  # (inside the INSERT), long after validation. See IntegerColumnRange.
+  clamps_integer_columns :tokens_in, :tokens_out
   validates :cost, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
   validate :required_usage_for_agent_completion
 
