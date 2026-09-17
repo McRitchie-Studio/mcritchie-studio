@@ -74,14 +74,14 @@ note under the table):
 
 ## Solana Wallets
 
-Each agent has a dedicated Solana wallet. Credentials stored in 1Password. The three vault-admin identities below (Xan, Alex Human, Mason) are **the same keys on devnet and mainnet** — verified 2026-09-05 as the `VaultState.signers` set on both clusters — so a rotation of any of them is a mainnet event, not a devnet one. The other rows were not part of that verification: check the cluster before assuming any of them is devnet-only.
+Each agent has a dedicated Solana wallet. Credentials stored in 1Password. The three vault-admin identities below (Xan, Mr. McRitchie's Phantom, Mason) are **the same keys on devnet and mainnet** — verified 2026-09-05 as the `VaultState.signers` set on both clusters — so a rotation of any of them is a mainnet event, not a devnet one. The other rows were not part of that verification: check the cluster before assuming any of them is devnet-only.
 
 ### Wallet Addresses
 
 | Agent | Address | Role |
 |-------|---------|------|
 | Xan | `8K81w4e6UcB7TiANhM9N8sAgijJvTxxybRi8AENRaRYd` | Rotated vault admin (signs routine onchain ops) |
-| Alex Human | `7ZDJp7FUHhuceAqcW9CHe81hCiaMTjgWAXfprBM59Tcr` | Backup vault admin (recovery only) |
+| Mr. McRitchie's Phantom | `7ZDJp7FUHhuceAqcW9CHe81hCiaMTjgWAXfprBM59Tcr` | Backup vault admin (recovery only) |
 | Mason | `CytJS23p1zCM2wvUUngiDePtbMB484ebD7bK4nDqWjrR` | Vault signer (third 2-of-3 cosigner) |
 | Mack | `foUuRyeibadQoGdKXZ9pBGDqmkb1jY1jYsu8dZ29nds` | Agent wallet |
 | Turf Monster admin | `BLSBw8fXHzZc5pbaYCKMpMSsrtXBTbWXpUPVzMrXx9oo` | Agent governance identity (`solana.turf.admin`) |
