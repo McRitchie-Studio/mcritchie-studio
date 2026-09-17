@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_16_210000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_17_140000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -508,13 +508,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_16_210000) do
     t.string "entity_hint"
     t.text "filed_note"
     t.string "from_addr"
+    t.bigint "history_id"
     t.string "message_id"
     t.datetime "received_at"
     t.string "s3_key", null: false
+    t.string "source", default: "resend", null: false
     t.string "status", default: "received", null: false
     t.string "subject"
     t.datetime "updated_at", null: false
     t.index ["s3_key"], name: "index_desk_capture_items_on_s3_key", unique: true
+    t.index ["source", "history_id"], name: "index_desk_capture_items_on_source_and_history_id"
     t.index ["status", "received_at"], name: "index_desk_capture_items_on_status_and_received_at"
   end
 

@@ -272,6 +272,14 @@ class BinHelpFlagClassTest < Minitest::Test
     "session-preflight"      => :optparse,
     "reviewer-select"        => :optparse,
     "qa-intake"              => :optparse,
+    # The Gmail READ credential's one-time refresh-token mint. OptionParser with a
+    # -h arm that exits before anything opens, and an unknown flag raises
+    # InvalidOption unrescued. Nothing durable to precede: it writes no file and
+    # calls no API until a human has approved a consent screen in a browser, and
+    # its whole output is a JSON object printed to stdout for the operator to
+    # paste into 1Password. The abort for a missing --client-id is reached only
+    # AFTER the help arm has already exited.
+    "gmail-oauth-mint"       => :optparse,
     "devops-cycle"           => :optparse,
     "devops-tests"           => :optparse,
     "devops-reconcile"       => :optparse,
