@@ -166,10 +166,10 @@ mechanics and are reconciled to this model as each phase lands. Where they still
 say "PR into `release`", "the sweep merges each feature PR", or "the gate runs the
 local suite", read the target below.*
 
-**Why.** Today the *authoritative* test-and-deploy verdict runs locally on a
-developer machine — `fast-check`/`full-suite-check` certify G1, and `bin/release
-prepare`/`ship` run the G3/G4 suites in local gate workspaces and `git push heroku`
-directly. That local-cert model is the root of a documented flakiness class
+**Why.** When this model was approved, the *authoritative* test-and-deploy verdict
+ran locally on a developer machine — `fast-check`/`full-suite-check` certified G1,
+and `bin/release prepare`/`ship` ran the G3/G4 suites in local gate workspaces and
+ran `git push heroku` directly. That local-cert model is the root of a documented flakiness class
 (parallel-cert SIGSEGVs, stale-cert false positives, shared-primary-torn-mid-suite
 false reds) that we have spent real effort mitigating with fingerprinting and
 isolated gate workspaces. v2 moves the deciding run onto clean, isolated GitHub
@@ -1090,8 +1090,30 @@ app deploys, so apps never deploy against an unpublished gem. Then for the apps
 it fast-forwards each repo's `main` up to `release` (so `release` collapses into
 `main`), pushes origin — stamping that repo's members **`merged: "main"`** as
 each ff lands (best-effort; the interrupted-run skip signal — a re-run's ffs
-no-op and `ship!` re-stamps it regardless) — deploys (`git push heroku main`;
-release phase runs migrations), and smokes `/up`. After every app deploys + smokes (and before the
+no-op and `ship!` re-stamps it regardless) — then deploys. **There is no single
+deploy command:** each app ships by the `prod_deploy.strategy` on its
+`config/release_repos.yml` row (`bin/release.rb#deploy_app`), and only
+`three-rung` repos reach this step (`app/models/release/ladder.rb#sweepable`):
+
+- **`github_actions` — `mcritchie-studio`.** Dispatches `gh workflow run
+  prod-deploy.yml -f sha=<frozen>` and watches the run. The workflow pushes that
+  SHA to Heroku and hard-gates the production `/up` smoke, so the conductor runs
+  no smoke of its own. Not `git push heroku main` — see
+  [How Production Deploys](../modules/deployment.md#how-production-deploys).
+- **`repo_script` — `turf-monster`.** Runs the repo's own `bin/deploy --yes` in
+  its ship workspace at the frozen SHA. The script runs its suite, pushes to its
+  Heroku remote, smokes, and owns its rollback.
+- **`git_push_heroku` — `mcritchie-industries`.** Ref-pushes the frozen SHA to
+  the Heroku git remote the row names (`git push <remote>
+  <frozen>:refs/heads/main`), then the conductor curl-smokes `<smoke_url>/up`.
+- **No `prod_deploy` — `turf-vault`.** Main advances and ship records `no
+  production deploy target — nothing dispatched`. The program upgrades by hand
+  through Squads, never through ship.
+
+All three deploying apps migrate in their Heroku release phase (`release:` in
+each Procfile). `rolio` (`git_push_heroku`, `ladder: dormant`) and `tax-studio`
+(`repo_script`, `ladder: planned`) declare adapters but never reach this step;
+`chain-ops` (`ladder: blocked`) declares none. After every app deploys + smokes (and before the
 `shipped` record), the **post-deploy hook** runs each member's
 `devops.post_deploy_cmd` on its **production app** via `heroku run` (duplicate
 commands fold to one run, as on QA), records the

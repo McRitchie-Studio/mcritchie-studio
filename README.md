@@ -143,8 +143,14 @@ npm run test:headed             # with visible browser
 
 ## Deploy
 
+Production does not deploy with `git push heroku main`. `bin/release ship`
+fast-forwards `release → main`, then dispatches the GitHub Actions workflow
+`.github/workflows/prod-deploy.yml` with the frozen SHA; the workflow pushes
+that SHA to Heroku and gates on a production `/up` smoke. The full path lives in
+one place:
+[How Production Deploys](docs/agents/modules/deployment.md#how-production-deploys).
+
 ```bash
-git push heroku main
 heroku ps:scale worker=1 --app mcritchie-studio
 ```
 
