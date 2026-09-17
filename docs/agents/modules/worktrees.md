@@ -212,7 +212,12 @@ How it works, and what it will not do:
   `extensions.worktreeConfig`. It is not the shared `.git/config`, so a sibling
   desk and the primary resolve exactly as before. The one shared write is the
   switch `extensions.worktreeConfig = true`, once per repo.
-- **Nothing here writes `~/.gitconfig`**, and nothing may.
+- **Nothing here writes `~/.gitconfig`, and no soul identity may land there.**
+  No `user.*` key goes into the operator's global file, by script or by hand.
+  Its one sanctioned global write is the credential-helper wiring that
+  `bin/install-git-credential-helper` prints and you run once
+  ([source-control.md](source-control.md#how-the-two-tools-are-wired--differently));
+  it names a helper, not an author.
 - **It refuses a primary checkout.** A primary is a loading dock: release
   artifact commits and the operator's own commits land there, and a stamp would
   name a soul on all of them.
@@ -220,6 +225,12 @@ How it works, and what it will not do:
   `identity: UNSTAMPED` with what a hand commit will be authored as and the
   `identity` command that fixes it. A stamp that fails never fails `new` or
   `begin`, because the desk is still whole.
+- **A desk cut by hand gets no stamp and no warning.** The studio-engine,
+  solana-studio and turf-vault lanes have no `bin/task begin`, so their desk is a
+  plain `git worktree add`, and neither `new` nor `begin` runs to stamp it or
+  print `UNSTAMPED`. Cut it at `<repo>/.worktrees/<slug>`, where `identity` looks,
+  and stamp it before the first commit:
+  `/Users/alex/projects/mcritchie-studio/bin/agent-worktree identity <repo> <slug> <soul>`.
 - **A worktree cut from a stamped desk inherits the stamp** (git copies
   `config.worktree`; measured on git 2.50.1). A zap throwaway cut from a
   builder's desk commits as that builder unless the zapper names themselves.

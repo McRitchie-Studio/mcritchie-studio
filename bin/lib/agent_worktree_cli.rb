@@ -120,7 +120,7 @@ module AgentWorktreeCli
 
       new --soul / identity: stamp the desk's OWN git config (config.worktree)
         with the soul's commit identity, e.g. Carl <carl@mcritchie.studio>.
-        Never the shared .git/config, never the global file.
+        Never a user.* key in the shared .git/config, never the global file.
       remove --force: override the content-on-<base> guard ONLY for a
         merge-verified branch (a merged PR on GitHub). Never overrides
         the dirty or not-git-registered guards.
