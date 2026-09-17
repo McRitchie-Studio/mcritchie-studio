@@ -95,9 +95,11 @@ field `credential`.** The consuming constant is `Slack::Credentials::ITEM` in
 philosophical: the ingest calls a bare `op read` with whatever token the shell
 already carries, which in every agent lane is `OP_SERVICE_ACCOUNT_TOKEN`. An
 admin-vault item is simply not readable with that token. **And the failure is
-silent** — `shell_read_from_op` rescues to nil, `configured?` returns false, and
-`bin/rails slack:pull` prints `No Slack token` and **exits 0**. The lane looks
-idle rather than broken.
+silent** — `shell_read_from_op` returns nil on a refused read, `configured?`
+returns false, and `bin/rails slack:pull` prints `No Slack token` and **exits
+0**. The lane looks idle rather than broken. A missing `op`, a spent 1Password
+quota, and a cold `op` killed at `OP_TIMEOUT_SECONDS` (15s) print the same line,
+so check those before re-filing a token.
 
 The agent service account **cannot create or edit 1Password items** (measured —
 `(101) You do not have permission`, for creates as well as deletes, despite an
@@ -230,7 +232,8 @@ facts. The ingest writes that line into `source_note`; keep it through triage.
 ### Filing a month
 
 Classification is written once, at create. **A later pull refreshes `byte_size`
-and nothing else**, so these edits survive the next run:
+and re-adds the `slack-ingest` tag if it is missing — nothing else**, so these
+edits survive the next run:
 
 ```bash
 cd /Users/alex/projects/mcritchie-industries
