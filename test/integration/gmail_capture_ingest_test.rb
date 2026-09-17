@@ -37,6 +37,15 @@ class GmailCaptureIngestTest < ActionDispatch::IntegrationTest
     end
   end
 
+  # Intercepts DeskCapture.store on the MODULE, not merely as an injected double.
+  #
+  # Injecting a double into the ingest is not enough and CI proved it: the real
+  # DeskCapture.ingest_raw extracts attachments by calling DeskCapture.store
+  # ITSELF, so a test that stubs only the ingest's copy still reaches S3 from
+  # inside ingest_raw. That passed locally — a desk has AWS credentials in .env,
+  # so it wrote two real objects into the private production desk bucket — and
+  # failed on CI, which has none (Aws::Errors::MissingCredentialsError). Stubbing
+  # the module is what makes the test hermetic in both places.
   class StorageDouble
     attr_reader :stored
 
@@ -48,6 +57,16 @@ class GmailCaptureIngestTest < ActionDispatch::IntegrationTest
     end
 
     def ingest_raw(**kwargs) = DeskCapture.ingest_raw(**kwargs)
+
+    # Swaps DeskCapture.store for this recorder for the duration of the block.
+    def intercepting
+      original = DeskCapture.method(:store)
+      recorder = method(:store)
+      DeskCapture.define_singleton_method(:store) { |key, body, **kw| recorder.call(key, body, **kw) }
+      yield
+    ensure
+      DeskCapture.define_singleton_method(:store, original)
+    end
   end
 
   class CredentialsDouble
@@ -81,15 +100,36 @@ class GmailCaptureIngestTest < ActionDispatch::IntegrationTest
     @original_query = ENV["GMAIL_CAPTURE_QUERY"]
     ENV["GMAIL_CAPTURE_QUERY"] = "from:#{COUNTERPARTY}"
     @storage = StorageDouble.new
+    DeskCapture.reset!
   end
 
   teardown do
     @original_query ? ENV["GMAIL_CAPTURE_QUERY"] = @original_query : ENV.delete("GMAIL_CAPTURE_QUERY")
   end
 
+  # HERMETICITY, pinned independently of the environment. DeskCapture.client
+  # memoizes an Aws::S3::Client the first time anything asks for one, so a nil
+  # @client proves no S3 call was attempted — true on a desk that HAS AWS
+  # credentials as well as on CI, which does not. Asserting "no credentials
+  # error" would only ever have held on CI, which is how this leaked: locally it
+  # passed by writing two real objects into the private production desk bucket.
+  teardown do
+    assert_nil DeskCapture.instance_variable_get(:@client),
+      "an S3 client was constructed — something in this test reached real object storage"
+    DeskCapture.reset!
+  end
+
   def pull(messages)
-    Gmail::MailboxIngest.new(client: ClientDouble.new(messages), storage: @storage,
-                             credentials: CredentialsDouble.new).call
+    @storage.intercepting do
+      Gmail::MailboxIngest.new(client: ClientDouble.new(messages), storage: @storage,
+                               credentials: CredentialsDouble.new).call
+    end
+  end
+
+  # The three team@-door tests call ingest_raw directly, so they need the same
+  # interception — attachment extraction is exactly what they assert about.
+  def ingest_via_resend(raw, key)
+    @storage.intercepting { DeskCapture.ingest_raw(raw: raw, s3_key: key) }
   end
 
   test "a counterparty's mail lands swept-ready, body and attachment extracted" do
@@ -123,7 +163,7 @@ class GmailCaptureIngestTest < ActionDispatch::IntegrationTest
   test "the public team@ door still quarantines the same stranger" do
     # The Gmail leg does NOT widen DESK_ALLOWED_SENDERS. Proven by running the
     # identical message through the Resend transport, which passes no source.
-    DeskCapture.ingest_raw(raw: deal_mime, s3_key: "resend/re_x.eml")
+    ingest_via_resend(deal_mime, "resend/re_x.eml")
 
     item = DeskCaptureItem.find_by!(s3_key: "resend/re_x.eml")
     assert_equal "resend", item.source
@@ -138,7 +178,7 @@ class GmailCaptureIngestTest < ActionDispatch::IntegrationTest
     # passes. Headers a stranger controls must not reach it.
     forged = deal_mime.sub("MIME-Version: 1.0",
                            "X-Forwarded-For: alex@mcritchie.studio\nX-Source: gmail\nMIME-Version: 1.0")
-    DeskCapture.ingest_raw(raw: forged, s3_key: "resend/re_forged.eml")
+    ingest_via_resend(forged, "resend/re_forged.eml")
 
     assert_equal "quarantined", DeskCaptureItem.find_by!(s3_key: "resend/re_forged.eml").status
     assert_equal %w[gmail], DeskCapture::TRUSTED_SOURCES,
@@ -148,7 +188,7 @@ class GmailCaptureIngestTest < ActionDispatch::IntegrationTest
   test "Mr McRitchie's own forward through team@ is unaffected" do
     own = deal_mime.sub("From: Deal Broker <#{COUNTERPARTY}>",
                         "From: Alex McRitchie <amcritchie@gmail.com>")
-    DeskCapture.ingest_raw(raw: own, s3_key: "resend/re_own.eml")
+    ingest_via_resend(own, "resend/re_own.eml")
 
     item = DeskCaptureItem.find_by!(s3_key: "resend/re_own.eml")
     assert_equal "received", item.status, "the hand-forward path must keep working exactly as before"
