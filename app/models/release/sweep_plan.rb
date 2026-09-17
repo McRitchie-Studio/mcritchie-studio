@@ -15,6 +15,9 @@ class Release
   #   ""                    → HELD anomaly (a `reviewed` member with no code on
   #                           accepted — review's merge never landed; leave it
   #                           behind, the CLI warns, it self-heals on re-review).
+  # And ahead of both, the LADDER is a ticket too: a member naming a repo the
+  # registry PARKS (Release::Ladder.parked — anything but three-rung) is HELD whatever
+  # its stamp says, because the conductor does not promote or deploy a parked repo.
   #
   # Like Release::ShipSequence / Release::MergePlan this is deliberately IO-free and
   # Rails-free (bin/release `require_relative`s it directly), so the partition lives
@@ -39,8 +42,40 @@ class Release
     #              why: a multi-repo task whose PR urls cover only some of the repos
     #              it names (see #repo_coverage_gap). The caller aborts on a
     #              non-empty list — BEFORE the promote, so nothing has moved.
-    def compute(rows)
+    #   "parked" — [{ "slug", "stage", "repos", "parked" => { repo => ladder },
+    #              "live" => [repo] }] rows naming a repo the registry PARKS. Kept
+    #              out of every other list: never recorded, promoted or deployed.
+    #              `bin/release prepare` prints #parked_hold_line and sweeps on;
+    #              `bin/release merge`, where the operator NAMED the task, refuses.
+    #
+    # `parked:` is the registry's { repo => ladder } for every non-three-rung repo —
+    # Release::Ladder.parked(config), passed in so this module stays IO-free. It
+    # defaults to {} only so a bare partition test needs no registry; every live
+    # caller passes it, and Release::Conductor.validate_members! refuses a parked
+    # member at record time for any caller that does not.
+    #
+    # PARKED IS PARTITIONED FIRST, ahead of the coverage refusal. A row naming a
+    # parked repo is not a member of this sweep at all, so it has no promote to be
+    # wrong about — refusing the WHOLE run over its PR record would stall every
+    # other task for one that could never ride.
+    #
+    # A MIXED row (a live repo AND a parked one) is held WHOLE. Sweeping its live
+    # half would stamp the task assembled, then shipped, for a repo that never moved
+    # — the same lie the 2026-08-13 half-ship told. `live` names what was withheld,
+    # so the hold line can say so.
+    def compute(rows, parked: {})
       rows = Array(rows).map { |row| normalize(row) }
+      parked_map = (parked || {}).to_h { |repo, ladder| [ repo.to_s.strip, ladder.to_s ] }
+
+      held_parked = rows.filter_map do |row|
+        named = row["repos"].select { |repo| parked_map.key?(repo) }
+        next if named.empty?
+
+        { "slug" => row["slug"], "stage" => row["stage"], "repos" => row["repos"],
+          "parked" => named.to_h { |repo| [ repo, parked_map[repo] ] }, "live" => row["repos"] - named }
+      end
+      parked_slugs = held_parked.map { |row| row["slug"] }
+      rows = rows.reject { |row| parked_slugs.include?(row["slug"]) }
 
       blocked = rows.filter_map do |row|
         missing = repo_coverage_gap(repos: row["repos"], pr_repos: row["pr_urls"].keys,
@@ -59,8 +94,28 @@ class Release
         "record"  => record.map { |row| { "slug" => row["slug"], "merged" => row["merged"] } },
         "held"    => held.map { |row| row["slug"] },
         "sweep"   => record.map { |row| row["slug"] },
-        "blocked" => blocked
+        "blocked" => blocked,
+        "parked"  => held_parked
       }
+    end
+
+    # The `⚠ HELD` sweep line for one "parked" entry: the task, every parked repo it
+    # names with its ladder, the stage it keeps, and — for a mixed task — the live
+    # repo that is withheld with it and why. Pure, so the wording is unit-tested
+    # rather than re-derived at the call site.
+    def parked_hold_line(entry)
+      parked = (entry["parked"] || {}).map { |repo, ladder| "#{repo} (ladder: #{ladder})" }.join(", ")
+      live   = strings(entry["live"])
+      stage  = entry["stage"].to_s.strip.empty? ? "reviewed" : entry["stage"].to_s
+      why =
+        if live.empty?
+          "the conductor sweeps three-rung repos only"
+        else
+          "holding the whole task, so #{live.join(', ')} does not ride either: sweeping that half alone " \
+            "would stamp the task assembled and shipped for a repo that never moved"
+        end
+      "⚠ HELD #{entry['slug']}: names parked #{parked} — #{why}; left `#{stage}`, never promoted or deployed. " \
+        "Re-ladder the repo in config/release_repos.yml, or drop it from the task's devops.repositories."
     end
 
     # THE INTERIM SAFETY NET, and the permanent rule it grew into: a task that names

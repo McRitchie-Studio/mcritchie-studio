@@ -63,16 +63,51 @@ class RolloutChecklistReconciliationDocsTest < ActiveSupport::TestCase
     File.read(Rails.root.join(path))
   end
 
-  # A checkbox item is its `- [ ]` / `- [x]` line plus every following line
-  # indented deeper, so a mark or evidence on a continuation line counts.
+  # A checkbox is a line that STARTS with a box: any bullet (`-`, `*`, `+`) or
+  # ordered marker (`1.`, `1)`), at any indent, holding a space, `x` or `X`, and
+  # followed by whitespace or the end of the file. Blockquote markers are stripped
+  # first (QUOTE), so `> - [ ]` and `> > * [ ]` are boxes too.
+  #
+  # That is not every box GitHub renders. A box that opens a container NESTED in a
+  # list item — `- - [ ]`, `- > - [ ]`, or a `> - [ ]` indented four or more spaces
+  # under its parent item — renders as a checkbox and is invisible here. The guarded
+  # doc had none on 2026-09-16; teach the pattern that spelling before using it.
+  #
+  # WIDENED 2026-09-16 (rollout-guard-misses-checkbox-forms). The first version
+  # knew one spelling, `- [ ]` / `- [x]`. An unmarked `* [ ]`, `- [X]` or `> - [ ]`
+  # was therefore not a box at all to this file, so it passed — green because the
+  # guard could not see the box, not because the box was marked.
+  #
+  # The trailing lookahead is what keeps a link out: `- [x](./file.md)` is a list
+  # item whose text starts with a link, not a box. A box-shaped line inside a
+  # fenced code block still counts, as it did before; that fails LOUDLY, and
+  # teaching this file about fences would let one unclosed fence hide every box
+  # below it.
+  CHECKBOX = /\A(\s*)(?:[-*+]|\d{1,9}[.)])[ \t]+\[([ xX])\](?=\s|\z)/
+  QUOTE = /\A(?: {0,3}> ?)+/
+
+  # A checkbox item is its box line plus every following line indented deeper
+  # (after blockquote markers are stripped), so a mark or evidence on a
+  # continuation line counts.
+  #
+  # A continuation may not sit in a DEEPER blockquote than its box. Stripping the
+  # markers erases the difference between `- [ ] Item` followed by `>   **DONE …**`
+  # and one quoted item, so without the depth check a separate quote block below an
+  # unquoted box vouched for it: a false clean. A SHALLOWER line still attaches,
+  # because Markdown keeps it in the item as a lazy continuation. The cost is one
+  # loud miss: a quote nested INSIDE the item (`  > **DONE …**`) is refused too, so
+  # the box reads as unmarked. Put the mark on the item's own lines.
   def checkbox_items(text)
     items = []
     open_item = nil
-    text.each_line.with_index(1) do |line, number|
-      if (m = line.match(/\A(\s*)- \[( |x)\]\s/))
-        open_item = { line: number, indent: m[1].size, checked: m[2] == "x", body: +line }
+    text.each_line.with_index(1) do |raw, number|
+      depth = raw[QUOTE].to_s.count(">")
+      line = raw.sub(QUOTE, "")
+      if (m = line.match(CHECKBOX))
+        open_item = { line: number, indent: m[1].size, depth: depth, checked: m[2].casecmp?("x"), body: +line }
         items << open_item
-      elsif open_item && !line.strip.empty? && line[/\A\s*/].size > open_item[:indent]
+      elsif open_item && !line.strip.empty? && depth <= open_item[:depth] &&
+            line[/\A\s*/].size > open_item[:indent]
         open_item[:body] << line
       else
         open_item = nil
@@ -211,6 +246,63 @@ class RolloutChecklistReconciliationDocsTest < ActiveSupport::TestCase
     end
   end
 
+  # A box this file cannot SEE is a box it cannot hold to a mark, so an unmarked one
+  # passes by being invisible. The first three spellings are the ones review proved
+  # slipped past the original pattern; every one is planted bare.
+  def test_the_checker_sees_every_checkbox_spelling
+    {
+      "star bullet" => "* [ ] Item\n",
+      "capital X" => "- [X] Item\n",
+      "blockquoted" => "> - [ ] Item\n",
+      "plus bullet" => "+ [ ] Item\n",
+      "ordered with a dot" => "1. [ ] Item\n",
+      "ordered with a paren" => "2) [x] Item\n",
+      "nested blockquote" => "> > * [ ] Item\n",
+      "indented" => "   - [ ] Item\n",
+      "empty box at end of file" => "- [ ]"
+    }.each do |label, prose|
+      assert_match(/no dated/, checklist_defects(prose).join, "#{label}: an unmarked box read as clean")
+    end
+
+    assert_match(/box \[x\] disagrees/, checklist_defects("- [X] Item — **NOT MET (2026-09-16).**\n").join,
+                 "a capital X was seen but not read as checked")
+  end
+
+  # The widening must not reach lines that are not boxes. A guard that flags prose
+  # gets muted, and then it protects nothing.
+  def test_the_checker_ignores_lines_that_are_not_checkboxes
+    {
+      "list item that starts with a link" => "- [x](./file.md) is linked\n",
+      "link whose text is X" => "* [X](https://example.com)\n",
+      "no space after the bullet" => "-[ ] not a list item\n",
+      "no bullet" => "[ ] bare brackets\n",
+      "two characters in the box" => "- [xx] not a box\n",
+      # Widening the box class to any character passed every other pin here.
+      "another letter in the box" => "- [y] not a box\n",
+      "empty brackets" => "- [] not a box\n",
+      "box mid-line" => "Write `- [ ]` for an open item.\n",
+      "table cell" => "| [ ] | open |\n",
+      "bold brackets" => "- **[ ]** emphasis, not a box\n",
+      "quoted box mid-line" => "> the old form was - [ ] only\n"
+    }.each do |label, prose|
+      assert_empty checkbox_items(prose), "#{label}: read as a checkbox"
+    end
+  end
+
+  # A quote block that starts short of the item's text is not that box's
+  # continuation, however far its own text is indented after the `>`. Each box is
+  # asserted SEEN first, so the missing mark is the only reason it can fail.
+  def test_a_mark_in_a_deeper_quote_does_not_vouch_for_the_box_above
+    {
+      "quoted mark under an unquoted box" => "- [ ] Item\n>   **UNSETTLED (2026-09-16).** No read.\n",
+      "quote indented short of the item's text" => "- [ ] Item\n >   **UNSETTLED (2026-09-16).** No read.\n",
+      "doubly quoted mark under a quoted box" => "> - [ ] Item\n> >   **UNSETTLED (2026-09-16).** No read.\n"
+    }.each do |label, prose|
+      assert_equal 1, checkbox_items(prose).size, "#{label}: the box itself was not seen"
+      assert_match(/no dated/, checklist_defects(prose).join, "#{label}: the quoted mark was attached to the box")
+    end
+  end
+
   def test_the_checker_catches_a_bare_threshold
     assert_not_empty authority_defects("- Add admin override for emergencies (signed by 2-of-3 multisig)\n"),
                      "the original Phase B line names no multisig and read as clean"
@@ -224,6 +316,17 @@ class RolloutChecklistReconciliationDocsTest < ActiveSupport::TestCase
                "  `SetAuthority` on `DaFv83yo…` at 2026-06-02T19:14:10Z (slot `423870782`).\n"
     assert_empty checklist_defects(good_box)
     assert_empty checklist_defects("- [ ] Bounty — **UNSETTLED (2026-09-16).**\n  No read decides it.\n")
+    # Each of these is asserted SEEN before it is asserted clean: an empty defect
+    # list from a box the checker never found would pass here for the wrong reason.
+    quoted = "> - [ ] Bounty\n>   **UNSETTLED (2026-09-16).** No read decides it.\n"
+    assert_equal 1, checkbox_items(quoted).size
+    assert_empty checklist_defects(quoted), "a mark on a blockquoted continuation line was not attached to its box"
+    lazy = "> - [ ] Bounty\n    **UNSETTLED (2026-09-16).** No read decides it.\n"
+    assert_equal 1, checkbox_items(lazy).size
+    assert_empty checklist_defects(lazy), "a lazy continuation under a quoted box was not attached to it"
+    starred = "* [X] Transferred — **DONE (2026-09-16).** at 2026-06-02T19:14:10Z\n"
+    assert_equal 1, checkbox_items(starred).size
+    assert_empty checklist_defects(starred)
     assert_empty authority_defects("> `VaultState` is the program's own signer set, still\n> 2-of-3 on the deployed v0.25.\n")
     assert_empty authority_defects("- both live Squads read 3-of-5 since 2026-09-15\n")
     assert_empty slot_defects("The live devnet program is `EQGFJAcA…`, last deployed (slot `468716417`).\n")

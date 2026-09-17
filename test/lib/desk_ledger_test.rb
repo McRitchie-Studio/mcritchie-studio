@@ -89,6 +89,21 @@ class DeskLedgerTest < Minitest::Test
 
       refute_includes desk.keys, :resolved_on
       refute_includes desk.keys, :actor
+      refute_includes desk.keys, :leaked_processes, "a clean teardown posts no leak evidence"
+    end
+  end
+
+  # A teardown that SPARED a process closes its episode `leaked`, and the evidence rides the
+  # same write: which pid, why it was a candidate, and where it runs from.
+  def test_a_leaked_close_posts_the_spared_processes
+    leak = [{ "pid" => 4242, "label" => "web", "via" => "pidfile", "cwd" => "/elsewhere" }]
+    with_transport([AUTH_OK, Response.new("201", "{}")]) do |calls|
+      DeskLedger.file(desk: DESK, status: "leaked", source: "remove", leaked_processes: leak)
+
+      desk = calls.last[:body][:desk]
+
+      assert_equal "leaked", desk[:status]
+      assert_equal leak, desk[:leaked_processes]
     end
   end
 

@@ -2479,7 +2479,9 @@ def duplicate_values(records, key)
   records.group_by { |record| record[key].to_s }.select { |value, grouped| !value.empty? && value != "?" && grouped.size > 1 }
 end
 
-def stop_generic_rails(dir, port = nil)
+# `spared:` is an optional collector (see note_spared): a teardown passes one so it can
+# report and record the processes it left running; `down` passes none and only warns.
+def stop_generic_rails(dir, port = nil, spared: nil)
   pidfile = File.join(dir, "tmp", "pids", "agent-web.pid")
   unless File.exist?(pidfile)
     live_pid = port ? port_pid(port) : ""
@@ -2488,14 +2490,14 @@ def stop_generic_rails(dir, port = nil)
       return
     end
 
-    stop_port_holder(dir, port, live_pid)
+    stop_port_holder(dir, port, live_pid, spared: spared)
     return
   end
 
   pid = File.read(pidfile).strip
-  unless pid_alive?(pid) && stop_recorded_pid(dir, pid, "web")
+  unless pid_alive?(pid) && stop_recorded_pid(dir, pid, "web", spared: spared)
     if port && !(live_pid = port_pid(port)).empty?
-      stop_port_holder(dir, port, live_pid)
+      stop_port_holder(dir, port, live_pid, spared: spared)
     else
       puts "web not running"
     end
@@ -2507,11 +2509,12 @@ end
 # live pid its pidfile names can belong to any process. SIGTERM goes only to a pid rooted in
 # the desk, by the same cwd_is_desk? check stop_port_holder makes; anything else is left
 # running and named. False when it was left alone, so the caller treats the pidfile as stale.
-def stop_recorded_pid(dir, pid, label)
+def stop_recorded_pid(dir, pid, label, spared: nil)
   cwd = process_cwd(pid)
   unless cwd_is_desk?(cwd, dir)
     warn "#{label} pidfile names pid #{pid} (#{cwd.empty? ? "cwd unreadable" : "cwd #{cwd}"}), " \
          "not this desk's stack at #{dir} — leaving it running"
+    note_spared(spared, pid: pid, label: label, via: "pidfile", cwd: cwd)
     return false
   end
 
@@ -2533,11 +2536,12 @@ end
 # holds that port dies exactly that way, reproduced locally, because a teardown test
 # signals whatever holds it. The same shape on a laptop is an unrelated app that took a
 # dead desk's port.
-def stop_port_holder(dir, port, pid)
+def stop_port_holder(dir, port, pid, spared: nil)
   cwd = process_cwd(pid)
   unless cwd_is_desk?(cwd, dir)
     warn "port #{port} is held by pid #{pid} (#{cwd.empty? ? "cwd unreadable" : "cwd #{cwd}"}), " \
          "not this desk's stack at #{dir} — leaving it running"
+    note_spared(spared, pid: pid, label: "web", via: "port", cwd: cwd, port: port)
     return
   end
 
@@ -2545,6 +2549,37 @@ def stop_port_holder(dir, port, pid)
   puts "stopped web pid #{pid} on port #{port}"
 rescue Errno::ESRCH
   puts "web pid #{pid} on port #{port} already exited"
+end
+
+# A SPARED PROCESS IS AN OUTCOME, NOT A FOOTNOTE. Sparing is right (the two stops above
+# explain why), but a teardown that leaves a process running has not cleanly finished, and
+# until 2026-09-16 the warn line was the only trace: the command exited 0 and the desk
+# ledger read `removed`. The stops therefore append each process they leave alone to the
+# caller's collector, and teardown_worktree turns a non-empty one into a `leaked` record,
+# a `teardown-leak:` line and exit TEARDOWN_LEAK_EXIT.
+#
+# ONE ENTRY PER PID. A dead desk's pidfile and its port often name the same stranger, and
+# stop_generic_rails asks both, so the second sighting only adds the port it was seen on.
+def note_spared(spared, pid:, label:, via:, cwd:, port: nil)
+  return unless spared
+
+  port = port.to_s.match?(/\A\d+\z/) ? port.to_i : nil
+  if (known = spared.find { |entry| entry["pid"] == pid.to_i })
+    known["port"] ||= port if port
+    return
+  end
+
+  spared << { "pid" => pid.to_i, "label" => label, "via" => via, "port" => port,
+              "cwd" => cwd.to_s.empty? ? nil : cwd }.compact
+end
+
+# "pid 4242 (web pidfile, port 3021, cwd /elsewhere)" — the one description the command
+# line, the ledger reason and the reclaim summary all print.
+def spared_process_description(entry)
+  details = [entry["via"] == "port" ? "#{entry["label"]} port holder" : "#{entry["label"]} pidfile"]
+  details << "port #{entry["port"]}" if entry["port"]
+  details << (entry["cwd"] ? "cwd #{entry["cwd"]}" : "cwd unreadable")
+  "pid #{entry["pid"]} (#{details.join(", ")})"
 end
 
 def list_worktrees(app = nil)
@@ -3111,11 +3146,27 @@ end
 # this desk may go, or — once it is gone — the command that took it. It is prose for a
 # reader, not a machine field, and it is the one cell of the old markdown row that has
 # no equivalent anywhere in the registry.
-def cleanup_condition(record, status:)
+def cleanup_condition(record, status:, leaked: nil)
   command = cleanup_command(record)
   return "Removed with `#{command}` during approved lifecycle cleanup." if status == "removed"
+  return "Being removed with `#{command}`; a record still reading `removing` means that teardown never recorded its outcome." if status == "removing"
+
+  if status == "leaked"
+    pids = Array(leaked).map { |entry| entry["pid"] }
+    return "Removed with `#{command}`, but pid #{pids.join(", ")} was left running. " \
+           "Check it with `ps -o pid,command -p #{pids.join(",")}` and stop it by hand only if it is this desk's."
+  end
 
   "Remove with `#{command}` after operator approval."
+end
+
+# The sentence a `leaked` record LEADS with. The Desks panel prints `reason` on a finished
+# desk, so the leak goes first or it is clamped away behind the git facts.
+def leak_reason(leaked)
+  return nil if leaked.nil? || leaked.empty?
+
+  "LEFT RUNNING: #{leaked.map { |entry| spared_process_description(entry) }.join("; ")} — " \
+    "not provably this desk's, so never signalled."
 end
 
 # WHO filed the row, when anything knows. The markdown ledger never carried this and the
@@ -3150,15 +3201,16 @@ end
 # (DeskRecord.registry_attributes). A second mapping on this side would be a second answer
 # waiting to disagree with the first. The three narrative fields are the ones the SWEEP
 # owns and the registry does not carry.
-def desk_ledger_write(record, status:, source:)
+def desk_ledger_write(record, status:, source:, leaked_processes: nil)
   DeskLedger.file(
     desk: stack_record_snapshot(record, {}),
     status: status,
     source: source,
     actor: desk_ledger_actor,
     safety: cleanup_safety_label(record),
-    reason: cleanup_reason(record),
-    safe_delete_condition: cleanup_condition(record, status: status),
+    reason: [leak_reason(leaked_processes), cleanup_reason(record)].compact.join(" "),
+    safe_delete_condition: cleanup_condition(record, status: status, leaked: leaked_processes),
+    leaked_processes: leaked_processes,
     dotenv: File.join(HUB_DIR, ".env")
   )
 end
@@ -3167,6 +3219,10 @@ def file_desk_record!(record, status:, source:)
   result = desk_ledger_write(record, status: status, source: source)
   return result if result.ok?
 
+  refuse_unrecorded_teardown!(record, result)
+end
+
+def refuse_unrecorded_teardown!(record, result)
   abort <<~MSG
     agent-worktree: REFUSING to tear down #{worktree_label(record)} — the desk ledger write failed.
 
@@ -3237,19 +3293,19 @@ def registered_worktree?(app, dir)
   ok && out.lines.any? { |line| line.chomp == "worktree #{dir}" }
 end
 
-def stop_pidfile(dir, path, label)
+def stop_pidfile(dir, path, label, spared: nil)
   return unless File.exist?(path)
 
   pid = File.read(path).strip
   if pid_alive?(pid)
-    stop_recorded_pid(dir, pid, label)
+    stop_recorded_pid(dir, pid, label, spared: spared)
   else
     puts "#{label} not running"
   end
   FileUtils.rm_f(path)
 end
 
-def stop_stack_for_removal(app, dir, record)
+def stop_stack_for_removal(app, dir, record, spared: nil)
   # Skip only a desk that genuinely has nothing running: a discovered repo AND no
   # stack env on this desk. Both halves are load-bearing.
   #
@@ -3275,14 +3331,14 @@ def stop_stack_for_removal(app, dir, record)
       ok = sh("bin/tm", "down", chdir: dir, env: command_env(app, values), allow_fail: true)
       warn "warning: bin/tm down failed; falling back to pidfile cleanup" unless ok
     else
-      stop_generic_rails(dir, values["APP_PORT"])
+      stop_generic_rails(dir, values["APP_PORT"], spared: spared)
     end
   else
-    stop_generic_rails(dir, record[:port])
+    stop_generic_rails(dir, record[:port], spared: spared)
   end
 
-  stop_pidfile(dir, File.join(dir, "tmp", "pids", "tm-web.pid"), "tm web") if app.fetch("stack") == "tm"
-  stop_pidfile(dir, File.join(dir, "tmp", "pids", "tm-sidekiq.pid"), "tm sidekiq") if app.fetch("sidekiq")
+  stop_pidfile(dir, File.join(dir, "tmp", "pids", "tm-web.pid"), "tm web", spared: spared) if app.fetch("stack") == "tm"
+  stop_pidfile(dir, File.join(dir, "tmp", "pids", "tm-sidekiq.pid"), "tm sidekiq", spared: spared) if app.fetch("sidekiq")
 end
 
 def delete_local_branch_if_safe(app, branch)
@@ -3297,22 +3353,78 @@ def delete_local_branch_if_safe(app, branch)
   sh("git", "-C", app.fetch("repo"), "branch", "-D", branch)
 end
 
+# THE LEAK EXIT. A teardown that finished but left a process running exits 3: distinct from
+# 1 (refused before anything was destroyed, or aborted part-way, e.g. `git worktree remove`
+# failing after the stack, Redis DB and databases are already gone) and 2 (an argument refusal),
+# because a caller must be able to tell "the desk is gone and something outlived it" from
+# both. A reclaim batch finishes every desk first and exits 3 once at the end, so one leak
+# never stops the sweep.
+TEARDOWN_LEAK_EXIT = 3
+
 # The per-worktree teardown shared by `remove` and `cleanup --reclaim`:
-# stop the stack, flush its Redis DB, record the ledger row, drop the git
-# worktree, and delete the local branch. Callers handle band scale-in and the
-# registry refresh once, after the (possibly batched) teardown.
+# open the ledger record, stop the stack, flush its Redis DB, drop the desk's
+# databases, drop the git worktree, delete the local branch, and close the record
+# with the outcome. Returns the processes the stop spared ([] for a clean teardown).
+# Callers handle band scale-in, the registry refresh and the exit code once, after
+# the (possibly batched) teardown.
 def teardown_worktree(app, dir, record)
   # RECORD FIRST, DESTROY SECOND. The ledger write used to sit in the middle of this
   # sequence, which was survivable while it was a local file append and is not while it
   # is a network call — a teardown that stopped the stack and then failed to record would
-  # be the defect with extra steps. file_desk_record! aborts on a failed write, so the
+  # be the defect with extra steps. open_teardown_record! aborts on a failed write, so the
   # only thing a board outage can cost here is a re-run.
-  file_desk_record!(record, status: "removed", source: "remove")
-  stop_stack_for_removal(app, dir, record)
+  #
+  # OUTCOME LAST. Whether the stop spares a process is only known after that first write,
+  # and a resolved record is immutable, so the first write opens the episode `removing`
+  # and the last one closes it `removed` or `leaked`.
+  closes = open_teardown_record!(record)
+  spared = []
+  stop_stack_for_removal(app, dir, record, spared: spared)
   flush_redis_db(record)
   drop_desk_databases(record)
   sh("git", "-C", app.fetch("repo"), "worktree", "remove", dir)
   delete_local_branch_if_safe(app, record[:branch])
+  close_teardown_record(record, spared) if closes
+  spared.each do |entry|
+    puts "teardown-leak: #{worktree_label(record)} #{spared_process_description(entry)} is still running — " \
+         "never signalled, because nothing proves it is this desk's"
+  end
+  spared
+end
+
+# The fail-closed first write. True when the board took `removing`, so the teardown owes it
+# a closing write.
+#
+# AN OLDER BOARD IS NOT AN OUTAGE. This CLI ships in worktrees and CI while the board
+# deploys on its own cadence, and a board that predates `removing` refuses it BY NAME.
+# Aborting there would refuse every teardown until the deploy, so the teardown files the
+# removal the way it did before (one `removed` record, still written first, still fail
+# closed) and reports any leak on the command line and in the exit code only.
+def open_teardown_record!(record)
+  result = desk_ledger_write(record, status: "removing", source: "remove")
+  return true if result.ok?
+  refuse_unrecorded_teardown!(record, result) unless result.error.to_s.include?('unknown status "removing"')
+
+  warn "note: the desk ledger at #{DeskLedger.base_url} predates the `removing` and `leaked` states, so " \
+       "#{worktree_label(record)} is filed the old way (one `removed` record, written first). A process this " \
+       "teardown leaves running is reported here and in the exit code, not on the board."
+  file_desk_record!(record, status: "removed", source: "remove")
+  false
+end
+
+# The closing write. The desk is already gone, so a failure here must not abort: that would
+# report a finished teardown as a refused one. It warns, and the record keeps reading
+# `removing`, which the next snapshot's vanished count surfaces once the desk is missing.
+def close_teardown_record(record, spared)
+  status = spared.empty? ? "removed" : "leaked"
+  result = desk_ledger_write(record, status: status, source: "remove", leaked_processes: spared.empty? ? nil : spared)
+  return if result.ok?
+
+  warn <<~MSG
+    warning: #{worktree_label(record)} is torn down, but the desk ledger could not close its record as `#{status}`.
+      #{result.error}
+    The board still reads `removing` for this desk; once a snapshot misses it, it is listed as vanished.
+  MSG
 end
 
 # Scale-down-on-close normal flow: release every worktree whose branch is
@@ -3381,9 +3493,12 @@ def run_reclaim(app = nil, yes: false)
         next
       end
 
-      teardown_worktree(fresh[:app], dir, fresh)
-      freed << { slug: "#{fresh[:app].fetch("slug")}/#{fresh[:task]}", redis_db: fresh[:redis_db] }
-      puts "reclaimed #{fresh[:app].fetch("slug")}/#{fresh[:task]} (freed redis db #{fresh[:redis_db]})"
+      # A spared process is reported for THIS desk and the loop runs on: the desk itself is
+      # gone either way, and stopping the batch would strand every desk after it.
+      spared = teardown_worktree(fresh[:app], dir, fresh)
+      freed << { slug: "#{fresh[:app].fetch("slug")}/#{fresh[:task]}", redis_db: fresh[:redis_db], leaked: spared }
+      leak_note = spared.empty? ? "" : " — left #{spared.size} process(es) running, see teardown-leak above"
+      puts "reclaimed #{fresh[:app].fetch("slug")}/#{fresh[:task]} (freed redis db #{fresh[:redis_db]})#{leak_note}"
     end
     maybe_scale_in
   end
@@ -3399,6 +3514,13 @@ def run_reclaim(app = nil, yes: false)
     band = load_current_capacity
     puts "current band: #{band} slots (redis DBs #{redis_db_min}-#{redis_db_min + band - 1})"
   end
+
+  leaky = freed.reject { |entry| entry[:leaked].empty? }
+  return if leaky.empty?
+
+  named = leaky.map { |entry| "#{entry[:slug]} (#{entry[:leaked].map { |process| "pid #{process["pid"]}" }.join(", ")})" }
+  puts "reclaim: #{leaky.size} of #{freed.size} reclaimed desk(s) left a process running: #{named.join("; ")}"
+  exit TEARDOWN_LEAK_EXIT
 end
 
 def run_remove(app, task, yes: false, force: false)
@@ -3474,11 +3596,18 @@ def run_remove(app, task, yes: false, force: false)
     return
   end
 
-  teardown_worktree(app, dir, record)
+  spared = teardown_worktree(app, dir, record)
   maybe_scale_in
   # Unscoped: the registry is cross-app, and a snapshot of `app` alone erased every other
   # app's desks from it and from the desk ledger (see run_snapshot).
   run_snapshot(write: true)
+  return if spared.empty?
+
+  pids = spared.map { |entry| entry["pid"] }
+  puts "remove: #{app.fetch("slug")}/#{task} is torn down, but left #{spared.size} process(es) running " \
+       "(pid #{pids.join(", ")}). Check with `ps -o pid,command -p #{pids.join(",")}` and stop it by hand " \
+       "only if it is this desk's."
+  exit TEARDOWN_LEAK_EXIT
 end
 
 def graduation_blockers(record)

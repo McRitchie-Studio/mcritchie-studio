@@ -73,7 +73,9 @@ module AgentWorktreeCli
   #                        a clean `main`.
   #   bin/release.rb#reclaim_worktrees
   #                        `cleanup --reclaim [--yes]`; exit 0 means the reclaim ran,
-  #                        and the ship parses its output for a reclaimed count.
+  #                        and the ship parses its output for a reclaimed count. A
+  #                        teardown that ran but left a process running exits 3
+  #                        (TEARDOWN_LEAK_EXIT); the ship reads the output, not the code.
   #
   # There is a fifth reader that is not a script: `shell-hook zsh` is consumed as
   # `eval "$(bin/agent-worktree shell-hook zsh)"` from the login shell. Usage

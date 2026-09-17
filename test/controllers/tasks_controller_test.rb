@@ -949,9 +949,17 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
   # gate runs), so count exactly that.
   test "[integration] an explicit stage view never instantiates more than one page of tasks" do
     limit = Task::BOARD_STAGE_LIMIT
-    # Enough rows that a whole-column load cannot hide inside the allowance below.
+    # 30 past one page: page 2 has rows to draw, and a whole-column load reads 130.
     (limit + 30).times { |i| Task.create!(title: "instantiation cap archived #{i}", stage: "archived") }
     assert_operator Task.where(stage: "archived").count, :>, limit + 20
+    # The page chrome instantiates NO task here, so the budget below is exactly one
+    # page. Measured 2026-09-16 with the fixture set's live tasks present: page 1
+    # loads 100 and page 2 loads 30 on both boards, and an agent filter matching
+    # nobody loads 0. The one chrome that reads tasks on its own is the /deployments
+    # release module (an active release of 3 members added 9), and it renders only
+    # when a release exists. Pin that absence instead of budgeting for it.
+    assert_equal 0, Release.count,
+                 "a release module instantiates its member tasks — count those explicitly"
 
     paths = [tasks_path(stage: "archived"), deployments_path(stage: "archived"),
              tasks_path(stage: "archived", page: 2),
@@ -963,10 +971,10 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
       ActiveSupport::Notifications.subscribed(counter, "instantiation.active_record") { get path }
 
       assert_response :success
-      # One page of the column. The allowance covers the handful of live tasks the
-      # layout and release chrome read on their own; it is far below the 30 extra
-      # archived rows a whole-column load instantiates.
-      assert_operator instantiated["Task"], :<=, limit + 10,
+      # One page of the column, and not one row more. This read `limit + 10` — an
+      # allowance for chrome that instantiates nothing — so a controller loading 110
+      # while drawing 100 stayed green (stage-load-test-allows-overload).
+      assert_operator instantiated["Task"], :<=, limit,
                       "#{path} instantiated #{instantiated['Task']} tasks — one page is #{limit}"
     end
   end

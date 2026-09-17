@@ -36,7 +36,10 @@ module Desks
 
       @live_total = open_scope.count
       @live = open_scope.order(Arel.sql(ATTENTION_ORDER)).limit(LIVE_LIMIT).to_a
-      @removed = DeskRecord.removed.newest_first.limit(REMOVED_LIMIT).to_a
+      # EVERY finished teardown, `leaked` included. A leaked desk is gone like a removed one,
+      # and it is the finished row a reader most needs to see: its reason leads with the
+      # process the teardown left running.
+      @removed = DeskRecord.resolved.newest_first.limit(REMOVED_LIMIT).to_a
       @vanished = DeskRecord.vanished(as_of: @snapshot&.generated_at)
                             .newest_first.limit(VANISHED_LIMIT).to_a
       @apps = load_apps(open_scope)

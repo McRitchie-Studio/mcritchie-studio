@@ -97,7 +97,8 @@ class AgentWorktreePortIsolationTest < ActiveSupport::TestCase
 
     out, err, status = remove_desk(lsof)
 
-    assert status.success?, "#{out}\n#{err}"
+    # 3, not 0: a teardown that spared a process reports the leak (agent_worktree_teardown_leak_test.rb).
+    assert_equal 3, status.exitstatus, "#{out}\n#{err}"
     refute Dir.exist?(@worktree_dir), "premise: the teardown really ran"
     assert stranger_alive?, "the teardown signalled pid #{@stranger.fetch(:pid)}, which is not the desk's " \
                             "server — on a CI runner that pid can be a sibling test worker\n#{out}\n#{err}"
@@ -125,7 +126,7 @@ class AgentWorktreePortIsolationTest < ActiveSupport::TestCase
 
     out, err, status = remove_desk(lsof)
 
-    assert status.success?, "#{out}\n#{err}"
+    assert_equal 3, status.exitstatus, "#{out}\n#{err}"
     refute Dir.exist?(@worktree_dir), "premise: the teardown really ran"
     assert stranger_alive?, "the teardown signalled pid #{@stranger.fetch(:pid)}, which the desk's pidfile " \
                             "names but which runs from #{@projects_dir}\n#{out}\n#{err}"

@@ -491,9 +491,11 @@ planned, because the registration step is usually the one with another party in 
 > **THE SQUADS HALF OF THIS EXAMPLE IS NOW HISTORY, AND THE REST STILL RUNS.**
 > That day TWO Squads config ceremonies ran, five minutes apart — devnet
 > executed **09:41:25 MDT**, mainnet **09:46:51-55 MDT**. Not one transaction
-> across both clusters, and the difference matters here: they REMOVED `CytJ…`
-> from both, but `8K81…` **from mainnet only**. Re-measured on-chain at
-> `finalized` 2026-09-15, each cluster reads **threshold 3 of FIVE**, all mask 7,
+> across both clusters, and the difference matters here: both REMOVED `CytJ…`
+> and `8K81…`, but that afternoon devnet Squads transaction #18 ADDED `8K81…`
+> BACK (14:02:10 MDT), so it is seated on devnet and absent on mainnet — read
+> from each Squad's config transactions at `finalized` 2026-09-16. Re-measured
+> on-chain at `finalized` 2026-09-15, each cluster reads **threshold 3 of FIVE**, all mask 7,
 > and the fives differ — mainnet `4H3fP3ot…` is `7auwTL…`, `3Qj4v9…`, `7ZDJ…`,
 > `9gACbz…`, `BLSBw8…`; devnet `7nRuVw3V…` is `2eGs8G3w…`, `3Qj4v9…`, `7ZDJ…`,
 > **`8K81…`**, `BLSBw8…`. So `squad-upgrade.js`, which signs as
@@ -522,8 +524,11 @@ the key you just rotated out:
 **`update_signers` does not touch Squads membership.** They are separate systems
 that happen to share a pubkey: one is turf-vault's own in-program multisig, the
 other is the Squads V4 multisig that owns the program's upgrade authority. Rotate
-the first and stop, and the rotated-out key still holds **upgrade authority over
-the mainnet program** — a strictly larger power than the one you just took away.
+the first and stop, and the rotated-out key keeps its seat on **every Squad that
+seats it** — a share of that cluster's program upgrade authority, a strictly larger
+power than the one you just took away. Read the seats per cluster: `8K81…` today
+sits on the **devnet** Squad alone, where transaction #18 re-seated it, and is off
+mainnet's (read at `finalized` 2026-09-16).
 
 The Squads half is mutable and is an operator act at `app.squads.so`. The mechanism,
 inline so you need not leave this file: propose **one** config transaction doing
