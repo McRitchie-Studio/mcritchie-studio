@@ -40,7 +40,7 @@ require "test_helper"
 #     provenance now, and the docs say so. Only present-tense denial is a defect.
 #   · squad.json as a SCRIPT INPUT. `initialize-mainnet.js` really does build its
 #     `initialize` signer array from `members`, and `squad-upgrade.js` really does
-#     take its cluster from that file. Citing it for what a script will DO is
+#     read each cluster's addresses from that file. Citing it for what a script will DO is
 #     correct; citing it for what is DEPLOYED is the thing this guard stops.
 #   · `turf-vault/docs/KEY_ROTATION.md`, which says the same thing and is
 #     banner-marked HISTORICAL at its line 3. It is a frozen plan in another repo.
@@ -232,7 +232,7 @@ class VaultSignerRecordDocsTest < ActiveSupport::TestCase
       "mainnet record back when only the devnet table carried signers.",
     "squad.json as a script input" =>
       "`scripts/initialize-mainnet.js` builds `signers` from its `members`, and " \
-      "`scripts/squad-upgrade.js` takes its cluster from that file's top-level `network`.",
+      "`scripts/squad-upgrade.js --cluster=mainnet` reads that file's top-level addresses.",
     "a true statement about the devnet table alone" =>
       "The devnet signer rows sit under `## Devnet` in `CURRENT_DEPLOYMENT.md`."
   }.freeze

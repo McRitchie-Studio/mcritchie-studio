@@ -294,9 +294,8 @@ op whoami                                   # is 1Password unlocked?
 ## Commit Authorship — which soul `git log` names
 
 Auth identity answers *may this lane push*. Authorship answers *who wrote this*,
-and the two are unrelated. A desk's commits are authored from the **task's
-`devops.built_by`** — the current builder — set per commit by
-`lib/commit_identity.rb` and applied at `bin/ship`'s 1/8 commit step:
+and the two are unrelated. The soul is always the **task's `devops.built_by`**
+(the current builder), spelled by `lib/commit_identity.rb` one way everywhere:
 
 ```
 Carl <carl@mcritchie.studio>      # name titleised from the slug; local part IS the slug
@@ -305,25 +304,78 @@ Carl <carl@mcritchie.studio>      # name titleised from the slug; local part IS 
 The email's local part is the soul slug, so `git log --format=%ae` joins straight
 to the board's author set with no mapping table.
 
-**A re-claim repoints it.** `built_by` names the current builder and already
-repoints on an explicit `--actor`/`--agent`, so after
-`bin/task begin <task> --agent shannon --steal` the next commit is Shannon's
-while the earlier ones stay Carl's. That is the point of setting the author per
-commit rather than per desk: a desk shared by two souls is the measured case, not
-a hypothetical.
+It reaches a commit through **two layers**, because a desk commits by two paths:
+
+| Commit path | Identity comes from | Set by |
+|---|---|---|
+| `bin/ship`'s 1/8 commit | The environment (`GIT_AUTHOR_*`/`GIT_COMMITTER_*`), which outranks every config file | `CommitIdentity.commit!`, from `built_by` at that moment |
+| Every other desk commit: your own mid-build commits, a merge-forward, a rebase | The **desk's own** config file, `.git/worktrees/<desk>/config.worktree` | `bin/agent-worktree new --soul <soul>`, which `bin/task begin --agent <soul>` passes |
+
+**Layer 2 exists because layer 1 covers one commit.** Measured on turf-monster's
+`origin/accepted`, 2026-09-07 to 2026-09-16: 14 commits read `Steffon
+<steffon@mcritchie.studio>` (layer 1) while **131 commits and 50 merges** read
+`Steffon (Claude)`, a shared default that every desk's hand commits inherited,
+whoever the builder was. On 2026-09-15 a reviewer read that default as authorship
+and reasoned wrongly from it. The default was removed from
+`/Users/alex/projects/turf-monster/.git/config` on 2026-09-16 (the old values are
+on the [task record](https://mcritchie.studio/tasks/turf-monster-git-identity-wrong)).
+
+**`bin/task begin` keeps the two layers in step.** It stamps the desk from
+`--agent` as it is cut, then reads the recorded `built_by` back after the claim and
+re-stamps if they differ, so a hand commit and a ship commit always name the same
+soul. With no builder on record it stamps nothing and prints `UNSTAMPED` with the
+command to fix it.
+
+**A re-claim repoints both.** `built_by` names the current builder and repoints on
+an explicit `--actor`/`--agent`. After `bin/task begin <task> --agent shannon
+--steal`, the next ship commit and the desk stamp are both Shannon's, while the
+earlier commits stay Carl's. A handoff made OUTSIDE `begin` (`bin/task move <task>
+building --actor <soul>`) repoints `built_by` but not the desk, so stamp it too:
+
+```bash
+/Users/alex/projects/mcritchie-studio/bin/agent-worktree identity <app> <task-slug> <soul>
+```
 
 **A task that names no builder is not given one.** `bin/ship` says so and commits
-under the checkout's own identity. An unattributed commit that admits it is
-recoverable; one laundered under a guessed soul is not.
+under the checkout's own identity, and `begin` leaves the desk unstamped. On this
+Mac that identity is the operator's global one (`Alex McRitchie
+<amcritchie@gmail.com>`), the same as every primary checkout. An unattributed
+commit that admits it is recoverable; one laundered under a guessed soul is not.
 
-**Never `git config user.name` in a desk.** A worktree has no config of its own —
-`--git-dir` is `.git/worktrees/<name>`, but config resolves through
-`--git-common-dir` — so that write lands in the shared `.git/config` and renames
-every other desk in the repo at once. That is how
-`/Users/alex/projects/turf-monster/.git/config` came to read `Steffon (Claude)`
-and mis-author the commit on PR 573, which `shannon` built. The environment
-outranks every config file, so the relic no longer affects a `bin/ship` commit;
-a hand-run `git commit` in that repo still inherits it.
+**Why an unstamped commit does not simply fail.** Making git refuse would need an
+empty `user.name`, and that was measured and rejected: it breaks `git stash`, and
+git's own error tells the reader to run `git config --global user.name` (a write to
+the operator's file) or to drop `--global` and set the shared repo default (the
+defect above). The loud signal lives in `new` and `begin`, where the printed fix is
+the right one.
+
+**Never a plain `git config user.name` in a desk.** Without `--worktree` that write
+lands in the shared `.git/config` (config resolves through `--git-common-dir`) and
+renames every desk in the repo at once. That is how turf-monster's default got
+there. `bin/agent-worktree identity` is the only sanctioned writer. It refuses a
+primary checkout, a value that is not a soul slug, and a repo the switch would
+change behind someone's back: shared config carrying `core.bare=true` or
+`core.worktree`, or a dormant `config.worktree` left in another desk (git ignores
+it while the extension is off, and would start honouring it). None of the eight
+repos carried either on 2026-09-16. Its only shared write is
+`extensions.worktreeConfig = true`, once per repo.
+
+**A worktree cut FROM a stamped desk inherits the stamp** (git copies
+`config.worktree` into the new worktree; measured on git 2.50.1). A zap throwaway
+cut from a builder's desk therefore commits as the builder. A reviewer or conductor
+zapping from there names themselves per commit: see the
+[zap protocol](zap-protocol.md#reviewer--apply-a-bounded-zap-or-name-it).
+
+**Who reads git authorship, and what the stamp changes.**
+
+| Reader | What it reads | Effect of the stamp |
+|---|---|---|
+| `bin/reviewer-select` | The board's author set (`devops.built_by` + `devops.builders`), never git | None. No-self-review holds either way |
+| `bin/pr-review` fix-forward | The PR head SHA and the seated reviewers, not the commit author | None |
+| Sizing (`actual_size`) and the Alex learning heartbeat | TaskEvent cost and agent activities, not git | None |
+| `bin/lib/upstream_misfile.rb` | `git blame` for commit SHAs only | None |
+| `Github::CommitFetcher` builder monitor (`amcritchie`, cohort `ai_builder`) | GitHub's `author.login`, which GitHub resolves from the commit **email** | **Fewer commits counted.** `amcritchie@gmail.com` resolves to `amcritchie`; `<soul>@mcritchie.studio` resolves to no account (measured: turf `8b270728` → `amcritchie`, `2636e534` → null). Desk hand commits on the public repos stop counting toward that monitor, as ship commits already had |
+| People reading `git log` / `git blame` | Author name and email | Now names the claiming soul instead of a shared default |
 
 This is **read-only** with respect to `devops.builders`, the author set
 `bin/reviewer-select` excludes. Nothing here writes the board, so it can neither

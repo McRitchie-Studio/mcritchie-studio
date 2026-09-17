@@ -6,14 +6,14 @@
 # every verdict below be proven in a unit test WITHOUT running the script.
 #
 # THE DEFECT IT CLOSES (/tasks/worktree-subcommand-drops-help), and it is the
-# WIDEST surface the class has produced — TWENTY-ONE subcommands, FOURTEEN of which
+# WIDEST surface the class has produced — TWENTY-TWO subcommands, FIFTEEN of which
 # reach a durable write (measured; the SEVEN read-only arms are apps, list, plan, env,
-# holder, shell-hook and doctor). `whereami` was counted read-only here and in the
+# holder, shell-hook and doctor; `identity`, added 2026-09-16, writes git config). `whereami` was counted read-only here and in the
 # manifest test until 2026-09-01 and is NOT: `run_whereami(app, task)` — both positionals
 # given — calls write_context_marker, which File.writes .agent-context.json, excludes
 # it from git and refreshes the Codex session title. Re-derived from source rather
-# than carried forward, because a count is only true of the tree it came from: 21
-# arms in COMMANDS below, minus the seven above, is 14. The dispatcher did
+# than carried forward, because a count is only true of the tree it came from: 22
+# arms in COMMANDS below, minus the seven above, is 15. The dispatcher did
 # `cmd = ARGV.shift || "help"` and no arm
 # validated what was left, so:
 #
@@ -55,7 +55,7 @@ module AgentWorktreeCli
   # Exit 0 from bin/agent-worktree is read as a FACT by four callers, and in every
   # one of them the fact is something a probe never established:
   #
-  #   bin/task:1869-1889   `begin_step!` runs `new <app> <slug>` then
+  #   bin/task#begin_step! runs `new <app> <slug>` then
   #                        `bind-task <app> <slug> <task>`, and `die!`s on non-zero.
   #                        Exit 0 means "THE WORKTREE WAS CREATED" and "the task is
   #                        bound" — so a help probe answering 0 would let
@@ -97,8 +97,9 @@ module AgentWorktreeCli
       apps
       list [app]
       plan <app> <task-slug> [type]
-      new <app> <task-slug> [type] [--start]
+      new <app> <task-slug> [type] [--start] [--soul <soul>]
       bind-task <app> <task-slug> <task-record-slug-or-url>
+      identity <app> <task-slug> <soul>
       whereami [app task-slug] [--json|--shell]
       holder <task-slug> [--json]
       holder --session <session-id> [--json]
@@ -117,6 +118,9 @@ module AgentWorktreeCli
       remove <app> <task-slug> [--force] [--yes]
       down <app> <task-slug>
 
+      new --soul / identity: stamp the desk's OWN git config (config.worktree)
+        with the soul's commit identity, e.g. Carl <carl@mcritchie.studio>.
+        Never a user.* key in the shared .git/config, never the global file.
       remove --force: override the content-on-<base> guard ONLY for a
         merge-verified branch (a merged PR on GitHub). Never overrides
         the dirty or not-git-registered guards.
@@ -180,9 +184,9 @@ module AgentWorktreeCli
       bool: ["--yes"], value: [], allow_positional: false
     },
     "new" => {
-      synopsis: "bin/agent-worktree new <app> <task-slug> [type] [--start]",
-      consequence: "NO worktree, branch, port, Redis DB, Postgres database, stack env or context marker was created",
-      bool: ["--start"], value: [], allow_positional: true
+      synopsis: "bin/agent-worktree new <app> <task-slug> [type] [--start] [--soul <soul>]",
+      consequence: "NO worktree, branch, port, Redis DB, Postgres database, stack env, context marker or desk identity was created",
+      bool: ["--start"], value: ["--soul"], allow_positional: true
     },
     "env" => {
       synopsis: "bin/agent-worktree env <app> <task-slug>",
@@ -192,6 +196,11 @@ module AgentWorktreeCli
     "bind-task" => {
       synopsis: "bin/agent-worktree bind-task <app> <task-slug> <task-record-slug-or-url>",
       consequence: "the task was NOT bound — no stack env and no context marker was written",
+      bool: [], value: [], allow_positional: true
+    },
+    "identity" => {
+      synopsis: "bin/agent-worktree identity <app> <task-slug> <soul>",
+      consequence: "the desk's git identity was NOT changed and extensions.worktreeConfig was not touched",
       bool: [], value: [], allow_positional: true
     },
     "up" => {

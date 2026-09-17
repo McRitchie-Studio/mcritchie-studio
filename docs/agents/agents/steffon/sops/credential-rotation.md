@@ -476,9 +476,10 @@ planned, because the registration step is usually the one with another party in 
 > **`studio-agents-admin`** — not `agent.alex.solana` in `studio-agents`. An
 > ordinary agent token cannot see that vault, so `source ~/.zprofile.admin`
 > before any read here. The field label is SPACED: `private key`.
-> The turf-vault identifiers below (`members.alex_bot`, `ALEX_BOT_KEY`) still
-> spell the OLD name — they are code in another repo, not stale prose, and
-> renaming them here would make this table wrong.
+> One turf-vault identifier below still spells the OLD name: `squad.json`'s
+> `members.alex_bot`. It is code in another repo, not stale prose, and renaming
+> it here would make this table wrong. `squad-upgrade.js` no longer names this
+> key at all (turf-vault `280cebf`, 2026-09-15).
 >
 > **THIS EXAMPLE IS STILL ABOUT `8K81…`, NOT ABOUT THE TURF ADMIN KEY.** Later
 > that same day the Turf Monster keys were refiled entity-first into
@@ -498,11 +499,12 @@ planned, because the registration step is usually the one with another party in 
 > on-chain at `finalized` 2026-09-15, each cluster reads **threshold 3 of FIVE**, all mask 7,
 > and the fives differ — mainnet `4H3fP3ot…` is `7auwTL…`, `3Qj4v9…`, `7ZDJ…`,
 > `9gACbz…`, `BLSBw8…`; devnet `7nRuVw3V…` is `2eGs8G3w…`, `3Qj4v9…`, `7ZDJ…`,
-> **`8K81…`**, `BLSBw8…`. So `squad-upgrade.js`, which signs as
-> `ALEX_BOT_KEY`/`8K81…` and cosigns with `MASON_KEY`/`CytJ…`, can approve
-> nothing on mainnet; on devnet `8K81…` can still cast one of the three
-> approvals but `CytJ…` cannot, so the script cannot reach threshold there
-> either. **The "rotate it on Squads too" step below still applies on DEVNET**,
+> **`8K81…`**, `BLSBw8…`. The upgrade script now follows the chain rather than
+> two names: turf-vault `280cebf` rebuilt `squad-upgrade.js` to sign with the
+> seats in `scripts/lib/squad-clusters.js` (`AGENT_SEATS`) that the chain still
+> seats. `8K81…` is one of its three DEVNET seats, which together reach threshold
+> 3, and the mainnet roster does not list it. **The "rotate it on Squads too"
+> step below still applies on DEVNET**,
 > where this key is seated, and no longer on mainnet. What `8K81…` still IS: production's
 > `SOLANA_ADMIN_KEY` and a live `VaultState.signers` entry (2-of-3, untouched on
 > both clusters). Those are the parts this example still rotates. The two
@@ -519,7 +521,7 @@ the key you just rotated out:
 |---|---|---|
 | turf-vault `VaultState.signers` — contest/treasury 2-of-3 | `update_signers` (on-chain, 2-of-3) | `turf-monster/docs/SOLANA.md` signer list |
 | turf-vault **Squads V4 — PROGRAM UPGRADE AUTHORITY, one multisig PER CLUSTER** | a **Squads config transaction**, at `app.squads.so` | the live multisig account, read with `squads_members` below — `turf-vault/scripts/squad.json` → `members.alex_bot` is provenance only |
-| `scripts/squad-upgrade.js`, which signs upgrades as `ALEX_BOT_KEY` (one of the two approvals; Mason casts the other as `MASON_KEY`) | the BOT key is supplied per run from 1Password, not a stored config var — Mason's is his own, and the human Alex key (`7ZDJ…`) is a Phantom export with no filed item at all | `squad-upgrade.js:87-88` `loadKey("ALEX_BOT_KEY")` / `loadKey("MASON_KEY")` |
+| `scripts/squad-upgrade.js`, which signs DEVNET upgrades with this key as its `xan` seat (one of three agent approvals; the mainnet roster does not list it) | a turf-vault PR to that seat's `pubkey` in `scripts/lib/squad-clusters.js` — the script REFUSES a loaded key that does not derive to the roster's pubkey, and drops a roster seat the chain no longer seats. The bot key is read per `--send` run from the `SQUAD_KEY_XAN` override, never a stored config var: the script's own 1Password read looks in `studio-agents`, and this key's item (`agent.xan.solana`) lives in `studio-agents-admin`, so fill the override from an admin-lane read (`credential-inventory.md`); Mr. McRitchie's key (`7ZDJ…`) is a Phantom export with no filed item at all, and the script never signs as it | `squad-clusters.js` `AGENT_SEATS.devnet` role `xan`; `squad-upgrade.js:194-224` `loadSeatKeypair` |
 
 **`update_signers` does not touch Squads membership.** They are separate systems
 that happen to share a pubkey: one is turf-vault's own in-program multisig, the
@@ -533,9 +535,11 @@ mainnet's (read at `finalized` 2026-09-16).
 The Squads half is mutable and is an operator act at `app.squads.so`. The mechanism,
 inline so you need not leave this file: propose **one** config transaction doing
 `removeMember(<old pubkey>)` + `addMember(<new pubkey>, { mask: $WANT_MASK })`, keep
-threshold 2, approve with the **two clean members** (never with the key being
-rotated out), execute. `$WANT_MASK` is **read off the chain**, not typed — see
-the next paragraph.
+the threshold as it is, approve with enough **clean members** to reach it (never with
+the key being rotated out), execute. Both live Squads read threshold 3 of five
+(`finalized`, 2026-09-16), so that is three approvals from the four members who stay.
+`$WANT_MASK` — and the member count and threshold the grader expects afterwards — are
+**read off the chain**, not typed. See the next paragraph.
 
 **Name the permission mask, and READ IT — do not type it.** `addMember` is not
 symmetric with `removeMember`: remove takes a bare pubkey, add takes a
@@ -547,36 +551,44 @@ procedure — one was written for narrowing the bot and was **declined before it
 ran**; the reasoning is under **NARROWING THE BOT WAS PROPOSED AND DECLINED**
 below, not in the bit table that follows immediately.
 
-So this procedure names no mask literal anywhere: ONE constant, read from the
-chain, grants whatever is live on the day. Run it BEFORE you propose — the
+So this procedure names no mask literal anywhere: ONE read of the chain grants
+whatever is live on the day. The same read records the member count and threshold,
+because a rotation swaps one key and changes neither; the grader in step 5 compares
+against those, not against numbers typed here. Run it BEFORE you propose — the
 outgoing key must still be a member for it to answer, and after the execute it is
 gone:
 
 ```bash
 # Reuses squads_members() from "Verifying the Squads rotation" below.
 OLD_MEMBER=<old pubkey>
-WANT_MASK=$(squads_members | awk -v k="$OLD_MEMBER" '$1==k { print $2 }')
+BEFORE=$(squads_members) || BEFORE=
+WANT_MASK=$(printf '%s\n' "$BEFORE" | awk -v k="$OLD_MEMBER" '$1==k { print $2 }')
 : "${WANT_MASK:?the outgoing key is not a member of this multisig — read the Multisig account again before proposing anything}"
+WANT_THRESHOLD=$(printf '%s\n' "$BEFORE" | awk '$1=="threshold" { print $2 }')
+: "${WANT_THRESHOLD:?the read carried no threshold — read the Multisig account again before proposing anything}"
+WANT_COUNT=$(printf '%s\n' "$BEFORE" | awk '$1!="threshold"' | wc -l | tr -d ' ')
 printf 'grant the new key mask %s (what %s holds now)\n' "$WANT_MASK" "$OLD_MEMBER"
+printf 'expect %s members at threshold %s after the rotation\n' "$WANT_COUNT" "$WANT_THRESHOLD"
 ```
 
-Every step below, and the grader in step 5, use that one value. Grant anything
+Every step below, and the grader in step 5, use those values. Grant anything
 else and the rotation still "succeeds" — the break lands at the NEXT upgrade, in
 whichever call lost its bit, weeks later and far from this SOP.
 
-Which bits the bot needs is decided by `turf-vault/scripts/squad-upgrade.js`, the
-only thing that signs upgrades. Re-verified 2026-09-14 against the script as it
-stands on `accepted`, which approves as the bot:
+Which bits a seat needs is decided by `turf-vault/scripts/squad-upgrade.js`, the
+only thing that signs upgrades. Re-verified 2026-09-16 against the script as it
+stands on `accepted` (turf-vault `280cebf`), which signs with every roster seat the
+chain still seats — on devnet, the bot is one of three:
 
 | Bit | Value | Where `squad-upgrade.js` needs it |
 |---|---|---|
-| `Initiate` | 1 | `:176` `creator: alexBot.publicKey` (`vaultTransactionCreate`) and `:179` `creator: alexBot` (`proposalCreate`) |
-| `Vote` | 2 | `:182` `member: alexBot,` — the bot casts ONE of the two approvals; Mason casts the other at `:185` |
-| `Execute` | 4 | `:193` `member: alexBot.publicKey` (`vaultTransactionExecute`) |
+| `Initiate` | 1 | `:660` `creator: initiator.publicKey` (`vaultTransactionCreate`) and `:696` `creator: initiator,` (`proposalCreate`) — the initiator is the best-funded seated key holding Initiate (`:433-437`) |
+| `Vote` | 2 | `:722` `member: keypairs.get(voter.pubkey),` (`proposalApprove`) — every seated key holding Vote casts one approval |
+| `Execute` | 4 | `:772` `member: keypairs.get(plan.executor.pubkey).publicKey,` (`vaultTransactionExecute`) — only when the seats reach threshold |
 
 Every citation above names the line the ARGUMENT is on, not the line the call
 opens — the convention this table has used since it was written, stated because
-the two differ by two to four lines in this script and a reader who checks one
+the two differ by four to five lines in this script and a reader who checks one
 expecting the other concludes the table has rotted.
 
 `Initiate | Vote | Execute` = **mask 7**. The bit values are `@sqds/multisig`'s own
@@ -588,11 +600,12 @@ upgrade, in whichever call lost its bit, weeks later and far from this SOP.
 **NARROWING THE BOT WAS PROPOSED AND DECLINED** (Mr. McRitchie, 2026-09-14), so
 7 is not a number in transition — it is the answer, for a reason worth keeping
 here. Squads validates the threshold against the members holding **Vote**, so
-approvals count only from voters. Dropping the bot's Vote would leave exactly TWO
-voters against threshold 2: lose either human key and upgrade authority freezes
-permanently, with no quorum left to add a replacement. The spare was judged worth
-more than the narrowing, knowing that a leaked bot key plus one human key still
-reaches quorum.
+approvals count only from voters. On that day's Squads shape — three members at
+threshold 2 — dropping the bot's Vote would have left exactly TWO voters against
+threshold 2: lose either human key and upgrade authority freezes permanently, with
+no quorum left to add a replacement. The spare was judged worth more than the
+narrowing, knowing that a leaked bot key plus one human key still reached quorum.
+Both Squads have since grown to five members at threshold 3 (2026-09-15).
 
 The rotation still reads `$WANT_MASK` off the chain rather than naming 7,
 because a rotation must grant what the outgoing key HELD — whatever that is on
@@ -610,24 +623,35 @@ instead of trusting the checkboxes you clicked.
 `stale_transaction_index` to the current `transaction_index`, invalidating every
 proposal created before it. Split the rotation and execute the remove first, and the
 pending add is STALE — it fails at execute with `StaleProposal` (`0x1777`, 6007) and
-must be re-proposed and re-approved. You are meanwhile sitting at **2 members,
-threshold 2**: a 2-of-2 over mainnet upgrade authority, where losing either surviving
-key is unrecoverable. One transaction and the multisig never leaves three members.
-The same staleness kills any upgrade proposal already in flight — land or abandon
-those before you rotate.
+must be re-proposed and re-approved. You are meanwhile one member short at the same
+threshold: on today's five-member Squads at threshold 3 that is three of four, where
+losing two more keys freezes upgrade authority for good (on the old three-member
+shape it was a 2-of-2). One transaction and the member count never drops.
+The same staleness strands any proposal still COLLECTING approvals: Squads refuses
+to approve or reject it (`StaleProposal`, 6007) and to cancel it
+(`InvalidProposalStatus`, 6008, because cancel needs an Approved proposal), so it
+stays `Active` and inert. Devnet proposal #17, staled when transaction #18
+executed on 2026-09-15, is one; it needs no action (keyless simulations,
+2026-09-16). **A proposal that had already reached Approved is NOT inert.** Squads
+still cancels it, and still EXECUTES a stale Approved vault transaction, an upgrade
+included; only a stale config transaction refuses to execute (Squads v4 source:
+`proposal_vote.rs`, `vault_transaction_execute.rs`, `config_transaction_execute.rs`,
+read 2026-09-16). So land or cancel every approved upgrade proposal before you rotate.
 
 `turf-vault/docs/KEY_ROTATION.md` §7 describes the same mechanism, and
 `secrets-rotation.md` is right that the file as a whole is a **SUPERSEDED plan** —
 so take the mechanism from it and **no addresses**: its program IDs, multisig PDAs
 and member lists are historical.
 
-**What is live truth for what.** `turf-vault/scripts/squad.json`'s top level is
-authoritative for the ADDRESSES, because it is what `squad-upgrade.js` actually
-reads — take `multisigPda` from there. It is **not** authoritative for membership:
-its own `_comment` says "members is documentation only", and no Squads rotation
-writes to a committed file. Live truth for **members, their masks, and the
-threshold** is the on-chain `Multisig` account at `multisigPda` — the read
-`squad-upgrade.js:143` already performs, and the one step 5 below runs.
+**What is live truth for what.** `turf-vault/scripts/squad.json` is authoritative
+for the ADDRESSES, because it is what `squad-upgrade.js` actually reads through
+`resolveCluster` — the top level for mainnet, the `devnet` block for devnet. Take
+`multisigPda` from the block for your cluster. It is **not** authoritative for
+membership: its own `_members_are` note says `members` is the `VaultState` signer
+set, not Squads membership, and no Squads rotation writes to a committed file. Live
+truth for **members, their masks, and the threshold** is the on-chain `Multisig`
+account at `multisigPda` — the read `squad-upgrade.js:376-379` already performs, and
+the one step 5 below runs.
 
 `solana program show <PROGRAM_ID> --url mainnet-beta` does **not** confirm a member
 rotation and must never be used as its proof. It prints the upgrade AUTHORITY, which
@@ -659,10 +683,11 @@ Now the on-chain signer half. Read the program, not the intuition
 > update it authorized. Two outcomes, and the second is the dangerous one: the
 > eviction trips 6017 and fails loudly, **or** it succeeds having evicted the only
 > other slot — a signer who did nothing wrong — and left the compromised key in
-> place. You would read that transaction as a completed rotation. Both humans
-> cosign an eviction (Alex + Mason from Phantom); the compromised key stays out of
-> it. Same rule at Squads: approve the config transaction with the two clean
-> members, never with the member being removed.
+> place. You would read that transaction as a completed rotation. The two signers
+> who stay cosign an eviction (Mr. McRitchie and Mason, from Phantom); the
+> compromised key stays out of it. Same rule at Squads: approve the config
+> transaction with clean members only, enough to reach the threshold, never with
+> the member being removed.
 
 **There is no overlap window in `VaultState`, and that is by construction.**
 (The Squads membership above is a different system with its own rules.) Because
@@ -680,13 +705,16 @@ not recognise. That is not "isolated"; it is BROKEN, and it is broken for both Q
 and mainnet at once. The correct order:
 
 1. Mint the new keypair, **and fund it**. Nothing is live yet, and an unfunded
-   key is not a working replacement: Xan is the FEE PAYER, not just an
-   identity. It pays all five transactions in `squad-upgrade.js` — including
-   Mason's approval (`:164`) — signs and pays the permissionless `extendProgram`
-   (`:119`, `:123`), and is the payer slot for `create_contest`,
-   `mint_entry_token` and `enter_contest` (`turf-monster/docs/SOLANA.md`, "Two-level
-   multisig auth"). Skip this and every one of those fails AFTER the rotation reads
-   as done — the same late, far-from-here failure as a wrong permission mask.
+   key is not a working replacement: Xan is a FEE PAYER, not just an identity. It
+   is the payer slot for `create_contest`, `mint_entry_token` and `enter_contest`
+   (`turf-monster/docs/SOLANA.md`, "Two-level multisig auth"). On devnet it can pay
+   for a whole upgrade too: `squad-upgrade.js` makes the best-funded seated key
+   that can Initiate both fee payer and creator (`:433-437`), and that key pays
+   every create, proposal, approval and execute, plus any permissionless
+   `extendProgram` (`:609-630`). The script passes over an unfunded seat, so the
+   upgrade survives; the app's payer slots do not. Skip this and every one of those
+   fails AFTER the rotation reads as done — the same late, far-from-here failure as
+   a wrong permission mask.
    `turf-vault/docs/KEY_ROTATION.md` §2 is the recipe: read the old key's balance
    and transfer it across, less dust. Take the MOVE from it, not its `4.55` — that
    figure is sized for the v0.20 migration, which front-loaded ~3.5 SOL of one-time
@@ -707,38 +735,40 @@ and mainnet at once. The correct order:
    rotation you wanted from the one that evicted the wrong slot.
 4. Update registration **two of two — the Squads membership**: propose ONE config
    transaction doing `removeMember(old)` + `addMember(new, { mask: $WANT_MASK })` at
-   `app.squads.so` against the live `multisigPda` in `scripts/squad.json`, threshold
-   stays 2, approved by the two clean members. **`$WANT_MASK` is the value you read
-   off the chain above — never a number you type. It is 7 today and stays 7 until
-   someone deliberately re-scopes the bot; the UI will happily give you a
-   different one.** This step does **not** move program
+   `app.squads.so` against the live `multisigPda` for that cluster in
+   `scripts/squad.json`, threshold unchanged, approved by clean members up to the
+   threshold (three of the four who stay, on today's five-member Squads).
+   **`$WANT_MASK` is the value you read off the chain above — never a number you
+   type. It is 7 today and stays 7 until someone deliberately re-scopes the bot; the
+   UI will happily give you a different one.** This step does **not** move program
    upgrade authority: that authority is the Squads vault PDA before and after, and
    is unchanged by a membership edit. What it moves is **who can direct it** — which
-   is the whole of the power, and is a separate 2-of-3 on a separate system that
-   step 2 does not touch and cannot.
+   is the whole of the power, and is a separate authority (Squads) on a separate
+   system that step 2 does not touch and cannot. On devnet, where the key is also a
+   `squad-upgrade.js` seat, open a turf-vault PR moving the `xan` seat's `pubkey` in
+   `scripts/lib/squad-clusters.js` to the new key; until it merges, the script drops
+   that seat and a devnet upgrade stops for a human.
 5. VERIFY it — with the block under **Verifying the Squads rotation** below, not by
-   eye. Four properties, and the member list shows only two of them: three members,
-   threshold 2, the new pubkey present **with `$WANT_MASK`**, the old pubkey gone. A
+   eye. Four properties, and the member list shows only two of them: the member
+   count and threshold you read before proposing (`$WANT_COUNT`, `$WANT_THRESHOLD`),
+   the new pubkey present **with `$WANT_MASK`**, the old pubkey gone. A
    verification that stops at "the right pubkeys are listed" passes over a member
    who cannot execute, and the first thing that tells you is a failed upgrade.
 6. ONLY THEN set the config var on each consuming app.
 7. Phase 6. For this credential the on-chain eviction already happened at step 2
    and the Squads eviction at step 4, so Phase 6 clears the dead secret out of the
-   remaining stores — Heroku, `.env`, 1Password, and any shell that ran
-   `squad-upgrade.js`. **Do not read that as "nothing else holds authority": read
-   it off your Phase 1 list, which is why the list is the rotation.**
+   remaining stores — Heroku, `.env`, 1Password, and any shell that exported
+   `SQUAD_KEY_XAN` for `squad-upgrade.js`. **Do not read that as "nothing else
+   holds authority": read it off your Phase 1 list, which is why the list is the
+   rotation.**
 
 #### Verifying the Squads rotation
 
-> ⚠ **THE GRADER BELOW STILL EXPECTS THE PRE-2026-09-15 SHAPE — 3 members at
-> threshold 2 — AND BOTH LIVE SQUADS ARE NOW 5 AT THRESHOLD 3.** Run it unchanged
-> against either cluster today and it prints two FAIL lines for a perfectly
-> healthy multisig. Re-derive the expected count and threshold from `squads_members`
-> BEFORE the config transaction is proposed, exactly as `$WANT_MASK` already is,
-> and compare against those. Parameterising the two literals is tracked
-> separately — the guard test in `test/docs/credential_rotation_shell_guard_test.rb`
-> pins this grader's fixtures at 3/2, so the fix is a paired change, not an edit
-> here.
+> **The grader expects the shape the chain had BEFORE the rotation**, not a shape
+> typed here: `$WANT_COUNT` and `$WANT_THRESHOLD` come from the same read as
+> `$WANT_MASK`. So it grades both live Squads (five members at threshold 3) and any
+> later shape without an edit. Until 2026-09-16 it hardcoded three members at
+> threshold 2, and printed two FAIL lines for every healthy live Squad.
 
 Step 5's four properties, graded against the on-chain `Multisig` account. The
 reader is separate from the grader on purpose: the read is the part that talks to
@@ -748,15 +778,24 @@ is worth testing.
 ```bash
 # The reader. Live truth for members, masks and threshold — NOT squad.json.
 # Prints "threshold <n>", then one "<pubkey> <mask>" line per member.
+# SQUADS_CLUSTER is REQUIRED and has no default: devnet and mainnet are different
+# Squads with different members, and a default is how a rotation reads the wrong
+# one. turf-vault's own resolveCluster supplies the address and RPC (a private RPC
+# goes in SOLANA_RPC_URL), and the read refuses an RPC from another cluster.
+SQUADS_CLUSTER=<cluster>   # devnet or mainnet
 squads_members() {
-  ( cd /Users/alex/projects/turf-vault && node -e "
+  ( cd /Users/alex/projects/turf-vault && SQUADS_CLUSTER="$SQUADS_CLUSTER" node -e "
       const multisig = require(\"@sqds/multisig\");
       const { Connection, PublicKey } = require(\"@solana/web3.js\");
-      const cfg = require(\"./scripts/squad.json\");
-      const rpc = process.env.RPC_URL || \"https://api.mainnet-beta.solana.com\";
+      const { resolveCluster } = require(\"./scripts/lib/squad-clusters\");
       (async () => {
+        const c = resolveCluster(process.env.SQUADS_CLUSTER);
+        const conn = new Connection(c.rpcUrl);
+        if ((await conn.getGenesisHash()) !== c.genesisHash) {
+          throw new Error(\"that RPC is not \" + c.cluster + \"; refusing to read\");
+        }
         const ms = await multisig.accounts.Multisig.fromAccountAddress(
-          new Connection(rpc), new PublicKey(cfg.multisigPda));
+          conn, new PublicKey(c.multisigPda));
         console.log(\"threshold \" + ms.threshold);
         for (const m of ms.members) {
           console.log(m.key.toBase58() + \" \" + m.permissions.mask);
@@ -770,12 +809,14 @@ squads_members() {
 # The grader. Substitute the two pubkeys, then run it. It prints one FAIL line per
 # broken property and exits non-zero; a silent PASS is the only success.
 NEW_MEMBER=<new pubkey>
-# OLD_MEMBER and WANT_MASK come from the mask paragraph above, READ OFF THE CHAIN
-# before the config transaction was proposed. Do not re-type either here: a
-# literal is what made one number serve two states, and the wrong one passes
-# this grader silently.
+# OLD_MEMBER, WANT_MASK, WANT_COUNT and WANT_THRESHOLD come from the mask paragraph
+# above, READ OFF THE CHAIN before the config transaction was proposed. Do not
+# re-type any of them here: a literal is what made one number serve two states,
+# and the wrong one passes this grader silently.
 : "${OLD_MEMBER:?set it in the mask step above}"
 : "${WANT_MASK:?read it from the chain in the mask step above, before the outgoing key was removed}"
+: "${WANT_COUNT:?read it from the chain in the mask step above, before the config transaction was proposed}"
+: "${WANT_THRESHOLD:?read it from the chain in the mask step above, before the config transaction was proposed}"
 
 check_squads_rotation() {
   local ms
@@ -792,8 +833,8 @@ check_squads_rotation() {
   new_mask=$(printf '%s\n' "$ms" | awk -v k="$NEW_MEMBER" '$1==k {print $2}')
   old_hit=$(printf '%s\n' "$ms" | awk -v k="$OLD_MEMBER" '$1==k {print $1}')
 
-  [ "$count" = 3 ] || { printf 'FAIL  %s members, expected 3\n' "$count"; bad=1; }
-  [ "$threshold" = 2 ] || { printf 'FAIL  threshold %s, expected 2\n' "$threshold"; bad=1; }
+  [ "$count" = "$WANT_COUNT" ] || { printf 'FAIL  %s members, expected %s (the count before the rotation)\n' "$count" "$WANT_COUNT"; bad=1; }
+  [ "$threshold" = "$WANT_THRESHOLD" ] || { printf 'FAIL  threshold %s, expected %s (the threshold before the rotation)\n' "$threshold" "$WANT_THRESHOLD"; bad=1; }
   [ -z "$old_hit" ] || { printf 'FAIL  the rotated-out key is STILL a member\n'; bad=1; }
   [ -n "$new_mask" ] || { printf 'FAIL  the new key is NOT a member\n'; bad=1; }
   [ "$new_mask" = "$WANT_MASK" ] || {
@@ -801,7 +842,7 @@ check_squads_rotation() {
     bad=1
   }
 
-  [ "$bad" = 0 ] && printf 'PASS  3 members, threshold 2, new key present with mask %s, old key gone\n' "$WANT_MASK"
+  [ "$bad" = 0 ] && printf 'PASS  %s members, threshold %s, new key present with mask %s, old key gone\n' "$count" "$threshold" "$WANT_MASK"
   return "$bad"
 }
 

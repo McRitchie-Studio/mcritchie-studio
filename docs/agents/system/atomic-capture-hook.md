@@ -390,6 +390,34 @@ child transcripts, so reconcile is a no-op and never disturbs its live measureme
 > double-count), just not per-review-precise. A `toolUseId`/span-overlap child→activity
 > match is a documented follow-up.
 
+## Retention: rows live 45 days
+
+Capture only ever adds rows, so the table is pruned on a schedule. Mr. McRitchie
+set the rule on 2026-09-16: delete `agent_actions` rows **older than 45 days**,
+and never touch a row 45 days old or newer.
+
+| What | Value |
+|------|-------|
+| Job | `AgentActionRetentionJob` (`app/jobs/agent_action_retention_job.rb`) |
+| Schedule | `config/recurring.yml` `production` block, `agent_action_retention`: 3:30 AM `America/Los_Angeles`, nightly |
+| Where it runs | every app booted with `RAILS_ENV=production`: production **and** `mcritchie-studio-qa`, which also loads that block. Not development or test |
+| Clock | `occurred_at < now - 3,888,000 s` (a fixed 45 × 86,400 seconds in any time zone, so a DST change never moves it; indexed; when the action happened) |
+| Batches | one `DELETE … WHERE id IN (SELECT … LIMIT 5000)` per batch, 0.25 s pause, 10-minute budget per run |
+| Runs on | the `worker` dyno (`bin/jobs`), never a web request |
+| Receipt | a `Rails.logger` line with rows deleted per run; a failure writes an `ErrorLog` (`target_name: agent_actions`) |
+
+Two kinds of old row are **kept**, because something durable still reads them:
+
+- **Graded actions.** An `ActionGrade` targeting the row. A banked grade is an
+  Insight Bank lesson, and the action's `dependent: :destroy` would take it too.
+- **CI test-scope actions.** `event_slug` in `Task::TestingPhases::CI_SCOPES`.
+  `Task::TestingPhases` rebuilds a task's CI phase from them.
+
+Adding a reader that needs rows older than 45 days means adding it to that keep
+list, or reading a durable projection instead. A run that hits its budget stops
+cleanly and the next run resumes. The job never runs `VACUUM FULL` or
+`pg_repack`: autovacuum makes the freed space reusable, which stops the growth.
+
 ## Tests
 
 `test/lib/atomic_capture_hook_test.rb`:

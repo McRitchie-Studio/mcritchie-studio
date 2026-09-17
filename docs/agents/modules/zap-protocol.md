@@ -100,6 +100,18 @@ where the guard does fire. Cutting under `.worktrees/` deliberately stops the
 answer depending on where you happened to be standing: the tree is refused by
 name, with the missing file called out.
 
+**Name yourself on a zap you make from someone else's seat.** A desk carries the
+git identity of the soul who claimed it (see
+[Commit Authorship](source-control.md#commit-authorship--which-soul-git-log-names)),
+and a worktree cut FROM a desk inherits that stamp — git copies the desk's
+`config.worktree` (measured on git 2.50.1). A throwaway cut from the primary
+carries no stamp at all and falls through to the machine identity. So the builder
+seat needs nothing (your throwaway comes off your own desk and already names you),
+while the reviewer and conductor seats name themselves on the commit with `git -c
+user.name=… -c user.email=…`. On 2026-09-15 two reviewer zaps and a merge-forward
+all read `Steffon (Claude)`, and the next reviewer read that as Steffon's work when
+Carl and Jasper had written it.
+
 ### Builder — on your own feat branch
 
 You are building a task and notice a small defect in code your cycle already
@@ -151,7 +163,9 @@ cp <desk>/.env.test.local "$ZAP"/                     # REQUIRED before any test
 cd "$ZAP"
 BASE=$(git rev-parse HEAD)                            # the head you zap FROM — pin the lease to it
 # ...one bounded fix...
-git commit -m "zap: <what was broken, one line>"
+# Name the ZAPPING soul (on a review zap, the reviewer), not the builder's stamp this throwaway inherited:
+git -c user.name="<Soul>" -c user.email=<soul>@mcritchie.studio \
+  commit -m "zap: <what was broken, one line>"
 git push --force-with-lease=refs/heads/feat/<slug>:$BASE origin HEAD:refs/heads/feat/<slug>
 cd - && git worktree remove --force "$ZAP"
 ```
@@ -376,7 +390,8 @@ cd "$ZAP"
 # desk instead:  bin/agent-worktree new <app> zap-<slug>
 # …fix, then:
 git add -p
-git commit -m "zap: <what was broken, one line>"
+git -c user.name="<Soul>" -c user.email=<soul>@mcritchie.studio \
+  commit -m "zap: <what was broken, one line>" # YOUR name — a throwaway carries none
 git push origin HEAD:refs/heads/accepted       # fast-forward; rejects loudly if stale
 cd - && git worktree remove --force "$ZAP"
 ```
