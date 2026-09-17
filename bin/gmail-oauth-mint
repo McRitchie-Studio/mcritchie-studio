@@ -1,0 +1,109 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# One-time refresh-token mint for the Gmail READ credential.
+#
+# Run this ONCE, at Mr. McRitchie's desk, signed in as the mailbox owner. It
+# opens the consent page, catches the redirect on a loopback port, exchanges the
+# code, and prints the JSON object to paste into 1Password. It stores nothing.
+#
+#   bin/gmail-oauth-mint --client-id <id> --client-secret <secret>
+#
+# Why a loopback redirect is legal on a "Web application" client: Google exempts
+# localhost URIs from its HTTPS rule, so no public callback and no hub route is
+# needed for a credential that is minted once.
+#
+# Re-run it whenever the token is rejected (a password change on the mailbox
+# account invalidates Gmail-scoped refresh tokens). Re-minting is safe: Google
+# allows 100 live refresh tokens per account per client before it starts
+# invalidating the oldest.
+
+require "webrick"
+require "net/http"
+require "json"
+require "uri"
+require "securerandom"
+require "optparse"
+
+SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
+PORT = Integer(ENV.fetch("GMAIL_MINT_PORT", "8767"))
+REDIRECT = "http://localhost:#{PORT}/oauth2/callback"
+
+options = {}
+OptionParser.new do |opts|
+  opts.banner = "usage: bin/gmail-oauth-mint --client-id <id> --client-secret <secret>"
+  opts.on("--client-id ID") { |v| options[:client_id] = v }
+  opts.on("--client-secret SECRET") { |v| options[:client_secret] = v }
+  opts.on("-h", "--help") { puts opts; exit 0 }
+end.parse!
+
+missing = [ :client_id, :client_secret ].reject { |k| options[k].to_s.strip.length.positive? }
+abort "missing #{missing.join(', ')}. Add #{REDIRECT} as an authorized redirect URI first." if missing.any?
+
+state = SecureRandom.hex(16)
+auth_url = URI("https://accounts.google.com/o/oauth2/v2/auth")
+auth_url.query = URI.encode_www_form(
+  client_id: options[:client_id],
+  redirect_uri: REDIRECT,
+  response_type: "code",
+  scope: SCOPE,
+  # offline is what yields a refresh token at all; consent forces a fresh one
+  # even if this client was already authorized.
+  access_type: "offline",
+  prompt: "consent",
+  state: state
+)
+
+puts "Scope requested: #{SCOPE}  (read-only — it cannot send, label, or delete)"
+puts "Open this and approve as the mailbox owner:"
+puts
+puts auth_url
+puts
+puts "Waiting for the redirect on #{REDIRECT} ..."
+
+code = nil
+error = nil
+server = WEBrick::HTTPServer.new(
+  Port: PORT, BindAddress: "127.0.0.1",
+  Logger: WEBrick::Log.new(File::NULL), AccessLog: []
+)
+server.mount_proc "/oauth2/callback" do |req, res|
+  if req.query["state"] != state
+    error = "state mismatch — discarding this redirect"
+  else
+    code = req.query["code"]
+    error ||= req.query["error"]
+  end
+  res.content_type = "text/plain"
+  res.body = error ? "Failed: #{error}\n" : "Authorized. Close this tab and return to the terminal.\n"
+  server.shutdown
+end
+trap("INT") { server.shutdown }
+server.start
+
+abort "consent failed: #{error}" if error
+abort "no authorization code received" if code.to_s.empty?
+
+uri = URI("https://oauth2.googleapis.com/token")
+response = Net::HTTP.post_form(
+  uri,
+  code: code, client_id: options[:client_id], client_secret: options[:client_secret],
+  redirect_uri: REDIRECT, grant_type: "authorization_code"
+)
+body = JSON.parse(response.body) rescue {}
+abort "token exchange failed (HTTP #{response.code}): #{body['error_description'] || body['error'] || response.body}" unless response.is_a?(Net::HTTPSuccess)
+
+refresh = body["refresh_token"]
+abort "Google returned no refresh_token. Re-run — access_type=offline and prompt=consent are required." if refresh.to_s.empty?
+
+puts
+puts "Paste this whole object into 1Password:"
+puts "  vault studio-agents -> item gmail.studio.agents -> field `credential`"
+puts
+puts JSON.pretty_generate(
+  "client_id" => options[:client_id],
+  "client_secret" => options[:client_secret],
+  "refresh_token" => refresh
+)
+puts
+puts "Then verify with:  bin/rails gmail:check"

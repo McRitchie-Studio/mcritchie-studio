@@ -28,6 +28,7 @@ class DeskCapturePollJob < ApplicationJob
 
     item = DeskCaptureItem.new(
       s3_key: key,
+      source: "ses",
       message_id: parsed.message_id,
       from_addr: parsed.from_addr,
       subject: parsed.subject,
