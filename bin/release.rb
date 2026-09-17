@@ -1900,7 +1900,17 @@ def merge
   #    with no merged stamp — review never landed its feat PR on `accepted`). For
   #    this EXPLICIT command a held task is a HARD abort: the operator named it and
   #    there is no code on `accepted` to promote — silently dropping it would lie.
-  plan = Release::SweepPlan.compute(infos)
+  plan = Release::SweepPlan.compute(infos, parked: Release::Ladder.parked(RELEASE_REPOS))
+
+  # 2-bis. PARKED-REPO REFUSAL — first, because SweepPlan partitions a parked row out
+  #     before anything else, so it sits in NO other list: without this abort `merge`
+  #     would drop the task the operator named and print a tick. prepare HOLDS such a
+  #     task and sweeps on; here the operator asked for it by name, so say no.
+  if plan["parked"].any?
+    abort!("merge refused #{plan['parked'].size} task(s) naming a parked repo — the conductor sweeps " \
+           "three-rung repos only, so NOTHING was promoted or recorded: " \
+           "#{plan['parked'].map { |entry| Release::SweepPlan.parked_hold_line(entry) }.join(' ')}")
+  end
 
   # 2a. MULTI-REPO COVERAGE REFUSAL — prepare's step 3a, on the path prepare itself
   #     routes operators to (`prepare has NO --override — use bin/release merge
@@ -2007,11 +2017,18 @@ end
 # crash recovery. The plural pair is what the promote list and
 # Release::SweepPlan's coverage refusal read — deriving either from the singular
 # is what promoted one repo of a two-repo task and shipped the other blind.
+#
+# The PARKED tasks ride along too (a task naming a repo the registry parks — see
+# Release::Conductor.sweep_candidates), so the pure plan can HOLD them by name
+# instead of their simply being absent. `|| []` is load-bearing: this snippet runs
+# on the DEPLOYED conductor, and a conductor older than the "parked" key still
+# lists those tasks under "reviewed" — where SweepPlan holds them all the same,
+# because the CLI judges the ladder from its OWN registry (RELEASE_REPOS).
 def sweep_detect_ruby(only_slugs)
   only = only_slugs.empty? ? "nil" : only_slugs.inspect
   "only = #{only}; " \
   "c = Release::Conductor.sweep_candidates; " \
-  "tasks = c['reviewed'] + c['stragglers']; " \
+  "tasks = c['reviewed'] + c['stragglers'] + (c['parked'] || []); " \
   "tasks = tasks.select { |t| only.include?(t.slug) } if only; " \
   "rows = tasks.map { |t| { slug: t.slug, stage: t.stage, merged: t.merged.to_s, " \
   "pr_url: t.devops_url('pr').to_s, repo: t.release_repo.to_s, kind: t.release_kind.to_s, " \
@@ -3165,8 +3182,10 @@ def prepare
   #    anomalies (a `reviewed` member with no merged stamp — review's feat→accepted
   #    merge never landed). Unlike the explicit `merge` command, a held member here
   #    is WARNED + left `reviewed` (it self-heals on re-review) — the self-healing
-  #    sweep never aborts on it.
-  plan = Release::SweepPlan.compute(cands)
+  #    sweep never aborts on it. A candidate naming a PARKED repo (the registry's
+  #    non-three-rung ladders) is held the same way, whole, and named on a `⚠ HELD`
+  #    line: it is never promoted, recorded or deployed, and the rest sweeps on.
+  plan = Release::SweepPlan.compute(cands, parked: Release::Ladder.parked(RELEASE_REPOS))
 
   # 3a. MULTI-REPO COVERAGE REFUSAL — fail-closed, and the earliest seam that can
   #     see it: nothing has been claimed, promoted, recorded or deployed yet. A
@@ -3186,6 +3205,7 @@ def prepare
            "devops.repositories if it carries no work, then re-run `bin/release prepare`.")
   end
 
+  plan["parked"].each { |entry| say("  #{Release::SweepPlan.parked_hold_line(entry)}") }
   held = plan["held"]
   held.each do |s|
     say("  ⚠ #{s}: `reviewed` but merged:\"\" — review never landed its feat PR on `#{ACCEPTED_BRANCH}`; " \
@@ -3231,9 +3251,16 @@ def prepare
   # difference between "turf wasn't in this release" and "turf was silently dropped".
   # NOTE: this file is Rails-FREE (it runs standalone, and only require_relative's
   # the pure Release::* modules) — no ActiveSupport, so no `.presence`.
-  promote_repos = cands.select { |c| c["merged"].to_s == ACCEPTED_MERGED }
-                       .flat_map { |c| (c["repos"].is_a?(Array) && !c["repos"].empty?) ? c["repos"] : [ c["repo"] ] }
-                       .map(&:to_s).reject(&:empty?).uniq
+  #
+  # Drawn from the rows the PLAN sweeps, never from every candidate. That excludes
+  # nothing a stamp did not already exclude (a held row carries no "accepted" stamp,
+  # a blocked one aborted above) — except a row naming a PARKED repo, which can
+  # carry merged:"accepted" and would otherwise promote the parked repo's `accepted`
+  # onto `release` while the plan held its task.
+  swept_cands   = cands.select { |c| plan["sweep"].include?(c["slug"]) }
+  promote_repos = swept_cands.select { |c| c["merged"].to_s == ACCEPTED_MERGED }
+                             .flat_map { |c| (c["repos"].is_a?(Array) && !c["repos"].empty?) ? c["repos"] : [ c["repo"] ] }
+                             .map(&:to_s).reject(&:empty?).uniq
 
   # 4a-bis. ACCEPTED-COVERAGE HARD STOP — the git read gets a vote on the promote
   #     list, immediately before the irreversible op.
@@ -3280,9 +3307,8 @@ def prepare
   #     A HELD row (merged:"") names nothing here on purpose: it is not being
   #     recorded, so it has no claim on the promote list. `bin/release status`
   #     remains the ecosystem-wide read.
-  member_repos = cands.select { |c| plan["sweep"].include?(c["slug"]) }
-                      .flat_map { |c| (c["repos"].is_a?(Array) && !c["repos"].empty?) ? c["repos"] : [ c["repo"] ] }
-                      .map(&:to_s).reject(&:empty?).uniq
+  member_repos = swept_cands.flat_map { |c| (c["repos"].is_a?(Array) && !c["repos"].empty?) ? c["repos"] : [ c["repo"] ] }
+                            .map(&:to_s).reject(&:empty?).uniq
   if promote_repos.any? && !DRY
     step("guard: every repo this release's members name whose `accepted` is ahead must ride this promote")
     coverage = ladder_clean_verdict
@@ -3310,7 +3336,7 @@ def prepare
   #    in plan["sweep"], so it is never recorded onto the RC. Suppressed under
   #    --dry-run (the promotion previewed above; nothing recorded).
   landed = plan["sweep"]
-  left_reviewed = held
+  left_reviewed = held + plan["parked"].map { |entry| entry["slug"] }
   result = {}
   if landed.any? && !DRY
     step("record: Release::Conductor.sweep! ×#{landed.size} + repo plan in ONE run (#{landed.join(', ')})")
@@ -3354,14 +3380,14 @@ def prepare
     release_conductor_claim!
     if DRY && cands.any?
       say("")
-      say("✓ Dry run: #{cands.size} task(s) would sweep onto a fresh candidate — the repo plan (and the QA deploy preview) " \
+      say("✓ Dry run: #{landed.size} task(s) would sweep onto a fresh candidate — the repo plan (and the QA deploy preview) " \
           "becomes available once the sweep records; re-run without --dry-run.")
       close_role_span("qa-deploy dry-run — sweep previewed")
       return
     end
     say("")
     say("✓ Nothing to deploy — the release has no members yet" \
-        "#{left_reviewed.any? ? " (#{left_reviewed.join(', ')} left `reviewed` — no code on `#{ACCEPTED_BRANCH}`)" : ''}.")
+        "#{left_reviewed.any? ? " (#{left_reviewed.join(', ')} held — see the ⚠ line for each)" : ''}.")
     close_role_span("qa-deploy no-op — no members to deploy")
     return
   end
@@ -4227,9 +4253,26 @@ end
 
 def verify_release_carries_accepted!(repo_groups, rel_slug, rel_state)
   plan_repos = Array(repo_groups).map { |g| g["repo"].to_s }.reject(&:empty?).uniq
-  # Only a THREE-RUNG repo has an `accepted` rung it can fall behind. A registry-
-  # parked two-rung repo in the plan is out of scope by construction (there is no
-  # `accepted` branch to compare), not silently skipped.
+  # A PARKED repo in the deploy plan is REFUSED, not skipped. The sweep holds any
+  # task naming one before it is attached (Release::SweepPlan here,
+  # Release::Conductor.sweep_candidates + validate_members! on the record side), so
+  # reaching this line means a member came in by a door those do not guard. This is
+  # the deploy half's entry condition — nothing published, gated or deployed yet —
+  # so it is the last cheap place to stop a parked repo being deployed.
+  parked = Release::Ladder.parked(RELEASE_REPOS).slice(*plan_repos)
+  if parked.any?
+    named = parked.map { |repo, ladder| "#{repo} (ladder: #{ladder})" }.join(", ")
+    if DRY
+      step("verify: would REFUSE — the deploy plan names parked repo(s) #{named}; the conductor sweeps three-rung repos only")
+    else
+      abort!("parked repo in the deploy plan: #{named} — release #{rel_slug} would deploy a repo the conductor " \
+             "does not sweep. Nothing was published, gated, or deployed. Detach the member naming it " \
+             "(re-ladder the repo in config/release_repos.yml, or drop it from the task's " \
+             "devops.repositories), then re-run `bin/release prepare`.")
+    end
+  end
+  # Only a THREE-RUNG repo has an `accepted` rung it can fall behind, so the git
+  # read below is scoped to those.
   scope = plan_repos & release_repo_slugs
   if scope.empty?
     step("verify: no three-rung repo in the deploy plan — no `#{ACCEPTED_BRANCH}` rung to fall behind")
@@ -6767,9 +6810,17 @@ end
 #
 # NOTHING HERE READS THE PRIMARY'S WORKING TREE. That is the whole point of this
 # region (2026-07-12): ask what the deploy actually NEEDS, and the answer splits
-# cleanly in two.
+# cleanly in two — no working tree at all, or a private one. Which app takes which
+# adapter is the registry's call (config/release_repos.yml `prod_deploy.strategy`),
+# so read it there rather than from a list here: this comment once named two apps
+# for git_push_heroku long after one of them had moved to github_actions and the
+# other had been parked.
 #
-#   * git_push_heroku (hub, rolio) needs NO WORKING TREE. "Deploy" is: hand a
+#   * github_actions needs NO WORKING TREE: it dispatches the repo's prod-deploy
+#     workflow at the frozen SHA, and GitHub Actions does the Heroku push and the
+#     hard /up smoke.
+#
+#   * git_push_heroku needs NO WORKING TREE either. "Deploy" is: hand a
 #     commit to a git remote. So it is a ref push straight out of the shared object
 #     store — `git push <remote> <frozen>:refs/heads/<branch>` — which is also
 #     STRICTER than what it replaced: the old `git push heroku main` shipped

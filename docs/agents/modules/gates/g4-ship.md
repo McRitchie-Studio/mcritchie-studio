@@ -135,7 +135,8 @@ actually need a checkout FOR?" has a two-line answer:
 | Step | Needs a working tree? | Where it runs now |
 |------|----------------------|-------------------|
 | advance `main` → frozen SHA | **no** | `git push origin <frozen>:refs/heads/main` — a ref push out of the shared object store |
-| `git_push_heroku` deploy (hub, rolio) | **no** | `git push <remote> <frozen>:refs/heads/main` — ships the frozen SHA *by value* |
+| `github_actions` deploy (the hub) | **no** | `gh workflow run <prod-deploy workflow> -f sha=<frozen>` — Actions does the Heroku push and the `/up` smoke |
+| `git_push_heroku` deploy (mcritchie-industries; rolio, parked) | **no** | `git push <remote> <frozen>:refs/heads/main` — ships the frozen SHA *by value* |
 | `repo_script` deploy (turf-monster) | **yes** (its `bin/deploy` runs the repo's suite, hashes the IDL, pushes) | the **ship workspace**: `<repo>/.worktrees/_ship`, detached at the frozen SHA, own lock, own test DB (`<app>_ship_test`) |
 | gem re-pin commit | **yes** (`bundle lock` writes `Gemfile.lock`) | the ship workspace, pushed as `HEAD:refs/heads/release` |
 | gem artifact build | **yes** (`gem build` packages what is on disk) | still the gem's **primary** — the one residual (see below) |

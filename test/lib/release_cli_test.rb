@@ -6359,7 +6359,7 @@ class ReleaseCliTest < Minitest::Test
 
   # --- deploy_app: what the deploy actually needs ------------------------------
 
-  # [integration] git_push_heroku (hub, rolio) needs NO working tree: "deploy" is
+  # [integration] git_push_heroku (industries, rolio) needs NO working tree: "deploy" is
   # handing a commit to a git remote. It ref-pushes the FROZEN SHA BY VALUE, which
   # is stricter than the old `git push heroku main` (that shipped whatever the local
   # branch pointed at, in a checkout any session could disturb). Proven on real git:
