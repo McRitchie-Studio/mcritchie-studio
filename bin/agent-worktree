@@ -964,6 +964,30 @@ def report_desk_identity(app, task, dir, soul)
   false
 end
 
+# What `identity` tells the reader to run when the desk it was asked to stamp is MISSING.
+#
+# THE DEFECT (identity-hint-for-gem-desks). `identity` resolves through sweep_app_for, so
+# it reaches repos the registry does not list: studio-engine, solana-studio, turf-vault.
+# Its hint still said `new`, which resolves through app_for (the registry) and answers
+# "unknown app" for every one of them. The docs send gem-lane builders to `identity`, so
+# the one remedy printed there was the one guaranteed to fail.
+#
+# The lane is read off the same registry lookup `new` uses, not a list of gem slugs: a
+# repo `new` can resolve keeps `new` (it also allocates the port and stack an app desk
+# needs), and any other repo gets the plain `git worktree add` that cuts the desk at the
+# path identity resolves, the sibling tree included, then the identity re-run.
+def missing_desk_remedy(app, task, soul)
+  script = File.join(__dir__, "agent-worktree")
+  slug = app.fetch("slug")
+  return "Run: #{script} new #{slug} #{task} --soul #{soul}" if apps.key?(slug)
+
+  <<~REMEDY.chomp
+    `new` cannot cut this desk: #{slug} is not a registered app, so it answers "unknown app". Cut it with git, then re-run identity:
+      git -C #{app.fetch("repo")} worktree add #{worktree_dir(app, task)} -b feat/#{task} origin/accepted
+      #{script} identity #{slug} #{task} #{soul}
+  REMEDY
+end
+
 def print_plan(app, task, values, dir = worktree_dir(app, task))
   redis_db = values.fetch("REDIS_URL").split("/").last
   task_record_url = task_url(values)
@@ -5316,7 +5340,7 @@ if $PROGRAM_NAME == __FILE__
     app = sweep_app_for(app_name)
     task = clean_slug(raw_task)
     dir = worktree_dir(app, task)
-    abort "missing worktree: #{dir}\nRun: #{File.join(__dir__, "agent-worktree")} new #{app.fetch("slug")} #{task} --soul #{soul}" unless Dir.exist?(dir)
+    abort "missing worktree: #{dir}\n#{missing_desk_remedy(app, task, soul)}" unless Dir.exist?(dir)
     exit(report_desk_identity(app, task, dir, soul) ? 0 : 1)
   when "up"
     app_name, raw_task = ARGV

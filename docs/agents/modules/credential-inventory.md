@@ -6,11 +6,11 @@ This file names credential locations so agents can ask for or reference the righ
 
 | Vault | Purpose |
 |-------|---------|
-| `studio-agents` | The **agent** vault — every build, review, and QA lane reads it through `OP_SERVICE_ACCOUNT_TOKEN`. It is the vault formerly named `agents` (renamed 2026-08-28; same vault id `txqp6ijdo3ujsfhsfzdj5h5dzq`). |
+| `studio-agents` | The **agent** vault — every build, review, and QA lane reads it through `OP_SERVICE_ACCOUNT_TOKEN`. Holds `slack.studio.agents` (read-only Slack token, consumed by `Slack::Credentials` in mcritchie-industries). It is the vault formerly named `agents` (renamed 2026-08-28; same vault id `txqp6ijdo3ujsfhsfzdj5h5dzq`). |
 | `studio-agents-admin` | The **admin** vault — `github.mcritchie-deployer` and other ship-lane credentials. Read only by a SEPARATE service account (`OP_ADMIN_SERVICE_ACCOUNT_TOKEN`, sourced from `~/.zprofile.admin`); the agent token is never granted it, so an ordinary agent shell cannot even list it. That invisibility is the design, not a fault. |
-| `industries-agents` | Industries-brand agent credentials. Created 2026-08-28. **Not visible to the agent service account** — on 2026-08-29 `op vault list` returned `studio-agents` alone. Grant it before a lane depends on it. |
-| `family-agents` | Family-brand agent credentials. Created 2026-08-28. **Not visible to the agent service account** — same as above. Grant it before a lane depends on it. |
-| `Commercial Welding` | Reserved for the Commercial Welding initiative. Created 2026-08-28. **Not visible to the agent service account** — same as above. Grant it before a lane depends on it. |
+| `industries-agents` | Industries-brand agent credentials. Created 2026-08-28. **Visible to the agent service account** — re-measured 2026-09-16, `op vault list` returns it. The 2026-08-29 reading that it was invisible is superseded; a grant landed in between and this census did not catch up. |
+| `family-agents` | Family-brand agent credentials. Created 2026-08-28. **Visible to the agent service account** — re-measured 2026-09-16. The 2026-08-29 reading that it was invisible is superseded; a grant landed in between and this census did not catch up. |
+| `Commercial Welding` | Reserved for the Commercial Welding initiative. Created 2026-08-28. **Visible to the agent service account** — re-measured 2026-09-16. The 2026-08-29 reading that it was invisible is superseded. |
 | `studio-applications` | **Deterministic application/CI credentials** — consumed by deployed software, never by agent judgment: the durable copies of Heroku config vars and GitHub Actions secrets. Created 2026-09-02. Admin service account WRITES here (the provisioning lane files fleet credentials — this is the one vault where agent-side write is by design); agent service account reads. Grants pending as of 2026-09-02. |
 | `Blockchain` / `🧱 Blockchain` | Human-controlled blockchain credentials, if granted. |
 
