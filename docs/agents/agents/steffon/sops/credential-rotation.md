@@ -627,13 +627,16 @@ must be re-proposed and re-approved. You are meanwhile one member short at the s
 threshold: on today's five-member Squads at threshold 3 that is three of four, where
 losing two more keys freezes upgrade authority for good (on the old three-member
 shape it was a 2-of-2). One transaction and the member count never drops.
-The same staleness kills any upgrade proposal already in flight — land or abandon
-those before you rotate. **A stale proposal cannot be cleaned up afterwards,
-either.** Squads refuses to reject it (`StaleProposal`, 6007) and to cancel it
+The same staleness strands any proposal still COLLECTING approvals: Squads refuses
+to approve or reject it (`StaleProposal`, 6007) and to cancel it
 (`InvalidProposalStatus`, 6008, because cancel needs an Approved proposal), so it
-stays `Active` and inert forever. Devnet proposal #17, staled when transaction #18
+stays `Active` and inert. Devnet proposal #17, staled when transaction #18
 executed on 2026-09-15, is one; it needs no action (keyless simulations,
-2026-09-16).
+2026-09-16). **A proposal that had already reached Approved is NOT inert.** Squads
+still cancels it, and still EXECUTES a stale Approved vault transaction, an upgrade
+included; only a stale config transaction refuses to execute (Squads v4 source:
+`proposal_vote.rs`, `vault_transaction_execute.rs`, `config_transaction_execute.rs`,
+read 2026-09-16). So land or cancel every approved upgrade proposal before you rotate.
 
 `turf-vault/docs/KEY_ROTATION.md` §7 describes the same mechanism, and
 `secrets-rotation.md` is right that the file as a whole is a **SUPERSEDED plan** —
