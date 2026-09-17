@@ -399,8 +399,9 @@ and never touch a row 45 days old or newer.
 | What | Value |
 |------|-------|
 | Job | `AgentActionRetentionJob` (`app/jobs/agent_action_retention_job.rb`) |
-| Schedule | `config/recurring.yml` production, `agent_action_retention`: 3:30 AM `America/Los_Angeles`, nightly |
-| Clock | `occurred_at < now - 45 days` (indexed; when the action happened) |
+| Schedule | `config/recurring.yml` `production` block, `agent_action_retention`: 3:30 AM `America/Los_Angeles`, nightly |
+| Where it runs | every app booted with `RAILS_ENV=production`: production **and** `mcritchie-studio-qa`, which also loads that block. Not development or test |
+| Clock | `occurred_at < now - 3,888,000 s` (a fixed 45 × 86,400 seconds in any time zone, so a DST change never moves it; indexed; when the action happened) |
 | Batches | one `DELETE … WHERE id IN (SELECT … LIMIT 5000)` per batch, 0.25 s pause, 10-minute budget per run |
 | Runs on | the `worker` dyno (`bin/jobs`), never a web request |
 | Receipt | a `Rails.logger` line with rows deleted per run; a failure writes an `ErrorLog` (`target_name: agent_actions`) |

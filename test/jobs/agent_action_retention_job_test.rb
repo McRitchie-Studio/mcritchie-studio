@@ -41,6 +41,65 @@ class AgentActionRetentionJobTest < ActiveSupport::TestCase
     end
   end
 
+  # 2026-04-01 12:00 MDT. 45 CALENDAR days back is 2026-02-15 12:00 MST, across the
+  # 2026-03-08 spring-forward, which is only 45 days minus 1 hour of real time.
+  DST_NOW = Time.utc(2026, 4, 1, 18, 0, 0)
+  WINDOW_SECONDS = 45 * 86_400
+
+  test "[unit] the cutoff is a fixed 45-day span in a DST zone: 45d-1s stays, 45d+1s goes" do
+    travel_to(DST_NOW) do
+      Time.use_zone("America/Denver") do
+        # Guard against a vacuous test: the window must actually straddle a DST change.
+        assert Time.zone.now.dst?, "now must be in daylight time"
+        assert_not (Time.zone.now - WINDOW_SECONDS).dst?, "45 days back must be in standard time"
+
+        # Ages in plain seconds, so the fixture cannot share the bug under test.
+        just_inside = action_at(DST_NOW - (WINDOW_SECONDS - 1))
+        just_past   = action_at(DST_NOW - (WINDOW_SECONDS + 1))
+
+        result = run_job
+
+        assert exists?(just_inside), "a row 45 days minus 1 second old is NOT older than 45 days; it stays"
+        assert_not exists?(just_past), "a row 45 days plus 1 second old is past the window"
+        assert_equal WINDOW_SECONDS, (DST_NOW - result.cutoff).to_i,
+                     "the cutoff is 3,888,000 seconds back in any zone, never 45 calendar days"
+      end
+    end
+  end
+
+  test "[integration] kept and in-window rows whose ids sit between expired ids survive every batch" do
+    travel_to(NOW) do
+      # Created in this order, so the ids interleave. Expired rows age in id order, so
+      # each batch of 2 is a consecutive expired pair whose id span holds exactly one
+      # row the job must keep: [a, b] spans the graded row, [c, d] the in-window row,
+      # [e, f] the CI-scope row. A batch that deletes an id RANGE, instead of
+      # re-applying the rules to each id, takes all three.
+      expired_a = action_at(90.days.ago)
+      graded    = action_at(95.days.ago, task_slug: "graded-probe")
+      ActionGrade.create!(agent_action: graded, grader: ActionGrade::ALEX,
+                          slug: "interleaved lesson", disposition: ActionGrade::GOOD)
+      expired_b = action_at(88.days.ago)
+      expired_c = action_at(87.days.ago)
+      in_window = action_at(10.days.ago)
+      expired_d = action_at(85.days.ago)
+      expired_e = action_at(84.days.ago)
+      ci_scope  = action_at(95.days.ago, kind: "test_scope", event_slug: Task::TestingPhases::CI_SCOPES.first,
+                                         task_slug: "ci-probe", result_slug: "pass")
+      expired_f = action_at(83.days.ago)
+
+      result = run_job(batch_size: 2)
+
+      [expired_a, expired_b, expired_c, expired_d, expired_e, expired_f].each do |row|
+        assert_not exists?(row), "an expired row between kept rows is still deleted"
+      end
+      assert exists?(graded), "a graded row between expired ids must survive its batch"
+      assert exists?(in_window), "an in-window row between expired ids must survive its batch"
+      assert exists?(ci_scope), "a CI-scope row between expired ids must survive its batch"
+      assert_equal 6, result.deleted
+      assert_operator result.batches, :>=, 3, "the run must cross several batches to prove anything"
+    end
+  end
+
   test "[unit] the clock is occurred_at, not created_at" do
     travel_to(NOW) do
       old_action_recent_write = action_at(60.days.ago, created_at: 1.day.ago)
