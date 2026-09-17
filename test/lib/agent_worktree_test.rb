@@ -1353,7 +1353,7 @@ class AgentWorktreeTest < Minitest::Test
   def test_stackless_skip_requires_a_quiet_desk_not_just_a_stackless_repo
     out = run_in_script(<<~RUBY)
       STOPPED = []
-      def stop_generic_rails(dir, _port = nil); STOPPED << dir; end
+      def stop_generic_rails(dir, _port = nil, spared: nil); STOPPED << dir; end
       def stop_pidfile(*_a); end
       def local_email_values; {}; end
       def parse_env(_p); { "APP_PORT" => "3999" }; end
