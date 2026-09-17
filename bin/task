@@ -120,7 +120,11 @@
 #       the child `move building` on the fresh path.
 #       --agent SOUL works on BOTH forms and must be a soul SLUG (lowercase with
 #       single hyphens); on the RESUME form it rides to the claim as --actor, so
-#       devops.built_by is stamped even though a resume sets no agent_slug. The
+#       devops.built_by is stamped even though a resume sets no agent_slug.
+#       The desk's git identity follows the same soul: --agent reaches
+#       `agent-worktree new --soul`, and after the claim begin reads built_by
+#       back and stamps the desk with it when that differs (or says UNSTAMPED
+#       when no builder is on record). Never fatal. The
 #       resume form takes no OTHER create flag: one is REFUSED, naming
 #       `bin/task update <slug>`, never dropped in silence. bin/ship is the
 #       handoff twin. )
@@ -318,6 +322,9 @@ require_relative "lib/projects_root"
 require_relative "lib/bin_helpers"
 require_relative "lib/cert_root_guard"
 require_relative "lib/fast_lane"
+# The desk's git identity: the soul `bin/ship` authors from, stamped into the desk
+# (turf-monster-git-identity-wrong). See reconcile_desk_identity below.
+require_relative "../lib/commit_identity"
 require_relative "lib/stamp_confirmation"
 require_relative "lib/build_claim_renewer"
 require_relative "lib/session_markers"
@@ -2769,6 +2776,53 @@ def fetch_task_for_begin(slug)
   die!("GET /api/v1/tasks/#{slug} -> #{res.code}: #{parsed["error"] || res.body}")
 end
 
+# THE DESK'S GIT IDENTITY, reconciled against the claim that just landed
+# (turf-monster-git-identity-wrong).
+#
+# `new` stamped the desk from --agent, the builder begin was TOLD about. The
+# authoritative soul is the one the claim RECORDED — devops.built_by, the value
+# bin/ship authors its own commit from (CommitIdentity.soul_of) — and it differs
+# from --agent in exactly the cases Task#builder_to_stamp resolves without one: a
+# resume with no --agent keeps the builder already on record, and a create with no
+# --agent falls to the persona or the assignee. Reading the claim back, rather than
+# re-deriving that chain here, is what keeps a hand commit in the desk and the ship
+# commit spelling the SAME soul; a client-side copy of the chain would drift.
+#
+# NEVER FATAL. Every failure below leaves a whole desk and a claimed task, so it
+# warns with the exact remedy instead of dying past the claim — the same posture
+# `bin/agent-worktree new` takes toward a stamp that does not land.
+def reconcile_desk_identity(slug, app, worktree_slug, worktree_bin, stamped:)
+  remedy = "#{worktree_bin} identity #{app} #{worktree_slug} <soul>"
+  res = TaskBoard.request(:get, "/api/v1/tasks/#{slug}", base_url: BASE_URL, token: token)
+  unless res.code.to_i.between?(200, 299)
+    warn!("begin 4/5 identity — could not read #{slug}'s builder back (HTTP #{res.code}), so the desk keeps " \
+          "whatever identity `new` printed above. Once the board answers: #{remedy}")
+    return
+  end
+
+  soul = CommitIdentity.soul_of(TaskBoard.parse_body(res).dig("data", "metadata", "devops"))
+  if soul.nil?
+    warn!("begin 4/5 identity — #{slug} names NO builder (devops.built_by is blank), so the desk is UNSTAMPED: " \
+          "a hand-run git commit there names no soul. Claim it with --agent <soul>, or stamp it: #{remedy}")
+    return
+  end
+  # `new --soul` already stamped exactly this soul and printed the result.
+  return if soul == stamped
+
+  warn!("begin 4/5 identity — #{worktree_bin} identity #{app} #{worktree_slug} #{soul}   (the claim recorded #{soul})")
+  return if system(worktree_bin, "identity", app, worktree_slug, soul)
+
+  warn!("  ✗ the desk identity did not land — hand commits there will not name #{soul}. " \
+        "Fix what it printed above, then: #{worktree_bin} identity #{app} #{worktree_slug} #{soul}")
+rescue StandardError => e
+  # A board read that RAISES (connection refused, timeout) is the same non-answer as
+  # a non-2xx — and must be just as non-fatal, or a network blip past the claim kills
+  # a begin whose desk and claim are both already whole.
+  warn!("begin 4/5 identity — could not read #{slug}'s builder back (#{e.class}: #{e.message}); " \
+        "the desk keeps whatever identity `new` printed above. Once the board answers: " \
+        "#{worktree_bin} identity #{app} #{worktree_slug} <soul>")
+end
+
 # One begin step that shells a tool: narrate, run, die with a RESUME hint on
 # failure — rerunning `bin/task begin <slug>` continues from the failed step.
 def begin_step!(label, slug, *cmd, chdir: nil)
@@ -3134,7 +3188,13 @@ when "begin"
   worktree_bin = BinHelpers.bin_for("TASK_BEGIN_WORKTREE_BIN", "agent-worktree")
   # agent-worktree `new` is idempotent (an existing desk is reused) and `bind-task`
   # re-binds safely — `new` does NOT auto-bind, which is why begin welds them.
-  begin_step!("2/5 worktree", slug, worktree_bin, "new", app, worktree_slug)
+  # --soul stamps the desk's own git config at the moment it is cut, so a hand
+  # commit made there is authored by the builder rather than by whatever the
+  # checkout carries. Only when begin was TOLD the builder; reconcile_desk_identity
+  # below settles every other case from the recorded claim.
+  new_cmd = [worktree_bin, "new", app, worktree_slug]
+  new_cmd += ["--soul", builder] unless builder.empty?
+  begin_step!("2/5 worktree", slug, *new_cmd)
   begin_step!("3/5 bind", slug, worktree_bin, "bind-task", app, worktree_slug, slug)
 
   if stage == "building"
@@ -3193,6 +3253,8 @@ when "begin"
     move_cmd << "--steal" if steal
     begin_step!("4/5 claim", slug, *move_cmd)
   end
+
+  reconcile_desk_identity(slug, app, worktree_slug, worktree_bin, stamped: builder.empty? ? nil : builder)
 
   worktree_dir = CertRootGuard.worktree_hint(worktree_slug, ENV["TASK_BEGIN_PROJECTS_DIR"])
   die!("worktree #{worktree_slug.inspect} not found on disk after allocation — check bin/agent-worktree output") if worktree_dir.nil?

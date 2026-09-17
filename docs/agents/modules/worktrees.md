@@ -190,6 +190,47 @@ bin/agent-worktree sweep-orphan-dbs          # dry run; --yes drops orphaned des
 
 The launcher creates `/Users/alex/projects/<repo>/.worktrees/<task-slug>`, branches from the current **base ref** — `origin/accepted` when the repo has one (the persistent feature-PR target), else `origin/release`, else `origin/main` — copies the primary `.env`, writes `.env.agent-stack`, prepares the isolated database, and prints the local URL.
 
+### A desk commits as its claiming soul
+
+`new --soul <soul>` stamps the desk's **own** git config with the soul's commit
+identity, spelled exactly as `bin/ship` spells it:
+
+```bash
+bin/agent-worktree new turf-monster docs-stack --soul carl
+# identity: Carl <carl@mcritchie.studio> — stamped in this desk's own git config
+bin/agent-worktree identity turf-monster docs-stack shannon   # re-stamp an existing desk
+```
+
+`bin/task begin --agent <soul>` passes `--soul` for you, then reads the recorded
+builder back after the claim and re-stamps if it differs. So a hand-run `git
+commit`, a merge-forward, or a rebase in the desk names the builder, just as
+`bin/ship`'s own commit does.
+
+How it works, and what it will not do:
+
+- **The stamp lives in `.git/worktrees/<desk>/config.worktree`**, via
+  `extensions.worktreeConfig`. It is not the shared `.git/config`, so a sibling
+  desk and the primary resolve exactly as before. The one shared write is the
+  switch `extensions.worktreeConfig = true`, once per repo.
+- **Nothing here writes `~/.gitconfig`**, and nothing may.
+- **It refuses a primary checkout.** A primary is a loading dock: release
+  artifact commits and the operator's own commits land there, and a stamp would
+  name a soul on all of them.
+- **An unstamped desk is announced, not silent.** `new` without `--soul` prints
+  `identity: UNSTAMPED` with what a hand commit will be authored as and the
+  `identity` command that fixes it. A stamp that fails never fails `new` or
+  `begin`, because the desk is still whole.
+- **A worktree cut from a stamped desk inherits the stamp** (git copies
+  `config.worktree`; measured on git 2.50.1). A zap throwaway cut from a
+  builder's desk commits as that builder unless the zapper names themselves.
+
+**Never run a plain `git config user.name` in a desk.** Without `--worktree` it
+writes the shared `.git/config` and renames every desk in the repo. That is how
+turf-monster came to author every desk's hand commits as `Steffon (Claude)` until
+2026-09-16. Full layering, the readers of git authorship, and why an unstamped
+commit is not made to fail:
+[source-control.md → Commit Authorship](source-control.md#commit-authorship--which-soul-git-log-names).
+
 ### Every subcommand accounts for its whole command line
 
 `--help` on **any** subcommand answers and does **nothing** — it allocates no
@@ -956,21 +997,23 @@ convention:**
 
 **Two things that look like they would help and do not:**
 
-- **Git authorship cannot identify a soul.** Every agent commits under one
-  identity. Re-derive it rather than trusting this sentence — the count drifts
-  with the branch and the window:
+- **Git authorship names the CLAIMING soul, not the writer of a foreign
+  write.** A desk stamped at creation (from 2026-09-16) commits as a soul (see
+  [A desk commits as its claiming soul](#a-desk-commits-as-its-claiming-soul)),
+  but only as the soul that CLAIMED the desk. A conductor or reviewer writing into
+  someone else's desk by hand commits under the HOLDER's stamp, so the foreign
+  write this convention forbids is exactly the one authorship cannot expose.
+  Before the stamp it was worse: measured on `origin/accepted`, 2026-08-31, 187
+  of the last 300 commits were `Alex McRitchie <amcritchie@gmail.com>`, and on
+  turf-monster a shared `Steffon (Claude)` default named Steffon on every desk.
+  The 2026-08-30 conductor write (`9f9ad2de`) and the builder's own correction
+  (`0f6c0ddf`) are indistinguishable by author, date, and trailer. Any guard
+  keyed on "commit author differs from claim holder" is still dead on arrival.
+  Re-derive the mix rather than trusting a count:
 
   ```bash
   git log --format='%an <%ae>' -300 | sort | uniq -c | sort -rn
   ```
-
-  Measured on `origin/accepted`, 2026-08-31: 187 of the last 300 commits are
-  `Alex McRitchie <amcritchie@gmail.com>`, 107 are the merge bot, and **two**
-  name a soul — `Shannon` and `Alex (Claude)` — both under the operator's own
-  email address. Two in 300, and not separable by email even then.
-  The 2026-08-30 conductor write (`9f9ad2de`) and the builder's own correction
-  (`0f6c0ddf`) are indistinguishable by author, date, and trailer. Any guard
-  keyed on "commit author differs from claim holder" is dead on arrival.
 - **`.agent-context.json` does not record an occupant.** Its keys name the
   task, branch, port, database, and Redis slot; there is no agent, soul, or
   session field, and `bin/agent-worktree list` has no occupant column.

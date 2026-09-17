@@ -23,14 +23,16 @@
 # test_two_desks_of_one_repo_do_not_share_an_identity below is the load-bearing
 # test in this file rather than a nicety.
 #
-# WHY NOT extensions.worktreeConfig. It would work, but it re-resolves config
-# for EVERY read in the repo, for all 52 live worktrees across the two repos, to
-# attribute a commit. And it still buys the wrong GRAIN: a desk holds one
-# identity, while the measured reality is two souls on one desk.
-#
-# SO: the author is set PER COMMIT, from the environment, which outranks every
-# config file. That is the only grain that matches what actually happened, and
-# it costs no config write at all.
+# TWO LAYERS, BOTH PROVED HERE. bin/ship's own commit is authored PER COMMIT,
+# from the environment, which outranks every config file — the only grain that
+# matches two souls taking turns at one desk. Every OTHER desk commit (the
+# builder's mid-build commits, merge-forwards, rebases) never passes through
+# bin/ship, so the desk is also stamped PER DESK, in its own config.worktree via
+# extensions.worktreeConfig (turf-monster-git-identity-wrong, approved
+# 2026-09-16). That is a DIFFERENT file from the shared .git/config, which is why
+# the sibling-isolation property below still holds for the stamp. The "desk
+# layer" section at the bottom proves it against real repos with the global
+# config pinned to a scratch file.
 #
 # WHERE THE WIRING IS PROVED. Not here, and not by reading bin/ship's source: a
 # source scan asserts a string, not a behaviour. test/lib/ship_test.rb runs the
@@ -162,7 +164,218 @@ class CommitIdentityTest < Minitest::Test
     assert_equal "turf-monster@mcritchie.studio", env["GIT_AUTHOR_EMAIL"]
   end
 
+  # --- the desk layer: stamp_worktree! against real repos -------------------
+  #
+  # THE DEFECT (measured 2026-09-16). bin/ship's env covers one commit. The
+  # builder's hand commits in a turf-monster desk inherited the SHARED default in
+  # .git/config — "Steffon (Claude)" — whoever the builder was: 131 non-merge
+  # commits and 50 merges on origin/accepted since 2026-09-07. Every test below
+  # commits with a PLAIN `git commit`, never through CommitIdentity.commit!, because
+  # the hand commit is the path under test.
+
+  def test_a_hand_commit_in_a_stamped_desk_carries_the_claiming_soul
+    in_repo(poison: "Steffon (Claude)") do |root|
+      desk = add_desk(root, "feat/a")
+
+      result = CommitIdentity.stamp_worktree!(desk, "jasper")
+
+      assert result.ok, "the stamp must land: #{result.message}"
+      hand_commit(desk)
+      assert_equal "Jasper <jasper@mcritchie.studio>", git!(desk, "log", "-1", "--format=%an <%ae>")
+      assert_equal "Jasper <jasper@mcritchie.studio>", git!(desk, "log", "-1", "--format=%cn <%ce>"),
+                   "the committer line must name the soul too, or a rebase keeps the relic in %cn"
+      assert_equal CommitIdentity.env_for("built_by" => "jasper")["GIT_AUTHOR_NAME"], result.name,
+                   "the desk stamp and bin/ship's commit must spell a soul the SAME way"
+    end
+  end
+
+  def test_stamping_one_desk_leaves_its_sibling_and_the_primary_alone
+    in_repo(poison: "Steffon (Claude)") do |root|
+      desk_a = add_desk(root, "feat/a")
+      desk_b = add_desk(root, "feat/b")
+      primary_before = ident(root)
+      sibling_before = ident(desk_b)
+
+      assert CommitIdentity.stamp_worktree!(desk_a, "carl").ok
+
+      assert_equal primary_before, ident(root), "the primary must resolve exactly as before"
+      assert_equal sibling_before, ident(desk_b), "an unstamped sibling must resolve exactly as before"
+      hand_commit(desk_b)
+      assert_equal "Steffon (Claude)", author_name(desk_b)
+      refute_equal "Carl", repo_config(root, "user.name"),
+                   "the stamp must never land in the SHARED config — that write renames every desk"
+    end
+  end
+
+  def test_the_extension_switch_is_the_only_shared_write
+    in_repo do |root|
+      desk = add_desk(root, "feat/a")
+      shared_before = shared_config_lines(root)
+
+      result = CommitIdentity.stamp_worktree!(desk, "shannon")
+
+      assert result.ok
+      assert result.enabled, "the first stamp in a repo switches the extension on and says so"
+      assert_equal ["extensions.worktreeconfig=true"], shared_config_lines(root) - shared_before,
+                   "exactly one key may be added to .git/config, and it is not an identity"
+      refute CommitIdentity.stamp_worktree!(desk, "shannon").enabled,
+             "a re-stamp must not claim to have switched on an extension that was already on"
+    end
+  end
+
+  def test_the_stamp_never_writes_the_global_file
+    in_repo do |root|
+      desk = add_desk(root, "feat/a")
+      global = ENV.fetch("GIT_CONFIG_GLOBAL")
+      File.write(global, "[user]\n\tname = Operator\n\temail = operator@example.com\n")
+      before = File.binread(global)
+
+      assert CommitIdentity.stamp_worktree!(desk, "avi").ok
+
+      assert_equal before, File.binread(global), "the global file must be byte-for-byte untouched"
+      assert_equal "Avi <avi@mcritchie.studio>", ident(desk),
+                   "the desk stamp outranks the global identity it leaves in place"
+    end
+  end
+
+  def test_a_re_stamp_repoints_the_desk_for_a_handoff
+    in_repo do |root|
+      desk = add_desk(root, "feat/a")
+      CommitIdentity.stamp_worktree!(desk, "carl")
+
+      CommitIdentity.stamp_worktree!(desk, "turf-monster")
+
+      hand_commit(desk)
+      assert_equal "Turf Monster <turf-monster@mcritchie.studio>", git!(desk, "log", "-1", "--format=%an <%ae>")
+    end
+  end
+
+  def test_a_primary_checkout_is_refused_and_left_untouched
+    in_repo do |root|
+      shared_before = shared_config_lines(root)
+
+      result = CommitIdentity.stamp_worktree!(root, "carl")
+
+      refute result.ok
+      assert_equal :primary, result.refused
+      assert_equal shared_before, shared_config_lines(root),
+                   "a refused stamp must not even switch the extension on"
+      assert_equal "Alex McRitchie <amcritchie@gmail.com>", ident(root)
+    end
+  end
+
+  def test_a_value_that_is_not_a_soul_is_refused_before_any_git_call
+    calls = []
+    spy = ->(*args) { calls << args; ["", true] }
+
+    ["Steffon", "turf_monster", "8b12f485-ac04-4134-bbb6-ba9ac7e3c41d", ""].each do |bad|
+      result = CommitIdentity.stamp_worktree!("/nowhere", bad, git: spy)
+      refute result.ok
+      assert_equal :not_a_soul, result.refused
+    end
+    assert_empty calls, "a refused soul must not reach git at all"
+  end
+
+  def test_a_repo_whose_shared_config_the_extension_would_change_is_refused
+    # Git's documented hazard: core.worktree (or core.bare=true) in the shared config
+    # must move before extensions.worktreeConfig is switched on. Driven with a runner
+    # because a real repo carrying core.worktree re-roots every command run in it.
+    writes = []
+    answers = {
+      %w[rev-parse --path-format=absolute --git-dir] => ["/r/.git/worktrees/a\n", true],
+      %w[rev-parse --path-format=absolute --git-common-dir] => ["/r/.git\n", true],
+      %w[config --local --get extensions.worktreeConfig] => ["", false],
+      %w[config --local --get core.bare] => ["false\n", true],
+      %w[config --local --get core.worktree] => ["/elsewhere\n", true]
+    }
+    runner = lambda do |_dir, *args|
+      answers.fetch(args) { writes << args; ["", true] }
+    end
+
+    result = CommitIdentity.stamp_worktree!("/r/.worktrees/a", "carl", git: runner)
+
+    assert_equal :unsafe_repo, result.refused
+    assert_empty writes, "nothing may be written to a repo the extension would re-root"
+  end
+
+  def test_a_dormant_config_worktree_elsewhere_blocks_the_switch
+    # With the extension OFF git ignores config.worktree files. Switching it on for
+    # one desk would silently activate a leftover file in another desk — changing a
+    # checkout nobody asked to change. Measured: no repo here carries one today.
+    in_repo(poison: "Steffon (Claude)") do |root|
+      desk = add_desk(root, "feat/a")
+      other = add_desk(root, "feat/b")
+      dormant = File.join(git!(other, "rev-parse", "--path-format=absolute", "--git-dir"), "config.worktree")
+      File.write(dormant, "[user]\n\tname = Leftover\n")
+      before = ident(other)
+
+      result = CommitIdentity.stamp_worktree!(desk, "carl")
+
+      assert_equal :unsafe_repo, result.refused
+      assert_includes result.message, dormant
+      assert_nil repo_config_or_nil(root, "extensions.worktreeConfig"), "the switch must stay off"
+      assert_equal before, ident(other), "the other desk must resolve exactly as before"
+    end
+  end
+
+  def test_an_unstamped_desk_with_no_identity_anywhere_refuses_the_commit_loudly
+    # The machine-independent half of "unstamped is loud": with no global identity,
+    # no repo identity and git's hostname guess turned off, the only thing that can
+    # author a desk commit is the stamp. (On this Mac ~/.gitconfig DOES carry an
+    # identity, so there an unstamped commit falls through to it instead — see
+    # lib/commit_identity.rb, "WHY NOT MAKE THE UNSTAMPED COMMIT FAIL".)
+    in_repo(identity: false) do |root|
+      stamped = add_desk(root, "feat/a")
+      unstamped = add_desk(root, "feat/b")
+      assert CommitIdentity.stamp_worktree!(stamped, "carl").ok
+
+      _out, err, status = Open3.capture3("git", "-C", unstamped, "-c", "user.useConfigOnly=true",
+                                         "commit", "--allow-empty", "-m", "no one")
+      refute status.success?, "an unstamped desk with no identity anywhere must not commit"
+      assert_match(/Please tell me who you are/, err)
+
+      _out, err, status = Open3.capture3("git", "-C", stamped, "-c", "user.useConfigOnly=true",
+                                         "commit", "--allow-empty", "-m", "carl")
+      assert status.success?, "the stamped sibling must commit: #{err}"
+      assert_equal "Carl", author_name(stamped)
+    end
+  end
+
+  def test_worktree_identity_reads_nil_for_an_identity_from_any_other_scope
+    in_repo(poison: "Steffon (Claude)") do |root|
+      desk = add_desk(root, "feat/a")
+
+      assert_nil CommitIdentity.worktree_identity(desk),
+                 "an identity inherited from the SHARED config is not a stamp"
+      CommitIdentity.stamp_worktree!(desk, "carl")
+      assert_equal ["Carl", "carl@mcritchie.studio"], CommitIdentity.worktree_identity(desk)
+    end
+  end
+
   private
+
+  def add_desk(root, branch)
+    desk = File.join(File.dirname(root), branch.tr("/", "-"))
+    if git_unborn?(root)
+      git!(root, "-c", "user.name=Seed", "-c", "user.email=seed@example.com",
+           "commit", "--allow-empty", "-q", "-m", "base")
+    end
+    git!(root, "worktree", "add", "-q", "-b", branch, desk)
+    desk
+  end
+
+  def git_unborn?(root)
+    _out, _err, status = Open3.capture3("git", "-C", root, "rev-parse", "--verify", "-q", "HEAD")
+    !status.success?
+  end
+
+  def hand_commit(dir)
+    git!(dir, "commit", "--allow-empty", "-q", "-m", "a hand commit, no bin/ship")
+  end
+
+  def ident(dir) = git!(dir, "var", "GIT_AUTHOR_IDENT").sub(/\s+\d+\s+[-+]\d{4}\z/, "")
+
+  def shared_config_lines(root) = git!(root, "config", "--local", "--list").lines.map(&:strip)
 
   def devops(built_by: :unset, builders: nil)
     d = {}
@@ -173,7 +386,7 @@ class CommitIdentityTest < Minitest::Test
 
   # A real repo with a real (poisoned) repo-level identity, isolated from the
   # machine's global config so the test measures only what it set up.
-  def in_repo(poison: nil)
+  def in_repo(poison: nil, identity: true)
     Dir.mktmpdir("commit-identity") do |tmp|
       home = File.join(tmp, "home")
       FileUtils.mkdir_p(home)
@@ -187,8 +400,12 @@ class CommitIdentityTest < Minitest::Test
                "GIT_COMMITTER_NAME" => nil, "GIT_COMMITTER_EMAIL" => nil) do
         git!(root, "init", "-q", "-b", "main")
         # The machine identity every desk inherits when nothing else is set.
-        git!(root, "config", "user.name", poison || "Alex McRitchie")
-        git!(root, "config", "user.email", "amcritchie@gmail.com")
+        # identity: false leaves the repo with NO identity at any scope (the global
+        # file above does not exist), for the tests about what supplies one.
+        if identity
+          git!(root, "config", "user.name", poison || "Alex McRitchie")
+          git!(root, "config", "user.email", "amcritchie@gmail.com")
+        end
         yield root
       end
     end
@@ -216,4 +433,9 @@ class CommitIdentityTest < Minitest::Test
   def author_name(root) = git!(root, "log", "-1", "--format=%an")
   def author_email(root) = git!(root, "log", "-1", "--format=%ae")
   def repo_config(root, key) = git!(root, "config", "--local", "--get", key)
+
+  def repo_config_or_nil(root, key)
+    out, _err, status = Open3.capture3("git", "-C", root, "config", "--local", "--get", key)
+    status.success? ? out.strip : nil
+  end
 end

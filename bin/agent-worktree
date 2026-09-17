@@ -74,6 +74,10 @@ require_relative "lib/agent_worktree_cli"
 # who holds what. See bin/lib/desk_context.rb for why a backfill was the wrong fix.
 require_relative "lib/session_identity"
 require_relative "lib/desk_context"
+# The desk's git identity — the claiming soul, in the desk's OWN config.worktree.
+# The same module bin/ship authors its commit from, so a desk stamp and a ship
+# commit spell a soul identically ("Carl <carl@mcritchie.studio>").
+require_relative "../lib/commit_identity"
 
 PROJECTS_DIR = File.expand_path(ENV.fetch("PROJECTS_DIR") { ProjectsRoot.default_projects_dir })
 HUB_DIR = File.join(PROJECTS_DIR, "mcritchie-studio")
@@ -901,6 +905,63 @@ end
 # — which binds at its very next step — looked as if the bind had FAILED.
 def task_line_value(task_record_url)
   task_record_url || "(unbound — run bind-task to bind)"
+end
+
+# `--soul <slug>` / `--soul=<slug>` out of argv, BEFORE an arm destructures its
+# positionals. Both spellings are removed, because the argument guard accepts both
+# and a leftover `--soul=carl` would land in `new`'s `maybe_type` slot, be read as
+# flag-shaped, and be discarded — the silent drop that guard exists to prevent.
+# Returns the value, or nil when the flag is absent; exits through `usage` when
+# the flag is present with no value.
+def take_soul_flag!(argv)
+  if (idx = argv.index { |arg| arg.start_with?("--soul=") })
+    value = argv.delete_at(idx).split("=", 2).last
+  elsif (idx = argv.index("--soul"))
+    argv.delete_at(idx)
+    value = argv.delete_at(idx)
+  else
+    return nil
+  end
+  usage if value.to_s.strip.empty?
+  value
+end
+
+# Stamp a desk with its claiming soul and SAY what happened — or, with no soul,
+# say what a hand-run commit there will be authored as.
+#
+# THE DEFECT (turf-monster-git-identity-wrong). A desk is where a builder's
+# mid-build commits, merge-forwards and rebases happen, and none of those pass
+# through bin/ship's per-commit author. They took whatever the checkout carried:
+# on turf-monster that was a shared "Steffon (Claude)" default in .git/config, so
+# every soul's hand commits read as Steffon's, and a reviewer reasoned from it.
+# lib/commit_identity.rb#stamp_worktree! owns the mechanics and the refusals.
+#
+# NEVER FATAL. `new` exiting 0 means "the worktree was created" to bin/task
+# begin, and a desk with no stamp is still a whole desk — so a refusal or a failed
+# write is reported loudly and the desk stands. Returns whether a stamp landed.
+def report_desk_identity(app, task, dir, soul)
+  if soul
+    result = CommitIdentity.stamp_worktree!(dir, soul)
+    if result.ok
+      extension = result.enabled ? " (enabled extensions.worktreeConfig on #{app.fetch("repo")})" : ""
+      puts "identity: #{result.name} <#{result.email}> — stamped in this desk's own git config#{extension}"
+      return true
+    end
+    warn "identity: ✗ NOT stamped — #{result.message}"
+  end
+
+  stamped = CommitIdentity.worktree_identity(dir)
+  if stamped
+    puts "identity: #{stamped[0]} <#{stamped[1]}> (this desk's own git config)"
+    return !soul
+  end
+
+  resolved, = CommitIdentity.capture_git(dir, "var", "GIT_AUTHOR_IDENT")
+  fallback = resolved.to_s.strip.sub(/\s+\d+\s+[-+]\d{4}\z/, "")
+  fallback = "no identity at all (git will refuse the commit)" if fallback.empty?
+  warn "identity: UNSTAMPED — a hand-run `git commit` in this desk is authored as #{fallback}, " \
+       "which names no soul. Stamp it: #{File.join(__dir__, "agent-worktree")} identity #{app.fetch("slug")} #{task} <soul>"
+  false
 end
 
 def print_plan(app, task, values, dir = worktree_dir(app, task))
@@ -5117,6 +5178,8 @@ if $PROGRAM_NAME == __FILE__
     puts "sweep-orphan-dbs: dropped #{dropped} of #{orphans.length}"
 
   when "new"
+    # Taken out FIRST, before the positionals are destructured — see take_soul_flag!.
+    soul = take_soul_flag!(ARGV)
     app_name, raw_task, maybe_type, *rest = ARGV
     usage unless app_name && raw_task
     app = app_for(app_name)
@@ -5205,6 +5268,11 @@ if $PROGRAM_NAME == __FILE__
     puts "worktree ready: #{dir}"
     puts "stack env:      #{path}"
     puts "context:        #{context_path(dir)}"
+    # OUTSIDE the atomic region on purpose: the stamp lives in the desk's own git
+    # dir, so it goes wherever the desk goes, and a stamp that fails must not unwind
+    # a desk that is otherwise whole. Runs on a resume too, which is what lets
+    # `bin/task begin <slug> --agent <soul> --steal` re-point an existing desk.
+    report_desk_identity(app, task, dir, soul)
     # Provision the isolated TEST DB, write .env.test.local, and BUILD the bundled
     # assets now, so a fresh worktree runs `bin/rails test` — and bin/fast-check, whose
     # lanes pass explicit test paths — out of the box (no manual db:create / unsetting
@@ -5237,6 +5305,19 @@ if $PROGRAM_NAME == __FILE__
     app = app_for(app_name)
     task = clean_slug(raw_task)
     run_bind_task(app, task, reference)
+  when "identity"
+    # Stamp (or re-stamp) an EXISTING desk with a soul's git identity. The remedy
+    # `new` and `bin/task begin` print for an UNSTAMPED desk, and the move for a
+    # handoff made outside begin (`bin/task move <slug> building --actor <soul>`).
+    # sweep_app_for, not app_for: this writes only git config — no port, Redis slot
+    # or stack — so a discovered repo's desk (studio-engine, turf-vault) is in reach.
+    app_name, raw_task, soul, *extra = ARGV
+    usage unless app_name && raw_task && soul && extra.empty?
+    app = sweep_app_for(app_name)
+    task = clean_slug(raw_task)
+    dir = worktree_dir(app, task)
+    abort "missing worktree: #{dir}\nRun: #{File.join(__dir__, "agent-worktree")} new #{app.fetch("slug")} #{task} --soul #{soul}" unless Dir.exist?(dir)
+    exit(report_desk_identity(app, task, dir, soul) ? 0 : 1)
   when "up"
     app_name, raw_task = ARGV
     usage unless app_name && raw_task
