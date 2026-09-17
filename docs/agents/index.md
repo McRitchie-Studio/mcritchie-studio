@@ -78,6 +78,7 @@ required execution path. Do not follow a Background reference to run an SOP.
 | `work-backlog` | Shared | `mcritchie-studio/docs/agents/modules/work-backlog.md` |
 | `token-session` | Shared | `mcritchie-studio/docs/agents/modules/token-session.md` |
 | `knowledge-capture` | Shared | `mcritchie-studio/docs/agents/modules/knowledge-capture.md` |
+| `slack-capture` | Shared | `mcritchie-studio/docs/agents/modules/slack-capture.md` |
 
 For `pr-review`, read Carl's `pr-review.md` and run the bounded review it
 describes. A review session (a Pokémon orchestrator) spins one Carl per PR;
@@ -732,6 +733,7 @@ Do not merge or deploy unless I explicitly assigned that lane.
 | Ports, servers, callbacks | `mcritchie-studio/docs/agents/modules/ports-and-processes.md` |
 | Object storage (S3 buckets, keys, conventions) | `mcritchie-studio/docs/agents/modules/object-storage.md` |
 | Knowledge capture (team@, intake protocol, sweep) | `mcritchie-studio/docs/agents/modules/knowledge-capture.md` |
+| Slack capture (connect, read, categorize a channel) | `mcritchie-studio/docs/agents/modules/slack-capture.md` |
 | Parallel DevOps and QA graduation | `mcritchie-studio/docs/agents/modules/parallel-agent-devops.md` |
 | Agent presence (who is working, machine headroom) | `mcritchie-studio/docs/agents/system/agent-presence.md` |
 | Modular PR review SOP | `mcritchie-studio/docs/agents/modules/pr-review-sop.md` |
@@ -844,6 +846,7 @@ depend on the heartbeat.
 | `work-backlog` | Shared | `mcritchie-studio/docs/agents/modules/work-backlog.md` |
 | `token-session` | Shared | `mcritchie-studio/docs/agents/modules/token-session.md` |
 | `knowledge-capture` | Shared | `mcritchie-studio/docs/agents/modules/knowledge-capture.md` |
+| `slack-capture` | Shared | `mcritchie-studio/docs/agents/modules/slack-capture.md` |
 
 ## Repos
 
