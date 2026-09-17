@@ -91,7 +91,9 @@
 1. Deploy `turf-vault` to mainnet (audit-signed-off version) with single key as initial upgrade authority.
    *Ran 2026-06-02:* `DaFv83yo…` was deployed at 19:13:53Z by the single key
    `8K81…`. A first program, `mnzow…`, was deployed that morning and abandoned
-   after the Alex Bot leak; it was never closed (`turf-vault/docs/CURRENT_DEPLOYMENT.md`).
+   after the Alex Bot leak. It stayed open until 2026-09-16, when Mr. McRitchie
+   closed it through its Squad `9dCLM…` and removed the leaked `F6f8…` from that
+   Squad (`squads-upgrade-authority-migration.md`, **How it resolved**).
 2. Run the full Phase 4 Squads upgrade-authority migration (see runbook).
    *Ran 2026-06-02:* authority reached the Squads vault at 19:14:10Z (pre-flight
    item 3).

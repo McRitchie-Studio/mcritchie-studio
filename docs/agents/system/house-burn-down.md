@@ -462,11 +462,14 @@ Current deployment facts drift quickly. Treat `turf-vault/docs/CURRENT_DEPLOYMEN
 
 **Gotcha**: `anchor test` will fail with `ts-mocha: command not found` if you skip `yarn install`. The Anchor scaffold's test runner is JS, not Rust.
 
-To deploy a new version: the program's upgrade authority is a Squads V4 multisig (one per cluster, each with its own threshold and members — `turf-monster/docs/SOLANA.md` states them once and carries the command to re-derive them), and **the vault PDA differs per cluster** — devnet (`EQGFJAcA…`) is `BW13kgfiG2koFn3WRkte21NW9TFygsD1ge2fNJdjH6kC`, mainnet (`DaFv83yo…`) is `Bk9sS7iiSRL18vuo2KVzkeGw7EekKqxMCjrdoyGGdJm`. The first two commands below are the **devnet** path, but the third is not scoped by them: `squad-upgrade.js` reads its cluster from `turf-vault/scripts/squad.json`'s top-level `network`/`programId`/`vaultPda`, which on `main` are the **mainnet** set, so it proposes against that file's cluster no matter what `solana config set` selected. Confirm the authority for the cluster you are on with `solana program show <PROGRAM_ID> --url <cluster>` before proposing anything. Either way a plain `anchor deploy` no longer works — it would be rejected by the on-chain upgrade-authority check. Build the program, then route the upgrade through the Squads multisig:
+To deploy a new version: the program's upgrade authority is a Squads V4 multisig (one per cluster, each with its own threshold and members — `turf-monster/docs/SOLANA.md` states them once and carries the command to re-derive them), and **the vault PDA differs per cluster** — devnet (`EQGFJAcA…`) is `BW13kgfiG2koFn3WRkte21NW9TFygsD1ge2fNJdjH6kC`, mainnet (`DaFv83yo…`) is `Bk9sS7iiSRL18vuo2KVzkeGw7EekKqxMCjrdoyGGdJm`. **Name the cluster on every run.** `turf-vault/scripts/squad-upgrade.js` REQUIRES `--cluster=devnet|mainnet`, has no default, and refuses when the RPC's genesis hash belongs to a different cluster. It reads that cluster's addresses from `scripts/squad.json` (the top level for mainnet, the `devnet` block for devnet) and its live Squads membership from the chain, and it refuses unless the program's upgrade authority is that cluster's Squads vault. It does **not** write the buffer: you write it and hand the buffer authority to that cluster's Squads vault first. It dry-runs unless `--send` arms it. On devnet the agent's three seats reach threshold 3, so an armed run upgrades end to end; on mainnet it casts the agent's two approvals and stops for Mr. McRitchie. A plain `anchor deploy` no longer works — it would be rejected by the on-chain upgrade-authority check. The devnet path:
 ```bash
-solana config set --url devnet
+cd ~/projects/turf-vault
 anchor build
-node turf-vault/scripts/squad-upgrade.js   # writes the buffer + proposes the upgrade to the Squad for cosign
+solana program write-buffer target/deploy/turf_vault.so --url devnet   # prints "Buffer: <ADDR>"
+solana program set-buffer-authority <BUFFER> --new-buffer-authority BW13kgfiG2koFn3WRkte21NW9TFygsD1ge2fNJdjH6kC --url devnet
+node scripts/squad-upgrade.js --cluster=devnet <BUFFER>          # dry run: reads the chain, prints the plan, signs nothing
+node scripts/squad-upgrade.js --cluster=devnet <BUFFER> --send   # armed
 ```
 See `docs/agents/system/squads-upgrade-authority-migration.md` for the historical migration notes, then verify current procedure in the `turf-vault` repo before proposing or approving an upgrade.
 
