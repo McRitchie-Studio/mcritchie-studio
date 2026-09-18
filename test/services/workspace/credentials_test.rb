@@ -84,6 +84,17 @@ class WorkspaceCredentialsTest < ActiveSupport::TestCase
     assert_includes error.message, "not valid JSON"
   end
 
+  test "a broken paste never carries key bytes into the exception message" do
+    # A PEM with LITERAL newlines is invalid JSON, and JSON::ParserError echoes
+    # the input to end of stream — the whole key body, into ErrorLog.
+    body = self.class.signing_key.to_pem.lines[1..-2].join.delete("\n")
+    Workspace::Credentials.op_reader = ->(_item) { key_json.gsub("\\n", "\n") }
+
+    error = assert_raises(Workspace::Credentials::Malformed) { Workspace::Credentials.credential }
+    assert_includes error.message, "not valid JSON"
+    refute_includes error.message, body[0, 40], "private key bytes rode out in the exception"
+  end
+
   test "missing key fields name themselves" do
     Workspace::Credentials.op_reader = ->(_item) { { "type" => "service_account" }.to_json }
 

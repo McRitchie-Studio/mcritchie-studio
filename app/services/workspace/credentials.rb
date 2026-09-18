@@ -182,7 +182,12 @@ module Workspace
 
         parsed
       rescue JSON::ParserError => e
-        raise Malformed, "#{ITEM} is not valid JSON: #{e.message}"
+        # NEVER interpolate e.message: it echoes the input from the failure point
+        # to end of stream, so a key pasted with literal newlines inside
+        # private_key carries the WHOLE key body into the message (and into
+        # ErrorLog / Sentry). Position only — the rule Gmail::Credentials learned.
+        raise Malformed, "#{ITEM} is not valid JSON (#{e.message[/at line \d+ column \d+/] || 'position unreported'}) " \
+                         "— a literal line break inside private_key is the usual cause"
       end
 
       # Bounded on purpose — Open3.capture3 has no timeout of its own, so the
