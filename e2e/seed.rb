@@ -1207,4 +1207,38 @@ DeskRecord.file!(
   status: "live", last_seen_at: 1.day.ago
 )
 
-puts "Seeded: #{User.count} users, #{Agent.count} agents, #{Task.count} tasks, #{Activity.count} activities, #{Coach.count} coaches, #{Release.count} releases, #{AgentAction.count} agent actions, #{AgentActivity.count} agent activities, #{GithubWorkflowRun.count} github runs, #{News.count} news, #{Content.count} content"
+# --- /communications ---------------------------------------------------------
+# Four rows that make the page's two claims checkable in a browser: that asks
+# sort above the raw stream, and that each filter narrows to what it names.
+# Synthetic entities and addresses only — this repo is PUBLIC.
+Communication.delete_all
+
+Communication.create!(
+  kind: "general", channel: "fathom", entity: "e2e-entity", external_id: "e2e-f-1",
+  occurred_at: 9.days.ago, subject: "E2E kickoff call transcript",
+  participants: [ { "name" => "E2E Person", "email" => "person@example.test", "role" => "advisor", "side" => "theirs" } ]
+)
+Communication.create!(
+  kind: "general", channel: "sms", entity: "e2e-other-entity", external_id: "e2e-s-1",
+  occurred_at: 2.hours.ago, subject: "E2E quick confirmation"
+)
+Communication.create!(
+  kind: "ask", channel: "email", entity: "e2e-entity", external_id: "e2e-e-1",
+  occurred_at: 1.hour.ago, status: "open",
+  ask_text: "E2E: draft a reply about the revised schedule.",
+  key_points: [ "E2E point: the date moved", "E2E point: the figure did not" ]
+)
+Communication.create!(
+  kind: "ask", channel: "email", entity: "e2e-entity", external_id: "e2e-e-2",
+  occurred_at: 3.days.ago, status: "delivered",
+  ask_text: "E2E: ask for the appraisal summary.",
+  deliverable_url: "https://mail.google.com/mail/u/0/#drafts?compose=e2edraft"
+)
+# Labelled on the page, body never rendered.
+Communication.create!(
+  kind: "general", channel: "call", entity: "e2e-entity", external_id: "e2e-p-1",
+  occurred_at: 1.day.ago, subject: "E2E counsel call",
+  body_text: "e2e-privileged-body-marker", privileged: true
+)
+
+puts "Seeded: #{User.count} users, #{Agent.count} agents, #{Task.count} tasks, #{Activity.count} activities, #{Coach.count} coaches, #{Release.count} releases, #{AgentAction.count} agent actions, #{AgentActivity.count} agent activities, #{GithubWorkflowRun.count} github runs, #{News.count} news, #{Content.count} content, #{Communication.count} communications"
