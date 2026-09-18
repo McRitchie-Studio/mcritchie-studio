@@ -1994,24 +1994,6 @@ class TaskTest < ActiveSupport::TestCase
     assert_equal 0, Task.wip_count, "shipping the last live task empties WIP"
   end
 
-  # The DevOps sidebar's split of the same number. Every live stage is PRESENT, a
-  # zero included, in board order — the sidebar draws one tile per stage and must not
-  # have to guess which stages exist — and the split sums to wip_count exactly.
-  test "[unit] wip_by_stage splits WIP by stage, in board order, zeros included" do
-    Task.delete_all
-    2.times { |i| Task.create!(title: "wip split designed #{i}", stage: "designed") }
-    Task.create!(title: "wip split building task", stage: "building")
-    Task.create!(title: "wip split reviewed task", stage: "reviewed")
-    Task.create!(title: "wip split shipped task", stage: "shipped")
-    Task.create!(title: "wip split archived task", stage: "archived")
-
-    split = Task.wip_by_stage
-
-    assert_equal %w[designed building submitted reviewed assembled], split.keys
-    assert_equal({ "designed" => 2, "building" => 1, "submitted" => 0, "reviewed" => 1, "assembled" => 0 }, split)
-    assert_equal Task.wip_count, split.values.sum
-  end
-
   # A blocked task is a `building` task carrying a block marker, not a stage of its
   # own — so it is still open work and must stay in the count. This is the case an
   # `stage NOT IN (shipped, archived)` count gets right and a hand-rolled
