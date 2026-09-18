@@ -236,6 +236,49 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
       "Task must broadcast the card removal after a destroy commits"
   end
 
+  # --- the app ladder: summary card, sidebar detail, Releases summary ---------
+
+  # THREE SLOTS FROM ONE READ. The row became the Applications summary card; the full
+  # cards moved to the sidebar (#app-ladder-detail); and the Releases summary card rides
+  # the same push because its "Next" row counts the work queued on `accepted` — ladder
+  # data — and every release event already calls this method.
+  test "[unit] app_ladder replaces the summary card, the sidebar detail and the Releases summary" do
+    streams = capture_turbo_stream_broadcasts("deployments") { DeploymentsBroadcaster.app_ladder }
+
+    assert_equal %w[app-ladder-detail app-ladder-row release-summary-card], streams.map { |s| s["target"] }.sort
+    streams.each { |s| assert_equal "replace", s["action"] }
+  end
+
+  # ONE ORDER FOR THE WHOLE SURFACE: the summary list and the sidebar's full cards come
+  # from the same cards in the same order, so a live push can never show them disagreeing.
+  test "[integration] app_ladder draws the summary and the sidebar in one shared order" do
+    streams = capture_turbo_stream_broadcasts("deployments") { DeploymentsBroadcaster.app_ladder }
+    by_target = streams.index_by { |s| s["target"] }
+
+    summary = Nokogiri::HTML.fragment(by_target["app-ladder-row"].to_html)
+                            .css("[data-test='app-summary-row']").map { |el| el["data-repo"] }
+    detail = Nokogiri::HTML.fragment(by_target["app-ladder-detail"].to_html)
+                           .css("[data-test='app-ladder-card']").map { |el| el["data-repo"] }
+
+    assert_not_empty summary
+    assert_equal summary, detail
+  end
+
+  # A CI tick cannot move a queued count or a ship time, so .ci_progress asks for the
+  # ladder WITHOUT the Releases card rather than redraw it byte-identically on every one
+  # of a run's ~24 upserts.
+  test "[unit] app_ladder(release_summary: false) leaves the Releases summary alone" do
+    streams = capture_turbo_stream_broadcasts("deployments") { DeploymentsBroadcaster.app_ladder(release_summary: false) }
+
+    assert_equal %w[app-ladder-detail app-ladder-row], streams.map { |s| s["target"] }.sort
+  end
+
+  test "[unit] app_ladder is guarded — a dead cable can't break the write that fired it" do
+    Turbo::StreamsChannel.stub(:broadcast_replace_to, ->(*) { raise "cable down" }) do
+      assert_nothing_raised { DeploymentsBroadcaster.app_ladder }
+    end
+  end
+
   # --- release modules: the Next/Last cards live-update on a release change ----
 
   test "[unit] release_modules REPLACES both the current-release and last-release slots" do
@@ -498,6 +541,19 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
 
     assert_nil streams.find { |s| s["target"] == "current-release" },
                "a repo that is not a release member fires no Next Release refresh"
+  end
+
+  # A ladder-branch tick moves the Applications summary + its sidebar (a rung's verdict
+  # changed) but never the Releases summary, which reads nothing from CI.
+  test "[integration] ci_progress on a ladder branch refreshes the app slots, not the Releases card" do
+    job = seed_ci(repo: "McRitchie-Studio/turf-monster", branch: "accepted", sha: "ladder-sha", passed: 2, pending: 1)
+
+    targets = capture_turbo_stream_broadcasts("deployments") { DeploymentsBroadcaster.ci_progress(job) }
+                .map { |s| s["target"] }
+
+    assert_includes targets, "app-ladder-row"
+    assert_includes targets, "app-ladder-detail"
+    refute_includes targets, "release-summary-card"
   end
 
   test "[integration] ci_progress with no eligible task or release broadcasts nothing" do

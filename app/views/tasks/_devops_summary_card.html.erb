@@ -1,0 +1,113 @@
+<%# THE DEVOPS SUMMARY CARD — the fourth /deployments summary card: how long a release
+    takes, told honestly, and how much work is in flight.
+
+    WHAT IT REPLACED, AND WHY. The old card was six tiles: WIP plus the MEAN of four
+    stages and a total over the last ten releases. Measured on production 2026-09-18,
+    those numbers were true and still misled: the stages overlap (G3 runs inside
+    Assembled, Deployed inside G4), so they never add up; and the mean total, 2h 39m,
+    was two outliers — releases that sat open for 6-8 hours collecting work — while
+    the median release took about an hour. Release::Flow re-reads the same releases as
+    four phases that TILE each release's time, and this card leads with the median.
+
+    FOUR THINGS, top to bottom:
+      the typical release     the MEDIAN total — the hero number — with the mean
+                              beside it, small, so the gap between them is visible
+      the last ten releases   a sparkline, oldest left, each column stacked by phase;
+                              a column past the scale is clipped and marked, so eight
+                              ordinary releases are not flattened to a pixel by two
+      the typical phases      one bar, each phase's MEDIAN, labelled directly
+      the outliers, named     "2 slow releases — most of it in Batch": what the mean hid
+
+    The full story — every release as a row, the phase table, WIP by stage, and the
+    original six stage averages — opens in the sidebar (tasks/_devops_detail).
+
+    Not a broadcast slot: like the card it replaced, it reads shipped history and a
+    WIP count at render time.
+
+    Locals: flow (Release::Flow or nil), wip_count, wip_by_stage %>
+<% flow = local_assigns[:flow] %>
+<% wip_count = local_assigns[:wip_count] %>
+<%= tag.div(**deploy_summary_card_options("devops", test: "devops-summary-card", id: "devops-summary-card")) do %>
+  <%= render "tasks/summary_card_header", panel: "devops", title: "DevOps",
+             meta: wip_count.nil? ? nil : "#{wip_count} in flight" %>
+
+  <% if flow&.any? %>
+    <% median = flow.median_total %>
+    <% mean = flow.mean_total %>
+    <% outliers = flow.outliers %>
+    <% scale = flow.scale_seconds %>
+    <div class="mt-3 flex items-end justify-between gap-3">
+      <div class="min-w-0">
+        <div class="font-mono text-2xl font-bold leading-none tabular-nums text-heading" data-test="devops-typical"
+             data-seconds="<%= median %>"><%= release_flow_duration(median) %></div>
+        <div class="mt-1 text-[11px] leading-tight text-muted">
+          typical release <span class="whitespace-nowrap">· avg <span class="tabular-nums" data-test="devops-mean"><%= release_flow_duration(mean) %></span></span>
+        </div>
+      </div>
+
+      <%# THE SPARKLINE. Oldest left, newest right. Each column is one release, its height
+          its total against the tallest ORDINARY release (Flow#scale_seconds); a column
+          past that scale is drawn full height with a 2px surface break near its top —
+          the axis-break mark — so its length is admitted, not implied. %>
+      <div class="flex h-10 shrink-0 items-end gap-[2px]" role="img"
+           aria-label="Last <%= flow.size %> releases, oldest first: <%= flow.chronological.map { |e| release_flow_duration(e.total) }.join(", ") %>"
+           data-test="devops-sparkline">
+        <% flow.chronological.each do |entry| %>
+          <% clipped = outliers.include?(entry) %>
+          <% height = clipped ? 100 : [(entry.total.to_f / scale * 100).round, 6].max %>
+          <div class="relative flex w-2 flex-col-reverse gap-px overflow-hidden rounded-t-sm"
+               style="height: <%= height %>%"
+               data-test="devops-spark-column"
+               data-release="<%= entry.slug %>"
+               data-clipped="<%= clipped %>"
+               title="<%= entry.slug %> · <%= release_flow_duration(entry.total) %><%= " — off the scale" if clipped %>">
+            <% Release::Flow::PHASE_KEYS.each do |key| %>
+              <% seconds = entry.phase(key) %>
+              <% next if seconds.zero? || entry.total.zero? %>
+              <div class="<%= release_flow_phase_class(key) %> w-full" style="flex: <%= seconds %> 1 0px; min-height: 1px"></div>
+            <% end %>
+            <% if clipped %>
+              <div class="absolute inset-x-0 top-1.5 h-0.5 bg-surface" aria-hidden="true"></div>
+            <% end %>
+          </div>
+        <% end %>
+      </div>
+    </div>
+
+    <%# THE TYPICAL PHASES — each phase's median, as one bar with 2px surface gaps and a
+        label under every segment, so identity never rides on colour alone. %>
+    <% medians = Release::Flow::PHASES.map { |phase| [phase, flow.phase_median(phase[:key]).to_i] } %>
+    <% medians_total = medians.sum(&:last) %>
+    <div class="mt-3" data-test="devops-phase-bar">
+      <div class="flex h-2 w-full gap-0.5 overflow-hidden rounded-full">
+        <% medians.each do |phase, seconds| %>
+          <% next if seconds.zero? || medians_total.zero? %>
+          <div class="<%= release_flow_phase_class(phase[:key]) %> h-full first:rounded-l-full last:rounded-r-full"
+               style="flex: <%= seconds %> 1 0px"
+               title="<%= phase[:label] %> · typically <%= release_flow_duration(seconds) %> — <%= phase[:hint] %>"></div>
+        <% end %>
+      </div>
+      <div class="mt-1.5 flex flex-wrap gap-x-2.5 gap-y-0.5 text-[10px] leading-tight text-secondary" data-test="devops-phase-legend">
+        <% medians.each do |phase, seconds| %>
+          <span class="inline-flex items-center gap-1" data-test="devops-phase" data-phase="<%= phase[:key] %>" data-seconds="<%= seconds %>"
+                title="<%= phase[:hint] %>">
+            <span class="<%= release_flow_phase_class(phase[:key]) %> h-2 w-2 shrink-0 rounded-sm" aria-hidden="true"></span>
+            <%= phase[:label] %> <span class="tabular-nums text-heading"><%= release_flow_duration(seconds) %></span>
+          </span>
+        <% end %>
+      </div>
+    </div>
+
+    <%# WHAT THE MEAN WAS HIDING, named. Only when there is something to name. %>
+    <% if outliers.any? %>
+      <% dominant = outliers.map(&:dominant_phase).tally.max_by { |_phase, count| count }&.first %>
+      <% dominant_label = Release::Flow::PHASES.find { |phase| phase[:key] == dominant }&.dig(:label) %>
+      <p class="mt-auto pt-2 text-[11px] leading-tight text-muted" data-test="devops-outlier-note">
+        <span class="font-medium text-heading"><%= pluralize(outliers.size, "slow release") %></span>
+        (<%= outliers.map { |entry| release_flow_duration(entry.total) }.join(", ") %>)<% if dominant_label %> — most of it in <%= dominant_label %><% end %>
+      </p>
+    <% end %>
+  <% else %>
+    <p class="mt-3 text-xs text-muted" data-test="devops-empty">No shipped releases yet.</p>
+  <% end %>
+<% end %>

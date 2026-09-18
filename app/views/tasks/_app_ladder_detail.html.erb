@@ -1,0 +1,37 @@
+<%# THE APPLICATIONS SIDEBAR — every full app card, stacked vertically, in the same order
+    the summary card lists them (Ci::AppLadder.recent_first), so the app you clicked
+    near the top of the card is near the top here.
+
+    These are the cards that used to scroll sideways across the page
+    (tasks/_app_ladder_card): CI meter, lane legend, the accepted → release → main
+    track, when main last took code, and the review roll. Each still links to the
+    GitHub Actions run behind its active rung.
+
+    #app-ladder-detail IS A BROADCAST SLOT of its own. DeploymentsBroadcaster.app_ladder
+    replaces it beside #app-ladder-row, so an open sidebar moves with the board. It is a
+    separate slot rather than a child of #app-ladder-row because the sidebar is fixed
+    and lives outside the summary grid, and because replacing only the list keeps the
+    sidebar's own scroll position through a broadcast.
+
+    data-rendered-at: the slot's render stamp, as on #app-ladder-row.
+
+    Locals: cards - Array<Ci::AppLadder::Card>, in display order. %>
+<% cards = local_assigns.fetch(:cards, []) %>
+<div id="app-ladder-detail" class="space-y-3" data-test="app-ladder-detail"
+     data-rendered-at="<%= (Time.current.to_f * 1000).to_i %>">
+  <% if cards.any? %>
+    <p class="text-[11px] text-muted">
+      <%= pluralize(cards.size, "repo") %> on the ladder · newest suite restart first · each card opens its GitHub Actions run
+    </p>
+    <% cards.each do |card| %>
+      <%# FULLY QUALIFIED on purpose: DeploymentsBroadcaster renders this partial
+          standalone through ApplicationController.render, where a bare
+          "app_ladder_card" resolves against application/ and raises Missing partial —
+          which Studio::Cable.safe_broadcast swallows, so the slot would simply never
+          move. %>
+      <%= render "tasks/app_ladder_card", card: card, card_class: "w-full" %>
+    <% end %>
+  <% else %>
+    <p class="text-sm text-muted">No applications report CI on the ladder yet.</p>
+  <% end %>
+</div>

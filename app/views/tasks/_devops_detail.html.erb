@@ -1,0 +1,119 @@
+<%# THE DEVOPS SIDEBAR — the full story behind the DevOps summary card. Three sections,
+    then the original six stage averages (tasks/_release_duration_card) beneath them,
+    unchanged, so nothing the old card showed is gone.
+
+      In flight       the WIP count split by stage (Task.wip_by_stage)
+      Where the time goes
+                      the typical release against the mean, the four phases as a table
+                      (median, and share of ALL the window's time — outliers included,
+                      so the distortion the median removes is visible, not hidden)
+      Last N releases one row each: a 100% bar of its phases and its total. Each bar
+                      is its own composition rather than a length on a shared scale —
+                      on one scale the two slow releases flatten the other eight to
+                      slivers, and composition is the question this list answers.
+
+    Locals: flow (Release::Flow or nil), wip_count, wip_by_stage %>
+<% flow = local_assigns[:flow] %>
+<% wip_by_stage = local_assigns[:wip_by_stage] || {} %>
+<% wip_count = local_assigns[:wip_count] %>
+<section class="rounded-xl border border-subtle bg-surface p-4" data-test="devops-detail-wip">
+  <div class="flex items-baseline justify-between gap-3">
+    <h4 class="text-sm font-semibold text-heading">In flight</h4>
+    <span class="font-mono text-lg font-bold tabular-nums text-heading"><%= wip_count.nil? ? "—" : wip_count %></span>
+  </div>
+  <p class="text-[11px] text-muted">Open tasks by stage — everything not yet shipped or archived.</p>
+  <div class="mt-3 grid grid-cols-5 gap-2">
+    <% wip_by_stage.each do |stage, count| %>
+      <div class="rounded-lg border border-subtle bg-inset px-2 py-1.5 text-center" data-test="devops-wip-stage" data-stage="<%= stage %>" data-count="<%= count %>">
+        <div class="font-mono text-base font-bold tabular-nums <%= count.zero? ? "text-muted" : "text-heading" %>"><%= count %></div>
+        <div class="truncate text-[10px] uppercase tracking-wide text-muted"><%= Task::STAGE_LABELS.fetch(stage, stage.titleize) %></div>
+      </div>
+    <% end %>
+  </div>
+</section>
+
+<% if flow&.any? %>
+  <% median = flow.median_total %>
+  <% mean = flow.mean_total %>
+  <% outliers = flow.outliers %>
+  <section class="rounded-xl border border-subtle bg-surface p-4" data-test="devops-detail-flow">
+    <h4 class="text-sm font-semibold text-heading">Where release time goes</h4>
+    <p class="mt-1 text-xs text-secondary">
+      A typical release takes <span class="font-semibold text-heading tabular-nums"><%= release_flow_duration(median) %></span>
+      (the median of the last <%= flow.size %>).
+      <% if outliers.any? %>
+        The average reads <span class="tabular-nums"><%= release_flow_duration(mean) %></span> because
+        <%= pluralize(outliers.size, "release") %> ran past <%= Release::Flow::OUTLIER_FACTOR %>× the median.
+      <% else %>
+        The average is <span class="tabular-nums"><%= release_flow_duration(mean) %></span>.
+      <% end %>
+    </p>
+
+    <table class="mt-3 w-full text-left text-xs" data-test="devops-phase-table">
+      <thead>
+        <tr class="text-[10px] uppercase tracking-wide text-muted">
+          <th class="py-1 font-semibold">Phase</th>
+          <th class="py-1 text-right font-semibold">Typical</th>
+          <th class="py-1 text-right font-semibold" title="Share of every second of the window, outliers included">Share of all</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-subtle/60">
+        <% Release::Flow::PHASES.each do |phase| %>
+          <tr data-test="devops-phase-row" data-phase="<%= phase[:key] %>">
+            <td class="py-1.5 pr-2">
+              <span class="inline-flex items-center gap-1.5">
+                <span class="<%= release_flow_phase_class(phase[:key]) %> h-2.5 w-2.5 shrink-0 rounded-sm" aria-hidden="true"></span>
+                <span class="font-medium text-heading"><%= phase[:label] %></span>
+              </span>
+              <span class="block pl-4 text-[11px] text-muted"><%= phase[:hint] %></span>
+            </td>
+            <td class="py-1.5 text-right tabular-nums text-heading"><%= release_flow_duration(flow.phase_median(phase[:key])) %></td>
+            <td class="py-1.5 text-right tabular-nums text-secondary"><%= (flow.phase_share(phase[:key]) * 100).round %>%</td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="rounded-xl border border-subtle bg-surface p-4" data-test="devops-detail-releases">
+    <div class="flex items-baseline justify-between gap-3">
+      <h4 class="text-sm font-semibold text-heading">Last <%= flow.size %> releases</h4>
+      <%= link_to "All Deployments", all_deployments_path,
+                  class: "shrink-0 rounded bg-inset px-2 py-1 text-xs font-semibold text-secondary border border-subtle hover:text-heading" %>
+    </div>
+    <p class="text-[11px] text-muted">Each bar is that release's own split, newest first.</p>
+    <ol class="mt-3 space-y-2">
+      <% flow.entries.each do |entry| %>
+        <% slow = outliers.include?(entry) %>
+        <li class="grid grid-cols-[minmax(0,9.5rem)_minmax(0,1fr)_3.5rem] items-center gap-2" data-test="devops-release-row"
+            data-release="<%= entry.slug %>" data-slow="<%= slow %>">
+          <%= link_to deployment_path(entry.slug), class: "flex min-w-0 items-center gap-1.5 text-xs hover:underline",
+                      title: [entry.slug, entry.mascot&.name, entry.shipped_at&.in_time_zone&.strftime("%b %-d %-l:%M%P")].compact.join(" · ") do %>
+            <% if entry.mascot&.sprite_url.present? %>
+              <img src="<%= entry.mascot.sprite_url %>" alt="" width="20" height="20" loading="lazy" class="h-5 w-5 shrink-0" style="image-rendering: pixelated;">
+            <% else %>
+              <span class="h-5 w-5 shrink-0" aria-hidden="true"></span>
+            <% end %>
+            <code class="truncate text-[11px] text-secondary"><%= entry.slug.delete_prefix("rel-") %></code>
+          <% end %>
+          <div class="flex h-2.5 min-w-0 gap-0.5 overflow-hidden rounded-full" role="img"
+               aria-label="<%= Release::Flow::PHASES.map { |phase| "#{phase[:label]} #{release_flow_duration(entry.phase(phase[:key]))}" }.join(", ") %>">
+            <% Release::Flow::PHASES.each do |phase| %>
+              <% seconds = entry.phase(phase[:key]) %>
+              <% next if seconds.zero? %>
+              <div class="<%= release_flow_phase_class(phase[:key]) %> h-full first:rounded-l-full last:rounded-r-full"
+                   style="flex: <%= seconds %> 1 0px"
+                   title="<%= phase[:label] %> · <%= release_flow_duration(seconds) %>"></div>
+            <% end %>
+          </div>
+          <span class="text-right text-xs tabular-nums <%= slow ? "font-semibold text-heading" : "text-secondary" %>"><%= release_flow_duration(entry.total) %></span>
+        </li>
+      <% end %>
+    </ol>
+    <p class="mt-3 text-[11px] leading-snug text-muted">
+      The stage averages below overlap: G3 runs inside Assembled and Deployed runs inside
+      G4, so they do not add up to Total. The phases above split each release's time
+      without overlap.
+    </p>
+  </section>
+<% end %>

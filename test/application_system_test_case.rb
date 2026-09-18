@@ -161,15 +161,16 @@ class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
   # What the settle loop last certified: the box ("x,y,width,height") and the scroll
   # position it was sampled at.
   #
-  # THE GUARD COMPARES THE SCROLL POSITION, NOT THE BOX. The property worth pinning is
-  # that the geometry was certified in the frame the click happens in, and a frame IS a
-  # scroll position: the nav collapse slides the box but never moves window.scrollY. The
-  # box cannot carry that claim. On a runner whose frames arrive late, the settle loop
-  # reads two identical samples BEFORE the collapse's first rAF step, that step then lands
-  # between certification and pointerdown, and the box moves a few pixels while the click
-  # still lands — measured 2026-09-10 with frames delayed 55ms: certified 328,422, clicked
-  # at 328,418, toggle opened, 3 of 3 runs. That is the witness's job, not a frame error.
-  # Deleting the pre-scroll, by contrast, certifies at scrollY 0 and clicks at scrollY 49.
+  # THE GUARD ACCEPTS THE SCROLL POSITION OR THE BOX. The property worth pinning is that
+  # the geometry was certified in the frame the click happens in. On a runner whose frames
+  # arrive late, the settle loop reads two identical samples BEFORE the nav collapse's
+  # first rAF step, and that step then lands between certification and pointerdown. Where
+  # it lands depends on the layout: it slid the box a few pixels with scrollY unchanged
+  # (measured 2026-09-10: certified 328,422, clicked at 328,418), or Chrome's scroll
+  # anchoring absorbed it by scrolling the page with the box unchanged (measured
+  # 2026-09-18: box identical, scrollY 408 then 376). The click lands either way — that is
+  # the witness's job, not a frame error. Deleting the pre-scroll, by contrast, moves BOTH.
+  # See workflows_card_chip_fit_test.rb#assert_click_in_certified_frame.
   attr_reader :last_settled_box, :last_settled_scroll_y
 
   # True ONLY when the witness is still standing there to report that the click never

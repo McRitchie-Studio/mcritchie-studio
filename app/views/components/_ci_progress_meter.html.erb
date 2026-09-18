@@ -1,4 +1,4 @@
-<%# locals: (progress:, label: "CI", test_id: "ci-progress-bar", compact: false, clock: true) %>
+<%# locals: (progress:, label: "CI", test_id: "ci-progress-bar", compact: false, clock: true, inline: false) %>
 <%#
   The board card's CI meter, ONE ROW instead of two: a header (the PULL REQUEST
   number on the left, the run's clock on the right) over a single rail that carries
@@ -24,9 +24,16 @@
 
   role=progressbar + one summary aria-label carry the whole meter to assistive tech;
   the marks are decorative (aria-hidden) because the summary already names the count.
+
+  INLINE (inline: true) is the same meter laid on ONE LINE — rail then clock, no label
+  header — for a list that names each row itself (the /deployments Applications
+  summary card, one app per line). Same marks, same order, same clock; only the frame
+  moves. Its rail is a FIXED width rather than flex, because the cap is arithmetic on
+  that width and a flexing rail would clip marks silently at the narrow breakpoint —
+  see ApplicationHelper::CI_METER_INLINE_MARK_CAP for the measurement.
 %>
 <% if progress.respond_to?(:present?) && progress.present? %>
-  <% marks, overflowed = ci_meter_marks(progress) %>
+  <% marks, overflowed = ci_meter_marks(progress, cap: inline ? ApplicationHelper::CI_METER_INLINE_MARK_CAP : ApplicationHelper::CI_METER_MARK_CAP) %>
   <% tone = case progress.state
      when :green then { fill: "bg-emerald-500", text: "text-emerald-700 dark:text-emerald-300" }
      when :red then { fill: "bg-red-500", text: "text-red-700 dark:text-red-300" }
@@ -35,11 +42,7 @@
   <% summary = "#{progress.passed} of #{progress.total} CI checks passed" \
        + (progress.failed.positive? ? ", #{progress.failed} failed" : "") \
        + (progress.pending.positive? ? ", #{progress.pending} running" : "") %>
-  <div class="ci-progress-meter w-full space-y-1"
-       data-test="<%= test_id %>"
-       data-ci-state="<%= progress.state %>">
-    <div class="flex items-center justify-between gap-2 text-[10px] leading-none">
-      <span class="font-semibold uppercase tracking-wide text-muted truncate" data-test="<%= test_id %>-label"><%= label %></span>
+  <% clock_html = capture do %>
       <% if clock %>
         <%# The RUN CLOCK. While checks are pending it ticks live from the run's start
             (data-release-ticker + data-mode="short" — the installed-once ticker in
@@ -59,8 +62,9 @@
                 title="CI took <%= compact_elapsed_short(took) %>"><%= compact_elapsed_short(took) %></span>
         <% end %>
       <% end %>
-    </div>
-    <div class="relative h-[18px] w-full overflow-hidden rounded border border-subtle bg-inset"
+  <% end %>
+  <% rail_html = capture do %>
+    <div class="relative h-[18px] <%= inline ? "w-24 shrink-0" : "w-full" %> overflow-hidden rounded border border-subtle bg-inset"
          role="progressbar"
          aria-valuenow="<%= progress.passed %>"
          aria-valuemin="0"
@@ -92,5 +96,21 @@
         <% end %>
       </div>
     </div>
+  <% end %>
+  <div class="ci-progress-meter w-full <%= inline ? "flex items-center justify-end gap-2" : "space-y-1" %>"
+       data-test="<%= test_id %>"
+       data-ci-state="<%= progress.state %>"<% if inline %> data-inline="true"<% end %>>
+    <% if inline %>
+      <%= rail_html %>
+      <%# A fixed clock column, so a list of inline meters keeps its rails aligned
+          whether a row's clock reads "9s" or "1h 04m". %>
+      <span class="flex w-9 shrink-0 justify-end text-[10px] leading-none"><%= clock_html %></span>
+    <% else %>
+    <div class="flex items-center justify-between gap-2 text-[10px] leading-none">
+      <span class="font-semibold uppercase tracking-wide text-muted truncate" data-test="<%= test_id %>-label"><%= label %></span>
+      <%= clock_html %>
+    </div>
+    <%= rail_html %>
+    <% end %>
   </div>
 <% end %>

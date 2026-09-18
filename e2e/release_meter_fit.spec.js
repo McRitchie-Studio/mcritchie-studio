@@ -1,14 +1,15 @@
 const { test, expect } = require("@playwright/test");
+const { openDeploySidebar } = require("./helpers");
 
 // The release phase meter's LAYOUT, at the tier that can see it. The meter draws one mark
 // per CI check inside its bar (tasks/_release_phase_meter), and both of the defects this
 // file guards were invisible to every other tier:
 //
 //   · The marks overflowed the bar and `overflow-hidden` ate them SILENTLY — no error, no
-//     missing element, nothing a component test asserting mark COUNT could see. The bar is
-//     174px wide at a 1024px viewport but 80px at 1280px, because the dashboard's
-//     `xl:grid-cols-2` halves the lane; a component test has no width at all, and the only
-//     browser-tier spec pinned 1600px, one of the widths where it happens not to reproduce.
+//     missing element, nothing a component test asserting mark COUNT could see. The bar's
+//     width is set by whatever holds the release card — once the halved 2x2 dashboard
+//     (80px at 1280px), since 2026-09-18 the Releases SIDEBAR, which is a fixed 36rem from
+//     640px up and the full phone width below it. A component test has no width at all.
 //   · The marks sit ON the fill, so a same-hue pair (mint ✓ on a mint fill) measured
 //     1.73:1 while looking fine in dark mode.
 //
@@ -19,8 +20,8 @@ const { test, expect } = require("@playwright/test");
 // The colour maths mirrors WCAG 2.1; colours are normalized by painting them to a canvas
 // because Tailwind v4's palette computes to oklch(), which string-parsing drops.
 
-const NARROW = 1280; // xl: the dashboard splits into two columns and the bar halves
-const WIDE = 1920; // the bar's roomiest case
+const NARROW = 390; // a phone: the sidebar is the full, narrow viewport and the bar is smallest
+const WIDE = 1920; // the sidebar at its fixed 36rem — the bar's roomiest case
 
 const MEASURE = () => {
   const cv = document.createElement("canvas");
@@ -81,6 +82,7 @@ const MEASURE = () => {
     return {
       repo: meter.closest("[data-test='release-lane']").dataset.repo,
       phase: meter.dataset.phase,
+      barWidth: Math.round(bar.getBoundingClientRect().width),
       hasMarks: !!row,
       marksShown: shown(row),
       compactShown: shown(compact),
@@ -101,6 +103,7 @@ async function assertMetersFitAndAreLegible(page, theme) {
       await page.setViewportSize({ width, height: 1000 });
       await page.goto("/deployments");
       await page.evaluate((t) => document.documentElement.classList.toggle("dark", t === "dark"), theme);
+      await openDeploySidebar(page, "releases");
       await expect(page.locator("#current-release [data-test='release-lane']").first()).toBeVisible();
 
       const meters = await page.evaluate(MEASURE);
@@ -116,9 +119,12 @@ async function assertMetersFitAndAreLegible(page, theme) {
         if (m.hasMarks) {
           // Exactly one of the two representations is on screen — never both, never neither.
           expect(m.marksShown !== m.compactShown, `${where}: marks XOR the compact fraction`).toBe(true);
-          // The narrow column cannot hold the marks, so it must fall back rather than clip.
-          if (width === NARROW) expect(m.compactShown, `${where}: narrow bar shows the fraction`).toBe(true);
-          if (width === WIDE) expect(m.marksShown, `${where}: wide bar shows the marks`).toBe(true);
+          // THE METER'S OWN RULE, read off the bar it measured: under 99px the marks cannot
+          // fit and it must fall back to the fraction rather than clip; at 99px and over it
+          // shows the marks. Asserted against the measured width rather than a viewport,
+          // because the card's width is the sidebar's, not the screen's.
+          if (m.barWidth < 99) expect(m.compactShown, `${where}: a ${m.barWidth}px bar shows the fraction`).toBe(true);
+          else expect(m.marksShown, `${where}: a ${m.barWidth}px bar shows the marks`).toBe(true);
         }
       }
     }

@@ -212,7 +212,18 @@
 # MEASURED with the lister on THIS tree, never by arithmetic — and the method was first
 # validated against the untouched tree, where it reproduced the declared 149/139:
 #   npx playwright test --list => 150
-total_specs: 150
+#
+# 150 -> 156 on 2026-09-18: e2e/deploy_summary_row.spec.js, SIX specs. /deployments now
+# leads with one row of four summary cards, each opening a sidebar that holds the full
+# cards (tasks/_deploy_summary_row) — which sidebar is on screen, how it dismisses, that
+# a copy chip inside a card does not also open it, the Applications order, and the
+# Workflows carousel turning on its five-minute clock are all browser behaviour no
+# server tier can see. The two app_ladder_row specs about the retired horizontal row
+# were REPLACED one-for-one by two about the summary card, so they move nothing here.
+# Coverage ADDED; `quarantined` is untouched.
+# MEASURED with the lister on THIS tree, never by arithmetic:
+#   npx playwright test --list => 156
+total_specs: 156
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
@@ -335,7 +346,13 @@ quarantined: 10
 # Re-derived on THIS tree with the lister, never by arithmetic:
 #   npx playwright test --list                           => 150
 #   npx playwright test --list --grep-invert @quarantine => 140
-executed: 140
+#
+# 140 -> 146 on 2026-09-18: the deploy_summary_row spec above. Coverage ADDED;
+# `quarantined` untouched at 10.
+# Re-derived on THIS tree with the lister, never by arithmetic:
+#   npx playwright test --list                           => 156
+#   npx playwright test --list --grep-invert @quarantine => 146
+executed: 146
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to

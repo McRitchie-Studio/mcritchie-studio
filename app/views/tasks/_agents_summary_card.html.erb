@@ -1,0 +1,100 @@
+<%# THE WORKFLOWS SUMMARY CARD — the third /deployments summary card. ONE soul at a
+    time, with the commands that launch it, rotating every five minutes: the current
+    soul slides UP out of the frame while the next slides in from the BOTTOM, so the
+    five read as a wheel turning rather than a list paging. A click on the card (not on
+    a chip) opens every soul and every command in the sidebar.
+
+    Rendered by tasks/_heartbeats_card (variant: :summary), which owns the soul list
+    and each soul's acts — so this card and the sidebar cannot disagree about a chip.
+
+    HOW THE WHEEL TURNS. Every slide is stacked in ONE grid cell and stays laid out,
+    so the frame is always as tall as the tallest soul and the card never jumps height
+    mid-rotation. Each slide is in one of three places:
+      active   in frame                         (translate 0)
+      leaving  just rotated out, going UP       (translate -100%, animated)
+      waiting  parked BELOW, ready to come in   (translate +100%, NOT animated — a
+                                                 slide returning from the top must not
+                                                 be seen sweeping down across the frame)
+    Off-frame slides are `inert`, so a hidden chip can be neither clicked nor tabbed to.
+
+    THE CLOCK. A one-second tick adds to `elapsed` while the card is not hovered and
+    holds no KEYBOARD focus, and turns the wheel when it reaches `ms`; the hairline under
+    the frame is that same elapsed, drawn. Pausing is the point of counting rather than
+    scheduling: a wheel that turned under the pointer, or out from under a tabbed-to chip,
+    would move the command the operator was reaching for. Keyboard focus only
+    (:focus-visible) — a mouse click leaves focus on the chip it copied, and that must
+    not freeze the wheel until the next click elsewhere. The dots jump straight to a soul
+    and restart its five minutes.
+
+    Reduced motion: the slides swap without the slide.
+
+    Locals: entries - [{ launcher:, soul:, actions: }], first soul first %>
+<% entries = local_assigns.fetch(:entries) %>
+<% ms = ApplicationHelper::AGENTS_CAROUSEL_ROTATE_MS %>
+<%= tag.div(**deploy_summary_card_options("agents", test: "agents-summary-card", id: "agents-summary-card"),
+            "x-data": "soulCarousel(#{entries.size}, #{ms})",
+            "@mouseenter": "hover = true", "@mouseleave": "hover = false",
+            "@focusin": "focused = $event.target.matches(':focus-visible')", "@focusout": "focused = false",
+            "data-rotate-ms": ms,
+            ":data-active-agent": "agents[index]",
+            "data-active-agent": entries.first&.dig(:launcher, :agent_slug),
+            "data-agents": entries.map { |entry| entry[:launcher][:agent_slug] }.join(",")) do %>
+  <div class="flex items-center justify-between gap-2" data-test="summary-card-header">
+    <h3 class="text-[11px] font-semibold text-muted">
+      <%= tag.button(**deploy_summary_toggle_options("agents")) do %>Workflows<span class="sr-only"> details</span><% end %>
+    </h3>
+    <div class="flex items-center gap-2">
+      <%# The dots: where the wheel is, and a way to turn it by hand. Real buttons, so
+          openFrom leaves them their own click. %>
+      <div class="flex items-center gap-1" role="tablist" aria-label="Choose a soul" data-test="soul-carousel-dots">
+        <% entries.each_with_index do |entry, i| %>
+          <% slug = entry[:launcher][:agent_slug] %>
+          <button type="button"
+                  class="h-1.5 w-1.5 rounded-full bg-[var(--color-border-strong)] transition-all duration-300 hover:bg-[var(--color-text-muted)] data-[active=true]:w-3 data-[active=true]:bg-primary"
+                  data-active="<%= i.zero? %>"
+                  :data-active="index === <%= i %> ? 'true' : 'false'"
+                  role="tab"
+                  :aria-selected="index === <%= i %> ? 'true' : 'false'"
+                  aria-selected="<%= i.zero? %>"
+                  aria-label="Show <%= entry[:soul]&.name.presence || slug.titleize %>"
+                  data-test="soul-carousel-dot"
+                  data-agent="<%= slug %>"
+                  @click="go(<%= i %>)"></button>
+        <% end %>
+      </div>
+      <span class="text-sm leading-none text-muted transition group-hover:translate-x-0.5 group-hover:text-heading" aria-hidden="true">&rsaquo;</span>
+    </div>
+  </div>
+
+  <div class="relative mt-3 grid flex-1 overflow-hidden" data-test="soul-carousel-frame" aria-live="polite">
+    <% entries.each_with_index do |entry, i| %>
+      <% slug = entry[:launcher][:agent_slug] %>
+      <%# Server-side first paint: slide 0 in frame, the rest parked below and inert —
+          the same state place(i) computes, so Alpine's first pass moves nothing. %>
+      <%# The place is an ATTRIBUTE, styled by data variants, not a bound class list:
+          Alpine's :class keeps whatever classes the server rendered, so a first-paint
+          `translate-y-full` would outlive the slide's first turn into frame. %>
+      <div class="[grid-area:1/1] min-w-0 transition duration-700 ease-out motion-reduce:transition-none
+                  data-[place=active]:translate-y-0 data-[place=active]:opacity-100
+                  data-[place=leaving]:-translate-y-full data-[place=leaving]:opacity-0
+                  data-[place=waiting]:translate-y-full data-[place=waiting]:opacity-0 data-[place=waiting]:transition-none"
+           data-place="<%= i.zero? ? "active" : "waiting" %>"
+           :data-place="place(<%= i %>)"
+           x-effect="$el.inert = index !== <%= i %>"
+           <% unless i.zero? %>inert<% end %>
+           data-test="soul-slide"
+           data-agent="<%= slug %>">
+        <%= render "tasks/heartbeat_launcher", launcher: entry[:launcher], soul: entry[:soul],
+                   actions: entry[:actions], layout: :slide %>
+      </div>
+    <% end %>
+  </div>
+
+  <%# The hairline: how far through this soul's five minutes the wheel is. %>
+  <div class="mt-3 h-0.5 overflow-hidden rounded-full bg-inset" aria-hidden="true">
+    <div class="h-full rounded-full bg-primary/50 transition-[width] duration-1000 ease-linear"
+         style="width: 0%"
+         :style="{ width: (elapsed / ms * 100) + '%' }"
+         data-test="soul-carousel-progress"></div>
+  </div>
+<% end %>

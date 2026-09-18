@@ -561,6 +561,15 @@ module ApplicationHelper
   # PASSES, never a failure or a still-running check.
   CI_METER_MARK_CAP = 13
 
+  # The INLINE meter's cap (components/_ci_progress_meter, inline: true — one app per
+  # line on the /deployments Applications summary card). Same arithmetic, different
+  # rail: that rail is a FIXED w-24 = 96px, so its content box is 86px (96 - 2px
+  # border - 8px of px-1 padding), 7 marks span 12*7 - 2 = 82px and 8 would span 94px
+  # and clip. Fixed on purpose — a flexing rail would make this cap a guess at the
+  # narrowest breakpoint rather than arithmetic. 96px rather than wider because the
+  # app NAME shares the line: at 1536px a wider rail truncated "mcritchie-studio".
+  CI_METER_INLINE_MARK_CAP = 7
+
   # The marks the card meter draws: one per check, severity-ordered, capped. Returns
   # [marks, overflowed] — the caller fades the row's right edge when overflowed.
   def ci_meter_marks(progress, cap: CI_METER_MARK_CAP)
@@ -1179,6 +1188,18 @@ module ApplicationHelper
     ACTION_DESCRIPTIONS[act.to_s]
   end
 
+  # What a soul's HEARTBEAT row launches, for the Workflows sidebar's description
+  # column: the launcher's own title with its "<Soul> — " lead dropped, since the name
+  # already sits beside it. One source — the title the avatar's tooltip carries.
+  # How long the Workflows summary card holds one soul before the wheel turns to the
+  # next — five minutes, the operator's spec. One constant: the card publishes it as
+  # data-rotate-ms, so the e2e spec drives the clock by the page's own number.
+  AGENTS_CAROUSEL_ROTATE_MS = 5 * 60 * 1000
+
+  def heartbeat_description(launcher)
+    launcher[:title].to_s.sub(/\A[^—]*—\s*/, "").upcase_first
+  end
+
   # Leading icon for each heartbeat launcher act. The three ORDERED release-pipeline
   # acts get a 1→3 keycap so the buttons read as a sequence across the souls (Carl
   # pr-review 1 → Avi qa-release 2 → Steffon production-deploy 3); the off-sequence
@@ -1355,6 +1376,79 @@ module ApplicationHelper
   APP_LADDER_FADE_MASK =
     "mask-image: linear-gradient(to right, #000 calc(100% - 64px), transparent); " \
     "-webkit-mask-image: linear-gradient(to right, #000 calc(100% - 64px), transparent)"
+
+  # THE FOUR /deployments SUMMARY CARDS OPEN THEIR SIDEBAR THE SAME WAY, so the
+  # attributes are defined once (tasks/_deploy_summary_row owns `panel` and the handlers
+  # these name). Four hand-written copies is how one card ends up keyboard-dead while the
+  # other three work.
+  #
+  # TWO PIECES, AND THE SPLIT IS THE ACCESSIBILITY:
+  #
+  #   the card    a plain block that opens its sidebar on a click anywhere on its
+  #               surface (openFrom, which leaves real controls inside it their own
+  #               clicks). NOT role=button — a button's children are presentational
+  #               to assistive tech, which would hide the Workflows card's copy chips
+  #               and carousel dots from a screen reader entirely.
+  #   the toggle  a real <button> in the card's heading: the focus stop, the
+  #               aria-expanded / aria-controls disclosure, and native Enter/Space.
+  #               The card draws its focus ring when this button has keyboard focus.
+  DEPLOY_SUMMARY_CARD_CLASS =
+    "group relative flex h-full min-w-0 cursor-pointer flex-col rounded-xl border border-subtle bg-surface p-4 " \
+    "text-left transition hover:border-primary/40 " \
+    "has-[.summary-card-toggle:focus-visible]:ring-2 has-[.summary-card-toggle:focus-visible]:ring-primary/50".freeze
+
+  def deploy_summary_card_options(panel, test:, id: nil, extra_class: nil)
+    {
+      id: id,
+      class: [DEPLOY_SUMMARY_CARD_CLASS, extra_class].compact.join(" "),
+      ":class": "panel === '#{panel}' ? 'border-primary/60 ring-1 ring-primary/30' : ''",
+      "@click": "openFrom($event, '#{panel}')",
+      data: { test: test, panel: panel }
+    }.compact
+  end
+
+  # The heading button that IS each summary card's control for keyboard and assistive
+  # tech — see deploy_summary_card_options for why the card itself is not one.
+  def deploy_summary_toggle_options(panel)
+    {
+      type: "button",
+      class: "summary-card-toggle cursor-pointer uppercase tracking-wide focus:outline-none",
+      "aria-controls": "deploy-sidebar-#{panel}",
+      "aria-expanded": "false",
+      ":aria-expanded": "panel === '#{panel}' ? 'true' : 'false'",
+      "@click": "toggle('#{panel}')",
+      data: { test: "summary-card-toggle" }
+    }
+  end
+
+  # THE FOUR RELEASE PHASES' COLOURS (Release::Flow::PHASES) — identity, so categorical,
+  # and deliberately NONE of the page's status hues: emerald and amber already mean
+  # "passed" and "running" on every CI meter here, and a green QA segment would read as
+  # a verdict. Blue / orange / violet / magenta are slots 1, 2, 7 and 5 of the dataviz
+  # reference palette, in the STACK order Batch → QA → Hold → Ship, and that order was
+  # validated as adjacent pairs (scripts/validate_palette.js, 2026-09-18) against this
+  # app's own surfaces — #ffffff light, #3C3853 dark: every hard gate passes, worst
+  # adjacent CVD ΔE 24.7 light / 16.0 dark. The first order tried (orange beside
+  # magenta) FAILED the normal-vision floor at ΔE 12.9, so the order is load-bearing.
+  # Magenta (light) and orange + magenta (dark) sit under 3:1 on the card, which is why
+  # every phase is always drawn with a visible label and the sidebar carries a table.
+  RELEASE_FLOW_PHASE_CLASSES = {
+    "batch" => "bg-[#2a78d6] dark:bg-[#3987e5]",
+    "qa"    => "bg-[#eb6834] dark:bg-[#d95926]",
+    "hold"  => "bg-[#4a3aa7] dark:bg-[#9085e9]",
+    "ship"  => "bg-[#e87ba4] dark:bg-[#d55181]"
+  }.freeze
+
+  def release_flow_phase_class(key) = RELEASE_FLOW_PHASE_CLASSES.fetch(key.to_s)
+
+  # A release-flow duration in the page's stage vocabulary ("16m", "1h 24m"), or "—".
+  def release_flow_duration(seconds) = release_duration_label(seconds)
+
+  # "acc" / "rel" / "main" — the branch a summary row's suite ran on, in the width a
+  # one-line row can spare. The full name rides the row's title.
+  APP_SUMMARY_BRANCH_ABBREVIATIONS = { "accepted" => "acc", "release" => "rel", "main" => "main" }.freeze
+
+  def app_summary_branch(branch) = APP_SUMMARY_BRANCH_ABBREVIATIONS.fetch(branch.to_s, branch.to_s)
 
   def app_ladder_rung_tone(state)
     APP_LADDER_TONES.fetch(state.to_sym, APP_LADDER_FADED)

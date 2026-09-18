@@ -528,6 +528,74 @@ module Ci
         "under-reported a multi-repo release exactly as the pipeline under-promoted it"
     end
 
+    # --- the summary card's order: newest suite restart first ----------------
+
+    # "WHICHEVER APP TEST SUITE RESTARTED MOST RECENTLY JUMPS TO THE TOP" — the
+    # operator's spec for the Applications summary card. The key is the newest suite
+    # START across all three rungs, so a suite that just kicked off on `accepted`
+    # outranks one that finished on `main` a minute ago.
+    test "[unit] latest_suite_at is the newest suite start across all three rungs" do
+      card = build_card(%i[pending green green],
+                        verdicts: { "accepted" => 2.minutes.ago, "release" => 3.hours.ago, "main" => 1.day.ago })
+
+      assert_in_delta 2.minutes.ago, card.latest_suite_at, 1
+      assert_equal "accepted", card.latest_suite_rung.branch
+    end
+
+    test "[unit] an app with nothing ingested has no latest suite" do
+      card = build_card(%i[not_built not_built not_built])
+
+      assert_nil card.latest_suite_at
+      assert_nil card.latest_suite_rung
+      assert_nil card.latest_suite_progress
+    end
+
+    # NOT #active_rung. A release member's full card stays on `release` so it agrees
+    # with the tracker above it; the summary line reports whatever restarted last —
+    # here an `accepted` merge mid-sweep — and names its branch so the two readings
+    # never pose as one.
+    test "[unit] the summary rung is the newest start even when the full card pins release" do
+      card = build_card(%i[pending green green], release_member: true,
+                        verdicts: { "accepted" => 1.minute.ago, "release" => 20.minutes.ago })
+
+      assert_equal "release", card.active_rung.branch, "the full card keeps its release pin"
+      assert_equal "accepted", card.latest_suite_rung.branch, "the summary reports the restart"
+    end
+
+    test "[unit] recent_first orders by the newest suite restart, nothing-ingested last" do
+      quiet = build_card(%i[not_built not_built not_built], repo: "rolio")
+      old = build_card(%i[green green green], repo: "solana-studio", verdicts: { "main" => 2.days.ago })
+      fresh = build_card(%i[pending green green], repo: "turf-monster", verdicts: { "accepted" => 1.minute.ago })
+      middle = build_card(%i[green green green], repo: "studio-engine", verdicts: { "release" => 1.hour.ago })
+
+      ordered = Ci::AppLadder.recent_first([quiet, old, fresh, middle])
+
+      assert_equal %w[turf-monster studio-engine solana-studio rolio], ordered.map(&:repo)
+    end
+
+    # sort_by is not stable, so the tie-break is part of the key: two apps with no
+    # ingested CI keep #build's worst-first order rather than a coin toss per render.
+    test "[unit] recent_first keeps the incoming order for ties" do
+      a = build_card(%i[not_built not_built not_built], repo: "turf-vault")
+      b = build_card(%i[not_built not_built not_built], repo: "mcritchie-industries")
+      c = build_card(%i[not_built not_built not_built], repo: "solana-studio")
+
+      assert_equal %w[turf-vault mcritchie-industries solana-studio],
+                   Ci::AppLadder.recent_first([a, b, c]).map(&:repo)
+    end
+
+    # The summary line and the full card read the same rung in the common case, and
+    # that read costs a query — so the summary shares #progress's memo rather than
+    # re-reading it.
+    test "[unit] latest_suite_progress reuses the full card's progress when the rungs coincide" do
+      card = build_card(%i[green green green], verdicts: { "main" => 5.minutes.ago })
+      sentinel = Object.new
+      card.instance_variable_set(:@progress, sentinel)
+
+      assert_same card.active_rung, card.latest_suite_rung
+      assert_same sentinel, card.latest_suite_progress
+    end
+
     private
 
     def build_card(states, repo: "turf-monster", parked: {}, verdicts: {}, release_member: false,

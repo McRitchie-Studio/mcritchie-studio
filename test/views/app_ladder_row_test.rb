@@ -2,16 +2,17 @@
 
 require "test_helper"
 
-# The app-ladder ROW in isolation — the frame around the cards, which is where the
-# operator's three asks live:
+# The app-ladder ROW in isolation — since 2026-09-18 the APPLICATIONS SUMMARY CARD, the
+# first of the four /deployments summary cards, plus the pinned strip it carries:
 #
-#   ONE SCROLLING LINE   every card in a single horizontal track, never a wrapping
-#                        grid whose height grows with the ecosystem.
-#   A MEASURED FADE      a right-edge gradient that says "there is more", seeded
-#                        server-side at Ci::AppLadder::ROW_FADE_AT so the first paint
-#                        is right before Alpine measures anything.
+#   ONE LINE PER APP     emoji, name, the inline CI meter and its clock — in the order
+#                        the caller hands in (Ci::AppLadder.recent_first on the page:
+#                        newest suite restart first).
+#   A SIDEBAR, NOT LINKS a click anywhere on the card opens the Applications sidebar;
+#                        the full cards (and their GitHub links) live there.
 #   THE PINNED STRIP     the same applications, condensed to three rows, ready to fix
-#                        under the site header once the row scrolls off.
+#                        under the site header once the card scrolls off — with its own
+#                        measured fade, seeded server-side at Ci::AppLadder::ROW_FADE_AT.
 #
 # The pinning itself is browser behaviour and is proved in e2e/app_ladder_row.spec.js.
 # What this tier proves is that the strip is RENDERED, carries every app, and carries
@@ -26,52 +27,67 @@ require "test_helper"
 class AppLadderRowViewTest < ActionView::TestCase
   include ApplicationHelper
 
-  test "every card sits in one horizontal scroller rather than a wrapping grid" do
+  test "every application gets one line in the summary list, in the order handed in" do
     render partial: "tasks/app_ladder_row", locals: { cards: cards(4) }
 
-    assert_select "[data-test='app-ladder-scroller']", 1
-    assert_select "[data-test='app-ladder-scroller'].overflow-x-auto", 1
-    assert_select "[data-test='app-ladder-scroller'] > [data-test='app-ladder-card']", 4
-    assert_select "[data-test='app-ladder-scroller'].grid", 0, "the row must not wrap onto a second line"
+    assert_select "[data-test='app-summary-card'] [data-test='app-summary-list'] > [data-test='app-summary-row']", 4
+    rows = css_select("[data-test='app-summary-row']").map { |el| el["data-repo"] }
+    assert_equal REPOS.first(4), rows, "the card never re-sorts — the order is the caller's (recent_first)"
+    # No horizontal scroller and no full cards on the page's first line any more: those
+    # moved to the sidebar (tasks/_app_ladder_detail).
+    assert_select "[data-test='app-ladder-scroller']", 0
+    assert_select "[data-test='app-ladder-card']", 0
   end
 
-  # A card that shrinks to fit would defeat the row: five apps would simply become five
-  # narrower cards and nothing would ever scroll.
-  test "cards keep their width instead of shrinking to fit the row" do
-    render partial: "tasks/app_ladder_row", locals: { cards: cards(6) }
+  # THE WHOLE CARD OPENS THE SIDEBAR on a click, through the shared summary-card
+  # attributes (ApplicationHelper#deploy_summary_card_options); its heading is the real
+  # button a keyboard or screen reader uses. And the card is the element the pinned
+  # strip measures against (x-ref="row").
+  test "the card opens the Applications sidebar and is what the strip measures" do
+    render partial: "tasks/app_ladder_row", locals: { cards: cards(3) }
 
-    assert_select "[data-test='app-ladder-card'].shrink-0", 6
+    card = css_select("[data-test='app-summary-card']").first
+    assert_equal "openFrom($event, 'apps')", card["@click"]
+    assert_equal "row", card["x-ref"], "the strip pins when THIS card leaves the screen"
+    assert_select "[data-test='app-summary-card'] h3 button[data-test='summary-card-toggle'][aria-controls='deploy-sidebar-apps']", 1
+    assert_select "[data-test='app-summary-card'] a", 0, "no row may be a link: a click means 'show me more'"
   end
 
-  # THE FADE IS A CLAIM ABOUT CONTENT OFF-SCREEN. Below the threshold the row fits, so
-  # the first paint must not draw one — the browser corrects the reading within a frame,
-  # and a fade over a row with nothing behind it is a promise it cannot keep.
+  # AN APP WITH NOTHING INGESTED GETS WORDS, never an empty rail reading "0 of 0".
+  test "an app with no ingested CI says so instead of drawing an empty meter" do
+    render partial: "tasks/app_ladder_row", locals: { cards: [card(%i[not_built not_built not_built])] }
+
+    assert_select "[data-test='app-summary-row'] [data-test='app-summary-ci-empty']", text: "no CI ingested"
+    assert_select "[data-test='app-summary-row'] [data-test='app-summary-ci']", 0
+  end
+
+  # THE FADE LIVES ON THE STRIP NOW — the only part of this slot that still scrolls
+  # sideways. Seeded at the count that cannot fit, so the first paint is right.
   # ONE RENDER PER TEST, deliberately: ActionView::TestCase accumulates `rendered`
-  # across renders inside a single test, so the second pass would still be selecting
-  # the first pass's markup.
-  test "the fade is seeded on at the count that cannot fit" do
+  # across renders inside a single test.
+  test "the strip's fade is seeded on at the count that cannot fit" do
     render partial: "tasks/app_ladder_row", locals: { cards: cards(Ci::AppLadder::ROW_FADE_AT) }
 
-    assert_select "[data-test='app-ladder-scroller'][data-faded='true']", 1
-    assert_match(/overflowing: true/, rendered, "five cards cannot fit — seed the fade on")
+    assert_select "[data-test='app-ladder-pinned-scroller'][data-faded='true']", 1
+    assert_match(/pinnedOverflowing: true/, rendered, "five tiles cannot fit — seed the fade on")
   end
 
-  test "a row that fits is seeded with no fade at all" do
+  test "a strip that fits is seeded with no fade at all" do
     render partial: "tasks/app_ladder_row", locals: { cards: cards(Ci::AppLadder::ROW_FADE_AT - 1) }
 
-    assert_select "[data-test='app-ladder-scroller'][data-faded='true']", 0
-    assert_match(/overflowing: false/, rendered, "four cards fit — do not promise more")
+    assert_select "[data-test='app-ladder-pinned-scroller'][data-faded='true']", 0
+    assert_match(/pinnedOverflowing: false/, rendered, "four tiles fit — do not promise more")
   end
 
   # A MASK, NOT AN OVERLAY. An overlay must be painted in the page's background colour —
-  # a claim about what sits behind the cards, and one more thing to keep in step with
-  # both themes. It would also sit over the cards and have to be made click-through.
-  test "the fade masks the row itself rather than painting over it" do
+  # a claim about what sits behind the tiles, and one more thing to keep in step with
+  # both themes. It would also sit over the tiles and have to be made click-through.
+  test "the strip's fade masks the strip itself rather than painting over it" do
     render partial: "tasks/app_ladder_row", locals: { cards: cards(5) }
 
-    scroller = css_select("[data-test='app-ladder-scroller']").first
+    scroller = css_select("[data-test='app-ladder-pinned-scroller']").first
     assert_equal ApplicationHelper::APP_LADDER_FADE_MASK, scroller["style"]
-    assert_equal "(overflowing && !atEnd) ? fadeRight : ''", scroller[":style"],
+    assert_equal "(pinnedOverflowing && !pinnedAtEnd) ? fadeRight : ''", scroller[":style"],
                  "the browser's own measurement owns the fade after the first paint"
   end
 
@@ -196,11 +212,14 @@ class AppLadderRowViewTest < ActionView::TestCase
     assert_select "[data-test='app-ladder-pinned-card'] [data-test='app-ladder-pinned-ci']", 1
   end
 
-  test "an empty ladder renders neither a row nor a strip" do
+  # The slot and the card stay — the summary row keeps its four cells — but there is
+  # nothing to list and nothing to pin.
+  test "an empty ladder keeps the card, says so, and renders no strip" do
     render partial: "tasks/app_ladder_row", locals: { cards: [] }
 
     assert_select "[data-test='app-ladder-row']", 1
-    assert_select "[data-test='app-ladder-scroller']", 0
+    assert_select "[data-test='app-summary-card'] [data-test='app-summary-empty']", 1
+    assert_select "[data-test='app-summary-row']", 0
     assert_select "[data-test='app-ladder-pinned']", 0
   end
 

@@ -49,6 +49,24 @@ module ReleaseMembersHelper
     end.values
   end
 
+  # WORK WAITING FOR THE NEXT SWEEP, per app — the Releases summary card's "Next" row
+  # when no candidate is open. Same shape as #release_member_repo_counts, so one
+  # cluster partial draws both.
+  #
+  # Read off the ladder cards the page already built (Card#parked_at("accepted")), not
+  # a second query: it is then the very count each app card in the Applications
+  # sidebar prints on its `accepted` node, and the two cannot disagree. Largest
+  # first; ties keep the ladder's order.
+  def release_queued_repo_counts(cards)
+    Array(cards).each_with_index.filter_map do |card, index|
+      count = card.parked_at("accepted")
+      emoji = app_emoji(card.repo)
+      next if count.zero? || emoji.blank?
+
+      [{ emoji: emoji, count: count, repositories: [card.repo] }, index]
+    end.sort_by { |entry, index| [-entry[:count], index] }.map(&:first)
+  end
+
   def release_member_expense_weight(task)
     size = release_member_size(task)
     TASK_SIZE_WEIGHTS.fetch(size.to_s, 0)

@@ -1,10 +1,14 @@
 # Workflows — the five soul launchers
 
-The standalone **Workflows card** on `/deployments` (`tasks/_heartbeats_card`,
-sized to match the Next Release card) renders five **soul-avatar heartbeat
-launchers** (`ApplicationHelper#heartbeat_launchers`, one `tasks/_heartbeat_launcher`
-per soul). Each launcher is a soul face — **a link to that soul's `/agents/<slug>`
-page** — over a **prompt-like row 1** plus one or more **copyable action rows**,
+The **Workflows card** on `/deployments` — the third of the four summary cards
+(`tasks/_heartbeats_card`) — renders five **soul-avatar heartbeat launchers**
+(`ApplicationHelper#heartbeat_launchers`, one `tasks/_heartbeat_launcher` per soul)
+on two surfaces drawn from ONE chip list. The card shows **one soul at a time** on a
+five-minute carousel that starts on Turf Monster (the soul in frame slides up, the
+next slides in from below; it holds while hovered). A click on the card opens the
+**Workflows sidebar**: every soul and every command, each chip beside what it
+launches. Each launcher is a soul face — **a link to that soul's `/agents/<slug>`
+page** — with a **prompt-like row 1** plus one or more **copyable action rows**,
 each carrying a leading icon (a ❤️ on the heartbeat row; a `1️⃣`–`3️⃣` keycap on the
 three ordered release actions, a themed glyph on the rest):
 

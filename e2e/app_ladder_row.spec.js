@@ -1,7 +1,17 @@
 const { test, expect } = require("@playwright/test");
+const { openDeploySidebar } = require("./helpers");
 
-// The /deployments app-ladder row: one card per reportable repo, each showing where
-// that application sits on `accepted → release → main`.
+// Load the board and open the Applications sidebar, where the full cards live.
+async function ladderDetail(page) {
+  await page.goto("/deployments");
+  await openDeploySidebar(page, "apps");
+}
+
+// The /deployments app ladder: one card per reportable repo, each showing where that
+// application sits on `accepted → release → main`. Since the summary row (2026-09-18)
+// the full cards live in the Applications SIDEBAR (#app-ladder-detail) and
+// #app-ladder-row is the Applications summary card plus the pinned strip — so every
+// test that reads a full card opens the sidebar first (ladderDetail below).
 //
 // WHY A BROWSER-LEVEL CHECK EARNS ITS PLACE HERE. The model and integration tiers
 // already prove the state machine and the rendered markup. What they cannot prove is
@@ -13,12 +23,11 @@ const { test, expect } = require("@playwright/test");
 // So this spec asserts the row renders AND that the board beneath it still works.
 
 test("the deployments app-ladder row renders a card per repo with three rungs each", async ({ page }) => {
-  await page.goto("/deployments");
+  await ladderDetail(page);
 
-  const row = page.locator("[data-test='app-ladder-row']");
-  await expect(row).toBeVisible();
+  await expect(page.locator("[data-test='app-ladder-row']")).toBeVisible();
 
-  const cards = row.locator("[data-test='app-ladder-card']");
+  const cards = page.locator("#app-ladder-detail [data-test='app-ladder-card']");
   const cardCount = await cards.count();
   expect(cardCount).toBeGreaterThan(0);
 
@@ -46,10 +55,10 @@ test("the deployments app-ladder row renders a card per repo with three rungs ea
 // A rung state outside the known set means the model grew a state the view does not
 // render, which would fall through to a silent default.
 test("every rung renders a known state and never invents a pass", async ({ page }) => {
-  await page.goto("/deployments");
+  await ladderDetail(page);
 
   const states = await page
-    .locator("[data-test='app-ladder-row'] [data-test='app-ladder-rung']")
+    .locator("#app-ladder-detail [data-test='app-ladder-rung']")
     .evaluateAll((els) => els.map((el) => el.getAttribute("data-state")));
 
   expect(states.length).toBeGreaterThan(0);
@@ -67,7 +76,7 @@ test("the board beneath the ladder row still renders", async ({ page }) => {
 
   await expect(page.locator("[data-test='app-ladder-row']")).toBeVisible();
   await expect(page.locator("[data-test='kanban-board']")).toBeVisible();
-  await expect(page.locator("[data-test='release-dashboard-grid']")).toBeVisible();
+  await expect(page.locator("[data-test='deploy-summary-row']")).toBeVisible();
 });
 
 // The colour vocabulary, asserted in a real browser: the verified fill (emerald) may
@@ -75,9 +84,9 @@ test("the board beneath the ladder row still renders", async ({ page }) => {
 // pixel layer — a stale or never-built rung wearing the verified tint would read as a
 // pass the suite never performed, and no server-side tier can see the class landed.
 test("the fill colours mean what progress says, never what CI says", async ({ page }) => {
-  await page.goto("/deployments");
+  await ladderDetail(page);
 
-  const nodes = page.locator("[data-test='app-ladder-row'] [data-test='app-ladder-rung']");
+  const nodes = page.locator("#app-ladder-detail [data-test='app-ladder-rung']");
   const count = await nodes.count();
   expect(count).toBeGreaterThan(0);
 
@@ -113,9 +122,9 @@ test("the fill colours mean what progress says, never what CI says", async ({ pa
 // from collapsing back into one channel — a reached rung behind an unreached one would
 // mean the bar drew a gap, which the frontier rule makes impossible.
 test("the coloured run is contiguous from the first rung to the frontier", async ({ page }) => {
-  await page.goto("/deployments");
+  await ladderDetail(page);
 
-  const cards = page.locator("[data-test='app-ladder-row'] [data-test='app-ladder-card']");
+  const cards = page.locator("#app-ladder-detail [data-test='app-ladder-card']");
   const cardCount = await cards.count();
   expect(cardCount).toBeGreaterThan(0);
 
@@ -164,9 +173,9 @@ test("the coloured run is contiguous from the first rung to the frontier", async
 // the opposite defect, an ACTIVE card that dims or loses its meter — and it can never go
 // vacuous, because the board always has cards.
 test("every card dims and collapses if and only if it is at rest", async ({ page }) => {
-  await page.goto("/deployments");
+  await ladderDetail(page);
 
-  const cards = page.locator("[data-test='app-ladder-row'] [data-test='app-ladder-card']");
+  const cards = page.locator("#app-ladder-detail [data-test='app-ladder-card']");
   const count = await cards.count();
   expect(count, "the row must have cards for this sweep to mean anything").toBeGreaterThan(0);
 
@@ -213,10 +222,10 @@ test("every card dims and collapses if and only if it is at rest", async ({ page
 // Resting cards sink. The row is sorted worst-first, and rest is the far end of that
 // order — so no resting card may appear before a card still holding work.
 test("resting cards sort behind every card that still holds work", async ({ page }) => {
-  await page.goto("/deployments");
+  await ladderDetail(page);
 
   const flags = await page
-    .locator("[data-test='app-ladder-row'] [data-test='app-ladder-card']")
+    .locator("#app-ladder-detail [data-test='app-ladder-card']")
     .evaluateAll((els) => els.map((el) => el.getAttribute("data-at-rest") === "true"));
 
   const firstResting = flags.indexOf(true);
@@ -230,10 +239,10 @@ test("resting cards sort behind every card that still holds work", async ({ page
 
 // Every card states its position in words, not only as a diagram.
 test("every card names where it sits in the devops process", async ({ page }) => {
-  await page.goto("/deployments");
+  await ladderDetail(page);
 
   const positions = await page
-    .locator("[data-test='app-ladder-row'] [data-test='app-ladder-position']")
+    .locator("#app-ladder-detail [data-test='app-ladder-position']")
     .evaluateAll((els) => els.map((el) => el.getAttribute("data-position")));
 
   expect(positions.length).toBeGreaterThan(0);
@@ -248,13 +257,13 @@ test("every card names where it sits in the devops process", async ({ page }) =>
 
 // A rung being verified right now is the one moving part on the card.
 test("a running rung carries a spinner and a settled one does not", async ({ page }) => {
-  await page.goto("/deployments");
+  await ladderDetail(page);
 
   const pending = page.locator(
-    "[data-test='app-ladder-row'] [data-test='app-ladder-rung'][data-state='pending']"
+    "#app-ladder-detail [data-test='app-ladder-rung'][data-state='pending']"
   );
   const settled = page.locator(
-    "[data-test='app-ladder-row'] [data-test='app-ladder-rung'][data-state='green']"
+    "#app-ladder-detail [data-test='app-ladder-rung'][data-state='green']"
   );
 
   for (let i = 0; i < (await pending.count()); i += 1) {
@@ -298,6 +307,15 @@ test("the ladder row re-renders from a broadcast when the dev tools fire", async
   // slot, with no reload.
   const before = await row.getAttribute("data-rendered-at");
   expect(before, "the row must carry a render stamp").toBeTruthy();
+  // The same push now also carries the Applications SIDEBAR and the Releases SUMMARY
+  // card (DeploymentsBroadcaster.app_ladder, three slots from one read), so all three
+  // stamps must move — a slot the broadcast forgot would sit stale in an open sidebar.
+  const others = ["#app-ladder-detail", "#release-summary-card"];
+  const othersBefore = {};
+  for (const slot of others) {
+    othersBefore[slot] = await page.locator(slot).getAttribute("data-rendered-at");
+    expect(othersBefore[slot], `${slot} must carry a render stamp`).toBeTruthy();
+  }
 
   // REDRAW, not Open. Redraw (dev/board#rebroadcast_release_modules) re-broadcasts
   // unconditionally with nothing changed, so it fires the same push on every run and
@@ -313,6 +331,14 @@ test("the ladder row re-renders from a broadcast when the dev tools fire", async
       message: "the ladder row never re-rendered after the dev tool fired",
     })
     .not.toBe(before);
+  for (const slot of others) {
+    await expect
+      .poll(async () => page.locator(slot).getAttribute("data-rendered-at"), {
+        timeout: 20000,
+        message: `${slot} never re-rendered after the dev tool fired`,
+      })
+      .not.toBe(othersBefore[slot]);
+  }
 });
 
 // --- the review roll --------------------------------------------------------
@@ -327,9 +353,9 @@ test("the ladder row re-renders from a broadcast when the dev tools fire", async
 // value is one of the two legal forms, and that the count of what was excluded is
 // always beside it.
 test("every application card carries a review average or admits it has none", async ({ page }) => {
-  await page.goto("/deployments");
+  await ladderDetail(page);
 
-  const cards = page.locator("[data-test='app-ladder-row'] [data-test='app-ladder-card']");
+  const cards = page.locator("#app-ladder-detail [data-test='app-ladder-card']");
   const count = await cards.count();
   expect(count).toBeGreaterThan(0);
 
@@ -357,9 +383,9 @@ test("every application card carries a review average or admits it has none", as
 // the review value lives in its own labelled block below the ladder badges, and it
 // says "avg" out loud whenever it is a number.
 test("the review average is never confusable with the CI run clock", async ({ page }) => {
-  await page.goto("/deployments");
+  await ladderDetail(page);
 
-  const card = page.locator("[data-test='app-ladder-row'] [data-test='app-ladder-card']").first();
+  const card = page.locator("#app-ladder-detail [data-test='app-ladder-card']").first();
   const review = card.locator("[data-test='app-ladder-review']");
   await expect(review).toBeVisible();
 
@@ -390,9 +416,9 @@ test("the review average is never confusable with the CI run clock", async ({ pa
 // only one environment has. A board where nothing is mid-flight passes it vacuously
 // and still proves the page renders; a board mid-release proves the real thing.
 test("no card shows a green meter over a lane that is red or running", async ({ page }) => {
-  await page.goto("/deployments");
+  await ladderDetail(page);
 
-  const cards = page.locator("[data-test='app-ladder-row'] [data-test='app-ladder-card']");
+  const cards = page.locator("#app-ladder-detail [data-test='app-ladder-card']");
   const count = await cards.count();
   expect(count).toBeGreaterThan(0);
 
@@ -438,50 +464,49 @@ test("no card shows a green meter over a lane that is red or running", async ({ 
 // A WIDE VIEWPORT, like the other Deployments specs in this suite: the six-lane board
 // collapses its upstream lanes below 1400px, and a spec that scrolls this page should
 // be scrolling the page the operator actually looks at.
-test.describe("the applications row", () => {
+test.describe("the applications summary card and its strip", () => {
   test.use({ viewport: { width: 1600, height: 900 } });
 
-  test("every application sits on one horizontal line", async ({ page }) => {
+  // ONE LINE PER APP in the summary card, each carrying the SAME meter the full card
+  // draws (components/_ci_progress_meter, inline) or words where there is none — never
+  // an empty rail. Read off the painted rows, not the classes.
+  test("every application gets one line in the summary card", async ({ page }) => {
     await page.goto("/deployments");
 
-    const scroller = page.locator("[data-test='app-ladder-scroller']");
-    await expect(scroller).toBeVisible();
+    const rows = page.locator("[data-test='app-summary-card'] [data-test='app-summary-row']");
+    await expect(rows.first()).toBeVisible();
+    const lines = await rows.evaluateAll((els) =>
+      els.map((el) => ({
+        repo: el.dataset.repo,
+        height: Math.round(el.getBoundingClientRect().height),
+        meter: !!el.querySelector("[data-test='app-summary-ci'] [data-inline='true']"),
+        empty: !!el.querySelector("[data-test='app-summary-ci-empty']"),
+      }))
+    );
 
-    // ONE LINE means one top edge. A wrapping grid puts the fifth card on a second
-    // row, which is the exact shape this replaced — and the only reading that proves
-    // it is the painted geometry, not the classes.
-    const tops = await page
-      .locator("[data-test='app-ladder-card']")
-      .evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().top)));
-
-    expect(tops.length, "the live board must have cards").toBeGreaterThan(0);
-    expect(new Set(tops).size, "every card shares one top edge").toBe(1);
+    expect(lines.length, "the live board must list its applications").toBeGreaterThan(0);
+    for (const line of lines) {
+      expect(line.height, `${line.repo} sits on ONE line`).toBeLessThanOrEqual(24);
+      expect(line.meter !== line.empty, `${line.repo} draws a meter XOR says it has none`).toBe(true);
+    }
+    // The same applications the sidebar details, one line each.
+    const detail = page.locator("#app-ladder-detail [data-test='app-ladder-card']");
+    await expect(detail).toHaveCount(lines.length);
   });
 
-  test("the row fades at its right edge and clears when you reach the end", async ({ page }) => {
+  // The rows are not links: a click anywhere on the card is "show me more", and it opens
+  // the sidebar that holds the full cards — each of which still links to its run.
+  test("the summary card opens the sidebar of full application cards", async ({ page }) => {
     await page.goto("/deployments");
 
-    const scroller = page.locator("[data-test='app-ladder-scroller']");
-    const room = await scroller.evaluate((el) => el.scrollWidth - el.clientWidth);
+    const card = page.locator("[data-test='app-summary-card']");
+    await expect(card.locator("a")).toHaveCount(0);
+    await expect(page.locator("[data-test='deploy-summary']")).toHaveAttribute("data-alpine-ready", "true");
+    await card.locator("[data-test='app-summary-row']").first().click();
 
-    if (room <= 8) {
-      // Every repo fits, so there is nothing off-screen — and then the fade must be
-      // ABSENT. Asserted rather than skipped: a skip would leave the honest half of
-      // this contract uncovered on exactly the board that can prove it.
-      await expect(scroller).not.toHaveAttribute("data-faded", "true");
-      return;
-    }
-
-    await expect(scroller).toHaveAttribute("data-faded", "true");
-    await expect(scroller).toHaveAttribute("style", /mask-image/);
-
-    // Scroll to the end: there is nothing more to the right, so the promise must stop.
-    await scroller.evaluate((el) => {
-      el.scrollLeft = el.scrollWidth;
-      el.dispatchEvent(new Event("scroll"));
-    });
-
-    await expect(scroller).not.toHaveAttribute("data-faded", "true");
+    await expect(page.locator("#deploy-sidebar-apps")).toBeVisible();
+    await expect(card.locator("button[data-test='summary-card-toggle']")).toHaveAttribute("aria-expanded", "true");
+    await expect(page.locator("#app-ladder-detail [data-test='app-ladder-card']").first()).toBeVisible();
   });
 
   test("scrolling past the applications pins them to the top of the page", async ({ page }) => {
@@ -563,9 +588,9 @@ test.describe("the applications row", () => {
 // value is the release's own shipped_at — a real date and time, or an em dash when the
 // last ship predates the scanned window. Never a guess, and never blank.
 test("every card stamps when main last took its code", async ({ page }) => {
-  await page.goto("/deployments");
+  await ladderDetail(page);
 
-  const cards = page.locator("[data-test='app-ladder-row'] [data-test='app-ladder-card']");
+  const cards = page.locator("#app-ladder-detail [data-test='app-ladder-card']");
   const count = await cards.count();
   expect(count).toBeGreaterThan(0);
 

@@ -90,12 +90,42 @@ class DeploymentsBroadcaster
   # cable failure can never break the write that triggered it. Computed fresh from
   # Ci::AppLadder rather than passed in — the caller knows something changed, not what
   # the row should now say.
-  def self.app_ladder
+  #
+  # THREE SLOTS FROM ONE READ, since the row became the Applications SUMMARY card:
+  #
+  #   #app-ladder-row        the summary card + its pinned strip
+  #   #app-ladder-detail     the full app cards in the Applications sidebar
+  #   #release-summary-card  the Releases summary card — its "Next" row counts the work
+  #                          queued on `accepted`, which is ladder data, and its members
+  #                          and last ship move on exactly the release events that
+  #                          already call this method. So every caller that can change
+  #                          it is already here, and no new wiring had to learn about it.
+  #
+  # The cards are built ONCE and handed to every slot, in the page's own order
+  # (Ci::AppLadder.recent_first), so a push can never show the sidebar and the summary
+  # disagreeing about the ladder.
+  #
+  # `release_summary: false` is for .ci_progress: a CI tick cannot move a count or a
+  # ship time, so it skips the Releases card rather than redraw it byte-identically on
+  # every one of a run's ~24 upserts.
+  def self.app_ladder(release_summary: true)
     Studio::Cable.safe_broadcast do
+      cards = Ci::AppLadder.recent_first(Ci::AppLadder.build)
       Turbo::StreamsChannel.broadcast_replace_to(
         STREAM, target: "app-ladder-row",
-        partial: "tasks/app_ladder_row", locals: { cards: Ci::AppLadder.build }
+        partial: "tasks/app_ladder_row", locals: { cards: cards }
       )
+      Turbo::StreamsChannel.broadcast_replace_to(
+        STREAM, target: "app-ladder-detail",
+        partial: "tasks/app_ladder_detail", locals: { cards: cards }
+      )
+      if release_summary
+        Turbo::StreamsChannel.broadcast_replace_to(
+          STREAM, target: "release-summary-card",
+          partial: "tasks/release_summary_card",
+          locals: { current_release: Release.current, last_release: Release.last_shipped, cards: cards }
+        )
+      end
     end
   end
 
@@ -167,7 +197,7 @@ class DeploymentsBroadcaster
       # The ladder row carries this repo's own CI meter, so a check upsert for ANY
       # ladder branch moves it — including the branches no task and no release member
       # is watching, which is precisely the case the two pushes above cannot cover.
-      app_ladder if Ci::AppLadder::RUNGS.include?(job.head_branch.to_s)
+      app_ladder(release_summary: false) if Ci::AppLadder::RUNGS.include?(job.head_branch.to_s)
     end
   end
 

@@ -257,6 +257,40 @@ module Ci
         @progress = active_rung&.progress
       end
 
+      # WHEN THIS APP'S CI LAST (RE)STARTED, on any of its three rungs — the newest
+      # suite start the ladder has ingested, or nil when nothing was.
+      #
+      # This is the key the /deployments Applications summary card sorts by, and the
+      # operator's ask is the reason it is a START rather than a verdict: "whichever
+      # app test suite restarted most recently jumps to the top", so a glance at the
+      # top row answers "what is cooking right now". A settled verdict would order by
+      # when a suite FINISHED, which puts the long-running suite at the bottom exactly
+      # while it is the news.
+      #
+      # verdict_at is the newest run's run_started_at on the rung's newest sha, and
+      # GitHub re-stamps run_started_at on a re-run — so a re-run counts as a restart.
+      def latest_suite_at = latest_suite_rung&.verdict_at
+
+      # The rung that restarted most recently. DELIBERATELY NOT #active_rung: that one
+      # pins a release member to its `release` rung so the full card agrees with the
+      # tracker above it, while the summary card reports whatever suite started last —
+      # which may well be `accepted` taking a merge mid-sweep. The summary names its
+      # branch, so the two readings never pose as the same fact.
+      def latest_suite_rung = rungs.select(&:verdict_at).max_by(&:verdict_at)
+
+      # The latest suite's checks, for the summary card's meter. Shares #progress's
+      # memo when the two rungs coincide — the common case — so the summary costs no
+      # second query for a card the sidebar already read.
+      def latest_suite_progress
+        return @latest_suite_progress if defined?(@latest_suite_progress)
+
+        rung = latest_suite_rung
+        @latest_suite_progress = if rung.nil? then nil
+                                 elsif rung.equal?(active_rung) then progress
+                                 else rung.progress
+                                 end
+      end
+
       # EVERY suite lane on the active rung, read ONCE per card. Same memo discipline
       # as #progress, and for the same reason: the card asks twice — the meter's label
       # and the legend row beneath it — and a rung is a frozen value object that cannot
@@ -338,6 +372,22 @@ module Ci
                    release_member: members.include?(repo), release_in_qa: in_qa,
                    last_shipped_at: shipped[repo])
         end.sort_by(&:sort_key)
+      end
+
+      # THE /deployments ORDER: newest suite restart first, the order the operator
+      # asked the Applications summary card to read in. Applied to cards #build
+      # already made — #build keeps its worst-first contract for every other caller.
+      #
+      # ONE ORDER FOR THE WHOLE SURFACE. The summary list, the sidebar's full cards
+      # and the pinned strip all take it, so a click never opens a sidebar that lists
+      # the apps in a different order than the card it came from.
+      #
+      # An app with nothing ingested sinks to the bottom, and ties keep #build's
+      # worst-first order (sort_by is not stable, so the index is part of the key).
+      def recent_first(cards)
+        cards.each_with_index
+             .sort_by { |card, index| [-(card.latest_suite_at&.to_f || -Float::INFINITY), index] }
+             .map(&:first)
       end
 
       def card_for(repo, parked = parked_index, review_roll = nil,

@@ -40,12 +40,13 @@ const ours = (errs) => errs.filter((e) => !KNOWN_UNRELATED.includes(e));
 // outcome.
 test.use({ viewport: { width: 1600, height: 900 } });
 
-// Scroll until the in-flow ladder row has left the top of the page, which is the
-// only condition under which the pinned copy is supposed to show.
+// Scroll until the Applications summary card has left the top of the page, which is
+// the only condition under which the pinned copy is supposed to show. (The card is what
+// the row's controller measures — x-ref="row" — since the full-width row of app cards
+// became the summary card on 2026-09-18.)
 async function scrollPastTheLadder(page) {
   await page.evaluate(() => {
-    const scroller = document.querySelector("[data-test='app-ladder-scroller']");
-    const row = scroller.parentElement;
+    const row = document.querySelector("[data-test='app-summary-card']");
     window.scrollTo(0, row.getBoundingClientRect().bottom + window.scrollY + 80);
   });
   await page.waitForTimeout(400);

@@ -1,5 +1,5 @@
 const { test, expect } = require("@playwright/test");
-const { watchPageErrors } = require("./helpers");
+const { watchPageErrors, openDeploySidebar } = require("./helpers");
 
 // Pagination fixture (the 26 rel-e2e-page-* shipped releases) lives in e2e/seed.rb
 // with every other spec's data. It USED to be seeded right here via a synchronous
@@ -11,6 +11,9 @@ test("deployments analytics card navigates to release history and detail", async
 
   await page.goto("/deployments");
 
+  // The six stage tiles live in the DevOps SIDEBAR since the summary row; its summary
+  // card is what opens it.
+  await openDeploySidebar(page, "devops");
   const card = page.locator("#release-duration-card");
   await expect(card).toBeVisible();
   // Six tiles on the 3x2 grid: the WIP count plus the five duration averages.

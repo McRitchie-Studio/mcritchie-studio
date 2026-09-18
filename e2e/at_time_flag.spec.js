@@ -1,4 +1,5 @@
 const { test, expect } = require("@playwright/test");
+const { openDeploySidebar } = require("./helpers");
 
 // [e2e] The "at" format's CLIENT half — the only half a server test can never see.
 //
@@ -59,6 +60,8 @@ async function readBadge(browser, timezoneId) {
   try {
     const page = await context.newPage();
     await page.goto("/deployments");
+    // The Last Release card lives in the Releases sidebar since the summary row.
+    await openDeploySidebar(page, "releases");
 
     const stamp = page.locator(BADGE);
     await expect(stamp).toBeVisible();
