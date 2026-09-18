@@ -1,0 +1,24 @@
+#!/bin/sh
+# Test double for the 1Password CLI. test/test_helper.rb puts this directory
+# FIRST on PATH, so anything under test that shells out to `op` reaches this
+# script instead of a vault.
+#
+# It records the call and fails. Recording is what lets test_helper fail the
+# test that made the call; failing is what keeps a missed call from ever
+# looking like a successful read.
+#
+#   FAKE_OP_LOG   file each call appends "<pid> <argv>" to (test_helper sets it)
+#   FAKE_OP_MODE  "hang" never answers, so a caller's timeout has to fire
+echo "$$ $*" >> "${FAKE_OP_LOG:-/dev/null}"
+
+if [ "$FAKE_OP_MODE" = "hang" ]; then
+  # exec, so the pid the caller kills IS the sleep; a plain child would
+  # outlive the kill and hold the pipes open.
+  exec sleep 20
+fi
+
+# stdout on purpose: a caller that trusts output over the exit status would
+# read this as a token, and the test that checks the status catches it.
+echo "not-a-token-the-fake-op-failed"
+echo "fake op: the test suite may not read 1Password" >&2
+exit 1

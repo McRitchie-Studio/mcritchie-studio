@@ -1,4 +1,17 @@
 ENV["RAILS_ENV"] ||= "test"
+# `op` on PATH inside the suite is the FAKE at test/support/bin/op, never the
+# real 1Password CLI — set before boot so nothing can shell out first. The
+# service-account token goes too, so even a call that dodged the fake would have
+# no quota to spend. The guard that FAILS the offending test is below.
+#
+# This matters here and not only in Industries: the hub now carries two
+# credential modules that fall back to `op read` — Gmail::Credentials (the
+# read-only capture mouth) and Workspace::Credentials (the Drive/Gmail service
+# account) — and the 1Password daily quota is account-wide, shared by every
+# agent lane on this machine. A suite that spends it takes the ship lane down
+# with it.
+ENV["PATH"] = [ File.expand_path("support/bin", __dir__), ENV["PATH"] ].join(File::PATH_SEPARATOR)
+ENV.delete("OP_SERVICE_ACCOUNT_TOKEN")
 # Arm Release::SealRetry's real-sleep guard for the WHOLE suite. The ship seal's
 # boot-window retry waits ~30 real seconds in production; a test that forgets to
 # inject a `sleeper` would silently burn that per call. Armed here, the policy
@@ -30,6 +43,83 @@ require "rails/test_help"
 # Forcing the first draw here, un-stubbed, means no later env stub can ever be it.
 # See test/controllers/dev/board_controller_test.rb (task fix-dev-board-route-pollution).
 Rails.application.reload_routes_unless_loaded
+
+# --- 1Password: stub the readers, then prove nothing reached the CLI ----------
+#
+# Two layers on purpose. The lambdas below cover the modules we KNOW fall back
+# to `op read`; the fake-op guard covers everything else — a test that restores
+# a real reader, a new credentials module nobody added here, a stray `op` in a
+# helper. The first keeps the common path off the network; the second is what
+# notices when a new one appears.
+module ActiveSupport
+  class TestCase
+    setup do
+      [ defined?(Gmail::Credentials) && Gmail::Credentials,
+        defined?(Workspace::Credentials) && Workspace::Credentials ].each do |mod|
+        next unless mod
+
+        mod.reset!
+        mod.op_reader = ->(_item) { nil }
+      end
+      start_fake_op_log
+    end
+
+    teardown do
+      [ defined?(Gmail::Credentials) && Gmail::Credentials,
+        defined?(Workspace::Credentials) && Workspace::Credentials ].each do |mod|
+        next unless mod
+
+        mod.op_reader = nil
+        mod.reset!
+      end
+    end
+
+    # The lambdas above hold only while nothing swaps them out. This holds for
+    # everything else, and names the test that made the call.
+    teardown { assert_op_never_reached }
+
+    def assert_op_never_reached
+      calls = drain_fake_op_calls
+      return if calls.empty?
+
+      flunk "#{calls.size} call(s) reached 1Password's op CLI (stopped by the fake at " \
+            "test/support/bin/op): #{calls.map { |call| "op #{call[:argv]}" }.join('; ')}. " \
+            "Inject a reader instead, or wrap a deliberate call in reaching_fake_op."
+    end
+
+    # Runs the block and returns the op calls it made, clearing them so the
+    # guard does not then fail a DELIBERATE call. The ensure clears them on an
+    # assertion failure inside the block too, so that failure is reported once
+    # rather than again as an undeclared op call.
+    def reaching_fake_op
+      drain_fake_op_calls
+      yield
+      drain_fake_op_calls
+    ensure
+      drain_fake_op_calls
+    end
+
+    def start_fake_op_log
+      ENV.delete("FAKE_OP_MODE")
+      ENV["FAKE_OP_LOG"] = Rails.root.join("tmp", "fake-op-#{Process.pid}.log").to_s
+      FileUtils.mkdir_p(File.dirname(ENV["FAKE_OP_LOG"]))
+      File.write(ENV["FAKE_OP_LOG"], "")
+    end
+
+    def drain_fake_op_calls
+      path = ENV["FAKE_OP_LOG"].to_s
+      return [] unless File.exist?(path)
+
+      calls = File.readlines(path, chomp: true).map do |line|
+        pid, argv = line.split(" ", 2)
+        { pid: pid.to_i, argv: argv.to_s }
+      end
+      File.write(path, "")
+      calls
+    end
+  end
+end
+
 # minitest/mock (Object#stub + Minitest::Mock) isn't auto-required by rails/test_help;
 # the pinned minitest ~> 5.25 keeps it available (6.0 dropped it — see Gemfile), so
 # make it loadable suite-wide for tests that stub a seam (e.g. the LLM adapter).

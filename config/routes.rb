@@ -76,6 +76,11 @@ Rails.application.routes.draw do
                                                 as: :board_rebroadcast_release_modules
     end
   end
+  # /communications — the communications record (who said what, what was asked).
+  # Short path by operator preference; admin-gated in the controller because the
+  # page renders deal correspondence.
+  get "communications", to: "communications#index", as: :communications
+
   # Public link hub — general (non-admin) destinations. The admin counterpart
   # lives at /admin/links (admin#links, require_admin). Both are surfaced from
   # the nav dropdown (Admin Links shows only to admins).

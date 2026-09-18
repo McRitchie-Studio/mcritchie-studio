@@ -1,0 +1,141 @@
+<%# /communications — the communications record. Asks first, newest first. %>
+<style>
+  .comm-kind { font-size: .7rem; padding: 0 .45rem; border-radius: .25rem; border: 1px solid rgb(148 163 184 / .5); white-space: nowrap; }
+  .comm-kind-ask     { border-color: rgb(59 130 246 / .6); color: rgb(37 99 235); font-weight: 600; }
+  .comm-kind-general { opacity: .7; }
+  .comm-status { font-size: .7rem; padding: 0 .45rem; border-radius: .25rem; border: 1px solid rgb(148 163 184 / .5); white-space: nowrap; }
+  .comm-status-open        { border-color: rgb(245 158 11 / .6); color: rgb(180 83 9); }
+  .comm-status-researching { border-color: rgb(168 85 247 / .6); color: rgb(147 51 234); }
+  .comm-status-drafted     { border-color: rgb(59 130 246 / .6); color: rgb(37 99 235); }
+  .comm-status-delivered   { border-color: rgb(16 185 129 / .5); color: rgb(5 150 105); }
+  .comm-status-closed      { opacity: .6; }
+  .comm-privileged { font-size: .7rem; padding: 0 .45rem; border-radius: .25rem; border: 1px solid rgb(220 38 38 / .6); color: rgb(220 38 38); white-space: nowrap; }
+  .comm-points { margin: .25rem 0 0; padding-left: 1rem; }
+  .comm-points li { font-size: .8rem; opacity: .85; }
+</style>
+
+<div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+  <h1 class="text-xl font-semibold">Communications</h1>
+  <div class="text-sm opacity-70">
+    <%= @open_asks %> open ask<%= "s" unless @open_asks == 1 %> ·
+    <%= @counts.fetch("ask", 0) %> ask<%= "s" unless @counts.fetch("ask", 0) == 1 %> ·
+    <%= @counts.fetch("general", 0) %> general
+  </div>
+</div>
+
+<div id="comm-filters" class="flex flex-col gap-2 text-sm mb-4">
+  <div class="flex flex-wrap items-center gap-2">
+    <span class="opacity-60 w-16">Kind</span>
+    <%= link_to "All", communications_path(status: @status, channel: @channel, entity: @entity),
+                class: @kind ? "" : "font-semibold underline" %>
+    <% Communication::KINDS.each do |kind| %>
+      <%= link_to "#{kind} (#{@counts.fetch(kind, 0)})",
+                  communications_path(kind: kind, status: @status, channel: @channel, entity: @entity),
+                  class: kind == @kind ? "font-semibold underline" : "" %>
+    <% end %>
+  </div>
+
+  <div class="flex flex-wrap items-center gap-2">
+    <span class="opacity-60 w-16">Status</span>
+    <%= link_to "Any", communications_path(kind: @kind, channel: @channel, entity: @entity),
+                class: @status ? "" : "font-semibold underline" %>
+    <% Communication::STATUSES.each do |status| %>
+      <%= link_to status,
+                  communications_path(status: status, kind: @kind, channel: @channel, entity: @entity),
+                  class: status == @status ? "font-semibold underline" : "" %>
+    <% end %>
+  </div>
+
+  <div class="flex flex-wrap items-center gap-2">
+    <span class="opacity-60 w-16">Channel</span>
+    <%= link_to "Any", communications_path(kind: @kind, status: @status, entity: @entity),
+                class: @channel ? "" : "font-semibold underline" %>
+    <% Communication::CHANNELS.each do |channel| %>
+      <%= link_to channel,
+                  communications_path(channel: channel, kind: @kind, status: @status, entity: @entity),
+                  class: channel == @channel ? "font-semibold underline" : "" %>
+    <% end %>
+  </div>
+
+  <% if @entities.any? %>
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="opacity-60 w-16">Entity</span>
+      <%= link_to "Any", communications_path(kind: @kind, status: @status, channel: @channel),
+                  class: @entity ? "" : "font-semibold underline" %>
+      <% @entities.each do |entity| %>
+        <%= link_to entity,
+                    communications_path(entity: entity, kind: @kind, status: @status, channel: @channel),
+                    class: entity == @entity ? "font-semibold underline" : "" %>
+      <% end %>
+    </div>
+  <% end %>
+</div>
+
+<% if @communications.any? %>
+  <div class="overflow-x-auto">
+    <table id="comm-rows" class="w-full text-sm">
+      <thead>
+        <tr class="text-left border-b">
+          <th class="py-2 pr-3">When</th>
+          <th class="py-2 pr-3">Kind</th>
+          <th class="py-2 pr-3">Channel</th>
+          <th class="py-2 pr-3">Subject / ask</th>
+          <th class="py-2 pr-3">Entity</th>
+          <th class="py-2 pr-3">Status</th>
+          <th class="py-2 pr-3">Deliverable</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% @communications.each do |comm| %>
+          <tr class="border-b align-top" data-kind="<%= comm.kind %>" data-comm-id="<%= comm.id %>">
+            <td class="py-2 pr-3 whitespace-nowrap opacity-70">
+              <%= comm.occurred_at ? l(comm.occurred_at, format: :short) : "—" %>
+            </td>
+            <td class="py-2 pr-3">
+              <span class="comm-kind comm-kind-<%= comm.kind %>"><%= comm.kind %></span>
+            </td>
+            <td class="py-2 pr-3 whitespace-nowrap opacity-70"><%= comm.channel %></td>
+            <td class="py-2 pr-3">
+              <div class="flex flex-wrap items-center gap-2">
+                <span><%= comm.ask? ? comm.ask_text.to_s.truncate(120) : comm.subject.presence || "—" %></span>
+                <%# Named, never rendered. The body of a privileged row does not %>
+                <%# belong on a list page any more than it belongs in a draft. %>
+                <% if comm.privileged? %>
+                  <span class="comm-privileged" title="Attorney-client — excluded from draft context by default">privileged</span>
+                <% end %>
+              </div>
+              <% if comm.key_points.present? %>
+                <ul class="comm-points">
+                  <% comm.key_points.each do |point| %>
+                    <li><%= point %></li>
+                  <% end %>
+                </ul>
+              <% end %>
+            </td>
+            <td class="py-2 pr-3 whitespace-nowrap opacity-70"><%= comm.entity.presence || "—" %></td>
+            <td class="py-2 pr-3">
+              <% if comm.status.present? %>
+                <span class="comm-status comm-status-<%= comm.status %>"><%= comm.status %></span>
+              <% else %>
+                <span class="opacity-40">—</span>
+              <% end %>
+            </td>
+            <td class="py-2 pr-3">
+              <% if comm.deliverable_url.present? %>
+                <%= link_to "open draft", comm.deliverable_url, target: "_blank", rel: "noopener",
+                            class: "underline" %>
+              <% else %>
+                <span class="opacity-40">—</span>
+              <% end %>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  </div>
+<% else %>
+  <p id="comm-empty" class="text-sm opacity-70">
+    Nothing recorded yet<%= " for this filter" if @kind || @status || @channel || @entity %>.
+    Asks and the raw stream both land here once the ingest runs.
+  </p>
+<% end %>

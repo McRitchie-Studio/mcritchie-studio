@@ -29,6 +29,17 @@ gem "bcrypt", "~> 3.1.7"
 
 gem "omniauth"
 gem "omniauth-google-oauth2"
+
+# Google Workspace — Drive + Gmail, reached with a service account under
+# domain-wide delegation. The official clients rather than hand-rolled
+# Net::HTTP: DWD authorization is a signed JWT assertion exchanged for an
+# access token, and googleauth already implements that signing (and the refresh
+# around it) correctly. Hand-rolling it buys nothing and owns a crypto path
+# forever. NOTE these are a DIFFERENT lane from omniauth-google-oauth2 above,
+# which is the hub's SSO sign-in and shares no credential with them.
+gem "google-apis-drive_v3", "~> 0.87"
+gem "google-apis-gmail_v1", "~> 0.53"
+gem "googleauth", "~> 1.17"
 gem "omniauth-rails_csrf_protection"
 
 # Rate limiting (prelaunch audit H6 — SSO hub brute-force prevention)
