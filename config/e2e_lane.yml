@@ -200,7 +200,19 @@
 # archive. It seeds its own archived tasks through the API (the shortfall only), never
 # e2e/seed.rb. Coverage ADDED; `quarantined` is untouched.
 # MEASURED with the lister: `npx playwright test --list` => 149.
-total_specs: 149
+#
+# 149 -> 150 on 2026-09-17: e2e/communications_index.spec.js, ONE spec. /communications
+# filters by kind, status, channel and entity, and every filter link rebuilds its query
+# string from the OTHER three — so a single dropped parameter means one filter silently
+# clears its siblings. Every server-side tier still passes, because each asks for one
+# filter at a time; only a browser clicking them in SEQUENCE can see it. The spec also
+# pins that asks sort above the raw stream and that a privileged row is labelled while
+# its body never reaches the page. It seeds through e2e/seed.rb and is deliberately NOT
+# tagged @qa-readonly. Coverage ADDED; `quarantined` is untouched.
+# MEASURED with the lister on THIS tree, never by arithmetic — and the method was first
+# validated against the untouched tree, where it reproduced the declared 149/139:
+#   npx playwright test --list => 150
+total_specs: 150
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
@@ -317,7 +329,13 @@ quarantined: 10
 # Re-derived on THIS tree with the lister, never by arithmetic:
 #   npx playwright test --list                           => 149
 #   npx playwright test --list --grep-invert @quarantine => 139
-executed: 139
+#
+# 139 -> 140 on 2026-09-17: the communications_index spec above. Coverage ADDED;
+# `quarantined` untouched at 10.
+# Re-derived on THIS tree with the lister, never by arithmetic:
+#   npx playwright test --list                           => 150
+#   npx playwright test --list --grep-invert @quarantine => 140
+executed: 140
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to

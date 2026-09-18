@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_17_140000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_18_040000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -385,6 +385,37 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_17_140000) do
     t.index ["slug"], name: "index_coaches_on_slug", unique: true
     t.index ["sport"], name: "index_coaches_on_sport"
     t.index ["team_slug"], name: "index_coaches_on_team_slug"
+  end
+
+  create_table "communications", force: :cascade do |t|
+    t.jsonb "access", default: {}, null: false
+    t.text "ask_text"
+    t.text "body_text"
+    t.string "channel", null: false
+    t.datetime "created_at", null: false
+    t.string "deliverable_url"
+    t.string "direction"
+    t.datetime "due_at"
+    t.string "entity"
+    t.string "external_id"
+    t.jsonb "key_points", default: [], null: false
+    t.string "kind", null: false
+    t.datetime "occurred_at"
+    t.string "owner"
+    t.jsonb "participants", default: [], null: false
+    t.boolean "privileged", default: false, null: false
+    t.text "processing"
+    t.string "source_ref"
+    t.string "status"
+    t.string "subject"
+    t.text "summary"
+    t.jsonb "tags", default: [], null: false
+    t.string "thread_key"
+    t.datetime "updated_at", null: false
+    t.index ["channel", "external_id"], name: "index_communications_on_channel_and_external_id", unique: true
+    t.index ["entity", "kind", "status"], name: "index_communications_on_entity_and_kind_and_status"
+    t.index ["occurred_at"], name: "index_communications_on_occurred_at"
+    t.index ["thread_key"], name: "index_communications_on_thread_key"
   end
 
   create_table "contacts", force: :cascade do |t|
