@@ -4,8 +4,8 @@ require "test_helper"
 
 # Task.wip_by_stage — the WIP count split by stage, for the /deployments DevOps sidebar.
 # Its own file rather than another test at the bottom of test/models/task_test.rb, a
-# frozen append hotspot (config/test_health.yml): this concern is new, so it gets a
-# home named for it.
+# frozen append hotspot the test-health ratchet caps: this concern is new, so it gets
+# a home named for it.
 class TaskWipByStageTest < ActiveSupport::TestCase
   # The DevOps sidebar's split of the same number. Every live stage is PRESENT, a
   # zero included, in board order — the sidebar draws one tile per stage and must not
