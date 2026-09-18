@@ -29,6 +29,10 @@ class AgentActivity < ApplicationRecord
   # by the agent at close (`bin/agent-activity next/end --key-method "…"`).
   include HasKeyMethod
 
+  # Usage counters are telemetry: too wide for the column clamps and logs rather
+  # than failing the narration write. See IntegerColumnRange.
+  clamps_integer_columns :tokens_in, :tokens_out, :cache_creation_tokens, :cache_read_tokens
+
   # The agent-declared activity vocabulary — a fixed, small set so activities stay
   # comparable across sessions. The agent picks ONE per activity.
   CATEGORIES = %w[

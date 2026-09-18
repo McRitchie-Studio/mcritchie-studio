@@ -51,7 +51,7 @@ module Api
           render_data(task, status: :created)
         end
       rescue StandardError => e
-        render_error(e.message)
+        render_exception(e)
       end
 
       def update
@@ -60,7 +60,7 @@ module Api
           render_data(@task)
         end
       rescue StandardError => e
-        render_error(e.message)
+        render_exception(e)
       end
 
       def destroy
@@ -69,7 +69,7 @@ module Api
           head :no_content
         end
       rescue StandardError => e
-        render_error(e.message)
+        render_exception(e)
       end
 
       # Record an INTENT event: an agent (or the two-senior review pair) STARTING
@@ -91,7 +91,7 @@ module Api
           render_data(@task)
         end
       rescue StandardError => e
-        render_error(e.message)
+        render_exception(e)
       end
 
       # Mark the task blocked WITHOUT leaving the pipeline — a `building` attribute
@@ -107,7 +107,7 @@ module Api
           render_data(@task)
         end
       rescue StandardError => e
-        render_error(e.message)
+        render_exception(e)
       end
 
       private

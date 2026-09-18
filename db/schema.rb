@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_16_210000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_17_140000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -81,7 +81,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_16_210000) do
   create_table "agent_actions", force: :cascade do |t|
     t.string "actor", default: "agent", null: false
     t.bigint "agent_activity_id"
-    t.integer "cache_read_tokens", default: 0
+    t.bigint "cache_read_tokens", default: 0
     t.decimal "cost", precision: 10, scale: 4, default: "0.0"
     t.datetime "created_at", null: false
     t.integer "duration_ms"
@@ -104,8 +104,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_16_210000) do
     t.string "stage"
     t.string "summary"
     t.string "task_slug"
-    t.integer "tokens_in", default: 0, null: false
-    t.integer "tokens_out", default: 0, null: false
+    t.bigint "tokens_in", default: 0, null: false
+    t.bigint "tokens_out", default: 0, null: false
     t.datetime "updated_at", null: false
     t.index ["agent_activity_id"], name: "index_agent_actions_on_agent_activity_id"
     t.index ["feedback_anchor"], name: "index_agent_actions_on_feedback_anchor"
@@ -118,8 +118,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_16_210000) do
 
   create_table "agent_activities", force: :cascade do |t|
     t.string "agent"
-    t.integer "cache_creation_tokens"
-    t.integer "cache_read_tokens"
+    t.bigint "cache_creation_tokens"
+    t.bigint "cache_read_tokens"
     t.string "category", null: false
     t.datetime "closed_at"
     t.decimal "cost", precision: 10, scale: 4
@@ -137,8 +137,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_16_210000) do
     t.string "stage"
     t.string "supervisor_agent"
     t.string "task_slug"
-    t.integer "tokens_in"
-    t.integer "tokens_out"
+    t.bigint "tokens_in"
+    t.bigint "tokens_out"
     t.string "transcript_path"
     t.string "turn_uuid"
     t.datetime "updated_at", null: false
@@ -508,13 +508,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_16_210000) do
     t.string "entity_hint"
     t.text "filed_note"
     t.string "from_addr"
+    t.bigint "history_id"
     t.string "message_id"
     t.datetime "received_at"
     t.string "s3_key", null: false
+    t.string "source", default: "resend", null: false
     t.string "status", default: "received", null: false
     t.string "subject"
     t.datetime "updated_at", null: false
     t.index ["s3_key"], name: "index_desk_capture_items_on_s3_key", unique: true
+    t.index ["source", "history_id"], name: "index_desk_capture_items_on_source_and_history_id"
     t.index ["status", "received_at"], name: "index_desk_capture_items_on_status_and_received_at"
   end
 
@@ -950,8 +953,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_16_210000) do
     t.string "source"
     t.string "status", null: false
     t.string "step", null: false
-    t.integer "tokens_in"
-    t.integer "tokens_out"
+    t.bigint "tokens_in"
+    t.bigint "tokens_out"
     t.datetime "updated_at", null: false
     t.string "url"
     t.index ["release_slug", "idempotency_key"], name: "index_release_events_on_release_slug_and_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
@@ -1353,8 +1356,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_16_210000) do
 
   create_table "task_events", force: :cascade do |t|
     t.string "actor"
-    t.integer "cache_creation_tokens"
-    t.integer "cache_read_tokens"
+    t.bigint "cache_creation_tokens"
+    t.bigint "cache_read_tokens"
     t.decimal "cost", precision: 10, scale: 4
     t.datetime "created_at", null: false
     t.string "from_stage"
@@ -1366,8 +1369,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_16_210000) do
     t.string "source"
     t.string "task_slug", null: false
     t.string "to_stage", null: false
-    t.integer "tokens_in"
-    t.integer "tokens_out"
+    t.bigint "tokens_in"
+    t.bigint "tokens_out"
     t.datetime "updated_at", null: false
     t.index ["task_slug", "kind"], name: "index_task_events_on_task_slug_and_kind"
     t.index ["task_slug", "occurred_at"], name: "index_task_events_on_task_slug_and_occurred_at"
@@ -1557,8 +1560,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_16_210000) do
     t.string "slug"
     t.integer "tasks_completed", default: 0
     t.integer "tasks_failed", default: 0
-    t.integer "tokens_in", default: 0
-    t.integer "tokens_out", default: 0
+    t.bigint "tokens_in", default: 0
+    t.bigint "tokens_out", default: 0
     t.datetime "updated_at", null: false
     t.index ["agent_slug", "period_date", "period_type", "model"], name: "idx_usages_unique", unique: true
     t.index ["agent_slug"], name: "index_usages_on_agent_slug"

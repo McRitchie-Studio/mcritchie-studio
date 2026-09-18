@@ -9,6 +9,22 @@
 module DeskCapture
   INCOMING_PREFIX = "incoming/"
   PARSED_PREFIX   = "parsed/"
+  GMAIL_PREFIX    = "gmail/"
+
+  # Transports whose arrivals skip the sender allowlist.
+  #
+  # `team@` is a PUBLIC address: anyone can mail it, and the `From:` header they
+  # put on it is theirs to choose, so that door checks the sender and
+  # quarantines strangers. The Gmail read is not that door — it reads messages
+  # already delivered to Mr. McRitchie's own mailbox, selected by a query we
+  # control, so the counterparty's address in `From:` is the expected truth
+  # rather than a red flag. Quarantining those would drop the body and leave the
+  # attachments unextracted, which is the whole payload.
+  #
+  # The safety hinges on `source` being unforgeable: it is an argument our own
+  # callers pass, never a header. DeskCaptureResendIngestJob does not pass it and
+  # so cannot become trusted, which is the property `ingest_raw` is tested for.
+  TRUSTED_SOURCES = %w[gmail].freeze
 
   class << self
     def bucket
@@ -37,6 +53,10 @@ module DeskCapture
       @client = nil
     end
 
+    def trusted_source?(source)
+      TRUSTED_SOURCES.include?(source.to_s)
+    end
+
     def list_incoming_keys(max: 200)
       client.list_objects_v2(bucket: bucket, prefix: INCOMING_PREFIX, max_keys: max)
             .contents.map(&:key)
@@ -58,27 +78,32 @@ module DeskCapture
     # out. The Resend webhook leg (primary) runs through here; the SES poll
     # fallback predates it and still carries its own inline copy of this
     # logic. Idempotent on s3_key.
-    def ingest_raw(raw:, s3_key:)
+    #
+    # `source` is the TRANSPORT, chosen by the calling code and never read off
+    # the message. Everything about trust hangs on that: see TRUSTED_SOURCES.
+    def ingest_raw(raw:, s3_key:, source: "resend", history_id: nil)
       return DeskCaptureItem.find_by(s3_key: s3_key) if DeskCaptureItem.exists?(s3_key: s3_key)
 
       parsed = Parser.parse(raw)
-      allowlisted = DeskCaptureItem.allowlisted?(parsed.from_addr)
+      trusted = trusted_source?(source) || DeskCaptureItem.allowlisted?(parsed.from_addr)
 
       item = DeskCaptureItem.new(
         s3_key: s3_key,
+        source: source,
+        history_id: history_id,
         message_id: parsed.message_id,
         from_addr: parsed.from_addr,
         subject: parsed.subject,
         received_at: parsed.sent_at || Time.current,
         entity_hint: parsed.entity_hint,
-        status: allowlisted ? "received" : "quarantined",
-        body_text: allowlisted ? parsed.body_text : nil,
+        status: trusted ? "received" : "quarantined",
+        body_text: trusted ? parsed.body_text : nil,
         attachments: []
       )
 
-      # Attachments extract for ALLOWLISTED mail only — quarantined raw stays
+      # Attachments extract for TRUSTED mail only — quarantined raw stays
       # sealed where nothing renders or executes it.
-      if allowlisted
+      if trusted
         base = s3_key.sub(%r{\A[^/]+/}, "").sub(/\.eml\z/, "")
         item.attachments = parsed.attachments.each_with_index.map do |att, idx|
           stored = store("#{PARSED_PREFIX}#{base}/#{idx}-#{Parser.sanitize_filename(att.filename)}",
