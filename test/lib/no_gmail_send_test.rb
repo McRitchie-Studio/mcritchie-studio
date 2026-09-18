@@ -29,8 +29,8 @@ class NoGmailSendTest < ActiveSupport::TestCase
   # GmailClient::FORBIDDEN_GEM_CALLS and its test — and the only way to quiet
   # that is to exclude the Gmail client from the scan, which is exactly the file
   # where a send would most plausibly be added. So the patterns match a call on a
-  # receiver, a bare call with parens, or a symbol handed to metaprogrammed
-  # dispatch; a %w[] declaration or a quoted name matches none of them.
+  # receiver, a bare call with parens, or a symbol or QUOTED name handed to
+  # dispatch; a %w[] declaration or a bare quoted name matches none of them.
   SEND_CALLS = "send_user_(?:message|draft)".freeze
 
   FORBIDDEN = {
@@ -39,9 +39,12 @@ class NoGmailSendTest < ActiveSupport::TestCase
     /\.#{SEND_CALLS}\b/o => "a GmailService send call on a receiver",
     /(?<![\w:."'])#{SEND_CALLS}\s*\(/o => "a bare GmailService send call",
     /:#{SEND_CALLS}\b/o => "a GmailService send call via symbol dispatch",
-    # The REST paths, in case anything ever hand-rolls the HTTP call.
-    %r{users/me/messages/send} => "the messages.send REST path",
-    %r{users/me/drafts/send} => "the drafts.send REST path",
+    /(?::|\b(?:send|__send__|public_send|method|try)\s*\(?\s*:?)["']#{SEND_CALLS}["']/o =>
+      "a GmailService send call via string or quoted-symbol dispatch",
+    # The REST paths, in case anything ever hand-rolls the HTTP call — for ANY
+    # user segment: `me`, the gem's own `{userId}` template, or an interpolation.
+    %r{users/[^/\s"']+/messages/send} => "the messages.send REST path",
+    %r{users/[^/\s"']+/drafts/send} => "the drafts.send REST path",
     # The scope that would make sending possible even without the calls above.
     %r{auth/gmail\.send} => "the gmail.send scope"
   }.freeze
@@ -105,6 +108,10 @@ class NoGmailSendTest < ActiveSupport::TestCase
       'service.public_send(:send_user_message, "me", message)' => "symbol dispatch",
       'post("users/me/messages/send")' => "messages.send REST",
       'post("users/me/drafts/send")' => "drafts.send REST",
+      'service.public_send("send_user_draft", "me", id)' => "string dispatch",
+      'service.__send__(:"send_user_message", "me", m)' => "quoted-symbol dispatch",
+      'post("gmail/v1/users/#{uid}/messages/send")' => "messages.send REST, interpolated user",
+      "command(:post, 'gmail/v1/users/{userId}/drafts/send')" => "drafts.send REST, gem template",
       '"https://www.googleapis.com/auth/gmail.send"' => "gmail.send scope"
     }
 
