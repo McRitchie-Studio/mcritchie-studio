@@ -172,6 +172,13 @@ rather than stopping:
 
 ### If a value does leak: rotate first, redact second
 
+**Not every credential problem stops the work.** A real exposure of something
+that guards money, customer data or production still rotates here, first —
+that is this section. A shell account, a latent risk that exposed nothing, a
+stale value or a hygiene fault is LOGGED and worked in a weekly pass instead:
+the triage, and the private place to log it, are
+[`credential-issues`](../../../modules/credential-issues.md).
+
 Deleting the note un-exposes nothing. On 2026-09-09 a full `heroku config --json`
 dump — 36 keys including an RSA private key, `RAILS_MASTER_KEY`,
 `SECRET_KEY_BASE`, `AWS_SECRET_ACCESS_KEY` and a live `DATABASE_URL` — was written
