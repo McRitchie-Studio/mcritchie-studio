@@ -1,7 +1,7 @@
 require "test_helper"
 
 # [unit] Communication — the two kinds, the terse/unbounded split, and the
-# privileged default. Synthetic names throughout: this repo is private, but a
+# privileged default. Synthetic names throughout: this repo is PUBLIC, and a
 # fixture that names a real counterparty ends up in failure output, and failure
 # output travels.
 class CommunicationTest < ActiveSupport::TestCase
