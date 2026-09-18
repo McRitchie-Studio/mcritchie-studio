@@ -119,18 +119,66 @@ class DeploySummaryCardsTest < ActionView::TestCase
     assert_select "[data-test='release-summary-last']", text: /none yet/
   end
 
-  test "[component] an open candidate reads its own members per app, with a live clock" do
+  # AN OPEN CANDIDATE: one line (state + live clock, conductor floated right), then ONE
+  # UNLABELLED STAGE TRACKER PER APP — emoji, feature count, four pills — drawn from the
+  # same per-repo lanes the full tracker in the sidebar draws.
+  test "[component] an open candidate shows a stage tracker per app on one line under its state" do
+    Pokemon.find_or_create_by!(slug: "lapras") { |p| p.name = "Lapras"; p.dex = 131 }
     release = Release.open!(branch: "release/summary-open")
+    release.update!(metadata: { "devops" => { "mascot" => "lapras" } })
     task(repo: "turf-monster", release: release)
     task(repo: "turf-monster", release: release)
     task(repo: "studio-engine", release: release)
 
-    render partial: "tasks/release_summary_card", locals: { current_release: release, last_release: nil, cards: [] }
+    render partial: "tasks/release_summary_card", locals: { current_release: release.reload, last_release: nil, cards: [] }
 
     assert_select "[data-test='release-summary-next'][data-state='open']", 1
-    counts = css_select("[data-test='release-summary-next-counts'] [data-test='app-count']")
-    assert_equal({ "turf-monster" => "2", "studio-engine" => "1" }, counts.to_h { |el| [el["data-repo"], el["data-count"]] })
-    assert_select "[data-test='release-summary-next-note'] [data-release-ticker][data-since='#{release.created_at.to_i}']", 1
+    assert_select "[data-test='release-summary-next-line'] [data-test='release-summary-next-clock'][data-release-ticker][data-since='#{release.created_at.to_i}']", 1
+    assert_select "[data-test='release-summary-next-line'] [data-test='release-summary-next-mascot']", text: "Lapras"
+    trackers = css_select("[data-test='release-summary-next-trackers'] [data-test='release-app-tracker']")
+    assert_equal release.member_repos.sort, trackers.map { |el| el["data-repo"] }.sort, "one tracker per member repo"
+    counts = trackers.to_h { |el| [el["data-repo"], el.at_css("[data-test='release-app-tracker-count']")&.text] }
+    assert_equal({ "turf-monster" => "2", "studio-engine" => "1" }, counts)
+    trackers.each do |tracker|
+      assert_equal 4, tracker.css("[data-test='release-app-tracker-segment']").size, "four pills, no labels"
+      assert_match(/stages done/, tracker["aria-label"], "unlabelled, never unnamed")
+    end
+    # The queued-on-accepted counts are the NO-candidate reading; they do not appear here.
+    assert_select "[data-test='release-summary-next-counts']", 0
+  end
+
+  # A gem has no deploy: its last two phases are n/a — drawn as dashed pills and left out
+  # of "x of y done", so a gem that has published reads complete rather than half done.
+  test "[component] an app tracker counts only the phases that apply and names each one" do
+    lane = { repo: "studio-engine", emoji: "💎", kind: "lib",
+             phases: [{ key: "assembling", label: "Assembling", state: :done },
+                      { key: "published", label: "Published", state: :running },
+                      { key: "confirming", label: "Confirming", state: :na },
+                      { key: "deploying", label: "Deploying", state: :na }] }
+
+    render partial: "tasks/release_app_tracker", locals: { lane: lane, count: 3 }
+
+    tracker = css_select("[data-test='release-app-tracker']").first
+    assert_equal "1", tracker["data-done"]
+    assert_equal "2", tracker["data-of"]
+    assert_equal "studio-engine: 1 of 2 stages done — Assembling done, Published running, Confirming n/a, Deploying n/a",
+                 tracker["aria-label"]
+    assert_equal "img", tracker["role"]
+    states = css_select("[data-test='release-app-tracker-segment']").map { |el| el["data-state"] }
+    assert_equal %w[done running na na], states
+    assert_select "[data-test='release-app-tracker-segment'][data-state='running'].animate-pulse.motion-reduce\\:animate-none", 1
+    assert_select "[data-test='release-app-tracker-segment'][data-state='na'].border-dashed", 2
+    assert_select "[data-test='release-app-tracker-count']", text: "3"
+  end
+
+  test "[unit] member counts per repo read the same repos the lanes do" do
+    tasks = [Task.new(metadata: { "devops" => { "repositories" => %w[turf-monster studio-engine] } }),
+             Task.new(metadata: { "devops" => { "repositories" => %w[turf-monster] } })]
+
+    assert_equal({ "turf-monster" => 2, "studio-engine" => 1 }, release_member_counts_by_repo(tasks))
+    assert_equal "waiting", release_app_tracker_word(:pending)
+    assert_equal release_app_tracker_segment_class(:pending), release_app_tracker_segment_class(:unknown),
+                 "an unknown state draws as waiting, never as a verdict"
   end
 
   test "[component] Last shows when it shipped, the Pokémon that ran it, and its features per app" do
@@ -143,8 +191,11 @@ class DeploySummaryCardsTest < ActionView::TestCase
 
     render partial: "tasks/release_summary_card", locals: { current_release: nil, last_release: release.reload, cards: [] }
 
-    assert_select "[data-test='release-summary-last-shipped'] time[datetime='#{release.shipped_at.in_time_zone.iso8601}']", 1
+    # ONE LINE: label, ship time, how long it took — and the conductor floated right.
+    assert_select "[data-test='release-summary-last-line'] [data-test='release-summary-last-shipped'] time[datetime='#{release.shipped_at.in_time_zone.iso8601}']", 1
     assert_select "[data-test='release-summary-last-shipped']", text: /Shipped/
+    assert_select "[data-test='release-summary-last-line'] [data-test='release-summary-last-timing']", text: /took/
+    assert_select "[data-test='release-summary-last-line'] [data-test='release-summary-last-mascot-conductor'].ml-auto", 1
     assert_select "[data-test='release-summary-last-mascot']", text: "Pidgey"
     assert_select "[data-test='release-summary-last-counts'] [data-test='app-count'][data-repo='mcritchie-studio'][data-count='2']", 1
   end

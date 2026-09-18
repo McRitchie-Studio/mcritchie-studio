@@ -1,0 +1,38 @@
+<%# ONE APP'S STAGES in the open candidate, as a pizza tracker with no labels — the
+    Releases summary card's answer to "where is each app in this release" without
+    opening the sidebar. The emoji and feature count lead (the card's app vocabulary),
+    then four pills: Assembling · Deploying QA · Confirming · Deploying, drawn from the
+    SAME per-repo lanes the full tracker in the sidebar draws (#release_repo_lanes), so
+    the two can never disagree about a phase.
+
+    Unlabelled on purpose — it is what lets three or four apps share one line — but
+    never unnamed: the title and the accessible name spell out every phase and its
+    state, and "2 of 4 done".
+
+    Locals: lane (a #release_repo_lanes entry), count (features for this repo) %>
+<% lane = local_assigns.fetch(:lane) %>
+<% count = local_assigns[:count].to_i %>
+<% phases = lane[:phases] %>
+<% applicable = phases.reject { |phase| phase[:state].to_sym == :na } %>
+<% done = applicable.count { |phase| phase[:state].to_sym == :done } %>
+<% summary = "#{lane[:repo]}: #{done} of #{applicable.size} stages done — " +
+             phases.map { |phase| "#{phase[:label]} #{release_app_tracker_word(phase[:state])}" }.join(", ") %>
+<span class="inline-flex items-center gap-1.5"
+      role="img" aria-label="<%= summary %>" title="<%= summary %>"
+      data-test="release-app-tracker"
+      data-repo="<%= lane[:repo] %>"
+      data-done="<%= done %>"
+      data-of="<%= applicable.size %>">
+  <span class="text-sm leading-none" aria-hidden="true"><%= lane[:emoji] %></span>
+  <% if count.positive? %>
+    <span class="text-sm font-semibold tabular-nums text-heading" aria-hidden="true" data-test="release-app-tracker-count"><%= count %></span>
+  <% end %>
+  <span class="flex items-center gap-0.5" aria-hidden="true">
+    <% phases.each do |phase| %>
+      <span class="h-2 w-2.5 rounded-[1px] first:rounded-l-full last:rounded-r-full <%= release_app_tracker_segment_class(phase[:state]) %>"
+            data-test="release-app-tracker-segment"
+            data-phase="<%= phase[:key] %>"
+            data-state="<%= phase[:state] %>"></span>
+    <% end %>
+  </span>
+</span>

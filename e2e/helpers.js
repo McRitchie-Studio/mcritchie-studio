@@ -260,6 +260,25 @@ async function openDeploySidebar(page, panel) {
   await expect(toggle).toHaveAttribute("aria-expanded", "true");
   const sidebar = page.locator(`#deploy-sidebar-${panel}`);
   await expect(sidebar).toBeVisible();
+  // …AND SETTLED. The sidebar is "visible" from the first frame of its 300ms slide-in,
+  // while it is still off to the right, so geometry read then describes a panel in
+  // motion — measured: a seal read at x=1636 beside a state badge read at x=1327, one
+  // frame apart, in a sidebar whose right edge is 1280. Wait for the slide to finish.
+  // A transition Alpine cancels as it swaps its classes REJECTS `finished` with an
+  // AbortError — it has still ended, so a cancel counts as done. Then the box must hold
+  // still across two frames, which is the property the callers actually rely on.
+  await sidebar.evaluate(async (el) => {
+    await Promise.all(el.getAnimations().map((a) => a.finished.catch(() => {})));
+    const frame = () => new Promise((resolve) => requestAnimationFrame(resolve));
+    let last = "";
+    for (let i = 0; i < 60; i += 1) {
+      await frame();
+      const r = el.getBoundingClientRect();
+      const now = `${Math.round(r.left)},${Math.round(r.width)}`;
+      if (now === last) return;
+      last = now;
+    }
+  });
   return sidebar;
 }
 

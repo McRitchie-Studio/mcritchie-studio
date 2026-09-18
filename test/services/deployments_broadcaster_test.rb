@@ -556,6 +556,28 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
     refute_includes targets, "release-summary-card"
   end
 
+  # A release MEMBER's candidate-CI tick moves the Releases summary too: its per-app
+  # tracker's Assembling pill is exactly that CI.
+  test "[integration] ci_progress for a member's release-branch job refreshes the Releases summary" do
+    release = Release.open!
+    task = Task.create!(title: "Member tick summary task", stage: "reviewed",
+                        metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } })
+    release.add(task)
+    job = seed_ci(repo: "McRitchie-Studio/mcritchie-studio", branch: Release::BRANCH, sha: "member-summary-sha", passed: 3, pending: 1)
+
+    targets = capture_turbo_stream_broadcasts("deployments") { DeploymentsBroadcaster.ci_progress(job) }
+                .map { |s| s["target"] }
+
+    assert_includes targets, "current-release"
+    assert_includes targets, "release-summary-card"
+  end
+
+  test "[unit] release_summary pushes the Releases summary card alone" do
+    streams = capture_turbo_stream_broadcasts("deployments") { DeploymentsBroadcaster.release_summary(cards: []) }
+
+    assert_equal %w[release-summary-card], streams.map { |s| s["target"] }
+  end
+
   test "[integration] ci_progress with no eligible task or release broadcasts nothing" do
     job = CiCheckJob.new(repo: "McRitchie-Studio/mcritchie-studio", job_id: 1, head_sha: "orphan-sha",
                          head_branch: "feat/nobody", workflow_name: "CI", status: "queued")

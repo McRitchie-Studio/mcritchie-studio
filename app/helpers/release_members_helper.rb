@@ -67,6 +67,16 @@ module ReleaseMembersHelper
     end.sort_by { |entry, index| [-entry[:count], index] }.map(&:first)
   end
 
+  # FEATURES PER MEMBER REPO, keyed by repo, for the Releases summary card's per-app
+  # trackers. Read through Task#release_repos — the SAME derivation Release#member_repos
+  # (and so the tracker's lanes) uses — so a lane can never show a count its own member
+  # set disagrees with. #release_member_repo_counts groups by EMOJI for the cluster.
+  def release_member_counts_by_repo(tasks)
+    Array(tasks).each_with_object(Hash.new(0)) do |task, counts|
+      task.release_repos.each { |repo| counts[repo] += 1 }
+    end
+  end
+
   def release_member_expense_weight(task)
     size = release_member_size(task)
     TASK_SIZE_WEIGHTS.fetch(size.to_s, 0)

@@ -1421,6 +1421,27 @@ module ApplicationHelper
     }
   end
 
+  # ONE SEGMENT OF A RELEASES-CARD APP TRACKER — the unlabelled "pizza tracker" each
+  # member repo gets on the Releases summary card: its four release phases
+  # (#release_repo_lanes — Assembling, Deploying QA, Confirming, Deploying) as four
+  # pills, no labels, so a whole candidate reads at a glance. The labels are not lost:
+  # each segment's title and the tracker's accessible name carry them, so a state is
+  # never colour alone. Running pulses (and holds still for reduced motion); a phase
+  # that does not apply (a gem has no deploy) is a dashed outline, and is not counted.
+  RELEASE_APP_TRACKER_SEGMENT = {
+    done: "bg-emerald-500",
+    running: "bg-amber-500 animate-pulse motion-reduce:animate-none",
+    failed: "bg-red-500",
+    pending: "bg-[var(--color-border-strong)]",
+    na: "border border-dashed border-[var(--color-border-strong)]"
+  }.freeze
+  RELEASE_APP_TRACKER_WORDS = { done: "done", running: "running", failed: "failed", pending: "waiting", na: "n/a" }.freeze
+
+  def release_app_tracker_segment_class(state) =
+    RELEASE_APP_TRACKER_SEGMENT.fetch(state.to_sym, RELEASE_APP_TRACKER_SEGMENT[:pending])
+
+  def release_app_tracker_word(state) = RELEASE_APP_TRACKER_WORDS.fetch(state.to_sym, "waiting")
+
   # THE FOUR RELEASE PHASES' COLOURS (Release::Flow::PHASES) — identity, so categorical,
   # and deliberately NONE of the page's status hues: emerald and amber already mean
   # "passed" and "running" on every CI meter here, and a green QA segment would read as
