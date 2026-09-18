@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_18_040000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_18_170000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -805,6 +805,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_18_040000) do
     t.index ["s3_key"], name: "index_image_caches_on_s3_key", unique: true
   end
 
+  create_table "knowledge_sources", force: :cascade do |t|
+    t.jsonb "access", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.boolean "enabled", default: true, null: false
+    t.string "entity"
+    t.string "external_root_id", null: false
+    t.string "kind", null: false
+    t.string "last_walk_error"
+    t.datetime "last_walked_at"
+    t.string "name", null: false
+    t.datetime "updated_at", null: false
+    t.index ["kind", "external_root_id"], name: "index_knowledge_sources_on_kind_and_external_root_id", unique: true
+  end
+
   create_table "migration_lane_claims", force: :cascade do |t|
     t.datetime "acquired_at"
     t.datetime "claim_expires_at"
@@ -1265,6 +1279,33 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_18_040000) do
     t.index ["key"], name: "index_solid_queue_semaphores_on_key", unique: true
   end
 
+  create_table "source_documents", force: :cascade do |t|
+    t.jsonb "access", default: {}, null: false
+    t.bigint "byte_size"
+    t.string "checksum"
+    t.datetime "created_at", null: false
+    t.string "entity"
+    t.string "external_id", null: false
+    t.string "indexed_version"
+    t.bigint "knowledge_source_id", null: false
+    t.datetime "last_indexed_at"
+    t.datetime "last_seen_at"
+    t.jsonb "metadata", default: {}, null: false
+    t.string "mime_type"
+    t.string "owner_email"
+    t.jsonb "parents", default: [], null: false
+    t.datetime "remote_modified_at"
+    t.string "remote_version"
+    t.string "status", default: "active", null: false
+    t.jsonb "tags", default: [], null: false
+    t.string "title"
+    t.datetime "updated_at", null: false
+    t.string "web_url"
+    t.index ["knowledge_source_id", "external_id"], name: "index_source_documents_on_knowledge_source_id_and_external_id", unique: true
+    t.index ["knowledge_source_id", "status"], name: "index_source_documents_on_knowledge_source_id_and_status"
+    t.index ["knowledge_source_id"], name: "index_source_documents_on_knowledge_source_id"
+  end
+
   create_table "studio_email_deliveries", force: :cascade do |t|
     t.string "action", null: false
     t.jsonb "args", default: [], null: false
@@ -1640,6 +1681,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_18_040000) do
   add_foreign_key "solid_queue_ready_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
   add_foreign_key "solid_queue_recurring_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
   add_foreign_key "solid_queue_scheduled_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
+  add_foreign_key "source_documents", "knowledge_sources"
   add_foreign_key "studio_email_deliveries", "users"
   add_foreign_key "tracked_github_builder_repos", "tracked_github_builders"
 end
