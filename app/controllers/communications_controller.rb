@@ -17,7 +17,9 @@ class CommunicationsController < ApplicationController
     @kind    = permitted(params[:kind], Communication::KINDS)
     @status  = permitted(params[:status], Communication::STATUSES)
     @channel = permitted(params[:channel], Communication::CHANNELS)
-    @entity  = params[:entity].presence
+    # A string or nothing: entity[x]=1 arrives as nested Parameters, which the
+    # filter links cannot rebuild into a query string.
+    @entity  = params[:entity].is_a?(String) ? params[:entity].presence : nil
 
     scope = Communication.all
     scope = scope.where(kind: @kind) if @kind

@@ -124,6 +124,16 @@ class CommunicationsIndexTest < ActionDispatch::IntegrationTest
     assert_equal 4, ids.size, "unknown values drop out and the page shows everything"
   end
 
+  test "a STRUCTURED entity param is ignored, not a 500" do
+    # entity[x]=1 arrives as nested Parameters, which the filter links cannot
+    # turn back into a query string — the page raised instead of rendering.
+    log_in_as @admin
+    get communications_path(entity: { x: "1" })
+
+    assert_response :success
+    assert_equal 4, response.body.scan(/data-comm-id="(\d+)"/).size
+  end
+
   test "a privileged row is LABELLED but its body is not rendered" do
     secret_body = "synthetic-privileged-body-marker"
     Communication.create!(kind: "general", channel: "call", entity: ENTITY, external_id: "p-1",
