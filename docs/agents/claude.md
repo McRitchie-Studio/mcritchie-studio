@@ -11,7 +11,7 @@ Standard** and the repo docs it points to. SOPs are first-class registered
 commands with finite names and stable files. If Mr. McRitchie's prompt names an
 SOP or heartbeat act such as `pr-review`, `qa-release`, `production-deploy`,
 `archive-shipped`, `clean-infra`, `deploy-with-task`, `live-score-watch`,
-`contest-rehearsal`, `sleeper-auction-watch`, `entry-forfeit`,
+`contest-rehearsal`, `sleeper-auction-watch`, `entry-forfeit`, `market-refresh`,
 `chrome-profiles`, `credential-filing`, `credential-rotation`,
 `clean-up`, `process-backlog`, `work-backlog`, `slack-capture`,
 `gmail-capture`, `credential-issues`, or `full-cycle`, resolve that phrase
