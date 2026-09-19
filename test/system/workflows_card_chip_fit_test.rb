@@ -287,8 +287,8 @@ class WorkflowsCardChipFitTest < ApplicationSystemTestCase
     assert_selector OPENED, wait: OPEN_WAIT
   end
 
-  # THE CLICK LANDED WHERE IT WAS CERTIFIED — proved by EITHER of two readings, because a
-  # late nav collapse after certification shows up as one or the other, never neither:
+  # THE CLICK LANDED WHERE IT WAS CERTIFIED — proved by ANY of three readings, because a
+  # late nav collapse after certification shows up as one, the other, or a little of each:
   #
   #   same scroll position  the collapse slid the control a few px, but the page did not
   #                         scroll (measured 2026-09-10 on the old Workflows toggle:
@@ -298,6 +298,9 @@ class WorkflowsCardChipFitTest < ApplicationSystemTestCase
   #                         (measured 2026-09-18 on this opener with frames delayed 55ms:
   #                         box 33,201,292,17 at both, scrollY 408 then 376 — exactly the
   #                         collapse's 32px)
+  #   centre still on it    BOTH at once — anchoring scrolled 32px AND the box slid 4px
+  #                         (measured 2026-09-19, 2 of 11 runs: scrollY 408 then 376, box
+  #                         y 197 then 201), so the certified centre is still on the control
   #
   # Which one a layout gets depends on where Chrome picks its anchor node, which is why
   # a guard pinned to only one of them went red the moment the control moved. The bug this
@@ -306,14 +309,22 @@ class WorkflowsCardChipFitTest < ApplicationSystemTestCase
   def assert_click_in_certified_frame(landed)
     same_scroll = last_settled_scroll_y == landed["scroll_y"]
     same_box = last_settled_box == landed["box"]
-    assert same_scroll || same_box,
+    assert same_scroll || same_box || certified_centre_on?(landed["box"]),
            "click_when_settled certified the opener at scrollY #{last_settled_scroll_y} " \
            "(box #{last_settled_box}) but the click was dispatched at scrollY " \
-           "#{landed['scroll_y']} (box #{landed['box']}) — BOTH moved. The geometry was certified " \
-           "in a frame the click then left: `element.click` scrolls the control into view, and " \
+           "#{landed['scroll_y']} (box #{landed['box']}) — BOTH moved, off the certified centre. " \
+           "The geometry was certified in a frame the click then left: `element.click` scrolls " \
+           "the control into view, and " \
            "that scroll collapses this app's sticky nav under the pointer. Certify AFTER " \
            "entering the frame the click happens in — a longer wait before the scroll cannot " \
            "help, because the box really is stable where it was measured."
+  end
+
+  # Is the centre of the box the settle loop certified inside the box the click landed in?
+  def certified_centre_on?(landed_box)
+    x, y, w, h = last_settled_box.to_s.split(",").map(&:to_f)
+    lx, ly, lw, lh = landed_box.to_s.split(",").map(&:to_f)
+    (x + w / 2).between?(lx, lx + lw) && (y + h / 2).between?(ly, ly + lh)
   end
 
   # Hold every requestAnimationFrame callback back +ms+, and prove the stub is live before

@@ -161,7 +161,8 @@ class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
   # What the settle loop last certified: the box ("x,y,width,height") and the scroll
   # position it was sampled at.
   #
-  # THE GUARD ACCEPTS THE SCROLL POSITION OR THE BOX. The property worth pinning is that
+  # THE GUARD ACCEPTS THE SCROLL POSITION, THE BOX, OR THE CERTIFIED CENTRE STILL ON THE
+  # CONTROL (both can move a little at once). The property worth pinning is that
   # the geometry was certified in the frame the click happens in. On a runner whose frames
   # arrive late, the settle loop reads two identical samples BEFORE the nav collapse's
   # first rAF step, and that step then lands between certification and pointerdown. Where
