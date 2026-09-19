@@ -32,7 +32,11 @@ module Workspace
   # cannot be used is a broken credential, and the one thing this must never do
   # is dress a filing mistake as an empty Drive.
   module Credentials
-    ITEM = "op://industries-agents/google.drive.agents/credential".freeze
+    # Named by the credential-filing convention, <service>.<entity>.<lane>:
+    # google.industries.agents. The first draft of this constant said
+    # google.drive.agents, but "drive" is not an entity, and a NEW item follows the
+    # convention rather than being grandfathered in.
+    ITEM = "op://industries-agents/google.industries.agents/credential".freeze
 
     # WHOSE MAILBOX AND DRIVE THIS ACTS AS. Pinned to a constant rather than
     # passed in, because domain-wide delegation cannot be narrowed at the grant:

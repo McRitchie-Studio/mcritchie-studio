@@ -18,8 +18,12 @@ module Workspace
     # What a file listing needs to make a filing decision without a second
     # round-trip: identity, type, revision, and — load-bearing — the owner, so
     # a caller can tell OUR file from a third party's before it writes.
-    FILE_FIELDS = "id,name,mimeType,modifiedTime,size,md5Checksum,headRevisionId," \
-                  "owners(emailAddress),capabilities(canEdit),parents,webViewLink,trashed".freeze
+    # `version` is the index's freshness key: Google raises it on EVERY server-side
+    # change, and it is the only change signal that covers native Google Docs —
+    # md5Checksum and headRevisionId are present for binary files only.
+    FILE_FIELDS = "id,name,mimeType,modifiedTime,version,size,md5Checksum,headRevisionId," \
+                  "owners(emailAddress),capabilities(canEdit),parents,webViewLink,trashed," \
+                  "shortcutDetails(targetId,targetMimeType)".freeze
 
     LIST_FIELDS = "nextPageToken,files(#{FILE_FIELDS})".freeze
 
