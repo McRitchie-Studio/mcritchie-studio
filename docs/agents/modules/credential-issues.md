@@ -141,9 +141,9 @@ a comment saying what was done: the rotation receipt, or the repair.
 
 - **It does not rotate anything.** That is `credential-rotation`.
 - **It does not define the weekly pass** — the operator owns that process.
-- **It does not clean up records already on the public board.** One exists today:
-  a follow-up task that describes a latent problem in its public text. Once the
-  private log exists, move that detail into an issue and cut the task's public
-  text back to the change being made.
+- **It does not clean up records already on the public board.** Where a task's
+  public text describes a credential problem, move that detail into an issue once
+  the private log exists, and cut the task's public text back to the change being
+  made.
 - **It does not lower the bar for a real exposure of something that matters.**
   §1's first row is the old rule, "rotate first", kept exactly where it belongs.
