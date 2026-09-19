@@ -1137,9 +1137,9 @@ module ApplicationHelper
   # settled in agents/turf_monster/HEARTBEAT.md.
   #
   # The CARD's own reason is separate, and it is the one to state here because it is
-  # measurable: the slug is 21 characters and needs 114px, while a chip's text area
-  # at the card's 728px cap is 99px, so it CLIPS — measured 2026-09-09, held by
-  # test/system/workflows_card_chip_fit_test.rb. It is NOT that a chip implies a
+  # measurable: the slug is 21 characters and needs 114px, while an act chip's text
+  # area on the summary card's carousel (four cards up at xl) is 98px, so it CLIPS —
+  # measured 2026-09-18, held by test/system/workflows_card_chip_fit_test.rb. It is NOT that a chip implies a
   # cadence: clean-infra, deploy-with-task and contest-rehearsal are all on the card
   # and all three are direct-invoke or off-sequence, so that argument never survived
   # contact with the card's own contents. Retired 2026-09-09; do not restate it.
