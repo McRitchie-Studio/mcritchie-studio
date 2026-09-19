@@ -1,38 +1,38 @@
 require "application_system_test_case"
 
-# [system] The Workflows card holds five soul columns inside a HALF-width dashboard
-# card, which leaves each chip ~126px. Two different rules apply, and conflating them
-# is what made this hard:
+# [system] The Workflows chips are drawn in TWO places since the /deployments summary
+# row (2026-09-18), and both are measured here from the RENDERED box:
+#
+#   THE CAROUSEL  the Workflows summary card — one quarter of the row at xl — shows one
+#                 soul at a time, its acts TWO TO A LINE. Every slide stays laid out
+#                 (the wheel slides them, it never display:nones them), so every chip is
+#                 measurable without turning the wheel.
+#   THE SIDEBAR   every soul and every command, one chip beside each description —
+#                 display:none until the card is clicked, so it is OPENED first.
+#
+# Two different rules apply to a chip, and conflating them is what made this hard:
 #
 #   ACT rows  — a single hyphenated token (`production-deploy`). CSS breaks at the
 #               hyphen, so ordinary wrapping renders it as two commands. These must
 #               sit on ONE line and must not be ellipsised, or the phrase cannot be
 #               read off the card at all.
-#   ROW 1     — a phrase ("Turf Monster Heartbeat", 22 chars). It does not fit 126px
-#               at any readable size, so it is ALLOWED to wrap — but only at its
-#               spaces, never mid-word, and never clipped.
+#   ROW 1     — a phrase ("Turf Monster Heartbeat", 22 chars). It is ALLOWED to wrap —
+#               but only at its spaces, never mid-word, and never clipped.
 #
-# Both are measured from the RENDERED box, not asserted as class strings: a class
-# assertion stays green through a font swap, a Tailwind upgrade, or a longer act name
-# — exactly the changes that would silently reintroduce the break.
+# Measured, not asserted as class strings: a class assertion stays green through a
+# font swap, a Tailwind upgrade, or a longer act name — exactly the changes that would
+# silently reintroduce the break.
 #
-# THE CARD IS EXPANDED FIRST, and that is load-bearing. Rows past +compact_limit+ (3)
-# are hidden behind the card's Show All toggle, and a display:none box measures 0x0 —
-# scrollWidth 0, clientWidth 0, height 0 — which sails through every check below. So
-# this file silently measured 10 of 11 chips: `full-cycle` and any THIRD act a soul
-# gained were exempt, and the third act is exactly where a new one lands. A file that
-# exists to catch "a longer future act" could not see the future act. Measured
-# 2026-09-09. +assert_every_chip_was_measured+ is the control that keeps it honest,
-# and +reveal_compact_rows+ now fails on its OWN cause rather than falling through to
-# it — a toggle that never opened is not a chip that does not fit.
+# THE SIDEBAR IS OPENED BEFORE IT IS MEASURED, and that is load-bearing. A display:none
+# box measures 0x0 — scrollWidth 0, clientWidth 0, height 0 — which sails through every
+# check below. +assert_every_chip_was_measured+ is the control that keeps it honest, and
+# +open_workflows_sidebar+ fails on its OWN cause rather than falling through to it — an
+# opener that never opened is not a chip that does not fit.
 #
-# ELEVEN, NOT TWELVE, which is what this header said until 2026-09-09. The card renders
-# 2 + 2 + 2 + 3 + 2 act chips (ApplicationHelper#heartbeat_launchers, with the card's own
-# order for Carl/Avi/Steffon), and ALEX ALONE has a third act — so `full-cycle` is the
-# only row past the limit today. The twelfth chip in the old count was
-# `sleeper-auction-watch`, the act deliberately carved OUT of this card, which has no
-# chip here to measure. A wrong number in the header of a file whose whole job is to
-# stop wrong numbers standing.
+# THIS FILE ALSO GUARDS click_when_settled's CERTIFIED-FRAME HALF (see the helper in
+# application_system_test_case.rb, which names it). The opener — the Workflows summary
+# card — is the control those guards click: below the fold on a short window, so the
+# driver has to scroll, and a scroll collapses this app's sticky nav under the pointer.
 class WorkflowsCardChipFitTest < ApplicationSystemTestCase
   setup do
     %w[carl avi steffon alex].each { |s| Agent.find_or_create_by!(slug: s) { |a| a.name = s.capitalize } }
@@ -48,67 +48,55 @@ class WorkflowsCardChipFitTest < ApplicationSystemTestCase
     page.driver.browser.manage.window.resize_to(*ApplicationSystemTestCase::SCREEN_SIZE)
   end
 
-  # The card is HALF width from xl up (the dashboard goes 2-col there), so viewport
-  # width alone does not predict chip width — 1300px is TIGHTER than 1100px, because
-  # at 1100 the card owns the whole row and at 1300 it owns half a smaller screen.
-  # Sweep either side of every step: below sm, full-width 5-up, the xl pinch, and
-  # the 2xl return to 5-up.
+  # Either side of every step the summary row takes: one card per line below sm, two
+  # up from sm, four up from xl (1280 — the NARROWEST the carousel ever gets, a quarter
+  # of a small screen), and the 2xl container cap.
   WIDTHS = [ 700, 1100, 1300, 1536, 1728 ].freeze
 
-  test "every launcher chip renders its command on a single line at every width" do
+  test "every workflow chip renders its command on a single line at every width" do
     WIDTHS.each { |w| assert_chips_fit_at(w) }
   end
 
-
   # THE CARVE-OUT'S REASON, HELD. tasks/_heartbeats_card states that
   # `sleeper-auction-watch` cannot be a chip because its 21-character slug clips the
-  # card's chip. That is a claim about pixels, so it is asserted against pixels — and
-  # it is asserted in BOTH directions, because the two acts kept off this card are
-  # kept off for DIFFERENT reasons and conflating them is how the wrong one gets
-  # copied forward. `archive-shipped` fits fine; it is absent because
-  # production-deploy already runs it. If the card is ever widened enough for the
-  # auction slug to fit, this reddens and the comment must be rewritten rather than
-  # left standing as a reason that has quietly expired.
+  # carousel's act chip at its narrowest. That is a claim about pixels, so it is asserted
+  # against pixels — and in BOTH directions, because the two acts kept off the card are
+  # kept off for DIFFERENT reasons and conflating them is how the wrong one gets copied
+  # forward. `archive-shipped` fits fine; it is absent because production-deploy already
+  # runs it. If the carousel is ever widened enough for the auction slug to fit, this
+  # reddens and the comment must be rewritten rather than left standing as a reason that
+  # has quietly expired.
   #
-  # THE WIDTH IS 1728, NOT 1536, AND THAT IS THE MEASUREMENT'S WHOLE FOOTING. 1536 is
-  # EXACTLY Tailwind's `2xl` breakpoint — the width at which the card's ladder returns to
-  # `2xl:grid-cols-5`. One pixel below it the grid is `xl:grid-cols-3` and the chip hits
-  # its `max-w-[11rem]` cap. MEASURED at 1535px, 2026-09-09: three columns, and
-  # `sleeper-auction-watch` needs 114px of 114px — so `assert_operator 114, :>, 114`
-  # fails and prints the text below, which tells the reader the carve-out's reason has
-  # expired. A scrollbar, a Chrome bump, or a different runner is all it takes. An
-  # argument holder that can cry "expired" for a reason unrelated to the argument
-  # destroys the very property it was built to hold. 1728 is the sweep's own top width,
-  # sits well inside 2xl, and measures the identical budget: the card is at its 728px cap
-  # from 1536 up, so the chip's text area is the same at both. The 5-up grid is ASSERTED
+  # 1300, NOT 1280. 1280 is EXACTLY Tailwind's `xl` — the width at which the row goes
+  # four up — and one pixel of scrollbar below it the row is two up and every chip is
+  # twice as wide. A measurement that can flip on a runner's scrollbar destroys the very
+  # property it was built to hold. 1300 sits inside xl, and the four-up row is ASSERTED
   # below before anything is measured, so the test states its precondition instead of
   # assuming it.
-  DESIGN_WIDTH = 1728
+  DESIGN_WIDTH = 1300
   OFF_CARD_FITS     = "archive-shipped".freeze        # 15 chars — absent for a NON-geometry reason
   OFF_CARD_TOO_WIDE = "sleeper-auction-watch".freeze  # 21 chars — absent because it does not fit
 
-  test "the card's chip budget still explains which acts are kept off it" do
+  test "the carousel's chip budget still explains which acts are kept off it" do
     page.driver.browser.manage.window.resize_to(DESIGN_WIDTH, 1000)
     visit deployments_path
-    assert_selector "[data-test='heartbeats-card']", wait: 10
-    reveal_compact_rows
+    assert_selector SUMMARY, wait: 10
 
-    columns = grid_column_count
-    assert_equal 5, columns,
-                 "the budget asserted here is the FIVE-UP card's, and at #{DESIGN_WIDTH}px the grid " \
-                 "resolved to #{columns} column(s) instead. Read nothing below until that is fixed: " \
-                 "at 3-up the chip hits its max-w-[11rem] cap and both measurements are about a card " \
-                 "this test did not mean to measure. Check the ladder in tasks/_heartbeats_card and " \
-                 "that DESIGN_WIDTH is not sitting on a breakpoint edge."
+    columns = summary_row_column_count
+    assert_equal 4, columns,
+                 "the budget asserted here is the FOUR-UP row's, and at #{DESIGN_WIDTH}px the summary " \
+                 "row resolved to #{columns} column(s) instead. Read nothing below until that is " \
+                 "fixed: at two up every chip is twice as wide and both measurements are about a card " \
+                 "this test did not mean to measure."
 
-    chip = page.all("[data-test='heartbeats-card'] button[data-row='action'] code", visible: :all).first
+    chip = page.all("#{SUMMARY} button[data-row='action'] code", visible: :all).first
     assert chip, "no act chip to measure the budget against"
 
     wide = measure_in_chip(chip, OFF_CARD_TOO_WIDE)
     assert_operator wide[:need], :>, wide[:room],
                     "#{OFF_CARD_TOO_WIDE} now needs #{wide[:need]}px of #{wide[:room]}px and FITS. " \
-                    "The card's comment in tasks/_heartbeats_card keeps it off on the grounds that " \
-                    "it clips; that reason has expired, so rewrite the comment rather than leave a " \
+                    "The comment in tasks/_heartbeats_card keeps it off on the grounds that it " \
+                    "clips; that reason has expired, so rewrite the comment rather than leave a " \
                     "dead rationale standing. The product decision is separate and still stands — " \
                     "see docs/agents/agents/turf_monster/HEARTBEAT.md."
 
@@ -120,55 +108,55 @@ class WorkflowsCardChipFitTest < ApplicationSystemTestCase
   end
 
   # THE GUARD FOR THE HELPER ITSELF. Everything above is only readable as a verdict about
-  # WIDTH if a reveal that never happened cannot arrive dressed as one. So break the
-  # reveal in each of the four ways it can fail and prove the failure names the TOGGLE —
+  # WIDTH if an opening that never happened cannot arrive dressed as one. So break the
+  # opening in each of the four ways it can fail and prove the failure names the OPENER —
   # and, just as load-bearing, that it does not read as the width or hidden-chip verdict.
-  # Without this the fix is a promise; with it, deleting any one of the four flunks below
-  # turns this red.
-  test "a reveal that cannot open fails as a toggle, never as a chip width" do
+  test "a sidebar that cannot open fails as the opener, never as a chip width" do
     load_workflows_card
 
-    # 1. Alpine has not hydrated the card: the compacted rows still carry x-cloak, so a
-    #    click would land before @click is bound and be swallowed in silence. Its observer
-    #    is stopped first BECAUSE the signal is real — a live Alpine strips a re-added
-    #    x-cloak within the microtask, which is the readiness fact the reveal relies on.
-    #    Measured 2026-09-09 on Alpine 3.16.1: 0 cloaked elements under the card once
-    #    hydrated, 1 with the observer stopped. The throw is deliberate — if this API ever
-    #    goes, this scenario must fail loudly rather than quietly stop simulating anything.
+    # 1. Alpine has not hydrated the sidebar: it still carries the x-cloak Alpine strips
+    #    as it initializes, so a click would land before @click is bound and be swallowed
+    #    in silence. The observer is stopped first BECAUSE the signal is real — a live
+    #    Alpine strips a re-added x-cloak within the microtask. The throw is deliberate —
+    #    if this API ever goes, this scenario must fail loudly rather than quietly stop
+    #    simulating anything.
     page.execute_script(<<~JS)
       if (!window.Alpine || !window.Alpine.stopObservingMutations) {
-        throw new Error('Alpine.stopObservingMutations is gone: this scenario no longer simulates an unhydrated card.');
+        throw new Error('Alpine.stopObservingMutations is gone: this scenario no longer simulates an unhydrated sidebar.');
       }
       window.Alpine.stopObservingMutations();
-      document.querySelector("#{CARD} [data-test='heartbeat-copy-row']").setAttribute('x-cloak', '');
+      document.querySelector("#{SIDEBAR}").setAttribute('x-cloak', '');
     JS
-    assert_reveal_blames_the_toggle { reveal_compact_rows(wait: 0.5) }
+    assert_opening_blames_the_opener { open_workflows_sidebar(wait: 0.5) }
 
-    # 2. No toggle at all — the card stopped offering a reveal.
+    # 2. No opener at all — the card stopped offering one.
     load_workflows_card
-    page.execute_script(%(document.querySelector("#{TOGGLE}").remove()))
-    assert_reveal_blames_the_toggle { reveal_compact_rows(wait: 0.5) }
+    page.execute_script(%(document.querySelector("#{OPENER}").remove()))
+    assert_opening_blames_the_opener { open_workflows_sidebar(wait: 0.5) }
 
-    # 3. A toggle that is present, clickable, and INERT — the swallowed click, reproduced.
-    #    The replacement carries no Alpine attributes, so Alpine has nothing to re-bind
-    #    when its observer sees the new node, and the state can never flip.
+    # 3. An opener that is present, clickable, and INERT — the swallowed click,
+    #    reproduced. The card is swapped for a copy stripped of every Alpine attribute,
+    #    so Alpine has nothing to bind when its observer sees the new node and `panel`
+    #    can never flip. Its heading button keeps the server's aria-expanded="false", so
+    #    the failure it produces is the click's, not the hydration check's.
     load_workflows_card
     page.execute_script(<<~JS)
-      var live = document.querySelector("#{TOGGLE}");
-      var dead = document.createElement('button');
-      dead.setAttribute('type', 'button');
-      dead.setAttribute('data-test', 'heartbeat-compact-toggle');
-      dead.setAttribute('aria-expanded', 'false');
-      dead.textContent = 'Show All';
+      var live = document.querySelector("#{SUMMARY}");
+      var dead = live.cloneNode(true);
+      [dead].concat(Array.from(dead.querySelectorAll('*'))).forEach(function (el) {
+        Array.from(el.attributes).forEach(function (a) {
+          if (/^(x-|@|:)/.test(a.name)) el.removeAttribute(a.name);
+        });
+      });
       live.parentNode.replaceChild(dead, live);
     JS
-    assert_reveal_blames_the_toggle { reveal_compact_rows(wait: 0.5) }
+    assert_opening_blames_the_opener { open_workflows_sidebar(wait: 0.5) }
 
-    # 4. The toggle opens and the rows never paint. Measuring is stubbed to the 0px the
+    # 4. The sidebar opens and its chips never paint. Measuring is stubbed to the 0px the
     #    caller would otherwise receive and report as HIDDEN chips.
     load_workflows_card
     define_singleton_method(:act_chip_widths) { [ 0, 0 ] }
-    assert_reveal_blames_the_toggle { reveal_compact_rows(wait: 0.5) }
+    assert_opening_blames_the_opener { open_workflows_sidebar(wait: 0.5) }
   end
 
   # THE CERTIFIED-FRAME GUARD. click_when_settled promises the control had stopped moving
@@ -176,20 +164,16 @@ class WorkflowsCardChipFitTest < ApplicationSystemTestCase
   # at, so that promise means something only if the geometry was certified in the SAME
   # frame the click happens in — and the driver scrolls as the first step of the click.
   #
-  # IT COMPARES SCROLL POSITIONS, NOT BOXES, and the box version was itself the flake.
-  # Comparing boxes also pins "nothing moved between certification and pointerdown",
-  # which the helper does not promise and cannot: on a runner whose frames arrive late,
-  # the settle loop reads two identical samples before the nav collapse's first rAF step,
-  # that step lands in between, and the box moves ~4px while the click lands and the
-  # toggle opens. Measured 2026-09-10 with frames delayed 55ms: 3 of 3 red on correct
-  # code, "certified 328,422 but dispatched 328,418". The collapse never moves
-  # window.scrollY, so the scroll position carries the real claim and nothing else. The
-  # slow-frame test below holds that, rather than this comment asserting it.
+  # IT ACCEPTS THE SCROLL POSITION OR THE BOX, NOT BOTH. On a runner whose frames arrive
+  # late the settle loop can certify before the nav collapse's first rAF step, and the
+  # collapse then lands between certification and pointerdown — moving the control a few
+  # px, or (under scroll anchoring) scrolling the page instead. The click lands either
+  # way. See assert_click_in_certified_frame for both measurements.
   #
   # IT BITES BY CONSTRUCTION: delete the scrollIntoView from click_when_settled and the
-  # geometry is certified at scrollY 0 while the driver's own scroll puts the click at
-  # scrollY 49 (measured), so this goes red naming both. The below-the-fold precondition
-  # is what guarantees the driver has to scroll at all.
+  # geometry is certified at scrollY 0 while the driver's own scroll puts the click
+  # further down. The below-the-fold precondition is what guarantees the driver has to
+  # scroll at all.
   test "the click lands in the very frame click_when_settled certified as settled" do
     assert_click_lands_in_the_certified_frame
   end
@@ -197,68 +181,83 @@ class WorkflowsCardChipFitTest < ApplicationSystemTestCase
   # THE SAME GUARD ON A STARVED RUNNER, made deterministic with the sibling file's own
   # technique (board_filter_click_stability_test.rb stubs requestAnimationFrame): every
   # frame callback is held back 55ms, which is what a loaded headless Chrome does to the
-  # nav collapse. That is the condition that turned the box comparison red, so it is the
-  # condition this guard has to stay green under — and it still reddens when the
-  # pre-scroll is deleted, because a rAF delay cannot move the driver's scroll.
+  # nav collapse. It still reddens when the pre-scroll is deleted, because a rAF delay
+  # cannot move the driver's scroll.
   test "the certified frame holds on a runner whose frames arrive late" do
     assert_click_lands_in_the_certified_frame(frame_delay_ms: 55)
   end
 
   # THE WITNESS GUARD. The settle loop clears on two identical consecutive samples, so a
   # runner starved past its 50ms sample interval cannot tell a page that HAS settled from
-  # one that has not moved YET — which is how every previous fix here stayed marginal. So
-  # a swallowed click must be a fact the helper reads, not a risk it estimates.
+  # one that has not moved YET. So a swallowed click must be a fact the helper reads, not
+  # a risk it estimates.
   #
   # The swallow is made DETERMINISTIC rather than waited for: a one-shot pointerdown
-  # handler shoves the toggle 240px down the page, so pointerup lands somewhere else and
-  # the browser fires `click` on the common ancestor — the exact production sequence, on a
-  # handler instead of a runner. The retry then finds a page that is genuinely still.
+  # handler shoves the card 240px down the page, so pointerup lands somewhere else and
+  # the browser fires `click` on the common ancestor — the exact production sequence, on
+  # a handler instead of a runner. The retry then finds a page that is genuinely still.
   #
   # IT BITES BY CONSTRUCTION: drop the witness/retry loop from click_when_settled and this
-  # goes red as "the Show All toggle did not open within 10s of the click", which is the CI
-  # failure verbatim.
-  test "a click swallowed under the pointer is retried, not reported as a dead toggle" do
+  # goes red as "the Workflows sidebar did not open".
+  test "a click swallowed under the pointer is retried, not reported as a dead opener" do
     load_workflows_card
     swallow_the_next_click
 
-    reveal_compact_rows
+    open_workflows_sidebar
 
-    assert_selector "#{TOGGLE}[aria-expanded='true']", wait: REVEAL_WAIT
-    assert_operator toggle_pointerdowns, :>=, 2,
-                    "only #{toggle_pointerdowns} click was dispatched at the toggle, so no retry ran " \
+    assert_selector OPENED, wait: OPEN_WAIT
+    assert_operator opener_pointerdowns, :>=, 2,
+                    "only #{opener_pointerdowns} click was dispatched at the opener, so no retry ran " \
                     "and this test is a green that proves nothing: the first click landed despite the " \
-                    "shove. Check that the pointerdown handler still moves the toggle further than " \
-                    "its own height."
+                    "shove. Check that the pointerdown handler still moves the card further than its " \
+                    "own height."
   end
 
   # A retry re-scrolls and certifies a NEW frame, so the frame guard's two sides must come
   # from the attempt that LANDED. A forced swallow runs that path everywhere, not only on a
-  # starved runner. The shove moves the toggle 240px down, so the retry's scroll position
+  # starved runner. The shove moves the card 240px down, so the retry's scroll position
   # differs from the abandoned attempt's and a first-only latch cannot pass by accident.
   test "the certified frame matches the click that landed, even after a retry" do
-    page.driver.browser.manage.window.resize_to(700, 1000)
+    page.driver.browser.manage.window.resize_to(*SHORT_WINDOW)
     load_workflows_card
     record_pointerdown_frame
     swallow_the_next_click
 
-    click_when_settled(TOGGLE)
+    click_when_settled(OPENER)
 
-    assert_operator toggle_pointerdowns, :>=, 2, "no retry ran, so this proves nothing"
+    assert_operator opener_pointerdowns, :>=, 2, "no retry ran, so this proves nothing"
     landed = pointerdown_frame
-    assert_equal last_settled_scroll_y, landed["scroll_y"],
-                 "retry certified scrollY #{last_settled_scroll_y} but pointerdown read scrollY " \
-                 "#{landed['scroll_y']}: record_pointerdown_frame must keep the LAST pointerdown, " \
-                 "not an abandoned attempt's"
+    # The shove moved the card 240px, so an abandoned attempt's frame differs from the
+    # landed one in BOTH readings — a first-only latch cannot pass either way.
+    assert_click_in_certified_frame(landed)
   end
 
   private
 
-  # How far the toggle's bottom edge sits BELOW the viewport, in px. Positive means the
+  SUMMARY = "#agents-summary-card".freeze
+  # The card's own header row: its centre is the empty gap between the title and the
+  # carousel dots, so a click there lands on the CARD's surface — which is what opens the
+  # sidebar — rather than on a chip or a dot, which own their clicks.
+  OPENER  = "#agents-summary-card [data-test='summary-card-header']".freeze
+  OPENED  = "#agents-summary-card button[data-test='summary-card-toggle'][aria-expanded='true']".freeze
+  SIDEBAR = "#deploy-sidebar-agents".freeze
+  CARD    = "#deploy-sidebar-agents [data-test='heartbeats-card']".freeze
+  # Narrow AND short: two cards to a line pushes the Workflows card onto the summary
+  # row's second line, and 560px of height puts that line below the fold, so the driver
+  # has to scroll to reach it. Asserted, not assumed, in the certified-frame body.
+  SHORT_WINDOW = [ 700, 560 ].freeze
+
+  # The ceiling on each step of the opening — the card's OWN first-paint budget (the
+  # `wait: 10` on every assert_selector above), not a fresh number tuned on a warm
+  # laptop. It bounds a hang; it is not what makes the opening deterministic.
+  OPEN_WAIT = 10
+
+  # How far the opener's bottom edge sits BELOW the viewport, in px. Positive means the
   # driver must scroll to reach it, which is the precondition the frame guard needs.
-  def toggle_gap_below_fold
+  def opener_gap_below_fold
     page.evaluate_script(<<~JS).to_i
       (function () {
-        var t = document.querySelector("#{TOGGLE}");
+        var t = document.querySelector("#{OPENER}");
         return t ? Math.round(t.getBoundingClientRect().bottom - window.innerHeight) : 0;
       })()
     JS
@@ -268,32 +267,64 @@ class WorkflowsCardChipFitTest < ApplicationSystemTestCase
   # requestAnimationFrame callback back that long, installed AFTER the card has hydrated
   # so it starves the nav collapse, not Alpine's own start-up.
   def assert_click_lands_in_the_certified_frame(frame_delay_ms: nil)
-    # 700x1000 is the sweep's own narrowest width and it puts the toggle below the fold,
-    # which is what forces the driver to scroll. Asserted, not assumed, below.
-    page.driver.browser.manage.window.resize_to(700, 1000)
+    page.driver.browser.manage.window.resize_to(*SHORT_WINDOW)
     load_workflows_card
 
-    below_fold = toggle_gap_below_fold
+    below_fold = opener_gap_below_fold
     assert_operator below_fold, :>, 0,
-                    "the toggle was already fully in view (#{below_fold}px past the fold), so the " \
-                    "driver never had to scroll and this test exercised nothing. Widen the window or " \
-                    "shorten it until the Workflows card sits below the fold again."
+                    "the opener was already fully in view (#{below_fold}px past the fold), so the " \
+                    "driver never had to scroll and this test exercised nothing. Shorten SHORT_WINDOW " \
+                    "until the Workflows card sits below the fold again."
 
     delay_animation_frames(frame_delay_ms) if frame_delay_ms
 
     record_pointerdown_frame
-    click_when_settled(TOGGLE)
+    click_when_settled(OPENER)
 
     landed = pointerdown_frame
-    assert landed, "no pointerdown reached the toggle, so there is no click frame to compare"
-    assert_equal last_settled_scroll_y, landed["scroll_y"],
-                 "click_when_settled certified the toggle at scrollY #{last_settled_scroll_y} " \
-                 "(box #{last_settled_box}) but the click was dispatched at scrollY " \
-                 "#{landed['scroll_y']} (box #{landed['box']}). The geometry was certified in a " \
-                 "frame the click then left: `element.click` scrolls the control into view, and " \
-                 "that scroll collapses this app's sticky nav under the pointer. Certify AFTER " \
-                 "entering the frame the click happens in — a longer wait before the scroll cannot " \
-                 "help, because the box really is stable where it was measured."
+    assert landed, "no pointerdown reached the opener, so there is no click frame to compare"
+    assert_click_in_certified_frame(landed)
+    assert_selector OPENED, wait: OPEN_WAIT
+  end
+
+  # THE CLICK LANDED WHERE IT WAS CERTIFIED — proved by ANY of three readings, because a
+  # late nav collapse after certification shows up as one, the other, or a little of each:
+  #
+  #   same scroll position  the collapse slid the control a few px, but the page did not
+  #                         scroll (measured 2026-09-10 on the old Workflows toggle:
+  #                         certified 328,422, clicked at 328,418, same scrollY)
+  #   same box              Chrome's SCROLL ANCHORING absorbed the collapse by scrolling
+  #                         the page instead, so the control never moved on screen
+  #                         (measured 2026-09-18 on this opener with frames delayed 55ms:
+  #                         box 33,201,292,17 at both, scrollY 408 then 376 — exactly the
+  #                         collapse's 32px)
+  #   centre still on it    BOTH at once — anchoring scrolled 32px AND the box slid 4px
+  #                         (measured 2026-09-19, 2 of 11 runs: scrollY 408 then 376, box
+  #                         y 197 then 201), so the certified centre is still on the control
+  #
+  # Which one a layout gets depends on where Chrome picks its anchor node, which is why
+  # a guard pinned to only one of them went red the moment the control moved. The bug this
+  # guards against moves BOTH: delete the pre-scroll and certification happens at the
+  # load's scroll position while the driver's own scroll moves the page AND the control.
+  def assert_click_in_certified_frame(landed)
+    same_scroll = last_settled_scroll_y == landed["scroll_y"]
+    same_box = last_settled_box == landed["box"]
+    assert same_scroll || same_box || certified_centre_on?(landed["box"]),
+           "click_when_settled certified the opener at scrollY #{last_settled_scroll_y} " \
+           "(box #{last_settled_box}) but the click was dispatched at scrollY " \
+           "#{landed['scroll_y']} (box #{landed['box']}) — BOTH moved, off the certified centre. " \
+           "The geometry was certified in a frame the click then left: `element.click` scrolls " \
+           "the control into view, and " \
+           "that scroll collapses this app's sticky nav under the pointer. Certify AFTER " \
+           "entering the frame the click happens in — a longer wait before the scroll cannot " \
+           "help, because the box really is stable where it was measured."
+  end
+
+  # Is the centre of the box the settle loop certified inside the box the click landed in?
+  def certified_centre_on?(landed_box)
+    x, y, w, h = last_settled_box.to_s.split(",").map(&:to_f)
+    lx, ly, lw, lh = landed_box.to_s.split(",").map(&:to_f)
+    (x + w / 2).between?(lx, lx + lw) && (y + h / 2).between?(ly, ly + lh)
   end
 
   # Hold every requestAnimationFrame callback back +ms+, and prove the stub is live before
@@ -317,7 +348,7 @@ class WorkflowsCardChipFitTest < ApplicationSystemTestCase
                     "the stub is not live and this is not a slow-frame run"
   end
 
-  # Record the frame the click really happens in — the scroll position, plus the toggle's
+  # Record the frame the click really happens in — the scroll position, plus the opener's
   # box for the failure message — at the instant pointerdown is dispatched. Capture phase,
   # so nothing downstream can stop it. Overwritten on EVERY pointerdown: the settle loop
   # re-certifies per attempt, so a first-only latch would pair a retry's certified frame
@@ -326,7 +357,7 @@ class WorkflowsCardChipFitTest < ApplicationSystemTestCase
     page.execute_script(<<~JS)
       window.__pointerdownFrame = null;
       document.addEventListener('pointerdown', function () {
-        var t = document.querySelector("#{TOGGLE}");
+        var t = document.querySelector("#{OPENER}");
         if (!t) return;
         var r = t.getBoundingClientRect();
         window.__pointerdownFrame = { box: #{ApplicationSystemTestCase::BOX_JS},
@@ -339,24 +370,24 @@ class WorkflowsCardChipFitTest < ApplicationSystemTestCase
     page.evaluate_script("window.__pointerdownFrame")
   end
 
-  # Move the toggle out from under the pointer, once, on the first pointerdown. 240px is
-  # far more than the button's 13px height, so pointerup cannot land on it and `click` is
+  # Move the opener out from under the pointer, once, on the first pointerdown. 240px is
+  # far more than the header's own height, so pointerup cannot land on it and `click` is
   # dispatched at the common ancestor instead — the swallow, reproduced on a handler.
-  # The shove is left in place: the retry must succeed against a page that has genuinely
-  # stopped moving, not against one that conveniently snapped back.
+  # The shove moves the whole CARD (the header's parent), so the stray click cannot land
+  # on the card's surface either. It is left in place: the retry must succeed against a
+  # page that has genuinely stopped moving, not one that conveniently snapped back.
   #
-  # Every pointerdown dispatched AT the toggle is counted, because that — not the shove —
-  # is what proves a retry ran: a shove that failed to carry the button off the pointer
-  # would still fire once, the first click would land, and a shove count would read 1.
+  # Every pointerdown dispatched AT the opener is counted, because that — not the shove —
+  # is what proves a retry ran.
   def swallow_the_next_click
     page.execute_script(<<~JS)
-      window.__togglePointerdowns = 0;
+      window.__openerPointerdowns = 0;
       document.addEventListener('pointerdown', function (e) {
-        var t = document.querySelector("#{TOGGLE}");
-        if (t && t.contains(e.target)) { window.__togglePointerdowns += 1; }
+        var t = document.querySelector("#{OPENER}");
+        if (t && t.contains(e.target)) { window.__openerPointerdowns += 1; }
       }, true);
       var shove = function () {
-        var t = document.querySelector("#{TOGGLE}");
+        var t = document.querySelector("#{OPENER}");
         if (!t) return;
         document.removeEventListener('pointerdown', shove, true);
         t.parentElement.style.marginTop = '240px';
@@ -366,105 +397,89 @@ class WorkflowsCardChipFitTest < ApplicationSystemTestCase
     JS
   end
 
-  def toggle_pointerdowns
-    page.evaluate_script("window.__togglePointerdowns").to_i
+  def opener_pointerdowns
+    page.evaluate_script("window.__openerPointerdowns").to_i
   end
 
   def assert_chips_fit_at(width)
     page.driver.browser.manage.window.resize_to(width, 1000)
     visit deployments_path
-    assert_selector "[data-test='heartbeats-card']", wait: 10
-    reveal_compact_rows
+    assert_selector SUMMARY, wait: 10
 
-    acts = page.all("[data-test='heartbeats-card'] button[data-row='action'] code", visible: :all)
-    heads = page.all("[data-test='heartbeats-card'] button[data-row='heartbeat'] code", visible: :all)
-    assert_operator acts.size, :>=, 7, "expected the souls' act chips to render at #{width}px"
-    assert_equal 5, heads.size, "expected five row-1 heartbeat chips at #{width}px"
+    # THE CAROUSEL: every slide is laid out, so every chip has a real box already.
+    carousel_acts = page.all("#{SUMMARY} button[data-row='action'] code", visible: :all)
+    carousel_heads = page.all("#{SUMMARY} button[data-row='heartbeat'] code", visible: :all)
+    assert_operator carousel_acts.size, :>=, 7, "expected every soul's act chips in the carousel at #{width}px"
+    assert_equal 5, carousel_heads.size, "expected five row-1 heartbeat chips in the carousel at #{width}px"
+    assert_every_chip_was_measured(carousel_acts, width)
+    assert_chips_readable(carousel_acts, carousel_heads, width, where: "the Workflows summary card's carousel")
+
+    # THE SIDEBAR: opened first, or every chip measures 0x0.
+    open_workflows_sidebar
+    acts = page.all("#{CARD} button[data-row='action'] code", visible: :all)
+    heads = page.all("#{CARD} button[data-row='heartbeat'] code", visible: :all)
+    assert_equal carousel_acts.size, acts.size, "the sidebar offers every act the carousel does"
+    assert_equal 5, heads.size, "expected five row-1 heartbeat chips in the sidebar at #{width}px"
     assert_every_chip_was_measured(acts, width)
+    assert_chips_readable(acts, heads, width, where: "the Workflows sidebar")
+  end
 
+  def assert_chips_readable(acts, heads, width, where:)
     broken = acts.filter_map { |c| describe_overflow(c, single_line: true) }
     assert_empty broken,
-                 "At a #{width}px viewport these ACT chips wrap or are ellipsised. An act is one " \
-                 "hyphenated token — split across lines it reads as two commands, and clipped it " \
-                 "cannot be read off the card. Reclaim width in tasks/_heartbeats_card (column " \
-                 "count, grid gap) or tasks/_heartbeat_launcher (chip padding, font)."
+                 "At a #{width}px viewport these ACT chips in #{where} wrap or are ellipsised. An " \
+                 "act is one hyphenated token — split across lines it reads as two commands, and " \
+                 "clipped it cannot be read off the card. Reclaim width in tasks/_heartbeat_launcher " \
+                 "(the :slide grid or the :row chip column) or tasks/_workflow_copy_chip (padding, font)."
 
     clipped = heads.filter_map { |c| describe_overflow(c, single_line: false) }
     assert_empty clipped,
-                 "At a #{width}px viewport these row-1 phrases are CLIPPED. Wrapping onto a second " \
-                 "line at a space is fine and expected here; losing characters is not."
+                 "At a #{width}px viewport these row-1 phrases in #{where} are CLIPPED. Wrapping onto " \
+                 "a second line at a space is fine and expected; losing characters is not."
   end
 
-  CARD = "[data-test='heartbeats-card']".freeze
-  TOGGLE = "[data-test='heartbeat-compact-toggle']".freeze
-
-  # The ceiling on each step of the reveal — the card's OWN first-paint budget (the
-  # `wait: 10` on every assert_selector above), not a fresh number tuned on a warm
-  # laptop. It bounds a hang; it is not what makes the reveal deterministic.
-  REVEAL_WAIT = 10
-
-  # Open the Show All toggle so the rows past +compact_limit+ have real boxes, then wait
-  # for Alpine to paint them. Without this every third act measures 0x0.
+  # Click the Workflows summary card so the sidebar's chips have real boxes, then wait
+  # for them to paint. Without this every sidebar chip measures 0x0.
   #
   # EVERY EXIT HERE IS A FAILURE THAT NAMES ITSELF, and that is the point of the method.
-  # It used to hold two SOFT exits — `return unless has_selector?(..., wait: 2)` and
-  # `break if Time.now > deadline` — and both fell through to the width assertions with
-  # the chips still hidden. A hidden chip measures 0x0, so a toggle that never opened was
-  # REPORTED as a chip that does not fit, and the reader was sent to tasks/_heartbeats_card
-  # to reclaim pixels that were never the problem. Measured 2026-09-09: the `system` job
-  # red at 1m33s naming `full-cycle` at 0px seven seconds after Puma booted, then GREEN on
-  # a re-run of the same SHA. A toggle timeout and a width regression must never share a
+  # A hidden chip measures 0x0, so an opener that never opened would otherwise be
+  # REPORTED as a chip that does not fit, and the reader sent to reclaim pixels that were
+  # never the problem. An opening timeout and a width regression must never share a
   # message.
   #
-  # READINESS SIGNALS, NOT A BIGGER NUMBER, and here is why the number could not work.
-  # The race is not that the page is slow — it is that the click is UNORDERED against two
-  # things that finish on their own schedule, so any fixed wait only moves the threshold:
+  # READINESS SIGNALS, NOT A BIGGER NUMBER. The click is UNORDERED against things that
+  # finish on their own schedule, so any fixed wait only moves the threshold:
   #
-  #   ALPINE — the button is server-rendered and clickable long before `@click` is bound.
-  #            A click that lands first does nothing at all: no error, no state change.
-  #            Alpine strips `x-cloak` from every element it initializes, so the card
-  #            SHEDDING its cloak is the hydration signal, and the click waits behind it.
-  #   FONTS  — page text is Montserrat, fetched from fonts.googleapis.com; the files land
-  #            AFTER `visit` returns and every glyph is re-measured, which reflows this
-  #            grid under the pointer. +click_when_settled+ (application_system_test_case)
-  #            exists for exactly that: pointerdown and pointerup hit different elements
-  #            and the browser fires `click` on their common ancestor.
-  #   THE SCROLL — and this, not the font, is what actually reddened this file. The
-  #            toggle sits BELOW THE FOLD, so `element.click` scrolls to reach it, and on
-  #            this app a scroll collapses the sticky nav: measured 2026-09-09 at 700x1000,
-  #            the header goes 134px -> 102px over ~160ms and drags this 13px-tall button
-  #            up 32px, starting a frame AFTER the scroll with `document.getAnimations()`
-  #            still empty. Certifying the box BEFORE that scroll certifies a coordinate
-  #            frame the click is about to leave, which is why the previous fix here
-  #            stayed marginal: three runs of one unchanged SHA passed at 24.5s of suite
-  #            time and failed at 30.5s and 40.5s. The fix is in click_when_settled, and
-  #            the two tests below hold it.
+  #   ALPINE — the card is server-rendered and clickable long before `@click` is bound.
+  #            A click that lands first does nothing at all. Alpine strips `x-cloak` from
+  #            the sidebar as it initializes it, so the sidebar SHEDDING its cloak is the
+  #            hydration signal, and the click waits behind it.
+  #   FONTS / THE SCROLL — +click_when_settled+ (application_system_test_case) certifies
+  #            the box in the frame the click happens in; the guards above hold that.
   #
   # +wait+ is a per-step ceiling, exposed so the guard test above can drive each exit
   # without paying it four times over.
-  def reveal_compact_rows(wait: REVEAL_WAIT)
-    unless page.has_selector?(TOGGLE, wait: wait)
-      flunk "the Workflows card rendered no Show All toggle within #{wait}s, so the rows past " \
-            "compact_limit were never revealed. The card renders one whenever a soul has more rows " \
-            "than compact_limit (Alex has three acts), so either the page never finished loading or " \
-            "the card no longer hides rows — in which case this helper is obsolete and every chip is " \
-            "already measurable. THIS IS NOT A VERDICT ABOUT CHIP WIDTH."
+  def open_workflows_sidebar(wait: OPEN_WAIT)
+    unless page.has_selector?(OPENER, wait: wait)
+      flunk "the Workflows summary card rendered no opener within #{wait}s, so the sidebar was " \
+            "never opened. Either the page never finished loading or the card lost its header row. " \
+            "THIS IS NOT A VERDICT ABOUT CHIP WIDTH."
     end
 
-    unless page.has_no_selector?("#{CARD} [x-cloak]", visible: :all, wait: wait)
-      flunk "Alpine had not hydrated the Workflows card within #{wait}s — its compacted rows still " \
-            "carry the x-cloak that Alpine strips as it initializes each element. Clicking the Show " \
-            "All toggle now would be swallowed (@click is not bound yet) and every row past " \
-            "compact_limit would stay hidden at 0px. THIS IS NOT A VERDICT ABOUT CHIP WIDTH."
+    unless page.has_no_selector?("#{SIDEBAR}[x-cloak]", visible: :all, wait: wait)
+      flunk "Alpine had not hydrated the Workflows sidebar within #{wait}s — it still carries the " \
+            "x-cloak Alpine strips as it initializes. Clicking the opener now would be swallowed " \
+            "(@click is not bound yet) and every sidebar chip would stay hidden at 0px. " \
+            "THIS IS NOT A VERDICT ABOUT CHIP WIDTH."
     end
 
-    click_when_settled(TOGGLE)
+    click_when_settled(OPENER)
 
-    unless page.has_selector?("#{TOGGLE}[aria-expanded='true']", wait: wait)
-      flunk "the Show All toggle did not open within #{wait}s of the click — it still reports " \
-            "aria-expanded=#{toggle_expanded_state.inspect} (nil means Alpine never bound the " \
-            "attribute at all). The click was swallowed, or the toggle no longer drives " \
-            "heartbeatsExpanded. THIS IS NOT A VERDICT ABOUT CHIP WIDTH."
+    unless page.has_selector?(OPENED, wait: wait)
+      flunk "the Workflows sidebar did not open within #{wait}s of clicking its opener — the card " \
+            "reports aria-expanded=#{opener_expanded_state.inspect} (nil means the card lost its " \
+            "heading button). The click was swallowed, or the card no longer drives `panel`. " \
+            "THIS IS NOT A VERDICT ABOUT CHIP WIDTH."
     end
 
     deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + wait
@@ -473,8 +488,8 @@ class WorkflowsCardChipFitTest < ApplicationSystemTestCase
       return if widths.any? && widths.none?(&:zero?)
 
       if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
-        flunk "the Show All toggle reported OPEN but #{widths.count(&:zero?)} of #{widths.size} act " \
-              "chips still measured 0px #{wait}s later, so the revealed rows never painted. " \
+        flunk "the opener reported the sidebar OPEN but #{widths.count(&:zero?)} of #{widths.size} " \
+              "act chips still measured 0px #{wait}s later, so the sidebar never painted. " \
               "THIS IS NOT A VERDICT ABOUT CHIP WIDTH."
       end
 
@@ -482,58 +497,57 @@ class WorkflowsCardChipFitTest < ApplicationSystemTestCase
     end
   end
 
-  # Load /deployments and hold until the Workflows card is both rendered AND hydrated —
-  # the state every scenario in the guard test starts from, so each one breaks exactly
-  # the thing it means to break.
+  # Load /deployments and hold until the Workflows card and its sidebar are both rendered
+  # AND hydrated — the state every scenario in the guard test starts from, so each one
+  # breaks exactly the thing it means to break.
   def load_workflows_card
     visit deployments_path
-    assert_selector CARD, wait: REVEAL_WAIT
-    assert_no_selector "#{CARD} [x-cloak]", visible: :all, wait: REVEAL_WAIT
+    assert_selector SUMMARY, wait: OPEN_WAIT
+    assert_no_selector "#{SIDEBAR}[x-cloak]", visible: :all, wait: OPEN_WAIT
   end
 
-  # A reveal failure has to be readable as a TOGGLE failure by whoever finds it in a CI
-  # log, which is two claims, not one: it names the toggle, and it cannot be mistaken for
-  # the width verdict this file exists to deliver.
-  def assert_reveal_blames_the_toggle(&block)
+  # An opening failure has to be readable as an OPENER failure by whoever finds it in a
+  # CI log, which is two claims, not one: it names the opener, and it cannot be mistaken
+  # for the width verdict this file exists to deliver.
+  def assert_opening_blames_the_opener(&block)
     error = assert_raises(Minitest::Assertion, &block)
 
-    assert_match(/toggle/i, error.message,
-                 "a reveal that failed must name the toggle. Got: #{error.message}")
+    assert_match(/opener/i, error.message,
+                 "an opening that failed must name the opener. Got: #{error.message}")
     assert_match(/NOT A VERDICT ABOUT CHIP WIDTH/, error.message,
-                 "a reveal that failed must disclaim the width verdict. Got: #{error.message}")
+                 "an opening that failed must disclaim the width verdict. Got: #{error.message}")
     refute_match(/wrap or are ellipsised|measured 0px wide, which means/, error.message,
-                 "a reveal that failed must not arrive wearing the width or hidden-chip verdict's " \
-                 "words — that confusion is the whole defect this file was fixed for.")
+                 "an opening that failed must not arrive wearing the width or hidden-chip " \
+                 "verdict's words — that confusion is the whole defect this file was fixed for.")
     error
   end
 
-  # What the toggle currently claims about itself. nil when Alpine never bound the
+  # What the card currently claims about its sidebar. nil when Alpine never bound the
   # attribute, which separates "never hydrated" from "click swallowed" in the flunk above.
-  def toggle_expanded_state
+  def opener_expanded_state
     page.evaluate_script(<<~JS)
       (function () {
-        var t = document.querySelector("#{TOGGLE}");
+        var t = document.querySelector("#{SUMMARY} button[data-test='summary-card-toggle']");
         return t ? t.getAttribute('aria-expanded') : null;
       })()
     JS
   end
 
-  # The grid's RESOLVED track count, read off the launcher's own parent so it does not
-  # depend on the card's class strings — the same reason every other measurement here
-  # comes from the rendered box.
-  def grid_column_count
+  # The summary row's RESOLVED track count, read off the rendered grid so it does not
+  # depend on class strings — the same reason every other measurement here comes from
+  # the rendered box.
+  def summary_row_column_count
     page.evaluate_script(<<~JS).to_i
       (function () {
-        var first = document.querySelector("#{CARD} [data-test='heartbeat-launcher']");
-        if (!first) return 0;
-        return window.getComputedStyle(first.parentElement)
-                     .gridTemplateColumns.split(' ').filter(Boolean).length;
+        var row = document.querySelector("[data-test='deploy-summary-row']");
+        if (!row) return 0;
+        return window.getComputedStyle(row).gridTemplateColumns.split(' ').filter(Boolean).length;
       })()
     JS
   end
 
   def act_chip_widths
-    page.all("[data-test='heartbeats-card'] button[data-row='action'] code", visible: :all)
+    page.all("#{CARD} button[data-row='action'] code", visible: :all)
         .map { |c| page.evaluate_script("arguments[0].scrollWidth", c).to_i }
   end
 
@@ -547,11 +561,10 @@ class WorkflowsCardChipFitTest < ApplicationSystemTestCase
     end
     assert_empty unmeasured,
                  "At #{width}px these act chips measured 0px wide, which means they were HIDDEN " \
-                 "when this file checked them — not that they fit. This is NOT the toggle timing " \
-                 "out: reveal_compact_rows now flunks on its own cause if the Show All toggle is " \
-                 "missing, unhydrated, swallowed the click, or never painted, so by the time this " \
-                 "fires the rows past compact_limit were genuinely revealed and something else is " \
-                 "hiding these."
+                 "when this file checked them — not that they fit. This is NOT the opener timing " \
+                 "out: open_workflows_sidebar flunks on its own cause if the opener is missing, " \
+                 "unhydrated, swallowed the click, or never painted, so by the time this fires " \
+                 "something else is hiding these."
   end
 
   # Returns a description when the box misbehaves, nil when it is fine. `single_line`
@@ -573,7 +586,6 @@ class WorkflowsCardChipFitTest < ApplicationSystemTestCase
     "#{box['text']} (height #{box['h'].round(1)}px vs line #{box['line'].round(1)}px, " \
       "overflow #{box['overflow'].round(1)}px)"
   end
-
 
   # Measure a hypothetical phrase in a REAL chip: same font, same padding, same
   # column. The text is restored before returning, so the page is left as found.

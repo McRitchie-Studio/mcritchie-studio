@@ -49,6 +49,34 @@ module ReleaseMembersHelper
     end.values
   end
 
+  # WORK WAITING FOR THE NEXT SWEEP, per app — the Releases summary card's "Next" row
+  # when no candidate is open. Same shape as #release_member_repo_counts, so one
+  # cluster partial draws both.
+  #
+  # Read off the ladder cards the page already built (Card#parked_at("accepted")), not
+  # a second query: it is then the very count each app card in the Applications
+  # sidebar prints on its `accepted` node, and the two cannot disagree. Largest
+  # first; ties keep the ladder's order.
+  def release_queued_repo_counts(cards)
+    Array(cards).each_with_index.filter_map do |card, index|
+      count = card.parked_at("accepted")
+      emoji = app_emoji(card.repo)
+      next if count.zero? || emoji.blank?
+
+      [{ emoji: emoji, count: count, repositories: [card.repo] }, index]
+    end.sort_by { |entry, index| [-entry[:count], index] }.map(&:first)
+  end
+
+  # FEATURES PER MEMBER REPO, keyed by repo, for the Releases summary card's per-app
+  # trackers. Read through Task#release_repos — the SAME derivation Release#member_repos
+  # (and so the tracker's lanes) uses — so a lane can never show a count its own member
+  # set disagrees with. #release_member_repo_counts groups by EMOJI for the cluster.
+  def release_member_counts_by_repo(tasks)
+    Array(tasks).each_with_object(Hash.new(0)) do |task, counts|
+      task.release_repos.each { |repo| counts[repo] += 1 }
+    end
+  end
+
   def release_member_expense_weight(task)
     size = release_member_size(task)
     TASK_SIZE_WEIGHTS.fetch(size.to_s, 0)

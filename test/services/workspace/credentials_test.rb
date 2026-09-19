@@ -58,7 +58,7 @@ class WorkspaceCredentialsTest < ActiveSupport::TestCase
   test "the item lives in industries-agents, never an admin vault" do
     # An admin-vault item is unreadable with the agent lane's
     # OP_SERVICE_ACCOUNT_TOKEN, and that read fails silently.
-    assert_equal "op://industries-agents/google.drive.agents/credential",
+    assert_equal "op://industries-agents/google.industries.agents/credential",
                  Workspace::Credentials::ITEM
     refute_includes Workspace::Credentials::ITEM, "-admin"
   end

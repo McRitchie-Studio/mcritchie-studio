@@ -717,49 +717,30 @@ class ApplicationHelperTest < ActionView::TestCase
     end
   end
 
-  test "[component] _heartbeats_card renders the five soul heartbeat launchers in a responsive grid" do
-    Agent.find_or_create_by!(slug: "carl") { |a| a.name = "Carl" }
-    Agent.find_or_create_by!(slug: "avi") { |a| a.name = "Avi" }
-    Agent.find_or_create_by!(slug: "steffon") { |a| a.name = "Steffon" }
-    Agent.find_or_create_by!(slug: "alex") { |a| a.name = "Alex" }
-    Agent.find_or_create_by!(slug: "turf-monster") { |a| a.name = "Turf Monster" }
+  test "[component] _heartbeats_card (the Workflows sidebar) lists every soul and every command" do
+    seed_workflow_souls
 
     render partial: "tasks/heartbeats_card"
 
-    # The launchers live in their own card, one per soul, stacked on narrow
-    # screens, 3-up at sm and 5-up once there is room.
+    # The sidebar variant: one card, every soul stacked vertically, nothing tucked
+    # behind a toggle — the sidebar has the room the half-width card never did.
     assert_select "[data-test='heartbeats-card']", count: 1
-    assert_select "[data-test='heartbeats-card'][data-compact-limit='3']", count: 1
-    assert_select "[data-test='heartbeats-card'][x-data*='heartbeatsExpanded']", count: 1
-    # The ladder tracks the CARD's width, not the viewport's: 5 at lg (the card owns
-    # the whole row there), 3 at xl (the dashboard halves it), 5 again at 2xl (half a
-    # big screen is wide enough). Pinned against the dashboard by its own test below;
-    # chip FIT at each width is measured in workflows_card_chip_fit_test.
-    assert_select "[data-test='heartbeats-card'] div.grid.grid-cols-1.sm\\:grid-cols-3.lg\\:grid-cols-5.xl\\:grid-cols-3 [data-test='heartbeat-launcher']", count: 5
-    # `2xl:grid-cols-5` is asserted as a substring, not in the selector: Nokogiri's CSS
-    # parser rejects a class whose name starts with a digit unless it is unicode-escaped
-    # (`.\32 xl\:grid-cols-5`), and that spelling is far more likely to rot than to catch
-    # anything. The rung still has to be here — it is what returns the card to five
-    # columns once half a screen is wide enough.
-    assert_includes rendered, "2xl:grid-cols-5"
-    # The card is titled for the FLOWS it launches, not for liveness.
-    assert_select "[data-test='heartbeats-card'] h3", text: "Workflows"
+    assert_select "[data-test='heartbeats-card'] [data-test='heartbeats-list'] [data-test='heartbeat-launcher'][data-layout='row']", count: 5
+    assert_select "[data-test='heartbeat-compact-toggle']", count: 0
+    assert_select "[x-show='heartbeatsExpanded']", count: 0
     # Steffon's column swapped archive-shipped for clean-infra; the archive now
     # rides production-deploy, so it must not render as a copyable chip.
     assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] button[data-clip='clean-infra']", count: 1
     assert_select "[data-test='heartbeats-card'] button[data-clip='archive-shipped']", count: 0
-    # The fifth soul carries her own heartbeat phrase + the watch act.
-    assert_select "[data-test='heartbeat-launcher'][data-agent='turf-monster'] button[data-clip='Turf Monster Heartbeat']", count: 1
-    assert_select "[data-test='heartbeat-launcher'][data-agent='turf-monster'] button[data-clip='live-score-watch']", count: 1
-    assert_select "[data-test='heartbeat-compact-toggle']", text: /Show All/
-    assert_select "[data-test='heartbeat-compact-toggle'] span[x-show='heartbeatsExpanded']", text: "Compact"
     # The tracker does NOT live here — it stays in the Current Release card.
     assert_select "[data-test='heartbeats-card'] [data-test='release-tracker-steps']", count: 0
-    # Each launcher stacks a soul avatar (LINKING to /agents/<slug>) OVER a prompt-
-    # like row 1 + its atom action(s), each an independently-copyable data-clip target.
+    # Each launcher: the soul's avatar (LINKING to /agents/<slug>) and its NAME, then a
+    # prompt-like row 1 + its atom action(s), each an independently-copyable data-clip
+    # target sitting beside the one line that says what it launches.
     heartbeat_launchers.each do |launcher|
       scope = "[data-test='heartbeat-launcher'][data-agent='#{launcher[:agent_slug]}']"
       assert_select "#{scope} a[data-test='heartbeat-avatar-link'][href=?]", "/agents/#{launcher[:agent_slug]}"
+      assert_select "#{scope} [data-test='heartbeat-soul-name']", count: 1
       assert_select "#{scope} button[data-row='heartbeat'][data-clip=?]", launcher[:heartbeat] do
         assert_select "code", text: launcher[:heartbeat]
       end
@@ -768,31 +749,25 @@ class ApplicationHelperTest < ActionView::TestCase
           assert_select "code", text: act
         end
       end
-      # Exactly (1 heartbeat + N acts) independently-copyable rows per launcher.
+      # Exactly (1 heartbeat + N acts) independently-copyable rows per launcher, and a
+      # description beside every one of them.
       assert_select "#{scope} button[data-clip]", count: 1 + launcher[:actions].size
+      assert_select "#{scope} [data-test='heartbeat-row-description']", count: 1 + launcher[:actions].size
     end
-    # Carl (pr-review + slow), Avi (qa-release + deploy-with-task), Steffon
-    # (production-deploy + clean-infra), Alex (grade + share + full-cycle),
-    # Turf Monster (live-score-watch).
-    assert_select "[data-test='heartbeat-launcher'][data-agent='carl'] button[data-row='action'] code", text: "pr-review-slow"
-    assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] button[data-row='action'] code", text: "deploy-with-task"
-    assert_select "[data-test='heartbeat-launcher'][data-agent='alex'] button[data-row='action'] code", text: "full-cycle"
-    assert_select "[data-test='heartbeat-launcher'][data-agent='turf-monster'] button[data-row='action'] code", text: "live-score-watch"
+    # A described act says what it does (ACTION_DESCRIPTIONS), and the heartbeat row
+    # says what the soul does, without repeating the soul's name.
+    assert_select "[data-test='heartbeat-launcher'][data-agent='carl'] [data-copy-row-index='2'] [data-test='heartbeat-row-description']",
+                  text: action_description("pr-review")
+    assert_select "[data-test='heartbeat-launcher'][data-agent='carl'] [data-copy-row-index='1'] [data-test='heartbeat-row-description']",
+                  text: "Review submitted PRs, one Carl per PR (review-only)"
     assert_select "[data-test='heartbeat-launcher'][data-agent='carl'] [data-copy-row-index='2'] button[data-clip='pr-review']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='carl'] [data-copy-row-index='3'] button[data-clip='pr-review-slow']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] [data-copy-row-index='2'] button[data-clip='qa-release']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] [data-copy-row-index='3'] button[data-clip='deploy-with-task']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] [data-copy-row-index='2'] button[data-clip='production-deploy']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] [data-copy-row-index='3'] button[data-clip='clean-infra']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='alex'] [data-copy-row-index='4'] button[data-clip='full-cycle']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='turf-monster'] [data-copy-row-index='2'] button[data-clip='live-score-watch']"
-    assert_select "[data-test='heartbeat-launcher'] > span.text-muted", count: 0
-    # Only Alex's list exceeds the compact limit (4 rows) → its row 4 (full-cycle)
-    # is tucked behind the card toggle; Carl/Avi/Steffon (3 rows) have none hidden.
-    assert_select "[data-test='heartbeat-launcher'][data-agent='alex'] [data-test='heartbeat-copy-row'][data-copy-row-index='4'][x-show='heartbeatsExpanded'][x-cloak]"
-    assert_select "[data-test='heartbeat-launcher'][data-agent='carl'] [data-test='heartbeat-copy-row'][x-show='heartbeatsExpanded']", count: 0
-    assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] [data-test='heartbeat-copy-row'][x-show='heartbeatsExpanded']", count: 0
-    assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] [data-test='heartbeat-copy-row'][x-show='heartbeatsExpanded']", count: 0
-    assert_select "[data-test='heartbeat-launcher'][data-agent='turf-monster'] [data-test='heartbeat-copy-row'][x-show='heartbeatsExpanded']", count: 0
     # Each soul heartbeat row (row 1) carries a leading ❤️; there are exactly five.
     assert_select "[data-test='heartbeat-heart']", count: 5
     assert_select "[data-test='heartbeat-launcher'] button[data-row='heartbeat'] [data-test='heartbeat-heart']", text: "❤️", count: 5
@@ -818,35 +793,57 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_includes rendered, "window.copyText"
   end
 
-  # The column ladder is a CONTRACT BETWEEN TWO FILES, and nothing in the code links
-  # them: the dashboard decides how WIDE the card is, and the card decides how many
-  # columns to put in it. The Workflows card is deliberately HALF width (no col-span),
-  # which is why its ladder has to dip to 3 at xl — between 1280 and 1535 half a
-  # screen is ~620px and the act chips measurably do not fit five across.
-  #
-  # Give the card a col-span later and the dip becomes wrong (wasted width); drop the
-  # dip while it stays half width and the chips break again. Either way this fails and
-  # names the other file, so the two cannot drift apart silently. Chip FIT itself is
-  # measured in test/system/workflows_card_chip_fit_test.rb.
-  test "[component] the card's column ladder matches the width the dashboard gives it" do
-    board = Rails.root.join("app/views/tasks/_deploy_board.html.erb").read
-    card = Rails.root.join("app/views/tasks/_heartbeats_card.html.erb").read
-    render_line = board.lines.find { |l| l.include?('render "heartbeats_card"') }
+  # THE CAROUSEL: ONE SOUL IN FRAME, STARTING ON TURF MONSTER. Every slide renders —
+  # the wheel animates between them in the browser (e2e/deploy_summary_row.spec.js) —
+  # but only the first is in frame, and the rest are parked below AND inert, so a chip
+  # the operator cannot see can be neither clicked nor tabbed to.
+  test "[component] _heartbeats_card :summary is a five-minute carousel that starts on Turf Monster" do
+    seed_workflow_souls
 
-    refute_nil render_line, "the deploy board no longer renders the Workflows card"
-    spans_full_row = render_line.include?("col-span-2")
-    dips_at_xl = card.include?("xl:grid-cols-3")
+    render partial: "tasks/heartbeats_card", locals: { variant: :summary }
 
-    refute spans_full_row,
-           "The Workflows card is meant to sit HALF width in the 2x2 dashboard. If you gave it a " \
-           "col-span on purpose, drop `xl:grid-cols-3` from the card in the same pass — the dip " \
-           "only exists because half a screen cannot hold five chips between 1280 and 1535px."
-    assert dips_at_xl,
-           "The card is half width (no col-span in _deploy_board), so its ladder MUST dip to " \
-           "`xl:grid-cols-3`. Without it, five columns are asked to fit a ~620px card at 1300px " \
-           "and the act chips are clipped — measured, see workflows_card_chip_fit_test."
+    card = css_select("[data-test='agents-summary-card']").first
+    refute_nil card, "the summary variant renders the Workflows summary card"
+    assert_equal "turf-monster,carl,avi,steffon,alex", card["data-agents"],
+                 "the wheel starts on Turf Monster and walks the rest in canonical order"
+    assert_equal "turf-monster", card["data-active-agent"]
+    assert_equal ApplicationHelper::AGENTS_CAROUSEL_ROTATE_MS.to_s, card["data-rotate-ms"]
+    assert_equal 300_000, ApplicationHelper::AGENTS_CAROUSEL_ROTATE_MS, "the operator's spec: five minutes"
+    assert_equal "agents", card["data-panel"], "a click opens the Workflows sidebar"
+
+    slides = css_select("[data-test='soul-slide']")
+    assert_equal %w[turf-monster carl avi steffon alex], slides.map { |slide| slide["data-agent"] }
+    assert_equal %w[active waiting waiting waiting waiting], slides.map { |slide| slide["data-place"] }
+    assert_nil slides.first["inert"], "the soul in frame is interactive"
+    slides.drop(1).each { |slide| refute_nil slide["inert"], "#{slide['data-agent']} is off-frame, so inert" }
+    assert_select "[data-test='soul-slide'] [data-test='heartbeat-launcher'][data-layout='slide']", count: 5
+    assert_select "[data-test='soul-carousel-dot']", count: 5
+    assert_select "[data-test='soul-carousel-dot'][data-active='true']", count: 1
+    assert_select "[data-test='soul-carousel-dot'][data-active='true'][data-agent='turf-monster']", count: 1
+    # No sidebar list in the summary: the detail is one click away, not duplicated.
+    assert_select "[data-test='heartbeats-card']", count: 0
   end
 
+  # ONE DECISION, TWO SURFACES. The chip list per soul is decided once in
+  # tasks/_heartbeats_card and both variants draw from it, so the carousel and the
+  # sidebar can never offer different commands for the same soul. Compared by
+  # rendering, not by reading source: a second chip list added in either partial
+  # would pass any source check that looked only at the first.
+  test "[component] the carousel and the sidebar offer the same commands for every soul" do
+    seed_workflow_souls
+
+    chips_by_soul = lambda do |html|
+      Nokogiri::HTML.fragment(html).css("[data-test='heartbeat-launcher']").to_h do |launcher|
+        [launcher["data-agent"], launcher.css("button[data-clip]").map { |chip| chip["data-clip"] }]
+      end
+    end
+
+    detail = chips_by_soul.call(render(partial: "tasks/heartbeats_card"))
+    summary = chips_by_soul.call(render(partial: "tasks/heartbeats_card", locals: { variant: :summary }))
+
+    assert_equal 5, detail.size
+    assert_equal detail, summary
+  end
   test "[component] the DevOps card keeps its stage tiles but no longer carries the heartbeats" do
     render partial: "tasks/release_duration_card", locals: { dashboard: {} }
 
@@ -1260,5 +1257,12 @@ class ApplicationHelperTest < ActionView::TestCase
       Ci::LadderRung.new(repo: repo, branch: branch, state: :green, sha: "abc1234def")
     end
     Ci::AppLadder::Card.new(repo: repo, rungs: rungs, last_shipped_at: last_shipped_at)
+  end
+
+  def seed_workflow_souls
+    { "carl" => "Carl", "avi" => "Avi", "steffon" => "Steffon", "alex" => "Alex",
+      "turf-monster" => "Turf Monster" }.each do |slug, name|
+      Agent.find_or_create_by!(slug: slug) { |agent| agent.name = name }
+    end
   end
 end

@@ -740,16 +740,17 @@ reads a board signal and a git signal on each, refusing when they disagree.
 
 #### The five soul heartbeat launchers — the Workflows card
 
-The standalone **Workflows card** (`tasks/_heartbeats_card` on `/deployments`,
-sized to match the Next Release card) renders the five soul heartbeat launchers
+The **Workflows card** (`tasks/_heartbeats_card`, the third of the four
+`/deployments` summary cards) renders the five soul heartbeat launchers
 (`ApplicationHelper#heartbeat_launchers`, one `tasks/_heartbeat_launcher` per soul)
-in a 5-up grid. Each launcher is a soul face (**linking to `/agents/<slug>`**) over
+one soul at a time on a five-minute carousel; a click opens the Workflows sidebar
+with every soul and command. Each launcher is a soul face (**linking to `/agents/<slug>`**) with
 a **prompt-like row 1** (`Carl Heartbeat` / `Avi Heartbeat` / `Steffon Heartbeat` /
 `Alex Heartbeat` / `Turf Monster Heartbeat`) plus one or more **copyable action
 rows**, each with a leading icon (❤️ on the heartbeat row; `1️⃣`–`3️⃣` on the three
 ordered release actions, a themed glyph on the rest). **Any row**, pasted into a
-fresh session, is a **recognized launcher**. The 5-stage release tracker stays in
-the **Next Release** card. Cross-soul launcher map:
+fresh session, is a **recognized launcher**. The release tracker stays in the
+**Next Release** card, which now lives in the Releases sidebar. Cross-soul launcher map:
 [`heartbeats.md`](../modules/heartbeats.md). Per-soul heartbeat launchers live
 with the souls:
 [`Carl`](../agents/carl/HEARTBEAT.md),

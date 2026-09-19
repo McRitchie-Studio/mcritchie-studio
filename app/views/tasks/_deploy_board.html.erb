@@ -77,7 +77,8 @@
 //
 // A store outlives the node. The replaced row re-reads the same value on init and
 // comes up already pinned, so the strip never flickers through a state the page
-// was not in. THIS partial is the right home: it renders the row (line ~517) and
+// was not in. THIS partial is the right home: it renders the row (through
+// tasks/_deploy_summary_row, where the row is the Applications summary card) and
 // is NOT itself a broadcast target, and the row may carry no <script> of its own
 // — a script inside a replaced fragment is a re-execution question nobody should
 // have to answer on a live board.
@@ -553,32 +554,19 @@ document.addEventListener('turbo:before-cache', function() {
   </div>
 
   <% if show_release_modules %>
-    <!-- Deployment dashboard: a 2×2 card grid — Next Release + Last Release on the top
-         row, Workflows + DevOps (WIP + release durations) on the bottom row.
-
-         Workflows deliberately does NOT span both columns. It stays one half-width
-         cell like every other card (measured: 728px at 2xl, giving its five soul
-         columns ~132px each, where the longest act `production-deploy` renders 92px
-         into 99px of text area — 7px of slack, nothing clipped). The squeeze is
-         absorbed by the CARD's own column ladder rather than by this grid:
-         tasks/_heartbeats_card goes 5-up at lg, dips to 3-up at xl where this
-         dashboard halves it, and returns to 5-up at 2xl.
-
-         That makes the two files a contract with nothing in the code linking them.
-         Give this card a col-span here and you MUST drop `xl:grid-cols-3` there in
-         the same pass — application_helper_test.rb's "column ladder" test fails and
-         names the other file if they drift apart. -->
-    <div class="grid min-w-0 grid-cols-1 gap-4 mb-6 items-stretch xl:grid-cols-2" data-test="release-dashboard-grid">
-      <%= render "current_release", release: current_release, card_class: "h-full min-w-0" %>
-      <%= render "last_release", release: last_release, card_class: "h-full min-w-0" %>
-      <%= render "heartbeats_card", card_class: "h-full min-w-0" %>
-      <%= render "release_duration_card", dashboard: release_duration_dashboard, wip_count: wip_task_count, card_class: "h-full min-w-0" %>
-    </div>
-
-    <%# App ladder — one card per three-rung repo, directly under the dashboard.
-        Shows where each application sits on accepted → release → main, the state
-        the Next Release card cannot express because the two are decoupled. %>
-    <%= render "app_ladder_row", cards: app_ladder_cards %>
+    <%# THE SUMMARY ROW — Applications · Releases · Workflows · DevOps, four cards on one
+        line, each opening a sidebar with the full detail (tasks/_deploy_summary_row).
+        It replaced a 2x2 dashboard plus a full-width row of app cards that put the
+        board ~900px down the page; every card that dashboard held still renders, with
+        its broadcast id, inside the sidebars. %>
+    <%= render "tasks/deploy_summary_row",
+               current_release: current_release,
+               last_release: last_release,
+               release_duration_dashboard: release_duration_dashboard,
+               wip_task_count: wip_task_count,
+               wip_by_stage: local_assigns[:wip_by_stage],
+               release_flow: local_assigns[:release_flow],
+               app_ladder_cards: app_ladder_cards %>
   <% end %>
 
   <%# App filter — toggle a repo to hide all its cards (client-side, like the agent

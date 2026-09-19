@@ -1,85 +1,74 @@
-<%# Workflows card for /deployments — the five soul heartbeat launchers (Carl /
-    Avi / Steffon / Alex / Turf Monster), each an avatar over its copyable
-    heartbeat prompt + actions, in an even 5-up grid. The release progress tracker
-    stays in the Current Release card. Titled "Workflows" because every row is a
-    flow the operator launches, not a liveness signal. Locals:
-      card_class  extra card classes for grid placement (optional) %>
+<%# THE WORKFLOWS SURFACE for /deployments — the five soul heartbeat launchers (Turf
+    Monster / Carl / Avi / Steffon / Alex), each a copyable heartbeat prompt plus its
+    acts. Titled "Workflows" because every row is a flow the operator launches, not a
+    liveness signal.
+
+    ONE FILE, TWO VARIANTS, and that is deliberate: the soul list and each soul's acts
+    are decided HERE, once, and both presentations draw from that one decision.
+      :summary  the Workflows summary card — ONE soul at a time on a 5-minute carousel
+                (tasks/_agents_summary_card), the third card of the summary row
+      :detail   the Workflows SIDEBAR — every soul and every command, stacked
+                vertically, each command beside what it launches
+    Two files each deciding chip membership is how a chip lands on one surface and not
+    the other; test/lib/workflows_card_carve_out_test.rb reads the decision below.
+
+    Locals:
+      variant     :detail (default) or :summary
+      card_class  extra card classes (optional) %>
+<% variant = local_assigns.fetch(:variant, :detail) %>
 <% card_class = ["rounded-xl border border-subtle bg-surface p-4", local_assigns[:card_class]].compact.join(" ") %>
 <% launchers = heartbeat_launchers %>
-<% compact_limit = 3 %>
-<% has_compact_rows = launchers.any? { |launcher| 1 + launcher[:actions].size > compact_limit } %>
 <% souls = Agent.where(slug: launchers.map { |l| l[:agent_slug] }.uniq).index_by(&:slug) %>
-<%= render "components/copy_text_script" %>
-<div id="heartbeats-card"
-     class="<%= card_class %>"
-     data-test="heartbeats-card"
-     data-compact-limit="<%= compact_limit %>"
-     x-data="{ heartbeatsExpanded: false }">
-  <div class="flex items-start justify-between gap-3">
-    <div class="min-w-0">
-      <h3 class="text-sm font-semibold text-heading">Workflows</h3>
-      <p class="text-[11px] text-muted">Copy any phrase to launch that soul's workflow.</p>
+<%# Card-specific visual order, plus the two acts deliberately NOT here.
+    archive-shipped — production-deploy runs it as its final step, so the
+    cleaning rides the release rather than waiting to be remembered.
+    sleeper-auction-watch — the decision is settled in
+    agents/turf_monster/HEARTBEAT.md (calendar-bound, operator-attended, so
+    nothing should schedule it), and the summary card could not carry it regardless:
+    the slug is 21 characters and needs 114px, while an act chip's text area on the
+    carousel — two acts to a line, at its narrowest (xl, four cards) — is 98px, so it
+    clips away its last ~3 characters. The longest acts that fit are 17
+    (production-deploy, contest-rehearsal: 92px), so the budget is ~18. Held by
+    test/system/workflows_card_chip_fit_test.rb, which FAILS if the card is ever
+    widened enough to retire this reason.
+    It is NOT that a chip implies a cadence — clean-infra, deploy-with-task and
+    contest-rehearsal are all here, and all three are direct-invoke or
+    off-sequence. That argument was retired 2026-09-09; do not restate it.
+    Both acts stay invocable by name. Adding either also owes
+    ACTION_DESCRIPTIONS + ACTION_ICONS keys and the arrays pinned in
+    application_helper_test.rb, and test/lib/workflows_card_carve_out_test.rb
+    holds THIS comment to the helper's "deliberately ABSENT" list, so a third
+    carve-out cannot land here in silence. %>
+<% entries = launchers.map do |launcher|
+     card_actions = case launcher[:agent_slug]
+                    when "carl" then ["pr-review", "pr-review-slow"]
+                    when "avi" then ["qa-release", "deploy-with-task"]
+                    when "steffon" then ["production-deploy", "clean-infra"]
+                    else launcher[:actions]
+                    end
+     { launcher: launcher, soul: souls[launcher[:agent_slug]], actions: card_actions }
+   end %>
+<% if variant == :summary %>
+  <%# THE CAROUSEL STARTS ON TURF MONSTER — the operator's spec — and walks the rest in
+      their canonical order, wrapping, so it reads as a circle rather than a list. %>
+  <% first = entries.index { |entry| entry[:launcher][:agent_slug] == "turf-monster" } || 0 %>
+  <%= render "tasks/agents_summary_card", entries: entries.rotate(first) %>
+<% else %>
+  <%= render "components/copy_text_script" %>
+  <div id="heartbeats-card"
+       class="<%= card_class %>"
+       data-test="heartbeats-card">
+    <p class="text-[11px] text-muted">Copy any phrase to launch that soul's workflow.</p>
+    <%# ONE SOUL PER ROW, vertically — the sidebar's width is what lets every command
+        sit beside its description, which the half-width card of five columns never
+        could. No compact toggle: nothing here is hidden. %>
+    <div class="mt-4 flex flex-col divide-y divide-subtle/70" data-test="heartbeats-list">
+      <% entries.each do |entry| %>
+        <div class="py-3 first:pt-0 last:pb-0">
+          <%= render "tasks/heartbeat_launcher", launcher: entry[:launcher], soul: entry[:soul],
+                     actions: entry[:actions], layout: :row %>
+        </div>
+      <% end %>
     </div>
   </div>
-  <%# Five souls, five columns from lg up, inside a HALF-width dashboard card. That is
-    a genuinely tight box and every horizontal pixel here was measured, not guessed:
-    the card maxes out at 728px, so five columns get ~126px each and a chip's text
-    area is what is left after its padding and icon. The gap is `gap-2` rather than
-    the `gap-4` a roomier card would use because those 8px x 4 gutters are ~6px of
-    text room per column.
-    The ladder dips to 3 at xl and returns to 5 at 2xl because the CARD's width, not
-    the viewport's, is what matters: the dashboard goes 2-col at xl, so between 1280
-    and 1535 the card is half of a smallish screen (~620px, ~111px columns) and the
-    acts measurably do not fit. From 2xl the card reaches its 728px cap and they do.
-    test/system/workflows_card_chip_fit_test.rb sweeps 700/1100/1300/1536/1728px and
-    fails naming any ACT phrase that stops fitting on one line. Named breakpoints
-    only — an arbitrary variant like min-[1800px]: is emitted BEFORE sm: and would
-    lose to it at every width. %>
-  <div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-3 2xl:grid-cols-5">
-    <% launchers.each do |launcher| %>
-      <%# Card-specific visual order, plus the two acts deliberately NOT here.
-          archive-shipped — production-deploy runs it as its final step, so the
-          cleaning rides the release rather than waiting to be remembered.
-          sleeper-auction-watch — the decision is settled in
-          agents/turf_monster/HEARTBEAT.md (calendar-bound, operator-attended, so
-          nothing should schedule it), and this card could not carry it regardless:
-          the slug is 21 characters and needs 114px, while a chip's text area at the
-          card's 728px cap is 99px, so it clips away its last ~3 characters. The
-          longest act that fits is 17 (production-deploy, 92px, 7px to spare), so the
-          budget is ~18. Measured 2026-09-09 at 1536/1728px and held by
-          test/system/workflows_card_chip_fit_test.rb, which FAILS if the card is
-          ever widened enough to retire this reason.
-          It is NOT that a chip implies a cadence — clean-infra, deploy-with-task and
-          contest-rehearsal are all here, and all three are direct-invoke or
-          off-sequence. That argument was retired 2026-09-09; do not restate it.
-          Both acts stay invocable by name. Adding either also owes
-          ACTION_DESCRIPTIONS + ACTION_ICONS keys and the arrays pinned in
-          application_helper_test.rb, and test/lib/workflows_card_carve_out_test.rb
-          holds THIS comment to the helper's "deliberately ABSENT" list, so a third
-          carve-out cannot land here in silence. %>
-      <% card_actions = case launcher[:agent_slug]
-                        when "carl" then ["pr-review", "pr-review-slow"]
-                        when "avi" then ["qa-release", "deploy-with-task"]
-                        when "steffon" then ["production-deploy", "clean-infra"]
-                        else launcher[:actions]
-                        end %>
-      <%= render "tasks/heartbeat_launcher",
-                 launcher: launcher,
-                 soul: souls[launcher[:agent_slug]],
-                 actions: card_actions,
-                 compact_limit: compact_limit %>
-    <% end %>
-  </div>
-  <% if has_compact_rows %>
-    <div class="mt-3 flex justify-center">
-      <button type="button"
-              class="text-[10px] font-medium leading-tight text-muted underline-offset-2 transition hover:text-body hover:underline focus:outline-none focus-visible:ring-1 focus-visible:ring-primary/50"
-              data-test="heartbeat-compact-toggle"
-              :aria-expanded="heartbeatsExpanded"
-              @click="heartbeatsExpanded = !heartbeatsExpanded">
-        <span x-show="!heartbeatsExpanded">Show All</span>
-        <span x-show="heartbeatsExpanded" x-cloak>Compact</span>
-      </button>
-    </div>
-  <% end %>
-</div>
+<% end %>

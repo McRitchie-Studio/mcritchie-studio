@@ -1,4 +1,5 @@
 const { test, expect } = require("@playwright/test");
+const { openDeploySidebar } = require("./helpers");
 
 // The /deployments Last Release card wears a post-ship production smoke SEAL badge
 // (🟢/🔴) — the verdict of the read-only @qa-readonly suite (bin/prod-smoke) run
@@ -7,6 +8,11 @@ const { test, expect } = require("@playwright/test");
 test("the Last Release card shows the production smoke-seal badge", async ({ page }) => {
   await page.goto("/deployments");
 
+  // The summary card carries the seal too, beside the ship time, without a click.
+  await expect(page.locator("#release-summary-card [data-test='release-summary-seal']")).toHaveAttribute("data-seal-status", "green");
+
+  // The full Last Release card lives in the Releases sidebar.
+  await openDeploySidebar(page, "releases");
   const badge = page.locator("#last-release [data-test='release-smoke-seal-badge']");
   await expect(badge).toBeVisible();
   await expect(badge).toHaveAttribute("data-seal-status", "green");

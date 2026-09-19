@@ -1,0 +1,53 @@
+<%# ONE APPLICATION ON ONE LINE, for the Applications summary card:
+    emoji · name · branch · the inline CI meter · its clock.
+
+    THE BRANCH IS NAMED because the line reports whichever rung restarted LAST
+    (Card#latest_suite_rung), which is not always the rung the full card reports — a
+    release member's full card stays on `release` while an `accepted` merge restarts its
+    suite. Naming it keeps two true readings from posing as one.
+
+    TONE CARRIES STATE, quietly: a running or failing app reads at full strength, an
+    app whose latest suite settled green steps back, so the eye lands on the news.
+    An app with nothing ingested gets words where the rail would be, never an empty
+    rail that reads as "0 of 0 passed".
+
+    Locals: card - Ci::AppLadder::Card %>
+<% card = local_assigns.fetch(:card) %>
+<% rung = card.latest_suite_rung %>
+<% progress = card.latest_suite_progress %>
+<% state = progress&.state || (rung ? rung.state : :none) %>
+<% settled_green = state == :green && !progress&.running? %>
+<% started = card.latest_suite_at %>
+<% title = [card.repo,
+            (rung && "#{rung.branch} suite"),
+            (started && "started #{started.in_time_zone.strftime('%b %-d %-l:%M%P')}"),
+            (progress && "#{progress.passed} of #{progress.total} checks passed")].compact.join(" · ") %>
+<li class="flex min-w-0 items-center gap-2 <%= "opacity-70" if settled_green %>"
+    data-test="app-summary-row"
+    data-repo="<%= card.repo %>"
+    data-state="<%= state %>"
+    data-branch="<%= rung&.branch %>"
+    data-suite-at="<%= started&.iso8601 %>"
+    title="<%= title %>">
+  <span class="w-4 shrink-0 text-center text-xs leading-none" aria-hidden="true"><%= app_emoji(card.repo) %></span>
+  <span class="min-w-0 flex-1 truncate text-[11px] font-medium <%= card.needs_attention? ? app_ladder_position_tone(card) : "text-heading" %>"
+        data-test="app-summary-name"><%= card.repo %></span>
+  <% if rung %>
+    <%# Shown only when the CARD has room for it (a container query on the card, not a
+        viewport breakpoint): at 1280px four cards leave ~260px, and the branch token
+        is what would otherwise cut "turf-monster" to "turf-mo…". The branch still
+        rides the row's title there. %>
+    <span class="hidden shrink-0 text-[9px] uppercase tracking-wider text-muted @[19rem]:inline" data-test="app-summary-branch"><%= app_summary_branch(rung.branch) %></span>
+  <% end %>
+  <% if progress.present? %>
+    <div class="shrink-0" data-test="app-summary-ci">
+      <%= render "components/ci_progress_meter", progress: progress, label: nil,
+                 test_id: "app-summary-ci-bar", inline: true, clock: true %>
+    </div>
+  <% else %>
+    <%# Same footprint as the inline meter — 6rem rail + 0.5rem gap + 2.25rem clock —
+        so every row's right edge lines up. %>
+    <span class="w-[8.75rem] shrink-0 rounded border border-dashed border-subtle px-1.5 py-[3px] text-center text-[9px] leading-none text-muted"
+          data-test="app-summary-ci-empty">no CI ingested</span>
+  <% end %>
+</li>

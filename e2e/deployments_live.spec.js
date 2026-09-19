@@ -1,5 +1,5 @@
 const { test, expect } = require("@playwright/test");
-const { watchPageErrors } = require("./helpers");
+const { watchPageErrors, openDeploySidebar } = require("./helpers");
 
 // THE UPSTREAM LANES ONLY RENDER WIDE — call this in a spec that waits on a card in
 // designed / building / submitted.
@@ -160,6 +160,8 @@ test("a direct-blocked card ignores stale review intent until a fresh one starts
 
 test("Last Release stacks member pills while Current Release keeps readable wrapping", async ({ page }) => {
   await page.goto("/deployments");
+  // The release cards live in the Releases sidebar since the summary row.
+  await openDeploySidebar(page, "releases");
 
   const currentStack = page.locator("#current-release [data-test='release-member-stack']");
   await expect(currentStack).toHaveCount(0);
@@ -179,6 +181,9 @@ test("Last Release stacks member pills while Current Release keeps readable wrap
   await expect(html).toHaveClass(/dark/);
   await page.click('button[title="Toggle theme"]');
   await expect(html).not.toHaveClass(/dark/);
+  // The toggle is an outside click, which dismisses the sidebar — reopen it to read the
+  // Last Release card in the light theme.
+  await openDeploySidebar(page, "releases");
   await assertLastReleaseStack(page);
 });
 
@@ -406,6 +411,8 @@ test("a byte-identical Next Release re-render flashes nothing", async ({ page })
   page.on("pageerror", (err) => pageErrors.push(String(err)));
 
   await page.goto("/deployments");
+  // The release cards live in the Releases sidebar since the summary row.
+  await openDeploySidebar(page, "releases");
   await expect(page.locator("#current-release")).toBeVisible();
   await expect(page.locator("#current-release [data-test='release-phase-meter']").first()).toBeVisible();
   // The card must carry its own signature, or the fx has nothing to branch on and
@@ -424,6 +431,8 @@ test("a Next Release card whose own signature moved still flashes", async ({ pag
   page.on("pageerror", (err) => pageErrors.push(String(err)));
 
   await page.goto("/deployments");
+  // The release cards live in the Releases sidebar since the summary row.
+  await openDeploySidebar(page, "releases");
   await expect(page.locator("#current-release")).toBeVisible();
 
   // The other half of the property: silence must come from "nothing moved", not from a
@@ -507,6 +516,8 @@ test("a transparent modern-syntax tone leaves the ring its default colour", asyn
     "color-mix(in oklch, oklch(0.7 0.15 160) 0%, transparent)",
   ]) {
     await page.goto("/deployments");
+    // The release cards live in the Releases sidebar since the summary row.
+    await openDeploySidebar(page, "releases");
     await expect(page.locator("#current-release")).toBeVisible();
     await expect(page.locator("#current-release [data-test='release-phase-fill']").first()).toBeAttached();
 
@@ -527,6 +538,8 @@ test("an opaque modern-syntax tone still tints the ring", async ({ page }) => {
   page.on("pageerror", (err) => pageErrors.push(String(err)));
 
   await page.goto("/deployments");
+  // The release cards live in the Releases sidebar since the summary row.
+  await openDeploySidebar(page, "releases");
   await expect(page.locator("#current-release")).toBeVisible();
   await expect(page.locator("#current-release [data-test='release-phase-fill']").first()).toBeAttached();
 

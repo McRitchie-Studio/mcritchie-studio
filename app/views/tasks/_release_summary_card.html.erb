@@ -1,0 +1,105 @@
+<%# THE RELEASES SUMMARY CARD — the second /deployments summary card. The operator's
+    spec, and nothing past it: features per app in the emoji-count convention
+    ("🪎 4  🐊 2  🧱 1"), when the last release shipped, and the Pokémon that ran it.
+    The full Next + Last release cards — tracker, member pills, links, seal — open in the
+    sidebar, ids intact, so every release broadcast and animation still lands there.
+
+    EACH HALF LEADS WITH ONE LINE — label, when, how long — with the conductor Pokémon
+    floated to its right end (tasks/_release_summary_mascot).
+
+    NEXT reads one of two things, and says which:
+      a candidate is open  → its state and live clock, then ONE UNLABELLED STAGE TRACKER
+                             PER APP (tasks/_release_app_tracker): emoji, feature count,
+                             and four pills for Assembling · Deploying QA · Confirming ·
+                             Deploying — the full per-repo tracker, shrunk to fit a line;
+      nothing is open      → what is QUEUED on `accepted` per app — exactly what the
+                             next sweep will promote. "None active" alone was what the
+                             old card said most of the day, which answered nothing.
+
+    LAST reads the most recent shipped release: its smoke seal, the ship time in the
+    reader's own clock (the engine's at-time primitive), how long it took, the conductor,
+    and its members per app.
+
+    #release-summary-card IS A BROADCAST SLOT. DeploymentsBroadcaster.app_ladder replaces
+    it: every release event and every `merged` stamp change already fires that push, and
+    those are exactly what move these counts. A CI tick pushes it only for a release
+    MEMBER (DeploymentsBroadcaster.ci_progress) — the Assembling pill is that member's CI.
+
+    Locals: current_release, last_release, cards (the ladder cards, for queued counts) %>
+<% rel = local_assigns[:current_release] %>
+<% last = local_assigns[:last_release] %>
+<% cards = local_assigns.fetch(:cards, []) %>
+<% next_counts = rel ? [] : release_queued_repo_counts(cards) %>
+<% last_counts = last ? release_member_repo_counts(last.tasks.to_a) : [] %>
+<% queued_total = rel ? nil : cards.sum { |card| card.parked_at("accepted") } %>
+<% lanes = rel ? release_repo_lanes(rel) : [] %>
+<% counts_by_repo = rel ? release_member_counts_by_repo(rel.tasks.to_a) : {} %>
+<%= tag.div(**deploy_summary_card_options("releases", test: "release-summary-card", id: "release-summary-card", extra_class: "@container"),
+            "data-rendered-at": (Time.current.to_f * 1000).to_i) do %>
+  <%= render "tasks/summary_card_header", panel: "releases", title: "Releases",
+             meta: rel ? "candidate open" : nil %>
+
+  <div class="mt-3 flex flex-1 flex-col gap-3">
+    <%# NEXT %>
+    <section class="min-w-0" data-test="release-summary-next" data-state="<%= rel ? "open" : "queued" %>">
+      <div class="flex min-w-0 items-center gap-2" data-test="release-summary-next-line">
+        <span class="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-muted">Next</span>
+        <% if rel %>
+          <span class="min-w-0 truncate text-[11px] font-medium text-heading" data-test="release-summary-next-state"><%= release_state_label(rel, current: true) %><span class="font-normal text-muted" title="in progress" data-test="release-summary-next-clock" data-release-ticker data-since="<%= rel.created_at.to_i %>" data-prefix=" · "> · <%= release_elapsed_clock(rel) %></span></span>
+          <%= render "tasks/release_summary_mascot", mascot: rel.mascot, test_id: "release-summary-next-mascot" %>
+        <% else %>
+          <span class="text-[11px] italic text-muted" data-test="release-summary-next-state">none active</span>
+        <% end %>
+      </div>
+      <% if rel %>
+        <% if lanes.any? %>
+          <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5" data-test="release-summary-next-trackers">
+            <% lanes.each do |lane| %>
+              <%= render "tasks/release_app_tracker", lane: lane, count: counts_by_repo[lane[:repo]] %>
+            <% end %>
+          </div>
+        <% else %>
+          <p class="mt-1 text-[11px] text-muted" data-test="release-summary-next-note">no members yet</p>
+        <% end %>
+      <% else %>
+        <% if next_counts.any? %>
+          <div class="mt-1.5">
+            <%= render "tasks/app_count_cluster", entries: next_counts, test_id: "release-summary-next-counts" %>
+          </div>
+        <% end %>
+        <p class="mt-1 truncate text-[11px] text-muted" data-test="release-summary-next-note">
+          <% if queued_total.positive? %>
+            <%= pluralize(queued_total, "task") %> queued on accepted
+          <% else %>
+            nothing queued on accepted
+          <% end %>
+        </p>
+      <% end %>
+    </section>
+
+    <div class="border-t border-subtle/70"></div>
+
+    <%# LAST %>
+    <section class="min-w-0" data-test="release-summary-last">
+      <div class="flex min-w-0 items-center gap-2" data-test="release-summary-last-line">
+        <span class="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-muted">Last</span>
+        <% if last %>
+          <span class="flex min-w-0 items-center gap-1.5 text-[11px] font-medium text-heading" data-test="release-summary-last-shipped">
+            <% if (seal = last.smoke_seal) %>
+              <span class="shrink-0 leading-none" data-test="release-summary-seal" data-seal-status="<%= seal.status %>" title="<%= release_smoke_seal_title(seal) %>"><%= seal.badge %></span>
+            <% end %>
+            <span class="truncate"><%= release_state_label(last) %><% if (timing = release_timing_label(last)) %><span class="font-normal text-muted" data-test="release-summary-last-timing"> · <%= timing %></span><% end %></span>
+          </span>
+          <%= render "tasks/release_summary_mascot", mascot: last.mascot, test_id: "release-summary-last-mascot" %>
+        <% else %>
+          <span class="text-[11px] italic text-muted">none yet</span>
+        <% end %>
+      </div>
+      <% if last_counts.any? %>
+        <div class="mt-1.5">
+          <%= render "tasks/app_count_cluster", entries: last_counts, test_id: "release-summary-last-counts" %>
+        </div>
+      <% end %>
+    </section>
+  </div>
+<% end %>

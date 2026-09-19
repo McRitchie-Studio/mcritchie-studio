@@ -787,7 +787,11 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "#last-release", { text: /#{Regexp.escape(active.slug)}/, count: 0 }
   end
 
-  test "deployments wraps Current and Last release modules in a responsive side-by-side grid" do
+  # ONE ROW OF FOUR SUMMARY CARDS, each opening a sidebar that holds the full card it
+  # stands for. The full cards keep their ids — #current-release, #last-release,
+  # #heartbeats-card, #release-duration-card, #app-ladder-detail — because every
+  # broadcast and every release animation targets them; they moved, they did not go.
+  test "deployments leads with one row of four summary cards, each opening its sidebar" do
     Release.delete_all
     shipped = Release.open!(branch: "release/grid-shipped")
     shipped.ship!
@@ -798,23 +802,37 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     get deployments_path
     assert_response :success
 
-    # A 2×2 card grid once the viewport has enough room: Next Release + Last
-    # Release on top, Workflows + DevOps below.
-    assert_select "[data-test='release-dashboard-grid'].grid.grid-cols-1.xl\\:grid-cols-2" do
-      assert_select "#current-release", count: 1
-      assert_select "#last-release", count: 1
-      assert_select "[data-test='heartbeats-card']", count: 1
-      assert_select "#release-duration-card", count: 1
+    assert_select "[data-test='deploy-summary-row'].grid.grid-cols-1.sm\\:grid-cols-2.xl\\:grid-cols-4" do
+      assert_select "[data-test='app-summary-card'][data-panel='apps']", count: 1
+      assert_select "#release-summary-card[data-panel='releases']", count: 1
+      assert_select "#agents-summary-card[data-panel='agents']", count: 1
+      assert_select "#devops-summary-card[data-panel='devops']", count: 1
+      # The full cards are NOT in the row any more…
+      assert_select "#current-release", count: 0
+      assert_select "#last-release", count: 0
+      assert_select "[data-test='heartbeats-card']", count: 0
+      assert_select "#release-duration-card", count: 0
     end
-    assert_select "#current-release.h-full"
-    assert_select "#last-release.h-full"
-    assert_select "[data-test='heartbeats-card'].h-full"
-    assert_select "#release-duration-card.h-full"
-    # Next Release no longer spans two rows — every card is a single 2×2 cell.
-    assert_select "#current-release.lg\\:row-span-2", count: 0
+    # …they are in the sidebars, one sidebar per summary card, each controlled by it.
+    { "apps" => "#app-ladder-detail", "releases" => "#current-release",
+      "agents" => "[data-test='heartbeats-card']", "devops" => "#release-duration-card" }.each do |panel, full_card|
+      assert_select "aside#deploy-sidebar-#{panel}[x-show=?]", "panel === '#{panel}'" do
+        assert_select full_card, count: 1
+      end
+      assert_select "button[data-test='summary-card-toggle'][aria-controls='deploy-sidebar-#{panel}']", count: 1
+    end
+    assert_select "aside#deploy-sidebar-releases #last-release", count: 1
+    # Every card stretches to the row's height, and each heading is a real button — the
+    # keyboard and screen-reader control. No card is role=button: that would hide the
+    # Workflows card's own chips from assistive tech.
+    assert_select "[data-test='deploy-summary-row'] [data-panel].h-full", count: 4
+    assert_select "[data-test='deploy-summary-row'] h3 button[data-test='summary-card-toggle']", count: 4
+    assert_select "[data-test='deploy-summary-row'] [role='button']", count: 0
+    # The old 2x2 dashboard is gone.
+    assert_select "[data-test='release-dashboard-grid']", count: 0
   end
 
-  test "deployments empty-state Current still nests inside the responsive grid beside Last" do
+  test "deployments with no active release: Next reads the queue, the sidebar keeps the empty state" do
     Release.delete_all
     shipped = Release.open!(branch: "release/grid-empty")
     shipped.ship!
@@ -822,8 +840,9 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     get deployments_path
     assert_response :success
 
-    # Short empty-state Current + tall Last both live in the grid container.
-    assert_select "div.grid.grid-cols-1.xl\\:grid-cols-2" do
+    assert_select "#release-summary-card [data-test='release-summary-next'][data-state='queued']", count: 1
+    assert_select "#release-summary-card [data-test='release-summary-next-state']", text: "none active"
+    assert_select "aside#deploy-sidebar-releases" do
       assert_select "#current-release", text: /none active/
       assert_select "#last-release", count: 1
     end
@@ -869,11 +888,15 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     # the side / terminal states stay off the board
     assert_select "#dropzone-blocked", count: 0
     assert_select "#dropzone-archived", count: 0
-    # Copy-paste kickoff commands stay off the /deployments column headers.
-    assert_not_includes response.body, "Review submitted PRs"
-    assert_not_includes response.body, "Prepare release"
-    assert_not_includes response.body, "Run Deployment"
-    assert_not_includes response.body, "Archive completed tasks"
+    # Copy-paste kickoff commands stay off the /deployments column headers. Scoped to
+    # the headers: "Review submitted PRs" is ALSO what Carl's heartbeat does, and the
+    # Workflows sidebar rightly says so beside his chip.
+    headers = css_select("[data-test='stage-header']").map(&:text).join(" ")
+    assert_not_empty headers, "the lane headers rendered"
+    assert_not_includes headers, "Review submitted PRs"
+    assert_not_includes headers, "Prepare release"
+    assert_not_includes headers, "Run Deployment"
+    assert_not_includes headers, "Archive completed tasks"
   end
 
   # --- board scope: live work only ------------------------------------------

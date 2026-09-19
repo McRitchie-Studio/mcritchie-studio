@@ -90,14 +90,58 @@ class DeploymentsBroadcaster
   # cable failure can never break the write that triggered it. Computed fresh from
   # Ci::AppLadder rather than passed in — the caller knows something changed, not what
   # the row should now say.
-  def self.app_ladder
+  #
+  # THREE SLOTS FROM ONE READ, since the row became the Applications SUMMARY card:
+  #
+  #   #app-ladder-row        the summary card + its pinned strip
+  #   #app-ladder-detail     the full app cards in the Applications sidebar
+  #   #release-summary-card  the Releases summary card — its "Next" row counts the work
+  #                          queued on `accepted`, which is ladder data, and its members
+  #                          and last ship move on exactly the release events that
+  #                          already call this method. So every caller that can change
+  #                          it is already here, and no new wiring had to learn about it.
+  #
+  # The cards are built ONCE and handed to every slot, in the page's own order
+  # (Ci::AppLadder.recent_first), so a push can never show the sidebar and the summary
+  # disagreeing about the ladder.
+  #
+  # `release_summary: false` is for .ci_progress on a NON-member's tick: that cannot
+  # move a count, a ship time or a member's stage, so it skips the Releases card rather
+  # than redraw it byte-identically on every one of a run's ~24 upserts. A release
+  # MEMBER's tick does move the card — its per-app tracker's Assembling segment is that
+  # member's candidate CI — and .ci_progress pushes it through .release_summary.
+  def self.app_ladder(release_summary: true)
     Studio::Cable.safe_broadcast do
+      cards = Ci::AppLadder.recent_first(Ci::AppLadder.build)
       Turbo::StreamsChannel.broadcast_replace_to(
         STREAM, target: "app-ladder-row",
-        partial: "tasks/app_ladder_row", locals: { cards: Ci::AppLadder.build }
+        partial: "tasks/app_ladder_row", locals: { cards: cards }
       )
+      Turbo::StreamsChannel.broadcast_replace_to(
+        STREAM, target: "app-ladder-detail",
+        partial: "tasks/app_ladder_detail", locals: { cards: cards }
+      )
+      replace_release_summary(cards) if release_summary
     end
   end
+
+  # The Releases summary card alone. `cards` feed only its "queued on accepted" counts,
+  # which it reads when NO candidate is open; a caller that knows one is open (a member's
+  # CI tick) passes none and skips the ladder build.
+  def self.release_summary(cards: nil)
+    Studio::Cable.safe_broadcast do
+      replace_release_summary(cards || Ci::AppLadder.recent_first(Ci::AppLadder.build))
+    end
+  end
+
+  def self.replace_release_summary(cards)
+    Turbo::StreamsChannel.broadcast_replace_to(
+      STREAM, target: "release-summary-card",
+      partial: "tasks/release_summary_card",
+      locals: { current_release: Release.current, last_release: Release.last_shipped, cards: cards }
+    )
+  end
+  private_class_method :replace_release_summary
 
   def self.release_modules(fx: nil, slots: RELEASE_SLOTS)
     Studio::Cable.safe_broadcast do
@@ -154,8 +198,9 @@ class DeploymentsBroadcaster
       # Ci::ProgressReader#for_release) updates live. release_ci_slot_for owns the
       # member + branch match, so this fires ONLY for a member's release-CI push — the
       # per-repo "<repo> G3 tests" slots it used to morph are now those Assembling meters.
-      if (release = Release.current) &&
-         reader.release_ci_slot_for(release, job.repo, job.head_branch)
+      member_tick = (release = Release.current) &&
+                    reader.release_ci_slot_for(release, job.repo, job.head_branch)
+      if member_tick
         # :current ONLY. A CI tick cannot change Release.last_shipped, so pushing the
         # Last Release card here was a byte-identical redraw the client then had to
         # explain — and it explained it with confetti, once per upsert. Declared
@@ -167,7 +212,13 @@ class DeploymentsBroadcaster
       # The ladder row carries this repo's own CI meter, so a check upsert for ANY
       # ladder branch moves it — including the branches no task and no release member
       # is watching, which is precisely the case the two pushes above cannot cover.
-      app_ladder if Ci::AppLadder::RUNGS.include?(job.head_branch.to_s)
+      # The Releases summary rides along only for a MEMBER's tick (its per-app tracker
+      # reads that CI); a candidate is open then, so it needs no ladder cards of its own.
+      if Ci::AppLadder::RUNGS.include?(job.head_branch.to_s)
+        app_ladder(release_summary: !!member_tick)
+      elsif member_tick
+        release_summary(cards: [])
+      end
     end
   end
 

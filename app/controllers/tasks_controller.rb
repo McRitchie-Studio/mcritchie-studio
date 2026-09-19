@@ -35,11 +35,17 @@ class TasksController < ApplicationController
     # @tasks_by_stage: load_board narrows to the agent/stage filter params, and a
     # filtered board must not silently shrink the pipeline-wide WIP number.
     @wip_task_count = Task.wip_count
+    @wip_by_stage = Task.wip_by_stage
+    # Where release time goes — the DevOps summary card's four phases and its median
+    # (Release::Flow). The six stage averages above stay for the sidebar.
+    @release_flow = Release::Flow.recent
     # The app-ladder row: where each application sits on accepted → release → main,
     # which the Next Release card cannot show (it is decoupled — work parks on
     # `accepted` between releases). Pipeline-wide for the same reason as WIP above:
     # it must not shrink under a board filter.
-    @app_ladder_cards = Ci::AppLadder.build
+    # Newest suite restart first — the order the Applications summary card reads in,
+    # shared by its sidebar and the pinned strip (Ci::AppLadder.recent_first).
+    @app_ladder_cards = Ci::AppLadder.recent_first(Ci::AppLadder.build)
     # The desk panel: what the worktree desks ARE, and the teardown records that used to
     # live in a markdown file the primary checkout could never commit. Fixed query count
     # by construction (Desks::Panel) so it cannot make the board's cost grow with the
