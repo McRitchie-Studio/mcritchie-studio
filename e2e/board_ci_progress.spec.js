@@ -1,4 +1,5 @@
 const { test, expect } = require("@playwright/test");
+const { openDeploySidebar } = require("./helpers");
 
 // The board's CI progress meters (feature: visual-ci-progress-bars, v1.3:
 // show-ci-while-building). Data is seeded by e2e/seed.rb: a submitted "E2E CI
@@ -43,6 +44,8 @@ test("a submitted task card shows its CI checks as marks, linked to the PR", asy
 
 test("the Next Release card shows each member repo's G3 CI in its Assembling meter", async ({ page }) => {
   await page.goto("/deployments");
+  // The Next Release card lives in the Releases sidebar since the summary row.
+  await openDeploySidebar(page, "releases");
 
   // G3 CI is now the ASSEMBLING meter of the repo's lane (the standalone "<repo> G3
   // tests" bars were retired). The seed's active release carries mcritchie-studio

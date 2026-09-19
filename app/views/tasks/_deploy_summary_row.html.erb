@@ -1,0 +1,168 @@
+<%# THE /deployments SUMMARY ROW — four cards on ONE line, each a summary that opens a
+    right-hand sidebar holding the full detail it stands for:
+
+      Applications   one line per app, newest suite restart first     → every full app card
+      Releases       per-app feature counts, last ship time + Pokémon → Next + Last release cards
+      Workflows      one soul at a time on a 5-minute carousel        → every soul and its commands
+      DevOps         typical release time and where the time goes     → WIP, phases, stage averages
+
+    WHY. The page used to lead with a 2x2 dashboard plus a full-width row of app cards,
+    and the operator reached the board ~900px down. The summaries carry what a glance
+    needs; the detail is one click away, never gone.
+
+    THE SIDEBARS HOLD THE ORIGINAL CARDS, ids intact. #current-release, #last-release,
+    #app-ladder-detail and #heartbeats-card still exist in the DOM with the same ids, so
+    every DeploymentsBroadcaster push and every ReleaseFx animation keeps landing on
+    them. A closed sidebar is display:none, not unrendered.
+
+    ONE ALPINE OWNER for which sidebar is open (`panel`). The summary cards and the
+    sidebars all read it, so opening one closes the rest, and a broadcast that REPLACES
+    a summary card (#app-ladder-row, #release-summary-card) re-initialises inside this
+    scope and keeps working — the same inheritance the board's task cards rely on.
+
+    Locals: current_release, last_release, release_duration_dashboard, wip_task_count,
+            wip_by_stage, release_flow, app_ladder_cards %>
+<% cards = local_assigns.fetch(:app_ladder_cards, []) %>
+<% flow = local_assigns.fetch(:release_flow, nil) %>
+<%= render "components/copy_text_script" %>
+<script>
+// Defined inline, before the markup, for the reason kanbanBoard is: x-data must find
+// the function when Alpine (or a Turbo visit's MutationObserver) first walks the node.
+function deploySummary() {
+  return {
+    panel: null,
+    // "Every card is wired" — set a tick AFTER init, once Alpine has bound the
+    // directives below, so a script (or a spec) that waits for it never clicks an
+    // unbound control. Stripped before Turbo snapshots the page, like the board's own
+    // data-alpine-ready, so a restored preview cannot claim a readiness it lacks.
+    init() { this.$nextTick(() => { this.$el.dataset.alpineReady = 'true'; }); },
+    toggle(name) { this.panel = this.panel === name ? null : name; },
+    close() { this.panel = null; },
+    // Each sidebar dismisses on an outside click only while it is the open one. By the
+    // time a click on ANOTHER summary card reaches the document, that card has already
+    // switched `panel`, so the old sidebar's outside handler must not undo it.
+    closeIf(name) { if (this.panel === name) this.panel = null; },
+    // A summary card is itself the control, but it can hold real controls — a copy
+    // chip, an avatar link, a carousel dot. Those own their clicks; only a click on
+    // the card's own surface opens its sidebar.
+    openFrom(event, name) {
+      if (event.target.closest('a, button, [data-summary-own-click]')) return;
+      this.toggle(name);
+    }
+  };
+}
+
+// The Workflows card's wheel (tasks/_agents_summary_card documents the three places a
+// slide can be). A one-second tick COUNTS toward the turn instead of scheduling it,
+// so hovering or focusing the card holds the wheel still and the hairline with it.
+// It counts the time that actually PASSED since the last tick, not "one second per
+// tick": a throttled or sleeping tab fires late and would otherwise slow the wheel,
+// and a test can jump the clock rather than tick through five minutes.
+// Only `index` and `prev` decide a slide's place, so a dot jump and a timed turn are
+// the same move. The interval is the instance's own and is released in destroy():
+// Turbo Drive tears this card down on every visit away from /deployments.
+function soulCarousel(count, ms) {
+  return {
+    count: count,
+    ms: ms,
+    index: 0,
+    prev: null,
+    elapsed: 0,
+    hover: false,
+    focused: false,
+    agents: [],
+    _tick: null,
+    _last: 0,
+    init() {
+      this.agents = (this.$el.dataset.agents || '').split(',');
+      this._last = Date.now();
+      this._tick = setInterval(() => {
+        const now = Date.now();
+        const passed = Math.max(now - this._last, 0);
+        this._last = now;
+        if (this.hover || this.focused || document.hidden) return;
+        this.elapsed = Math.min(this.elapsed + passed, this.ms);
+        if (this.elapsed >= this.ms) this.turn((this.index + 1) % this.count);
+      }, 1000);
+    },
+    destroy() { clearInterval(this._tick); this._tick = null; },
+    turn(next) {
+      if (next === this.index) { this.elapsed = 0; return; }
+      this.prev = this.index;
+      this.index = next;
+      this.elapsed = 0;
+    },
+    go(i) { this.turn(i); },
+    place(i) {
+      if (i === this.index) return 'active';
+      if (i === this.prev) return 'leaving';
+      return 'waiting';
+    }
+  };
+}
+</script>
+<div x-data="deploySummary()"
+     class="mb-6"
+     data-test="deploy-summary"
+     @turbo:before-cache.window="close(); delete $el.dataset.alpineReady">
+  <%# items-stretch + h-full on every card: the row reads as one band whatever each
+      card holds, rather than four ragged heights. 2-up below xl, where a quarter of
+      the container would squeeze the Applications meters below their fixed rail. %>
+  <div class="grid min-w-0 grid-cols-1 items-stretch gap-4 sm:grid-cols-2 xl:grid-cols-4"
+       data-test="deploy-summary-row">
+    <%= render "tasks/app_ladder_row", cards: cards %>
+    <%= render "tasks/release_summary_card", current_release: current_release, last_release: last_release, cards: cards %>
+    <%= render "tasks/heartbeats_card", variant: :summary %>
+    <%= render "tasks/devops_summary_card", flow: flow, wip_count: wip_task_count, wip_by_stage: local_assigns[:wip_by_stage] %>
+  </div>
+
+  <%# THE FOUR SIDEBARS. The engine's shared shell (components/_sidebar_panel): fixed
+      right, under the site header, slides in and out. display_class "flex" rather than
+      the engine's "hidden md:flex" — a phone gets the detail too, full width. %>
+  <%# OUR OWN CLOSE BUTTON, not the engine panel's. The panel stamps its close button
+      data-link-sidebar-close, and the engine's link-sidebar bridge
+      (components/_link_sidebar) swallows EVERY click on that attribute in the capture
+      phase — stopImmediatePropagation, then it closes the LINK sidebar. So on any
+      other panel the × never reaches its own @click and does nothing (measured
+      2026-09-18: the click never reached the document). close_action is therefore
+      left unset — the panel then renders no button and no before-cache hook, and this
+      row owns both (the button below; @turbo:before-cache on the wrapper above). %>
+  <% close_button = capture do %>
+    <button type="button" @click="close()"
+            class="flex h-8 w-8 items-center justify-center rounded-full text-secondary transition hover:bg-surface-alt hover:text-heading focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+            aria-label="Close sidebar"
+            data-test="deploy-sidebar-close"><span class="text-xl leading-none">&times;</span></button>
+  <% end %>
+  <% sidebar = { display_class: "flex", width_class: "w-full sm:w-[36rem] max-w-full",
+                 escape_action: "close()", actions_html: close_button } %>
+  <% apps_body = capture do %>
+    <div class="flex-1 overflow-y-auto p-4" data-test="deploy-sidebar-body">
+      <%= render "tasks/app_ladder_detail", cards: cards %>
+    </div>
+  <% end %>
+  <% releases_body = capture do %>
+    <div class="flex-1 space-y-4 overflow-y-auto p-4" data-test="deploy-sidebar-body">
+      <%= render "tasks/current_release", release: current_release, card_class: "min-w-0" %>
+      <%= render "tasks/last_release", release: last_release, card_class: "min-w-0" %>
+    </div>
+  <% end %>
+  <% agents_body = capture do %>
+    <div class="flex-1 overflow-y-auto p-4" data-test="deploy-sidebar-body">
+      <%= render "tasks/heartbeats_card", card_class: "min-w-0" %>
+    </div>
+  <% end %>
+  <% devops_body = capture do %>
+    <div class="flex-1 space-y-4 overflow-y-auto p-4" data-test="deploy-sidebar-body">
+      <%= render "tasks/devops_detail", flow: flow, wip_count: wip_task_count, wip_by_stage: local_assigns[:wip_by_stage] %>
+      <%= render "tasks/release_duration_card", dashboard: release_duration_dashboard, wip_count: wip_task_count, card_class: "min-w-0" %>
+    </div>
+  <% end %>
+  <%= render "components/sidebar_panel", **sidebar, id: "deploy-sidebar-apps", title: "Applications",
+        open: "panel === 'apps'", outside_action: "closeIf('apps')", body_html: apps_body %>
+  <%= render "components/sidebar_panel", **sidebar, id: "deploy-sidebar-releases", title: "Releases",
+        open: "panel === 'releases'", outside_action: "closeIf('releases')", body_html: releases_body %>
+  <%= render "components/sidebar_panel", **sidebar, id: "deploy-sidebar-agents", title: "Workflows",
+        open: "panel === 'agents'", outside_action: "closeIf('agents')", body_html: agents_body %>
+  <%= render "components/sidebar_panel", **sidebar, id: "deploy-sidebar-devops", title: "DevOps",
+        open: "panel === 'devops'", outside_action: "closeIf('devops')", body_html: devops_body %>
+</div>

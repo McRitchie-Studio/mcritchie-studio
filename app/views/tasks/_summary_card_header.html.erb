@@ -1,0 +1,18 @@
+<%# The heading row every /deployments summary card opens with: the card's name — a
+    real <button>, the card's keyboard and screen-reader control
+    (ApplicationHelper#deploy_summary_toggle_options) — an optional one-phrase status
+    beside it, and a chevron on the right that says "this opens", brightening on hover
+    so the whole card reads as the control it is.
+    Locals: title, panel, meta (optional string or safe HTML) %>
+<div class="flex items-center justify-between gap-2" data-test="summary-card-header">
+  <div class="flex min-w-0 items-baseline gap-2">
+    <h3 class="shrink-0 text-[11px] font-semibold text-muted">
+      <%= tag.button(**deploy_summary_toggle_options(local_assigns.fetch(:panel))) do %><%= local_assigns.fetch(:title) %><span class="sr-only"> details</span><% end %>
+    </h3>
+    <% if (meta = local_assigns[:meta]).present? %>
+      <span class="truncate text-[11px] text-secondary" data-test="summary-card-meta"><%= meta %></span>
+    <% end %>
+  </div>
+  <span class="shrink-0 text-sm leading-none text-muted transition group-hover:translate-x-0.5 group-hover:text-heading"
+        aria-hidden="true">&rsaquo;</span>
+</div>

@@ -1,10 +1,14 @@
 # Workflows — the five soul launchers
 
-The standalone **Workflows card** on `/deployments` (`tasks/_heartbeats_card`,
-sized to match the Next Release card) renders five **soul-avatar heartbeat
-launchers** (`ApplicationHelper#heartbeat_launchers`, one `tasks/_heartbeat_launcher`
-per soul). Each launcher is a soul face — **a link to that soul's `/agents/<slug>`
-page** — over a **prompt-like row 1** plus one or more **copyable action rows**,
+The **Workflows card** on `/deployments` — the third of the four summary cards
+(`tasks/_heartbeats_card`) — renders five **soul-avatar heartbeat launchers**
+(`ApplicationHelper#heartbeat_launchers`, one `tasks/_heartbeat_launcher` per soul)
+on two surfaces drawn from ONE chip list. The card shows **one soul at a time** on a
+five-minute carousel that starts on Turf Monster (the soul in frame slides up, the
+next slides in from below; it holds while hovered). A click on the card opens the
+**Workflows sidebar**: every soul and every command, each chip beside what it
+launches. Each launcher is a soul face — **a link to that soul's `/agents/<slug>`
+page** — with a **prompt-like row 1** plus one or more **copyable action rows**,
 each carrying a leading icon (a ❤️ on the heartbeat row; a `1️⃣`–`3️⃣` keycap on the
 three ordered release actions, a themed glyph on the rest):
 
@@ -41,9 +45,9 @@ three ordered release actions, a themed glyph on the rest):
   [`turf_monster/HEARTBEAT.md`](../agents/turf_monster/HEARTBEAT.md).
 
   The **card's** own reason is separate, and it is the one worth stating because a
-  test can hold it: at 21 characters the slug needs 114px, while a chip's text area
-  at the card's 728px cap is 99px — so it clips, losing its last three characters.
-  Measured 2026-09-09 at 1536px and 1728px; `test/system/workflows_card_chip_fit_test.rb`
+  test can hold it: at 21 characters the slug needs 114px, while an act chip's text
+  area on the summary card's carousel (four cards up at xl) is 98px — so it clips,
+  losing its last three characters. Measured 2026-09-18 at 1300px; `test/system/workflows_card_chip_fit_test.rb`
   holds it and fails if the card is ever widened enough for the reason to expire.
   It is **not** that a chip implies a cadence: `clean-infra`, `deploy-with-task`
   and `contest-rehearsal` are all on the card and all three are direct-invoke or

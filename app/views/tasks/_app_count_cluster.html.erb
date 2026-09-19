@@ -1,0 +1,19 @@
+<%# Features per app as emoji + count — "🪎 4  🐊 2  🧱 1" — the Releases summary card's
+    core fact. Entries come from ReleaseMembersHelper (#release_member_repo_counts for a
+    release's members, #release_queued_repo_counts for work waiting on `accepted`), so
+    the emoji are the page's one app vocabulary (ApplicationHelper::APP_EMOJIS).
+    Locals: entries - [{ emoji:, count:, repositories: }], test_id %>
+<% entries = local_assigns.fetch(:entries, []) %>
+<div class="flex flex-wrap items-center gap-x-3 gap-y-1" data-test="<%= local_assigns.fetch(:test_id, "app-count-cluster") %>">
+  <% entries.each do |entry| %>
+    <span class="inline-flex items-center gap-1 text-sm tabular-nums text-heading"
+          data-test="app-count"
+          data-repo="<%= entry[:repositories].join(",") %>"
+          data-count="<%= entry[:count] %>"
+          title="<%= pluralize(entry[:count], "task") %> · <%= entry[:repositories].join(", ") %>">
+      <span class="leading-none" aria-hidden="true"><%= entry[:emoji] %></span>
+      <span class="font-semibold"><%= entry[:count] %></span>
+      <span class="sr-only"><%= entry[:repositories].join(", ") %></span>
+    </span>
+  <% end %>
+</div>

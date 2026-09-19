@@ -224,4 +224,62 @@ function watchPageErrors(page, { allowOrigins = [] } = {}) {
   return { pageErrors, failures, ignored, report };
 }
 
-module.exports = { loginWithMagicLink, watchPageErrors };
+// OPEN ONE OF THE /deployments SIDEBARS the way the operator does — by clicking its
+// summary card — and wait until it has slid in.
+//
+// WHY EVERY RELEASE / LADDER SPEC NEEDS IT. Since the summary row (2026-09-18) the full
+// cards — #current-release, #last-release, #app-ladder-detail, #heartbeats-card,
+// #release-duration-card — live in closed sidebars: in the DOM, ids intact, still
+// receiving every broadcast, but display:none until opened. A visibility assertion on a
+// closed sidebar fails for a reason unrelated to the card under test.
+//
+// It clicks the card's HEADING BUTTON — the card's real control (aria-expanded,
+// aria-controls), where a click on the card's surface is the mouse shortcut to the same
+// thing. It waits for Alpine to have bound the button before clicking: the server
+// renders aria-expanded="false" and Alpine owns it after init, so a click that lands
+// first reaches an unwired element and does nothing.
+//
+// `panel` is one of "apps", "releases", "agents", "devops".
+async function openDeploySidebar(page, panel) {
+  const { expect } = require("@playwright/test");
+  // A DIFFERENT open sidebar can cover this card — at 1280px the 36rem sidebar sits over
+  // the row's right half — so close it first, the way the operator would.
+  for (const other of ["apps", "releases", "agents", "devops"]) {
+    if (other === panel) continue;
+    const open = page.locator(`#deploy-sidebar-${other}`);
+    if (await open.isVisible()) {
+      await page.keyboard.press("Escape");
+      await expect(open).toBeHidden();
+    }
+  }
+  const toggle = page.locator(`button[data-test='summary-card-toggle'][aria-controls='deploy-sidebar-${panel}']`);
+  await expect(page.locator("[data-test='deploy-summary']")).toHaveAttribute("data-alpine-ready", "true");
+  if ((await toggle.getAttribute("aria-expanded")) !== "true") {
+    await toggle.click();
+  }
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  const sidebar = page.locator(`#deploy-sidebar-${panel}`);
+  await expect(sidebar).toBeVisible();
+  // …AND SETTLED. The sidebar is "visible" from the first frame of its 300ms slide-in,
+  // while it is still off to the right, so geometry read then describes a panel in
+  // motion — measured: a seal read at x=1636 beside a state badge read at x=1327, one
+  // frame apart, in a sidebar whose right edge is 1280. Wait for the slide to finish.
+  // A transition Alpine cancels as it swaps its classes REJECTS `finished` with an
+  // AbortError — it has still ended, so a cancel counts as done. Then the box must hold
+  // still across two frames, which is the property the callers actually rely on.
+  await sidebar.evaluate(async (el) => {
+    await Promise.all(el.getAnimations().map((a) => a.finished.catch(() => {})));
+    const frame = () => new Promise((resolve) => requestAnimationFrame(resolve));
+    let last = "";
+    for (let i = 0; i < 60; i += 1) {
+      await frame();
+      const r = el.getBoundingClientRect();
+      const now = `${Math.round(r.left)},${Math.round(r.width)}`;
+      if (now === last) return;
+      last = now;
+    }
+  });
+  return sidebar;
+}
+
+module.exports = { loginWithMagicLink, watchPageErrors, openDeploySidebar };

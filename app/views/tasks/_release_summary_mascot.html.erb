@@ -1,0 +1,18 @@
+<%# The conductor Pokémon, floated to the right end of a Releases summary line (Next or
+    Last) — the operator's layout: time on the left, who ran it on the right. The sprite
+    always shows; the name joins it when the CARD has room (a container query on the
+    card), since at 1280px four cards leave no width for both. The name also rides the
+    title, so a narrow card loses nothing.
+    Locals: mascot (Pokemon or nil), test_id %>
+<% mascot = local_assigns[:mascot] %>
+<% if mascot %>
+  <span class="ml-auto flex shrink-0 items-center gap-1" title="Conductor: <%= mascot.name %>"
+        data-test="<%= local_assigns.fetch(:test_id) %>-conductor">
+    <span class="hidden text-[11px] font-medium @[19rem]:inline" data-test="<%= local_assigns.fetch(:test_id) %>"
+          style="<%= "color: #{mascot.signature_color};" if mascot.signature_color.present? %>"><%= mascot.name %></span>
+    <% if mascot.sprite_url.present? %>
+      <img src="<%= mascot.sprite_url %>" alt="<%= mascot.name %>" width="24" height="24" loading="lazy"
+           class="-my-1 h-6 w-6 shrink-0" style="image-rendering: pixelated;">
+    <% end %>
+  </span>
+<% end %>

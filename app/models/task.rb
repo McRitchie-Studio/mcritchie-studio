@@ -873,6 +873,15 @@ class Task < ApplicationRecord
     live.count
   end
 
+  # The same WIP, split by stage in board order — { "designed" => 3, ... } with
+  # every live stage present, a zero included, so the DevOps card can draw one
+  # segment per stage without guessing which stages exist. One grouped query, and
+  # its sum is #wip_count by construction: both read the `live` scope.
+  def self.wip_by_stage
+    counts = live.group(:stage).count
+    (STAGES - %w[shipped archived]).index_with { |stage| counts[stage].to_i }
+  end
+
   # Avi's per-APPLICATION release disposition over the `reviewed` queue — the read
   # behind the reviewed-stage board marker and the `qa-release` disposition step. It
   # groups the reviewed candidates by their release application (Task#release_repo) and

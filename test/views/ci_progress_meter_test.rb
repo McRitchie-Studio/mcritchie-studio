@@ -35,6 +35,40 @@ class CiProgressMeterTest < ActionView::TestCase
     assert_includes clock["title"], "CI took"
   end
 
+  # INLINE: the same meter on one line — rail then clock, no label header — for a list
+  # that names each row itself (the Applications summary card). The rail is a FIXED
+  # w-24, and the cap is arithmetic on that width (CI_METER_INLINE_MARK_CAP): a flexing
+  # rail would clip its last marks silently at the narrow breakpoint.
+  test "[component] inline lays rail and clock on one line and caps marks to the fixed rail" do
+    render partial: "components/ci_progress_meter",
+           locals: { progress: Ci::CheckProgress.new(passed: 12, failed: 1, pending: 2), label: nil,
+                     test_id: "app-summary-ci-bar", inline: true }
+
+    meter = css_select("[data-test='app-summary-ci-bar']").first
+    assert_equal "true", meter["data-inline"]
+    assert_includes meter["class"], "flex"
+    assert_select "[data-test='app-summary-ci-bar-label']", 0, "inline carries no label header"
+    assert_select "[data-test='app-summary-ci-bar'] [role='progressbar'].w-24.shrink-0", 1
+    marks = css_select("[data-test='app-summary-ci-bar'] [data-test='ci-check-symbol']")
+    assert_equal ApplicationHelper::CI_METER_INLINE_MARK_CAP, marks.size
+    assert_equal 7, ApplicationHelper::CI_METER_INLINE_MARK_CAP,
+                 "96px rail - 2px border - 8px padding = 86px; 7 marks span 82px, 8 would span 94px"
+    # Severity order survives the cap: the failure leads, the running pair follows,
+    # and it is surplus PASSES that fall off the end — under a fade, not a silent clip.
+    assert_equal %w[failed pending pending passed passed passed passed], marks.map { |m| m["data-ci-check-state"] }
+    assert_select "[data-test='app-summary-ci-bar-marks'][data-overflowed='true']", 1
+  end
+
+  test "[component] the default layout is unchanged by the inline option" do
+    render partial: "components/ci_progress_meter",
+           locals: { progress: Ci::CheckProgress.new(passed: 20), label: "PR: 9", test_id: "task-ci-progress" }
+
+    assert_nil css_select("[data-test='task-ci-progress']").first["data-inline"]
+    assert_select "[data-test='task-ci-progress-label']", text: "PR: 9"
+    assert_select "[data-test='task-ci-progress'] [role='progressbar'].w-full", 1
+    assert_select "[data-test='task-ci-progress'] [data-test='ci-check-symbol']", ApplicationHelper::CI_METER_MARK_CAP
+  end
+
   test "[component] no ingested timestamps -> no clock at all, never a 0s" do
     render partial: "components/ci_progress_meter",
            locals: { progress: Ci::CheckProgress.new(passed: 2, pending: 1), label: "PR: 7", test_id: "task-ci-progress" }
