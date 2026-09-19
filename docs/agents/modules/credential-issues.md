@@ -90,18 +90,11 @@ gh issue create -R McRitchie-Studio/mcritchie-industries --label credential-issu
 **What happened:** <how it was exposed, or why it is a risk>
 **Known stores:** <every place you know holds this value — app config, Actions secrets, .env files, other vault items>
 **Found by:** <session or task slug>, <date>
-**Digest:** <optional — first 12 hex chars of sha256 of the value, to say WHICH value without revealing it>
 BODY
 ```
 
 `Known stores` is the most useful line you can write: it is the start of
 `credential-rotation`'s Phase 1 list, and you know it now while it is fresh.
-
-To get a digest without printing the value:
-
-```bash
-op read "op://<vault>/<item>/<field>" | shasum -a 256 | cut -c1-12
-```
 
 ### Never write into the issue
 
@@ -109,10 +102,13 @@ op read "op://<vault>/<item>/<field>" | shasum -a 256 | cut -c1-12
 - **The output of a command that echoed it** — an error message, a log line, a
   failing test's diff. Describe it; do not paste it.
 - A screenshot of a vault, a config page, or a terminal holding it.
+- **A digest of it.** A sha256 of a live secret is a confirmation oracle for a
+  guessed value — `credential-rotation`: "Digests are for the shell, not for the
+  record."
 
 The issue is private, but a private issue is still read by every session that
 has the grant, rendered in notifications, and kept forever. Identify a value by
-its digest, never by its content.
+its 1Password item and field name, never by its content.
 
 ---
 
