@@ -174,10 +174,11 @@ rather than stopping:
 
 **Not every credential problem stops the work.** A real exposure of something
 that guards money, customer data or production still rotates here, first —
-that is this section. A shell account, a latent risk that exposed nothing, a
-stale value or a hygiene fault is LOGGED and worked in a weekly pass instead:
-the triage, and the private place to log it, are
-[`credential-issues`](../../../modules/credential-issues.md).
+that is this section. So does a value exposed in a PUBLIC place that can run up
+a bill or take an action, even on a shell account. An unexposed shell account,
+a latent risk that exposed nothing, a stale value or a hygiene fault is LOGGED
+and worked in a weekly pass instead: the triage, and the private place to log
+it, are [`credential-issues`](../../../modules/credential-issues.md).
 
 Deleting the note un-exposes nothing. On 2026-09-09 a full `heroku config --json`
 dump — 36 keys including an RSA private key, `RAILS_MASTER_KEY`,
