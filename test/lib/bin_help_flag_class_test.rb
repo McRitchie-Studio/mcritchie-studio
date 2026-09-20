@@ -267,6 +267,12 @@ class BinHelpFlagClassTest < Minitest::Test
     "ship-wait"              => :optparse,
     "dor-check"              => :optparse,
     "fast-check"             => :optparse,
+    # Both corpus scripts parse before touching anything and then REFUSE a leftover
+    # positional, because OptionParser alone would have let `bin/hormozi-prep
+    # ./captions` run a full re-clean against the default root while the operator
+    # watched a path they named be ignored.
+    "hormozi-prep"           => :optparse,
+    "hormozi-bundle"         => :optparse,
     "full-suite-check"       => :optparse,
     "pr-review"              => :optparse,
     "session-preflight"      => :optparse,

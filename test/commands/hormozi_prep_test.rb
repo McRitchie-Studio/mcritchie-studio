@@ -70,6 +70,22 @@ class HormoziPrepTest < Minitest::Test
     end
   end
 
+  # An unknown FLAG is OptionParser's problem and it raises. A leftover POSITIONAL
+  # is nobody's problem unless the script makes it one — and this script rewrites
+  # every transcript under a root, so ignoring the path someone typed means
+  # re-cleaning the default corpus while they watch the wrong directory.
+  def test_refuses_a_leftover_positional_argument
+    Dir.mktmpdir do |root|
+      Dir.mkdir(File.join(root, "captions"))
+
+      out, status = Open3.capture2e(RbConfig.ruby, SCRIPT, "--root", root, "./captions")
+
+      refute status.success?
+      assert_match(/unexpected argument/, out)
+      refute File.exist?(File.join(root, "extract", "manifest.tsv")), "it must refuse BEFORE writing"
+    end
+  end
+
   def test_refuses_a_root_with_no_captions
     Dir.mktmpdir do |root|
       out, status = Open3.capture2e(RbConfig.ruby, SCRIPT, "--root", root)

@@ -30,6 +30,11 @@ OptionParser.new do |opts|
   end
 end.parse!
 
+# OptionParser refuses an unknown FLAG on its own; a leftover positional it simply
+# leaves in ARGV. On a script that rewrites every transcript under a root, silently
+# ignoring the path someone typed is the whole defect.
+abort "unexpected argument(s): #{ARGV.join(' ')} — did you mean --root?" unless ARGV.empty?
+
 root = options[:root]
 captions_dir = File.join(root, "captions")
 transcripts_dir = File.join(root, "transcripts")

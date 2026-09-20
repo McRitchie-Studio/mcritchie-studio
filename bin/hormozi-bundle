@@ -27,6 +27,11 @@ OptionParser.new do |opts|
   end
 end.parse!
 
+# This script deletes and rebuilds the bundles directory. A positional argument it
+# ignored would mean rebuilding the DEFAULT root while the operator believed they
+# had named another one.
+abort "unexpected argument(s): #{ARGV.join(' ')} — did you mean --root?" unless ARGV.empty?
+
 root = options[:root]
 extract_dir = File.join(root, "extract")
 bundles_dir = File.join(root, "bundles")
