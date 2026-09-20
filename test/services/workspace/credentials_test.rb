@@ -243,4 +243,40 @@ class WorkspaceCredentialsTest < ActiveSupport::TestCase
     assert_operator Workspace::Credentials::OP_TIMEOUT_SECONDS, :<=, 30,
       "op blocks for biometric unlock on a cold session; an unbounded read hangs a cron dyno"
   end
+
+  test "probe REFUSES a credential in self-signed-JWT mode, which ignores the subject" do
+    # The subject read-back is necessary but not sufficient: in this mode
+    # googleauth signs as the service account itself and never sends `sub`,
+    # while creds.sub keeps echoing what we set. Every call would then succeed
+    # against an empty Drive and a mailbox we do not own.
+    ENV["GOOGLE_SERVICE_ACCOUNT_JSON"] = key_json
+    WorkspaceAccount.create!(domain: "selfsigned.test")
+    liar = Struct.new(:sub) do
+      def fetch_access_token! = true
+      def enable_self_signed_jwt? = true
+    end.new("team@selfsigned.test")
+
+    ok, error = Workspace::Credentials.stub(:build_authorizer, ->(_s) { liar }) do
+      Workspace::Credentials.probe("team@selfsigned.test")
+    end
+
+    refute ok, "a credential that cannot carry the subject must not read as proven"
+    assert_includes error, "self-signed"
+  end
+
+  test "the mode is OFF for our real key shape, and a foreign universe_domain turns it ON" do
+    # The tripwire for the test above: it pins that the refusal is inert today
+    # AND that its condition is genuinely reachable, so neither half is theatre.
+    require "googleauth"
+    normal = Google::Auth::ServiceAccountCredentials.make_creds(
+      json_key_io: StringIO.new(key_json), scope: Workspace::Credentials::SCOPES
+    )
+    foreign = Google::Auth::ServiceAccountCredentials.make_creds(
+      json_key_io: StringIO.new(key_json("universe_domain" => "tpc.example.test")),
+      scope: Workspace::Credentials::SCOPES
+    )
+
+    refute normal.enable_self_signed_jwt?, "delegation would silently stop working"
+    assert foreign.enable_self_signed_jwt?, "if this flips, the probe guard is unreachable"
+  end
 end

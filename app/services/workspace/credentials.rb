@@ -158,6 +158,17 @@ module Workspace
           # perfectly fine.
           return [ false, "subject was not applied to the credential" ] unless creds.sub == subject
 
+          # The subject read-back above is necessary but not sufficient. In
+          # self-signed-JWT mode googleauth signs as the service account itself
+          # and never sends `sub` — while creds.sub keeps echoing what we set,
+          # so the check above still passes. The mode turns on by itself when
+          # universe_domain is not googleapis.com (service_account.rb:66), which
+          # a swapped key could carry. Then every call would succeed against an
+          # empty Drive and a mailbox we do not own.
+          if creds.respond_to?(:enable_self_signed_jwt?) && creds.enable_self_signed_jwt?
+            return [ false, "credential is in self-signed-JWT mode, which ignores the subject entirely" ]
+          end
+
           [ true, nil ]
         rescue StandardError => e
           [ false, e.message.to_s[/"error":\s*"([^"]+)"/, 1] || e.class.to_s ]

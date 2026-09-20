@@ -257,4 +257,27 @@ class DriveWalkerTest < ActionDispatch::IntegrationTest
 
     assert_equal [ "team@synthetic.test" ], seen.uniq
   end
+
+  test "a REUSED walker builds a client per SUBJECT, never carrying the first source's identity" do
+    # Deliberately does NOT inject a client, because the injection seam bypasses
+    # the memo this guards. @subject is assigned per call while the built client
+    # was memoized flat, so one walker instance walking two workspaces would
+    # have read the second company's folder as the first company's user.
+    other = WorkspaceAccount.create!(domain: "other.test", entity: "other-entity")
+    other.mark_verified!
+    other_source = KnowledgeSource.create!(kind: "google_drive", name: "Other folder",
+                                           external_root_id: "other-root", entity: "other-entity",
+                                           access: {}, workspace_account: other)
+    tree = base_tree.merge("other-root" => [ file("doc-c", "Other.pdf", version: 1, parents: [ "other-root" ]) ])
+    built = []
+    walker = Workspace::DriveWalker.new
+
+    Workspace::DriveClient.stub(:new, ->(subject:) { built << subject; TreeClient.new(tree) }) do
+      walker.call(@source)
+      walker.call(other_source)
+    end
+
+    assert_equal [ "team@synthetic.test", "team@other.test" ], built,
+      "the second walk must open a client as its OWN workspace subject"
+  end
 end

@@ -14,8 +14,16 @@
 #              or we have not proved it yet. Impersonation refused.
 #   active   — a token was fetched for this subject and the grant is proven.
 #   revoked  — deliberately switched off. Impersonation refused, row kept.
+#              A TERMINAL state as far as any automatic path is concerned:
+#              nothing reactivates it, and #reinstate! returns it only to
+#              `pending`, which still has to prove delegation again.
 class WorkspaceAccount < ApplicationRecord
   STATUSES = %w[pending active revoked].freeze
+
+  # Raised when something tries to ACTIVATE a revoked row. Never rescued into a
+  # verdict — a caller reaching this has a bug, and a quiet no-op it ignores is
+  # how the kill switch would come undone a second time.
+  class Revoked < StandardError; end
 
   # The house convention: every Workspace we are given access to carries a
   # `team@` user, and that user is the one we act as.
@@ -41,8 +49,45 @@ class WorkspaceAccount < ApplicationRecord
 
   # Proven: a token was issued for this subject, so the grant exists in the
   # right Workspace. Clears any earlier refusal.
+  #
+  # A REVOKED row is never resurrected here. Revocation is the one compensating
+  # control for turning a compile-time constant into a runtime row, so it must
+  # not be undone by a sweep that happens to find the Google-side grant still
+  # live — only by #reinstate!, which a human runs by name. This RAISES where
+  # mark_unverified! merely keeps the status, because the two directions are not
+  # symmetric: failing to deactivate is safe, and activating by accident opens a
+  # mailbox. A caller that has not thought about revoked rows finds out here
+  # rather than in an access log.
   def mark_verified!(at: Time.current)
+    if status == "revoked"
+      raise Revoked, "#{domain} is revoked — impersonation stays refused. " \
+                     "bin/rails 'workspace:reinstate[#{domain}]' puts it back to pending, " \
+                     "and delegation must then be proven again."
+    end
+
     update!(status: "active", delegation_verified_at: at, last_check_error: nil)
+  end
+
+  # The kill switch. Any status -> revoked, and impersonation is refused from
+  # the next call. The row and its knowledge_sources are KEPT, so the history of
+  # what we read survives switching the access off.
+  #
+  # This is the LOCAL half only: it does not withdraw the Google-side grant.
+  # Ending that takes the domain's own super-admin removing our client id.
+  def revoke!(reason = nil)
+    self.notes = [ notes.presence, "#{Date.current.iso8601} revoked: #{reason}" ].compact.join("\n") if reason.present?
+    update!(status: "revoked")
+  end
+
+  # The ONLY way back from revoked — and it does not restore access. The row
+  # returns to `pending`, which is still refused, and the grant has to be proven
+  # again before anything may impersonate the subject. So undoing a kill switch
+  # takes a human naming the domain AND a live grant: two deliberate acts,
+  # neither of which any sweep can perform on its own.
+  def reinstate!
+    raise ArgumentError, "#{domain} is #{status}, not revoked — nothing to reinstate" unless status == "revoked"
+
+    update!(status: "pending", delegation_verified_at: nil, last_check_error: nil)
   end
 
   # NOT an error state on its own. `unauthorized_client` is what a brand-new
@@ -66,6 +111,14 @@ class WorkspaceAccount < ApplicationRecord
   # company can never name a subject in another company's domain.
   def subject_belongs_to_this_domain
     return if domain.blank? || subject.blank?
+
+    # One @, checked FIRST: "team@evil.test@mason.test" ends with the right
+    # domain and is still two addresses. The mailbox it would open is this
+    # domain's either way, so this closes a shape rather than a live hole.
+    unless subject.count("@") == 1
+      errors.add(:subject, "must be a single email address (got #{subject})")
+      return
+    end
     return if subject.end_with?("@#{domain}")
 
     errors.add(:subject, "must be an address in #{domain} (got #{subject})")

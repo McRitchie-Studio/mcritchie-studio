@@ -83,4 +83,63 @@ class WorkspaceAccountTest < ActiveSupport::TestCase
   test "status is constrained" do
     assert_raises(ActiveRecord::RecordInvalid) { WorkspaceAccount.create!(domain: "m.test", status: "live") }
   end
+
+  test "mark_verified! REFUSES to resurrect a revoked row" do
+    # The blocker, at the model. The sweep no longer probes revoked rows, but
+    # that is the other half — this is the one that holds for a caller which
+    # does not exist yet. The rake task was exactly such a caller.
+    account = WorkspaceAccount.create!(domain: "mason.test", status: "revoked")
+
+    error = assert_raises(WorkspaceAccount::Revoked) { account.mark_verified! }
+
+    assert_includes error.message, "reinstate"
+    assert_equal "revoked", account.reload.status
+    assert_nil account.delegation_verified_at
+    refute WorkspaceAccount.impersonatable?("team@mason.test")
+  end
+
+  test "revoke! switches an ACTIVE workspace off and keeps the row" do
+    account = WorkspaceAccount.create!(domain: "mason.test")
+    account.mark_verified!
+    assert WorkspaceAccount.impersonatable?("team@mason.test")
+
+    account.revoke!("key exposed in a transcript")
+
+    assert_equal "revoked", account.reload.status
+    refute WorkspaceAccount.impersonatable?("team@mason.test")
+    assert_includes account.notes, "key exposed in a transcript"
+    assert WorkspaceAccount.exists?(domain: "mason.test"), "the row is kept, not destroyed"
+  end
+
+  test "reinstate! returns a revoked row to PENDING, never straight to active" do
+    # Reinstating does not restore access. It only makes the grant provable
+    # again, so coming back from a kill switch always costs two acts: a human
+    # naming the domain, then a real token.
+    account = WorkspaceAccount.create!(domain: "mason.test")
+    account.mark_verified!
+    account.revoke!
+
+    account.reinstate!
+
+    assert_equal "pending", account.reload.status
+    refute WorkspaceAccount.impersonatable?("team@mason.test")
+    assert_nil account.delegation_verified_at, "a reinstated row is no longer PROVEN"
+  end
+
+  test "reinstate! refuses a row that was never revoked" do
+    account = WorkspaceAccount.create!(domain: "mason.test")
+
+    assert_raises(ArgumentError) { account.reinstate! }
+    assert_equal "pending", account.reload.status
+  end
+
+  test "a subject carrying two addresses is refused" do
+    # "team@evil.test@mason.test" ends with the right domain and is still two
+    # addresses. The mailbox would be this domain's either way, so this closes
+    # a shape rather than a live cross-tenant hole.
+    account = WorkspaceAccount.new(domain: "mason.test", subject: "team@evil.test@mason.test")
+
+    refute account.valid?
+    assert_includes account.errors[:subject].join, "single email address"
+  end
 end

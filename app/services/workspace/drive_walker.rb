@@ -63,8 +63,22 @@ module Workspace
 
     private
 
+    # Keyed by subject, never memoized flat: @subject is assigned per call, so a
+    # REUSED walker would read the second source's folder while still holding
+    # the first source's identity. workspace:walk builds a fresh walker per
+    # source today, so this closes a latent shape rather than an observed bug —
+    # but the memo only became identity-bearing when the subject stopped being a
+    # constant, and nothing else would catch it coming back.
     def client
-      @client ||= DriveClient.new(subject: @subject)
+      # @client is the INJECTION seam (tests pass a tree double) and must keep
+      # winning. Only the built client is memoized, and it is keyed by subject
+      # rather than flat: @subject is assigned per call, so a REUSED walker
+      # would otherwise read the second source's folder while still holding the
+      # first source's identity. workspace:walk builds a fresh walker per source
+      # today, so this closes a latent shape rather than an observed bug — but
+      # the memo only became identity-bearing when the subject stopped being a
+      # constant, and nothing else would catch it coming back.
+      @client || ((@clients ||= {})[@subject] ||= DriveClient.new(subject: @subject))
     end
 
     # Depth-first over folders. `visited` is what makes it terminate: a Drive

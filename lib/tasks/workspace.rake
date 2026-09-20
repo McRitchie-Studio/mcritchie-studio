@@ -47,28 +47,94 @@ namespace :workspace do
     key = Workspace::Credentials.credential
     puts "Credential source: #{Workspace::Credentials.source} · service account #{key['client_email']} · client id #{key['client_id']}"
 
-    failed = accounts.order(:domain).map { |account|
-      ok, error = Workspace::Credentials.probe(account.subject)
-      unless ok
-        # unauthorized_client is the NORMAL not-yet state for a fresh grant —
-        # and also exactly what a grant placed in the WRONG workspace looks
-        # like, forever. Naming the domain is what tells those apart.
-        account.mark_unverified!(error)
-        warn "#{account.domain}: NOT AUTHORIZED as #{account.subject} (#{error})"
-        warn "  → the delegation must be granted in #{account.domain}'s OWN admin console, for client id #{key['client_id']}"
+    # A revoked row is never PROBED, let alone flipped. Skipping it here is what
+    # keeps this sweep truthful — the probe gate is `exists?` rather than
+    # `active?` on purpose, so that pending rows can be proven, which means a
+    # revoked row would otherwise probe green and print "ACTIVE" for a mailbox
+    # that stays shut. The model refuses the flip as well; these are two
+    # independent halves of the same guarantee, and neither relies on the other.
+    revoked, checkable = accounts.order(:domain).to_a.partition { |account| account.status == "revoked" }
+
+    revoked.each do |account|
+      puts "#{account.domain}: SKIPPED — revoked, so impersonation stays refused and delegation was not probed."
+      puts "  → bin/rails 'workspace:reinstate[#{account.domain}]' returns it to pending, where a check can prove it again."
+    end
+
+    failed = checkable.map { |account|
+      begin
+        ok, error = Workspace::Credentials.probe(account.subject)
+        unless ok
+          # unauthorized_client is the NORMAL not-yet state for a fresh grant —
+          # and also exactly what a grant placed in the WRONG workspace looks
+          # like, forever. Naming the domain is what tells those apart.
+          account.mark_unverified!(error)
+          warn "#{account.domain}: NOT AUTHORIZED as #{account.subject} (#{error})"
+          warn "  → the delegation must be granted in #{account.domain}'s OWN admin console, for client id #{key['client_id']}"
+          next account
+        end
+
+        if account.scopes.present? && account.scopes != Workspace::Credentials::SCOPES
+          warn "  → #{account.domain} was registered against different scopes than the code now asks for;"
+          warn "    re-run workspace:register[#{account.domain}] and have the delegation re-granted."
+        end
+
+        # The flip comes BEFORE the two reads deliberately: DriveClient and
+        # GmailClient both go through authorizer_for, which refuses a subject
+        # that is not ACTIVE. So the reads are a smoke test of a grant already
+        # proven by the probe, not the proof itself — they cannot be reordered.
+        account.mark_verified!
+        drive = Workspace::DriveClient.new(subject: account.subject).files_list(query: "trashed = false", limit: 5)
+        profile = Workspace::GmailClient.new(subject: account.subject).service.get_user_profile("me")
+        puts "#{account.domain}: ACTIVE as #{account.subject}"
+        puts "  mailbox: #{profile.email_address} (#{profile.messages_total} messages)"
+        puts "  drive:   #{Array(drive.files).size} item(s) on the first page"
+        nil
+      rescue StandardError => e
+        # One row's failure must not abandon the rest of the sweep half-checked,
+        # which is what an exception escaping this block used to do — including
+        # after that row had already been flipped active.
+        warn "#{account.domain}: CHECK FAILED (#{e.class}: #{e.message})"
         next account
       end
-
-      account.mark_verified!
-      drive = Workspace::DriveClient.new(subject: account.subject).files_list(query: "trashed = false", limit: 5)
-      profile = Workspace::GmailClient.new(subject: account.subject).service.get_user_profile("me")
-      puts "#{account.domain}: ACTIVE as #{account.subject}"
-      puts "  mailbox: #{profile.email_address} (#{profile.messages_total} messages)"
-      puts "  drive:   #{Array(drive.files).size} item(s) on the first page"
-      nil
     }.compact
 
     exit 1 if failed.any?
+  end
+
+  desc "Switch a workspace OFF: workspace:revoke[domain,reason]"
+  task :revoke, [ :domain, :reason ] => :environment do |_t, args|
+    abort "usage: bin/rails 'workspace:revoke[<domain>,<why>]'" if args[:domain].blank?
+
+    account = WorkspaceAccount.find_by(domain: args[:domain].to_s.strip.downcase)
+    abort "No workspace registered for #{args[:domain]}." if account.nil?
+
+    account.revoke!(args[:reason])
+    puts "#{account.domain}: REVOKED — impersonating #{account.subject} is refused from the next call."
+    puts "  Kept: the row and its #{account.knowledge_sources.count} knowledge source(s), so what we already read stays readable."
+    puts "  Nothing reactivates this on its own — not even a successful workspace:check."
+    puts "  Back: bin/rails 'workspace:reinstate[#{account.domain}]' (to PENDING, which must then be re-proven)."
+    puts
+    puts "  ⚠ This is the LOCAL half only. The Google-side grant is untouched and still exists."
+    puts "    To end it, #{account.domain}'s super-admin removes client id " \
+         "#{(Workspace::Credentials.credential || {})['client_id'] || '(no credential filed)'} from their delegation page."
+  end
+
+  desc "Return a revoked workspace to pending (delegation must be re-proven): workspace:reinstate[domain]"
+  task :reinstate, [ :domain ] => :environment do |_t, args|
+    abort "usage: bin/rails 'workspace:reinstate[<domain>]'" if args[:domain].blank?
+
+    account = WorkspaceAccount.find_by(domain: args[:domain].to_s.strip.downcase)
+    abort "No workspace registered for #{args[:domain]}." if account.nil?
+
+    begin
+      account.reinstate!
+    rescue ArgumentError => e
+      abort e.message
+    end
+
+    puts "#{account.domain}: now PENDING — impersonation is STILL refused."
+    puts "  Reinstating does not restore access; it only makes the grant provable again."
+    puts "  Prove it: bin/rails 'workspace:check[#{account.domain}]'"
   end
 
   desc "Attach a Drive folder to a workspace: workspace:add_source[domain,name,folder_id,entity]"
