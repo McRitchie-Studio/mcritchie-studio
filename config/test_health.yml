@@ -259,4 +259,27 @@ frozen_size:
   # a NEW file, which is where this ceiling asks new code to go) plus 11 lines where two
   # checks that used to `File.read` the markdown ledger now assert the RECORD the sweep
   # filed — a stronger assertion, in the tests that already own that behaviour.
-  test/commands/agent_worktree_test.rb: 2357
+  # +156 (2026-09-20, reclaim-gate-reads-board): six CLI-level checks for the new
+  # BOARD-STAGE reclaim channel — a `reviewed` desk withheld, an `assembled` desk spared by
+  # `--reclaim --yes`, a `shipped` desk still torn down, the stage printed in the
+  # `rationale:` line, the registry refusing to nominate a mid-release desk, and an
+  # unresolvable task withheld rather than freed. They stay in THIS file for the reason the
+  # 2026-08-27 entry above gives, and the case is the stronger one: they are not merely
+  # negatives of the positive control that already lives here, they are THE SAME staged
+  # desk with the SAME lapsed claim and exactly ONE variable flipped — the board stage. Put
+  # them in a new file and that comparison has to be re-staged from scratch
+  # (setup_repo + mark_worktree_merged_to_origin_main + abandon_desk! + bind_task_slug +
+  # removal_env + agent_worktree, which are spread across this file rather than sitting in
+  # one extractable block), and the duplicated fixture — not the flipped variable — becomes
+  # the thing a future reader has to verify. The PURE decisions are split out as this
+  # ceiling actually asks: they are unit-tier, in test/lib/agent_worktree_test.rb, driving
+  # stage_hold_reason and board_stage_for directly with no board and no filesystem.
+  #
+  # THE REAL FIX IS AN EXTRACTION, and it is deliberately not in this diff. This file's
+  # private harness wants to be test/support/agent_worktree_fixture.rb, which would let a
+  # concern get its own file without re-staging anything and would SHRINK this hotspot
+  # rather than ratchet it again. That is a refactor, this is a bugfix, and merging the two
+  # would bury a guard change inside a several-hundred-line move.
+  #
+  # The ceiling is the file's real size, so the next addition goes to a new file.
+  test/commands/agent_worktree_test.rb: 2513
