@@ -24,7 +24,7 @@ OmniAuth.config.allowed_request_methods = [:post]
 # bookmark. Pinned, every front door produces the single registered callback.
 #
 # CanonicalHost 301s browsers onto the canonical host already, but deliberately leaves
-# non-GET requests alone — and the omniauth request phase is a POST
+# anything other than GET and HEAD alone — and the omniauth request phase is a POST
 # (allowed_request_methods above). This is what covers it, and taking both answers
 # from CanonicalHost is what stops the front door and the callback drifting apart.
 #

@@ -84,7 +84,8 @@ URL to register.
 Three things stay reachable under their own names, deliberately:
 
 - `/up`, so Heroku's health check never chases a redirect.
-- Every non-GET request. A 301 rewrites POST to GET in browsers and is ignored
+- Every request that is not a GET or a HEAD. A 301 rewrites POST to GET in
+  browsers and is ignored
   by many API clients, so redirecting one would corrupt webhook deliveries and
   `/api/v1` calls that happen to name an alias. The pinned callback covers the
   one POST that matters here, the omniauth request phase.

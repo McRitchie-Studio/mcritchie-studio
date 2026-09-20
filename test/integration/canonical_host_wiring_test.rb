@@ -92,6 +92,24 @@ class CanonicalHostWiringTest < ActionDispatch::IntegrationTest
     assert_includes location, CGI.escape("https://#{ALIAS_HOST}/auth/google_oauth2/callback")
   end
 
+  # The two cases above set full_host BY HAND, so they prove the MECHANISM and not the
+  # WIRE. Nothing else asserted that the initializer actually makes the call, and in the
+  # test environment it cannot be observed: APP_HOST is unset, so the boot-time pin is a
+  # no-op by definition and OmniAuth.config.full_host is legitimately nil. Deleting the
+  # call was therefore green on every lane — fast cert and full CI alike — while silently
+  # restoring the bug this task exists for. The middleware MOUNT is asserted above; this
+  # is the OAuth half of the same claim, read from source for the same reason the
+  # host_authorization case below is: the decision is made once, at boot, in an
+  # environment that cannot exercise it.
+  test "the omniauth initializer pins its callback through CanonicalHost" do
+    source = File.read(Rails.root.join("config/initializers/omniauth.rb"))
+
+    assert_match(/^\s*CanonicalHost\.pin_omniauth!\(OmniAuth\.config\)/, source,
+                 "config/initializers/omniauth.rb must pin the callback origin, or a " \
+                 "sign-in begun on an alias host goes back to deriving redirect_uri from " \
+                 "the request host — which is exactly the redirect_uri_mismatch above")
+  end
+
   # --- One exemption list, three gates ---------------------------------------------
   # /up is written out in three places that must agree. Exempt it here but not in host
   # authorization and Heroku's health check is refused; the reverse and the check

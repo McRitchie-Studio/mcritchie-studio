@@ -40,7 +40,8 @@ answer only to hand visitors on: `CanonicalHost`
 (`lib/middleware/canonical_host.rb`) 301s every GET and HEAD on them to
 `APP_HOST`, and the Google OAuth callback is pinned to the same host, so a
 sign-in begun on an alias no longer draws `redirect_uri_mismatch`. `/up`,
-non-GET requests, and `DYNO_HOST` stay reachable under their own names.
+requests other than GET and HEAD, and `DYNO_HOST` stay reachable under their
+own names.
 `v1.mcritchie.studio` is connected to the old Squarespace site as its primary
 domain, has the Squarespace `www` prefix disabled, and returns `200`.
 
