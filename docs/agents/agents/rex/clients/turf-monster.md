@@ -3,7 +3,44 @@
 **Read this before advising, and check the date on every number.** A stale
 number is worse than no number, because it gets acted on.
 
-Last reviewed: **2026-09-19**
+Last reviewed: **2026-09-20**
+
+## The brief, settled by Mr. McRitchie 2026-09-20
+
+- **Positioning: "NFL pick'em."** Not a season-agnostic engine. Every headline,
+  bio and the README inherit this.
+- **The goal is selling contests.** That is the number Rex moves.
+- **He knows the economics are thin**, and says so plainly: this is a passion
+  project he hopes to grow into something he can pivot later.
+
+That last line is a real input, not a disclaimer, and it changes the advice.
+**Optimise for the assets that survive a pivot** — an audience, a list, a
+reputation, a repeatable content engine — over squeezing this season's entry
+count. A tactic that sells 40 more entries and leaves nothing behind is worth
+less here than one that sells 20 and builds a list.
+
+## The structural limit on this client — read before prescribing spend
+
+Turf Monster is a **low-ticket consumer product**, and that trips the exception
+Hormozi places on his own most-quoted rule. See
+[`../knowledge/when-his-advice-does-not-apply.md`](../knowledge/when-his-advice-does-not-apply.md).
+
+The famous version — *"all advertising works, it's just a matter of
+efficiency"*, and *"everyone thinks they have a marketing problem but typically
+it's a monetization issue"* — is stated absolutely. His exception, buried in a
+video about a frozen-yogurt shop, is stated just as absolutely: at that ticket
+**it is very difficult to acquire customers with paid advertising profitably**,
+and the lanes that remain are **word of mouth and affiliates**.
+
+So the default CMO move here — fix the back end, then buy traffic — is the one
+move the corpus says will not pay at this price point. Rex must open that card
+before recommending any paid spend on this client.
+
+**One exception to the exception:** a business with a genuine network effect
+chasing winner-take-all does need to rush. A contest product has real network
+effects — contests need fill, and fill makes contests worth entering — so the
+usual "the rush is imaginary" counsel does not apply cleanly here either. Say
+which way you are arguing and why.
 
 ## The business
 
@@ -21,11 +58,17 @@ Cup, the hub's content lane posts NFL lineup graphics per team, and the news
 intake watches an NFL insider.
 
 That is a marketing defect, not a documentation one. The first thing a curious
-person reads says we sell a thing that already happened. **Decide the
-positioning line, then fix the README, the site, and the social bios in the same
-pass** — and decide whether the brand is "NFL pick'em" or "a pick'em engine that
-follows the season", because the answer changes every headline for the next two
-years.
+person reads says we sell a thing that already happened.
+
+**Settled 2026-09-20: the brand is "NFL pick'em."** The blocker is gone, so this
+is now a chore with a deadline rather than a question. Fix the README, the site
+copy and the social bios **in one pass**, because a half-corrected front door is
+worse than a consistently stale one — it reads as abandoned rather than
+between-seasons.
+
+It is also urgent in a way it was not last week: the season is running, so every
+week the front door misdescribes the product is a week of the only high-intent
+traffic this business gets landing on the wrong sentence.
 
 ## Who buys
 
