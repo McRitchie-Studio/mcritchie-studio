@@ -63,10 +63,31 @@ class CanonicalHost
     end
 
     # Tolerate an APP_HOST written as a URL. Operators set these by hand in `heroku
-    # config:set`, and a stray scheme or trailing slash would otherwise build a
-    # Location header that redirects to nowhere.
+    # config:set`, and a stray scheme, path, or port would otherwise build a Location
+    # header that redirects to nowhere — or, for a port, to ITSELF: a request arrives
+    # with host "mcritchie.studio" and a canonical of "mcritchie.studio:443" never
+    # matches it, so the 301 points back at the same page, forever, cached for an hour.
+    # The port is dropped rather than kept because the canonical value names a HOST;
+    # canonical_url carries the port the request actually arrived on.
     def normalize(value)
-      value.to_s.strip.downcase.sub(%r{\Ahttps?://}, "").sub(%r{/+\z}, "").presence
+      value.to_s.strip.downcase
+           .sub(%r{\Ahttps?://}, "")
+           .sub(%r{/.*\z}, "")
+           .sub(/:\d+\z/, "")
+           .presence
+    end
+
+    # Pin an OmniAuth config's callback origin to the canonical host, and return what
+    # it pinned — nil where none is configured, which leaves omniauth deriving the
+    # callback per request for localhost and worktree desks.
+    #
+    # A method rather than three lines inside the initializer so the decision is
+    # reachable from a test. The initializer runs once, at boot, in an environment
+    # that by definition has no APP_HOST, so nothing else can exercise it. The
+    # OmniAuth config is passed in rather than reached for, to keep this file free of
+    # the constant.
+    def pin_omniauth!(config, env = ENV)
+      origin(env)&.tap { |value| config.full_host = value }
     end
   end
 

@@ -179,6 +179,50 @@ class CanonicalHostTest < ActiveSupport::TestCase
     end
   end
 
+  # --- A hand-typed APP_HOST -------------------------------------------------------
+  # normalize's whole job. A canonical value that does not match the host requests
+  # actually ARRIVE with points the page at itself, and max-age=3600 then caches that
+  # loop in every visitor's browser for an hour.
+
+  test "strips a port from the canonical host rather than redirecting a page to itself" do
+    status, = call("https://mcritchie.studio/tasks", canonical_host: "mcritchie.studio:443")
+
+    assert_equal 200, status
+    assert @downstream.called?,
+           "a canonical host carrying :443 must not 301 the canonical page back to itself"
+  end
+
+  test "normalises a canonical host pasted as a whole URL" do
+    assert_equal "https://mcritchie.studio",
+                 CanonicalHost.origin("APP_HOST" => "https://mcritchie.studio:443/tasks")
+  end
+
+  test "carries the request's own port after dropping the configured one" do
+    _status, = response = call("http://www.mcritchie.studio:3011/tasks", canonical_host: "mcritchie.studio:8080")
+
+    assert_equal "http://mcritchie.studio:3011/tasks", location(response),
+                 "the port belongs to the request; the configured value names a HOST"
+  end
+
+  # --- The pinned callback ---------------------------------------------------------
+  # config/initializers/omniauth.rb runs once, at boot, in an environment that by
+  # definition has no APP_HOST — so this is the only place the pin is exercised.
+
+  test "pins an omniauth config to the canonical origin" do
+    config = Struct.new(:full_host).new(nil)
+
+    assert_equal "https://qa.mcritchie.studio",
+                 CanonicalHost.pin_omniauth!(config, "APP_HOST" => "qa.mcritchie.studio")
+    assert_equal "https://qa.mcritchie.studio", config.full_host
+  end
+
+  test "leaves an omniauth config alone when no canonical host is configured" do
+    config = Struct.new(:full_host).new(nil)
+
+    assert_nil CanonicalHost.pin_omniauth!(config, {})
+    assert_nil config.full_host, "unpinned, omniauth must keep deriving the callback per request"
+  end
+
   private
 
   def with_env(values)

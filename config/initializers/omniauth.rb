@@ -1,5 +1,9 @@
 # frozen_string_literal: true
 
+# config/initializers/canonical_host.rb requires this too; `require` is idempotent,
+# and naming it here keeps this file readable on its own.
+require Rails.root.join("lib/middleware/canonical_host")
+
 Rails.application.config.middleware.use OmniAuth::Builder do
   provider :google_oauth2,
     ENV["GOOGLE_CLIENT_ID"],
@@ -26,6 +30,4 @@ OmniAuth.config.allowed_request_methods = [:post]
 #
 # nil off a deployed app (no APP_HOST), which leaves omniauth's per-request behaviour
 # untouched for localhost and worktree desks on their own ports.
-if (canonical_origin = CanonicalHost.origin)
-  OmniAuth.config.full_host = canonical_origin
-end
+CanonicalHost.pin_omniauth!(OmniAuth.config)

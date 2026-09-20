@@ -11,11 +11,13 @@
 # Anchored on Rack::Sendfile rather than on ActionDispatch::HostAuthorization, which
 # reads as the more meaningful landmark but is absent whenever config.hosts is empty
 # (the test environment), and anchoring there fails the boot outright. Sendfile is
-# unconditional and sits immediately after host authorization, so on a deployed app
-# this lands in exactly that slot: an allowlisted alias is redirected, while a forged
-# Host header is refused before it gets here. Nothing about the redirect depends on
-# that ordering for safety — the Location host is always the configured canonical one
-# and never anything the request supplied.
+# unconditional and sits just past host authorization, so on a deployed app this lands
+# after BOTH of the gates that matter — host authorization, and the ActionDispatch::SSL
+# that config.force_ssl inserts between them. Each is the right side to be on: a forged
+# Host header is refused rather than redirected, and http has already been upgraded, so
+# the scheme carried into the Location is the real one. Nothing about the redirect
+# depends on that ordering for safety, though — the Location host is always the
+# configured canonical one and never anything the request supplied.
 #
 # Required rather than autoloaded: `middleware` is on the autoload_lib ignore list in
 # config/application.rb, so this is the single place the constant is defined.

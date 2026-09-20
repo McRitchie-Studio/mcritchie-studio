@@ -92,6 +92,24 @@ class CanonicalHostWiringTest < ActionDispatch::IntegrationTest
     assert_includes location, CGI.escape("https://#{ALIAS_HOST}/auth/google_oauth2/callback")
   end
 
+  # --- One exemption list, three gates ---------------------------------------------
+  # /up is written out in three places that must agree. Exempt it here but not in host
+  # authorization and Heroku's health check is refused; the reverse and the check
+  # chases a redirect. Nothing linked them.
+
+  test "every exempt path is honoured by all three gates" do
+    assert_equal EdgeGuard::EXEMPT_PATHS.sort, CanonicalHost::EXEMPT_PATHS.sort,
+                 "the two middlewares must exempt the same paths, or one refuses what the other waves through"
+
+    host_authorization = File.read(Rails.root.join("config/environments/production.rb"))[/config\.host_authorization = .*/]
+    assert host_authorization, "production.rb must still configure a host_authorization exclusion"
+
+    CanonicalHost::EXEMPT_PATHS.each do |path|
+      assert_includes host_authorization, %("#{path}"),
+                      "#{path} is exempt in the middleware but not excluded from host authorization"
+    end
+  end
+
   private
 
   def configured

@@ -234,11 +234,14 @@ The 1Password account is `alex@mcritchie.studio` (account ID `MWOV5OT5BRHATI4EGM
 
 **Verify:** Sign in via Google on each app.
 
-**Authorized redirect URIs:** one per deploy target, and only one. The callback
-host is pinned to `APP_HOST` (`config/initializers/omniauth.rb`), so alias hosts
-such as `www.` never appear in a `redirect_uri` — adding them back would re-open
-the mismatch this pinning closed. See `docs/agents/modules/deployment.md`
-§ Root-Domain Launch.
+**Authorized redirect URIs — do not prune this list.** Production and QA share
+ONE OAuth client (`GOOGLE_CLIENT_ID` is byte-identical on `mcritchie-studio` and
+`mcritchie-studio-qa`), and it carries one URI per deploy target: the apex
+callback for production and the `qa.` one for QA. Deleting either ends sign-in on
+that target. The callback host is pinned to `APP_HOST`
+(`config/initializers/omniauth.rb`), so ALIAS hosts such as `www.` need no entry
+and adding one would re-open the mismatch the pinning closed. Full table:
+`docs/agents/modules/deployment.md` § McRitchie Studio → Root-Domain Launch.
 
 **Note:** Google OAuth tokens (the access/refresh tokens per user) are NOT rotated as part of this — those live in `users.uid` and re-issue automatically on next sign-in. This procedure rotates only the *app-level* client secret.
 

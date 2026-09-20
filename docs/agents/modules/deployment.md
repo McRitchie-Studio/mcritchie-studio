@@ -91,10 +91,21 @@ Three things stay reachable under their own names, deliberately:
 - `DYNO_HOST`, which health checks and internal tooling reach directly.
 
 Both halves are dark without `APP_HOST`, which is set only on a deployed app, so
-localhost and worktree desks behave exactly as before. Each deploy target
-therefore needs exactly ONE authorized redirect URI on its Google OAuth client —
-`https://mcritchie.studio/auth/google_oauth2/callback` for production,
-`https://qa.mcritchie.studio/auth/google_oauth2/callback` for QA.
+localhost and worktree desks behave exactly as before.
+
+Production and QA **share one Google OAuth client** — `GOOGLE_CLIENT_ID` is
+byte-identical on `mcritchie-studio` and `mcritchie-studio-qa`. That one client
+carries one authorized redirect URI per deploy target, so two today:
+
+| Deploy target | `APP_HOST` | Authorized redirect URI |
+|---------------|------------|-------------------------|
+| Production | `mcritchie.studio` | `https://mcritchie.studio/auth/google_oauth2/callback` |
+| QA | `qa.mcritchie.studio` | `https://qa.mcritchie.studio/auth/google_oauth2/callback` |
+
+**Never prune that list to one entry.** Both URIs live on the same client, so
+deleting either one ends sign-in on the target it belongs to. What pinning
+removed is the need for ALIAS entries (`www.`, legacy `app.`) — adding one back
+would rebuild the second front door this closed.
 
 Launch status as of 2026-06-15:
 
