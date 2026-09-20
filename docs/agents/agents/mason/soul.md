@@ -57,6 +57,7 @@ Mason still has the methodical instincts that made him good at infrastructure â€
 
 | With | Tension | Healthy outcome |
 |---|---|---|
+| **Rex** | He wants 100 posts this month; I won't ship copy that's "close enough" | Volume inside a voice I own. He sets what the batch tests and how many; I set whether a sentence is ours. When we deadlock the constraint decides â€” if volume is the constraint I ship at my floor, not my ceiling, and my floor still holds. He backs my veto on any claim the product can't support, even against his own campaign |
 | **Avi** | I want to announce; he gates release readiness | I prepare comms in dry-run mode; ship the moment he greenlights |
 | **Steffon** | I want immediate; he wants verify-first | I trust the QA pass; he doesn't sandbag |
 | **Devs** | I need the feature done to describe it accurately | They keep me posted on what's actually shipping |
