@@ -38,13 +38,21 @@ module Workspace
     # convention rather than being grandfathered in.
     ITEM = "op://industries-agents/google.industries.agents/credential".freeze
 
-    # WHOSE MAILBOX AND DRIVE THIS ACTS AS. Pinned to a constant rather than
-    # passed in, because domain-wide delegation cannot be narrowed at the grant:
-    # it authorizes impersonation of ANY user in the domain and the CALLING CODE
-    # picks the subject via the JWT `sub` claim. With the subject a constant, a
-    # change of subject is a visible diff with a test to break; with it an
-    # argument, it is a caller's typo away from reading someone else's mailbox.
-    SUBJECT = "team@mcritchie.industries".freeze
+    # WHOSE MAILBOX AND DRIVE THIS ACTS AS — and why it is a table, not an
+    # argument.
+    #
+    # Domain-wide delegation cannot be narrowed at the grant: it authorizes
+    # impersonation of ANY user in a domain, and the CALLING CODE picks the
+    # subject via the JWT `sub` claim. This used to be held by pinning one
+    # address in a frozen constant. Multi-tenant access made that impossible —
+    # there is a subject per workspace now — so the guard moved rather than
+    # being dropped: #authorizer_for REFUSES any subject that is not an ACTIVE
+    # WorkspaceAccount. A typo reaches nothing, and the set of domains this
+    # system can open is one query.
+    #
+    # Refused because the subject is not on the allow-list. Distinct from a
+    # Google refusal, which means the grant itself is missing.
+    class UnregisteredSubject < StandardError; end
 
     # The whole grant, frozen, asserted by the suite. Deliberately NOT the full
     # `drive` scope.
@@ -97,11 +105,12 @@ module Workspace
         nil
       end
 
-      # The authorizer both clients hand to their service object, impersonating
-      # SUBJECT.
+      # The authorizer a client hands to its service object, impersonating ONE
+      # registered, active workspace subject.
       #
       # `sub` is assigned AFTER make_creds, and BOTH ways of getting this wrong
-      # are silent — which is the whole reason #subject exists and is asserted.
+      # are silent — which is why #probe reads the subject back off the built
+      # object rather than trusting it.
       #
       #   Passing `sub:` to make_creds does NOT raise. It prints
       #   "Unrecognized option(s) for ServiceAccountCredentials.make_creds: :sub"
@@ -111,33 +120,65 @@ module Workspace
       #   Omitting the assignment does not raise either: the credential then
       #   authenticates as the service account ITSELF, which owns no mail and an
       #   empty Drive — so every call succeeds and returns nothing.
-      #
-      # A warning on stderr in a cron dyno is not a failure anyone sees, so the
-      # subject is read back off the built object by a test instead.
-      def authorizer
-        @authorizer ||= begin
-          require "googleauth"
-
-          creds = ::Google::Auth::ServiceAccountCredentials.make_creds(
-            json_key_io: StringIO.new(credential.to_json),
-            scope: SCOPES
-          )
-          creds.sub = SUBJECT
-          creds
+      def authorizer_for(subject)
+        subject = normalize_subject(subject)
+        unless WorkspaceAccount.impersonatable?(subject)
+          raise UnregisteredSubject,
+                "refusing to impersonate #{subject}: it is not an ACTIVE workspace_account. " \
+                "Register the workspace, have its super-admin grant delegation, then run " \
+                "bin/rails 'workspace:check[<domain>]' to prove it."
         end
+
+        build_authorizer(subject)
       end
 
-      # The subject the authorizer will actually impersonate. Read back off the
-      # built object rather than returning the constant, so the test proves the
-      # assignment happened instead of proving the constant exists.
-      def subject
-        authorizer.sub
+      # Proves a grant WITHOUT handing back anything that can read data.
+      #
+      # The allow-list cannot apply here: a workspace is pending precisely
+      # because it cannot be impersonated yet, so the check that proves the
+      # grant has to be allowed to try. What keeps this from being a hole is
+      # that it (a) still requires the subject to be a REGISTERED row, so it
+      # cannot sweep a domain for reachable users, and (b) returns a verdict,
+      # never an authorizer — nothing can use it to fetch mail.
+      #
+      # Returns [ok, error_slug_or_nil].
+      def probe(subject)
+        subject = normalize_subject(subject)
+        raise UnregisteredSubject, "#{subject} is not a registered workspace_account" unless
+          WorkspaceAccount.exists?(subject: subject)
+
+        # The rescue wraps ONLY the token fetch. Wrapping the whole method
+        # swallowed the guard above and turned a refusal into a return value —
+        # an UnregisteredSubject is a StandardError too.
+        begin
+          creds = build_authorizer(subject)
+          creds.fetch_access_token!
+          # Read the subject back off the BUILT object: a dropped assignment
+          # would otherwise authenticate as the service account itself and look
+          # perfectly fine.
+          return [ false, "subject was not applied to the credential" ] unless creds.sub == subject
+
+          # The subject read-back above is necessary but not sufficient. In
+          # self-signed-JWT mode googleauth signs as the service account itself
+          # and never sends `sub` — while creds.sub keeps echoing what we set,
+          # so the check above still passes. The mode turns on by itself when
+          # universe_domain is not googleapis.com (service_account.rb:66), which
+          # a swapped key could carry. Then every call would succeed against an
+          # empty Drive and a mailbox we do not own.
+          if creds.respond_to?(:enable_self_signed_jwt?) && creds.enable_self_signed_jwt?
+            return [ false, "credential is in self-signed-JWT mode, which ignores the subject entirely" ]
+          end
+
+          [ true, nil ]
+        rescue StandardError => e
+          [ false, e.message.to_s[/"error":\s*"([^"]+)"/, 1] || e.class.to_s ]
+        end
       end
 
       def reset!
         @op_credential = nil
         @op_read = false
-        @authorizer = nil
+        @authorizers = nil
       end
 
       # Injected in tests. Production shells out to `op`; the suite swaps in a
@@ -150,6 +191,23 @@ module Workspace
       end
 
       private
+
+      def normalize_subject(subject) = subject.to_s.strip.downcase
+
+      # Cached per subject: one credential object per workspace, each holding
+      # its own short-lived token.
+      def build_authorizer(subject)
+        require "googleauth"
+
+        @authorizers ||= {}
+        @authorizers[subject] ||= begin
+          creds = ::Google::Auth::ServiceAccountCredentials.make_creds(
+            json_key_io: StringIO.new(credential.to_json), scope: SCOPES
+          )
+          creds.sub = subject
+          creds
+        end
+      end
 
       def raw_credential
         env_credential || op_credential
