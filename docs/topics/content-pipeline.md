@@ -23,7 +23,55 @@
 
 `content:hook`, `content:script`, `content:assets`, `content:assemble`, `content:post`, `content:review` (manual). `content:script_agent`, `content:assets_agent`, `content:assemble_agent`, `content:finalize`, `content:metadata` (AI). `content:generate SLUG=xxx` (full pipeline). All support `SLUG=` override.
 
-**Feature status: ON ICE** — Services are built and wired up but not yet tested end-to-end with real API calls.
+**Feature status: BLOCKED ON CREDITS ONLY.** The client was rewritten on
+2026-09-20 against the current API; what remains is a purchase, not a code
+change.
+
+**What the rewrite fixed.** `Higgsfield::Client` used to target
+`platform.higgsfield.ai` with `hf-api-key`/`hf-secret` headers, paths
+`/v1/text2image/soul` and `/v1/image2video/dop`, and polling at
+`/v1/job-sets/{id}`. That surface is partly decommissioned — it still
+AUTHENTICATES our key and still serves `GET /v1/motions`, so a shallow probe
+looks healthy, but the image path answers `400 {"detail":"Unavailable model"}`.
+Its `width_and_height: "1024x1792"` is also no longer accepted. This is why the
+feature read as "built but untested" for months rather than as broken.
+
+The client now targets, all measured live:
+
+| | Current |
+|---|---|
+| Host | `api.higgsfield.ai` |
+| Auth | `Authorization: Key <id>:<secret>` |
+| Image | `POST /higgsfield-ai/soul/v2/standard` (requires `prompt`) |
+| Video | `POST /kling-video/v2.5-turbo/pro/image-to-video` (requires `prompt`, `image_url`) |
+| Poll | `GET /requests/{request_id}/status` |
+
+`Higgsfield::Client::VERTICAL_9_16` (`1152x2048`) replaces the retired size, and
+the video model moved from a body field into the PATH — a `model:` argument is
+now accepted and ignored rather than sent as an unknown field.
+
+**What is still unverified, and why.** The account answers `not_enough_credits`
+on every media type, so no SUCCESSFUL payload has ever been observed. Request
+shapes are measured; RESPONSE parsing is written tolerantly against the
+plausible shapes and marked `UNVERIFIED` in the source. `extract_url` fails
+loudly with the payload rather than returning nil, so the first real generation
+reports the true shape instead of producing a broken video. An empty pool raises
+`Higgsfield::Client::InsufficientCreditsError` specifically, so "top up the
+account" never again reads as "the integration is broken".
+
+A probe order that tells the three failures apart, since they look alike from the
+app: a fake-id `GET` proves auth (404 = authenticated), an empty `POST` returns
+the schema (422), and only a well-formed POST reveals credits.
+
+Two further gaps to know before trusting the chain end to end:
+
+- **`Content::AssembleAgent` makes ONE clip from the FIRST scene image.**
+  `AssetsAgent` generates images for up to 5 scenes and `AssembleAgent` then uses
+  `image_urls.first` and discards the rest. There is no multi-scene stitching, no
+  music, and no text overlays (`music_track: nil`, `text_overlays: []`,
+  `logo_overlay: false`).
+- **`Content::Finalize` is a labelled stub.** It prints `[STUB] FFmpeg watermark`
+  and returns the URL it was given.
 
 ## Starter Post (X) Workflow
 
