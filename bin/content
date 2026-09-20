@@ -42,6 +42,15 @@ def die!(msg)
   exit 1
 end
 
+# `--help` is the probe every operator tries first, and on this ecosystem an
+# unrecognised argument has already taken a shift lease and rolled a docs
+# ledger. This script CLAIMS and WRITES, so help exits without acting and an
+# unknown flag refuses through OptionParser rather than being stepped over.
+def usage!(status = 0)
+  warn File.read(__FILE__).lines[2..40].map { |l| l.sub(/\A# ?/, "") }.join
+  exit status
+end
+
 # ONE session id per desk, not per invocation — a claim and its release are
 # different processes, and a fresh uuid each time would make every release look
 # like a stranger's. CONTENT_SESSION overrides for an SOP that wants its own.
@@ -112,6 +121,7 @@ OptionParser.new do |o|
   o.on("--scenes-file F") { |v| opts[:scenes_file] = v }
   o.on("--title T")       { |v| opts[:title] = v }
   o.on("--session S")     { |v| @session = v }
+  o.on("-h", "--help")    { usage!(0) }
 end.parse!(ARGV)
 
 case command
@@ -157,7 +167,9 @@ when "release"
   slug = ARGV.shift or die!("release needs a slug")
   print_content(api(:post, "/api/v1/contents/#{slug}/release", { session: session }))
 
+when "help", "--help", "-h", nil
+  usage!(0)
 else
-  warn File.read(__FILE__).lines[2..40].map { |l| l.sub(/\A# ?/, "") }.join
-  exit(command.nil? ? 1 : 1)
+  warn "content: unknown command #{command.inspect}"
+  usage!(1)
 end
