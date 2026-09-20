@@ -1026,6 +1026,13 @@ class StageAgentsHelperTest < ActionView::TestCase
     task.reload
   end
 
+  # A two-form line (Diglett → Dugtrio) walking the same journey: with every line
+  # spending a step at REVIEW, the final form is already on the reviewed event and
+  # the assemble event just carries it forward.
+  def two_form_journey(stage:)
+    evolving_journey(stage: stage, base: "diglett", first: "dugtrio", third: "dugtrio")
+  end
+
   test "final_evolution detects the new form produced at the assembled gate" do
     evo = final_evolution(evolving_journey(stage: "assembled"))
 
@@ -1036,19 +1043,22 @@ class StageAgentsHelperTest < ActionView::TestCase
     assert_equal "https://example.test/charizard.png", evo.to_face.avatar
   end
 
-  test "final_evolution detects a 2-stage line that waits until assembled" do
-    journey = evolving_journey(stage: "assembled", base: "diglett", first: "diglett", third: "dugtrio")
+  # A two-form line is finished at REVIEW, so the reveal belongs to that gate —
+  # and the assemble gate behind it, which evolved nothing, must not hide it.
+  test "final_evolution detects a 2-stage line finishing at the review gate" do
+    journey = two_form_journey(stage: "assembled")
     evo = final_evolution(journey)
 
     assert_not_nil evo
     assert_equal "diglett", evo.from["slug"]
     assert_equal "dugtrio", evo.to["slug"]
+    assert_equal "reviewed", evo.event.to_stage, "the review gate made the final form, so it owns the reel"
   end
 
-  test "final_evolution is nil before the task is assembled" do
+  test "final_evolution is nil until a gate lands a form that cannot evolve" do
     assert_nil final_evolution(deploy_task(stage: "submitted", reviewers: REVIEWERS))
     assert_nil final_evolution(evolving_journey(stage: "reviewed")),
-      "the review gate reaches the MIDDLE form — there is no final reveal yet"
+      "a three-stage line reaches only its MIDDLE form at review — no final reveal yet"
   end
 
   test "final_evolution reads the real review + assemble evolution end to end" do
@@ -1094,7 +1104,7 @@ class StageAgentsHelperTest < ActionView::TestCase
                "a first evolution at a skipped-submit review is not a final evolution"
   end
 
-  test "stage_timeline splices an Evolve card after review and strips later companions" do
+  test "stage_timeline splices an Evolve card after the assemble gate and strips later companions" do
     blocks = stage_timeline(evolving_journey(stage: "shipped"), @agents)
 
     assert_equal %w[designed building submitted reviewed assembled evolve shipped],
@@ -1119,9 +1129,16 @@ class StageAgentsHelperTest < ActionView::TestCase
   end
 
   test "stage_timeline celebrates a 2-stage final evolution at review" do
-    blocks = stage_timeline(evolving_journey(stage: "assembled", base: "diglett", first: "diglett", third: "dugtrio"), @agents)
+    blocks = stage_timeline(two_form_journey(stage: "assembled"), @agents)
 
-    assert blocks.any?(&:evolution?), "a 2-stage line earns its final Evolve card at review"
+    assert_equal %w[designed building submitted reviewed evolve assembled],
+                 blocks.map { |b| b.evolution? ? "evolve" : b.to_stage },
+                 "a 2-stage line earns its Evolve card right after Reviewed, the gate that made Dugtrio"
+
+    evolve = blocks.find(&:evolution?)
+    assert_equal "Diglett", evolve.evolution.from.name
+    assert_equal "Dugtrio", evolve.evolution.to.name
+
     assembled = blocks.find { |b| b.to_stage == "assembled" }
     refute assembled.agents.any? { |a| a.agent.is_a?(StageAgentsHelper::MascotAgent) },
            "the final mascot belongs to the Evolve card, not the assembled card"

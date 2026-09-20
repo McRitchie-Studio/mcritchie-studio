@@ -80,9 +80,14 @@ class Task < ApplicationRecord
   #
   # They used to sit at submitted/reviewed, and moved out one stage each on
   # 2026-08-15: submitting is the builder handing work over, not the work being
-  # accepted, so the celebration belongs at the gates that ACCEPT it. It also puts
-  # every mascot's final form on the deploy side of the seam, where a one-evolution
-  # line (Pikachu → Raichu) now lands at `assembled` instead of `reviewed`.
+  # accepted, so the celebration belongs at the gates that ACCEPT it.
+  #
+  # EVERY line spends its first step at REVIEW (2026-09-20). The review gate used
+  # to be reserved for three-stage families, which parked a one-evolution line
+  # (Pikachu → Raichu) at `assembled` with nothing to show for passing review. A
+  # gate that evolves only some mascots reads as a bug on the board, so both gates
+  # now advance whatever can still evolve: two-form lines reach their final form at
+  # review and coast through assemble, three-stage lines walk both steps as before.
   MASCOT_EVOLUTION_GATES = { "reviewed" => 1, "assembled" => 2 }.freeze
   DEPLOY_STAGES = %w[submitted reviewed assembled shipped].freeze
   NEXT_INTENT_STAGE = { "designed" => "building", "building" => "submitted",
@@ -4015,13 +4020,13 @@ class Task < ApplicationRecord
   end
 
   # Evolve the TASK's copy of its mascot at a pipeline gate (reviewed/assembled).
-  # The review gate is reserved for three-stage families, so Charmander reviews as
-  # Charmeleon while Pikachu stays Pikachu. The assemble gate then evolves whatever
-  # can still evolve, celebrating QA-green with the mascot's final form — which is
-  # what puts a one-evolution line's single step at `assembled` rather than
-  # spending it early. The SESSION's mascot is untouched: a session working
-  # two tasks keeps its own stable Pokémon while each task's copy evolves with
-  # progress. devops.mascot_stage records the gate consumed, so a blocked→resubmitted
+  # Each gate advances the mascot ONE step if it still can — Charmander reviews as
+  # Charmeleon and assembles as Charizard, while Pikachu spends its only step at
+  # REVIEW and arrives at assemble already Raichu. A gate with nowhere left to go is
+  # still consumed, so every line celebrates review and only the lines deep enough
+  # to have more left also celebrate assemble. The SESSION's mascot is untouched:
+  # a session working two tasks keeps its own stable Pokémon while each task's
+  # copy evolves with progress. devops.mascot_stage records the gate consumed, so a blocked→resubmitted
   # loop never double-evolves; it is not a client (DEVOPS_KEYS) field, so board
   # updates can't clobber it.
   def evolve_stage_mascot
@@ -4038,7 +4043,6 @@ class Task < ApplicationRecord
     return unless pokemon
 
     devops["mascot_stage"] = gate
-    return if gate == 1 && !pokemon.second_evolution_form?
 
     evolved = pokemon.evolutions.order(Arel.sql("RANDOM()")).first
     return unless evolved # nowhere to go — the gate is still consumed
