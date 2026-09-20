@@ -102,6 +102,80 @@ Two further gaps to know before trusting the chain end to end:
 - **`Content::Finalize` is a labelled stub.** It prints `[STUB] FFmpeg watermark`
   and returns the URL it was given.
 
+## The agent surface — where inference lives
+
+**The rule: anything with a right answer stays in code; anything with a JUDGMENT
+goes to a soul.** A game's scoreline is a fact and the app records it. Whether
+that game was worth posting about, what the take is, and whether a caption
+sounds like us are judgments, and they are written by an agent during an SOP
+using its OWN inference.
+
+| Deterministic — app code | Non-deterministic — agent inference |
+|---|---|
+| Game finalises → recap created | Is this game worth posting about? |
+| Higgsfield render, given a prompt | The take, the script, the scene list |
+| ffmpeg assembly, watermark, music | The caption, the hashtags, the hook |
+| S3 upload, stage moves, idempotency | The operator's vibe check before publish |
+
+**Why this and not an API key.** The in-app agents (`Content::ScriptAgent`,
+`MetadataAgent`, `PrepForTiktok`, and the three `News::*Agent`s) each do a raw
+`Net::HTTP` call to `api.anthropic.com` keyed on `ENV["ANTHROPIC_API_KEY"]` —
+which **production does not have**. Routing inference through a soul instead
+means no model key in prod, prompts that live in SOP prose an agent can improve
+rather than frozen string literals in `.rb` files, inference that lands in the
+agent trajectory where the learning loop can grade it, and a real voice veto
+(Mason cannot veto a line a Rails service already sent). Those services stay in
+place as the LEGACY path for `workflow=video`; retiring them is its own task.
+
+**The board is already the queue.** A `Content` at `stage=idea` IS a pending
+work item, so nothing new queues anything — the only missing primitives were a
+claim and a write-back.
+
+### `/api/v1/contents`
+
+Standard agent bearer auth (`AGENT_API_SECRET`, which production HAS).
+
+| Call | What it does |
+|---|---|
+| `GET /api/v1/contents?stage=&workflow=&claimable=1` | what is waiting |
+| `GET /api/v1/contents/:slug` | the full record, including `game_facts` |
+| `POST /api/v1/contents/claim_next` | the ATOMIC pop — the SERVER picks which |
+| `PATCH /api/v1/contents/:slug` | the write-back; `stage` advances the card |
+| `POST /api/v1/contents/:slug/release` | "I am done, or I gave up" |
+
+**The claim is why this is safe to run more than one of.** `claim_next` selects
+`FOR UPDATE SKIP LOCKED` inside a transaction, exactly as
+`Task.claim_next_review` does, so two sessions draining the queue together never
+block and never collide. Without it they both script the same game and produce
+two different takes for one card. The lease is `Content::AGENT_CLAIM_LEASE` (30
+minutes) and EXPIRES, so a session that dies mid-SOP does not strand the card;
+`release` is refused to a stranger while a claim is live, because re-opening a
+card someone is still writing is the other half of the same bug.
+
+**An empty pop is a NORMAL outcome**, answered `200` with
+`{"claimed": null, "reason": "none_claimable"}`. Callers idle; they do not
+retry-storm.
+
+**The write is deliberately NARROW.** `game_facts`, `game_slug`, `team_slug` and
+the score columns are not permitted — they are the deterministic half's record of
+what happened, and an agent that could rewrite the scoreline could publish a
+video about a game that did not happen. Note `scenes` is permitted by NAMED KEYS
+(`number`, `description`, `camera`, `duration`, `characters`): the `scenes: []`
+form permits an array of SCALARS only and silently drops every scene, which looks
+exactly like a model that wrote nothing.
+
+### `bin/content`
+
+The CLI a soul actually uses: `list`, `show`, `claim`, `write`, `release`.
+
+**Long text goes over stdin or a file, never a shell argument** — a generated
+script carries newlines, quotes and `$`, and a shell argument eats all three.
+Use `--script -` (stdin) or `--script-file F`; same for `--caption`/`--scenes`.
+
+The session id is per-DESK (`tmp/content-session`), not per-invocation, because a
+claim and its release are different processes — a fresh id each time would make
+every release look like a stranger's. `CONTENT_SESSION` overrides.
+
 ## Game Recap Workflow
 
 `Content.workflow = "game_recap"` — one Content per finished NFL game, created at
