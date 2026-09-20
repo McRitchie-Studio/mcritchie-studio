@@ -7,6 +7,10 @@
 class KnowledgeSource < ApplicationRecord
   KINDS = %w[google_drive egnyte transcripts].freeze
 
+  # A folder is always walked AS a named subject. Optional on the record so
+  # existing rows survive the migration; the walker REFUSES a source without
+  # one rather than falling back to a global identity.
+  belongs_to :workspace_account, optional: true
   has_many :source_documents, dependent: :destroy
 
   validates :kind, inclusion: { in: KINDS }

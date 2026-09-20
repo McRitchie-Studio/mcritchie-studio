@@ -819,7 +819,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_20_090000) do
     t.datetime "last_walked_at"
     t.string "name", null: false
     t.datetime "updated_at", null: false
+    t.bigint "workspace_account_id"
     t.index ["kind", "external_root_id"], name: "index_knowledge_sources_on_kind_and_external_root_id", unique: true
+    t.index ["workspace_account_id"], name: "index_knowledge_sources_on_workspace_account_id"
   end
 
   create_table "migration_lane_claims", force: :cascade do |t|
@@ -1667,6 +1669,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_20_090000) do
     t.index ["slug"], name: "index_users_on_slug", unique: true
   end
 
+  create_table "workspace_accounts", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.datetime "delegation_verified_at"
+    t.string "domain", null: false
+    t.string "entity"
+    t.string "last_check_error"
+    t.string "name"
+    t.text "notes"
+    t.jsonb "scopes", default: [], null: false
+    t.string "status", default: "pending", null: false
+    t.string "subject", null: false
+    t.datetime "updated_at", null: false
+    t.index ["domain"], name: "index_workspace_accounts_on_domain", unique: true
+    t.index ["subject"], name: "index_workspace_accounts_on_subject", unique: true
+  end
+
   add_foreign_key "action_grades", "agent_actions"
   add_foreign_key "action_grades", "agent_activities", on_delete: :nullify
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
@@ -1677,6 +1695,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_20_090000) do
   add_foreign_key "builders", "people"
   add_foreign_key "github_builder_commit_range_caches", "github_commit_ranges"
   add_foreign_key "github_builder_commit_range_caches", "tracked_github_builders"
+  add_foreign_key "knowledge_sources", "workspace_accounts"
   add_foreign_key "roster_spots", "rosters"
   add_foreign_key "solid_queue_blocked_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
   add_foreign_key "solid_queue_claimed_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade

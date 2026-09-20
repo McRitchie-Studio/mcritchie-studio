@@ -141,21 +141,87 @@ class WorkspaceCredentialsTest < ActiveSupport::TestCase
     refute_includes joined, "mail.google.com"
   end
 
-  test "the subject is pinned to a constant, not taken from a caller" do
-    assert_equal "team@mcritchie.industries", Workspace::Credentials::SUBJECT
-    # No writer: a caller cannot repoint the impersonation.
-    refute Workspace::Credentials.respond_to?(:subject=)
+  test "an unregistered subject is REFUSED — the allow-list replaces the old pinned constant" do
+    # Delegation cannot be narrowed at the grant: it reaches any user in a
+    # domain and the CALLER picks whom. That used to be held by a frozen
+    # constant; multi-tenant access moved it here. Nothing else changed about
+    # the risk, so nothing may weaken this.
+    ENV["GOOGLE_SERVICE_ACCOUNT_JSON"] = key_json
+
+    error = assert_raises(Workspace::Credentials::UnregisteredSubject) do
+      Workspace::Credentials.authorizer_for("team@not-registered.test")
+    end
+    assert_includes error.message, "not an ACTIVE workspace_account"
   end
 
-  test "the authorizer actually impersonates the subject" do
-    # THE SILENT FAILURE THIS GUARDS. make_creds refuses a `sub:` option, so the
+  test "a REGISTERED BUT PENDING workspace is refused too" do
+    # Registering is not authorization. A row only becomes impersonatable once
+    # a token has actually been issued for it.
+    ENV["GOOGLE_SERVICE_ACCOUNT_JSON"] = key_json
+    WorkspaceAccount.create!(domain: "pending.test")
+
+    assert_raises(Workspace::Credentials::UnregisteredSubject) do
+      Workspace::Credentials.authorizer_for("team@pending.test")
+    end
+  end
+
+  test "a revoked workspace stops being impersonatable" do
+    ENV["GOOGLE_SERVICE_ACCOUNT_JSON"] = key_json
+    account = WorkspaceAccount.create!(domain: "gone.test")
+    account.mark_verified!
+    assert Workspace::Credentials.authorizer_for("team@gone.test")
+
+    account.update!(status: "revoked")
+    assert_raises(Workspace::Credentials::UnregisteredSubject) do
+      Workspace::Credentials.authorizer_for("team@gone.test")
+    end
+  end
+
+  test "an active workspace's authorizer actually impersonates ITS subject" do
+    # THE SILENT FAILURE THIS GUARDS. make_creds drops a `sub:` option, so the
     # assignment is a separate line — and forgetting it does not raise: the
     # credential authenticates as the service account itself, which owns no mail
     # and an empty Drive, so every call would succeed and return nothing.
     ENV["GOOGLE_SERVICE_ACCOUNT_JSON"] = key_json
+    WorkspaceAccount.create!(domain: "live.test").mark_verified!
 
-    assert_equal "team@mcritchie.industries", Workspace::Credentials.subject
-    assert_equal Workspace::Credentials::SCOPES, Workspace::Credentials.authorizer.scope
+    authorizer = Workspace::Credentials.authorizer_for("team@live.test")
+    assert_equal "team@live.test", authorizer.sub
+    assert_equal Workspace::Credentials::SCOPES, authorizer.scope
+  end
+
+  test "each workspace gets its OWN credential object — one cannot leak into another" do
+    ENV["GOOGLE_SERVICE_ACCOUNT_JSON"] = key_json
+    WorkspaceAccount.create!(domain: "one.test").mark_verified!
+    WorkspaceAccount.create!(domain: "two.test").mark_verified!
+
+    one = Workspace::Credentials.authorizer_for("team@one.test")
+    two = Workspace::Credentials.authorizer_for("team@two.test")
+
+    assert_equal "team@one.test", one.sub
+    assert_equal "team@two.test", two.sub
+    refute_same one, two
+  end
+
+  test "probe refuses a subject that is not registered at all" do
+    # The probe has to work on PENDING rows — that is its job — so the thing
+    # stopping it being a domain-sweeping tool is that the row must exist.
+    ENV["GOOGLE_SERVICE_ACCOUNT_JSON"] = key_json
+
+    assert_raises(Workspace::Credentials::UnregisteredSubject) do
+      Workspace::Credentials.probe("someone@stranger.test")
+    end
+  end
+
+  test "probe returns a VERDICT, never an authorizer" do
+    # It must not become a way to reach data around the allow-list.
+    ENV["GOOGLE_SERVICE_ACCOUNT_JSON"] = key_json
+    WorkspaceAccount.create!(domain: "probe.test")
+
+    ok, error = Workspace::Credentials.probe("team@probe.test")
+    assert_includes [ true, false ], ok
+    assert ok == false || error.nil?
+    refute_respond_to ok, :fetch_access_token!
   end
 
   test "make_creds SILENTLY DROPS a sub option — why the assignment is a separate line" do
@@ -176,5 +242,41 @@ class WorkspaceCredentialsTest < ActiveSupport::TestCase
   test "the op read is bounded" do
     assert_operator Workspace::Credentials::OP_TIMEOUT_SECONDS, :<=, 30,
       "op blocks for biometric unlock on a cold session; an unbounded read hangs a cron dyno"
+  end
+
+  test "probe REFUSES a credential in self-signed-JWT mode, which ignores the subject" do
+    # The subject read-back is necessary but not sufficient: in this mode
+    # googleauth signs as the service account itself and never sends `sub`,
+    # while creds.sub keeps echoing what we set. Every call would then succeed
+    # against an empty Drive and a mailbox we do not own.
+    ENV["GOOGLE_SERVICE_ACCOUNT_JSON"] = key_json
+    WorkspaceAccount.create!(domain: "selfsigned.test")
+    liar = Struct.new(:sub) do
+      def fetch_access_token! = true
+      def enable_self_signed_jwt? = true
+    end.new("team@selfsigned.test")
+
+    ok, error = Workspace::Credentials.stub(:build_authorizer, ->(_s) { liar }) do
+      Workspace::Credentials.probe("team@selfsigned.test")
+    end
+
+    refute ok, "a credential that cannot carry the subject must not read as proven"
+    assert_includes error, "self-signed"
+  end
+
+  test "the mode is OFF for our real key shape, and a foreign universe_domain turns it ON" do
+    # The tripwire for the test above: it pins that the refusal is inert today
+    # AND that its condition is genuinely reachable, so neither half is theatre.
+    require "googleauth"
+    normal = Google::Auth::ServiceAccountCredentials.make_creds(
+      json_key_io: StringIO.new(key_json), scope: Workspace::Credentials::SCOPES
+    )
+    foreign = Google::Auth::ServiceAccountCredentials.make_creds(
+      json_key_io: StringIO.new(key_json("universe_domain" => "tpc.example.test")),
+      scope: Workspace::Credentials::SCOPES
+    )
+
+    refute normal.enable_self_signed_jwt?, "delegation would silently stop working"
+    assert foreign.enable_self_signed_jwt?, "if this flips, the probe guard is unreachable"
   end
 end
