@@ -5,14 +5,19 @@
 # many DIFFERENT videos say it. Each bundle is what a synthesis agent reads to
 # write a single card, so the whole corpus never has to fit in one context.
 #
+# A run with a selection REBUILDS bundles/ from scratch. A --min-sources that
+# selects nothing writes the empty index, keeps the existing bundles, and says so:
+# most ideas are said once, so a high value is a question with no answer rather
+# than an instruction to delete anything. Read the sources column of index.tsv to
+# see where the ceiling is today; it climbs as the extraction wave adds files.
+#
 #   bin/hormozi-bundle                # default corpus root
 #   bin/hormozi-bundle --root DIR
-#   bin/hormozi-bundle --min-sources 3
+#   bin/hormozi-bundle --min-sources 2   # only ideas said in 2+ videos
 
 require "optparse"
-require "json"
-require "fileutils"
 require_relative "../lib/hormozi/bundler"
+require_relative "../lib/hormozi/bundle_writer"
 
 DEFAULT_ROOT = File.expand_path("~/projects/.corpus/hormozi")
 
@@ -39,31 +44,21 @@ bundles_dir = File.join(root, "bundles")
 paths = Dir.glob(File.join(extract_dir, "*.json")).sort
 abort "no extraction files in #{extract_dir}" if paths.empty?
 
-FileUtils.rm_rf(bundles_dir)
 bundles = Hormozi::Bundler.build(paths).select { |bundle| bundle.source_count >= options[:min_sources] }
 
-index = []
-bundles.each do |bundle|
-  dir = File.join(bundles_dir, bundle.kind)
-  FileUtils.mkdir_p(dir)
-  File.write(File.join(dir, "#{bundle.slug}.json"), JSON.pretty_generate(
-    kind: bundle.kind,
-    name: bundle.name,
-    slug: bundle.slug,
-    source_count: bundle.source_count,
-    sources: bundle.sources,
-    items: bundle.items
-  ))
-  index << [ bundle.kind, bundle.slug, bundle.source_count, bundle.item_count, bundle.name ]
-end
+# The clearing of bundles/ lives inside the writer, BELOW this decision, so a
+# filter that selects nothing cannot delete the previous run's output. See
+# lib/hormozi/bundle_writer.rb for the failure that bought that ordering.
+kept = bundles.empty? ? Hormozi::BundleWriter.bundle_file_count(bundles_dir) : 0
+index_path = Hormozi::BundleWriter.write(bundles_dir, bundles)
 
-File.write(
-  File.join(bundles_dir, "index.tsv"),
-  ([ %w[kind slug sources items name].join("\t") ] + index.map { |row| row.join("\t") }).join("\n") + "\n"
-)
+if bundles.empty?
+  warn "no idea reached --min-sources #{options[:min_sources]} — wrote an empty index and left " \
+       "bundles/ in place (#{kept} bundle file(s) still there); re-run with a lower --min-sources to rebuild"
+end
 
 puts "read #{paths.length} extraction file(s) -> #{bundles.length} bundle(s)"
 bundles.group_by(&:kind).sort_by { |_kind, list| -list.length }.each do |kind, list|
   puts format("  %-11s %3d bundles, top: %s (%d sources)", kind, list.length, list.first.name, list.first.source_count)
 end
-puts "index: #{File.join(bundles_dir, 'index.tsv')}"
+puts "index: #{index_path}"

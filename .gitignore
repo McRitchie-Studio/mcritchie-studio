@@ -59,3 +59,13 @@ playwright/.cache/
 # repo (it keys on account email, some of them personal). Only the .example is
 # committed. See docs/agents/agents/steffon/sops/chrome-profiles.md.
 config/chrome_profiles.yml
+
+# The Hormozi corpus lives OUTSIDE git at ~/projects/.corpus/hormozi — it is
+# caption-derived text of someone else's copyrighted talks, and not ours to
+# redistribute. bin/hormozi-prep and bin/hormozi-bundle take a free-form --root,
+# so `--root .` from a checkout would write these four into this PUBLIC repo.
+# See docs/agents/agents/rex/knowledge/README.md § Provenance.
+/captions/
+/transcripts/
+/extract/
+/bundles/
