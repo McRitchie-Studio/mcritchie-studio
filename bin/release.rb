@@ -8149,13 +8149,16 @@ def archive
   say("✓ Archived #{archived_count} tasks; reclaimed #{reclaimed} worktrees; SHIPPED → #{kept_count}")
   say("✓ Swept #{sweep[:reclaimed_human] || '0 B'} of regenerable artifacts " \
       "across #{sweep[:repos]} repo(s) / #{sweep[:worktrees]} worktree(s) (this machine only)")
-  if sweep[:rotation_missing].to_a.any?
-    say("⚠ MISSING LOG ROTATION: #{sweep[:rotation_missing].join(', ')} — " \
-        "these apps have not adopted the studio-engine cap; their local logs grow to Rails' 100 MB default")
-  end
-  if sweep[:rotation_unknown].to_a.any?
-    say("⚠ Logger audit inconclusive (could not boot): #{sweep[:rotation_unknown].join(', ')}")
-  end
+  # THE ROTATION VERDICT ALWAYS PRINTS — silence here was the defect.
+  # Both branches this replaced fired only on a NON-EMPTY list, and an empty list
+  # is what three different situations produce: a fully capped machine, a sweep
+  # run with --skip-audit, and a summary line sweep_summary could not parse (it
+  # returns {} by design, so a sweep hiccup cannot abort a run whose board work
+  # already landed). The Exit Seam therefore reported an UNAUDITED machine exactly
+  # as it reported a capped one, which is how five loose apps went unnamed for a
+  # month. ArtifactSweep.rotation_report_lines owns the wording for all five
+  # verdicts and never returns nothing.
+  ArtifactSweep.rotation_report_lines(sweep).each { |line| say(line) }
   say("✓ Retired #{docs[:moved] || 0} frozen doc(s) into #{DocsArchive::ARCHIVE_DIR}/ " \
       "and rolled #{docs[:ledger_rolled] || 0} ledger row(s) — moved, never deleted")
   if docs[:skipped].to_a.any?

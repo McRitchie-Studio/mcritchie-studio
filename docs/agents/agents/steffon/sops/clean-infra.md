@@ -221,9 +221,28 @@ at runtime.
 | Verdict | Meaning | What to do |
 |---|---|---|
 | `OK` | bounded at a sane cap | nothing |
-| `LOOSE` | rotating at Rails' own 100 MB default — the studio-engine cap is **not** installed | the app needs the `studio-engine` bump adopted |
+| `LOOSE` | rotating at Rails' own 100 MB default — the studio-engine cap is **not** installed | the app needs `studio-engine >= 0.33.0`, the version whose `studio.logger` initializer installs the cap |
 | `NONE` | not rotating at all | same, and more urgent |
 | `?` | the app could not be booted (reason given) | inconclusive — never read it as pass or fail |
+
+**Then read the run's own verdict, the last line of the audit.** The per-app table
+is not the whole answer, because three different situations print an empty
+`rotation_missing`: a machine where every app is capped, a run made with
+`--skip-audit`, and a summary line nothing could parse. Those used to end the run
+in the same silence. The sweep now states which one it was, and carries it in the
+tagged JSON as `rotation_verdict`:
+
+| `rotation_verdict` | What the run proved |
+|---|---|
+| `capped` | the audit ran and **every** app it reached is capped — the only pass |
+| `uncapped` | at least one app read `LOOSE` or `NONE`; they are named on the line |
+| `unproven` | nothing read loose, but an app could not be booted — its cap is UNKNOWN |
+| `unaudited` | the audit did not run (`--skip-audit`); **no** app was checked |
+| `unreadable` | the sweep emitted no audit fields at all — treat every app as unchecked |
+
+Only `capped` is a pass. The other four print a `LOG CAP NOT PROVEN` or `MISSING
+LOG ROTATION` line naming what could not be proven, so an unchecked app can never
+read as a clean one.
 
 Two things rotation can never reach are **reported and never deleted**: scratch
 validator ledgers (`*/test-ledger`) and stray files at the projects root.
@@ -282,9 +301,11 @@ The machine is carrying only live work. Report:
 - worktrees reclaimed, and **any withheld and why** (the `rationale:` line)
 - Redis band before → after, and whether the floor or a high desk stopped it
 - **reclaimed bytes** from the artifact sweep, labelled **this machine only**
-- **any app named `LOOSE` or `NONE`** by the logger audit — name each one, and say
-  plainly that its local logs are still growing to Rails' 100 MB default
-- any app the audit could not boot, with the reason
+- **the audit's `rotation_verdict`**, and **any app named `LOOSE` or `NONE`** by
+  the logger audit — name each one, and say plainly that its local logs are still
+  growing to Rails' 100 MB default
+- **any app the audit could not boot, with the reason** — a `LOG CAP NOT PROVEN`
+  app is reported alongside the loose ones, never folded into the clean count
 - stale pids killed, orphaned databases dropped
 - **any `teardown-leak:` pid** the reclaim left running, and what `ps` said it was
 - anything appended to the ledger rather than removed
