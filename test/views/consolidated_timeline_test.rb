@@ -207,6 +207,43 @@ class ConsolidatedTimelineTest < ActionView::TestCase
     assert_select "[data-test='timeline-block'][data-stage='assembled'] [data-test='timeline-crew-member'][title^='Charizard']", count: 0
   end
 
+  # A TWO-FORM line (Diglett → Dugtrio) is finished at REVIEW, so its reel renders
+  # right after Submitted → Reviewed and is credited to the reviewer who completed
+  # that gate. Before 2026-09-20 the review gate skipped these lines entirely and
+  # the reel waited on QA-green.
+  test "renders an Evolve reel card after Submitted to Reviewed for a two-form line" do
+    # Collision-proof against fixtures + e2e seed leftovers in the shared test DB.
+    Agent.where(slug: "steffon").first_or_initialize.update!(name: "Steffon", slug: "steffon")
+    Agent.where(slug: "carl").first_or_initialize.update!(name: "Carl", slug: "carl")
+    [[50, "diglett", ["dugtrio"]], [51, "dugtrio", []]].each do |dex, slug, evo|
+      Pokemon.where(slug: slug).first_or_initialize
+             .update!(dex: dex, name: slug.capitalize, slug: slug, generation: 1, base: "diglett", evolution: evo, baby: [])
+    end
+    task = Task.create!(title: "component two form evolve task")
+    task.task_events.delete_all
+    snap = ->(slug) { { "mascot" => { "slug" => slug, "name" => slug.capitalize, "avatar" => "https://example.test/#{slug}.png" } } }
+    TaskEvent.create!(task_slug: task.slug, from_stage: "building", to_stage: "submitted",
+                      occurred_at: 4.hours.ago, seconds_in_from: 3600, actor: "carl", metadata: snap["diglett"])
+    TaskEvent.create!(task_slug: task.slug, from_stage: "submitted", to_stage: "reviewed",
+                      occurred_at: 3.hours.ago, seconds_in_from: 3600,
+                      metadata: snap["dugtrio"].merge("reviewers" => [{ "slug" => "carl", "weight" => "primary" }]))
+    # The assemble gate is consumed but evolves nothing, so it must not claim the reel.
+    TaskEvent.create!(task_slug: task.slug, from_stage: "reviewed", to_stage: "assembled",
+                      occurred_at: 2.hours.ago, seconds_in_from: 1800, actor: "steffon", metadata: snap["dugtrio"])
+    task.update_columns(stage: "assembled")
+
+    render partial: "tasks/consolidated_timeline", locals: { task: task.reload, agents: Agent.all.to_a, events: task.task_events.to_a }
+
+    assert_select "[data-test='timeline-block'][data-stage='evolve']", count: 1
+    assert_select "[data-test='timeline-evolution-from']", text: /Diglett/
+    assert_select "[data-test='timeline-evolution-to']", text: /Dugtrio/
+    assert_select "[data-test='timeline-evolution-trigger']", text: /Carl/
+
+    # …and it sits between Reviewed and Assembled, not after the assemble card.
+    stages = css_select("[data-test='timeline-block']").map { |node| node["data-stage"] }
+    assert_equal %w[submitted reviewed evolve assembled], stages
+  end
+
   # A NON-evolving mascot earns no Evolve reel — but it must still stay off the
   # deploy cards. Reviewed → Assembled and Assembled → Shipped render their stage
   # owners (Steffon / Avi) alone; the mascot lives only on the Build lane.
