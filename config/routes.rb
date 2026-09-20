@@ -305,6 +305,10 @@ Rails.application.routes.draw do
     namespace :v1 do
       post "auth", to: "auth#create"
       post "release_notes", to: "release_notes#create"
+      # Finished-game push from turf-monster (Nfl::LiveScores::PollCycle#finalise).
+      # Creates the Content idea a faceless recap video is built from. Idempotent:
+      # 201 when this call created the recap, 200 when it already existed.
+      post "game_recaps", to: "game_recaps#create"
       # GitHub Actions webhook receiver (workflow_run events). Called by GitHub,
       # not an agent — GithubWebhooksController skips bearer auth and gates ONLY
       # on the HMAC signature. DevOps v2: agents read CI status off the board.

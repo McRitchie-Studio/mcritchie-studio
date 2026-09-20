@@ -339,4 +339,24 @@ class ContentsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to content_path(@idea_content.slug)
     assert_match(/starter_post_x/, flash[:alert].to_s)
   end
+
+  # The workflow <select> is hand-maintained, so a value added to
+  # Content::WORKFLOWS without a matching option is invisible until someone
+  # saves — no option is `selected`, the browser submits the first, and
+  # :workflow is permitted on update. On a game_recap that also disarms the
+  # [game_slug, workflow] idempotency index. content-pipeline.md's "Form
+  # gotcha" states the rule; this is what enforces it.
+  test "the edit form offers every Content::WORKFLOWS value" do
+    log_in_as(@admin)
+    get edit_content_path(@idea_content.slug)
+    assert_response :success
+
+    offered = css_select("select[name='content[workflow]'] option").map { |option| option["value"] }
+
+    Content::WORKFLOWS.each do |workflow|
+      assert_includes offered, workflow,
+                      "#{workflow} is in Content::WORKFLOWS but missing from the edit form's " \
+                      "workflow select — saving the form would silently rewrite it to the first option"
+    end
+  end
 end

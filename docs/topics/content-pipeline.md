@@ -23,7 +23,93 @@
 
 `content:hook`, `content:script`, `content:assets`, `content:assemble`, `content:post`, `content:review` (manual). `content:script_agent`, `content:assets_agent`, `content:assemble_agent`, `content:finalize`, `content:metadata` (AI). `content:generate SLUG=xxx` (full pipeline). All support `SLUG=` override.
 
-**Feature status: ON ICE** — Services are built and wired up but not yet tested end-to-end with real API calls.
+**Feature status: BLOCKED, and "ON ICE" understated it.** Measured 2026-09-20,
+the generative path fails for two independent reasons, neither of which a test
+run would fix:
+
+1. **The client targets a decommissioned surface.** `Higgsfield::Client` posts to
+   `platform.higgsfield.ai` with `hf-api-key`/`hf-secret` headers. The current API
+   is `api.higgsfield.ai` with `Authorization: Key <id>:<secret>`, image at
+   `POST /higgsfield-ai/soul/v2/standard`, video at
+   `POST /kling-video/v2.5-turbo/pro/image-to-video`, polling at
+   `GET /requests/{id}/status`. The legacy host still authenticates our key and
+   still serves `GET /v1/motions`, so a shallow probe looks healthy — but
+   `/v1/text2image/soul` answers `400 {"detail":"Unavailable model"}`, and its
+   `width_and_height: "1024x1792"` is no longer a valid size (the 422 names the
+   current set; `1152x2048` is exact 9:16).
+2. **The account has no credits.** Both hosts, image and video, answer
+   `not_enough_credits`. One shared pool, and it is empty. No code change reaches
+   past this — it is a purchase.
+
+A probe order that tells the three failures apart, since they look alike from the
+app: a fake-id `GET /v1/job-sets/<uuid>` proves auth (404 = authenticated), an
+empty `POST` returns the schema (422), and only a well-formed POST reveals credits.
+
+Two further gaps to know before trusting the chain:
+
+- **`Content::AssembleAgent` makes ONE 5-second clip from the FIRST scene image.**
+  `AssetsAgent` generates images for up to 5 scenes and `AssembleAgent` then uses
+  `image_urls.first` and discards the rest. There is no multi-scene stitching, no
+  music, and no text overlays (`music_track: nil`, `text_overlays: []`,
+  `logo_overlay: false`).
+- **`Content::Finalize` is a labelled stub.** It prints `[STUB] FFmpeg watermark`
+  and returns the URL it was given.
+
+## Game Recap Workflow
+
+`Content.workflow = "game_recap"` — one Content per finished NFL game, created at
+`stage=idea`. This is the head of the faceless-social pipeline: turf-monster
+settles a game, the hub turns it into a content idea.
+
+### The cross-repo seam
+Games live in **turf-monster**; Content lives in the **hub**. The hub never reads
+turf-monster's database. The whole crossing is one endpoint:
+
+```
+POST /api/v1/game_recaps
+Authorization: Bearer <token from POST /api/v1/auth>
+{ "game": { "game_slug": "...", "home_team_slug": "...", "away_team_slug": "...",
+            "home_score": 24, "away_score": 17, "status_detail": "Final",
+            "season_year": 2026, "season_type": 2, "week": 3 } }
+```
+
+Auth is the standard agent bearer token (`Api::V1::BaseController`, shared
+`AGENT_API_SECRET`) — see [`task-board-api.md`](../agents/modules/task-board-api.md).
+
+**Team slugs are shared between the repos.** Both derive from
+`"Buffalo Bills".parameterize`, so `buffalo-bills` means the same team on each
+side and the payload carries slugs rather than the `BUF`-style abbreviations
+turf-monster's `Change` struct reports.
+
+### Idempotency is structural, not incidental
+`Nfl::LiveScores::PollCycle` is deliberately safe to re-run — every scoring event
+is keyed on ESPN's own play id — so the same final is EXPECTED to arrive here
+more than once. A partial unique index on `[game_slug, workflow]` is the arbiter;
+`Content::CreateGameRecap` re-reads on `RecordNotUnique` rather than raising, so a
+duplicate answers **200 with the existing recap** while the call that created it
+answers **201**. A `find_or_create` in the controller would lose that race.
+
+### Title composition
+`Content::CreateGameRecap` reads `Team#mascot` (which derives "Broncos" from
+"Denver Broncos" minus location when the column is blank — the NFL seed never
+populates it) and composes:
+
+- Win: `"Bills Beat Dolphins 24-17"` — **winner first, always**, never home-first.
+- Tie: `"Bills And Dolphins Tie 17-17"` — NFL ties are rare but real, and "beat"
+  would be a lie, so the phrase changes rather than just the numbers.
+
+`team_slug` holds the WINNER and `rival_team_slug` the loser, reusing the columns
+the other workflows use for "us" and "them" so team-colour and hashtag lookups
+keep working. On a tie the pair is stored in the feed's home/away order rather
+than inventing a ranking. `game_facts` (jsonb) keeps the scoreline verbatim so a
+later script step never has to call back to turf-monster.
+
+### Refusals
+`Content::CreateGameRecap::InvalidGame` → `422 INVALID_GAME` for: a missing
+required field, a team slug the hub does not know, a game played against itself,
+a negative score, or a score that is not a whole number. That last one matters —
+`"final".to_i` is `0`, which would silently invent a shutout, so the check is
+`Integer(..., exception: false)` rather than `to_i`.
 
 ## Starter Post (X) Workflow
 
