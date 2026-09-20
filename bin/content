@@ -107,7 +107,7 @@ OptionParser.new do |o|
   o.on("--script S")      { |v| opts[:script] = v }
   o.on("--script-file F") { |v| opts[:script_file] = v }
   o.on("--caption C")     { |v| opts[:caption] = v }
-  o.on("--caption-file F"){ |v| opts[:caption_file] = v }
+  o.on("--caption-file F") { |v| opts[:caption_file] = v }
   o.on("--scenes-json J") { |v| opts[:scenes_json] = v }
   o.on("--scenes-file F") { |v| opts[:scenes_file] = v }
   o.on("--title T")       { |v| opts[:title] = v }
