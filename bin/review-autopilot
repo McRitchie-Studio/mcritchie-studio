@@ -40,7 +40,7 @@ require "optparse"
 require_relative "lib/task_board"
 require_relative "lib/approval_request_notice"
 
-BASE_URL = ENV.fetch("TASK_BOARD_URL", "https://www.mcritchie.studio")
+BASE_URL = ENV.fetch("TASK_BOARD_URL", "https://mcritchie.studio")
 DOTENV = File.expand_path("../.env", __dir__)
 
 options = { agent: ENV["AGENT_SLUG"], all: false }

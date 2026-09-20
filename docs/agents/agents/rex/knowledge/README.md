@@ -34,6 +34,7 @@ The transcripts and extraction files live **outside the repo** at
 | [`audience-and-avatar`](audience-and-avatar.md) | Who you are talking to, and how the audience tells you what to make | 16 |
 | [`volume-and-repetition`](volume-and-repetition.md) | Why reps beat ideas, and the switch rule from more to better | 15 |
 | [`scaling-order`](scaling-order.md) | More/Better/New, the roadmap stages, what breaks at 2x/5x/10x | 9 |
+| [`when-his-advice-does-not-apply`](when-his-advice-does-not-apply.md) | The limits he puts on his own method. **Open this before advising a low-ticket or B2B client** | 35 |
 | [`where-he-contradicts-himself`](where-he-contradicts-himself.md) | The six places the ground moves. **Check before quoting doctrine** | 6 |
 | [`x-factor`](x-factor.md) | How he operates — the part that is hardest to copy | 6 |
 | [`core-four`](core-four.md) | The only four ways to let people know | 2 |

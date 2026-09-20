@@ -417,14 +417,14 @@ class FastCertSubjectTest < Minitest::Test
   end
 
   # THE WIRING INITIALIZER, which is the diff this whole clause exists for. Its class
-  # half (lib/middleware/edge_guard.rb) still maps both tests, so the hole only opens
+  # half (lib/middleware/edge_guard.rb) still maps them, so the hole only opens
   # on a diff touching the initializer ALONE — which is exactly the diff a wiring
   # change produces, and it mapped to ZERO.
   #
   # ASSERTED, NOT SKIPPED, if a file is missing: this test lives in the hub and runs
   # against the hub, so the condition cannot fire, and a skip is coverage switched off
   # while keeping the test's name.
-  def test_the_edge_guard_initializer_maps_its_own_two_tests_in_this_repo
+  def test_the_edge_guard_initializer_maps_every_test_asserting_its_wiring_in_this_repo
     initializer = "config/initializers/edge_guard.rb"
     owner = "lib/middleware/edge_guard.rb"
 
@@ -439,9 +439,16 @@ class FastCertSubjectTest < Minitest::Test
     # would go green on a mapping that had grown a hundred coincidental matches.
     mapped = FastCert.select_tests(REPO_ROOT, [initializer]) - [SELF]
 
-    assert_equal ["test/integration/edge_guard_wiring_test.rb", "test/lib/edge_guard_test.rb"],
+    # canonical_host_wiring_test.rb earns its place rather than coinciding into it: it
+    # asserts CanonicalHost sits BEHIND EdgeGuard, so un-mounting EdgeGuard or moving it
+    # off position 0 turns that test red, and a diff touching this initializer alone
+    # should run it. Grow this list only for an entry that genuinely asserts the wiring
+    # — a coincidental token match is the thing assert_equal exists to catch.
+    assert_equal ["test/integration/canonical_host_wiring_test.rb",
+                  "test/integration/edge_guard_wiring_test.rb",
+                  "test/lib/edge_guard_test.rb"],
                  mapped,
-                 "the wiring initializer alone must reach both edge-guard tests"
+                 "the wiring initializer alone must reach every test that asserts its wiring"
   end
 
   # THE CONTRACT TEST OF A CONFIG, reached through the quoted basename. It names its

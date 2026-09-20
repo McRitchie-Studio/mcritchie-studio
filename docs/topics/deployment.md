@@ -35,7 +35,13 @@ As of 2026-06-15, `mcritchie.studio` is the canonical production host.
 Production config should keep `APP_HOST=mcritchie.studio` and
 `MAILER_HOST=mcritchie.studio`; `APP_HOST_ALIASES` should include
 `app.mcritchie.studio`, `www.mcritchie.studio`, and the Heroku fallback host.
-Heroku ACM has issued certs for root, `www`, and legacy `app`.
+Heroku ACM has issued certs for root, `www`, and legacy `app`. Those two aliases
+answer only to hand visitors on: `CanonicalHost`
+(`lib/middleware/canonical_host.rb`) 301s every GET and HEAD on them to
+`APP_HOST`, and the Google OAuth callback is pinned to the same host, so a
+sign-in begun on an alias no longer draws `redirect_uri_mismatch`. `/up`,
+requests other than GET and HEAD, and `DYNO_HOST` stay reachable under their
+own names.
 `v1.mcritchie.studio` is connected to the old Squarespace site as its primary
 domain, has the Squarespace `www` prefix disabled, and returns `200`.
 

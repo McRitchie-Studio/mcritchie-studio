@@ -32,6 +32,28 @@ they bring their own traffic and do their own advertising. So they sit on top of
 the four as a multiplier: you run the Core Four to recruit affiliates, then teach
 the affiliates to run the Core Four for you.
 
+## He also teaches a different cut of the same territory
+
+In a 20,000-word keynote (`XwZH-lOKG9c`) he names **six** pools, not four, under
+the label *"never go hungry again"*:
+
+> paid media · earned media · owned media · outbound · affiliates and partners ·
+> referrals
+
+Same universe, different map. Media splits three ways rather than collapsing into
+"content", and **affiliates and referrals come out as pools of their own** —
+which contradicts this card's own line above that affiliates are not a fifth
+channel.
+
+**Neither is wrong; they answer different questions.** The four-way cut is an
+AUDIT — two axes, no gaps, use it to find the empty box. The six-way cut is an
+INVENTORY — more granular, better for allocating effort across sources you
+already run. Rex should reach for four when asking *what are we not doing*, and
+six when asking *where should the next hour go*.
+
+What he never does is reconcile them, so do not present either as the canonical
+list.
+
 ## When it applies
 
 Universal, and most useful as an audit rather than a plan. It tells you which box

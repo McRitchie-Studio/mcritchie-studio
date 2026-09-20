@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_20_030000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_20_090000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -445,6 +445,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_20_030000) do
     t.text "description"
     t.integer "duration_seconds"
     t.string "final_video_url"
+    t.jsonb "game_facts", default: {}, null: false
+    t.string "game_slug"
     t.jsonb "hashtags", default: []
     t.jsonb "hook_ideas", default: []
     t.string "hook_image_url"
@@ -480,6 +482,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_20_030000) do
     t.datetime "updated_at", null: false
     t.integer "views"
     t.string "workflow", default: "video", null: false
+    t.index ["game_slug", "workflow"], name: "index_contents_on_game_slug_and_workflow_when_present", unique: true, where: "(game_slug IS NOT NULL)"
     t.index ["rival_team_slug"], name: "index_contents_on_rival_team_slug"
     t.index ["slug"], name: "index_contents_on_slug", unique: true
     t.index ["source_news_slug"], name: "index_contents_on_source_news_slug"
