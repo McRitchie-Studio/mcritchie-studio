@@ -43,7 +43,7 @@ PRIORITY_LABELS = {
 
 OPTIONS = {
   apps: DEFAULT_APPS.dup,
-  base_url: ENV.fetch("TASK_BOARD_URL", "https://www.mcritchie.studio"),
+  base_url: ENV.fetch("TASK_BOARD_URL", "https://mcritchie.studio"),
   decisions: false,
   json: false,
   offline_fixture: nil,

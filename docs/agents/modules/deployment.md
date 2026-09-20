@@ -71,6 +71,43 @@ ceiling. Re-prove the math there before raising `WEB_CONCURRENCY`,
 Squarespace site is archived at `https://v1.mcritchie.studio`; the old Rails app
 host `https://app.mcritchie.studio` remains a legacy alias.
 
+Those aliases no longer answer as themselves. `CanonicalHost`
+(`lib/middleware/canonical_host.rb`) 301s every GET and HEAD on a non-canonical
+host to `APP_HOST`, and `config/initializers/omniauth.rb` pins the Google
+callback to `https://$APP_HOST`. Before that, omniauth built `redirect_uri` from
+the host the request arrived on, so a sign-in begun on `www.` handed Google an
+unregistered callback and drew `Error 400: redirect_uri_mismatch`. That failure
+tracked whichever browser profile held the alias bookmark, so it read as an
+account problem rather than an address one. One front door means one callback
+URL to register.
+
+Three things stay reachable under their own names, deliberately:
+
+- `/up`, so Heroku's health check never chases a redirect.
+- Every request that is not a GET or a HEAD. A 301 rewrites POST to GET in
+  browsers and is ignored
+  by many API clients, so redirecting one would corrupt webhook deliveries and
+  `/api/v1` calls that happen to name an alias. The pinned callback covers the
+  one POST that matters here, the omniauth request phase.
+- `DYNO_HOST`, which health checks and internal tooling reach directly.
+
+Both halves are dark without `APP_HOST`, which is set only on a deployed app, so
+localhost and worktree desks behave exactly as before.
+
+Production and QA **share one Google OAuth client** — `GOOGLE_CLIENT_ID` is
+byte-identical on `mcritchie-studio` and `mcritchie-studio-qa`. That one client
+carries one authorized redirect URI per deploy target, so two today:
+
+| Deploy target | `APP_HOST` | Authorized redirect URI |
+|---------------|------------|-------------------------|
+| Production | `mcritchie.studio` | `https://mcritchie.studio/auth/google_oauth2/callback` |
+| QA | `qa.mcritchie.studio` | `https://qa.mcritchie.studio/auth/google_oauth2/callback` |
+
+**Never prune that list to one entry.** Both URIs live on the same client, so
+deleting either one ends sign-in on the target it belongs to. What pinning
+removed is the need for ALIAS entries (`www.`, legacy `app.`) — adding one back
+would rebuild the second front door this closed.
+
 Launch status as of 2026-06-15:
 
 - Production deploy: Heroku release `v63`, commit `4831ebcd`.
