@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 Rails.application.config.middleware.use OmniAuth::Builder do
   provider :google_oauth2,
     ENV["GOOGLE_CLIENT_ID"],
@@ -7,3 +9,23 @@ Rails.application.config.middleware.use OmniAuth::Builder do
 end
 
 OmniAuth.config.allowed_request_methods = [:post]
+
+# Pin the callback to the canonical host.
+#
+# Unset, omniauth builds `redirect_uri` from the host the request arrived on. This app
+# answers on several allowlisted names (APP_HOST_ALIASES), so beginning a sign-in on
+# `www.` or the legacy `app.` subdomain handed Google a callback URL that its OAuth
+# client had never been shown — `Error 400: redirect_uri_mismatch`, reported as an
+# account problem because it tracked whichever browser profile held the alias
+# bookmark. Pinned, every front door produces the single registered callback.
+#
+# CanonicalHost 301s browsers onto the canonical host already, but deliberately leaves
+# non-GET requests alone — and the omniauth request phase is a POST
+# (allowed_request_methods above). This is what covers it, and taking both answers
+# from CanonicalHost is what stops the front door and the callback drifting apart.
+#
+# nil off a deployed app (no APP_HOST), which leaves omniauth's per-request behaviour
+# untouched for localhost and worktree desks on their own ports.
+if (canonical_origin = CanonicalHost.origin)
+  OmniAuth.config.full_host = canonical_origin
+end
