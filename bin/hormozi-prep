@@ -1,0 +1,113 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Cleans downloaded auto-captions into plain transcripts and writes the manifest
+# the extraction wave reads.
+#
+# The corpus itself lives OUTSIDE git (it is large and it is someone else's
+# copyrighted speech); only this script, its tests, and the distilled markdown
+# land in the repo. Default root is ~/projects/.corpus/hormozi, override with
+# --root.
+#
+#   bin/hormozi-prep                 # clean everything not already cleaned
+#   bin/hormozi-prep --force         # re-clean every caption file
+#   bin/hormozi-prep --root DIR      # point at another corpus root
+
+require "optparse"
+require_relative "../lib/hormozi/vtt_cleaner"
+require_relative "../lib/hormozi/triage"
+
+DEFAULT_ROOT = File.expand_path("~/projects/.corpus/hormozi")
+
+options = { root: DEFAULT_ROOT, force: false }
+OptionParser.new do |opts|
+  opts.banner = "Usage: bin/hormozi-prep [options]"
+  opts.on("--root DIR", "corpus root (default #{DEFAULT_ROOT})") { |v| options[:root] = File.expand_path(v) }
+  opts.on("--force", "re-clean captions that already have a transcript") { options[:force] = true }
+  opts.on("-h", "--help") do
+    puts opts
+    exit 0
+  end
+end.parse!
+
+# OptionParser refuses an unknown FLAG on its own; a leftover positional it simply
+# leaves in ARGV. On a script that rewrites every transcript under a root, silently
+# ignoring the path someone typed is the whole defect.
+abort "unexpected argument(s): #{ARGV.join(' ')} — did you mean --root?" unless ARGV.empty?
+
+root = options[:root]
+captions_dir = File.join(root, "captions")
+transcripts_dir = File.join(root, "transcripts")
+extract_dir = File.join(root, "extract")
+
+abort "no captions at #{captions_dir} — run the fetch first" unless Dir.exist?(captions_dir)
+
+Dir.mkdir(transcripts_dir) unless Dir.exist?(transcripts_dir)
+Dir.mkdir(extract_dir) unless Dir.exist?(extract_dir)
+
+# Titles and durations come from the yt-dlp listing. Separators have been both a
+# real tab and a literal backslash-t depending on how the dump was quoted, so
+# accept either rather than silently reading every title as part of the id.
+def load_metadata(root)
+  meta = {}
+  Dir.glob(File.join(root, "meta", "*.tsv")).each do |path|
+    File.foreach(path) do |line|
+      id, duration, title = line.chomp.split(/\t|\\t|\|/, 3)
+      next if id.nil? || id.strip.empty? || title.nil?
+
+      meta[id.strip] = { duration: duration.to_i, title: title.strip }
+    end
+  end
+  meta
+end
+
+metadata = load_metadata(root)
+rows = []
+cleaned = 0
+skipped = 0
+
+Dir.glob(File.join(captions_dir, "*.vtt")).sort.each do |vtt_path|
+  id = File.basename(vtt_path).sub(/\.[a-z-]+\.vtt\z/, "").sub(/\.vtt\z/, "")
+  transcript_path = File.join(transcripts_dir, "#{id}.txt")
+
+  if File.exist?(transcript_path) && !options[:force]
+    text = File.read(transcript_path)
+    skipped += 1
+  else
+    text = Hormozi::VttCleaner.clean(File.read(vtt_path))
+    File.write(transcript_path, text)
+    cleaned += 1
+  end
+
+  info = metadata[id] || {}
+  title = info[:title] || id
+  verdict = Hormozi::Triage.score(title)
+  rows << {
+    id: id,
+    tier: verdict.tier,
+    score: verdict.score,
+    duration: info[:duration] || 0,
+    words: text.split.length,
+    title: title
+  }
+end
+
+rows.sort_by! { |row| [ row[:tier], -row[:score], -row[:words] ] }
+
+manifest_path = File.join(extract_dir, "manifest.tsv")
+File.open(manifest_path, "w") do |file|
+  file.puts %w[id tier score duration_s words title].join("\t")
+  rows.each do |row|
+    file.puts [ row[:id], row[:tier], row[:score], row[:duration], row[:words], row[:title] ].join("\t")
+  end
+end
+
+by_tier = rows.group_by { |row| row[:tier] }
+total_words = rows.sum { |row| row[:words] }
+
+puts "cleaned #{cleaned}, reused #{skipped}, #{rows.length} transcripts, #{total_words} words"
+(1..3).each do |tier|
+  tier_rows = by_tier[tier] || []
+  puts "  tier #{tier}: #{tier_rows.length} episodes, #{tier_rows.sum { |row| row[:words] }} words"
+end
+puts "manifest: #{manifest_path}"
