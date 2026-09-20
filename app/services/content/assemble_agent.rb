@@ -1,7 +1,11 @@
 class Content
   class AssembleAgent
-    # Higgsfield DoP (Director of Photography) — image-to-video generation
-    # Takes scene images and generates cinematic motion video
+    # Higgsfield image-to-video generation (Kling 2.5 via Higgsfield::Client).
+    # Takes scene images and generates cinematic motion video.
+    #
+    # The "DoP" model this used to name was the retired platform.higgsfield.ai
+    # surface; the model is part of the request PATH now, so the default is
+    # selected by the client rather than named here.
 
     def self.assemble_latest
       content = Content.where(stage: "assets").order(position: :desc, created_at: :desc).first
@@ -37,8 +41,13 @@ class Content
       image_urls = scene_assets.map { |a| a["image_url"] }.compact
       raise "No image URLs in scene assets" if image_urls.empty?
 
-      # Use the first scene image as the starting frame
-      # DoP generates a 5-second cinematic video from a single image
+      # Use the first scene image as the starting frame.
+      #
+      # KNOWN GAP, not a design: AssetsAgent generates an image per scene (up to
+      # five, each one paid for) and this discards all but the first, so ~80% of
+      # the image spend is thrown away on every run — on the very pool whose
+      # emptiness blocks the feature. Multi-scene stitching is its own task.
+      # Clip length is whatever the model's default is; no duration is passed.
       primary_image = image_urls.first
       prompt = build_video_prompt
 
@@ -46,10 +55,12 @@ class Content
       puts "  Primary image: #{primary_image.truncate(80)}"
       puts "  Prompt: #{prompt.truncate(120)}"
 
+      # No `model:` — "dop-turbo" named the retired body-field model and the
+      # client now REFUSES an unknown name rather than ignoring it. nil takes
+      # the current default path (kling-pro).
       video_url = @client.generate_video_and_wait(
         image_url: primary_image,
-        prompt: prompt,
-        model: "dop-turbo"
+        prompt: prompt
       )
 
       puts "  -> Video: #{video_url.truncate(80)}"
