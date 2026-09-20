@@ -1,0 +1,194 @@
+# Workspace Provision
+
+## Status: Active
+
+This is Steffon's `workspace-provision` SOP. It gives the agents **read access
+to one client's Google Workspace** — their Drive and their mail — so the
+knowledge layer can index what that client already has, without anyone
+forwarding files by hand.
+
+Run it when a new client arrives, or when an existing client opens a second
+domain. The conventions it applies live in
+[`../../../modules/credential-inventory.md`](../../../modules/credential-inventory.md)
+and [`../../../modules/knowledge-capture.md`](../../../modules/knowledge-capture.md);
+this file is the act.
+
+**The shape of the work, in one sentence:** one service account serves every
+workspace we are ever given, and the only per-client step is that client's own
+super-admin granting it delegation in their own admin console — which Google
+offers no API for, and which is therefore the one manual seam this SOP cannot
+remove.
+
+## What this act is NOT
+
+- **It never sends mail.** The grant includes `gmail.compose`, which *can*
+  send. "Never sends" is held in code (`test/lib/no_gmail_send_test.rb`), not
+  by the grant. Do not widen to `gmail.send`, `gmail.modify`, or
+  `mail.google.com`.
+- **It never edits a file we do not own.** `drive.readonly` plus `drive.file`;
+  never plain `drive`.
+- **It never creates the 1Password item.** The agent service account is
+  READ-ONLY, measured. Mr. McRitchie files credentials; see
+  [`./credential-filing.md`](./credential-filing.md).
+- **It never impersonates a subject that is not on the allow-list.** Delegation
+  cannot be narrowed at the grant — it authorizes *any* user in the domain and
+  the caller picks — so the boundary is the `workspace_accounts` table, not the
+  grant.
+- **It does not put client specifics in this repo.** `mcritchie-studio` is
+  PUBLIC. Counterparty names, domains, and folder ids are database rows.
+
+## Entry
+
+You need: the client's domain, a `team@<domain>` user existing in their
+Workspace, and a named contact who is a **super-admin** of that domain. If any
+of the three is missing, stop at the decline path.
+
+```bash
+cd /Users/alex/projects/mcritchie-studio
+bin/rails workspace:accounts          # who is reachable today
+```
+
+## 1. Register the workspace
+
+```bash
+bin/rails 'workspace:register[<domain>,<Display Name>,<entity-slug>]'
+```
+
+The row lands as **`pending`** — registered is not authorized. The subject
+defaults to `team@<domain>` and is validated to belong to that row's own
+domain, so a row for one client can never be pointed at another's mailbox.
+
+`register` prints the two values the client's admin needs: the **Client ID** and
+the **exact scope list**. Read them from that output rather than from any doc —
+they come from the filed credential, so they stay correct across a key rotation.
+
+## 2. Hand the grant to the client's super-admin
+
+Send the printed Client ID and scopes with these instructions. They must be run
+by a super-admin **of the client's own domain**:
+
+> admin.google.com → Security → Access and data control → API controls →
+> Manage domain wide delegation → **Add new** → paste the Client ID → paste the
+> scopes as one comma-separated line → Authorise.
+
+**⚠ THE FAILURE THAT COSTS AN EVENING.** A grant added in the *wrong* Workspace
+looks identical to a grant that has not propagated yet: both answer
+`unauthorized_client`, forever versus for a few minutes. Nothing in the error
+distinguishes them. That is why step 3 names the domain it proved, and why you
+confirm with the admin **which domain they were signed into** before you wait on
+propagation. Measured 2026-09-19.
+
+## 3. Prove the delegation
+
+```bash
+bin/rails 'workspace:check[<domain>]'
+```
+
+Green flips the row to **`active`** and prints the mailbox and a first page of
+Drive. Anything else records the refusal on the row and leaves it `pending`.
+
+Read the verdict this way:
+
+| What you see | What it means | Next |
+|---|---|---|
+| `ACTIVE as team@<domain>` | Proven. The grant is in the right place. | Step 4 |
+| `unauthorized_client`, minutes old | Normal propagation | Wait, re-run |
+| `unauthorized_client`, hours old | Wrong Workspace, or wrong Client ID | Back to step 2 — confirm the domain they signed into |
+| `SKIPPED — revoked` | Deliberately switched off | Switching one back on, below |
+
+A `pending` row is refused everywhere, so an unproven workspace is safe to leave
+sitting. Do not hand-edit `status` to `active` to move things along; the flip
+exists to record that a real token was issued.
+
+## 4. Attach the folders
+
+```bash
+bin/rails 'workspace:add_source[<domain>,<Source Name>,<drive folder id>,<entity-slug>]'
+```
+
+The folder id is the last path segment of the Drive URL. Attach the narrowest
+folder that covers the need — the grant reaches the whole domain, so the source
+row is what actually scopes what we read.
+
+## 5. First walk
+
+```bash
+bin/rails 'workspace:walk[<source id>]'
+```
+
+This records **metadata only** — title, type, owner, link, version, modified
+date. It never downloads a document: the client's Drive stays the source of
+truth and we keep an index, not a copy. The walker has no download path at all,
+and a test asserts it.
+
+A document is marked `missing` only after a walk that COMPLETED. A failed walk
+records the error and infers nothing, so a network blip mid-tree never
+tombstones the half it did not reach.
+
+## 6. Record
+
+- Note the new workspace and its sources in the client's own private repo — not
+  here.
+- If a credential changed hands, file it per
+  [`./credential-filing.md`](./credential-filing.md).
+
+## Switching a workspace off — and back on
+
+```bash
+bin/rails 'workspace:revoke[<domain>,<why>]'      # impersonation refused from the next call
+bin/rails 'workspace:reinstate[<domain>]'         # returns to PENDING, never to active
+```
+
+`revoked` is terminal to every automatic path: no sweep, and no successful
+delegation check, reactivates it. `reinstate` returns the row only to `pending`,
+so coming back always costs two deliberate acts — a human naming the domain, and
+then a real token through `workspace:check`.
+
+**Revoking here does not withdraw the Google-side grant.** It closes our door,
+not theirs. Ending the grant itself is the client's super-admin removing our
+Client ID from their delegation page — ask for it explicitly when a relationship
+ends, and record the date you asked.
+
+## Handling the credential — the rule that leaked a key
+
+When a service-account key is set anywhere, **suppress both streams and verify
+by identifier, never by value**:
+
+```bash
+# The value is multi-line. A filter that matches only the first line lets the
+# REST of a private key through, which is exactly how one reached a transcript
+# on 2026-09-19.
+heroku config:set GOOGLE_SERVICE_ACCOUNT_JSON="$(cat "$KEYFILE")" \
+  --app <app> >/dev/null 2>&1
+
+# Verify by fingerprint only.
+bin/rails runner 'puts Workspace::Credentials.credential["private_key_id"]'
+```
+
+Never `echo`, `cat`, or interpolate the key into a message, a commit, or an
+error. `Workspace::Credentials` already refuses to put key bytes in an exception
+— a `JSON::ParserError` echoes its input to end of stream, so the parse failure
+reports **position only**.
+
+## Decline path
+
+Stop, and say so plainly, when:
+
+- The contact is not a super-admin of that domain. Nobody else can grant this.
+- There is no `team@` user. Ask them to create one; do not substitute a person's
+  mailbox, which would put one employee's mail behind an agent's read.
+- The client wants us to send or edit rather than read. That is a different
+  grant and a different decision, and it is Mr. McRitchie's to make.
+
+## Background — not needed to execute
+
+`gcloud` (585.0.0, installed 2026-09-20) covers the Google-side half that *is*
+scriptable: creating and rotating the service-account key, and listing which
+keys exist. The delegation grant itself stays manual because Google publishes no
+API for it — verified across every Google source, which documents it as a
+console action only. So the ceiling on automating this act is one click, taken
+by someone who does not work for us.
+
+Architecture of the allow-list, and why a compile-time constant became a table:
+`docs/agents/system/devops-cycle-design.md` is not it — the reasoning lives on
+the `workspace-accounts-registry` task record.
