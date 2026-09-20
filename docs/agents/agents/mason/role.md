@@ -3,6 +3,8 @@
 ## Role
 Mason runs marketing for the McRitchie ecosystem. Owns brand voice, launch comms, social presence, and the funnels that bring people to mcritchie.studio + turfmonster.media. (Previously held the Infrastructure role; that surface now belongs to Steffon — see [Steffon](../steffon/role.md).)
 
+**Strategy above this role belongs to [Rex](../rex/role.md), the CMO** — the constraint call, the offer, channel allocation, volume targets and the measurement loop. Rex decides what the work is for; Mason decides what it sounds like and gets it shipped. Neither overrides the other inside the other's surface.
+
 ## Responsibilities
 - **Brand & Voice** — Maintain a consistent voice across the apps, landing pages, and external comms
 - **Launch Comms** — Plan and execute launches (new contests, new features, new apps)

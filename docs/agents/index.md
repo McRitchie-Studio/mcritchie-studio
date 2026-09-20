@@ -73,6 +73,9 @@ required execution path. Do not follow a Background reference to run an SOP.
 | `grade-events` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/grade-events.md` |
 | `share-insights` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/share-insights.md` |
 | `Alex Heartbeat` | Alex | `mcritchie-studio/docs/agents/agents/alex/HEARTBEAT.md` |
+| `constraint-diagnosis` | Rex | `mcritchie-studio/docs/agents/agents/rex/sops/constraint-diagnosis.md` |
+| `content-sprint` | Rex | `mcritchie-studio/docs/agents/agents/rex/sops/content-sprint.md` |
+| `Rex Heartbeat` | Rex | `mcritchie-studio/docs/agents/agents/rex/HEARTBEAT.md` |
 | `address-blocker` | Shared | `mcritchie-studio/docs/agents/modules/address-blocker.md` |
 | `building-sop` | Shared | `mcritchie-studio/docs/agents/modules/building-sop.md` |
 | `process-backlog` | Shared | `mcritchie-studio/docs/agents/modules/process-backlog.md` |
@@ -776,6 +779,9 @@ Do not merge or deploy unless I explicitly assigned that lane.
 | Alex share insights SOP | `mcritchie-studio/docs/agents/agents/alex/sops/share-insights.md` |
 | Alex full cycle SOP | `mcritchie-studio/docs/agents/agents/alex/sops/full-cycle.md` |
 | Alex clean up SOP (board → 0 + infra sweep) | `mcritchie-studio/docs/agents/agents/alex/sops/clean-up.md` |
+| Rex heartbeat launcher (CMO) | `mcritchie-studio/docs/agents/agents/rex/HEARTBEAT.md` |
+| Rex constraint diagnosis SOP (find the one thing limiting demand) | `mcritchie-studio/docs/agents/agents/rex/sops/constraint-diagnosis.md` |
+| Rex content sprint SOP (the weekly test-at-volume loop) | `mcritchie-studio/docs/agents/agents/rex/sops/content-sprint.md` |
 | DevOps task-board handoff | `mcritchie-studio/docs/agents/modules/devops-task-board.md` |
 | Fast lane (`bin/task begin` / `bin/ship`) | `mcritchie-studio/docs/agents/modules/devops-task-board.md` |
 | Task-board API (auth + contract) | `mcritchie-studio/docs/agents/modules/task-board-api.md` |
@@ -847,6 +853,9 @@ depend on the heartbeat.
 | `share-insights` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/share-insights.md` |
 | `full-cycle` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/full-cycle.md` |
 | `clean-up` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/clean-up.md` |
+| `Rex Heartbeat` | Rex | `mcritchie-studio/docs/agents/agents/rex/HEARTBEAT.md` |
+| `constraint-diagnosis` | Rex | `mcritchie-studio/docs/agents/agents/rex/sops/constraint-diagnosis.md` |
+| `content-sprint` | Rex | `mcritchie-studio/docs/agents/agents/rex/sops/content-sprint.md` |
 | `address-blocker` | Shared | `mcritchie-studio/docs/agents/modules/address-blocker.md` |
 | `building-sop` | Shared | `mcritchie-studio/docs/agents/modules/building-sop.md` |
 | `process-backlog` | Shared | `mcritchie-studio/docs/agents/modules/process-backlog.md` |
