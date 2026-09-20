@@ -359,7 +359,8 @@ mattering when an **acquirer** is assessing risk, so it also expires when you
 sell the business. Two videos, two thresholds, same doctrine. **Treat the band
 as $1M-$3M rather than quoting a precise number he does not hold precisely.**
 
-**A related boundary on niching, same video.** Before switching niches he asks:
+**A related boundary on niching, back on `neTSqOAMgao`.** Before switching niches
+he asks:
 
 > "have you reached the market cap the answer is no of course not"
 
