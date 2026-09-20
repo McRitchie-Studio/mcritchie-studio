@@ -17,37 +17,84 @@
 - `Content::AssembleAgent` — Higgsfield (Kling 3) generates video from scene images → delegates to `Content::Assemble`
 - `Content::Finalize` — FFmpeg watermark overlay (stub pending buildpack). Updates `logo_overlay`. **Note:** despite the `_agent` suffix on its rake task (`content:finalize_agent`) and route (`POST /contents/:slug/finalize_step`), this is NOT an AI agent — it's a deterministic FFmpeg post-processing step that runs after `assemble_agent`. Sits in the `assembly` stage but marks the video finalized.
 - `Content::MetadataAgent` — Claude Haiku generates TikTok captions, hashtags, music suggestions. Can run at any stage.
-- `Higgsfield::Client` — Shared HTTP client (`app/services/higgsfield/client.rb`). Auth via `hf-api-key`/`hf-secret` headers. Submit + poll pattern with 5-min timeout.
+- `Higgsfield::Client` — Shared HTTP client (`app/services/higgsfield/client.rb`). Auth via a single `Authorization: Key <id>:<secret>` header against `api.higgsfield.ai`. Submit + poll pattern with 5-min timeout. (The `hf-api-key`/`hf-secret` pair belonged to the retired `platform.higgsfield.ai` host — see **Feature status** below.)
 
 ## Rake Tasks
 
 `content:hook`, `content:script`, `content:assets`, `content:assemble`, `content:post`, `content:review` (manual). `content:script_agent`, `content:assets_agent`, `content:assemble_agent`, `content:finalize`, `content:metadata` (AI). `content:generate SLUG=xxx` (full pipeline). All support `SLUG=` override.
 
-**Feature status: BLOCKED, and "ON ICE" understated it.** Measured 2026-09-20,
-the generative path fails for two independent reasons, neither of which a test
-run would fix:
+**Feature status: BLOCKED ON CREDITS AND THREE BUILD GAPS.** The client was
+rewritten on 2026-09-20 against the current API, so the integration itself is no
+longer broken. But topping the account up does NOT make this pipeline produce a
+postable video, and it would be an expensive thing to believe. Three gaps sit
+between a credited call and something publishable:
 
-1. **The client targets a decommissioned surface.** `Higgsfield::Client` posts to
-   `platform.higgsfield.ai` with `hf-api-key`/`hf-secret` headers. The current API
-   is `api.higgsfield.ai` with `Authorization: Key <id>:<secret>`, image at
-   `POST /higgsfield-ai/soul/v2/standard`, video at
-   `POST /kling-video/v2.5-turbo/pro/image-to-video`, polling at
-   `GET /requests/{id}/status`. The legacy host still authenticates our key and
-   still serves `GET /v1/motions`, so a shallow probe looks healthy — but
-   `/v1/text2image/soul` answers `400 {"detail":"Unavailable model"}`, and its
-   `width_and_height: "1024x1792"` is no longer a valid size (the 422 names the
-   current set; `1152x2048` is exact 9:16).
-2. **The account has no credits.** Both hosts, image and video, answer
-   `not_enough_credits`. One shared pool, and it is empty. No code change reaches
-   past this — it is a purchase.
+1. **No posting door for the workflow this path produces.** `contents.workflow`
+   defaults to `"video"`, and `TIKTOK_WORKFLOWS` is
+   `starter_post_tiktok_offense`/`_defense` ONLY — so `post_to_tiktok` and
+   `studio_upload_to_tiktok` both raise "Only available for TikTok workflows",
+   and `post_to_x` requires `starter_post_x`. No publish path accepts a
+   `"video"` Content.
+2. **No audio.** There is no TTS or voiceover anywhere in `app/`, `lib/` or
+   `config/`, while `ScriptAgent` writes a NARRATED 15-30 second script. The
+   script gets written and then never spoken.
+3. **One-scene assembly.** `AssembleAgent` builds one clip from
+   `image_urls.first` of the five images `AssetsAgent` paid for, and passes no
+   duration.
+
+Top the credits up today and what comes out is a silent ~5s clip, built from one
+of five paid images, carrying none of the script, that no publish path will
+accept.
+
+**What the rewrite fixed.** `Higgsfield::Client` used to target
+`platform.higgsfield.ai` with `hf-api-key`/`hf-secret` headers, paths
+`/v1/text2image/soul` and `/v1/image2video/dop`, and polling at
+`/v1/job-sets/{id}`. That surface is partly decommissioned — it still
+AUTHENTICATES our key and still serves `GET /v1/motions`, so a shallow probe
+looks healthy, but the image path answers `400 {"detail":"Unavailable model"}`.
+Its `width_and_height: "1024x1792"` is also no longer accepted (the 422 names
+the current set; `1152x2048` is exact 9:16). This is why the feature read as
+"built but untested" for months rather than as broken.
+
+The client now targets, all measured live:
+
+| | Current |
+|---|---|
+| Host | `api.higgsfield.ai` |
+| Auth | `Authorization: Key <id>:<secret>` |
+| Image | `POST /higgsfield-ai/soul/v2/standard` (requires `prompt`) |
+| Video | `POST /kling-video/v2.5-turbo/pro/image-to-video` (requires `prompt`, `image_url`) |
+| Poll | `GET /requests/{request_id}/status` |
+
+`Higgsfield::Client::VERTICAL_9_16` (`1152x2048`) replaces the retired size, and
+the video model moved from a body field into the PATH — so `generate_video`
+REFUSES a non-nil `model:` rather than accepting and ignoring it.
+
+**What is still unverified, and why.** The account answers `not_enough_credits`
+on every media type, so no SUCCESSFUL payload has ever been observed. Request
+shapes are measured; RESPONSE parsing is written tolerantly against the
+plausible shapes and marked `UNVERIFIED` in the source. Both the URL read and
+the status read fail loudly WITH the payload rather than returning nil or
+polling out, so the first real generation reports the true shape. An empty pool
+raises `Higgsfield::Client::InsufficientCreditsError` specifically, so "top up
+the account" never again reads as "the integration is broken".
+
+**Three request fields are also unverified.** `prompt` is the only field the new
+image endpoint is PROVEN to require; `width_and_height`, `quality` and
+`enhance_prompt` are carried over from the old client and are each a way the
+first credited call could 422 under the strict validator the empty-POST probe
+proved exists. **On the first credited run, measure the returned image's pixel
+dimensions before spending any video credits** — if Soul v2 ignores
+`width_and_height`, Kling inherits that frame and we publish a square clip to a
+9:16 surface.
 
 A probe order that tells the three failures apart, since they look alike from the
-app: a fake-id `GET /v1/job-sets/<uuid>` proves auth (404 = authenticated), an
-empty `POST` returns the schema (422), and only a well-formed POST reveals credits.
+app: a fake-id `GET` proves auth (404 = authenticated), an empty `POST` returns
+the schema (422), and only a well-formed POST reveals credits.
 
-Two further gaps to know before trusting the chain:
+Two further gaps to know before trusting the chain end to end:
 
-- **`Content::AssembleAgent` makes ONE 5-second clip from the FIRST scene image.**
+- **`Content::AssembleAgent` makes ONE ~5-second clip from the FIRST scene image.**
   `AssetsAgent` generates images for up to 5 scenes and `AssembleAgent` then uses
   `image_urls.first` and discards the rest. There is no multi-scene stitching, no
   music, and no text overlays (`music_track: nil`, `text_overlays: []`,

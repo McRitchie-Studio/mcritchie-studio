@@ -33,6 +33,14 @@ module Workspace
       # failed Result — and it is checked before the walk's own rescue exists.
       raise ArgumentError, "DriveWalker walks google_drive sources, not #{source.kind}" unless source.kind == "google_drive"
 
+      # A folder is walked AS a named subject, never as an implicit global
+      # identity. No workspace, or one not yet proven, is a refusal — not a
+      # fallback: falling back is how a walk ends up reading the wrong company.
+      account = source.workspace_account
+      raise ArgumentError, "#{source.name} has no workspace_account — nothing says whose Drive to read" if account.nil?
+      raise ArgumentError, "#{account.domain} is #{account.status}, not active — grant delegation, then bin/rails 'workspace:check[#{account.domain}]'" unless account.active?
+
+      @subject = account.subject
       @started_at = @clock.call
       @counts = Hash.new(0)
       @seen = Set.new
@@ -55,8 +63,22 @@ module Workspace
 
     private
 
+    # Keyed by subject, never memoized flat: @subject is assigned per call, so a
+    # REUSED walker would read the second source's folder while still holding
+    # the first source's identity. workspace:walk builds a fresh walker per
+    # source today, so this closes a latent shape rather than an observed bug —
+    # but the memo only became identity-bearing when the subject stopped being a
+    # constant, and nothing else would catch it coming back.
     def client
-      @client ||= DriveClient.new
+      # @client is the INJECTION seam (tests pass a tree double) and must keep
+      # winning. Only the built client is memoized, and it is keyed by subject
+      # rather than flat: @subject is assigned per call, so a REUSED walker
+      # would otherwise read the second source's folder while still holding the
+      # first source's identity. workspace:walk builds a fresh walker per source
+      # today, so this closes a latent shape rather than an observed bug — but
+      # the memo only became identity-bearing when the subject stopped being a
+      # constant, and nothing else would catch it coming back.
+      @client || ((@clients ||= {})[@subject] ||= DriveClient.new(subject: @subject))
     end
 
     # Depth-first over folders. `visited` is what makes it terminate: a Drive

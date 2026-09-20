@@ -4436,6 +4436,152 @@ def review_hold(record)
     "under review is a working one"
 end
 
+# --- the BOARD-STAGE channel: is the PIPELINE still holding this work? ------------------
+#
+# THE HOLE THIS CLOSES, measured on 2026-09-20. The gate asked five channels and never
+# asked the board what STAGE the bound task sits at. Every one of the five can be
+# legitimately, truthfully clear while the work is mid-release:
+#
+#   git     a `reviewed` task's branch IS merged onto accepted — that is what `reviewed`
+#           MEANS. The git channel is not merely quiet here, it reads affirmatively safe.
+#   pr      review merged and CLOSED the PR on its way to `reviewed`, so GitHub answers
+#           "no open PR" and is right.
+#   claim   the builder handed off at `submitted` and let their lease lapse.
+#   review  the reviewer finished; `review_in_progress` is false again.
+#   desk    nobody has typed in it since the handoff, and it is hours old.
+#
+# So five green channels, and `safe: merged on origin/accepted (clean)` printed over a
+# desk the pipeline had not finished with. That night it was 5 of 19 candidates —
+# hormozi-corpus-pipeline, rex-cmo-soul, bind-wallet-signal-through-registry,
+# correct-retry-cap-rationale and log-slack-ingest-failures, every one at `reviewed` and
+# riding rel-20260920-b16744 — and `cleanup --reclaim --yes` would have taken all five
+# while their release assembled. The second cost was quieter and larger: the batch path
+# became unusable during ANY live release, because nothing in the dry run separated a
+# mid-flight desk from spent litter.
+#
+# THE QUESTION THIS CHANNEL ASKS, which no other one can. Not "has the content landed"
+# (git), not "is the PR finished" (pr), not "is anybody here right now" (claim / review /
+# desk), but: IS THE PIPELINE DONE WITH THIS WORK? The board's `stage` column is the only
+# field that answers, because it is the only one that knows about the rungs ABOVE
+# `accepted` — the release sweep, QA, and the production ship. Every channel before this
+# one reads a fact that goes quiet at the `reviewed` seam; the pipeline keeps going.
+
+# The stages at which the pipeline has let go: `shipped` (fast-forwarded into main) and
+# `archived` (the terminal resting state — abandoned tickets AND filed-away completed
+# work). Mirrors Task::STAGES minus the live ones; kept as a literal rather than derived,
+# because this script runs with no Rails loaded.
+#
+# Everything else withholds, and deliberately so — including `designed`. A `designed`
+# task with a desk on disk is usually one INSIDE the `new` → `bind-task` → `move
+# building` window, which is the exact desk the 2026-08-13 sweep destroyed; this channel
+# closes that hole from a second direction. `blocked` is not a stage (a blocked task sits
+# in `building`), so it withholds through `building`.
+RECLAIMABLE_STAGES = %w[shipped archived].freeze
+
+# What the board could tell us about the bound task's stage. Five outcomes, enumerated
+# rather than collapsed, because FOUR of them are not stages at all and the whole defect
+# was a gate that could not tell an answer from a silence:
+#
+#   [:unbound,    nil]     no bound task — there is no stage to ask for
+#   [:unreadable, nil]     the board read FAILED (500, timeout, auth, malformed)
+#   [:unresolved, nil]     the board answered, positively, that there is no such task
+#   [:stageless,  nil]     a record we read that carries no `stage` — we did not get an answer
+#   [:known,      "<s>"]   the board named the stage
+#
+# WHICH WAY WE FAIL WHEN THE BOARD IS SLOW OR DOWN, since this gate runs on a machine
+# sweep and this file's usual instinct is "never wedge the sweep". Here that instinct is
+# exactly backwards, and this is the deliberate exception: failing OPEN on an unreadable
+# board is what destroys a live desk, and the costs are not symmetric — withholding is a
+# DEFERRAL (re-run when the board answers), freeing is an IRREVERSIBLE teardown of a
+# branch that may live nowhere else. The sweep is also not wedged by it: the read is
+# BOUNDED (capture_status kills the child at TASK_READ_TIMEOUT, 10s), so a blackholed
+# board costs ten seconds per desk and withholds, it does not hang. And the board is
+# MOST likely to be down during heavy parallel devops — precisely when a mass reclaim is
+# being run — so the outage and the sweep are correlated, not independent. Same doctrine
+# as claim_hold's bound-but-unreadable branch, reached independently.
+def board_stage_for(record)
+  slug = task_record_slug(record[:env] || {})
+  return [:unbound, nil] unless slug
+
+  task_record = task_record_for_pr(record)
+  return [:unreadable, nil] if task_record.nil?
+  # {} here is the 404 lane, NOT the unbound one: the slug check above already returned.
+  return [:unresolved, nil] if task_record.empty?
+
+  stage = compact_value(task_record["stage"])
+  stage ? [:known, stage] : [:stageless, nil]
+end
+
+# PURE: the withhold reason for the board-stage channel, or nil when the pipeline has let
+# this work go. Split from the I/O the way pr_hold_reason is, because the PRECEDENCE is
+# the guard and it has to be unit-testable without a board.
+#
+# `:unbound` is the ONE forced fail-open, and it is forced for the same reason claim_hold's
+# is: withholding every desk with no task to look up would wedge cleanup outright, and it
+# would permanently strand `_ship`/`_gate` — the release workspaces carry no bound task BY
+# DESIGN, and reclaiming them between releases is the intended behaviour. Nothing is
+# unguarded there: the desk channel judges an unbound desk on filesystem liveness, and the
+# release-conductor claim judges `_ship`/`_gate`.
+#
+# The other three non-stages all WITHHOLD, and each says which one it hit — a failed read
+# is not a clean read. That asymmetry is the point of the channel: without it, a desk whose
+# task could not be resolved AT ALL would be more reclaimable than one the board plainly
+# says is at `reviewed`, which is the same "absence reads as permission" bug one door over.
+def stage_hold_reason(status:, stage:, slug:, remedy:)
+  case status
+  when :unbound
+    nil
+  when :unreadable
+    "bound to task #{slug}, but the board record could not be read, so its pipeline stage " \
+      "could not be checked; withholding rather than reclaiming a desk whose work may still " \
+      "be mid-release (re-run once the board is reachable)"
+  when :unresolved
+    "bound to task #{slug}, and the board answered that no such task exists — a desk whose " \
+      "task cannot be resolved has no stage to clear it, and an unresolvable desk must never " \
+      "be MORE reclaimable than one the board can speak for; tear it down deliberately with " \
+      "#{remedy}"
+  when :stageless
+    "bound to task #{slug}, whose board record carries no `stage`, so the pipeline's own " \
+      "answer is missing; withholding rather than reading a silence as permission (tear it " \
+      "down deliberately with #{remedy})"
+  when :known
+    return nil if RECLAIMABLE_STAGES.include?(stage)
+
+    "the bound task #{slug} is at board stage `#{stage}`, not #{RECLAIMABLE_STAGES.join(" or ")} " \
+      "— the pipeline still has this work in hand, and reclaiming the desk deletes the local " \
+      "branch behind it. Every other channel can be honestly clear here: a task merged onto " \
+      "accepted is mid-release, not finished. Re-run once it reaches " \
+      "#{RECLAIMABLE_STAGES.join("/")}"
+  end
+end
+
+# The reason this desk is withheld because the pipeline is not finished with its task, or
+# nil. Reads the board record claim_hold has already memoized, so it costs no round-trip.
+#
+# `fresh:` is deliberately absent, for the same reason review_hold and desk_hold omit it:
+# claim_hold runs FIRST in the chain and with the caller's own `fresh:`, so the under-lock
+# re-verify has already re-read this record. A stage that moves mid-sweep moves toward
+# `shipped` anyway — toward MORE reclaimable, never less.
+def stage_hold(record, announce: false)
+  status, stage = board_stage_for(record)
+  reason = stage_hold_reason(status: status, stage: stage,
+                             slug: task_record_slug(record[:env] || {}),
+                             remedy: remove_command_hint(record))
+  warn "note: #{worktree_label(record)}: #{reason}" if reason && announce
+  reason
+end
+
+# cleanup_command, but it never raises on a partial record. cleanup_command does
+# `record[:app].fetch("slug")`, and this channel names the override inside a REFUSAL —
+# a guard that raised while explaining why it refused would take the whole sweep down on
+# the one path that matters most. A record with no :app still gets a usable sentence.
+def remove_command_hint(record)
+  app = record[:app]
+  return cleanup_command(record) if app.is_a?(Hash) && app["slug"]
+
+  "bin/agent-worktree remove <app> #{record[:task]} --yes"
+end
+
 # --- the rationale: why a nominated desk was judged free --------------------------------
 #
 # "Every archive records its rationale." A dry run that prints `safe: merged on
@@ -4452,6 +4598,7 @@ def reclaim_clearances(record)
     git_clearance(record),
     pr_clearance(record),
     claim_clearance(record),
+    stage_clearance(record),
     review_clearance(record),
     desk_clearance(record)
   ].compact
@@ -4479,6 +4626,33 @@ def claim_clearance(record)
   return "no bound task, so no build claim to hold it" unless slug
 
   "no live build claim on #{slug}"
+end
+
+# What the BOARD-STAGE channel observed. The whole point of the channel is that the
+# safe/unsafe split be READABLE rather than implicit, so this names the stage the way
+# pr_clearance names the branch and claim_clearance names the slug — an operator reading
+# the dry run (or the ledger row, months later) can see that the pipeline was asked and
+# what it answered.
+#
+# Only the FREE statuses can reach here (every other one withheld, and a withheld desk
+# renders its hold instead of a rationale). The trailing branch is for that residue: if a
+# status ever reaches this renderer without a matching line, it says so out loud rather
+# than being silently compacted away — an omitted clearance is exactly the blind channel
+# this section exists to make visible.
+def stage_clearance(record)
+  status, stage = board_stage_for(record)
+  case status
+  when :known
+    "board stage `#{stage}` (terminal — the pipeline is done with it)"
+  when :unbound
+    if ship_workspace_record?(record)
+      "a release workspace, which carries no bound task and so no board stage"
+    else
+      "no bound task, so no board stage to read"
+    end
+  else
+    "board stage NOT ESTABLISHED (#{status})"
+  end
 end
 
 def review_clearance(record)
@@ -4644,6 +4818,7 @@ end
 def reclaim_hold(record, fresh: false, announce: false)
   origin_hold(record) ||
     claim_hold(record, fresh: fresh, announce: announce) ||
+    stage_hold(record, announce: announce) ||
     review_hold(record) ||
     desk_hold(record, announce: announce) ||
     pr_hold(record, announce: announce)
@@ -4684,10 +4859,14 @@ end
 # WITHHOLDING is that answer; nominating is the lie. So an unverifiable desk is withheld
 # everywhere, and only `remove … --yes` (the explicit operator override) still proceeds — with
 # a warning.
-# FOUR CHANNELS, and no one of them subsumes another — each was added because the ones
+# FIVE CHANNELS, and no one of them subsumes another — each was added because the ones
 # before it read a load-bearing desk as free:
 #   claim_hold   asks the BOARD who is BUILDING here (and, for `_ship`/`_gate`, whether a
 #                release conductor is live);
+#   stage_hold   asks the BOARD whether the PIPELINE is finished with the task — the only
+#                channel that can see the rungs above `accepted`, and therefore the only
+#                one that separates spent litter from a desk whose release is still
+#                assembling;
 #   review_hold  asks the board whether a REVIEWER is on the task — a lane with its own
 #                claim, whose sessions read far more than they write;
 #   desk_hold    asks the FILESYSTEM whether anyone is at the desk — the only channel that
@@ -4696,7 +4875,9 @@ end
 #                that separates "content is on the base" from "the PR is finished".
 # A claim can be live while the desk sits untouched mid-cert; a desk can be in active use
 # while its task carries no readable claim at all (the desk the 08-13 sweep ate); and a
-# desk can be quiet, unclaimed and diff-empty while its PR is still open (the 08-14 sweep).
+# desk can be quiet, unclaimed and diff-empty while its PR is still open (the 08-14 sweep);
+# and a desk can be clear on ALL FOUR of those while its task sits at `reviewed` and its
+# release assembles (the 09-20 sweep, 5 of 19 candidates).
 # See reclaim_hold for why they run in this order.
 def reclaim_verdict(record, fresh: false, announce: false)
   evidence = reclaim_evidence(record, fresh: fresh, announce: announce)

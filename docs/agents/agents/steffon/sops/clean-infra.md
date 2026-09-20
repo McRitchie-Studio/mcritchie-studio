@@ -100,12 +100,35 @@ bin/agent-worktree cleanup --reclaim --yes   # full teardown + Redis band shrink
   whose diff against base is empty is git-eligible while its PR is still open, and
   a reviewer works a builder's desk without ever taking the build claim. Both are
   channels of the same gate.
+- **A task the pipeline has not finished with withholds its desk, whatever git
+  says.** The gate reads the bound task's **board stage** and frees a desk only at
+  `shipped` or `archived`. Everything else — `designed`, `building`, `submitted`,
+  `reviewed`, `assembled` — is withheld, and the hold prints the stage. This is the
+  only channel that can see the rungs above `accepted`: a `reviewed` task IS merged
+  onto accepted (that is what `reviewed` means), its PR was closed on the way there,
+  its builder's lease lapsed at the handoff and its reviewer has finished — so all
+  five other channels read honestly clear while its release is still assembling. On
+  2026-09-20 that was 5 of 19 candidates, every one riding `rel-20260920-b16744`,
+  and `--yes` would have taken all five. **So `cleanup --reclaim --yes` is usable
+  during a live release again** — the mid-flight desks name themselves.
+- **An unresolvable desk is withheld, not freed.** A board that could not be read,
+  a bound task the board says does not exist, and a record carrying no stage each
+  withhold with their own wording — a failed read is never a clean read, and an
+  answer you could not get must not buy more freedom than one you got and disliked.
+  An unreadable board says *re-run once the board is reachable*; the other two name
+  `bin/agent-worktree remove <app> <task-slug> --yes`, because the board answered
+  and waiting would change nothing. A desk with **no bound task** (including
+  `_ship`/`_gate`) is the one exception and says so: there is no stage to ask for,
+  and the desk and release-claim channels cover it.
 - **Read the `rationale:` line, not just `safe:`.** `safe: merged on
   origin/accepted (clean)` is a git fact, and on 2026-08-14 it was true of all
   three load-bearing desks a 29-candidate dry run offered up. Each candidate
   prints what every channel asked and answered; a channel that could not be asked
-  says so (`GitHub unreachable`). That line is the approval packet — a blind
-  channel gets fixed before the batch is approved.
+  says so (`GitHub unreachable`, `board stage NOT ESTABLISHED`). That line is the
+  approval packet — a blind channel gets fixed before the batch is approved. A
+  cleared desk now carries its stage there too (``board stage `shipped` (terminal
+  — the pipeline is done with it)``), so the safe/unsafe split is readable rather
+  than implicit.
 - **Trust the gate over the description.** If the count you were told and the
   count the dry run finds disagree, surface the discrepancy and believe the gate.
 - **Exit 3 is a finished sweep that left a process running, not a failure.** A

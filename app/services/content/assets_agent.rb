@@ -1,7 +1,7 @@
 class Content
   class AssetsAgent
     # Higgsfield Soul — text-to-image generation
-    # 9:16 vertical for TikTok (1024x1792)
+    # 9:16 vertical for TikTok (Higgsfield::Client::VERTICAL_9_16)
 
     def self.assets_latest
       content = Content.where(stage: "script").order(position: :desc, created_at: :desc).first
@@ -34,9 +34,11 @@ class Content
         prompt = build_image_prompt(scene)
         puts "  Generating image for scene #{scene["number"]}: #{prompt.truncate(100)}"
 
+        # 9:16 for TikTok and Reels. The literal "1024x1792" that used to sit
+        # here is no longer a size the API accepts.
         image_url = @client.generate_image_and_wait(
           prompt: prompt,
-          width_and_height: "1024x1792",
+          width_and_height: Higgsfield::Client::VERTICAL_9_16,
           quality: "1080p",
           enhance_prompt: true
         )

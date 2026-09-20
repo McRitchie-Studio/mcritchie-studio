@@ -466,8 +466,8 @@ bin/agent-worktree scale status
   brand-new worktree off `release` and one whose work was **fast-forward merged**
   are **git-identical** — both clean, both `HEAD == base`, both 0-ahead — so
   `cleanup_ready?` provably cannot tell a desk someone just sat down at from
-  finished work. **Five** independent channels answer that question (and for a
-  **discovered repo** three of them are structurally dead, which is why such a desk is
+  finished work. **Six** independent channels answer that question (and for a
+  **discovered repo** four of them are structurally dead, which is why such a desk is
   withheld outright — see **unbound on a DISCOVERED repo** below), and every
   destructive path, `doctor`, and the registry route through ONE decision
   (`reclaim_verdict` → `[reclaimable?, hold_reason]`), so the conductor's front door
@@ -493,6 +493,31 @@ bin/agent-worktree scale status
     confirmed hold names the builder's heartbeat age, so the hold is checkable. The
     board read is genuinely bounded (10s, `AGENT_WORKTREE_TASK_TIMEOUT`) because it
     kills the child — a hung or black-holed board cannot stall a sweep.
+  - **The STAGE channel** (`stage_hold`) asks the board whether the **pipeline** is
+    finished with the task, and frees a desk only at `shipped` or `archived`. It is the
+    only channel that can see the rungs ABOVE `accepted` — the release sweep, QA, the
+    production ship — and the other five all go quiet at the `reviewed` seam. **2026-09-20:
+    a dry run offered 19 candidates, 5 of them tasks at `reviewed` riding a release that
+    was still assembling.** Nothing malfunctioned: `reviewed` MEANS the branch is merged
+    onto `accepted`, so git read affirmatively safe; review closed the PR on the way
+    there; the builder's lease lapsed at the handoff; the reviewer had finished; and
+    nobody had typed in the desk for hours. Five honest clearances over five live desks,
+    and `--yes` would have deleted the local branch behind every one. The hold names the
+    stage, and a cleared desk names it too, so the safe/unsafe split is readable rather
+    than implicit. It costs no round-trip — it reads the record the claim channel just
+    memoized.
+
+    Where it CANNOT get an answer it withholds, each case in its own words, because a
+    failed read is not a clean read and an answer you could not get must never buy more
+    freedom than one you got and disliked: an **unreadable board** (re-run once it is
+    reachable), a **task the board says does not exist** and a **record carrying no
+    `stage`** (both name `remove … --yes`, because the board answered and waiting changes
+    nothing). Failing OPEN on an unreadable board is the deliberate exception this file's
+    "never wedge the sweep" instinct does not get: withholding is a deferral, freeing is an
+    irreversible teardown, and the board is most likely to be down during exactly the heavy
+    parallel devops that prompts a mass reclaim. The read is bounded (10s), so it defers
+    rather than hangs. **No bound task is the one forced fail-open** — `_ship`/`_gate`
+    carry none by design — and its clearance says so rather than implying a stage was read.
   - **The DESK channel** (`desk_hold`) asks the filesystem whether anyone is at the
     directory, and it exists because the claim channel has a hole it structurally
     cannot cover. **2026-08-13: a `cleanup --reclaim` sweep destroyed a desk a builder

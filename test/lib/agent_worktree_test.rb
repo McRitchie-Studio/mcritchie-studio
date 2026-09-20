@@ -167,11 +167,21 @@ class AgentWorktreeTest < Minitest::Test
   # fails open. A BOUND-but-unreadable record is WITHHELD on every lane — there is no
   # "advisory" lane, because every caller's answer is consumed to destroy.
 
+  # WHY EVERY FIXTURE RECORD BELOW NAMES A `stage`. The board-stage channel (added
+  # 2026-09-20) withholds a desk whose bound task has not reached `shipped`/`archived`, and
+  # it treats a record carrying NO stage as an unanswered read rather than a clean one — a
+  # readable task record always has a stage, so its absence means the payload is not one.
+  # That is the right posture on a destroy path, and it means a fixture that omits the
+  # stage is now an INCOMPLETE record, not a minimal one: it would be withheld as
+  # `:stageless` before the channel under test was ever consulted. `shipped` is the stage a
+  # finished, reclaimable desk actually carries, so stamping it here makes these fixtures
+  # more faithful to a real board record, not less.
+
   # A BOUND desk (it has a task slug) — an UNBOUND one short-circuits to "free" before the
   # claim is even consulted, which is its own case below.
   def live_claimed(devops_ruby)
     run_in_script(<<~RUBY)
-      def task_record_for_pr(_r, fresh: false); { "metadata" => { "devops" => #{devops_ruby} } }; end
+      def task_record_for_pr(_r, fresh: false); { "stage" => "shipped", "metadata" => { "devops" => #{devops_ruby} } }; end
       print !claim_hold({ env: { "TASK_RECORD_SLUG" => "t" }, task: "t" }).nil?
     RUBY
   end
@@ -232,7 +242,7 @@ class AgentWorktreeTest < Minitest::Test
     expires = (Time.now + 110).utc.iso8601
     out = run_in_script(<<~RUBY)
       def task_record_for_pr(_r, fresh: false)
-        { "metadata" => { "devops" => { "claimed_session" => "s", "claim_expires_at" => #{expires.inspect} } } }
+        { "stage" => "shipped", "metadata" => { "devops" => { "claimed_session" => "s", "claim_expires_at" => #{expires.inspect} } } }
       end
       print claim_hold({ env: { "TASK_RECORD_SLUG" => "busy-task" }, task: "busy-task" })
     RUBY
@@ -249,7 +259,7 @@ class AgentWorktreeTest < Minitest::Test
   def test_claim_hold_reason_for_a_corrupt_claim_says_expiry_unverifiable_not_live_builder
     out = run_in_script(<<~RUBY)
       def task_record_for_pr(_r, fresh: false)
-        { "metadata" => { "devops" => { "claimed_session" => "s", "claim_expires_at" => "not-a-timestamp" } } }
+        { "stage" => "shipped", "metadata" => { "devops" => { "claimed_session" => "s", "claim_expires_at" => "not-a-timestamp" } } }
       end
       print claim_hold({ env: { "TASK_RECORD_SLUG" => "busy-task" }, task: "busy-task" })
     RUBY
@@ -265,7 +275,7 @@ class AgentWorktreeTest < Minitest::Test
 
   def test_claim_hold_is_nil_when_free
     out = run_in_script(<<~RUBY)
-      def task_record_for_pr(_r, fresh: false); { "metadata" => { "devops" => {} } }; end
+      def task_record_for_pr(_r, fresh: false); { "stage" => "shipped", "metadata" => { "devops" => {} } }; end
       print claim_hold({ env: {} }).inspect
     RUBY
     assert_equal "nil", out, "an unheld desk yields no reason (and is reclaimable)"
@@ -300,7 +310,7 @@ class AgentWorktreeTest < Minitest::Test
     devops = held ? %({ "claimed_session" => "s", "claim_expires_at" => #{(Time.now + 110).utc.iso8601.inspect} }) : "{}"
     run_in_script(<<~RUBY)
       #{ABANDONED_DESK}
-      def task_record_for_pr(_r, fresh: false); { "metadata" => { "devops" => #{devops} } }; end
+      def task_record_for_pr(_r, fresh: false); { "stage" => "shipped", "metadata" => { "devops" => #{devops} } }; end
       record = { dirty: #{dirty}, merged: true, equivalent_to_main: true,
                  env: { "TASK_RECORD_SLUG" => "t" }, task: "t" }
       print reclaim_verdict(record).inspect
@@ -337,7 +347,7 @@ class AgentWorktreeTest < Minitest::Test
   # the real mtimes and the real `.git` marker are driven end to end against a staged git
   # worktree in test/commands/agent_worktree_test.rb.
 
-  def desk_verdict(age:, touched:, task_json: %({ "metadata" => { "devops" => {} } }), env: %({ "TASK_RECORD_SLUG" => "t" }))
+  def desk_verdict(age:, touched:, task_json: %({ "stage" => "shipped", "metadata" => { "devops" => {} } }), env: %({ "TASK_RECORD_SLUG" => "t" }))
     run_in_script(<<~RUBY)
       def desk_age_seconds(_r); #{age}; end
       def desk_touched_recently?(_r); #{touched.inspect}; end
@@ -387,7 +397,7 @@ class AgentWorktreeTest < Minitest::Test
   # is why "just add an age threshold" was not the fix.
   def test_an_aged_quiet_desk_with_a_gate_in_flight_is_withheld
     out = desk_verdict(age: 6 * 3_600, touched: false,
-                       task_json: %({ "holder_gate_in_flight" => true, "metadata" => { "devops" => {} } }))
+                       task_json: %({ "holder_gate_in_flight" => true, "stage" => "shipped", "metadata" => { "devops" => {} } }))
 
     assert_match(/\A\[false, "a gate the holder may have opened is still running/, out,
                  "a holder mid-cert writes nothing into the desk — reclaiming it destroys live work")
@@ -398,7 +408,7 @@ class AgentWorktreeTest < Minitest::Test
   # everyone's gate, so it can only keep a desk, never free one.
   def test_an_older_board_without_holder_keys_falls_back_to_the_task_wide_gate
     out = desk_verdict(age: 6 * 3_600, touched: false,
-                       task_json: %({ "gate_in_flight" => true, "metadata" => { "devops" => {} } }))
+                       task_json: %({ "gate_in_flight" => true, "stage" => "shipped", "metadata" => { "devops" => {} } }))
 
     assert_match(/\A\[false, "a gate the holder may have opened is still running/, out,
                  "a board too old to publish holder-scoped facts must degrade to the protective twin")
@@ -408,14 +418,14 @@ class AgentWorktreeTest < Minitest::Test
   # deliberately doing nothing, which is exactly what an idle desk looks like.
   def test_a_desk_whose_task_waits_on_the_operator_is_withheld
     out = desk_verdict(age: 6 * 3_600, touched: false,
-                       task_json: %({ "metadata" => { "devops" => { "approval_status" => "waiting" } } }))
+                       task_json: %({ "stage" => "shipped", "metadata" => { "devops" => { "approval_status" => "waiting" } } }))
 
     assert_match(/\A\[false, "the bound task is waiting on the operator/, out)
   end
 
   def test_a_desk_whose_task_landed_a_recent_artifact_is_withheld
     out = desk_verdict(age: 6 * 3_600, touched: false,
-                       task_json: %({ "holder_liveness_seconds_ago" => 90, "metadata" => { "devops" => {} } }))
+                       task_json: %({ "holder_liveness_seconds_ago" => 90, "stage" => "shipped", "metadata" => { "devops" => {} } }))
 
     assert_match(/\A\[false, "the bound task landed a durable artifact/, out,
                  "a holder working through the board rather than the filesystem is still working")
@@ -510,7 +520,7 @@ class AgentWorktreeTest < Minitest::Test
     # must NOT consult it (that would wedge task reclaim on every live release).
     out = run_in_script(<<~RUBY)
       def release_claim_liveness(fresh: false); :live; end
-      def task_record_for_pr(_r, fresh: false); { "metadata" => { "devops" => {} } }; end
+      def task_record_for_pr(_r, fresh: false); { "stage" => "shipped", "metadata" => { "devops" => {} } }; end
       print claim_hold({ task: "t", dir: "/repo/.worktrees/t", env: { "TASK_RECORD_SLUG" => "t" } }).inspect
     RUBY
     assert_equal "nil", out, "a task desk is reclaimable regardless of a live release — the guard is _ship/_gate only"
@@ -739,7 +749,7 @@ class AgentWorktreeTest < Minitest::Test
     run_in_script(<<~RUBY)
       #{ABANDONED_DESK}
       def open_pr_for_branch(_r); #{pr_status}; end
-      def task_record_for_pr(_r, fresh: false); { "metadata" => { "devops" => {} } }; end
+      def task_record_for_pr(_r, fresh: false); { "stage" => "shipped", "metadata" => { "devops" => {} } }; end
       record = { task: "t", dir: "/repo/.worktrees/t", branch: "feat/t", dirty: false,
                  merged: false, equivalent_to_main: true, env: { "TASK_RECORD_SLUG" => "t" },
                  base_ref: "origin/accepted" }
@@ -777,7 +787,7 @@ class AgentWorktreeTest < Minitest::Test
   end
 
   def test_a_desk_under_live_review_is_withheld
-    out = verdict_with_review(%({ "review_in_progress" => true, "metadata" => { "devops" => {} } }))
+    out = verdict_with_review(%({ "review_in_progress" => true, "stage" => "shipped", "metadata" => { "devops" => {} } }))
 
     assert_match(/\A\[false, "a review is in progress/, out,
                  "a reviewer holds no build claim and writes nothing — the board is the only " \
@@ -786,8 +796,177 @@ class AgentWorktreeTest < Minitest::Test
 
   def test_a_desk_whose_review_has_finished_is_freed
     assert_equal "[true, nil]",
-                 verdict_with_review(%({ "review_in_progress" => false, "metadata" => { "devops" => {} } })),
+                 verdict_with_review(%({ "review_in_progress" => false, "stage" => "shipped", "metadata" => { "devops" => {} } })),
                  "the control: review over, desk quiet, nothing open — ordinary litter"
+  end
+
+  # --- reclaim guard: the BOARD-STAGE channel (the 2026-09-20 mid-release sweep) ----------
+  #
+  # THE HOLE THE OTHER FIVE COULD NOT COVER. On 2026-09-20 a `cleanup --reclaim` dry run
+  # offered 19 candidates, and 5 of them were tasks at `reviewed` riding a release that was
+  # still assembling (hormozi-corpus-pipeline, rex-cmo-soul,
+  # bind-wallet-signal-through-registry, correct-retry-cap-rationale,
+  # log-slack-ingest-failures). Every channel was honestly clear: `reviewed` MEANS the
+  # branch is merged onto accepted, review closed the PR on the way there, the builder's
+  # lease lapsed at the handoff, the reviewer had finished, and nobody had typed in the
+  # desk for hours. So the gate printed `safe: merged on origin/accepted (clean)` over
+  # five live desks, and `--yes` would have taken all five.
+  #
+  # The board's `stage` is the only field that can see the rungs ABOVE accepted — the
+  # release sweep, QA, the production ship — which is why no combination of the other five
+  # substitutes for it. These checks drive the whole verdict, so removing the channel
+  # from reclaim_hold turns the withhold checks into `[true, nil]` and reddens them.
+
+  # Every other channel deliberately CLEAR: long-abandoned quiet desk, no open PR, no
+  # claim, no reviewer, diff-empty against base. The stage is the only thing left deciding.
+  def verdict_with_stage(stage_json)
+    run_in_script(<<~RUBY)
+      #{ABANDONED_DESK}
+      def open_pr_for_branch(_r); [:none, nil]; end
+      def task_record_for_pr(_r, fresh: false); #{stage_json}; end
+      record = { task: "t", dir: "/repo/.worktrees/t", branch: "feat/t", dirty: false,
+                 merged: true, equivalent_to_main: true, env: { "TASK_RECORD_SLUG" => "t" },
+                 base_ref: "origin/accepted",
+                 app: { "slug" => "mcritchie-studio" } }
+      print reclaim_verdict(record).inspect
+    RUBY
+  end
+
+  def record_at(stage)
+    %({ "stage" => #{stage.inspect}, "review_in_progress" => false, "metadata" => { "devops" => {} } })
+  end
+
+  # THE REGRESSION. This is the exact cell the sweep got wrong, and it is the one that
+  # fails the moment stage_hold leaves reclaim_hold.
+  def test_a_reviewed_task_desk_is_withheld_with_its_stage_named
+    out = verdict_with_stage(record_at("reviewed"))
+
+    assert_match(/\A\[false, "the bound task t is at board stage `reviewed`/, out,
+                 "a task merged onto accepted and waiting for the release sweep is LIVE work: " \
+                 "every other channel is honestly clear, so only the board can withhold it")
+    assert_match(/not shipped or archived/, out,
+                 "name the terminal stages, so the operator knows what they are waiting for")
+    assert_match(/merged onto accepted is mid-release, not finished/, out,
+                 "the hold explains WHY a reviewed desk looks safe and is not — otherwise the " \
+                 "operator reads a refusal over a desk five channels just called clean")
+  end
+
+  # EVERY live stage, not just the one that bit. `designed` is in here deliberately: a
+  # designed task with a desk on disk is usually one inside the new → bind-task → move
+  # building window, which is the desk the 2026-08-13 sweep destroyed.
+  def test_every_non_terminal_stage_withholds_and_prints_itself
+    %w[designed building submitted reviewed assembled].each do |stage|
+      out = verdict_with_stage(record_at(stage))
+
+      assert_match(/\A\[false, "the bound task t is at board stage `#{stage}`/, out,
+                   "stage #{stage} is work the pipeline still has in hand")
+    end
+  end
+
+  # THE POSITIVE CONTROL, and it is not optional here. This guard's failure mode is
+  # BIMODAL: fail-open destroys a live desk, fail-CLOSED silently wedges every sweep. A
+  # channel that withheld both terminal stages too would pass every check above while
+  # `cleanup --reclaim` quietly stopped reclaiming anything ever again.
+  def test_the_two_terminal_stages_still_free_the_desk
+    %w[shipped archived].each do |stage|
+      assert_equal "[true, nil]", verdict_with_stage(record_at(stage)),
+                   "#{stage} is terminal — the pipeline has let go, and the desk is litter the " \
+                   "sweep exists to take"
+    end
+  end
+
+  # THE ASYMMETRY, stated as a test because it is the property that is easy to lose: an
+  # answer we could not get must never buy MORE freedom than an answer we got and did not
+  # like. Before this channel, a desk bound to a task the board cannot resolve sailed
+  # through on five clear channels — strictly freer than one the board plainly called
+  # `reviewed`.
+  def test_an_unanswerable_stage_is_never_freer_than_a_known_one
+    # the board read FAILED (500/timeout/auth/malformed)
+    unreadable = verdict_with_stage("nil")
+    assert_match(/\A\[false, "bound to task t, but the board record could not be read/, unreadable)
+    assert_match(/re-run once the board is reachable/, unreadable,
+                 "an outage is a DEFERRAL — say so, because the remedy is to wait")
+
+    # the board ANSWERED: there is no such task (deleted or renamed slug)
+    unresolved = verdict_with_stage("{}")
+    assert_match(/\A\[false, "bound to task t, and the board answered that no such task exists/,
+                 unresolved)
+    assert_match(/bin\/agent-worktree remove mcritchie-studio t --yes/, unresolved,
+                 "the board ANSWERED, so 're-run later' would be a lie — name the override instead")
+
+    # a record we read that carries no `stage` at all
+    stageless = verdict_with_stage(%({ "review_in_progress" => false, "metadata" => { "devops" => {} } }))
+    assert_match(/\A\[false, "bound to task t, whose board record carries no `stage`/, stageless)
+
+    # ...and all three say WHICH they hit. A failed read is not a clean read, and three
+    # identical refusals would make the dry run unreadable in exactly the case that matters.
+    assert_equal 3, [unreadable, unresolved, stageless].uniq.size,
+                 "each unanswerable case names itself; they must not collapse into one message"
+  end
+
+  # THE ONE FORCED FAIL-OPEN, and why it is forced. `_ship`/`_gate` carry no bound task BY
+  # DESIGN, and reclaiming them between releases is the intended behaviour — withholding
+  # every unbound desk would strand them forever and wedge ad-hoc cleanup besides. Nothing
+  # is unguarded: the desk channel judges an unbound desk on filesystem liveness, and the
+  # release-conductor claim judges _ship/_gate.
+  def test_an_unbound_desk_is_not_withheld_by_the_stage_channel
+    out = run_in_script(<<~RUBY)
+      def task_record_for_pr(_r, fresh: false); { "stage" => "reviewed" }; end
+      print stage_hold({ task: "_ship", dir: "/repo/.worktrees/_ship", env: {} }).inspect
+    RUBY
+
+    assert_equal "nil", out,
+                 "no bound task means no stage to ask for — withholding here would strand every " \
+                 "release workspace and wedge the sweep"
+  end
+
+  # The PURE precedence, driven directly: the five shapes board_stage_for can emit, with no
+  # board and no filesystem in the way. The wrapper's job is to classify; this asserts what
+  # the classification MEANS, which is the half that decides whether a desk survives.
+  def test_stage_hold_reason_covers_every_shape_the_resolver_emits
+    out = run_in_script(<<~RUBY)
+      shapes = [[:unbound, nil], [:unreadable, nil], [:unresolved, nil], [:stageless, nil],
+                [:known, "reviewed"], [:known, "shipped"], [:known, "archived"]]
+      print shapes.map { |status, stage|
+        stage_hold_reason(status: status, stage: stage, slug: "t", remedy: "R").nil?
+      }.inspect
+    RUBY
+
+    assert_equal "[true, false, false, false, false, true, true]", out,
+                 "free only for unbound (forced) and the two terminal stages; every unanswerable " \
+                 "shape withholds"
+  end
+
+  # LEGIBILITY is half the acceptance: the safe/unsafe split must be READABLE in the dry
+  # run, not implicit. A freed desk prints the stage that freed it, beside the other
+  # channels' clearances.
+  def test_the_rationale_prints_the_board_stage_that_freed_the_desk
+    out = run_in_script(<<~RUBY)
+      #{ABANDONED_DESK}
+      def open_pr_for_branch(_r); [:none, nil]; end
+      def task_record_for_pr(_r, fresh: false); #{record_at("shipped")}; end
+      record = { task: "t", dir: "/repo/.worktrees/t", branch: "feat/t", dirty: false,
+                 merged: true, equivalent_to_main: true, env: { "TASK_RECORD_SLUG" => "t" },
+                 base_ref: "origin/accepted", app: { "slug" => "mcritchie-studio" } }
+      print reclaim_evidence(record)[:rationale]
+    RUBY
+
+    assert_match(/board stage `shipped` \(terminal/, out,
+                 "the operator reading the dry run can see the pipeline was ASKED and what it said")
+  end
+
+  # A `_ship` workspace reads free, and its clearance must say WHY rather than implying a
+  # stage was read and cleared. "No bound task" and "the board said shipped" are different
+  # facts and the rationale line must not blur them.
+  def test_the_ship_workspace_clearance_says_it_has_no_stage_to_read
+    out = run_in_script(<<~RUBY)
+      def task_record_for_pr(_r, fresh: false); {}; end
+      print stage_clearance({ task: "_ship", dir: "/repo/.worktrees/_ship", env: {} })
+    RUBY
+
+    assert_match(/release workspace/, out)
+    assert_match(/no board stage/, out,
+                 "an absent stage is narrated as absent, never as a clearance it did not earn")
   end
 
   # --- the RATIONALE: every nomination explains itself ------------------------------------
@@ -800,7 +979,7 @@ class AgentWorktreeTest < Minitest::Test
     out = run_in_script(<<~RUBY)
       #{ABANDONED_DESK}
       def open_pr_for_branch(_r); [:none, nil]; end
-      def task_record_for_pr(_r, fresh: false); { "review_in_progress" => false, "metadata" => { "devops" => {} } }; end
+      def task_record_for_pr(_r, fresh: false); { "review_in_progress" => false, "stage" => "shipped", "metadata" => { "devops" => {} } }; end
       record = { task: "t", dir: "/repo/.worktrees/t", branch: "feat/t", dirty: false,
                  merged: true, equivalent_to_main: true, env: { "TASK_RECORD_SLUG" => "t" },
                  base_ref: "origin/accepted" }
@@ -810,6 +989,7 @@ class AgentWorktreeTest < Minitest::Test
     assert_match(/merged into origin\/accepted, tree clean/, out, "the git fact")
     assert_match(/no open PR for feat\/t \(GitHub asked\)/, out, "the PR channel, and that it was actually asked")
     assert_match(/no live build claim on t/, out, "the claim channel")
+    assert_match(/board stage `shipped`/, out, "the board-stage channel")
     assert_match(/no review in progress/, out, "the review channel")
     assert_match(/desk idle/, out, "the desk channel")
   end
@@ -820,7 +1000,7 @@ class AgentWorktreeTest < Minitest::Test
     out = run_in_script(<<~RUBY)
       #{ABANDONED_DESK}
       def open_pr_for_branch(_r); [:open, "7"]; end
-      def task_record_for_pr(_r, fresh: false); { "metadata" => { "devops" => {} } }; end
+      def task_record_for_pr(_r, fresh: false); { "stage" => "shipped", "metadata" => { "devops" => {} } }; end
       record = { task: "t", dir: "/repo/.worktrees/t", branch: "feat/t", dirty: false,
                  merged: true, equivalent_to_main: true, env: { "TASK_RECORD_SLUG" => "t" },
                  base_ref: "origin/accepted" }

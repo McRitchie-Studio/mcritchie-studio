@@ -171,12 +171,21 @@ The 1Password account is `alex@mcritchie.studio` (account ID `MWOV5OT5BRHATI4EGM
 
 **Procedure:**
 1. Higgsfield dashboard → API keys → regenerate.
-2. Copy both `hf-api-key` and `hf-secret` values.
-3. Update 1Password `agent.higgesfield`.
+2. Copy the **`API Key ID`** and **`API Key Secret`** values — those are the
+   field names the 1Password item actually carries. They used to be written here
+   as `hf-api-key`/`hf-secret`, which were the retired `platform.higgsfield.ai`
+   HEADER names, not field names; the current API sends both in ONE header,
+   `Authorization: Key <id>:<secret>`.
+3. Update 1Password `agent.higgesfield` (`API Key ID` → `HIGGSFIELD_API_KEY`,
+   `API Key Secret` → `HIGGSFIELD_API_SECRET`).
 4. `heroku config:set HIGGSFIELD_API_KEY=... HIGGSFIELD_API_SECRET=... --app mcritchie-studio`.
 5. Re-run `bin/ecosystem-build`.
 
-**Verify:** `bin/rails content:assets_agent SLUG=<a-content-slug>` completes successfully.
+**Verify:** `bin/rails content:assets_agent SLUG=<a-content-slug>` completes
+successfully. **As of 2026-09-20 that cannot pass**: the account answers
+`not_enough_credits` on every media type, and `mcritchie-studio` carries no
+`HIGGSFIELD_*` config at all. A rotation done today is therefore verified only
+as far as the 1Password write — say so rather than recording a green verify.
 
 ---
 
