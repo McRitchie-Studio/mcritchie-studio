@@ -178,8 +178,8 @@ The refresh and the reprice commit together or not at all, so a refusal at the
 last step leaves every price and every expected score exactly as it found them.
 
 **The INGEST is already committed by then**, and that is the one piece this
-atomicity does not cover: step 2 writes the week's projections and its snapshot
-rows before the refresh transaction opens. A later refusal leaves those in place.
+atomicity does not cover: the ingest block writes the week's projections and its
+snapshot rows before the refresh transaction opens. A later refusal leaves those in place.
 Nothing is mispriced by it — prices live on `slate_matchups`, which the rollback
 restores — but the market rows do now describe a pull whose reprice never landed.
 Re-running after clearing the refusal reconciles them.
