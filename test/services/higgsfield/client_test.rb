@@ -76,15 +76,37 @@ class Higgsfield::ClientTest < ActiveSupport::TestCase
     assert_equal "https://example.com/a.png", calls.first[:body]["image_url"]
   end
 
-  # The model used to be a body field (`dop-turbo`); it is now part of the path.
-  # Passing it must not put an unknown field on the wire.
-  test "a legacy model argument is ignored rather than sent" do
+  # The model used to be a FUNCTIONAL body field (`dop-turbo`); it is now part of
+  # the path. Silently ignoring it would convert a working argument into a no-op
+  # that still reads like a switch at the call site.
+  test "the retired dop-turbo model is refused, not ignored" do
+    error = assert_raises ArgumentError do
+      client.generate_video(image_url: "https://example.com/a.png", prompt: "p", model: "dop-turbo")
+    end
+
+    assert_match "dop-turbo", error.message
+    assert_match "kling-pro", error.message, "the refusal should name the valid models"
+  end
+
+  test "a nil model takes the default path" do
     c = client
     calls = recording(c)
 
-    c.generate_video(image_url: "https://example.com/a.png", prompt: "p", model: "dop-turbo")
+    c.generate_video(image_url: "https://example.com/a.png", prompt: "p", model: nil)
 
+    assert_equal "/kling-video/v2.5-turbo/pro/image-to-video", calls.first[:path]
     assert_not calls.first[:body].key?("model")
+  end
+
+  test "known model names select their own paths" do
+    { "kling-pro" => "/kling-video/v2.5-turbo/pro/image-to-video",
+      "kling-standard" => "/kling-video/v2.5-turbo/standard/image-to-video",
+      "hailuo" => "/minimax/hailuo-2.3/standard/image-to-video" }.each do |name, path|
+      c = client
+      calls = recording(c)
+      c.generate_video(image_url: "https://example.com/a.png", prompt: "p", model: name)
+      assert_equal path, calls.first[:path], "model #{name}"
+    end
   end
 
   test "status reads the requests status endpoint" do
@@ -190,5 +212,29 @@ class Higgsfield::ClientTest < ActiveSupport::TestCase
     recording(c, response: { "unexpected" => true })
 
     assert_raises(Higgsfield::Client::GenerationError) { c.generate_image_and_wait(prompt: "x") }
+  end
+
+  # --- the status read, given the same loud treatment as the URL read ------
+
+  test "status is read from the plausible keys" do
+    c = client
+
+    assert_equal "completed", c.send(:extract_status, { "status" => "Completed" })
+    assert_equal "queued",    c.send(:extract_status, { "state" => "QUEUED" })
+    assert_equal "running",   c.send(:extract_status, { "data" => { "status" => "running" } })
+  end
+
+  # The asymmetry that mattered: a finished asset under an unexpected key used
+  # to parse as "", match nothing, and poll the full 300s before raising a
+  # TimeoutError that named no payload.
+  test "an unreadable status raises immediately with the payload, not a timeout" do
+    c = client
+    c.define_singleton_method(:status) { |_| { "phase" => "completed", "asset" => "x" } }
+    c.define_singleton_method(:sleep) { |_| flunk("should not have polled") }
+
+    error = assert_raises(Higgsfield::Client::GenerationError) { c.await_result("r1") }
+
+    assert_match "no recognisable status key", error.message
+    assert_match "phase", error.message, "the payload must be printed so the true shape is learned"
   end
 end

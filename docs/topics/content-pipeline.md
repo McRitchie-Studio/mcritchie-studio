@@ -17,15 +17,34 @@
 - `Content::AssembleAgent` — Higgsfield (Kling 3) generates video from scene images → delegates to `Content::Assemble`
 - `Content::Finalize` — FFmpeg watermark overlay (stub pending buildpack). Updates `logo_overlay`. **Note:** despite the `_agent` suffix on its rake task (`content:finalize_agent`) and route (`POST /contents/:slug/finalize_step`), this is NOT an AI agent — it's a deterministic FFmpeg post-processing step that runs after `assemble_agent`. Sits in the `assembly` stage but marks the video finalized.
 - `Content::MetadataAgent` — Claude Haiku generates TikTok captions, hashtags, music suggestions. Can run at any stage.
-- `Higgsfield::Client` — Shared HTTP client (`app/services/higgsfield/client.rb`). Auth via `hf-api-key`/`hf-secret` headers. Submit + poll pattern with 5-min timeout.
+- `Higgsfield::Client` — Shared HTTP client (`app/services/higgsfield/client.rb`). Auth via a single `Authorization: Key <id>:<secret>` header against `api.higgsfield.ai`. Submit + poll pattern with 5-min timeout. (The `hf-api-key`/`hf-secret` pair belonged to the retired `platform.higgsfield.ai` host — see **Feature status** below.)
 
 ## Rake Tasks
 
 `content:hook`, `content:script`, `content:assets`, `content:assemble`, `content:post`, `content:review` (manual). `content:script_agent`, `content:assets_agent`, `content:assemble_agent`, `content:finalize`, `content:metadata` (AI). `content:generate SLUG=xxx` (full pipeline). All support `SLUG=` override.
 
-**Feature status: BLOCKED ON CREDITS ONLY.** The client was rewritten on
-2026-09-20 against the current API; what remains is a purchase, not a code
-change.
+**Feature status: BLOCKED ON CREDITS AND THREE BUILD GAPS.** The client was
+rewritten on 2026-09-20 against the current API, so the integration itself is no
+longer broken. But topping the account up does NOT make this pipeline produce a
+postable video, and it would be an expensive thing to believe. Three gaps sit
+between a credited call and something publishable:
+
+1. **No posting door for the workflow this path produces.** `contents.workflow`
+   defaults to `"video"`, and `TIKTOK_WORKFLOWS` is
+   `starter_post_tiktok_offense`/`_defense` ONLY — so `post_to_tiktok` and
+   `studio_upload_to_tiktok` both raise "Only available for TikTok workflows",
+   and `post_to_x` requires `starter_post_x`. No publish path accepts a
+   `"video"` Content.
+2. **No audio.** There is no TTS or voiceover anywhere in `app/`, `lib/` or
+   `config/`, while `ScriptAgent` writes a NARRATED 15-30 second script. The
+   script gets written and then never spoken.
+3. **One-scene assembly.** `AssembleAgent` builds one clip from
+   `image_urls.first` of the five images `AssetsAgent` paid for, and passes no
+   duration.
+
+Top the credits up today and what comes out is a silent ~5s clip, built from one
+of five paid images, carrying none of the script, that no publish path will
+accept.
 
 **What the rewrite fixed.** `Higgsfield::Client` used to target
 `platform.higgsfield.ai` with `hf-api-key`/`hf-secret` headers, paths
@@ -33,8 +52,9 @@ change.
 `/v1/job-sets/{id}`. That surface is partly decommissioned — it still
 AUTHENTICATES our key and still serves `GET /v1/motions`, so a shallow probe
 looks healthy, but the image path answers `400 {"detail":"Unavailable model"}`.
-Its `width_and_height: "1024x1792"` is also no longer accepted. This is why the
-feature read as "built but untested" for months rather than as broken.
+Its `width_and_height: "1024x1792"` is also no longer accepted (the 422 names
+the current set; `1152x2048` is exact 9:16). This is why the feature read as
+"built but untested" for months rather than as broken.
 
 The client now targets, all measured live:
 
@@ -47,17 +67,26 @@ The client now targets, all measured live:
 | Poll | `GET /requests/{request_id}/status` |
 
 `Higgsfield::Client::VERTICAL_9_16` (`1152x2048`) replaces the retired size, and
-the video model moved from a body field into the PATH — a `model:` argument is
-now accepted and ignored rather than sent as an unknown field.
+the video model moved from a body field into the PATH — so `generate_video`
+REFUSES a non-nil `model:` rather than accepting and ignoring it.
 
 **What is still unverified, and why.** The account answers `not_enough_credits`
 on every media type, so no SUCCESSFUL payload has ever been observed. Request
 shapes are measured; RESPONSE parsing is written tolerantly against the
-plausible shapes and marked `UNVERIFIED` in the source. `extract_url` fails
-loudly with the payload rather than returning nil, so the first real generation
-reports the true shape instead of producing a broken video. An empty pool raises
-`Higgsfield::Client::InsufficientCreditsError` specifically, so "top up the
-account" never again reads as "the integration is broken".
+plausible shapes and marked `UNVERIFIED` in the source. Both the URL read and
+the status read fail loudly WITH the payload rather than returning nil or
+polling out, so the first real generation reports the true shape. An empty pool
+raises `Higgsfield::Client::InsufficientCreditsError` specifically, so "top up
+the account" never again reads as "the integration is broken".
+
+**Three request fields are also unverified.** `prompt` is the only field the new
+image endpoint is PROVEN to require; `width_and_height`, `quality` and
+`enhance_prompt` are carried over from the old client and are each a way the
+first credited call could 422 under the strict validator the empty-POST probe
+proved exists. **On the first credited run, measure the returned image's pixel
+dimensions before spending any video credits** — if Soul v2 ignores
+`width_and_height`, Kling inherits that frame and we publish a square clip to a
+9:16 surface.
 
 A probe order that tells the three failures apart, since they look alike from the
 app: a fake-id `GET` proves auth (404 = authenticated), an empty `POST` returns
@@ -65,13 +94,69 @@ the schema (422), and only a well-formed POST reveals credits.
 
 Two further gaps to know before trusting the chain end to end:
 
-- **`Content::AssembleAgent` makes ONE clip from the FIRST scene image.**
+- **`Content::AssembleAgent` makes ONE ~5-second clip from the FIRST scene image.**
   `AssetsAgent` generates images for up to 5 scenes and `AssembleAgent` then uses
   `image_urls.first` and discards the rest. There is no multi-scene stitching, no
   music, and no text overlays (`music_track: nil`, `text_overlays: []`,
   `logo_overlay: false`).
 - **`Content::Finalize` is a labelled stub.** It prints `[STUB] FFmpeg watermark`
   and returns the URL it was given.
+
+## Game Recap Workflow
+
+`Content.workflow = "game_recap"` — one Content per finished NFL game, created at
+`stage=idea`. This is the head of the faceless-social pipeline: turf-monster
+settles a game, the hub turns it into a content idea.
+
+### The cross-repo seam
+Games live in **turf-monster**; Content lives in the **hub**. The hub never reads
+turf-monster's database. The whole crossing is one endpoint:
+
+```
+POST /api/v1/game_recaps
+Authorization: Bearer <token from POST /api/v1/auth>
+{ "game": { "game_slug": "...", "home_team_slug": "...", "away_team_slug": "...",
+            "home_score": 24, "away_score": 17, "status_detail": "Final",
+            "season_year": 2026, "season_type": 2, "week": 3 } }
+```
+
+Auth is the standard agent bearer token (`Api::V1::BaseController`, shared
+`AGENT_API_SECRET`) — see [`task-board-api.md`](../agents/modules/task-board-api.md).
+
+**Team slugs are shared between the repos.** Both derive from
+`"Buffalo Bills".parameterize`, so `buffalo-bills` means the same team on each
+side and the payload carries slugs rather than the `BUF`-style abbreviations
+turf-monster's `Change` struct reports.
+
+### Idempotency is structural, not incidental
+`Nfl::LiveScores::PollCycle` is deliberately safe to re-run — every scoring event
+is keyed on ESPN's own play id — so the same final is EXPECTED to arrive here
+more than once. A partial unique index on `[game_slug, workflow]` is the arbiter;
+`Content::CreateGameRecap` re-reads on `RecordNotUnique` rather than raising, so a
+duplicate answers **200 with the existing recap** while the call that created it
+answers **201**. A `find_or_create` in the controller would lose that race.
+
+### Title composition
+`Content::CreateGameRecap` reads `Team#mascot` (which derives "Broncos" from
+"Denver Broncos" minus location when the column is blank — the NFL seed never
+populates it) and composes:
+
+- Win: `"Bills Beat Dolphins 24-17"` — **winner first, always**, never home-first.
+- Tie: `"Bills And Dolphins Tie 17-17"` — NFL ties are rare but real, and "beat"
+  would be a lie, so the phrase changes rather than just the numbers.
+
+`team_slug` holds the WINNER and `rival_team_slug` the loser, reusing the columns
+the other workflows use for "us" and "them" so team-colour and hashtag lookups
+keep working. On a tie the pair is stored in the feed's home/away order rather
+than inventing a ranking. `game_facts` (jsonb) keeps the scoreline verbatim so a
+later script step never has to call back to turf-monster.
+
+### Refusals
+`Content::CreateGameRecap::InvalidGame` → `422 INVALID_GAME` for: a missing
+required field, a team slug the hub does not know, a game played against itself,
+a negative score, or a score that is not a whole number. That last one matters —
+`"final".to_i` is `0`, which would silently invent a shutout, so the check is
+`Integer(..., exception: false)` rather than `to_i`.
 
 ## Starter Post (X) Workflow
 

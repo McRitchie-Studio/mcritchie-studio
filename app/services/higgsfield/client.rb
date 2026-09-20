@@ -26,6 +26,21 @@ module Higgsfield
     # VERIFIED: paths, and the fields each one requires.
     IMAGE_PATH = "/higgsfield-ai/soul/v2/standard".freeze          # requires: prompt
     VIDEO_PATH = "/kling-video/v2.5-turbo/pro/image-to-video".freeze # requires: prompt, image_url
+
+    # The model is part of the PATH now, so selecting one means picking a path.
+    # Named rather than free-form: the old client took `model: "dop-turbo"` as a
+    # body field, and a rewrite that quietly ignored that value would turn a
+    # working argument into a no-op the caller could not see.
+    IMAGE_PATHS = {
+      "soul-v2" => IMAGE_PATH,
+      "soul"    => "/higgsfield-ai/soul/standard"
+    }.freeze
+
+    VIDEO_PATHS = {
+      "kling-pro"      => VIDEO_PATH,
+      "kling-standard" => "/kling-video/v2.5-turbo/standard/image-to-video",
+      "hailuo"         => "/minimax/hailuo-2.3/standard/image-to-video"
+    }.freeze
     STATUS_PATH = "/requests/%<id>s/status".freeze
     CANCEL_PATH = "/requests/%<id>s/cancel".freeze
 
@@ -72,10 +87,22 @@ module Higgsfield
     def generate_video(image_url:, prompt:, model: nil, duration: nil)
       body = { prompt: prompt, image_url: image_url }
       body[:duration] = duration if duration.present?
-      # `model` is accepted for call-site compatibility with the old client,
-      # where it selected `dop-turbo`. The model is now part of the PATH, so a
-      # value here is deliberately ignored rather than sent as an unknown field.
-      post(VIDEO_PATH, body)
+
+      post(video_path_for(model), body)
+    end
+
+    # A nil model takes the default. A KNOWN name selects its path. Anything
+    # else — including the old client's `dop-turbo`, which used to be a
+    # functional body field — RAISES, because silently ignoring it would
+    # convert a working argument into a no-op that reads like a switch.
+    def video_path_for(model)
+      return VIDEO_PATH if model.nil?
+
+      VIDEO_PATHS.fetch(model.to_s) do
+        raise ArgumentError,
+              "unknown Higgsfield video model #{model.inspect} — " \
+              "the model is part of the path now; use one of #{VIDEO_PATHS.keys.join(', ')} or nil"
+      end
     end
 
     def status(request_id)
@@ -103,7 +130,7 @@ module Higgsfield
 
       loop do
         payload = status(request_id)
-        state = payload["status"].to_s.downcase
+        state = extract_status(payload)
 
         if FAILED_STATUSES.include?(state)
           raise GenerationError, "Higgsfield request #{request_id} ended #{state}: #{payload['error'] || payload['detail']}"
@@ -120,6 +147,23 @@ module Higgsfield
     end
 
     private
+
+    # UNVERIFIED, and given the SAME loud treatment as `extract_url` — the two
+    # reads used to be asymmetric and it mattered. `payload["status"]` alone
+    # meant a state under any other key (`{"state":"completed"}`) parsed as "",
+    # matched neither terminal nor failed, and polled the full 300s before
+    # raising TimeoutError naming no payload. A FINISHED asset then reported as
+    # a timeout and the true shape was never printed — the exact opposite of why
+    # the response side is marked unverified.
+    def extract_status(payload)
+      raw = payload["status"] || payload["state"] || payload.dig("data", "status")
+      if raw.nil?
+        raise GenerationError,
+              "no recognisable status key in poll payload: #{payload.inspect[0, 300]}"
+      end
+
+      raw.to_s.downcase
+    end
 
     # UNVERIFIED — no successful submit was ever observed. The docs call it a
     # request id; accept the plausible spellings rather than pin one.
