@@ -30,8 +30,12 @@ What each answer means:
 | `302` | deployed, but no slate resolved — a DATA problem, not a release one | Name the span explicitly: `/benchmarks/<span-slug>` |
 | `200` | deployed and rendering | Carry on |
 
-`bin/rails -T market` answers the same question from the other side, and louder:
-a missing task aborts the run outright.
+`bin/rails -T market` answers the same question from the other side, but
+**quietly — read the LISTING, never the exit code.** An environment on an older
+release still lists `market:snapshot` from it, prints no error, and exits `0`;
+only `market:pull` and `market:refresh` answer this question. The loud answer
+comes one command later, if you skip this check: a task that is not there aborts
+with `Unrecognized command` and exit `1`.
 
 Everything else here — the split, the decisions, the refusals, the escalations —
 is settled and waits on nothing.
