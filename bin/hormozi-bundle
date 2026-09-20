@@ -1,0 +1,64 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Groups the extraction wave's output into one bundle per idea, ranked by how
+# many DIFFERENT videos say it. Each bundle is what a synthesis agent reads to
+# write a single card, so the whole corpus never has to fit in one context.
+#
+#   bin/hormozi-bundle                # default corpus root
+#   bin/hormozi-bundle --root DIR
+#   bin/hormozi-bundle --min-sources 3
+
+require "optparse"
+require "json"
+require "fileutils"
+require_relative "../lib/hormozi/bundler"
+
+DEFAULT_ROOT = File.expand_path("~/projects/.corpus/hormozi")
+
+options = { root: DEFAULT_ROOT, min_sources: 1 }
+OptionParser.new do |opts|
+  opts.banner = "Usage: bin/hormozi-bundle [options]"
+  opts.on("--root DIR", "corpus root (default #{DEFAULT_ROOT})") { |v| options[:root] = File.expand_path(v) }
+  opts.on("--min-sources N", Integer, "only bundle ideas said in N+ videos") { |v| options[:min_sources] = v }
+  opts.on("-h", "--help") do
+    puts opts
+    exit 0
+  end
+end.parse!
+
+root = options[:root]
+extract_dir = File.join(root, "extract")
+bundles_dir = File.join(root, "bundles")
+
+paths = Dir.glob(File.join(extract_dir, "*.json")).sort
+abort "no extraction files in #{extract_dir}" if paths.empty?
+
+FileUtils.rm_rf(bundles_dir)
+bundles = Hormozi::Bundler.build(paths).select { |bundle| bundle.source_count >= options[:min_sources] }
+
+index = []
+bundles.each do |bundle|
+  dir = File.join(bundles_dir, bundle.kind)
+  FileUtils.mkdir_p(dir)
+  File.write(File.join(dir, "#{bundle.slug}.json"), JSON.pretty_generate(
+    kind: bundle.kind,
+    name: bundle.name,
+    slug: bundle.slug,
+    source_count: bundle.source_count,
+    sources: bundle.sources,
+    items: bundle.items
+  ))
+  index << [ bundle.kind, bundle.slug, bundle.source_count, bundle.item_count, bundle.name ]
+end
+
+File.write(
+  File.join(bundles_dir, "index.tsv"),
+  ([ %w[kind slug sources items name].join("\t") ] + index.map { |row| row.join("\t") }).join("\n") + "\n"
+)
+
+puts "read #{paths.length} extraction file(s) -> #{bundles.length} bundle(s)"
+bundles.group_by(&:kind).sort_by { |_kind, list| -list.length }.each do |kind, list|
+  puts format("  %-11s %3d bundles, top: %s (%d sources)", kind, list.length, list.first.name, list.first.source_count)
+end
+puts "index: #{File.join(bundles_dir, 'index.tsv')}"
