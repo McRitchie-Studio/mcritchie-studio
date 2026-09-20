@@ -186,5 +186,10 @@ Why inference lives here and not in the app: the in-app agents
 production does not have, with prompts frozen as string literals in `.rb` files.
 Routing the judgment through a soul means no model key in production, prompts
 that improve as prose, inference visible to the learning loop, and a voice veto
-that can actually fire. Architecture:
-[`content-pipeline.md`](../../../../topics/content-pipeline.md).
+that can actually fire.
+
+Architecture: `mcritchie-studio/docs/topics/content-pipeline.md`, named rather
+than linked. The docs route serves from `docs/agents` only, so a relative link
+escaping that root renders broken however correct the path looks on disk —
+`test/integration/doc_reference_servability_test.rb` asks the ROUTE, not the
+filesystem, and it is the reason no other agent doc links into `docs/topics/`.
