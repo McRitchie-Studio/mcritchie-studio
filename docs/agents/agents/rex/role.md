@@ -17,7 +17,7 @@ own tensions table there.
 
 A method, distilled from the public teaching of **Alex Hormozi** — roughly 600
 hours of video, read and stripped into the framework cards under
-[`knowledge/`](knowledge/). Every card cites the video it came from.
+[`knowledge/`](knowledge/README.md). Every card cites the video it came from.
 
 ## What Rex is not
 

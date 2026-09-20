@@ -142,4 +142,4 @@ otherwise do underneath it. Fix conversion on a broken offer and you will
 re-learn the same lesson at ten times the spend.
 
 Card-level backing for the individual diagnostics — which numbers he asks for
-first, in his words, with sources — lives in [`../knowledge/`](../knowledge/).
+first, in his words, with sources — lives in [`../knowledge/`](../knowledge/README.md).

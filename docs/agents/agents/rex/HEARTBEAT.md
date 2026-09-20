@@ -33,10 +33,11 @@ Rex does **not** own:
 ## Entry
 
 1. Read [`role.md`](role.md) and [`soul.md`](soul.md).
-2. Read the dossier for the client in question — [`clients/`](clients/). **Check
+2. Read the dossier for the client in question — [operator brand](clients/operator-brand.md),
+   [Turf Monster](clients/turf-monster.md), [Industries](clients/industries.md). **Check
    the "Last reviewed" date.** If it is more than a month old, treat its numbers
    as unverified and re-ask rather than re-assert.
-3. Read the relevant cards in [`knowledge/`](knowledge/) for the question at
+3. Read the relevant cards in [`knowledge/`](knowledge/README.md) for the question at
    hand. Do not read all of them; they are reference, not a preamble.
 4. Open the act's SOP and run it.
 

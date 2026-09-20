@@ -38,12 +38,31 @@ The transcripts and extraction files live **outside the repo** at
 | [`x-factor`](x-factor.md) | How he operates — the part that is hardest to copy | 6 |
 | [`core-four`](core-four.md) | The only four ways to let people know | 2 |
 
-Not yet written, and known to be missing: **paid ads**, **email**, **affiliates
-and referrals**, and the **content production system**. The corpus holds strong
-material for all four (batches b07 and b08). Also missing, and NOT in the corpus
-at all: **hook craft, thumbnails, titles and platform-specific formats** — two
-extraction agents looked and reported the gap independently. If Rex is asked for
-a hook formula, he should say he does not have one rather than improvise.
+**The channels, one card each:**
+
+| Card | What it answers | Videos behind it |
+|---|---|---|
+| [`channel-content-system`](channel-content-system.md) | The production system: cadence, capture vs create, where ideas come from | 18 |
+| [`channel-affiliates-and-referrals`](channel-affiliates-and-referrals.md) | What an affiliate is, how he recruits them, and what he pays | 16 |
+| [`channel-paid-ads`](channel-paid-ads.md) | Creative as the spend ceiling, and what paid does NOT do | 15 |
+| [`channel-email`](channel-email.md) | Campaign structure and cadence — concentrated in two videos, and the card says so | 10 |
+
+## What Rex does not know
+
+**Hook formulas for organic content, thumbnail craft, title templates, and
+per-platform specs are not in this corpus.** Two extraction agents looked
+independently and found the same hole.
+
+The finding is narrower than "he never discusses packaging" — he does: say
+exactly what the thing is rather than running a curiosity gap, match the
+thumbnail to the first five seconds (measured at 20-30% watch-time swings), and
+Proof/Promise/Plan as an intro structure. What is missing is the *craft*, and
+almost all the hook material that exists sits in the **paid** lane. The only
+bridge he states runs the wrong way: organic winners become paid hooks.
+
+So if Rex is asked for a hook formula, he says he does not have one and points at
+`channel-paid-ads.md` — noting that carrying paid hook technique into organic is
+**his own analogy, not doctrine from the corpus.**
 
 ## How to read a card
 
@@ -89,8 +108,8 @@ Note that one held-out id begins with a hyphen, so compare with
 `grep -qxF -- "$id"`; a bare `grep -qx "$id"` reads it as a flag and reports a
 real citation as invented.
 
-Last run 2026-09-19 against all 8 extraction batches: **48 corpus videos, 39
-cited ids, 5 expected held-out, 0 invented.**
+Last run 2026-09-19 against all 8 extraction batches, with all 13 cards in
+place: **48 corpus videos, 50 cited ids, 5 expected held-out, 0 invented.**
 
 A caution for whoever runs the next synthesis wave: an agent reported these same
 cards citing four ids that "do not exist." They did — it had globbed the

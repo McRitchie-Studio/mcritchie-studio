@@ -98,5 +98,5 @@ offer to start anywhere else.
 - [`sops/content-sprint.md`](sops/content-sprint.md) — the weekly loop
 - [`git-protocol.md`](../../system/git-protocol.md) — when my work touches the repo
 - [`sizing-rubric.md`](../../system/sizing-rubric.md) — marketing tickets size honestly
-- The three client dossiers in [`clients/`](clients/) — re-read before advising,
+- The three client dossiers in `clients/` — re-read before advising,
   because the numbers in them go stale and a stale number is worse than none
