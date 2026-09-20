@@ -57,8 +57,16 @@ module Hormozi
     # Extraction runs across many agents, so the same idea comes back spelled a
     # dozen ways ("the value equation", "Value Equation:", "value-equation").
     # Bundling on the raw name would scatter one framework across a dozen cards.
+    #
+    # The leading article is stripped because half the agents write "the Core
+    # Four" and half write "Core Four". Only "the" — stripping "a" would turn
+    # "A/B testing" into "b-testing".
     def self.normalize(name)
-      name.to_s.downcase.gsub(/[^a-z0-9]+/, "-").gsub(/\A-|-\z/, "")
+      name.to_s
+          .downcase
+          .gsub(/[^a-z0-9]+/, "-")
+          .gsub(/\A-|-\z/, "")
+          .sub(/\Athe-/, "")
     end
 
     # The bundle answers to the spelling most agents chose, not to whichever
