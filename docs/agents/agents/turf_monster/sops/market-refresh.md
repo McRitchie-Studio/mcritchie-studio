@@ -232,7 +232,7 @@ would otherwise price off stale lines.
 | Refusal | What it means | Remedy |
 |---|---|---|
 | `carry no readable DraftKings line` | ESPN served a game with no DK odds, or a team abbreviation that maps to no `Team` | Re-run in a few minutes; a new abbreviation needs a `Nfl::Espn::TeamMap` alias |
-| `the schedule moved` | The week's matchups no longer match the dataset — a flexed game | That is a slate REBUILD, not a refresh. Decide what happens to the slate first; `ALLOW_SCHEDULE_CHANGE=1` accepts the dataset half deliberately (on production it rides `-e` with the others — step 3) |
+| `the schedule moved` | The week's matchups no longer match the dataset — a flexed game | That is a slate REBUILD, not a refresh. Decide what happens to the slate first; `ALLOW_SCHEDULE_CHANGE=1` accepts the dataset half deliberately (on production it rides `-e`, semicolon-separated — steps 2 and 3) |
 | `paid pick(s)` | The slate backs money | Step 2. Never pass the override on your own judgment |
 | `kicked off` | The span's first game has started | **Nothing.** A started span is never repriced — the race is being run |
 | `no longer in the weekly slates` | A span row's game is absent from its source week | Same as schedule drift: a rebuild question |
