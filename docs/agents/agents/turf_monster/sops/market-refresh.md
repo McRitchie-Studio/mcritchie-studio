@@ -1,13 +1,29 @@
 # Market Refresh
 
-## Status: Active — pending its release
+## Status: Active — check the environment before the first run
 
-**The commands below ship with turf-monster's `refresh-market-benchmarks`.** Until
-that release reaches the environment you are pointing at, `market:pull` and
-`market:refresh` do not exist there and a run aborts with an unknown-task error.
-Check before you run, not after: `bin/rails -T market` lists what that
-environment actually has. Everything else in this SOP — the split, the
-decisions, the refusals — is settled and does not wait on the release.
+This SOP describes turf-monster work that landed in two pieces: the pricing rule
+(per-game ranking and the bye line) with `two-line-bye-multipliers`, and
+everything you actually RUN — `market:pull`, `market:refresh`, the
+`/benchmarks` page — with `refresh-market-benchmarks`. An environment has them
+once the release carrying them reaches it, and not before.
+
+**So check the environment you are pointing at, before the first command, not
+after:**
+
+```bash
+bin/rails -T market            # market:pull AND market:refresh listed?
+curl -sS -o /dev/null -w '%{http_code}\n' <base-url>/benchmarks   # 200?
+```
+
+Locally that is your desk; on production, `heroku run --no-tty -a
+turf-monster-mainnet -- bin/rails -T market` and `https://turfmonster.media`.
+If either answer is missing, the release has not landed there — **stop.** Nothing
+in this SOP has a manual fallback, and a missing rake task aborts loudly while a
+missing page just redirects, which is the quieter half of the same answer.
+
+Everything else here — the split, the decisions, the refusals, the escalations —
+is settled and waits on nothing.
 
 This is Turf Monster's `market-refresh` SOP. It rebuilds a span slate's Turf
 Score benchmarks from fresh DraftKings numbers: pull the week's lines, ingest
@@ -104,14 +120,30 @@ APPLY=1 REPRICE_PAID_PICKS=nfl-2026-weeks-4-6 \
   bin/rails market:refresh WEEKS=4,5,6 SPAN=nfl-2026-weeks-4-6
 ```
 
+(Against production both flags ride `-e`, not a shell prefix — step 3.)
+
 The flag unlocks **only** the slate it names — an override left in your shell
 from last week cannot reprice this week's contest.
 
 ### 3. Apply
 
 ```bash
+# local desk
 APPLY=1 bin/rails market:refresh WEEKS=4,5,6 SPAN=nfl-2026-weeks-4-6
+
+# production — the flags must reach the DYNO, via -e
+heroku run --no-tty --exit-code -a turf-monster-mainnet \
+  -e "APPLY=1;REPRICE_PAID_PICKS=nfl-2026-weeks-4-6" \
+  -- bin/rails market:refresh WEEKS=4,5,6 SPAN=nfl-2026-weeks-4-6
 ```
+
+**`-e` is not decoration, and a shell-style prefix is the trap.** `heroku run
+APPLY=1 bin/rails …` sets the variable in YOUR shell, not the dyno's: the task
+then dry-runs and prints output all but identical to an apply, so the operator
+reads success and production is untouched. `-e` passes them through (semicolons
+separate; measured against `turf-monster-mainnet` 2026-09-19 — the dyno read
+`APPLY="1"`). Confirm from the run's own output before believing it: an APPLY run
+says `APPLY` in its header and ends `APPLIED.`, never `Dry run only`.
 
 The refresh and the reprice commit together or not at all, so a refusal at the
 last step leaves the expected scores as they were. There is no half-applied
@@ -123,9 +155,13 @@ state to clean up.
    values, so it shows exactly what the board will pay: each team's points per
    game, its rank, its multiplier, and the bye line where one applies. The
    snapshot line under the heading must name today's pull.
-2. **The bye teams** — on a span with byes, every bye team must sit on the
-   x1.5-x3.0 line and be badged. A bye team priced at or under x2.0 with no
-   badge means the reprice did not run.
+2. **The bye teams** — on a span with byes, every bye team is badged and sits on
+   the x1.5-x3.0 line. **Read the BADGE, not the number.** The bye line's lower
+   half overlaps the full-span line — a strong bye team at rank 2 prices x1.5,
+   below plenty of three-game teams — so a bye team at or under x2.0 is ordinary
+   and proves nothing either way. What does: an unbadged bye team (the page is
+   not seeing two lines at all), or a badged team priced above x2.0 where no
+   three-game team can reach, which only the bye line produces.
 3. **The dataset** — on a LOCAL run, `git diff db/seeds/data/nfl/*.csv` shows
    exactly the games that moved. Commit it (see step 5).
 
@@ -175,6 +211,8 @@ matchups, which would cascade to live `Selection` rows, so it refuses any slate
 that backs a pick. `Nfl::RefreshSpanSlate` updates the rows in place instead.
 
 The mechanics, step by step, with citations:
-`turf-monster/docs/workflows/market-snapshot.md` (steps 1-5). The pricing rule
+`turf-monster/docs/workflows/market-snapshot.md` (the fetch, the dataset, the
+ingest and the artifact; the span rebuild joins them as its last step with
+`refresh-market-benchmarks`). The pricing rule
 itself — per-game ranking, and the two lines a bye span prices on —
 is `turf-monster/docs/FORMULAS.md`.
