@@ -370,6 +370,16 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
      now), `disarm <task>`. Then release your claim (step 7) and close out; the
      merge lands without you.
 
+     **Two refusals, and they ask for opposite things — read the exit code.**
+     Exit **2** is the tool declining: your standing verdict is not `merge-ready`,
+     or the flags were wrong. Exit **1** is `could not run` — it could not READ the
+     board (a redirect, a 401, an outage), so nothing was armed and your verdict
+     still stands; fix the read and re-run the same command. `arm` refuses rather
+     than arming on an unreadable task record, because the approval block above is
+     the last thing a person sees before a merge runs with no reviewer present.
+     Until 2026-09-20 that read went unchecked: with `--head` supplied a 301
+     WARNED, armed anyway, and exited **0**.
+
    - **request-changes → block it back to the builder** (only for a reachable
      regression per step 4 — never for a finding you could zap or note):
 

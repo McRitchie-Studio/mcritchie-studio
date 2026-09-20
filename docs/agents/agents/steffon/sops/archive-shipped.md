@@ -327,9 +327,12 @@ reclaimed, and regenerable disk is swept. Report:
 - reclaimed worktrees
 - any worktree intentionally left alone and why
 - **reclaimed bytes** from the artifact sweep, labelled as **this machine only**
-- **any app named `LOOSE` or `NONE`** by the logger audit — name each one, and
-  say plainly that its local logs are still growing to Rails' 100 MB default
-- any app the audit could not boot, with the reason
+- **the audit's `rotation_verdict`**, and **any app named `LOOSE` or `NONE`** by
+  the logger audit — name each one, and say plainly that its local logs are still
+  growing to Rails' 100 MB default
+- **any app the audit could not boot, with the reason** — `LOG CAP NOT PROVEN` is
+  reported alongside the loose ones. Only `rotation_verdict: capped` is a pass;
+  `unaudited` and `unreadable` mean no app was checked, not that all are clean
 - **retired-doc count** and the ledger rows rolled over
 - **any doc skipped for being still referenced** — name the file AND its
   referrer, so the citation can be fixed deliberately rather than orphaned

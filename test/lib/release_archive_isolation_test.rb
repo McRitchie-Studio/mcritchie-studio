@@ -82,6 +82,30 @@ class ReleaseArchiveIsolationTest < Minitest::Test
     assert_includes out, "rolled 2 ledger row(s)", out
   end
 
+  # [integration] THE EXIT SEAM MUST NEVER GO QUIET ABOUT THE LOG CAP.
+  #
+  # ISOLATION_STUB's payload carries `rotation_missing: [], rotation_unknown: [],
+  # audited_envs: []` — a sweep that audited NOTHING, which is what --skip-audit
+  # and an unparseable summary line both look like from here (sweep_summary
+  # returns {} on purpose so a sweep hiccup cannot abort a run whose board work
+  # already landed). The Exit Seam's two rotation warnings each fired only on a
+  # non-empty list, so this run printed exactly what a fully capped machine
+  # printed: nothing. That is how five loose apps stayed unnamed.
+  #
+  # The stub is deliberately left as it was. Asserting against the UNAUDITED
+  # payload is the point — a fixture rewritten to carry loose apps would prove
+  # only that a non-empty list prints, which was never broken.
+  def test_the_exit_seam_names_an_unaudited_sweep_rather_than_reading_as_capped
+    out = run_archive("#{BOARD_STUB}; #{ReleaseArchiveSeams::ISOLATION_STUB}; " \
+                      "#{ReleaseArchiveSeams::SHELL_POISON}")
+
+    assert_includes out, "LOG CAP NOT PROVEN",
+                    "an audit that checked no app must say so in the Exit Seam, not print " \
+                    "the silence a capped machine prints\n\n#{out}"
+    refute_includes out, "every audited app caps its local logs",
+                    "the sweep audited nothing — it cannot claim every app is capped\n\n#{out}"
+  end
+
   private
 
   def run_archive(setup)

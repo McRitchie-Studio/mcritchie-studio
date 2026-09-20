@@ -201,6 +201,93 @@ class ArtifactSweepTest < Minitest::Test
                     "the engine's 16 MB development cap must land comfortably inside healthy"
   end
 
+  # --- coverage: is every managed app PROVEN capped? -----------------------
+  # [unit] The filed test plan for cap-loose-app-logs: "the audit reports LOOSE
+  # for an app with no cap" — and the half that plan is really about, which is
+  # that an app the audit could NOT prove must not come back looking capped.
+  #
+  # The bug these lock down is an ABSENCE, so every case below asserts against
+  # :capped rather than merely asserting the happy path. Three different
+  # situations emit `rotation_missing: []`, and only ONE of them is a clean
+  # machine; before this classifier the other two printed the same nothing.
+
+  def test_an_audit_that_reached_every_app_and_found_them_capped_is_the_only_pass
+    summary = { audited_envs: %w[development], rotation_missing: [], rotation_unknown: [] }
+
+    assert_equal :capped, ArtifactSweep.rotation_coverage(summary)
+    assert ArtifactSweep.rotation_proven?(summary)
+    assert_equal ["✓ every audited app caps its local logs (development)"],
+                 ArtifactSweep.rotation_report_lines(summary)
+  end
+
+  def test_a_loose_app_is_named_and_the_run_is_not_a_pass
+    summary = { audited_envs: %w[development], rotation_missing: %w[rolio chain-ops], rotation_unknown: [] }
+
+    assert_equal :uncapped, ArtifactSweep.rotation_coverage(summary)
+    refute ArtifactSweep.rotation_proven?(summary)
+    report = ArtifactSweep.rotation_report_lines(summary).join("\n")
+    assert_includes report, "rolio", "the audit must NAME the loose app, not just count it"
+    assert_includes report, "chain-ops"
+    assert_includes report, ArtifactSweep::ENGINE_CAP_FLOOR,
+                    "name the engine floor: three of the loose apps already carry studio-engine"
+  end
+
+  def test_an_app_that_could_not_be_booted_is_unproven_never_capped
+    summary = { audited_envs: %w[development], rotation_missing: [], rotation_unknown: %w[karen_mcritchie] }
+
+    assert_equal :unproven, ArtifactSweep.rotation_coverage(summary),
+                 "an empty rotation_missing with an unbootable app is NOT a clean machine"
+    refute ArtifactSweep.rotation_proven?(summary)
+    report = ArtifactSweep.rotation_report_lines(summary).join("\n")
+    assert_includes report, "karen_mcritchie"
+    assert_includes report, "NOT PROVEN"
+  end
+
+  def test_a_loose_app_and_an_unprovable_one_are_both_named_in_the_same_run
+    summary = { audited_envs: %w[development], rotation_missing: %w[rolio], rotation_unknown: %w[karen_mcritchie] }
+    report = ArtifactSweep.rotation_report_lines(summary)
+
+    assert_equal 2, report.size, "the worst verdict must not swallow the other category"
+    assert_includes report.join("\n"), "rolio"
+    assert_includes report.join("\n"), "karen_mcritchie"
+  end
+
+  def test_a_skipped_audit_does_not_read_as_a_capped_machine
+    summary = { audited_envs: [], rotation_missing: [], rotation_unknown: [] }
+
+    assert_equal :unaudited, ArtifactSweep.rotation_coverage(summary),
+                 "--skip-audit emits the same empty lists a clean machine does"
+    refute ArtifactSweep.rotation_proven?(summary)
+    assert_includes ArtifactSweep.rotation_report_lines(summary).join("\n"), "did not run"
+  end
+
+  # bin/release archive's sweep_summary returns {} when the tagged line is absent,
+  # on purpose — a sweep hiccup must not abort a run whose board work landed. That
+  # degraded hash must still not read as proof.
+  def test_a_summary_with_no_audit_fields_is_unreadable_not_clean
+    assert_equal :unreadable, ArtifactSweep.rotation_coverage({})
+    assert_equal :unreadable, ArtifactSweep.rotation_coverage(nil)
+    refute ArtifactSweep.rotation_proven?({})
+    assert_includes ArtifactSweep.rotation_report_lines({}).join("\n"), "NOT PROVEN"
+  end
+
+  def test_every_verdict_says_something
+    ArtifactSweep::ROTATION_COVERAGE_VERDICTS.each do |verdict|
+      summary =
+        case verdict
+        when :unreadable then {}
+        when :unaudited  then { audited_envs: [] }
+        when :uncapped   then { audited_envs: %w[development], rotation_missing: %w[a] }
+        when :unproven   then { audited_envs: %w[development], rotation_unknown: %w[a] }
+        when :capped     then { audited_envs: %w[development] }
+        end
+
+      assert_equal verdict, ArtifactSweep.rotation_coverage(summary), verdict.to_s
+      refute_empty ArtifactSweep.rotation_report_lines(summary),
+                   "#{verdict} returned no line — silence is the defect this replaced"
+    end
+  end
+
   # --- parsing -------------------------------------------------------------
 
   def test_parses_the_audit_payload_out_of_chatty_boot_output

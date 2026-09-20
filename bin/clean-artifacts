@@ -247,12 +247,13 @@ end
 say
 say("==> #{DRY ? 'Would reclaim' : 'Reclaimed'} #{ArtifactSweep.human_bytes(reclaimed)} " \
     "across #{plan[:repos].size} repo(s) and #{plan[:worktree_count]} worktree(s)")
-if missing.any?
-  say("==> MISSING ROTATION: #{missing.join(', ')} — these apps have not adopted the studio-engine cap")
-end
-say("==> logger audit inconclusive for: #{unknown.join(', ')}") if unknown.any?
-
-puts ArtifactSweep.summary_line(
+# THE VERDICT IS COMPUTED, NEVER INFERRED FROM AN EMPTY LIST. Two lists that came
+# back empty used to end this script in silence — and `rotation_missing: []` is
+# what a fully capped machine emits, what `--skip-audit` emits, and what a
+# summary line nobody could parse degrades to downstream. So the coverage verdict
+# rides in the summary, and ArtifactSweep.rotation_report_lines always says
+# something: an app whose cap could not be PROVEN is named here, not skipped.
+summary = {
   dry_run: DRY,
   reclaimed_bytes: reclaimed,
   reclaimed_human: ArtifactSweep.human_bytes(reclaimed),
@@ -261,4 +262,9 @@ puts ArtifactSweep.summary_line(
   rotation_missing: missing,
   rotation_unknown: unknown,
   audited_envs: SKIP_AUDIT ? [] : AUDIT_ENVS
-)
+}
+summary[:rotation_verdict] = ArtifactSweep.rotation_coverage(summary)
+
+ArtifactSweep.rotation_report_lines(summary).each { |line| say("==> #{line}") }
+
+puts ArtifactSweep.summary_line(summary)
