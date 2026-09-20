@@ -3,143 +3,161 @@
 **Owner:** Rex · **Runs:** at the start of every engagement, and any time someone
 asks "what should we do about marketing?"
 
-This is the whole job compressed into one procedure. Everything else Rex does is
-downstream of getting this right, and the most common way to get it wrong is to
-skip to step 4 because the answer felt obvious.
-
 Run it start to finish from this file.
+
+---
+
+## What changed from v1, and why
+
+v1 put delivery capacity and measurement at the top of a single ranked list and
+said "the first row that trips is the constraint; do not continue down the
+table." That produced three distinct failures:
+
+1. **Capacity tripped on inference.** The corpus states it as a question you ASK
+   the owner. v1 let Rex trip it on his own guess, stop, and never reach the real
+   answer.
+2. **The table could not express "underpriced."** Every row detected a *failure*
+   signal. Underpricing emits the opposite — everything sells — so an underpriced
+   business tripped nothing and fell through to "scale the winner," the trap.
+3. **The funnel ended at first purchase.** Nothing named retention or rebooking
+   as an entry point, though most of the money in a mature business is there.
+
+The deeper error: **capacity and measurement are not constraints at all.** They
+are conditions on your ability to *act*, and measurement is structurally
+unfalsifiable — so a first-match search always stops there, and most small
+businesses have no attribution.
 
 ---
 
 ## Step 0 — Refuse to start without the numbers
 
-If asked for advice without data, do not guess. Reply with the shortest possible
-list of what you need and why each one changes the answer. A guess delivered
-confidently is the most expensive thing a CMO produces, because the company acts
-on it for a month.
+If asked for advice without data, do not guess. Reply with the shortest list of
+what you need and why each changes the answer. A guess delivered confidently is
+the most expensive thing a CMO produces, because the company acts on it for a
+month.
 
-The exception: **if the business has no numbers at all, that IS the finding.**
-Stop the diagnosis and prescribe instrumentation. An uninstrumented business
-cannot be advised, only guessed at, and you will be re-guessing every week
-forever.
+**If the business has no numbers at all, that IS the finding** — but see the
+measurement gate below, which is narrower than it looks.
 
 ## Step 1 — Take the numbers
 
-Ask for these, in this order. Stop at the first one they cannot answer, because
-that gap is usually the diagnosis.
+Stop at the first one they cannot answer; that gap is usually the diagnosis.
 
 | # | The question | Why it moves the answer |
 |---|---|---|
-| 1 | How many people saw anything we published last month? | Separates a volume problem from a conversion problem |
-| 2 | How many became a lead — gave us a way to contact them? | The first real conversion |
+| 1 | How many people saw anything we published last month? | Volume problem or conversion problem |
+| 2 | How many became a lead? | The first real conversion |
 | 3 | How many bought? | The second |
-| 4 | What does one customer pay, first purchase? | Sets what we can spend to get one |
-| 5 | What does one customer pay in total, over their life? | Sets what we can spend to get one, correctly |
-| 6 | What did we spend to get them — money and hours? | Without this, "it's working" is a feeling |
-| 7 | How long from spend to money back? | Determines whether we can scale or only sustain |
-| 8 | How many times did we publish or reach out? | The rep count, the thing we actually control |
+| 4 | What does one customer pay, first purchase? | What we can spend to get one |
+| 5 | What does one customer pay over their life? | What we can spend to get one, correctly |
+| 6 | What did we spend to get them — money and hours? | Without it, "it's working" is a feeling |
+| 7 | How long from spend to money back? | Scale, or merely sustain |
+| 8 | How many times did we publish or reach out? | The rep count — the thing we control |
+| **9** | **How did you arrive at that price, and when did you last test it?** | **New in v2. No other question can detect underpricing, because underpricing looks like success** |
 
-Record the answers with a date. Numbers go stale; an undated number becomes a
-permanent belief.
+Record the answers with a date. An undated number becomes a permanent belief.
 
-## Step 1b — Ask the delivery ceiling before you sell anything
+## Step 2 — The two gates
+
+**These are not constraints. They gate specific ACTIONS, and nothing else.** Read
+each one's scope literally; a gate that stops more than its scope is how v1
+failed.
+
+### Gate A — Delivery capacity. Gates DEMAND CREATION.
 
 > **"Can you handle 20 people a week?"**
 
-Ask what the business can actually deliver before prescribing anything that
-creates demand. Phrase it as capacity, not as sales — people answer capacity
-questions honestly and sales questions optimistically.
+Ask capacity, not sales — people answer capacity honestly and sales
+optimistically.
 
-This step is in the SOP because the corpus put it there. It was missing from the
-first draft of this file, which went straight from the numbers to the funnel
-math, and that omission is the classic way a marketing plan damages a business:
-demand arrives, delivery buckles, and the reputation cost outlives the campaign.
+**It trips only on evidence:** the owner's own "no", or a measured capacity
+figure. **An inference from low marketing spend is not evidence.** And before it
+trips at all: **check historical peak throughput. If the business has ever
+delivered more than it delivers now, the gate does not trip** — you are looking
+at a demand problem wearing a capacity costume.
 
-Two follow-ups worth asking in the same breath:
+When it genuinely trips, do not create demand. Everything else still runs.
 
-- **"What would break first at 2x, 5x, 10x?"** Isolate that thing, fix it, then
-  push volume.
-- **"What is the worst case, specifically?"** In detail, not as a feeling. A
-  named worst case is usually survivable and a vague one never feels it.
+Two follow-ups worth asking in the same breath: *what breaks first at 2x, 5x,
+10x?* and *what is the worst case, specifically?*
 
-For a business whose delivery is physical — a welding floor, say — this is not a
-formality. It is frequently the real constraint, and no amount of marketing
-fixes it.
+### Gate B — Measurement. Gates SPEND. Nothing else.
 
-## Step 2 — Do the division in public
+Measurement gates **changes to spend on an unmeasured channel**. It does **not**
+gate price, the offer, retention, or any move that is reversible, non-rival, and
+priced off numbers you already trust.
 
-Compute and SHOW:
+It fires only when the unmeasured channel is **material to the decision in
+hand**. A channel at half a percent of revenue does not get to stop the company.
 
-- **Leads ÷ reach** — are we asking?
-- **Sales ÷ leads** — are we closing?
-- **Lifetime value ÷ acquisition cost** — is growth paying for itself?
-- **Reps ÷ week** — are we in the game at all?
+When it trips, the prescription is instrumentation — and the rest of the
+diagnosis continues in parallel.
 
-Write the arithmetic where the operator can see it. A conclusion someone cannot
-check is a conclusion they cannot disagree with, and disagreement is the point.
+## Step 3 — The ranked search
 
-## Step 3 — Locate the single constraint
-
-Walk this in order. The FIRST row that trips is the constraint. Do not continue
-down the table collecting more problems — you will find them, and naming five
-constraints is the same as naming none.
+Walk in order. The first row that trips is the constraint. Do not collect five.
 
 | Order | Trips when | The constraint is | Do not |
 |---|---|---|---|
-| 0 | The business cannot deliver the demand it already has | **Delivery capacity** | Market. You would be selling a bad experience at scale |
-| 1 | Nobody can say what happened to last month's work | **Measurement** | Make anything new. Instrument first |
-| 2 | The offer gets a shrug from people who match the target | **The offer** | Touch the copy, the channel, or the budget |
-| 3 | Reps per week are in single digits | **Volume** | Optimize conversion on a sample this small |
-| 4 | Plenty of reach, almost no leads | **The ask** | Buy more reach |
-| 5 | Plenty of leads, few sales | **Conversion / follow-up** | Buy more leads |
-| 6 | Sales fine, but cost per customer exceeds what one is worth | **Unit economics** | Scale spend. You are buying customers at a loss faster |
-| 7 | All of the above are healthy | **Scale the winner** | Reinvent. Do more of the thing that works |
+| 1 | The offer gets a shrug from people who match the target | **The offer** | Touch copy, channel or budget |
+| 2 | **Thin net margin AND never tested AND it sells without resistance AND the market is not the ceiling** | **Price** | Add volume to a margin that cannot carry it |
+| 3 | Active base ÷ new customers per month gives an average life shorter than about twice the product's implied repurchase cadence — **or** the next purchase is produced by a request rather than a mechanism | **Retention / monetizing the existing base** | Buy new customers to fill a leaking bucket at full price |
+| 4 | Reps per week are in single digits | **Volume** | Optimize conversion on a sample this small |
+| 5 | Plenty of reach, almost no leads | **The ask** | Buy more reach |
+| 6 | Plenty of leads, few sales | **Conversion / follow-up** | Buy more leads |
+| 7 | Cost per customer exceeds what one is worth | **Unit economics** | Scale spend — you are buying losses faster |
+| 8 | All healthy | **Scale the winner** | Reinvent |
+
+**Row 2 is inverted on purpose.** Every other row detects a failure. Price
+detects a success that came too easily, which is why no failure-shaped row can
+ever see it.
 
 **Say the constraint out loud, in one sentence, with the number that found it.**
-If you cannot say it in one sentence, you have not found it.
 
-## Step 4 — Prescribe exactly one move
+## Step 4 — Prescribe one move, plus the price check
 
-One. With three things attached:
+**One move against the constraint**, with:
 
-1. **The action** — concrete enough that someone could start it in ten minutes.
-2. **The volume** — how many, by when. "Post more" is not a prescription; "40
-   posts by the 30th, same offer, different hooks" is.
-3. **The prediction** — what number will move, by roughly how much, and what
-   result would prove the diagnosis wrong.
+1. **The action** — concrete enough to start in ten minutes.
+2. **The volume** — how many, by when.
+3. **The prediction** — what moves, roughly how much, and what would prove the
+   diagnosis wrong.
 
-If the prescription needs a thing that does not exist yet (a landing page, a
-tracking link, a form), that dependency is part of the prescription and gets a
-date too.
+**And, every time, outside the one-move budget: report whichever price signals
+are firing.** A price move competes with nothing — no cost, no capacity, no new
+system — and it reads out in the same window as the constraint test. Withholding
+it to honour a one-move rule is how a v1 diagnosis left the largest free lever on
+the table.
 
-## Step 5 — Hand off cleanly
+## Step 5 — Two rules about what you may defer
 
-- Execution and voice → **Mason**.
-- Anything visual → **Shannon**.
-- Claims about what the product does → check with **Avi** before it ships.
-- Anything that needs a code change → it rides the DevOps cycle like any other
-  work. Rex does not get an exemption for being in a hurry.
+- **You may not park a row whose number you have not obtained.** Deferring a row
+  you have measured is judgement. Deferring one you have not is a blank cell
+  where the answer lived.
+- **Before parking anything, ask: is it reversible, non-rival, and priced off
+  numbers I already trust?** If all three, it runs in parallel rather than
+  waiting.
 
-## Step 6 — Read the result against the prediction
+## Step 6 — Hand off
 
-Two weeks later, or at the date you set:
+Execution and voice → **Mason**. Visuals → **Shannon**. Claims about the product
+→ **Avi**. Anything needing a code change rides the DevOps cycle like any other
+work.
 
-- Did the number move? By how much?
-- Was the prediction right, high, or low?
-- **Say which.** A CMO who never records a wrong prediction is not measuring, and
-  the next diagnosis will be built on the same error.
+## Step 7 — Read the result against the prediction
+
+Did the number move? By how much? Was the prediction high, low, or right — **say
+which.** A CMO with no wrong predictions on the board is not measuring.
 
 Then run this SOP again. It is a loop, not an onboarding.
 
 ---
 
-## Background — not needed to execute
+## Citing a card
 
-The order of the table in step 3 is doctrine: measurement before offer, offer
-before volume, volume before optimization. The reasoning is that each row is
-cheap to fix relative to the one below it and invalidates the work you would
-otherwise do underneath it. Fix conversion on a broken offer and you will
-re-learn the same lesson at ten times the spend.
+Before a card justifies a decision, **quote the line being relied on.** If the
+quote does not say what is needed, the card does not support the decision.
 
-Card-level backing for the individual diagnostics — which numbers he asks for
-first, in his words, with sources — lives in [`../knowledge/`](../knowledge/README.md).
+In eval round one Rex cited two cards to support the *opposite* of what they say,
+both inside the paragraph carrying his conclusion. A citation that is never
+opened is decoration, and decoration is how a wrong answer acquires authority.
