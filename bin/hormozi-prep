@@ -15,6 +15,7 @@
 
 require "optparse"
 require_relative "../lib/hormozi/vtt_cleaner"
+require_relative "../lib/hormozi/transcript_store"
 require_relative "../lib/hormozi/triage"
 
 DEFAULT_ROOT = File.expand_path("~/projects/.corpus/hormozi")
@@ -67,15 +68,17 @@ cleaned = 0
 skipped = 0
 
 Dir.glob(File.join(captions_dir, "*.vtt")).sort.each do |vtt_path|
-  id = File.basename(vtt_path).sub(/\.[a-z-]+\.vtt\z/, "").sub(/\.vtt\z/, "")
+  id = Hormozi::VttCleaner.video_id(vtt_path)
   transcript_path = File.join(transcripts_dir, "#{id}.txt")
 
-  if File.exist?(transcript_path) && !options[:force]
+  # Reuse turns on COMPLETENESS, not existence, and the write below is atomic —
+  # together they are what keeps an interrupted run from stranding a truncated
+  # transcript that every later run reuses. See lib/hormozi/transcript_store.rb.
+  if Hormozi::TranscriptStore.reusable?(transcript_path) && !options[:force]
     text = File.read(transcript_path)
     skipped += 1
   else
-    text = Hormozi::VttCleaner.clean(File.read(vtt_path))
-    File.write(transcript_path, text)
+    text = Hormozi::TranscriptStore.write(transcript_path, Hormozi::VttCleaner.clean(File.read(vtt_path)))
     cleaned += 1
   end
 

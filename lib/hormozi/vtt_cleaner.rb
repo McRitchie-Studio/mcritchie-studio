@@ -16,6 +16,15 @@ module Hormozi
     CUE_SEQUENCE = /\A\d+\z/
     INLINE_TAG = /<[^>]*>/
 
+    # yt-dlp writes the caption as `<video-id>.<language-tag>.vtt`, and the tag is
+    # whatever --sub-langs asked for. A REGION-CODED tag is capitalized or carries
+    # digits (`.en-US.vtt`, `.pt-BR.vtt`, `.es-419.vtt`), so a lowercase-only class
+    # stripped only `.vtt` and left the tag ON the id: the metadata lookup missed,
+    # the title fell back to the filename, and a real episode tiered at 3 at exit
+    # 0. The class is anchored between a dot and `.vtt`, and YouTube ids carry no
+    # dots, so widening it cannot swallow part of an id.
+    LANGUAGE_TAG = /\.[A-Za-z0-9-]+\.vtt\z/
+
     # The longest overlap worth hunting for. Auto-caption cues carry a handful
     # of words; scanning further costs time and invites false matches.
     MAX_OVERLAP_WORDS = 24
@@ -29,6 +38,12 @@ module Hormozi
       "&apos;" => "'",
       "&nbsp;" => " "
     }.freeze
+
+    # The video id a caption file belongs to. A file with no language tag at all
+    # (`<video-id>.vtt`) keeps its bare id.
+    def self.video_id(path)
+      File.basename(path).sub(LANGUAGE_TAG, "").sub(/\.vtt\z/, "")
+    end
 
     # Returns the VTT's spoken words as one plain string.
     def self.clean(vtt)

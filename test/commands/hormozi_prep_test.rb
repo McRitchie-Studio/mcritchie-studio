@@ -20,6 +20,20 @@ require "tmpdir"
 # 2. RE-CLEANING. The wave reruns after a partial caption fetch. A prep that
 #    re-cleans everything each time turns a 30-second resume into a full pass,
 #    so an existing transcript must be reused unless --force says otherwise.
+#
+# TWO MORE, FOUND IN THE PR 1467 REVIEW AND PINNED BELOW.
+#
+# 3. THE TRUNCATED TRANSCRIPT. Reuse asked File.exist? — existence, not
+#    completeness — and the write it paired that with was a plain File.write.
+#    A prep interrupted mid-write during a 516-file clean therefore left a
+#    zero-byte .txt that satisfied every later run FOREVER: reused at exit 0,
+#    counted in the cheerful summary, and read as an empty transcript by the
+#    extraction wave for a tier-1 episode. Silent and permanent.
+#
+# 4. THE REGION-CODED CAPTION. The video id was derived with a lowercase-only
+#    language-tag class, so a `<id>.en-US.vtt` kept its tag: the metadata lookup
+#    missed, the title fell back to the filename, and a real episode tiered at 3
+#    at exit 0. Reachable the moment the fetch widens its --sub-langs.
 class HormoziPrepTest < Minitest::Test
   SCRIPT = File.expand_path("../../bin/hormozi-prep", __dir__)
 
@@ -83,6 +97,74 @@ class HormoziPrepTest < Minitest::Test
       refute status.success?
       assert_match(/unexpected argument/, out)
       refute File.exist?(File.join(root, "extract", "manifest.tsv")), "it must refuse BEFORE writing"
+    end
+  end
+
+  # A zero-byte transcript is what an interrupted write leaves behind, and the
+  # only thing separating it from a finished one is its size. Reused, it reports a
+  # tier-1 episode with 0 words at exit 0 — the extraction wave then reads
+  # nothing and nobody is told.
+  def test_re_cleans_a_truncated_transcript_instead_of_reusing_it
+    Dir.mktmpdir do |root|
+      Dir.mkdir(File.join(root, "captions"))
+      Dir.mkdir(File.join(root, "meta"))
+      Dir.mkdir(File.join(root, "transcripts"))
+      File.write(File.join(root, "captions", "P14HA83uNJE.en.vtt"), VTT)
+      File.write(
+        File.join(root, "meta", "channel_videos.tsv"),
+        "P14HA83uNJE\\t531\\tHow To Write Ads That Get Leads\n"
+      )
+      transcript_path = File.join(root, "transcripts", "P14HA83uNJE.txt")
+      File.write(transcript_path, "")
+
+      out, status = Open3.capture2e(RbConfig.ruby, SCRIPT, "--root", root)
+
+      assert status.success?, "prep failed: #{out}"
+      assert_match(/cleaned 1, reused 0/, out, "THE BUG: an empty transcript satisfied the existence check")
+      assert_equal "your offer is the business and the ads are the leads", File.read(transcript_path)
+
+      _id, _tier, _score, _duration, words, = File.readlines(File.join(root, "extract", "manifest.tsv"), chomp: true)[1].split("\t")
+      assert_equal "11", words, "the manifest reported 0 words for a tier-1 episode and exited 0"
+    end
+  end
+
+  # Interruption is the trigger, so the write must land by rename: either the old
+  # transcript or the whole new one is on disk, never a prefix of it, and no
+  # staging file is left where a later run could mistake it for output.
+  def test_a_completed_write_leaves_no_staging_file_behind
+    Dir.mktmpdir do |root|
+      Dir.mkdir(File.join(root, "captions"))
+      File.write(File.join(root, "captions", "P14HA83uNJE.en.vtt"), VTT)
+
+      out, status = Open3.capture2e(RbConfig.ruby, SCRIPT, "--root", root)
+
+      assert status.success?, "prep failed: #{out}"
+      assert_equal [ "P14HA83uNJE.txt" ], Dir.children(File.join(root, "transcripts")).sort
+    end
+  end
+
+  # yt-dlp names the file after whatever --sub-langs asked for, and a region-coded
+  # tag is capitalized. Stripping only lowercase left the tag ON the id.
+  def test_derives_the_video_id_from_a_region_coded_caption_name
+    Dir.mktmpdir do |root|
+      Dir.mkdir(File.join(root, "captions"))
+      Dir.mkdir(File.join(root, "meta"))
+      File.write(File.join(root, "captions", "P14HA83uNJE.en-US.vtt"), VTT)
+      File.write(
+        File.join(root, "meta", "channel_videos.tsv"),
+        "P14HA83uNJE\\t531\\tHow To Write Ads That Get Leads\n"
+      )
+
+      out, status = Open3.capture2e(RbConfig.ruby, SCRIPT, "--root", root)
+
+      assert status.success?, "prep failed: #{out}"
+      assert File.exist?(File.join(root, "transcripts", "P14HA83uNJE.txt")), "THE BUG: the transcript was named P14HA83uNJE.en-US.txt"
+
+      id, tier, _score, duration, _words, title = File.readlines(File.join(root, "extract", "manifest.tsv"), chomp: true)[1].split("\t")
+      assert_equal "P14HA83uNJE", id
+      assert_equal "531", duration, "a mis-derived id misses the metadata row entirely"
+      assert_equal "How To Write Ads That Get Leads", title
+      assert_equal "1", tier, "and a missed title tiers a real episode at 3"
     end
   end
 

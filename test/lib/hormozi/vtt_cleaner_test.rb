@@ -79,4 +79,20 @@ class VttCleanerTest < Minitest::Test
     assert_equal "", Hormozi::VttCleaner.clean("")
     assert_equal "", Hormozi::VttCleaner.clean(nil)
   end
+
+  # THE DEFECT: the language-tag class was lowercase-only, so a region-coded tag
+  # kept its tag on the id. `P14HA83uNJE.en-US` then missed its metadata row, fell
+  # back to the filename as its title, and tiered a real episode at 3 at exit 0 —
+  # silent, and reachable the moment the fetch widens its --sub-langs.
+  def test_derives_the_video_id_from_every_language_tag_yt_dlp_writes
+    assert_equal "P14HA83uNJE", Hormozi::VttCleaner.video_id("P14HA83uNJE.en.vtt")
+    assert_equal "P14HA83uNJE", Hormozi::VttCleaner.video_id("P14HA83uNJE.en-US.vtt")
+    assert_equal "P14HA83uNJE", Hormozi::VttCleaner.video_id("P14HA83uNJE.pt-BR.vtt")
+    assert_equal "P14HA83uNJE", Hormozi::VttCleaner.video_id("P14HA83uNJE.es-419.vtt")
+    assert_equal "P14HA83uNJE", Hormozi::VttCleaner.video_id("P14HA83uNJE.vtt")
+  end
+
+  def test_derives_the_video_id_from_a_full_path
+    assert_equal "P14HA83uNJE", Hormozi::VttCleaner.video_id("/corpus/hormozi/captions/P14HA83uNJE.en-US.vtt")
+  end
 end
