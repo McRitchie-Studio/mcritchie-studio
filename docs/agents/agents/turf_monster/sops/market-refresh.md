@@ -13,14 +13,25 @@ after:**
 
 ```bash
 bin/rails -T market            # market:pull AND market:refresh listed?
-curl -sS -o /dev/null -w '%{http_code}\n' <base-url>/benchmarks   # 200?
+curl -sS -o /dev/null -w '%{http_code}\n' <base-url>/benchmarks   # see the table
 ```
 
 Locally that is your desk; on production, `heroku run --no-tty -a
 turf-monster-mainnet -- bin/rails -T market` and `https://turfmonster.media`.
-If either answer is missing, the release has not landed there — **stop.** Nothing
-in this SOP has a manual fallback, and a missing rake task aborts loudly while a
-missing page just redirects, which is the quieter half of the same answer.
+(The `--` is required: without it `-T` is eaten as a `heroku` flag.)
+
+**No `-L` on that curl, deliberately.** Following the redirect lands on the
+homepage and prints `200`, which masks the very failure the check exists to find.
+What each answer means:
+
+| Code | Means | Do |
+|---|---|---|
+| `404` | the route is not drawn — **the release has not landed here** | Stop. Nothing in this SOP has a manual fallback |
+| `302` | deployed, but no slate resolved — a DATA problem, not a release one | Name the span explicitly: `/benchmarks/<span-slug>` |
+| `200` | deployed and rendering | Carry on |
+
+`bin/rails -T market` answers the same question from the other side, and louder:
+a missing task aborts the run outright.
 
 Everything else here — the split, the decisions, the refusals, the escalations —
 is settled and waits on nothing.
@@ -42,7 +53,7 @@ domain failure too — a wrong benchmark does not look like an outage, it looks
 like a contest that priced a team wrong and paid on it.
 
 **It holds no release lane.** It writes `slate_matchups`, `nfl_team_total_projections`
-and one `market_snapshots` row. It never touches `release` or `main`, never
+and a `market_snapshots` row **per week** (the WEEKS=4,5,6 example writes three). It never touches `release` or `main`, never
 promotes, and never deploys.
 
 ## The split — read this before running anything
@@ -82,9 +93,12 @@ and on what a refusal means.
 bin/rails market:refresh WEEKS=4,5,6 SPAN=nfl-2026-weeks-4-6
 
 # production (read-only in this form — it writes nothing without APPLY=1)
-heroku run --no-tty -a turf-monster-mainnet -- \
+heroku run --no-tty --exit-code -a turf-monster-mainnet -- \
   bin/rails market:refresh WEEKS=4,5,6 SPAN=nfl-2026-weeks-4-6
 ```
+
+`--exit-code` is not optional even on a dry run: without it a REFUSED run comes
+back exit 0, so a script — or a tired reader — takes a refusal for a pass.
 
 It prints four blocks, and every one of them is worth reading:
 
@@ -116,11 +130,15 @@ paid pick was bought at the price it was shown. Repricing it is
 Then carry his answer as the flag, which names the slate deliberately:
 
 ```bash
+# local desk
 APPLY=1 REPRICE_PAID_PICKS=nfl-2026-weeks-4-6 \
   bin/rails market:refresh WEEKS=4,5,6 SPAN=nfl-2026-weeks-4-6
-```
 
-(Against production both flags ride `-e`, not a shell prefix — step 3.)
+# production — both flags ride -e, semicolon-separated, never a shell prefix
+heroku run --no-tty --exit-code -a turf-monster-mainnet \
+  -e "APPLY=1;REPRICE_PAID_PICKS=nfl-2026-weeks-4-6" \
+  -- bin/rails market:refresh WEEKS=4,5,6 SPAN=nfl-2026-weeks-4-6
+```
 
 The flag unlocks **only** the slate it names — an override left in your shell
 from last week cannot reprice this week's contest.
@@ -131,30 +149,48 @@ from last week cannot reprice this week's contest.
 # local desk
 APPLY=1 bin/rails market:refresh WEEKS=4,5,6 SPAN=nfl-2026-weeks-4-6
 
-# production — the flags must reach the DYNO, via -e
+# production — the flag must reach the DYNO, via -e
 heroku run --no-tty --exit-code -a turf-monster-mainnet \
-  -e "APPLY=1;REPRICE_PAID_PICKS=nfl-2026-weeks-4-6" \
+  -e "APPLY=1" \
   -- bin/rails market:refresh WEEKS=4,5,6 SPAN=nfl-2026-weeks-4-6
 ```
+
+**This is the whole command for the ordinary case.** It carries no paid-pick
+override, and it must not: that flag disarms the one guard this SOP calls
+Mr. McRitchie's decision. Add it only through step 2, and only with his answer in
+hand.
 
 **`-e` is not decoration, and a shell-style prefix is the trap.** `heroku run
 APPLY=1 bin/rails …` sets the variable in YOUR shell, not the dyno's: the task
 then dry-runs and prints output all but identical to an apply, so the operator
 reads success and production is untouched. `-e` passes them through (semicolons
 separate; measured against `turf-monster-mainnet` 2026-09-19 — the dyno read
-`APPLY="1"`). Confirm from the run's own output before believing it: an APPLY run
-says `APPLY` in its header and ends `APPLIED.`, never `Dry run only`.
+`APPLY="1"`). Confirm from the run's own output before believing it — **on the positive test
+alone: it ends `APPLIED.`** Anything else wrote no price, `REFUSED:` included. Do
+not read "it said APPLY and not `Dry run only`" as success: a refused apply says
+both of those and still ends `REFUSED:`.
 
 The refresh and the reprice commit together or not at all, so a refusal at the
-last step leaves the expected scores as they were. There is no half-applied
-state to clean up.
+last step leaves every price and every expected score exactly as it found them.
+
+**The INGEST is already committed by then**, and that is the one piece this
+atomicity does not cover: step 2 writes the week's projections and its snapshot
+rows before the refresh transaction opens. A later refusal leaves those in place.
+Nothing is mispriced by it — prices live on `slate_matchups`, which the rollback
+restores — but the market rows do now describe a pull whose reprice never landed.
+Re-running after clearing the refusal reconciles them.
 
 ### 4. Verify, in this order
 
 1. **The page** — `/benchmarks/<span-slug>` (public). It reads the STORED
    values, so it shows exactly what the board will pay: each team's points per
-   game, its rank, its multiplier, and the bye line where one applies. The
-   snapshot line under the heading must name today's pull.
+   game, its rank, its multiplier, and the bye line where one applies. Check the
+   PRICES against the reprice block you just read.
+
+   **Do not lead with the snapshot line.** "Lines pulled today" resolves through
+   the ingest rows, which commit before the refresh transaction — so it reads
+   green on a REFUSED apply too, and it is the one signal on this page that
+   cannot fail. It confirms the pull; the prices confirm the apply.
 2. **The bye teams** — on a span with byes, every bye team is badged and sits on
    the x1.5-x3.0 line. **Read the BADGE, not the number.** The bye line's lower
    half overlaps the full-span line — a strong bye team at rank 2 prices x1.5,
@@ -177,6 +213,12 @@ APPLY=1 bin/rails market:pull WEEKS=4,5,6     # from a worktree
 git diff db/seeds/data/nfl/2026_expected_team_totals.csv
 ```
 
+**It is a second, independent fetch, not a transcript of the production run.**
+`market:pull` always re-reads ESPN live, so if a line moved in between, the
+committed CSV records the LATER number. That is fine for a seed source — it is
+still the market — but never cite the file as evidence of what production
+applied. The `MarketSnapshot` rows are that record.
+
 That diff is the week's market movement, and it belongs in a normal task and PR
 like any other change. Do not skip it: the next environment built from seeds
 would otherwise price off stale lines.
@@ -186,7 +228,7 @@ would otherwise price off stale lines.
 | Refusal | What it means | Remedy |
 |---|---|---|
 | `carry no readable DraftKings line` | ESPN served a game with no DK odds, or a team abbreviation that maps to no `Team` | Re-run in a few minutes; a new abbreviation needs a `Nfl::Espn::TeamMap` alias |
-| `the schedule moved` | The week's matchups no longer match the dataset — a flexed game | That is a slate REBUILD, not a refresh. Decide what happens to the slate first; `ALLOW_SCHEDULE_CHANGE=1` accepts the dataset half deliberately |
+| `the schedule moved` | The week's matchups no longer match the dataset — a flexed game | That is a slate REBUILD, not a refresh. Decide what happens to the slate first; `ALLOW_SCHEDULE_CHANGE=1` accepts the dataset half deliberately (on production it rides `-e` with the others — step 3) |
 | `paid pick(s)` | The slate backs money | Step 2. Never pass the override on your own judgment |
 | `kicked off` | The span's first game has started | **Nothing.** A started span is never repriced — the race is being run |
 | `no longer in the weekly slates` | A span row's game is absent from its source week | Same as schedule drift: a rebuild question |
