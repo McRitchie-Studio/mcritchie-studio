@@ -1,0 +1,163 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# The content pipeline's AGENT CLI — how a soul works the board.
+#
+# The split this exists to serve: anything with a right answer stays in code
+# (the game finalises, the recap is created, Higgsfield renders, ffmpeg
+# assembles); anything with a JUDGMENT goes to a soul, which writes it with its
+# OWN inference during an SOP. So production needs no model key, and the
+# prompts live in SOP prose an agent can improve rather than in frozen string
+# literals inside .rb files.
+#
+# The board is already the queue: a Content at stage=idea IS a pending work
+# item. This only adds find / claim / write / release.
+#
+# Usage:
+#   bin/content list [--stage idea] [--workflow game_recap] [--claimable]
+#   bin/content show <slug>
+#   bin/content claim [--agent turf-monster] [--stage idea] [--workflow game_recap]
+#   bin/content write <slug> [--script-file F | --script - ] [--caption "..."]
+#                            [--scenes-json '[...]'] [--stage script]
+#   bin/content release <slug>
+#
+# LONG TEXT GOES OVER STDIN OR A FILE, never a shell argument. A generated
+# script carries newlines, quotes and `$`, and a shell argument eats all three —
+# `--script -` reads stdin, `--script-file F` reads a file.
+#
+# Auth: AGENT_API_SECRET (ENV, else repo .env, else 1Password), exactly as
+# bin/task resolves it. Base URL via CONTENT_API_BASE (default mcritchie.studio).
+
+require "json"
+require "optparse"
+require "securerandom"
+require "fileutils"
+require_relative "lib/task_board"
+
+BASE_URL = ENV.fetch("CONTENT_API_BASE", ENV.fetch("TASK_API_BASE", "https://mcritchie.studio"))
+ROOT = File.expand_path("..", __dir__)
+
+def die!(msg)
+  warn "content: #{msg}"
+  exit 1
+end
+
+# ONE session id per desk, not per invocation — a claim and its release are
+# different processes, and a fresh uuid each time would make every release look
+# like a stranger's. CONTENT_SESSION overrides for an SOP that wants its own.
+def session
+  @session ||= ENV["CONTENT_SESSION"].to_s.strip.then do |given|
+    next given unless given.empty?
+
+    path = File.join(ROOT, "tmp", "content-session")
+    File.exist?(path) ? File.read(path).strip : begin
+      FileUtils.mkdir_p(File.dirname(path))
+      id = "content-#{SecureRandom.hex(8)}"
+      File.write(path, id)
+      id
+    end
+  end
+end
+
+def token
+  @token ||= api(:post, "/api/v1/auth", { secret: TaskBoard.agent_secret(File.join(ROOT, ".env")) }, auth: false)
+             .fetch("token")
+end
+
+def api(method, path, body = nil, auth: true)
+  res = TaskBoard.request(method, path, base_url: BASE_URL, token: (auth ? token : nil), body: body)
+  parsed = begin
+    JSON.parse(res.body.to_s)
+  rescue JSON::ParserError
+    {}
+  end
+
+  unless res.is_a?(Net::HTTPSuccess)
+    die!("#{method.to_s.upcase} #{path} → #{res.code} #{parsed['error'] || res.body.to_s[0, 200]}")
+  end
+
+  parsed["data"]
+end
+
+# `-` means stdin; otherwise a path. Returns nil when neither was given.
+def read_text(inline, file)
+  return File.read(file) if file
+  return $stdin.read if inline == "-"
+
+  inline
+end
+
+def print_content(c, full: false)
+  puts "#{c['slug']}  [#{c['stage']}]  #{c['title']}"
+  puts "  workflow: #{c['workflow']}#{c['claimed_by'] ? "  held by: #{c['claimed_by']}" : ''}"
+  return unless full
+
+  puts "  facts: #{c['game_facts'].to_json}" if c["game_facts"].is_a?(Hash) && c["game_facts"].any?
+  puts "  script: #{c['script_text'].to_s[0, 200]}" unless c["script_text"].to_s.empty?
+  puts "  url: #{c['url']}" if c["url"]
+end
+
+command = ARGV.shift
+opts = {}
+OptionParser.new do |o|
+  o.on("--stage S")       { |v| opts[:stage] = v }
+  o.on("--workflow W")    { |v| opts[:workflow] = v }
+  o.on("--agent A")       { |v| opts[:agent] = v }
+  o.on("--claimable")     { opts[:claimable] = true }
+  o.on("--script S")      { |v| opts[:script] = v }
+  o.on("--script-file F") { |v| opts[:script_file] = v }
+  o.on("--caption C")     { |v| opts[:caption] = v }
+  o.on("--caption-file F"){ |v| opts[:caption_file] = v }
+  o.on("--scenes-json J") { |v| opts[:scenes_json] = v }
+  o.on("--scenes-file F") { |v| opts[:scenes_file] = v }
+  o.on("--title T")       { |v| opts[:title] = v }
+  o.on("--session S")     { |v| @session = v }
+end.parse!(ARGV)
+
+case command
+when "list"
+  query = { stage: opts[:stage], workflow: opts[:workflow], claimable: opts[:claimable] }.compact
+  qs = query.map { |k, v| "#{k}=#{v}" }.join("&")
+  rows = api(:get, "/api/v1/contents#{qs.empty? ? '' : "?#{qs}"}")
+  puts "no content" if rows.empty?
+  rows.each { |c| print_content(c) }
+
+when "show"
+  slug = ARGV.shift or die!("show needs a slug")
+  print_content(api(:get, "/api/v1/contents/#{slug}"), full: true)
+
+when "claim"
+  body = { session: session, agent: opts[:agent], stage: opts[:stage], workflow: opts[:workflow] }.compact
+  data = api(:post, "/api/v1/contents/claim_next", body)
+  if data["claimed"].nil?
+    # An empty queue is a NORMAL outcome. Exit 0 with nothing on stdout so a
+    # caller doing `slug=$(bin/content claim)` simply idles instead of retrying.
+    warn "content: nothing to claim (#{data['reason']})"
+    exit 0
+  end
+  print_content(data["claimed"], full: true)
+  warn "content: claimed as session #{session}"
+
+when "write"
+  slug = ARGV.shift or die!("write needs a slug")
+  payload = {}
+  payload[:script_text] = read_text(opts[:script], opts[:script_file]) if opts[:script] || opts[:script_file]
+  payload[:captions]    = read_text(opts[:caption], opts[:caption_file]) if opts[:caption] || opts[:caption_file]
+  payload[:title]       = opts[:title] if opts[:title]
+  payload[:stage]       = opts[:stage] if opts[:stage]
+  if opts[:scenes_json] || opts[:scenes_file]
+    raw = opts[:scenes_file] ? File.read(opts[:scenes_file]) : opts[:scenes_json]
+    payload[:scenes] = JSON.parse(raw)
+  end
+  die!("write needs something to write") if payload.empty?
+
+  print_content(api(:patch, "/api/v1/contents/#{slug}", { content: payload }), full: true)
+
+when "release"
+  slug = ARGV.shift or die!("release needs a slug")
+  print_content(api(:post, "/api/v1/contents/#{slug}/release", { session: session }))
+
+else
+  warn File.read(__FILE__).lines[2..40].map { |l| l.sub(/\A# ?/, "") }.join
+  exit(command.nil? ? 1 : 1)
+end
