@@ -23,7 +23,8 @@ module Workspace
     # Metadata plus the decoded body, without the whole payload tree.
     METADATA_HEADERS = %w[From To Cc Subject Date Message-ID In-Reply-To References].freeze
 
-    def initialize(credentials: Credentials, sleeper: method(:sleep), service: nil)
+    def initialize(subject: nil, credentials: Credentials, sleeper: method(:sleep), service: nil)
+      @subject = subject
       @credentials = credentials
       @sleeper = sleeper
       @service = service
@@ -34,7 +35,7 @@ module Workspace
         require "google/apis/gmail_v1"
 
         ::Google::Apis::GmailV1::GmailService.new.tap do |svc|
-          svc.authorization = @credentials.authorizer
+          svc.authorization = @credentials.authorizer_for(@subject)
         end
       end
     end

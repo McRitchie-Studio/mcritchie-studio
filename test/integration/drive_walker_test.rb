@@ -46,9 +46,11 @@ class DriveWalkerTest < ActionDispatch::IntegrationTest
   def folder(id, name) = Drive::File.new(id: id, name: name, mime_type: Workspace::DriveWalker::FOLDER_MIME)
 
   setup do
+    @account = WorkspaceAccount.create!(domain: "synthetic.test", entity: "synthetic-entity")
+    @account.mark_verified!
     @source = KnowledgeSource.create!(kind: "google_drive", name: "Synthetic deal folder",
                                       external_root_id: "root", entity: "synthetic-entity",
-                                      access: { "samson" => "full" })
+                                      access: { "samson" => "full" }, workspace_account: @account)
   end
 
   def walk(tree, **opts)
@@ -220,5 +222,39 @@ class DriveWalkerTest < ActionDispatch::IntegrationTest
   test "a non-Drive source is a programming error, and raises" do
     egnyte = KnowledgeSource.create!(kind: "egnyte", name: "e", external_root_id: "e-root")
     assert_raises(ArgumentError) { Workspace::DriveWalker.new(client: TreeClient.new({})).call(egnyte) }
+  end
+
+  test "a source with NO workspace refuses to walk — it never falls back to a global identity" do
+    # Falling back is how a walk ends up reading the wrong company's Drive.
+    orphan = KnowledgeSource.create!(kind: "google_drive", name: "Unattached",
+                                     external_root_id: "orphan-root")
+    client = TreeClient.new(base_tree)
+
+    error = assert_raises(ArgumentError) { Workspace::DriveWalker.new(client: client).call(orphan) }
+    assert_match(/no workspace_account/, error.message)
+    assert_empty client.queries, "nothing may be read before we know whose Drive it is"
+  end
+
+  test "a source whose workspace is not yet proven refuses to walk" do
+    @account.update!(status: "pending")
+    client = TreeClient.new(base_tree)
+
+    error = assert_raises(ArgumentError) { Workspace::DriveWalker.new(client: client).call(@source) }
+    assert_match(/pending, not active/, error.message)
+    assert_empty client.queries
+  end
+
+  test "the walk runs as its own workspace's subject" do
+    # The subject is resolved from the source's workspace, never from a global
+    # default — which is what makes two clients safe to index side by side.
+    seen = []
+    walker = Workspace::DriveWalker.new(client: TreeClient.new(base_tree))
+    walker.define_singleton_method(:client) do
+      seen << instance_variable_get(:@subject)
+      instance_variable_get(:@client)
+    end
+    walker.call(@source)
+
+    assert_equal [ "team@synthetic.test" ], seen.uniq
   end
 end
