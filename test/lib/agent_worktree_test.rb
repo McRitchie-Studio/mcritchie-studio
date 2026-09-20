@@ -167,18 +167,19 @@ class AgentWorktreeTest < Minitest::Test
   # fails open. A BOUND-but-unreadable record is WITHHELD on every lane — there is no
   # "advisory" lane, because every caller's answer is consumed to destroy.
 
+  # WHY EVERY FIXTURE RECORD BELOW NAMES A `stage`. The board-stage channel (added
+  # 2026-09-20) withholds a desk whose bound task has not reached `shipped`/`archived`, and
+  # it treats a record carrying NO stage as an unanswered read rather than a clean one — a
+  # readable task record always has a stage, so its absence means the payload is not one.
+  # That is the right posture on a destroy path, and it means a fixture that omits the
+  # stage is now an INCOMPLETE record, not a minimal one: it would be withheld as
+  # `:stageless` before the channel under test was ever consulted. `shipped` is the stage a
+  # finished, reclaimable desk actually carries, so stamping it here makes these fixtures
+  # more faithful to a real board record, not less.
+
   # A BOUND desk (it has a task slug) — an UNBOUND one short-circuits to "free" before the
   # claim is even consulted, which is its own case below.
-  # WHY EVERY FIXTURE RECORD BELOW NAMES A `stage`. The board-stage channel (added
-# 2026-09-20) withholds a desk whose bound task has not reached `shipped`/`archived`, and
-# it treats a record carrying NO stage as an unanswered read rather than a clean one — a
-# readable task record always has a stage, so its absence means the payload is not one.
-# That is the right posture on a destroy path, and it means a fixture that omits the
-# stage is now an INCOMPLETE record, not a minimal one: it would be withheld as
-# `:stageless` before the channel under test was ever consulted. `shipped` is the stage a
-# finished, reclaimable desk actually carries, so stamping it here makes these fixtures
-# more faithful to a real board record, not less.
-def live_claimed(devops_ruby)
+  def live_claimed(devops_ruby)
     run_in_script(<<~RUBY)
       def task_record_for_pr(_r, fresh: false); { "stage" => "shipped", "metadata" => { "devops" => #{devops_ruby} } }; end
       print !claim_hold({ env: { "TASK_RECORD_SLUG" => "t" }, task: "t" }).nil?
