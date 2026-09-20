@@ -17,9 +17,19 @@ attribution and routes to its act SOPs:
 - [`entry-forfeit`](sops/entry-forfeit.md) - withdraw one entrant from one
   contest at their own request, forfeiting the entry fee: one status flip before
   grading, plus the on-chain seat gap it leaves behind.
+- [`market-refresh`](sops/market-refresh.md) - rebuild a span slate's Turf Score
+  benchmarks from fresh DraftKings lines: pull, ingest, re-read the span's
+  expected points, reprice, and check the result on /benchmarks.
 
 Use this file when Mr. McRitchie invokes `Turf Monster Heartbeat`. When he
 invokes a single act directly, read that act's SOP file.
+
+`market-refresh` is not a chip either, for a fourth reason: it is CALENDAR-shaped
+but not calendar-bound. It wants running after a week concludes and before the
+next span locks — weekly through the season, at a moment Mr. McRitchie picks
+around the schedule and the contests actually open. Nothing here can compute that
+moment, so nothing here should schedule it. It stays a registered invocation by
+name, owned here and in the prose guard's `ACT_OWNER`.
 
 `entry-forfeit` is deliberately NOT a chip, and for a third reason again: it is
 an on-demand incident SOP. Nothing schedules it and nothing should — it runs when
