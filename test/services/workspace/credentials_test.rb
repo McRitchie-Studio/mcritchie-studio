@@ -279,4 +279,44 @@ class WorkspaceCredentialsTest < ActiveSupport::TestCase
     refute normal.enable_self_signed_jwt?, "delegation would silently stop working"
     assert foreign.enable_self_signed_jwt?, "if this flips, the probe guard is unreachable"
   end
+
+  # --- .redact: what an exception may say out loud in this lane --------------
+  #
+  # A SYNTHETIC secret shaped like the thing that would really be quoted back.
+  # Never a real key, and no assertion below ever prints it: minitest appends
+  # its default message to a custom one, so `assert_match` / `refute_includes`
+  # dump their haystack either way. Only plain `assert`/`refute` suppress it.
+  SECRET = "SYNTHETICPRIVATEKEYBODY0123456789".freeze
+
+  test "an exception that quotes its input surrenders only its class" do
+    quoting = JSON::ParserError.new(%(unexpected token at '{"private_key":"#{SECRET}"}'))
+
+    slug = Workspace::Credentials.redact(quoting)
+
+    refute slug.include?(SECRET),
+           "redact returned #{slug.length} chars carrying the #{SECRET.length}-byte body it was quoting"
+    assert_equal "JSON::ParserError", slug
+  end
+
+  test "an OAuth refusal surrenders the slug and nothing beside it" do
+    refusing = RuntimeError.new(%({"error": "unauthorized_client", "error_description": "#{SECRET}"}))
+
+    slug = Workspace::Credentials.redact(refusing)
+
+    assert_equal "unauthorized_client", slug,
+                 "the slug is the part an operator acts on; losing it costs the diagnosis"
+    refute slug.include?(SECRET), "redact returned #{slug.length} chars including the description body"
+  end
+
+  # The control. Every assertion above is about what redact STRIPS, and a method
+  # that returned "" would pass all of them. This is the one that says it still
+  # answers.
+  test "redact always returns something an operator can read" do
+    [ RuntimeError.new("network gone"), Workspace::Credentials::Malformed.new("bad") ].each do |error|
+      slug = Workspace::Credentials.redact(error)
+
+      assert slug.present?, "redact returned an empty string for #{error.class}"
+      assert_equal error.class.to_s, slug
+    end
+  end
 end

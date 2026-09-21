@@ -93,7 +93,13 @@ namespace :workspace do
         # One row's failure must not abandon the rest of the sweep half-checked,
         # which is what an exception escaping this block used to do — including
         # after that row had already been flipped active.
-        warn "#{account.domain}: CHECK FAILED (#{e.class}: #{e.message})"
+        # REDACTED, and not because a leak is known on this path — because at a
+        # bare `rescue StandardError` you cannot know. The credential itself is
+        # parsed at the top of this task, OUTSIDE this block, and
+        # Workspace::Credentials.parse redacts its own JSON::ParserError, so the
+        # obvious leak cannot reach here. That is an argument about today's call
+        # graph, not about the rescue, and the rescue is what has to hold.
+        warn "#{account.domain}: CHECK FAILED (#{e.class}: #{Workspace::Credentials.redact(e)})"
         next account
       end
     }.compact

@@ -171,8 +171,24 @@ module Workspace
 
           [ true, nil ]
         rescue StandardError => e
-          [ false, e.message.to_s[/"error":\s*"([^"]+)"/, 1] || e.class.to_s ]
+          [ false, redact(e) ]
         end
+      end
+
+      # WHAT AN EXCEPTION MAY SAY OUT LOUD in this lane, in one place.
+      #
+      # At a bare `rescue StandardError` you cannot know whether the exception
+      # quotes its input — `JSON::ParserError` echoes it to end of stream, and a
+      # transport error can carry a request body. So nothing here passes
+      # `e.message` through: an OAuth error surrenders its `"error"` slug, which
+      # is the only part an operator acts on, and everything else degrades to the
+      # class name. See docs/agents/modules/backend-discipline.md, "Never
+      # interpolate an exception message that quotes its input".
+      #
+      # `probe` has redacted this way since it was written. This is the same rule
+      # given a name so the OTHER callers can hold it too.
+      def redact(error)
+        error.message.to_s[/"error":\s*"([^"]+)"/, 1] || error.class.to_s
       end
 
       def reset!
