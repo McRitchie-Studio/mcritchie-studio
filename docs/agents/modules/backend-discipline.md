@@ -14,6 +14,66 @@ rescue_and_log(target:, parent:)
 
 Do not swallow provider failures silently. If a user-facing flow fails, make the failure visible to support and future agents.
 
+### Never interpolate an exception message that quotes its input
+
+Some exceptions carry the thing that failed to parse. `JSON::ParserError` is the
+one that keeps biting: its message echoes the input **from the failure point to
+the end of the stream**. So a service-account key pasted with literal newlines
+inside `private_key` does not produce "bad JSON at line 4" — it produces a
+message holding the whole PEM body. Measured on json 2.21.1: a 1,889-character
+message carrying all 25 lines of a 1,588-character private key.
+
+**The rule: rescue it, and report POSITION ONLY.**
+
+```ruby
+rescue JSON::ParserError => e
+  raise Malformed, "#{ITEM} is not valid JSON " \
+                   "(#{e.message[/at line \d+ column \d+/] || 'position unreported'})"
+end
+```
+
+The fallback matters — a message that does not match the pattern must degrade to
+`position unreported`, never to the raw message.
+
+**Why it is worse than a noisy log.** `ErrorLog.capture!` (studio-engine
+`app/models/error_log.rb`) stores `message: exception.message` verbatim into
+Postgres and forwards it to Sentry, and the same method builds its `inspect`
+column as `exception.message.to_s[0, 1000]`. The engine already refuses to store
+`exception.inspect` **because ivar dumps carry secrets** — and leaves `message`
+wholly undefended. That asymmetry is the sharpest way to see the gap: 1,000
+characters of a 1,592-character PEM is still the usable part of a private key,
+and `error_logs/show` renders that column in the admin UI. The leak is
+persistent, published, and visible.
+
+**It is not only parser errors.** The shape is *any* raise or log that
+interpolates a value the caller did not choose. A near-miss found in review:
+`mcritchie-industries` `app/services/indexes/fred_client.rb` interpolates the
+request URL into three raises that `indexes/sync.rb` hands to
+`ErrorLog.capture!` and prints in a `Result#error`. It is safe today only
+because FRED's `fredgraph.csv` endpoint is keyless. Repoint it at the keyed
+`api.stlouisfed.org`, whose key rides an `api_key=` query param, and those three
+lines become a live credential leak into Postgres on the first transport error.
+
+**Where the rule already lives in code** — three sites, which is why it belongs
+in prose:
+
+| Repo | Service |
+|------|---------|
+| `mcritchie-studio` | `app/services/gmail/credentials.rb` |
+| `mcritchie-studio` | `app/services/workspace/credentials.rb` |
+| `mcritchie-industries` | `app/services/google/credentials.rb` |
+
+A hand-written `bin/rails runner` does **not** inherit any of them. When you
+write one that parses a credential — in a rake task, in an SOP, in a one-off —
+it needs its own rescue.
+
+**Writing the test is its own trap: a leak test must not print the leak.**
+minitest's `message()` prepends your custom message and still **appends** the
+default one, so `assert_match`, `assert_includes` and `refute_includes` dump
+their haystack even when you pass a message of your own. Only plain `assert` and
+`refute` suppress it. Assert on a body prefix plus a length bound, and keep the
+failure message to lengths.
+
 ## Irreversible Effects
 
 Validate everything before irreversible side effects:
