@@ -57,8 +57,13 @@ class Person < ApplicationRecord
     end
   end
 
+  # Two active players can share a name — six do in the 2026 league, measured against the feed on 2026-09-21 —
+  # so a name-derived slug is not unique on its own. A genuine namesake carries
+  # a `disambiguator` (a stable fragment of their league ID); everyone else
+  # keeps the clean "first-last" slug, which is almost everyone.
   def name_slug
-    "#{first_name} #{last_name}".parameterize
+    base = "#{first_name} #{last_name}".parameterize
+    disambiguator.present? ? "#{base}-#{disambiguator}" : base
   end
 
   def full_name

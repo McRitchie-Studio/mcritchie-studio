@@ -67,19 +67,50 @@ class Nflverse::SeedPlayers
   end
 
   def call
-    rows = parse_csv
-    puts "  #{rows.size} rows; filter: status=#{@status_filter || "any"} last_season>=#{@min_season}"
+    # Recorded so a later reader can tell "nothing changed" apart from "nothing
+    # was checked" — a question no record's own updated_at can answer, and the
+    # one a delta sync has to ask before trusting an empty result.
+    ImportRun.track("nflverse_players") do |run|
+      rows = ordered(parse_csv)
+      puts "  #{rows.size} rows; filter: status=#{@status_filter || "any"} last_season>=#{@min_season}"
 
-    rows.each do |row|
-      next @stats[:skipped_inactive] += 1 if @status_filter && row["status"] != @status_filter
-      last_season = row["last_season"].to_i
-      next @stats[:skipped_old] += 1 if last_season > 0 && last_season < @min_season
+      rows.each do |row|
+        next @stats[:skipped_inactive] += 1 if @status_filter && row["status"] != @status_filter
+        last_season = row["last_season"].to_i
+        next @stats[:skipped_old] += 1 if last_season > 0 && last_season < @min_season
 
-      ingest_row(row)
+        ingest_row(row)
+      end
+
+      run.update!(rows_seen: rows.size,
+                  rows_changed: @stats[:athletes_created].to_i + @stats[:athletes_updated].to_i)
+      puts "\nnflverse seed: #{@stats.inspect}"
+      @stats
     end
+  end
 
-    puts "\nnflverse seed: #{@stats.inspect}"
-    @stats
+  # Public so tests can drive a single row without a CSV. Returns the Athlete
+  # (or nil if skipped).
+  # A DETERMINISTIC ingest order, independent of how the feed happens to ship
+  # the file.
+  #
+  # It matters only for namesakes, and only on a rebuild from empty — but that
+  # is exactly what a pre-season sync does. Of two players sharing a name, the
+  # FIRST one ingested keeps the clean "justin-jefferson" slug and the second
+  # gets the disambiguated one. Leave that to CSV order and a rebuild can hand
+  # the clean slug to the other player, silently changing a URL that other
+  # records point at by slug.
+  #
+  # Sorting on the league ID makes the outcome a property of the DATA rather
+  # than of the file. Rows with no ID sort last.
+  #
+  # The index is a TIEBREAK, not decoration: Ruby's `sort_by` is NOT stable, so
+  # without it every ID-less row could land in a different relative position on
+  # each run — which is the exact non-determinism this method exists to remove.
+  def ordered(rows)
+    rows.each_with_index
+        .sort_by { |r, i| [r["gsis_id"].to_s.strip.empty? ? 1 : 0, r["gsis_id"].to_s.strip, i] }
+        .map(&:first)
   end
 
   # Public so tests can drive a single row without a CSV. Returns the Athlete
@@ -112,11 +143,7 @@ class Nflverse::SeedPlayers
       person = Person.find_or_create_by_name!(first, last, athlete: true)
       @stats[:people_created] += 1 if person.previously_new_record?
 
-      athlete = Athlete.find_by(person_slug: person.slug)
-      if athlete.nil?
-        athlete = Athlete.create!(person_slug: person.slug, sport: "football")
-        @stats[:athletes_created] += 1
-      end
+      athlete = resolve_athlete!(person, first, last, gsis_id, espn_id)
     end
 
     attrs = build_attrs(row, gsis_id)
@@ -134,6 +161,59 @@ class Nflverse::SeedPlayers
   end
 
   private
+
+  # WHICH ATHLETE RECORD THIS ROW BELONGS TO, once a name lookup has found a
+  # Person. The name is not enough:
+  #
+  #   - no athlete yet              -> create one
+  #   - athlete with no gsis_id     -> an unidentified record for this name (a
+  #                                    seed, or a hand-entered row); adopt it
+  #                                    rather than making a twin
+  #   - athlete with a DIFFERENT
+  #     gsis_id                     -> a DIFFERENT HUMAN who shares the name.
+  #                                    Give them their own Person, slugged with
+  #                                    a disambiguator, so the two never collide
+  #
+  # That last branch is the whole point. Adopting blindly is what silently
+  # overwrote one of each namesake pair: the row is counted as an update, the
+  # import reports success, and a player is simply gone.
+  def resolve_athlete!(person, first, last, gsis_id, espn_id)
+    existing = Athlete.find_by(person_slug: person.slug)
+
+    return existing if existing && (existing.gsis_id.blank? || existing.gsis_id == gsis_id)
+
+    # ONE TRANSACTION, because the two writes are one fact. A Person created
+    # here whose Athlete then fails leaves an ID-less orphan, and the NEXT run
+    # recomputes the same disambiguator and dies on the unique index — an
+    # uncaught RecordNotUnique that wedges every later import. The caller's
+    # rescue is around `update!`, not around this.
+    transaction do
+      if existing
+        person = Person.create!(
+          first_name: first, last_name: last, athlete: true,
+          disambiguator: disambiguator_for(gsis_id, espn_id)
+        )
+        @stats[:people_created] += 1
+        @stats[:name_collisions] = @stats.fetch(:name_collisions, 0) + 1
+        vputs "  [~] name collision: #{first} #{last} -> #{person.slug}"
+      end
+
+      @stats[:athletes_created] += 1
+      Athlete.create!(person_slug: person.slug, sport: "football")
+    end
+  end
+
+  def transaction(&block) = ActiveRecord::Base.transaction(&block)
+
+  # A short, STABLE suffix. Derived from the league ID rather than a counter, so
+  # re-running the import in a different row order produces the same slug — a
+  # counter would make a person's URL depend on CSV ordering.
+  def disambiguator_for(gsis_id, espn_id)
+    source = gsis_id.presence || espn_id.presence
+    raise "cannot disambiguate a namesake with no league ID" if source.blank?
+
+    source.gsub(/\D/, "").last(4)
+  end
 
   def lookup_athlete_by_ids(gsis_id:, pff_id:, otc_id:, espn_id:, pfr_id:)
     return Athlete.find_by(gsis_id: gsis_id) if gsis_id && Athlete.exists?(gsis_id: gsis_id)

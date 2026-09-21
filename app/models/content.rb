@@ -80,6 +80,76 @@ class Content < ApplicationRecord
   before_create :set_initial_position
   before_save :set_stage_timestamp, if: :stage_changed?
 
+  # --- the agent claim ---------------------------------------------------
+  #
+  # Non-deterministic steps (the script, the scenes, the caption) are written by
+  # a SOUL during an SOP, using its own inference, rather than by an in-app call
+  # to the Anthropic API. The board is already the queue — a Content sitting at
+  # `idea` IS a pending work item — so a claim is the only primitive that was
+  # missing: without it, two sessions draining the same queue both script the
+  # same game and produce two different takes.
+  #
+  # The lease expires so a session that dies mid-SOP does not strand the card.
+  AGENT_CLAIM_LEASE = 30.minutes
+
+  # Free to claim: never claimed, or claimed long enough ago that the holder is
+  # presumed gone.
+  scope :claimable_by_agent, ->(now: Time.current) {
+    where(claimed_at: nil).or(where(claimed_at: ...(now - AGENT_CLAIM_LEASE)))
+  }
+
+  ClaimResult = Struct.new(:content, :reason, keyword_init: true) do
+    def claimed? = reason == "claimed"
+  end
+
+  # The ATOMIC pop. The server picks WHICH content, exactly as
+  # `Task.claim_next_review` does, so the decision cannot drift between callers.
+  #
+  # `FOR UPDATE SKIP LOCKED` is what makes it safe under concurrency: a row a
+  # racer is already inside is skipped rather than waited on, so two agents
+  # draining the queue together never block and never collide.
+  #
+  # An empty pop is a NORMAL outcome, not an error — the caller idles.
+  def self.claim_next_for_agent(session:, agent: nil, stage: "idea", workflow: nil, now: Time.current)
+    scope = claimable_by_agent(now: now).by_stage(stage)
+    scope = scope.where(workflow: workflow) if workflow.present?
+
+    slugs = scope.ordered.pluck(:slug)
+    return ClaimResult.new(content: nil, reason: "none_claimable") if slugs.empty?
+
+    slugs.each do |slug|
+      claimed = transaction do
+        content = claimable_by_agent(now: now).where(slug: slug).lock("FOR UPDATE SKIP LOCKED").first
+        next nil unless content # a racer holds it, or it was claimed since the pluck
+
+        content.update!(claimed_by: agent.presence || session, claim_session: session, claimed_at: now)
+        ClaimResult.new(content: content, reason: "claimed")
+      end
+      return claimed if claimed
+    end
+
+    ClaimResult.new(content: nil, reason: "none_claimable")
+  end
+
+  def claim_expired?(now: Time.current)
+    claimed_at.present? && claimed_at < now - AGENT_CLAIM_LEASE
+  end
+
+  def claim_held?(now: Time.current)
+    claimed_at.present? && !claim_expired?(now: now)
+  end
+
+  # Dropping the lease is deliberately unconditional for the HOLDER and refused
+  # for anyone else: a release is how a soul says "I am done or I gave up", and
+  # letting a stranger release it would re-open a card someone is still writing.
+  def release_claim!(session: nil)
+    if session.present? && claim_session.present? && claim_session != session && claim_held?
+      raise ArgumentError, "content #{slug} is held by another session"
+    end
+
+    update!(claimed_by: nil, claim_session: nil, claimed_at: nil)
+  end
+
   scope :by_stage, ->(stage) { where(stage: stage) }
   # Board order comes from the concern (position DESC NULLS LAST, created_at DESC).
   scope :ordered, -> { board_ordered }
