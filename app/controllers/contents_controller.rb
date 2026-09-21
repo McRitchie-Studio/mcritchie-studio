@@ -102,7 +102,17 @@ class ContentsController < ApplicationController
       Content.transaction do
         # Supersede rather than delete: the old image stays as the record of
         # what was published before.
-        slot.artifact&.retire!
+        #
+        # ONLY ON :reuse, and the condition is the whole point. A `:reuse` slot
+        # holds the SAME cast in the SAME look, so the new image genuinely
+        # replaces it. A `:reskin` slot holds a DIFFERENT asset — the same faces
+        # in another colorway, which is what `decide` falls back to — so
+        # retiring it here would destroy the white jersey in order to file the
+        # black one. Both lookups start from `live`, so the white artifact then
+        # goes invisible and the NEXT white game reads `:generate`: the library
+        # could hold at most one live artifact per cast, which is exactly the
+        # reuse this screen exists to make possible.
+        slot.artifact&.retire! if slot.reuse?
 
         artifact = Artifact.create!(kind: slot.kind, image_url: params[:image_url], source: "operator")
         slot.subjects.each_with_index do |row, i|
