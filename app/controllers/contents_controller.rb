@@ -91,8 +91,11 @@ class ContentsController < ApplicationController
   # subject rows — a pair is two rows, a sheet is one, and a trio would be
   # three. The shape is the artifact's `kind`; who is in it lives on the join.
   def attach_artifact
-    slot = Content::ArtifactPlan.new(@content).slots.find { |s| s.kind == params[:kind] && s.cast_label == params[:cast] }
-    slot ||= Content::ArtifactPlan.new(@content).slots.find { |s| s.kind == params[:kind] }
+    # Keyed on the slot's INDEX, not on its rendered cast name. A display string
+    # is not an identifier: two character-sheet slots differ only by who is in
+    # them, so a name mismatch silently attached to the WRONG slot rather than
+    # failing — which reads as "the attach did nothing".
+    slot = Content::ArtifactPlan.new(@content).slots[params[:slot_index].to_i]
     return redirect_to(content_path(@content.slug), alert: "No such slot on this content.") unless slot
 
     rescue_and_log(target: @content) do

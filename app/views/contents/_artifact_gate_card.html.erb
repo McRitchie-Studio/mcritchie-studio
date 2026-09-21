@@ -44,7 +44,7 @@
 
   <%# THE THREE SLOTS. %>
   <div class="space-y-3">
-    <% slots.each do |slot| %>
+    <% slots.each_with_index do |slot, slot_index| %>
       <div class="rounded-lg border border-border p-4 flex gap-4">
         <div class="w-28 h-28 shrink-0 rounded-md bg-surface-2 border border-border overflow-hidden flex items-center justify-center">
           <% if slot.artifact&.image_url.present? %>
@@ -76,11 +76,20 @@
             <% end %>
           </p>
 
+          <%# A stable hook for the e2e: selecting these forms positionally picked
+              the wrong one, and the failure then looked like a disabled button
+              rather than a mis-selected form. %>
           <%= form_with url: attach_artifact_content_path(@content.slug), method: :post,
+                        data: { test: "attach-#{slot.kind}", slot_decision: slot.decision },
                         class: "flex items-center gap-2 flex-wrap" do |f| %>
-            <%= f.hidden_field :kind, value: slot.kind %>
-            <%= f.hidden_field :cast, value: slot.cast_label %>
-            <%= f.url_field :image_url, placeholder: "paste the image URL",
+            <%= f.hidden_field :slot_index, value: slot_index %>
+            <%# text_field, NOT url_field. The app accepts a RELATIVE path (local
+                demo assets are served from /public), but HTML5 type=url refuses
+                one — the browser blocks the submit and no request is ever made.
+                Integration tests bypass the browser, so they cannot see it; the
+                e2e is what caught it. An input must not reject what the server
+                stores. %>
+            <%= f.text_field :image_url, placeholder: "paste the image URL",
                   class: "input-field text-xs w-72" %>
             <%= f.submit slot.artifact&.image_url.present? ? "Replace" : "Attach",
                   class: "btn-secondary text-xs" %>

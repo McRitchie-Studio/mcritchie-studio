@@ -1155,29 +1155,38 @@ News.create!(title: "E2E News Archived", stage: "archived")
 3.times { |i| Content.create!(title: "E2E Content Idea #{i + 1}", stage: "idea", workflow: "video") }
 Content.create!(title: "E2E Content Hook", stage: "hook", workflow: "video")
 
-# The rapper-replace inspection gate. Seeded so the duo and QB slots read REUSE
-# and the skill slot reads RE-SKIN (Chase on file in black, this game in white) —
-# the mix the gate exists to show.
-PlayerArtifact.delete_all
+# The rapper-replace inspection gate, on the Person-anchored model. Seeded so
+# the pair and QB slots read REUSE and the skill slot reads RE-SKIN — the mix
+# the gate exists to show.
+Artifact.delete_all
+Appearance.delete_all
+Person.where(last_name: %w[Burrow Chase]).destroy_all
+
+burrow = Person.create!(first_name: "Joe", last_name: "Burrow", athlete: true)
+chase  = Person.create!(first_name: "JaMarr", last_name: "Chase", athlete: true)
+bw = Appearance.create!(person_slug: burrow.slug, descriptor: "Bengals white", colorway: "white")
+Appearance.create!(person_slug: burrow.slug, descriptor: "Navy suit",
+                   generation_notes: "Tailored navy suit, press-conference lighting.")
+cw = Appearance.create!(person_slug: chase.slug, descriptor: "Bengals white", colorway: "white")
+
 e2e_gate = Content.create!(
   title: "E2E Burrow And Chase", workflow: "rapper_replace", stage: "idea",
-  qb_player_slug: "joe-burrow", skill_player_slug: "jamarr-chase",
+  qb_player_slug: burrow.slug, skill_player_slug: chase.slug,
   game_facts: { "winner_slug" => "cincinnati-bengals",
                 "away_team_slug" => "cincinnati-bengals",
-                "home_team_slug" => "jacksonville-jaguars",
-                "players" => { "joe-burrow" => "Joe Burrow", "jamarr-chase" => "Ja'Marr Chase" } }
+                "home_team_slug" => "jacksonville-jaguars" }
 )
-PlayerArtifact.create!(player_slug: "joe-burrow", secondary_player_slug: "jamarr-chase",
-  player_name: "Joe Burrow", secondary_player_name: "Ja'Marr Chase",
-  colorway: "white", kind: "duo", image_url: "/demo-artifacts/demo-1.png",
-  source: "chatgpt", approved_at: Time.current)
-PlayerArtifact.create!(player_slug: "joe-burrow", player_name: "Joe Burrow",
-  colorway: "white", kind: "qb_sheet", image_url: "/demo-artifacts/demo-2.png",
-  source: "chatgpt", approved_at: Time.current)
-PlayerArtifact.create!(player_slug: "jamarr-chase", player_name: "Ja'Marr Chase",
-  colorway: "black", kind: "skill_sheet", image_url: "/demo-artifacts/demo-3.png",
-  source: "chatgpt", approved_at: Time.current)
-puts "  e2e gate content: #{e2e_gate.slug}"
+
+sheet = Artifact.create!(kind: "character_sheet", image_url: "/icon.png", source: "chatgpt",
+                         approved_at: Time.current)
+sheet.subjects.create!(person_slug: burrow.slug, appearance_slug: bw.slug, role: "qb", ordinal: 1)
+
+pair = Artifact.create!(kind: "pair", image_url: "/icon.png", source: "chatgpt",
+                        approved_at: Time.current)
+pair.subjects.create!(person_slug: burrow.slug, appearance_slug: bw.slug, role: "qb", ordinal: 1)
+pair.subjects.create!(person_slug: chase.slug,  appearance_slug: cw.slug, role: "skill", ordinal: 2)
+
+puts "  e2e gate content: #{e2e_gate.slug} (burrow=#{burrow.slug} chase=#{chase.slug})"
 
 # Triage inbox: one open finding for the promote flow (triage_promote.spec.js
 # promotes it — a MUTATING spec, so it must never carry @qa-readonly).

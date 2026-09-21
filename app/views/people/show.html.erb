@@ -81,7 +81,9 @@
           <%= form_with url: attach_artifact_person_path(@person.slug), method: :post,
                         class: "flex items-center gap-2 flex-wrap pl-3 pb-2" do |f| %>
             <%= f.hidden_field :appearance_slug, value: look.slug %>
-            <%= f.url_field :image_url, placeholder: "image URL for #{look.descriptor}",
+            <%# text_field for the same reason as the gate's: type=url blocks a
+                relative path in the browser and the submit never fires. %>
+            <%= f.text_field :image_url, placeholder: "image URL for #{look.descriptor}",
                   class: "input-field text-xs w-80" %>
             <%= f.submit "Attach image", class: "btn-secondary text-xs" %>
           <% end %>

@@ -27,12 +27,14 @@ class ArtifactGateTest < ActionDispatch::IntegrationTest
 
   def slots = Content::ArtifactPlan.new(@content.reload).slots
 
-  def attach(slot, url = "/x.png")
+  def attach(index, url = "/x.png")
     post attach_artifact_content_path(@content.slug),
-         params: { kind: slot.kind, cast: slot.cast_label, image_url: url }
+         params: { slot_index: index, image_url: url }
   end
 
-  def attach_all = slots.each { |s| attach(s) }
+  def index_of(kind) = slots.index { |s| s.kind == kind }
+
+  def attach_all = slots.each_index { |i| attach(i) }
 
   # --- component tier ------------------------------------------------------
 
@@ -82,8 +84,7 @@ class ArtifactGateTest < ActionDispatch::IntegrationTest
 
   # The ceiling this model exists to remove: a pair is two subject rows.
   test "attaching a pair files both people as subjects" do
-    pair = slots.find { |s| s.kind == "pair" }
-    attach(pair)
+    attach(index_of("pair"))
 
     artifact = Artifact.find_by(kind: "pair")
     assert_equal 2, artifact.subjects.count
@@ -91,8 +92,7 @@ class ArtifactGateTest < ActionDispatch::IntegrationTest
   end
 
   test "a character sheet files exactly one subject" do
-    sheet = slots.find { |s| s.kind == "character_sheet" }
-    attach(sheet)
+    attach(index_of("character_sheet"))
 
     assert_equal 1, Artifact.find_by(kind: "character_sheet").subjects.count
   end
@@ -100,9 +100,9 @@ class ArtifactGateTest < ActionDispatch::IntegrationTest
   # Supersede rather than delete: the old image stays as the record of what was
   # published before.
   test "replacing an image retires the old artifact rather than deleting it" do
-    sheet = slots.find { |s| s.kind == "character_sheet" }
-    attach(sheet, "/one.png")
-    attach(slots.find { |s| s.kind == "character_sheet" }, "/two.png")
+    i = index_of("character_sheet")
+    attach(i, "/one.png")
+    attach(i, "/two.png")
 
     assert_equal 1, Artifact.live.where(kind: "character_sheet").count
     assert_equal 1, Artifact.where(kind: "character_sheet").where.not(retired_at: nil).count
@@ -119,7 +119,7 @@ class ArtifactGateTest < ActionDispatch::IntegrationTest
 
   # The gate's whole job: refuse until a human could have looked at them all.
   test "approving is refused while a slot is empty" do
-    attach(slots.find { |s| s.kind == "pair" })
+    attach(index_of("pair"))
 
     post approve_artifacts_content_path(@content.slug)
 
