@@ -6,6 +6,16 @@ require "test_helper"
 class WorkspaceErrorSlugTest < ActiveSupport::TestCase
   SECRET = "-----BEGIN PRIVATE KEY-----MIIEvQIBADANBgkqh".freeze
 
+  # EVERY ASSERTION HERE IS PLAIN `assert`/`refute`, DELIBERATELY. minitest's
+  # `message()` prepends a custom message and still APPENDS the default one, so
+  # `refute_includes` / `assert_includes` dump their HAYSTACK even when you pass
+  # your own — and the haystack in this file is the slug, on the exact failure
+  # that means the slug carried the secret. A leak test that prints the leak
+  # when it catches one is not a leak test. So: no haystack in any message
+  # below, and lengths instead of contents. The rule itself is in
+  # docs/agents/modules/backend-discipline.md, "Never interpolate an exception
+  # message that quotes its input" — this is the same rule applied to a test.
+
   test "a raw message never survives, however alarming its contents" do
     error = StandardError.new("credential rejected: #{SECRET}")
 
@@ -15,8 +25,8 @@ class WorkspaceErrorSlugTest < ActiveSupport::TestCase
     # token. What must NOT survive is the key, and the character class plus the
     # length bound are what stop it.
     assert_equal "StandardError: credential", slug
-    refute_includes slug, "BEGIN PRIVATE KEY"
-    refute_includes slug, "MIIEvQ"
+    refute slug.include?("BEGIN PRIVATE KEY"), "the slug is #{slug.length} chars and carries a PEM header"
+    refute slug.include?("MIIEvQ"), "the slug is #{slug.length} chars and carries key body bytes"
   end
 
   test "a message that LEADS with key bytes still cannot spill them" do
@@ -32,13 +42,16 @@ class WorkspaceErrorSlugTest < ActiveSupport::TestCase
 
     slug = Workspace::ErrorSlug.for(error)
 
-    assert_includes slug, "unauthorized_client"
-    refute_includes slug, "team@client.test", "the description carries addresses we do not spread"
-    refute_includes slug, "long prose"
+    assert slug.include?("unauthorized_client"), "the diagnosis was dropped; slug is #{slug.length} chars"
+    refute slug.include?("team@client.test"),
+           "the slug is #{slug.length} chars and carries an address we do not spread"
+    refute slug.include?("long prose"), "the slug is #{slug.length} chars and carries description prose"
   end
 
   test "a reason slug is read too" do
-    assert_includes Workspace::ErrorSlug.for(StandardError.new(%({"reason": "notFound"}))), "notFound"
+    slug = Workspace::ErrorSlug.for(StandardError.new(%({"reason": "notFound"})))
+
+    assert slug.include?("notFound"), "the reason field was dropped; slug is #{slug.length} chars"
   end
 
   test "an injected slug that is not slug-shaped is refused, not echoed" do
@@ -49,7 +62,8 @@ class WorkspaceErrorSlugTest < ActiveSupport::TestCase
     slug = Workspace::ErrorSlug.for(error)
 
     assert_equal "StandardError", slug
-    refute_includes slug, "BEGIN PRIVATE KEY"
+    refute slug.include?("BEGIN PRIVATE KEY"),
+           "a crafted error field smuggled prose through; slug is #{slug.length} chars"
   end
 
   # A NAMED class: an anonymous one stringifies as #<Class:0x...> because
@@ -64,7 +78,7 @@ class WorkspaceErrorSlugTest < ActiveSupport::TestCase
     slug = Workspace::ErrorSlug.for(FakeServerError.new("503 from upstream for team@client.test"))
 
     assert_equal "WorkspaceErrorSlugTest::FakeServerError: HTTP 503", slug
-    refute_includes slug, "team@client.test"
+    refute slug.include?("team@client.test"), "the slug is #{slug.length} chars and carries an address"
   end
 
   # `#{error.class}` interpolates through to_s, NOT name — and an anonymous
@@ -109,12 +123,30 @@ class WorkspaceErrorSlugTest < ActiveSupport::TestCase
     )
     theirs = StandardError.new(%({"error": "unauthorized_client", "detail": "team@secret.test"}))
 
-    assert_includes Workspace::ErrorSlug.for(ours), "Register the workspace",
-                    "an authored remedy must survive — slugging it leaves the operator nothing to do"
-    assert_operator Workspace::ErrorSlug.for(ours).length, :<=, Workspace::ErrorSlug::AUTHORED_MAX
+    slug = Workspace::ErrorSlug.for(ours)
+
+    assert slug.include?("Register the workspace"),
+           "an authored remedy must survive — slugging it leaves the operator nothing to do " \
+           "(slug was #{slug.length} chars)"
 
     assert_equal "StandardError: unauthorized_client", Workspace::ErrorSlug.for(theirs),
                  "a FOREIGN message is still reduced to its token — the split is by origin, not by shape"
+  end
+
+  # THE SAME DEFECT THIS FILE ALREADY FIXED FOR `MAX`, ONE BOUND OVER. The
+  # AUTHORED_MAX assertion used to ride on the real UnregisteredSubject message,
+  # which measures 209 chars against a bound of 400 — so it asserted 209 <= 400
+  # and passed with the clamp DELETED. A bound test has to be driven by a
+  # subject longer than the bound, or it is a test that the fixture is short.
+  test "an authored message is bounded too" do
+    long = Workspace::Credentials::UnregisteredSubject.new("R" * (Workspace::ErrorSlug::AUTHORED_MAX * 2))
+
+    slug = Workspace::ErrorSlug.for(long)
+
+    assert_equal Workspace::ErrorSlug::AUTHORED_MAX, slug.length,
+                 "the subject must be LONGER than AUTHORED_MAX, or this passes without the clamp running"
+    assert_operator Workspace::ErrorSlug::AUTHORED_MAX, :>, Workspace::ErrorSlug::MAX,
+                    "two bounds for two threat models — if they converge, one of them is dead code"
   end
 
   test "nil is an answer, not a crash" do

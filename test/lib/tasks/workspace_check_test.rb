@@ -116,6 +116,51 @@ class WorkspaceCheckRakeTest < ActiveSupport::TestCase
     assert_equal 1, @exit_status, "a sweep with a failed row still exits non-zero"
   end
 
+  # A SYNTHETIC secret, shaped like the thing that would actually be quoted back:
+  # a PEM body. Never a real key, and the assertions below never print it.
+  LEAK_MARKER = "SYNTHETICPRIVATEKEYBODY0123456789".freeze
+
+  # THE ASSERTIONS ARE PLAIN `refute`, DELIBERATELY. minitest's `message()`
+  # prepends a custom message and still APPENDS the default one, so
+  # `refute_includes` dumps its haystack even when you pass your own message —
+  # which, for a leak test, prints the very bytes it is asserting the absence
+  # of. Only plain `assert`/`refute` suppress the default. So: no haystack in
+  # any message below, and lengths instead of contents.
+  test "a CHECK FAILED row does not print what the exception was quoting" do
+    WorkspaceAccount.create!(domain: "quoting.test")
+    quoting = ->(_subject) {
+      raise JSON::ParserError, "unexpected token at '{\"private_key\":\"#{LEAK_MARKER}\"}'"
+    }
+
+    _out, err = run_check(nil, probe: quoting)
+
+    assert err.include?("CHECK FAILED"), "the sweep must still report the failure"
+    refute err.include?(LEAK_MARKER),
+           "the CHECK FAILED line carried #{LEAK_MARKER.length} bytes the exception was quoting; " \
+           "stderr was #{err.length} chars"
+    assert err.include?("JSON::ParserError"),
+           "the operator still needs to know WHICH error — the class is the part that is safe"
+  end
+
+  # The other half: redaction must not throw away the one thing an operator
+  # acts on. An OAuth refusal names its reason in a JSON body, and that slug is
+  # the whole diagnosis — a rescue that reports only the class turns
+  # "unauthorized_client" into "Signet::AuthorizationError" and costs the reader
+  # the answer.
+  test "an OAuth refusal still surrenders the slug the operator acts on" do
+    WorkspaceAccount.create!(domain: "slug.test")
+    refusing = ->(_subject) {
+      raise RuntimeError, %({"error": "unauthorized_client", "error_description": "#{LEAK_MARKER}"})
+    }
+
+    _out, err = run_check(nil, probe: refusing)
+
+    assert err.include?("unauthorized_client"), "the actionable slug must survive redaction"
+    refute err.include?(LEAK_MARKER),
+           "the description field carried #{LEAK_MARKER.length} bytes through; " \
+           "stderr was #{err.length} chars"
+  end
+
   test "a proven row whose SMOKE READ fails records why, instead of contradicting the operator" do
     # The probe succeeds, so the grant is genuinely proven and the row is
     # flipped active. Then the Drive read blows up. The row used to stay active
@@ -149,6 +194,5 @@ class WorkspaceCheckRakeTest < ActiveSupport::TestCase
       "the stored state now agrees with what the operator was told"
     refute_includes account.last_check_error.to_s, "team@smoke.test"
     refute_includes err, "team@smoke.test", "vendor prose does not reach the terminal either"
-    assert_nil out[/ACTIVE as team@smoke.test/], "it must not claim success"
-  end
+    assert_nil out[/ACTIVE as team@smoke.test/], "it must not claim success"  end
 end

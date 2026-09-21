@@ -279,4 +279,77 @@ class WorkspaceCredentialsTest < ActiveSupport::TestCase
     refute normal.enable_self_signed_jwt?, "delegation would silently stop working"
     assert foreign.enable_self_signed_jwt?, "if this flips, the probe guard is unreachable"
   end
+
+  # --- what probe's rescue may say out loud ---------------------------------
+  #
+  # probe carried its own redactor — the SAME rule as Workspace::ErrorSlug,
+  # written out a second time and weaker at three points. It is the last caller
+  # to join the shared one. These tests drive the REAL seam (stub the authorizer,
+  # let the rescue catch) rather than calling the redactor directly, because what
+  # matters is the pair probe returns, which is what lands in last_check_error.
+  #
+  # A SYNTHETIC secret shaped like the thing that would really be quoted back.
+  # Never a real key, and no assertion below ever prints it: minitest appends its
+  # default message to a custom one, so `assert_match` / `refute_includes` dump
+  # their haystack either way. Only plain `assert`/`refute` suppress it, so every
+  # assertion below is plain, and reports LENGTHS instead of contents.
+  SECRET = "SYNTHETICPRIVATEKEYBODY0123456789".freeze
+
+  def probe_raising(error, domain:)
+    WorkspaceAccount.create!(domain: domain)
+    Workspace::Credentials.stub(:build_authorizer, ->(_s) { raise error }) do
+      Workspace::Credentials.probe("team@#{domain}")
+    end
+  end
+
+  test "an exception that quotes its input surrenders only class and fault token" do
+    quoting = JSON::ParserError.new(%(unexpected token at '{"private_key":"#{SECRET}"}'))
+
+    ok, slug = probe_raising(quoting, domain: "quoting.test")
+
+    refute ok
+    refute slug.include?(SECRET),
+           "probe returned #{slug.length} chars carrying the #{SECRET.length}-byte body it quoted"
+    assert_equal "JSON::ParserError: unexpected", slug
+  end
+
+  test "an OAuth refusal still surrenders the slug the operator acts on" do
+    refusing = RuntimeError.new(%({"error": "unauthorized_client", "error_description": "#{SECRET}"}))
+
+    _ok, slug = probe_raising(refusing, domain: "slug.test")
+
+    assert slug.include?("unauthorized_client"),
+           "the actionable slug is the diagnosis; losing it costs the reader the answer"
+    refute slug.include?(SECRET), "probe returned #{slug.length} chars including the description body"
+  end
+
+  # THE ONE THE OLD INLINE EXPRESSION COULD NOT SURVIVE. A regex over a string
+  # with invalid encoding raises ArgumentError, and this is a rescue body — so
+  # the raise escapes the rescue meant to contain it, and probe blows up instead
+  # of returning a verdict. ErrorSlug scrubs first.
+  test "a garbled response body returns a verdict instead of raising out of the rescue" do
+    garbled = RuntimeError.new(%(backendError \xC3\x28 #{SECRET}).dup.force_encoding("UTF-8"))
+    refute garbled.message.valid_encoding?, "the fixture has to be genuinely invalid to test anything"
+
+    ok, slug = probe_raising(garbled, domain: "garbled.test")
+
+    refute ok
+    assert slug.present?, "probe returned nothing at all"
+    refute slug.include?(SECRET), "probe returned #{slug.length} chars including the quoted body"
+  end
+
+  # The control. Every assertion above is about what probe STRIPS, and a rescue
+  # that returned "" would pass all of them. This is the one that says it still
+  # answers — and it pins the SHAPE change: a bare token before, "Class: token"
+  # now, which is what an operator reads out of last_check_error.
+  test "probe always returns something an operator can read" do
+    [ [ RuntimeError.new("network gone"), "RuntimeError: network" ],
+      [ Workspace::Credentials::Malformed.new("bad"), "Workspace::Credentials::Malformed: bad" ]
+    ].each_with_index do |(error, expected), i|
+      _ok, slug = probe_raising(error, domain: "control#{i}.test")
+
+      assert slug.present?, "probe returned an empty slug for #{error.class}"
+      assert_equal expected, slug
+    end
+  end
 end
