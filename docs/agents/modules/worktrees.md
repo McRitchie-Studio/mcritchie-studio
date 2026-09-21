@@ -677,11 +677,11 @@ bin/agent-worktree scale status
   worktree self-releases its Redis slot the same way a stack scales down when it
   closes. The dry run (no `--yes`) lists only the worktrees that are SAFE to
   auto-remove — clean, either contained in the base ref or base-equivalent, **and
-  unoccupied** (`reclaimable?`, all six channels in the order they run: a reachable origin,
-  no live build-claim, a bound task the board puts at `shipped` or `archived`, no reviewer on
-  the task, a desk old enough, quiet enough, and with no gate in flight to be called
-  abandoned, and no open unmerged PR on the branch) — and prints the same safety evidence,
-  rationale, and
+  unoccupied** (`reclaimable?`, all six channels in the order they run: a reachable
+  origin, no live build-claim, a bound task the board puts at `shipped` or
+  `archived`, no reviewer on the task, a desk old enough, quiet enough, and with no
+  gate in flight to be called abandoned, and no open unmerged PR on the branch) —
+  and prints the same safety evidence, rationale, and
   removal command as `cleanup`. It never lists a dirty, unmerged, claimed, fresh, or
   actively-edited worktree, never a desk whose PR is still open, and never `_ship`/
   `_gate` while a release conductor holds a claim; the candidate set is sourced from

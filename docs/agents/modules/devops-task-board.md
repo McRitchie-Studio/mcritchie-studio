@@ -174,8 +174,8 @@ in review, so a ship no longer costs you the request (fixed 2026-09-09).
    paragraph used to say `cleanup --reclaim` could take it from that moment, and
    since the stage channel landed (`stage_hold`, 2026-09-20) the reclaim WITHHOLDS
    a bound desk until `shipped` or `archived` — the desk outlives the window it
-   once explained. **Any** save at
-   `reviewed` or later settles an open request to `none` — settled, NOT
+   once explained. **Any** save at `reviewed` or later settles an open request to
+   `none` — settled, NOT
    `approved`: the operator never granted anything, and faking a grant would
    misreport the acceptance metric. This is an invariant re-asserted on every
    save, not a one-shot transition: until 2026-07-27 it fired only on the one

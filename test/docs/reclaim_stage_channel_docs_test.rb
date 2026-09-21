@@ -19,8 +19,13 @@ require "test_helper"
 # on purpose — a failed `assert_match` prints the entire haystack, and the
 # haystack here is a 1,000-line doc.
 #
-# NOTE FOR THE RUNNER: `bin/fast-check` cannot see `test/docs` (its diff→test map
-# does not reach this directory), so this lane must be run explicitly:
+# NOTE FOR THE RUNNER, measured rather than assumed. A changed TEST file maps to
+# itself, so `bin/fast-check` DOES run this lane whenever this file is in the diff
+# — it ran here on the shipping commit (`mapped-tests: PASS`, 2026-09-20). What it
+# cannot do is run it on the diff that matters: a prose-only edit to the docs below
+# maps to no test at all, so the drift this guard exists to catch reaches the
+# builder's cert unseen and is caught by CI's full suite instead. Run it by hand
+# when you touch those docs:
 #   bin/rails test test/docs/reclaim_stage_channel_docs_test.rb
 class ReclaimStageChannelDocsTest < ActiveSupport::TestCase
   AGENTS = Rails.root.join("docs", "agents")
