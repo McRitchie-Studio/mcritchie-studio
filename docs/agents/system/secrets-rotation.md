@@ -167,25 +167,57 @@ The 1Password account is `alex@mcritchie.studio` (account ID `MWOV5OT5BRHATI4EGM
 
 ## Higgsfield API credentials (`HIGGSFIELD_API_KEY` + `HIGGSFIELD_API_SECRET`)
 
-**Store:** 1Password item `agent.higgesfield` (note the typo — preserved historically) + Heroku config on `mcritchie-studio` + `.env` locally.
+**Store:** 1Password item **`higgsfield.studio.agents`** in the `studio-agents`
+vault, plus `.env` locally. **No Heroku config** — `mcritchie-studio` carried no
+`HIGGSFIELD_*` var at all on 2026-09-20, so there is nothing to push unless that
+changes. References:
+
+- `op://studio-agents/higgsfield.studio.agents/API Key ID` → `HIGGSFIELD_API_KEY`
+- `op://studio-agents/higgsfield.studio.agents/API Key Secret` → `HIGGSFIELD_API_SECRET`
+
+**Renamed 2026-09-20.** This was `agent.higgesfield` — the legacy inverted
+`agent.<service>` form, carrying a misspelling that this runbook used to say was
+preserved deliberately. The `credential-filing` SOP grandfathers legacy names but
+says to rename one when you next touch it and fix every reference in the same
+pass, so the typo had no reason to outlive that pass. The old item is retitled
+`agent.higgesfield (RETIRED - use higgsfield.studio.agents)` and carries a pointer
+note; its value is kept only as a fallback until the replacement key is proven to
+authenticate. **Do not rotate the retired item** — nothing reads it.
+
+⚠ **Establish the auth shape BEFORE you rotate.** `app/services/higgsfield/client.rb`
+sends both halves in ONE header — `Authorization: Key <API Key ID>:<API Key Secret>`
+— measured against the live API on 2026-09-20. But the dashboard key dialog now
+appears to show a SINGLE key. The two possibilities need different work, and
+guessing is how the wrong field gets filled:
+
+| What the dashboard issues | What to do |
+|---------------------------|------------|
+| An **ID + secret** pair (what the code expects today) | Fill both fields. No code change. |
+| A **single bare key** | Collapse the item to one `credential` field, change `Client#initialize` and `Client#headers`, and rewrite this section. |
+
+A shape check that costs nothing: the key filed in April was a **36-character
+UUID** (`API Key ID`) plus a **64-character lowercase-hex** string
+(`API Key Secret`). Measure the length of what the dashboard hands you — it
+identifies which half you are holding without revealing it.
+
+Earlier versions of step 2 said to copy `hf-api-key` and `hf-secret`. Those were
+**header** names from the retired `platform.higgsfield.ai` host, never field
+names — do not go looking for them in the item.
 
 **Procedure:**
+
 1. Higgsfield dashboard → API keys → regenerate.
-2. Copy the **`API Key ID`** and **`API Key Secret`** values — those are the
-   field names the 1Password item actually carries. They used to be written here
-   as `hf-api-key`/`hf-secret`, which were the retired `platform.higgsfield.ai`
-   HEADER names, not field names; the current API sends both in ONE header,
-   `Authorization: Key <id>:<secret>`.
-3. Update 1Password `agent.higgesfield` (`API Key ID` → `HIGGSFIELD_API_KEY`,
-   `API Key Secret` → `HIGGSFIELD_API_SECRET`).
-4. `heroku config:set HIGGSFIELD_API_KEY=... HIGGSFIELD_API_SECRET=... --app mcritchie-studio`.
+2. Establish the shape (table above) before touching 1Password.
+3. Update `higgsfield.studio.agents`. The operator pastes with `read -rs T` and
+   never into a session transcript — `credential-filing` SOP §5.
+4. Verify by **digest, not plaintext** — `credential-filing` SOP §6.
 5. Re-run `bin/ecosystem-build`.
 
 **Verify:** `bin/rails content:assets_agent SLUG=<a-content-slug>` completes
-successfully. **As of 2026-09-20 that cannot pass**: the account answers
-`not_enough_credits` on every media type, and `mcritchie-studio` carries no
-`HIGGSFIELD_*` config at all. A rotation done today is therefore verified only
-as far as the 1Password write — say so rather than recording a green verify.
+successfully. **As of 2026-09-20 that could not pass**: the account answered
+`not_enough_credits` on every media type, which is exactly why a new key was
+issued on a new plan. A rotation whose only proof is the 1Password write is
+verified only that far — say so rather than recording a green verify.
 
 ---
 
