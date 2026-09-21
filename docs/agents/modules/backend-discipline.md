@@ -23,14 +23,21 @@ inside `private_key` does not produce "bad JSON at line 4" — it produces a
 message holding the whole PEM body.
 
 **Measured here, on this repo's own stack** — `bundle exec`, json 2.20.0, the
-version `Gemfile.lock` pins and a dyno loads — against a freshly generated
-RSA-2048 key broken the documented way:
+version `Gemfile.lock` pins and a dyno loads — against ten freshly generated
+RSA-2048 keys, each broken the documented way (the PEM's own newlines left
+literal):
 
 ```text
-key body                             1,624 chars
-ParserError message                  1,689 chars
-verbatim key prefix inside it        1,624 chars   ← the entire body
+key body (base64, unwrapped)          1,624 chars
+ParserError message                   1,782-1,786 chars
+how much of the body it carries       ALL of it
+longest CONTIGUOUS run of body chars  64  (one PEM line)
 ```
+
+The body arrives WRAPPED, because a real PEM is: 25 lines of 64 characters and
+one of 24, whose breaks the message echoes too. No single 1,624-character run
+appears, and none needs to — every character of the key is in there, and
+stripping 25 newlines is not a defence.
 
 **The rule: rescue it, and report POSITION ONLY.**
 
