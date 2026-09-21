@@ -184,30 +184,46 @@ pass, so the typo had no reason to outlive that pass. The old item is retitled
 note; its value is kept only as a fallback until the replacement key is proven to
 authenticate. **Do not rotate the retired item** — nothing reads it.
 
-⚠ **Establish the auth shape BEFORE you rotate.** `app/services/higgsfield/client.rb`
-sends both halves in ONE header — `Authorization: Key <API Key ID>:<API Key Secret>`
-— measured against the live API on 2026-09-20. But the dashboard key dialog now
-appears to show a SINGLE key. The two possibilities need different work, and
-guessing is how the wrong field gets filled:
+**A credential is TWO values, and the console may show you only one of them.**
+Settled 2026-09-20 against Higgsfield's own docs
+([docs.higgsfield.ai/docs/authentication](https://docs.higgsfield.ai/docs/authentication)):
+a credential is *"two separate values: a key ID and a secret"*, sent in ONE
+header as `Authorization: Key YOUR_KEY_ID:YOUR_KEY_SECRET`. That is exactly what
+`app/services/higgsfield/client.rb` already sends, so **no code change is needed**
+— this was an open question on 2026-09-20 and the answer is the shape the code
+had all along.
 
-| What the dashboard issues | What to do |
-|---------------------------|------------|
-| An **ID + secret** pair (what the code expects today) | Fill both fields. No code change. |
-| A **single bare key** | Collapse the item to one `credential` field, change `Client#initialize` and `Client#headers`, and rewrite this section. |
+⚠ **If the console shows a single masked key, you are holding half the pair.**
+The key ID is re-displayable; the secret is shown once at creation. A rotation
+that fills one field and leaves the other stale authenticates as neither.
+**The console field is labelled `api-key`, and that label is a trap** — it is
+the key *ID*, not the whole credential. Higgsfield's own SDK does the same
+thing: `HF_API_KEY` holds `YOUR_KEY_ID`, and `HF_API_SECRET` holds the secret.
+Our `HIGGSFIELD_API_KEY` follows that convention. So "the dashboard only shows
+one key" is the expected view of a two-value credential, not evidence that the
+pair went away.
 
-A shape check that costs nothing: the key filed in April was a **36-character
-UUID** (`API Key ID`) plus a **64-character lowercase-hex** string
-(`API Key Secret`). Measure the length of what the dashboard hands you — it
-identifies which half you are holding without revealing it.
+Settle it by **length**, which reveals nothing. After a `read -rs T`, run
+`echo ${#T}`:
 
-Earlier versions of step 2 said to copy `hf-api-key` and `hf-secret`. Those were
-**header** names from the retired `platform.higgsfield.ai` host, never field
-names — do not go looking for them in the item.
+| Length | What you are holding |
+|--------|----------------------|
+| **36** | the key ID alone (a UUID) — the secret exists; capture it at creation |
+| **64** | the secret alone (lowercase hex) |
+| **~101** | the combined `KEY_ID:SECRET` string the SDK calls `HF_CREDENTIALS` — split it on the colon |
+
+Measured against the April 2026 key, which was a 36-char UUID plus a 64-char
+lowercase-hex secret.
+
+`hf-api-key` and `hf-secret` are **legacy header names** the API still accepts,
+not field names — earlier versions of step 2 sent readers hunting for them in
+the item. Do not.
 
 **Procedure:**
 
-1. Higgsfield dashboard → API keys → regenerate.
-2. Establish the shape (table above) before touching 1Password.
+1. Higgsfield Console (`console.higgsfield.ai`) → API keys → regenerate. Capture
+   the secret at creation; it is not shown again.
+2. Confirm you have BOTH halves before touching 1Password.
 3. Update `higgsfield.studio.agents`. The operator pastes with `read -rs T` and
    never into a session transcript — `credential-filing` SOP §5.
 4. Verify by **digest, not plaintext** — `credential-filing` SOP §6.
