@@ -20,8 +20,17 @@ Some exceptions carry the thing that failed to parse. `JSON::ParserError` is the
 one that keeps biting: its message echoes the input **from the failure point to
 the end of the stream**. So a service-account key pasted with literal newlines
 inside `private_key` does not produce "bad JSON at line 4" — it produces a
-message holding the whole PEM body. Measured on json 2.21.1: a 1,889-character
-message carrying all 25 lines of a 1,588-character private key.
+message holding the whole PEM body.
+
+**Measured here, on this repo's own stack** — `bundle exec`, json 2.20.0, the
+version `Gemfile.lock` pins and a dyno loads — against a freshly generated
+RSA-2048 key broken the documented way:
+
+```text
+key body                             1,624 chars
+ParserError message                  1,689 chars
+verbatim key prefix inside it        1,624 chars   ← the entire body
+```
 
 **The rule: rescue it, and report POSITION ONLY.**
 
@@ -32,46 +41,53 @@ rescue JSON::ParserError => e
 end
 ```
 
-Two details in that one line are load-bearing, and both were learned by leaking.
+Two details in that one line are load-bearing.
 
-**ANCHOR the slice.** `e.message[/\d+/]` looks like "the position" and is not:
-it takes the message's FIRST digit run, and on the most likely failure that run
-is key material. Measured under `bundle exec` on **json 2.20.0 — the version
-`Gemfile.lock` pins and a dyno actually loads** — against a key pasted with a
-literal line break inside `private_key`, the cause these rescues exist for:
+**ANCHOR the slice — because `e.message[/\d+/]` is not a position at all.** It
+reads like one and is not: it returns whatever digit run happens to sit at the
+failure point. Measured on the same stack, 40 freshly generated RSA-2048 bodies:
 
 ```text
-message                              invalid ASCII control character in string:
-                                     \nMIIEvQIBADANBgkqhkiG987654…
-e.message[/\d+/]                  => "987654321"            ← key bytes
-e.message[/at line \d+ column \d+/] => "at line 2 column 0"
+break right after the BEGIN armor
+  e.message[/\d+/]                  => "9"                  ← key material, 1 char
+  e.message[/at line \d+ column \d+/] => "at line 2 column 0"
+
+digit runs present in real key bodies   1 to 5 chars (longest seen: 92476)
 ```
 
-The anchored pattern needs the literal words `at line` and `column`, which key
-material does not contain (base64 has no space character, so a key body cannot
-form that phrase). A bare `\d+` "reports the position" on a well-formed test
-fixture and leaks on the real accident.
-
-**Measure under the runtime the command LOADS, not the one your shell reaches
-for.** The first run of this was taken with bare `ruby`, which used the laptop's
-default gem (3.0.2) while the documented command was `heroku run bin/rails
-runner` — the bundled 2.20.0. The leak reproduces on both, so the conclusion
-survived; it survived for a reason that run had not established. `bundle exec`,
-or the dyno.
+So the bare slice is a *small* leak — but that is not the argument for anchoring,
+and an earlier revision of this file overstated it into a nine-digit one that no
+real key produces. The argument is that **the bare form is not the thing you
+asked for.** It yields a position only by coincidence, and it yields key bytes
+the rest of the time; the anchored form is a position or it is nothing. It needs
+the literal words `at line` and `column`, which a base64 body cannot form
+(base64 has no space character).
 
 **FALL BACK to a fixed string**, never to the raw message. A message that does
 not match the pattern must degrade to `position unreported`, so a change to the
 exception's wording degrades instead of silently reopening the leak.
 
-**Why it is worse than a noisy log.** `ErrorLog.capture!` (studio-engine
-`app/models/error_log.rb`) stores `message: exception.message` verbatim into
-Postgres and forwards it to Sentry, and the same method builds its `inspect`
-column as `exception.message.to_s[0, 1000]`. The engine already refuses to store
-`exception.inspect` **because ivar dumps carry secrets** — and leaves `message`
-wholly undefended. That asymmetry is the sharpest way to see the gap: 1,000
-characters of a 1,592-character PEM is still the usable part of a private key,
-and `error_logs/show` renders that column in the admin UI. The leak is
-persistent, published, and visible.
+**Measure under the runtime the command LOADS, not the one your shell reaches
+for**, and measure the REAL input. Both halves of that were learned here: an
+early run used bare `ruby` (the laptop's default gem) while the documented
+command was `heroku run bin/rails runner` (the bundled 2.20.0), and a later one
+used a hand-built fixture whose digits were typed rather than generated — which
+is how the nine-digit figure got in. A synthetic input measures your fixture.
+
+**Why it is worse than a noisy log — it reaches a screen, further than you would
+guess.** `ErrorLog.capture!` (studio-engine `app/models/error_log.rb`) stores
+`message: exception.message` verbatim into an uncapped `text` column and
+forwards it to Sentry. The engine already refuses to store `exception.inspect`
+**because ivar dumps carry secrets**, and leaves `message` wholly undefended.
+That asymmetry is the sharpest way to see the gap. Then it renders, three ways:
+
+| Where | What it shows |
+|---|---|
+| `error_logs/show.html.erb` | the message **unbounded**, in an `h2` |
+| `error_logs/index.html.erb` | the message under Tailwind `truncate` — CSS ellipsis only, so the **full bytes sit in the DOM** for up to 100 rows, without opening a single log |
+| `error_logs_controller.rb` | `message ILIKE :q` — the leaked bytes are **queryable** |
+
+Persistent, published, visible, and searchable.
 
 **It is not only parser errors.** The shape is *any* raise or log that
 interpolates a value the caller did not choose. A near-miss found in review:

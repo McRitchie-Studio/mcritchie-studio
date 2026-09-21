@@ -89,9 +89,21 @@ class ParseErrorRedactionDocsTest < ActiveSupport::TestCase
     assert doc_body.match?(/at line \\d\+ column \\d\+/),
       "the doc must name the ANCHORED pattern — 'report the position' alone is what leaked"
 
-    assert doc_body.match?(/987654321/),
-      "the doc must carry the MEASUREMENT that shows a bare digit run returning key bytes; " \
-      "without it this reads as a style preference rather than a leak"
+    # NO PIN ON A SPECIFIC MEASURED VALUE, and that is a deliberate correction.
+    # This assertion used to require the literal string "987654321" — a figure
+    # taken from a hand-built fixture, not from a real key. So an agent who
+    # re-measured, found the true value and corrected the doc REDDENED this
+    # suite, and the failure message told them to restore the false number. A
+    # guard that punishes re-measurement is this rule running backwards.
+    #
+    # What is pinned instead is the SHAPE the rule needs: the anchored pattern
+    # above, the fixed-string fallback below, and — since the argument is that
+    # the bare form is not a position at all — that the doc still shows the bare
+    # form being contrasted with it. The numbers are free to move when someone
+    # measures again, which is what we want them to do.
+    assert doc_body.match?(%r{e\.message\[/\\d\+/\]}),
+      "the doc must still SHOW the bare form it is arguing against — the rule is a contrast, " \
+      "and without the losing side it reads as an arbitrary preference"
 
     assert doc_body.match?(/position unreported/i),
       "the doc must require a fixed-string fallback, never the raw message"
