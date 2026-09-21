@@ -81,9 +81,19 @@ module Api
         assert_nil JSON.parse(response.body)["data"]["claimed"]
       end
 
+      # Every write below CLAIMS FIRST, because a write is now refused without a
+      # live claim. That is the contract, not test scaffolding — the SOP already
+      # claims before it writes, and these tests walk the same path.
+      def claim!(session: "sess-1")
+        post claim_next_api_v1_contents_path, params: { session: session }, headers: auth, as: :json
+        session
+      end
+
       test "the agent writes its script back and advances the stage" do
+        claim!
+
         patch api_v1_content_path(@content.slug),
-              params: { content: {
+              params: { session: "sess-1", content: {
                 script_text: "The Bills did not win this game so much as survive it.",
                 scenes: [{ "number" => 1, "description" => "stadium at dusk" }],
                 captions: "Survived it 24-17.",
@@ -101,14 +111,76 @@ module Api
       # An agent that could rewrite the scoreline could publish a video about a
       # game that did not happen.
       test "the agent cannot rewrite the recorded scoreline" do
+        claim!
+
         patch api_v1_content_path(@content.slug),
-              params: { content: { script_text: "x", game_facts: { "home_score" => 99 }, game_slug: "fake" } },
+              params: { session: "sess-1",
+                        content: { script_text: "x", game_facts: { "home_score" => 99 }, game_slug: "fake" } },
               headers: auth, as: :json
 
         assert_response :success
         @content.reload
         assert_equal 24, @content.game_facts["home_score"]
         assert_equal "buffalo-bills-vs-miami-dolphins", @content.game_slug
+      end
+
+      # --- the lease, enforced on the destructive half -----------------------
+      #
+      # Release (harmless) checked the session from the first day; update
+      # (destructive) did not. A write from a non-holder landed with a 200, so
+      # the caller could not even tell it had collided.
+
+      test "a write with no claim at all is refused" do
+        patch api_v1_content_path(@content.slug),
+              params: { session: "sess-1", content: { script_text: "unclaimed" } },
+              headers: auth, as: :json
+
+        assert_response :conflict
+        assert_equal "CLAIM_REQUIRED", JSON.parse(response.body)["error_code"]
+        assert_nil @content.reload.script_text
+      end
+
+      test "a write from a session that does not hold the claim is refused" do
+        claim!(session: "sess-1")
+
+        patch api_v1_content_path(@content.slug),
+              params: { session: "sess-2", content: { script_text: "stranger's take", stage: "script" } },
+              headers: auth, as: :json
+
+        assert_response :conflict
+        assert_equal "CLAIM_HELD", JSON.parse(response.body)["error_code"]
+        @content.reload
+        assert_nil @content.script_text
+        assert_equal "idea", @content.stage, "a refused write must not advance the card"
+      end
+
+      # Omitting the session must not be a way PAST the check — that is exactly
+      # how the release guard failed.
+      test "a write that sends no session is refused on a claimed card" do
+        claim!(session: "sess-1")
+
+        patch api_v1_content_path(@content.slug),
+              params: { content: { script_text: "sessionless" } },
+              headers: auth, as: :json
+
+        assert_response :conflict
+        assert_equal "CLAIM_REQUIRED", JSON.parse(response.body)["error_code"]
+        assert_nil @content.reload.script_text
+      end
+
+      # The reachable collision: A claims, A's inference outruns the 30-minute
+      # lease, B claims the lapsed card, A's write must not land on B's.
+      test "a write on a lapsed lease is refused, even for the original holder" do
+        claim!(session: "sess-1")
+        @content.reload.update!(claimed_at: (Content::AGENT_CLAIM_LEASE + 1.minute).ago)
+
+        patch api_v1_content_path(@content.slug),
+              params: { session: "sess-1", content: { script_text: "late take" } },
+              headers: auth, as: :json
+
+        assert_response :conflict
+        assert_equal "CLAIM_LAPSED", JSON.parse(response.body)["error_code"]
+        assert_nil @content.reload.script_text
       end
 
       test "release drops the lease" do
@@ -124,6 +196,19 @@ module Api
         post claim_next_api_v1_contents_path, params: { session: "sess-1" }, headers: auth, as: :json
 
         post release_api_v1_content_path(@content.slug), params: { session: "sess-2" }, headers: auth, as: :json
+
+        assert_response :conflict
+        assert_equal "CLAIM_HELD", JSON.parse(response.body)["error_code"]
+        assert @content.reload.claimed_at.present?
+      end
+
+      # The fail-open, at the HTTP seam: a stranger who omitted the session used
+      # to force-release a live claim, while the same stranger who sent one was
+      # refused. The missing value must fail CLOSED.
+      test "a release that sends no session cannot drop a live claim" do
+        post claim_next_api_v1_contents_path, params: { session: "sess-1" }, headers: auth, as: :json
+
+        post release_api_v1_content_path(@content.slug), headers: auth, as: :json
 
         assert_response :conflict
         assert_equal "CLAIM_HELD", JSON.parse(response.body)["error_code"]

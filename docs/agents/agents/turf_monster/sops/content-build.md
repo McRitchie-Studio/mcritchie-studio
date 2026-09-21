@@ -144,6 +144,19 @@ bin/content write <slug> \
 `--stage script` advances the card. Leave the stage off if you want to save work
 in progress without moving it.
 
+**The write is REFUSED unless you still hold the claim.** The session rides the
+write, and the server answers `409` with one of three codes rather than writing:
+
+| Code | What happened | What to do |
+|------|---------------|------------|
+| `CLAIM_REQUIRED` | you never claimed this card, or sent no session | claim it, then write |
+| `CLAIM_LAPSED` | your 30-minute lease ran out mid-inference | claim it again — someone else may hold it now, and your draft is in `/tmp`, not lost |
+| `CLAIM_HELD` | another session holds it | leave it; claim the next card |
+
+`CLAIM_LAPSED` refuses YOU, the original claimer, on purpose. Past the lease the
+card is claimable by anyone, so a write from before the lapse can land on top of
+somebody else's — which is the exact collision the claim exists to prevent.
+
 ### 6. Release
 
 ```bash

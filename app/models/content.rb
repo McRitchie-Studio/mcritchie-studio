@@ -113,12 +113,69 @@ class Content < ApplicationRecord
   # Dropping the lease is deliberately unconditional for the HOLDER and refused
   # for anyone else: a release is how a soul says "I am done or I gave up", and
   # letting a stranger release it would re-open a card someone is still writing.
+  #
+  # `session.present?` is NOT a conjunct of the guard, and that is the whole
+  # correction here. It used to be, which made the check bypassable by OMITTING
+  # the thing being checked: a stranger who sent a session was refused, and the
+  # same stranger who sent none force-released a live claim (measured, on an
+  # unsaved record, 2026-09-21). A caller who names no session has not proved it
+  # holds this one, so it is a stranger — the missing value must fail CLOSED.
   def release_claim!(session: nil)
-    if session.present? && claim_session.present? && claim_session != session && claim_held?
+    if claim_held? && claim_session.present? && claim_session != normalize_session(session)
       raise ArgumentError, "content #{slug} is held by another session"
     end
 
     update!(claimed_by: nil, claim_session: nil, claimed_at: nil)
+  end
+
+  # Why this session may not WRITE this card, or nil when it may.
+  #
+  # Release is harmless and update is destructive, so update is the one that
+  # has to be guarded — and it was the one that was not. The reachable path:
+  # agent A claims, its inference runs past AGENT_CLAIM_LEASE, agent B
+  # legitimately claims the lapsed card, both PATCH, last write wins silently
+  # and A gets a 200 as if it succeeded. Both souls scripted the same game,
+  # which is exactly the collision the claim was invented to prevent.
+  #
+  # An EXPIRED lease therefore refuses its own original holder too. Past the
+  # lease someone else may already hold the card, and "it was mine when I
+  # started" is not a right to write — re-claiming is how you find out.
+  ClaimRefusal = Struct.new(:code, :message, keyword_init: true)
+
+  def claim_write_refusal(session:, now: Time.current)
+    given = normalize_session(session)
+
+    if claimed_at.blank?
+      return ClaimRefusal.new(code: "CLAIM_REQUIRED",
+                              message: "content #{slug} is not claimed — claim it before writing")
+    end
+
+    if claim_expired?(now: now)
+      lapsed = (claimed_at + AGENT_CLAIM_LEASE).utc.iso8601
+      return ClaimRefusal.new(code: "CLAIM_LAPSED",
+                              message: "content #{slug}'s claim lease lapsed at #{lapsed} — claim it again before writing")
+    end
+
+    # A claim taken without a session can never be proved by anyone, so nobody
+    # may write through it. It is bounded: the lease drops it within
+    # AGENT_CLAIM_LEASE and the next claim carries a session.
+    if claim_session.blank?
+      return ClaimRefusal.new(code: "CLAIM_REQUIRED",
+                              message: "content #{slug} was claimed without a session, so no caller can prove it holds it")
+    end
+
+    if given.nil?
+      return ClaimRefusal.new(code: "CLAIM_REQUIRED",
+                              message: "content #{slug} is claimed — send the session that claimed it")
+    end
+
+    return ClaimRefusal.new(code: "CLAIM_HELD", message: "content #{slug} is held by another session") if claim_session != given
+
+    nil
+  end
+
+  def claim_holder?(session:, now: Time.current)
+    claim_write_refusal(session: session, now: now).nil?
   end
 
   scope :by_stage, ->(stage) { where(stage: stage) }
@@ -159,6 +216,12 @@ class Content < ApplicationRecord
   end
 
   private
+
+  # "", "   " and nil are all "no session". Normalising at one site is what
+  # keeps release and write agreeing on what a missing session means.
+  def normalize_session(value)
+    value.to_s.strip.presence
+  end
 
   def set_stage_timestamp
     case stage
