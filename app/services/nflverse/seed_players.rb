@@ -31,6 +31,27 @@ class Nflverse::SeedPlayers
   # where an uncaught raise aborts the ENTIRE ship, not just this task.
   class FeedUnavailable < StandardError; end
 
+  # Transport failures, matching the shape this repo already uses in
+  # ReleaseNotes::DiscordClient and Gmail::Client.
+  #
+  # PARENT classes, deliberately. A literal list of concrete errors drifts the
+  # moment the network finds a new way to fail, and it already had: an earlier
+  # version named ECONNREFUSED/ECONNRESET/EHOSTUNREACH but missed their
+  # siblings ETIMEDOUT, ENETUNREACH and EPIPE — an enumeration incomplete for
+  # the very family it enumerates. `SystemCallError` is the parent of every
+  # `Errno::`, and `IOError` the parent of `EOFError` (which a server that
+  # hangs up mid-chunk raises).
+  TRANSPORT_ERRORS = [
+    SocketError, SystemCallError, IOError, Timeout::Error, OpenSSL::SSL::SSLError,
+    OpenURI::HTTPError
+  ].freeze
+
+  # open-uri raises a BARE RuntimeError for "redirection forbidden" and "HTTP
+  # redirection loop" (open-uri.rb:233 and :241). That path is LIVE here, not
+  # theoretical: PLAYERS_URL is a GitHub release download, so every single
+  # fetch redirects to objects.githubusercontent.com.
+  REDIRECT_ERROR = /redirection forbidden|HTTP redirection loop/i
+
   # nflverse uses standard NFL abbreviations with a few quirks: "LA" for the
   # Rams, "LAC" for the Chargers, "LV" for the Raiders, "WAS" for the
   # Commanders. Maps to our canonical team slugs.
@@ -86,6 +107,10 @@ class Nflverse::SeedPlayers
     @stats
   end
 
+  # PRIVATE (declared below, not by a marker): calling this directly bypasses
+  # `call`'s rescue, which is the whole point of the change. A bare `private`
+  # here would also privatise `ingest_row`, which is deliberately public so a
+  # test can drive one row without a CSV.
   def run_import
     ImportRun.track("nflverse_players") do |run|
       rows = ordered(parse_csv)
@@ -306,10 +331,23 @@ class Nflverse::SeedPlayers
   # command inside `bin/release`, where a raise aborts the whole ship.
   def fetch_remote
     puts "Fetching #{@source_url}"
-    URI.open(@source_url, read_timeout: 60).read.force_encoding("UTF-8")
-  rescue OpenURI::HTTPError, SocketError, Timeout::Error, Errno::ECONNREFUSED,
-         Errno::ECONNRESET, Errno::EHOSTUNREACH, OpenSSL::SSL::SSLError => e
+    open_source(@source_url).read.force_encoding("UTF-8")
+  rescue *TRANSPORT_ERRORS => e
     raise FeedUnavailable, "#{e.class}: #{e.message}"
+  rescue RuntimeError => e
+    # Only open-uri's redirect refusals — anything else is ours and must keep
+    # raising, or the quiet path would hide every genuine defect.
+    raise unless e.message.match?(REDIRECT_ERROR)
+
+    raise FeedUnavailable, "#{e.class}: #{e.message}"
+  end
+
+  private :run_import
+
+  # Seam so a test can make the NETWORK fail rather than hand-raising the
+  # wrapped error — which is what let an incomplete rescue list ship.
+  def open_source(url)
+    URI.open(url, read_timeout: 60)
   end
 
   def vputs(msg)
