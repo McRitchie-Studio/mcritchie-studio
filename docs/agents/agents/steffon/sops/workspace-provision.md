@@ -85,7 +85,7 @@ bin/rails 'workspace:check[<domain>]'
 ```
 
 Green flips the row to **`active`** and prints the mailbox and a first page of
-Drive. Anything else records the refusal on the row and leaves it `pending`.
+Drive. A refusal at the PROBE is recorded on the row and leaves it `pending`.
 
 Read the verdict this way:
 
@@ -95,10 +95,23 @@ Read the verdict this way:
 | `unauthorized_client`, minutes old | Normal propagation | Wait, re-run |
 | `unauthorized_client`, hours old | Wrong Workspace, or wrong Client ID | Back to step 2 — confirm the domain they signed into |
 | `SKIPPED — revoked` | Deliberately switched off | Switching one back on, below |
+| `CHECK FAILED` **after** the probe passed | **The row is already `active`.** Re-run before you walk away | Below |
 
-A `pending` row is refused everywhere, so an unproven workspace is safe to leave
-sitting. Do not hand-edit `status` to `active` to move things along; the flip
-exists to record that a real token was issued.
+**`CHECK FAILED` does not mean `pending`.** `lib/tasks/workspace.rake` calls
+`account.mark_verified!` BEFORE the Drive and Gmail smoke reads — deliberately,
+because `authorizer_for` refuses a subject that is not ACTIVE, so the reads
+cannot come first. `mark_verified!` sets `status: "active"` and clears
+`last_check_error`, and the `rescue StandardError` below only warns. So a smoke
+read that fails leaves the row **active with no recorded error** while your
+terminal says `CHECK FAILED` — the one state where the screen and the row
+disagree. Re-run `workspace:check[<domain>]`: a real grant passes the reads the
+second time, and a row that keeps failing them is `workspace:revoke`'s job, not
+something to leave sitting.
+
+A `pending` row is refused everywhere, so a workspace that never got past the
+probe is safe to leave sitting. One that reached `CHECK FAILED` is not, per the
+paragraph above. Do not hand-edit `status` to `active` to move things along; the
+flip exists to record that a real token was issued.
 
 ## 4. Attach the folders
 
@@ -155,15 +168,42 @@ When a service-account key is set anywhere, **suppress both streams and verify
 by identifier, never by value**:
 
 ```bash
+# ASSIGN THE PATH FIRST, and refuse to continue without it. `>/dev/null 2>&1`
+# suppresses the key, but it also suppresses `cat`'s complaint — so an unset or
+# mistyped path sets the production credential to the EMPTY STRING, silently,
+# and Heroku stores it. Guard on the file, not on the variable being non-blank:
+# a path that is set but wrong fails the same way.
+KEYFILE=<absolute path to the downloaded key .json>
+[ -s "$KEYFILE" ] || { echo "KEYFILE is unset or empty — refusing to set the credential"; exit 1; }
+
 # The value is multi-line. A filter that matches only the first line lets the
 # REST of a private key through, which is exactly how one reached a transcript
 # on 2026-09-19.
 heroku config:set GOOGLE_SERVICE_ACCOUNT_JSON="$(cat "$KEYFILE")" \
   --app <app> >/dev/null 2>&1
 
-# Verify by fingerprint only.
-bin/rails runner 'puts Workspace::Credentials.credential["private_key_id"]'
+# VERIFY ON THE DYNO, and verify the ENV VAR — not the resolved credential.
+# A bare `bin/rails` runs on your desk, not on the app you just wrote to. And
+# `Workspace::Credentials.credential` resolves `ENV[...].presence || 1Password`
+# (app/services/workspace/credentials.rb), so a wiped `""` falls through to the
+# vault and prints a perfectly healthy fingerprint over the value you just
+# destroyed. Read the var itself, by length and fingerprint, never by value:
+heroku run --app <app> --no-tty --exit-code -- \
+  bin/rails runner 'v = ENV["GOOGLE_SERVICE_ACCOUNT_JSON"].to_s;
+                    abort("EMPTY — the config:set wrote nothing") if v.strip.empty?;
+                    begin; k = JSON.parse(v);
+                    rescue JSON::ParserError => e; abort("UNPARSEABLE at offset #{e.message[/\d+/]}"); end;
+                    puts "bytes=#{v.bytesize} private_key_id=#{k["private_key_id"]}"'
 ```
+
+Two things make this a check rather than a printout. `abort` exits non-zero
+under `--exit-code`, so a wiped credential stops the SOP instead of scrolling
+past as a blank line. And the parse is RESCUED to an offset: a bare
+`JSON.parse` on a truncated key raises `JSON::ParserError`, whose message
+echoes its input to end of stream — printing the key bytes into the transcript,
+which is the exact leak the rest of this section exists to prevent.
+`Workspace::Credentials` already handles this internally; a hand-written runner
+does not inherit that, so it has to say so itself.
 
 Never `echo`, `cat`, or interpolate the key into a message, a commit, or an
 error. `Workspace::Credentials` already refuses to put key bytes in an exception
