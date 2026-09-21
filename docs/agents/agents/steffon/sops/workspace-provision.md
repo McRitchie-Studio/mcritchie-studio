@@ -43,6 +43,18 @@ You need: the client's domain, a `team@<domain>` user existing in their
 Workspace, and a named contact who is a **super-admin** of that domain. If any
 of the three is missing, stop at the decline path.
 
+**And a filed Google credential — which `register` does NOT check.** `check`
+guards on it (`lib/tasks/workspace.rake`, the `configured?` gate, warn + exit 1);
+`register` has no such guard, so it runs happily without one and prints
+`Client ID: (no credential filed)`. Step 2 then tells you to hand that line to
+the client's super-admin. It fails loudly — the string says what is wrong — but
+only if you read it, and you are about to paste it into an email. Confirm the
+credential resolves before you start:
+
+```bash
+bin/rails runner 'puts Workspace::Credentials.configured? ? "credential: #{Workspace::Credentials.source}" : "NO CREDENTIAL FILED — stop here"'
+```
+
 ```bash
 cd /Users/alex/projects/mcritchie-studio
 bin/rails workspace:accounts          # who is reachable today
@@ -60,7 +72,13 @@ domain, so a row for one client can never be pointed at another's mailbox.
 
 `register` prints the two values the client's admin needs: the **Client ID** and
 the **exact scope list**. Read them from that output rather than from any doc —
-they come from the filed credential, so they stay correct across a key rotation.
+but for different reasons, and the difference matters when a key rotates. The
+Client ID is read from the filed credential, so it does stay correct across a
+rotation. The scope list is NOT: it is printed from
+`Workspace::Credentials::SCOPES`, a frozen constant in the code, so it tracks
+what the CODE asks for. That is the right source — it is what a grant has to
+match — but a rotation cannot change it, and a code change can. When SCOPES
+moves, every existing grant is stale and `check` says so.
 
 ## 2. Hand the grant to the client's super-admin
 
@@ -69,7 +87,7 @@ by a super-admin **of the client's own domain**:
 
 > admin.google.com → Security → Access and data control → API controls →
 > Manage domain wide delegation → **Add new** → paste the Client ID → paste the
-> scopes as one comma-separated line → Authorise.
+> scopes as one comma-separated line → Authorize.
 
 **⚠ THE FAILURE THAT COSTS AN EVENING.** A grant added in the *wrong* Workspace
 looks identical to a grant that has not propagated yet: both answer
@@ -92,12 +110,24 @@ Read the verdict this way:
 | What you see | What it means | Next |
 |---|---|---|
 | `ACTIVE as team@<domain>` | Proven. The grant is in the right place. | Step 4 |
-| `unauthorized_client`, minutes old | Normal propagation | Wait, re-run |
-| `unauthorized_client`, hours old | Wrong Workspace, or wrong Client ID | Back to step 2 — confirm the domain they signed into |
+| `NOT AUTHORIZED as team@<domain> (unauthorized_client)`, minutes old | Normal propagation | Wait, re-run |
+| `NOT AUTHORIZED as team@<domain> (unauthorized_client)`, hours old | Wrong Workspace, or wrong Client ID | Back to step 2 — confirm the domain they signed into |
+| `NOT AUTHORIZED … (<any other slug>)` | Not a propagation delay — the slug names the refusal | Read the slug before re-running |
 | `SKIPPED — revoked` | Deliberately switched off | Switching one back on, below |
 | `CHECK FAILED` **after** the probe passed | **The row is already `active`.** Re-run before you walk away | Below |
 
-**`CHECK FAILED` does not mean `pending`.** `lib/tasks/workspace.rake` calls
+The rows above key on the line the task actually prints —
+`<domain>: NOT AUTHORIZED as <subject> (<slug>)` — not on the bare slug. The
+slug sits in parentheses at the end, so a reader scanning for `unauthorized_client`
+finds nothing at the start of any line and can read that as "no refusal for this
+domain". The label is what you see first; the slug is what tells the two
+`NOT AUTHORIZED` rows apart.
+
+**`CHECK FAILED` AFTER THE PROBE PASSED does not mean `pending`** — and the
+qualifier is the whole sentence. The `rescue` spans the entire block, so a
+failure BEFORE `mark_verified!` also prints `CHECK FAILED`, with the row
+correctly left `pending`. It is only the post-flip failure that disagrees with
+the screen. `lib/tasks/workspace.rake` calls
 `account.mark_verified!` BEFORE the Drive and Gmail smoke reads — deliberately,
 because `authorizer_for` refuses a subject that is not ACTIVE, so the reads
 cannot come first. `mark_verified!` sets `status: "active"` and clears
@@ -209,7 +239,9 @@ does not inherit that, so it has to say so itself.
 **Slice the message with the ANCHORED pattern — `at line \d+ column \d+` —
 never a bare `\d+`.** The bare form takes the message's FIRST digit run, and on
 this credential's most likely failure that run is key material, not a position.
-Measured on json 3.0.2 against a key pasted with a literal line break inside
+Measured under `bundle exec` on **json 2.20.0** — the version `Gemfile.lock`
+pins and the `heroku run bin/rails runner` above actually loads, not the
+laptop's default gem — against a key pasted with a literal line break inside
 `private_key`:
 
 ```text
@@ -250,5 +282,8 @@ console action only. So the ceiling on automating this act is one click, taken
 by someone who does not work for us.
 
 Architecture of the allow-list, and why a compile-time constant became a table:
-`docs/agents/system/devops-cycle-design.md` is not it — the reasoning lives on
-the `workspace-accounts-registry` task record.
+`app/services/workspace/credentials.rb` carries it at the `SCOPES`/allow-list
+comments, and `app/models/workspace_account.rb` carries the allow-list rationale
+and the three-state lifecycle. Both are on disk. (The `workspace-accounts-registry`
+task record held the original write-up and is ARCHIVED, so it is history rather
+than a place to read.)
