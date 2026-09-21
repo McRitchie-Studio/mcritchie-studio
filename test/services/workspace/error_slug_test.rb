@@ -183,7 +183,7 @@ class WorkspaceErrorSlugTest < ActiveSupport::TestCase
   # must come before the first `assert_equal`. minitest stops at the first
   # failure and appends its default message, so a shape check that runs first
   # prints the haystack the refute existed to catch.
-  GUARDED_FIXTURES = %w[SECRET team@client.test team@secret.test].freeze
+  GUARDED_FIXTURES = %w[SECRET MIIEvQ team@client.test team@secret.test].freeze
 
   test "every test that names a guarded fixture refutes before it asserts equality" do
     source = File.read(__FILE__)
