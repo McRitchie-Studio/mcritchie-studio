@@ -60,14 +60,15 @@ mechanics and does not transfer.
 mkdir -p "${CLAUDE_SCRATCHPAD:-/tmp}/ff"
 ```
 
-**EVERY BLOCK BELOW RE-ENTERS THAT DIRECTORY, and the repetition is the point.**
+**EVERY BLOCK BELOW THAT USES A RELATIVE PATH RE-ENTERS THAT DIRECTORY, and
+the repetition is the point.**
 This SOP runs across several turns, and **no shell state survives a turn
 boundary** — measured 2026-09-21: a variable comes back empty, and the working
 directory is RESET after the call, including a `cd` inside the project tree. So
 a single `cd` here would not still be in force by the time the scripts run:
 they would read and write `league.json` in whatever directory the turn started
 in, which is usually a git worktree. Consistent, still working, and scattering
-nineteen files through a tracked tree.
+seventeen files through a tracked tree.
 
 `${CLAUDE_SCRATCHPAD:-/tmp}` is safe to repeat because it carries nothing — an
 environment lookup with a fallback, re-evaluated fresh in each turn. (Nothing
