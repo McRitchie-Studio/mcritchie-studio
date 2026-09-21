@@ -59,8 +59,15 @@ break right after the BEGIN armor
   e.message[/\d+/]                  => "9"                  ← key material, 1 char
   e.message[/at line \d+ column \d+/] => "at line 2 column 0"
 
-digit runs present in real key bodies   1 to 5 chars (longest seen: 92476)
+digit runs present in real key bodies   mostly 1-2 chars; the tail is a SAMPLE
 ```
+
+**"Longest seen" is a sample, not a limit**, and two censuses disagree: 40 bodies
+measured here gave a maximum run of 5 (`80456`), and 40 measured by a reviewer
+gave 6 (`277951`). Neither is wrong. A base64 body draws from a 64-character
+alphabet of which 10 are digits, so a run of length *k* appears with probability
+≈ (10/64)^k — geometric, with no upper bound. Quote the distribution's shape, not
+its maximum; the maximum is whatever your sample happened to contain.
 
 So the bare slice is a *small* leak — but that is not the argument for anchoring,
 and an earlier revision of this file overstated it into a nine-digit one that no

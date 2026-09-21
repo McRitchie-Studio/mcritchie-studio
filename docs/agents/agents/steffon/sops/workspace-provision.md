@@ -304,10 +304,18 @@ newlines were never escaped as `\n`, which is what a paste does. Ten keys:
 
 ```text
 message         invalid ASCII control character in string: \nMIIEvQIBADANBgkqhkiG9w0…
-                                                            (length 1741 on all ten)
 e.message[/\d+/]                      => "9"                 ← key bytes, 10/10
 e.message[/at line \d+ column \d+/]   => "at line 2 column 0" ← 10/10
 ```
+
+**No message LENGTH is quoted here, deliberately.** `JSON::ParserError` quotes
+from the failure point to END OF DOCUMENT, so the length is a property of the
+fields that FOLLOW `private_key`, not of the key. Measured over 20 keys: a
+document that ends at `private_key` gives 1,741 (±4 for the DER length byte),
+and a real Google credential with its seven trailing fields gives 1,907 — same
+key, same failure. An earlier revision of this section printed one of those
+numbers under "the construction, stated so it can be rebuilt", which it could
+not be. What matters is unbounded, and that is already the claim.
 
 **One character, and it is not a sample — it is structural.** PKCS#8 wraps the
 key in an AlgorithmIdentifier carrying the rsaEncryption OID, which base64s to
@@ -320,7 +328,10 @@ character. **The case is that it is not a position at all.** It returns key
 material that merely looks like a number, and it would do so silently, every
 time, in a line whose whole purpose is to report where the parse failed. The
 anchored form is a position or nothing: it needs the literal words `at line` and
-`column`, which base64's alphabet cannot produce. It is the same slice `Gmail::Credentials`,
+`column`, and the SPACE between them is the part base64 cannot produce. (The
+letters are not — `c`, `o`, `l`, `u`, `m` and `n` are all in the base64
+alphabet, and an earlier revision of this line claimed otherwise. The rule was
+safe; the reason given for it was not.) It is the same slice `Gmail::Credentials`,
 `Workspace::Credentials` and Industries' `Google::Credentials` already use — and
 like them it falls back to a fixed string rather than to the raw message, so a
 future change to the exception's wording degrades to `position unreported`
