@@ -188,8 +188,18 @@ module Workspace
         # An earlier revision of this PR fixed it by EXTRACTING this expression
         # as `Credentials.redact` and calling it from the sweep too. That was
         # backwards: it would have given the weaker rule a name and a second
-        # caller, on the same day the sweep moved to the stronger one. There is
-        # one redactor now, and this is the last caller to join it.
+        # caller, on the same day the sweep moved to the stronger one.
+        #
+        # ONE RESCUE-TIME REDUCER — not one redactor. `Malformed` is raised below
+        # with a position sliced out of a ParserError, and that is a CONSTRUCTOR:
+        # it builds a safe message at RAISE time, where the position is still
+        # known. ErrorSlug is a REDUCER: it takes whatever message reaches a
+        # rescue and cuts it down. Extracting either into the other would be
+        # wrong, and saying "there is one redactor" tells an auditor asking
+        # whether Workspace redaction is centralized to stop looking — they would
+        # miss that constructor, and api_retry.rb, which interpolates a raw
+        # vendor message into a new error (contained downstream by ErrorSlug, but
+        # travelling raw inside the lane until it gets there).
         rescue StandardError => e
           [ false, Workspace::ErrorSlug.for(e) ]
         end
