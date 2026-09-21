@@ -31,7 +31,14 @@ class WorkspaceAccount < ApplicationRecord
 
   has_many :knowledge_sources, dependent: :nullify
 
-  validates :domain, presence: true, uniqueness: true
+  # A domain is dot-separated labels, each starting and ending alphanumeric.
+  # This rejects the two shapes that validated before and should not have:
+  # a TRAILING DOT ("mason.test.") and a bare single label ("localhost").
+  DOMAIN_FORMAT = /\A[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+\z/
+
+  validates :domain, presence: true, uniqueness: true,
+                     format: { with: DOMAIN_FORMAT, allow_blank: true,
+                               message: "must be a dot-separated domain with no trailing dot" }
   validates :subject, presence: true, uniqueness: true
   validates :status, inclusion: { in: STATUSES }
   validate :subject_belongs_to_this_domain
@@ -99,6 +106,17 @@ class WorkspaceAccount < ApplicationRecord
             last_check_error: reason.to_s[0, 250])
   end
 
+  # The grant is PROVEN — a token was issued — but a follow-up read failed.
+  #
+  # Status is deliberately untouched. Dropping to `pending` would discard a
+  # proven delegation because of a transient read, and the row would then lie in
+  # the other direction. What was wrong before is that the sweep printed
+  # CHECK FAILED while the row stayed `active` with last_check_error nil, so the
+  # stored state contradicted what the operator was told.
+  def record_check_warning!(reason)
+    update!(last_check_error: reason.to_s[0, 250])
+  end
+
   private
 
   def normalize
@@ -117,6 +135,13 @@ class WorkspaceAccount < ApplicationRecord
     # domain's either way, so this closes a shape rather than a live hole.
     unless subject.count("@") == 1
       errors.add(:subject, "must be a single email address (got #{subject})")
+      return
+    end
+
+    # "@mason.test" has exactly one @ and ends with the right domain, and names
+    # nobody. It would be handed to Google as the subject of a JWT.
+    if subject.start_with?("@")
+      errors.add(:subject, "must have a local part before the @ (got #{subject})")
       return
     end
     return if subject.end_with?("@#{domain}")

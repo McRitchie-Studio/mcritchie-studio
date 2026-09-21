@@ -115,4 +115,40 @@ class WorkspaceCheckRakeTest < ActiveSupport::TestCase
     assert_includes out, "ACTIVE as team@zzz-fine.test"
     assert_equal 1, @exit_status, "a sweep with a failed row still exits non-zero"
   end
+
+  test "a proven row whose SMOKE READ fails records why, instead of contradicting the operator" do
+    # The probe succeeds, so the grant is genuinely proven and the row is
+    # flipped active. Then the Drive read blows up. The row used to stay active
+    # with last_check_error nil while this sweep printed CHECK FAILED.
+    account = WorkspaceAccount.create!(domain: "smoke.test")
+    boom = Class.new do
+      def files_list(query:, limit:) = raise(StandardError, %({"error": "backendError", "detail": "team@smoke.test"}))
+    end
+
+    Rake::Task["workspace:check"].reenable
+    out, err = Workspace::Credentials.stub(:configured?, true) do
+      Workspace::Credentials.stub(:credential, KEY) do
+        Workspace::Credentials.stub(:probe, ->(s) { [ true, nil ] }) do
+          Workspace::DriveClient.stub(:new, ->(subject:) { boom.new }) do
+            capture_io do
+              begin
+                Rake::Task["workspace:check"].invoke("smoke.test")
+              rescue SystemExit
+                nil
+              end
+            end
+          end
+        end
+      end
+    end
+
+    account.reload
+    assert_equal "active", account.status, "the grant WAS proven — a transient read must not discard it"
+    assert_includes err, "CHECK FAILED"
+    assert_equal "StandardError: backendError", account.last_check_error,
+      "the stored state now agrees with what the operator was told"
+    refute_includes account.last_check_error.to_s, "team@smoke.test"
+    refute_includes err, "team@smoke.test", "vendor prose does not reach the terminal either"
+    assert_nil out[/ACTIVE as team@smoke.test/], "it must not claim success"
+  end
 end
