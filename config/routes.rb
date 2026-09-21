@@ -309,6 +309,10 @@ Rails.application.routes.draw do
       # Creates the Content idea a faceless recap video is built from. Idempotent:
       # 201 when this call created the recap, 200 when it already existed.
       post "game_recaps", to: "game_recaps#create"
+      # The person/athlete projection turf-monster syncs from. Read-only by
+      # design: MS masters durable facts, TM masters events, and neither writes
+      # into the other's master.
+      resources :athletes, only: [:index]
       # The content pipeline's AGENT surface. Non-deterministic steps (the take,
       # the scenes, the caption) are written by a soul during an SOP with its own
       # inference, so production needs no model key. `claim_next` is the atomic
