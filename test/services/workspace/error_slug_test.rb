@@ -6,6 +6,30 @@ require "test_helper"
 class WorkspaceErrorSlugTest < ActiveSupport::TestCase
   SECRET = "-----BEGIN PRIVATE KEY-----MIIEvQIBADANBgkqh".freeze
 
+  # THE LEAK REFUTE RUNS FIRST, AND IT IS A PLAIN `refute`. Those are two rules
+  # and both are load-bearing.
+  #
+  # PLAIN, because minitest's `message()` prepends a custom message and still
+  # APPENDS the default one — so `refute_includes` / `assert_includes` dump their
+  # HAYSTACK even when you pass your own, and the haystack here is the slug, on
+  # the exact failure that means the slug carried the secret. A leak test that
+  # prints the leak when it catches one is not a leak test.
+  #
+  # FIRST, because minitest stops a test at its first failed assertion. An
+  # `assert_equal` on the reduced slug is a fine SHAPE check and its haystack is
+  # equally the slug — so if it runs before the refute, a broken guard fails
+  # THERE and prints the very bytes the refute existed to catch, which never
+  # runs. An earlier revision of this comment claimed every assertion in the file
+  # was plain; there were nine `assert_equal` and two `assert_operator`, and five
+  # of them printed guarded content under a broken-guard mutant. The claim was
+  # the defect, not the assertions: shape checks belong here, behind the refute.
+  #
+  # An `assert_operator` on a LENGTH is exempt by construction — its haystack is
+  # an integer. The rule is about haystacks that can hold the secret.
+  #
+  # Same rule, one level up: docs/agents/modules/backend-discipline.md, "Never
+  # interpolate an exception message that quotes its input".
+
   test "a raw message never survives, however alarming its contents" do
     error = StandardError.new("credential rejected: #{SECRET}")
 
@@ -14,9 +38,9 @@ class WorkspaceErrorSlugTest < ActiveSupport::TestCase
     # The leading word survives as the fault token — that is the point of the
     # token. What must NOT survive is the key, and the character class plus the
     # length bound are what stop it.
+    refute slug.include?("BEGIN PRIVATE KEY"), "the slug is #{slug.length} chars and carries a PEM header"
+    refute slug.include?("MIIEvQ"), "the slug is #{slug.length} chars and carries key body bytes"
     assert_equal "StandardError: credential", slug
-    refute_includes slug, "BEGIN PRIVATE KEY"
-    refute_includes slug, "MIIEvQ"
   end
 
   test "a message that LEADS with key bytes still cannot spill them" do
@@ -24,6 +48,7 @@ class WorkspaceErrorSlugTest < ActiveSupport::TestCase
 
     slug = Workspace::ErrorSlug.for(error)
 
+    refute slug.include?("MIIEvQ"), "the slug is #{slug.length} chars and carries key body bytes"
     assert_equal "StandardError", slug, "a run longer than a token is not a token"
   end
 
@@ -32,13 +57,16 @@ class WorkspaceErrorSlugTest < ActiveSupport::TestCase
 
     slug = Workspace::ErrorSlug.for(error)
 
-    assert_includes slug, "unauthorized_client"
-    refute_includes slug, "team@client.test", "the description carries addresses we do not spread"
-    refute_includes slug, "long prose"
+    assert slug.include?("unauthorized_client"), "the diagnosis was dropped; slug is #{slug.length} chars"
+    refute slug.include?("team@client.test"),
+           "the slug is #{slug.length} chars and carries an address we do not spread"
+    refute slug.include?("long prose"), "the slug is #{slug.length} chars and carries description prose"
   end
 
   test "a reason slug is read too" do
-    assert_includes Workspace::ErrorSlug.for(StandardError.new(%({"reason": "notFound"}))), "notFound"
+    slug = Workspace::ErrorSlug.for(StandardError.new(%({"reason": "notFound"})))
+
+    assert slug.include?("notFound"), "the reason field was dropped; slug is #{slug.length} chars"
   end
 
   test "an injected slug that is not slug-shaped is refused, not echoed" do
@@ -48,8 +76,9 @@ class WorkspaceErrorSlugTest < ActiveSupport::TestCase
 
     slug = Workspace::ErrorSlug.for(error)
 
+    refute slug.include?("BEGIN PRIVATE KEY"),
+           "a crafted error field smuggled prose through; slug is #{slug.length} chars"
     assert_equal "StandardError", slug
-    refute_includes slug, "BEGIN PRIVATE KEY"
   end
 
   # A NAMED class: an anonymous one stringifies as #<Class:0x...> because
@@ -63,8 +92,8 @@ class WorkspaceErrorSlugTest < ActiveSupport::TestCase
     # that is left to say.
     slug = Workspace::ErrorSlug.for(FakeServerError.new("503 from upstream for team@client.test"))
 
+    refute slug.include?("team@client.test"), "the slug is #{slug.length} chars and carries an address"
     assert_equal "WorkspaceErrorSlugTest::FakeServerError: HTTP 503", slug
-    refute_includes slug, "team@client.test"
   end
 
   # `#{error.class}` interpolates through to_s, NOT name — and an anonymous
@@ -109,15 +138,71 @@ class WorkspaceErrorSlugTest < ActiveSupport::TestCase
     )
     theirs = StandardError.new(%({"error": "unauthorized_client", "detail": "team@secret.test"}))
 
-    assert_includes Workspace::ErrorSlug.for(ours), "Register the workspace",
-                    "an authored remedy must survive — slugging it leaves the operator nothing to do"
-    assert_operator Workspace::ErrorSlug.for(ours).length, :<=, Workspace::ErrorSlug::AUTHORED_MAX
+    slug = Workspace::ErrorSlug.for(ours)
 
-    assert_equal "StandardError: unauthorized_client", Workspace::ErrorSlug.for(theirs),
+    assert slug.include?("Register the workspace"),
+           "an authored remedy must survive — slugging it leaves the operator nothing to do " \
+           "(slug was #{slug.length} chars)"
+
+    foreign = Workspace::ErrorSlug.for(theirs)
+
+    refute foreign.include?("team@secret.test"),
+           "the foreign slug is #{foreign.length} chars and carries an address"
+    assert_equal "StandardError: unauthorized_client", foreign,
                  "a FOREIGN message is still reduced to its token — the split is by origin, not by shape"
+  end
+
+  # THE SAME DEFECT THIS FILE ALREADY FIXED FOR `MAX`, ONE BOUND OVER. The
+  # AUTHORED_MAX assertion used to ride on the real UnregisteredSubject message,
+  # which measures 209 chars against a bound of 400 — so it asserted 209 <= 400
+  # and passed with the clamp DELETED. A bound test has to be driven by a
+  # subject longer than the bound, or it is a test that the fixture is short.
+  test "an authored message is bounded too" do
+    long = Workspace::Credentials::UnregisteredSubject.new("R" * (Workspace::ErrorSlug::AUTHORED_MAX * 2))
+
+    slug = Workspace::ErrorSlug.for(long)
+
+    assert_equal Workspace::ErrorSlug::AUTHORED_MAX, slug.length,
+                 "the subject must be LONGER than AUTHORED_MAX, or this passes without the clamp running"
+    assert_operator Workspace::ErrorSlug::AUTHORED_MAX, :>, Workspace::ErrorSlug::MAX,
+                    "two bounds for two threat models — if they converge, one of them is dead code"
   end
 
   test "nil is an answer, not a crash" do
     assert_equal "unknown error", Workspace::ErrorSlug.for(nil)
+  end
+
+  # THE CONVENTION GUARDS ITSELF, because prose did not. The comment at the top
+  # of this file once asserted every assertion here was a plain assert/refute; it
+  # was wrong by eleven, and five tests printed guarded fixture content under a
+  # broken-guard mutant — measured, including a full "-----BEGIN PRIVATE
+  # KEY-----MIIEvQIBADANBgkqh". Ordering is invisible on review and silent when
+  # it regresses, so it is asserted rather than described.
+  #
+  # The rule: in any test whose body names a guarded fixture, a plain `refute`
+  # must come before the first `assert_equal`. minitest stops at the first
+  # failure and appends its default message, so a shape check that runs first
+  # prints the haystack the refute existed to catch.
+  GUARDED_FIXTURES = %w[SECRET MIIEvQ team@client.test team@secret.test].freeze
+
+  test "every test that names a guarded fixture refutes before it asserts equality" do
+    source = File.read(__FILE__)
+    offenders = []
+
+    source.scan(/^  test ("[^"]+") do\n(.*?)^  end$/m) do
+      name, body = Regexp.last_match(1), Regexp.last_match(2)
+      next unless GUARDED_FIXTURES.any? { |fixture| body.include?(fixture) }
+      next if name.include?("refutes before it asserts")
+
+      refute_at = body.index(/^\s+refute /)
+      equal_at = body.index(/^\s+assert_equal /)
+      next if equal_at.nil?
+
+      offenders << name if refute_at.nil? || refute_at > equal_at
+    end
+
+    assert_empty offenders,
+                 "these name a guarded fixture and reach an assert_equal before any plain refute, " \
+                 "so a broken guard fails on the shape check and prints the slug: #{offenders.join(', ')}"
   end
 end

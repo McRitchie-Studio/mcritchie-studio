@@ -23,6 +23,16 @@ require "test_helper"
 class ParseErrorRedactionDocsTest < ActiveSupport::TestCase
   DOC = Rails.root.join("docs/agents/modules/backend-discipline.md")
 
+  # THE FABRICATION LANDED IN A FILE THIS GUARD DID NOT READ. `workspace-provision`
+  # is an SOP: it hands an operator a `heroku run bin/rails runner` one-liner that
+  # parses a credential, which inherits no service's rescue, so it teaches the rule
+  # in its own words — and it published the invented figure for a day after this
+  # file's own retraction landed. A guard scoped to the doc that happens to own the
+  # rule cannot see the doc that APPLIES it.
+  APPLYING_DOCS = [
+    Rails.root.join("docs/agents/agents/steffon/sops/workspace-provision.md")
+  ].freeze
+
   # The sites this repo owns, as the doc's table names them.
   GUARDED_SERVICES = [
     "app/services/gmail/credentials.rb",
@@ -116,5 +126,37 @@ class ParseErrorRedactionDocsTest < ActiveSupport::TestCase
     assert doc_body.match?(/leak test must not print the leak/i),
       "the doc must carry the test-writing trap — otherwise the first test written against this " \
       "rule prints the very bytes it is guarding"
+  end
+
+  # Every doc that hands an operator a credential-parsing one-liner has to teach
+  # the anchored form, and none may re-publish the retracted figure. This is the
+  # assertion that would have caught the sibling copy on the day it was written.
+  test "[static] a doc that teaches the rule uses the anchored slice and no retracted figure" do
+    APPLYING_DOCS.each do |path|
+      body = path.read
+      rel = path.relative_path_from(Rails.root).to_s
+
+      assert body.match?(/at line .d\+ column .d\+/),
+        "#{rel} hands the operator a rescue on a credential and must show the ANCHORED slice"
+
+      assert body.match?(/position unreported/),
+        "#{rel} must fall back to a fixed string, never to the raw message"
+
+      # THE FIGURE MAY NOT APPEAR INSIDE A FENCED BLOCK. A proximity window was
+      # the first shape of this assertion and it did not bite: the 600 characters
+      # before a fresh copy still reached back into the retraction's own prose, so
+      # the control passed. The failure mode is not "the digits appear" — they have
+      # to, in the retraction that names them — it is the digits appearing as
+      # OUTPUT. A fence is what makes a number read as something a command printed.
+      fenced = body.scan(/```.*?```/m).join("\n")
+
+      refute fenced.match?(/987654/),
+        "#{rel} prints the retracted figure inside a fenced block, where it reads as measured " \
+        "output. It was TYPED onto a real PKCS#8 prefix and labelled Measured; the real answer " \
+        "is \"9\". Name it in prose if you are retracting it, never in a fence."
+
+      assert body.match?(/retract|fabricat/i),
+        "#{rel} must keep the retraction that explains why the figure it once published was false"
+    end
   end
 end

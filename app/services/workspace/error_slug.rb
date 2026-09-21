@@ -18,8 +18,17 @@ module Workspace
     # A SEPARATE, LARGER BOUND FOR TEXT WE WROTE. MAX exists to stop
     # vendor-controlled text of unbounded length; an authored message has a
     # length we chose, and clamping it to 120 cut every remedy mid-sentence
-    # ("…it is not an "). The three authored messages measure 110-190 chars, so
-    # this leaves headroom without becoming "unbounded by another name".
+    # ("…it is not an ").
+    #
+    # WHAT IT BOUNDS IS THE STORED VALUE, not the raw message: `for` clamps
+    # "#{class}: #{message}", and the class prefix alone costs 27-45 chars of
+    # the budget. Measured across the four AUTHORED classes at their seven
+    # raise sites, with realistic subjects, domains and Drive folder ids:
+    # 112-313 chars STORED. The binding case is DriveWalker::TooDeep at 313,
+    # which leaves 87 to spare without becoming "unbounded by another name".
+    #
+    # Re-measure that figure when a message is added or grows. A range quoted
+    # here went stale the moment the list took a fourth member.
     AUTHORED_MAX = 400
 
     # A real fault token is one short identifier. The cap and the character
@@ -43,10 +52,23 @@ module Workspace
     # An operator reading "refusing" has been told nothing. The leading-word
     # fallback is right for a foreign message and wrong for one of ours, so the
     # split is by ORIGIN, not by shape.
+    # A CENTRAL FROZEN LIST, NOT A MARKER MODULE — and the fourth entry is the
+    # one that forced the choice to be made deliberately rather than by default.
+    # A marker (`include Workspace::AuthoredError`) would be tidier and is the
+    # wrong shape: this is a security ALLOW-LIST, not a taxonomy. A marker makes
+    # the redaction bypass self-service — any author could opt their own message
+    # past the redactor with no diff on THIS file, which is the file a security
+    # reviewer watches — and `include` is inherited, so a subclass three levels
+    # down would inherit the exemption silently. Adding a class here costs one
+    # line and shows up in exactly the right diff.
+    #
+    # The load-time coupling (naming app classes in a class body) is the price.
+    # If it ever bites, resolve by NAME at call time rather than loosening this.
     AUTHORED = [
       Workspace::Credentials::UnregisteredSubject,
       Workspace::Credentials::Malformed,
-      WorkspaceAccount::Revoked
+      WorkspaceAccount::Revoked,
+      Workspace::DriveWalker::TooDeep
     ].freeze
 
     def self.for(error)

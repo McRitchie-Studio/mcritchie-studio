@@ -170,8 +170,38 @@ module Workspace
           end
 
           [ true, nil ]
+        # THE LAST SEAM THAT STILL HAD ITS OWN REDACTOR. This line used to read
+        # `e.message.to_s[/"error":\s*"([^"]+)"/, 1] || e.class.to_s` — the same
+        # RULE as Workspace::ErrorSlug, written out again, and weaker in three
+        # ways that all matter here:
+        #
+        #   * NO `.scrub`. A regex over a string with invalid encoding raises
+        #     ArgumentError, and this is a rescue body, so the raise escapes the
+        #     rescue that was supposed to contain it.
+        #   * NO SHAPE CHECK. It returned whatever sat between the quotes, at
+        #     whatever length. ErrorSlug requires the capture to match TOKEN, so
+        #     a PEM header or an address cannot ride out in an "error" field.
+        #   * NO PROSE BRANCH. Google states the same fault two ways, and the
+        #     leading-token form ("backendError on <folder>") read as the class
+        #     name here.
+        #
+        # An earlier revision of this PR fixed it by EXTRACTING this expression
+        # as `Credentials.redact` and calling it from the sweep too. That was
+        # backwards: it would have given the weaker rule a name and a second
+        # caller, on the same day the sweep moved to the stronger one.
+        #
+        # ONE RESCUE-TIME REDUCER — not one redactor. `Malformed` is raised below
+        # with a position sliced out of a ParserError, and that is a CONSTRUCTOR:
+        # it builds a safe message at RAISE time, where the position is still
+        # known. ErrorSlug is a REDUCER: it takes whatever message reaches a
+        # rescue and cuts it down. Extracting either into the other would be
+        # wrong, and saying "there is one redactor" tells an auditor asking
+        # whether Workspace redaction is centralized to stop looking — they would
+        # miss that constructor, and api_retry.rb, which interpolates a raw
+        # vendor message into a new error (contained downstream by ErrorSlug, but
+        # travelling raw inside the lane until it gets there).
         rescue StandardError => e
-          [ false, e.message.to_s[/"error":\s*"([^"]+)"/, 1] || e.class.to_s ]
+          [ false, Workspace::ErrorSlug.for(e) ]
         end
       end
 
