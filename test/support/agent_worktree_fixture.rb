@@ -650,8 +650,22 @@ module AgentWorktreeFixture
     out.strip
   end
 
+  # RAISES on a ref that does not resolve, and that is the whole point.
+  #
+  # `git rev-parse <missing-ref>` writes the REF NAME to stdout and exits 128. So a
+  # helper that drops the status returns "refs/remotes/origin/main" for a ref that
+  # is not there — never nil, never empty. `refute_empty rev(...)` could therefore
+  # not fail, on exactly the case it was written to catch (measured 2026-09-21).
+  #
+  # The other caller is worse than a vacuous test: `stage_agent_worktree_desk!`
+  # feeds this straight into `update-ref`, so a silent failure would point
+  # origin/main at a ref name and every base comparison after it would be wrong.
   def rev(dir, ref)
-    out, = Open3.capture3(SessionEnv.neutralized, "git", "rev-parse", ref, chdir: dir)
+    out, err, status = Open3.capture3(SessionEnv.neutralized, "git", "rev-parse", ref, chdir: dir)
+    unless status.success?
+      raise "git rev-parse #{ref.inspect} failed in #{dir} (exit #{status.exitstatus}): #{err.strip}"
+    end
+
     out.strip
   end
 
