@@ -36,8 +36,9 @@ Two details in that one line are load-bearing, and both were learned by leaking.
 
 **ANCHOR the slice.** `e.message[/\d+/]` looks like "the position" and is not:
 it takes the message's FIRST digit run, and on the most likely failure that run
-is key material. Measured on json 3.0.2 against a key pasted with a literal
-line break inside `private_key` — the cause these rescues exist for:
+is key material. Measured under `bundle exec` on **json 2.20.0 — the version
+`Gemfile.lock` pins and a dyno actually loads** — against a key pasted with a
+literal line break inside `private_key`, the cause these rescues exist for:
 
 ```text
 message                              invalid ASCII control character in string:
@@ -47,8 +48,16 @@ e.message[/at line \d+ column \d+/] => "at line 2 column 0"
 ```
 
 The anchored pattern needs the literal words `at line` and `column`, which key
-material does not contain. A bare `\d+` "reports the position" on a well-formed
-test fixture and leaks on the real accident.
+material does not contain (base64 has no space character, so a key body cannot
+form that phrase). A bare `\d+` "reports the position" on a well-formed test
+fixture and leaks on the real accident.
+
+**Measure under the runtime the command LOADS, not the one your shell reaches
+for.** The first run of this was taken with bare `ruby`, which used the laptop's
+default gem (3.0.2) while the documented command was `heroku run bin/rails
+runner` — the bundled 2.20.0. The leak reproduces on both, so the conclusion
+survived; it survived for a reason that run had not established. `bundle exec`,
+or the dyno.
 
 **FALL BACK to a fixed string**, never to the raw message. A message that does
 not match the pattern must degrade to `position unreported`, so a change to the
