@@ -160,19 +160,47 @@ class ReclaimStageChannelDocsTest < ActiveSupport::TestCase
         "#{rel} enumerates the withhold channels and must include the board-stage one"
     end
 
-    # THE DENOMINATOR IS DERIVED; the numerator is not, and cannot be. How many
-    # channels the chain has is a fact about the code. How many go blind for a
-    # DISCOVERED repo is an analysis of what each one reads, which no value in
-    # `bin/agent-worktree` expresses — so it is pinned here by hand, next to the
-    # count it has to agree with. "three of the five" survived a sixth channel
-    # landing precisely because nothing tied the two numbers together.
     live_docs.each do |path|
       refute File.read(path).gsub(/[*`]/, "").gsub(/\s+/, " ").match?(/of the five channels/i),
         "#{path} still counts five reclaim channels; the chain has #{channels.size}"
     end
 
-    assert norm("modules/worktrees.md").match?(/four of the six channels are structurally dead/i),
-      "worktrees.md must say how many channels a discovered repo loses — claim, stage, review and PR " \
-      "all read a task record it can never have"
+    # PIN THE DERIVED FACT, NOT A HAND COUNT. The previous version of this
+    # assertion demanded the prose say "four of the six channels are structurally
+    # dead" — a number nothing in the code expresses, and which was WRONG on three
+    # of the four it named. The counting question is itself the error: `reclaim_hold`
+    # is an `||` chain, so only the first channel that returns is ever asked.
+    #
+    # What IS derivable is the shape. `claim_hold` sits second and returns a hold
+    # outright for a discovered repo, so the four after it never execute. Both
+    # halves are read off the source here, and the doc must describe THAT rather
+    # than a tally.
+    claim_index = channels.index("claim_hold")
+    assert_equal 1, claim_index,
+      "claim_hold is no longer second in reclaim_hold (#{channels.inspect}); the short-circuit " \
+      "the docs describe is what makes a discovered desk safe, so its position is load-bearing"
+
+    # Sliced to the discovered_app? BRANCH, not the whole method. A looser regex
+    # matched a `return` further down claim_hold and stayed green when the branch
+    # was made to fall through — measured. The branch is what is being asserted,
+    # so the branch is what has to be read.
+    claim_body = gate_source[/^def claim_hold.*?^end/m].to_s
+    branch = claim_body[/^  if discovered_app\?.*?^  end$/m].to_s
+
+    assert branch.present?,
+      "could not find the `if discovered_app?` branch in claim_hold — this assertion has gone " \
+      "blind and would pass on any body at all"
+    assert branch.match?(/^    return "/),
+      "the discovered_app? branch of claim_hold no longer RETURNS — if it falls through, the " \
+      "four channels after it do run, and every doc below describes the wrong mechanism"
+
+    body = norm("modules/worktrees.md")
+    assert body.match?(/short-circuit/i),
+      "worktrees.md must name the SHORT-CIRCUIT — 'how many channels are dead' is the wrong " \
+      "question for an || chain, and asking it is how the prose came to describe an unreached " \
+      "channel as a blind one"
+    assert body.match?(/never run at all|unreached/i),
+      "worktrees.md must say the later channels do not RUN. A blind channel returns nil, and " \
+      "nil FREES — so 'dead' describes the desk as unprotected at the moment it is protected"
   end
 end
