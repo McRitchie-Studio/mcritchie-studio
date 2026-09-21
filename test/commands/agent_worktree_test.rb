@@ -16,8 +16,8 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
   # hub and its one worktree, owns setup/teardown, and carries every helper that drives
   # the real bin/agent-worktree against them. Read its header before adding a test here:
   # a new concern that needs nothing from THIS file's containment self-tests should get
-  # its own file and include the same module — which is what the ceiling in
-  # config/test_health.yml has been asking for, and what this extraction makes free.
+  # its own file and include the same module — which is what this file's append-hotspot
+  # ceiling has been asking for all along, and what this extraction finally makes free.
   include AgentWorktreeFixture
 
   test "bind-task records the production task on env and context marker" do
