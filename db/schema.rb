@@ -170,6 +170,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_21_030000) do
     t.index ["status"], name: "index_agents_on_status"
   end
 
+  create_table "appearances", force: :cascade do |t|
+    t.string "colorway"
+    t.datetime "created_at", null: false
+    t.string "descriptor", null: false
+    t.text "generation_notes"
+    t.string "person_slug", null: false
+    t.string "reference_url"
+    t.datetime "retired_at"
+    t.string "slug", null: false
+    t.string "team_slug"
+    t.datetime "updated_at", null: false
+    t.index ["person_slug", "descriptor"], name: "index_appearances_live_per_person", unique: true, where: "(retired_at IS NULL)"
+    t.index ["slug"], name: "index_appearances_on_slug", unique: true
+  end
+
   create_table "apps", force: :cascade do |t|
     t.string "color"
     t.datetime "created_at", null: false
@@ -195,6 +210,33 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_21_030000) do
     t.string "timezone"
     t.datetime "updated_at", null: false
     t.index ["slug"], name: "index_arenas_on_slug", unique: true
+  end
+
+  create_table "artifact_subjects", force: :cascade do |t|
+    t.string "appearance_slug"
+    t.string "artifact_slug", null: false
+    t.datetime "created_at", null: false
+    t.integer "ordinal", default: 1, null: false
+    t.string "person_slug", null: false
+    t.string "role"
+    t.datetime "updated_at", null: false
+    t.index ["appearance_slug"], name: "index_artifact_subjects_on_appearance_slug"
+    t.index ["artifact_slug", "person_slug"], name: "index_artifact_subjects_on_artifact_slug_and_person_slug", unique: true
+    t.index ["person_slug"], name: "index_artifact_subjects_on_person_slug"
+  end
+
+  create_table "artifacts", force: :cascade do |t|
+    t.datetime "approved_at"
+    t.string "approved_by"
+    t.datetime "created_at", null: false
+    t.string "image_url"
+    t.string "kind", null: false
+    t.datetime "retired_at"
+    t.string "slug", null: false
+    t.string "source"
+    t.datetime "updated_at", null: false
+    t.index ["kind", "retired_at"], name: "index_artifacts_on_kind_and_retired_at"
+    t.index ["slug"], name: "index_artifacts_on_slug", unique: true
   end
 
   create_table "athlete_grades", force: :cascade do |t|
@@ -436,10 +478,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_21_030000) do
   end
 
   create_table "contents", force: :cascade do |t|
+    t.datetime "artifacts_approved_at"
     t.datetime "assembled_at"
     t.datetime "asset_at"
     t.jsonb "caption_variants", default: []
     t.text "captions"
+    t.string "claim_session"
+    t.datetime "claimed_at"
+    t.string "claimed_by"
     t.integer "comments_count"
     t.string "content_type", default: "tiktok_video"
     t.datetime "created_at", null: false
@@ -487,6 +533,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_21_030000) do
     t.index ["rival_team_slug"], name: "index_contents_on_rival_team_slug"
     t.index ["slug"], name: "index_contents_on_slug", unique: true
     t.index ["source_news_slug"], name: "index_contents_on_source_news_slug"
+    t.index ["stage", "claimed_at"], name: "index_contents_on_stage_and_claimed_at"
     t.index ["stage", "position"], name: "index_contents_on_stage_and_position"
     t.index ["stage"], name: "index_contents_on_stage"
     t.index ["team_slug"], name: "index_contents_on_team_slug"
@@ -912,6 +959,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_21_030000) do
     t.string "avatar_url"
     t.boolean "coach", default: false
     t.datetime "created_at", null: false
+    t.string "default_appearance_slug"
     t.string "disambiguator"
     t.string "email"
     t.string "facebook_url"
@@ -924,6 +972,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_21_030000) do
     t.datetime "updated_at", null: false
     t.string "website_url"
     t.string "x_url"
+    t.index ["default_appearance_slug"], name: "index_people_on_default_appearance_slug"
     t.index ["email"], name: "index_people_on_email"
     t.index ["last_name", "first_name"], name: "index_people_on_last_name_and_first_name"
     t.index ["slug"], name: "index_people_on_slug", unique: true

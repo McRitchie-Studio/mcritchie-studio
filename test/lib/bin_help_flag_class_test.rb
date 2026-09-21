@@ -92,6 +92,10 @@ class BinHelpFlagClassTest < Minitest::Test
     # NON-ZERO because bin/release reads this script's exit status as "the QA
     # deploy succeeded".
     "qa-server"              => :cli_arg_guard,
+    # The content pipeline's agent CLI. CLAIMS and WRITES, so `--help` is wired
+    # through the parser and exits before dispatch — verified against a dead
+    # base URL, so no subcommand reached the network.
+    "content"                => :optparse,
     "control-check"          => :cli_arg_guard,
     # Read-only: it runs the JS dependency audit and reports a verdict; it takes
     # no options and mutates nothing, so there is no first mutation for --help to
