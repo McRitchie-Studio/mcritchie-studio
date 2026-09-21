@@ -3,12 +3,14 @@
 ## Status: PENDING — do not run steps 2 and 3 yet
 
 **Two of this SOP's commands do not exist on production.** `studio:sync_athletes`
-and `studio:sync_status` ship in turf-monster PR **#789**, and the
-`FEED UNAVAILABLE` behaviour step 1 relies on ships in McRitchie Studio PR
-**#1489**. Both are OPEN. Measured on the deployed slug: `turf-monster-mainnet`
-runs `17b05084`, identical to `origin/main`, and a full-tree grep finds zero
-hits — so each line dies with `Don't know how to build task
-'studio:sync_athletes'`.
+and `studio:sync_status` ship in turf-monster PR **#789**, which is still OPEN.
+Measured on the deployed slug: `turf-monster-mainnet` runs `17b05084`, identical
+to `origin/main`, and a full-tree grep finds zero hits — so each line dies with
+`Don't know how to build task 'studio:sync_athletes'`.
+
+McRitchie Studio **#1489** — the other half — **merged 2026-09-21** (`620a9bda`)
+and step 1 has been rewritten for it. It is on `accepted`, not yet on `main`, so
+step 1's new rule describes production only after the next release ships.
 
 **MERGING #1489 DOES NOT SATISFY STEP 1's RULE — IT INVERTS IT.** Today an
 nflverse outage RAISES (`ImportRun.track` stamps `failed` and re-raises), which
@@ -20,13 +22,14 @@ a status flip.
 **WHO FLIPS IT, and what they must do** — the builder of whichever of the two PRs
 lands LAST, as part of that task:
 
-| PR | What it unblocks | What it obliges |
-|---|---|---|
-| turf-monster **#789** | steps 2 and 3 exist at all | nothing else — the commands simply start working |
-| McRitchie Studio **#1489** | the `FEED UNAVAILABLE` path | **rewrite step 1's verdict rule**: a warn-and-return is no longer a STOP, and the check becomes "did the ImportRun finish `ok` TODAY", not "did the command exit 0" |
+| PR | What it unblocks | What it obliges | State |
+|---|---|---|---|
+| McRitchie Studio **#1489** | the `FEED UNAVAILABLE` path | rewrite step 1's verdict rule — a warn-and-return is no longer a STOP, and the check becomes "did the `ImportRun` finish `ok` TODAY" rather than "did the command exit 0" | **MERGED 2026-09-21, rewrite DONE** |
+| turf-monster **#789** | steps 2 and 3 exist at all | nothing else — the commands simply start working | OPEN |
 
-Only then: set `Status: Active`, and add the rows this file is deliberately
-missing from the heartbeat and `modules/heartbeats.md`. It is registered in
+So **#789 is the only thing left**, and its builder flips this file. Only then:
+set `Status: Active`, and add the rows this file is deliberately missing from
+the heartbeat and `modules/heartbeats.md`. It is registered in
 `docs/agents/index.md` and in `ACT_OWNER` (see below), and nowhere else, on
 purpose: a `roster-sync` invocation must not resolve to a procedure production
 cannot run. Step 1 is accurate today and safe to run on its own.
@@ -106,23 +109,38 @@ path RAISES when `AWS_ACCESS_KEY_ID` is unset — which is the state on QA. It
 also turns a data refresh into thousands of image fetches and S3 writes, which
 is a separate job, not part of a roster sync.
 
-**A feed outage RAISES today — do not read a failure here as benign.**
-`ImportRun.track` (`app/models/import_run.rb`) stamps the run `failed` and
-**re-raises**, and `fetch_remote` has no rescue, so an nflverse outage aborts
-the step with a non-zero exit and a stack trace. There is no `FEED UNAVAILABLE`
-line on production; that graceful degradation ships in McRitchie Studio PR
-**#1489** and is not merged. Until it is, a red step 1 is a STOP: the data is
-stale, and step 2 would sync a replica from a source that did not refresh.
+**DO NOT JUDGE THIS STEP BY ITS EXIT CODE.** McRitchie Studio PR **#1489**
+merged on 2026-09-21 (`620a9bda`), and it deliberately made a feed outage
+**warn and return** instead of raising: `FEED UNAVAILABLE — data not refreshed`
+on stderr, a `failed` `ImportRun` recorded, and **exit 0**. That is the right
+behaviour — a deploy should not abort because a third party is down, only the
+DATA is stale — but it means a green exit no longer tells you the refresh
+happened.
 
-Either way, confirm what actually landed before going on — a run that errored
-and a run that never started look the same from the next step:
+Measured on the merged code:
+
+| Condition | Exit code |
+|---|---|
+| feed outage (e.g. `Errno::ETIMEDOUT`) | **0** — with a `FEED UNAVAILABLE` warning |
+| ordinary bug (e.g. `ArgumentError`) | **1** |
+
+**THE VERDICT IS THE TIMESTAMP, and the exit code is only a tiebreak.** Ask the
+record, not the shell:
 
 ```bash
 heroku run -x -a mcritchie-studio 'bin/rails runner "r = ImportRun.last_success_for(%q(nflverse_players)); puts r ? r.finished_at : %q(never)"'
 ```
 
-If that prints a timestamp from before today, the refresh did not land — retry
-once, then report rather than proceeding into step 2 on stale data.
+- **A timestamp from today** → the refresh landed. Go on to step 2.
+- **`never`, or a timestamp from before today** → it did not, whatever the exit
+  code said. This is the STOP: step 2 would sync a replica from a source that
+  never refreshed. Retry once, then report.
+- **Exit 1** → not a feed outage but a real bug, and the stack trace is worth
+  reading before anything else.
+
+(Before #1489 this step aborted loudly on an outage, and an earlier revision of
+this file told you to treat a red run as the signal. That rule is now not merely
+wrong but UNREACHABLE — on an outage the step is no longer red.)
 
 ### Step 2 — sync the replica
 
