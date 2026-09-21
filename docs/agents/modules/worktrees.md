@@ -470,8 +470,9 @@ bin/agent-worktree scale status
   are **git-identical** — both clean, both `HEAD == base`, both 0-ahead — so
   `cleanup_ready?` provably cannot tell a desk someone just sat down at from
   finished work. **Six** independent channels answer that question (and for a
-  **discovered repo** four of them are structurally dead, which is why such a desk is
-  withheld outright — see **unbound on a DISCOVERED repo** below), and every
+  **discovered repo** the SECOND of them returns a hold outright, short-circuiting the
+  four after it — which is why such a desk is withheld, see **unbound on a DISCOVERED
+  repo** below), and every
   destructive path, `doctor`, and the registry route through ONE decision
   (`reclaim_verdict` → `[reclaimable?, hold_reason]`), so the conductor's front door
   can never nominate a desk the sweep would refuse. A withheld desk is named with its
@@ -603,12 +604,15 @@ bin/agent-worktree scale status
       never carry a bound task at all: `TASK_RECORD_SLUG` is written by `bind-task`, which
       routes through `app_for`, and `app_for` stays registry-only because `new`/`up`/`plan`
       need a port range a discovered repo has no answer for. So the fail-open above would be
-      a *standing licence to destroy* rather than a best-effort, and **four of the six
-      channels are structurally dead** for such a desk: claim, stage, review and PR all
-      read a task record there is none of. The desk channel is DEGRADED rather than dead —
-      its progress / gate-in-flight / awaiting-approval reads come from that same absent
-      record — and origin is unaffected. What is left is desk age
-      plus mtimes — and `desk_activity` prunes `tmp`, `log`, `coverage`, `vendor` and
+      a *standing licence to destroy* rather than a best-effort. So `claim_hold` **returns a
+      hold outright** for such a desk — and because it is SECOND in an `||` chain, that
+      return means stage, review, desk and pr **never run at all**. They are UNREACHED,
+      not blind, and the difference is the whole point: a blind channel returns `nil`, and
+      `nil` FREES. (Only `review_hold` would genuinely have had nothing to read; `stage`
+      fails open at its own slug guard, and `pr_hold`'s primary lane reads GitHub by
+      branch rather than the board. Counting "dead channels" was the wrong question —
+      in an `||` chain only the first one to return is ever asked.) What would otherwise
+      be left is desk age plus mtimes — and `desk_activity` prunes `tmp`, `log`, `coverage`, `vendor` and
       `.bundle`, which is exactly and only what a gem builder writes while running a suite,
       with a cert p99 of 94 minutes against a 1h29m idle window. Measured before the guard:
       `cleanup --reclaim studio-engine` nominated 4 desks on mtime evidence alone. So
