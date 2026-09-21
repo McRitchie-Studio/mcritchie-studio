@@ -1,6 +1,30 @@
 # Roster Sync
 
-## Status: Active
+## Status: PENDING — do not run steps 2 and 3 yet
+
+**Two of this SOP's commands do not exist on production.** `studio:sync_athletes`
+and `studio:sync_status` ship in turf-monster PR **#789**, and the
+`FEED UNAVAILABLE` behaviour step 1 relies on ships in McRitchie Studio PR
+**#1489**. Both are OPEN. Measured on the deployed slug: `turf-monster-mainnet`
+runs `17b05084`, identical to `origin/main`, and a full-tree grep finds zero
+hits — so each line dies with `Don't know how to build task
+'studio:sync_athletes'`.
+
+**This file goes `Active`, and joins the heartbeat and `ACT_OWNER` registries,
+on the day both PRs merge and deploy — not before.** It is registered in
+`docs/agents/index.md` only, deliberately: a `roster-sync` invocation must not
+resolve to a procedure production cannot run. Step 1 is accurate today and safe
+to run on its own.
+
+**EVERY command here is `heroku run -x -a <app>`, and that is deliberate — there
+is no `cd` in this file.** The cwd cannot matter when the app is named on the
+line, a `cd` would not survive to the next step anyway (shell state does not
+cross a turn boundary), and its only real effect would be to make a MISSING
+`-a` resolve silently against whichever app the checkout's `heroku` remote
+points at. `-x` is equally load-bearing: without it `heroku run` discards the
+remote command's exit code and a failed sync reports success
+(`heroku help run`: *"-x, --exit-code  passthrough the exit code of the remote
+command"*).
 
 This is Turf Monster's `roster-sync` SOP. It refreshes the player, team and
 person data both apps run on — before a season, before an event, or any time
@@ -59,8 +83,7 @@ what you believe you are refreshing.
 ### Step 1 — refresh the provider from nflverse
 
 ```bash
-cd /Users/alex/projects/mcritchie-studio
-heroku run -a mcritchie-studio 'bin/rails runner "Nflverse::SeedPlayers.new(status_filter: %q(ACT), upload_headshots: false).call"'
+heroku run -x -a mcritchie-studio 'bin/rails runner "Nflverse::SeedPlayers.new(status_filter: %q(ACT), upload_headshots: false).call"'
 ```
 
 `upload_headshots: false` is not optional here. The default is `true`, and that
@@ -68,12 +91,19 @@ path RAISES when `AWS_ACCESS_KEY_ID` is unset — which is the state on QA. It
 also turns a data refresh into thousands of image fetches and S3 writes, which
 is a separate job, not part of a roster sync.
 
-**A feed outage is not a failure of this step.** If nflverse is down the import
-reports `FEED UNAVAILABLE`, records a failed `ImportRun`, and exits 0 on
-purpose. The data is simply stale. Check and move on:
+**A feed outage RAISES today — do not read a failure here as benign.**
+`ImportRun.track` (`app/models/import_run.rb`) stamps the run `failed` and
+**re-raises**, and `fetch_remote` has no rescue, so an nflverse outage aborts
+the step with a non-zero exit and a stack trace. There is no `FEED UNAVAILABLE`
+line on production; that graceful degradation ships in McRitchie Studio PR
+**#1489** and is not merged. Until it is, a red step 1 is a STOP: the data is
+stale, and step 2 would sync a replica from a source that did not refresh.
+
+Either way, confirm what actually landed before going on — a run that errored
+and a run that never started look the same from the next step:
 
 ```bash
-heroku run -a mcritchie-studio 'bin/rails runner "r = ImportRun.last_success_for(%q(nflverse_players)); puts r ? r.finished_at : %q(never)"'
+heroku run -x -a mcritchie-studio 'bin/rails runner "r = ImportRun.last_success_for(%q(nflverse_players)); puts r ? r.finished_at : %q(never)"'
 ```
 
 If that prints a timestamp from before today, the refresh did not land — retry
@@ -82,8 +112,7 @@ once, then report rather than proceeding into step 2 on stale data.
 ### Step 2 — sync the replica
 
 ```bash
-cd /Users/alex/projects/turf-monster
-heroku run -a turf-monster-mainnet 'bin/rails studio:sync_athletes'
+heroku run -x -a turf-monster-mainnet 'bin/rails studio:sync_athletes'
 ```
 
 That is the delta. It resumes from its stored watermark, so a run interrupted
@@ -92,7 +121,7 @@ halfway picks up where it stopped rather than restarting.
 **Force a full rebuild only when you have a reason:**
 
 ```bash
-heroku run -a turf-monster-mainnet 'bin/rails studio:sync_athletes FULL=1'
+heroku run -x -a turf-monster-mainnet 'bin/rails studio:sync_athletes FULL=1'
 ```
 
 Reasons that qualify: the replica is empty, you have just restored a database,
@@ -102,15 +131,25 @@ changed. "It feels stale" does not qualify — the watermark already knows.
 ### Step 3 — reconcile, and do not skip this
 
 ```bash
-heroku run -a turf-monster-mainnet 'bin/rails studio:sync_status'
-heroku run -a mcritchie-studio 'bin/rails runner "puts %Q{MS athletes=#{Athlete.count} missing_gsis=#{Athlete.where(gsis_id: [nil, %q()]).count}}"'
+heroku run -x -a turf-monster-mainnet 'bin/rails studio:sync_status'
+heroku run -x -a mcritchie-studio 'bin/rails runner "puts %Q{MS athletes=#{Athlete.count} missing_gsis=#{Athlete.where(gsis_id: [nil, %q()]).count}}"'
 ```
 
 Read three things:
 
-1. **The two counts are close.** They will not be identical — MS carries every
-   person it knows and TM's replica carries athletes — but a gap of hundreds
-   means a page was dropped or a run stopped early.
+1. **The two counts are close — but only AFTER TM stops seeding its own.**
+   Both commands count `Athlete`, so the gap is not a person/athlete
+   difference. It is a FILTER difference: McRitchie Studio imports
+   `status=ACT` with `last_season >= 2024`
+   (`app/services/nflverse/seed_players.rb`), while turf-monster's own seeder
+   used `last_season >= 2026`. Measured 2026-09-21: MS production holds
+   **2,051**, turf-monster production holds **~2,896**. A gap of hundreds is
+   therefore the EXPECTED state today and is not evidence of a dropped page.
+
+   Until turf-monster's own importer is retired, compare the sync's own
+   counters instead — `ok` plus `skipped` against the pages it reported — and
+   treat the absolute totals as unequal by design. Once MS is the only writer,
+   the two should converge and a gap becomes meaningful again.
 2. **`missing_gsis` is 0.** A single athlete without a league ID cannot be
    synced at all and cannot be matched by any later importer.
 3. **`last_status` is `ok`.** `skipped` means `AGENT_API_SECRET` is unset on
