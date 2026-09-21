@@ -194,5 +194,6 @@ class WorkspaceCheckRakeTest < ActiveSupport::TestCase
       "the stored state now agrees with what the operator was told"
     refute_includes account.last_check_error.to_s, "team@smoke.test"
     refute_includes err, "team@smoke.test", "vendor prose does not reach the terminal either"
-    assert_nil out[/ACTIVE as team@smoke.test/], "it must not claim success"  end
+    assert_nil out[/ACTIVE as team@smoke.test/], "it must not claim success"
+  end
 end
