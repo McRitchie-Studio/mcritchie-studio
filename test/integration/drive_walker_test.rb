@@ -172,7 +172,10 @@ class DriveWalkerTest < ActionDispatch::IntegrationTest
 
     assert_match(/#{Workspace::DriveWalker::MAX_DEPTH}/, stored, "the operator needs the depth it hit")
     assert_match(/root/, stored, "and which folder it started from")
-    assert_match(/cycle of shortcuts/, stored, "and what to do about it — that is the whole point of a remedy")
+    assert_match(/raise DriveWalker::MAX_DEPTH/, stored,
+      "and what to do about it — that is the whole point of a remedy")
+    refute_match(/cycle of shortcuts/, stored,
+      "and NOT a cause the walker makes impossible: shortcuts are never followed and visited ends cycles")
     assert_match(/TooDeep/, stored, "the class still leads, so the kind of failure is still legible")
   end
 
@@ -181,12 +184,12 @@ class DriveWalkerTest < ActionDispatch::IntegrationTest
     # ErrorSlug cannot allow-list RuntimeError — every foreign raise in Ruby
     # arrives on it — so the naming is what carries the remedy through, and this
     # proves it rather than asserting it.
-    sentence = "Drive tree deeper than 25 levels under root — check that folder for a cycle of shortcuts."
+    sentence = "Drive tree deeper than 25 levels under root — raise DriveWalker::MAX_DEPTH if it is that deep."
 
     named = Workspace::ErrorSlug.for(Workspace::DriveWalker::TooDeep.new(sentence))
     bare = Workspace::ErrorSlug.for(RuntimeError.new(sentence))
 
-    assert_includes named, "cycle of shortcuts"
+    assert_includes named, "raise DriveWalker::MAX_DEPTH"
     assert_equal "RuntimeError: Drive", bare,
       "if this ever stops being true the allow-list is no longer what saves the remedy"
     assert_includes Workspace::ErrorSlug::AUTHORED, Workspace::DriveWalker::TooDeep

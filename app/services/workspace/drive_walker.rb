@@ -23,10 +23,10 @@ module Workspace
     # through Workspace::ErrorSlug, which passes an AUTHORED class's message
     # through and slugs everything else to a fault token — and `RuntimeError`
     # can never join that list, since every foreign raise in Ruby would ride in
-    # on it. Measured before this class existed: the 62-character remedy below
-    # reached the durable `last_walk_error` column as "RuntimeError: Drive",
-    # losing both the depth and the folder id, which are the only two things an
-    # operator can act on.
+    # on it. Measured before this class existed: the 62-character message this
+    # raise carried at the time reached the durable `last_walk_error` column as
+    # "RuntimeError: Drive", losing both the depth and the folder id, which are
+    # the only two things an operator can act on.
     class TooDeep < StandardError; end
 
     Result = Struct.new(:source, :seen, :added, :changed, :unchanged, :missing, :error,
@@ -99,9 +99,18 @@ module Workspace
     # Depth-first over folders. `visited` is what makes it terminate: a Drive
     # file may have several parents, so the same folder can be reachable twice.
     def walk(source, folder_id, depth:, visited:)
+      # THE ONLY CAUSE IS GENUINE NESTING, so that is the only thing the remedy
+      # names. An earlier revision blamed "a cycle of shortcuts" and sent the
+      # operator after something this file makes impossible twice over:
+      # recursion is gated on FOLDER_MIME (below), and a shortcut's own mime is
+      # SHORTCUT_MIME — its target mime is stored as inert metadata and never
+      # compared — so a shortcut is never followed; and `visited` ends a folder
+      # cycle before depth ever grows. Measured: a 35-deep shortcut chain and
+      # both an a->b->a and a self-cycle all walk CLEANLY at MAX_DEPTH 25.
       raise TooDeep, "Drive tree deeper than #{MAX_DEPTH} levels under #{source.external_root_id} — " \
-                     "the walk stopped rather than recurse forever. Check that folder for a cycle of " \
-                     "shortcuts, or raise DriveWalker::MAX_DEPTH if the tree is legitimately deeper." if depth > MAX_DEPTH
+                     "that is #{MAX_DEPTH + 1}+ distinct folders nested on one path. Cycles cannot cause " \
+                     "this (visited ends them) and shortcuts are never followed, so the tree really is " \
+                     "that deep: inspect it, or raise DriveWalker::MAX_DEPTH." if depth > MAX_DEPTH
       return if visited.include?(folder_id)
 
       visited << folder_id
