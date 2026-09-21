@@ -12,27 +12,23 @@ McRitchie Studio **#1489** — the other half — **merged 2026-09-21** (`620a9b
 and step 1 has been rewritten for it. It is on `accepted`, not yet on `main`, so
 step 1's new rule describes production only after the next release ships.
 
-**MERGING #1489 DOES NOT SATISFY STEP 1's RULE — IT INVERTS IT.** Today an
-nflverse outage RAISES (`ImportRun.track` stamps `failed` and re-raises), which
-is why step 1 says a red run is a STOP. #1489 adds the graceful
-`FEED UNAVAILABLE` path that *warns and returns*. So on the day it lands, "a red
-step 1 is a STOP" becomes wrong, and this file needs a REWRITE of that rule, not
-a status flip.
-
 **WHO FLIPS IT, and what they must do** — the builder of whichever of the two PRs
 lands LAST, as part of that task:
 
 | PR | What it unblocks | What it obliges | State |
 |---|---|---|---|
 | McRitchie Studio **#1489** | the `FEED UNAVAILABLE` path | rewrite step 1's verdict rule — a warn-and-return is no longer a STOP, and the check becomes "did the `ImportRun` finish `ok` TODAY" rather than "did the command exit 0" | **MERGED 2026-09-21, rewrite DONE** |
-| turf-monster **#789** | steps 2 and 3 exist at all | nothing else — the commands simply start working | OPEN |
+| turf-monster **#789** | steps 2 and 3 exist at all | teach step 3 the FOURTH status. `Studio::SyncAthletes` returns `ok_with_collisions` when the namesake guard REFUSES a row, and `studio_sync.rake:17` prints it — a status this file did not have, on the very Aaron Brewer collision the escalation list forecasts | OPEN |
 
 So **#789 is the only thing left**, and its builder flips this file. Only then:
 set `Status: Active`, and add the rows this file is deliberately missing from
 the heartbeat and `modules/heartbeats.md`. It is registered in
 `docs/agents/index.md` and in `ACT_OWNER` (see below), and nowhere else, on
-purpose: a `roster-sync` invocation must not resolve to a procedure production
-cannot run. Step 1 is accurate today and safe to run on its own.
+purpose. Not because the invocation must fail to resolve — `index.md` IS the
+invocation registry and this is registered there, so it resolves. The withheld
+half is the HEARTBEAT: a heartbeat row is an instruction to run the act on a
+schedule, and two of these three steps do not exist on production yet. Step 1 is
+accurate today and safe to run on its own.
 
 **EVERY command here is `heroku run -x -a <app>`, and that is deliberate — there
 is no `cd` in this file.** The cwd cannot matter when the app is named on the
@@ -117,9 +113,12 @@ behaviour — a deploy should not abort because a third party is down, only the
 DATA is stale — but it means a green exit no longer tells you the refresh
 happened.
 
-Measured on the merged code:
+⚠️ **Measured on `accepted`, which is not yet what production runs.** #1489 is
+merged but not shipped, so until the next release the deployed app still RAISES
+on an outage and this step still goes red. The timestamp rule below is correct
+in BOTH worlds — that is why it is the verdict and the exit code is not.
 
-| Condition | Exit code |
+| Condition | Exit code on `accepted` |
 |---|---|
 | feed outage (e.g. `Errno::ETIMEDOUT`) | **0** — with a `FEED UNAVAILABLE` warning |
 | ordinary bug (e.g. `ArgumentError`) | **1** |
@@ -212,8 +211,18 @@ Read three things:
 2. **`missing_gsis` is 0.** A single athlete without a league ID cannot be
    synced at all and cannot be matched by any later importer.
 3. **`last_status` is `ok`.** `skipped` means `AGENT_API_SECRET` is unset on
-   that app and nothing ran. `failed` means the provider was unreachable — the
-   cursor's `detail` says which.
+   that app and nothing ran. `failed` means the run did not complete — usually
+   the provider was unreachable, but the service rescues `StandardError`, so any
+   crash lands here; the cursor's `detail` says which, recorded by CLASS for
+   anything we did not raise ourselves.
+
+   ⚠️ **`last_status: ok` DOES NOT MEAN NOTHING WAS REFUSED, and that is a trap
+   worth knowing before you read a clean line as a clean run.** Two things carry
+   a status here and only one of them is the cursor. The RUN's status
+   (`studio:sync_athletes`, the `status:` line) can read **`ok_with_collisions`**
+   — rows the namesake guard refused to write. The CURSOR's `last_status`
+   (`studio:sync_status`) stays `ok` for that same run, because nothing failed.
+   So read step 2's own output, not only step 3's.
 
 **A green run with a wrong count is the failure mode to watch for**, because
 nothing errors. That is why this step is not optional.
@@ -221,9 +230,10 @@ nothing errors. That is why this step is not optional.
 ## What good looks like
 
 - Step 1's `ImportRun` finished today with status `ok`.
-- Step 2 reports `status: ok` and a `written` count that is SMALL on a delta —
-  a delta that rewrites thousands of rows means the provider re-stamped
-  everything, which is worth understanding before trusting it.
+- Step 2 reports `status: ok` — the bare word, not `ok_with_collisions` — and a
+  `written` count that is SMALL on a delta. A delta that rewrites thousands of
+  rows means the provider re-stamped everything, which is worth understanding
+  before trusting it.
 - Step 3's `synced` count equals the master's `athletes` count, and
   `missing_gsis` is 0. (NOT the two TOTALS — see step 3.)
 - Nothing needed a `FULL=1`.
@@ -232,10 +242,19 @@ nothing errors. That is why this step is not optional.
 
 - **`missing_gsis` is not 0** — the provider's import is broken. Do not sync a
   replica from it; report and stop.
-- **`synced` does not equal the master's count** — run `FULL=1` ONCE. If it
-  still disagrees, stop: something is dropping rows and a third run will not
-  find it. A gap between the two TOTALS is not this condition and never was;
-  turf-monster carries its own pre-sync rows by design.
+- **`status: ok_with_collisions`** — read this one FIRST, because it explains a
+  short `synced` and the remedy below would not. The namesake guard found a row
+  whose `gsis_id` disagrees with the one this app already holds for that person,
+  and REFUSED to write it: nothing was overwritten, and that row is simply
+  missing. Step 2 names each one and prints the fix —
+  *"resolve in McRitchie Studio (give one of them a disambiguated person), then
+  re-run."* **A `FULL=1` cannot clear it.** The refusal is deterministic, so a
+  rebuild refuses the same row again; only the MASTER can resolve it.
+- **`synced` does not equal the master's count** — and step 2 did NOT report
+  collisions. Then run `FULL=1` ONCE. If it still disagrees, stop: something is
+  dropping rows and a third run will not find it. A gap between the two TOTALS is
+  not this condition and never was; turf-monster carries its own pre-sync rows by
+  design.
 - **`last_status: skipped`** — `AGENT_API_SECRET` is missing on that app. It is
   the same shared secret both apps already hold; this is a config gap, not a
   data problem.
@@ -249,8 +268,9 @@ nothing errors. That is why this step is not optional.
 
 ## Handoff
 
-Report to Mr. McRitchie with both counts, the `last_status`, whether a full
-rebuild was needed, and anything in step 3 that did not reconcile. If everything
+Report to Mr. McRitchie with both counts, step 2's `status` and the cursor's
+`last_status` (they are different fields — see step 3), whether a full rebuild
+was needed, any collision named, and anything in step 3 that did not reconcile. If everything
 was clean, say so in one line — a clean sync does not need a paragraph.
 
 ---
