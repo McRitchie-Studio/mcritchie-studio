@@ -6,7 +6,7 @@ class Content < ApplicationRecord
   include Studio::Board::Rankable
 
   STAGES = %w[idea hook script assets assembly posted reviewed].freeze
-  WORKFLOWS = %w[video starter_post_x starter_post_tiktok_offense starter_post_tiktok_defense game_recap].freeze
+  WORKFLOWS = %w[video starter_post_x starter_post_tiktok_offense starter_post_tiktok_defense game_recap rapper_replace].freeze
 
   TIKTOK_WORKFLOWS = %w[starter_post_tiktok_offense starter_post_tiktok_defense].freeze
 
@@ -15,12 +15,41 @@ class Content < ApplicationRecord
   # so the existing team-colour and hashtag lookups keep working unchanged.
   GAME_RECAP_WORKFLOW = "game_recap".freeze
 
+  # The first content STYLE: a qualifying duo swapped into a music-video shot.
+  # Its gate is the three image artifacts, which a human must look at before
+  # any video is made.
+  RAPPER_REPLACE_WORKFLOW = "rapper_replace".freeze
+
   def tiktok_workflow?
     TIKTOK_WORKFLOWS.include?(workflow)
   end
 
   def game_recap?
     workflow == GAME_RECAP_WORKFLOW
+  end
+
+  def rapper_replace?
+    workflow == RAPPER_REPLACE_WORKFLOW
+  end
+
+  def artifacts_approved? = artifacts_approved_at.present?
+
+  # The colorway we BELIEVE the winner wore, from the only signal the feed
+  # gives us: home or away. It is a guess and is labelled one — NFL teams wear
+  # alternates and throwbacks, and a wrong jersey is the artifact defect that
+  # matters most. The operator confirms or overrides it at the inspection gate,
+  # which is the same moment they are already looking at the images.
+  def guessed_colorway
+    return nil if game_facts.blank?
+
+    winner = game_facts["winner_slug"]
+    return nil if winner.blank?
+
+    winner == game_facts["away_team_slug"] ? "white" : "primary"
+  end
+
+  def effective_colorway
+    colorway.presence || guessed_colorway
   end
 
   def lineup_side

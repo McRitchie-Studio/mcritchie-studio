@@ -9,7 +9,7 @@ class ContentsController < ApplicationController
   skip_before_action :verify_authenticity_token, if: -> { request.format.json? }
   skip_before_action :require_authentication, only: [:index, :show]
   before_action :require_admin, except: [:index, :show]
-  before_action :set_content, only: [:show, :edit, :update, :destroy, :hook_step, :script_step, :assets_step, :assemble_step, :post_step, :review_step, :script_agent_step, :assets_agent_step, :assemble_agent_step, :finalize_step, :metadata_step, :generate_lineup_assets, :post_to_x, :post_to_tiktok, :prep_for_tiktok, :use_caption_variant, :mark_posted, :studio_upload_to_tiktok]
+  before_action :set_content, only: [:show, :edit, :update, :destroy, :hook_step, :script_step, :assets_step, :assemble_step, :post_step, :review_step, :script_agent_step, :assets_agent_step, :assemble_agent_step, :finalize_step, :metadata_step, :generate_lineup_assets, :post_to_x, :post_to_tiktok, :prep_for_tiktok, :use_caption_variant, :mark_posted, :studio_upload_to_tiktok, :set_colorway, :attach_artifact, :approve_artifacts]
 
   def index
     @contents = Content.ordered
@@ -75,6 +75,63 @@ class ContentsController < ApplicationController
     end
   rescue StandardError => e
     redirect_to content_path(@content.slug), alert: "Studio upload failed: #{e.message}"
+  end
+
+  # --- rapper-replace inspection gate ------------------------------------
+
+  # Confirm or override the jersey. This RE-DECIDES every slot, because the
+  # colorway is part of an artifact's identity — Burrow in white and Burrow in
+  # black are different artifacts, not one with a detail changed.
+  def set_colorway
+    @content.update!(colorway: params[:colorway].to_s.strip.downcase.presence)
+    redirect_to content_path(@content.slug), notice: "Jersey set to #{@content.colorway}."
+  end
+
+  # Attach (or replace) the image for one slot. Creates the Artifact and its
+  # subject rows — a pair is two rows, a sheet is one, and a trio would be
+  # three. The shape is the artifact's `kind`; who is in it lives on the join.
+  def attach_artifact
+    # Keyed on the slot's INDEX, not on its rendered cast name. A display string
+    # is not an identifier: two character-sheet slots differ only by who is in
+    # them, so a name mismatch silently attached to the WRONG slot rather than
+    # failing — which reads as "the attach did nothing".
+    slot = Content::ArtifactPlan.new(@content).slots[params[:slot_index].to_i]
+    return redirect_to(content_path(@content.slug), alert: "No such slot on this content.") unless slot
+
+    rescue_and_log(target: @content) do
+      Content.transaction do
+        # Supersede rather than delete: the old image stays as the record of
+        # what was published before.
+        slot.artifact&.retire!
+
+        artifact = Artifact.create!(kind: slot.kind, image_url: params[:image_url], source: "operator")
+        slot.subjects.each_with_index do |row, i|
+          artifact.subjects.create!(person_slug: row[:slug], appearance_slug: row[:appearance]&.slug,
+                                    role: row[:role], ordinal: i + 1)
+        end
+      end
+      redirect_to content_path(@content.slug), notice: "#{slot.label} attached."
+    end
+  end
+
+  # The gate itself. Approves every slot's artifact and stamps the content,
+  # which is what unlocks video generation.
+  def approve_artifacts
+    slots = Content::ArtifactPlan.new(@content).slots
+    missing = slots.reject { |s| s.artifact&.image_url.present? }
+
+    if slots.empty? || missing.any?
+      return redirect_to content_path(@content.slug),
+                         alert: "Every slot needs an image first (missing: #{missing.map(&:label).join(', ')})."
+    end
+
+    rescue_and_log(target: @content) do
+      Content.transaction do
+        slots.each { |slot| slot.artifact.approve!(by: Current.user&.email) }
+        @content.update!(artifacts_approved_at: Time.current)
+      end
+      redirect_to content_path(@content.slug), notice: "Artifacts approved — video generation unlocked."
+    end
   end
 
   def prep_for_tiktok
@@ -381,6 +438,11 @@ class ContentsController < ApplicationController
   def content_params
     params.require(:content).permit(
       :title, :description, :source_type, :source_news_slug, :content_type, :stage,
+      # The rapper-replace cast. Without these the inspection gate is
+      # unreachable: ArtifactPlan#cast reads them, so an unset pair means zero
+      # slots and an approve that always refuses — while the workflow is
+      # offered in the edit dropdown.
+      :qb_player_slug, :skill_player_slug, :colorway,
       :hook_image_url, :selected_hook_index,
       :script_text, :duration_seconds,
       :final_video_url, :music_track, :logo_overlay,

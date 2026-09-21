@@ -1155,6 +1155,49 @@ News.create!(title: "E2E News Archived", stage: "archived")
 3.times { |i| Content.create!(title: "E2E Content Idea #{i + 1}", stage: "idea", workflow: "video") }
 Content.create!(title: "E2E Content Hook", stage: "hook", workflow: "video")
 
+# The rapper-replace inspection gate, on the Person-anchored model. Seeded so
+# the pair and QB slots read REUSE and the skill slot reads GENERATE — the mix
+# the gate exists to show, and the empty slot the operator spec fills.
+#
+# Chase deliberately gets NO character sheet in any colorway: one in another
+# jersey would decide `reskin` rather than `generate`, and the spec's
+# attach-then-approve walk needs a slot with nothing on file.
+#
+# ArtifactSubject is cleared EXPLICITLY. `Artifact.delete_all` skips callbacks,
+# so `dependent:` never fires and the join rows outlive their artifact — on a
+# reused test database those orphans are read by Artifact.matching through the
+# association and decide slots that no longer have an image.
+ArtifactSubject.delete_all
+Artifact.delete_all
+Appearance.delete_all
+Person.where(last_name: %w[Burrow Chase]).destroy_all
+
+burrow = Person.create!(first_name: "Joe", last_name: "Burrow", athlete: true)
+chase  = Person.create!(first_name: "JaMarr", last_name: "Chase", athlete: true)
+bw = Appearance.create!(person_slug: burrow.slug, descriptor: "Bengals white", colorway: "white")
+Appearance.create!(person_slug: burrow.slug, descriptor: "Navy suit",
+                   generation_notes: "Tailored navy suit, press-conference lighting.")
+cw = Appearance.create!(person_slug: chase.slug, descriptor: "Bengals white", colorway: "white")
+
+e2e_gate = Content.create!(
+  title: "E2E Burrow And Chase", workflow: "rapper_replace", stage: "idea",
+  qb_player_slug: burrow.slug, skill_player_slug: chase.slug,
+  game_facts: { "winner_slug" => "cincinnati-bengals",
+                "away_team_slug" => "cincinnati-bengals",
+                "home_team_slug" => "jacksonville-jaguars" }
+)
+
+sheet = Artifact.create!(kind: "character_sheet", image_url: "/icon.png", source: "chatgpt",
+                         approved_at: Time.current)
+sheet.subjects.create!(person_slug: burrow.slug, appearance_slug: bw.slug, role: "qb", ordinal: 1)
+
+pair = Artifact.create!(kind: "pair", image_url: "/icon.png", source: "chatgpt",
+                        approved_at: Time.current)
+pair.subjects.create!(person_slug: burrow.slug, appearance_slug: bw.slug, role: "qb", ordinal: 1)
+pair.subjects.create!(person_slug: chase.slug,  appearance_slug: cw.slug, role: "skill", ordinal: 2)
+
+puts "  e2e gate content: #{e2e_gate.slug} (burrow=#{burrow.slug} chase=#{chase.slug})"
+
 # Triage inbox: one open finding for the promote flow (triage_promote.spec.js
 # promotes it — a MUTATING spec, so it must never carry @qa-readonly).
 TriageFinding.delete_all
