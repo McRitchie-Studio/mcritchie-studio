@@ -493,8 +493,20 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
   # The lease TTL is 120s (ClaimLease::DEFAULT_TTL_SECONDS).
   CLAIM_TTL = 120
 
+  # WHY EVERY BOARD PAYLOAD IN THE RECLAIM CHECKS NAMES A `stage`. The board-stage channel
+  # (added 2026-09-20) withholds a desk whose bound task has not reached `shipped` or
+  # `archived`, and it reads a record carrying NO stage as an unanswered question rather
+  # than a clean one — a real task record always has a stage, so its absence means the
+  # payload is not one. On a destroy path that is the right posture, and it makes a
+  # stage-less fixture an INCOMPLETE board record rather than a minimal one: it would be
+  # withheld as `:stageless` before the channel a check is named for is ever consulted.
+  # `shipped` is what a finished, reclaimable desk's task actually carries, so naming it
+  # here makes these stand-ins more faithful to the board, not less. The stage channel's
+  # own checks drive the non-terminal stages.
+  TERMINAL_STAGE = "shipped"
+
   def claim_json(expires_at, session:)
-    JSON.generate("metadata" => { "devops" => {
+    JSON.generate("stage" => TERMINAL_STAGE, "metadata" => { "devops" => {
                     "claimed_session" => session, "claim_expires_at" => expires_at.utc.iso8601
                   } })
   end
@@ -514,7 +526,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
   # expiry unverifiable", never "held by a live builder" (we never confirmed one). claim_json
   # can't build this — it iso8601-formats a Time — so it is spelled out here.
   def corrupt_claim_json
-    JSON.generate("metadata" => { "devops" => {
+    JSON.generate("stage" => TERMINAL_STAGE, "metadata" => { "devops" => {
                     "claimed_session" => "sess-corrupt", "claim_expires_at" => "not-a-timestamp"
                   } })
   end
@@ -541,9 +553,9 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
       n=$(cat #{counter.shellescape} 2>/dev/null || echo 0)
       echo $((n + 1)) > #{counter.shellescape}
       if [ "$n" -eq 0 ]; then
-        echo '{"metadata":{"devops":{}}}'
+        echo '{"stage":"shipped","metadata":{"devops":{}}}'
       else
-        echo '{"metadata":{"devops":{"claimed_session":"sess-midsweep","claim_expires_at":"#{expires}"}}}'
+        echo '{"stage":"shipped","metadata":{"devops":{"claimed_session":"sess-midsweep","claim_expires_at":"#{expires}"}}}'
       fi
     SH
     FileUtils.chmod(0o755, bin)
@@ -564,7 +576,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
       #!/bin/sh
       n=$(cat #{counter.shellescape} 2>/dev/null || echo 0)
       echo $((n + 1)) > #{counter.shellescape}
-      echo '{"metadata":{"devops":{"claimed_session":"sess-dead","claim_expires_at":"#{expires}"}}}'
+      echo '{"stage":"shipped","metadata":{"devops":{"claimed_session":"sess-dead","claim_expires_at":"#{expires}"}}}'
     SH
     FileUtils.chmod(0o755, bin)
     counter
@@ -669,6 +681,150 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     assert_includes out, "cleanup candidates:",
                     "fail-open: a lapsed lease (a closed/crashed builder) is not live"
     refute_includes out, "withheld"
+  end
+
+  # --- the BOARD-STAGE channel, end to end (the 2026-09-20 mid-release sweep) -------------
+  #
+  # A real staged git worktree, merged into origin/main, long abandoned, with no open PR
+  # and no claim — the shape every other channel in this file certifies as free litter. The
+  # only thing separating it from a live desk is the bound task's STAGE, and before this
+  # channel existed nothing asked. On 2026-09-20 a dry run offered 19 candidates, 5 of them
+  # tasks at `reviewed` riding a release that was still assembling; `--yes` would have taken
+  # all five and deleted the local branch behind work the sweep had not finished promoting.
+  #
+  # Drive BOTH cells. A guard that withheld every stage would pass the withhold checks while
+  # silently wedging `cleanup --reclaim` forever, which is the other half of this gate's
+  # bimodal failure.
+  def board_record_at(stage)
+    JSON.generate("stage" => stage, "review_in_progress" => false,
+                  "metadata" => { "devops" => JSON.parse(lapsed_claim_json).dig("metadata", "devops") })
+  end
+
+  test "[integration] cleanup withholds a desk whose task is mid-release, and NAMES the stage" do
+    mark_worktree_merged_to_origin_main
+    bind_task_slug("mid-release-task")
+    abandon_desk! # every other channel deliberately clear: only the stage can withhold it
+
+    out, err, status = agent_worktree("cleanup", "mcritchie-studio",
+                                      env: { "AGENT_WORKTREE_TASK_JSON" => board_record_at("reviewed") })
+
+    assert status.success?, err
+    assert_includes out, "withheld mcritchie-studio/terminal-context: the bound task " \
+                         "mid-release-task is at board stage `reviewed`",
+                    "a task merged onto accepted and waiting for the release sweep is LIVE work"
+    assert_includes out, "no free candidates — 1 desk withheld (see the reasons above)"
+    refute_includes out, "cleanup candidates:",
+                    "the desk that read `safe: merged on origin/accepted (clean)` on 2026-09-20 " \
+                    "must not be offered at all"
+  end
+
+  test "[integration] reclaim --yes does NOT tear down a desk whose release is still assembling" do
+    mark_worktree_merged_to_origin_main
+    bind_task_slug("mid-release-task")
+    abandon_desk!
+    assert Dir.exist?(@worktree_dir), "precondition: the desk is on disk"
+
+    out, err, status = agent_worktree("cleanup", "mcritchie-studio", "--reclaim", "--yes",
+                                      env: removal_env("AGENT_WORKTREE_TASK_JSON" => board_record_at("assembled")))
+
+    assert status.success?, "#{out}\n#{err}"
+    assert Dir.exist?(@worktree_dir),
+           "the batch path is the one that destroys — an assembled task's desk survives it"
+    assert_includes out, "board stage `assembled`"
+    refute_includes out, "reclaimed mcritchie-studio/terminal-context"
+  end
+
+  # THE VALUE BEING RESTORED. The batch path was unusable during a live release because
+  # nothing in its output separated a mid-flight desk from spent litter. It is usable again
+  # precisely because the two now read differently: the shipped desk is TAKEN.
+  test "[integration] reclaim --yes STILL tears down a desk whose task has shipped (positive control)" do
+    mark_worktree_merged_to_origin_main
+    bind_task_slug("shipped-task")
+    abandon_desk!
+    assert Dir.exist?(@worktree_dir), "precondition: the desk is on disk"
+
+    out, err, status = agent_worktree("cleanup", "mcritchie-studio", "--reclaim", "--yes",
+                                      env: removal_env("AGENT_WORKTREE_TASK_JSON" => board_record_at("shipped")))
+
+    assert status.success?, "#{out}\n#{err}"
+    assert_includes out, "reclaimed mcritchie-studio/terminal-context",
+                    "a channel that withheld every stage would be a wedge, not a fix"
+    refute Dir.exist?(@worktree_dir), "a shipped task's desk is litter, and the sweep still takes it"
+  end
+
+  # LEGIBILITY, which is half the acceptance: the dry run's `rationale:` line is the approval
+  # packet, and the operator must be able to SEE that the pipeline was asked. `safe: merged
+  # on origin/accepted (clean)` was true of all five desks that should never have been
+  # offered — the git fact was never the problem, the missing question was.
+  test "[integration] the cleanup rationale prints the board stage that freed the desk" do
+    mark_worktree_merged_to_origin_main
+    bind_task_slug("shipped-task")
+    abandon_desk!
+
+    out, err, status = agent_worktree("cleanup", "mcritchie-studio",
+                                      env: { "AGENT_WORKTREE_TASK_JSON" => board_record_at("archived") })
+
+    assert status.success?, err
+    assert_includes out, "cleanup candidates:"
+    assert_match(/rationale:.*board stage `archived` \(terminal/, out,
+                 "the stage prints beside the other channels' clearances, the way the PR and " \
+                 "claim channels print theirs")
+  end
+
+  # THE CONDUCTOR'S FRONT DOOR must agree with the sweep. bin/qa-intake builds its Cleanup
+  # Candidates section straight off `cleanup_candidate` and prints a `remove … --yes` per
+  # row, so a registry that nominated a mid-release desk would have the operator tear down
+  # by hand exactly what the sweep refuses.
+  test "[integration] the registry does not nominate a desk whose task is mid-release" do
+    mark_worktree_merged_to_origin_main
+    bind_task_slug("mid-release-task")
+    abandon_desk!
+    registry = File.join(@projects_dir, "registry.json")
+
+    _out, err, status = agent_worktree("snapshot", "mcritchie-studio", "--write",
+                                       env: { "AGENT_WORKTREE_REGISTRY" => registry,
+                                              "AGENT_WORKTREE_TASK_JSON" => board_record_at("reviewed") })
+
+    assert status.success?, err
+    payload = JSON.parse(File.read(registry))
+    worktree = payload.fetch("worktrees").find { |entry| entry["task"] == @task }
+    refute worktree.fetch("cleanup_candidate"),
+           "the conductor must not be told to remove a desk whose release is still assembling"
+    assert_match(/board stage `reviewed`/, worktree.fetch("withheld_reason"), "…and it must be told WHY")
+    assert_equal 1, payload.dig("summary", "withheld")
+  end
+
+  # AN UNRESOLVABLE TASK MUST NOT BE FREER THAN A KNOWN-UNSAFE ONE. A desk bound to a slug
+  # the board positively answers "no such task" for has no stage to clear it. Before this
+  # channel it sailed through on five clear channels — strictly freer than a desk the board
+  # plainly called `reviewed`. The board ANSWERED here, so the honest remedy is the explicit
+  # override, not "re-run once the board is reachable".
+  test "[integration] a desk bound to a task the board cannot resolve is withheld, not freed" do
+    mark_worktree_merged_to_origin_main
+    bind_task_slug("deleted-task")
+    abandon_desk!
+    plant_task_bin_answering_not_found
+
+    out, err, status = agent_worktree("cleanup", "mcritchie-studio", env: removal_env)
+
+    assert status.success?, "#{out}\n#{err}"
+    assert_includes out, "the board answered that no such task exists"
+    assert_includes out, "bin/agent-worktree remove mcritchie-studio terminal-context --yes"
+    refute_includes out, "cleanup candidates:"
+  end
+
+  # A `bin/task` that speaks the board's genuine 404 contract: EXIT_TASK_NOT_FOUND (4) plus
+  # the tasks API's own body. That pair is the ONLY thing the gate accepts as "the task does
+  # not exist" — a router or route 404 is a failed read and stays in the unreadable lane.
+  def plant_task_bin_answering_not_found
+    bin = File.join(@hub_dir, "bin", "task")
+    FileUtils.mkdir_p(File.dirname(bin))
+    File.write(bin, <<~SH)
+      #!/bin/sh
+      echo 'GET /api/v1/tasks/deleted-task -> 404: task not found' >&2
+      exit 4
+    SH
+    FileUtils.chmod(0o755, bin)
   end
 
   # THE REGISTRY is the conductor's front door: bin/qa-intake builds its Cleanup Candidates
@@ -969,7 +1125,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     mark_worktree_merged_to_origin_main
     bind_task_slug("mid-cert-task")
     abandon_desk!
-    mid_cert = JSON.generate("holder_gate_in_flight" => true,
+    mid_cert = JSON.generate("holder_gate_in_flight" => true, "stage" => TERMINAL_STAGE,
                              "metadata" => { "devops" => JSON.parse(lapsed_claim_json)
                                                              .dig("metadata", "devops") })
 

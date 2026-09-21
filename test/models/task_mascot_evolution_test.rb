@@ -1,11 +1,11 @@
 require "test_helper"
 
-# [unit] The two mascot evolution gates: a three-stage task Pokémon evolves one
-# step when the work is REVIEWED, and every evolvable mascot advances when it
-# ASSEMBLES (Charmander → Charmeleon → Charizard; Pikachu spends its one step at
-# assemble, for Raichu). Both gates sit on the ACCEPTING side of the submit seam —
-# handing work over is not the same as the work being taken. The SESSION's mascot
-# never changes — only the task's copy.
+# [unit] The two mascot evolution gates: a task Pokémon takes one step when the
+# work is REVIEWED and one more when it ASSEMBLES (Charmander → Charmeleon →
+# Charizard). EVERY line spends a step at review, so Pikachu is already Raichu
+# when it gets there and simply coasts through assemble. Both gates sit on the
+# ACCEPTING side of the submit seam — handing work over is not the same as the
+# work being taken. The SESSION's mascot never changes — only the task's copy.
 class TaskMascotEvolutionTest < ActiveSupport::TestCase
   # Collision-proof against e2e seed leftovers in the shared test DB
   # (first_or_initialize + update! forces the attributes either way).
@@ -76,23 +76,27 @@ class TaskMascotEvolutionTest < ActiveSupport::TestCase
     assert_equal 2, task.devops["mascot_stage"]
   end
 
-  test "a one-evolution mascot skips reviewed and evolves at assembled" do
+  # The whole point of the 2026-09-20 change: a two-form line used to sit out the
+  # review gate and wait for QA-green, so passing review showed the operator
+  # nothing. It now finishes at review and the assemble gate is a no-op for it.
+  test "a one-evolution mascot reaches its final form at reviewed" do
     seed_pikachu_line!
     task = make_task(mascot: "pikachu")
 
     task.submit!
     task.review!
 
-    assert_equal "pikachu", task.reload.devops["mascot"]
+    assert_equal "raichu", task.reload.devops["mascot"]
     assert_equal 1, task.devops["mascot_stage"]
 
     task.assemble!
 
-    assert_equal "raichu", task.reload.devops["mascot"]
+    assert_equal "raichu", task.reload.devops["mascot"],
+                 "nowhere left to go — the assemble gate is consumed but evolves nothing"
     assert_equal 2, task.devops["mascot_stage"]
   end
 
-  test "a branching one-evolution line evolves into one random branch at assembled" do
+  test "a branching one-evolution line evolves into one random branch at reviewed" do
     seed_family!([[133, "eevee", "eevee", %w[vaporeon jolteon flareon espeon umbreon]],
                   [134, "vaporeon", "eevee", []],
                   [135, "jolteon", "eevee", []],
@@ -103,11 +107,14 @@ class TaskMascotEvolutionTest < ActiveSupport::TestCase
 
     task.submit!
     task.review!
-    assert_equal "eevee", task.devops["mascot"]
+
+    assert_includes %w[vaporeon jolteon flareon espeon umbreon], task.devops["mascot"]
+    assert_equal 1, task.devops["mascot_stage"]
+    eeveelution = task.devops["mascot"]
 
     task.assemble!
 
-    assert_includes %w[vaporeon jolteon flareon espeon umbreon], task.devops["mascot"]
+    assert_equal eeveelution, task.devops["mascot"], "the drawn branch is final — assemble leaves it alone"
     assert_equal 2, task.devops["mascot_stage"]
   end
 

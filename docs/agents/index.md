@@ -58,6 +58,7 @@ required execution path. Do not follow a Background reference to run an SOP.
 | `sleeper-auction-watch` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/sleeper-auction-watch.md` |
 | `entry-forfeit` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/entry-forfeit.md` |
 | `market-refresh` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/market-refresh.md` |
+| `content-build` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/content-build.md` |
 | `Turf Monster Heartbeat` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/HEARTBEAT.md` |
 | `production-deploy` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/production-deploy.md` |
 | `archive-shipped` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
@@ -775,6 +776,7 @@ Do not merge or deploy unless I explicitly assigned that lane.
 | Turf Monster sleeper auction watch SOP (live draft valuation) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/sleeper-auction-watch.md` |
 | Turf Monster entry forfeit SOP (withdraw one entrant, forfeit fee) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/entry-forfeit.md` |
 | Turf Monster market refresh SOP (rebuild a span's benchmarks from fresh lines) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/market-refresh.md` |
+| Turf Monster content build SOP (drain the idea queue, write the takes) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/content-build.md` |
 | Address a blocker (shared primitive) | `mcritchie-studio/docs/agents/modules/address-blocker.md` |
 | Alex heartbeat launcher | `mcritchie-studio/docs/agents/agents/alex/HEARTBEAT.md` |
 | Alex grade events SOP | `mcritchie-studio/docs/agents/agents/alex/sops/grade-events.md` |
@@ -840,6 +842,7 @@ depend on the heartbeat.
 | `sleeper-auction-watch` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/sleeper-auction-watch.md` |
 | `entry-forfeit` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/entry-forfeit.md` |
 | `market-refresh` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/market-refresh.md` |
+| `content-build` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/content-build.md` |
 | `Turf Monster Heartbeat` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/HEARTBEAT.md` |
 | `Steffon Heartbeat` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/HEARTBEAT.md` |
 | `production-deploy` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/production-deploy.md` |

@@ -100,12 +100,35 @@ bin/agent-worktree cleanup --reclaim --yes   # full teardown + Redis band shrink
   whose diff against base is empty is git-eligible while its PR is still open, and
   a reviewer works a builder's desk without ever taking the build claim. Both are
   channels of the same gate.
+- **A task the pipeline has not finished with withholds its desk, whatever git
+  says.** The gate reads the bound task's **board stage** and frees a desk only at
+  `shipped` or `archived`. Everything else — `designed`, `building`, `submitted`,
+  `reviewed`, `assembled` — is withheld, and the hold prints the stage. This is the
+  only channel that can see the rungs above `accepted`: a `reviewed` task IS merged
+  onto accepted (that is what `reviewed` means), its PR was closed on the way there,
+  its builder's lease lapsed at the handoff and its reviewer has finished — so all
+  five other channels read honestly clear while its release is still assembling. On
+  2026-09-20 that was 5 of 19 candidates, every one riding `rel-20260920-b16744`,
+  and `--yes` would have taken all five. **So `cleanup --reclaim --yes` is usable
+  during a live release again** — the mid-flight desks name themselves.
+- **An unresolvable desk is withheld, not freed.** A board that could not be read,
+  a bound task the board says does not exist, and a record carrying no stage each
+  withhold with their own wording — a failed read is never a clean read, and an
+  answer you could not get must not buy more freedom than one you got and disliked.
+  An unreadable board says *re-run once the board is reachable*; the other two name
+  `bin/agent-worktree remove <app> <task-slug> --yes`, because the board answered
+  and waiting would change nothing. A desk with **no bound task** (including
+  `_ship`/`_gate`) is the one exception and says so: there is no stage to ask for,
+  and the desk and release-claim channels cover it.
 - **Read the `rationale:` line, not just `safe:`.** `safe: merged on
   origin/accepted (clean)` is a git fact, and on 2026-08-14 it was true of all
   three load-bearing desks a 29-candidate dry run offered up. Each candidate
   prints what every channel asked and answered; a channel that could not be asked
-  says so (`GitHub unreachable`). That line is the approval packet — a blind
-  channel gets fixed before the batch is approved.
+  says so (`GitHub unreachable`, `board stage NOT ESTABLISHED`). That line is the
+  approval packet — a blind channel gets fixed before the batch is approved. A
+  cleared desk now carries its stage there too (``board stage `shipped` (terminal
+  — the pipeline is done with it)``), so the safe/unsafe split is readable rather
+  than implicit.
 - **Trust the gate over the description.** If the count you were told and the
   count the dry run finds disagree, surface the discrepancy and believe the gate.
 - **Exit 3 is a finished sweep that left a process running, not a failure.** A
@@ -221,9 +244,28 @@ at runtime.
 | Verdict | Meaning | What to do |
 |---|---|---|
 | `OK` | bounded at a sane cap | nothing |
-| `LOOSE` | rotating at Rails' own 100 MB default — the studio-engine cap is **not** installed | the app needs the `studio-engine` bump adopted |
+| `LOOSE` | rotating at Rails' own 100 MB default — the studio-engine cap is **not** installed | the app needs `studio-engine >= 0.33.0`, the version whose `studio.logger` initializer installs the cap |
 | `NONE` | not rotating at all | same, and more urgent |
 | `?` | the app could not be booted (reason given) | inconclusive — never read it as pass or fail |
+
+**Then read the run's own verdict, the last line of the audit.** The per-app table
+is not the whole answer, because three different situations print an empty
+`rotation_missing`: a machine where every app is capped, a run made with
+`--skip-audit`, and a summary line nothing could parse. Those used to end the run
+in the same silence. The sweep now states which one it was, and carries it in the
+tagged JSON as `rotation_verdict`:
+
+| `rotation_verdict` | What the run proved |
+|---|---|
+| `capped` | the audit ran and **every** app it reached is capped — the only pass |
+| `uncapped` | at least one app read `LOOSE` or `NONE`; they are named on the line |
+| `unproven` | nothing read loose, but an app could not be booted — its cap is UNKNOWN |
+| `unaudited` | the audit did not run (`--skip-audit`); **no** app was checked |
+| `unreadable` | the sweep emitted no audit fields at all — treat every app as unchecked |
+
+Only `capped` is a pass. The other four print a `LOG CAP NOT PROVEN` or `MISSING
+LOG ROTATION` line naming what could not be proven, so an unchecked app can never
+read as a clean one.
 
 Two things rotation can never reach are **reported and never deleted**: scratch
 validator ledgers (`*/test-ledger`) and stray files at the projects root.
@@ -282,9 +324,11 @@ The machine is carrying only live work. Report:
 - worktrees reclaimed, and **any withheld and why** (the `rationale:` line)
 - Redis band before → after, and whether the floor or a high desk stopped it
 - **reclaimed bytes** from the artifact sweep, labelled **this machine only**
-- **any app named `LOOSE` or `NONE`** by the logger audit — name each one, and say
-  plainly that its local logs are still growing to Rails' 100 MB default
-- any app the audit could not boot, with the reason
+- **the audit's `rotation_verdict`**, and **any app named `LOOSE` or `NONE`** by
+  the logger audit — name each one, and say plainly that its local logs are still
+  growing to Rails' 100 MB default
+- **any app the audit could not boot, with the reason** — a `LOG CAP NOT PROVEN`
+  app is reported alongside the loose ones, never folded into the clean count
 - stale pids killed, orphaned databases dropped
 - **any `teardown-leak:` pid** the reclaim left running, and what `ps` said it was
 - anything appended to the ledger rather than removed

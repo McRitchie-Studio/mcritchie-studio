@@ -177,6 +177,88 @@ module ArtifactSweep
     nil
   end
 
+  # ---- coverage: is EVERY managed app PROVEN to cap its logs? --------------
+
+  # WHY THIS EXISTS. A missing answer used to be shaped exactly like a clean one.
+  # `rotation_missing: []` + `rotation_unknown: []` is what a machine where every
+  # app is capped emits, AND what `--skip-audit` emits, AND what an unparseable
+  # summary line degrades to in `bin/release archive` (sweep_summary returns {}
+  # on purpose, so a sweep hiccup cannot abort a run whose board work already
+  # landed). The archive's Exit Seam printed its rotation warnings only when
+  # those lists were non-empty — so a run that audited NOTHING printed exactly
+  # what a fully capped machine printed: silence.
+  #
+  # That is the hole `cap-loose-app-logs` was filed against: an app whose cap
+  # cannot be PROVEN must be named, never passed over. So the verdict is
+  # computed, not inferred from an empty list:
+  #
+  #   :capped      the audit ran and every app it reached reported a sane cap
+  #   :uncapped    at least one app reported Rails' default, or no rotation
+  #   :unproven    nothing read loose, but an app could not be booted — its cap
+  #                is UNKNOWN, and unknown is not a pass
+  #   :unaudited   the audit did not run (--skip-audit); nothing was checked
+  #   :unreadable  the summary carried no audit fields at all
+  #
+  # Worst-first, so the headline reads :capped only when the audit ran AND every
+  # app it reached was capped.
+  ROTATION_COVERAGE_VERDICTS = %i[unreadable unaudited uncapped unproven capped].freeze
+
+  # The engine version whose `studio.logger` initializer installs the cap. Below
+  # this an app carries studio-engine and is still LOOSE, which is what three of
+  # this machine's five loose apps look like — so the remedy line names the floor
+  # rather than saying "adopt studio-engine" to a repo that already has it.
+  ENGINE_CAP_FLOOR = "0.33.0"
+
+  # Classify a `bin/clean-artifacts` summary hash (symbol keys, as
+  # parse_summary returns). `nil` and a partial hash both answer :unreadable
+  # rather than raising — a degraded summary is the case this guards.
+  def rotation_coverage(summary)
+    summary = summary.to_h
+    return :unreadable unless summary.key?(:audited_envs)
+    return :unaudited if Array(summary[:audited_envs]).empty?
+    return :uncapped if Array(summary[:rotation_missing]).any?
+    return :unproven if Array(summary[:rotation_unknown]).any?
+
+    :capped
+  end
+
+  def rotation_proven?(summary)
+    rotation_coverage(summary) == :capped
+  end
+
+  # The ONE wording for the audit's verdict, so `bin/clean-artifacts`' closing
+  # report and `bin/release archive`'s Exit Seam can never disagree about what a
+  # run proved. EVERY verdict returns at least one line — silence is the defect
+  # this replaces, and an empty return would reintroduce it.
+  def rotation_report_lines(summary)
+    summary = summary.to_h
+    missing = Array(summary[:rotation_missing])
+    unknown = Array(summary[:rotation_unknown])
+
+    case rotation_coverage(summary)
+    when :unreadable
+      ["⚠ LOG CAP NOT PROVEN: the sweep emitted no logger audit, so no app was checked. " \
+       "Re-run bin/clean-artifacts and read its audit section — an empty result here is " \
+       "silence, not a clean machine."]
+    when :unaudited
+      ["⚠ LOG CAP NOT PROVEN: the logger audit did not run (--skip-audit), so no app was " \
+       "checked. An empty result here is silence, not a clean machine."]
+    else
+      lines = []
+      if missing.any?
+        lines << "⚠ MISSING LOG ROTATION: #{missing.join(', ')} — these apps have not adopted " \
+                 "the studio-engine cap (needs >= #{ENGINE_CAP_FLOOR}); their local logs grow " \
+                 "to Rails' #{human_bytes(RAILS_DEFAULT_CAP)} default"
+      end
+      if unknown.any?
+        lines << "⚠ LOG CAP NOT PROVEN for: #{unknown.join(', ')} — the audit could not boot " \
+                 "these, so the cap is UNKNOWN. Never read it as a pass"
+      end
+      lines << "✓ every audited app caps its local logs (#{Array(summary[:audited_envs]).join(', ')})" if lines.empty?
+      lines
+    end
+  end
+
   # ---- reporting ----------------------------------------------------------
 
   def human_bytes(bytes)

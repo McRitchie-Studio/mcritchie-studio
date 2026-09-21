@@ -39,6 +39,7 @@ require "json"
 require "optparse"
 require_relative "lib/task_board"
 require_relative "lib/approval_request_notice"
+require_relative "lib/board_read"
 
 BASE_URL = ENV.fetch("TASK_BOARD_URL", "https://mcritchie.studio")
 DOTENV = File.expand_path("../.env", __dir__)
@@ -63,6 +64,21 @@ slug = ARGV.shift
 def die(message, code = 1)
   warn("review-autopilot: #{message}")
   exit code
+end
+
+# A READ whose status forbids reading it. Dies on 1 — "could not run" — never on 2:
+# an unreachable board is not a refusal this tool made, and filing it as one sends
+# the operator to their own flags instead of to the board. Returns the response so
+# it can be used inline.
+#
+# NOT a gate on what the read CONTAINS. A waiting approval request still never
+# blocks an arm (see the notice at the end of `arm`); this only refuses a response
+# nobody can read.
+def read!(res, what)
+  refusal = BoardRead.refusal(res, what: what)
+  die(refusal) if refusal
+
+  res
 end
 
 def token
@@ -109,7 +125,14 @@ case command
 when "arm"
   die("usage: bin/review-autopilot arm <task-slug> [--head <sha>]", 2) if slug.to_s.empty?
 
+  # CHECKED BEFORE IT IS READ, and before the POST. `parse_body` is lenient by
+  # design, so an unchecked non-2xx arrives here as {} and every field plucked off
+  # it is nil — which is how a 301 armed a server-side auto-merge against a task
+  # record nobody had read, warned about it, and exited 0 (2026-09-20). Without
+  # --head the same {} instead reached `die("could not resolve a head sha", 2)`:
+  # non-zero, but blaming the caller for an unreachable board.
   task_res, task_body = api(:get, "/api/v1/tasks/#{slug}")
+  read!(task_res, "task #{slug}")
   task = task_body["data"] || {}
   devops = task.dig("metadata", "devops") || {}
   head = options[:head] || live_head(devops["pr_url"])
@@ -133,17 +156,17 @@ when "arm"
   # An armed merge runs server-side with no reviewer present, so ARM time is the
   # last moment a person sees a carried approval request. Information, never a gate,
   # but an UNREAD task is not "nothing waiting", so say which one this is.
-  if task_res.is_a?(Net::HTTPSuccess)
-    ApprovalRequestNotice.lines(task).each { |line| warn line }
-  else
-    warn "!! approval state UNREAD (task read -> HTTP #{task_res.code}): run bin/task show #{slug} before you walk away."
-  end
+  # No UNREAD branch here any more: `read!` above refuses an unreadable task read
+  # outright, so reaching this line means the record was read. The zap that added
+  # that warning (a053c142) wanted an unverifiable approval state never to pass
+  # silently; refusing the arm is the same intent, enforced instead of announced.
+  ApprovalRequestNotice.lines(task).each { |line| warn line }
 
 when "list"
   path = "/api/v1/review_pending_actions"
   path += "?state=all" if options[:all]
   res, body = api(:get, path)
-  die("list failed -> HTTP #{res.code}") unless res.is_a?(Net::HTTPSuccess)
+  read!(res, "list")
 
   # STRICT count. "nothing armed" is the most reassuring sentence this CLI can
   # print — it is the operator's answer to "is anything queued to merge itself?"

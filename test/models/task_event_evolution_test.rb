@@ -48,6 +48,39 @@ class TaskEventEvolutionTest < ActiveSupport::TestCase
     assert_equal "charizard", task.reload.devops["mascot"]
   end
 
+  # A two-form line has one step and spends it at REVIEW, so its FINAL form is
+  # already baked on the reviewed event — the gate change seen through the spine
+  # the timeline actually reads.
+  test "a two-form line bakes its final form on the reviewed event" do
+    [[50, "diglett", ["dugtrio"]], [51, "dugtrio", []]].each do |dex, slug, evolution|
+      Pokemon.where(slug: slug).first_or_initialize.update!(
+        dex: dex, name: slug.capitalize, slug: slug, generation: 1,
+        base: "diglett", evolution: evolution, baby: [],
+        avatar_url: "https://example.test/pokemon/#{dex}-#{slug}-cropped.png"
+      )
+    end
+    task = Task.create!(title: "Two form snapshot walk task")
+    task.update_columns(metadata: { "devops" => { "session_id" => "sess-two-form",
+                                                  "mascot" => "diglett",
+                                                  "mascot_session" => "sess-two-form" } })
+    task = task.reload
+
+    task.build!
+    task.submit!
+    task.review!
+    task.assemble!
+
+    assert_equal "diglett", snapshot_for(task, "submitted")["slug"]
+    assert_equal "dugtrio", snapshot_for(task, "reviewed")["slug"],
+                 "the review gate evolved it before the reviewed event baked"
+    assert_equal "https://example.test/pokemon/51-dugtrio-cropped.png",
+                 snapshot_for(task, "reviewed")["avatar"]
+    # The assemble gate is consumed but has nowhere to go, so history carries the
+    # same final form forward rather than repainting it.
+    assert_equal "dugtrio", snapshot_for(task, "assembled")["slug"]
+    assert_equal "dugtrio", task.reload.devops["mascot"]
+  end
+
   test "a shiny walk bakes shiny avatars for every form" do
     seed_charmander_line!
     Pokemon.find_by!(slug: "charmeleon").update!(

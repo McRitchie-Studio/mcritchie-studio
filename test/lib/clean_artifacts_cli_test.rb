@@ -178,6 +178,50 @@ class CleanArtifactsCliTest < Minitest::Test
     end
   end
 
+  # [integration] THE CLOSING REPORT, through the real process. The table rows
+  # above are one thing; what a reader and bin/release archive actually act on is
+  # the verdict at the bottom, and an app that could not be booted has to reach
+  # it as its OWN named category. An assertion that only checked the three capped
+  # apps would pass against the version that ended a loose machine in silence.
+  def test_the_closing_report_names_the_loose_app_and_the_unprovable_one
+    with_apps do |root|
+      out, summary = run_cli(root, "--dry-run")
+
+      assert_equal "uncapped", summary[:rotation_verdict],
+                   "the verdict must be computed, not inferred from an empty list"
+      assert_includes out, "MISSING LOG ROTATION: default-app, unrotated-app"
+      assert_includes out, "LOG CAP NOT PROVEN for: dormant-app"
+      refute_includes out, "every audited app caps its local logs",
+                      "a machine with two loose apps must never claim a clean audit"
+    end
+  end
+
+  # An audit that did not run must not print what a capped machine prints. This
+  # is the exact conflation the verdict exists for: --skip-audit emits the same
+  # empty rotation_missing a fully capped machine does.
+  def test_a_skipped_audit_says_so_rather_than_going_quiet
+    with_apps do |root|
+      out, summary = run_cli(root, "--dry-run", "--skip-audit")
+
+      assert_equal "unaudited", summary[:rotation_verdict]
+      assert_includes out, "LOG CAP NOT PROVEN"
+      assert_includes out, "did not run"
+      refute_includes out, "every audited app caps its local logs"
+    end
+  end
+
+  def test_a_machine_where_every_app_is_capped_says_so_affirmatively
+    Dir.mktmpdir("clean-artifacts-capped") do |root|
+      make_app(root, "capped-app", cap: 16 * MB)
+      make_app(root, "also-capped", cap: 8 * MB)
+
+      out, summary = run_cli(root, "--dry-run")
+
+      assert_equal "capped", summary[:rotation_verdict]
+      assert_includes out, "every audited app caps its local logs (development)"
+    end
+  end
+
   def test_audit_envs_flag_widens_the_audit
     with_apps do |root|
       _out, summary = run_cli(root, "--dry-run", "--audit-envs=development,test")
@@ -195,7 +239,8 @@ class CleanArtifactsCliTest < Minitest::Test
 
       summary = ArtifactSweep.parse_summary(out)
       refute_nil summary, "bin/release archive parses this line for its Exit Seam report"
-      %i[reclaimed_bytes reclaimed_human repos worktrees rotation_missing rotation_unknown].each do |key|
+      %i[reclaimed_bytes reclaimed_human repos worktrees rotation_missing rotation_unknown
+         rotation_verdict].each do |key|
         assert summary.key?(key), "the archive summary needs #{key}"
       end
     end

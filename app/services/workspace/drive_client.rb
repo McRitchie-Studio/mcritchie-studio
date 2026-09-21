@@ -27,7 +27,8 @@ module Workspace
 
     LIST_FIELDS = "nextPageToken,files(#{FILE_FIELDS})".freeze
 
-    def initialize(credentials: Credentials, sleeper: method(:sleep), service: nil)
+    def initialize(subject: nil, credentials: Credentials, sleeper: method(:sleep), service: nil)
+      @subject = subject
       @credentials = credentials
       @sleeper = sleeper
       @service = service
@@ -38,7 +39,7 @@ module Workspace
         require "google/apis/drive_v3"
 
         ::Google::Apis::DriveV3::DriveService.new.tap do |svc|
-          svc.authorization = @credentials.authorizer
+          svc.authorization = @credentials.authorizer_for(@subject)
         end
       end
     end

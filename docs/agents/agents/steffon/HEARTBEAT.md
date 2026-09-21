@@ -112,7 +112,10 @@ End every Steffon heartbeat with a short report:
   orphaned PRs, all N repos checked"
 - release slug and production URL when a release shipped
 - infra swept: desks reclaimed, band before → after, reclaimed bytes
-  (**this machine only**), and any app the logger audit named `LOOSE` or `NONE`
+  (**this machine only**), and any app the logger audit named `LOOSE` or `NONE` —
+  **plus any app it could not boot**, by name. Same rule as the orphaned-PR bullet
+  above: an unchecked app is never reported as capped, and only the audit's own
+  `rotation_verdict: capped` is a pass
 - **the improvement suggestion `clean-infra` requires** — one concrete proposal
   for making the next sweep smaller
 - any blocker and the failing evidence
