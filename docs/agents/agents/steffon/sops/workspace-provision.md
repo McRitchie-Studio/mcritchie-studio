@@ -192,18 +192,38 @@ heroku run --app <app> --no-tty --exit-code -- \
   bin/rails runner 'v = ENV["GOOGLE_SERVICE_ACCOUNT_JSON"].to_s;
                     abort("EMPTY — the config:set wrote nothing") if v.strip.empty?;
                     begin; k = JSON.parse(v);
-                    rescue JSON::ParserError => e; abort("UNPARSEABLE at offset #{e.message[/\d+/]}"); end;
+                    rescue JSON::ParserError => e;
+                      abort("UNPARSEABLE #{e.message[/at line \d+ column \d+/] || "position unreported"}"); end;
                     puts "bytes=#{v.bytesize} private_key_id=#{k["private_key_id"]}"'
 ```
 
 Two things make this a check rather than a printout. `abort` exits non-zero
 under `--exit-code`, so a wiped credential stops the SOP instead of scrolling
-past as a blank line. And the parse is RESCUED to an offset: a bare
+past as a blank line. And the parse is RESCUED to a POSITION: a bare
 `JSON.parse` on a truncated key raises `JSON::ParserError`, whose message
 echoes its input to end of stream — printing the key bytes into the transcript,
 which is the exact leak the rest of this section exists to prevent.
 `Workspace::Credentials` already handles this internally; a hand-written runner
 does not inherit that, so it has to say so itself.
+
+**Slice the message with the ANCHORED pattern — `at line \d+ column \d+` —
+never a bare `\d+`.** The bare form takes the message's FIRST digit run, and on
+this credential's most likely failure that run is key material, not a position.
+Measured on json 3.0.2 against a key pasted with a literal line break inside
+`private_key`:
+
+```text
+message         invalid ASCII control character in string: \nMIIEvQIBADANBgkqhkiG987654…
+e.message[/\d+/]                      => "987654321"   ← key bytes
+e.message[/at line \d+ column \d+/]   => "at line 2 column 0"
+```
+
+The anchored pattern needs the literal words `at line` and `column`, which key
+material does not contain. It is the same slice `Gmail::Credentials`,
+`Workspace::Credentials` and Industries' `Google::Credentials` already use — and
+like them it falls back to a fixed string rather than to the raw message, so a
+future change to the exception's wording degrades to `position unreported`
+instead of reopening the leak.
 
 Never `echo`, `cat`, or interpolate the key into a message, a commit, or an
 error. `Workspace::Credentials` already refuses to put key bytes in an exception
