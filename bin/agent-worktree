@@ -4076,10 +4076,13 @@ def claim_hold(record, fresh: false, announce: false)
   # a best-effort. TASK_RECORD_SLUG is written by bind-task, which routes through app_for —
   # registry-only, because new/up/plan need a port range a discovered repo has no answer for.
   #
-  # That matters because the other three channels are structurally dead for it too:
-  # review_hold reads a task record there is none of, pr_hold_reason returns nil the moment
-  # board_pr_url is nil (always), and desk_hold's progress / gate_in_flight /
-  # awaiting_approval channels all read that same absent record. What survives is desk age
+  # That matters because of how little the FOUR channels after this one would leave us if we
+  # fell through to them. Only review_hold is genuinely blind: it reads a task record there is
+  # none of, and a blind channel returns nil, which FREES. stage_hold fails open by DESIGN at
+  # board_stage_for's slug guard (:unbound, its one forced fail-open). pr_hold is not blind at
+  # all on its primary lane — it asks GITHUB by branch, and board_pr_url is consulted only on
+  # the :unavailable fallback. desk_hold is DEGRADED rather than blind: its progress /
+  # gate_in_flight / awaiting_approval reads come from that same absent record, leaving desk age
   # plus mtimes — and desk_activity prunes tmp, log, coverage, vendor and .bundle, which is
   # exactly and only what a gem builder writes while running a suite. Cert p99 is 94 minutes,
   # LONGER than the 1h29m idle window, which is the very reason the gate channel exists.
@@ -4094,16 +4097,24 @@ def claim_hold(record, fresh: false, announce: false)
   #
   # So: unbound + unverifiable = HOLD. Coverage buys VISIBILITY (doctor, list, snapshot, and
   # the dry run's withheld lines), not automated teardown.
+  #
+  # THIS RETURN SHORT-CIRCUITS THE REST OF THE CHAIN, and the distinction is
+  # load-bearing enough that the docs got it wrong by copying the old wording of
+  # the string below. `claim_hold` is SECOND in `reclaim_hold`, so a non-nil
+  # return here means stage/review/desk/pr NEVER RUN. They are UNREACHED, which
+  # is not the same as blind: a blind channel returns nil, and nil FREES. Saying
+  # those channels "cannot answer" describes the desk as unprotected at the exact
+  # moment this branch is what protects it.
   if discovered_app?(record[:app])
     if announce
       warn "note: #{worktree_label(record)} is a discovered repo's desk, which can never " \
            "carry a bound task; withholding rather than judging it on mtimes alone"
     end
     return "a discovered repo's desk can never carry a bound task (bind-task routes through " \
-           "the registry), so the build, review and PR channels can never answer for it — and " \
-           "desk mtimes alone cannot prove a gem desk abandoned, because a cert writes " \
-           "nothing into its desk for longer than the idle window. Withholding rather than " \
-           "nominating a desk we cannot verify; tear it down deliberately with " \
+           "the registry), so the only channel that could ask a REVIEWER about it has nothing " \
+           "to read — and desk mtimes alone cannot prove a gem desk abandoned, because a cert " \
+           "writes nothing into its desk for longer than the idle window. Withholding rather " \
+           "than nominating a desk we cannot verify; tear it down deliberately with " \
            "#{cleanup_command(record)}"
   end
 
@@ -4859,8 +4870,11 @@ end
 # WITHHOLDING is that answer; nominating is the lie. So an unverifiable desk is withheld
 # everywhere, and only `remove … --yes` (the explicit operator override) still proceeds — with
 # a warning.
-# FIVE CHANNELS, and no one of them subsumes another — each was added because the ones
-# before it read a load-bearing desk as free:
+# SIX CHANNELS, and no one of them subsumes another — each was added because the ones
+# before it read a load-bearing desk as free. They run in the order `reclaim_hold` chains
+# them, and that chain is `||`: the FIRST to return a reason wins and the rest never run.
+#   origin_hold  asks whether the REMOTE is reachable at all — merge evidence that could
+#                not be refreshed is stale, and stale evidence is not permission to delete;
 #   claim_hold   asks the BOARD who is BUILDING here (and, for `_ship`/`_gate`, whether a
 #                release conductor is live);
 #   stage_hold   asks the BOARD whether the PIPELINE is finished with the task — the only
@@ -4878,7 +4892,9 @@ end
 # desk can be quiet, unclaimed and diff-empty while its PR is still open (the 08-14 sweep);
 # and a desk can be clear on ALL FOUR of those while its task sits at `reviewed` and its
 # release assembles (the 09-20 sweep, 5 of 19 candidates).
-# See reclaim_hold for why they run in this order.
+# See reclaim_hold for why they run in this order — and note that BECAUSE it is an `||`
+# chain, "how many channels can answer for this desk" is never the right question. Only
+# the first one that returns is asked at all.
 def reclaim_verdict(record, fresh: false, announce: false)
   evidence = reclaim_evidence(record, fresh: fresh, announce: announce)
   [evidence[:free], evidence[:hold]]

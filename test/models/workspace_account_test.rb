@@ -142,4 +142,40 @@ class WorkspaceAccountTest < ActiveSupport::TestCase
     refute account.valid?
     assert_includes account.errors[:subject].join, "single email address"
   end
+
+  test "a subject with no local part is refused" do
+    # "@mason.test" has exactly one @ and ends with the right domain, and names
+    # nobody. It would still be handed to Google as a JWT subject.
+    account = WorkspaceAccount.new(domain: "mason.test", subject: "@mason.test")
+
+    refute account.valid?
+    assert_includes account.errors[:subject].join, "local part"
+  end
+
+  test "a trailing-dot domain is refused" do
+    refute WorkspaceAccount.new(domain: "mason.test.").valid?
+  end
+
+  test "a single-label domain is refused" do
+    refute WorkspaceAccount.new(domain: "localhost").valid?
+  end
+
+  test "ordinary domains still validate" do
+    %w[mason.test a-b.co.uk x1.example.com].each do |domain|
+      assert WorkspaceAccount.new(domain: domain).valid?, "#{domain} should be legal"
+    end
+  end
+
+  test "record_check_warning! keeps a PROVEN row active while saying what failed" do
+    # The state the sweep used to leave behind: active, last_check_error nil,
+    # while the terminal said CHECK FAILED. The row contradicted the operator.
+    account = WorkspaceAccount.create!(domain: "mason.test")
+    account.mark_verified!
+
+    account.record_check_warning!("Google::Apis::ServerError: HTTP 503")
+
+    assert_equal "active", account.reload.status, "a proven grant is not discarded over a transient read"
+    assert_equal "Google::Apis::ServerError: HTTP 503", account.last_check_error
+    assert WorkspaceAccount.impersonatable?("team@mason.test")
+  end
 end

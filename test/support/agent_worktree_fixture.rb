@@ -28,8 +28,18 @@
 #
 #       assert status.success?
 #       assert_includes out, "withheld mcritchie-studio/terminal-context"
+#       assert_includes out, "board stage `reviewed`"
 #     end
 #   end
+#
+# ASSERT THE REASON, NOT THE PREFIX — that second line is not decoration. The sweep prints
+# `withheld <desk>` for EVERY hold it takes (fresh, dirty, claimed, unreadable, board
+# stage), so a test that asserts only the prefix passes no matter which channel held the
+# desk, and therefore cannot prove the thing it was written to prove. Assert the reason.
+# Same discipline with `rev` below: it RAISES on a ref that does not resolve, so assert the
+# SHA shape (`assert_match(/\A[0-9a-f]{40}\z/, rev(...))`) rather than `refute_empty` —
+# `git rev-parse <missing-ref>` prints the ref NAME and exits 128, so "not empty" is true
+# for a ref that is not there.
 #
 # `include` is the whole setup. The module owns `setup`/`teardown`; a host that needs
 # its own must call `super`, or call the two primitives
@@ -650,8 +660,22 @@ module AgentWorktreeFixture
     out.strip
   end
 
+  # RAISES on a ref that does not resolve, and that is the whole point.
+  #
+  # `git rev-parse <missing-ref>` writes the REF NAME to stdout and exits 128. So a
+  # helper that drops the status returns "refs/remotes/origin/main" for a ref that
+  # is not there — never nil, never empty. `refute_empty rev(...)` could therefore
+  # not fail, on exactly the case it was written to catch (measured 2026-09-21).
+  #
+  # The other caller is worse than a vacuous test: `stage_agent_worktree_desk!`
+  # feeds this straight into `update-ref`, so a silent failure would point
+  # origin/main at a ref name and every base comparison after it would be wrong.
   def rev(dir, ref)
-    out, = Open3.capture3(SessionEnv.neutralized, "git", "rev-parse", ref, chdir: dir)
+    out, err, status = Open3.capture3(SessionEnv.neutralized, "git", "rev-parse", ref, chdir: dir)
+    unless status.success?
+      raise "git rev-parse #{ref.inspect} failed in #{dir} (exit #{status.exitstatus}): #{err.strip}"
+    end
+
     out.strip
   end
 

@@ -50,9 +50,13 @@ module Workspace
       rescue StandardError => e
         # Record the failure on the source so it is visible, and DO NOT infer
         # anything about the documents this walk never reached.
-        source.update_columns(last_walk_error: "#{e.class}: #{e.message}".truncate(500),
-                              updated_at: @clock.call)
-        return result(source, missing: 0, error: "#{e.class}: #{e.message}")
+        #
+        # The slug, not e.message: this column is DURABLE and is rendered back
+        # to an operator, and a Google message echoes the subject address and
+        # the titles of files we are deliberately not copying.
+        slug = ErrorSlug.for(e)
+        source.update_columns(last_walk_error: slug, updated_at: @clock.call)
+        return result(source, missing: 0, error: slug)
       end
 
       # Reached ONLY when the whole tree was read without raising.

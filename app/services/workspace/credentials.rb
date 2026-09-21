@@ -170,25 +170,29 @@ module Workspace
           end
 
           [ true, nil ]
+        # THE LAST SEAM THAT STILL HAD ITS OWN REDACTOR. This line used to read
+        # `e.message.to_s[/"error":\s*"([^"]+)"/, 1] || e.class.to_s` — the same
+        # RULE as Workspace::ErrorSlug, written out again, and weaker in three
+        # ways that all matter here:
+        #
+        #   * NO `.scrub`. A regex over a string with invalid encoding raises
+        #     ArgumentError, and this is a rescue body, so the raise escapes the
+        #     rescue that was supposed to contain it.
+        #   * NO SHAPE CHECK. It returned whatever sat between the quotes, at
+        #     whatever length. ErrorSlug requires the capture to match TOKEN, so
+        #     a PEM header or an address cannot ride out in an "error" field.
+        #   * NO PROSE BRANCH. Google states the same fault two ways, and the
+        #     leading-token form ("backendError on <folder>") read as the class
+        #     name here.
+        #
+        # An earlier revision of this PR fixed it by EXTRACTING this expression
+        # as `Credentials.redact` and calling it from the sweep too. That was
+        # backwards: it would have given the weaker rule a name and a second
+        # caller, on the same day the sweep moved to the stronger one. There is
+        # one redactor now, and this is the last caller to join it.
         rescue StandardError => e
-          [ false, redact(e) ]
+          [ false, Workspace::ErrorSlug.for(e) ]
         end
-      end
-
-      # WHAT AN EXCEPTION MAY SAY OUT LOUD in this lane, in one place.
-      #
-      # At a bare `rescue StandardError` you cannot know whether the exception
-      # quotes its input — `JSON::ParserError` echoes it to end of stream, and a
-      # transport error can carry a request body. So nothing here passes
-      # `e.message` through: an OAuth error surrenders its `"error"` slug, which
-      # is the only part an operator acts on, and everything else degrades to the
-      # class name. See docs/agents/modules/backend-discipline.md, "Never
-      # interpolate an exception message that quotes its input".
-      #
-      # `probe` has redacted this way since it was written. This is the same rule
-      # given a name so the OTHER callers can hold it too.
-      def redact(error)
-        error.message.to_s[/"error":\s*"([^"]+)"/, 1] || error.class.to_s
       end
 
       def reset!

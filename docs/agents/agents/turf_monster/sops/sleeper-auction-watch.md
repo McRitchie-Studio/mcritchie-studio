@@ -52,12 +52,30 @@ mechanics and does not transfer.
    URL: `https://sleeper.com/leagues/<league_id>/...`.
 3. **Node is available** — the scripts below are plain Node with `fetch`.
 4. **A scratch directory**, namespaced to this act. Everything below writes to
-   `$SCRATCH/ff/`. Never write to a bare filename in a shared scratchpad.
+   `${CLAUDE_SCRATCHPAD:-/tmp}/ff/`. Never write to a bare filename in a shared
+   scratchpad — the session scratchpad is shared between sibling agents, so
+   `league.json` is the dangerous name precisely because it is the obvious one.
 
 ```bash
-SCRATCH="${CLAUDE_SCRATCHPAD:-/tmp}"   # or the session scratchpad you were given
-mkdir -p "$SCRATCH/ff" && cd "$SCRATCH/ff"
+mkdir -p "${CLAUDE_SCRATCHPAD:-/tmp}/ff"
 ```
+
+**EVERY BLOCK BELOW THAT USES A RELATIVE PATH RE-ENTERS THAT DIRECTORY, and
+the repetition is the point.**
+This SOP runs across several turns, and **no shell state survives a turn
+boundary** — measured 2026-09-21: a variable comes back empty, and the working
+directory is RESET after the call, including a `cd` inside the project tree. So
+a single `cd` here would not still be in force by the time the scripts run:
+they would read and write `league.json` in whatever directory the turn started
+in, which is usually a git worktree. Consistent, still working, and scattering
+seventeen files through a tracked tree.
+
+`${CLAUDE_SCRATCHPAD:-/tmp}` is safe to repeat because it carries nothing — an
+environment lookup with a fallback, re-evaluated fresh in each turn. (Nothing
+sets it today, so it resolves to `/tmp`; the `ff/` subdirectory is what does
+the namespacing, and this keeps working the day something does set it.) The
+relative filenames inside the Node snippets then stay correct, because the
+`cd` at the top of their own block put them there.
 
 No auth is required. Sleeper's read API is public; the draft board, the picks,
 and the projections all come back unauthenticated.
@@ -65,6 +83,7 @@ and the projections all come back unauthenticated.
 ## Step 1 — Read the league and the draft
 
 ```bash
+cd "${CLAUDE_SCRATCHPAD:-/tmp}/ff"   # this block re-enters it; no turn carries a cwd
 L=<league_id>
 curl -s "https://api.sleeper.app/v1/league/$L" -o league.json
 curl -s "https://api.sleeper.app/v1/league/$L/drafts" -o drafts.json
@@ -94,6 +113,7 @@ all three below.
 ## Step 2 — Pull projections
 
 ```bash
+cd "${CLAUDE_SCRATCHPAD:-/tmp}/ff"   # this block re-enters it; no turn carries a cwd
 for P in QB RB WR TE K DEF DL LB DB; do
   curl -s "https://api.sleeper.com/projections/nfl/<season>?season_type=regular&position[]=$P&order_by=ppr" \
     -o "proj_$P.json" &
@@ -118,6 +138,7 @@ no special-casing.
 player onto one entry. Use `row.player_id`.
 
 ```bash
+cd "${CLAUDE_SCRATCHPAD:-/tmp}/ff"   # this block re-enters it; no turn carries a cwd
 cat > model.js <<'EOF'
 const fs = require('fs');
 const league = require('./league.json');
@@ -210,6 +231,7 @@ Three checks, every time. Each has caught a real bug:
 Poll picks and print the delta. Run this each time you check.
 
 ```bash
+cd "${CLAUDE_SCRATCHPAD:-/tmp}/ff"   # this block re-enters it; no turn carries a cwd
 cat > live.js <<'EOF'
 const V = require('./values.json'), fs = require('fs');
 const DRAFT = process.env.DRAFT_ID, ME = +process.env.MY_ROSTER || null;
@@ -264,9 +286,9 @@ Chrome with a debug port on a **throwaway profile** and attach over CDP.
 
 ```bash
 nohup "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
-  --remote-debugging-port=9222 --user-data-dir="$SCRATCH/draft-chrome-profile" \
+  --remote-debugging-port=9222 --user-data-dir="${CLAUDE_SCRATCHPAD:-/tmp}/draft-chrome-profile" \
   --no-first-run --no-default-browser-check --window-size=1440,900 \
-  > "$SCRATCH/draft-chrome.log" 2>&1 &
+  > "${CLAUDE_SCRATCHPAD:-/tmp}/draft-chrome.log" 2>&1 &
 until curl -s --max-time 1 http://127.0.0.1:9222/json/version >/dev/null; do sleep 1; done
 ```
 

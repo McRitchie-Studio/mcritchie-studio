@@ -140,6 +140,64 @@ class ArtifactGateTest < ActionDispatch::IntegrationTest
            "artifacts approved in white must read as re-skins once the jersey changes"
   end
 
+  # --- the repeat case: the same pair, a different jersey, then back -------
+  #
+  # This is the case the screen was built for. A face does not change week to
+  # week; only the jersey does. So filing the black recolor must not cost the
+  # white artifact — and the test that proves it has to run the WHOLE cycle,
+  # because the defect was invisible after two attaches and only showed on the
+  # third.
+
+  test "attaching a re-skin leaves the other colorway live" do
+    Appearance.create!(person_slug: @burrow.slug, descriptor: "Bengals black", colorway: "black")
+    Appearance.create!(person_slug: @chase.slug,  descriptor: "Bengals black", colorway: "black")
+
+    attach_all
+    assert_equal 3, Artifact.live.count, "the white set is on file"
+
+    post set_colorway_content_path(@content.slug), params: { colorway: "black" }
+    assert slots.all?(&:reskin?), "the control — these must be re-skins, or this proves nothing"
+
+    attach_all
+
+    assert_equal 6, Artifact.live.count,
+                 "filing the black recolor retired the white artifacts it was re-skinned FROM — " \
+                 "the library can then hold only one live artifact per cast, and the reuse this " \
+                 "screen exists for is impossible"
+    assert_equal 0, Artifact.where.not(retired_at: nil).count,
+                 "a re-skin supersedes nothing; nothing should have been retired"
+  end
+
+  # The third pass is the one that bites: white, black, then white again. With
+  # the unconditional retire the white artifacts are gone by now and the gate
+  # asks the operator to generate images it already has.
+  test "a jersey the pair has worn before still reads reuse on the way back" do
+    Appearance.create!(person_slug: @burrow.slug, descriptor: "Bengals black", colorway: "black")
+    Appearance.create!(person_slug: @chase.slug,  descriptor: "Bengals black", colorway: "black")
+
+    attach_all                                                              # white
+    post set_colorway_content_path(@content.slug), params: { colorway: "black" }
+    attach_all                                                              # black
+    post set_colorway_content_path(@content.slug), params: { colorway: "white" }
+
+    assert slots.all?(&:reuse?),
+           "back in white, every slot must read REUSE — the artifacts are still on file. " \
+           "Read #{slots.map(&:decision).inspect}"
+  end
+
+  # The supersede itself must still happen, or the fix above has simply turned
+  # the retire off. Same cast, same look, a new image: that one IS a replacement.
+  test "a reuse attach still retires the artifact it replaces" do
+    i = index_of("pair")
+    attach(i, "/first.png")
+    assert slots[i].reuse?, "the control — the second attach must be deciding REUSE"
+
+    attach(i, "/second.png")
+
+    assert_equal 1, Artifact.live.where(kind: "pair").count
+    assert_equal 1, Artifact.where(kind: "pair").where.not(retired_at: nil).count
+  end
+
   # --- the wiring blockers a review found ---------------------------------
 
   # The gate was unreachable in production: nothing wrote the cast, so

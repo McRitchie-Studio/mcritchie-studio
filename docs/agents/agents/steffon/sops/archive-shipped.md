@@ -153,7 +153,9 @@ of those calls:
 
 - **Clean + merged is NOT sufficient.** A fresh desk is git-identical to a merged
   one, so the reclaim also withholds a desk younger than 1h29m, one written to
-  inside that window, and one whose holder has a gate in flight.
+  inside that window, one whose holder has a gate in flight, and one bound to a
+  task the board does not yet put at `shipped` or `archived` — `reviewed` means
+  mid-release, so a merged desk stands until the release ships.
 - **Read the `rationale:` line, not just `safe:`.** It names what every channel
   asked and answered; a channel that could not be asked says so.
 

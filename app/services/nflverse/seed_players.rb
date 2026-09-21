@@ -26,6 +26,32 @@ class Nflverse::SeedPlayers
   PLAYERS_URL = "https://github.com/nflverse/nflverse-data/releases/download/players/players.csv"
   DEFAULT_MIN_SEASON = 2024
 
+  # A third-party feed being unreachable is NOT an import defect, and must not
+  # read as one: this service runs as a post-deploy command inside bin/release,
+  # where an uncaught raise aborts the ENTIRE ship, not just this task.
+  class FeedUnavailable < StandardError; end
+
+  # Transport failures, matching the shape this repo already uses in
+  # ReleaseNotes::DiscordClient and Gmail::Client.
+  #
+  # PARENT classes, deliberately. A literal list of concrete errors drifts the
+  # moment the network finds a new way to fail, and it already had: an earlier
+  # version named ECONNREFUSED/ECONNRESET/EHOSTUNREACH but missed their
+  # siblings ETIMEDOUT, ENETUNREACH and EPIPE — an enumeration incomplete for
+  # the very family it enumerates. `SystemCallError` is the parent of every
+  # `Errno::`, and `IOError` the parent of `EOFError` (which a server that
+  # hangs up mid-chunk raises).
+  TRANSPORT_ERRORS = [
+    SocketError, SystemCallError, IOError, Timeout::Error, OpenSSL::SSL::SSLError,
+    OpenURI::HTTPError
+  ].freeze
+
+  # open-uri raises a BARE RuntimeError for "redirection forbidden" and "HTTP
+  # redirection loop" (open-uri.rb:233 and :241). That path is LIVE here, not
+  # theoretical: PLAYERS_URL is a GitHub release download, so every single
+  # fetch redirects to objects.githubusercontent.com.
+  REDIRECT_ERROR = /redirection forbidden|HTTP redirection loop/i
+
   # nflverse uses standard NFL abbreviations with a few quirks: "LA" for the
   # Rams, "LAC" for the Chargers, "LV" for the Raiders, "WAS" for the
   # Commanders. Maps to our canonical team slugs.
@@ -70,6 +96,22 @@ class Nflverse::SeedPlayers
     # Recorded so a later reader can tell "nothing changed" apart from "nothing
     # was checked" — a question no record's own updated_at can answer, and the
     # one a delta sync has to ask before trusting an empty result.
+    run_import
+  rescue FeedUnavailable => e
+    # RECORDED, LOUD, AND NOT FATAL. The deploy proceeds because the APP is
+    # fine — only the data is stale — and the failed ImportRun is what tells a
+    # later reader this refresh never happened. Swallowing it silently would be
+    # worse than the abort it replaces.
+    warn "nflverse seed: FEED UNAVAILABLE — data not refreshed (#{e.message})"
+    @stats[:feed_unavailable] = 1
+    @stats
+  end
+
+  # PRIVATE (declared below, not by a marker): calling this directly bypasses
+  # `call`'s rescue, which is the whole point of the change. A bare `private`
+  # here would also privatise `ingest_row`, which is deliberately public so a
+  # test can drive one row without a CSV.
+  def run_import
     ImportRun.track("nflverse_players") do |run|
       rows = ordered(parse_csv)
       puts "  #{rows.size} rows; filter: status=#{@status_filter || "any"} last_season>=#{@min_season}"
@@ -89,8 +131,6 @@ class Nflverse::SeedPlayers
     end
   end
 
-  # Public so tests can drive a single row without a CSV. Returns the Athlete
-  # (or nil if skipped).
   # A DETERMINISTIC ingest order, independent of how the feed happens to ship
   # the file.
   #
@@ -128,8 +168,9 @@ class Nflverse::SeedPlayers
     # "Will Anderson Jr." (with pff_id from PFF CSV) and "Will Anderson" (from
     # Spotrac without suffix) live as two Person+Athlete pairs and a name match
     # picks the wrong one.
+    nflverse_id = row["nfl_id"].to_s.strip.presence
     athlete = lookup_athlete_by_ids(gsis_id: gsis_id, pff_id: pff_id, otc_id: otc_id,
-                                     espn_id: espn_id, pfr_id: pfr_id)
+                                     espn_id: espn_id, pfr_id: pfr_id, nflverse_id: nflverse_id)
     person = athlete&.person
 
     if athlete.nil?
@@ -215,12 +256,19 @@ class Nflverse::SeedPlayers
     source.gsub(/\D/, "").last(4)
   end
 
-  def lookup_athlete_by_ids(gsis_id:, pff_id:, otc_id:, espn_id:, pfr_id:)
+  def lookup_athlete_by_ids(gsis_id:, pff_id:, otc_id:, espn_id:, pfr_id:, nflverse_id: nil)
     return Athlete.find_by(gsis_id: gsis_id) if gsis_id && Athlete.exists?(gsis_id: gsis_id)
     return Athlete.find_by(pff_id: pff_id)   if pff_id  && Athlete.exists?(pff_id: pff_id)
     return Athlete.find_by(otc_id: otc_id)   if otc_id  && Athlete.exists?(otc_id: otc_id)
     return Athlete.find_by(espn_id: espn_id) if espn_id && Athlete.exists?(espn_id: espn_id)
     return Athlete.find_by(pfr_id: pfr_id)   if pfr_id  && Athlete.exists?(pfr_id: pfr_id)
+    # nflverse_id is written by build_attrs and UNIQUELY INDEXED, so it must be
+    # probed here too. Missing it meant a row whose nflverse_id already belonged
+    # to another athlete fell through to the name path, and `update!` then raised
+    # into the caller's rescue — committing a namesake pair carrying no league
+    # IDs. The NEXT run recomputed the same disambiguator and died on
+    # index_people_on_slug with an uncaught RecordNotUnique, aborting the import.
+    return Athlete.find_by(nflverse_id: nflverse_id) if nflverse_id && Athlete.exists?(nflverse_id: nflverse_id)
     nil
   end
 
@@ -277,9 +325,29 @@ class Nflverse::SeedPlayers
     CSV.parse(body, headers: true)
   end
 
+  # The feed is a third party and will have bad minutes. Its errors are named
+  # so `call` can tell "nflverse was unreachable" apart from "our import is
+  # broken" — a distinction that matters because this runs as a post-deploy
+  # command inside `bin/release`, where a raise aborts the whole ship.
   def fetch_remote
     puts "Fetching #{@source_url}"
-    URI.open(@source_url, read_timeout: 60).read.force_encoding("UTF-8")
+    open_source(@source_url).read.force_encoding("UTF-8")
+  rescue *TRANSPORT_ERRORS => e
+    raise FeedUnavailable, "#{e.class}: #{e.message}"
+  rescue RuntimeError => e
+    # Only open-uri's redirect refusals — anything else is ours and must keep
+    # raising, or the quiet path would hide every genuine defect.
+    raise unless e.message.match?(REDIRECT_ERROR)
+
+    raise FeedUnavailable, "#{e.class}: #{e.message}"
+  end
+
+  private :run_import
+
+  # Seam so a test can make the NETWORK fail rather than hand-raising the
+  # wrapped error — which is what let an incomplete rescue list ship.
+  def open_source(url)
+    URI.open(url, read_timeout: 60)
   end
 
   def vputs(msg)

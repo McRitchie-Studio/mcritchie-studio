@@ -42,8 +42,40 @@ class AgentWorktreeFixtureTest < ActiveSupport::TestCase
     refute git_dirty?(@hub_dir), "the primary must read clean with a worktree provisioned under it"
     refute git_dirty?(@worktree_dir), "the staged desk must read clean"
 
-    refute_empty rev(@hub_dir, "refs/remotes/origin/main"),
-                 "base resolution needs a local origin/main ref, with no network"
+    # THE POSITIVE CONTROL. Every `git_dirty?` site in this suite is a `refute`, so a
+    # predicate that had quietly stopped detecting anything would satisfy all of them.
+    # Dirty the desk on purpose, prove it is SEEN, and put it back.
+    scratch = File.join(@worktree_dir, "dirty-probe.txt")
+    File.write(scratch, "x")
+    assert git_dirty?(@worktree_dir),
+           "git_dirty? did not see an untracked file — every refute above passes for free"
+    File.delete(scratch)
+    refute git_dirty?(@worktree_dir), "the probe must leave the desk as it found it"
+
+    # A SHA, not merely "not empty". `git rev-parse` on a missing ref prints the ref
+    # NAME and exits 128, so `refute_empty` could not fail here — the helper now raises,
+    # and this pins the shape it returns.
+    assert_match(/\A[0-9a-f]{40}\z/, rev(@hub_dir, "refs/remotes/origin/main"),
+                 "base resolution needs a local origin/main ref resolving to a SHA, with no network")
+  end
+
+  # [control] THE ASSERTION THAT COULD NOT FAIL, now pinned from the other side.
+  #
+  # `git rev-parse <missing-ref>` prints the REF NAME on stdout and exits 128 —
+  # measured. So the old helper, which dropped the status, returned a non-empty
+  # string for a ref that does not exist, and `refute_empty rev(...)` passed on
+  # precisely the case it was written to catch. This test is what makes the
+  # repair falsifiable: revert the helper to `out, = Open3.capture3(...)` and it
+  # goes red, because nothing raises and the name comes back instead.
+  test "[control] rev RAISES on a ref that does not resolve, rather than echoing its name" do
+    error = assert_raises(RuntimeError) { rev(@hub_dir, "refs/heads/no-such-ref") }
+
+    assert_includes error.message, "no-such-ref", "the failure must name the ref that did not resolve"
+    assert_includes error.message, "128", "and the exit status, so a reader can tell it apart from a crash"
+
+    # The other half: a ref that DOES resolve still comes back as a bare SHA, so the
+    # repair did not simply turn the helper into something that always raises.
+    assert_match(/\A[0-9a-f]{40}\z/, rev(@hub_dir, "HEAD"))
   end
 
   test "[integration] the staged desk starts FRESH — abandon_desk! is what ages it" do
@@ -84,6 +116,15 @@ class AgentWorktreeFixtureTest < ActiveSupport::TestCase
     assert_includes out, "withheld mcritchie-studio/terminal-context",
                     "board_record_at + bind_task_slug must compose into a payload the real sweep reads " \
                     "as a bound, mid-release task — the fixture's board stand-ins are useless otherwise"
+
+    # AND WITHHELD FOR THE RIGHT REASON. The sweep prints `withheld <desk>` for every
+    # hold it takes — fresh, dirty, claimed, unreadable — so the line alone cannot tell
+    # a board-stage hold from any other, and this test's whole claim is about the BOARD
+    # payload. Assert the stage the sweep read back.
+    assert_includes out, "board stage `reviewed`",
+                    "the desk was withheld, but the line does not say the BOARD STAGE held it — so this " \
+                    "test cannot tell a stage hold from a freshness or dirtiness hold, which is the only " \
+                    "thing it exists to prove"
   end
 
   test "[integration] the network floor rides along — this file's spawn cannot reach the real board" do

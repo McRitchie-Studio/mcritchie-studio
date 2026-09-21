@@ -93,13 +93,27 @@ namespace :workspace do
         # One row's failure must not abandon the rest of the sweep half-checked,
         # which is what an exception escaping this block used to do — including
         # after that row had already been flipped active.
-        # REDACTED, and not because a leak is known on this path — because at a
-        # bare `rescue StandardError` you cannot know. The credential itself is
-        # parsed at the top of this task, OUTSIDE this block, and
-        # Workspace::Credentials.parse redacts its own JSON::ParserError, so the
-        # obvious leak cannot reach here. That is an argument about today's call
-        # graph, not about the rescue, and the rescue is what has to hold.
-        warn "#{account.domain}: CHECK FAILED (#{e.class}: #{Workspace::Credentials.redact(e)})"
+        slug = Workspace::ErrorSlug.for(e)
+
+        # If we get here AFTER the flip, the delegation is genuinely proven and
+        # only the smoke read failed — so the row keeps `active` and records
+        # WHY. Before this, it kept `active` with last_check_error nil while
+        # this line said CHECK FAILED, so the row contradicted the operator.
+        # GUARDED, because this is a rescue body: anything that raises HERE is
+        # not caught by the rescue above it, and takes the rest of the sweep
+        # with it. `record_check_warning!` is an `update!`, so it runs every
+        # validation on the row — including DOMAIN_FORMAT — and a row stored
+        # before that validation existed makes it raise RecordInvalid. The
+        # operator still needs the CHECK FAILED line either way, so the record
+        # is best-effort and the report is not.
+        begin
+          account.record_check_warning!(slug) if account.reload.active?
+        rescue StandardError => record_error
+          warn "  → could not record the warning on #{account.domain} " \
+               "(#{Workspace::ErrorSlug.for(record_error)}); the line below still stands"
+        end
+
+        warn "#{account.domain}: CHECK FAILED (#{slug})"
         next account
       end
     }.compact
@@ -163,7 +177,11 @@ namespace :workspace do
 
   desc "Walk knowledge sources and record document METADATA: workspace:walk[source_id] (all enabled when omitted)"
   task :walk, [ :source_id ] => :environment do |_t, args|
-    sources = args[:source_id].present? ? KnowledgeSource.where(id: args[:source_id]) : KnowledgeSource.enabled
+    # ORDERED, and not only for the tests. Without it the walk visits in heap
+    # order, so a multi-tenant sweep reports its tenants differently run to run —
+    # and the "a refused source does not cost the others their walk" test depends
+    # on reaching the refusing source FIRST, a premise nothing was making true.
+    sources = args[:source_id].present? ? KnowledgeSource.where(id: args[:source_id]) : KnowledgeSource.enabled.order(:id)
     sources = sources.where(kind: "google_drive")
     abort "No google_drive knowledge source matches #{args[:source_id].inspect}." if sources.none?
 
@@ -173,14 +191,32 @@ namespace :workspace do
     end
 
     failed = sources.map { |source|
-      r = Workspace::DriveWalker.new.call(source)
-      if r.ok?
-        puts "##{source.id} #{source.name}: #{r.seen} seen — #{r.added} new, #{r.changed} changed, " \
-             "#{r.unchanged} unchanged, #{r.missing} now missing; #{source.stale_documents.size} need indexing"
-        nil
-      else
-        # Loud, and nothing was marked missing: a failed walk infers nothing.
-        warn "##{source.id} #{source.name}: WALK FAILED — #{r.error} (nothing marked missing)"
+      begin
+        r = Workspace::DriveWalker.new.call(source)
+        if r.ok?
+          puts "##{source.id} #{source.name}: #{r.seen} seen — #{r.added} new, #{r.changed} changed, " \
+               "#{r.unchanged} unchanged, #{r.missing} now missing; #{source.stale_documents.size} need indexing"
+          nil
+        else
+          # Loud, and nothing was marked missing: a failed walk infers nothing.
+          warn "##{source.id} #{source.name}: WALK FAILED — #{r.error} (nothing marked missing)"
+          source
+        end
+      rescue ArgumentError => e
+        # OUR OWN refusal, raised BEFORE the walker's internal rescue exists: a
+        # source with no workspace_account, or one whose workspace is not
+        # active. Without this block that raise escapes the map and abandons
+        # every OTHER tenant's walk — one unbound source takes the whole sweep
+        # down with a backtrace, in place of the remedy this message carries.
+        # workspace:check learned exactly this 70 lines up.
+        #
+        # e.message is shown VERBATIM here on purpose: this text is ours, and
+        # naming the remedy is the entire point of the raise.
+        warn "##{source.id} #{source.name}: WALK REFUSED — #{e.message}"
+        source
+      rescue StandardError => e
+        # Anything else is foreign text, so it reports as a slug.
+        warn "##{source.id} #{source.name}: WALK FAILED — #{Workspace::ErrorSlug.for(e)} (nothing marked missing)"
         source
       end
     }.compact
