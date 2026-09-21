@@ -26,6 +26,11 @@ class Nflverse::SeedPlayers
   PLAYERS_URL = "https://github.com/nflverse/nflverse-data/releases/download/players/players.csv"
   DEFAULT_MIN_SEASON = 2024
 
+  # A third-party feed being unreachable is NOT an import defect, and must not
+  # read as one: this service runs as a post-deploy command inside bin/release,
+  # where an uncaught raise aborts the ENTIRE ship, not just this task.
+  class FeedUnavailable < StandardError; end
+
   # nflverse uses standard NFL abbreviations with a few quirks: "LA" for the
   # Rams, "LAC" for the Chargers, "LV" for the Raiders, "WAS" for the
   # Commanders. Maps to our canonical team slugs.
@@ -70,6 +75,18 @@ class Nflverse::SeedPlayers
     # Recorded so a later reader can tell "nothing changed" apart from "nothing
     # was checked" — a question no record's own updated_at can answer, and the
     # one a delta sync has to ask before trusting an empty result.
+    run_import
+  rescue FeedUnavailable => e
+    # RECORDED, LOUD, AND NOT FATAL. The deploy proceeds because the APP is
+    # fine — only the data is stale — and the failed ImportRun is what tells a
+    # later reader this refresh never happened. Swallowing it silently would be
+    # worse than the abort it replaces.
+    warn "nflverse seed: FEED UNAVAILABLE — data not refreshed (#{e.message})"
+    @stats[:feed_unavailable] = 1
+    @stats
+  end
+
+  def run_import
     ImportRun.track("nflverse_players") do |run|
       rows = ordered(parse_csv)
       puts "  #{rows.size} rows; filter: status=#{@status_filter || "any"} last_season>=#{@min_season}"
@@ -89,8 +106,6 @@ class Nflverse::SeedPlayers
     end
   end
 
-  # Public so tests can drive a single row without a CSV. Returns the Athlete
-  # (or nil if skipped).
   # A DETERMINISTIC ingest order, independent of how the feed happens to ship
   # the file.
   #
@@ -128,8 +143,9 @@ class Nflverse::SeedPlayers
     # "Will Anderson Jr." (with pff_id from PFF CSV) and "Will Anderson" (from
     # Spotrac without suffix) live as two Person+Athlete pairs and a name match
     # picks the wrong one.
+    nflverse_id = row["nfl_id"].to_s.strip.presence
     athlete = lookup_athlete_by_ids(gsis_id: gsis_id, pff_id: pff_id, otc_id: otc_id,
-                                     espn_id: espn_id, pfr_id: pfr_id)
+                                     espn_id: espn_id, pfr_id: pfr_id, nflverse_id: nflverse_id)
     person = athlete&.person
 
     if athlete.nil?
@@ -215,12 +231,19 @@ class Nflverse::SeedPlayers
     source.gsub(/\D/, "").last(4)
   end
 
-  def lookup_athlete_by_ids(gsis_id:, pff_id:, otc_id:, espn_id:, pfr_id:)
+  def lookup_athlete_by_ids(gsis_id:, pff_id:, otc_id:, espn_id:, pfr_id:, nflverse_id: nil)
     return Athlete.find_by(gsis_id: gsis_id) if gsis_id && Athlete.exists?(gsis_id: gsis_id)
     return Athlete.find_by(pff_id: pff_id)   if pff_id  && Athlete.exists?(pff_id: pff_id)
     return Athlete.find_by(otc_id: otc_id)   if otc_id  && Athlete.exists?(otc_id: otc_id)
     return Athlete.find_by(espn_id: espn_id) if espn_id && Athlete.exists?(espn_id: espn_id)
     return Athlete.find_by(pfr_id: pfr_id)   if pfr_id  && Athlete.exists?(pfr_id: pfr_id)
+    # nflverse_id is written by build_attrs and UNIQUELY INDEXED, so it must be
+    # probed here too. Missing it meant a row whose nflverse_id already belonged
+    # to another athlete fell through to the name path, and `update!` then raised
+    # into the caller's rescue — committing a namesake pair carrying no league
+    # IDs. The NEXT run recomputed the same disambiguator and died on
+    # index_people_on_slug with an uncaught RecordNotUnique, aborting the import.
+    return Athlete.find_by(nflverse_id: nflverse_id) if nflverse_id && Athlete.exists?(nflverse_id: nflverse_id)
     nil
   end
 
@@ -277,9 +300,16 @@ class Nflverse::SeedPlayers
     CSV.parse(body, headers: true)
   end
 
+  # The feed is a third party and will have bad minutes. Its errors are named
+  # so `call` can tell "nflverse was unreachable" apart from "our import is
+  # broken" — a distinction that matters because this runs as a post-deploy
+  # command inside `bin/release`, where a raise aborts the whole ship.
   def fetch_remote
     puts "Fetching #{@source_url}"
     URI.open(@source_url, read_timeout: 60).read.force_encoding("UTF-8")
+  rescue OpenURI::HTTPError, SocketError, Timeout::Error, Errno::ECONNREFUSED,
+         Errno::ECONNRESET, Errno::EHOSTUNREACH, OpenSSL::SSL::SSLError => e
+    raise FeedUnavailable, "#{e.class}: #{e.message}"
   end
 
   def vputs(msg)
