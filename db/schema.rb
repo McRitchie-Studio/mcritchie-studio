@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_21_030000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_21_040000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -486,6 +486,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_21_030000) do
     t.string "claim_session"
     t.datetime "claimed_at"
     t.string "claimed_by"
+    t.string "colorway"
     t.integer "comments_count"
     t.string "content_type", default: "tiktok_video"
     t.datetime "created_at", null: false
@@ -507,6 +508,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_21_030000) do
     t.string "post_id"
     t.string "post_url"
     t.datetime "posted_at"
+    t.string "qb_player_slug"
     t.integer "reference_video_end"
     t.integer "reference_video_start"
     t.string "reference_video_url"
@@ -519,6 +521,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_21_030000) do
     t.datetime "scripted_at"
     t.integer "selected_hook_index"
     t.integer "shares"
+    t.string "skill_player_slug"
     t.string "slug", null: false
     t.string "source_news_slug"
     t.string "source_type"

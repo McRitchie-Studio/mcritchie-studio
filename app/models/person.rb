@@ -2,6 +2,13 @@ class Person < ApplicationRecord
   include Sluggable
 
   has_one :athlete_profile, class_name: "Athlete", foreign_key: :person_slug, primary_key: :slug
+  has_many :appearances, foreign_key: :person_slug, primary_key: :slug, inverse_of: :person, dependent: :destroy
+  has_many :artifact_subjects, class_name: "ArtifactSubject", foreign_key: :person_slug, primary_key: :slug, dependent: :destroy
+  has_many :artifacts, through: :artifact_subjects
+  # The look stamped when this person's first model was created. Most flows
+  # never name an appearance at all and simply get this one.
+  belongs_to :default_appearance, class_name: "Appearance", foreign_key: :default_appearance_slug,
+             primary_key: :slug, optional: true
   has_many :builders, dependent: :restrict_with_exception
   has_many :contracts, foreign_key: :person_slug, primary_key: :slug
   has_many :teams, through: :contracts

@@ -168,9 +168,14 @@ in review, so a ship no longer costs you the request (fixed 2026-09-09).
 7. A `waiting` request is legal for as long as the LOCAL DEMO it points at can be
    served: `designed`, `building` and `submitted` (plus `blocked`, which parks the
    task on `building`). The window closes at `reviewed` — the work has merged onto
-   `accepted` and `bin/agent-worktree cleanup --reclaim` can take the desk from
-   that moment, so the request points at a page nobody can open. **Any** save at
-   `reviewed` or later settles an open request to `none` — settled, NOT
+   `accepted`, so the question the request was asking (*ship it as built?*) has
+   already been answered by the merge, and the branch the demo was served from is
+   no longer the thing under review. **Not** because the desk is gone: this
+   paragraph used to say `cleanup --reclaim` could take it from that moment, and
+   since the stage channel landed (`stage_hold`, 2026-09-20) the reclaim WITHHOLDS
+   a bound desk until `shipped` or `archived` — the desk outlives the window it
+   once explained. **Any** save at `reviewed` or later settles an open request to
+   `none` — settled, NOT
    `approved`: the operator never granted anything, and faking a grant would
    misreport the acceptance metric. This is an invariant re-asserted on every
    save, not a one-shot transition: until 2026-07-27 it fired only on the one

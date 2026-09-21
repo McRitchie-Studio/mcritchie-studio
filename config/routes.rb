@@ -226,6 +226,11 @@ Rails.application.routes.draw do
       post :starter_post_tiktok_defense,   action: :create_starter_post_tiktok_defense
     end
     member do
+      # The rapper-replace inspection gate: confirm the jersey, attach each of
+      # the three artifacts, then approve. Approval is what unlocks video.
+      post :set_colorway
+      post :attach_artifact
+      post :approve_artifacts
       post :hook_step
       post :script_step
       post :assets_step
@@ -258,11 +263,23 @@ Rails.application.routes.draw do
       patch :restore
     end
   end
-  resources :people, only: [:index], param: :slug do
+  # DECLARED BEFORE the :show member route below. Adding `:show` draws
+  # GET /people/:slug, which matches "search" as a slug and 404s through
+  # find_by! — silently breaking the person picker in news/edit and
+  # people/merge. Route order is the fix; a literal must precede its wildcard.
+  get "people/search", to: "people#search", as: :search_people
+
+  resources :people, only: [:index, :show], param: :slug do
     collection do
       get :merge
       post :merge, action: :merge_execute
       get :duplicates
+    end
+    member do
+      # The model library: a person's looks, and the images made of them.
+      post :create_appearance
+      post :make_default_appearance
+      post :attach_artifact
     end
   end
 
@@ -293,7 +310,6 @@ Rails.application.routes.draw do
   get "games/:year", to: "games#season", as: :games_season, constraints: { year: /\d{4}/ }
   get "games/:year/week/:week", to: "games#week", as: :games_week
   get "games/:year/week/:week/:slug", to: "games#show", as: :game_show
-  get "people/search", to: "people#search", as: :search_people
   get "activities", to: redirect("/agents"), as: :activities
   resources :usages, only: [:index]
 
@@ -309,6 +325,10 @@ Rails.application.routes.draw do
       # Creates the Content idea a faceless recap video is built from. Idempotent:
       # 201 when this call created the recap, 200 when it already existed.
       post "game_recaps", to: "game_recaps#create"
+      # The person/athlete projection turf-monster syncs from. Read-only by
+      # design: MS masters durable facts, TM masters events, and neither writes
+      # into the other's master.
+      resources :athletes, only: [:index]
       # The content pipeline's AGENT surface. Non-deterministic steps (the take,
       # the scenes, the caption) are written by a soul during an SOP with its own
       # inference, so production needs no model key. `claim_next` is the atomic

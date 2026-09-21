@@ -21,6 +21,13 @@
 #                            [--scenes-json '[...]'] [--stage script]
 #   bin/content release <slug>
 #
+# CLAIM BEFORE YOU WRITE. `write` sends this desk's session and the server
+# refuses it with 409 unless that session still holds the card's live claim:
+# CLAIM_REQUIRED (never claimed, or no session), CLAIM_LAPSED (the 30-minute
+# lease ran out — re-claim, someone else may hold it now), CLAIM_HELD (another
+# session has it). A lapsed lease refuses its ORIGINAL holder too, which is the
+# point: past the lease your write can land on top of somebody else's.
+#
 # LONG TEXT GOES OVER STDIN OR A FILE, never a shell argument. A generated
 # script carries newlines, quotes and `$`, and a shell argument eats all three —
 # `--script -` reads stdin, `--script-file F` reads a file.
@@ -161,7 +168,10 @@ when "write"
   end
   die!("write needs something to write") if payload.empty?
 
-  print_content(api(:patch, "/api/v1/contents/#{slug}", { content: payload }), full: true)
+  # The session rides the write. The server refuses a write from anyone who is
+  # not the live claim holder, so omitting it here made every write a 409 —
+  # and, before the server checked, made the lease decorative.
+  print_content(api(:patch, "/api/v1/contents/#{slug}", { content: payload, session: session }), full: true)
 
 when "release"
   slug = ARGV.shift or die!("release needs a slug")

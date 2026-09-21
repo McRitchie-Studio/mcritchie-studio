@@ -110,23 +110,63 @@ Then the script (15-30 seconds spoken) and the scene list. Scenes carry
 **Write it to a file rather than a shell argument.** A script has newlines,
 quotes and dollar signs in it, and a shell argument eats all three.
 
+**NAMESPACE THE DIRECTORY BY CARD.** This is inside a
+per-card loop, and the session scratchpad is SHARED — sibling agents spawned
+from one session get the same directory, so `take.txt` is the dangerous
+filename precisely because it is the obvious one. Two cards in flight and one
+take silently overwrites the other, and the agent that then reads it writes the
+wrong game's script to the right card. Appending is not the fix; it interleaves.
+
+**WRITE THE WHOLE PATH AT EVERY SITE. Carry nothing between steps.** Step 3 and
+step 5 are separate turns with Mason's pass in between, and **no shell state
+survives a turn boundary** — measured 2026-09-21, both kinds:
+
+| What you might carry | What happens by step 5 |
+|---|---|
+| a variable — `work=…` then `"$work/take.txt"` | `$work` is empty, so the path silently becomes `/take.txt` |
+| the working directory — `cd …` then `take.txt` | the harness RESETS cwd after the call, so the write lands wherever you started |
+
+`${CLAUDE_SCRATCHPAD:-/tmp}` is safe to repeat because it carries nothing: it
+is an environment lookup with a fallback, re-evaluated fresh in each turn. (No
+harness sets it today, so it resolves to `/tmp` — the per-card directory is
+what does the real work, and it keeps working the day something does set it.)
+`<slug>` is the card's own slug, filled in like every other placeholder here.
+
 ```bash
-cat > /tmp/take.txt <<'EOF'
+mkdir -p "${CLAUDE_SCRATCHPAD:-/tmp}/content/<slug>"
+
+cat > "${CLAUDE_SCRATCHPAD:-/tmp}/content/<slug>/take.txt" <<'EOF'
 <the script>
 EOF
 
-cat > /tmp/scenes.json <<'EOF'
+cat > "${CLAUDE_SCRATCHPAD:-/tmp}/content/<slug>/scenes.json" <<'EOF'
 [{"number":1,"description":"...","camera":"...","duration":5,"characters":[]}]
 EOF
 ```
 
+Yes, that path is repeated. That is the point — the short version is the one
+that breaks.
+
 ### 4. Mason's voice pass — the seam, so it does not get relitigated
 
 **You set whether the take is RIGHT. Mason sets whether the sentence is OURS.**
-That is the same seam [`content-sprint`](../../rex/sops/content-sprint.md)
-already defines, one level down, and it is not negotiable in either direction:
-he does not overrule your read of the game, and you do not overrule his read of
-the voice. He can veto a line; if he does, rewrite it rather than argue it.
+It is not negotiable in either direction: he does not overrule your read of the
+game, and you do not overrule his read of the voice. He can veto a line; if he
+does, rewrite it rather than argue it.
+
+**Mason's half is borrowed from [`content-sprint`](../../rex/sops/content-sprint.md);
+the other half is NOT.** That SOP's seam is a two-party sentence — *"Rex sets
+what the batch is testing and how many; Mason sets whether a given sentence is
+ours."* Here Rex's half is replaced by yours: nobody is setting a target count,
+and what stands in for it is your read of which games are worth a video.
+
+**So the two SOPs push volume in OPPOSITE directions, and that is deliberate.**
+`content-sprint` says build *"more than you think you need"* — it is testing a
+market and ugly reps are the point. This SOP says *"a slate where every single
+game earned a video is a slate you did not judge."* Both are right for their own
+job: Rex is buying learning per rep, you are buying credibility per post. If you
+are ever running under `content-sprint`'s count, **his number wins** — you are
+inside his batch then, and this sentence is the one that tells you so.
 
 Hand him the take and the caption. Anything visual goes to Shannon. Anything
 claiming what the product DOES gets a check from Avi before it leaves.
@@ -135,14 +175,27 @@ claiming what the product DOES gets a check from Avi before it leaves.
 
 ```bash
 bin/content write <slug> \
-  --script-file /tmp/take.txt \
-  --scenes-file /tmp/scenes.json \
+  --script-file "${CLAUDE_SCRATCHPAD:-/tmp}/content/<slug>/take.txt" \
+  --scenes-file "${CLAUDE_SCRATCHPAD:-/tmp}/content/<slug>/scenes.json" \
   --caption "<Mason's line>" \
   --stage script
 ```
 
 `--stage script` advances the card. Leave the stage off if you want to save work
 in progress without moving it.
+
+**The write is REFUSED unless you still hold the claim.** The session rides the
+write, and the server answers `409` with one of three codes rather than writing:
+
+| Code | What happened | What to do |
+|------|---------------|------------|
+| `CLAIM_REQUIRED` | you never claimed this card, or sent no session | claim it, then write |
+| `CLAIM_LAPSED` | your 30-minute lease ran out mid-inference | claim it again — someone else may hold it now, and your draft is still at `${CLAUDE_SCRATCHPAD:-/tmp}/content/<slug>/`, not lost |
+| `CLAIM_HELD` | another session holds it | leave it; claim the next card |
+
+`CLAIM_LAPSED` refuses YOU, the original claimer, on purpose. Past the lease the
+card is claimable by anyone, so a write from before the lapse can land on top of
+somebody else's — which is the exact collision the claim exists to prevent.
 
 ### 6. Release
 
