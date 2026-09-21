@@ -6,7 +6,7 @@ class Content < ApplicationRecord
   include Studio::Board::Rankable
 
   STAGES = %w[idea hook script assets assembly posted reviewed].freeze
-  WORKFLOWS = %w[video starter_post_x starter_post_tiktok_offense starter_post_tiktok_defense game_recap].freeze
+  WORKFLOWS = %w[video starter_post_x starter_post_tiktok_offense starter_post_tiktok_defense game_recap rapper_replace].freeze
 
   TIKTOK_WORKFLOWS = %w[starter_post_tiktok_offense starter_post_tiktok_defense].freeze
 
@@ -15,12 +15,41 @@ class Content < ApplicationRecord
   # so the existing team-colour and hashtag lookups keep working unchanged.
   GAME_RECAP_WORKFLOW = "game_recap".freeze
 
+  # The first content STYLE: a qualifying duo swapped into a music-video shot.
+  # Its gate is the three image artifacts, which a human must look at before
+  # any video is made.
+  RAPPER_REPLACE_WORKFLOW = "rapper_replace".freeze
+
   def tiktok_workflow?
     TIKTOK_WORKFLOWS.include?(workflow)
   end
 
   def game_recap?
     workflow == GAME_RECAP_WORKFLOW
+  end
+
+  def rapper_replace?
+    workflow == RAPPER_REPLACE_WORKFLOW
+  end
+
+  def artifacts_approved? = artifacts_approved_at.present?
+
+  # The colorway we BELIEVE the winner wore, from the only signal the feed
+  # gives us: home or away. It is a guess and is labelled one — NFL teams wear
+  # alternates and throwbacks, and a wrong jersey is the artifact defect that
+  # matters most. The operator confirms or overrides it at the inspection gate,
+  # which is the same moment they are already looking at the images.
+  def guessed_colorway
+    return nil if game_facts.blank?
+
+    winner = game_facts["winner_slug"]
+    return nil if winner.blank?
+
+    winner == game_facts["away_team_slug"] ? "white" : "primary"
+  end
+
+  def effective_colorway
+    colorway.presence || guessed_colorway
   end
 
   def lineup_side
@@ -113,12 +142,69 @@ class Content < ApplicationRecord
   # Dropping the lease is deliberately unconditional for the HOLDER and refused
   # for anyone else: a release is how a soul says "I am done or I gave up", and
   # letting a stranger release it would re-open a card someone is still writing.
+  #
+  # `session.present?` is NOT a conjunct of the guard, and that is the whole
+  # correction here. It used to be, which made the check bypassable by OMITTING
+  # the thing being checked: a stranger who sent a session was refused, and the
+  # same stranger who sent none force-released a live claim (measured, on an
+  # unsaved record, 2026-09-21). A caller who names no session has not proved it
+  # holds this one, so it is a stranger — the missing value must fail CLOSED.
   def release_claim!(session: nil)
-    if session.present? && claim_session.present? && claim_session != session && claim_held?
+    if claim_held? && claim_session.present? && claim_session != normalize_session(session)
       raise ArgumentError, "content #{slug} is held by another session"
     end
 
     update!(claimed_by: nil, claim_session: nil, claimed_at: nil)
+  end
+
+  # Why this session may not WRITE this card, or nil when it may.
+  #
+  # Release is harmless and update is destructive, so update is the one that
+  # has to be guarded — and it was the one that was not. The reachable path:
+  # agent A claims, its inference runs past AGENT_CLAIM_LEASE, agent B
+  # legitimately claims the lapsed card, both PATCH, last write wins silently
+  # and A gets a 200 as if it succeeded. Both souls scripted the same game,
+  # which is exactly the collision the claim was invented to prevent.
+  #
+  # An EXPIRED lease therefore refuses its own original holder too. Past the
+  # lease someone else may already hold the card, and "it was mine when I
+  # started" is not a right to write — re-claiming is how you find out.
+  ClaimRefusal = Struct.new(:code, :message, keyword_init: true)
+
+  def claim_write_refusal(session:, now: Time.current)
+    given = normalize_session(session)
+
+    if claimed_at.blank?
+      return ClaimRefusal.new(code: "CLAIM_REQUIRED",
+                              message: "content #{slug} is not claimed — claim it before writing")
+    end
+
+    if claim_expired?(now: now)
+      lapsed = (claimed_at + AGENT_CLAIM_LEASE).utc.iso8601
+      return ClaimRefusal.new(code: "CLAIM_LAPSED",
+                              message: "content #{slug}'s claim lease lapsed at #{lapsed} — claim it again before writing")
+    end
+
+    # A claim taken without a session can never be proved by anyone, so nobody
+    # may write through it. It is bounded: the lease drops it within
+    # AGENT_CLAIM_LEASE and the next claim carries a session.
+    if claim_session.blank?
+      return ClaimRefusal.new(code: "CLAIM_REQUIRED",
+                              message: "content #{slug} was claimed without a session, so no caller can prove it holds it")
+    end
+
+    if given.nil?
+      return ClaimRefusal.new(code: "CLAIM_REQUIRED",
+                              message: "content #{slug} is claimed — send the session that claimed it")
+    end
+
+    return ClaimRefusal.new(code: "CLAIM_HELD", message: "content #{slug} is held by another session") if claim_session != given
+
+    nil
+  end
+
+  def claim_holder?(session:, now: Time.current)
+    claim_write_refusal(session: session, now: now).nil?
   end
 
   scope :by_stage, ->(stage) { where(stage: stage) }
@@ -159,6 +245,12 @@ class Content < ApplicationRecord
   end
 
   private
+
+  # "", "   " and nil are all "no session". Normalising at one site is what
+  # keeps release and write agreeing on what a missing session means.
+  def normalize_session(value)
+    value.to_s.strip.presence
+  end
 
   def set_stage_timestamp
     case stage

@@ -89,6 +89,10 @@
       <% end %>
 
       <%# Creator copilot card (assembly stage) — variants, vibes, three handoff paths. %>
+      <% if @content.rapper_replace? && !@content.artifacts_approved? %>
+        <%= render "artifact_gate_card" %>
+      <% end %>
+
       <% if @content.tiktok_workflow? && @content.stage == "assembly" %>
         <%= render "tiktok_assembly_card" %>
       <% end %>

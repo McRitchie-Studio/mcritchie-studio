@@ -67,6 +67,7 @@ required execution path. Do not follow a Background reference to run an SOP.
 | `bucket-provision` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/bucket-provision.md` |
 | `credential-filing` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/credential-filing.md` |
 | `credential-rotation` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/credential-rotation.md` |
+| `workspace-provision` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/workspace-provision.md` |
 | `chrome-profiles` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/chrome-profiles.md` |
 | `Steffon Heartbeat` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/HEARTBEAT.md` |
 | `full-cycle` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/full-cycle.md` |
@@ -767,6 +768,7 @@ Do not merge or deploy unless I explicitly assigned that lane.
 | Steffon bucket provision SOP (per-app S3 + IAM) | `mcritchie-studio/docs/agents/agents/steffon/sops/bucket-provision.md` |
 | Steffon credential filing SOP (naming, logos, vault lanes) | `mcritchie-studio/docs/agents/agents/steffon/sops/credential-filing.md` |
 | Steffon credential rotation SOP (rotate one secret everywhere) | `mcritchie-studio/docs/agents/agents/steffon/sops/credential-rotation.md` |
+| Steffon workspace provision SOP (client Google Workspace read access) | `mcritchie-studio/docs/agents/agents/steffon/sops/workspace-provision.md` |
 | Steffon Chrome profiles SOP (avatar-menu roster, fresh Mac) | `mcritchie-studio/docs/agents/agents/steffon/sops/chrome-profiles.md` |
 | Turf Monster heartbeat launcher | `mcritchie-studio/docs/agents/agents/turf_monster/HEARTBEAT.md` |
 | Turf Monster live score watch SOP | `mcritchie-studio/docs/agents/agents/turf_monster/sops/live-score-watch.md` |
@@ -850,6 +852,7 @@ depend on the heartbeat.
 | `bucket-provision` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/bucket-provision.md` |
 | `credential-filing` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/credential-filing.md` |
 | `credential-rotation` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/credential-rotation.md` |
+| `workspace-provision` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/workspace-provision.md` |
 | `chrome-profiles` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/chrome-profiles.md` |
 | `Alex Heartbeat` | Alex | `mcritchie-studio/docs/agents/agents/alex/HEARTBEAT.md` |
 | `grade-events` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/grade-events.md` |
@@ -1035,8 +1038,10 @@ runs that same full `remove` teardown for each candidate, then shrinks the Redis
 band toward the floor. Git eligibility alone is NOT the safety rule — a fresh
 desk is git-identical to a merged one, and reclaiming on that once destroyed a
 live builder's desk — so a desk younger than 1h29m, one being written to, or one
-whose holder has a gate in flight is withheld, and finished desks linger that
-long before the sweep takes them. See
+whose holder has a gate in flight is withheld. A **bound** desk is withheld
+further, until the board puts its task at `shipped` or `archived`: a merged desk
+stands through the whole release cycle, not 1h29m, because `reviewed` means
+mid-release, not finished. An unreadable board withholds too. See
 `mcritchie-studio/docs/agents/modules/worktrees.md`.
 
 The worktree launcher uses an elastic Redis band starting at DB `9`. The band

@@ -11,6 +11,7 @@ module Api
     # the atomic claim, and the write-back that were missing.
     class ContentsController < BaseController
       before_action :set_content, only: [:show, :update, :release]
+      before_action :require_claim_holder, only: [:update]
 
       # GET /api/v1/contents?stage=idea&workflow=game_recap&claimable=1
       # What is waiting for me. `claimable=1` hides cards another session holds.
@@ -49,11 +50,16 @@ module Api
         })
       end
 
-      # PATCH /api/v1/contents/:slug
+      # PATCH /api/v1/contents/:slug { session, content: {...} }
       #
       # The write-back. A soul sends what it wrote; `stage` advances the card.
       # Only the inference-authored fields are permitted — a claim cannot be
       # used to rewrite the scoreline the deterministic half recorded.
+      #
+      # `session` is REQUIRED and is checked before the write (see
+      # `require_claim_holder`). Without it this was the unguarded half of an
+      # asymmetry: release — harmless — checked the session, and update —
+      # destructive — did not.
       def update
         rescue_and_log(target: @content) do
           @content.update!(content_params)
@@ -74,6 +80,18 @@ module Api
 
       def set_content
         @content = Content.find_by!(slug: params[:slug])
+      end
+
+      # THE LEASE, ENFORCED. 409 rather than 403: nothing is wrong with the
+      # caller's credential — the card's claim state conflicts with the write,
+      # and the remedy is to claim it (again), not to re-authenticate. The code
+      # says which of the three states it found so a caller can act on it
+      # without parsing prose.
+      def require_claim_holder
+        refusal = @content.claim_write_refusal(session: params[:session])
+        return if refusal.nil?
+
+        render_error(refusal.message, status: :conflict, error_code: refusal.code)
       end
 
       # An absent `limit` must show the QUEUE, not one card: `to_i` on a missing
@@ -97,6 +115,10 @@ module Api
         params.require(:content).permit(
           :title, :description, :script_text, :duration_seconds, :captions,
           :music_track, :stage, :selected_hook_index,
+          # The rapper-replace cast, so an agent (or the upstream duo detector)
+          # can set who the piece is about. game_facts and the score columns
+          # stay unwritable — those are the deterministic half's record.
+          :qb_player_slug, :skill_player_slug, :colorway,
           hook_ideas: [], hashtags: [], music_suggestions: [], caption_variants: [],
           # `scenes` is an array of HASHES, so its keys are named rather than
           # left as `scenes: []` — that form permits an array of SCALARS only and

@@ -12,7 +12,9 @@ commands with finite names and stable files. If Mr. McRitchie's prompt names an
 SOP or heartbeat act such as `pr-review`, `qa-release`, `production-deploy`,
 `archive-shipped`, `clean-infra`, `deploy-with-task`, `live-score-watch`,
 `contest-rehearsal`, `sleeper-auction-watch`, `entry-forfeit`, `market-refresh`,
+`content-build`,
 `chrome-profiles`, `credential-filing`, `credential-rotation`,
+`workspace-provision`,
 `clean-up`, `process-backlog`, `work-backlog`, `slack-capture`,
 `gmail-capture`, `credential-issues`, or `full-cycle`, resolve that phrase
 through the SOP registry, read the mapped SOP, then execute it. For example, `pr-review` means read
