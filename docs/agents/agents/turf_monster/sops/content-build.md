@@ -110,23 +110,48 @@ Then the script (15-30 seconds spoken) and the scene list. Scenes carry
 **Write it to a file rather than a shell argument.** A script has newlines,
 quotes and dollar signs in it, and a shell argument eats all three.
 
+**NAMESPACE THE FILE BY CARD.** This is inside a per-card loop, and the session
+scratchpad is SHARED — sibling agents spawned from one session get the same
+directory, so `take.txt` is the dangerous filename precisely because it is the
+obvious one. Two cards in flight and one take silently overwrites the other;
+the agent that then reads it writes the wrong game's script to the right card.
+Appending is not the fix, it interleaves.
+
 ```bash
-cat > /tmp/take.txt <<'EOF'
+work="${SCRATCHPAD:-/tmp}/<slug>"     # the card's own slug — one directory per card
+mkdir -p "$work"
+
+cat > "$work/take.txt" <<'EOF'
 <the script>
 EOF
 
-cat > /tmp/scenes.json <<'EOF'
+cat > "$work/scenes.json" <<'EOF'
 [{"number":1,"description":"...","camera":"...","duration":5,"characters":[]}]
 EOF
 ```
 
+Carry `$work` to step 5; it is the same card.
+
 ### 4. Mason's voice pass — the seam, so it does not get relitigated
 
 **You set whether the take is RIGHT. Mason sets whether the sentence is OURS.**
-That is the same seam [`content-sprint`](../../rex/sops/content-sprint.md)
-already defines, one level down, and it is not negotiable in either direction:
-he does not overrule your read of the game, and you do not overrule his read of
-the voice. He can veto a line; if he does, rewrite it rather than argue it.
+It is not negotiable in either direction: he does not overrule your read of the
+game, and you do not overrule his read of the voice. He can veto a line; if he
+does, rewrite it rather than argue it.
+
+**Mason's half is borrowed from [`content-sprint`](../../rex/sops/content-sprint.md);
+the other half is NOT.** That SOP's seam is a three-party sentence — *"Rex sets
+what the batch is testing and how many; Mason sets whether a given sentence is
+ours."* Here Rex's half is replaced by yours: nobody is setting a target count,
+and what stands in for it is your read of which games are worth a video.
+
+**So the two SOPs push volume in OPPOSITE directions, and that is deliberate.**
+`content-sprint` says build *"more than you think you need"* — it is testing a
+market and ugly reps are the point. This SOP says *"a slate where every single
+game earned a video is a slate you did not judge."* Both are right for their own
+job: Rex is buying learning per rep, you are buying credibility per post. If you
+are ever running under `content-sprint`'s count, **his number wins** — you are
+inside his batch then, and this sentence is the one that tells you so.
 
 Hand him the take and the caption. Anything visual goes to Shannon. Anything
 claiming what the product DOES gets a check from Avi before it leaves.
@@ -135,8 +160,8 @@ claiming what the product DOES gets a check from Avi before it leaves.
 
 ```bash
 bin/content write <slug> \
-  --script-file /tmp/take.txt \
-  --scenes-file /tmp/scenes.json \
+  --script-file "$work/take.txt" \
+  --scenes-file "$work/scenes.json" \
   --caption "<Mason's line>" \
   --stage script
 ```

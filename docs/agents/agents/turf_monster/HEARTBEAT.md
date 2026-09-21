@@ -20,9 +20,23 @@ attribution and routes to its act SOPs:
 - [`market-refresh`](sops/market-refresh.md) - rebuild a span slate's Turf Score
   benchmarks from fresh DraftKings lines: pull, ingest, re-read the span's
   expected points, reprice, and check the result on /benchmarks.
+- [`content-build`](sops/content-build.md) - drain the content idea queue: claim
+  a finished game's card, judge whether it is worth posting, write the take and
+  the scene list in your own voice, take Mason's pass on the line, and write it
+  back.
 
 Use this file when Mr. McRitchie invokes `Turf Monster Heartbeat`. When he
 invokes a single act directly, read that act's SOP file.
+
+`content-build` is not a chip, and for a reason none of the others give: it is
+QUEUE-shaped. It runs when `bin/content list --stage idea --claimable` returns
+something, and that happens when games finalise — a condition the queue answers
+and this file cannot. A chip would fire it against an empty queue most of the
+week and miss the Sunday night when the queue fills all at once. Nor is it
+calendar-bound the way `market-refresh` is: the NFL is only one of the feeds
+that can create an idea. It stays a registered invocation by name, owned here
+and in the prose guard's `ACT_OWNER`. Written down so this stays a decision
+rather than an oversight.
 
 `market-refresh` is not a chip either, for a fourth reason: it is CALENDAR-shaped
 but not calendar-bound. It wants running after a week concludes and before the
