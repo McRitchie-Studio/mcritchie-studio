@@ -10,11 +10,26 @@ runs `17b05084`, identical to `origin/main`, and a full-tree grep finds zero
 hits — so each line dies with `Don't know how to build task
 'studio:sync_athletes'`.
 
-**This file goes `Active`, and joins the heartbeat and `ACT_OWNER` registries,
-on the day both PRs merge and deploy — not before.** It is registered in
-`docs/agents/index.md` only, deliberately: a `roster-sync` invocation must not
-resolve to a procedure production cannot run. Step 1 is accurate today and safe
-to run on its own.
+**MERGING #1489 DOES NOT SATISFY STEP 1's RULE — IT INVERTS IT.** Today an
+nflverse outage RAISES (`ImportRun.track` stamps `failed` and re-raises), which
+is why step 1 says a red run is a STOP. #1489 adds the graceful
+`FEED UNAVAILABLE` path that *warns and returns*. So on the day it lands, "a red
+step 1 is a STOP" becomes wrong, and this file needs a REWRITE of that rule, not
+a status flip.
+
+**WHO FLIPS IT, and what they must do** — the builder of whichever of the two PRs
+lands LAST, as part of that task:
+
+| PR | What it unblocks | What it obliges |
+|---|---|---|
+| turf-monster **#789** | steps 2 and 3 exist at all | nothing else — the commands simply start working |
+| McRitchie Studio **#1489** | the `FEED UNAVAILABLE` path | **rewrite step 1's verdict rule**: a warn-and-return is no longer a STOP, and the check becomes "did the ImportRun finish `ok` TODAY", not "did the command exit 0" |
+
+Only then: set `Status: Active`, and add the rows this file is deliberately
+missing from the heartbeat and `modules/heartbeats.md`. It is registered in
+`docs/agents/index.md` and in `ACT_OWNER` (see below), and nowhere else, on
+purpose: a `roster-sync` invocation must not resolve to a procedure production
+cannot run. Step 1 is accurate today and safe to run on its own.
 
 **EVERY command here is `heroku run -x -a <app>`, and that is deliberate — there
 is no `cd` in this file.** The cwd cannot matter when the app is named on the
@@ -137,19 +152,45 @@ heroku run -x -a mcritchie-studio 'bin/rails runner "puts %Q{MS athletes=#{Athle
 
 Read three things:
 
-1. **The two counts are close — but only AFTER TM stops seeding its own.**
-   Both commands count `Athlete`, so the gap is not a person/athlete
-   difference. It is a FILTER difference: McRitchie Studio imports
-   `status=ACT` with `last_season >= 2024`
-   (`app/services/nflverse/seed_players.rb`), while turf-monster's own seeder
-   used `last_season >= 2026`. Measured 2026-09-21: MS production holds
-   **2,051**, turf-monster production holds **~2,896**. A gap of hundreds is
-   therefore the EXPECTED state today and is not evidence of a dropped page.
+1. **DO NOT compare the two totals. They are not comparable, and the reason is
+   not the one you would guess.** Measured 2026-09-21:
 
-   Until turf-monster's own importer is retired, compare the sync's own
-   counters instead — `ok` plus `skipped` against the pages it reported — and
-   treat the absolute totals as unequal by design. Once MS is the only writer,
-   the two should converge and a gap becomes meaningful again.
+   | | |
+   |---|---|
+   | McRitchie Studio production | **2,051** |
+   | turf-monster production | **2,896**, every row created 2026-08-28 |
+   | today's feed, MS filter (`ACT`, `last_season >= 2024`) | **2,051** |
+   | today's feed, TM filter (`ACT`, `last_season >= 2026`) | **1,731** |
+
+   The filter difference is worth **+320 in MS's favour** — MS's season window
+   is the WIDER one. The other **−1,165** is TIME: turf-monster's table was
+   built from the live feed on 2026-08-28, before roster cutdowns, and the
+   feed's ACT set has shrunk since. Both tables are single imports taken 24 days
+   apart from a moving source.
+
+   So a gap of hundreds today is STALENESS, not a dropped page — and it would
+   still be there if both filters matched. (Three hypotheses died getting here:
+   that the gap was person-vs-athlete, that it was the filter, and that
+   turf-monster's table was an accumulation. It is one import, on one day.)
+
+   **What IS comparable, and what to actually check:** after a sync, the replica
+   should hold one synced row per row the master sent.
+
+   ⚠️ **This command is part of the PENDING half and fails today** — `synced_at`
+   is a column turf-monster PR **#789** adds, and production's `athletes` does
+   not have it yet. Measured 2026-09-21: the line below exits **1** against
+   `turf-monster-mainnet`. That is the same defect this whole file was blocked
+   for, so it is marked rather than quietly included.
+
+   ```bash
+   # requires #789 merged and deployed
+   heroku run -x -a turf-monster-mainnet 'bin/rails runner "puts %Q{synced=#{Athlete.where.not(synced_at: nil).count} total=#{Athlete.count}}"'
+   ```
+
+   `synced` should equal MS's `athletes` count, and `rows_seen` from step 2
+   should equal it too. `total` will EXCEED it by turf-monster's own pre-sync
+   rows for as long as its importer still runs — that excess is expected and is
+   not the sync's business.
 2. **`missing_gsis` is 0.** A single athlete without a league ID cannot be
    synced at all and cannot be matched by any later importer.
 3. **`last_status` is `ok`.** `skipped` means `AGENT_API_SECRET` is unset on
@@ -165,21 +206,28 @@ nothing errors. That is why this step is not optional.
 - Step 2 reports `status: ok` and a `written` count that is SMALL on a delta —
   a delta that rewrites thousands of rows means the provider re-stamped
   everything, which is worth understanding before trusting it.
-- Step 3's counts agree to within a sensible margin and `missing_gsis` is 0.
+- Step 3's `synced` count equals the master's `athletes` count, and
+  `missing_gsis` is 0. (NOT the two TOTALS — see step 3.)
 - Nothing needed a `FULL=1`.
 
 ## When to stop and escalate
 
 - **`missing_gsis` is not 0** — the provider's import is broken. Do not sync a
   replica from it; report and stop.
-- **The counts disagree by hundreds** — run `FULL=1` ONCE. If they still
-  disagree, stop: something is dropping rows and a third run will not find it.
+- **`synced` does not equal the master's count** — run `FULL=1` ONCE. If it
+  still disagrees, stop: something is dropping rows and a third run will not
+  find it. A gap between the two TOTALS is not this condition and never was;
+  turf-monster carries its own pre-sync rows by design.
 - **`last_status: skipped`** — `AGENT_API_SECRET` is missing on that app. It is
   the same shared secret both apps already hold; this is a config gap, not a
   data problem.
 - **A namesake's slug changed unexpectedly** — two players sharing a name is
-  normal (six groups in the 2026 feed) but a slug CHANGING is not, because
-  other records point at it. Report which player.
+  normal but a slug CHANGING is not, because other records point at it. Report
+  which player. Measured 2026-09-21 against the feed under the master's filter:
+  **six groups, twelve players, every one a pair** — Aaron Brewer, Marcus
+  Harris, Justin Jefferson, Jaylon Jones, Byron Murphy, Byron Young. (Aaron
+  Brewer is the pair that the replica's collision guard refuses on, so expect to
+  see him named there rather than silently overwritten.)
 
 ## Handoff
 
