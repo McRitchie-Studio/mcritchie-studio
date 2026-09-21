@@ -76,8 +76,13 @@ module Api
         @content = Content.find_by!(slug: params[:slug])
       end
 
+      # An absent `limit` must show the QUEUE, not one card: `to_i` on a missing
+      # param is 0, so the floor meant to guard `limit=0` became the DEFAULT.
       def limit
-        [[params[:limit].to_i, 1].max, 100].min
+        given = params[:limit].to_i
+        return 50 if given <= 0
+
+        [given, 100].min
       end
 
       def claim_params

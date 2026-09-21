@@ -27,6 +27,20 @@ module Api
         assert_equal @content.slug, body.first["slug"]
       end
 
+      # With no `limit` this returned ONE card on a queue of any size — the floor
+      # against `limit=0` had become the default. One fixture cannot see that.
+      test "a list returns the whole queue, and an explicit limit still caps it" do
+        2.upto(3) { |i| Content.create!(title: "Game #{i} Recap", stage: "idea", workflow: "game_recap") }
+        query = { stage: "idea", workflow: "game_recap" }
+
+        get api_v1_contents_path, params: query, headers: auth, as: :json
+        assert_response :success
+        assert_equal 3, JSON.parse(response.body)["data"].length, "an absent limit truncated the queue"
+
+        get api_v1_contents_path, params: query.merge(limit: 2), headers: auth, as: :json
+        assert_equal 2, JSON.parse(response.body)["data"].length
+      end
+
       test "show carries the game facts the agent needs to write a true take" do
         get api_v1_content_path(@content.slug), headers: auth, as: :json
 
