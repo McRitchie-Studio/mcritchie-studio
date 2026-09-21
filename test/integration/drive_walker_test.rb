@@ -148,6 +148,63 @@ class DriveWalkerTest < ActionDispatch::IntegrationTest
     assert_equal walked_at, @source.last_walked_at, "last_walked_at means the last walk that COMPLETED"
   end
 
+  # A CHAIN OF FOLDERS, one per level, ending in a document. Deeper than
+  # MAX_DEPTH on purpose: the point is what the refusal LEAVES BEHIND.
+  def deep_tree(levels)
+    tree = { "root" => [ folder("deep-0", "Level 0") ] }
+    (1...levels).each { |i| tree["deep-#{i - 1}"] = [ folder("deep-#{i}", "Level #{i}") ] }
+    tree["deep-#{levels - 1}"] = [ file("doc-deep", "Buried.pdf", version: 1, parents: [ "deep-#{levels - 1}" ]) ]
+    tree
+  end
+
+  test "a tree deeper than MAX_DEPTH refuses, and the refusal keeps its remedy" do
+    # THE REGRESSION THIS PINS. The refusal is raised INSIDE the walk's own
+    # rescue, which reduces whatever it catches through Workspace::ErrorSlug.
+    # While it was a bare RuntimeError, ErrorSlug had no way to tell an authored
+    # remedy from a vendor message quoting its input, so it took the leading
+    # fault token — and a 62-character sentence reached this durable column as
+    # "RuntimeError: Drive", losing the depth AND the folder id, which are the
+    # only two things an operator can act on.
+    r = walk(deep_tree(Workspace::DriveWalker::MAX_DEPTH + 5))
+
+    refute r.ok?
+    stored = @source.reload.last_walk_error
+
+    assert_match(/#{Workspace::DriveWalker::MAX_DEPTH}/, stored, "the operator needs the depth it hit")
+    assert_match(/root/, stored, "and which folder it started from")
+    assert_match(/cycle of shortcuts/, stored, "and what to do about it — that is the whole point of a remedy")
+    assert_match(/TooDeep/, stored, "the class still leads, so the kind of failure is still legible")
+  end
+
+  test "the depth refusal survives redaction BECAUSE it is named, not because of its words" do
+    # The control for the fix. Same sentence, raised as a bare RuntimeError:
+    # ErrorSlug cannot allow-list RuntimeError — every foreign raise in Ruby
+    # arrives on it — so the naming is what carries the remedy through, and this
+    # proves it rather than asserting it.
+    sentence = "Drive tree deeper than 25 levels under root — check that folder for a cycle of shortcuts."
+
+    named = Workspace::ErrorSlug.for(Workspace::DriveWalker::TooDeep.new(sentence))
+    bare = Workspace::ErrorSlug.for(RuntimeError.new(sentence))
+
+    assert_includes named, "cycle of shortcuts"
+    assert_equal "RuntimeError: Drive", bare,
+      "if this ever stops being true the allow-list is no longer what saves the remedy"
+    assert_includes Workspace::ErrorSlug::AUTHORED, Workspace::DriveWalker::TooDeep
+  end
+
+  test "a deep tree refuses without marking anything missing" do
+    # Same property as the failed-walk test: an incomplete walk proves nothing
+    # about what it never reached.
+    walk(deep_tree(3))
+    assert_equal "active", @source.source_documents.find_by!(external_id: "doc-deep").status
+
+    r = walk(deep_tree(Workspace::DriveWalker::MAX_DEPTH + 5))
+
+    assert_equal 0, r.missing
+    assert_equal "active", @source.source_documents.find_by!(external_id: "doc-deep").status,
+      "the refusal must not conclude that the document it never reached is gone"
+  end
+
   test "a successful walk clears the previous walk's error" do
     walk(base_tree, fail_on: "sub")
     assert @source.reload.last_walk_error

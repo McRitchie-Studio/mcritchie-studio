@@ -18,6 +18,17 @@ module Workspace
     # against a pathological structure, not a tuning knob.
     MAX_DEPTH = 25
 
+    # NAMED, because this raise happens INSIDE the walk's own rescue and a bare
+    # RuntimeError could not survive it. The rescue reduces whatever it catches
+    # through Workspace::ErrorSlug, which passes an AUTHORED class's message
+    # through and slugs everything else to a fault token — and `RuntimeError`
+    # can never join that list, since every foreign raise in Ruby would ride in
+    # on it. Measured before this class existed: the 62-character remedy below
+    # reached the durable `last_walk_error` column as "RuntimeError: Drive",
+    # losing both the depth and the folder id, which are the only two things an
+    # operator can act on.
+    class TooDeep < StandardError; end
+
     Result = Struct.new(:source, :seen, :added, :changed, :unchanged, :missing, :error,
                         keyword_init: true) do
       def ok? = error.nil?
@@ -88,7 +99,9 @@ module Workspace
     # Depth-first over folders. `visited` is what makes it terminate: a Drive
     # file may have several parents, so the same folder can be reachable twice.
     def walk(source, folder_id, depth:, visited:)
-      raise "Drive tree deeper than #{MAX_DEPTH} levels under #{source.external_root_id}" if depth > MAX_DEPTH
+      raise TooDeep, "Drive tree deeper than #{MAX_DEPTH} levels under #{source.external_root_id} — " \
+                     "the walk stopped rather than recurse forever. Check that folder for a cycle of " \
+                     "shortcuts, or raise DriveWalker::MAX_DEPTH if the tree is legitimately deeper." if depth > MAX_DEPTH
       return if visited.include?(folder_id)
 
       visited << folder_id

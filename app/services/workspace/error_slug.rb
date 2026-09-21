@@ -43,10 +43,23 @@ module Workspace
     # An operator reading "refusing" has been told nothing. The leading-word
     # fallback is right for a foreign message and wrong for one of ours, so the
     # split is by ORIGIN, not by shape.
+    # A CENTRAL FROZEN LIST, NOT A MARKER MODULE — and the third entry is when
+    # that choice had to be made deliberately rather than by default. A marker
+    # (`include Workspace::AuthoredError`) would be tidier and is the wrong
+    # shape: this is a security ALLOW-LIST, not a taxonomy. A marker makes the
+    # redaction bypass self-service — any author could opt their own message
+    # past the redactor with no diff on THIS file, which is the file a security
+    # reviewer watches — and `include` is inherited, so a subclass three levels
+    # down would inherit the exemption silently. Adding a class here costs one
+    # line and shows up in exactly the right diff.
+    #
+    # The load-time coupling (naming app classes in a class body) is the price.
+    # If it ever bites, resolve by NAME at call time rather than loosening this.
     AUTHORED = [
       Workspace::Credentials::UnregisteredSubject,
       Workspace::Credentials::Malformed,
-      WorkspaceAccount::Revoked
+      WorkspaceAccount::Revoked,
+      Workspace::DriveWalker::TooDeep
     ].freeze
 
     def self.for(error)
