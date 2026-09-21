@@ -18,8 +18,17 @@ module Workspace
     # A SEPARATE, LARGER BOUND FOR TEXT WE WROTE. MAX exists to stop
     # vendor-controlled text of unbounded length; an authored message has a
     # length we chose, and clamping it to 120 cut every remedy mid-sentence
-    # ("…it is not an "). The three authored messages measure 110-190 chars, so
-    # this leaves headroom without becoming "unbounded by another name".
+    # ("…it is not an ").
+    #
+    # WHAT IT BOUNDS IS THE STORED VALUE, not the raw message: `for` clamps
+    # "#{class}: #{message}", and the class prefix alone costs 27-45 chars of
+    # the budget. Measured across the four AUTHORED classes at their seven
+    # raise sites, with realistic subjects, domains and Drive folder ids:
+    # 112-313 chars STORED. The binding case is DriveWalker::TooDeep at 313,
+    # which leaves 87 to spare without becoming "unbounded by another name".
+    #
+    # Re-measure that figure when a message is added or grows. A range quoted
+    # here went stale the moment the list took a fourth member.
     AUTHORED_MAX = 400
 
     # A real fault token is one short identifier. The cap and the character
