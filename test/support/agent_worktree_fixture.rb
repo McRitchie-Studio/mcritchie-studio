@@ -28,8 +28,18 @@
 #
 #       assert status.success?
 #       assert_includes out, "withheld mcritchie-studio/terminal-context"
+#       assert_includes out, "board stage `reviewed`"
 #     end
 #   end
+#
+# ASSERT THE REASON, NOT THE PREFIX — that second line is not decoration. The sweep prints
+# `withheld <desk>` for EVERY hold it takes (fresh, dirty, claimed, unreadable, board
+# stage), so a test that asserts only the prefix passes no matter which channel held the
+# desk, and therefore cannot prove the thing it was written to prove. Assert the reason.
+# Same discipline with `rev` below: it RAISES on a ref that does not resolve, so assert the
+# SHA shape (`assert_match(/\A[0-9a-f]{40}\z/, rev(...))`) rather than `refute_empty` —
+# `git rev-parse <missing-ref>` prints the ref NAME and exits 128, so "not empty" is true
+# for a ref that is not there.
 #
 # `include` is the whole setup. The module owns `setup`/`teardown`; a host that needs
 # its own must call `super`, or call the two primitives
