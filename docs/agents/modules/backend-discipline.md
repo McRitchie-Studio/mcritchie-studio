@@ -64,7 +64,15 @@ digit runs present in real key bodies   1 to 5 chars (longest seen: 92476)
 
 So the bare slice is a *small* leak — but that is not the argument for anchoring,
 and an earlier revision of this file overstated it into a nine-digit one that no
-real key produces. The argument is that **the bare form is not the thing you
+real key produces. **That figure was not confined to this file.** The same
+fabricated `"987654321"` was published in
+[`agents/steffon/sops/workspace-provision.md`](../agents/steffon/sops/workspace-provision.md),
+labelled "Measured", and is retracted there too — with the reason the real run is
+one character: PKCS#8 wraps every RSA key in an AlgorithmIdentifier carrying the
+rsaEncryption OID, which base64s to the fixed run `BgkqhkiG9w0BAQEF`, so a body's
+FIRST digit is always the `9` of `9w0`, at index 20. Measured 10/10 there. A
+retraction scoped to one file leaves the other asserting the opposite, which is
+worse than either alone. The argument is that **the bare form is not the thing you
 asked for.** It yields a position only by coincidence, and it yields key bytes
 the rest of the time; the anchored form is a position or it is nothing. It needs
 the literal words `at line` and `column`, which a base64 body cannot form
