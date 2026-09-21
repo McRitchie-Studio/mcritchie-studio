@@ -82,7 +82,7 @@ module AgentWorktreeFixture
     @script = Rails.root.join("bin/agent-worktree").to_s
     # THE DESK LEDGER, for real. `remove`/`cleanup --reclaim --yes` file their audit record
     # on the board BEFORE they destroy anything and ABORT when they cannot — so under the
-    # OutboundSeams floor (TASK_API_BASE pinned unroutable) no teardown in this file could
+    # OutboundSeams floor (TASK_API_BASE pinned unroutable) no teardown staged here could
     # complete. The answer is a real board on localhost, not a test-only bypass: a skip flag
     # on a destroy path is how a fail-closed guard quietly stops being one.
     @desk_ledger = DeskLedgerSink.start
@@ -291,17 +291,19 @@ module AgentWorktreeFixture
   # below was already here except the reach ones, and their absence was not a
   # near miss: bin/agent-worktree shells the hub's bin/task on the mascot and
   # bind paths, bin/task defaults TASK_API_BASE to https://mcritchie.studio, and
-  # the reads end `2>/dev/null` — so the ~11 spawn sites in this file
-  # authenticated against and read the PRODUCTION BOARD, silently, on every
+  # the reads end `2>/dev/null` — so the ~11 spawn sites this fixture was
+  # extracted from authenticated against and read the PRODUCTION BOARD, silently, on every
   # `bin/rails test`. The fixture repo also carries a real
   # git@github.com:McRitchie-Studio/... origin (setup_repo), and the sibling
   # removal tests pinned GIT_SSH_COMMAND while `finish --push --pr` did not.
   #
-  # The file LOOKED sealed — several tests plant a fake bin/task in the staged hub
+  # THAT file LOOKED sealed — several of its tests plant a fake bin/task in the staged hub
   # (plant_task_bin_with_lapsed_claim and friends) — and that is the lesson worth
   # keeping: those fakes seal the INSPECTED-repo read (fetch_task_record), which is
   # a different resolution from the hub CLI this script speaks through. A seam
-  # spelled per test covers the tests that remember it. This one covers the file.
+  # spelled per test covers the tests that remember it. This one covers every spawn any
+  # file makes through the fixture — which is the reason the floor belongs HERE and not
+  # in the test file it came from.
   #
   # OutboundSeams.env merges `extra` LAST, so a test that plants its own fake `gh`
   # on PATH, or points AGENT_WORKTREE_TASK_BIN somewhere, still wins.
@@ -312,8 +314,8 @@ module AgentWorktreeFixture
       "AGENT_WORKTREE_LOCK" => File.join(@projects_dir, ".agents", "agent-worktree.lock"),
       # The fixture origin is an ssh URL and OutboundSeams pins GIT_SSH_COMMAND to a
       # stub that always exits non-zero, so a REAL `git fetch origin` can never
-      # succeed here on any machine. Without this default every sweep in this file
-      # takes the origin-unreachable WITHHOLD branch instead of the channel the test
+      # succeed here on any machine. Without this default every sweep driven through
+      # this fixture takes the origin-unreachable WITHHOLD branch instead of the channel the test
       # was written to exercise. Override it per-test (`"error"`/`"gone"`) to drive
       # the withhold path deliberately.
       "AGENT_WORKTREE_ORIGIN_FETCH" => "ok",
@@ -335,12 +337,12 @@ module AgentWorktreeFixture
   # (merged-PR injection, fake-gh PATH).
   #
   # GIT_SSH_COMMAND used to be pinned here, at "/usr/bin/false", and that pin is
-  # the reason this file's ssh containment was believed to be handled: it made the
+  # the reason the agent-worktree suite's ssh containment was believed to be handled: it made the
   # allow_fail `git fetch origin` fail instantly with no network — for the REMOVAL
-  # tests, and only for them. The `finish --push --pr` test three hundred lines up
-  # passed no env at all, against a fixture whose origin is a real
+  # tests, and only for them. The `finish --push --pr` test in
+  # test/commands/agent_worktree_test.rb passed no env at all, against a fixture whose origin is a real
   # git@github.com:McRitchie-Studio/... URL. So the pin now lives in the floor
-  # (OutboundSeams, via command_env), where it covers every spawn in the file, and
+  # (OutboundSeams, via command_env), where it covers every spawn any test makes, and
   # what it points at is a RECORDING refusal rather than /usr/bin/false — same
   # instant failure, but it leaves a receipt, so a test can prove the interception
   # happened instead of inferring it from the absence of a hang.
@@ -350,7 +352,7 @@ module AgentWorktreeFixture
 
   # Force the ssh-form origin fetch to fail instantly offline (restore is then
   # against the local origin/main ref). command_env's floor already pins this for
-  # every spawn in the file; naming it at these call sites keeps the premise
+  # every spawn the fixture makes; naming it at a call site keeps the premise
   # legible where the assertion depends on the fetch NOT succeeding.
   def offline_git
     { "GIT_SSH_COMMAND" => OutboundSeams.stub("ssh") }
@@ -362,7 +364,8 @@ module AgentWorktreeFixture
 
   # A RUNNABLE copy of bin/agent-worktree inside the tmpdir hub; answers its path.
   #
-  # This is what redirects the unpinned fallback (see the test above): ProjectsRoot
+  # This is what redirects the unpinned fallback (the unpinned-registry check in
+  # test/commands/agent_worktree_test.rb): ProjectsRoot
   # resolves the projects root from the running script's own location, so the copy
   # resolves @projects_dir. Three trees cover the script's require_relative graph —
   # bin/ (incl. bin/lib/projects_root), lib/ (task_usage_sandbox, claim_lease) and
@@ -761,5 +764,4 @@ module AgentWorktreeFixture
     env["PGPASSWORD"] = template_uri.password if template_uri.password.present?
     env
   end
-
 end

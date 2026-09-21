@@ -1675,9 +1675,10 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
   # the same PROJECTS_DIR-else-real-root fallback that leaked the cost store (PR #525)
   # and the narration markers (PR #549). Nobody had them on a list — the containment
   # test (test/lib/state_store_containment_test.rb) found them by reading the tree.
-  # The pins below were already CORRECT in this file; they were just remembered rather
-  # than enforced, and a pin you have to remember is the bug. Now an unpinned spawn
-  # aborts instead of overwriting the live registry every conductor session reads.
+  # The pins were already CORRECT here — they live in the fixture's command_env now —
+  # they were just remembered rather than enforced, and a pin you have to remember is
+  # the bug. Now an unpinned spawn aborts instead of overwriting the live registry
+  # every conductor session reads.
   #
   # Spawned fully unpinned, so this drives the real fallback — and the guard aborts
   # BEFORE any IO, so it never writes the store even when it goes red.

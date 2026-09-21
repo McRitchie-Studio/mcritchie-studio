@@ -285,6 +285,12 @@ frozen_size:
   # the `include AgentWorktreeFixture`, and a rewritten note on the two `def test_` methods
   # whose visibility used to depend on the `private` the harness took with it.
   #
+  # READ THE TWO ENTRIES ABOVE AS HISTORY FROM HERE ON. Both the 2026-08-27 and the
+  # 2026-09-20 entries turn on the same sentence — "a new file could only get them by
+  # duplicating the fixture" — and that sentence stopped being true on this line. It was
+  # an accurate reason to keep those tests here at the time, and it is no longer a reason
+  # to keep the NEXT ones here.
+  #
   # WHAT THIS BUYS, and it is the whole point of the ceiling: the reason a new concern kept
   # NOT getting its own file was never the tests, it was the staging. `setup_repo +
   # mark_worktree_merged_to_origin_main + abandon_desk! + bind_task_slug + removal_env +
