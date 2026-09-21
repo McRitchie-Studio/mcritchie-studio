@@ -53,7 +53,10 @@ class WorkspaceWalkRakeTest < ActiveSupport::TestCase
 
   test "a REFUSED source does not cost the other tenants their walk" do
     # The refusing source is created FIRST, so before the fix its raise escaped
-    # the map before the healthy one was ever reached.
+    # the map before the healthy one was ever reached. That premise is only true
+    # because the walk is ORDERED BY ID (`workspace.rake`); on the unordered
+    # `enabled` scope it held by heap-order luck, and would have stopped holding
+    # the first time a row was updated.
     pending_ws = WorkspaceAccount.create!(domain: "notyet.test")          # pending — refused
     bad = source(name: "Unproven folder", root: "bad-root", account: pending_ws)
 

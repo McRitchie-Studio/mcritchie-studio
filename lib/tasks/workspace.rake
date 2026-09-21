@@ -99,7 +99,19 @@ namespace :workspace do
         # only the smoke read failed — so the row keeps `active` and records
         # WHY. Before this, it kept `active` with last_check_error nil while
         # this line said CHECK FAILED, so the row contradicted the operator.
-        account.record_check_warning!(slug) if account.reload.active?
+        # GUARDED, because this is a rescue body: anything that raises HERE is
+        # not caught by the rescue above it, and takes the rest of the sweep
+        # with it. `record_check_warning!` is an `update!`, so it runs every
+        # validation on the row — including DOMAIN_FORMAT — and a row stored
+        # before that validation existed makes it raise RecordInvalid. The
+        # operator still needs the CHECK FAILED line either way, so the record
+        # is best-effort and the report is not.
+        begin
+          account.record_check_warning!(slug) if account.reload.active?
+        rescue StandardError => record_error
+          warn "  → could not record the warning on #{account.domain} " \
+               "(#{Workspace::ErrorSlug.for(record_error)}); the line below still stands"
+        end
 
         warn "#{account.domain}: CHECK FAILED (#{slug})"
         next account
@@ -165,7 +177,11 @@ namespace :workspace do
 
   desc "Walk knowledge sources and record document METADATA: workspace:walk[source_id] (all enabled when omitted)"
   task :walk, [ :source_id ] => :environment do |_t, args|
-    sources = args[:source_id].present? ? KnowledgeSource.where(id: args[:source_id]) : KnowledgeSource.enabled
+    # ORDERED, and not only for the tests. Without it the walk visits in heap
+    # order, so a multi-tenant sweep reports its tenants differently run to run —
+    # and the "a refused source does not cost the others their walk" test depends
+    # on reaching the refusing source FIRST, a premise nothing was making true.
+    sources = args[:source_id].present? ? KnowledgeSource.where(id: args[:source_id]) : KnowledgeSource.enabled.order(:id)
     sources = sources.where(kind: "google_drive")
     abort "No google_drive knowledge source matches #{args[:source_id].inspect}." if sources.none?
 
