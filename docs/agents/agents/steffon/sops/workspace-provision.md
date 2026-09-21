@@ -283,20 +283,55 @@ does not inherit that, so it has to say so itself.
 
 **Slice the message with the ANCHORED pattern — `at line \d+ column \d+` —
 never a bare `\d+`.** The bare form takes the message's FIRST digit run, and on
-this credential's most likely failure that run is key material, not a position.
-Measured under `bundle exec` on **json 2.20.0** — the version `Gemfile.lock`
+this credential's most likely failure that run is key material rather than a
+position.
+
+**RETRACTION — an earlier revision of this section printed `=> "987654321"`
+here, and that figure was FABRICATED.** It was not measured; digits were typed
+over a real PKCS#8 prefix (`MIIEvQIBADANBgkqhkiG9w0BAQ` became
+`MIIEvQIBADANBgkqhkiG987654`) and the result was labelled "Measured". The same
+figure was retracted from
+[`modules/backend-discipline.md`](../../../modules/backend-discipline.md),
+§ *Never interpolate an exception message that quotes its input*, which is the
+house rule this paragraph applies; the two now agree.
+
+Re-measured here, `bundle exec` on **json 2.20.0** — the version `Gemfile.lock`
 pins and the `heroku run bin/rails runner` above actually loads, not the
-laptop's default gem — against a key pasted with a literal line break inside
-`private_key`:
+laptop's default gem. The construction, stated so it can be rebuilt: a
+2048-bit RSA key from `OpenSSL::PKey::RSA.new(2048).private_to_pem`, embedded
+in a service-account JSON with its PEM **line breaks left literal** — i.e. the
+newlines were never escaped as `\n`, which is what a paste does. Ten keys:
 
 ```text
-message         invalid ASCII control character in string: \nMIIEvQIBADANBgkqhkiG987654…
-e.message[/\d+/]                      => "987654321"   ← key bytes
-e.message[/at line \d+ column \d+/]   => "at line 2 column 0"
+message         invalid ASCII control character in string: \nMIIEvQIBADANBgkqhkiG9w0…
+e.message[/\d+/]                      => "9"                 ← key bytes, 10/10
+e.message[/at line \d+ column \d+/]   => "at line 2 column 0" ← 10/10
 ```
 
-The anchored pattern needs the literal words `at line` and `column`, which key
-material does not contain. It is the same slice `Gmail::Credentials`,
+**No message LENGTH is quoted here, deliberately.** `JSON::ParserError` quotes
+from the failure point to END OF DOCUMENT, so the length is a property of the
+fields that FOLLOW `private_key`, not of the key. Measured over 20 keys: a
+document that ends at `private_key` gives 1,741 (±4 for the DER length byte),
+and a real Google credential with its seven trailing fields gives 1,907 — same
+key, same failure. An earlier revision of this section printed one of those
+numbers under "the construction, stated so it can be rebuilt", which it could
+not be. What matters is unbounded, and that is already the claim.
+
+**One character, and it is not a sample — it is structural.** PKCS#8 wraps the
+key in an AlgorithmIdentifier carrying the rsaEncryption OID, which base64s to
+the literal run `BgkqhkiG9w0BAQEF` in every RSA key. So the body's first digit
+is always the `9` of `9w0`, at index 20, and the run stops there. Measured: all
+ten bodies contain `9w0BAQEF`, and the first digit sits at index 20 in all ten.
+
+So the case against the bare form is NOT that it leaks a lot — it leaks one
+character. **The case is that it is not a position at all.** It returns key
+material that merely looks like a number, and it would do so silently, every
+time, in a line whose whole purpose is to report where the parse failed. The
+anchored form is a position or nothing: it needs the literal words `at line` and
+`column`, and the SPACE between them is the part base64 cannot produce. (The
+letters are not — `c`, `o`, `l`, `u`, `m` and `n` are all in the base64
+alphabet, and an earlier revision of this line claimed otherwise. The rule was
+safe; the reason given for it was not.) It is the same slice `Gmail::Credentials`,
 `Workspace::Credentials` and Industries' `Google::Credentials` already use — and
 like them it falls back to a fixed string rather than to the raw message, so a
 future change to the exception's wording degrades to `position unreported`
