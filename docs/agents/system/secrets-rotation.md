@@ -172,8 +172,9 @@ vault, plus `.env` locally. **No Heroku config** — `mcritchie-studio` carried 
 `HIGGSFIELD_*` var at all on 2026-09-20, so there is nothing to push unless that
 changes. References:
 
-- `op://studio-agents/higgsfield.studio.agents/API Key ID` → `HIGGSFIELD_API_KEY`
-- `op://studio-agents/higgsfield.studio.agents/API Key Secret` → `HIGGSFIELD_API_SECRET`
+- `op://studio-agents/higgsfield.studio.agents/api-key` — **one field holding
+  both halves**, `<KEY_ID>:<KEY_SECRET>`. Split it on the FIRST colon:
+  before → `HIGGSFIELD_API_KEY`, after → `HIGGSFIELD_API_SECRET`.
 
 **Renamed 2026-09-20.** This was `agent.higgesfield` — the legacy inverted
 `agent.<service>` form, carrying a misspelling that this runbook used to say was
@@ -184,36 +185,41 @@ pass, so the typo had no reason to outlive that pass. The old item is retitled
 note; its value is kept only as a fallback until the replacement key is proven to
 authenticate. **Do not rotate the retired item** — nothing reads it.
 
-**A credential is TWO values, and the console may show you only one of them.**
-Settled 2026-09-20 against Higgsfield's own docs
-([docs.higgsfield.ai/docs/authentication](https://docs.higgsfield.ai/docs/authentication)):
-a credential is *"two separate values: a key ID and a secret"*, sent in ONE
-header as `Authorization: Key YOUR_KEY_ID:YOUR_KEY_SECRET`. That is exactly what
-`app/services/higgsfield/client.rb` already sends, so **no code change is needed**
-— this was an open question on 2026-09-20 and the answer is the shape the code
-had all along.
+**A credential is TWO values, and the console hands them over PRE-JOINED as
+one string.** This is the single fact that makes the whole thing confusing, so
+take it slowly:
 
-⚠ **If the console shows a single masked key, you are holding half the pair.**
-The key ID is re-displayable; the secret is shown once at creation. A rotation
-that fills one field and leaves the other stale authenticates as neither.
-**The console field is labelled `api-key`, and that label is a trap** — it is
-the key *ID*, not the whole credential. Higgsfield's own SDK does the same
-thing: `HF_API_KEY` holds `YOUR_KEY_ID`, and `HF_API_SECRET` holds the secret.
-Our `HIGGSFIELD_API_KEY` follows that convention. So "the dashboard only shows
-one key" is the expected view of a two-value credential, not evidence that the
-pair went away.
+- Higgsfield issues a **key ID** and a **secret**
+  ([docs.higgsfield.ai](https://docs.higgsfield.ai/docs/authentication): *"a
+  credential consists of two separate values: a key ID and a secret"*).
+- The console shows them as **one masked field labelled `api-key`**, whose value
+  is literally `<KEY_ID>:<KEY_SECRET>`. The official `higgsfield-js` SDK calls
+  this exact form `HF_CREDENTIALS`.
+- So **"there is no secret field" is the expected view, not a missing secret.**
+  The secret is the half after the colon. On 2026-09-20 that view was read as a
+  move to single-key auth; measurement said otherwise, and the pair is intact.
+- The API takes them re-joined anyway — `Authorization: Key <id>:<secret>` —
+  which is what `app/services/higgsfield/client.rb` already sends, from the two
+  env vars. **No code change is needed.** There is no Bearer mode and no
+  `api-key:` header alternative
+  ([the console's own quick-start](https://open.higgsfield.ai/quick-start) says
+  so explicitly).
 
-Settle it by **length**, which reveals nothing. After a `read -rs T`, run
-`echo ${#T}`:
+⚠ **The `api-key` label is a trap** — it names the whole credential here, while
+the vendor's own `HF_API_KEY` names only the key ID. Read the value's format
+before splitting it, never the label.
+
+**Identify what you are holding by LENGTH, which reveals nothing.** After a
+`read -rs T`, run `echo ${#T}`:
 
 | Length | What you are holding |
 |--------|----------------------|
-| **36** | the key ID alone (a UUID) — the secret exists; capture it at creation |
-| **64** | the secret alone (lowercase hex) |
-| **~101** | the combined `KEY_ID:SECRET` string the SDK calls `HF_CREDENTIALS` — split it on the colon |
+| **101** | the full credential, `KEY_ID:SECRET` — one colon, 36 + 1 + 64. This is what the console gives you. |
+| **36** | the key ID alone (a UUID) — the secret half is missing |
+| **64** | the secret alone (lowercase hex) — the ID half is missing |
 
-Measured against the April 2026 key, which was a 36-char UUID plus a 64-char
-lowercase-hex secret.
+Measured 2026-09-20 against both the filed credential and the retired April 2026
+key: a 36-character UUID and a 64-character lowercase-hex secret.
 
 `hf-api-key` and `hf-secret` are **legacy header names** the API still accepts,
 not field names — earlier versions of step 2 sent readers hunting for them in
@@ -221,9 +227,10 @@ the item. Do not.
 
 **Procedure:**
 
-1. Higgsfield Console (`console.higgsfield.ai`) → API keys → regenerate. Capture
-   the secret at creation; it is not shown again.
-2. Confirm you have BOTH halves before touching 1Password.
+1. Higgsfield Console (`console.higgsfield.ai`, which redirects to
+   `open.higgsfield.ai`) → API keys → regenerate.
+2. Copy the `api-key` value WHOLE, colon included. `echo ${#T}` should say
+   **101**; anything else means you have half of it.
 3. Update `higgsfield.studio.agents`. The operator pastes with `read -rs T` and
    never into a session transcript — `credential-filing` SOP §5.
 4. Verify by **digest, not plaintext** — `credential-filing` SOP §6.
