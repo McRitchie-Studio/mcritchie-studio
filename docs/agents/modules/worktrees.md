@@ -512,7 +512,7 @@ bin/agent-worktree scale status
     freedom than one you got and disliked: an **unreadable board** (re-run once it is
     reachable), a **task the board says does not exist** and a **record carrying no
     `stage`** (both name `remove … --yes`, because the board answered and waiting changes
-    nothing). Failing OPEN on an unreadable board is the deliberate exception this file's
+    nothing). Failing CLOSED on an unreadable board is the deliberate exception this file's
     "never wedge the sweep" instinct does not get: withholding is a deferral, freeing is an
     irreversible teardown, and the board is most likely to be down during exactly the heavy
     parallel devops that prompts a mass reclaim. The read is bounded (10s), so it defers
@@ -654,12 +654,14 @@ bin/agent-worktree scale status
     mtimes, so a fresh or busy unbound desk survives and a cold one is still collected.
     Bind the task immediately after `new` anyway — a bound desk gets the gate channel
     too, which is the only thing that sees a holder mid-cert.
-  - **What this costs, stated plainly.** Desks now linger up to
-    `ClaimLease::DESK_IDLE_SECONDS` (1h29m) after their work is done, holding a Redis
-    band slot while they wait. That is a real trade against band pressure, taken
-    deliberately: disk and a slot are recoverable, a destroyed desk is not.
-    `remove <app> <task> --yes` still tears one down on demand, so nothing is stuck —
-    only nothing is automatic.
+  - **What this costs, stated plainly.** A **bound** desk is held until its task reaches
+    `shipped` or `archived` — a full release cycle, not an idle window — so a merged desk
+    keeps its Redis band slot through QA and the production ship. `ClaimLease::DESK_IDLE_SECONDS`
+    (1h29m) is the DESK channel's threshold alone, and since the stage channel landed it is
+    the whole wait only for an **unbound** desk, which has no task to ask a stage of. That is
+    a real trade against band pressure, taken deliberately: disk and a slot are recoverable, a
+    destroyed desk is not. `remove <app> <task> --yes` still tears one down on demand, so
+    nothing is stuck — only nothing is automatic.
   - **Every nomination explains itself.** `safe: merged on origin/accepted (clean,
     +0/-0)` is a **git fact**, and it was true of all three load-bearing desks the
     2026-08-14 sweep offered up. So a nominated candidate also prints
@@ -675,9 +677,11 @@ bin/agent-worktree scale status
   worktree self-releases its Redis slot the same way a stack scales down when it
   closes. The dry run (no `--yes`) lists only the worktrees that are SAFE to
   auto-remove — clean, either contained in the base ref or base-equivalent, **and
-  unoccupied** (`reclaimable?`: no live build-claim, no reviewer on the task, no open
-  unmerged PR on the branch, and a desk old enough, quiet enough, and with no gate in
-  flight to be called abandoned) — and prints the same safety evidence, rationale, and
+  unoccupied** (`reclaimable?`, all six channels in the order they run: a reachable origin,
+  no live build-claim, a bound task the board puts at `shipped` or `archived`, no reviewer on
+  the task, a desk old enough, quiet enough, and with no gate in flight to be called
+  abandoned, and no open unmerged PR on the branch) — and prints the same safety evidence,
+  rationale, and
   removal command as `cleanup`. It never lists a dirty, unmerged, claimed, fresh, or
   actively-edited worktree, never a desk whose PR is still open, and never `_ship`/
   `_gate` while a release conductor holds a claim; the candidate set is sourced from
@@ -1010,7 +1014,7 @@ Prefer these over trust. All were verified by execution.
 | Dirty-tree cert refusal | `bin/lib/cert_tree_guard.rb`, every cert | Certifying over uncommitted (possibly foreign) state |
 | Shared-test-DB refusal | `bin/lib/desk_guard.rb`, every cert lane | A desk **or throwaway under `.worktrees/`** on the shared test DB |
 | Desk occupancy | `DeskActivity.touched_since?`, `bin/agent-worktree list` | Someone working in a desk right now |
-| Reclaim withhold | `desk_hold`, `bin/agent-worktree cleanup --reclaim` | Destroying a desk younger than 1h29m, touched, or mid-gate |
+| Reclaim withhold | `desk_hold` + `stage_hold`, `bin/agent-worktree cleanup --reclaim` | Destroying a desk younger than 1h29m, touched, mid-gate, or bound to a task the board does not put at `shipped`/`archived` |
 
 The fingerprint is a git tree hash of `git add -A` + `write-tree`
 (`bin/lib/full_suite_gate.rb:104`), so it covers tracked edits **and**

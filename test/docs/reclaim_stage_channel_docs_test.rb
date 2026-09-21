@@ -133,7 +133,7 @@ class ReclaimStageChannelDocsTest < ActiveSupport::TestCase
     # The two prose enumerations that listed the channels one by one and skipped
     # the stage one. Each must name the pipeline-stage question.
     {
-      "modules/worktrees.md" => /reclaimable\?:[^)]*\bshipped\b/i,
+      "modules/worktrees.md" => /reclaimable\?[^)]*\bshipped\b/i,
       "modules/parallel-agent-devops.md" => /withheld_reason[^)]*\bshipped\b/i
     }.each do |rel, pattern|
       assert norm(rel).match?(pattern),
