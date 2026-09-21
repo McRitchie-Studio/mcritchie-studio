@@ -275,7 +275,7 @@ frozen_size:
   # ceiling actually asks: they are unit-tier, in test/lib/agent_worktree_test.rb, driving
   # stage_hold_reason and board_stage_for directly with no board and no filesystem.
   #
-  # -638 (2026-09-20, extract-agent-worktree-test-fixture): THE EXTRACTION THE ENTRY ABOVE
+  # -637 (2026-09-20, extract-agent-worktree-test-fixture): THE EXTRACTION THE ENTRY ABOVE
   # PROMISED, now done, and the first LOWERING this hotspot has ever recorded. The private
   # harness — 44 methods and 2 constants, including every name the +156 entry above lists as
   # "spread across this file rather than sitting in one extractable block" — moved verbatim
@@ -301,4 +301,4 @@ frozen_size:
   #
   # The ceiling is the file's real size again, so the next addition still goes to a new
   # file — the difference is that going there is now free.
-  test/commands/agent_worktree_test.rb: 1875
+  test/commands/agent_worktree_test.rb: 1876
