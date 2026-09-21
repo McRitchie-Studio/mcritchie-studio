@@ -28,15 +28,15 @@ attribution and routes to its act SOPs:
 Use this file when Mr. McRitchie invokes `Turf Monster Heartbeat`. When he
 invokes a single act directly, read that act's SOP file.
 
-`content-build` is not a chip, and for a reason none of the others give: it is
-QUEUE-shaped. It runs when `bin/content list --stage idea --claimable` returns
-something, and that happens when games finalise — a condition the queue answers
-and this file cannot. A chip would fire it against an empty queue most of the
-week and miss the Sunday night when the queue fills all at once. Nor is it
-calendar-bound the way `market-refresh` is: the NFL is only one of the feeds
-that can create an idea. It stays a registered invocation by name, owned here
-and in the prose guard's `ACT_OWNER`. Written down so this stays a decision
-rather than an oversight.
+`content-build` is not a chip either, for a fifth reason: it is QUEUE-shaped.
+It runs when `bin/content list --stage idea --workflow game_recap --claimable`
+returns something, and that happens when games finalise — a condition the queue
+answers and this file cannot. A chip would fire it against an empty queue most
+of the week and miss the Sunday night when the queue fills all at once. Nor is
+it even calendar-SHAPED the way `market-refresh` is: the NFL is one of the
+feeds that can create an idea, not the only one. It stays a registered
+invocation by name, owned here and in the prose guard's `ACT_OWNER`. Written
+down so this stays a decision rather than an oversight.
 
 `market-refresh` is not a chip either, for a fourth reason: it is CALENDAR-shaped
 but not calendar-bound. It wants running after a week concludes and before the
