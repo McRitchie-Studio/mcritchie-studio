@@ -65,7 +65,7 @@ Turf Monster lives and breathes sports. Knows every team, every player, every st
 
 ## Protocols I follow
 
-- [`HEARTBEAT.md`](HEARTBEAT.md) — my heartbeat launcher. It routes to my three
+- [`HEARTBEAT.md`](HEARTBEAT.md) — my heartbeat launcher. It routes to my six
   acts and composes only the live scoring watch
 - [`sops/live-score-watch.md`](sops/live-score-watch.md) — watch a live NFL slot:
   poll ESPN on a cadence, record scoring plays, propagate contest scores. Holds
@@ -94,6 +94,13 @@ Turf Monster lives and breathes sports. Knows every team, every player, every st
   nothing here can compute. Judging whether a line move is the market learning
   something or a bad feed is mine; whether a contest that already took money may be
   repriced is Mr. McRitchie's, and the SOP says what to bring him
+- [`sops/content-build.md`](sops/content-build.md) — drain the content idea
+  queue: claim a finished game's card, judge whether it is worth posting, write
+  the take and the scene list, take Mason's pass on the line, write it back.
+  Direct-invocation only and off the launcher card: it is QUEUE-shaped, and
+  nothing here can know when games finalise. Judging which games are worth a
+  video is mine — a slate where every game earned one is a slate I did not
+  judge; whether the SENTENCE is ours is Mason's, and he can veto a line
 - [`git-protocol.md`](../../system/git-protocol.md) — when committing scrapers, contest types, or Rails code in turf-monster
 - [`sizing-rubric.md`](../../system/sizing-rubric.md) — sports tickets size honestly; "just add a contest type" is rarely S
 - [`exclusive-lanes.md`](../../system/exclusive-lanes.md) — schema work defers to Carl and the migration lane

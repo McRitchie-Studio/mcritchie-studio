@@ -71,6 +71,7 @@ class DocOwnerProseGuardTest < ActiveSupport::TestCase
     "contest-rehearsal" => "Turf Monster",  # registered 2026-09-04 with the second act; the guard is the only thing that keeps a docs claim from drifting
     "sleeper-auction-watch" => "Turf Monster",  # registered 2026-09-09 with the third act. It is deliberately off the launcher card, so no card test can see a wrong-owner claim about it; this row is the whole mechanism
     "entry-forfeit" => "Turf Monster",  # registered 2026-09-09 with the fourth act. Off the launcher card too (externally triggered — an entrant asks, at a moment nobody here picks), so as with the auction watch this row is the ONLY thing that can catch a wrong-soul claim about it
+    "content-build" => "Turf Monster",  # registered 2026-09-21 with the sixth act: drain the content idea queue. Off the launcher card (QUEUE-shaped — it runs when games finalise, which nothing here can schedule), so as with the auction watch, the forfeit and the market refresh this row is the only thing that can catch a wrong-soul claim about it
     "market-refresh" => "Turf Monster",  # registered 2026-09-19 with the fifth act: the weekly benchmark rebuild. Operator-triggered and off the launcher card, so as with the auction watch and the forfeit this row is the only thing that can catch a wrong-soul claim about it
     "pre-QA gate" => "Avi",
     "production-deploy" => "Steffon",
