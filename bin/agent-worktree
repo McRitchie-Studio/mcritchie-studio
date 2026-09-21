@@ -4076,10 +4076,13 @@ def claim_hold(record, fresh: false, announce: false)
   # a best-effort. TASK_RECORD_SLUG is written by bind-task, which routes through app_for —
   # registry-only, because new/up/plan need a port range a discovered repo has no answer for.
   #
-  # That matters because the other three channels are structurally dead for it too:
-  # review_hold reads a task record there is none of, pr_hold_reason returns nil the moment
-  # board_pr_url is nil (always), and desk_hold's progress / gate_in_flight /
-  # awaiting_approval channels all read that same absent record. What survives is desk age
+  # That matters because of how little the FOUR channels after this one would leave us if we
+  # fell through to them. Only review_hold is genuinely blind: it reads a task record there is
+  # none of, and a blind channel returns nil, which FREES. stage_hold fails open by DESIGN at
+  # board_stage_for's slug guard (:unbound, its one forced fail-open). pr_hold is not blind at
+  # all on its primary lane — it asks GITHUB by branch, and board_pr_url is consulted only on
+  # the :unavailable fallback. desk_hold is DEGRADED rather than blind: its progress /
+  # gate_in_flight / awaiting_approval reads come from that same absent record, leaving desk age
   # plus mtimes — and desk_activity prunes tmp, log, coverage, vendor and .bundle, which is
   # exactly and only what a gem builder writes while running a suite. Cert p99 is 94 minutes,
   # LONGER than the 1h29m idle window, which is the very reason the gate channel exists.
