@@ -57,8 +57,16 @@ class ParseErrorRedactionDocsTest < ActiveSupport::TestCase
         "#{rel} interpolates a bare e.message; JSON::ParserError echoes its input, so this writes " \
         "credential bytes into ErrorLog and Sentry. Report position only."
 
-      assert source.match?(/e\.message\[/),
-        "#{rel} must SLICE the message (e.message[/at line \\d+ column \\d+/]) rather than use it whole"
+      # ANCHORED, not merely sliced. A bare `e.message[/\d+/]` takes the first
+      # digit run, which on a key with a literal line break inside private_key
+      # IS key material — measured. The pattern must require the literal words
+      # `at line` and `column`, which key bytes do not contain.
+      assert source.match?(%r{e\.message\[/at line .*column}),
+        "#{rel} must slice the message with the ANCHORED pattern " \
+        "(e.message[/at line \\d+ column \\d+/]) — a bare digit run returns key bytes"
+
+      assert source.match?(/position unreported/),
+        "#{rel} must fall back to a fixed string when the pattern misses, never to the raw message"
     end
   end
 
@@ -72,6 +80,21 @@ class ParseErrorRedactionDocsTest < ActiveSupport::TestCase
 
     assert doc_body.match?(/keyless/i),
       "the near-miss is only a near-miss because the endpoint is keyless; say so, or it reads as safe"
+  end
+
+  test "[static] the doc teaches the anchored slice, not just \"report the position\"" do
+    # "Report the position" was already the rule, and following it still leaked:
+    # the bare digit run reads as a position and is not one. The doc has to say
+    # which slice, or the next reader reinvents the same bug.
+    assert doc_body.match?(/at line \\d\+ column \\d\+/),
+      "the doc must name the ANCHORED pattern — 'report the position' alone is what leaked"
+
+    assert doc_body.match?(/987654321/),
+      "the doc must carry the MEASUREMENT that shows a bare digit run returning key bytes; " \
+      "without it this reads as a style preference rather than a leak"
+
+    assert doc_body.match?(/position unreported/i),
+      "the doc must require a fixed-string fallback, never the raw message"
   end
 
   test "[static] the doc warns that a leak test must not print the leak" do
