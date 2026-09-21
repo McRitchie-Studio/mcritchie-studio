@@ -26,7 +26,7 @@ class Content
       # names the look we DO have, because that is the thing being changed.
       def detail
         case decision
-        when :reuse  then "approved artifact on file"
+        when :reuse  then artifact&.approved? ? "approved artifact on file" : "attached, not yet approved"
         when :reskin then "have #{artifact.subjects.ordered.map { |s| s.effective_appearance&.descriptor }.compact.uniq.join(' / ')} — recolor for this game"
         else              "nothing on file for this cast"
         end

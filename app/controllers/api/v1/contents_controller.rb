@@ -97,6 +97,10 @@ module Api
         params.require(:content).permit(
           :title, :description, :script_text, :duration_seconds, :captions,
           :music_track, :stage, :selected_hook_index,
+          # The rapper-replace cast, so an agent (or the upstream duo detector)
+          # can set who the piece is about. game_facts and the score columns
+          # stay unwritable — those are the deterministic half's record.
+          :qb_player_slug, :skill_player_slug, :colorway,
           hook_ideas: [], hashtags: [], music_suggestions: [], caption_variants: [],
           # `scenes` is an array of HASHES, so its keys are named rather than
           # left as `scenes: []` — that form permits an array of SCALARS only and

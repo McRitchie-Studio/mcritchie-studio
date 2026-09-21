@@ -1156,8 +1156,18 @@ News.create!(title: "E2E News Archived", stage: "archived")
 Content.create!(title: "E2E Content Hook", stage: "hook", workflow: "video")
 
 # The rapper-replace inspection gate, on the Person-anchored model. Seeded so
-# the pair and QB slots read REUSE and the skill slot reads RE-SKIN — the mix
-# the gate exists to show.
+# the pair and QB slots read REUSE and the skill slot reads GENERATE — the mix
+# the gate exists to show, and the empty slot the operator spec fills.
+#
+# Chase deliberately gets NO character sheet in any colorway: one in another
+# jersey would decide `reskin` rather than `generate`, and the spec's
+# attach-then-approve walk needs a slot with nothing on file.
+#
+# ArtifactSubject is cleared EXPLICITLY. `Artifact.delete_all` skips callbacks,
+# so `dependent:` never fires and the join rows outlive their artifact — on a
+# reused test database those orphans are read by Artifact.matching through the
+# association and decide slots that no longer have an image.
+ArtifactSubject.delete_all
 Artifact.delete_all
 Appearance.delete_all
 Person.where(last_name: %w[Burrow Chase]).destroy_all

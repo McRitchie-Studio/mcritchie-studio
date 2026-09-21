@@ -438,6 +438,11 @@ class ContentsController < ApplicationController
   def content_params
     params.require(:content).permit(
       :title, :description, :source_type, :source_news_slug, :content_type, :stage,
+      # The rapper-replace cast. Without these the inspection gate is
+      # unreachable: ArtifactPlan#cast reads them, so an unset pair means zero
+      # slots and an approve that always refuses — while the workflow is
+      # offered in the edit dropdown.
+      :qb_player_slug, :skill_player_slug, :colorway,
       :hook_image_url, :selected_hook_index,
       :script_text, :duration_seconds,
       :final_video_url, :music_track, :logo_overlay,

@@ -139,4 +139,39 @@ class ArtifactGateTest < ActionDispatch::IntegrationTest
     assert slots.all?(&:reskin?),
            "artifacts approved in white must read as re-skins once the jersey changes"
   end
+
+  # --- the wiring blockers a review found ---------------------------------
+
+  # The gate was unreachable in production: nothing wrote the cast, so
+  # ArtifactPlan#cast was always empty, slots was always [], and approve always
+  # refused — while the workflow sat in the operator's dropdown.
+  test "an operator can set the cast through the edit form" do
+    blank = Content.create!(title: "No cast yet", workflow: "rapper_replace", stage: "idea")
+
+    patch content_path(blank.slug), params: { content: {
+      qb_player_slug: @burrow.slug, skill_player_slug: @chase.slug, colorway: "white"
+    } }
+
+    blank.reload
+    assert_equal @burrow.slug, blank.qb_player_slug
+    assert_equal @chase.slug, blank.skill_player_slug
+    assert_equal 3, Content::ArtifactPlan.new(blank).slots.length,
+                 "a content with a cast must produce slots — otherwise the gate can never open"
+  end
+
+  # Adding :show drew GET /people/:slug, which swallowed the literal
+  # /people/search and 404'd the person picker in news/edit and people/merge.
+  test "the people search route is not shadowed by the person page" do
+    assert_equal({ controller: "people", action: "search" },
+                 Rails.application.routes.recognize_path("/people/search"))
+    assert_equal({ controller: "people", action: "show", slug: "joe-burrow" },
+                 Rails.application.routes.recognize_path("/people/joe-burrow"))
+  end
+
+  test "the person search endpoint answers" do
+    get search_people_path, params: { q: "Burrow" }
+
+    assert_response :success
+    assert_includes JSON.parse(response.body).map { |p| p["slug"] }, @burrow.slug
+  end
 end

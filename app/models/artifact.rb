@@ -31,8 +31,10 @@ class Artifact < ApplicationRecord
 
   # THE REUSE KEY: the exact set of (person, look) pairs. Two artifacts are the
   # same asset only when they show the same people wearing the same things.
+  # Reads the association, NOT a fresh relation: `subjects.ordered` builds a new
+  # query and discards any preload, so an includes() upstream was dead weight.
   def subject_key
-    subjects.ordered.map { |s| "#{s.person_slug}@#{s.effective_appearance&.slug}" }.sort.join("|")
+    subjects.sort_by { |s| [s.ordinal, s.id] }.map { |s| "#{s.person_slug}@#{s.effective_appearance&.slug}" }.sort.join("|")
   end
 
   # Find a LIVE artifact showing exactly this cast in exactly these looks.

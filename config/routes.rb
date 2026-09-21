@@ -263,6 +263,12 @@ Rails.application.routes.draw do
       patch :restore
     end
   end
+  # DECLARED BEFORE the :show member route below. Adding `:show` draws
+  # GET /people/:slug, which matches "search" as a slug and 404s through
+  # find_by! — silently breaking the person picker in news/edit and
+  # people/merge. Route order is the fix; a literal must precede its wildcard.
+  get "people/search", to: "people#search", as: :search_people
+
   resources :people, only: [:index, :show], param: :slug do
     collection do
       get :merge
@@ -304,7 +310,6 @@ Rails.application.routes.draw do
   get "games/:year", to: "games#season", as: :games_season, constraints: { year: /\d{4}/ }
   get "games/:year/week/:week", to: "games#week", as: :games_week
   get "games/:year/week/:week/:slug", to: "games#show", as: :game_show
-  get "people/search", to: "people#search", as: :search_people
   get "activities", to: redirect("/agents"), as: :activities
   resources :usages, only: [:index]
 
