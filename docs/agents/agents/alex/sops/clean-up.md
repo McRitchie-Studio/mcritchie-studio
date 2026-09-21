@@ -617,8 +617,9 @@ They are restated here only because getting them wrong destroys work:
 
 - **Clean + merged is NOT sufficient, and never was.** A brand-new worktree is
   git-identical to a merged one, so it passes the git test vacuously; on
-  2026-08-13 that destroyed a live builder's desk mid-task. Expect finished desks
-  to linger up to 1h29m before the sweep will take them.
+  2026-08-13 that destroyed a live builder's desk mid-task. Expect a bound desk to
+  stand until its task reaches `shipped` or `archived` — a full release cycle;
+  1h29m is only the floor, and the whole wait only for an unbound desk.
 - **Trust the safety gate over the description.** If Mr. McRitchie says "three
   worktrees" and the dry run finds seventeen, surface the discrepancy — and
   believe the gate.

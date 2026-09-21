@@ -275,11 +275,30 @@ frozen_size:
   # ceiling actually asks: they are unit-tier, in test/lib/agent_worktree_test.rb, driving
   # stage_hold_reason and board_stage_for directly with no board and no filesystem.
   #
-  # THE REAL FIX IS AN EXTRACTION, and it is deliberately not in this diff. This file's
-  # private harness wants to be test/support/agent_worktree_fixture.rb, which would let a
-  # concern get its own file without re-staging anything and would SHRINK this hotspot
-  # rather than ratchet it again. That is a refactor, this is a bugfix, and merging the two
-  # would bury a guard change inside a several-hundred-line move.
+  # -637 (2026-09-20, extract-agent-worktree-test-fixture): THE EXTRACTION THE ENTRY ABOVE
+  # PROMISED, now done, and the first LOWERING this hotspot has ever recorded. The private
+  # harness — 44 methods and 2 constants, including every name the +156 entry above lists as
+  # "spread across this file rather than sitting in one extractable block" — moved verbatim
+  # to test/support/agent_worktree_fixture.rb, a module a test class includes. Nothing else
+  # changed: the bodies are byte-identical, the 89 cases and 2,041 assertions are the same
+  # 89 and 2,041 before and after, and the only lines ADDED to this file are the require,
+  # the `include AgentWorktreeFixture`, and a rewritten note on the two `def test_` methods
+  # whose visibility used to depend on the `private` the harness took with it.
   #
-  # The ceiling is the file's real size, so the next addition goes to a new file.
-  test/commands/agent_worktree_test.rb: 2513
+  # READ THE TWO ENTRIES ABOVE AS HISTORY FROM HERE ON. Both the 2026-08-27 and the
+  # 2026-09-20 entries turn on the same sentence — "a new file could only get them by
+  # duplicating the fixture" — and that sentence stopped being true on this line. It was
+  # an accurate reason to keep those tests here at the time, and it is no longer a reason
+  # to keep the NEXT ones here.
+  #
+  # WHAT THIS BUYS, and it is the whole point of the ceiling: the reason a new concern kept
+  # NOT getting its own file was never the tests, it was the staging. `setup_repo +
+  # mark_worktree_merged_to_origin_main + abandon_desk! + bind_task_slug + removal_env +
+  # agent_worktree` is now one `include`, so the next check can ask its question from a new
+  # file and still compare against the same staged desk. test/lib/agent_worktree_fixture_
+  # test.rb is the proof: a SECOND file that stages a desk and drives the real binary
+  # against it while copying nothing.
+  #
+  # The ceiling is the file's real size again, so the next addition still goes to a new
+  # file — the difference is that going there is now free.
+  test/commands/agent_worktree_test.rb: 1876

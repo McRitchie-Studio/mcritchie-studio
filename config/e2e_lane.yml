@@ -221,9 +221,11 @@
 # server tier can see. The two app_ladder_row specs about the retired horizontal row
 # were REPLACED one-for-one by two about the summary card, so they move nothing here.
 # Coverage ADDED; `quarantined` is untouched.
+# 156 -> 158 on 2026-09-21: the two artifact_gate specs (the model library, and
+# the operator approving the gate). Coverage ADDED; `quarantined` untouched at 10.
 # MEASURED with the lister on THIS tree, never by arithmetic:
-#   npx playwright test --list => 156
-total_specs: 156
+#   npx playwright test --list => 158
+total_specs: 158
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
@@ -349,10 +351,12 @@ quarantined: 10
 #
 # 140 -> 146 on 2026-09-18: the deploy_summary_row spec above. Coverage ADDED;
 # `quarantined` untouched at 10.
+# 146 -> 148 on 2026-09-21: the two artifact_gate specs. Coverage ADDED;
+# `quarantined` untouched at 10.
 # Re-derived on THIS tree with the lister, never by arithmetic:
-#   npx playwright test --list                           => 156
-#   npx playwright test --list --grep-invert @quarantine => 146
-executed: 146
+#   npx playwright test --list                           => 158
+#   npx playwright test --list --grep-invert @quarantine => 148
+executed: 148
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to

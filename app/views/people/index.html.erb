@@ -49,7 +49,20 @@
              data-name="<%= "#{person.full_name} #{person.teams.map(&:name).join(' ')}".downcase %>"
              data-sport="<%= athlete&.sport %>">
           <div class="flex items-start gap-3">
-            <% if (headshot = athlete&.headshot_url(width: 400)) %>
+            <% models = @models_by_person[person.slug] || [] %>
+            <% if models.any? %>
+              <%# A generated MODEL, not the headshot — this page is where you
+                  check what we have made of someone. %>
+              <%= link_to person_path(person.slug), class: "flex-shrink-0 relative" do %>
+                <img src="<%= models.first %>"
+                     alt="<%= person.full_name %> model"
+                     loading="lazy"
+                     class="w-16 h-16 rounded-full object-cover bg-surface-alt ring-2 ring-primary/60">
+                <span class="absolute -bottom-1 -right-1 px-1.5 rounded-full text-[10px] font-bold bg-primary text-white border border-surface">
+                  <%= models.length %>
+                </span>
+              <% end %>
+            <% elsif (headshot = athlete&.headshot_url(width: 400)) %>
               <img src="<%= headshot %>"
                    alt="<%= person.full_name %>"
                    loading="lazy"
@@ -60,7 +73,9 @@
               </div>
             <% end %>
             <div class="flex-1 min-w-0">
-              <p class="text-heading font-semibold truncate"><%= person.full_name %></p>
+              <p class="text-heading font-semibold truncate">
+                <%= link_to person.full_name, person_path(person.slug), class: "hover:text-primary" %>
+              </p>
               <div class="flex flex-wrap items-center gap-1.5 mt-1">
                 <% if athlete&.position.present? %>
                   <span class="badge bg-primary/10 text-primary border-primary/20 text-xs"><%= athlete.position %></span>
