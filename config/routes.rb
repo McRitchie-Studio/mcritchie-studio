@@ -309,6 +309,18 @@ Rails.application.routes.draw do
       # Creates the Content idea a faceless recap video is built from. Idempotent:
       # 201 when this call created the recap, 200 when it already existed.
       post "game_recaps", to: "game_recaps#create"
+      # The content pipeline's AGENT surface. Non-deterministic steps (the take,
+      # the scenes, the caption) are written by a soul during an SOP with its own
+      # inference, so production needs no model key. `claim_next` is the atomic
+      # pop — the SERVER picks which content — mirroring claim_next_review above.
+      resources :contents, only: [:index, :show, :update], param: :slug do
+        collection do
+          post :claim_next
+        end
+        member do
+          post :release
+        end
+      end
       # GitHub Actions webhook receiver (workflow_run events). Called by GitHub,
       # not an agent — GithubWebhooksController skips bearer auth and gates ONLY
       # on the HMAC signature. DevOps v2: agents read CI status off the board.

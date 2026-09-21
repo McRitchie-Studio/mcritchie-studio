@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_20_090000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_20_200000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -439,6 +439,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_20_090000) do
     t.datetime "asset_at"
     t.jsonb "caption_variants", default: []
     t.text "captions"
+    t.string "claim_session"
+    t.datetime "claimed_at"
+    t.string "claimed_by"
     t.integer "comments_count"
     t.string "content_type", default: "tiktok_video"
     t.datetime "created_at", null: false
@@ -486,6 +489,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_20_090000) do
     t.index ["rival_team_slug"], name: "index_contents_on_rival_team_slug"
     t.index ["slug"], name: "index_contents_on_slug", unique: true
     t.index ["source_news_slug"], name: "index_contents_on_source_news_slug"
+    t.index ["stage", "claimed_at"], name: "index_contents_on_stage_and_claimed_at"
     t.index ["stage", "position"], name: "index_contents_on_stage_and_position"
     t.index ["stage"], name: "index_contents_on_stage"
     t.index ["team_slug"], name: "index_contents_on_team_slug"
