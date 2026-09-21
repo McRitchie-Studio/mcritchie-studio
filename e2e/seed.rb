@@ -1155,6 +1155,30 @@ News.create!(title: "E2E News Archived", stage: "archived")
 3.times { |i| Content.create!(title: "E2E Content Idea #{i + 1}", stage: "idea", workflow: "video") }
 Content.create!(title: "E2E Content Hook", stage: "hook", workflow: "video")
 
+# The rapper-replace inspection gate. Seeded so the duo and QB slots read REUSE
+# and the skill slot reads RE-SKIN (Chase on file in black, this game in white) —
+# the mix the gate exists to show.
+PlayerArtifact.delete_all
+e2e_gate = Content.create!(
+  title: "E2E Burrow And Chase", workflow: "rapper_replace", stage: "idea",
+  qb_player_slug: "joe-burrow", skill_player_slug: "jamarr-chase",
+  game_facts: { "winner_slug" => "cincinnati-bengals",
+                "away_team_slug" => "cincinnati-bengals",
+                "home_team_slug" => "jacksonville-jaguars",
+                "players" => { "joe-burrow" => "Joe Burrow", "jamarr-chase" => "Ja'Marr Chase" } }
+)
+PlayerArtifact.create!(player_slug: "joe-burrow", secondary_player_slug: "jamarr-chase",
+  player_name: "Joe Burrow", secondary_player_name: "Ja'Marr Chase",
+  colorway: "white", kind: "duo", image_url: "/demo-artifacts/demo-1.png",
+  source: "chatgpt", approved_at: Time.current)
+PlayerArtifact.create!(player_slug: "joe-burrow", player_name: "Joe Burrow",
+  colorway: "white", kind: "qb_sheet", image_url: "/demo-artifacts/demo-2.png",
+  source: "chatgpt", approved_at: Time.current)
+PlayerArtifact.create!(player_slug: "jamarr-chase", player_name: "Ja'Marr Chase",
+  colorway: "black", kind: "skill_sheet", image_url: "/demo-artifacts/demo-3.png",
+  source: "chatgpt", approved_at: Time.current)
+puts "  e2e gate content: #{e2e_gate.slug}"
+
 # Triage inbox: one open finding for the promote flow (triage_promote.spec.js
 # promotes it — a MUTATING spec, so it must never carry @qa-readonly).
 TriageFinding.delete_all

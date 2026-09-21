@@ -226,6 +226,11 @@ Rails.application.routes.draw do
       post :starter_post_tiktok_defense,   action: :create_starter_post_tiktok_defense
     end
     member do
+      # The rapper-replace inspection gate: confirm the jersey, attach each of
+      # the three artifacts, then approve. Approval is what unlocks video.
+      post :set_colorway
+      post :attach_artifact
+      post :approve_artifacts
       post :hook_step
       post :script_step
       post :assets_step
@@ -258,11 +263,17 @@ Rails.application.routes.draw do
       patch :restore
     end
   end
-  resources :people, only: [:index], param: :slug do
+  resources :people, only: [:index, :show], param: :slug do
     collection do
       get :merge
       post :merge, action: :merge_execute
       get :duplicates
+    end
+    member do
+      # The model library: a person's looks, and the images made of them.
+      post :create_appearance
+      post :make_default_appearance
+      post :attach_artifact
     end
   end
 

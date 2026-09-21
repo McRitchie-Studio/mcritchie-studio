@@ -1,0 +1,113 @@
+<%# The inspection gate. Shows when workflow is rapper_replace and the three
+    artifacts have not yet been approved.
+
+    The decision per slot is the point of this screen: a player's face does not
+    change week to week, only the jersey does, so most weeks this should read
+    "reuse, reuse, re-skin" rather than "generate three". %>
+<%
+  plan  = Content::ArtifactPlan.new(@content)
+  slots = plan.slots
+  ready = plan.ready?
+%>
+<div class="card p-6 border-2 border-primary/40 space-y-5">
+  <div class="flex items-center justify-between">
+    <p class="label-upper text-primary">🖼 Artifact Inspection</p>
+    <span class="text-xs text-muted">you approve before any video is made</span>
+  </div>
+
+  <%# THE COLORWAY. Guessed from home/away and labelled as a guess — an
+      unconfirmed guess that looks confirmed is how a wrong jersey ships. %>
+  <div class="rounded-lg bg-surface-2 p-4 space-y-3">
+    <div class="flex items-center gap-2 flex-wrap">
+      <span class="label-upper text-muted">Jersey</span>
+      <span class="text-heading font-bold text-lg"><%= plan.colorway || "unknown" %></span>
+      <% if plan.colorway_guessed? %>
+        <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-900/50 text-amber-300 border border-amber-700/50">
+          GUESSED FROM HOME/AWAY
+        </span>
+      <% else %>
+        <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-900/50 text-emerald-300 border border-emerald-700/50">
+          CONFIRMED
+        </span>
+      <% end %>
+    </div>
+
+    <%= form_with url: set_colorway_content_path(@content.slug), method: :post,
+                  class: "flex items-center gap-2 flex-wrap" do |f| %>
+      <%= f.text_field :colorway, value: plan.colorway,
+            placeholder: "white · primary · black · throwback",
+            class: "input-field text-sm w-64" %>
+      <%= f.submit "Confirm jersey", class: "btn-secondary text-sm" %>
+      <span class="text-xs text-muted">changing this re-decides every slot below</span>
+    <% end %>
+  </div>
+
+  <%# THE THREE SLOTS. %>
+  <div class="space-y-3">
+    <% slots.each do |slot| %>
+      <div class="rounded-lg border border-border p-4 flex gap-4">
+        <div class="w-28 h-28 shrink-0 rounded-md bg-surface-2 border border-border overflow-hidden flex items-center justify-center">
+          <% if slot.artifact&.image_url.present? %>
+            <%= image_tag slot.artifact.image_url, class: "object-cover w-full h-full" %>
+          <% else %>
+            <span class="text-3xl opacity-40">🖼</span>
+          <% end %>
+        </div>
+
+        <div class="flex-1 min-w-0 space-y-2">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="text-heading font-bold"><%= slot.label %></span>
+            <% scheme = slot.reuse? ? "bg-emerald-900/50 text-emerald-300 border-emerald-700/50"
+                      : slot.reskin? ? "bg-amber-900/50 text-amber-300 border-amber-700/50"
+                      : "bg-rose-900/50 text-rose-300 border-rose-700/50" %>
+            <span class="px-2 py-0.5 rounded text-[10px] font-bold border <%= scheme %>">
+              <%= slot.status_label.upcase %>
+            </span>
+          </div>
+
+          <p class="text-sm text-muted">
+            <%= slot.cast_label %> — <%= slot.detail %>
+          </p>
+          <%# Each subject's own look. A mixed cast carries different looks in
+              one frame, which is why appearance lives here and not on the artifact. %>
+          <p class="text-xs text-muted">
+            <% slot.subjects.each do |row| %>
+              <span class="mr-2"><%= row[:name] %>: <%= row[:appearance]&.descriptor || "no look" %></span>
+            <% end %>
+          </p>
+
+          <%= form_with url: attach_artifact_content_path(@content.slug), method: :post,
+                        class: "flex items-center gap-2 flex-wrap" do |f| %>
+            <%= f.hidden_field :kind, value: slot.kind %>
+            <%= f.hidden_field :cast, value: slot.cast_label %>
+            <%= f.url_field :image_url, placeholder: "paste the image URL",
+                  class: "input-field text-xs w-72" %>
+            <%= f.submit slot.artifact&.image_url.present? ? "Replace" : "Attach",
+                  class: "btn-secondary text-xs" %>
+          <% end %>
+        </div>
+      </div>
+    <% end %>
+
+    <% if slots.empty? %>
+      <p class="text-sm text-muted">
+        No players on this content yet — the qualifying duo has not been recorded.
+      </p>
+    <% end %>
+  </div>
+
+  <%# APPROVE. Deliberately refuses until every slot has an image: the gate's
+      whole job is that a human looked at all three. %>
+  <div class="pt-2 border-t border-border flex items-center gap-3 flex-wrap">
+    <%= button_to "✅ Approve all three",
+          approve_artifacts_content_path(@content.slug), method: :post,
+          class: ready ? "btn-primary" : "btn-primary opacity-40 cursor-not-allowed",
+          disabled: !ready,
+          form: { data: { turbo_confirm: "Approve these three artifacts and unlock video generation?" } } %>
+    <% unless ready %>
+      <span class="text-xs text-muted">
+        every slot needs an image before this unlocks
+      </span>
+    <% end %>
+  </div>
+</div>
