@@ -46,13 +46,18 @@ class Nflverse::SeedPlayersHardeningTest < ActiveSupport::TestCase
     assert_equal athlete.id, found&.id, "nflverse_id must be part of the lookup hierarchy"
   end
 
-  # THE REGRESSION THIS BUG OWES. The previous version carried a gsis_id, so
-  # lookup_athlete_by_ids returned at the FIRST probe and the test passed with
-  # or without the nflverse_id fix — it exercised nothing.
-  #
+  # THE REGRESSION THIS BUG OWES, at the tier the wedge actually happens on.
   # Here the second row shares NOTHING but nflverse_id, which is uniquely
   # indexed. Without the fix it falls through to the name path, update! raises
   # into the caller's rescue, and the athlete is left with no league IDs.
+  #
+  # ASSERT THE FORK, NOT THE ID. The obvious assertions do not bite: the
+  # caller's pre-existing rescue swallows the RecordNotUnique, so
+  # `assert_nothing_raised` passes either way, and the forked athlete never
+  # receives NFL-123, so counting that id stays 1 either way. What the wedge
+  # leaves behind is a SECOND Athlete and a stranded disambiguated Person —
+  # measured 1 vs 2 with the probe removed, so these two lines are the ones
+  # doing the work.
   test "a row matching only on nflverse_id updates rather than colliding" do
     import(csv(row(gsis: "00-0036442", nfl_id: "NFL-123")))
     assert_equal 1, Athlete.where(nflverse_id: "NFL-123").count
@@ -61,8 +66,9 @@ class Nflverse::SeedPlayersHardeningTest < ActiveSupport::TestCase
     second = "00-0099999,9999999,,,,NFL-123,Joe,Joe,Burrow,QB,CIN,ACT,2026,76,215"
     assert_nothing_raised { import(csv(second)) }
 
-    assert_equal 1, Athlete.where(nflverse_id: "NFL-123").count,
-                 "nflverse_id is uniquely indexed — a second row must update, not fork"
+    assert_equal 1, Athlete.count, "the wedge forks a second Athlete"
+    assert_nil Person.find_by(slug: "joe-burrow-9999"),
+               "the wedge strands a disambiguated Person the next run dies on"
   end
 
   # --- the ship-aborter ---------------------------------------------------
