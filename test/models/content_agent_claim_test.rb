@@ -100,4 +100,76 @@ class ContentAgentClaimTest < ActiveSupport::TestCase
 
     assert_nothing_raised { @a.release_claim!(session: "sess-2") }
   end
+
+  # THE FAIL-OPEN. The old guard led with `session.present?`, so the check was
+  # bypassed by OMITTING the thing being checked: the same stranger who was
+  # refused with a session force-released the claim without one. The control
+  # below is the half that already passed — both must hold, or this proves
+  # nothing about the missing-value case.
+  test "a stranger who sends NO session cannot release a live claim" do
+    claimed = Content.claim_next_for_agent(session: "sess-1", agent: "turf-monster").content
+
+    assert_raises(ArgumentError) { claimed.release_claim!(session: nil) }
+    assert_raises(ArgumentError) { claimed.release_claim!(session: "") }
+    assert_raises(ArgumentError) { claimed.release_claim!(session: "   ") }
+    assert_raises(ArgumentError) { claimed.release_claim!(session: "sess-2") } # the control
+
+    assert claimed.reload.claim_held?, "the claim must survive every refused release"
+  end
+
+  # --- the WRITE guard ---------------------------------------------------
+  #
+  # Release is harmless and was guarded; update is destructive and was not.
+  # These pin the asymmetry closed.
+
+  test "the live holder may write" do
+    claimed = Content.claim_next_for_agent(session: "sess-1", agent: "turf-monster").content
+
+    assert_nil claimed.claim_write_refusal(session: "sess-1")
+    assert claimed.claim_holder?(session: "sess-1")
+  end
+
+  test "a non-holder may not write" do
+    claimed = Content.claim_next_for_agent(session: "sess-1", agent: "turf-monster").content
+
+    refusal = claimed.claim_write_refusal(session: "sess-2")
+
+    assert_equal "CLAIM_HELD", refusal.code
+    assert_not claimed.claim_holder?(session: "sess-2")
+  end
+
+  test "a caller who sends no session may not write a claimed card" do
+    claimed = Content.claim_next_for_agent(session: "sess-1", agent: "turf-monster").content
+
+    [nil, "", "  "].each do |given|
+      assert_equal "CLAIM_REQUIRED", claimed.claim_write_refusal(session: given)&.code,
+                   "session #{given.inspect} must not be able to write"
+    end
+  end
+
+  test "an unclaimed card may not be written at all" do
+    assert_equal "CLAIM_REQUIRED", @a.claim_write_refusal(session: "sess-1")&.code
+  end
+
+  # The reachable collision this whole guard exists for: A claims, A's inference
+  # runs past the lease, B legitimately claims the lapsed card, and A's write
+  # must NOT land. "It was mine when I started" is not a right to write.
+  test "a lapsed lease refuses its own original holder" do
+    @a.update!(claimed_by: "turf-monster", claim_session: "sess-1",
+               claimed_at: (Content::AGENT_CLAIM_LEASE + 1.minute).ago)
+
+    refusal = @a.claim_write_refusal(session: "sess-1")
+
+    assert_equal "CLAIM_LAPSED", refusal.code
+    assert_match(/claim it again/, refusal.message)
+  end
+
+  # A claim nobody can prove belongs to them is a claim nobody may write
+  # through. It is bounded — the lease drops it within AGENT_CLAIM_LEASE.
+  test "a sessionless claim cannot be written through by anyone" do
+    @a.update!(claimed_by: "turf-monster", claim_session: nil, claimed_at: Time.current)
+
+    assert_equal "CLAIM_REQUIRED", @a.claim_write_refusal(session: "sess-1")&.code
+    assert_equal "CLAIM_REQUIRED", @a.claim_write_refusal(session: nil)&.code
+  end
 end

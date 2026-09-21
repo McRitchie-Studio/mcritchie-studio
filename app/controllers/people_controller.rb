@@ -1,8 +1,71 @@
 class PeopleController < ApplicationController
-  skip_before_action :require_authentication, only: [:index]
+  skip_before_action :require_authentication, only: [:index, :show]
+  before_action :set_person, only: [:show, :create_appearance, :make_default_appearance, :attach_artifact]
 
   def index
-    @people = Person.includes(:teams, { athlete_profile: :image_caches }, contracts: :team).order(:last_name, :first_name)
+    # Most-recently-touched first: creating or editing a model bumps a person,
+    # so the people you are actually working on float to the top rather than
+    # whoever happens to be alphabetically first among 3,000.
+    @people = Person.includes(:teams, { athlete_profile: :image_caches }, contracts: :team)
+                    .order(updated_at: :desc, id: :desc)
+
+    # Model thumbnails for the whole page in ONE query. Per-person lookups here
+    # would be 3,000 round trips.
+    @models_by_person = ArtifactSubject
+                        .joins("INNER JOIN artifacts ON artifacts.slug = artifact_subjects.artifact_slug")
+                        .where("artifacts.retired_at IS NULL AND artifacts.image_url IS NOT NULL")
+                        .order(Arel.sql("artifacts.created_at DESC"))
+                        .pluck(:person_slug, Arel.sql("artifacts.image_url"))
+                        .group_by(&:first)
+                        .transform_values { |rows| rows.map(&:last) }
+  end
+
+  # THE MODEL LIBRARY for one person: every look we have of them, which one is
+  # the default, and every image they appear in — including images they share
+  # with someone else, which is why this reads through the subject join rather
+  # than off the person.
+  def show
+    @appearances = @person.appearances.live.order(:created_at)
+    @artifacts = Artifact.live
+                         .joins(:subjects)
+                         .where(artifact_subjects: { person_slug: @person.slug })
+                         .includes(subjects: [:person, :appearance])
+                         .order(created_at: :desc)
+                         .distinct
+  end
+
+  # Creating a person's FIRST look also makes it their default — the model does
+  # that itself, so a person can never end up with looks and no default.
+  def create_appearance
+    appearance = @person.appearances.new(appearance_params)
+    rescue_and_log(target: @person) do
+      appearance.save!
+      redirect_to person_path(@person.slug),
+                  notice: "#{appearance.descriptor} saved#{appearance.default? ? ' and set as default' : ''}."
+    end
+  rescue ActiveRecord::RecordInvalid => e
+    redirect_to person_path(@person.slug), alert: e.message
+  end
+
+  def make_default_appearance
+    appearance = @person.appearances.live.find_by(slug: params[:appearance_slug])
+    return redirect_to(person_path(@person.slug), alert: "No such look.") unless appearance
+
+    appearance.make_default!
+    redirect_to person_path(@person.slug), notice: "#{appearance.descriptor} is now the default."
+  end
+
+  # Attach an image for one look. A character sheet is a one-subject artifact;
+  # multi-person images are created by the content pipeline, not here.
+  def attach_artifact
+    appearance = @person.appearances.live.find_by(slug: params[:appearance_slug]) || @person.default_appearance
+    return redirect_to(person_path(@person.slug), alert: "Create a look first.") unless appearance
+
+    rescue_and_log(target: @person) do
+      artifact = Artifact.create!(kind: "character_sheet", image_url: params[:image_url], source: "operator")
+      artifact.subjects.create!(person_slug: @person.slug, appearance_slug: appearance.slug, ordinal: 1)
+      redirect_to person_path(@person.slug), notice: "Model image attached to #{appearance.descriptor}."
+    end
   end
 
   def search
@@ -24,6 +87,19 @@ class PeopleController < ApplicationController
   def merge
     # Render merge form
   end
+
+  private
+
+  def set_person
+    @person = Person.find_by!(slug: params[:slug])
+  end
+
+  def appearance_params
+    params.require(:appearance).permit(:descriptor, :team_slug, :colorway, :reference_url, :generation_notes)
+  end
+
+  public
+
 
   def merge_execute
     keep = Person.find_by(slug: params[:keep_slug])

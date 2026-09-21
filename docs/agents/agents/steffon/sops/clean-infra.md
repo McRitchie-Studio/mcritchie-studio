@@ -93,8 +93,10 @@ bin/agent-worktree cleanup --reclaim --yes   # full teardown + Redis band shrink
   git test vacuously. On 2026-08-13 that destroyed a live builder's desk
   mid-task. The reclaim now also withholds a desk younger than 1h29m, one written
   to inside that window, or one whose holder has a gate in flight (a cert writes
-  nothing into its desk for up to 94 minutes). **Expect finished desks to linger
-  up to 1h29m.** That is the trade, and it is deliberate. Use `bin/agent-worktree
+  nothing into its desk for up to 94 minutes). **Expect a bound desk to stand until
+  its task reaches `shipped` or `archived`** — a full release cycle, per the stage
+  rule below; 1h29m is the floor, and it is the whole wait only for an unbound
+  desk. That is the trade, and it is deliberate. Use `bin/agent-worktree
   remove <app> <task-slug> --yes` when you need a specific one gone now.
 - **An OPEN unmerged PR withholds a desk, and so does a live reviewer.** A branch
   whose diff against base is empty is git-eligible while its PR is still open, and
@@ -124,11 +126,13 @@ bin/agent-worktree cleanup --reclaim --yes   # full teardown + Redis band shrink
   origin/accepted (clean)` is a git fact, and on 2026-08-14 it was true of all
   three load-bearing desks a 29-candidate dry run offered up. Each candidate
   prints what every channel asked and answered; a channel that could not be asked
-  says so (`GitHub unreachable`, `board stage NOT ESTABLISHED`). That line is the
-  approval packet — a blind channel gets fixed before the batch is approved. A
-  cleared desk now carries its stage there too (``board stage `shipped` (terminal
-  — the pipeline is done with it)``), so the safe/unsafe split is readable rather
-  than implicit.
+  says so (`GitHub unreachable`). That line is the approval packet — a blind
+  channel gets fixed before the batch is approved. **Do not go hunting there for a
+  blind stage channel**: a stage the board could not establish WITHHOLDS, so it
+  prints as a hold and the desk is never nominated at all (`reclaim_evidence`
+  renders a rationale only when nothing holds). A cleared desk does carry its stage
+  there (``board stage `shipped` (terminal — the pipeline is done with it)``), so
+  the safe/unsafe split is readable rather than implicit.
 - **Trust the gate over the description.** If the count you were told and the
   count the dry run finds disagree, surface the discrepancy and believe the gate.
 - **Exit 3 is a finished sweep that left a process running, not a failure.** A

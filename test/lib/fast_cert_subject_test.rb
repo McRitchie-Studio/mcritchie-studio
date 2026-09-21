@@ -520,11 +520,20 @@ class FastCertSubjectTest < Minitest::Test
     # the sixth with this same cause: test/models/task_devops_identifier_lists_test.rb
     # is a new file rather than an append to the frozen hotspot test/models/task_test.rb
     # (2023, at its ceiling), and its header cites this config to say why.
+    # 27 → 28 on 2026-09-20 (extract-agent-worktree-test-fixture), the EIGHTH increment
+    # and the seventh with this same cause — but the first where the hotspot SHRANK
+    # instead of a new file landing beside it. test/lib/agent_worktree_fixture_test.rb
+    # is a new file whose header cites this config to say why the private harness of the
+    # frozen hotspot test/commands/agent_worktree_test.rb became
+    # test/support/agent_worktree_fixture.rb, and the ceiling came DOWN with the move
+    # (2513 → 1876). The hotspot file itself deliberately does NOT spell this config's
+    # path: its note names its own ceiling in words instead, because a mention there
+    # buys a reader nothing and costs this lane a file.
     # What the assertion is FOR is the LIST: this one known entry and no other. A
     # second path appearing is the regression; this number changing is bookkeeping.
-    assert_equal ["config/test_health.yml (27)"], over,
+    assert_equal ["config/test_health.yml (28)"], over,
                  "config/test_health.yml was already over the cap before this clause " \
-                 "existed (its PATH matches 27 files); any OTHER entry here means the " \
+                 "existed (its PATH matches 28 files); any OTHER entry here means the " \
                  "config spelling re-opened a cap trip"
   end
 end
