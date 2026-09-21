@@ -150,9 +150,12 @@ When a new agent session starts actual implementation work:
    served — `designed`, `building` and `submitted` — so it SURVIVES `bin/ship` and
    keeps pulsing in the review column (fixed 2026-09-09; the seam used to sit at
    `submitted`, and the documented handoff discarded the request). The window
-   closes at `reviewed`: the work has merged and this desk is reclaimable, so any
-   save at `reviewed` or later settles an open request to `none` — settled, never
-   a fabricated `approved`. After requested changes, set `--approval
+   closes at `reviewed`: the work has merged, so any save at `reviewed` or later
+   settles an open request to `none` — settled, never a fabricated `approved`.
+   **The desk is NOT yet reclaimable there** — `RECLAIMABLE_STAGES` is
+   `%w[shipped archived]` (`bin/agent-worktree`), so `stage_hold` withholds a
+   desk bound to a `reviewed` task. Merged and reclaimable are two different
+   events, and the window closes on the first. After requested changes, set `--approval
    changes_requested` and keep building.
 11. Commit coherent work on the feature branch.
 12. Run `bin/agent-worktree finish <app> <task-slug>` to produce the PR/QA
@@ -600,10 +603,11 @@ bin/agent-worktree scale status
       never carry a bound task at all: `TASK_RECORD_SLUG` is written by `bind-task`, which
       routes through `app_for`, and `app_for` stays registry-only because `new`/`up`/`plan`
       need a port range a discovered repo has no answer for. So the fail-open above would be
-      a *standing licence to destroy* rather than a best-effort, and **three of the five
-      channels are structurally dead** for such a desk: review and PR both read the task
-      record there is none of, and the desk channel's progress / gate-in-flight /
-      awaiting-approval reads come from that same absent record. What is left is desk age
+      a *standing licence to destroy* rather than a best-effort, and **four of the six
+      channels are structurally dead** for such a desk: claim, stage, review and PR all
+      read a task record there is none of. The desk channel is DEGRADED rather than dead —
+      its progress / gate-in-flight / awaiting-approval reads come from that same absent
+      record — and origin is unaffected. What is left is desk age
       plus mtimes — and `desk_activity` prunes `tmp`, `log`, `coverage`, `vendor` and
       `.bundle`, which is exactly and only what a gem builder writes while running a suite,
       with a cert p99 of 94 minutes against a 1h29m idle window. Measured before the guard:

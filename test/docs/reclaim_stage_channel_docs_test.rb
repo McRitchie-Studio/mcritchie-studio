@@ -108,6 +108,21 @@ class ReclaimStageChannelDocsTest < ActiveSupport::TestCase
       "the approval-window paragraph is what this assertion guards"
     refute body.match?(/reviewed[^.]{0,200}cleanup --reclaim[^.]{0,160}from that moment/i),
       "at reviewed the stage channel WITHHOLDS the desk — the conclusion stands, the rationale does not"
+
+    # EVERY reclaim doc, not just the one that happened to be wrong first.
+    # Scoping this to devops-task-board.md left the SAME false rationale
+    # standing in worktrees.md — the canonical file — where correcting only one
+    # copy turned a uniformly-wrong pair into a live contradiction.
+    #
+    # The limit, stated: this refutes the phrasings we have SEEN ("this desk is
+    # reclaimable", "becomes reclaimable"). It cannot refute a claim nobody has
+    # written yet. The assertion below it is the one that generalises — the free
+    # set itself is read off the gate.
+    RECLAIM_DOCS.each do |rel|
+      refute norm(rel).match?(/\breviewed\b[^.]{0,160}(?:is|becomes|are) reclaimable\b/i),
+        "#{rel} says a desk is reclaimable at reviewed; RECLAIMABLE_STAGES is " \
+        "#{gate_source[/^RECLAIMABLE_STAGES = %w\[([^\]]+)\]/, 1].inspect}, so stage_hold WITHHOLDS it there"
+    end
   end
 
   test "[static] the blind-channel example in the rationale line is a reachable one" do
@@ -144,5 +159,20 @@ class ReclaimStageChannelDocsTest < ActiveSupport::TestCase
       assert norm(rel).match?(pattern),
         "#{rel} enumerates the withhold channels and must include the board-stage one"
     end
+
+    # THE DENOMINATOR IS DERIVED; the numerator is not, and cannot be. How many
+    # channels the chain has is a fact about the code. How many go blind for a
+    # DISCOVERED repo is an analysis of what each one reads, which no value in
+    # `bin/agent-worktree` expresses — so it is pinned here by hand, next to the
+    # count it has to agree with. "three of the five" survived a sixth channel
+    # landing precisely because nothing tied the two numbers together.
+    live_docs.each do |path|
+      refute File.read(path).gsub(/[*`]/, "").gsub(/\s+/, " ").match?(/of the five channels/i),
+        "#{path} still counts five reclaim channels; the chain has #{channels.size}"
+    end
+
+    assert norm("modules/worktrees.md").match?(/four of the six channels are structurally dead/i),
+      "worktrees.md must say how many channels a discovered repo loses — claim, stage, review and PR " \
+      "all read a task record it can never have"
   end
 end
