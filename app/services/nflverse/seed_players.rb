@@ -67,19 +67,26 @@ class Nflverse::SeedPlayers
   end
 
   def call
-    rows = ordered(parse_csv)
-    puts "  #{rows.size} rows; filter: status=#{@status_filter || "any"} last_season>=#{@min_season}"
+    # Recorded so a later reader can tell "nothing changed" apart from "nothing
+    # was checked" — a question no record's own updated_at can answer, and the
+    # one a delta sync has to ask before trusting an empty result.
+    ImportRun.track("nflverse_players") do |run|
+      rows = ordered(parse_csv)
+      puts "  #{rows.size} rows; filter: status=#{@status_filter || "any"} last_season>=#{@min_season}"
 
-    rows.each do |row|
-      next @stats[:skipped_inactive] += 1 if @status_filter && row["status"] != @status_filter
-      last_season = row["last_season"].to_i
-      next @stats[:skipped_old] += 1 if last_season > 0 && last_season < @min_season
+      rows.each do |row|
+        next @stats[:skipped_inactive] += 1 if @status_filter && row["status"] != @status_filter
+        last_season = row["last_season"].to_i
+        next @stats[:skipped_old] += 1 if last_season > 0 && last_season < @min_season
 
-      ingest_row(row)
+        ingest_row(row)
+      end
+
+      run.update!(rows_seen: rows.size,
+                  rows_changed: @stats[:athletes_created].to_i + @stats[:athletes_updated].to_i)
+      puts "\nnflverse seed: #{@stats.inspect}"
+      @stats
     end
-
-    puts "\nnflverse seed: #{@stats.inspect}"
-    @stats
   end
 
   # Public so tests can drive a single row without a CSV. Returns the Athlete
@@ -95,11 +102,19 @@ class Nflverse::SeedPlayers
   # records point at by slug.
   #
   # Sorting on the league ID makes the outcome a property of the DATA rather
-  # than of the file. Rows with no ID sort last and keep their relative order.
+  # than of the file. Rows with no ID sort last.
+  #
+  # The index is a TIEBREAK, not decoration: Ruby's `sort_by` is NOT stable, so
+  # without it every ID-less row could land in a different relative position on
+  # each run — which is the exact non-determinism this method exists to remove.
   def ordered(rows)
-    rows.sort_by { |r| [r["gsis_id"].to_s.strip.empty? ? 1 : 0, r["gsis_id"].to_s.strip] }
+    rows.each_with_index
+        .sort_by { |r, i| [r["gsis_id"].to_s.strip.empty? ? 1 : 0, r["gsis_id"].to_s.strip, i] }
+        .map(&:first)
   end
 
+  # Public so tests can drive a single row without a CSV. Returns the Athlete
+  # (or nil if skipped).
   def ingest_row(row)
     gsis_id = row["gsis_id"].to_s.strip.presence
     pff_id  = row["pff_id"].to_s.strip.presence&.to_i
@@ -167,19 +182,28 @@ class Nflverse::SeedPlayers
 
     return existing if existing && (existing.gsis_id.blank? || existing.gsis_id == gsis_id)
 
-    if existing
-      person = Person.create!(
-        first_name: first, last_name: last, athlete: true,
-        disambiguator: disambiguator_for(gsis_id, espn_id)
-      )
-      @stats[:people_created] += 1
-      @stats[:name_collisions] = @stats.fetch(:name_collisions, 0) + 1
-      vputs "  [~] name collision: #{first} #{last} -> #{person.slug}"
-    end
+    # ONE TRANSACTION, because the two writes are one fact. A Person created
+    # here whose Athlete then fails leaves an ID-less orphan, and the NEXT run
+    # recomputes the same disambiguator and dies on the unique index — an
+    # uncaught RecordNotUnique that wedges every later import. The caller's
+    # rescue is around `update!`, not around this.
+    transaction do
+      if existing
+        person = Person.create!(
+          first_name: first, last_name: last, athlete: true,
+          disambiguator: disambiguator_for(gsis_id, espn_id)
+        )
+        @stats[:people_created] += 1
+        @stats[:name_collisions] = @stats.fetch(:name_collisions, 0) + 1
+        vputs "  [~] name collision: #{first} #{last} -> #{person.slug}"
+      end
 
-    @stats[:athletes_created] += 1
-    Athlete.create!(person_slug: person.slug, sport: "football")
+      @stats[:athletes_created] += 1
+      Athlete.create!(person_slug: person.slug, sport: "football")
+    end
   end
+
+  def transaction(&block) = ActiveRecord::Base.transaction(&block)
 
   # A short, STABLE suffix. Derived from the league ID rather than a counter, so
   # re-running the import in a different row order produces the same slug — a

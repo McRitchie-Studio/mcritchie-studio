@@ -1,7 +1,7 @@
 class AddDisambiguatorAndDeltaStamps < ActiveRecord::Migration[8.1]
   def change
-    # TWO ACTIVE NFL PLAYERS CAN SHARE A NAME. Seven pairs do in the 2026
-    # league — Justin Jefferson is both a Vikings receiver and a Browns
+    # TWO ACTIVE NFL PLAYERS CAN SHARE A NAME. Six do in the 2026 league, measured
+    # against the feed on 2026-09-21 — Justin Jefferson is both a Vikings receiver and a Browns
     # linebacker. Person slugs derive from the name, so without this the second
     # arrival adopts the first's athlete record and OVERWRITES it: one of the
     # two is silently lost, and nothing reports it.

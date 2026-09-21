@@ -3,8 +3,8 @@ require "test_helper"
 # [integration] The namesake collision, across the importer's whole boundary:
 # a CSV in, Person + Athlete rows out.
 #
-# THE DEFECT THIS EXISTS FOR: two active NFL players can share a name (seven
-# pairs in the 2026 league). The importer used to find a Person by name, adopt
+# THE DEFECT THIS EXISTS FOR: two active NFL players can share a name (six measured in the
+# 2026 league on 2026-09-21). The importer used to find a Person by name, adopt
 # whatever Athlete hung off them, and update it — so the second arrival
 # OVERWROTE the first. The row counted as an update, the import reported
 # success, and a player was simply gone.
@@ -121,5 +121,72 @@ class Nflverse::SeedPlayersCollisionTest < ActiveSupport::TestCase
     end
 
     assert_operator athlete.reload.updated_at, :>, before
+  end
+
+  # --- the trap that got past every gate ---------------------------------
+  #
+  # `post_deploy_cmd` ran this importer WITHOUT `upload_headshots:`, taking the
+  # constructor default of true — which raises when AWS_ACCESS_KEY_ID is blank.
+  # mcritchie-studio-qa carries no AWS keys, `bin/release` runs post_deploy_cmd
+  # against QA with --exit-code, and a non-zero exit aborts the WHOLE batch QA
+  # release. No test covered the true path (every other test passes false), and
+  # dor-check's post-deploy gate only rejects a bare db:seed.
+
+  test "the headshot-caching default REFUSES without AWS credentials" do
+    original = ENV["AWS_ACCESS_KEY_ID"]
+    ENV["AWS_ACCESS_KEY_ID"] = nil
+
+    error = assert_raises RuntimeError do
+      Nflverse::SeedPlayers.new(csv_body: csv, status_filter: "ACT")
+    end
+    assert_match(/AWS_ACCESS_KEY_ID/, error.message)
+  ensure
+    ENV["AWS_ACCESS_KEY_ID"] = original
+  end
+
+  test "opting out of headshot caching runs with no AWS credentials at all" do
+    original = ENV["AWS_ACCESS_KEY_ID"]
+    ENV["AWS_ACCESS_KEY_ID"] = nil
+
+    assert_nothing_raised do
+      run_import(csv(jefferson(gsis: "00-0036322", espn: "4262921", position: "WR", team: "MIN")))
+    end
+  ensure
+    ENV["AWS_ACCESS_KEY_ID"] = original
+  end
+
+  # --- the import run record ---------------------------------------------
+
+  test "an import records a run so a reader can tell unchecked from unchanged" do
+    assert_difference -> { ImportRun.for_source("nflverse_players").count }, 1 do
+      run_import(csv(jefferson(gsis: "00-0036322", espn: "4262921", position: "WR", team: "MIN")))
+    end
+
+    run = ImportRun.last_success_for("nflverse_players")
+    assert_equal "ok", run.status
+    assert run.finished_at.present?
+    assert_operator run.rows_seen, :>, 0
+  end
+
+  test "a failed import is recorded failed, not left running forever" do
+    assert_raises StandardError do
+      ImportRun.track("nflverse_players") { raise "boom" }
+    end
+
+    assert_equal "failed", ImportRun.for_source("nflverse_players").order(:id).last.status
+  end
+
+  # Ruby's sort_by is not stable, so rows with no league ID need the index
+  # tiebreak or they shuffle between runs — the exact non-determinism `ordered`
+  # exists to remove.
+  test "rows without a league id keep a deterministic order" do
+    importer = Nflverse::SeedPlayers.new(csv_body: csv, upload_headshots: false)
+    rows = 200.times.map { |i| { "gsis_id" => "", "marker" => i } }
+
+    first  = importer.send(:ordered, rows).map { |r| r["marker"] }
+    second = importer.send(:ordered, rows).map { |r| r["marker"] }
+
+    assert_equal first, second
+    assert_equal (0...200).to_a, first
   end
 end
