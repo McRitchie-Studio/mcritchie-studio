@@ -106,12 +106,26 @@ module ReviewWorkerPulse
   # observed has outlasted every live review in the corpus.
   #
   # It is the SAME constant ReviewClaimCli::REVIEW_RENEW_WINDOW_SECONDS already bounds
-  # this lane with, and that is the point: the renewer's existing cap is a TIMEOUT
-  # measured from the renewer's own start, so it frees a dead reviewer's task at 3h25m
-  # whether the reviewer died in minute one or minute two hundred, and a LIVE reviewer
-  # can do nothing about it. The pulse is the same bound made MOVABLE — a live worker
-  # that beats pushes it forward, a dead one cannot. Same cost in the false-positive
-  # direction, strictly more evidence behind it.
+  # this lane with, and the renewer's existing cap is a TIMEOUT measured from the
+  # renewer's own start, so it frees a dead reviewer's task at 3h25m whether the
+  # reviewer died in minute one or minute two hundred.
+  #
+  # DO NOT READ THAT AS "THE PULSE MAKES THE BOUND MOVABLE" — it does not, and an
+  # earlier revision of this comment said it did. MEASURED at review, 2026-09-22:
+  # SILENT_AFTER_SECONDS == REVIEW_RENEW_WINDOW_SECONDS == 12275, and renew_loop still
+  # passes `max_lifetime: REVIEW_RENEW_WINDOW_SECONDS` unchanged. So with no beat
+  # :silent fires a few seconds BEFORE the cap (the claim marker predates the
+  # renewer's own start, so pulse_age > elapsed) — and WITH a beat :silent never
+  # fires at all, while the cap still drops the claim at 12275 regardless. A live
+  # worker that beats does NOT push the bound forward today.
+  #
+  # What the beat buys is therefore the DIAGNOSTIC, not the lifetime: `status` can
+  # tell a live reviewer from an abandoned one, which is the defect this file was
+  # filed for and which it does deliver. Making the bound genuinely movable means
+  # raising or removing the renew_loop cap, which is a separate decision with its own
+  # false-positive cost — whoever takes it should know the pulse is not already doing
+  # it. Same cost in the false-positive direction as today, strictly more evidence
+  # behind it.
   SILENT_AFTER_SECONDS = ClaimLease::REVIEW_TTL_SECONDS
 
   # The suffix base of the per-(session, slug) claim marker whose mtime IS the pulse.
