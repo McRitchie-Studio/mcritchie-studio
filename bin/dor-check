@@ -1915,7 +1915,72 @@ def secondary_cert_lane_state(eval, repo)
                .join(", ")
 end
 
-def suite_evidence_error(eval, slug, ci, review_role)
+# THE "OR CERTIFY LOCALLY IN FULL" ESCAPE — and whether this verdict may carry one.
+#
+# THE DEFECT (/tasks/red-ci-offers-dead-remedy). The two branches below that read the
+# CI STATE, name it ("...and it is currently RED"), and then offer this escape as the
+# alternative to the CI guidance they just gave, offered it UNCONDITIONALLY. On a RED
+# CI that is a ~30-minute command the gate then refuses the result of: the CI gate's
+# own :red refusal is not cert-clearable, so `bin/full-suite-check` produces a
+# BYTE-IDENTICAL verdict. Measured 2026-09-22 against a code-shaped fixture via
+# DOR_CHECK_SUITE_EVIDENCE=ok + DOR_CHECK_CI_STATUS, both roles: ready=false, exit 1.
+# It is the same shape as /tasks/exempt-refusal-prints-dead-remedy — fixed on the
+# exempt path, alive on the red one — and this one is printed by the GATE, which is
+# strictly more authoritative than the prose surfaces PR #1522 corrects.
+#
+# `open:` IS THE CI GATE'S OWN ANSWER, handed down from the call site as
+# `ci_error.nil? || ci_error_cert_clears` — literally the two values the run then acts
+# on (`if ci_error && !ci_error_cert_clears`). That is the fix, and it is the fix
+# rather than a wording change: the message and the behaviour now read ONE source, so
+# a state added to bin/lib/ci_status.rb or reclassified in bin/lib/ci_gate.rb moves
+# both together. Re-deriving the rule here would be a second copy of it, which is how
+# CiGate's own `cert_route:` header says this family of defect starts.
+#
+# MEASURED, the cells this opens and closes (FULL cert, every state CiStatus emits):
+#
+#   ci state    builder  review     ci state     builder  review
+#   green       OPEN     OPEN       unverified   OPEN     OPEN
+#   none        OPEN     OPEN       conflicted   closed   closed
+#   unreadable  OPEN     OPEN       ci_less      closed   closed
+#   pending     OPEN     CLOSED     closed       closed   closed
+#   red         CLOSED   CLOSED     merged       closed   closed
+#                                   no_pr        OPEN     closed
+#
+# TWO CELLS, NOT ONE. The red row is the filed defect. The `pending`/review cell is a
+# CORRECTION to the card that filed it, which recorded that a local full cert DOES
+# satisfy review on a pending CI: it does not, and the reason is structural rather
+# than incidental — :pending is deliberately NOT in CiGate::CI_NO_VERDICT_STATES (it
+# is "the answer is COMING", not "the answer was never GIVEN"), so review's allow-list
+# refuses it with cert_clears false. Re-measured before this change and after it.
+#
+# WHEN CLOSED, SAY SO — do not merely fall silent. The escape has been printed here
+# for months, so a reader who stops seeing it will assume the gate forgot rather than
+# that it cannot be honoured, and will run the suite anyway. This is CiGate's own
+# `cert_route: false` precedent ("NAME NO SECOND ROUTE... Say what does not work, so
+# nobody spends a full-suite run discovering it"), in the same words, one file over.
+#
+# SCOPE — the branches that do NOT get this, deliberately. The MISSING-cert branch at
+# the foot of this method and the STALE-deferral branch above it also name
+# `bin/full-suite-check`, and this does not touch either. They are a different claim:
+# they never read CI, and what they ask for is the gate's OWN missing evidence, which
+# the task owes whatever CI says — NECESSARY but not sufficient on a red CI. The two
+# branches below interpolate the CI state and then offer this as the alternative TO
+# the CI guidance, which is a claim that it CLEARS the verdict. That claim is the one
+# that can be false, so that claim is the one conditioned.
+def full_cert_escape(slug, ci, open:, deferral: false)
+  unless open
+    state = ci && ci[:state] ? ci[:state].to_s.upcase : "UNKNOWN"
+    return ". There is no local-cert route out of this one: what refuses this verdict is the CI STATE, not " \
+           "your evidence, so a FULL `#{FULL_SUITE_CMD} #{slug}` run while CI is #{state} still comes back " \
+           "NOT MET (exit 1) — it spends the suite and moves the verdict nowhere."
+  end
+
+  return "; or certify locally in full and stop depending on CI for this diff: #{FULL_SUITE_CMD} #{slug}." if deferral
+
+  "; or certify locally in full: #{FULL_SUITE_CMD} #{slug}."
+end
+
+def suite_evidence_error(eval, slug, ci, review_role, cert_route_open: true)
   unless eval[:verifiable]
     return "FULL-suite gate unverifiable — couldn't fingerprint the working tree (no git repo / git identity?). " \
       "Run bin/full-suite-check (or bin/fast-check) from inside the repo so the evidence is fingerprint-bound."
@@ -2005,8 +2070,7 @@ def suite_evidence_error(eval, slug, ci, review_role)
     return "this diff's cert was DEFERRED to GitHub CI — bin/fast-check could execute ZERO test files " \
       "(the mapped lane was CAPPED over a spine this checkout resolves none of), so it recorded a " \
       "receipt instead of a cert and CI is the ONLY evidence there is. CI is currently #{state}. " \
-      "#{guidance}; or certify locally in full and stop depending on CI for this diff: " \
-      "#{FULL_SUITE_CMD} #{slug}."
+      "#{guidance}#{full_cert_escape(slug, ci, open: cert_route_open, deferral: true)}"
   end
 
   # A receipt for a DIFFERENT tree is not a receipt for this one. Called out separately
@@ -2029,6 +2093,28 @@ def suite_evidence_error(eval, slug, ci, review_role)
         # A fast cert is credited against a GREEN CI, and here there is no CI to be
         # green — waiting for one is the exact trap this state exists to break.
         CiStatus.ci_less_remedy(ci)
+      elsif ci && ci[:state] == :red
+        # CI HAS ANSWERED, AND ITS ANSWER IS THE BLOCKER. This arm exists because RED
+        # used to fall through to the ROLE SPLIT at the foot of this chain, and that
+        # split is wrong for red in BOTH of its branches — which is what made the
+        # dead escape below survive so long: the sentence it trailed already read as
+        # a remedy, so nobody re-read the clause after it.
+        #   review  → "defer until CI finishes". CI HAS finished. There is nothing to
+        #             defer for; the settled answer is in hand and it is red.
+        #   builder → "push the branch and open the PR, then re-run dor-check". The PR
+        #             is open and its checks have reported — that is the only way this
+        #             arm can be reached at all. It is the rolio bug verbatim, one
+        #             state over: a remedy whose precondition is already satisfied, so
+        #             performing it changes nothing and teaches the reader the gate is
+        #             noise.
+        # POINT AT THE REMEDY, DO NOT REPRINT IT — the same call the two :unreadable
+        # arms below make, for the same reason. CiGate's :red refusal is raised beside
+        # this one in BOTH roles (measured 2026-09-22: it is errors[0] for builder and
+        # for review), and it already names the failing checks and says to fix, push
+        # and re-run. A second spelling here is a second thing to keep true.
+        "CI has REPORTED for this tree and the report is RED — there is nothing to wait for and no local " \
+          "evidence that changes it. The CI gate's error beside this one names the failing checks and " \
+          "carries the remedy; fixing them (or re-running a flaky one) and pushing is the whole move"
       elsif ci && ci[:state] == :unreadable && review_role
         # In THIS role the two gates always fail together — the CI allow-list refuses
         # an unreadable verdict unless a FULL cert clears it, and a full cert would
@@ -2054,8 +2140,7 @@ def suite_evidence_error(eval, slug, ci, review_role)
       end
     return "fast-cert evidence is FRESH for this exact code, but a fast cert only satisfies the suite gate " \
       "alongside a GREEN GitHub CI — CI carries the FULL suite + test:system as the net, and it is currently " \
-      "#{state}. #{guidance}; or certify locally " \
-      "in full: #{FULL_SUITE_CMD} #{slug}."
+      "#{state}. #{guidance}#{full_cert_escape(slug, ci, open: cert_route_open)}"
   end
 
   # THE LANES THIS REPO OWES, read from the SAME list the verdict is computed over.
@@ -3638,7 +3723,20 @@ if gate != "build" && shape_def && shape_def.fetch("full_suite_gate", true)
       # OPEN and its CI will settle; review's gate-zero holds the strict verdict.
       suite_route = "fast-provisional"
     else
-      errors << suite_evidence_error(suite_eval, task["slug"] || slug, ci, review_role)
+      # `cert_route_open:` — WHETHER THE REFUSAL MAY OFFER `bin/full-suite-check`, and
+      # it is the CI gate's OWN answer, not a second derivation of it. These are the
+      # very two values the merge gate above acts on (`if ci_error &&
+      # !ci_error_cert_clears` → the verdict fails), so the remedy this refusal PRINTS
+      # and the remedy the gate ACCEPTS cannot disagree: a full cert clears the CI half
+      # exactly when the CI gate raised no refusal, or raised one it marked
+      # cert-clearable. Hand-writing the state list here instead would be the second
+      # copy that /tasks/red-ci-offers-dead-remedy is a case of.
+      #
+      # BOTH ARE ASSIGNED IN THE SAME `gate != "build"` BLOCK that reads `ci`, and this
+      # branch sits inside another one — so `ci_error.nil?` here means "CI was read and
+      # it did not refuse", never "no CI was read".
+      errors << suite_evidence_error(suite_eval, task["slug"] || slug, ci, review_role,
+                                     cert_route_open: ci_error.nil? || ci_error_cert_clears)
     end
   end
 end
