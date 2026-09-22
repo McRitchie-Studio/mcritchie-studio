@@ -421,6 +421,16 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
      `--breaker-ack "red CI, mechanical"` and the rework block proceeds with the
      reason recorded.
 
+   **Beat the claim when you cross a gate.** `bin/task review-claim renew
+   <task-slug>` — a FOREGROUND command, which is the one thing a dead reviewer
+   cannot run. It is what proves a WORKER is still behind this claim, as opposed
+   to a detached renewer anchored to a session that is alive for its own reasons
+   (`bin/lib/review_worker_pulse.rb`). You do not need a timer: once per gate is
+   enough, and the beat costs one board call. Skipping it never fails a review —
+   the claim is held for `ClaimLease::REVIEW_TTL_SECONDS` from acquisition
+   regardless — it only means that past that window a conductor reading
+   `review-claim status` cannot tell your live review from an abandoned one.
+
 7. **Release the review claim on your verdict** (the orchestrator that claimed it
    releases it; release it yourself if you claimed it directly):
 

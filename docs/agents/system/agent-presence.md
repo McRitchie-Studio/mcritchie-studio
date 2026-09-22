@@ -690,15 +690,41 @@ because it is arithmetic over what they publish.
     test refuses any lane that goes back to the bare probe. The statusline
     throttles (`.heartbeat` and friends) are deliberately excluded: they prove a
     terminal is open, which is the 2026-08-13 immortal lease.
+  - **A THIRD face, which no session-level check can reach** — measured twice on
+    2026-09-22, about four hours apart. A harness watchdog ("no progress for
+    600s") killed reviewer subagents; each dead reviewer's claim immediately read
+    `RENEWING` with a seconds-fresh heartbeat under the **conductor's** session,
+    because the conductor kept working. `AnchorHeartbeat.alive_check` answers
+    `:working` there and is *correct* — the anchor is genuinely alive and
+    genuinely narrating. The signal is a true positive about the SESSION and says
+    nothing about the WORKER whose review the claim describes, and unlike the
+    codex case above it needs no abandoned terminal: it fires whenever a subagent
+    dies while its parent keeps working, which is the normal state of a conductor
+    session. The worker-level seam is
+    `bin/lib/review_worker_pulse.rb`; it is ANDed beside the anchor check, never
+    in place of it.
   - **Beware the sampling trap when you diagnose one of these.** The renew
     interval is 30s, so reading `claim_expires_at` twice 20 seconds apart shows it
     frozen and proves nothing — in either direction. Sample across a full renewal
     cycle or you will call a live holder dead.
   - **nothing today maps a heavy pid to a session** — and `session_id` is not a
     per-agent key either: measured during slice 2's review, every subagent in a
-    Claude Code fan-out inherits the parent's `CLAUDE_CODE_SESSION_ID` (only the
-    boolean `CLAUDE_CODE_CHILD_SESSION` marks a child), and none of the four env
-    vars `parent_session_id` reads is ever set, so the marker records `null`. The
+    Claude Code fan-out inherits the parent's `CLAUDE_CODE_SESSION_ID`, and none
+    of the four env vars `parent_session_id` reads is ever set, so the marker
+    records `null`.
+
+    **`CLAUDE_CODE_CHILD_SESSION` does NOT mark a child — corrected 2026-09-22.**
+    This line used to say it did. Re-measured directly, by running one probe from
+    a parent agent and the same probe from a subagent of it, same machine, seconds
+    apart: the var reads `1` in **both**, so it separates nothing. Nor does
+    anything else. Every identity-bearing fact was byte-identical —
+    `CLAUDE_CODE_SESSION_ID`, `CLAUDE_PID`, `CLAUDE_CODE_MESSAGING_SOCKET`, the
+    shell's ppid (both the same `claude` process), `SessionIdentity.nonce`, and
+    `SessionIdentity.agent_process` (pid **and** start time). A subagent is not an
+    OS process; its shell commands are direct children of the session's `claude`
+    process and inherit that process's whole environment. So a claim **cannot** be
+    made to record its worker, and no serializer or schema change reaches it —
+    plan for a worker-produced SIGNAL instead of a worker IDENTITY. The
     fan-out fold above works by that shared id, not by the designed mechanism.
     That is the real gap behind the `SUITE_CAPACITY` question
     above: the unattributed consumers slice 1 sees are largely sibling sessions
