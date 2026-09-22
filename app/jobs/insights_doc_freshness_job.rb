@@ -5,7 +5,7 @@
 #
 # THE RECEIPT IS AN ErrorLog ROW. A stale artefact was previously silent — nothing
 # anywhere said the learning loop's own output had stopped tracking the loop. Now it
-# surfaces where every other incident here surfaces (/admin/error_logs), carrying
+# surfaces where every other incident here surfaces (/error_logs), carrying
 # class, message, and backtrace, and outliving Heroku's log retention. A quiet run
 # means the doc matched the bank.
 #

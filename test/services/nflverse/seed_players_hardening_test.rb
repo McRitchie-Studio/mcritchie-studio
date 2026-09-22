@@ -23,6 +23,7 @@ class Nflverse::SeedPlayersHardeningTest < ActiveSupport::TestCase
     Athlete.delete_all
     Person.where(last_name: %w[Burrow Jefferson]).delete_all
     ImportRun.delete_all
+    ErrorLog.delete_all
   end
 
   # --- the wedge ----------------------------------------------------------
@@ -144,5 +145,51 @@ class Nflverse::SeedPlayersHardeningTest < ActiveSupport::TestCase
     import(csv(row(gsis: "00-0036442", nfl_id: "NFL-123")))
 
     assert_equal "ok", ImportRun.last_success_for("nflverse_players").status
+  end
+
+  # --- the operator surface -----------------------------------------------
+  #
+  # The failed ImportRun asserted above is DURABLE BUT UNRENDERED: its only
+  # reader outside the model is athletes_controller's
+  # `ImportRun.last_success_for`, which selects successes. Nothing else reads
+  # the table, so "discoverable" was true only of a production console.
+  # ErrorLog is what /error_logs and the Request Logs panel on /admin/dashboard
+  # actually render, which is what makes the comment on the rescue
+  # ("Swallowing it silently would be worse") true.
+
+  # Diffing the id SET rather than taking `order(:id).last`: a created row is
+  # not guaranteed to hold the largest id in a fixtured table, and this also
+  # asserts the count rather than inferring it.
+  def logs_written_by
+    before = ErrorLog.pluck(:id)
+    yield
+    ErrorLog.where.not(id: before)
+  end
+
+  test "[unit] the feed-outage rescue writes exactly one ErrorLog row" do
+    written = logs_written_by { importer_whose_network_raises(SocketError.new("down")).call }
+
+    assert_equal 1, written.count, "the quiet path owes exactly one row"
+    log = written.first
+    run = ImportRun.for_source("nflverse_players").order(:id).last
+
+    assert_equal run, log.target, "the row must link back to the run that failed"
+    assert_equal "nflverse_players", log.target_name, "the /error_logs badge names the importer"
+    assert_includes log.message, "SocketError", "the wrapped cause has to survive into the message"
+  end
+
+  test "[unit] a clean import writes no ErrorLog row" do
+    written = logs_written_by { import(csv(row(gsis: "00-0036442", nfl_id: "NFL-123"))) }
+
+    assert_equal 0, written.count
+  end
+
+  # The recovery must not depend on its own telemetry succeeding.
+  test "[unit] a failing ErrorLog write still leaves the outage non-fatal" do
+    imp = importer_whose_network_raises(SocketError.new("down"))
+
+    ErrorLog.stub(:capture!, ->(_e) { raise "error log is down" }) do
+      assert_nothing_raised { imp.call }
+    end
   end
 end
