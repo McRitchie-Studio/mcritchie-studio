@@ -52,7 +52,15 @@ class SessionPreflightShapeNoteTest < Minitest::Test
     end
   end
 
-  def test_only_devops
+  # NAMED AWAY FROM `test_`, DELIBERATELY — do not rename this back. Minitest
+  # collects every public method matching /^test_/, so the obvious name for this
+  # fixture ("the devops hash for the test-only shape") is COLLECTED AS A TEST and
+  # runs asserting nothing. config/test_health.yml declares `assertion_free: 0` as
+  # an EXACT contract, and under that name this file defeated it only by
+  # coincidence: the detector scans the method body for /assert\w*/ and found the
+  # word inside the fixture STRING below, "... assert red". Reword that string and
+  # the ratchet reds here, for a reason nobody editing a fixture would predict.
+  def devops_for_test_only
     {
       "shape" => "test-only", "repositories" => ["mcritchie-studio"], "risk_tags" => ["tests"],
       "acceptance" => ["the note matches the gate"], "test_plan" => ["[control] restore the wording, assert red"],
@@ -61,7 +69,7 @@ class SessionPreflightShapeNoteTest < Minitest::Test
   end
 
   def test_the_test_only_note_does_not_claim_the_full_suite_is_owed
-    output = run_preflight(test_only_devops)
+    output = run_preflight(devops_for_test_only)
 
     assert_match(/claimable ONLY on a diff/, output,
                  "the test-only shape note did not print at all — this test is asserting about a branch " \
@@ -76,7 +84,7 @@ class SessionPreflightShapeNoteTest < Minitest::Test
   end
 
   def test_the_test_only_note_states_not_exempt_and_the_green_ci_condition
-    output = run_preflight(test_only_devops)
+    output = run_preflight(devops_for_test_only)
 
     assert_match(/not exempt/i, output,
                  "the note no longer says test-only is NOT EXEMPT from the cert gate. That half is TRUE and " \
@@ -105,7 +113,7 @@ class SessionPreflightShapeNoteTest < Minitest::Test
   # `claimable_when` is not `test_only_diff` must not start printing a cert rule
   # that does not apply to it.
   def test_the_note_is_scoped_to_the_test_only_shape
-    output = run_preflight(test_only_devops.merge("shape" => "backend"))
+    output = run_preflight(devops_for_test_only.merge("shape" => "backend"))
 
     refute_match(/claimable ONLY on a diff/, output,
                  "the test-only claimability note printed for a `backend` task. It is gated on " \
