@@ -60,6 +60,7 @@
 # nothing to renew.
 
 require "json"
+require "time"
 require "fileutils"
 require "rbconfig"
 require_relative "agent_api"
@@ -67,6 +68,7 @@ require_relative "session_identity"
 require_relative "session_markers"
 require_relative "shift_renewer"
 require_relative "anchor_heartbeat"
+require_relative "review_worker_pulse"
 require_relative "../../lib/claim_holder"
 
 class ReviewClaimCli
@@ -343,7 +345,15 @@ class ReviewClaimCli
     # any non-JSON answer) parses to {} and reads as "nothing renewed", which is the
     # safe direction for every shape this can take.
     data = parse_data(res)
-    return renewed_ok(slug, data) if data["renewed"]
+    if data["renewed"]
+      # THE WORKER'S OWN BEAT. This is a FOREGROUND command — a tool call a dead
+      # subagent cannot make — so it, and only it, is entitled to refresh the pulse
+      # bin/lib/review_worker_pulse.rb reads. The detached renew-loop beats the BOARD
+      # through `renewed?` and never comes through here, which is the separation that
+      # keeps a renewer from certifying itself.
+      beat_pulse(sid, slug)
+      return renewed_ok(slug, data)
+    end
 
     refuse_renew(slug)
   end
@@ -424,9 +434,19 @@ class ReviewClaimCli
       # evidence: it frees a dead reviewer's task after 3h25m whether the reviewer
       # died in minute one or minute two hundred. The seam answers from the session's
       # own marks instead, and the cap stays as the belt behind the braces.
-      alive:    AnchorHeartbeat.alive_check(
-        resident: -> { SessionIdentity.process_alive?(pid, start) },
-        signal:   -> { AnchorHeartbeat.signal_age(session: session_id, projects_dir: @api.projects_dir) }
+      alive:    both_alive(
+        AnchorHeartbeat.alive_check(
+          resident: -> { SessionIdentity.process_alive?(pid, start) },
+          signal:   -> { AnchorHeartbeat.signal_age(session: session_id, projects_dir: @api.projects_dir) }
+        ),
+        # AND THE WORKER, which the anchor cannot see. A reviewer is a SUBAGENT, and a
+        # subagent carries no identity of its own — measured 2026-09-22: parent and
+        # subagent shells agree byte for byte on CLAUDE_CODE_SESSION_ID, CLAUDE_PID,
+        # ppid, SessionIdentity.nonce and the anchor pid+start. So every signal the
+        # line above reads is a TRUE POSITIVE about the session while saying nothing
+        # about the reviewer, and a conductor that keeps working keeps a dead
+        # reviewer's claim alive forever. See bin/lib/review_worker_pulse.rb.
+        ReviewWorkerPulse.alive_check(pulse: -> { worker_pulse_age(session_id, slug) })
       ),
       finished: -> { review_over?(slug) },
       renew:    -> { renewed?(slug) },
@@ -438,6 +458,20 @@ class ReviewClaimCli
       max_lifetime: REVIEW_RENEW_WINDOW_SECONDS
     )
     OK
+  end
+
+  # Two independent liveness reads, ANDed — the claim is held only while BOTH vouch.
+  #
+  # The conjunction is the whole shape of this fix. The session check is correct and
+  # load-bearing for the two faces AnchorHeartbeat was built for (no anchor; a dead
+  # anchor still resident), so it is not weakened, replaced, or made to answer a
+  # question it cannot. The worker check is ADDED beside it and answers the third face.
+  # Each keeps its own fail-safe posture — every uncertainty on either side HOLDS — so
+  # ANDing them can only ever stop a renewal on a POSITIVE reading from one of them.
+  #
+  # Short-circuits, so a stopped anchor never pays for a marker stat.
+  def both_alive(*checks)
+    -> { checks.all?(&:call) }
   end
 
   def release(slug)
@@ -623,6 +657,7 @@ class ReviewClaimCli
 
   def expiry_of(holder) = holder.is_a?(Hash) ? holder["expires_at"] : nil
 
+
   def emit_status_text(slug, grade, holder, watched, differenced = true)
     @out.puts("review-claim: #{slug} — " +
               ClaimHolder.render_observation(grade, expires_at: expiry_of(holder),
@@ -630,7 +665,48 @@ class ReviewClaimCli
                                                     renew_interval: ShiftRenewer::INTERVAL_SECONDS,
                                                     differenced: differenced))
     @out.puts("  holder: #{holder_line(holder)}") if holder.is_a?(Hash) && present?(holder["session"])
-    @out.puts("  #{next_move(slug, grade)}")
+
+    # THE LINE THAT TELLS THE TWO STATES APART. Everything above describes the LEASE,
+    # and the lease reads identically whether a reviewer is working or died an hour
+    # ago — measured twice on 2026-09-22, the second time when a dead reviewer resumed
+    # and re-acquired and `status` printed a reading character-for-character identical
+    # to the one it gave while he was dead.
+    mine, verdict, age = worker_reading(slug, holder, grade)
+    @out.puts("  #{ReviewWorkerPulse.render(verdict, age)}") if mine
+    @out.puts("  #{mine ? ReviewWorkerPulse.next_move_for_self(slug, verdict) : next_move(slug, grade)}")
+  end
+
+  # The worker-level reading for a claim, or [false, nil, nil] when this session has
+  # nothing to say about it.
+  #
+  # GATED ON THE HOLDER BEING THIS SESSION, for two independent reasons:
+  #
+  #   SOUNDNESS — the pulse marker is written by the instance that acquired the claim,
+  #     so for ANOTHER session's claim there is simply no local evidence. Printing an
+  #     UNVERIFIED line there would be noise on every foreign claim, and the existing
+  #     "ask the holder" wording is CORRECT in that case: there really is somebody else
+  #     to ask.
+  #   RELEVANCE — "your reviewer may be dead" is only actionable for the session that
+  #     owns the reviewer. It is the ONE party that can answer it, and in both measured
+  #     incidents it was the party standing at the terminal reading this output.
+  #
+  # A FREE or lapsed lease is skipped too: there is no live claim to attribute, and the
+  # existing `→ free to claim` line is the whole answer.
+  def worker_reading(slug, holder, grade)
+    return [false, nil, nil] unless holder.is_a?(Hash) && present?(holder["session"])
+    return [false, nil, nil] if ClaimHolder.observed_free?(grade)
+    return [false, nil, nil] unless ReviewWorkerPulse.mine?(holder_session: holder["session"],
+                                                            session: session_id)
+
+    age = worker_pulse_age(session_id, slug)
+    # A BEAT is read from its own marker, never inferred from the gap between the
+    # board's `acquired_at` and a local file mtime. Measured live against the real
+    # stuck claim on playwright-suite-flakes-repeatedly: that gap was 45s on a claim
+    # that had never been beaten, so the inference asserted a heartbeat that never
+    # happened — the one thing this verdict must never do.
+    beaten = ReviewWorkerPulse.beaten?(session: session_id, projects_dir: @api.projects_dir,
+                                       slug: slug)
+    [true, ReviewWorkerPulse.verdict(pulse_age: age, beaten: beaten), age]
   end
 
   # The next move, stated for the reader who has just been told a lease is alive.
@@ -650,8 +726,19 @@ class ReviewClaimCli
   end
 
   def emit_status_json(slug, grade, holder, watched, differenced = true)
+    mine, verdict, age = worker_reading(slug, holder, grade)
     @out.puts(JSON.generate({
                               "slug" => slug,
+                              # The worker-level reading, so a machine consumer can
+                              # branch on the SAME distinction the text output makes
+                              # rather than regex the prose. `held_by_this_session`
+                              # false means this session has no evidence either way,
+                              # NOT that the worker is alive.
+                              "worker" => {
+                                "held_by_this_session" => mine,
+                                "verdict" => (verdict.to_s if mine),
+                                "pulse_age" => (age&.round if mine)
+                              },
                               "observed" => grade.to_s,
                               "observed_note" => ClaimHolder.render_observation(
                                 grade, expires_at: expiry_of(holder), watched_seconds: watched,
@@ -1142,7 +1229,7 @@ class ReviewClaimCli
   # read and TERM taskB's renewer pid — taskB then lapses mid-review and a second
   # session could claim it, the exact double-review this gate prevents. The slug in
   # the suffix keeps each claim's marker (and its renewer) independent.
-  REVIEW_CLAIM = ".task-review-claim"
+  REVIEW_CLAIM = ReviewWorkerPulse::MARKER
 
   # The renewer's pid lives in its OWN marker rather than as a second line of
   # .task-review-claim, mirroring bin/devops-shift: a distinct reader might parse the
@@ -1156,12 +1243,37 @@ class ReviewClaimCli
     "#{base}-#{slug.to_s.gsub(/[^A-Za-z0-9._-]/, '')}"
   end
 
+  # Seeding the claim marker and refreshing the worker pulse are THE SAME WRITE — the
+  # marker's mtime IS the pulse (see bin/lib/review_worker_pulse.rb). Routed through
+  # that seam so the writer and the reader of this mtime derive the filename from one
+  # place; two copies of a marker name is how a reader comes to watch a file nobody
+  # writes any more, and it would fail SILENT and always in the "worker is dead"
+  # direction.
   def write_marker(sid, slug)
-    SessionMarkers.write(sid, @api.projects_dir, marker_suffix(REVIEW_CLAIM, slug), "#{slug}\n", env: @api.env)
+    touch_pulse(sid, slug)
   end
 
+  def touch_pulse(sid, slug)
+    ReviewWorkerPulse.touch(session: sid, projects_dir: @api.projects_dir, slug: slug, env: @api.env)
+  end
+
+  # A foreground `renew` — the worker's own heartbeat, recorded as its own fact.
+  def beat_pulse(sid, slug)
+    ReviewWorkerPulse.beat(session: sid, projects_dir: @api.projects_dir, slug: slug, env: @api.env)
+  end
+
+  # Seconds since a FOREGROUND command in this session acted on this review, or nil.
+  def worker_pulse_age(sid, slug)
+    ReviewWorkerPulse.pulse_age(session: sid, projects_dir: @api.projects_dir, slug: slug,
+                                now: @clock.call)
+  end
+
+  # Release drops the claim marker AND the beat marker together. A session that reviews
+  # the same task twice would otherwise inherit the previous review's beat and read
+  # ACTIVE before its new reviewer had done anything.
   def clear_marker(sid, slug)
-    SessionMarkers.delete(sid, @api.projects_dir, marker_suffix(REVIEW_CLAIM, slug), env: @api.env)
+    ReviewWorkerPulse.clear(session: sid, projects_dir: @api.projects_dir, slug: slug,
+                            env: @api.env)
   end
 
   def write_renewer_marker(sid, slug, pid)

@@ -1,0 +1,356 @@
+# frozen_string_literal: true
+
+require_relative "../../lib/claim_lease"
+require_relative "session_markers"
+
+# ReviewWorkerPulse — the WORKER-level half of "is this review still being done",
+# and the answer to a reviewer that dies inside a session that does not.
+#
+# ═══ WHY bin/lib/anchor_heartbeat.rb CANNOT REACH THIS ═══
+#
+# AnchorHeartbeat answers about the SESSION: resident process + narration inside
+# PROGRESS_QUIET_SECONDS. It was built for two faces of one defect — no anchor at
+# all (the claim lapses one TTL in), and a dead anchor still in the process table
+# (it renews forever). THIS IS NEITHER. The anchor is genuinely alive and genuinely
+# working, because the CONDUCTOR is alive and working; only the reviewer subagent
+# died. Every signal AnchorHeartbeat reads is a TRUE POSITIVE about the session and
+# says nothing whatever about the worker whose review the claim describes.
+#
+# So this file is strictly ADDITIONAL. It never loosens the session check, which is
+# correct and load-bearing for the other two faces; it adds a fact the session check
+# cannot carry.
+#
+# ═══ THE MEASUREMENT THAT DECIDED THE DESIGN, 2026-09-22 ═══
+#
+# The obvious fix — "record the SUBAGENT identity alongside the session, so liveness
+# can ask about the worker" — was tried first and is NOT IMPLEMENTABLE. A subagent
+# carries no identity of its own. Measured by running one probe from a parent agent
+# and the same probe from a subagent of it, on the same machine, seconds apart:
+#
+#   CLAUDE_CODE_SESSION_ID   1c7e1097-…debe   ==   1c7e1097-…debe
+#   CLAUDE_PID               30691            ==   30691
+#   shell ppid               30691            ==   30691   (both: the `claude` process)
+#   SessionIdentity.nonce    0e69fc8b45f5     ==   0e69fc8b45f5
+#   SessionIdentity.agent_process  {pid: 30691, start: "Sun Sep 20 08:50:56 2026"}  (identical)
+#
+# Byte-identical on every identity-bearing variable. A subagent is not an OS process:
+# its shell commands are direct children of the session's `claude` process and inherit
+# that process's whole environment. There is no env var, no pid, no ancestry step, and
+# no nonce that differs. THERE IS NOTHING TO RECORD — so a claim cannot be made to name
+# its worker, and no amount of serializer work changes that.
+#
+# ═══ WHAT IS ACTUALLY MISSING, WHICH IS NOT AN IDENTITY ═══
+#
+# A review claim is touched in the FOREGROUND exactly ONCE in its entire life — the
+# `acquire`. Every beat after that comes from the detached renew-loop, which is
+# anchored to the session. So from the moment of acquisition the claim carries NO
+# worker-produced evidence at all, and a live reviewer and a dead one are
+# indistinguishable because THERE IS NOTHING TO DISTINGUISH THEM WITH. (Checked, not
+# assumed: the review SOPs call `acquire`, `status` and `release`; `renew` exists and
+# nothing in the review lane ran it by hand.)
+#
+# That is a missing SIGNAL, not a missing identity — and a signal can be created where
+# an identity cannot. The pulse is the mtime of the per-(session, slug) claim marker
+# `<projects>/.agents/sessions/<id>.task-review-claim-<slug>`, which ALREADY EXISTS and
+# is ALREADY keyed to the one thing the worker is working on. A foreground review-claim
+# command refreshes it; nothing else may.
+#
+# WHAT MAY TOUCH THE PULSE, and what deliberately may not:
+#
+#   IT MAY     — `acquire` / `claim-next` (the seed) and `renew` (the worker's own
+#                beat). These run in the FOREGROUND, as a tool call, which is the one
+#                thing a dead subagent cannot do.
+#   IT MAY NOT — the detached `renew-loop`. NOTHING A RENEWER WRITES MAY COUNT AS ITS
+#                OWN EVIDENCE; a lease certifying itself is indistinguishable from the
+#                defect this file closes. The identical rule is stated in
+#                bin/lib/anchor_heartbeat.rb's header, one granularity up.
+#   IT MAY NOT — `status`. A DIAGNOSTIC MAY NOT MANUFACTURE THE EVIDENCE IT REPORTS.
+#                A conductor checking on a suspected-dead reviewer would otherwise
+#                refresh the very pulse it is about to read and be told the worker is
+#                alive — every time, and most confidently in exactly the case the
+#                reader is trying to diagnose.
+#
+# ═══ THE AGE IS THE DIAGNOSTIC; THE VERDICT IS THE BRAKE ═══
+#
+# These are separate on purpose, because they are wanted on different timescales.
+#
+# The conductor in the incident needed an answer in MINUTES — and the honest answer
+# available in minutes is not a verdict but the AGE itself: "nothing in this session
+# has acted on this review for 38m; only the detached renewer is keeping it alive."
+# That sentence is TRUE the moment it is printed and it names the one party who can
+# resolve it. A verdict on that timescale would be a guess.
+#
+# The VERDICT — the thing that stops a renewal — keeps the conservative bound below,
+# because stopping a renewal on a live review is the expensive direction.
+#
+# EVERY UNCERTAINTY KEEPS THE CLAIM, the same posture AnchorHeartbeat takes and for
+# the same reason: this file can only ever STOP a renewal, so its failure mode is
+# dropping a live reviewer's lease. A missing marker, an unreadable store, a blank
+# session, a raised exception — all answer :unverified, which HOLDS.
+#
+# THAT ALSO SELF-LIMITS THE SCOPE, usefully. The marker is written by the instance
+# that acquired the claim, so it exists only for a claim THIS machine's session holds.
+# Asked about ANOTHER session's claim there is no marker, the answer is :unverified,
+# and this file says nothing — so it can never free a lease belonging to a session it
+# cannot observe. The narrower answer is the sound one.
+#
+# Pure and injectable — `verdict` reads no clock, no disk and no process table, so the
+# decision is tested as arithmetic. The IO methods are thin and rescued.
+module ReviewWorkerPulse
+  # HOW LONG A REVIEW MAY GO WITHOUT A FOREGROUND TOUCH BEFORE THE CLAIM STOPS.
+  #
+  # DERIVED, NOT CHOSEN, and deliberately not a new number.
+  # ClaimLease::REVIEW_TTL_SECONDS is the longest CONTINUOUS review ever measured,
+  # cleared by half again, agreed by two independent instruments (1233 review windows;
+  # 259 g2a_primary lane runs). A worker silent for longer than the longest review ever
+  # observed has outlasted every live review in the corpus.
+  #
+  # It is the SAME constant ReviewClaimCli::REVIEW_RENEW_WINDOW_SECONDS already bounds
+  # this lane with, and the renewer's existing cap is a TIMEOUT measured from the
+  # renewer's own start, so it frees a dead reviewer's task at 3h25m whether the
+  # reviewer died in minute one or minute two hundred.
+  #
+  # DO NOT READ THAT AS "THE PULSE MAKES THE BOUND MOVABLE" — it does not, and an
+  # earlier revision of this comment said it did. MEASURED at review, 2026-09-22:
+  # SILENT_AFTER_SECONDS == REVIEW_RENEW_WINDOW_SECONDS == 12275, and renew_loop still
+  # passes `max_lifetime: REVIEW_RENEW_WINDOW_SECONDS` unchanged. So with no beat
+  # :silent fires a few seconds BEFORE the cap (the claim marker predates the
+  # renewer's own start, so pulse_age > elapsed) — and WITH a beat :silent never
+  # fires at all, while the cap still drops the claim at 12275 regardless. A live
+  # worker that beats does NOT push the bound forward today.
+  #
+  # What the beat buys is therefore the DIAGNOSTIC, not the lifetime: `status` can
+  # tell a live reviewer from an abandoned one, which is the defect this file was
+  # filed for and which it does deliver. Making the bound genuinely movable means
+  # raising or removing the renew_loop cap, which is a separate decision with its own
+  # false-positive cost — whoever takes it should know the pulse is not already doing
+  # it. Same cost in the false-positive direction as today, strictly more evidence
+  # behind it.
+  SILENT_AFTER_SECONDS = ClaimLease::REVIEW_TTL_SECONDS
+
+  # The suffix base of the per-(session, slug) claim marker whose mtime IS the pulse.
+  # It is the marker ReviewClaimCli already writes at acquire and deletes at release;
+  # this file adds a meaning to its mtime, not a second file to keep in step.
+  MARKER = ".task-review-claim"
+
+  # THE BEAT IS A SEPARATE MARKER, NOT A TIMESTAMP COMPARISON — and that is a
+  # correction, made against a measurement rather than a preference.
+  #
+  # The first cut inferred "was this a real beat or just the acquire's own seed?" by
+  # differencing the pulse mtime against the board's `acquired_at`, with a tolerance
+  # for clock skew. Run against the REAL stuck claim on
+  # playwright-suite-flakes-repeatedly it read 45s of gap where the whole claim had
+  # never been beaten once — so the inference declared a heartbeat that never happened,
+  # which is the exact failure the verdict exists to prevent. The two timestamps come
+  # from two clocks (the BOARD's and a local file mtime) and are separated by a command's
+  # own latency plus any same-instance re-acquire, so no tolerance makes the inference
+  # sound; a wider one would only have hidden the error behind a number nobody measured.
+  #
+  # So the fact is RECORDED rather than inferred. A beat writes its OWN marker, and
+  # "has this review been beaten" becomes an existence question with no clock in it.
+  # NOT ".task-review-claim-beat": that string is ALSO the claim marker of a task whose
+  # slug begins "beat-", so `.task-review-claim-beat-flaky-suite` would be both this
+  # file's beat marker for `flaky-suite` and the CLAIM marker for `beat-flaky-suite`.
+  # Releasing either would delete the other's evidence. The existing
+  # `.task-review-claim-renewer-<slug>` carries that same latent flaw; this does not
+  # copy it. "claim-" and "beat-" cannot prefix-collide, so no slug can reach it.
+  BEAT_MARKER = ".task-review-beat"
+
+  # The verdicts. Exactly one of them stops a renewal.
+  #
+  #   :active     — a foreground command acted on this review AFTER it was claimed.
+  #                 A real beat: a tool call a dead subagent could not have made.
+  #   :claimed_only — the ONLY foreground touch is the acquisition itself. Nothing has
+  #                 happened in the foreground since. HOLDS — a review claimed two
+  #                 minutes ago has legitimately had no beat yet — but it must SAY so,
+  #                 because "active" here would assert a heartbeat that never happened.
+  #                 This is the reading the live 2026-09-22 claim actually produced.
+  #   :unverified — nothing can vouch either way (no marker, unreadable store, blank
+  #                 session, another machine's claim). HOLDS: no evidence is not
+  #                 evidence, and this file never frees a lease on silence it cannot
+  #                 attribute.
+  #   :silent     — the claim is being kept alive with no foreground touch for longer
+  #                 than the longest review ever measured. STOPS renewing.
+  STOPS_RENEWING = %i[silent].freeze
+
+  module_function
+
+  # The whole decision, as arithmetic.
+  #
+  # +pulse_age+ — seconds since a foreground command last acted on this review, or nil
+  #               for UNKNOWN. nil and a number are different answers and must stay
+  #               different: folding nil to a large number would turn "we could not
+  #               look" into "nobody has touched it in ages", which frees leases on no
+  #               evidence at all.
+  # +beaten+ — has a foreground `renew` ever beaten this claim? An EXISTENCE fact read
+  #            from the beat marker, never inferred from a clock. False means the only
+  #            foreground touch on record is the acquisition itself.
+  def verdict(pulse_age:, beaten: false, silent_after: SILENT_AFTER_SECONDS)
+    return :unverified if pulse_age.nil?
+    return :silent if pulse_age > silent_after
+    return :claimed_only unless beaten
+
+    :active
+  end
+
+  # Only :silent stops a renewal.
+  def holding?(verdict) = !STOPS_RENEWING.include?(verdict)
+
+  # The per-(session, slug) marker suffix. Slugs are kebab-case (validated on the
+  # board), so already filesystem-safe; sanitize defensively anyway. Kept here rather
+  # than reached for on the CLI so the writer and the reader of this marker's mtime
+  # derive the same name from one place.
+  def marker_suffix(slug)
+    "#{MARKER}-#{safe(slug)}"
+  end
+
+  # The BEAT marker's suffix. A distinct file from the claim marker so "has this been
+  # beaten" is an existence question with no clock in it — see the BEAT_MARKER note.
+  def beat_suffix(slug)
+    "#{BEAT_MARKER}-#{safe(slug)}"
+  end
+
+  # Slugs are kebab-case (validated on the board), so already filesystem-safe;
+  # sanitize defensively anyway.
+  def safe(slug) = slug.to_s.gsub(/[^A-Za-z0-9._-]/, "")
+
+  # Refresh the pulse — a FOREGROUND command acted on this review. Re-writes the
+  # marker through SessionMarkers' guarded choke point rather than stamping the file
+  # directly, because a raw marker path may not leave that module (see its header).
+  # Best-effort: a claim is never lost because its pulse could not be written.
+  def touch(session:, projects_dir:, slug:, env: ENV, markers: SessionMarkers)
+    return nil if session.to_s.strip.empty?
+
+    markers.write(session, projects_dir, marker_suffix(slug), "#{slug}\n", env: env)
+  rescue StandardError
+    nil
+  end
+
+  # Seconds since a foreground command last acted on this review, or nil when nothing
+  # can vouch. Thin by design: SessionMarkers owns the path, this owns the arithmetic
+  # and the rescue.
+  def pulse_age(session:, projects_dir:, slug:, now: Time.now, markers: SessionMarkers)
+    return nil if session.to_s.strip.empty?
+
+    touched = [markers.touched_at(session, projects_dir, marker_suffix(slug)),
+               markers.touched_at(session, projects_dir, beat_suffix(slug))].compact.max
+    return nil if touched.nil?
+
+    age = now - touched
+    age.negative? ? 0 : age
+  rescue StandardError
+    nil
+  end
+
+  # Record a BEAT — a foreground `renew` by the worker. Distinct from +touch+, which
+  # only seeds the claim marker at acquisition; conflating them is what made a
+  # never-beaten claim read as ACTIVE.
+  def beat(session:, projects_dir:, slug:, env: ENV, markers: SessionMarkers)
+    return nil if session.to_s.strip.empty?
+
+    touch(session: session, projects_dir: projects_dir, slug: slug, env: env, markers: markers)
+    markers.write(session, projects_dir, beat_suffix(slug), "#{slug}\n", env: env)
+  rescue StandardError
+    nil
+  end
+
+  # Has a foreground `renew` ever beaten this claim? Existence, not arithmetic.
+  def beaten?(session:, projects_dir:, slug:, markers: SessionMarkers)
+    return false if session.to_s.strip.empty?
+
+    !markers.touched_at(session, projects_dir, beat_suffix(slug)).nil?
+  rescue StandardError
+    false
+  end
+
+  # Drop BOTH markers when the claim is released.
+  #
+  # The beat marker MUST go with the claim marker. A session that reviews the same task
+  # twice — a bounce, a resubmit, a re-acquire after a lapse — would otherwise inherit
+  # the PREVIOUS review's beat and read ACTIVE before its new reviewer had done
+  # anything. A stale beat is worse than no beat: it is evidence pointing the wrong way.
+  def clear(session:, projects_dir:, slug:, env: ENV, markers: SessionMarkers)
+    return nil if session.to_s.strip.empty?
+
+    markers.delete(session, projects_dir, marker_suffix(slug), env: env)
+    markers.delete(session, projects_dir, beat_suffix(slug), env: env)
+  rescue StandardError
+    nil
+  end
+
+  # Is the claim's holder THIS session?
+  #
+  # The fact `status` already had in hand and threw away. GET
+  # /api/v1/tasks/<slug>/review_claim returns the holder's `session`, and the CLI knows
+  # its own — it simply never compared them, so it printed "ASK THE HOLDER TO RELEASE
+  # IT (only their session can)" to a reader who WAS the holder. In the 2026-09-22
+  # incident that sentence was the whole cost: the one party able to act was told to go
+  # and ask somebody else.
+  def mine?(holder_session:, session:)
+    a = holder_session.to_s.strip
+    b = session.to_s.strip
+    return false if a.empty? || b.empty?
+
+    a == b
+  end
+
+  # The line `status` prints about the worker, for a claim this session holds.
+  #
+  # It leads with the AGE rather than a verdict, and names the renewer explicitly,
+  # because the reader's actual question is "is my reviewer still there" and the honest
+  # answer is "nothing here can tell you — but here is exactly what is keeping this
+  # claim alive, and you are the only one who can say whether that is a reviewer."
+  def render(verdict, pulse_age, now_unknown: "never")
+    age = pulse_age.nil? ? now_unknown : ClaimLease.humanize_age(pulse_age)
+
+    case verdict
+    when :active
+      "worker: ACTIVE — a foreground command in this session acted on this review #{age} ago, " \
+        "after it was claimed. A dead subagent cannot make a tool call."
+    when :claimed_only
+      "worker: NO BEAT — nothing has touched this review in the foreground since it was " \
+        "CLAIMED #{age} ago; only the detached renewer, anchored to this session, is keeping " \
+        "the claim alive. A live reviewer that has not beaten and a dead one read the same here."
+    when :silent
+      "worker: SILENT — no foreground command in this session has acted on this review " \
+        "for #{age}, which is longer than the longest review ever measured. Only the " \
+        "detached renewer, anchored to this session, is keeping the claim alive."
+    else
+      "worker: UNVERIFIED — this session has no local record of acting on this review, " \
+        "so nothing here can vouch either way. The claim stands."
+    end
+  end
+
+  # The next move for a claim held by THIS session — the sentence that replaces
+  # "ASK THE HOLDER TO RELEASE IT (only their session can)" when the asking session IS
+  # the holder.
+  #
+  # A live reviewer and a dead one are indistinguishable from here BY CONSTRUCTION (a
+  # subagent has no identity to ask about; see this file's header), so this must not
+  # pretend to a verdict. It states what is keeping the claim alive and hands the
+  # question to the ONLY party that can answer it — the session that would know whether
+  # it still has a reviewer working this task.
+  def next_move_for_self(slug, verdict)
+    lead = verdict == :active ? "THIS CLAIM IS YOURS" : "THIS CLAIM IS YOURS, AND NOTHING HERE PROVES A REVIEWER IS BEHIND IT"
+
+    "→ #{lead} — the holder is THIS session, so there is nobody else to ask. A live " \
+      "reviewer and a dead one read the same from here: a subagent shares its session's " \
+      "id, nonce and anchor, so the renewer cannot tell them apart. You can. If your " \
+      "reviewer for #{slug} is gone, release it: bin/task review-claim release #{slug}. " \
+      "If it is still working, leave it alone."
+  end
+
+  # The `alive:` companion for the renew-loop: STOP only on a positive :silent reading.
+  # Rescues everything to HOLDING, because an exception here would drop a live
+  # reviewer's lease — strictly worse than the defect being fixed.
+  #
+  # +pulse+ is a callable returning the pulse age (or nil) so the lane's IO stays
+  # injectable and this stays testable without a marker store.
+  def alive_check(pulse:, silent_after: SILENT_AFTER_SECONDS)
+    lambda do
+      holding?(verdict(pulse_age: pulse.call, silent_after: silent_after))
+    rescue StandardError
+      true
+    end
+  end
+end

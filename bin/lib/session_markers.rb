@@ -14,6 +14,7 @@ require_relative "../../lib/task_usage_sandbox"
 #   <projects>/.agents/sessions/<id>.devops-shift         the held shift lane (bin/devops-shift)
 #   <projects>/.agents/sessions/<id>.devops-shift-renewer its detached renewer's pid (ditto)
 #   <projects>/.agents/sessions/<id>.task-review-claim-<slug>          a held per-task review claim (bin/task review-claim)
+#   <projects>/.agents/sessions/<id>.task-review-beat-<slug>           a foreground BEAT on that review (bin/lib/review_worker_pulse.rb)
 #   <projects>/.agents/sessions/<id>.task-review-claim-renewer-<slug>  its detached renewer's pid (ditto)
 #   <projects>/.agents/sessions/<id>.build-claim-renewer-<slug>  a build claim's detached renewer: pid, nonce, desk (bin/task)
 #   <projects>/.agents/sessions/<id>.presence-<kind>-<pid> a HEAVY-WORK claim (bin/lib/presence_claim.rb)
@@ -257,6 +258,30 @@ module SessionMarkers
     return nil unless File.file?(path)
 
     File.read(path)
+  rescue StandardError
+    nil
+  end
+
+  # The mtime of ONE named marker, or nil when it is absent/unreadable. Unguarded —
+  # a read cannot pollute the store.
+  #
+  # DISTINCT FROM last_signal_at, which takes the NEWEST mtime across EVERY marker a
+  # session emitted. That one answers "is this SESSION working"; this one answers "was
+  # THIS marker touched", which is the only way to ask about one task inside a session
+  # that holds several. bin/lib/review_worker_pulse.rb is the consumer: a reviewer
+  # subagent shares its session's id, nonce and anchor, so a session-wide signal is a
+  # true positive about the conductor and says nothing about the reviewer.
+  #
+  # nil is load-bearing and must never be flattened into an age — its consumer reads a
+  # number as evidence and nil as "we could not look", and only the first may stop a
+  # renewal.
+  def touched_at(session_id, projects_dir, suffix)
+    return nil if session_id.to_s.strip.empty?
+
+    path = marker_path(session_id, projects_dir, suffix)
+    return nil unless File.file?(path)
+
+    File.mtime(path)
   rescue StandardError
     nil
   end
