@@ -119,9 +119,26 @@ module ReviewWorkerPulse
   # this file adds a meaning to its mtime, not a second file to keep in step.
   MARKER = ".task-review-claim"
 
+  # HOW MUCH NEWER THAN THE ACQUISITION A PULSE MUST BE TO COUNT AS A BEAT.
+  #
+  # `acquire` writes the marker inside the same command that takes the claim, so the
+  # pulse and `acquired_at` describe one moment. They are nonetheless read from TWO
+  # CLOCKS — `acquired_at` is the BOARD's, the pulse is this machine's file mtime — so
+  # they will not agree exactly, and a bare `pulse > acquired` would call ordinary skew
+  # a heartbeat. One renewal cadence is the smallest interval this lane already treats
+  # as meaningful, and a real beat is separated from its acquire by the work in
+  # between, which is minutes at least.
+  BEAT_TOLERANCE_SECONDS = 30
+
   # The verdicts. Exactly one of them stops a renewal.
   #
-  #   :active     — a foreground command acted on this review inside the window.
+  #   :active     — a foreground command acted on this review AFTER it was claimed.
+  #                 A real beat: a tool call a dead subagent could not have made.
+  #   :claimed_only — the ONLY foreground touch is the acquisition itself. Nothing has
+  #                 happened in the foreground since. HOLDS — a review claimed two
+  #                 minutes ago has legitimately had no beat yet — but it must SAY so,
+  #                 because "active" here would assert a heartbeat that never happened.
+  #                 This is the reading the live 2026-09-22 claim actually produced.
   #   :unverified — nothing can vouch either way (no marker, unreadable store, blank
   #                 session, another machine's claim). HOLDS: no evidence is not
   #                 evidence, and this file never frees a lease on silence it cannot
@@ -139,9 +156,17 @@ module ReviewWorkerPulse
   #               different: folding nil to a large number would turn "we could not
   #               look" into "nobody has touched it in ages", which frees leases on no
   #               evidence at all.
-  def verdict(pulse_age:, silent_after: SILENT_AFTER_SECONDS)
+  # +acquired_age+ — seconds since the claim was taken, or nil when the board did not
+  #                  say. nil means we cannot separate a beat from the acquisition, so
+  #                  the answer degrades to :active, which HOLDS. Never to
+  #                  :claimed_only: asserting "nothing has touched this" on a fact we
+  #                  could not read would be the confident-wrong direction.
+  def verdict(pulse_age:, acquired_age: nil, silent_after: SILENT_AFTER_SECONDS,
+              beat_tolerance: BEAT_TOLERANCE_SECONDS)
     return :unverified if pulse_age.nil?
     return :silent if pulse_age > silent_after
+    return :active if acquired_age.nil?
+    return :claimed_only unless acquired_age - pulse_age > beat_tolerance
 
     :active
   end
@@ -211,7 +236,12 @@ module ReviewWorkerPulse
 
     case verdict
     when :active
-      "worker: ACTIVE — a foreground command in this session acted on this review #{age} ago."
+      "worker: ACTIVE — a foreground command in this session acted on this review #{age} ago, " \
+        "after it was claimed. A dead subagent cannot make a tool call."
+    when :claimed_only
+      "worker: NO BEAT — nothing has touched this review in the foreground since it was " \
+        "CLAIMED #{age} ago; only the detached renewer, anchored to this session, is keeping " \
+        "the claim alive. A live reviewer that has not beaten and a dead one read the same here."
     when :silent
       "worker: SILENT — no foreground command in this session has acted on this review " \
         "for #{age}, which is longer than the longest review ever measured. Only the " \

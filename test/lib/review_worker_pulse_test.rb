@@ -72,6 +72,54 @@ class ReviewWorkerPulseTest < Minitest::Test
     assert ReviewWorkerPulse.holding?(verdict)
   end
 
+  # ── A BEAT IS NOT THE ACQUISITION ──────────────────────────────────────────
+  #
+  # MEASURED LIVE, 2026-09-22, against the real stuck claim on
+  # playwright-suite-flakes-repeatedly — a reviewer killed by the watchdog whose claim
+  # was still being renewed under the conductor's session. With only the pulse age this
+  # printed "worker: ACTIVE — …acted on this review 1.6h ago", which asserts a heartbeat
+  # that NEVER HAPPENED: the 1.6h-old touch WAS the acquire, and nothing had happened
+  # since. `acquire` writes the marker itself, so the seed must not be mistaken for a
+  # beat or every freshly-claimed review reads as one.
+
+  def test_unit_a_pulse_that_is_only_the_acquisition_is_not_a_beat
+    verdict = ReviewWorkerPulse.verdict(pulse_age: 5800, acquired_age: 5805)
+
+    assert_equal :claimed_only, verdict
+    assert ReviewWorkerPulse.holding?(verdict),
+           "a review claimed minutes ago has legitimately not beaten yet — this must " \
+           "SAY so without freeing the claim"
+  end
+
+  def test_unit_a_touch_well_after_the_acquisition_is_a_real_beat
+    assert_equal :active, ReviewWorkerPulse.verdict(pulse_age: 12, acquired_age: 5805)
+  end
+
+  def test_unit_clock_skew_between_the_board_and_the_file_is_not_a_beat
+    # `acquired_at` is the BOARD's clock and the pulse is a local file mtime, so they
+    # disagree slightly about one moment. A bare `pulse > acquired` would read that
+    # skew as a heartbeat — in BOTH directions, since the skew has no fixed sign.
+    [0, 1, -1, ReviewWorkerPulse::BEAT_TOLERANCE_SECONDS].each do |skew|
+      assert_equal :claimed_only,
+                   ReviewWorkerPulse.verdict(pulse_age: 600 - skew, acquired_age: 600),
+                   "a #{skew}s gap is clock skew, not a beat"
+    end
+  end
+
+  def test_unit_an_unreadable_acquisition_time_degrades_to_active_never_to_no_beat
+    # The safe direction: a fact we could not read may WEAKEN the answer, never make it
+    # confidently wrong. Asserting "nothing has touched this review" on a timestamp we
+    # failed to parse would be exactly that.
+    assert_equal :active, ReviewWorkerPulse.verdict(pulse_age: 12, acquired_age: nil)
+  end
+
+  def test_unit_past_the_bound_is_silent_whatever_the_acquisition_says
+    # The brake is decisive on its own and must stay decisive.
+    assert_equal :silent,
+                 ReviewWorkerPulse.verdict(pulse_age: ReviewWorkerPulse::SILENT_AFTER_SECONDS + 1,
+                                           acquired_age: ReviewWorkerPulse::SILENT_AFTER_SECONDS + 2)
+  end
+
   def test_unit_no_pulse_at_all_holds_the_claim_rather_than_freeing_it
     # The same asymmetry AnchorHeartbeat turns on: nil is "we could not look", never
     # "nobody has touched it in ages". Only a POSITIVE reading may cost a lease.
@@ -90,7 +138,7 @@ class ReviewWorkerPulseTest < Minitest::Test
 
   def test_unit_only_silent_stops_a_renewal
     assert_equal %i[silent], ReviewWorkerPulse::STOPS_RENEWING.to_a
-    %i[active unverified].each do |verdict|
+    %i[active claimed_only unverified].each do |verdict|
       assert ReviewWorkerPulse.holding?(verdict), "#{verdict} must not stop a renewal"
     end
   end
@@ -303,6 +351,21 @@ class ReviewWorkerPulseTest < Minitest::Test
     refute_includes out, "worker:"
   end
 
+  # THE LIVE CASE, as a control. This is the reading the real stuck claim produced:
+  # held by this session, renewer beating, and the only foreground touch is the acquire
+  # itself. It must not claim a heartbeat, and it must still hand over the remedy.
+  def test_control_a_claim_untouched_since_acquisition_reports_no_beat_not_active
+    out = status_with_pulse(age: 5800, acquired_age: 5805)
+
+    assert_includes out, "worker: NO BEAT"
+    refute_includes out, "worker: ACTIVE",
+                    "the 1.6h-old touch WAS the acquire; calling it a heartbeat asserts " \
+                    "something that never happened — measured live 2026-09-22"
+    assert_includes out, "since it was CLAIMED"
+    assert_includes out, "bin/task review-claim release #{SLUG}",
+                    "and the reader must still get the move only they can make"
+  end
+
   # The MACHINE face of the same distinction, because a caller branches on this
   # rather than on the prose.
   def test_control_the_json_face_carries_the_worker_verdict
@@ -325,9 +388,11 @@ class ReviewWorkerPulseTest < Minitest::Test
   #
   # The renewer is beating in every call (the expiry MOVES between the two reads), so
   # the lease grades RENEWING exactly as it did in both measured incidents.
-  def status_with_pulse(age:, holder_session: SESSION, lease_seconds: 60, flags: [])
+  def status_with_pulse(age:, holder_session: SESSION, lease_seconds: 60, flags: [],
+                        acquired_age: 300)
     with_store do |dir|
       stamp_pulse(dir, age: age, session: holder_session)
+      @acquired_age = acquired_age
       out = StringIO.new
       cli = ReviewClaimCli.new(env: { "TASK_REVIEW_CLAIM_SESSION" => SESSION },
                                out: out, err: StringIO.new)
@@ -348,7 +413,7 @@ class ReviewWorkerPulseTest < Minitest::Test
   def holder(seconds_left, session)
     {
       "task_slug" => SLUG, "session" => session, "label" => "sudowoodo", "agent" => "alex",
-      "acquired_at" => (START - 300).utc.iso8601,
+      "acquired_at" => (START - (@acquired_age || 300)).utc.iso8601,
       "expires_at" => (START + seconds_left).utc.iso8601,
       "heartbeat_age" => 2, "live" => seconds_left.positive?
     }

@@ -60,6 +60,7 @@
 # nothing to renew.
 
 require "json"
+require "time"
 require "fileutils"
 require "rbconfig"
 require_relative "agent_api"
@@ -656,6 +657,18 @@ class ReviewClaimCli
 
   def expiry_of(holder) = holder.is_a?(Hash) ? holder["expires_at"] : nil
 
+  # Seconds since an ISO-8601 board timestamp, or nil when it cannot be read. nil is
+  # load-bearing: ReviewWorkerPulse.verdict degrades to :active on it rather than
+  # asserting that nothing has touched a review, so an unparseable timestamp can only
+  # ever make the answer WEAKER, never confidently wrong.
+  def age_of(stamp)
+    return nil if stamp.to_s.strip.empty?
+
+    @clock.call - Time.parse(stamp.to_s)
+  rescue StandardError
+    nil
+  end
+
   def emit_status_text(slug, grade, holder, watched, differenced = true)
     @out.puts("review-claim: #{slug} — " +
               ClaimHolder.render_observation(grade, expires_at: expiry_of(holder),
@@ -697,7 +710,11 @@ class ReviewClaimCli
                                                             session: session_id)
 
     age = worker_pulse_age(session_id, slug)
-    [true, ReviewWorkerPulse.verdict(pulse_age: age), age]
+    # The ACQUISITION age separates a real beat from the acquire's own write. Without
+    # it a claim nobody has touched since it was taken reads ACTIVE, which asserts a
+    # heartbeat that never happened — measured live against a real stuck claim.
+    acquired = age_of(holder["acquired_at"])
+    [true, ReviewWorkerPulse.verdict(pulse_age: age, acquired_age: acquired), age]
   end
 
   # The next move, stated for the reader who has just been told a lease is alive.
