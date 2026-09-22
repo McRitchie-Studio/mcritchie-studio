@@ -183,11 +183,21 @@ impossible by construction rather than by every repo remembering to ignore `tmp/
      **It is keyed on the DECLARATION, not on the `gems` section** (`FullSuiteGate.registry_gated?`,
      changed 2026-09-14). While it keyed on the section, an `apps` row could never
      reach this branch however completely it declared its lane — which is why
-     turf-vault had four real CI lanes and no local cert for months. Declared today,
+     turf-vault had real CI lanes and no local cert for months. Declared today,
      all three naming a `bin/release-check` their own repo owns: studio-engine and
      solana-studio (studio-engine measured 2026-08-26 at ~215s for 102 files / 1491
-     runs) and turf-vault (its four CI lanes, measured 2026-09-14 at ~1s warm). So a
+     runs) and turf-vault (**five** lanes — two Node, three Rust — measured
+     2026-09-22 against `origin/accepted` at `09cdfb3`: **76s cold**, 1-2s on a
+     re-run; re-derive the table with `bin/release-check --list` rather than
+     trusting this line). So a
      studio-engine OR a turf-vault builder CAN use the fast route.
+
+     **Budget the COLD number.** The figure here read "four CI lanes … ~1s warm"
+     until 2026-09-22, when `cargo test` had already been a lane for a week and the
+     node suite had grown from 61 cases to 171. A builder who budgets a cert
+     against the warm number alone concludes a 76s lane has hung. Measure
+     turf-vault from `origin/accepted`, never from the local primary — on
+     2026-09-22 that primary was stale at `66ffff1` with no `bin/` on disk at all.
    - `mapped-tests` — `bin/rails test <files the branch diff maps to>` (path
      convention, falling back to a grep for the SUBJECT'S IDENTITY — a script's
      path and quoted command name, a config's path and quoted basename, an app
