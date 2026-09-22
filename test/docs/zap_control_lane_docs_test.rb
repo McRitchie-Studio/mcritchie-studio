@@ -233,8 +233,9 @@ class ZapControlLaneDocsTest < Minitest::Test
       docs/agents/claude.md
       docs/agents/index.md
       docs/agents/system/devops-cycle-design.md
+      docs/agents/modules/building-sop.md
     ].each do |rel|
-      refute_match(/owes the full-suite cert/i, source(rel),
+      refute_match(/owes the\s+full-suite cert/i, source(rel),
                    "#{rel}: still says test-only \"owes the full-suite cert\". Measured on the ladder above, " \
                    "the gate accepts a fast cert plus a green CI for this shape exactly as for a feature. A " \
                    "builder who read this on 2026-09-21 ran 11,004 tests the gate never asked for — say " \

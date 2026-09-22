@@ -86,8 +86,10 @@ bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> --agent 
   assertion, a fixed flake, a new diagnostic. It has no tiers because there is no
   behavior for a tier to be evidence of, but it is **not** the easy option: it is
   claimable only on a diff `bin/dor-check` OBSERVES to be 100% `test/`, `tests/`
-  or `e2e/` (one non-test file and the claim is refused), it still owes the
-  full-suite cert, and it owes a **control** — the evidence that the changed test
+  or `e2e/` (one non-test file and the claim is refused), it is **not exempt
+  from the cert gate** (`full_suite_gate: true`, unlike `docs`), which the fast
+  cert plus a green CI satisfies exactly as for a feature; and it owes a
+  **control** — the evidence that the changed test
   **still bites**. Run `bin/control-check <task>`: it replays the pre-change
   version of the changed test files against current production code and stamps
   the evidence. Where a changed file has no pre-change version (an added test) or
