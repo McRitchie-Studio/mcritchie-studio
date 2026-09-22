@@ -76,6 +76,7 @@ require_relative "agent_api"
 require_relative "session_identity"
 require_relative "session_markers"
 require_relative "shift_renewer"
+require_relative "anchor_heartbeat"
 
 class ReleaseClaimCli
   OPEN_TIMEOUT = 2
@@ -302,7 +303,15 @@ class ReleaseClaimCli
     pid = flags["anchor-pid"]
     start = flags["anchor-start"]
     ShiftRenewer.run(
-      alive:    -> { SessionIdentity.process_alive?(pid, start) },
+      # Residency ALONE used to answer this, and a resident process is not a working
+      # one — see bin/lib/anchor_heartbeat.rb for the 2026-09-22 orphan. This lane is
+      # the one with NO other brake (its only stop conditions are the anchor, a
+      # terminal release state, and the 12h cap), so it is the one that most needed
+      # the seam. Every uncertainty still holds the claim.
+      alive:    AnchorHeartbeat.alive_check(
+        resident: -> { SessionIdentity.process_alive?(pid, start) },
+        signal:   -> { AnchorHeartbeat.signal_age(session: session_id, projects_dir: @api.projects_dir) }
+      ),
       finished: -> { release_finished?(slug, role) },
       renew:    -> { renewed?(slug, role) },
       sleeper: ->(seconds) { sleep(seconds) },
@@ -374,8 +383,8 @@ class ReleaseClaimCli
   def start_renewer(sid, role, slug)
     anchor = anchor_process
     unless anchor
-      @out.puts("release-claim: note — no agent process to anchor a renewer to; " \
-                "this #{role} claim lapses in ~#{lease_ttl_seconds}s unless something renews it.")
+      @out.puts("release-claim: note — " \
+                "#{AnchorHeartbeat.unanchored_notice(subject: "#{role} claim", ttl_seconds: lease_ttl_seconds)}")
       return nil
     end
 

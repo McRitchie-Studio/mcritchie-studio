@@ -304,6 +304,7 @@ require_relative "../lib/task_usage_baseline"
 require_relative "../lib/task_usage_sandbox"
 require_relative "../lib/task_usage_audit"
 require_relative "../lib/claim_lease"
+require_relative "lib/anchor_heartbeat"
 require_relative "../lib/claim_holder"
 require_relative "../lib/desk_activity"
 require_relative "../lib/review_verdict_gate"
@@ -1177,8 +1178,9 @@ def start_build_claim_renewer(slug, devops, desk_hint = nil)
 
   anchor = build_claim_anchor
   if anchor.nil?
-    warn "note: no agent process to anchor a build-claim renewer to; this claim lapses in " \
-         "~#{ClaimLease.humanize_age(ClaimLease::DEFAULT_TTL_SECONDS)} unless a status line renews it."
+    warn "note: #{AnchorHeartbeat.unanchored_notice(subject: "build claim",
+                                                    ttl_seconds: ClaimLease::DEFAULT_TTL_SECONDS,
+                                                    fallback: "a PAINTING session's status line")}"
     return nil
   end
 
@@ -3659,7 +3661,17 @@ when "claim-renew-loop"
   end
   die!(usage) if anchor_pid.to_s.strip.empty? || anchor_start.to_s.strip.empty?
   BuildClaimRenewer.run(
-    alive: -> { SessionIdentity.process_alive?(anchor_pid, anchor_start) },
+    # See bin/lib/anchor_heartbeat.rb. This lane is the LEAST exposed of the four —
+    # its beat already runs ClaimLease.abandoned? — but the two checks answer
+    # different questions and neither covers the other. `abandoned?` asks whether
+    # THIS TASK'S desk and board rows have gone quiet, and answers "unknown" (which
+    # never frees a claim) whenever no desk resolves; the seam asks whether the
+    # SESSION behind the anchor is doing anything at all, which is exactly the fact
+    # a desk-less renewer has none of. The 2026-09-22 orphan was a build claim.
+    alive: AnchorHeartbeat.alive_check(
+      resident: -> { SessionIdentity.process_alive?(anchor_pid, anchor_start) },
+      signal: -> { AnchorHeartbeat.signal_age(session: session_identity.first, projects_dir: PROJECTS_DIR) }
+    ),
     beat: -> { renew_build_claim(slug, renew_desk) },
     sleeper: ->(seconds) { sleep(seconds) },
     clock: -> { Time.now },

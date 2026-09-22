@@ -47,10 +47,10 @@ and each answers a question adjacent to the one an agent actually asks.**
 |---------|-------|---------|----------------|
 | Cert runlock `cert-run.json` | local, in each desk's **git dir** | is a suite running against *this desk's* test DB | **OS identity** (pid + start time) — exact, no timeout |
 | Build claim (`claimed_session`/`claim_nonce`/`claim_expires_at`) | board | who holds this task | TTL 120s + renewer, fail-open |
-| Devops shift lease | board | who holds this *role lane* | TTL + anchor renewer |
-| Review claim | board | who is reviewing this task | TTL + anchor renewer |
-| Release conductor claim (`assembler`/`deployer`) | board | is a release live | TTL + anchor renewer |
-| Migration lane claim | board | who holds the migration lane | TTL + anchor renewer |
+| Devops shift lease | board | who holds this *role lane* | TTL 120s + anchor renewer |
+| Review claim | board | who is reviewing this task | TTL 3h25m + anchor renewer |
+| Release conductor claim (`assembler`/`deployer`) | board | is a release live | TTL 120s + anchor renewer |
+| Migration lane claim | board | who holds the migration lane | TTL 4h, **no renewer** — the TTL is the whole working window |
 | Session markers `.agents/sessions/<id>.*` | local | what the statusline should display — **stops naming the task once the session moves to a desk** | **none** |
 | Desk context `<desk>/.agent-context.json` | local, per-desk | what this desk holds — **but never whose session it is** | none |
 | Worktree registry | local | what desks exist | none — a manual snapshot |
@@ -675,6 +675,25 @@ because it is arithmetic over what they publish.
     direction the corpse grade depends on, and it is sound;
   - a **live** anchor proves only that the session's *host* is alive, so `live`
     means "may still be there" — over-reporting, which is the safe tie-break;
+  - **and a live anchor does not even prove the host is WORKING** — measured
+    2026-09-22, the sharpest form of the point above. A `codex --yolo` session
+    (pid 51595) hit a usage limit and was shut down; the process stayed in the
+    table, so `SessionIdentity.process_alive?` kept answering true and the
+    detached renewer kept advancing the lease (observed 03:50:45Z → 03:52:47Z
+    across a 75s read) over a desk holding 124 uncommitted lines. A
+    held-but-abandoned desk is worse than a lapsed one: the reclaim sweep
+    correctly withholds a claimed desk and no session steals a live claim, so the
+    two safety rules compose into a deadlock. `bin/lib/anchor_heartbeat.rb` is the
+    seam that closes it — residency from `process_alive?`, plus an IDLE verdict
+    when the session's own narration markers have gone quiet past
+    `ClaimLease::PROGRESS_QUIET_SECONDS`. All four renewing lanes ask it, and a
+    test refuses any lane that goes back to the bare probe. The statusline
+    throttles (`.heartbeat` and friends) are deliberately excluded: they prove a
+    terminal is open, which is the 2026-08-13 immortal lease.
+  - **Beware the sampling trap when you diagnose one of these.** The renew
+    interval is 30s, so reading `claim_expires_at` twice 20 seconds apart shows it
+    frozen and proves nothing — in either direction. Sample across a full renewal
+    cycle or you will call a live holder dead.
   - **nothing today maps a heavy pid to a session** — and `session_id` is not a
     per-agent key either: measured during slice 2's review, every subagent in a
     Claude Code fan-out inherits the parent's `CLAUDE_CODE_SESSION_ID` (only the
