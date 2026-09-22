@@ -103,6 +103,22 @@ class ReviewWorkerPulseTest < Minitest::Test
     assert_equal ReviewClaimCli::REVIEW_RENEW_WINDOW_SECONDS, ReviewWorkerPulse::SILENT_AFTER_SECONDS
   end
 
+  # THE TWO DERIVATIONS OF THIS MARKER'S NAME MUST AGREE, pinned because they are in
+  # different files. `acquire` WRITES it through ReviewWorkerPulse.marker_suffix and
+  # `release` DELETES it through ReviewClaimCli#marker_suffix, and `status` READS its
+  # mtime through the first. If they ever diverge, release stops clearing the marker it
+  # wrote and every subsequent status read reports a pulse for a claim that was let go
+  # — a failure that is SILENT and lands in the "a worker is alive" direction, which is
+  # the one direction this whole file exists to avoid being wrong in.
+  def test_unit_the_claim_marker_name_is_the_same_from_both_derivations
+    cli = ReviewClaimCli.new(env: {}, out: StringIO.new, err: StringIO.new)
+
+    assert_equal ReviewWorkerPulse.marker_suffix(SLUG),
+                 cli.send(:marker_suffix, ReviewClaimCli::REVIEW_CLAIM, SLUG),
+                 "acquire writes this marker and release deletes it by a separately " \
+                 "derived name; they must agree"
+  end
+
   # ── Whose claim is it ──────────────────────────────────────────────────────
 
   def test_unit_the_holder_being_this_session_is_recognised
