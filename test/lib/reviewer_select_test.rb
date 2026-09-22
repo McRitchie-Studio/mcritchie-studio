@@ -252,42 +252,77 @@ class ReviewerSelectCliTest < Minitest::Test
   # what an unreadable answer actually looks like. Returns stderr as a FOURTH
   # element — the busy-set degradation is announced there, and the callers above
   # destructure three, which stays valid.
-  def run_board(devops, *args, busy_payload: nil)
+  # Two agent sessions, so a test can drive the SAME task from DIFFERENT live
+  # instances — the whole point of the review claim (two-primaries-reviewed-one-pr).
+  SESSION_A = "aaaaaaaa-1111-4aaa-8aaa-aaaaaaaaaaaa"
+  SESSION_B = "bbbbbbbb-2222-4bbb-8bbb-bbbbbbbbbbbb"
+
+  # Starts ONE stub board and yields a runner, so a test can drive SEVERAL
+  # bin/reviewer-select invocations against the SAME board state. That is what "two
+  # selects against one task" actually requires: the second run must meet the claim the
+  # first one took, which a fresh server per invocation could never show.
+  # `run.call(*args, session:)` returns [out, status, err]; `requests` accumulates
+  # across every run, so an assertion can count writes for the WHOLE episode.
+  def with_board(devops, busy_payload: nil)
     server = TCPServer.new("127.0.0.1", 0)
     port = server.addr[1]
     requests = []
-    thread = Thread.new { serve(server, requests, devops, busy_payload) }
+    claim = {}
+    thread = Thread.new { serve(server, requests, devops, busy_payload, claim) }
 
-    # The board path SEEDS a per-session usage baseline (bin/reviewer-select's
-    # seed_review_usage_baseline). Un-neutralized, a run from a live agent session
-    # would seed it against the OPERATOR'S real session — writing into the real
-    # .agents/task-usage. SessionEnv.neutralized keeps the child session-less.
+    # THE BOARD PATH SEEDS A PER-SESSION USAGE BASELINE (bin/reviewer-select's
+    # seed_review_usage_baseline), and the operator's real store carries the proof of
+    # what that costs when it escapes: 58 baseline rows keyed by BOARD_SLUG
+    # ("cli-board-sample") sat in 58 of the operator's live session files, written by
+    # this very test before the neutralizer landed (`bin/task usage-audit` lists them).
     #
-    # That is necessary but NOT sufficient, and the real store carries the proof:
-    # 58 baseline rows keyed by BOARD_SLUG ("cli-board-sample") sit in 58 of the
-    # operator's live session files — written by this very test before the
-    # neutralizer landed (`bin/task usage-audit` lists them). A guarantee that
-    # holds only while nobody opts a session back in is a guarantee waiting to
-    # lapse. So the write root is PINNED too, and TASK_USAGE_SANDBOX (armed
-    # process-wide by test/support/task_usage_sandbox.rb) makes an unpinned child
-    # ABORT rather than fall back to the real store. Belt and braces, on purpose.
-    env = SessionEnv.neutralized(
-      {
-        "TASK_API_BASE" => "http://127.0.0.1:#{port}",
-        "AGENT_API_SECRET" => "test-secret",
-        "RAILS_ENV" => "test"
-      }.merge(TaskUsageSandboxEnv.child_env(sandbox_root))
-    )
-    out, err, status = Open3.capture3(env, RbConfig.ruby, BIN, BOARD_SLUG, *args)
-    [requests, out, status, err]
+    # So the child gets a FAKE session, never the ambient one. SessionEnv.neutralized
+    # strips CLAUDE_CODE_SESSION_ID / CODEX_THREAD_ID and this merge puts a fixed,
+    # obviously-synthetic id back — the opt-in SessionEnv documents. What was dangerous
+    # was resolving the OPERATOR'S live session, not naming a session at all, and
+    # naming one is now load-bearing: bin/reviewer-select takes a review CLAIM, a claim
+    # is held by a LIVE INSTANCE, and a session-less child can name none — so without
+    # this the board path would go advisory and never be exercised.
+    #
+    # The seat belt is unchanged and still does the real work: the write root is PINNED
+    # (TaskUsageSandboxEnv.child_env) and TASK_USAGE_SANDBOX — armed process-wide by
+    # test/support/task_usage_sandbox.rb — makes an unpinned child ABORT rather than
+    # fall back to the real store. A guarantee that held only while nobody opted a
+    # session back in was a guarantee waiting to lapse; this is the lapse, and the pin
+    # is what makes it safe.
+    runner = lambda do |*args, session: SESSION_A|
+      env = SessionEnv.neutralized(
+        {
+          "TASK_API_BASE" => "http://127.0.0.1:#{port}",
+          "AGENT_API_SECRET" => "test-secret",
+          "RAILS_ENV" => "test",
+          "CLAUDE_CODE_SESSION_ID" => session,
+          # Pinned so the nonce is DATA, not a walk of the live process tree — which
+          # under `bin/rails test` would find the operator's own agent process and
+          # make two runs share an identity by accident.
+          "TASK_CLAIM_NONCE" => "nonce-#{session}"
+        }.merge(TaskUsageSandboxEnv.child_env(sandbox_root))
+      )
+      out, err, status = Open3.capture3(env, RbConfig.ruby, BIN, BOARD_SLUG, *args)
+      [out, status, err]
+    end
+    yield runner, requests
   ensure
     server&.close
     thread&.join(1)
   end
 
+  def run_board(devops, *args, busy_payload: nil)
+    with_board(devops, busy_payload: busy_payload) do |run, requests|
+      out, status, err = run.call(*args)
+      return [requests, out, status, err]
+    end
+  end
+
   # Minimal HTTP/1.1 stub: records each request, returns canned JSON. The CLI opens
-  # one connection per call (auth, the task GET, then the intent POST).
-  def serve(server, requests, devops, busy_payload = nil)
+  # one connection per call (auth, the task GET, the review-claim POST, then the
+  # intent POST). `claim` is the stub's one piece of STATE — see review_claim_response.
+  def serve(server, requests, devops, busy_payload = nil, claim = {})
     loop do
       client = server.accept
       line = client.gets
@@ -303,7 +338,7 @@ class ReviewerSelectCliTest < Minitest::Test
       body = len ? client.read(len.to_i) : ""
       requests << { method: method, path: path, body: body }
 
-      payload = response_for(method, path, devops, busy_payload)
+      payload = response_for(method, path, devops, busy_payload, body, claim)
       client.write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n" \
                    "Content-Length: #{payload.bytesize}\r\nConnection: close\r\n\r\n#{payload}")
       client.close
@@ -312,9 +347,12 @@ class ReviewerSelectCliTest < Minitest::Test
     # server closed — stop serving
   end
 
-  def response_for(method, path, devops, busy_payload = nil)
+  def response_for(method, path, devops, busy_payload = nil, body = "", claim = {})
     return JSON.generate("token" => "stub-token") if path == "/api/v1/auth"
     return busy_payload if busy_payload && path.include?("stage=building")
+    if method == "POST" && path == "/api/v1/tasks/#{BOARD_SLUG}/review_claim"
+      return review_claim_response(body, claim)
+    end
     if method == "POST" && path == "/api/v1/tasks/#{BOARD_SLUG}/intent"
       return JSON.generate("data" => { "slug" => BOARD_SLUG })
     end
@@ -322,8 +360,51 @@ class ReviewerSelectCliTest < Minitest::Test
     JSON.generate("data" => { "slug" => BOARD_SLUG, "metadata" => { "devops" => devops } })
   end
 
+  # The stub's lease math, deliberately the same SHAPE as TaskReviewClaim.acquire:
+  # unclaimed OR the same live instance (session + nonce) ⇒ acquired; a DIFFERENT live
+  # instance ⇒ refused, with a holder block for the skip message. That compare-and-set
+  # is the only server behaviour these CLI tests depend on, and the REAL implementation
+  # — the row lock, the TTL, the self-review backstop — is pinned where it lives, in
+  # test/models/task_review_claim_test.rb. Keeping the stub this thin is the point: a
+  # stub that re-implemented the lease would start passing for reasons the board does
+  # not share.
+  def review_claim_response(body, claim)
+    sent = begin
+      JSON.parse(body.to_s)
+    rescue JSON::ParserError
+      {}
+    end
+    who = [sent["session"].to_s, sent["nonce"].to_s]
+
+    if claim.empty? || claim[:who] == who
+      disposition = claim.empty? ? "unclaimed" : "same_instance"
+      claim[:who] = who
+      claim[:agent] = sent["reviewer"].to_s
+      claim[:label] = sent["label"].to_s
+      JSON.generate("data" => { "acquired" => true, "disposition" => disposition,
+                                "holder" => holder_hash(claim) })
+    else
+      JSON.generate("data" => { "acquired" => false, "disposition" => "held_by_other",
+                                "holder" => holder_hash(claim) })
+    end
+  end
+
+  # Mirrors TaskReviewClaim#holder_info — the keys the refusal message reads.
+  def holder_hash(claim)
+    {
+      "task_slug" => BOARD_SLUG, "session" => claim[:who].to_a.first,
+      "label" => claim[:label], "agent" => claim[:agent],
+      "acquired_at" => "2026-09-21T20:15:00Z", "expires_at" => "2026-09-21T23:40:00Z",
+      "heartbeat_age" => 12, "live" => true
+    }
+  end
+
   def intent_posts(requests)
     requests.select { |r| r[:method] == "POST" && r[:path] == "/api/v1/tasks/#{BOARD_SLUG}/intent" }
+  end
+
+  def claim_posts(requests)
+    requests.select { |r| r[:method] == "POST" && r[:path] == "/api/v1/tasks/#{BOARD_SLUG}/review_claim" }
   end
 
   def json_decision(out)
@@ -371,6 +452,110 @@ class ReviewerSelectCliTest < Minitest::Test
     requests, out, status = run_board({ "shape" => "backend", "built_by" => "shannon" }, "--dry", "--json")
     assert_equal 0, status.exitstatus, out
     assert_equal 0, intent_posts(requests).size, "--dry is advisory only — writes nothing"
+  end
+
+  # --- TWO SELECTS, ONE TASK (two-primaries-reviewed-one-pr) -------------------
+  #
+  # MEASURED 2026-09-21, PR #1516: two sessions selected the same task, both pairs were
+  # carl+steffon, and the pair that reached merge-ready was seconds from merging a tree
+  # the OTHER pair had already bounced for a blocker it had missed. Only a pre-merge
+  # board re-read stopped the bad merge.
+  #
+  # The defect was a SEAM, not a race in the claim: bin/reviewer-select recorded review
+  # INTENT and never touched the claim at all, while `Task.reviewable` keys only on a
+  # live claim row. So the board painted "under review" off a claim-less intent and every
+  # gate still read FREE. Selection now ACQUIRES or REFUSES; the tests below pin both
+  # halves, plus the one that would make the cure worse than the disease.
+
+  def test_a_second_session_selecting_the_same_task_is_REFUSED
+    devops = { "shape" => "backend", "built_by" => "shannon" }
+    with_board(devops) do |run, requests|
+      first_out, first_status, = run.call("--json", session: SESSION_A)
+      assert_equal 0, first_status.exitstatus, "the FIRST select wins the claim:\n#{first_out}"
+
+      second_out, second_status, second_err = run.call("--json", session: SESSION_B)
+
+      assert_equal 10, second_status.exitstatus,
+        "a second pair on a task already under review is REFUSED (10):\n#{second_out}#{second_err}"
+      assert_equal 1, intent_posts(requests).size,
+        "ONE task, ONE review intent — the refused select recorded nothing"
+      refute second_out.lines.any? { |l| l.strip.start_with?("{") && l.include?("\"reviewers\"") },
+        "a refusal emits no machine-readable pick a caller could act on:\n#{second_out}"
+    end
+  end
+
+  def test_the_refusal_names_the_holder_and_where_to_go_instead
+    # A refusal that cannot be acted on just moves the stall. It must say WHO holds the
+    # review (so the loser can ask, not seize) and name the next move.
+    with_board({ "shape" => "backend", "built_by" => "shannon" }) do |run, _requests|
+      run.call("--json", session: SESSION_A)
+      _out, _status, err = run.call("--json", session: SESSION_B)
+
+      assert_match(/ALREADY UNDER REVIEW/, err, "the refusal says what happened")
+      assert_includes err, SESSION_A[0, 8], "and names the holding session"
+      assert_match(/carl/, err, "and the soul in the seat")
+      assert_match(/bin\/task claim-next-review/, err, "and where to go instead")
+      assert_match(/bin\/task review-claim status/, err, "and how to check a stale lease")
+    end
+  end
+
+  def test_the_same_session_selecting_twice_is_NOT_refused
+    # THE BLAST-RADIUS CONTROL. The lease identity is the SESSION's — its id plus a
+    # nonce anchored to the agent process every bin/ call descends from — and a reviewer
+    # SUBAGENT shares it rather than having its own. So the primary's own re-select, and
+    # their later `bin/task review-claim acquire`, must read as :same_instance and
+    # proceed. A guard that locked a reviewer out of their own review would pass the
+    # refusal test above and still wedge the entire review lane.
+    with_board({ "shape" => "backend", "built_by" => "shannon" }) do |run, requests|
+      _first_out, first_status, = run.call("--json", session: SESSION_A)
+      second_out, second_status, second_err = run.call("--json", session: SESSION_A)
+
+      assert_equal 0, first_status.exitstatus
+      assert_equal 0, second_status.exitstatus,
+        "the SAME live instance re-selecting is not a conflict:\n#{second_out}#{second_err}"
+      assert_equal 2, claim_posts(requests).size, "both runs asked for the claim"
+      assert json_decision(second_out)["intent_recorded"], "and the second run still records"
+    end
+  end
+
+  def test_the_claim_is_acquired_BEFORE_the_intent_is_recorded
+    # ORDER is the invariant, not merely "both calls happen". An intent written first
+    # and a claim attempted after would leave exactly the board face this bug is about —
+    # "under review" with nothing holding the task — for every run that loses the claim.
+    with_board({ "shape" => "backend", "built_by" => "shannon" }) do |run, requests|
+      run.call("--json", session: SESSION_A)
+
+      posts = requests.select { |r| r[:method] == "POST" }.map { |r| r[:path] }
+      claim_at = posts.index { |p| p.end_with?("/review_claim") }
+      intent_at = posts.index { |p| p.end_with?("/intent") }
+
+      refute_nil claim_at, "the default run takes the review claim: #{posts.inspect}"
+      refute_nil intent_at, "and records the intent: #{posts.inspect}"
+      assert claim_at < intent_at,
+        "the claim must be won BEFORE the intent is announced: #{posts.inspect}"
+    end
+  end
+
+  def test_no_record_reserves_nothing_just_as_it_records_nothing
+    # --no-record/--dry are ADVISORY. Taking a review lease on a task the caller only
+    # asked about would pin it for the full review TTL against the reviewer who
+    # actually wants it — a silent denial of service dressed as a preview.
+    requests, out, status = run_board({ "shape" => "backend", "built_by" => "shannon" },
+                                      "--no-record", "--json")
+    assert_equal 0, status.exitstatus, out
+    assert_equal 0, claim_posts(requests).size, "--no-record claims nothing"
+    assert_equal 0, intent_posts(requests).size, "--no-record records nothing"
+  end
+
+  def test_a_blind_pick_never_even_reserves_the_task
+    # The author refusal (exit 2) fires BEFORE the claim, so a pick the tool refuses to
+    # make cannot leave a lease behind either. Otherwise a run that selected nobody would
+    # still lock the task out of the review lane for the TTL.
+    requests, out, status = run_board({ "shape" => "backend" }, "--json")
+
+    assert_equal 2, status.exitstatus, out
+    assert_equal 0, claim_posts(requests).size, "a refused selection reserves nothing"
+    assert_equal 0, intent_posts(requests).size, "and records nothing"
   end
 
   def test_record_flag_is_a_back_compat_synonym_for_the_default
