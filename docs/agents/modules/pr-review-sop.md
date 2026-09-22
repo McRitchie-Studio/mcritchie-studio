@@ -98,7 +98,9 @@ Avi supervisor. Carl:
 2. Confirms **product-acceptance** — does the open PR (base `accepted`) meet the
    task's acceptance criteria?
 3. Determines the **domain LIGHT** by change surface (the table above), previewing
-   with **`bin/reviewer-select <task>`**. It scores the pool by domain fit with a
+   with **`bin/reviewer-select <task> --no-record`**. A preview must carry
+   `--no-record`: a bare run RECORDS, and recording takes the review claim (below).
+   It scores the pool by domain fit with a
    logged, seeded-per-task tiebreak and **excludes** the QA owner (who QAs the
    assembled RC — no self-gating), **every AUTHOR** (a soul never reviews its own
    work), and any **busy souls** (`--busy a,b,c` and/or `--busy-auto`). The pool is
@@ -180,13 +182,51 @@ Avi supervisor. Carl:
    eligible). The only lever that clears it is `--builder`, stating a smaller true
    author set. If the set is right, every eligible light wrote the diff.
 
-**Record the intent.** `bin/reviewer-select <task>` **records the picked pair by
-default** — it writes Carl + the light onto the task as the live **review intent**
-(the "record intent on PR review" convention), so `/deployments` and the task
-timeline show them reviewing live — a green ticking timer — the moment review kicks
-off, before `→ reviewed` lands. Pass `--no-record` / `--dry` only for an
-advisory-only preview. (The manual fallback is
-`bin/task intent <task> --to reviewed --actor carl`.)
+**Recording is the DEFAULT — and recording ACQUIRES the review claim first.**
+`bin/reviewer-select <task>` writes Carl + the light onto the task as the live
+**review intent** (the "record intent on PR review" convention), so `/deployments`
+and the task timeline show them reviewing live — a green ticking timer — the moment
+review kicks off, before `→ reviewed` lands. Pass **`--no-record`** / `--dry` for an
+advisory-only preview that claims nothing and writes nothing. (`--record` survives
+only as a back-compat no-op; it is not what turns recording on.)
+
+**So preview with `--no-record`, never with a bare run.** Since 2026-09-22 the intent
+write is downstream of a won claim rather than a substitute for one, so a bare
+"preview" takes the task's review claim: a **~3h25m lease**
+(`ClaimLease::REVIEW_TTL_SECONDS = 12275`) with **no renewer behind it**, because
+selection only reserves the seconds until the primary's own acquire. A live claim row
+drops the task out of `Task.reviewable` (`app/models/task.rb` — the scope excludes any
+`submitted` task carrying an unexpired `task_review_claims` row) and therefore out of
+`bin/task claim-next-review` for the whole TTL. It lapses on its own, which is the
+recoverable direction and chosen deliberately — but a preview should not cost a task
+three hours of queue time. From the session that popped the task the claim is already
+yours (`same_instance`), so the ordinary flow is unaffected; it is the bare run from a
+FRESH session — a look at who would review it — that strands the task.
+
+**Exit 10 is a SKIP, and it has TWO arms with opposite remedies.** Both print to
+stderr, select nothing and record nothing. `bin/pr-review` reads exit 10 as a skip
+rather than a failure (a generic "failed" reads as something to retry, and this is
+not), but its own message names only the first arm — so on a refusal, read
+`bin/reviewer-select`'s stderr for which one you actually hit:
+
+| Arm | What it means | The move |
+|-----|---------------|----------|
+| **held** (`refuse_held!`) | a DIFFERENT live session already holds this task's review claim; the message NAMES the holder | Review another task — `bin/task claim-next-review`. Read a suspect lease with `bin/task review-claim status <task>`; ask the holder to `bin/task review-claim release <task>` rather than taking it from them |
+| **self-review** (`refuse_self_review!`) | the board refused the claim because the primary is in this task's AUTHOR SET — the claim-side no-self-review backstop firing. It names NO holder | Reconcile the author set, do not retry: `bin/task show <task> --verbose`, then `bin/task move <task> building --actor <the-real-builder>` |
+
+Two more states are **degraded, not refusals**: no agent session (a plain shell or CI)
+and an unreadable board. Both print the pick as ADVISORY and record nothing, so the
+lane cannot wedge on a board hiccup.
+
+**The manual fallback is the CLAIM, not a bare intent.** Take it with
+**`bin/task review-claim acquire <task>`**: `TaskReviewClaim.acquire` writes the
+`reviewed` intent from the claim side (`record_review_intent`), so one atomic write
+gets you the crew seat **and** the reservation behind it. Do **not** hand-run `bin/task
+intent <task> --to reviewed` — it POSTs the intent and touches the claim table nowhere,
+which is precisely the claim-less intent that let two sessions review PR #1516 at once
+on 2026-09-21. (The DEPLOY lane's `bin/task intent --to assembled` / `--to shipped`
+fallback is a different case and stands: no claim gates those stages, so a deploy
+intent cannot get ahead of a reservation that does not exist.)
 
 Carl then **summons his LIGHT** (Step 2) — his own child, nested under him.
 

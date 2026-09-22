@@ -181,9 +181,10 @@ repo** (not N per-task merges), re-stamps `merged: "release"`, and flips members
 
 ### Picking the domain light (`bin/reviewer-select`)
 
-Carl runs `bin/reviewer-select <task>` to preview **Carl (primary)**, seated by
-ROLE and never ranked, **+ 1 LIGHT** picked by domain fit with a logged,
-seeded-per-task tiebreak. Three exclusions keep review
+Carl runs `bin/reviewer-select <task> --no-record` to preview **Carl (primary)**,
+seated by ROLE and never ranked, **+ 1 LIGHT** picked by domain fit with a logged,
+seeded-per-task tiebreak. Keep `--no-record` on a preview: a bare run RECORDS the
+pair, and recording takes the task's review claim (see below). Three exclusions keep review
 honest, and **none of them needs a manual flag in the common case**:
 
 - **QA owner** (the soul who QAs the assembled RC) — never a light on a PR he then
@@ -295,6 +296,16 @@ nothing either, exactly as they record nothing. Selecting from the session that
 already holds the claim — the ordinary flow, where `claim-next-review` claimed it
 moments earlier — is `same_instance` and proceeds, because the lease identity is
 the SESSION's and a reviewer subagent shares it.
+
+**Exit 10 has a SECOND arm, and its remedy is the opposite one.** The board also
+refuses the claim when the primary is in the task's AUTHOR SET — the claim-side
+no-self-review backstop (`refuse_self_review!`) — and that refusal exits 10 too. It
+names NO holder, so "someone else is reviewing it" is the wrong read: the author set
+the board holds disagrees with the one the pick was rolled from, and the move is to
+reconcile it (`bin/task show <task> --verbose`, then `bin/task move <task> building
+--actor <the-real-builder>`), not to take the next task. `bin/pr-review` reads exit
+10 as a SKIP for both arms but hard-codes the held wording, so read the command's
+own stderr to tell them apart.
 
 This closed a real seam. Until 2026-09-22 selection recorded intent and touched
 the claim nowhere, while `Task.reviewable` keys only on a live claim row — so the
