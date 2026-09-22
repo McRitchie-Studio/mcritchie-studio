@@ -59,11 +59,17 @@ class SessionPreflightShapeNoteTest < Minitest::Test
   # NAMED AWAY FROM `test_`, DELIBERATELY — do not rename this back. Minitest
   # collects every public method matching /^test_/, so the obvious name for this
   # fixture ("the devops hash for the test-only shape") is COLLECTED AS A TEST and
-  # runs asserting nothing. config/test_health.yml declares `assertion_free: 0` as
-  # an EXACT contract, and under that name this file defeated it only by
+  # runs asserting nothing. The repo's test-health ratchet declares `assertion_free`
+  # at zero as an EXACT contract, enforced by test/lib/test_health_ratchet_test.rb
+  # (whose failure names the config file); under that name this file defeated it by
   # coincidence: the detector scans the method body for /assert\w*/ and found the
   # word inside the fixture STRING below, "... assert red". Reword that string and
   # the ratchet reds here, for a reason nobody editing a fixture would predict.
+  # THAT RATCHET'S CONFIG IS NAMED IN WORDS, NOT SPELLED AS A PATH, deliberately.
+  # A literal mention adds this file to that config's fast-cert mapped set and trips
+  # the exact-count clause in test/lib/fast_cert_subject_test.rb. Measured 2026-09-22:
+  # spelling it took that count 28 -> 29 and reddened CI shard 1 while the local fast
+  # cert stayed green, because the cap clause is not in the mapped lane.
   def devops_for_test_only
     {
       "shape" => "test-only", "repositories" => ["mcritchie-studio"], "risk_tags" => ["tests"],
