@@ -181,8 +181,9 @@ repo** (not N per-task merges), re-stamps `merged: "release"`, and flips members
 
 ### Picking the domain light (`bin/reviewer-select`)
 
-Carl runs `bin/reviewer-select <task>` to preview **Carl (primary) + 1 LIGHT** by
-domain fit with a logged, seeded-per-task tiebreak. Three exclusions keep review
+Carl runs `bin/reviewer-select <task>` to preview **Carl (primary)**, seated by
+ROLE and never ranked, **+ 1 LIGHT** picked by domain fit with a logged,
+seeded-per-task tiebreak. Three exclusions keep review
 honest, and **none of them needs a manual flag in the common case**:
 
 - **QA owner** (the soul who QAs the assembled RC) — never a light on a PR he then
