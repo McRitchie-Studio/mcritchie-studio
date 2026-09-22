@@ -11,12 +11,16 @@
 # it. This drives the real script with a real task record and reads what came out
 # of the branch.
 #
-# WHAT IT IS GUARDING AGAINST, measured 2026-09-22. Until this file existed
-# bin/session-preflight was read by NO test at all, and it carried the falsified
-# claim that `test-only` owes the full suite outright long after the four agent
-# docs had been corrected — the one surface a docs-shaped correction could not
-# reach, and the costliest one to be wrong on. A file with no test is how prose
-# outlives the thing it describes.
+# WHAT IT IS GUARDING AGAINST, measured 2026-09-22. The script is NOT untested —
+# test/commands/session_preflight_test.rb has covered it for a long time, 36 cases
+# driving the same CLI seams this file drives. Not one of them reads the SHAPE
+# NOTE, which is why the script went on printing the falsified claim that
+# `test-only` owes the full suite outright long after the four agent docs had been
+# corrected. Coverage of a script is not coverage of every sentence it prints, and
+# an uncovered sentence is how prose outlives the thing it describes — here on the
+# one surface a docs-shaped correction could not reach, and the costliest one to be
+# wrong on. Add a case HERE when the note changes; add one THERE for the script's
+# behaviour.
 #
 # Run directly:
 #   ruby -Itest test/lib/session_preflight_shape_note_test.rb

@@ -231,8 +231,9 @@ class ZapControlLaneDocsTest < Minitest::Test
   # could reach. Two ENFORCEMENT surfaces state the same rule and were not on it:
   # `config/feature_shapes.yml`, the shape contract itself, and
   # `bin/session-preflight`, which prints this sentence at the moment a builder is
-  # deciding what to run — the costliest place to be wrong, and read by no test at
-  # all until 2026-09-22.
+  # deciding what to run — the costliest place to be wrong. The SCRIPT was covered
+  # (test/commands/session_preflight_test.rb, 36 cases); this SENTENCE was read by
+  # no test until 2026-09-22, which is the gap that let it go stale.
   FAST_OR_FULL_SURFACES = %w[
     docs/agents/claude.md
     docs/agents/index.md
