@@ -8,12 +8,13 @@ require "test_helper"
 # `ok`. A green release can therefore carry data that never refreshed.
 #
 # The failed ImportRun that records it is durable but UNRENDERED: its only
-# reader in this app is `ImportRun.last_success_for`, which selects successes.
-# So this test asserts the surface, not the table — the outage has to be
-# readable on /error_logs and on the Request Logs panel of /admin/dashboard,
-# which is what "discoverable without querying production" means.
+# reader outside the model is athletes_controller's
+# `ImportRun.last_success_for`, which selects SUCCESSES. So this test asserts
+# the surface, not the table — the outage has to be readable on /error_logs and
+# on the Request Logs panel of /admin/dashboard, which is what "discoverable
+# without querying production" means.
 #
-# It is also the only test in this repo that GETs /error_logs at all.
+# It is also the only test in this repo that GETs /error_logs.
 class FeedOutageErrorLogTest < ActionDispatch::IntegrationTest
   setup do
     ImportRun.delete_all
