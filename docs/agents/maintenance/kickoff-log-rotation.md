@@ -240,7 +240,9 @@ promise is "every app on the gem", not "every checkout".
 
 ## Note on the current floor
 
-There is roughly 1.2 GB of logs and 913 MB of tmp on disk right now, predating
-the fix. Do not clear it by hand first — running the repaired
-`bin/clean-artifacts --dry-run` and then the real sweep against that mess is the
-best available proof the work is correct.
+When this brief was written the machine carried roughly 1.2 GB of logs and
+913 MB of tmp, all of it predating the fix, and the plan was to leave it alone:
+running the repaired `bin/clean-artifacts --dry-run` and then the real sweep
+against that mess was the best available proof the work was correct. Those
+numbers describe the machine as it was then, not as it is now. For a current
+reading, run `bin/clean-artifacts --dry-run` and read its own report.
