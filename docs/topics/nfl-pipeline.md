@@ -11,6 +11,8 @@ Three layered services, each authoritative for one slice of state. Run the full 
 
 Pulls `players.csv` from nflverse-data GitHub release (~24k rows, default filter is `last_season>=2024` only — no status filter so UFA/RES/PUP veterans like Hunt/Harris/Waller are included). Upserts Person + Athlete with all six cross-ref IDs (`gsis_id`, `espn_id`, `pff_id`, `otc_id`, `pfr_id`, `nflverse_id`). Lookup priority is `gsis_id` (anchor) → `pff_id` → `otc_id` → `espn_id` → `pfr_id` → `nflverse_id` → `person_slug` (name match) → create. `nflverse_id` sits LAST but must be probed: it is uniquely indexed, so a row whose `nflverse_id` already belongs to another athlete would otherwise fall through to the name path and wedge the next run on `index_people_on_slug`. Sets `Athlete.team_slug` from `latest_team` and caches ESPN headshots to S3 inline (idempotent; **not** skipped without AWS creds — the constructor RAISES, so opt out with `upload_headshots: false` or `SKIP_HEADSHOTS=1`, which is what both declared post-deploy commands do). The `team_slug` here is provisional — Spotrac and ESPN authoritatively overwrite below. Optional env: `STATUS=ACT` to re-narrow, `MIN_SEASON=2025` to scope tighter.
 
+The name fallback adopts an existing Athlete only when it has no cross-ref IDs or shares an ID with the incoming row. If both records have identity data but none match, they are namesakes and receive separate Person slugs even when both GSIS IDs are blank. A namesake row with no identity key cannot receive a stable slug; the importer skips it, increments `namesake_collisions_skipped`, and continues instead of aborting the post-deploy command.
+
 ### 2. `Spotrac::SyncContracts`
 `app/services/spotrac/sync_contracts.rb`, rake `nfl:salaries_sync` — salary overlay.
 

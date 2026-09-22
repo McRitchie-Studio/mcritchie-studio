@@ -42,6 +42,41 @@ class Nflverse::SeedPlayersCollisionTest < ActiveSupport::TestCase
     assert_equal 2, Athlete.where(person_slug: people.map(&:slug)).count
   end
 
+  # GSIS is only one of six identity keys. These two people still have distinct
+  # ESPN IDs, so a blank GSIS must not turn the name match into permission to
+  # overwrite the first Athlete.
+  test "two namesakes with blank gsis and distinct secondary ids both survive" do
+    run_import(csv(
+      jefferson(gsis: "", espn: "4262921", position: "WR", team: "MIN"),
+      jefferson(gsis: "", espn: "4430737", position: "LB", team: "CLE")
+    ))
+
+    people = Person.where(first_name: "Justin", last_name: "Jefferson")
+    athletes = Athlete.where(person_slug: people.map(&:slug))
+
+    assert_equal 2, people.count, "the name match silently merged two people"
+    assert_equal 2, athletes.count, "one namesake athlete was overwritten"
+    assert_equal %w[4262921 4430737], athletes.order(:espn_id).pluck(:espn_id)
+  end
+
+  # There is no stable slug suffix when the incoming namesake has no identity
+  # key at all. That bad row must be visible in the counters, but it must not
+  # abort the post-deploy import or damage the identified athlete.
+  test "an unidentifiable namesake is skipped without aborting the import" do
+    stats = nil
+
+    assert_nothing_raised do
+      stats = run_import(csv(
+        jefferson(gsis: "00-0036322", espn: "4262921", position: "WR", team: "MIN"),
+        jefferson(gsis: "", espn: "", position: "LB", team: "CLE")
+      ))
+    end
+
+    assert_equal 1, Athlete.count
+    assert_equal "00-0036322", Athlete.first.gsis_id
+    assert_equal 1, stats[:namesake_collisions_skipped]
+  end
+
   test "the namesake carries a disambiguated slug and the first keeps the clean one" do
     run_import(csv(
       jefferson(gsis: "00-0036322", espn: "4262921", position: "WR", team: "MIN"),

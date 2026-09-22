@@ -25,6 +25,8 @@ require "open-uri"
 class Nflverse::SeedPlayers
   PLAYERS_URL = "https://github.com/nflverse/nflverse-data/releases/download/players/players.csv"
   DEFAULT_MIN_SEASON = 2024
+  IDENTITY_COLUMNS = %i[gsis_id pff_id otc_id espn_id pfr_id nflverse_id].freeze
+  DISAMBIGUATOR_PRIORITY = %i[gsis_id espn_id pff_id otc_id pfr_id nflverse_id].freeze
 
   # A third-party feed being unreachable is NOT an import defect, and must not
   # read as one: this service runs as a post-deploy command inside bin/release,
@@ -169,8 +171,9 @@ class Nflverse::SeedPlayers
     # Spotrac without suffix) live as two Person+Athlete pairs and a name match
     # picks the wrong one.
     nflverse_id = row["nfl_id"].to_s.strip.presence
-    athlete = lookup_athlete_by_ids(gsis_id: gsis_id, pff_id: pff_id, otc_id: otc_id,
-                                     espn_id: espn_id, pfr_id: pfr_id, nflverse_id: nflverse_id)
+    identifiers = { gsis_id: gsis_id, pff_id: pff_id, otc_id: otc_id, espn_id: espn_id,
+                    pfr_id: pfr_id, nflverse_id: nflverse_id }
+    athlete = lookup_athlete_by_ids(**identifiers)
     person = athlete&.person
 
     if athlete.nil?
@@ -184,7 +187,8 @@ class Nflverse::SeedPlayers
       person = Person.find_or_create_by_name!(first, last, athlete: true)
       @stats[:people_created] += 1 if person.previously_new_record?
 
-      athlete = resolve_athlete!(person, first, last, gsis_id, espn_id)
+      athlete = resolve_athlete!(person, first, last, identifiers)
+      return nil unless athlete
     end
 
     attrs = build_attrs(row, gsis_id)
@@ -207,21 +211,27 @@ class Nflverse::SeedPlayers
   # Person. The name is not enough:
   #
   #   - no athlete yet              -> create one
-  #   - athlete with no gsis_id     -> an unidentified record for this name (a
+  #   - athlete with no identity ID -> an unidentified record for this name (a
   #                                    seed, or a hand-entered row); adopt it
   #                                    rather than making a twin
-  #   - athlete with a DIFFERENT
-  #     gsis_id                     -> a DIFFERENT HUMAN who shares the name.
+  #   - athlete with a DIFFERENT ID -> a DIFFERENT HUMAN who shares the name.
   #                                    Give them their own Person, slugged with
   #                                    a disambiguator, so the two never collide
   #
   # That last branch is the whole point. Adopting blindly is what silently
   # overwrote one of each namesake pair: the row is counted as an update, the
   # import reports success, and a player is simply gone.
-  def resolve_athlete!(person, first, last, gsis_id, espn_id)
+  def resolve_athlete!(person, first, last, identifiers)
     existing = Athlete.find_by(person_slug: person.slug)
 
-    return existing if existing && (existing.gsis_id.blank? || existing.gsis_id == gsis_id)
+    return existing if existing && adoptable_name_match?(existing, identifiers)
+
+    disambiguator = disambiguator_for(identifiers) if existing
+    if existing && disambiguator.blank?
+      @stats[:namesake_collisions_skipped] += 1
+      vputs "  [!] skipped unidentifiable namesake: #{first} #{last}"
+      return nil
+    end
 
     # ONE TRANSACTION, because the two writes are one fact. A Person created
     # here whose Athlete then fails leaves an ID-less orphan, and the NEXT run
@@ -232,7 +242,7 @@ class Nflverse::SeedPlayers
       if existing
         person = Person.create!(
           first_name: first, last_name: last, athlete: true,
-          disambiguator: disambiguator_for(gsis_id, espn_id)
+          disambiguator: disambiguator
         )
         @stats[:people_created] += 1
         @stats[:name_collisions] = @stats.fetch(:name_collisions, 0) + 1
@@ -246,14 +256,33 @@ class Nflverse::SeedPlayers
 
   def transaction(&block) = ActiveRecord::Base.transaction(&block)
 
+  # Name matching can adopt a genuinely unidentified seed record. Once an
+  # Athlete carries any cross-reference, though, a row that shares none of
+  # them is another person even when GSIS is blank on both sides.
+  def adoptable_name_match?(existing, identifiers)
+    existing_ids = IDENTITY_COLUMNS.filter_map do |column|
+      value = existing.public_send(column)
+      [column, value] if value.present?
+    end.to_h
+
+    return true if existing_ids.empty?
+
+    identifiers.any? do |column, incoming|
+      incoming.present? && existing_ids[column].to_s == incoming.to_s
+    end
+  end
+
   # A short, STABLE suffix. Derived from the league ID rather than a counter, so
   # re-running the import in a different row order produces the same slug — a
   # counter would make a person's URL depend on CSV ordering.
-  def disambiguator_for(gsis_id, espn_id)
-    source = gsis_id.presence || espn_id.presence
-    raise "cannot disambiguate a namesake with no league ID" if source.blank?
+  def disambiguator_for(identifiers)
+    source = DISAMBIGUATOR_PRIORITY.filter_map { |column| identifiers[column].presence }.first
+    return if source.blank?
 
-    source.gsub(/\D/, "").last(4)
+    digits = source.to_s.gsub(/\D/, "")
+    return digits.last(4) if digits.present?
+
+    source.to_s.gsub(/[^a-z0-9]/i, "").downcase.last(8).presence
   end
 
   def lookup_athlete_by_ids(gsis_id:, pff_id:, otc_id:, espn_id:, pfr_id:, nflverse_id: nil)

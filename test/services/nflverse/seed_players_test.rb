@@ -122,6 +122,20 @@ class Nflverse::SeedPlayersTest < ActiveSupport::TestCase
     assert_equal 1, service.stats[:athletes_updated]
   end
 
+  test "a conflicting secondary identity refuses name-based adoption" do
+    service = Nflverse::SeedPlayers.new(csv_body: csv_for([]), upload_headshots: false)
+    existing = Athlete.new(espn_id: "111", pff_id: 222)
+
+    matching = { gsis_id: nil, espn_id: "111", pff_id: nil, otc_id: nil, pfr_id: nil,
+                 nflverse_id: nil }
+    conflicting = matching.merge(espn_id: "333")
+
+    assert service.send(:adoptable_name_match?, existing, matching)
+    assert_not service.send(:adoptable_name_match?, existing, conflicting)
+    assert service.send(:adoptable_name_match?, Athlete.new, conflicting),
+           "an unidentified hand-entered athlete should still be adopted"
+  end
+
   test "prefers pff_position over generic position (3-4 OLB → EDGE)" do
     # nflverse generic position = "OLB" → NFLVERSE_MAP collapses to "LB",
     # but pff_position = "ED" disambiguates as edge rusher (T.J. Watt case)
