@@ -169,6 +169,31 @@ class ReviewerSelector
     "alex"    => %w[docs documentation]
   }.freeze
 
+  # WHY A SOUL HOLDS A SEAT — the mechanism that actually put them there, carried
+  # on the seat view so the CLI can print it instead of guessing from the matched
+  # list. Three values, one per mechanism this class uses.
+  #
+  # THE DEFECT THIS EXISTS FOR, measured 2026-09-22 on `zap-desk-needs-build-artifacts`
+  # (shape `docs`). The seat line derived its explanation from ONE input — whether
+  # the seat matched any needed domain — and printed "(no domain match — seeded
+  # tiebreak)" whenever it matched none. For the LIGHT seat that is true. For the
+  # standing PRIMARY it is two false claims at once: Carl is seated by ROLE, never
+  # scored against the pool and never rolled, and he carried a placeholder roll of
+  # 0.0 that printed as `roll 0.0000` beside the sentence. The run read:
+  #
+  #   PRIMARY  carl   matched: (no domain match — seeded tiebreak)  (fit 0, roll 0.0000)
+  #   LIGHT    alex   matched: docs, documentation                  (fit 2, roll 0.5906)
+  #
+  # which says a tiebreak seated Carl over a soul who out-fit him 2–0. It did not:
+  # #pair seats Carl unconditionally (#carl_primary?) and ranks ONLY the light pool.
+  # The pick was correct and its explanation was not, and the explanation is what a
+  # reader acts on — that line was filed as an ordering bug and survived three
+  # rounds of evidence-gathering before anyone traced #pair. A seat now states the
+  # mechanism it was actually seated by.
+  SEAT_BASIS_STANDING_PRIMARY = "standing_primary"
+  SEAT_BASIS_DOMAIN_FIT = "domain_fit"
+  SEAT_BASIS_TIEBREAK = "seeded_tiebreak"
+
   # Neutral weight when an Agent row has no metadata["review_weight"].
   DEFAULT_REVIEW_WEIGHT = 1.0
 
@@ -383,16 +408,32 @@ class ReviewerSelector
     end
   end
 
-  # The standing-primary candidate view (Carl). Not part of the light ranking, so
-  # it carries a fixed roll of 0.0 — he is chosen deterministically, not rolled.
+  # The standing-primary candidate view (Carl). He is seated by ROLE, so he is
+  # neither scored against the pool nor rolled: his roll is **nil**, not 0.0.
+  # It was 0.0 until 2026-09-22 and that placeholder was read as a real roll —
+  # see SEAT_BASIS_STANDING_PRIMARY for the measured misreading it caused.
   def carl_candidate
-    build_candidate(STANDING_PRIMARY, roll: 0.0)
+    build_candidate(STANDING_PRIMARY, roll: nil, basis: SEAT_BASIS_STANDING_PRIMARY)
   end
 
-  def build_candidate(slug, roll:)
+  # `basis:` is the SEATING MECHANISM, carried on the candidate so the seat view
+  # can report it. Omit it and it derives from the fit (#ranked_basis) — the right
+  # answer for every soul drawn from the light ranking, which is every candidate
+  # but Carl. Carl passes his explicitly, because his has nothing to derive from:
+  # he is not in the ranking at all.
+  def build_candidate(slug, roll:, basis: nil)
     domains = reviewer_domains(slug)
-    { slug: slug, fit: (needed_domains & domains).size, weight: reviewer_weight(slug),
-      roll: roll, domains: domains }
+    fit = (needed_domains & domains).size
+    { slug: slug, fit: fit, weight: reviewer_weight(slug),
+      roll: roll, domains: domains, basis: basis || ranked_basis(fit) }
+  end
+
+  # The basis for a soul drawn from the LIGHT ranking. `ranked` sorts by
+  # [-fit, -weight, roll], so a candidate with ANY domain match got to the top on
+  # fit; a candidate at fit 0 got there on the seeded roll. Both are real
+  # mechanisms this class uses, and the seat line names whichever one applied.
+  def ranked_basis(fit)
+    fit.positive? ? SEAT_BASIS_DOMAIN_FIT : SEAT_BASIS_TIEBREAK
   end
 
   # A STABLE integer seed derived from the task identity AND the two exclusions
@@ -788,7 +829,15 @@ class ReviewerSelector
       "domains" => candidate[:domains],
       "matched" => (needs & candidate[:domains]),
       "fit" => candidate[:fit],
-      "roll" => candidate[:roll].round(4)
+      # WHY this soul holds this seat (SEAT_BASIS_*). Read it before reading the
+      # two numbers beside it: a `standing_primary` seat was not scored against the
+      # pool, so its fit is an observation about the soul and not the reason he is
+      # sitting there.
+      "basis" => candidate[:basis],
+      # nil for a seat that was never ROLLED — the standing primary. It was 0.0
+      # until 2026-09-22, and a placeholder that renders as a real number is how a
+      # reader concludes a roll happened. nil has no plausible reading but "none".
+      "roll" => candidate[:roll]&.round(4)
     }
   end
 
