@@ -549,12 +549,12 @@ class ZapCertFreshnessDocsTest < Minitest::Test
     # --- AND IT MUST NAME THE TREE IT ACTS ON (/tasks/remedy-command-lacks-directory) --
     #
     # Everything above measures the remedy from INSIDE the graded checkout. The operator
-    # is not standing there: bin/dor-check:1176-1180 says `--gate-role review` is run from
-    # the repo's PRIMARY, which sits on release or main by SOP, and the gate re-roots to
-    # the desk by itself. So the directory a pasted command acts on is whichever tree the
-    # reviewer happens to be in — and the move above is the FIRST MUTATING command this
-    # refusal has ever printed. The previous remedy was `git fetch`, harmless from
-    # anywhere; that is why nobody had to think about this before.
+    # is not standing there: bin/dor-check:98-99#"reviewers run --gate-role review" says
+    # that lane runs from the repo's PRIMARY, which sits on release or main by SOP, and
+    # the gate re-roots to the desk by itself. So the directory a pasted command acts on
+    # is whichever tree the reviewer happens to be in — and the move above is the FIRST
+    # MUTATING command this refusal has ever printed. The previous remedy was `git fetch`,
+    # harmless from anywhere; that is why nobody had to think about this before.
     poisoned_primary, spared_primary, moved_desk = with_house do |h|
       # The SOP geometry, built for real: the primary sits on main, BEHIND the feature
       # head. Note `-B main origin/#{BRANCH}` and not a bare `-B main` — with only feat/x

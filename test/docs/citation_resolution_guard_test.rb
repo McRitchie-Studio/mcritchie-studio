@@ -16,8 +16,7 @@ require "test_helper"
 # one. A rotted citation does not look rotted — it reads exactly like the truth, and
 # routes a reader to whatever happens to sit at that offset today.
 #
-# WHAT THIS GUARD DOES, in three lanes. Each asks only "does this RESOLVE?" — it
-# opens the cited file and looks. None of them reads the prose around the citation,
+# WHAT THIS GUARD DOES, in five lanes. NONE OF THEM READS THE PROSE around a citation,
 # which is the whole design: a guard keyed on WORDING is evaded by rephrasing, and a
 # sibling guard keyed on VERBS was measured against twelve of them by its reviewer,
 # slipping on plurals, noun forms, participles and synonyms alike. THAT MEASUREMENT IS
@@ -28,6 +27,8 @@ require "test_helper"
 #
 #   1. `path:line` must land on a SUBSTANTIVE line — the file exists, the line is
 #      inside it, and the line is neither blank nor a lone delimiter (`end`, `}`).
+#      A RANGE IS CHECKED AT BOTH ENDS: `path:a-b` whose LAST line is a bare `end` has
+#      slid off its subject, because a range is cut to fit a passage.
 #   2. `path#symbol` — the SEAM form — must land on a DEFINITION in that file.
 #      This is what makes a seam citation trustworthy rather than merely rot-proof.
 #      Without it, retiring `path:line` would trade a checkable pointer that rots for
@@ -35,10 +36,21 @@ require "test_helper"
 #   3. The `path:line` POPULATION MAY NOT GROW. A new pointer in the rotting format
 #      has to displace an old one, so the cheap path for a new citation is the seam
 #      form — which lane 2 then verifies forever.
+#   4. A DECLARED ANCHOR must be in the span that names it. `path:line#"what is on it"`
+#      carries its own subject, so when the file moves the citation says so itself
+#      instead of resolving quietly onto a stranger. This is the only lane that reads
+#      CONTENT — and it still reads no prose: the author DECLARES the token, the lane
+#      only looks it up. Limit A tried to INFER that token and measured a third false.
+#   5. The UNANCHORED population may not grow either. Lanes 3 and 5 together are what
+#      make lane 4 mandatory for new work: a new `path:line` must displace an old one
+#      AND must be anchored, without a retrofit of the 49 that are not.
 #
-# Lanes 1 and 2 are option (a) from the task record, lane 3 is option (b), and the
-# two compose exactly as the record predicted: verify the ones that must be lines,
-# and stop minting new ones everywhere else.
+# Lanes 1 and 2 are option (a) from the first task record, lane 3 is option (b), and the
+# two compose exactly as that record predicted: verify the ones that must be lines, and
+# stop minting new ones everywhere else. Lanes 4 and 5 are the second record's (a) and
+# (b) — added 2026-09-22 after four citations rotted onto SUBSTANTIVE lines in one night
+# across three PRs, green on all three lanes, with nothing but a reviewer's eye between
+# them and the tree. They are pinned at MISPOINTED_CITATIONS, verbatim, all four.
 #
 # A CONTINUATION ANCHOR IS A CITATION TOO, and until 2026-09-14 it was invisible to ALL
 # THREE LANES. `bin/release.rb:224 + :232`, `bin/task:631, :1139`, `bin/statusline:229,231`
@@ -65,13 +77,22 @@ require "test_helper"
 #
 # ITS LIMITS, STATED PLAINLY — four, and none of them is closable by resolution:
 #
-#   A. A citation that points at the WRONG SUBSTANTIVE LINE still passes lane 1.
+#   A. A BARE citation that points at the WRONG SUBSTANTIVE LINE still passes lane 1.
 #      Deciding that `bin/release.rb:267` should have been `:293` needs the citation's
 #      INTENT, which lives in prose. Inferring it was tried and measured here before
 #      being rejected: the nearest code token to the citation flags 46 sites, of which
 #      a hand audit found roughly a third false — including `(bin/release.rb:4296,4305)`,
 #      a correct PAIR whose two anchors the heuristic crossed. A lane with that error
-#      rate teaches readers to ignore it. Lane 3 is the answer instead — and LIMIT D IS
+#      rate teaches readers to ignore it.
+#      LANE 4 CLOSES THIS FOR ANCHORED CITATIONS, and for those only, by asking the
+#      author to DECLARE the token instead of guessing it. What it closes is ROT — a
+#      citation that was right when written and whose file moved under it. It does NOT
+#      close WRONG AT BIRTH: an author reading the wrong line copies the anchor off
+#      that same wrong line, and the pair is self-consistent forever. Nothing here can
+#      reach that, and defect D of MISPOINTED_CITATIONS is what it looks like — a range
+#      that swallowed the paragraph CONTRADICTING the sentence that cited it, ending
+#      substantive, carrying its anchor, and wrong. Lanes 3 and 5 price the rest — and
+#      LIMIT D IS
 #      THE AUTHORITY ON WHAT KIND OF ANSWER IT IS. Read it before this paragraph: lane 3
 #      prices the rotting format rather than proving anything about it, so the population
 #      falls as sites convert only because a reviewer keeps making it fall. This sentence
@@ -92,12 +113,15 @@ require "test_helper"
 #      docs that teach the naming convention (`x_test.rb`, `foo_test.rb`,
 #      `widget_test.rb`). A placeholder is spelled exactly like a real name on purpose,
 #      so resolution cannot tell them apart, and 441 false positives is not a guard.
-#   D. LANE 3 IS A TOLL BOOTH, NOT A BAN — and its monotonicity is a CONVENTION, not a
-#      mechanism. `LINE_CITATION_CEILING` is a plain constant, and nothing here compares
-#      it against the value on `accepted`; a diff that raises it is legal and merely
-#      visible. That is the intended design — it makes the seam form the cheap path and
-#      forces any exception onto a reviewable line — but it is enforced by REVIEW, so do
-#      not read a green lane 3 as proof that nobody bought their way past it.
+#   D. LANES 3 AND 5 ARE TOLL BOOTHS, NOT BANS — and their monotonicity is a CONVENTION,
+#      not a mechanism. `LINE_CITATION_CEILING` and `UNANCHORED_LINE_CITATION_CEILING`
+#      are plain constants, and nothing here compares either against the value on
+#      `accepted`; a diff that raises one is legal and merely visible. That is the
+#      intended design — it makes the seam form the cheap path and forces any exception
+#      onto a reviewable line — but it is enforced by REVIEW, so do not read a green
+#      lane 3 or 5 as proof that nobody bought their way past it. Lane 5 is the softer
+#      of the two by construction: raising it costs a reviewer's attention, whereas
+#      raising lane 3's also has to survive the question of why a seam would not do.
 class CitationResolutionGuardTest < ActiveSupport::TestCase
   # The directories a citation into THIS repo can start with. A token that starts
   # anywhere else is not addressed to this checkout and is none of this guard's
@@ -105,7 +129,48 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
   REPO_DIRS = %w[app bin config db docs e2e lib public script test].freeze
   DIRS_RE = REPO_DIRS.join("|")
 
-  LINE_CITATION = %r{\b((?:#{DIRS_RE})/[A-Za-z0-9_./-]*[A-Za-z0-9_]):(\d+)(?:-(\d+))?\b}
+  # THE DECLARED ANCHOR — `path:line#"what is on it"`, lane 4's whole subject.
+  #
+  # IT IS DECLARED, NOT INFERRED, and that distinction is the reason this lane exists
+  # where limit A's rejected heuristic did not. Limit A tried to GUESS the anchor from
+  # the nearest code token to the citation: 46 sites flagged, roughly a third of them
+  # false on a hand audit, including a correct PAIR whose two anchors it crossed. A
+  # guess can be wrong. A declaration cannot be wrong about ITSELF — the author writes
+  # the token, and the guard only asks whether the cited span contains it. The false
+  # positive rate of this lane is structurally zero: a citation with no `#` anchor is
+  # not in it at all.
+  #
+  # THREE SPELLINGS, because a line is not always an identifier. `#"quoted"` for a
+  # phrase (the only form that can carry `--gate-role review` or a comment sentence),
+  # `#`backticked`` for the same inside Markdown prose that is already code-spanning,
+  # and a bare `#token` for the common case where the landmark IS a Ruby name. Minimum
+  # three characters: `#"a"` would match every line in every file and pin nothing.
+  #
+  # `#` IS THE HOUSE'S OWN LANDMARK MARKER, borrowed deliberately from SEAM_CITATION so
+  # the family reads as one grammar: `path#symbol` is a landmark with no line,
+  # `path:line#anchor` is a landmark WITH one, and dropping the `:line` from the second
+  # is the conversion lane 3 is asking for. It cannot collide with SEAM_CITATION —
+  # that pattern needs `#` directly after a path, and a path may not contain `:`.
+  # Measured across the scanned corpus before this lane landed: ZERO occurrences of
+  # `path:<digits>#`, so widening the citation grammar re-read no existing prose.
+  #
+  # A YAML `#` DOES NOT START A COMMENT HERE. YAML needs whitespace before an inline
+  # `#`; this one sits hard against a digit, so `bin/dor-check:44-47#"FAST route"` is a
+  # scalar in config/feature_shapes.yml exactly as written.
+  ANCHOR = %r{\#(?:"([^"\n]{3,80})"|`([^`\n]{3,80})`|([A-Za-z_][A-Za-z0-9_]{2,}[!?]?))}
+
+  # A LEADING COMMENT MARKER IS NOT CONTENT. Dropping it is what lets an anchor be read
+  # the way a human reads the passage — and what lets a phrase that WRAPS across two
+  # comment lines be found, since the join would otherwise splice a `#` into the middle
+  # of it. `#` and `//` only: stripping a leading `--` would eat `--gate-role`, which is
+  # exactly the kind of anchor this lane exists to carry.
+  COMMENT_LEAD = %r{\A\s*(?:\#+|//)\s?}
+
+  # The citation, with its anchor OPTIONAL. Groups 1-3 are unchanged — path, first,
+  # last — so every lane, fixture and continuation that reads them is untouched; the
+  # anchor arrives as groups 4-6 and is read only through `anchor_of`. Making it part
+  # of `m[0]` is deliberate: the text a failure prints stays greppable in the body.
+  LINE_CITATION = %r{\b((?:#{DIRS_RE})/[A-Za-z0-9_./-]*[A-Za-z0-9_]):(\d+)(?:-(\d+))?\b(?:#{ANCHOR.source})?}
 
   # THE SECOND ANCHOR OF A CONTINUATION — a line number that inherits its path from the
   # citation it follows. Matched ONLY against the text immediately after a resolving
@@ -269,18 +334,32 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
   # carried a continuation), leaving 57, which is also 63 − 6. The seam population rose
   # 91 → 102 over the same diff, and 103 once it merged: every anchor that left became a
   # named landmark rather than a deletion.
-  LINE_CITATION_CEILING = 57
+  #
+  # 57 -> 55 on this task (citations-resolve-but-mislead). NOTHING WAS CONVERTED to earn
+  # those two: 57 was the value the follow-up left, and the tree underneath it had already
+  # drifted to 55 by ordinary deletion. Lowering a bound onto the measured count is what
+  # keeps it a BOUND rather than slack — at 57 the next two rotting pointers were prepaid.
+  LINE_CITATION_CEILING = 55
+
+  # LANE 5 — THE SECOND RATCHET, over the citations that carry NO declared anchor. It is
+  # a strictly tighter bound sharing lane 3's mechanism, and the two together are what
+  # make lane 4 mandatory for new work without a 55-site retrofit: a new `path:line` must
+  # displace an old one (lane 3) AND must be anchored (lane 5), because the unanchored
+  # population cannot grow either. The cheap paths stay, in order: a SEAM costs nothing
+  # and cannot rot; an ANCHORED line costs a toll but rots LOUDLY; a bare line costs the
+  # same toll and rots in silence, which is the trade this lane finally prices.
+  #
+  # ANCHORING IS NOT FREE, deliberately. An anchored citation into a file that moves often
+  # reds an unrelated PR on every slide until someone re-derives it. That is a real cost,
+  # and it is why anchoring buys no discount against lane 3: the SEAM stays the only form
+  # that is free, because it is the form this house actually wants.
+  #
+  # Measured on this task's tree: 55 `path:line` citations, 6 anchored, 49 bare.
+  UNANCHORED_LINE_CITATION_CEILING = 49
 
   def test_every_path_line_citation_lands_on_a_substantive_line
     offenders = census[:line].filter_map do |c|
-      verdict =
-        if c[:first] < 1 || c[:first] > c[:size] || c[:last] > c[:size]
-          "line #{c[:first]} is outside #{c[:path]}, which has #{c[:size]} lines"
-        elsif c[:content].to_s.strip.empty?
-          "line #{c[:first]} of #{c[:path]} is BLANK"
-        elsif DELIMITER_ONLY.match?(c[:content].to_s.strip)
-          "line #{c[:first]} of #{c[:path]} is a bare #{c[:content].strip.inspect}"
-        end
+      verdict = substance_verdict(c)
       "#{c[:where]} cites #{c[:text]} — #{verdict}" if verdict
     end
 
@@ -296,6 +375,12 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
       SEAM instead (`path#method_name`, `path#CONSTANT`), which this guard verifies
       and which no commit can move. Spend a line number only where the line itself
       is the unit, and say what is on it.
+
+      A RANGE THAT ENDS ON A BARE `end` HAS SLID OFF ITS SUBJECT. It is not merely
+      untidy: the range was cut to fit a passage, so when its LAST line is a block
+      terminator the passage is gone and the number is pointing at whatever code now
+      occupies that offset. Do not trim the range by one to silence this — re-derive
+      where the passage went, or anchor the citation so the next slide says so itself.
     MSG
   end
 
@@ -333,6 +418,178 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
       no ceiling because it cannot rot. If this citation genuinely needs a line,
       convert an existing one to a seam and lower the ceiling to match.
     MSG
+  end
+
+  # LANE 4 — THE ANCHOR. The one lane that reads what a line SAYS, and this guard's only
+  # answer to limit A. It does not INFER the claim from prose — limit A measured that at
+  # roughly a third false and rejected it. The author DECLARES a token, and the lane asks
+  # the single question resolution can answer about content: is it inside the span you
+  # named? A declaration cannot be wrong about itself, so this lane's false-positive rate
+  # is structurally zero: a citation with no anchor is not in it at all.
+  #
+  # WHAT IT CATCHES AND WHAT IT CANNOT. It catches ROT — a citation that was right when it
+  # was written and whose file moved under it — permanently, on every anchored site. It
+  # does NOT catch a citation that was WRONG AT BIRTH: an author reading the wrong line
+  # copies the anchor off that same wrong line, and the pair is self-consistent. Those are
+  # different failures and only the first is mechanical. A green lane 4 means the pointer
+  # still lands where its author put it — never that the sentence around it is true.
+  #
+  # A COMMON ANCHOR PINS LOOSELY. `--gate-role review` is on 11 lines of bin/dor-check, so
+  # rot could slide from one to another and stay green; `reviewers run --gate-role review`
+  # is on exactly one. That is the author's judgement to make. Refusing a common anchor is
+  # NOT the remedy — nothing here can tell a loose anchor from a file that legitimately
+  # repeats itself, and refusing would accuse correct prose, the worst failure a guard has.
+  def test_every_anchored_citation_carries_its_anchor_at_the_line_it_names
+    offenders = census[:line].filter_map do |c|
+      next unless c[:anchor]
+      next if c[:first] < 1 || c[:first] > c[:size] || c[:last] > c[:size]
+      next if anchor_in_span?(c)
+
+      anchor_offender(c)
+    end
+
+    assert_census_is_real
+
+    assert_empty offenders, anchor_lane_message(offenders)
+  end
+
+  # LANE 5 — the unanchored ratchet. Its reasoning is at UNANCHORED_LINE_CITATION_CEILING.
+  def test_a_new_line_citation_declares_its_anchor
+    bare = census[:line].count { |c| c[:anchor].nil? }
+
+    assert_census_is_real
+    assert_operator bare, :<=, UNANCHORED_LINE_CITATION_CEILING, <<~MSG
+      #{bare} `path:line` citations carry no anchor, over the ceiling of
+      #{UNANCHORED_LINE_CITATION_CEILING}. This number only moves DOWN.
+
+      A bare line number says WHERE to look and nothing about what is there, so when the
+      file moves it still resolves, still reads like the truth, and routes the next reader
+      to whatever now sits at that offset. Lane 1 catches that only when the rot happens
+      to land on a blank line or an `end`.
+
+      Say what is on the line, in the citation itself:
+      `bin/fast-check:300#"wrong_root = CertRootGuard.refusal"`. Lane 4 re-checks that on
+      every run, and a slide then reds with the new line named. Better still, cite the
+      SEAM (`path#symbol`) — it needs no ceiling and no anchor, because there is nothing
+      left in it to rot.
+    MSG
+  end
+
+  # THE FOUR DEFECTS THIS TASK WAS FILED FOR — restored verbatim and driven through the
+  # REAL rules against the REAL bin/dor-check, not through a copy of them. Each was live
+  # in this repo on 2026-09-22; three were repaired in the sweep that found them, and all
+  # four are pinned here because the repairs are exactly what stops the tree from proving
+  # the lanes bite. Every citation below resolves and lands on a SUBSTANTIVE line, which
+  # is why the shipped guard was green on all four.
+  #
+  # `lanes:` IS THE FULL SET, not the first one to fire. The anchored spelling of defect A
+  # trips BOTH lane 1 (its range ends on an `end`) and lane 4 (its span carries no such
+  # phrase), and an earlier cut of this table recorded only the first — which would have
+  # let lane 4 go silent on that row without a single assertion noticing.
+  #
+  # `lanes: []` IS A RECORD, NOT A TODO. Defect D is the honest floor of a resolution-keyed
+  # guard, and pinning the miss is what makes closing it visible: a future lane that catches
+  # it reds HERE and asks for the row to be re-labelled, rather than quietly closing a hole
+  # nobody had recorded was open.
+  MISPOINTED_CITATIONS = [
+    { as_written: "bin/dor-check:1176-1180", homes: nil, lanes: [:substance],
+      claim: "reviewers run --gate-role review from the PRIMARY",
+      seen_in: "test/docs/zap_cert_freshness_docs_test.rb and test/lib/dor_check_zap_seams_test.rb",
+      note: "the range ends on the bare `end` closing default_diff_base, a method the " \
+            "passage had never been part of. Lane 1 read only the FIRST line until this " \
+            "task, and :1176 is a `def` — substantive, and green for eleven days." },
+
+    { as_written: %(bin/dor-check:1176-1180#"reviewers run --gate-role review"), homes: [98],
+      lanes: %i[substance anchor], claim: "the same pair, spelled the way lane 5 now requires",
+      seen_in: "the repair this task shipped",
+      note: "the span is default_diff_base and carries no such phrase. This is the row " \
+            "that matters most: it is the same defect caught by CONTENT rather than by " \
+            "the luck of the range having landed on an `end`." },
+
+    { as_written: %(bin/dor-check:167#"Dor::Checks.load!"), homes: [171], lanes: [:anchor],
+      claim: "bin/dor-check calls Dor::Checks.load!, a directory glob",
+      seen_in: "test/lib/feature_shapes_audit_test.rb, repaired at 3c0a1179",
+      note: ":167 is `require_relative \"lib/base_movement_audit\"` — substantive, one " \
+            "require away from the truth, and invisible to every resolution-only lane." },
+
+    { as_written: %(bin/dor-check:2325#"required_meta ="), homes: [2972, 2975], lanes: [:anchor],
+      claim: "`required_meta = ...` is what CI_SEAM_REQUIRE must not read as a require",
+      seen_in: "test/lib/feature_shapes_audit_test.rb, repaired at 3c0a1179",
+      note: ":2325 is `@review_role = review_role` — a different assignment entirely, and " \
+            "647 lines from the one the sentence is about. THIS ROW IS ALSO THE LOOSE-ANCHOR " \
+            "CASE: `required_meta =` is assigned twice in bin/dor-check, so the re-derivation " \
+            "names both and the author is the one who has to choose. A tighter anchor is " \
+            "always available (`required_meta = defaults`); the guard cannot pick it for you, " \
+            "because it cannot tell a loose anchor from a file that legitimately repeats." },
+
+    { as_written: %(bin/dor-check:44-48#"FAST route"), homes: nil, lanes: [],
+      claim: "the FAST route satisfies the gate alongside a GREEN CI",
+      seen_in: "config/feature_shapes.yml, repaired in PR 1522",
+      note: "THE RANGE CITED ITS OWN COUNTEREXAMPLE: :44-47 is the FAST-route paragraph, " \
+            "and :48 opens the CI-seam paragraph granting the provisional credit the " \
+            "citing sentence denied. Nothing here can see it. The range ends SUBSTANTIVE, " \
+            "so lane 1 is silent; the anchor is inside the span, so lane 4 is silent. " \
+            "Catching it needs the citing PROSE to be read against the cited paragraph, " \
+            "which is limit A's rejected heuristic — measured at roughly a third false." }
+  ].freeze
+
+  def test_the_lanes_red_every_defect_this_task_was_filed_for
+    target = target_lines("bin/dor-check")
+    refute_nil target, "bin/dor-check is the subject of all four defects"
+
+    wrong = MISPOINTED_CITATIONS.filter_map do |d|
+      m = LINE_CITATION.match(d[:as_written])
+      next "the grammar no longer reads #{d[:as_written]}" if m.nil?
+
+      row = census_anchor("control", m[0], m[1], m[2], m[3], target, anchor_of(m))
+      fired = []
+      fired << :substance if substance_verdict(row)
+      fired << :anchor if row[:anchor] && !anchor_in_span?(row)
+
+      next "#{d[:as_written]} — expected #{d[:lanes].inspect}, fired #{fired.inspect}" if fired != d[:lanes]
+      next unless d[:homes]
+
+      sites = anchor_sites(target, row[:anchor], row[:last] - row[:first] + 1)
+      next if sites == d[:homes]
+
+      "#{d[:as_written]} — the re-derivation named #{sites.inspect}, not #{d[:homes].inspect}"
+    end
+
+    assert_empty wrong, <<~MSG
+      #{wrong.size} of the defects this guard was built for no longer behave as recorded:
+
+      #{wrong.join("\n      ")}
+
+      These are not fixtures. Each one is parsed by the shipping grammar and judged by the
+      shipping rules against the real bin/dor-check, so a rule that goes quiet fails HERE
+      rather than going quiet on the tree. If bin/dor-check has moved under a row, re-derive
+      its `home` and its `note` — do not delete the row, and do not re-label a :nothing row
+      as caught without saying which lane now catches it and why that lane is honest.
+    MSG
+  end
+
+  # THE MESSAGE IS A RULE. Ask what someone would write to satisfy this lane: the cheapest
+  # move is to edit the ANCHOR until it matches whatever now sits at the line — which keeps
+  # the citation pointing at the wrong thing AND silences the lane that noticed. So the
+  # failure must forbid that in its own words and hand over the re-derived number, which is
+  # the answer the wrong move was reaching for.
+  def test_the_anchor_failure_names_the_right_line_rather_than_inviting_a_weaker_anchor
+    target = target_lines("bin/dor-check")
+    m = LINE_CITATION.match(%(bin/dor-check:1176-1180#"reviewers run --gate-role review"))
+    row = census_anchor("control", m[0], m[1], m[2], m[3], target, anchor_of(m))
+
+    refute anchor_in_span?(row), "this test is anchored on :1176-1180 NOT carrying the phrase"
+
+    message = anchor_lane_message([anchor_offender(row)])
+
+    assert_includes message, "bin/dor-check:98",
+                    "the failure must RE-DERIVE and name the line that actually carries the " \
+                    "anchor — without it the only visible fix is to weaken the anchor"
+    assert_includes message, "DO NOT EDIT THE ANCHOR TO MATCH THE LINE",
+                    "the cheapest way to green is the wrong one, so the message has to say so"
+    assert_includes message, "SEAM",
+                    "a lane that only ever teaches better line numbers is teaching the " \
+                    "rotting format; the first remedy offered must be the one that cannot rot"
   end
 
   # THE DETECTOR MUST BITE, and on a fixed tree nothing proves that. These are
@@ -688,7 +945,7 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
           target = target_lines(m[1]) or next
           next if BACKTRACE_FRAME.match?(body[m.end(0), 8].to_s)
 
-          line << census_anchor(where.(m), m[0], m[1], m[2], m[3], target)
+          line << census_anchor(where.(m), m[0], m[1], m[2], m[3], target, anchor_of(m))
 
           continuation_anchors(body, m).each do |text, first, last|
             line << census_anchor(where.(m), text, m[1], first, last, target)
@@ -750,10 +1007,131 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
   # its path. Deliberately identical: lanes 1 and 3 cannot tell the two apart, which is the
   # whole reason gap 1 is closed by PARSING the shape rather than by stating a limit about
   # it. A limit would have left the shape working exactly as it did.
-  def census_anchor(where, text, path, first, last, target)
+  # A row now carries BOTH ends' content and the declared anchor, because lane 1 reads
+  # the last line of a range and lane 4 reads the anchor. `target` rides along so lane 4
+  # can RE-DERIVE: when an anchor is not where the citation says, the failure searches
+  # the file and names the line that actually carries it.
+  def census_anchor(where, text, path, first, last, target, anchor = nil)
     n = first.to_i
-    { where: where, text: text, path: path, first: n, last: (last || first).to_i,
-      size: target.size, content: (target[n - 1] if n >= 1 && n <= target.size) }
+    e = (last || first).to_i
+    at = ->(i) { target[i - 1] if i >= 1 && i <= target.size }
+    { where: where, text: text, path: path, first: n, last: e, anchor: anchor,
+      size: target.size, content: at.(n), last_content: at.(e), target: target }
+  end
+
+  # THE DECLARED ANCHOR, whichever of the three spellings carried it.
+  def anchor_of(match) = match[4] || match[5] || match[6]
+
+  def normalize_text(str) = str.to_s.gsub(/\s+/, " ").strip
+
+  # A CITED SPAN AS ONE STRING — comment markers dropped, whitespace collapsed. The span
+  # is joined rather than searched line by line so an anchor may wrap a line the way the
+  # sentence it came from does.
+  def span_text(lines)
+    normalize_text(Array(lines).map { |l| l.to_s.sub(COMMENT_LEAD, "") }.join(" "))
+  end
+
+  def anchor_in_span?(row)
+    span_text(row[:target][(row[:first] - 1)..(row[:last] - 1)])
+      .include?(normalize_text(row[:anchor]))
+  end
+
+  # WHERE THE ANCHOR ACTUALLY IS — the re-derivation that keeps lane 4's failure from
+  # teaching the wrong lesson. Without it the cheapest way to go green is to rewrite the
+  # ANCHOR, which preserves the rot and silences the lane forever; with it, the right
+  # number is already on screen and rewriting the anchor is visibly the worse move.
+  #
+  # SINGLE LINES FIRST, and only then windows of the cited span's own width. Searching
+  # straight at the cited width was the first cut and it was WRONG IN THE ONE WAY THAT
+  # MATTERS: re-deriving `#"reviewers run --gate-role review"` from a 5-line citation
+  # reported ":94, :95, :96, :97 (and 1 more)" — five window STARTS, four of which carry
+  # nothing, with the one true line buried as "1 more". A message that names four innocent
+  # lines is worse than one that names none, and this lane exists to hand over the right
+  # number. Narrow first reports bin/dor-check:98, alone. Caught by this file's own
+  # test_the_anchor_failure_names_the_right_line_rather_than_inviting_a_weaker_anchor.
+  #
+  # The WIDE pass is still needed and is still the cited width: an anchor may WRAP two
+  # comment lines, which is how anchor_in_span? found it, so a re-derivation that could
+  # only read single lines would red a citation and then report its anchor as nowhere —
+  # a verdict and a diagnosis that contradict each other. Its sites are window starts,
+  # which is the honest thing to report about a phrase that begins there.
+  def anchor_sites(target, anchor, width)
+    needle = normalize_text(anchor)
+    narrow = (1..target.size).select { |n| span_text([target[n - 1]]).include?(needle) }
+    return narrow if narrow.any? || width <= 1
+
+    (1..target.size).select { |n| span_text(target[n - 1, width]).include?(needle) }
+  end
+
+  # LANE 1'S RULE, extracted so the control fixtures can drive the REAL one. A copy of it
+  # in a fixture would pass forever while the shipping rule rotted — which is the vacuity
+  # every test in this file is built to avoid.
+  #
+  # BOTH ENDS OF A RANGE, since 2026-09-22. Lane 1 read only the FIRST line for eleven
+  # days, so `bin/dor-check:1176-1180` — a range whose last line is the bare `end` closing
+  # a method the passage had long since moved out of — resolved, read as substantive and
+  # sat green in two files. Measured the day the rule landed: 12 ranges in the scanned
+  # corpus, and this rule flags exactly those two. A range is CUT TO FIT a passage, so a
+  # block terminator at the bottom of one is the passage announcing it has moved.
+  def substance_verdict(row)
+    if row[:first] < 1 || row[:first] > row[:size] || row[:last] > row[:size]
+      "line #{row[:first]} is outside #{row[:path]}, which has #{row[:size]} lines"
+    elsif row[:content].to_s.strip.empty?
+      "line #{row[:first]} of #{row[:path]} is BLANK"
+    elsif DELIMITER_ONLY.match?(row[:content].to_s.strip)
+      "line #{row[:first]} of #{row[:path]} is a bare #{row[:content].strip.inspect}"
+    elsif row[:last] > row[:first] && row[:last_content].to_s.strip.empty?
+      "the range ENDS at line #{row[:last]} of #{row[:path]}, which is BLANK"
+    elsif row[:last] > row[:first] && DELIMITER_ONLY.match?(row[:last_content].to_s.strip)
+      "the range ENDS at line #{row[:last]} of #{row[:path]}, a bare " \
+        "#{row[:last_content].strip.inspect}"
+    end
+  end
+
+  # THE LANE 4 FAILURE, extracted so a test can read what it TEACHES. A guard's message is
+  # a rule in its own right: whatever it asks for is what the next person will write. The
+  # cheapest way to make this lane green is to rewrite the ANCHOR — which preserves the rot
+  # and silences the lane permanently — so the message has to spend its first sentence
+  # forbidding that, and its re-derivation has to put the correct number on screen where
+  # the wrong move would have gone.
+  def anchor_lane_message(offenders)
+    <<~MSG
+      #{offenders.size} anchored citation(s) do not carry their anchor at the line they name:
+
+      #{offenders.join("\n\n      ")}
+
+      DO NOT EDIT THE ANCHOR TO MATCH THE LINE. That silences this lane and leaves the
+      citation pointing exactly where it should not, which is the defect rather than the
+      fix. The anchor is the half of a citation a commit cannot move — it is what the
+      sentence is ABOUT. The NUMBER is what rotted, and the failure above has already
+      re-derived it for you.
+
+      Three honest fixes, in order: convert the citation to a SEAM (`path#symbol`), which
+      cannot rot at all; re-point the number at the line named above; or, when the anchor
+      is NOWHERE in that file, stop and decide which of two things happened — you are
+      citing the wrong file, or the passage has been deleted and the sentence around the
+      citation is now making a claim about nothing.
+    MSG
+  end
+
+  def cited_span(row)
+    text = span_text(row[:target][(row[:first] - 1)..(row[:last] - 1)])
+    (text.length > 90 ? "#{text[0, 90]}…" : text).inspect
+  end
+
+  def rederivation(row)
+    sites = anchor_sites(row[:target], row[:anchor], row[:last] - row[:first] + 1)
+    return "the anchor is NOWHERE in #{row[:path]}" if sites.empty?
+
+    shown = sites.first(4).map { |n| "#{row[:path]}:#{n}" }.join(", ")
+    rest = sites.size > 4 ? " (and #{sites.size - 4} more — a loose anchor pins loosely)" : ""
+    "the anchor IS at #{shown}#{rest}"
+  end
+
+  def anchor_offender(row)
+    "#{row[:where]} cites #{row[:text]}\n" \
+      "        that span reads #{cited_span(row)}\n" \
+      "        #{rederivation(row)}"
   end
 
   # Exit-blindness, closed once for all three lanes: a rotted glob or a rotted pattern
