@@ -278,14 +278,30 @@ class ZapControlLaneDocsTest < Minitest::Test
   # matters — the review gate-zero is an allow-list, so a pending, red or unreadable
   # CI refuses and only a FULL cert stands in. A surface that grants the fast route
   # without naming its condition has traded one wrong brief for another.
+  FAST_ROUTE = /fast[-\s]?(?:cert|check)/i
+  GREEN_CI   = /green[^.]{0,30}\bCI\b|\bCI\b[^.]{0,15}green/i
+  # The sentence must be ABOUT this gate. Without this clause the assertion passed
+  # on `docs/agents/index.md` for the wrong reason entirely — it matched the
+  # SUBMIT-SIDE provisional-credit paragraph ("a fast cert is credited
+  # provisionally... a red CI still blocks"), which is a different rule in a
+  # different section, while that file's real grant says `bin/fast-check` and would
+  # not have matched a /fast cert/ pattern at all. A whole-file regex cannot tell
+  # those apart; asking one SENTENCE to carry route + condition + subject can.
+  CERT_GATE_SUBJECT = /test-?only|full_suite_gate|cert gate|exempt/i
+
   def test_every_surface_states_the_green_ci_condition
     FAST_OR_FULL_SURFACES.each do |rel|
-      assert_match(/fast[-\s]?cert[^.]{0,160}green[^.]{0,25}CI|green[^.]{0,25}CI[^.]{0,160}fast[-\s]?cert/i,
-                   flat(rel),
-                   "#{rel}: names the fast route for test-only without its CONDITION. The fast cert " \
-                   "satisfies the cert gate only ALONGSIDE A SETTLED GREEN CI (bin/dor-check:44-48, and " \
-                   "the refusal at :2055 from the other side). \"A fast cert is enough\" is as wrong as " \
-                   "\"it owes the full suite\", and it fails at the review gate rather than on the clock")
+      qualifying = flat(rel).split(/(?<=[.!?])\s+/).select do |sentence|
+        sentence.match?(FAST_ROUTE) && sentence.match?(GREEN_CI) && sentence.match?(CERT_GATE_SUBJECT)
+      end
+
+      refute_empty qualifying,
+                   "#{rel}: grants the fast route for this gate without naming its CONDITION in the " \
+                   "same sentence. A fast cert satisfies the cert gate only ALONGSIDE A SETTLED GREEN " \
+                   "CI (bin/dor-check:44-48; the refusal at :2055 states the same conjunct from the " \
+                   "other side). \"A fast cert is enough\" is as wrong as \"it owes the full suite\" — " \
+                   "it just fails at the review gate instead of on the clock, because gate-zero is an " \
+                   "allow-list and a pending or unreadable CI leaves a FULL cert as the only stand-in"
     end
   end
 end
