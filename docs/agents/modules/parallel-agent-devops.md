@@ -252,6 +252,22 @@ chosen (busy-aware) pair as the live review intent so the board + timeline show
 the actual reviewers. Pass `--no-record` (or `--dry`) for an advisory-only run
 that writes nothing.
 
+**Recording ACQUIRES the review claim first, and a second pair is REFUSED.** The
+intent is the announcement of a claim already won, never the reservation itself.
+So a task another live instance is already reviewing exits **10** naming the
+holder, selects nothing and records nothing; `--no-record`/`--dry`/`--file` claim
+nothing either, exactly as they record nothing. Selecting from the session that
+already holds the claim — the ordinary flow, where `claim-next-review` claimed it
+moments earlier — is `same_instance` and proceeds, because the lease identity is
+the SESSION's and a reviewer subagent shares it.
+
+This closed a real seam. Until 2026-09-22 selection recorded intent and touched
+the claim nowhere, while `Task.reviewable` keys only on a live claim row — so the
+board painted "under review" off a claim-less intent and every gate still read
+FREE. On 2026-09-21 two sessions selected the same task (PR #1516), both pairs
+were carl+steffon, and the pair that reached merge-ready was seconds from merging
+a tree the other had already bounced. Only a pre-merge board re-read stopped it.
+
 During the review itself, both reviewer agents should broadcast progress with
 `POST /api/v1/tasks/:slug/review_events`. The API role `primary` displays as the
 heavy swimlane and records these moments: `started`, `context`, `diff`, `tests`,

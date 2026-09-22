@@ -11,14 +11,18 @@
 # previews that pair — primary Carl + the domain-fit LIGHT — and records the review
 # intent so the board shows the pair live.
 #
-# RECORDING IS THE DEFAULT. Producing the assignment also POSTs the picked pair as
-# the `--to reviewed` review INTENT — an idempotent board write to
-# /api/v1/tasks/<slug>/intent, the SAME endpoint `bin/task intent` uses — so
-# /deployments + the task timeline show the reviewers LIVE (the crew ticker), before
-# the →reviewed transition lands. Pass `--no-record` (or `--dry`) for advisory-only
-# behavior (print the pick, write NOTHING). The board write is best-effort: a
-# failure warns but never blocks the printed pick, and `--file` mode is always
-# advisory (offline — nothing to write to).
+# RECORDING IS THE DEFAULT, AND IT NOW TAKES THE REVIEW CLAIM FIRST. Producing the
+# assignment ACQUIRES the per-task review claim (POST /api/v1/tasks/<slug>/review_claim)
+# and only then POSTs the picked pair as the `--to reviewed` review INTENT — an
+# idempotent board write to /api/v1/tasks/<slug>/intent, the SAME endpoint `bin/task
+# intent` uses — so /deployments + the task timeline show the reviewers LIVE (the crew
+# ticker), before the →reviewed transition lands. A task ALREADY under live review by a
+# DIFFERENT instance REFUSES (exit 10) and records nothing; see the seam note at
+# `acquire_review_claim` for why intent-without-a-claim was the defect. Pass
+# `--no-record` (or `--dry`) for advisory-only behavior (print the pick, claim and write
+# NOTHING). Both board writes stay best-effort in the DEGRADED directions — a claim that
+# cannot be taken or read warns, records nothing, and still prints the pick — and
+# `--file` mode is always advisory (offline — nothing to claim or write).
 #
 # It loads the Rails app and calls `ReviewerSelector` for the task. The PRIMARY is
 # always Carl; the LIGHT is a domain-fit pick from the specialist pool {shannon=UI
@@ -97,6 +101,18 @@
 # Exit code: 0 = a pair was selected, 1 = task not found / usage error,
 #            2 = REFUSED — the authors are unknown, incomplete, one would be
 #                seated, or a --builder entry named nobody (see the block above).
+#           10 = SKIPPED — a DIFFERENT live instance already holds this task's review
+#                claim (or the board refused the claim as a self-review). Nothing was
+#                selected and nothing was recorded; pick another task.
+#
+# 2 AND 10 ARE DIFFERENT ANSWERS AND CARRY DIFFERENT REMEDIES, which is why they are
+# not one code. A 2 says the tool cannot KNOW something it must know, and only you can
+# state the missing fact (`--builder …`); re-running changes nothing. A 10 says the
+# tool knows perfectly well — someone else has this review — and the remedy is to move
+# to another task; re-running will never win it either, but for the opposite reason.
+# 10 is deliberately the SAME code `bin/task review-claim acquire` returns for the same
+# situation (ReviewClaimCli::SKIPPED), so a review session reading either tool's exit
+# status reads one vocabulary.
 
 # Activate the bundled gem versions first (Bundler.setup) — before requiring
 # `json` et al, so the pinned json (not the newer default gem) is the one loaded.
@@ -174,6 +190,105 @@ def api(method, path, body = nil, auth: true)
     die!("#{method.upcase} #{path} -> #{res.code}: #{parsed["error"] || res.body}")
   end
   parsed
+end
+
+# --- the review CLAIM: reserve the task before recording intent -------------
+
+# Exit code for "a different live instance already holds this review" — the SAME
+# number ReviewClaimCli::SKIPPED uses for the same situation, on purpose.
+REVIEW_CLAIM_SKIPPED = 10
+
+# THE SELECT→ACQUIRE SEAM (two-primaries-reviewed-one-pr).
+#
+# Recording the pair used to be the WHOLE of what selection wrote, and an INTENT is
+# invisible to every gate that decides whether a task is free to review. `Task.reviewable`
+# (app/models/task.rb) keys ONLY on a live row in `task_review_claims`; this command
+# touched that table nowhere — 551 lines with no mention of the claim at all. So the
+# board painted "under review" off a claim-less intent (Task#review_claim_alive? answers
+# `claim.nil? || claim.live?`) while every machine-readable gate still said FREE, and a
+# second `bin/reviewer-select` had nothing whatsoever to stop it.
+#
+# MEASURED 2026-09-21 on PR #1516: two sessions selected the same task, both pairs were
+# carl+steffon, and the pair that reached merge-ready was seconds from merging a tree the
+# OTHER pair had already bounced for a blocker. Only a pre-merge board re-read stopped it.
+# Note what this direction of the bug does NOT depend on: whether the peer pair ever
+# claimed, was refused, or merely interleaved around a release. Selection consulted the
+# claim in none of those cases, so the second select succeeded regardless.
+#
+# The claim is the primitive that already answers "is someone reviewing this", and
+# `TaskReviewClaim.acquire` is an atomic compare-and-set under a row lock. It ALREADY
+# writes the intent from the claim side (app/models/task_review_claim.rb) — claim→intent
+# was closed; intent→claim was the open one. So selection now ACQUIRES, and the intent
+# write is downstream of a won claim rather than a substitute for one.
+#
+# SAME-INSTANCE IS NOT A CONFLICT, and that is what makes this safe to put here. The
+# lease identity is the SESSION's — its id plus a nonce anchored to the `claude`/`codex`
+# process every bin/ call in that session descends from (bin/lib/session_identity.rb) —
+# and a reviewer SUBAGENT shares its session's identity rather than having its own. So
+# the primary's own later `bin/task review-claim acquire` re-takes THIS claim as
+# `:same_instance` and proceeds, while a PEER session gets `:held_by_other` and is
+# refused. Selecting cannot lock a reviewer out of their own review.
+#
+# NO RENEWER IS STARTED HERE. This is a RESERVATION covering the seconds between the pick
+# and the primary's own acquire, which starts the renewer that actually carries the
+# review. ClaimLease::REVIEW_TTL_SECONDS (~3h25m) covers that gap many times over, so a
+# selection nobody follows up on LAPSES on the ordinary TTL — the recoverable direction —
+# instead of pinning the task against the next reviewer forever.
+#
+# Returns [state, data]: :acquired · :held · :self_review · :no_session · :unreadable.
+# The last two are DEGRADED, not refusals — see the caller.
+def acquire_review_claim(slug, reviewer)
+  session, = agent_session_identity
+  return [:no_session, nil] if session.empty?
+
+  data = api(:post, "/api/v1/tasks/#{slug}/review_claim",
+             { session: session, nonce: SessionIdentity.nonce,
+               label: "reviewer-select", reviewer: reviewer.to_s })["data"]
+  # A body without `acquired` is an answer we cannot READ, which is not the same as a
+  # refusal — treating it as one would wedge the lane on a malformed 200.
+  return [:unreadable, nil] unless data.is_a?(Hash) && data.key?("acquired")
+  return [:acquired, data] if data["acquired"]
+
+  [data["disposition"].to_s == "self_review" ? :self_review : :held, data]
+rescue SystemExit, StandardError => e
+  warn!("review claim: the board could not be asked (#{e.class}: #{e.message.to_s.lines.first.to_s.strip})")
+  [:unreadable, nil]
+end
+
+# The holder, named. A refusal that says "someone else has it" has to say WHO, or the
+# only move left is to guess — mirrors ReviewClaimCli#holder_line.
+def holder_line(holder)
+  who = [holder["agent"], holder["label"]].map { |v| v.to_s.strip }.reject(&:empty?)
+  who = (who + ["session #{holder["session"].to_s.strip[0, 8]}"]).join(" · ")
+  since = holder["acquired_at"].to_s.strip
+  age = holder["heartbeat_age"]
+  "#{who}#{since.empty? ? "" : " since #{since}"}#{age.nil? ? "" : ", last heartbeat ~#{age}s ago"}"
+end
+
+def refuse_held!(slug, holder)
+  warn!("reviewer-select REFUSED to select for task=#{slug} — ALREADY UNDER REVIEW.")
+  warn!("  Held by: #{holder_line(holder)}")
+  warn!("  A SECOND pair on one PR is exactly the bug this refuses: two primaries can reach")
+  warn!("  OPPOSITE verdicts, spend the two-bounce breaker between them, and one can merge a")
+  warn!("  tree the other already sent back. Nothing was claimed and NO intent was recorded.")
+  warn!("  Move to the next reviewable task — the board picks and claims one atomically:")
+  warn!("    bin/task claim-next-review")
+  warn!("  If you believe that review is finished and the lease is merely stale, read it:")
+  warn!("    bin/task review-claim status #{slug}")
+  warn!("  A holder that has stopped renewing frees itself within the review TTL; ask the")
+  warn!("  holder to `bin/task review-claim release #{slug}` rather than taking it from them.")
+  exit REVIEW_CLAIM_SKIPPED
+end
+
+def refuse_self_review!(slug, reviewer)
+  warn!("reviewer-select REFUSED to select for task=#{slug} — THE PRIMARY BUILT IT.")
+  warn!("  The board refused the review claim for #{reviewer}: that soul is in this task's")
+  warn!("  AUTHOR SET, so seating them is a self-review. Nothing was recorded.")
+  warn!("  This is the claim-side backstop firing, which means the author set the board holds")
+  warn!("  disagrees with the one this pick was rolled from. Reconcile it:")
+  warn!("    bin/task show #{slug} --verbose            # what the board records")
+  warn!("    bin/task move #{slug} building --actor <the-real-builder>")
+  exit REVIEW_CLAIM_SKIPPED
 end
 
 # Returns the task hash (slug + metadata.devops) from --file or the board API.
@@ -521,6 +636,19 @@ end
 # failure (incl. api's die! → SystemExit) WARNS but never blocks the printed pick
 # — the conductor always gets the assignment. --file mode is offline → always
 # advisory.
+#
+# THE CLAIM COMES FIRST. The intent write is no longer the reservation — it is the
+# ANNOUNCEMENT of one already won (see `acquire_review_claim`). The invariant this
+# block keeps is one line: **an intent is never recorded without a claim behind it.**
+# Every path below either holds the claim and records, or records nothing.
+#
+# THE TWO DEGRADED STATES RECORD NOTHING AND STILL PRINT THE PICK, and that asymmetry
+# is deliberate. They mean "we could not establish that this task is free", which is
+# not the same as "it is taken" — so refusing outright would wedge the review lane on
+# a board hiccup, exactly the fail-open ReviewClaimCli keeps for the same reason. But
+# recording an intent anyway would recreate the very defect: a board face asserting a
+# live review that no claim backs. Printing an advisory pick costs a reviewer one
+# manual `bin/task review-claim acquire`; recording a blind intent costs a bad merge.
 recorded = nil
 if options[:record]
   if options[:file]
@@ -531,13 +659,34 @@ if options[:record]
     primary, light = decision["reviewers"]
     pair = [{ "slug" => primary["slug"], "weight" => primary["weight"] },
             { "slug" => light["slug"], "weight" => light["weight"] }]
-    begin
-      api(:post, "/api/v1/tasks/#{slug}/intent",
-          { to_stage: "reviewed", reviewers: pair, event: { source: "cli" } })
-      recorded = pair
-      seed_review_usage_baseline(slug)
-    rescue SystemExit, StandardError => e
-      warn!("intent not recorded — board write failed (#{e.message}); selection is advisory")
+    state, claim = acquire_review_claim(slug, primary["slug"])
+    case state
+    when :held
+      refuse_held!(slug, (claim["holder"] || {}).to_h)
+    when :self_review
+      refuse_self_review!(slug, primary["slug"])
+    when :no_session
+      # No CLAUDE_CODE_SESSION_ID / CODEX_THREAD_ID: a plain shell or CI. A lease is a
+      # claim by a LIVE INSTANCE, and this run cannot name one — so it must not take a
+      # review TTL that would wedge a real reviewer for ~3h25m, nor record an intent
+      # with nothing behind it. `bin/task review-claim acquire` refuses the identical
+      # state for the identical reason.
+      warn!("intent not recorded — this shell names no agent session, so no review claim can")
+      warn!("  identify it. The pick below is ADVISORY. A reviewer with a session should take")
+      warn!("  the task before reviewing it:  bin/task review-claim acquire #{slug}")
+    when :unreadable
+      warn!("intent not recorded — the review claim could not be taken, so this task is NOT")
+      warn!("  reserved and a second pair could still select it. The pick below is ADVISORY;")
+      warn!("  confirm the task is free before reviewing:  bin/task review-claim status #{slug}")
+    when :acquired
+      begin
+        api(:post, "/api/v1/tasks/#{slug}/intent",
+            { to_stage: "reviewed", reviewers: pair, event: { source: "cli" } })
+        recorded = pair
+        seed_review_usage_baseline(slug)
+      rescue SystemExit, StandardError => e
+        warn!("intent not recorded — board write failed (#{e.message}); selection is advisory")
+      end
     end
   end
 end
@@ -546,6 +695,7 @@ if options[:json]
   puts JSON.generate(decision.merge("pr_url" => pr_url.empty? ? nil : pr_url, "intent_recorded" => !recorded.nil?))
 else
   print_human(decision, pr_url, log.lines.last)
+  puts "review claim:    HELD by this session — a second pair cannot select this task" if recorded
   puts "intent:          recorded (#{recorded.map { |r| "#{r["slug"]}/#{r["weight"]}" }.join(' + ')}) — they now show reviewing live" if recorded
 end
 exit 0

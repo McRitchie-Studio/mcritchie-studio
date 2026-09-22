@@ -60,7 +60,10 @@ Review runs in two levels; keep them distinct:
      report, and only the review claim's holder spends the task's bounce. Carl is
      the standing primary on every PR; the light is the domain
      pick — `bin/reviewer-select <task>` previews the pair (primary Carl + the
-     domain light).
+     domain light). It also ACQUIRES the task's review claim before recording the
+     pair, so it exits **10** rather than seating a second pair on a PR someone
+     else is already reviewing. From the session that popped the task that claim
+     is already yours (`same_instance`), so this is invisible on the normal path.
 
 ## Parallel-first — claim each PR, skip what's already being reviewed
 
