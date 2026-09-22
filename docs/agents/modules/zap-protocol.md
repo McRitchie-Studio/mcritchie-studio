@@ -186,6 +186,13 @@ head merges only if its post-zap CI is green, and holds for re-review otherwise
 (it never merges a head the reviewers didn't see on a non-green CI). Record the
 zap on the task the ordinary way (§ Recording).
 
+**The CI is not the whole verdict, so do not stop here.** "Merge-ready plus a
+green CI" is what the *merge* needs; it is not what `bin/dor-check` grades. Your
+push moved the branch tree, and the fingerprint-bound lanes — the cert always,
+and the `[control@<fp>]` stamp on a `test-only` PR — go STALE on a tree move
+that a green CI says nothing about. Read the next section before you write the
+verdict: it is what you have to run, in which checkout, and in what order.
+
 **Name it instead** when it is out of bounds, or you'd rather not apply it:
 state the file and line, the one-line fix, and the bounds check (e.g. `within
 zap bounds: 3 lines, 1 file, no structure`) in your verdict, and it travels
@@ -211,6 +218,7 @@ because they happened to re-verify by hand.
 | GitHub CI verdict | **Yes** — checks re-run on the new head. |
 | The tree `bin/dor-check --gate-role review` grades | **Now guarded.** It re-roots to the *builder's desk*, which sits wherever the builder left it. It refuses when that tree is not the PR head. |
 | The full-suite cert fingerprint | **From a worktree yes; from a separate clone no** — see below. |
+| The `[control@<fp>]` stamp (`test-only` PRs only) | **Same trigger as the cert, same two cases** — it is graded by the same fingerprint machinery. Clearing it is a SECOND command, `bin/control-check`; re-certifying does not touch it. See below. |
 | The e2e declared-vs-executed set | **No** — it ran once, against the base as it was then. |
 | The PR's AUTHOR SET (who may review it next) | **Yes, since 2026-09-09** — `bin/pr-review` records the head move as a fix-forward. Before that it did **not**, and the gap seated a reviewer on his own commit. See below. |
 | The task's stage | **No mechanism found.** See the open question below. |
@@ -308,6 +316,35 @@ So the whole question is whether the checkout you push from writes the copy of
   STALE lane is the gate telling you the cert is out of date; this FRESH is the cert being
   wrong while looking right, so nothing prompts you if you skip it.
 
+**`bin/fast-check` clears a STALE cert too — `bin/full-suite-check` is the
+CI-INDEPENDENT option, not the required one.** Both bullets above name
+`bin/full-suite-check` because it certifies while leaning on nothing remote, and
+a reviewer who reads it as the only way out pays ~30 minutes for a ~1 minute
+job. The route ladder `bin/dor-check` runs is shape- and **role**-independent: a
+fresh `[fast-cert@<fp>]` plus a **settled green** GitHub CI is accepted in the
+review lane exactly as at submit (the `fast_fresh && ci[:state] == :green`
+branch carries no `review_role` condition — unlike the *provisional* branch
+below it, which is builder-only and is the one thing review's gate-zero is
+strict about). So after a zap: move the desk first, then `bin/fast-check
+<task>`, and let the zap's own CI carry the full suite. Reach for
+`bin/full-suite-check` when CI is **red, pending, or absent** — the three states
+that never credit a fast cert — or when you want the verdict to stand without
+one. Either way the ORDER above is what matters, and it is the same for both.
+
+Measured 2026-09-21 on two merged hub PRs, both cleared with a FAST cert:
+
+- **#1512** (`correct-redaction-comment-claims`) — the reviewer's own
+  `zap: list the inline key literal as a guarded fixture` (`e2859a27`) landed on
+  top of the builder's commit (`aef84448`) and staled the cert. The cert the task
+  ended up carrying is `[fast-cert@ff126491…]`, and `ff126491…` is
+  `e2859a27^{tree}` **exactly** — not the builder commit's tree (`6bba811b…`). A
+  re-run of `bin/fast-check` from the builder's desk, after the move, cleared it.
+- **#1494** (`harden-workspace-rake-sweeps`) — no zap at all: a builder's
+  `Merge remote-tracking branch 'origin/accepted'` (`873455de`) became the head
+  and moved the tree past the cert, and gate-zero refused. The recorded
+  `[fast-cert@bc5c60ed…]` is that merge commit's tree. **Any** head move does
+  this; a zap is simply the one a reviewer causes themselves.
+
 **`<desk>` is the checkout the gate grades** — the builder's desk, or the repo's
 primary when that repo has no desk for the task; `bin/dor-check`'s refusal prints
 the path. **Keep the `-C`.** A reviewer runs `--gate-role review` from the primary
@@ -355,6 +392,50 @@ seconds after** #519's declared-set check finished, and it touched both
 contract that counts it. That review came out right by luck. GitHub's own
 `BEHIND` signal is not a substitute: it only appears where branch protection
 demands an up-to-date branch, and `UNKNOWN` is passed over in silence.
+
+**ON A `test-only` PR THE CONTROL STALES WITH THE CERT — and re-certifying does
+not clear it.** `bin/dor-check` grades the recorded `[control@<fp>]` stamp with
+the *same* fingerprint machinery as the certs (`control_evidence_status` calls
+`FullSuiteGate.lane_status` on the same tree hash), so one moved head stales
+**two** lanes and the gate flips from PASS on two counts a green CI does not
+clear:
+
+```text
+fast-cert: STALE (certified for @<old tree>, but the branch tree is @<new tree>)
+the recorded control is STALE (it was run against different code)
+```
+
+They are **separate lanes with separate writers**. `bin/fast-check` and
+`bin/full-suite-check` write the cert lane and touch the control not at all, so
+a reviewer who re-certifies and re-runs the gate watches one error disappear and
+the other stay exactly where it was. The full recovery is **three steps, in this
+order**:
+
+```bash
+git -C <desk> merge --ff-only origin/<branch>   # move the desk onto the zapped head
+cd <desk> && /Users/alex/projects/mcritchie-studio/bin/fast-check <task>
+cd <desk> && /Users/alex/projects/mcritchie-studio/bin/control-check <task>
+```
+
+**Scope, so you do not go looking for this on a PR that cannot have it.** The
+control lane is required only where the shape declares
+`required_evidence: [control]`, and `config/feature_shapes.yml` declares it on
+**`test-only` alone**. On every other shape a zap stales the cert only.
+
+**Both re-runs belong in the DESK, and they punish a wrong root differently —
+one loudly, one silently.** `bin/fast-check` takes `CertRootGuard.refusal` and
+**exits 1** from a tree that is not the task's, and `cert_root_guard` has **no
+reviewer override**: a reviewer standing in the throwaway `.worktrees/zap-<slug>`
+desk this protocol told them to cut **cannot certify from it**, so the staleness
+they just caused is not clearable from where they are standing. That refusal is
+the guard working. `bin/control-check` has no such refusal — it roots at the
+cwd's git toplevel (`RepoRoot.code_root`, overridable with `CONTROL_CHECK_ROOT`)
+and fingerprints whatever tree it finds, so run from the wrong one it **succeeds**
+and stamps a `[control@<fp>]` the gate can never match. You learn about that at
+the next `bin/dor-check`, reading as a control that is still STALE for no visible
+reason. It does refuse a **dirty** tree, and it needs the changed test files
+**committed** — it restores pre-change content by hand and would destroy
+uncommitted work in the blast radius.
 
 **OPEN QUESTION — what demotes a task out of `submitted`.** It was believed that
 a reviewer zap demotes a task out of the review queue, citing turf #513. **That

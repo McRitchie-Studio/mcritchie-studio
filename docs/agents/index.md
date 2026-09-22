@@ -525,9 +525,13 @@ Before editing a single file:
    (prose only) · `test-only` (the diff is 100% `test/`, `tests/`, `e2e/`).
    The last two carry **no tiers** — and `test-only` is not a lighter contract:
    it is claimable **only** on a diff dor-check OBSERVES to be all test code, it
-   still owes the full-suite cert, and it owes a `[control]` line naming a file
+   still owes the **cert gate**, and it owes a `[control]` line naming a file
    in the diff, because the question a test-only change must answer is *does the
-   changed test still bite?*
+   changed test still bite?* The cert gate it owes is the ORDINARY one
+   (`full_suite_gate: true`, unlike `docs`, which waives it), so
+   **`bin/fast-check` plus a green CI satisfies it** — `bin/dor-check`'s route
+   ladder has no `test-only` branch. Read "owes the cert gate" as "is not
+   exempt", never as "must run the full suite locally".
 2. **Allocate an isolated worktree** (`bin/agent-worktree new <app> <task>`) on
    an allocated port. Do not edit on a primary checkout.
 3. **Run `/Users/alex/projects/mcritchie-studio/bin/session-preflight <task> --root <desk>`** before editing —
