@@ -75,6 +75,15 @@ class Nflverse::SeedPlayersCollisionTest < ActiveSupport::TestCase
     assert_equal 1, Athlete.count
     assert_equal "00-0036322", Athlete.first.gsis_id
     assert_equal 1, stats[:namesake_collisions_skipped]
+
+    # The count alone CANNOT see a silent merge. Adopting the unidentifiable row
+    # instead of skipping it also leaves one Athlete, also keeps the gsis
+    # (attrs.compact drops the blank), and still increments the counter — while
+    # the surviving row quietly becomes the OTHER human. Measured against that
+    # mutant: position LB, team cleveland-browns, athletes_updated 2.
+    assert_equal "WR", Athlete.first.position, "the skipped row overwrote the identified athlete"
+    assert_equal "minnesota-vikings", Athlete.first.team_slug
+    assert_equal 1, stats[:athletes_updated]
   end
 
   test "the namesake carries a disambiguated slug and the first keeps the clean one" do
