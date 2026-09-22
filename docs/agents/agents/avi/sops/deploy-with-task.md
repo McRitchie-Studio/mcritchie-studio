@@ -141,7 +141,8 @@ Use the production board by default. Do not add `--local`.
    supervisor.** Carl runs his gate-zero (`bin/dor-check <task> --gate-role
    review`), confirms product acceptance against the task's criteria, summons
    **one domain LIGHT** at his discretion (previewing with `bin/reviewer-select
-   <task>`), and drives the verdict.
+   <task> --no-record` — a bare run records the pair and takes the review claim),
+   and drives the verdict.
 
    On a merge-ready verdict **Carl merges the feat PR into `accepted`** (`gh pr
    merge --merge --match-head-commit` → `bin/task merged <task> accepted` →

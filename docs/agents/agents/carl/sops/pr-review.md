@@ -59,11 +59,12 @@ Review runs in two levels; keep them distinct:
      and does not drive the verdict — a defect it spots reaches Carl as a scout
      report, and only the review claim's holder spends the task's bounce. Carl is
      the standing primary on every PR; the light is the domain
-     pick — `bin/reviewer-select <task>` previews the pair (primary Carl + the
-     domain light). It also ACQUIRES the task's review claim before recording the
-     pair, so it exits **10** rather than seating a second pair on a PR someone
-     else is already reviewing. From the session that popped the task that claim
-     is already yours (`same_instance`), so this is invisible on the normal path.
+     pick — `bin/reviewer-select <task> --no-record` previews the pair (primary Carl
+     + the domain light). Keep `--no-record` on a preview: a bare run RECORDS, and
+     recording ACQUIRES the task's review claim first — so it exits **10** rather
+     than seating a second pair on a PR someone else is already reviewing. From
+     the session that popped the task that claim is already yours
+     (`same_instance`), so this is invisible on the normal path.
 
 ## Parallel-first — claim each PR, skip what's already being reviewed
 
@@ -190,8 +191,9 @@ The orchestrator's loop, per wave:
    head, and the checks already reported. Keep the wave to five or fewer agents in
    flight (Carl + his light count as two).
 4. **Carl reviews and owns.** He runs the deep review + gate-zero, summons **one**
-   light specialist at his discretion (previewed by `bin/reviewer-select <task>` —
-   Carl is the standing primary, the light is the domain pick), collects the
+   light specialist at his discretion (previewed by `bin/reviewer-select <task>
+   --no-record` — Carl is the standing primary, the light is the domain pick;
+   `--no-record` because a bare run records and claims), collects the
    light's read, and drives the verdict:
    - **merge-ready** → Carl revalidates the head and **merges** (see Verdicts).
    - **request-changes** → Carl blocks it back to the builder (see Verdicts).

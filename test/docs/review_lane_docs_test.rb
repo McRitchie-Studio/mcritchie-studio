@@ -211,4 +211,132 @@ class ReviewLaneDocsTest < ActiveSupport::TestCase
         "#{rel}: the checklist must include its domain's hard-won gotcha")
     end
   end
+
+  # ── document-reviewer-select-claim ────────────────────────────────────────
+  #
+  # PR #1521 (merged 93e74215) made `bin/reviewer-select` ACQUIRE the per-task
+  # review claim BEFORE recording intent, and recording is the DEFAULT. So a bare
+  # run that a doc presents as a "preview" now takes a ~3h25m lease
+  # (ClaimLease::REVIEW_TTL_SECONDS = 12_275) with NO renewer behind it — selection
+  # only reserves the seconds until the primary's own acquire. A live
+  # `task_review_claims` row drops the task out of `Task.reviewable`
+  # (the `Task.reviewable` scope in app/models/task.rb excludes any submitted task
+  # carrying an unexpired claim) and therefore out of `bin/task claim-next-review` for the whole
+  # TTL. The lapse is the recoverable direction and was chosen deliberately, but a
+  # reader following our own docs should not trip it at all.
+
+  # EVERY active agent doc, walked — not a fixed list. "Every preview invocation" is
+  # a universal claim, and a doc added tomorrow has to be covered the day it lands.
+  # Archives are frozen snapshots and stay as written.
+  def active_agent_docs
+    Dir.glob(AGENTS.join("**", "*.md")).reject { |p| p.include?("/archive/") }.sort
+  end
+
+  def doc_rel(path)
+    path.to_s.sub("#{AGENTS}/", "")
+  end
+
+  # Sentence-grained, because the check has to tell an INSTRUCTION ("previewing with
+  # `bin/reviewer-select <task>`") from a STATEMENT ABOUT the default ("…but
+  # `bin/reviewer-select <task>` records by default"). Splitting on a period followed
+  # by whitespace leaves `Task.reviewable` and `TaskEvent.metadata` intact.
+  def doc_sentences(rel)
+    norm(rel).split(/(?<=\.)\s+/)
+  end
+
+  # An invocation with the task placeholder and no opt-out flag on it.
+  BARE_SELECT = %r{bin/reviewer-select <task[^>]*>(?!\s*--(?:no-record|dry))}
+  # The ONE sentence shape allowed to carry a bare invocation: one whose subject IS
+  # the recording default (parallel-agent-devops.md's "records by default" paragraph,
+  # which exists precisely to teach this). Measured, not assumed — as of 2026-09-22
+  # exactly two active sentences match it, and both are about the behaviour rather
+  # than about running a preview. Deliberately NOT named as a remedy in the failure
+  # message: a preview instruction is fixed by adding the flag, never by bolting this
+  # phrase onto it.
+  STATES_RECORDING_DEFAULT = /records? by default|recording is the DEFAULT/i
+
+  test "[static] every active doc shows --no-record on a PREVIEW invocation of bin/reviewer-select" do
+    offenders = active_agent_docs.flat_map do |path|
+      rel = doc_rel(path)
+      doc_sentences(rel).filter_map do |sentence|
+        next unless sentence.match?(BARE_SELECT)
+        next unless sentence.match?(/preview/i)
+        next if sentence.match?(STATES_RECORDING_DEFAULT)
+
+        "#{rel}: #{sentence.strip[0, 150]}"
+      end
+    end
+
+    assert_empty offenders,
+      "Preview invocations must be written `bin/reviewer-select <task> --no-record`. " \
+      "Recording is the DEFAULT, and recording first ACQUIRES the task's review claim — " \
+      "a ~3h25m lease (ClaimLease::REVIEW_TTL_SECONDS) with no renewer behind it, which " \
+      "drops the task out of Task.reviewable and out of `bin/task claim-next-review` " \
+      "until it lapses. Add the flag to the command; do not reword around it:\n  " +
+      offenders.join("\n  ")
+  end
+
+  test "[static] the pr-review primitive describes the review claim and BOTH arms of exit 10" do
+    body = norm("modules/pr-review-sop.md")
+
+    assert_match(/ACQUIRES the review claim/i, body,
+      "the shared primitive must say that recording ACQUIRES the per-task review claim")
+    assert_match(/REVIEW_TTL_SECONDS/, body,
+      "name the lease constant so a reader can size what a bare run costs")
+    assert_match(/Task\.reviewable/, body,
+      "say what a live claim locks the task out of — Task.reviewable, hence claim-next-review")
+    assert_match(/exits? 10/i, body, "exit 10 must be named as the skip it is")
+
+    # BOTH ARMS. They exit on the same code and carry OPPOSITE remedies, and
+    # bin/pr-review's own exit-10 message hard-codes the HELD wording only — so a
+    # reader who hits the self-review arm is told the wrong thing unless the
+    # primitive covers it.
+    assert_match(/refuse_held!/, body,
+      "the HELD arm: a DIFFERENT live session holds the claim, and it names the holder")
+    assert_match(/refuse_self_review!/, body,
+      "the SELF-REVIEW arm: the board refused the claim because the primary is an author")
+    assert_match(/review-claim release/i, body,
+      "the held arm's remedy — ask the holder to release, take the next task")
+    assert_match(/move <task> building --actor/i, body,
+      "the self-review arm's remedy — reconcile the AUTHOR SET, not take the next task")
+  end
+
+  # The review lane's intent must come from the CLAIM. `bin/task intent <task> --to
+  # reviewed` POSTs /api/v1/tasks/<slug>/intent and touches `task_review_claims`
+  # NOWHERE — the claim-less write that let two sessions select PR #1516 on
+  # 2026-09-21, both pairs carl+steffon, one seconds from merging a tree the other
+  # had bounced. `bin/task review-claim acquire` is the replacement:
+  # TaskReviewClaim.acquire writes the reviewed intent from the claim side
+  # (app/models/task_review_claim.rb#record_review_intent), so the crew seat and
+  # the reservation land in one atomic write.
+  #
+  # SCOPED TO `--to reviewed`, and the scope is MEASURED rather than assumed: the
+  # DEPLOY lane's `bin/task intent --to assembled` / `--to shipped` fallback is
+  # legitimate and stays. `Task.reviewable` is the only stage scope keyed on a claim
+  # row; there is no assembled/shipped equivalent, so a deploy-lane intent cannot
+  # announce a reservation that does not exist. A guard that banned the subcommand
+  # outright would teach that false rule.
+  REVIEWED_INTENT = %r{bin/task intent [^.]{0,80}--to reviewed}i
+  PROHIBITS = /\bdo not\b|\bnever\b|\bdon't\b/i
+
+  test "[static] no active doc routes a reader to the claim-less bin/task intent --to reviewed" do
+    offenders = active_agent_docs.flat_map do |path|
+      rel = doc_rel(path)
+      doc_sentences(rel).filter_map do |sentence|
+        next unless sentence.match?(REVIEWED_INTENT)
+        # Naming it in order to FORBID it is the primitive's job, and passes.
+        next if sentence.match?(PROHIBITS)
+
+        "#{rel}: #{sentence.strip[0, 150]}"
+      end
+    end
+
+    assert_empty offenders,
+      "These sentences hand a reader the review-lane intent write with no claim behind it. " \
+      "Route them to `bin/task review-claim acquire <task>` instead — TaskReviewClaim.acquire " \
+      "writes the reviewed intent from the claim side, so the reservation and the crew seat " \
+      "land together. Name `bin/task intent --to reviewed` only to forbid it. (The DEPLOY " \
+      "lane's --to assembled / --to shipped fallback is a different case and is not covered " \
+      "by this guard.):\n  " + offenders.join("\n  ")
+  end
 end
