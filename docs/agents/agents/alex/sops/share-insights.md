@@ -105,7 +105,7 @@ the live bank and the deployed copy of the doc — and writes an **ErrorLog**
 receipt when the doc's recorded count no longer matches the bank, when the bank
 has been curated since the doc was generated, or when the generated header stops
 being machine-readable. A stale artefact is therefore a row in
-`/admin/error_logs`, not silence. See
+`/error_logs`, not silence. See
 [`../../../system/memory.md`](../../../system/memory.md).
 
 **This SOP installs nothing, and owes no install step.** Two facts hold it there,
