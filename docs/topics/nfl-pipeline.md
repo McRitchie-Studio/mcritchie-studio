@@ -13,6 +13,10 @@ Pulls `players.csv` from nflverse-data GitHub release (~24k rows, default filter
 
 The name fallback adopts an existing Athlete only when it has no cross-ref IDs or shares an ID with the incoming row. If both records have identity data but none match, they are namesakes and receive separate Person slugs even when both GSIS IDs are blank. A namesake row with no identity key cannot receive a stable slug; the importer skips it, increments `namesake_collisions_skipped`, and continues instead of aborting the post-deploy command.
 
+**Which namesake keeps the clean slug is a property of the data, never of the file.** Rows are ingested in `ordered` by the full identifier priority (`gsis_id` → `espn_id` → `pff_id` → `otc_id` → `pfr_id` → `nflverse_id`), present-before-absent then by value, with the CSV index surviving only as a last tiebreak for rows sharing every identifier. Sorting on `gsis_id` alone was not enough: a real namesake pair often has it blank on both rows, and the CSV index then decided the winner — so reversing two rows moved `justin-jefferson` from ESPN 4262921 to 4430737. Every foreign key here is a slug, so that reassigned one human's grades, stats and cached headshots to the other on a rebuild.
+
+The disambiguator suffix is the last four digits of the row's highest-priority identifier, widening to the **whole** identifier when that slug already belongs to someone else — two namesakes whose IDs end alike would otherwise compute the same slug and raise `RecordNotUnique` out of the post-deploy command. `Person.create!` is rescued as a backstop for what that check cannot see, counting `namesake_collisions_skipped` and skipping the row. The rule throughout: one malformed row costs one row, never the ship.
+
 ### 2. `Spotrac::SyncContracts`
 `app/services/spotrac/sync_contracts.rb`, rake `nfl:salaries_sync` — salary overlay.
 

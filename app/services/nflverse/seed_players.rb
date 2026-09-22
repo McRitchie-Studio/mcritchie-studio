@@ -28,6 +28,13 @@ class Nflverse::SeedPlayers
   IDENTITY_COLUMNS = %i[gsis_id pff_id otc_id espn_id pfr_id nflverse_id].freeze
   DISAMBIGUATOR_PRIORITY = %i[gsis_id espn_id pff_id otc_id pfr_id nflverse_id].freeze
 
+  # The CSV header each identity column arrives under. Only `nflverse_id`
+  # differs from its column name — the feed ships it as `nfl_id`.
+  IDENTITY_CSV_COLUMNS = {
+    gsis_id: "gsis_id", espn_id: "espn_id", pff_id: "pff_id",
+    otc_id: "otc_id", pfr_id: "pfr_id", nflverse_id: "nfl_id"
+  }.freeze
+
   # A third-party feed being unreachable is NOT an import defect, and must not
   # read as one: this service runs as a post-deploy command inside bin/release,
   # where an uncaught raise aborts the ENTIRE ship, not just this task.
@@ -143,15 +150,25 @@ class Nflverse::SeedPlayers
   # the clean slug to the other player, silently changing a URL that other
   # records point at by slug.
   #
-  # Sorting on the league ID makes the outcome a property of the DATA rather
-  # than of the file. Rows with no ID sort last.
+  # Sorting on the league IDs makes the outcome a property of the DATA rather
+  # than of the file. Rows carrying no identifier at all sort last.
   #
-  # The index is a TIEBREAK, not decoration: Ruby's `sort_by` is NOT stable, so
-  # without it every ID-less row could land in a different relative position on
-  # each run — which is the exact non-determinism this method exists to remove.
+  # It sorts on the WHOLE identifier priority, not on gsis_id alone. GSIS
+  # first keeps the established order, but GSIS is blank on both rows of a
+  # real namesake pair often enough to matter, and when it is, it discriminates
+  # nothing — leaving the CSV index as the only tiebreak, which is precisely
+  # the file-order dependency this method exists to remove. Measured on two
+  # blank-GSIS Jefferson rows: reversing them moved the clean `justin-jefferson`
+  # slug from ESPN 4262921 to 4430737. Every foreign key in this schema is that
+  # slug, so a feed reorder silently reassigned one human's grades, stats and
+  # headshots to the other.
+  #
+  # The index survives as the LAST tiebreak, for rows that share every
+  # identifier (or carry none): Ruby's `sort_by` is not stable, so without it
+  # those rows could shuffle between runs.
   def ordered(rows)
     rows.each_with_index
-        .sort_by { |r, i| [r["gsis_id"].to_s.strip.empty? ? 1 : 0, r["gsis_id"].to_s.strip, i] }
+        .sort_by { |row, index| identity_sort_key(row) << index }
         .map(&:first)
   end
 
@@ -226,7 +243,7 @@ class Nflverse::SeedPlayers
 
     return existing if existing && adoptable_name_match?(existing, identifiers)
 
-    disambiguator = disambiguator_for(identifiers) if existing
+    disambiguator = disambiguator_for(identifiers, first, last) if existing
     if existing && disambiguator.blank?
       @stats[:namesake_collisions_skipped] += 1
       vputs "  [!] skipped unidentifiable namesake: #{first} #{last}"
@@ -236,8 +253,9 @@ class Nflverse::SeedPlayers
     # ONE TRANSACTION, because the two writes are one fact. A Person created
     # here whose Athlete then fails leaves an ID-less orphan, and the NEXT run
     # recomputes the same disambiguator and dies on the unique index — an
-    # uncaught RecordNotUnique that wedges every later import. The caller's
-    # rescue is around `update!`, not around this.
+    # uncaught RecordNotUnique that wedges every later import. `ingest_row`'s
+    # own rescue is around `update!` and cannot see any of this, which is why
+    # the rescue below belongs to THIS method.
     transaction do
       if existing
         person = Person.create!(
@@ -252,6 +270,20 @@ class Nflverse::SeedPlayers
       @stats[:athletes_created] += 1
       Athlete.create!(person_slug: person.slug, sport: "football")
     end
+  rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid => e
+    # THE SAME RULE THE DISAMBIGUATOR RAISE WAS REMOVED FOR. This service is a
+    # declared post_deploy_cmd, and bin/release aborts the entire ship on a
+    # non-zero exit — so no single malformed row may raise out of here. Taking
+    # the raise out of `disambiguator_for` and leaving its twin one call away
+    # in `Person.create!` only moved it: a uniqueness failure on the computed
+    # slug aborted the import just as hard, and reaching it took nothing more
+    # exotic than three namesakes whose IDs end in the same four digits.
+    #
+    # `disambiguator_for` already widens past a taken slug, so this is the
+    # backstop for what it cannot see, not the primary defence.
+    @stats[existing ? :namesake_collisions_skipped : :athletes_failed] += 1
+    vputs "  [!] skipped namesake we could not slug: #{first} #{last} (#{e.message})"
+    nil
   end
 
   def transaction(&block) = ActiveRecord::Base.transaction(&block)
@@ -272,17 +304,61 @@ class Nflverse::SeedPlayers
     end
   end
 
+  # The ingest order, as a sort key: each identifier in priority order,
+  # present-before-absent then by value. Derived from DISAMBIGUATOR_PRIORITY so
+  # the row that sorts FIRST is the one whose highest-priority identifier sorts
+  # first — the same chain the suffix is cut from, by construction rather than
+  # by two lists agreeing.
+  #
+  # The comparison is lexicographic, so "1000" sorts before "999". That is
+  # arbitrary but TOTAL, which is all this needs: the point is that the order
+  # is a function of the data and nothing else.
+  def identity_sort_key(row)
+    DISAMBIGUATOR_PRIORITY.flat_map do |column|
+      value = row[IDENTITY_CSV_COLUMNS.fetch(column)].to_s.strip
+      [value.empty? ? 1 : 0, value]
+    end
+  end
+
   # A short, STABLE suffix. Derived from the league ID rather than a counter, so
   # re-running the import in a different row order produces the same slug — a
   # counter would make a person's URL depend on CSV ordering.
-  def disambiguator_for(identifiers)
+  #
+  # Four digits reads well and separates almost every pair — but NOT every
+  # pair, and "almost" is not a uniqueness guarantee against a unique index.
+  # Two namesakes whose IDs end in the same four digits compute the same slug,
+  # and `Person.create!` then raises RecordNotUnique. So four digits is a
+  # PREFERENCE: when that slug already belongs to someone else, widen to the
+  # whole identifier, which is unique because the identifier is.
+  #
+  # Widening is deterministic only because `ordered` is — the namesakes arrive
+  # in an order fixed by their identifiers, so the same one widens every run.
+  # Returns nil when nothing is free, which the caller counts and skips.
+  def disambiguator_for(identifiers, first, last)
     source = DISAMBIGUATOR_PRIORITY.filter_map { |column| identifiers[column].presence }.first
     return if source.blank?
 
-    digits = source.to_s.gsub(/\D/, "")
-    return digits.last(4) if digits.present?
+    disambiguator_candidates(source).find do |candidate|
+      !Person.exists?(slug: namesake_slug(first, last, candidate))
+    end
+  end
 
-    source.to_s.gsub(/[^a-z0-9]/i, "").downcase.last(8).presence
+  # Shortest first, then the whole identifier. Both are a function of the
+  # source ID alone, so the ladder cannot drift between runs.
+  def disambiguator_candidates(source)
+    digits = source.to_s.gsub(/\D/, "")
+    return [digits.last(4), digits].uniq if digits.present?
+
+    alnum = source.to_s.gsub(/[^a-z0-9]/i, "").downcase
+    alnum.present? ? [alnum.last(8), alnum].uniq : []
+  end
+
+  # Ask Person for the slug rather than re-deriving it here. Re-deriving would
+  # be a second copy of `name_slug`'s rule, free to drift from the one that
+  # actually writes the column — and this check is only worth making if it
+  # tests the slug that is really about to be inserted.
+  def namesake_slug(first, last, candidate)
+    Person.new(first_name: first, last_name: last, disambiguator: candidate).name_slug
   end
 
   def lookup_athlete_by_ids(gsis_id:, pff_id:, otc_id:, espn_id:, pfr_id:, nflverse_id: nil)

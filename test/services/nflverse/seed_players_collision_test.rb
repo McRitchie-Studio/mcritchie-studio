@@ -24,10 +24,20 @@ class Nflverse::SeedPlayersCollisionTest < ActiveSupport::TestCase
     Nflverse::SeedPlayers.new(csv_body: body, upload_headshots: false, status_filter: "ACT").call
   end
 
-  setup do
+  # The identity map this importer is accountable for: which human owns which
+  # slug. Returned sorted so two runs compare as a MAPPING, not a row order.
+  def slug_to_espn
+    Person.where(first_name: "Justin", last_name: "Jefferson")
+          .map { |person| [person.slug, Athlete.find_by(person_slug: person.slug)&.espn_id] }
+          .sort.to_h
+  end
+
+  def reset_jeffersons
     Athlete.delete_all
     Person.where(last_name: "Jefferson").delete_all
   end
+
+  setup { reset_jeffersons }
 
   # The headline case, named in the migration: a Vikings receiver and a Browns
   # linebacker who share a name.
@@ -107,13 +117,110 @@ class Nflverse::SeedPlayersCollisionTest < ActiveSupport::TestCase
     run_import(csv(a, b))
     forward = Person.where(first_name: "Justin", last_name: "Jefferson").map(&:slug).sort
 
-    Athlete.delete_all
-    Person.where(last_name: "Jefferson").delete_all
-
+    reset_jeffersons
     run_import(csv(b, a))
     reversed = Person.where(first_name: "Justin", last_name: "Jefferson").map(&:slug).sort
 
     assert_equal forward, reversed
+  end
+
+  # THE MAPPING, not the count. Every count assertion above is INVARIANT UNDER
+  # PERMUTATION: reversing these two rows still yields two people and two
+  # athletes, so none of them can see this defect. What a feed reorder can
+  # still change is WHICH human owns the clean slug — and in this schema the
+  # slug IS the foreign key, so grades, stats and cached headshots follow it.
+  # Assert the pairing.
+  #
+  # The rows are deliberately blank-GSIS: with a GSIS on both, `ordered` sorts
+  # on it and the outcome was already stable. Blank on both, GSIS discriminates
+  # nothing, and the secondary IDs are the only thing left that belongs to the
+  # DATA rather than to the file.
+  test "blank-gsis namesakes keep the same slug-to-id mapping in either feed order" do
+    a = jefferson(gsis: "", espn: "4262921", position: "WR", team: "MIN")
+    b = jefferson(gsis: "", espn: "4430737", position: "LB", team: "CLE")
+
+    run_import(csv(a, b))
+    forward = slug_to_espn
+
+    reset_jeffersons
+    run_import(csv(b, a))
+    reversed = slug_to_espn
+
+    assert_equal forward, reversed,
+                 "reordering the feed handed the clean slug to the other human"
+    assert_equal({ "justin-jefferson" => "4262921", "justin-jefferson-0737" => "4430737" },
+                 forward, "the clean slug must follow the identifier, not the row index")
+  end
+
+  # The disambiguator is the last four digits of a league ID, so two namesakes
+  # whose IDs end alike compute the SAME slug. It takes THREE to reach:
+  # the first namesake keeps the clean slug and never computes a suffix, so
+  # the collision is between the SECOND and THIRD. `Person.create!` then hits
+  # index_people_on_slug and raises RecordNotUnique — uncaught, from inside a
+  # post-deploy command, which aborts the whole ship. That is the same
+  # deploy-aborting raise this task removed from `disambiguator_for`, left
+  # live one call away on the adjacent path.
+  test "namesakes sharing their last four id digits both survive without aborting" do
+    rows = [
+      jefferson(gsis: "", espn: "4264567", position: "WR", team: "MIN"),
+      jefferson(gsis: "", espn: "4434567", position: "LB", team: "CLE"),
+      jefferson(gsis: "", espn: "4994567", position: "TE", team: "BUF")
+    ]
+    expected = {
+      "justin-jefferson" => "4264567",
+      "justin-jefferson-4567" => "4434567",
+      "justin-jefferson-4994567" => "4994567"
+    }
+    stats = nil
+
+    assert_nothing_raised do
+      stats = run_import(csv(*rows))
+    end
+
+    assert_equal 3, Person.where(first_name: "Justin", last_name: "Jefferson").count,
+                 "a suffix collision cost us a human"
+    assert_equal expected, slug_to_espn,
+                 "the colliding namesake must widen its suffix, not take the taken slug"
+    # `@stats` is a Hash.new(0), so an untouched counter reads 0, never nil.
+    assert_equal 0, stats[:namesake_collisions_skipped],
+                 "all three carry an identity key; none of them is unidentifiable"
+
+    # And the widened suffix is data-derived too, so it cannot depend on how
+    # the feed happened to list them.
+    reset_jeffersons
+    run_import(csv(*rows.reverse))
+    assert_equal expected, slug_to_espn, "the widened suffix followed the row index"
+  end
+
+  # The rescue is a BACKSTOP, and the ladder above is good enough that no
+  # honest CSV reaches it — which is exactly why it needs a test of its own.
+  # An untested rescue is a rescue nobody has seen work.
+  #
+  # The one case the ladder cannot detect for itself is a suffix that is free
+  # when it checks and taken when it inserts. Forcing the suffix reproduces
+  # that shape against a REAL Person.create! and a REAL unique index, so what
+  # is under test is the rescue, not a stubbed error.
+  test "a slug collision the ladder cannot see is skipped, not raised" do
+    Person.create!(first_name: "Justin", last_name: "Jefferson", athlete: true,
+                   disambiguator: "9999")
+    incumbent = Person.create!(first_name: "Justin", last_name: "Jefferson", athlete: true)
+    Athlete.create!(person_slug: incumbent.slug, sport: "football", espn_id: "111")
+
+    importer = Nflverse::SeedPlayers.new(csv_body: csv, upload_headshots: false)
+    importer.define_singleton_method(:disambiguator_for) { |*| "9999" }
+
+    row = CSV.parse(csv(jefferson(gsis: "", espn: "222", position: "LB", team: "CLE")),
+                    headers: true).first
+
+    assert_nothing_raised do
+      assert_nil importer.ingest_row(row), "a row we cannot slug must be skipped, not ingested"
+    end
+
+    assert_equal 1, importer.stats[:namesake_collisions_skipped]
+    assert_equal "111", incumbent.athlete_profile.reload.espn_id,
+                 "the skipped namesake overwrote the identified athlete"
+    assert_equal 2, Person.where(first_name: "Justin", last_name: "Jefferson").count,
+                 "the skipped row left a partial Person behind"
   end
 
   # The identifier every downstream importer is supposed to match on.
