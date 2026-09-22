@@ -112,6 +112,7 @@ class Nflverse::SeedPlayers
     # later reader this refresh never happened. Swallowing it silently would be
     # worse than the abort it replaces.
     warn "nflverse seed: FEED UNAVAILABLE — data not refreshed (#{e.message})"
+    record_outage(e)
     @stats[:feed_unavailable] = 1
     @stats
   end
@@ -122,6 +123,9 @@ class Nflverse::SeedPlayers
   # test can drive one row without a CSV.
   def run_import
     ImportRun.track("nflverse_players") do |run|
+      # Held so `call`'s rescue can point the ErrorLog at the run that failed.
+      # `track` yields it here and nowhere else, and the rescue is one frame up.
+      @import_run = run
       rows = ordered(parse_csv)
       puts "  #{rows.size} rows; filter: status=#{@status_filter || "any"} last_season>=#{@min_season}"
 
@@ -447,7 +451,36 @@ class Nflverse::SeedPlayers
     raise FeedUnavailable, "#{e.class}: #{e.message}"
   end
 
-  private :run_import
+  # THE OPERATOR SURFACE FOR THE QUIET PATH.
+  #
+  # `call` returns normally on an outage, so every caller's exit status stays
+  # 0 — `bin/rails runner`, `heroku run --exit-code`, and the post-deploy check
+  # that stamps the release `ok`. A green release can therefore carry data that
+  # never refreshed, and the failed ImportRun recording it has no view in this
+  # app: its only reader outside the model is athletes_controller's
+  # `ImportRun.last_success_for`, which selects SUCCESSES.
+  #
+  # ErrorLog is the surface that IS rendered — /error_logs and the Request Logs
+  # panel on /admin/dashboard, both newest-first, and Sentry when SENTRY_DSN is
+  # set — so this row is what makes the outage discoverable without a
+  # production console.
+  def record_outage(error)
+    log = ErrorLog.capture!(error)
+    return log unless @import_run
+
+    # The run is the target so the row links back to what failed; target_name
+    # is the source, which the /error_logs index renders as the row's badge.
+    log.target = @import_run
+    log.target_name = @import_run.source
+    log.save!
+    log
+  rescue StandardError => e
+    # Telemetry must never veto the recovery it reports on — this runs inside
+    # the rescue that keeps a feed outage from aborting the ship.
+    warn "nflverse seed: ErrorLog capture failed: #{e.class}: #{e.message}"
+  end
+
+  private :run_import, :record_outage
 
   # Seam so a test can make the NETWORK fail rather than hand-raising the
   # wrapped error — which is what let an incomplete rescue list ship.

@@ -33,7 +33,7 @@ class InsightsDocFreshnessJobTest < ActiveSupport::TestCase
 
     log = ErrorLog.order(:id).last
     assert_match(/StaleDocError/, log.inspect_field,
-                 "the receipt must name the failure class, so /admin/error_logs triages it like " \
+                 "the receipt must name the failure class, so /error_logs triages it like " \
                  "any other incident")
     assert_match(/records 0 banked insights/, log.message)
     assert_match(/bank holds 1/, log.message)
