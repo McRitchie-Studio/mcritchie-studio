@@ -67,6 +67,7 @@ require_relative "session_identity"
 require_relative "session_markers"
 require_relative "shift_renewer"
 require_relative "anchor_heartbeat"
+require_relative "review_worker_pulse"
 require_relative "../../lib/claim_holder"
 
 class ReviewClaimCli
@@ -343,7 +344,15 @@ class ReviewClaimCli
     # any non-JSON answer) parses to {} and reads as "nothing renewed", which is the
     # safe direction for every shape this can take.
     data = parse_data(res)
-    return renewed_ok(slug, data) if data["renewed"]
+    if data["renewed"]
+      # THE WORKER'S OWN BEAT. This is a FOREGROUND command — a tool call a dead
+      # subagent cannot make — so it, and only it, is entitled to refresh the pulse
+      # bin/lib/review_worker_pulse.rb reads. The detached renew-loop beats the BOARD
+      # through `renewed?` and never comes through here, which is the separation that
+      # keeps a renewer from certifying itself.
+      touch_pulse(sid, slug)
+      return renewed_ok(slug, data)
+    end
 
     refuse_renew(slug)
   end
@@ -424,9 +433,19 @@ class ReviewClaimCli
       # evidence: it frees a dead reviewer's task after 3h25m whether the reviewer
       # died in minute one or minute two hundred. The seam answers from the session's
       # own marks instead, and the cap stays as the belt behind the braces.
-      alive:    AnchorHeartbeat.alive_check(
-        resident: -> { SessionIdentity.process_alive?(pid, start) },
-        signal:   -> { AnchorHeartbeat.signal_age(session: session_id, projects_dir: @api.projects_dir) }
+      alive:    both_alive(
+        AnchorHeartbeat.alive_check(
+          resident: -> { SessionIdentity.process_alive?(pid, start) },
+          signal:   -> { AnchorHeartbeat.signal_age(session: session_id, projects_dir: @api.projects_dir) }
+        ),
+        # AND THE WORKER, which the anchor cannot see. A reviewer is a SUBAGENT, and a
+        # subagent carries no identity of its own — measured 2026-09-22: parent and
+        # subagent shells agree byte for byte on CLAUDE_CODE_SESSION_ID, CLAUDE_PID,
+        # ppid, SessionIdentity.nonce and the anchor pid+start. So every signal the
+        # line above reads is a TRUE POSITIVE about the session while saying nothing
+        # about the reviewer, and a conductor that keeps working keeps a dead
+        # reviewer's claim alive forever. See bin/lib/review_worker_pulse.rb.
+        ReviewWorkerPulse.alive_check(pulse: -> { worker_pulse_age(session_id, slug) })
       ),
       finished: -> { review_over?(slug) },
       renew:    -> { renewed?(slug) },
@@ -438,6 +457,20 @@ class ReviewClaimCli
       max_lifetime: REVIEW_RENEW_WINDOW_SECONDS
     )
     OK
+  end
+
+  # Two independent liveness reads, ANDed — the claim is held only while BOTH vouch.
+  #
+  # The conjunction is the whole shape of this fix. The session check is correct and
+  # load-bearing for the two faces AnchorHeartbeat was built for (no anchor; a dead
+  # anchor still resident), so it is not weakened, replaced, or made to answer a
+  # question it cannot. The worker check is ADDED beside it and answers the third face.
+  # Each keeps its own fail-safe posture — every uncertainty on either side HOLDS — so
+  # ANDing them can only ever stop a renewal on a POSITIVE reading from one of them.
+  #
+  # Short-circuits, so a stopped anchor never pays for a marker stat.
+  def both_alive(*checks)
+    -> { checks.all?(&:call) }
   end
 
   def release(slug)
@@ -1142,7 +1175,7 @@ class ReviewClaimCli
   # read and TERM taskB's renewer pid — taskB then lapses mid-review and a second
   # session could claim it, the exact double-review this gate prevents. The slug in
   # the suffix keeps each claim's marker (and its renewer) independent.
-  REVIEW_CLAIM = ".task-review-claim"
+  REVIEW_CLAIM = ReviewWorkerPulse::MARKER
 
   # The renewer's pid lives in its OWN marker rather than as a second line of
   # .task-review-claim, mirroring bin/devops-shift: a distinct reader might parse the
@@ -1156,8 +1189,24 @@ class ReviewClaimCli
     "#{base}-#{slug.to_s.gsub(/[^A-Za-z0-9._-]/, '')}"
   end
 
+  # Seeding the claim marker and refreshing the worker pulse are THE SAME WRITE — the
+  # marker's mtime IS the pulse (see bin/lib/review_worker_pulse.rb). Routed through
+  # that seam so the writer and the reader of this mtime derive the filename from one
+  # place; two copies of a marker name is how a reader comes to watch a file nobody
+  # writes any more, and it would fail SILENT and always in the "worker is dead"
+  # direction.
   def write_marker(sid, slug)
-    SessionMarkers.write(sid, @api.projects_dir, marker_suffix(REVIEW_CLAIM, slug), "#{slug}\n", env: @api.env)
+    touch_pulse(sid, slug)
+  end
+
+  def touch_pulse(sid, slug)
+    ReviewWorkerPulse.touch(session: sid, projects_dir: @api.projects_dir, slug: slug, env: @api.env)
+  end
+
+  # Seconds since a FOREGROUND command in this session acted on this review, or nil.
+  def worker_pulse_age(sid, slug)
+    ReviewWorkerPulse.pulse_age(session: sid, projects_dir: @api.projects_dir, slug: slug,
+                                now: @clock.call)
   end
 
   def clear_marker(sid, slug)

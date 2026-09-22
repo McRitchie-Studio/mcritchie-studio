@@ -261,6 +261,30 @@ module SessionMarkers
     nil
   end
 
+  # The mtime of ONE named marker, or nil when it is absent/unreadable. Unguarded —
+  # a read cannot pollute the store.
+  #
+  # DISTINCT FROM last_signal_at, which takes the NEWEST mtime across EVERY marker a
+  # session emitted. That one answers "is this SESSION working"; this one answers "was
+  # THIS marker touched", which is the only way to ask about one task inside a session
+  # that holds several. bin/lib/review_worker_pulse.rb is the consumer: a reviewer
+  # subagent shares its session's id, nonce and anchor, so a session-wide signal is a
+  # true positive about the conductor and says nothing about the reviewer.
+  #
+  # nil is load-bearing and must never be flattened into an age — its consumer reads a
+  # number as evidence and nil as "we could not look", and only the first may stop a
+  # renewal.
+  def touched_at(session_id, projects_dir, suffix)
+    return nil if session_id.to_s.strip.empty?
+
+    path = marker_path(session_id, projects_dir, suffix)
+    return nil unless File.file?(path)
+
+    File.mtime(path)
+  rescue StandardError
+    nil
+  end
+
   # Walk up from the tool's cwd to the nearest .agent-context.json.
   # nil when cwd is blank, no marker exists, or the file is unreadable/invalid.
   def read_context_marker(cwd)

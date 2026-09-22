@@ -181,7 +181,10 @@ class StateStoreContainmentTest < Minitest::Test
       "read" => "READ — returns the marker's contents",
       "last_signal_at" => "READ — stats the session's markers for their newest mtime to tell a " \
                           "WORKING agent from a merely resident one (bin/lib/anchor_heartbeat.rb); " \
-                          "it opens nothing and mutates nothing"
+                          "it opens nothing and mutates nothing",
+      "touched_at" => "READ — stats ONE named marker for its mtime, so a single task's claim can " \
+                      "be asked about inside a session holding several " \
+                      "(bin/lib/review_worker_pulse.rb); it opens nothing and mutates nothing"
     },
     "bin/lib/agent_api.rb" => {
       "token_cache_path" => "BUILDER — private; guarded_token_cache_path is what mutations use",
