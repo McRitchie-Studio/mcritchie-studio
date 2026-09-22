@@ -11,10 +11,14 @@ require_relative "../../lib/claim_lease"
 #
 #     alive: -> { SessionIdentity.process_alive?(pid, start) }
 #
-#     bin/task:3662                     the BUILD claim
-#     bin/lib/review_claim_cli.rb:421   the REVIEW claim
-#     bin/lib/release_claim_cli.rb:305  the RELEASE conductor claim (assembler/deployer)
-#     bin/devops-shift:238              the DEVOPS SHIFT lease
+#     bin/task                     (claim-renew-loop)  the BUILD claim
+#     bin/lib/review_claim_cli.rb  (#renew_loop)       the REVIEW claim
+#     bin/lib/release_claim_cli.rb (#renew_loop)       the RELEASE conductor claim
+#     bin/devops-shift             (#renew_loop)       the DEVOPS SHIFT lease
+#
+# Named by METHOD, not by line: wiring this seam moves every one of those lines, so a
+# pinned :NNN would be stale the moment it was written. The set is pinned as a TEST
+# instead (test/lib/anchor_heartbeat_test.rb), which cannot drift.
 #
 # `process_alive?` is `ps -o lstart=` compared to a recorded start signature. It is
 # SOUND in one direction only: a signature that no longer matches proves the holder

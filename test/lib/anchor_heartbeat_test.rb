@@ -270,12 +270,19 @@ class AnchorHeartbeatTest < Minitest::Test
 
     lanes.each do |path, what|
       source = File.read(File.join(root, path))
+      # Report the OFFENDING LINE, not the file. A refute_match against a 700-line
+      # script prints the whole script on failure, which buries the one fact the
+      # reader needs — and a guard whose failure is unreadable gets muted, not fixed.
+      offenders = source.lines.each_with_index
+                        .select { |line, _| line.match?(/alive:\s*->\s*\{\s*SessionIdentity\.process_alive\?/) }
+                        .map { |line, i| "#{path}:#{i + 1}: #{line.strip}" }
 
-      refute_match(/alive:\s*->\s*\{\s*SessionIdentity\.process_alive\?/, source,
-                   "#{path} (#{what}) passes the bare residency probe as its `alive:` — " \
-                   "a resident process is not a working one; go through AnchorHeartbeat.alive_check")
-      assert_match(/AnchorHeartbeat\.alive_check/, source,
-                   "#{path} (#{what}) must answer liveness through the shared seam")
+      assert_empty offenders,
+                   "#{what} passes the bare residency probe as its `alive:` — a resident " \
+                   "process is not a working one (the 2026-09-22 orphan). Go through " \
+                   "AnchorHeartbeat.alive_check:\n  #{offenders.join("\n  ")}"
+      assert_includes source, "AnchorHeartbeat.alive_check",
+                      "#{path} (#{what}) must answer liveness through the shared seam"
     end
   end
 
