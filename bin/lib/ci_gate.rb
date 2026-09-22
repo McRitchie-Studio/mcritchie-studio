@@ -123,7 +123,7 @@ module CiGate
   #      `nil.to_s` is "", which falls to the gates card's ✓ DEFAULT. The omission
   #      route's failure mode IS the inversion trap this family exists to stop.
   #   2. ABSENCE IS ALREADY SPOKEN FOR. `--gate build` writes no ci row at all
-  #      (bin/dor-check:3101), so a missing row already means "build gate". A second
+  #      (bin/dor-check:3185), so a missing row already means "build gate". A second
   #      meaning makes the record LESS legible, not more — and the suite already holds
   #      this principle: gate_record_no_verdict_ci_test's `ci_sop_entry` refuses to
   #      conclude anything from an absent row, because an absent row is not a passing row.

@@ -603,6 +603,36 @@ attempt n+1.
     missing is not the evidence but the PR: review's job is to merge one); any
     unclassified state; and — whatever the state — **anything on the exempt
     path**, per the bullet above.
+  - **…and the SUITE gate's refusal now agrees with that list, which it used to
+    contradict.** `suite_evidence_error`'s two CI-naming branches — a fresh FAST
+    cert, and a DEFERRAL receipt — each ended with a flat *"; or certify locally
+    in full: `bin/full-suite-check <slug>`"* on **every** state they could reach,
+    `red` among them. Measured 2026-09-22 against a code-shaped fixture, both
+    roles: a FULL cert against a RED CI is **NOT MET, exit 1**. So the gate asked
+    a builder for a ~30-minute suite run and then refused the result of running
+    it — the same shape as `/tasks/exempt-refusal-prints-dead-remedy`, surviving
+    on the red path (`/tasks/red-ci-offers-dead-remedy`), and printed by the gate
+    itself rather than by prose beside it. The clause is now conditioned on
+    `cert_route_open:`, which is the CI gate's **own** two return values
+    (`ci_error.nil? || ci_error_cert_clears`) handed down to the message — the
+    same one-parameter shape `cert_route:` uses next door, so the remedy the gate
+    PRINTS and the remedy it ACCEPTS cannot drift apart again. Where the route is
+    closed the refusal **says so** instead of falling silent: this escape was
+    printed for months, so a reader who merely stops seeing it assumes the gate
+    forgot and runs the suite anyway.
+    `test/lib/dor_check_remedy_honoured_test.rb` drives every (evidence × CI
+    state × role) cell, executes whatever remedy the refusal printed, and reds in
+    **both** directions — offering a dead remedy, and withholding a live one.
+  - **Two cells changed, and the second corrects the ticket that filed the
+    first.** `red` closes in BOTH roles. `pending` closes for **review** and stays
+    open for the **builder**: the ticket recorded that a local full cert satisfies
+    review on a pending CI, and it does not. The reason is structural rather than
+    incidental — `:pending` is deliberately NOT a member of
+    `CiGate::CI_NO_VERDICT_STATES` ("the answer is *coming*", not "the answer was
+    never *given*"), so review's allow-list refuses it with `cert_clears` false.
+    Submit-side there was never anything to buy there anyway: a fresh fast cert is
+    already credited provisionally on a pending CI (the `fast-provisional` route,
+    the one branch in the ladder testing `!review_role`).
   - Submit-side the **strict review semantics** do not apply — the builder's
     provisional handoff is untouched (see the state table above). The asymmetry is
     deliberate: the review gate-zero *is* the authoritative CI verdict, while
