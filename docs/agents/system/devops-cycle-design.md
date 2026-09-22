@@ -1426,7 +1426,7 @@ tiers that must be green by the time the task is `submitted` for review:
 | **onchain** | new turf-vault instruction | `unit` `integration` — Anchor unit, Anchor lifecycle, Ruby decoder unit |
 | **onchain-vertical** | new workflow w/ wallet + DB + UI + program | `unit` `component` `integration` `e2e` — almost always its own `release` |
 | **docs** | SOP / runbook / README edit | none — no code tiers; routes to the documentation seat (Alex) and certifies by review, not a test lane. **Claimable only on a diff observed to be prose, optionally with its own registry-guard tests** — `*_test.rb` under `test/docs/`, nothing else (`claimable_when: docs_with_guards_diff`) — which is what makes the empty column safe |
-| **test-only** | delete a stale assertion; fix a flaky spec | none — a diff with no behavior has nothing for a tier to be evidence of; it owes a **control** instead (below), and still owes the full-suite cert |
+| **test-only** | delete a stale assertion; fix a flaky spec | none — a diff with no behavior has nothing for a tier to be evidence of; it owes a **control** instead (below), and is **not exempt from the cert gate** (`full_suite_gate: true`, unlike `docs`) — which the fast cert plus a green CI satisfies, exactly as for a feature |
 
 **The backticked tier names are load-bearing, not formatting.** They are the
 canonical `dor_tiers` from `config/feature_shapes.yml`, and
