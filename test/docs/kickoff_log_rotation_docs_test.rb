@@ -147,7 +147,11 @@ class KickoffLogRotationDocsTest < ActiveSupport::TestCase
 
   test "[static] the kickoff does not promise an Exit Seam the archive SOP already delivers" do
     seam = read(ARCHIVE_SOP)
-    seam_body = collapsed(seam[/^## Exit Seam.*/m].to_s)
+    # Bounded at the NEXT heading, not at EOF. A greedy slice swallows every
+    # section below, so bullets RE-HOMED out of the Exit Seam would still be
+    # found and this cross-check would report them present. Measured in review
+    # 2026-09-22: moved under `## Related`, the greedy form stayed green.
+    seam_body = collapsed(seam[/^## Exit Seam.*?(?=\n## |\z)/m].to_s)
 
     assert_operator seam_body.length, :>, 200,
                     "could not slice an Exit Seam out of #{ARCHIVE_SOP} — the anchor moved and this " \
