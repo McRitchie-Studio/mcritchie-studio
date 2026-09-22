@@ -150,27 +150,33 @@ refute never runs at all. Measured on
 failures, **5 of them printing guarded content**, one carrying the whole PEM
 private-key header and the key-body prefix behind it. Moving every plain
 `refute` ahead of the first `assert_equal` left the same 9 failures printing
-nothing. So: **plain `refute` first, shape checks behind it.** An
-`assert_operator` on a LENGTH is exempt by construction — its haystack is an
-integer, which cannot hold the secret.
+nothing. So: **plain `refute` first, shape checks behind it.** The exemption is
+the **haystack, not the method**: any assertion whose haystack is an INTEGER is
+exempt by construction, because an integer cannot hold the secret. That covers
+an `assert_operator` on a length and an `assert_equal` on one alike — a length
+assertion running first is fine.
 
 That header is described above rather than quoted, deliberately:
 `test/lib/app_id_recorded_claims_test.rb` refuses private-key material anywhere
 under `docs/`, so illustrating this rule with a real one reddens CI. Measured on
-the first push of this paragraph — and `bin/fast-check` maps no test from a
-docs-only diff, so CI is the only thing that says so.
+the first push of this paragraph — and a docs-ONLY diff maps no test at all in
+`bin/fast-check`, so CI was the only thing that said so. Pairing prose with its
+guard test under `test/docs/` fixes that half too: a changed `*_test.rb` maps to
+itself, so the cert covers the doc rule instead of deferring it to CI.
 
 Ordering is invisible on review and silent when it regresses, so that file
 asserts it rather than describing it: a guard parses its own source and flags
 any test naming a `GUARDED_FIXTURES` string that reaches an `assert_equal`
-before a plain `refute`. **That list is the enforcement surface, which makes
-widening it look free. It is not.** Ask first what the suite asserts about the
-string. `team@x.test` is deliberately absent: it rides inside an AUTHORED error
-message, which `Workspace::ErrorSlug` passes through by design and the test
-beside it asserts must SURVIVE. Registering it as a guarded fixture would
-declare a leak out of the one string that file proves is intentional output. A
-fixture earns a place on that list only when the property under test is that it
-must NOT survive.
+before a plain `refute`. **Before adding a string to that list, ask what the
+suite already asserts about it.** `team@x.test` is deliberately absent, and the
+reason is documentary rather than mechanical: registering it would change no
+verdict at all, because the only test naming it already names `team@secret.test`
+and is already selected. It is absent because the list registers strings whose
+appearance is a LEAK, and that one appears BY DESIGN — it rides inside an
+AUTHORED error message that `Workspace::ErrorSlug` passes through and the test
+beside it asserts must SURVIVE. Listing it would state the opposite of the
+assertion directly above it. A fixture earns a place there only when the
+property under test is that it must NOT survive.
 
 ## Irreversible Effects
 
