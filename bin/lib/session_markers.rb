@@ -14,6 +14,7 @@ require_relative "../../lib/task_usage_sandbox"
 #   <projects>/.agents/sessions/<id>.devops-shift         the held shift lane (bin/devops-shift)
 #   <projects>/.agents/sessions/<id>.devops-shift-renewer its detached renewer's pid (ditto)
 #   <projects>/.agents/sessions/<id>.task-review-claim-<slug>          a held per-task review claim (bin/task review-claim)
+#   <projects>/.agents/sessions/<id>.task-review-beat-<slug>           a foreground BEAT on that review (bin/lib/review_worker_pulse.rb)
 #   <projects>/.agents/sessions/<id>.task-review-claim-renewer-<slug>  its detached renewer's pid (ditto)
 #   <projects>/.agents/sessions/<id>.build-claim-renewer-<slug>  a build claim's detached renewer: pid, nonce, desk (bin/task)
 #   <projects>/.agents/sessions/<id>.presence-<kind>-<pid> a HEAVY-WORK claim (bin/lib/presence_claim.rb)

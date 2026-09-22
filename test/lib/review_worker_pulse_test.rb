@@ -66,7 +66,7 @@ class ReviewWorkerPulseTest < Minitest::Test
   end
 
   def test_unit_a_recent_foreground_touch_keeps_the_claim
-    verdict = ReviewWorkerPulse.verdict(pulse_age: 30)
+    verdict = ReviewWorkerPulse.verdict(pulse_age: 30, beaten: true)
 
     assert_equal :active, verdict
     assert ReviewWorkerPulse.holding?(verdict)
@@ -83,7 +83,7 @@ class ReviewWorkerPulseTest < Minitest::Test
   # beat or every freshly-claimed review reads as one.
 
   def test_unit_a_pulse_that_is_only_the_acquisition_is_not_a_beat
-    verdict = ReviewWorkerPulse.verdict(pulse_age: 5800, acquired_age: 5805)
+    verdict = ReviewWorkerPulse.verdict(pulse_age: 5800, beaten: false)
 
     assert_equal :claimed_only, verdict
     assert ReviewWorkerPulse.holding?(verdict),
@@ -92,32 +92,35 @@ class ReviewWorkerPulseTest < Minitest::Test
   end
 
   def test_unit_a_touch_well_after_the_acquisition_is_a_real_beat
-    assert_equal :active, ReviewWorkerPulse.verdict(pulse_age: 12, acquired_age: 5805)
+    assert_equal :active, ReviewWorkerPulse.verdict(pulse_age: 12, beaten: true)
   end
 
-  def test_unit_clock_skew_between_the_board_and_the_file_is_not_a_beat
-    # `acquired_at` is the BOARD's clock and the pulse is a local file mtime, so they
-    # disagree slightly about one moment. A bare `pulse > acquired` would read that
-    # skew as a heartbeat — in BOTH directions, since the skew has no fixed sign.
-    [0, 1, -1, ReviewWorkerPulse::BEAT_TOLERANCE_SECONDS].each do |skew|
+  def test_unit_no_gap_between_the_two_clocks_can_manufacture_a_beat
+    # STRICTLY STRONGER than the tolerance test it replaces. The first cut differenced
+    # the board's `acquired_at` against a local file mtime and allowed 30s of skew; the
+    # REAL stuck claim showed 45s on a never-beaten review, so the inference declared a
+    # heartbeat that never happened. The verdict now consults NO clock for this
+    # question, so there is no gap — of any size, in either direction — that can reach
+    # :active without a recorded beat.
+    [0, 1, -1, 30, 45, 600, 6_000].each do |gap|
       assert_equal :claimed_only,
-                   ReviewWorkerPulse.verdict(pulse_age: 600 - skew, acquired_age: 600),
-                   "a #{skew}s gap is clock skew, not a beat"
+                   ReviewWorkerPulse.verdict(pulse_age: 600 + gap, beaten: false),
+                   "a #{gap}s gap is not a beat; only a recorded beat is"
     end
   end
 
-  def test_unit_an_unreadable_acquisition_time_degrades_to_active_never_to_no_beat
-    # The safe direction: a fact we could not read may WEAKEN the answer, never make it
-    # confidently wrong. Asserting "nothing has touched this review" on a timestamp we
-    # failed to parse would be exactly that.
-    assert_equal :active, ReviewWorkerPulse.verdict(pulse_age: 12, acquired_age: nil)
+  def test_unit_the_beat_defaults_to_absent_so_the_weaker_answer_is_the_default
+    # An omitted `beaten:` must mean "no beat on record", never "assume one". A default
+    # of true would make every caller that forgot the argument assert a heartbeat.
+    assert_equal :claimed_only, ReviewWorkerPulse.verdict(pulse_age: 12)
   end
 
-  def test_unit_past_the_bound_is_silent_whatever_the_acquisition_says
-    # The brake is decisive on its own and must stay decisive.
+  def test_unit_past_the_bound_is_silent_even_with_a_recorded_beat
+    # The brake is decisive on its own and must stay decisive: a beat from four hours
+    # ago is not a reason to keep renewing.
     assert_equal :silent,
                  ReviewWorkerPulse.verdict(pulse_age: ReviewWorkerPulse::SILENT_AFTER_SECONDS + 1,
-                                           acquired_age: ReviewWorkerPulse::SILENT_AFTER_SECONDS + 2)
+                                           beaten: true)
   end
 
   def test_unit_no_pulse_at_all_holds_the_claim_rather_than_freeing_it
@@ -131,7 +134,8 @@ class ReviewWorkerPulseTest < Minitest::Test
 
   def test_unit_the_boundary_second_still_counts_as_active
     # `>` not `>=` — a pulse landing exactly on the threshold keeps the claim.
-    on_bound = ReviewWorkerPulse.verdict(pulse_age: ReviewWorkerPulse::SILENT_AFTER_SECONDS)
+    on_bound = ReviewWorkerPulse.verdict(pulse_age: ReviewWorkerPulse::SILENT_AFTER_SECONDS,
+                                         beaten: true)
 
     assert_equal :active, on_bound
   end
@@ -205,7 +209,7 @@ class ReviewWorkerPulseTest < Minitest::Test
 
   # ── The pulse over a real marker store ─────────────────────────────────────
 
-  def test_integration_a_fresh_foreground_touch_reads_as_an_active_worker
+  def test_integration_an_acquire_seed_alone_is_not_a_beat
     with_store do |dir|
       # The guarded write seam needs its destination PINNED under the sandbox — an
       # unpinned marker write is refused rather than falling back to the operator's
@@ -214,11 +218,52 @@ class ReviewWorkerPulseTest < Minitest::Test
                               env: { "CLAUDE_PROJECTS_DIR" => dir })
 
       age = ReviewWorkerPulse.pulse_age(session: SESSION, projects_dir: dir, slug: SLUG)
+      beaten = ReviewWorkerPulse.beaten?(session: SESSION, projects_dir: dir, slug: SLUG)
 
       refute_nil age
       assert_operator age, :<, 120
-      assert_equal :active, ReviewWorkerPulse.verdict(pulse_age: age)
+      refute beaten, "acquire seeds the claim marker; that is not a heartbeat"
+      assert_equal :claimed_only, ReviewWorkerPulse.verdict(pulse_age: age, beaten: beaten)
     end
+  end
+
+  def test_integration_a_recorded_beat_reads_as_an_active_worker
+    with_store do |dir|
+      env = { "CLAUDE_PROJECTS_DIR" => dir }
+      ReviewWorkerPulse.touch(session: SESSION, projects_dir: dir, slug: SLUG, env: env)
+      ReviewWorkerPulse.beat(session: SESSION, projects_dir: dir, slug: SLUG, env: env)
+
+      age = ReviewWorkerPulse.pulse_age(session: SESSION, projects_dir: dir, slug: SLUG)
+      beaten = ReviewWorkerPulse.beaten?(session: SESSION, projects_dir: dir, slug: SLUG)
+
+      assert beaten
+      assert_equal :active, ReviewWorkerPulse.verdict(pulse_age: age, beaten: beaten)
+    end
+  end
+
+  # RELEASE MUST TAKE THE BEAT WITH IT. A session that reviews the same task twice
+  # would otherwise inherit the previous review's beat and read ACTIVE before its new
+  # reviewer had done anything — evidence pointing the wrong way, which is worse than
+  # no evidence.
+  def test_integration_release_clears_the_beat_as_well_as_the_claim
+    with_store do |dir|
+      env = { "CLAUDE_PROJECTS_DIR" => dir }
+      ReviewWorkerPulse.beat(session: SESSION, projects_dir: dir, slug: SLUG, env: env)
+      assert ReviewWorkerPulse.beaten?(session: SESSION, projects_dir: dir, slug: SLUG)
+
+      ReviewWorkerPulse.clear(session: SESSION, projects_dir: dir, slug: SLUG, env: env)
+
+      refute ReviewWorkerPulse.beaten?(session: SESSION, projects_dir: dir, slug: SLUG),
+             "a stale beat must not survive the release into the next review"
+      assert_nil ReviewWorkerPulse.pulse_age(session: SESSION, projects_dir: dir, slug: SLUG)
+    end
+  end
+
+  # The beat marker may not be reachable as some OTHER task's claim marker.
+  def test_integration_a_slug_beginning_with_beat_cannot_collide_with_a_beat_marker
+    refute_equal ReviewWorkerPulse.beat_suffix("flaky-suite"),
+                 ReviewWorkerPulse.marker_suffix("beat-flaky-suite"),
+                 "releasing one would delete the other's evidence"
   end
 
   def test_integration_a_stale_claim_marker_reads_as_a_silent_worker
@@ -270,7 +315,7 @@ class ReviewWorkerPulseTest < Minitest::Test
   # papered over); the worker half must differ (that is the fix).
 
   def test_control_a_live_worker_under_a_live_session_reads_as_active
-    out = status_with_pulse(age: 12)
+    out = status_with_pulse(age: 12, beaten: true)
 
     assert_includes out, "RENEWING", "the lease half is the same in both controls"
     assert_includes out, "worker: ACTIVE",
@@ -295,7 +340,7 @@ class ReviewWorkerPulseTest < Minitest::Test
   # worker line were hard-coded to its own answer; only the comparison proves the
   # output actually TRACKS the worker.
   def test_control_the_two_states_print_the_same_lease_and_a_different_worker
-    live = status_with_pulse(age: 12)
+    live = status_with_pulse(age: 12, beaten: true)
     dead = status_with_pulse(age: ReviewWorkerPulse::SILENT_AFTER_SECONDS + 3600)
 
     assert_equal lease_line(live), lease_line(dead),
@@ -369,7 +414,7 @@ class ReviewWorkerPulseTest < Minitest::Test
   # The MACHINE face of the same distinction, because a caller branches on this
   # rather than on the prose.
   def test_control_the_json_face_carries_the_worker_verdict
-    live = JSON.parse(status_with_pulse(age: 12, flags: ["--json"]))
+    live = JSON.parse(status_with_pulse(age: 12, beaten: true, flags: ["--json"]))
     dead = JSON.parse(status_with_pulse(age: ReviewWorkerPulse::SILENT_AFTER_SECONDS + 3600,
                                         flags: ["--json"]))
 
@@ -389,9 +434,10 @@ class ReviewWorkerPulseTest < Minitest::Test
   # The renewer is beating in every call (the expiry MOVES between the two reads), so
   # the lease grades RENEWING exactly as it did in both measured incidents.
   def status_with_pulse(age:, holder_session: SESSION, lease_seconds: 60, flags: [],
-                        acquired_age: 300)
+                        acquired_age: 300, beaten: false)
     with_store do |dir|
       stamp_pulse(dir, age: age, session: holder_session)
+      stamp_pulse(dir, age: age, session: holder_session, beat: true) if beaten
       @acquired_age = acquired_age
       out = StringIO.new
       cli = ReviewClaimCli.new(env: { "TASK_REVIEW_CLAIM_SESSION" => SESSION },
@@ -456,8 +502,9 @@ class ReviewWorkerPulseTest < Minitest::Test
   # Write the claim marker with a controlled mtime — the pulse, as a foreground
   # command would have left it `age` seconds ago. Reaches the private path builder
   # deliberately, as anchor_heartbeat_test.rb does, because a test may.
-  def stamp_pulse(dir, age:, session: SESSION, slug: SLUG)
-    path = SessionMarkers.send(:marker_path, session, dir, ReviewWorkerPulse.marker_suffix(slug))
+  def stamp_pulse(dir, age:, session: SESSION, slug: SLUG, beat: false)
+    suffix = beat ? ReviewWorkerPulse.beat_suffix(slug) : ReviewWorkerPulse.marker_suffix(slug)
+    path = SessionMarkers.send(:marker_path, session, dir, suffix)
     FileUtils.mkdir_p(File.dirname(path))
     File.write(path, "#{slug}\n")
     stamp = START - age

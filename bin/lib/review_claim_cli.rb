@@ -351,7 +351,7 @@ class ReviewClaimCli
       # bin/lib/review_worker_pulse.rb reads. The detached renew-loop beats the BOARD
       # through `renewed?` and never comes through here, which is the separation that
       # keeps a renewer from certifying itself.
-      touch_pulse(sid, slug)
+      beat_pulse(sid, slug)
       return renewed_ok(slug, data)
     end
 
@@ -657,17 +657,6 @@ class ReviewClaimCli
 
   def expiry_of(holder) = holder.is_a?(Hash) ? holder["expires_at"] : nil
 
-  # Seconds since an ISO-8601 board timestamp, or nil when it cannot be read. nil is
-  # load-bearing: ReviewWorkerPulse.verdict degrades to :active on it rather than
-  # asserting that nothing has touched a review, so an unparseable timestamp can only
-  # ever make the answer WEAKER, never confidently wrong.
-  def age_of(stamp)
-    return nil if stamp.to_s.strip.empty?
-
-    @clock.call - Time.parse(stamp.to_s)
-  rescue StandardError
-    nil
-  end
 
   def emit_status_text(slug, grade, holder, watched, differenced = true)
     @out.puts("review-claim: #{slug} — " +
@@ -710,11 +699,14 @@ class ReviewClaimCli
                                                             session: session_id)
 
     age = worker_pulse_age(session_id, slug)
-    # The ACQUISITION age separates a real beat from the acquire's own write. Without
-    # it a claim nobody has touched since it was taken reads ACTIVE, which asserts a
-    # heartbeat that never happened — measured live against a real stuck claim.
-    acquired = age_of(holder["acquired_at"])
-    [true, ReviewWorkerPulse.verdict(pulse_age: age, acquired_age: acquired), age]
+    # A BEAT is read from its own marker, never inferred from the gap between the
+    # board's `acquired_at` and a local file mtime. Measured live against the real
+    # stuck claim on playwright-suite-flakes-repeatedly: that gap was 45s on a claim
+    # that had never been beaten, so the inference asserted a heartbeat that never
+    # happened — the one thing this verdict must never do.
+    beaten = ReviewWorkerPulse.beaten?(session: session_id, projects_dir: @api.projects_dir,
+                                       slug: slug)
+    [true, ReviewWorkerPulse.verdict(pulse_age: age, beaten: beaten), age]
   end
 
   # The next move, stated for the reader who has just been told a lease is alive.
@@ -1265,14 +1257,23 @@ class ReviewClaimCli
     ReviewWorkerPulse.touch(session: sid, projects_dir: @api.projects_dir, slug: slug, env: @api.env)
   end
 
+  # A foreground `renew` — the worker's own heartbeat, recorded as its own fact.
+  def beat_pulse(sid, slug)
+    ReviewWorkerPulse.beat(session: sid, projects_dir: @api.projects_dir, slug: slug, env: @api.env)
+  end
+
   # Seconds since a FOREGROUND command in this session acted on this review, or nil.
   def worker_pulse_age(sid, slug)
     ReviewWorkerPulse.pulse_age(session: sid, projects_dir: @api.projects_dir, slug: slug,
                                 now: @clock.call)
   end
 
+  # Release drops the claim marker AND the beat marker together. A session that reviews
+  # the same task twice would otherwise inherit the previous review's beat and read
+  # ACTIVE before its new reviewer had done anything.
   def clear_marker(sid, slug)
-    SessionMarkers.delete(sid, @api.projects_dir, marker_suffix(REVIEW_CLAIM, slug), env: @api.env)
+    ReviewWorkerPulse.clear(session: sid, projects_dir: @api.projects_dir, slug: slug,
+                            env: @api.env)
   end
 
   def write_renewer_marker(sid, slug, pid)

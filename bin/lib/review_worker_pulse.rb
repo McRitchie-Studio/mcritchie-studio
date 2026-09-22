@@ -119,16 +119,28 @@ module ReviewWorkerPulse
   # this file adds a meaning to its mtime, not a second file to keep in step.
   MARKER = ".task-review-claim"
 
-  # HOW MUCH NEWER THAN THE ACQUISITION A PULSE MUST BE TO COUNT AS A BEAT.
+  # THE BEAT IS A SEPARATE MARKER, NOT A TIMESTAMP COMPARISON — and that is a
+  # correction, made against a measurement rather than a preference.
   #
-  # `acquire` writes the marker inside the same command that takes the claim, so the
-  # pulse and `acquired_at` describe one moment. They are nonetheless read from TWO
-  # CLOCKS — `acquired_at` is the BOARD's, the pulse is this machine's file mtime — so
-  # they will not agree exactly, and a bare `pulse > acquired` would call ordinary skew
-  # a heartbeat. One renewal cadence is the smallest interval this lane already treats
-  # as meaningful, and a real beat is separated from its acquire by the work in
-  # between, which is minutes at least.
-  BEAT_TOLERANCE_SECONDS = 30
+  # The first cut inferred "was this a real beat or just the acquire's own seed?" by
+  # differencing the pulse mtime against the board's `acquired_at`, with a tolerance
+  # for clock skew. Run against the REAL stuck claim on
+  # playwright-suite-flakes-repeatedly it read 45s of gap where the whole claim had
+  # never been beaten once — so the inference declared a heartbeat that never happened,
+  # which is the exact failure the verdict exists to prevent. The two timestamps come
+  # from two clocks (the BOARD's and a local file mtime) and are separated by a command's
+  # own latency plus any same-instance re-acquire, so no tolerance makes the inference
+  # sound; a wider one would only have hidden the error behind a number nobody measured.
+  #
+  # So the fact is RECORDED rather than inferred. A beat writes its OWN marker, and
+  # "has this review been beaten" becomes an existence question with no clock in it.
+  # NOT ".task-review-claim-beat": that string is ALSO the claim marker of a task whose
+  # slug begins "beat-", so `.task-review-claim-beat-flaky-suite` would be both this
+  # file's beat marker for `flaky-suite` and the CLAIM marker for `beat-flaky-suite`.
+  # Releasing either would delete the other's evidence. The existing
+  # `.task-review-claim-renewer-<slug>` carries that same latent flaw; this does not
+  # copy it. "claim-" and "beat-" cannot prefix-collide, so no slug can reach it.
+  BEAT_MARKER = ".task-review-beat"
 
   # The verdicts. Exactly one of them stops a renewal.
   #
@@ -156,17 +168,13 @@ module ReviewWorkerPulse
   #               different: folding nil to a large number would turn "we could not
   #               look" into "nobody has touched it in ages", which frees leases on no
   #               evidence at all.
-  # +acquired_age+ — seconds since the claim was taken, or nil when the board did not
-  #                  say. nil means we cannot separate a beat from the acquisition, so
-  #                  the answer degrades to :active, which HOLDS. Never to
-  #                  :claimed_only: asserting "nothing has touched this" on a fact we
-  #                  could not read would be the confident-wrong direction.
-  def verdict(pulse_age:, acquired_age: nil, silent_after: SILENT_AFTER_SECONDS,
-              beat_tolerance: BEAT_TOLERANCE_SECONDS)
+  # +beaten+ — has a foreground `renew` ever beaten this claim? An EXISTENCE fact read
+  #            from the beat marker, never inferred from a clock. False means the only
+  #            foreground touch on record is the acquisition itself.
+  def verdict(pulse_age:, beaten: false, silent_after: SILENT_AFTER_SECONDS)
     return :unverified if pulse_age.nil?
     return :silent if pulse_age > silent_after
-    return :active if acquired_age.nil?
-    return :claimed_only unless acquired_age - pulse_age > beat_tolerance
+    return :claimed_only unless beaten
 
     :active
   end
@@ -179,8 +187,18 @@ module ReviewWorkerPulse
   # than reached for on the CLI so the writer and the reader of this marker's mtime
   # derive the same name from one place.
   def marker_suffix(slug)
-    "#{MARKER}-#{slug.to_s.gsub(/[^A-Za-z0-9._-]/, '')}"
+    "#{MARKER}-#{safe(slug)}"
   end
+
+  # The BEAT marker's suffix. A distinct file from the claim marker so "has this been
+  # beaten" is an existence question with no clock in it — see the BEAT_MARKER note.
+  def beat_suffix(slug)
+    "#{BEAT_MARKER}-#{safe(slug)}"
+  end
+
+  # Slugs are kebab-case (validated on the board), so already filesystem-safe;
+  # sanitize defensively anyway.
+  def safe(slug) = slug.to_s.gsub(/[^A-Za-z0-9._-]/, "")
 
   # Refresh the pulse — a FOREGROUND command acted on this review. Re-writes the
   # marker through SessionMarkers' guarded choke point rather than stamping the file
@@ -200,11 +218,48 @@ module ReviewWorkerPulse
   def pulse_age(session:, projects_dir:, slug:, now: Time.now, markers: SessionMarkers)
     return nil if session.to_s.strip.empty?
 
-    touched = markers.touched_at(session, projects_dir, marker_suffix(slug))
+    touched = [markers.touched_at(session, projects_dir, marker_suffix(slug)),
+               markers.touched_at(session, projects_dir, beat_suffix(slug))].compact.max
     return nil if touched.nil?
 
     age = now - touched
     age.negative? ? 0 : age
+  rescue StandardError
+    nil
+  end
+
+  # Record a BEAT — a foreground `renew` by the worker. Distinct from +touch+, which
+  # only seeds the claim marker at acquisition; conflating them is what made a
+  # never-beaten claim read as ACTIVE.
+  def beat(session:, projects_dir:, slug:, env: ENV, markers: SessionMarkers)
+    return nil if session.to_s.strip.empty?
+
+    touch(session: session, projects_dir: projects_dir, slug: slug, env: env, markers: markers)
+    markers.write(session, projects_dir, beat_suffix(slug), "#{slug}\n", env: env)
+  rescue StandardError
+    nil
+  end
+
+  # Has a foreground `renew` ever beaten this claim? Existence, not arithmetic.
+  def beaten?(session:, projects_dir:, slug:, markers: SessionMarkers)
+    return false if session.to_s.strip.empty?
+
+    !markers.touched_at(session, projects_dir, beat_suffix(slug)).nil?
+  rescue StandardError
+    false
+  end
+
+  # Drop BOTH markers when the claim is released.
+  #
+  # The beat marker MUST go with the claim marker. A session that reviews the same task
+  # twice — a bounce, a resubmit, a re-acquire after a lapse — would otherwise inherit
+  # the PREVIOUS review's beat and read ACTIVE before its new reviewer had done
+  # anything. A stale beat is worse than no beat: it is evidence pointing the wrong way.
+  def clear(session:, projects_dir:, slug:, env: ENV, markers: SessionMarkers)
+    return nil if session.to_s.strip.empty?
+
+    markers.delete(session, projects_dir, marker_suffix(slug), env: env)
+    markers.delete(session, projects_dir, beat_suffix(slug), env: env)
   rescue StandardError
     nil
   end
