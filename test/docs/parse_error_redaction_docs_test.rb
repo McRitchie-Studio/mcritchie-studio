@@ -41,26 +41,40 @@ class ParseErrorRedactionDocsTest < ActiveSupport::TestCase
 
   def doc_body = @doc_body ||= DOC.read.gsub(/[*`]/, "").gsub(/\s+/, " ")
 
-  # THE EXEMPTION, NARROWED TO THE SENTENCES THAT GRANT IT. `doc_body` collapses
-  # the whole file onto one line, so a question about what the exemption SAYS
-  # cannot be asked of it — a phrase anywhere in the file answers. These two
-  # readers narrow the haystack instead: the paragraphs that grant an exemption,
-  # then each granting sentence plus the one after it, because a doc is free to
-  # state the property in one sentence and its coverage in the next.
-  def exemption_paragraphs
-    @exemption_paragraphs ||= DOC.read.split(/\n{2,}/)
-                                 .select { |para| para.match?(/exempt/i) }
-                                 .map { |para| para.gsub(/[*`]/, "").gsub(/\s+/, " ") }
+  # THE SENTENCES THAT GRANT THE EXEMPTION, ASKED ONE AT A TIME. `doc_body`
+  # collapses the file onto one line, so a question about what the exemption SAYS
+  # cannot be asked of it — a phrase anywhere in the file answers. The first
+  # attempt at this narrowed to a PASSAGE and then asked its questions of the
+  # UNION of every granting sentence in the file, which review measured as a leak
+  # of its own: a narrow grant in one paragraph and an unrelated exemption in
+  # another answered green together. So each granting sentence is held to the
+  # property by itself, and a doc that grants twice has to get it right twice.
+  # `exemption` is not a grant — only a sentence that says something IS exempt.
+  GRANT = /\bexempts?(?:ed)?\b/i
+
+  # A grant states a PROPERTY: it quantifies over the assertions it covers — "any
+  # assertion whose haystack is an INTEGER", "…whatever the assertion" — instead
+  # of naming the one method the writer happened to be holding.
+  UNIVERSAL_GRANT = Regexp.union(
+    /\b(?:any|every|each|all)\b[^.;:]{0,40}\b(?:assertions?|haystacks?)\b/i,
+    /\b(?:whatever|regardless of)\b[^.;:]{0,40}\b(?:assertions?|methods?)\b/i
+  )
+
+  # …and it must not close again in the same breath. That is the ordinary way an
+  # exemption gets narrowed, and review reproduced it here: "Only an
+  # `assert_operator` on a length is exempt; an `assert_equal` on one is not,
+  # whatever the haystack — even an integer." It reads as a grant until the
+  # closer, and every structural test of the grant alone passes it.
+  CLOSING_QUANTIFIER = /\b(?:only|no other|none other|nothing else|never|except|excluding)\b/i
+
+  def doc_sentences
+    @doc_sentences ||= DOC.read.split(/\n{2,}/)
+                          .map { |para| para.gsub(/[*`]/, "").gsub(/\s+/, " ") }
+                          .flat_map { |para| para.split(/(?<=[.!?])\s+/) }
   end
 
-  def exemption_passage
-    @exemption_passage ||= exemption_paragraphs.flat_map { |para| granting_sentences(para) }.uniq.join(" ")
-  end
-
-  def granting_sentences(paragraph)
-    sentences = paragraph.split(/(?<=[.!?])\s+/)
-    granting = sentences.each_index.select { |i| sentences[i].match?(/exempt/i) }
-    granting.flat_map { |i| sentences[i, 2] }
+  def granting_sentences
+    @granting_sentences ||= doc_sentences.select { |sentence| sentence.match?(GRANT) }
   end
 
   test "[static] backend discipline states the rule" do
@@ -177,41 +191,63 @@ class ParseErrorRedactionDocsTest < ActiveSupport::TestCase
       "the doc must say WHY the order decides it — without minitest's first-failure semantics the " \
       "rule reads as a style preference, and the next writer reorders it back"
 
-    # THE PHRASE WAS NEVER THE AXIS. This assertion read
-    # `doc_body.match?(/haystack is an integer/i)` against the whole file, and the
-    # round-1 wording review BOUNCED for this very defect — "an `assert_operator`
-    # on a LENGTH is exempt by construction — its haystack is an integer" —
-    # carries that phrase too. So the one regression its own failure message
-    # named sailed through: the guard could not catch the thing it was written to
-    # catch. Measured 2026-09-22, with the mutation verified to have landed
-    # before the run: swap the exemption back to that wording and this file was
-    # GREEN.
+    # KEPT, NOT REPLACED — and that is the rule this task learned the hard way.
+    # The first version of this fix DELETED the assertion below and put the
+    # structural ones underneath in its place. Review measured what that cost:
+    # narrow the doc to "Only an `assert_operator` on a length is exempt; an
+    # `assert_equal` on one is not, whatever the haystack — even an integer" —
+    # the ordinary way an exemption gets weakened, and precisely the defect this
+    # message names — and the deleted assertion REDS while the replacement passed
+    # GREEN at 7 runs, 26 assertions. A better assertion is not a superset until
+    # it has been shown to red every case the old one did. Add first; delete only
+    # once the measurement says you may.
+    assert doc_body.match?(/haystack is an integer/i),
+      "the doc must grant the exemption on the property that EARNS it — an integer haystack. " \
+      "Scoping it to one assertion method instead condemns an assert_equal on a length, which is " \
+      "exempt for exactly the same reason"
+
+    # WHAT THE PHRASE ABOVE CANNOT SEE. It matches anywhere in the file, so the
+    # round-1 wording review bounced — "an `assert_operator` on a LENGTH is
+    # exempt by construction — its haystack is an integer" — satisfies it while
+    # scoping the exemption to one method. The structural question is therefore
+    # asked of THE SENTENCE THAT GRANTS, one grant at a time: does it quantify
+    # over the assertions it covers, and does it close itself again in the same
+    # breath? Both are properties of that sentence, so no trailing sentence
+    # elsewhere in the paragraph can rescue a grant that fails them — the first
+    # shape of this assertion could be rescued exactly that way.
     #
-    # What it asks now is structural. The exemption must be granted where it is
-    # granted — in the sentences that grant it, not somewhere else in the file —
-    # on an integer haystack, and it must name MORE THAN ONE assertion method as
-    # covered. Naming exactly one condemns the rest by construction, which is the
-    # bounced wording's whole defect; naming NONE fails too, because a reader
-    # arrives at this rule holding one specific assertion, and an exemption is
-    # only legible as a property once the doc shows it crossing a method
-    # boundary. STILL NO MEASURED VALUE PINNED, per the correction recorded
-    # above: WHICH methods the doc names, and every failure count in that
-    # paragraph, stay free to move when someone measures again.
-    granted_on_the_property = exemption_passage.match?(/haystack/i) &&
-                              exemption_passage.match?(/integer/i)
+    # NO METHOD COUNT SURVIVES HERE, and that is a measured retreat rather than a
+    # simplification. Requiring the grant to name two methods was this
+    # assertion's first shape and review ruled it out in both directions: prose
+    # naming two while granting to one passes, and the purest property-only grant
+    # — "any assertion whose haystack is an INTEGER is exempt" — names none and
+    # reds. Review left the door open to keeping a count as a SECONDARY check, so
+    # the one structural form was tried and measured too: refusing a grant that
+    # names EXACTLY ONE method. It reds "any assertion whose haystack is an
+    # integer is exempt — an `assert_operator` on a length, say", a universal
+    # grant carrying one illustrative example, which is correct prose. A guard
+    # that punishes correct prose is the failure already recorded at the top of
+    # this file, so the count is gone. STILL NO MEASURED VALUE PINNED — which
+    # methods the doc names, and every failure count in that paragraph, stay free
+    # to move when someone measures again.
+    assert granting_sentences.any?,
+      "no sentence in backend-discipline.md grants the exemption any more, so the rule now " \
+      "condemns a length assertion — which cannot hold the secret and never could"
 
-    assert granted_on_the_property,
-      "the doc must grant the exemption on the property that EARNS it — an integer haystack — " \
-      "where it grants it. Stating the property elsewhere in the file is what let the round-1 " \
-      "wording through"
+    granting_sentences.each do |grant|
+      refute grant.match?(CLOSING_QUANTIFIER),
+        "this sentence grants the exemption and then closes it again in the same breath, which " \
+        "narrows it to whatever it happened to name: #{grant}"
 
-    covered = exemption_passage.scan(/assert_\w+/).map(&:downcase).uniq
+      assert grant.match?(UNIVERSAL_GRANT),
+        "the exemption must be granted over the ASSERTIONS it covers — any assertion whose " \
+        "haystack is an integer — not handed to one method that happens to have that " \
+        "haystack: #{grant}"
 
-    assert covered.size >= 2,
-      "the exemption names #{covered.empty? ? 'no assertion method' : covered.join(' and ')}; it " \
-      "must name at least two. Granted to ONE method it reads as a rule about that method, and " \
-      "condemns every other assertion holding the same integer haystack — an assert_equal on a " \
-      "length is exempt for exactly the reason an assert_operator on one is"
+      assert grant.match?(/haystack/i) && grant.match?(/integer/i),
+        "the grant must name the property that earns the exemption — an integer haystack — in " \
+        "the sentence that grants it: #{grant}"
+    end
   end
 
   # Every doc that hands an operator a credential-parsing one-liner has to teach
