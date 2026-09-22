@@ -929,8 +929,9 @@ usage-free; design accounting belongs on the `Designed → Building` transition
 because `bin/task create` seeds the usage baseline only after the task slug
 exists. The build-lane face is the task's
 Pokémon mascot (assigned at create). The
-review pair is recorded by **`bin/reviewer-select <task>`** (step 2 — recording
-is the DEFAULT now; pass `--no-record`/`--dry` for an advisory-only preview);
+review pair is recorded by a **bare `bin/reviewer-select <task>`** — recording
+is the DEFAULT, and the write rides the review CLAIM's acquisition
+(`TaskReviewClaim.acquire`), so step 2's `--no-record` preview records nothing;
 Avi's QA and Steffon's ship intents are **auto-recorded by the deploy CLI** —
 **`bin/release prepare`** fires the `assembled` intent (`actor: avi`) and
 **`bin/release ship`** the `shipped` intent (`actor: steffon`), both via
