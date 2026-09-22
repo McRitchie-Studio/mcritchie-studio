@@ -140,6 +140,32 @@ their haystack even when you pass a message of your own. Only plain `assert` and
 `refute` suppress it. Assert on a body prefix plus a length bound, and keep the
 failure message to lengths.
 
+**Plain is only half the rule: the refute must also run FIRST.** minitest stops
+a test at its first failed assertion, so ORDER decides which assertion gets to
+print. An `assert_equal` on the redacted value is a fine SHAPE check and belongs
+in the test — but its haystack is the same string the refute is guarding, so if
+it runs ahead of the refute a broken guard fails THERE, dumps the bytes, and the
+refute never runs at all. Measured on
+`test/services/workspace/error_slug_test.rb` under a broken-guard mutant: 9
+failures, **5 of them printing guarded content**, one carrying the full
+`-----BEGIN PRIVATE KEY-----` header and the key-body prefix behind it. Moving
+every plain `refute` ahead of the first `assert_equal` left the same 9 failures
+printing nothing. So: **plain `refute` first, shape checks behind it.** An
+`assert_operator` on a LENGTH is exempt by construction — its haystack is an
+integer, which cannot hold the secret.
+
+Ordering is invisible on review and silent when it regresses, so that file
+asserts it rather than describing it: a guard parses its own source and flags
+any test naming a `GUARDED_FIXTURES` string that reaches an `assert_equal`
+before a plain `refute`. **That list is the enforcement surface, which makes
+widening it look free. It is not.** Ask first what the suite asserts about the
+string. `team@x.test` is deliberately absent: it rides inside an AUTHORED error
+message, which `Workspace::ErrorSlug` passes through by design and the test
+beside it asserts must SURVIVE. Registering it as a guarded fixture would
+declare a leak out of the one string that file proves is intentional output. A
+fixture earns a place on that list only when the property under test is that it
+must NOT survive.
+
 ## Irreversible Effects
 
 Validate everything before irreversible side effects:
