@@ -491,7 +491,11 @@ apps:
     # task. The gap is now closed here instead of re-pointed.
     #
     # WHAT MADE IT CLOSABLE. The blocker was never "this repo has no tests" — it has
-    # four real CI lanes and a suite of 61 node:test cases behind one of them. The
+    # FIVE real CI lanes and a suite of 171 node:test cases behind one of them, plus
+    # 60 Rust tests (re-derive, never re-copy: `bin/release-check --list` prints the
+    # lane table, `npm run test:scripts` and `cargo test --workspace --locked` print
+    # their own totals). This sentence said "four lanes / 61 cases" until 2026-09-22
+    # and was wrong on both: `cargo test` joined the table 2026-09-15. The
     # blocker was that the whole-gate branch in bin/fast-check keyed on SECTION
     # MEMBERSHIP (gem_repo?) rather than on a declared command, so an `apps` row could
     # not reach it. That is now keyed on the DECLARATION
@@ -510,11 +514,14 @@ apps:
     #
     # WHAT THE SCRIPT RUNS, and who keeps that true. Exactly the lanes
     # .github/workflows/ci.yml runs, cheapest-first and fail-fast: the two pure-Node
-    # guards, then the two Rust lanes (as of 2026-09-14: check:doc-op-refs,
-    # test:scripts, cargo check, cargo clippy — but the SCRIPT is the authority here,
-    # not this sentence). Measured warm on this laptop 2026-09-14: ~1s total, and a
-    # COLD `target/` pays a full compile on the first run the way a gem's first bundle
-    # does. The parity is ENFORCED, in turf-vault, by
+    # guards, then the THREE Rust lanes — check:doc-op-refs, test:scripts, cargo check,
+    # cargo clippy, cargo test (but the SCRIPT is the authority here, not this
+    # sentence: `bin/release-check --list` prints the table). It read "the two Rust
+    # lanes" until 2026-09-22, which was true only until `cargo test` joined on
+    # 2026-09-15. BUDGET THE COLD NUMBER: 76s on a fresh tree with an empty `target/`
+    # (measured 2026-09-22 against origin/accepted at 09cdfb3), not the ~1s a RE-RUN
+    # pays — this line quoted the warm figure alone and that is what makes an honest
+    # lane look broken. The parity is ENFORCED, in turf-vault, by
     # scripts/tests/release-check-covers-ci.test.js: it executes `bin/release-check
     # --list`, extracts every gate lane from that workflow, and fails in either
     # direction. That guard is pure node:test, so it runs inside turf-vault's own
