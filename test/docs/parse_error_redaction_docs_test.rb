@@ -128,6 +128,39 @@ class ParseErrorRedactionDocsTest < ActiveSupport::TestCase
       "rule prints the very bytes it is guarding"
   end
 
+  # PLAIN WAS ONLY HALF THE RULE, and the missing half is the one that leaked.
+  # minitest stops a test at its FIRST failed assertion and appends its default
+  # message, so an `assert_equal` on the guarded value placed BEFORE the refute
+  # fails there, prints the bytes the refute existed to catch, and the refute
+  # never runs. Measured on test/services/workspace/error_slug_test.rb under a
+  # broken-guard mutant: most of its failures printed guarded content before the
+  # reorder, none after.
+  #
+  # Until this landed, the ordering half lived ONLY in a comment atop that test
+  # file and in its own self-parsing guard. A leak test written in any OTHER
+  # file therefore got the plain half and none of this — the same "the rule lived
+  # at code sites and in no doc" failure the assertions above exist to end, one
+  # level up.
+  #
+  # PINNED AS SHAPE, NOT AS A MEASURED VALUE — the same correction already
+  # recorded above, where a pinned figure reddened this suite for the agent who
+  # re-measured it and told them to restore a false one. The failure counts
+  # belong in the doc's prose, where re-measuring them is welcome.
+  test "[static] the doc states the ORDERING half, not just the plain half" do
+    assert doc_body.match?(/the refute must also run FIRST/i),
+      "backend-discipline.md carries the PLAIN half only. A leak test written to it can still " \
+      "print the leak, by reaching a shape check before the refute"
+
+    assert doc_body.match?(/stops a test at its first failed assertion/i),
+      "the doc must say WHY the order decides it — without minitest's first-failure semantics the " \
+      "rule reads as a style preference, and the next writer reorders it back"
+
+    assert doc_body.match?(/haystack is an integer/i),
+      "the doc must grant the exemption on the property that EARNS it — an integer haystack. " \
+      "Scoping it to one assertion method instead condemns an assert_equal on a length, which is " \
+      "exempt for exactly the same reason"
+  end
+
   # Every doc that hands an operator a credential-parsing one-liner has to teach
   # the anchored form, and none may re-publish the retracted figure. This is the
   # assertion that would have caught the sibling copy on the day it was written.
