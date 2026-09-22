@@ -573,6 +573,31 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
   # the citation pointing at the wrong thing AND silences the lane that noticed. So the
   # failure must forbid that in its own words and hand over the re-derived number, which is
   # the answer the wrong move was reaching for.
+  # THE VERBATIM-COPY CASE, which is how an author actually writes an anchor: they read
+  # the line and copy it. On a COMMENT line that copy carries the leading marker, and
+  # until this was made symmetric it could never match — `span_text` had already dropped
+  # the marker from the file side. Both spellings of the same true sentence must pass,
+  # or the lane reds on correct prose and its own message forbids the fix.
+  def test_an_anchor_copied_verbatim_off_a_comment_line_still_matches
+    target = target_lines("bin/dor-check")
+    refute_nil target, "bin/dor-check is the file every recorded defect cites"
+
+    line = target[3184].to_s.strip
+    assert_match(/\A#\s/, line, "bin/dor-check:3185 is no longer a comment line — re-derive this fixture")
+
+    stripped = line.sub(COMMENT_LEAD, "")[0, 32]
+    verbatim = line[0, 34]
+
+    row = { target: target, first: 3185, last: 3185 }
+    assert anchor_in_span?(row.merge(anchor: stripped)),
+           "the marker-stripped anchor #{stripped.inspect} no longer matches its own line"
+    assert anchor_in_span?(row.merge(anchor: verbatim)),
+           "an anchor copied VERBATIM off the cited comment line — #{verbatim.inspect} — does " \
+           "not match it. That is a FALSE POSITIVE on true prose, and the lane's own message " \
+           "tells the author not to edit the anchor, which is the only fix they have. Normalise " \
+           "both sides the same way (see normalize_anchor)."
+  end
+
   def test_the_anchor_failure_names_the_right_line_rather_than_inviting_a_weaker_anchor
     target = target_lines("bin/dor-check")
     m = LINE_CITATION.match(%(bin/dor-check:1176-1180#"reviewers run --gate-role review"))
@@ -1024,6 +1049,19 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
 
   def normalize_text(str) = str.to_s.gsub(/\s+/, " ").strip
 
+  # AN ANCHOR IS NORMALISED THE SAME WAY THE SPAN IS, and the symmetry is the whole
+  # point. `span_text` drops each line's leading comment marker, so an anchor copied
+  # VERBATIM off a comment line — marker and all, which is the natural authoring
+  # gesture — could never be found in it. Measured at review, 2026-09-22 against
+  # bin/dor-check:3185: `#"# CI-status gate (merge gate only)"` reds while
+  # `#"CI-status gate (merge gate only)"` passes, on the same true sentence. That red
+  # is a FALSE POSITIVE, and the lane's own message then forbids its only fix ("DO NOT
+  # EDIT THE ANCHOR TO MATCH THE LINE") and reports the text as NOWHERE while quoting
+  # the span containing it. Stripping both sides costs nothing a real anchor needs:
+  # `#"#!/usr/bin/env ruby"` still matches, because the span keeps its own shebang only
+  # if the file line does.
+  def normalize_anchor(str) = normalize_text(str.to_s.sub(COMMENT_LEAD, ""))
+
   # A CITED SPAN AS ONE STRING — comment markers dropped, whitespace collapsed. The span
   # is joined rather than searched line by line so an anchor may wrap a line the way the
   # sentence it came from does.
@@ -1033,7 +1071,7 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
 
   def anchor_in_span?(row)
     span_text(row[:target][(row[:first] - 1)..(row[:last] - 1)])
-      .include?(normalize_text(row[:anchor]))
+      .include?(normalize_anchor(row[:anchor]))
   end
 
   # WHERE THE ANCHOR ACTUALLY IS — the re-derivation that keeps lane 4's failure from
@@ -1056,7 +1094,7 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
   # a verdict and a diagnosis that contradict each other. Its sites are window starts,
   # which is the honest thing to report about a phrase that begins there.
   def anchor_sites(target, anchor, width)
-    needle = normalize_text(anchor)
+    needle = normalize_anchor(anchor)
     narrow = (1..target.size).select { |n| span_text([target[n - 1]]).include?(needle) }
     return narrow if narrow.any? || width <= 1
 
