@@ -663,7 +663,41 @@ class ReviewClaimCli
                                                     renew_interval: ShiftRenewer::INTERVAL_SECONDS,
                                                     differenced: differenced))
     @out.puts("  holder: #{holder_line(holder)}") if holder.is_a?(Hash) && present?(holder["session"])
-    @out.puts("  #{next_move(slug, grade)}")
+
+    # THE LINE THAT TELLS THE TWO STATES APART. Everything above describes the LEASE,
+    # and the lease reads identically whether a reviewer is working or died an hour
+    # ago — measured twice on 2026-09-22, the second time when a dead reviewer resumed
+    # and re-acquired and `status` printed a reading character-for-character identical
+    # to the one it gave while he was dead.
+    mine, verdict, age = worker_reading(slug, holder, grade)
+    @out.puts("  #{ReviewWorkerPulse.render(verdict, age)}") if mine
+    @out.puts("  #{mine ? ReviewWorkerPulse.next_move_for_self(slug, verdict) : next_move(slug, grade)}")
+  end
+
+  # The worker-level reading for a claim, or [false, nil, nil] when this session has
+  # nothing to say about it.
+  #
+  # GATED ON THE HOLDER BEING THIS SESSION, for two independent reasons:
+  #
+  #   SOUNDNESS — the pulse marker is written by the instance that acquired the claim,
+  #     so for ANOTHER session's claim there is simply no local evidence. Printing an
+  #     UNVERIFIED line there would be noise on every foreign claim, and the existing
+  #     "ask the holder" wording is CORRECT in that case: there really is somebody else
+  #     to ask.
+  #   RELEVANCE — "your reviewer may be dead" is only actionable for the session that
+  #     owns the reviewer. It is the ONE party that can answer it, and in both measured
+  #     incidents it was the party standing at the terminal reading this output.
+  #
+  # A FREE or lapsed lease is skipped too: there is no live claim to attribute, and the
+  # existing `→ free to claim` line is the whole answer.
+  def worker_reading(slug, holder, grade)
+    return [false, nil, nil] unless holder.is_a?(Hash) && present?(holder["session"])
+    return [false, nil, nil] if ClaimHolder.observed_free?(grade)
+    return [false, nil, nil] unless ReviewWorkerPulse.mine?(holder_session: holder["session"],
+                                                            session: session_id)
+
+    age = worker_pulse_age(session_id, slug)
+    [true, ReviewWorkerPulse.verdict(pulse_age: age), age]
   end
 
   # The next move, stated for the reader who has just been told a lease is alive.
@@ -683,8 +717,19 @@ class ReviewClaimCli
   end
 
   def emit_status_json(slug, grade, holder, watched, differenced = true)
+    mine, verdict, age = worker_reading(slug, holder, grade)
     @out.puts(JSON.generate({
                               "slug" => slug,
+                              # The worker-level reading, so a machine consumer can
+                              # branch on the SAME distinction the text output makes
+                              # rather than regex the prose. `held_by_this_session`
+                              # false means this session has no evidence either way,
+                              # NOT that the worker is alive.
+                              "worker" => {
+                                "held_by_this_session" => mine,
+                                "verdict" => (verdict.to_s if mine),
+                                "pulse_age" => (age&.round if mine)
+                              },
                               "observed" => grade.to_s,
                               "observed_note" => ClaimHolder.render_observation(
                                 grade, expires_at: expiry_of(holder), watched_seconds: watched,
