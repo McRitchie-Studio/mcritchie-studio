@@ -147,12 +147,18 @@ in the test — but its haystack is the same string the refute is guarding, so i
 it runs ahead of the refute a broken guard fails THERE, dumps the bytes, and the
 refute never runs at all. Measured on
 `test/services/workspace/error_slug_test.rb` under a broken-guard mutant: 9
-failures, **5 of them printing guarded content**, one carrying the full
-`-----BEGIN PRIVATE KEY-----` header and the key-body prefix behind it. Moving
-every plain `refute` ahead of the first `assert_equal` left the same 9 failures
-printing nothing. So: **plain `refute` first, shape checks behind it.** An
+failures, **5 of them printing guarded content**, one carrying the whole PEM
+private-key header and the key-body prefix behind it. Moving every plain
+`refute` ahead of the first `assert_equal` left the same 9 failures printing
+nothing. So: **plain `refute` first, shape checks behind it.** An
 `assert_operator` on a LENGTH is exempt by construction — its haystack is an
 integer, which cannot hold the secret.
+
+That header is described above rather than quoted, deliberately:
+`test/lib/app_id_recorded_claims_test.rb` refuses private-key material anywhere
+under `docs/`, so illustrating this rule with a real one reddens CI. Measured on
+the first push of this paragraph — and `bin/fast-check` maps no test from a
+docs-only diff, so CI is the only thing that says so.
 
 Ordering is invisible on review and silent when it regresses, so that file
 asserts it rather than describing it: a guard parses its own source and flags
