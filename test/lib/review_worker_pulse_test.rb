@@ -240,6 +240,15 @@ class ReviewWorkerPulseTest < Minitest::Test
     refute_equal worker_line(live), worker_line(dead),
                  "and the WORKER line is the whole point: if these agree, `status` still " \
                  "cannot tell the two states apart and nothing has been fixed"
+
+    # AND THE VERDICT, not merely the rendered age. Measured while mutating this file:
+    # a `verdict` that stopped reading the pulse age entirely still printed two
+    # DIFFERENT worker lines here — "…acted on this review 12s ago" against "…4.4h
+    # ago" — so the refute_equal above survived a mutant that had removed the whole
+    # decision. Differing text is not a differing verdict, and it is the verdict that
+    # the renewer and the remedy line both branch on.
+    assert_includes worker_line(live), "ACTIVE"
+    assert_includes worker_line(dead), "SILENT"
   end
 
   # THE MISDIRECTION, as its own control. "ASK THE HOLDER TO RELEASE IT (only their
