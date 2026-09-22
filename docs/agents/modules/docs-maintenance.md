@@ -122,7 +122,8 @@ the ratchet's — run `bin/rails test test/docs/citation_resolution_guard_test.r
 |------|-------------|-------|------------|
 | **Seam** (preferred) | `bin/release.rb#commit_gem_version!` | No | lane 2 — the file must DEFINE that symbol |
 | **Prose seam** | "in `commit_gem_version!` — at its `rewrite_version` refusal" | No | review |
-| **Line** (last resort) | `bin/fast-check:300` — the `wrong_root = CertRootGuard.refusal(…)` cert-root refusal | **Yes** | lane 1 — the line must be substantive; lane 3 caps the population |
+| **Anchored line** (when the line really is the unit) | `bin/fast-check:300#"wrong_root = CertRootGuard.refusal"` | **Loudly** — lane 4 reds and names the line it slid to | lanes 1 + 4 — substantive AND carrying its anchor |
+| **Bare line** (legacy — lane 5 is closing it) | the same pointer without the `#"…"` | **Silently** | lane 1 only, and only when the rot lands on a blank line or an `end` |
 
 The rules, in order:
 
@@ -132,6 +133,24 @@ The rules, in order:
 2. **Spend a `path:line` only where the line itself is the unit** — top-level script
    code with no enclosing definition is the honest case. Say what is ON the line, so
    a reader who lands somewhere else knows immediately.
+2a. **Say it IN the citation, not beside it** — `path:line#"what is on it"`. Until
+   2026-09-22 this house already wrote that anchor, in prose, next to almost every line
+   citation it had; nothing read it, so it could not stop the pointer drifting off the
+   thing it described. Written inside the citation it is CHECKED: lane 4 opens the file
+   on every run, and when the span no longer carries the anchor it reds and names the
+   line that does. Three spellings — `#"a quoted phrase"`, `` #`a backticked one` ``, or
+   a bare `#token` for a Ruby name. **Pick an anchor that occurs once.**
+   `#"--gate-role review"` sits on eleven lines of `bin/dor-check` and pins loosely;
+   `#"reviewers run --gate-role review"` sits on one.
+2b. **When lane 4 reds, fix the NUMBER.** Never edit the anchor to match whatever is
+   at the line now — that silences the lane and leaves the citation pointing exactly
+   where it should not. The failure has already re-derived the right line for you. An
+   anchor that is NOWHERE in the file means something else again: you are citing the
+   wrong file, or the passage is gone and the sentence now claims nothing.
+2c. **A range is checked at BOTH ends.** A `path:a-b` whose LAST line is a bare `end`
+   has slid off its subject — the range was cut to fit a passage, so a block terminator
+   at the bottom of it means the passage has moved. Do not trim the range by one to go
+   green; re-derive where the passage went.
 3. **Never renumber from a stale start.** Re-derive the number on your own tree, or
    convert the citation to a seam. Renumbering is its own error, and the next commit
    re-rots it.
@@ -147,11 +166,18 @@ The rules, in order:
    separator, so the guard refuses to read it either way: it will not count your second
    anchor, and it will not mint one out of somebody's `<file>:8,370`. Spell it `:229, :231`.
 
-`test/docs/citation_resolution_guard_test.rb` is the teeth. It keys on **resolution**
-— it opens the cited file and looks — never on the wording around the citation, so
-no rephrasing gets past it. It states its own four limits in its header; read them
-before trusting a green run to mean more than it does — in particular limit D, which
-says the ratchet is a toll booth kept monotonic by REVIEW, not by a check.
+`test/docs/citation_resolution_guard_test.rb` is the teeth, in five lanes. Four of them
+key on **resolution** — they open the cited file and look — never on the wording around
+the citation, so no rephrasing gets past them. Lane 4 is the one that reads CONTENT, and
+it does so only where an author DECLARED an anchor, which is why it has no false
+positives to trade for its reach.
+
+Read the header's limits before trusting a green run to mean more than it does. Two
+matter most. Limit D: the ratchets are toll booths kept monotonic by REVIEW, not by a
+check. And lane 4's own: it catches **rot** — a citation whose file moved under it —
+never a citation that was **wrong when it was written**, because an author reading the
+wrong line copies the anchor off that same wrong line. A green lane 4 says the pointer
+still lands where its author put it. It does not say the sentence is true.
 
 ## Drift Review
 
