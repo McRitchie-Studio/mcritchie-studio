@@ -66,6 +66,7 @@ require_relative "agent_api"
 require_relative "session_identity"
 require_relative "session_markers"
 require_relative "shift_renewer"
+require_relative "anchor_heartbeat"
 require_relative "../../lib/claim_holder"
 
 class ReviewClaimCli
@@ -418,7 +419,15 @@ class ReviewClaimCli
     pid = flags["anchor-pid"]
     start = flags["anchor-start"]
     ShiftRenewer.run(
-      alive:    -> { SessionIdentity.process_alive?(pid, start) },
+      # See bin/lib/anchor_heartbeat.rb. This lane already bounds a live-but-idle
+      # anchor with REVIEW_RENEW_WINDOW_SECONDS, but that is a TIMEOUT rather than
+      # evidence: it frees a dead reviewer's task after 3h25m whether the reviewer
+      # died in minute one or minute two hundred. The seam answers from the session's
+      # own marks instead, and the cap stays as the belt behind the braces.
+      alive:    AnchorHeartbeat.alive_check(
+        resident: -> { SessionIdentity.process_alive?(pid, start) },
+        signal:   -> { AnchorHeartbeat.signal_age(session: session_id, projects_dir: @api.projects_dir) }
+      ),
       finished: -> { review_over?(slug) },
       renew:    -> { renewed?(slug) },
       sleeper: @sleeper,
@@ -669,8 +678,8 @@ class ReviewClaimCli
   def start_renewer(sid, slug)
     anchor = anchor_process
     unless anchor
-      @out.puts("review-claim: note — no agent process to anchor a renewer to; " \
-                "this review lapses in ~#{lease_ttl_human} unless something renews it.")
+      @out.puts("review-claim: note — " \
+                "#{AnchorHeartbeat.unanchored_notice(subject: "review", ttl_seconds: lease_ttl_seconds)}")
       return nil
     end
 
