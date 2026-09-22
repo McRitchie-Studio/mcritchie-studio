@@ -82,8 +82,11 @@
 # DEFAULT, so a bare run carries an empty busy set and logs `busy=-` — "nobody
 # asked", not "the bench is idle". And `--busy-auto` covers only the mid-BUILD
 # half: a soul mid-REVIEW sits on a `submitted` task whose reviewer lives in
-# TaskReviewClaim.holder_agent, which the tasks API does not serialize, so that
-# half is reachable only by hand-passing `--busy <slug>`. Both the author and
+# TaskReviewClaim.holder_agent. That holder IS readable — GET
+# /api/v1/tasks/<slug>/review_claim serves it — but one task at a time; the INDEX
+# serializer carries only the `review_in_progress` boolean, never WHO. Nothing here
+# asks for either, so that half is reachable only by hand-passing `--busy <slug>`.
+# Tracked as `busy-auto-misses-mid-review`. Both the author and
 # the busy drops YIELD rather than starve: if the exclusions would leave too few
 # light candidates, the least-bad ones are KEPT back so ReviewerSelector always
 # returns a pair (flagged in the audit). The two kept cases are NOT equivalent here:

@@ -247,9 +247,14 @@ honest, and **none of them needs a manual flag in the common case**:
   which is what three runs on 2026-09-22 printed while the souls they named were
   each holding a live review claim. `--busy-auto` would not have caught those
   either: it queries `stage=building`, and a soul mid-REVIEW is on a `submitted`
-  task whose reviewer lives in `TaskReviewClaim.holder_agent` — a column the tasks
-  API does not serialize. So mid-review busy is reachable ONLY by hand-passing
-  `--busy <slug>`. Read `busy=-` as "nobody asked", never as "the bench is idle".
+  task whose reviewer lives in `TaskReviewClaim.holder_agent`. That holder IS
+  readable — `GET /api/v1/tasks/<slug>/review_claim` returns it (`{"holder": {"agent":
+  "carl", "live": true, …}}`, measured against prod 2026-09-22) — but only ONE TASK
+  AT A TIME. The index serializer carries `review_in_progress`, a boolean saying
+  someone is reviewing and never WHO, so a busy set built this way costs a round
+  trip per in-review task. `--busy-auto` asks for none of it. So mid-review busy is
+  reachable today ONLY by hand-passing `--busy <slug>`. Read `busy=-` as "nobody
+  asked", never as "the bench is idle". Tracked: `busy-auto-misses-mid-review`.
 
 **Reading a seat line — the two seats are filled by DIFFERENT mechanisms.** Each
 line ends with the basis that actually seated that soul, so the fit score beside it
