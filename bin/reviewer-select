@@ -78,7 +78,15 @@
 #
 # BUSY souls (agents mid-build / mid-review on
 # OTHER in-flight tasks) are excluded from the LIGHT seat via `--busy a,b,c` and/or
-# `--busy-auto` (which reads the board's stage=building tasks). Both the author and
+# `--busy-auto` (which reads the board's stage=building tasks). NEITHER IS ON BY
+# DEFAULT, so a bare run carries an empty busy set and logs `busy=-` — "nobody
+# asked", not "the bench is idle". And `--busy-auto` covers only the mid-BUILD
+# half: a soul mid-REVIEW sits on a `submitted` task whose reviewer lives in
+# TaskReviewClaim.holder_agent. That holder IS readable — GET
+# /api/v1/tasks/<slug>/review_claim serves it — but one task at a time; the INDEX
+# serializer carries only the `review_in_progress` boolean, never WHO. Nothing here
+# asks for either, so that half is reachable only by hand-passing `--busy <slug>`.
+# Tracked as `busy-auto-misses-mid-review`. Both the author and
 # the busy drops YIELD rather than starve: if the exclusions would leave too few
 # light candidates, the least-bad ones are KEPT back so ReviewerSelector always
 # returns a pair (flagged in the audit). The two kept cases are NOT equivalent here:
@@ -350,10 +358,43 @@ def fmt_list(list)
   arr.empty? ? "-" : arr.join(", ")
 end
 
+# WHY the seat was filled, in the seat's own words. Sourced from the decision's
+# `basis` (ReviewerSelector::SEAT_BASIS_*) — the mechanism that ACTUALLY seated the
+# soul — never inferred from the matched list.
+#
+# Inferring it is what this line used to do, and it produced a sentence that was
+# false in exactly the case a reader most needs it. A seat matching no needed domain
+# was labelled "(no domain match — seeded tiebreak)", which is true of the LIGHT and
+# untrue of the standing PRIMARY: Carl is seated by ROLE, is never ranked against the
+# pool, and is never rolled. On a `docs` task that printed Carl at "fit 0, roll
+# 0.0000" by "seeded tiebreak" directly above Alex at fit 2 — reading as though a
+# coin toss had beaten a 2-point domain match. It had not; the two seats are filled
+# by two different mechanisms and only one of them rolls. The line was filed as an
+# ordering bug and cost three rounds of evidence before anyone read #pair.
+#
+# A basis the CLI does not recognise falls back to the tiebreak wording rather than
+# printing a bare token: an older decision payload (no `basis` key at all) still
+# renders, and it renders as the thing every pre-2026-09-22 payload meant.
+SEAT_BASIS_TEXT = {
+  "standing_primary" => "standing primary — seated by role, not scored or rolled",
+  "domain_fit" => "top domain fit",
+  "seeded_tiebreak" => "no domain match — seeded tiebreak"
+}.freeze
+
+def seat_basis(seat)
+  why = SEAT_BASIS_TEXT.fetch(seat["basis"].to_s, SEAT_BASIS_TEXT.fetch("seeded_tiebreak"))
+  # A seat with no roll was never rolled — the standing primary, whose wording
+  # already says so. Anything else gets the roll it was actually drawn on. The nil
+  # is never formatted into a number: a printed 0.0000 is what read as a real draw.
+  return why if seat["roll"].nil?
+
+  "#{why}; roll #{format("%.4f", seat["roll"])}"
+end
+
 def seat_line(label, seat)
-  matched = seat["matched"].empty? ? "(no domain match — seeded tiebreak)" : seat["matched"].join(", ")
-  format("%-5s  %-10s  matched: %-30s  (fit %d, roll %.4f)",
-         label, seat["slug"], matched, seat["fit"], seat["roll"])
+  matched = seat["matched"].empty? ? "-" : seat["matched"].join(", ")
+  format("%-7s  %-9s  matched: %-24s  fit %d  (%s)",
+         label, seat["slug"], matched, seat["fit"], seat_basis(seat))
 end
 
 # The auditable "who's out" line of the LIGHT pool: the QA owner always, plus the

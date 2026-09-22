@@ -866,8 +866,8 @@ board):
    orchestrator who also holds the launchable Documentation review seat — one
    identity. (`--qa-owner SLUG` excludes a different soul; `--builder SLUG`
    overrides the recorded built_by; **`--busy a,b,c`** and/or **`--busy-auto`** (a
-   board query of agents on `stage=building` tasks) drop agents mid-build/review
-   elsewhere — the pool is never starved below a pair, the least-bad are kept
+   board query of agents on `stage=building` tasks) drop agents mid-BUILD
+   elsewhere — the mid-REVIEW half needs `--busy <slug>` by hand — the pool is never starved below a pair, the least-bad are kept
    back; `--json` for a machine-readable pick; **`--record`** writes the picked
    pair onto the task as a **review intent** so /deployments + the task timeline
    show Carl + the light reviewing live — a green ticking timer — the moment

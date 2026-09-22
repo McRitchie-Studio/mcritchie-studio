@@ -962,10 +962,11 @@ REPO="$(dirname "$(cd "$(git rev-parse --git-common-dir)" && pwd)")"   # the PRI
 MUT="$REPO/.worktrees/mut-<slug>"
 git worktree add "$MUT" --detach <pr-head>
 cp <desk>/.env.test.local "$MUT"/                        # REQUIRED — see below
+(cd "$MUT" && bin/rails test:prepare)                    # REQUIRED — see below
 ```
 
-**Both details are load-bearing.** Skip either and a loud tree collision becomes
-a silent database one:
+**All three details are load-bearing.** Skip one and a loud tree collision
+becomes a silent database one — or a green mutant that only looks green:
 
 - **`.env.test.local` is untracked**, so no worktree add and no `git archive`
   carries it. Without it `TEST_DATABASE_URL` renders empty,
@@ -979,6 +980,17 @@ a silent database one:
   `../` is not a desk, so the guard cannot fire and the shared-database run is
   admitted in silence. The same tree under `.worktrees/` is refused by name, with
   the missing file called out.
+- **`bin/rails test:prepare` builds the gitignored assets.** `.env.test.local` is
+  one of TWO untracked classes a worktree cannot carry; the other is the repo's
+  build output, which `git worktree add` cannot bring because git does not track
+  it. Measured 2026-09-22: a bare hub throwaway ran
+  `test/integration/smooth_load_layout_test.rb` to `The asset "tailwind.css" is
+  not present in the asset pipeline`, and a turf-monster one ran
+  `test/views/violet_text_contrast_test.rb` to 8 failures of 11 — on trees with
+  nothing wrong with them. In a MUTATION pass that reads as a mutant the suite
+  caught, which is the one wrong answer a mutation run can give. The full
+  reasoning, including why this is a call and never a list of filenames, is in
+  the [zap protocol](zap-protocol.md#the-three-seams).
 
 Isolating the tree does not isolate the database. Carrying `.env.test.local`
 points the throwaway at the **desk's** test DB, which the builder's own suite

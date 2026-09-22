@@ -670,9 +670,29 @@ end
     owed = tiers.empty? && evidence.any? ? "no tiers; evidence: #{evidence.join(', ')}" : tiers.join(", ")
     puts "Required tiers: #{shape["shape"] || "none"} => #{owed}"
     if shape["claimable_when"] == "test_only_diff"
+      # The older wording said this shape owed the full suite outright. That is
+      # falsified, and this line is where it cost the most, because it prints at the
+      # moment a builder decides what to run. (The falsified phrase is described
+      # rather than quoted here on purpose: test/docs/zap_control_lane_docs_test.rb
+      # refuses it anywhere in this file, so quoting it to warn about it reddens the
+      # suite.) `full_suite_gate: true` means NOT EXEMPT, and dor-check's route
+      # ladder has no test-only branch: the fast route plus a SETTLED GREEN CI
+      # satisfies it here exactly as for a feature. Say the condition, and say which
+      # condition it is — the ROLE, not the green. bin/dor-check#suite_evidence_error
+      # words both branches: review's gate-zero takes only the settled green, while the
+      # BUILDER's submit-side run also credits a fresh fast cert PROVISIONALLY while CI
+      # is pending or unreported on an OPEN PR — the `fast-provisional` route, the one
+      # branch in the ladder testing !review_role.
+      # So "without the green the fast cert stops standing in" is true for review and
+      # FALSE here, at submit — and this line is read at submit. The local full suite is
+      # for an UNREADABLE verdict; it does not unblock a RED CI in either role.
       puts "  claimable ONLY on a diff dor-check OBSERVES to be 100% test code (test/, tests/, e2e/) — " \
-           "one non-test file and the claim is refused; it still owes the full-suite cert, and the " \
-           "[control] line must name a file from the diff (does the changed test still bite?)"
+           "one non-test file and the claim is refused. It owes the cert gate (NOT exempt, unlike docs): " \
+           "a fresh fast cert ALONGSIDE A SETTLED GREEN CI satisfies it. At SUBMIT that same fast cert is " \
+           "credited PROVISIONALLY while CI is still pending, so you do not owe a local run there. The " \
+           "local full suite is the CI-independent evidence for an UNREADABLE verdict, and a RED CI is " \
+           "fixed by fixing CI. The [control] line must name a file from the diff (does the changed test " \
+           "still bite?)"
     end
     unless shape["required_metadata"].empty?
       puts "Required metadata: #{shape["required_metadata"].join(", ")}"

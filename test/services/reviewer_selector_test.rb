@@ -531,6 +531,54 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
     assert_equal 2, decision["reviewers"].map { |r| r["slug"] }.uniq.size, "two distinct reviewers"
   end
 
+  # --- the seat's BASIS: WHY that soul is sitting there (selector-picks-fit-zero-light) ---
+  #
+  # These two tests are one experiment with the variable flipped. A `docs` task puts
+  # exactly one soul on the needed domains (alex, fit 2) and leaves every other
+  # candidate at fit 0 — the mixed-fit set the question needs. The variable is
+  # whether Carl is eligible for the standing primary seat.
+
+  test "the standing primary's seat is basis'd on the ROLE, never on a tiebreak" do
+    # MEASURED 2026-09-22 on zap-desk-needs-build-artifacts. The PICK here is
+    # correct — Carl owns every review — but the seat used to explain itself as
+    # "(no domain match — seeded tiebreak)" beside a printed `roll 0.0000`, which
+    # reads as a coin toss seating Carl over a soul who out-fits him 2-0. Nothing
+    # was tossed: #pair seats Carl unconditionally and ranks only the light pool.
+    decision = ReviewerSelector.explain(task_for(shape: "docs"), builder: "steffon")
+    primary, light = decision["reviewers"]
+
+    assert_equal "carl", primary["slug"], "Carl is the standing primary on a docs PR too"
+    assert_equal ReviewerSelector::SEAT_BASIS_STANDING_PRIMARY, primary["basis"],
+      "the seat names the mechanism that seated it — the role"
+    assert_nil primary["roll"], "a soul seated by role is never rolled; 0.0 read as a real draw"
+    assert_equal 0, primary["fit"], "his fit is genuinely 0 — it is simply not why he is sitting there"
+
+    assert_equal "alex", light["slug"], "a domain-matched soul outranks every fit-0 candidate for the light"
+    assert_equal ReviewerSelector::SEAT_BASIS_DOMAIN_FIT, light["basis"]
+    assert_equal 2, light["fit"], "and the seat carries the fit score it won on"
+    assert light["roll"].is_a?(Numeric), "a ranked seat carries the roll it was actually drawn on"
+  end
+
+  test "a mixed-fit pool ranks into the PRIMARY seat once Carl has yielded" do
+    # The discriminating half. If the primary seat were filled BEFORE fits are
+    # scored, fit could never reach it — so the fit-0 primary above would be an
+    # ordering defect. It can and does: with Carl an author and yielded, both seats
+    # come from ONE ranked list and the docs soul takes PRIMARY at fit 2 over fit-0
+    # peers. The fit-0 primary above is therefore the standing-primary POLICY
+    # (docs/agents/agents/carl/sops/pr-review.md), not a ranking failure.
+    decision = ReviewerSelector.explain(task_for(shape: "docs"), builder: "carl")
+    primary, light = decision["reviewers"]
+
+    assert_equal "alex", primary["slug"], "fit decides the primary seat wherever fit is allowed to decide it"
+    assert_equal 2, primary["fit"]
+    assert_equal ReviewerSelector::SEAT_BASIS_DOMAIN_FIT, primary["basis"]
+    refute_equal "carl", primary["slug"], "an author reviews nothing on his own PR"
+    refute_equal "carl", light["slug"]
+    assert_equal 0, light["fit"], "the rest of the pool is genuinely fit 0 — no better light exists"
+    assert_equal ReviewerSelector::SEAT_BASIS_TIEBREAK, light["basis"],
+      "and THAT seat really was decided by the seeded roll"
+  end
+
   test "explain is deterministic under a seeded random (the light tiebreak is the only nondeterminism)" do
     task = task_for(shape: "backend")
     a = ReviewerSelector.new(task, random: Random.new(7)).decision
