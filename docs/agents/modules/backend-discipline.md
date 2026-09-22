@@ -140,6 +140,44 @@ their haystack even when you pass a message of your own. Only plain `assert` and
 `refute` suppress it. Assert on a body prefix plus a length bound, and keep the
 failure message to lengths.
 
+**Plain is only half the rule: the refute must also run FIRST.** minitest stops
+a test at its first failed assertion, so ORDER decides which assertion gets to
+print. An `assert_equal` on the redacted value is a fine SHAPE check and belongs
+in the test — but its haystack is the same string the refute is guarding, so if
+it runs ahead of the refute a broken guard fails THERE, dumps the bytes, and the
+refute never runs at all. Measured on
+`test/services/workspace/error_slug_test.rb` under a broken-guard mutant: 9
+failures, **5 of them printing guarded content**, one carrying the whole PEM
+private-key header and the key-body prefix behind it. Moving every plain
+`refute` ahead of the first `assert_equal` left the same 9 failures printing
+nothing. So: **plain `refute` first, shape checks behind it.** The exemption is
+the **haystack, not the method**: any assertion whose haystack is an INTEGER is
+exempt by construction, because an integer cannot hold the secret. That covers
+an `assert_operator` on a length and an `assert_equal` on one alike — a length
+assertion running first is fine.
+
+That header is described above rather than quoted, deliberately:
+`test/lib/app_id_recorded_claims_test.rb` refuses private-key material anywhere
+under `docs/`, so illustrating this rule with a real one reddens CI. Measured on
+the first push of this paragraph — and a docs-ONLY diff maps no test at all in
+`bin/fast-check`, so CI was the only thing that said so. Pairing prose with its
+guard test under `test/docs/` fixes that half too: a changed `*_test.rb` maps to
+itself, so the cert covers the doc rule instead of deferring it to CI.
+
+Ordering is invisible on review and silent when it regresses, so that file
+asserts it rather than describing it: a guard parses its own source and flags
+any test naming a `GUARDED_FIXTURES` string that reaches an `assert_equal`
+before a plain `refute`. **Before adding a string to that list, ask what the
+suite already asserts about it.** `team@x.test` is deliberately absent, and the
+reason is documentary rather than mechanical: registering it would change no
+verdict at all, because the only test naming it already names `team@secret.test`
+and is already selected. It is absent because the list registers strings whose
+appearance is a LEAK, and that one appears BY DESIGN — it rides inside an
+AUTHORED error message that `Workspace::ErrorSlug` passes through and the test
+beside it asserts must SURVIVE. Listing it would state the opposite of the
+assertion directly above it. A fixture earns a place there only when the
+property under test is that it must NOT survive.
+
 ## Irreversible Effects
 
 Validate everything before irreversible side effects:
