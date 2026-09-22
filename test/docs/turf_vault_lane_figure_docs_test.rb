@@ -101,7 +101,16 @@ class TurfVaultLaneFigureDocsTest < ActiveSupport::TestCase
   # A doc that declares itself a snapshot is a record of what was true on its date.
   # Correcting its figures would falsify the record, so it is out of scope — the
   # same carve-out the CURRENT_DEPLOYMENT guard makes for banner-marked history.
-  FROZEN_BANNER = /ARCHIVE-ONLY|ARCHIVED|HISTORICAL|SNAPSHOT|POINT-IN-TIME/i
+  # NOT a bare ARCHIVED, and the omission is the whole correctness of this carve-out.
+  # `archived` is a task STAGE in this house, printed in the lifecycle list near the top
+  # of a spec — so matching it exempted FOUR LIVE DOCS from both tests, measured at
+  # review 2026-09-22: system/devops-cycle-design.md (on "shipped → archived"),
+  # system/mission.md, system/news-pipeline.md and topics/data-model.md. The canonical
+  # DevOps spec silently carrying no guard is the guard failing at birth. Both files
+  # this carve-out exists for say ARCHIVE-ONLY in as many words
+  # (system/ecosystem-audit-2026-05-17.md, system/squads-upgrade-authority-migration.md),
+  # so the explicit banner is enough and the stage word is pure collateral.
+  FROZEN_BANNER = /ARCHIVE-ONLY|HISTORICAL RECORD|POINT-IN-TIME|AUDIT SNAPSHOT/i
 
   # Live prose an agent may act on. Frozen records state what was true on their
   # date and must not be rewritten; test/ holds this file's own fixtures.
@@ -167,6 +176,36 @@ class TurfVaultLaneFigureDocsTest < ActiveSupport::TestCase
   end
 
   # ── The live tree ─────────────────────────────────────────────────────────
+  # THE CARVE-OUT MUST NOT SWALLOW A LIVE DOC. A frozen-banner exemption turns BOTH
+  # tests off for the whole file, so an over-broad banner is a guard that reports green
+  # because it never looked. Measured at review 2026-09-22: matching a bare `ARCHIVED`
+  # exempted system/devops-cycle-design.md, system/mission.md, system/news-pipeline.md
+  # and topics/data-model.md — every one of them on the task STAGE word in a lifecycle
+  # list, and the first of them the canonical DevOps spec.
+  def test_the_frozen_carve_out_exempts_only_genuinely_frozen_files
+    all = Dir.glob(Rails.root.join("docs", "**", "*.md")).reject do |path|
+      path.include?("/archive") || path.include?("/audits/") || path.include?("/node_modules/")
+    end
+    exempt = all - guarded_docs
+
+    assert_operator exempt.size, :>, 0,
+                    "nothing is exempt, so this test proves nothing about the carve-out — " \
+                    "re-derive it rather than deleting it"
+
+    exempt.each do |path|
+      head = File.readlines(path).first(10).join
+      assert_match(/ARCHIVE-ONLY|HISTORICAL RECORD|POINT-IN-TIME|AUDIT SNAPSHOT/i, head,
+                   "#{path} is exempt from BOTH turf-vault lane tests, but its first ten lines " \
+                   "carry no explicit frozen banner. A live doc silently exempted is worse than " \
+                   "no guard, because it reports green. If this is the task STAGE word `archived` " \
+                   "in a lifecycle list, narrow FROZEN_BANNER — do not add the file to a list.")
+    end
+
+    refute_includes exempt.map { |p| p.sub("#{Rails.root}/", "") }, "docs/agents/system/devops-cycle-design.md",
+                    "the canonical DevOps spec is exempt from this guard. That is the exact " \
+                    "regression this test exists for."
+  end
+
   def test_every_turf_vault_lane_figure_is_pinned_to_its_re_derivation
     offenders = guarded_docs.flat_map do |path|
       unpinned_figures(File.read(path)).map do |at, what, excerpt|
