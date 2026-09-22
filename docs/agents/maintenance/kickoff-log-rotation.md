@@ -62,8 +62,9 @@ which is exactly the knob `:initialize_logger` reads
 so Rails keeps ownership of the path, formatter, level, and tagging. Which cap
 to use — and whether to touch anything at all — belongs to
 `Studio::LogRotation.cap_for`, which is Rails-free and unit-tested a branch at a
-time. Copying the draft above would have built the broken version; that is why
-this correction is recorded rather than the file deleted.
+time. Copying the shape this brief first proposed would have built the broken
+version; that is why the correction is recorded here rather than the file
+deleted.
 
 Why the engine and not seven `config/environments` edits: it rides the gem, so
 one change reaches every app and every **future** app; it is config in a repo, so
@@ -71,8 +72,9 @@ every worktree is born with it and a fresh Mac restores it from GitHub; and
 nobody ever runs anything.
 
 Caps each checkout near 48 MB across dev + test, against the 138 MB per desk we
-were carrying. `1` keeps one rotated file. Tune the two sizes deliberately now —
-it is awkward to revisit later.
+were carrying. The `1` in the Rails call above is the retained-file count, so
+each env keeps one rotated sibling. Tune the two sizes deliberately now — it is
+awkward to revisit later.
 
 **Add a behavioral test, not a grep.** Assert the booted dev/test logger actually
 carries a rotation cap. A test that greps for a config string passes forever
@@ -192,7 +194,11 @@ Gem-repo specifics — studio-engine does NOT behave like an app:
 
 - **The fast lane does not work for gem repos.** `bin/task begin` / `bin/ship`
   assume an app checkout. Use plain worktrees and the long-form commands.
-- **Gem-repo PRs retarget to `release`**, not `accepted`.
+- **Gem-repo feature PRs target `accepted`**, like every other repo. This brief
+  said `release`; that is no longer true and would misroute the PR. Measured
+  2026-09-22: all 22 non-promotion PRs merged in studio-engine were based on
+  `accepted`, and every `release`-based PR there is the `qa-release` batch
+  promotion (`Promote accepted → release`), not a feature.
 - **Consumer CI reads the consumers' `main`**, so anything that would break a
   host needs the host forward-compatible first. This change is additive and
   self-skipping — though **not** by the `next if app.config.logger` guard this
