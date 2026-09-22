@@ -327,6 +327,17 @@ def select_reviewers(slug)
     raise "reviewer-select REFUSED to pick reviewers for #{slug} (unknown builder — self-review not ruled out):\n" \
           "#{[err, out].join("\n").strip}"
   end
+  # Exit 10 is reviewer-select SKIPPING: a DIFFERENT live instance already holds this
+  # task's review claim. Seating a second pair here IS the two-primaries bug — two
+  # primaries reaching opposite verdicts on one PR, spending one bounce between them,
+  # one holding merge-ready against a tree the other already sent back. Name it as the
+  # skip it is; a generic "failed" reads as something to retry, and this is not — the
+  # move is another task. Its stderr names the holder.
+  if status&.exitstatus == 10
+    raise "reviewer-select SKIPPED #{slug} — another live session already holds this review. " \
+          "Do NOT review it here; take the next reviewable task instead " \
+          "(bin/task claim-next-review):\n#{[err, out].join("\n").strip}"
+  end
   unless status&.success?
     raise "reviewer-select failed for #{slug}: #{[err, out].join(" ").strip}"
   end
