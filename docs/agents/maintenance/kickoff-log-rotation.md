@@ -194,15 +194,15 @@ Gem-repo specifics — studio-engine does NOT behave like an app:
 
 - **The fast lane does not work for gem repos.** `bin/task begin` / `bin/ship`
   assume an app checkout. Use plain worktrees and the long-form commands.
-- **Gem-repo feature PRs target `accepted`**, like every other repo. This brief
-  said `release`; that was true when it was written and is false now, so
-  following it would misroute the PR. The authority is LOCAL, not a PR census:
-  `bin/pr-review`'s `ACCEPTED_BRANCH` and `bin/lib/task_pr_set.rb`'s
-  `LANDING_BASE` both name `accepted`, and review merges every feat PR there in
-  every repo. Do not re-derive the rule from a recent window of PRs — measured
-  2026-09-22 across all 346 studio-engine PRs, #1-#7 were based on `main` and
-  nine merged FEATURE PRs went to `release` (#8 through #67, the last on
-  2026-07-30). Every non-promotion PR since #67 is based on `accepted`.
+- **Gem-repo feature PRs target `accepted`**, like every other repo. This
+  brief said `release`, which is false now and would misroute the PR. The
+  authority is LOCAL, not a PR census: `bin/pr-review`'s `ACCEPTED_BRANCH`
+  and `bin/lib/task_pr_set.rb`'s `LANDING_BASE` both name `accepted`, and
+  review merges every feat PR there in every repo. Do not re-derive the
+  rule from a recent window of PRs — measured 2026-09-22 across all 346
+  studio-engine PRs, #1-#7 were based on `main` and nine merged FEATURE
+  PRs went to `release` (#8 through #67, the last on 2026-07-30). Every
+  non-promotion PR since #67 is based on `accepted`.
 - **Consumer CI reads the consumers' `main`**, so anything that would break a
   host needs the host forward-compatible first. This change is additive and
   self-skipping — though **not** by the `next if app.config.logger` guard this
