@@ -51,8 +51,23 @@ before you push:
 - A pure typo or doc zap may skip the test, but the recording note must say so
   explicitly: `no-test: copy-only, no behavior change`.
 
-A zap whose check **fails** is dead on arrival: revert it and escalate (see the
-guard below). Never push a zap with a red check to "fix forward."
+**Baseline before you believe a red.** A check that fails on a throwaway desk
+proves the THROWAWAY is red, not that your zap made it red — a fresh worktree
+starts without the untracked files the suite needs (§ The three seams). So
+before you act on a failure, run the SAME command on a tree you know is clean
+at the SAME SHA: the builder's desk, or the throwaway itself before you edited
+it. A failure that is also red on the baseline is the tree's, and you fix the
+tree; only a failure that is GREEN on the baseline is your zap's.
+
+A zap whose check fails **on that comparison** is dead on arrival: revert it and
+escalate (see the guard below). Never push a zap with a red check to "fix
+forward."
+
+This is not ceremony. On 2026-09-22 a reviewer ran the documented recipe against
+turf-monster PR #807 and got 14 failures and 9 errors on a zap that was
+correct — the throwaway was simply missing a gitignored stylesheet. Read
+literally, the paragraph above says to revert it. What stopped that was one
+baseline run on the builder's desk at the same SHA, which came back green.
 
 ## The three seams
 
@@ -73,14 +88,17 @@ reviewer's mutation pass, for the same reason in reverse: a mutation is a write,
 and a write into an occupied desk corrupts whatever else is reading it (see
 [The Desk Writer Convention](worktrees.md#the-desk-writer-convention)).
 
-**Cut it under `.worktrees/`, and carry `.env.test.local` across.** Both halves
-are load-bearing the moment your zap runs a test tier:
+**Cut it under `.worktrees/`, carry `.env.test.local` across, and build the
+repo's gitignored artifacts.** All three are load-bearing the moment your zap
+runs a test tier:
 
 ```bash
 REPO="$(dirname "$(cd "$(git rev-parse --git-common-dir)" && pwd)")"   # the PRIMARY checkout, from anywhere
 ZAP="$REPO/.worktrees/zap-<slug>"
 git worktree add "$ZAP" --detach <base>
-cp <desk>/.env.test.local "$ZAP"/     # or: bin/agent-worktree new <app> zap-<slug>
+cp <desk>/.env.test.local "$ZAP"/       # 1 of 2 untracked classes: the test-DB env
+(cd "$ZAP" && bin/rails test:prepare)   # 2 of 2: the gitignored build output (Rails apps)
+# or, instead of both lines: bin/agent-worktree new <app> zap-<slug>
 ```
 
 `.env.test.local` is **untracked**, so no `git worktree add` carries it. Without
@@ -99,6 +117,46 @@ From a desk — the builder seat — it resolves to a sibling *inside* `.worktre
 where the guard does fire. Cutting under `.worktrees/` deliberately stops the
 answer depending on where you happened to be standing: the tree is refused by
 name, with the missing file called out.
+
+**`.env.test.local` is one of TWO classes of untracked file a worktree cannot
+carry**, and the second is the repo's **gitignored build output**. `git
+worktree add` copies what git TRACKS, so every artifact a build step produces
+is simply absent — and the suite that reads one fails in a way no amount of
+re-reading your diff explains.
+
+**Do not enumerate the artifacts — run the repo's own prepare step.** An
+enumerated list rots the first time a new gitignored artifact appears; the
+prepare hook does not. For the Rails apps that step is `bin/rails test:prepare`,
+which `tailwindcss-rails` enhances with `tailwindcss:build` so it writes
+`app/assets/builds/tailwind.css` — the path both the hub and turf-monster ignore
+as `/app/assets/builds/*`. It is the same call
+`bin/agent-worktree#prepare_test_env` makes for a real desk, which is exactly
+why a desk cut with `bin/agent-worktree new` never shows this and a hand-cut
+throwaway always does. Measured 2026-09-22, on throwaways cut by the recipe
+above:
+
+| Repo | Bare throwaway | After `bin/rails test:prepare` |
+|---|---|---|
+| `mcritchie-studio` | `test/integration/smooth_load_layout_test.rb` → 1 error: `The asset "tailwind.css" is not present in the asset pipeline` | 0 failures; build took 515ms |
+| `turf-monster` | `test/views/violet_text_contrast_test.rb` → 8 failures of 11 runs: `app/assets/builds/tailwind.css is missing` | 0 failures; build took 430ms |
+
+**A prepared database is not a prepared tree.** In the turf-monster cell above
+`db:test:prepare` had already run and `app/assets/builds/` still held nothing
+but `.keep`: `tailwindcss-rails` enhances `test:prepare` and never
+`db:test:prepare`, an asymmetry pinned by
+`test/lib/tasks/test_prepare_asset_hook_test.rb`. Copying the env file and
+preparing the DB gets you neither the stylesheet nor a warning about it.
+
+**The repos differ — run yours, do not copy this line.** `rolio` TRACKS the
+hand-authored styles and script under `public/assets/` and has no build step
+at all.
+`turf-vault`'s two Node lanes — `npm run check:doc-op-refs` and `npm run
+test:scripts`, the ones its `bin/release-check` runs first — passed **171 tests
+with `node_modules` absent** on a fresh detached worktree (measured 2026-09-22),
+because they use node builtins only; its Rust lanes rebuild `target/`
+themselves, slowly and greenly. So the RULE is general — a fresh checkout of any
+kind lacks every gitignored artifact — while the STEP is per-repo, and the
+baseline run in § The test rule is what tells you which you are looking at.
 
 **Name yourself on a zap you make from someone else's seat.** A desk carries the
 git identity of the soul who claimed it (see
@@ -124,6 +182,7 @@ ZAP="$(dirname "$(cd "$(git rev-parse --git-common-dir)" && pwd)")/.worktrees/za
 git worktree add "$ZAP" --detach HEAD          # throwaway desk off your feat head
 cp .env.test.local "$ZAP"/                     # REQUIRED before any test tier
 cd "$ZAP"
+bin/rails test:prepare                         # AND the gitignored build output
 # …fix, then:
 git add -p
 git commit -m "zap: <what was broken, one line>"
@@ -161,6 +220,7 @@ ZAP="$(dirname "$(cd "$(git rev-parse --git-common-dir)" && pwd)")/.worktrees/za
 git worktree add "$ZAP" --detach FETCH_HEAD           # off the PR head you fetched
 cp <desk>/.env.test.local "$ZAP"/                     # REQUIRED before any test tier
 cd "$ZAP"
+bin/rails test:prepare                                # AND the gitignored build output
 BASE=$(git rev-parse HEAD)                            # the head you zap FROM — pin the lease to it
 # ...one bounded fix...
 # Name the ZAPPING soul (on a review zap, the reviewer), not the builder's stamp this throwaway may have inherited:
@@ -466,9 +526,10 @@ ZAP="$(dirname "$(cd "$(git rev-parse --git-common-dir)" && pwd)")/.worktrees/za
 git worktree add "$ZAP" --detach origin/accepted   # throwaway desk
 cd "$ZAP"
 # Running a test tier here? This throwaway has NO desk to copy .env.test.local
-# from, and under .worktrees/ desk_guard refuses that cert lane by name — which
-# is the right failure, but it leaves you holding a refusal. Provision a real
-# desk instead:  bin/agent-worktree new <app> zap-<slug>
+# from and no built assets either, and under .worktrees/ desk_guard refuses that
+# cert lane by name — which is the right failure, but it leaves you holding a
+# refusal. Provision a real desk instead, which does BOTH for you:
+#   bin/agent-worktree new <app> zap-<slug>
 # …fix, then:
 git add -p
 git -c user.name="<Soul>" -c user.email=<soul>@mcritchie.studio \
