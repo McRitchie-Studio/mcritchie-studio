@@ -122,6 +122,40 @@ class Nflverse::SeedPlayersTest < ActiveSupport::TestCase
     assert_equal 1, service.stats[:athletes_updated]
   end
 
+  # `ordered` sorted on gsis_id alone, so two rows with a blank GSIS fell
+  # through to the CSV index — file order deciding which namesake keeps the
+  # clean slug. It now sorts on the whole identifier priority.
+  test "rows with a blank gsis are ordered by their next identifier, not by csv position" do
+    service = Nflverse::SeedPlayers.new(csv_body: csv_for([]), upload_headshots: false)
+    rows = [
+      { "gsis_id" => "", "espn_id" => "4430737", "marker" => "late-espn" },
+      { "gsis_id" => "", "espn_id" => "4262921", "marker" => "early-espn" },
+      { "gsis_id" => "00-0036322", "espn_id" => "1", "marker" => "has-gsis" },
+      { "gsis_id" => "", "espn_id" => "", "pff_id" => "7", "marker" => "pff-only" },
+      { "gsis_id" => "", "espn_id" => "", "marker" => "no-ids" }
+    ]
+
+    order = service.send(:ordered, rows).map { |r| r["marker"] }
+
+    assert_equal %w[has-gsis early-espn late-espn pff-only no-ids], order
+    assert_equal order, service.send(:ordered, rows.reverse).map { |r| r["marker"] },
+                 "the ingest order still depends on how the feed listed the rows"
+  end
+
+  test "a conflicting secondary identity refuses name-based adoption" do
+    service = Nflverse::SeedPlayers.new(csv_body: csv_for([]), upload_headshots: false)
+    existing = Athlete.new(espn_id: "111", pff_id: 222)
+
+    matching = { gsis_id: nil, espn_id: "111", pff_id: nil, otc_id: nil, pfr_id: nil,
+                 nflverse_id: nil }
+    conflicting = matching.merge(espn_id: "333")
+
+    assert service.send(:adoptable_name_match?, existing, matching)
+    assert_not service.send(:adoptable_name_match?, existing, conflicting)
+    assert service.send(:adoptable_name_match?, Athlete.new, conflicting),
+           "an unidentified hand-entered athlete should still be adopted"
+  end
+
   test "prefers pff_position over generic position (3-4 OLB → EDGE)" do
     # nflverse generic position = "OLB" → NFLVERSE_MAP collapses to "LB",
     # but pff_position = "ED" disambiguates as edge rusher (T.J. Watt case)
