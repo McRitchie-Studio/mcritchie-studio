@@ -84,9 +84,21 @@ class SessionPreflightShapeNoteTest < Minitest::Test
                  "which waives it. Dropping it trades one wrong briefing for the opposite one.\n#{output}")
 
     assert_match(/green[^.]{0,30}\bCI\b/i, output,
-                 "the note grants the fast route without its CONDITION. A fast cert satisfies this gate only " \
-                 "ALONGSIDE A SETTLED GREEN CI — the review gate-zero is an allow-list, so a pending, red or " \
-                 "unreadable CI refuses and a FULL cert becomes the only stand-in.\n#{output}")
+                 "the note grants the fast route without its CONDITION. A fast cert satisfies this gate " \
+                 "ALONGSIDE A SETTLED GREEN CI, which is what the REVIEW gate-zero requires — it is an " \
+                 "allow-list, so red, pending and unreadable all refuse there.\n#{output}")
+
+    # The other half of the same rule, and the half this note is read at. The
+    # builder's own run credits that fast cert PROVISIONALLY on a pending CI
+    # (bin/dor-check:2052, route `fast-provisional` at :3636 — the one branch
+    # testing !review_role), so a note that stops at the green sends a builder to
+    # a suite the gate has already waved through. Measured at 91e634d3: fast cert
+    # only + pending CI = DoR MET, exit 0, for the builder.
+    assert_match(/provisional/i, output,
+                 "the note states the green condition but not the ROLE split, which is the half a BUILDER " \
+                 "needs: at submit a fresh fast cert is credited PROVISIONALLY while CI is still pending, " \
+                 "so a pending CI owes no local run. Stopping at the green is how the correction to the " \
+                 "over-strict wording reproduced its cost one cell over.\n#{output}")
   end
 
   # RESTRAINT: the note is scoped to the shape that earns it. A shape whose

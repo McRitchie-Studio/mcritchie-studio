@@ -297,11 +297,57 @@ class ZapControlLaneDocsTest < Minitest::Test
 
       refute_empty qualifying,
                    "#{rel}: grants the fast route for this gate without naming its CONDITION in the " \
-                   "same sentence. A fast cert satisfies the cert gate only ALONGSIDE A SETTLED GREEN " \
-                   "CI (bin/dor-check:44-48; the refusal at :2055 states the same conjunct from the " \
-                   "other side). \"A fast cert is enough\" is as wrong as \"it owes the full suite\" — " \
-                   "it just fails at the review gate instead of on the clock, because gate-zero is an " \
-                   "allow-list and a pending or unreadable CI leaves a FULL cert as the only stand-in"
+                   "same sentence. A fast cert satisfies the cert gate ALONGSIDE A SETTLED GREEN CI " \
+                   "(bin/dor-check:44-47; the refusal at :2055 states the same conjunct from the other " \
+                   "side). Say the green — but do NOT say it is the whole rule: the condition that " \
+                   "differs between the lanes is the ROLE. Review's gate-zero takes only the settled " \
+                   "green (:2050); the BUILDER also gets that fast cert credited PROVISIONALLY while CI " \
+                   "is pending or unreported on an OPEN PR (:2052, the `fast-provisional` route at " \
+                   ":3636 — the one branch testing !review_role)"
+    end
+  end
+
+  # THE ANTI-PERMISSIVE CLAUSE IS ITS OWN DEFECT, and this exists because the
+  # first correction of the over-strict wording shipped one (review of PR 1522,
+  # 2026-09-22). Refuting "test-only owes the full suite" invites the opposite
+  # overshoot — naming the LOCAL full suite as what to reach for when CI is not
+  # green — and that is false in the cell that costs the most.
+  #
+  # MEASURED at 91e634d3 against a test-only fixture carrying a real
+  # [fast-cert@<tree>], both roles, via DOR_CHECK_SUITE_EVIDENCE + DOR_CHECK_CI_STATUS:
+  #
+  #   evidence        CI         builder              review
+  #   fast cert only  green      met                  met
+  #   fast cert only  PENDING    MET (exit 0)         not met
+  #   fast cert only  none       MET (exit 0)         not met
+  #   fast cert only  red        not met              not met
+  #   FULL cert       RED        NOT MET (exit 1)     —
+  #
+  # So a local full suite is the answer in exactly ONE cell — an UNREADABLE
+  # verdict. On PENDING the builder is already satisfied by the fast cert
+  # (bin/dor-check:3636), so a full run there is the 11,004-test waste this file
+  # exists to prevent; and on RED it does not help at all, because red is fixed
+  # by fixing CI. This asserts the NEGATIVE only — it constrains nothing about how
+  # a surface phrases the provisional credit, it just refuses the one claim that
+  # sends a builder to the suite when the gate has already passed.
+  LOCAL_FULL_SUITE = /local full[-\s]?suite|full[-\s]?suite\s+(?:cert|run)|certif\w*\s+(?:locally|in full)/i
+  PENDING_CELL     = /\bpending\b/i
+
+  def test_no_surface_offers_the_local_full_suite_for_a_pending_ci
+    FAST_OR_FULL_SURFACES.each do |rel|
+      offenders = flat(rel).split(/(?<=[.!?])\s+/).select do |sentence|
+        sentence.match?(LOCAL_FULL_SUITE) && sentence.match?(PENDING_CELL)
+      end
+
+      assert_empty offenders,
+                   "#{rel}: names the LOCAL full suite in the same sentence as a PENDING CI. At submit a " \
+                   "fresh fast cert is ALREADY credited provisionally on a pending CI " \
+                   "(bin/dor-check:3636, route `fast-provisional`), so the gate has passed and the local " \
+                   "run buys nothing — that is the same waste as the over-strict wording this file " \
+                   "refutes, one cell over. The local full suite is for an UNREADABLE verdict; a RED CI " \
+                   "is fixed by fixing CI, not by certifying locally (a FULL cert against a red CI is " \
+                   "NOT MET, exit 1). If you are describing this defect rather than committing it, keep " \
+                   "the two clauses in separate sentences."
     end
   end
 end

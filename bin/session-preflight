@@ -677,13 +677,21 @@ end
       # refuses it anywhere in this file, so quoting it to warn about it reddens the
       # suite.) `full_suite_gate: true` means NOT EXEMPT, and dor-check's route
       # ladder has no test-only branch: the fast route plus a SETTLED GREEN CI
-      # satisfies it here exactly as for a feature. Say the condition, not just the
-      # permission — without the green, the fast cert stops standing in.
+      # satisfies it here exactly as for a feature. Say the condition, and say which
+      # condition it is — the ROLE, not the green. Review's gate-zero takes only the
+      # settled green (bin/dor-check:2050); the BUILDER's submit-side run also credits
+      # a fresh fast cert PROVISIONALLY while CI is pending or unreported on an OPEN PR
+      # (:2052, route `fast-provisional` at :3636, the one branch testing !review_role).
+      # So "without the green the fast cert stops standing in" is true for review and
+      # FALSE here, at submit — and this line is read at submit. The local full suite is
+      # for an UNREADABLE verdict; it does not unblock a RED CI in either role.
       puts "  claimable ONLY on a diff dor-check OBSERVES to be 100% test code (test/, tests/, e2e/) — " \
-           "one non-test file and the claim is refused; it owes the cert gate (NOT exempt, unlike docs) " \
-           "— a fresh fast cert ALONGSIDE A SETTLED GREEN CI satisfies it, and a local full suite is the " \
-           "CI-independent option for when CI is red, pending or unreadable — and the " \
-           "[control] line must name a file from the diff (does the changed test still bite?)"
+           "one non-test file and the claim is refused. It owes the cert gate (NOT exempt, unlike docs): " \
+           "a fresh fast cert ALONGSIDE A SETTLED GREEN CI satisfies it. At SUBMIT that same fast cert is " \
+           "credited PROVISIONALLY while CI is still pending, so you do not owe a local run there. The " \
+           "local full suite is the CI-independent evidence for an UNREADABLE verdict, and a RED CI is " \
+           "fixed by fixing CI. The [control] line must name a file from the diff (does the changed test " \
+           "still bite?)"
     end
     unless shape["required_metadata"].empty?
       puts "Required metadata: #{shape["required_metadata"].join(", ")}"

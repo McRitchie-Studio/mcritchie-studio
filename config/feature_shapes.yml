@@ -399,17 +399,33 @@ shapes:
       READ THE CONDITION, NOT JUST THE PERMISSION. `full_suite_gate: true`
       means NOT EXEMPT; it has never meant "run the full suite locally", and
       `bin/dor-check`'s route ladder has no `test-only` branch at all — the fast
-      route it takes here is the same one a feature takes, and it carries no
-      `review_role` condition, so the review lane accepts it exactly as submit
-      does (`bin/dor-check:44-48`, and the refusal at :2055 states the green-CI
-      conjunct from the other side). "A fast cert is enough" is equally wrong:
-      strip the settled green and the fast route stops satisfying this gate.
-      The LOCAL full suite is the CI-INDEPENDENT option — the one to reach for
-      when CI is red, pending or unreadable, because a fast cert does not stand
-      in then. Both halves cost real time when misread: on 2026-09-21 a builder
+      route it takes here is the same one a feature takes, and on a SETTLED
+      GREEN the review lane accepts it exactly as submit does
+      (`bin/dor-check:44-47`, and the refusal at :2055 states the green-CI
+      conjunct from the other side).
+
+      THE CONDITION THAT DIFFERS IS THE ROLE, NOT THE GREEN, and reading it the
+      other way costs a suite run. Review's gate-zero takes only the settled
+      green (:2050). The BUILDER's submit-side run ALSO credits a fresh fast
+      cert PROVISIONALLY while CI is pending or has not reported yet, once an
+      OPEN PR exists (:2052) — `fast-provisional` at :3636 is the one branch in
+      the ladder that tests `!review_role`, which is why the two lanes agree on
+      green and diverge on pending. So at submit, on a pending CI, the fast cert
+      you already hold IS the answer and a local full run buys nothing. Cite
+      :44-47 for the green conjunct and stop there: :48 opens the CI seam that
+      grants this credit, so a citation reaching it points at its own
+      counterexample.
+
+      THE LOCAL FULL SUITE IS THE CI-INDEPENDENT EVIDENCE, and the cell it is
+      FOR is an UNREADABLE verdict — the one state where it is both necessary
+      and sufficient. It does NOT unblock a RED CI in either role: red is fixed
+      by fixing CI, pushing and re-running, not by certifying locally. Every
+      wording here has cost real time when misread: on 2026-09-21 a builder
       briefed off the older, over-strict wording ran 11,004 tests for a one-file
       docs tripwire the gate never asked for, then a second 30-minute run before
-      it was killed.
+      it was killed; and the first correction of that wording erred the other
+      way, offering a local run for a CI state that already had its answer —
+      the same waste, one cell over (review, PR 1522, 2026-09-22).
 
       (3) A CONTROL. `required_evidence: [control]` — record ONE
       `[control] ...` line in checks_run that answers the question a tier list
