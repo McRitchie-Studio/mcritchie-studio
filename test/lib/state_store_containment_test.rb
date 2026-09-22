@@ -178,7 +178,10 @@ class StateStoreContainmentTest < Minitest::Test
   UNGUARDED_PATH_METHODS = {
     "bin/lib/session_markers.rb" => {
       "marker_path" => "BUILDER — private; the exported mutations (write/delete) launder it",
-      "read" => "READ — returns the marker's contents"
+      "read" => "READ — returns the marker's contents",
+      "last_signal_at" => "READ — stats the session's markers for their newest mtime to tell a " \
+                          "WORKING agent from a merely resident one (bin/lib/anchor_heartbeat.rb); " \
+                          "it opens nothing and mutates nothing"
     },
     "bin/lib/agent_api.rb" => {
       "token_cache_path" => "BUILDER — private; guarded_token_cache_path is what mutations use",

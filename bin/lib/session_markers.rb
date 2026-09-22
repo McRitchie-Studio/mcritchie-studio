@@ -293,4 +293,59 @@ module SessionMarkers
   rescue StandardError
     nil
   end
+
+  # --- Liveness: which markers prove an AGENT is working --------------------
+  #
+  # THE THROTTLES ARE NOT LIVENESS, and separating them is the whole point of doing
+  # this here rather than at the caller. bin/statusline writes `.heartbeat`,
+  # `.shift-heartbeat` and `.mascot-heal` whenever Claude Code PAINTS — so their
+  # mtimes track a TERMINAL BEING OPEN, which on this machine means "for days".
+  # lib/claim_lease.rb's abandonment gate already settled the argument from the
+  # 2026-08-13 incident, where a claim ticked 16:05:16Z → 16:06:46Z while three
+  # agents stalled behind it: "A heartbeat proves a TERMINAL IS OPEN. Nothing more."
+  #
+  # Counting them as agent liveness would rebuild that immortal lease on a timer,
+  # and it would do it INVISIBLY — a dead agent behind an open terminal would look
+  # maximally healthy, which is the one reading that must never be available.
+  #
+  # So the set is a DENY list over one known, small family of throttle suffixes
+  # rather than an allow list of "real" markers, because the population that must be
+  # excluded is bounded and named (bin/statusline writes exactly these three) while
+  # the population that counts is open — every future narration marker should count
+  # the day it is added, without anyone remembering to come back here.
+  THROTTLE_SUFFIXES = %w[.heartbeat .shift-heartbeat .mascot-heal].freeze
+
+  # The newest mtime across the markers this session emitted BY WORKING, or nil when
+  # nothing can vouch. nil is load-bearing and must never be flattened into an age:
+  # its consumer (bin/lib/anchor_heartbeat.rb) reads a number as evidence and nil as
+  # "we could not look", and only the first may ever stop a renewal.
+  #
+  # An unreadable store, a missing directory, a session that has written nothing, and
+  # a store holding ONLY throttles all answer nil — in each case the store has told
+  # us nothing about whether an agent is working.
+  def last_signal_at(session_id, projects_dir)
+    return nil if session_id.to_s.strip.empty?
+
+    prefix = marker_path(session_id, projects_dir, "")
+    dir = File.dirname(prefix)
+    stem = "#{File.basename(prefix)}."
+
+    # Dir.children + a string prefix, NOT Dir.glob. The session id is sanitised by
+    # marker_path, but +projects_dir+ is not, and a projects root containing a glob
+    # metacharacter (`[`, `*`, `?`) would make a glob silently match nothing — which
+    # this file's consumer reads as "no markers" and therefore as UNKNOWN. That is
+    # the safe direction, but it would be safe by accident and permanently blind.
+    #
+    # The in-flight sibling a write publishes is dot-prefixed INSIDE this directory
+    # (".<basename>.<pid>.tmp"), so it cannot start with the stem and is excluded by
+    # construction — see the publish note in +write+. A half-written file is not a fact.
+    File.directory?(dir) or return nil
+    Dir.children(dir)
+       .select { |name| name.start_with?(stem) }
+       .reject { |name| THROTTLE_SUFFIXES.any? { |suffix| name.end_with?(suffix) } }
+       .filter_map { |name| File.mtime(File.join(dir, name)) if File.file?(File.join(dir, name)) }
+       .max
+  rescue StandardError
+    nil
+  end
 end

@@ -78,6 +78,7 @@ require_relative "lib/agent_api"
 require_relative "lib/session_identity"
 require_relative "lib/session_markers"
 require_relative "lib/shift_renewer"
+require_relative "lib/anchor_heartbeat"
 
 class DevopsShiftCli
   OPEN_TIMEOUT = 2
@@ -235,7 +236,14 @@ class DevopsShiftCli
     pid = flags["anchor-pid"]
     start = flags["anchor-start"]
     ShiftRenewer.run(
-      alive:   -> { SessionIdentity.process_alive?(pid, start) },
+      # See bin/lib/anchor_heartbeat.rb. This lane is the barest of the four — it
+      # passes no `finished:` at all, because it protects a LANE rather than a unit
+      # of work, so before this seam the ONLY thing between a resident-but-dead
+      # holder and a 12-hour wedged lane was the process table.
+      alive:   AnchorHeartbeat.alive_check(
+        resident: -> { SessionIdentity.process_alive?(pid, start) },
+        signal:   -> { AnchorHeartbeat.signal_age(session: session_id, projects_dir: @api.projects_dir) }
+      ),
       renew:   -> { renewed?(lane) },
       sleeper: ->(seconds) { sleep(seconds) },
       clock:   -> { Time.now },
@@ -281,8 +289,8 @@ class DevopsShiftCli
   def start_renewer(sid, lane)
     anchor = anchor_process
     unless anchor
-      @out.puts("devops-shift: note — no agent process to anchor a renewer to; " \
-                "this shift lapses in ~#{lease_ttl_seconds}s unless something renews it.")
+      @out.puts("devops-shift: note — " \
+                "#{AnchorHeartbeat.unanchored_notice(subject: "shift", ttl_seconds: lease_ttl_seconds)}")
       return nil
     end
 

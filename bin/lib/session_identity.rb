@@ -108,10 +108,25 @@ module SessionIdentity
   # Is the process at +pid+ still the SAME process that was running at +start+?
   #
   # Fails toward "no" on every uncertainty — a blank/garbled start signature, a pid we
-  # cannot read, ps unavailable. The only consumer is the shift renewer, and there the
-  # safe direction is to STOP renewing: a lease that lapses early is recoverable
-  # (the lane frees, the next acquire takes it), while a renewer that keeps a lane
-  # alive on an unverifiable anchor is a phantom holder nobody can clear.
+  # cannot read, ps unavailable. Every consumer is a renewer, and there the safe
+  # direction is to STOP renewing: a lease that lapses early is recoverable (the lane
+  # frees, the next acquire takes it), while a renewer that keeps a lane alive on an
+  # unverifiable anchor is a phantom holder nobody can clear.
+  #
+  # THERE ARE FOUR CONSUMERS, NOT ONE. This said "the only consumer is the shift
+  # renewer" until 2026-09-22; the build claim (bin/task), the review claim
+  # (bin/lib/review_claim_cli.rb) and the release conductor claim
+  # (bin/lib/release_claim_cli.rb) had each since copied the same call. Worth
+  # correcting rather than deleting, because the miscount is the defect's own
+  # fingerprint: a check believed to have one caller is a check nobody re-derives
+  # when the second, third and fourth arrive.
+  #
+  # AND THIS ANSWERS ONLY HALF THE QUESTION. It proves RESIDENCY — that the process
+  # at +pid+ is the one we anchored to — and residency is not work. A `codex` that
+  # hit a usage limit stays in the process table indefinitely, and on 2026-09-22 one
+  # did, renewing a claim over an abandoned desk holding 124 uncommitted lines. The
+  # WORKING half is bin/lib/anchor_heartbeat.rb, which wraps this rather than
+  # replacing it; a caller wanting a lease decision wants that seam, not this method.
   def process_alive?(pid, start)
     return false if pid.to_i <= 0
 
