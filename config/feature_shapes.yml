@@ -386,12 +386,30 @@ shapes:
       shape every under-tested change claims, and this file's entire subject is
       what happens when a gate accepts a self-declaration.
 
-      (2) THE FULL-SUITE MERGE GATE STILL APPLIES (`full_suite_gate: true`,
-      unlike `docs`). Test code IS code: it runs, it can be broken, and a
-      test-only diff is the change most able to break the suite silently. So the
-      fingerprint-bound full-suite + rubocop evidence is required exactly as for
-      a feature. That is this shape's EXECUTED evidence, and it is the reason the
-      empty tier list costs nothing.
+      (2) THE CERT GATE STILL APPLIES (`full_suite_gate: true`, unlike `docs`).
+      Test code IS code: it runs, it can be broken, and a test-only diff is the
+      change most able to break the suite silently. So this shape is NOT EXEMPT
+      from the suite gate, and owes the same fingerprint-bound evidence a
+      feature owes — satisfied the same TWO ways, not one: a full
+      `[full-suite@<fp>]` + `[rubocop@<fp>]` cert, OR a fresh `[fast-cert@<fp>]`
+      ALONGSIDE A SETTLED GREEN GitHub CI, which is what carries the full suite
+      in that route. That is this shape's EXECUTED evidence, and it is the
+      reason the empty tier list costs nothing.
+
+      READ THE CONDITION, NOT JUST THE PERMISSION. `full_suite_gate: true`
+      means NOT EXEMPT; it has never meant "run the full suite locally", and
+      `bin/dor-check`'s route ladder has no `test-only` branch at all — the fast
+      route it takes here is the same one a feature takes, and it carries no
+      `review_role` condition, so the review lane accepts it exactly as submit
+      does (`bin/dor-check:44-48`, and the refusal at :2055 states the green-CI
+      conjunct from the other side). "A fast cert is enough" is equally wrong:
+      strip the settled green and the fast route stops satisfying this gate.
+      The LOCAL full suite is the CI-INDEPENDENT option — the one to reach for
+      when CI is red, pending or unreadable, because a fast cert does not stand
+      in then. Both halves cost real time when misread: on 2026-09-21 a builder
+      briefed off the older, over-strict wording ran 11,004 tests for a one-file
+      docs tripwire the gate never asked for, then a second 30-minute run before
+      it was killed.
 
       (3) A CONTROL. `required_evidence: [control]` — record ONE
       `[control] ...` line in checks_run that answers the question a tier list

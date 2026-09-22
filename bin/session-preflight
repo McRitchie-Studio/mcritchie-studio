@@ -670,8 +670,19 @@ end
     owed = tiers.empty? && evidence.any? ? "no tiers; evidence: #{evidence.join(', ')}" : tiers.join(", ")
     puts "Required tiers: #{shape["shape"] || "none"} => #{owed}"
     if shape["claimable_when"] == "test_only_diff"
+      # The older wording said this shape owed the full suite outright. That is
+      # falsified, and this line is where it cost the most, because it prints at the
+      # moment a builder decides what to run. (The falsified phrase is described
+      # rather than quoted here on purpose: test/docs/zap_control_lane_docs_test.rb
+      # refuses it anywhere in this file, so quoting it to warn about it reddens the
+      # suite.) `full_suite_gate: true` means NOT EXEMPT, and dor-check's route
+      # ladder has no test-only branch: the fast route plus a SETTLED GREEN CI
+      # satisfies it here exactly as for a feature. Say the condition, not just the
+      # permission — without the green, the fast cert stops standing in.
       puts "  claimable ONLY on a diff dor-check OBSERVES to be 100% test code (test/, tests/, e2e/) — " \
-           "one non-test file and the claim is refused; it still owes the full-suite cert, and the " \
+           "one non-test file and the claim is refused; it owes the cert gate (NOT exempt, unlike docs) " \
+           "— a fresh fast cert ALONGSIDE A SETTLED GREEN CI satisfies it, and a local full suite is the " \
+           "CI-independent option for when CI is red, pending or unreadable — and the " \
            "[control] line must name a file from the diff (does the changed test still bite?)"
     end
     unless shape["required_metadata"].empty?

@@ -226,21 +226,66 @@ class ZapControlLaneDocsTest < Minitest::Test
                  "docs no longer declares full_suite_gate: false — it is the other half of the same contrast"
   end
 
-  # The prose half. The falsified wording, refuted in every agent doc that carried it.
-  # This constrains nothing about how the correction is phrased.
-  def test_no_agent_doc_says_test_only_owes_the_full_suite_cert
-    %w[
-      docs/agents/claude.md
-      docs/agents/index.md
-      docs/agents/system/devops-cycle-design.md
-      docs/agents/modules/building-sop.md
-    ].each do |rel|
-      refute_match(/owes the\s+full-suite cert/i, source(rel),
+  # EVERY SURFACE THAT STATES THE RULE — and this list IS the guard's scope.
+  # Its first version named four agent docs, which is what a doc-shaped correction
+  # could reach. Two ENFORCEMENT surfaces state the same rule and were not on it:
+  # `config/feature_shapes.yml`, the shape contract itself, and
+  # `bin/session-preflight`, which prints this sentence at the moment a builder is
+  # deciding what to run — the costliest place to be wrong, and read by no test at
+  # all until 2026-09-22.
+  FAST_OR_FULL_SURFACES = %w[
+    docs/agents/claude.md
+    docs/agents/index.md
+    docs/agents/system/devops-cycle-design.md
+    docs/agents/modules/building-sop.md
+    config/feature_shapes.yml
+    bin/session-preflight
+  ].freeze
+
+  # WHY COLLAPSED. Every file here wraps its prose, so a literal-space regex reads
+  # clean over text that is plainly present — the phrase simply straddles a line
+  # break. The previous guard matched `/owes the\s+full-suite cert/i`, which pins
+  # ONE of the two gaps and leaves "owes<NEWLINE>the" through. A repo-wide scan on
+  # collapsed text is what found the `bin/session-preflight` site.
+  def flat(rel) = source(rel).gsub(/\s+/, " ")
+
+  # The prose half. The falsified wording, refuted on every surface that carried
+  # it. This constrains nothing about how the correction is phrased.
+  def test_no_surface_says_test_only_owes_the_full_suite_outright
+    FAST_OR_FULL_SURFACES.each do |rel|
+      body = flat(rel)
+
+      refute_match(/owes\s+the\s+full-?suite\s+cert/i, body,
                    "#{rel}: still says test-only \"owes the full-suite cert\". Measured on the ladder above, " \
                    "the gate accepts a fast cert plus a green CI for this shape exactly as for a feature. A " \
                    "builder who read this on 2026-09-21 ran 11,004 tests the gate never asked for — say " \
                    "\"owes the cert gate\" (not exempt), or name the local full suite as the CI-independent " \
                    "option it is")
+
+      # The same claim wearing the shape contract's own words. `full_suite_gate: true`
+      # is NOT EXEMPT; rendering it as "the full-suite evidence is required exactly as
+      # for a feature" reads as "run it locally" to everyone who stops before the
+      # trailing clause, which is how this file briefed the 11,004-test run.
+      refute_match(/full-?suite[^.]{0,80}required\s+exactly\s+as\s+for\s+a\s+feature/i, body,
+                   "#{rel}: states the cert gate as full-suite evidence \"required exactly as for a " \
+                   "feature\". What a feature owes is the GATE, satisfied by a full cert OR a fast cert " \
+                   "alongside a settled green CI — say which, because the lead clause is where readers stop")
+    end
+  end
+
+  # THE OPPOSITE MISREADING, which costs a merge rather than a suite. Strip the
+  # green-CI conjunct and "a fast cert satisfies it" becomes false exactly when it
+  # matters — the review gate-zero is an allow-list, so a pending, red or unreadable
+  # CI refuses and only a FULL cert stands in. A surface that grants the fast route
+  # without naming its condition has traded one wrong brief for another.
+  def test_every_surface_states_the_green_ci_condition
+    FAST_OR_FULL_SURFACES.each do |rel|
+      assert_match(/fast[-\s]?cert[^.]{0,160}green[^.]{0,25}CI|green[^.]{0,25}CI[^.]{0,160}fast[-\s]?cert/i,
+                   flat(rel),
+                   "#{rel}: names the fast route for test-only without its CONDITION. The fast cert " \
+                   "satisfies the cert gate only ALONGSIDE A SETTLED GREEN CI (bin/dor-check:44-48, and " \
+                   "the refusal at :2055 from the other side). \"A fast cert is enough\" is as wrong as " \
+                   "\"it owes the full suite\", and it fails at the review gate rather than on the clock")
     end
   end
 end
