@@ -78,7 +78,12 @@
 #
 # BUSY souls (agents mid-build / mid-review on
 # OTHER in-flight tasks) are excluded from the LIGHT seat via `--busy a,b,c` and/or
-# `--busy-auto` (which reads the board's stage=building tasks). Both the author and
+# `--busy-auto` (which reads the board's stage=building tasks). NEITHER IS ON BY
+# DEFAULT, so a bare run carries an empty busy set and logs `busy=-` — "nobody
+# asked", not "the bench is idle". And `--busy-auto` covers only the mid-BUILD
+# half: a soul mid-REVIEW sits on a `submitted` task whose reviewer lives in
+# TaskReviewClaim.holder_agent, which the tasks API does not serialize, so that
+# half is reachable only by hand-passing `--busy <slug>`. Both the author and
 # the busy drops YIELD rather than starve: if the exclusions would leave too few
 # light candidates, the least-bad ones are KEPT back so ReviewerSelector always
 # returns a pair (flagged in the audit). The two kept cases are NOT equivalent here:

@@ -15,6 +15,14 @@
 # (config/devops_vocabulary.yml → reviewer_roles) via .primary_role / .light_role
 # so the role this stamps can't drift from the SOP + the docs.
 #
+# THE TWO SEATS ARE FILLED BY DIFFERENT MECHANISMS, and each seat now SAYS which
+# one filled it (#seat's "basis", SEAT_BASIS_* below). The primary is seated by
+# ROLE and is neither ranked nor rolled; the light is ranked on fit and rolled only
+# to break a tie. So a light out-fitting the primary — Alex at fit 2 beside Carl at
+# fit 0 on a docs PR — is the policy working, not an ordering defect. Fit reaches
+# the PRIMARY seat only when Carl yields, and then #pair draws both seats from the
+# one ranked list (measured 2026-09-22: Alex takes primary at fit 2 there).
+#
 # The tiebreak RNG is seeded per-task by default (see #seed_for), so the LIGHT
 # pick is REPRODUCIBLE across processes: `bin/reviewer-select` (.decision) and the
 # avatars recorder in Task (.select) compute it independently, and the seed makes
