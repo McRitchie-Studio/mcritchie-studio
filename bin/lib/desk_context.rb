@@ -108,8 +108,13 @@ module DeskContext
   # AND `session_id` IS NOT UNIQUE PER AGENT EITHER — measured 2026-09-01 during
   # this file's own review, and it is the same negative result one field over.
   # Every subagent in a Claude Code fan-out INHERITS the parent's
-  # CLAUDE_CODE_SESSION_ID; the only thing distinguishing a child is the boolean
-  # CLAUDE_CODE_CHILD_SESSION. So one recorded session id can name an orchestrator
+  # CLAUDE_CODE_SESSION_ID, and NOTHING HERE DISTINGUISHES A CHILD — this line used
+  # to name CLAUDE_CODE_CHILD_SESSION as the discriminator and that is FALSE,
+  # retracted 2026-09-22. Measured twice, independently, by running one probe from an
+  # agent and the same probe from a real subagent of it: that variable reads "1" on
+  # BOTH, as do the session id, CLAUDE_PID, the messaging socket, the nonce and
+  # agent_process. A subagent is not an OS process. See
+  # bin/lib/review_worker_pulse.rb, which is the seam built for that negative result. So one recorded session id can name an orchestrator
   # and each of its subagents at once. `parent_session_id` was meant to fold those
   # into one operator, and under Claude Code it never fires: none of the four env
   # vars parent_session_id reads is set, and the marker on disk carries null. The
