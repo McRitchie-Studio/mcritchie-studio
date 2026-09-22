@@ -347,11 +347,31 @@ DECLARED gate as the whole mapped lane, skipping the Rails prepare lane that doe
 apply. Three repos declare one in `config/release_repos.yml`, and all three name the SAME
 thing — `bin/release-check`, a script that repo owns: **studio-engine** and
 **solana-studio** (under `gems:`, registered 2026-08-31) and **turf-vault** (under
-`apps:`, declared 2026-09-14 and repointed at its own script the same day; it runs
-that repo's four CI lanes, ~1s warm, 61 `node:test` cases among them). A registry row
+`apps:`, declared 2026-09-14 and repointed at its own script the same day). A registry row
 CAN declare a raw command chain instead, and turf-vault did for a day — but a chain
 in the hub is a copy of another repo's CI that drifts from it, so it is the unblock
 path, not the shape to copy.
+
+**Budget turf-vault's lane at FIVE lanes and 76s cold — not four and "~1s".**
+Measured 2026-09-22 against `origin/accepted` at `09cdfb3`: two Node lanes, then
+`cargo check`, `cargo clippy` and `cargo test`. A fresh tree pays **76s** (empty
+`target/`, crate cache warm); **1-2s** is the RE-RUN, and quoting only the warm
+number is what makes an honest lane look broken. The suite is **171 `node:test`
+cases** and **60 Rust tests**. But 171 is not 171 executed assertions: with no
+`node_modules`, three self-skip on absent runtime deps and the summary reads
+`pass 168 / skipped 3` — and those three print as `ok <n> … # SKIP`, which is
+pass-SHAPED, so a scan for `not ok` sees nothing wrong. Install the deps and it
+reads `pass 171 / skipped 0`. **Re-derive these figures; never re-copy them:**
+`bin/release-check --list` prints the lane table, and `npm run test:scripts` and
+`cargo test --workspace --locked` print their own totals. A count here with no
+command beside it is stale by default — this one was.
+
+**Read turf-vault from `origin/accepted`, never from the local primary.** On
+2026-09-22 that primary sat at `66ffff1` with no `bin/` directory at all, while
+`origin/accepted` carried the script at `09cdfb3` — so `ls bin/` "proves" the lane
+does not exist, contradicting the paragraph below. The read that answers it:
+`git -C /Users/alex/projects/turf-vault fetch origin && git show
+origin/accepted:bin/release-check`.
 
 **Never record a "no tests" skip for turf-vault.** It has a suite and now has a lane
 to run it. Until 2026-09-14 it had the suite but no lane, because this branch keyed on

@@ -68,8 +68,10 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
 
 2. **Summon your LIGHT specialist — your call, one soul.** You are the standing
    primary; pick the domain specialist whose eyes the change most wants and summon
-   **one** light. `bin/reviewer-select <task>` previews the pair (you as primary +
-   the domain light) — use it to choose, or override with your own domain judgment:
+   **one** light. `bin/reviewer-select <task> --no-record` previews the pair (you as
+   primary + the domain light) — use it to choose, or override with your own domain
+   judgment. Keep `--no-record` on a preview: a bare run RECORDS the pair, and
+   recording takes the task's review claim:
 
    ```bash
    bin/reviewer-select <task> --no-record        # preview the domain light (Shannon / Jasper / Steffon / Alex)
