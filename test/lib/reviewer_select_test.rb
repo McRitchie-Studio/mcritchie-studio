@@ -130,6 +130,56 @@ class ReviewerSelectCliTest < Minitest::Test
     assert_match(/tiebreak \(auditable/, out)
   end
 
+  # --- the seat line states the mechanism that seated the soul, not an inference ---
+  # (selector-picks-fit-zero-light). Driven from the exact measured payload: a docs
+  # shape with one soul on the needed domains (alex, fit 2) and everyone else at 0.
+
+  def test_the_standing_primary_seat_never_claims_a_tiebreak
+    out, code = select({ "shape" => "docs", "built_by" => "steffon" })
+    assert_equal 0, code, out
+
+    primary = out.lines.find { |l| l.start_with?("PRIMARY") }
+    light = out.lines.find { |l| l.start_with?("LIGHT") }
+    refute_nil primary, "expected a PRIMARY seat line:\n#{out}"
+    refute_nil light, "expected a LIGHT seat line:\n#{out}"
+
+    assert_match(/PRIMARY\s+carl/, primary, "Carl is the standing primary on a docs PR")
+    assert_match(/standing primary — seated by role/, primary,
+      "the seat says WHY it was seated — the role, which is the mechanism #pair actually used")
+    refute_match(/tiebreak/, primary,
+      "he is never ranked and never rolled; a tiebreak claim here read as a coin toss beating a fit-2 soul")
+    refute_match(/roll \d/, primary, "and no roll is printed for a seat that was never rolled")
+
+    assert_match(/LIGHT\s+alex/, light, "the docs soul takes the light seat")
+    assert_match(/fit 2/, light, "the seat states its fit score")
+    assert_match(/top domain fit/, light, "and the mechanism that won it")
+  end
+
+  def test_the_decision_json_carries_each_seats_basis
+    out, code = select({ "shape" => "docs", "built_by" => "steffon" }, "--json")
+    assert_equal 0, code, out
+
+    decision = JSON.parse(out.lines.reverse.find { |l| l.strip.start_with?("{") })
+    primary, light = decision["reviewers"]
+    assert_equal "standing_primary", primary["basis"], "a machine reader gets the mechanism too"
+    assert_nil primary["roll"], "a seat that was never rolled carries no roll, not a 0.0 placeholder"
+    assert_equal "domain_fit", light["basis"]
+    assert_equal 2, light["fit"]
+  end
+
+  def test_a_mixed_fit_pool_ranks_into_the_primary_seat_when_carl_yields
+    # Same payload, one variable flipped: Carl is the author, so he yields and BOTH
+    # seats come from the ranked list. The docs soul then takes PRIMARY at fit 2 —
+    # which is what proves the fit-0 primary above is policy, not a blind seat.
+    out, code = select({ "shape" => "docs", "built_by" => "carl" })
+    assert_equal 0, code, out
+
+    primary = out.lines.find { |l| l.start_with?("PRIMARY") }
+    assert_match(/PRIMARY\s+alex/, primary, "fit decides the primary seat wherever it is allowed to")
+    assert_match(/fit 2/, primary)
+    assert_match(/top domain fit/, primary, "and the seat names fit as the mechanism")
+  end
+
   def test_specialist_builder_recorded_on_the_task_is_excluded_from_the_light
     # devops.built_by is what the board JSON carries (the CLI builds an in-memory
     # task from it) — a specialist builder must drop out of the light pool.

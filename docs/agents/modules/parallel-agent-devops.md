@@ -181,8 +181,9 @@ repo** (not N per-task merges), re-stamps `merged: "release"`, and flips members
 
 ### Picking the domain light (`bin/reviewer-select`)
 
-Carl runs `bin/reviewer-select <task>` to preview **Carl (primary) + 1 LIGHT** by
-domain fit with a logged, seeded-per-task tiebreak. Three exclusions keep review
+Carl runs `bin/reviewer-select <task>` to preview **Carl (primary)**, seated by
+ROLE and never ranked, **+ 1 LIGHT** picked by domain fit with a logged,
+seeded-per-task tiebreak. Three exclusions keep review
 honest, and **none of them needs a manual flag in the common case**:
 
 - **QA owner** (the soul who QAs the assembled RC) — never a light on a PR he then
@@ -241,6 +242,40 @@ honest, and **none of them needs a manual flag in the common case**:
   and/or add **`--busy-auto`** to also exclude every agent on a `stage=building`
   task (a board query; skipped in `--file` mode and degrades to a no-op if the
   board read fails).
+  **This is the ONE exclusion that needs a flag, and `--busy-auto` covers only the
+  mid-BUILD half.** The other two drop out on their own, so a bare
+  `bin/reviewer-select <task>` carries an EMPTY busy set and logs `busy=-` —
+  which is what three runs on 2026-09-22 printed while the souls they named were
+  each holding a live review claim. `--busy-auto` would not have caught those
+  either: it queries `stage=building`, and a soul mid-REVIEW is on a `submitted`
+  task whose reviewer lives in `TaskReviewClaim.holder_agent`. That holder IS
+  readable — `GET /api/v1/tasks/<slug>/review_claim` returns it (`{"holder": {"agent":
+  "carl", "live": true, …}}`, measured against prod 2026-09-22) — but only ONE TASK
+  AT A TIME. The index serializer carries `review_in_progress`, a boolean saying
+  someone is reviewing and never WHO, so a busy set built this way costs a round
+  trip per in-review task. `--busy-auto` asks for none of it. So mid-review busy is
+  reachable today ONLY by hand-passing `--busy <slug>`. Read `busy=-` as "nobody
+  asked", never as "the bench is idle". Tracked: `busy-auto-misses-mid-review`.
+
+**Reading a seat line — the two seats are filled by DIFFERENT mechanisms.** Each
+line ends with the basis that actually seated that soul, so the fit score beside it
+is never mistaken for the reason:
+
+```text
+PRIMARY  carl       matched: -                    fit 0  (standing primary — seated by role, not scored or rolled)
+LIGHT    alex       matched: docs, documentation  fit 2  (top domain fit; roll 0.5906)
+```
+
+**A light out-fitting the primary is normal, not a defect.** Carl is seated by
+ROLE on every PR — he is never ranked against the pool and never rolled — while the
+light is the best DOMAIN FIT left after the exclusions. On a docs PR that reads
+exactly as above, and it is correct: Carl owns the deep read, Alex brings the lens.
+Fit reaches the primary seat only when Carl YIELDS (he is an author, or the named
+QA owner), and then both seats come from the one ranked list and the domain-matched
+soul takes primary. Until 2026-09-22 the primary line inferred its explanation from
+the matched list alone and printed `(no domain match — seeded tiebreak)` with a
+placeholder `roll 0.0000`, which read as a coin toss beating a 2-point match; that
+line was filed as an ordering bug and survived three rounds of evidence.
 
 **Keep-rather-than-starve:** the pool is never shrunk below a PRIMARY+LIGHT pair.
 If the builder + QA-owner + busy exclusions would leave too few candidates, the
