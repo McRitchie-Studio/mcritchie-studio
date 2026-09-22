@@ -256,7 +256,10 @@ way, do **not** start editing files until you have:
    `ui-only` · `ui+db` · `backend` · `library` · `onchain` · `onchain-vertical` ·
    `docs` · `test-only`. The last two carry no tiers; `test-only` is claimable
    ONLY on a diff dor-check observes to be 100% test code, and still owes the
-   full-suite cert plus a `[control]` line naming a file in the diff.
+   **cert gate** plus a `[control]` line naming a file in the diff. That gate is
+   the ordinary one — `full_suite_gate: true`, unlike `docs`, which waives it —
+   so **`bin/fast-check` plus a green CI satisfies it**, exactly as for a
+   feature. It does **not** mean you owe a local `bin/full-suite-check` run.
 2. **Allocated an isolated worktree** — `bin/agent-worktree new <app> <task>` —
    and worked there on an allocated port. Never edit a primary checkout.
 
