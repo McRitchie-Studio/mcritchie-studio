@@ -90,7 +90,7 @@ class SessionPreflightShapeNoteTest < Minitest::Test
 
     # The other half of the same rule, and the half this note is read at. The
     # builder's own run credits that fast cert PROVISIONALLY on a pending CI
-    # (bin/dor-check:2052, route `fast-provisional` at :3636 — the one branch
+    # (bin/dor-check#suite_evidence_error; `fast-provisional` is the one branch
     # testing !review_role), so a note that stops at the green sends a builder to
     # a suite the gate has already waved through. Measured at 91e634d3: fast cert
     # only + pending CI = DoR MET, exit 0, for the builder.

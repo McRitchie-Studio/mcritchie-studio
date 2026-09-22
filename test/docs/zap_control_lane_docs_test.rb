@@ -301,9 +301,9 @@ class ZapControlLaneDocsTest < Minitest::Test
                    "(bin/dor-check:44-47; the refusal at :2055 states the same conjunct from the other " \
                    "side). Say the green — but do NOT say it is the whole rule: the condition that " \
                    "differs between the lanes is the ROLE. Review's gate-zero takes only the settled " \
-                   "green (:2050); the BUILDER also gets that fast cert credited PROVISIONALLY while CI " \
-                   "is pending or unreported on an OPEN PR (:2052, the `fast-provisional` route at " \
-                   ":3636 — the one branch testing !review_role)"
+                   "green; the BUILDER also gets that fast cert credited PROVISIONALLY while CI " \
+                   "is pending or unreported on an OPEN PR. Both branches are worded in " \
+                   "bin/dor-check#suite_evidence_error, and `fast-provisional` is the one route testing !review_role"
     end
   end
 
@@ -325,7 +325,7 @@ class ZapControlLaneDocsTest < Minitest::Test
   #
   # So a local full suite is the answer in exactly ONE cell — an UNREADABLE
   # verdict. On PENDING the builder is already satisfied by the fast cert
-  # (bin/dor-check:3636), so a full run there is the 11,004-test waste this file
+  # (the `fast-provisional` route), so a full run there is the 11,004-test waste this file
   # exists to prevent; and on RED it does not help at all, because red is fixed
   # by fixing CI. This asserts the NEGATIVE only — it constrains nothing about how
   # a surface phrases the provisional credit, it just refuses the one claim that
@@ -342,7 +342,7 @@ class ZapControlLaneDocsTest < Minitest::Test
       assert_empty offenders,
                    "#{rel}: names the LOCAL full suite in the same sentence as a PENDING CI. At submit a " \
                    "fresh fast cert is ALREADY credited provisionally on a pending CI " \
-                   "(bin/dor-check:3636, route `fast-provisional`), so the gate has passed and the local " \
+                   "(bin/dor-check's `fast-provisional` route), so the gate has passed and the local " \
                    "run buys nothing — that is the same waste as the over-strict wording this file " \
                    "refutes, one cell over. The local full suite is for an UNREADABLE verdict; a RED CI " \
                    "is fixed by fixing CI, not by certifying locally (a FULL cert against a red CI is " \

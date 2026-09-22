@@ -405,16 +405,17 @@ shapes:
       conjunct from the other side).
 
       THE CONDITION THAT DIFFERS IS THE ROLE, NOT THE GREEN, and reading it the
-      other way costs a suite run. Review's gate-zero takes only the settled
-      green (:2050). The BUILDER's submit-side run ALSO credits a fresh fast
-      cert PROVISIONALLY while CI is pending or has not reported yet, once an
-      OPEN PR exists (:2052) — `fast-provisional` at :3636 is the one branch in
-      the ladder that tests `!review_role`, which is why the two lanes agree on
-      green and diverge on pending. So at submit, on a pending CI, the fast cert
-      you already hold IS the answer and a local full run buys nothing. Cite
-      :44-47 for the green conjunct and stop there: :48 opens the CI seam that
-      grants this credit, so a citation reaching it points at its own
-      counterexample.
+      other way costs a suite run. Both branches are worded for you in
+      `bin/dor-check#suite_evidence_error`: review's gate-zero takes only the
+      settled green, while the BUILDER's submit-side run ALSO credits a fresh
+      fast cert PROVISIONALLY while CI is pending or has not reported yet, once
+      an OPEN PR exists. The ladder's `fast-provisional` route is the one branch
+      testing `!review_role`, which is why the two lanes agree on green and
+      diverge on pending. So at submit, on a pending CI, the fast cert you
+      already hold IS the answer and a local full run buys nothing. Cite
+      :44-47 for the green conjunct and stop there — the CI-seam paragraph
+      immediately below it grants this credit, so a citation that reaches it
+      points at its own counterexample.
 
       THE LOCAL FULL SUITE IS THE CI-INDEPENDENT EVIDENCE, and the cell it is
       FOR is an UNREADABLE verdict — the one state where it is both necessary

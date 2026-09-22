@@ -678,10 +678,11 @@ end
       # suite.) `full_suite_gate: true` means NOT EXEMPT, and dor-check's route
       # ladder has no test-only branch: the fast route plus a SETTLED GREEN CI
       # satisfies it here exactly as for a feature. Say the condition, and say which
-      # condition it is — the ROLE, not the green. Review's gate-zero takes only the
-      # settled green (bin/dor-check:2050); the BUILDER's submit-side run also credits
-      # a fresh fast cert PROVISIONALLY while CI is pending or unreported on an OPEN PR
-      # (:2052, route `fast-provisional` at :3636, the one branch testing !review_role).
+      # condition it is — the ROLE, not the green. bin/dor-check#suite_evidence_error
+      # words both branches: review's gate-zero takes only the settled green, while the
+      # BUILDER's submit-side run also credits a fresh fast cert PROVISIONALLY while CI
+      # is pending or unreported on an OPEN PR — the `fast-provisional` route, the one
+      # branch in the ladder testing !review_role.
       # So "without the green the fast cert stops standing in" is true for review and
       # FALSE here, at submit — and this line is read at submit. The local full suite is
       # for an UNREADABLE verdict; it does not unblock a RED CI in either role.
