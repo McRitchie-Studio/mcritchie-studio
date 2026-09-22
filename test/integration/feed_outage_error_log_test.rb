@@ -33,10 +33,15 @@ class FeedOutageErrorLogTest < ActionDispatch::IntegrationTest
     get error_logs_path
 
     assert_response :success
-    assert_match "SocketError", response.body,
-                 "the cause has to be readable without opening a console"
-    assert_match "nflverse_players", response.body,
-                 "the badge has to name which importer went stale"
+    # PLAIN `assert`, not assert_match: minitest appends its default message to
+    # assert_match/assert_includes, so a failure here dumps the whole rendered
+    # page — measured at 421KB per failing assertion against this layout, which
+    # buries the one line a reader needs. Only plain assert/refute suppress it
+    # (docs/agents/modules/backend-discipline.md).
+    assert response.body.include?("SocketError"),
+           "the cause has to be readable on /error_logs without opening a console"
+    assert response.body.include?("nflverse_players"),
+           "the /error_logs badge has to name which importer went stale"
   end
 
   test "[integration] a feed outage reaches the admin dashboard request log" do
@@ -46,7 +51,8 @@ class FeedOutageErrorLogTest < ActionDispatch::IntegrationTest
     get admin_dashboard_path
 
     assert_response :success
-    assert_match "SocketError", response.body
+    assert response.body.include?("SocketError"),
+           "the outage has to reach the dashboard panel an operator actually opens"
   end
 
   # The page this criterion depends on has no other coverage, so its gate is
