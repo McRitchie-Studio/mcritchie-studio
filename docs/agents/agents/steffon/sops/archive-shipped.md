@@ -331,10 +331,22 @@ reclaimed, and regenerable disk is swept. Report:
 - **reclaimed bytes** from the artifact sweep, labelled as **this machine only**
 - **the audit's `rotation_verdict`**, and **any app named `LOOSE` or `NONE`** by
   the logger audit — name each one, and say plainly that its local logs are still
-  growing to Rails' 100 MB default
-- **any app the audit could not boot, with the reason** — `LOG CAP NOT PROVEN` is
-  reported alongside the loose ones. Only `rotation_verdict: capped` is a pass;
+  growing to Rails' 100 MB default. The seam splits these into **two populations
+  with opposite remedies**, so pass on the one it prints rather than collapsing
+  them: an app with **no studio-engine dependency at all** has NO PIN TO BUMP and
+  needs the dependency added or a local cap, while an app **pinned below the
+  floor** needs only a bump and a relock. Telling the first group to bump a pin
+  sends its owner looking for a line that does not exist.
+- **any app the audit could not boot, and the reason it prints** — `LOG CAP NOT
+  PROVEN` is reported alongside the loose ones, one line per app, each carrying
+  the boot failure verbatim. Only `rotation_verdict: capped` is a pass;
   `unaudited` and `unreadable` mean no app was checked, not that all are clean
+- **the `audit interpreter:` line**, whenever anything reads UNKNOWN. An audit
+  that booted the apps under a Ruby that is not their own reports UNKNOWN for
+  reasons that are facts about the sweep, not about the apps — and it fails in
+  BOTH directions, so a contaminated UNKNOWN is not merely pessimistic, it is
+  uninformative. That is what `bin/lib/toolchain_env.rb` exists to prevent; the
+  interpreter line is how you confirm it did
 - **retired-doc count** and the ledger rows rolled over
 - **any doc skipped for being still referenced** — name the file AND its
   referrer, so the citation can be fixed deliberately rather than orphaned
