@@ -1205,6 +1205,92 @@ module Api
         assert_equal "shiny-crop.png", snapshot["avatar"]
         assert snapshot["shiny"]
       end
+
+      # --- THE REVIEW HOLDER ON THE INDEX (busy-auto-misses-mid-review) ------------
+      #
+      # `review_in_progress` is a boolean naming nobody, so a caller building a busy
+      # set of mid-review souls had to spend one round trip PER in-review task on
+      # /api/v1/tasks/<slug>/review_claim. That per-task endpoint WORKS — which is the
+      # trap: wiring the N+1 against it passes every test and fixes nothing. These pin
+      # the point of the field, which is ONE read.
+
+      test "index full=1 serves the review holder beside the boolean" do
+        held = Task.create!(title: "Index Holder Live Claim", stage: "submitted")
+        free = Task.create!(title: "Index Holder No Claim", stage: "submitted")
+        TaskReviewClaim.acquire(task_slug: held.slug, session: "sess-IX", nonce: "inst-IX",
+                                reviewer: "carl", label: "pr-review")
+
+        get api_v1_tasks_path, params: { stage: "submitted", full: 1, per_page: 100 }, headers: @headers
+        assert_response :success
+        rows = JSON.parse(response.body).fetch("data").index_by { |r| r["slug"] }
+
+        assert_equal "carl", rows.fetch(held.slug)["review_holder"],
+                     "the index must NAME the reviewer; a busy set cannot exclude a boolean"
+        assert rows.fetch(held.slug)["review_claim_live"]
+        assert_nil rows.fetch(free.slug)["review_holder"]
+        refute rows.fetch(free.slug)["review_claim_live"],
+               "and a task with no claim must read as free, not merely unnamed"
+      end
+
+      # A LAPSED claim is not a busy soul. Serving its holder would exclude a
+      # specialist from every future pick because one of their reviews once crashed.
+      test "index full=1 stops naming a holder once the claim lapses" do
+        now = Time.utc(2026, 9, 22, 5, 0, 0)
+        task = Task.create!(title: "Index Holder Lapsed Claim", stage: "submitted")
+        TaskReviewClaim.acquire(task_slug: task.slug, session: "sess-LX", nonce: "inst-LX",
+                                reviewer: "carl", now: now)
+
+        travel_to(now + ClaimLease::REVIEW_TTL_SECONDS + 1) do
+          get api_v1_tasks_path, params: { stage: "submitted", full: 1, per_page: 100 }, headers: @headers
+          assert_response :success
+          row = JSON.parse(response.body).fetch("data").find { |r| r["slug"] == task.slug }
+          assert_nil row["review_holder"], "a lapsed lease frees the soul"
+          refute row["review_claim_live"]
+        end
+      end
+
+      # THE COST GUARD. The field exists to REPLACE an N+1, so serving it must not BE
+      # one: the claim rows are preloaded, so the number of task_review_claims reads
+      # must not grow with the number of rows on the page.
+      #
+      # ASSERTED AS SCALING, not as a with-claims/without-claims comparison. That
+      # comparison was written first and it was INERT — measured 2026-09-22 by deleting
+      # the preload and watching it stay green. Both arms paid the same per-row cost,
+      # because the query fired whether or not a claim existed, so the thing being
+      # compared was equal under the bug and under the fix alike. What the preload
+      # actually changes is the SLOPE, so that is what this measures.
+      test "index full=1 serves a page of review holders without a query per row" do
+        5.times do |i|
+          held = Task.create!(title: "Index Holder Cost #{i} Task", stage: "submitted")
+          TaskReviewClaim.acquire(task_slug: held.slug, session: "sess-C#{i}", nonce: "inst-C#{i}",
+                                  reviewer: "carl", label: "pr-review")
+        end
+
+        one = count_claim_queries { index_page(per_page: 1) }
+        many = count_claim_queries { index_page(per_page: 100) }
+
+        assert_operator many, :<=, one,
+                        "a page of #{Task.where(stage: "submitted").count} submitted tasks cost " \
+                        "#{many} task_review_claims quer(ies) against #{one} for a page of ONE — " \
+                        "the claim rows must be PRELOADED, so the count is flat in the page size. " \
+                        "A count that grows per row is the N+1 `review_holder` was added to remove, " \
+                        "reinstated inside the read meant to replace it"
+      end
+
+      def index_page(per_page:)
+        get api_v1_tasks_path, params: { stage: "submitted", full: 1, per_page: per_page },
+            headers: @headers
+        assert_response :success
+      end
+
+      def count_claim_queries
+        count = 0
+        counter = lambda do |_n, _s, _f, _i, payload|
+          count += 1 if payload[:sql].to_s.include?("task_review_claims")
+        end
+        ActiveSupport::Notifications.subscribed(counter, "sql.active_record") { yield }
+        count
+      end
     end
   end
 end

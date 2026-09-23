@@ -313,12 +313,16 @@ class ReviewerSelectCliTest < Minitest::Test
   # first one took, which a fresh server per invocation could never show.
   # `run.call(*args, session:)` returns [out, status, err]; `requests` accumulates
   # across every run, so an assertion can count writes for the WHOLE episode.
-  def with_board(devops, busy_payload: nil)
+  # `review_payload` is the MID-REVIEW half of --busy-auto's board read
+  # (GET /api/v1/tasks?stage=submitted&full=1) — the half that did not exist until
+  # busy-auto-misses-mid-review. Like `busy_payload` it is a RAW string, so a test can
+  # serve what an unreadable answer actually looks like.
+  def with_board(devops, busy_payload: nil, review_payload: nil)
     server = TCPServer.new("127.0.0.1", 0)
     port = server.addr[1]
     requests = []
     claim = {}
-    thread = Thread.new { serve(server, requests, devops, busy_payload, claim) }
+    thread = Thread.new { serve(server, requests, devops, busy_payload, claim, review_payload) }
 
     # THE BOARD PATH SEEDS A PER-SESSION USAGE BASELINE (bin/reviewer-select's
     # seed_review_usage_baseline), and the operator's real store carries the proof of
@@ -362,8 +366,8 @@ class ReviewerSelectCliTest < Minitest::Test
     thread&.join(1)
   end
 
-  def run_board(devops, *args, busy_payload: nil)
-    with_board(devops, busy_payload: busy_payload) do |run, requests|
+  def run_board(devops, *args, busy_payload: nil, review_payload: nil)
+    with_board(devops, busy_payload: busy_payload, review_payload: review_payload) do |run, requests|
       out, status, err = run.call(*args)
       return [requests, out, status, err]
     end
@@ -372,7 +376,7 @@ class ReviewerSelectCliTest < Minitest::Test
   # Minimal HTTP/1.1 stub: records each request, returns canned JSON. The CLI opens
   # one connection per call (auth, the task GET, the review-claim POST, then the
   # intent POST). `claim` is the stub's one piece of STATE — see review_claim_response.
-  def serve(server, requests, devops, busy_payload = nil, claim = {})
+  def serve(server, requests, devops, busy_payload = nil, claim = {}, review_payload = nil)
     loop do
       client = server.accept
       line = client.gets
@@ -388,7 +392,7 @@ class ReviewerSelectCliTest < Minitest::Test
       body = len ? client.read(len.to_i) : ""
       requests << { method: method, path: path, body: body }
 
-      payload = response_for(method, path, devops, busy_payload, body, claim)
+      payload = response_for(method, path, devops, busy_payload, body, claim, review_payload)
       client.write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n" \
                    "Content-Length: #{payload.bytesize}\r\nConnection: close\r\n\r\n#{payload}")
       client.close
@@ -397,9 +401,10 @@ class ReviewerSelectCliTest < Minitest::Test
     # server closed — stop serving
   end
 
-  def response_for(method, path, devops, busy_payload = nil, body = "", claim = {})
+  def response_for(method, path, devops, busy_payload = nil, body = "", claim = {}, review_payload = nil)
     return JSON.generate("token" => "stub-token") if path == "/api/v1/auth"
     return busy_payload if busy_payload && path.include?("stage=building")
+    return review_payload if review_payload && path.include?("stage=submitted")
     if method == "POST" && path == "/api/v1/tasks/#{BOARD_SLUG}/review_claim"
       return review_claim_response(body, claim)
     end
@@ -631,7 +636,8 @@ class ReviewerSelectCliTest < Minitest::Test
   def test_an_unreadable_busy_read_still_picks_but_announces_the_degradation
     _requests, out, status, err = run_board({ "shape" => "backend", "built_by" => "shannon" },
                                             "--busy-auto", "--json",
-                                            busy_payload: "<html>502 Bad Gateway</html>")
+                                            busy_payload: "<html>502 Bad Gateway</html>",
+                                            review_payload: empty_board)
 
     assert_equal 0, status.exitstatus, "the fail-open is intact — --busy-auto never aborts the pick"
     assert_equal 2, json_decision(out)["reviewers"].size, "a pair still forms"
@@ -643,10 +649,165 @@ class ReviewerSelectCliTest < Minitest::Test
     # The control: the warning must fire on an unreadable answer, not on every run.
     _requests, out, status, err = run_board({ "shape" => "backend", "built_by" => "shannon" },
                                             "--busy-auto", "--json",
-                                            busy_payload: JSON.generate("data" => []))
+                                            busy_payload: empty_board, review_payload: empty_board)
 
     assert_equal 0, status.exitstatus, out
     refute_includes err, "busy-auto: could not read", "a genuinely idle bench raises no alarm"
+  end
+
+  # --- THE MID-REVIEW HALF (busy-auto-misses-mid-review) ------------------------
+  #
+  # --busy-auto read ONE half of "who is heads-down": the agents on stage=building
+  # tasks. A soul mid-REVIEW is not on a building task at all — they are on a
+  # SUBMITTED task holding a live TaskReviewClaim — so the flag could not have caught
+  # them however well it worked. Measured 2026-09-22: the conductor overrode the pick
+  # BY HAND four times in one night for exactly this, and one override spent Avi's
+  # QA-owner exclusion on PR #1521.
+  #
+  # ONE READ, and that is the load-bearing part. The holder was always reachable per
+  # task (GET /api/v1/tasks/<slug>/review_claim), so an N+1 against that endpoint
+  # would pass a "does it exclude them" test while leaving the cost the card is about.
+  # These assert the REQUESTS as well as the pick.
+
+  # A submitted-stage index page, as `full=1` renders it: `review_holder` names the
+  # reviewing soul, `review_claim_live` says whether anyone holds it at all.
+  def review_board(*rows)
+    JSON.generate("data" => rows, "meta" => { "page" => 1, "per_page" => 100,
+                                              "total" => rows.size, "total_pages" => 1 })
+  end
+
+  def reviewed_row(slug, holder:, live: true)
+    { "slug" => slug, "stage" => "submitted", "review_in_progress" => live,
+      "review_claim_live" => live, "review_holder" => holder }
+  end
+
+  def building_board(*rows)
+    JSON.generate("data" => rows, "meta" => { "page" => 1, "per_page" => 100,
+                                              "total" => rows.size, "total_pages" => 1 })
+  end
+
+  def empty_board
+    JSON.generate("data" => [], "meta" => { "page" => 1, "per_page" => 100,
+                                            "total" => 0, "total_pages" => 1 })
+  end
+
+  def test_busy_auto_names_mid_review_souls_not_only_mid_build
+    _requests, out, status, err = run_board(
+      { "shape" => "backend", "built_by" => "steffon" }, "--busy-auto", "--json",
+      busy_payload: building_board({ "slug" => "other-build", "agent_slug" => "shannon" }),
+      review_payload: review_board(reviewed_row("other-review", holder: "jasper"))
+    )
+
+    assert_equal 0, status.exitstatus, "#{out}#{err}"
+    decision = json_decision(out)
+
+    assert_includes decision["busy"], "jasper",
+      "jasper holds a LIVE review claim on another submitted task — mid-review is heads-down " \
+      "exactly as mid-build is, and this half did not exist before"
+    assert_includes decision["busy"], "shannon", "and the mid-build half is still read"
+    refute_includes decision["candidates"], "jasper",
+      "a soul mid-review must leave the LIGHT pool, which is the whole point of reading them"
+  end
+
+  # THE TRAP THIS CARD NAMES. The per-task endpoint works, so a busy set could be
+  # built from it — at one round trip PER in-review task. Asserting the REQUESTS is
+  # the only thing that tells the two implementations apart, because both pass the
+  # test above.
+  def test_the_mid_review_half_costs_one_read_not_one_per_task
+    rows = (1..4).map { |i| reviewed_row("in-review-#{i}", holder: "jasper") }
+    requests, out, status, = run_board(
+      { "shape" => "backend", "built_by" => "steffon" }, "--busy-auto", "--json",
+      busy_payload: empty_board, review_payload: review_board(*rows)
+    )
+
+    assert_equal 0, status.exitstatus, out
+    per_task = requests.count { |r| r[:path].to_s.include?("/review_claim") && r[:method] == "GET" }
+    index_reads = requests.count { |r| r[:path].to_s.include?("stage=submitted") }
+
+    assert_equal 0, per_task,
+      "four in-review tasks must cost ZERO per-task /review_claim reads. That endpoint WORKS, " \
+      "which is the trap: an N+1 against it excludes the right souls and leaves the cost this " \
+      "card exists to remove"
+    assert_equal 1, index_reads, "the whole mid-review half is ONE index read"
+  end
+
+  # A soul mid-review whose claim names nobody cannot be excluded BY NAME. Scoring
+  # that as an idle seat is this card's failure mode in miniature, so it is said.
+  def test_a_live_claim_naming_no_soul_is_reported_rather_than_scored_idle
+    _requests, _out, status, err = run_board(
+      { "shape" => "backend", "built_by" => "shannon" }, "--busy-auto", "--json",
+      busy_payload: empty_board,
+      review_payload: review_board(reviewed_row("unnamed-review", holder: nil))
+    )
+
+    assert_equal 0, status.exitstatus
+    assert_includes err, "LIVE review claim that names no soul"
+    assert_includes err, "CANNOT be excluded by name"
+  end
+
+  # The two halves fail INDEPENDENTLY, so a degradation has to say WHICH one it lost:
+  # a pick missing only the mid-review half is a different partial answer from one
+  # missing both, and "busy-auto degraded" alone cannot tell them apart.
+  def test_a_lost_half_names_itself_and_the_other_half_still_reads
+    _requests, out, status, err = run_board(
+      { "shape" => "backend", "built_by" => "steffon" }, "--busy-auto", "--json",
+      busy_payload: building_board({ "slug" => "other-build", "agent_slug" => "shannon" }),
+      review_payload: "<html>502 Bad Gateway</html>"
+    )
+
+    assert_equal 0, status.exitstatus, "a lost half never aborts the pick"
+    assert_includes err, "could not read who is mid-review"
+    refute_includes err, "could not read who is mid-build",
+      "only the half that failed may be reported — naming both would hide which one to distrust"
+    assert_includes json_decision(out)["busy"], "shannon",
+      "and the half that READ must still count"
+  end
+
+  # A truncated page is a busy set silently missing whoever fell off the end — the
+  # same failure wearing a different hat.
+  def test_a_truncated_half_says_so
+    payload = JSON.generate("data" => [reviewed_row("in-review-1", holder: "jasper")],
+                            "meta" => { "page" => 1, "per_page" => 100,
+                                        "total" => 140, "total_pages" => 2 })
+    _requests, _out, status, err = run_board(
+      { "shape" => "backend", "built_by" => "shannon" }, "--busy-auto", "--json",
+      busy_payload: empty_board, review_payload: payload
+    )
+
+    assert_equal 0, status.exitstatus
+    assert_includes err, "page 1 of 2"
+    assert_includes err, "PARTIAL half, not an idle bench"
+  end
+
+  # --- AN EMPTY BUSY SET READS APART FROM AN IDLE BENCH ------------------------
+
+  def test_a_bare_run_records_that_nobody_asked
+    out, code = select({ "shape" => "backend", "built_by" => "shannon" }, "--json")
+
+    assert_equal 0, code, out
+    refute JSON.parse(out.lines.reverse.find { |l| l.strip.start_with?("{") })["busy_asked"],
+      "no --busy and no --busy-auto means the exclusion never RAN; a consumer that reads " \
+      "`busy: []` as an idle bench is making the call that cost four hand overrides"
+  end
+
+  def test_a_busy_auto_run_records_that_somebody_asked
+    _requests, out, status, = run_board({ "shape" => "backend", "built_by" => "shannon" },
+                                        "--busy-auto", "--json",
+                                        busy_payload: empty_board, review_payload: empty_board)
+
+    assert_equal 0, status.exitstatus, out
+    assert json_decision(out)["busy_asked"],
+      "the query RAN and the bench really was idle — the opposite fact from nobody asking"
+  end
+
+  # The human audit line is where an operator actually reads this, so it is asserted
+  # there too: a DISABLED safety check must read as disabled, not as a tidy blank.
+  def test_the_audit_line_says_the_busy_exclusion_was_off
+    out, code = select_verbose({ "shape" => "backend", "built_by" => "shannon" })
+
+    assert_equal 0, code, out
+    assert_includes out, "busy=NOT-ASKED(no-exclusion)",
+      "a bare `busy=-` reads as a bench that was checked and found idle"
   end
 
   # --- THE AUTHOR SET, end to end through the CLI ------------------------------

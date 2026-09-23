@@ -108,11 +108,14 @@
 # BUSY souls are excluded from the LIGHT seat too — specialists currently
 # mid-build or mid-review on OTHER in-flight tasks shouldn't be handed a second
 # read while they're heads-down elsewhere. Pass `busy:` (bin/reviewer-select's
-# `--busy a,b,c`, and/or its board query of agents on stage=building tasks). Like
+# `--busy a,b,c`, and/or its `--busy-auto` board query — agents on stage=building
+# tasks AND the holders of live review claims on submitted ones). Pass `busy_asked:`
+# with it, so an empty set can say WHICH empty it is. Like
 # the builder, the busy drop YIELDS rather than starve: if removing the builder +
 # QA owner + every busy soul would leave too few candidates, the least-bad (best
 # domain fit) busy souls are KEPT eligible (the decision/log flags them) so a pair
-# is always returned.
+# is always returned. That yield is what makes a WIDER busy set safe to feed in:
+# adding the mid-review half cannot wedge the lane, only shift the pick.
 #
 # Reads each specialist's Agent.metadata["domains"] + ["review_weight"]; DEGRADES
 # GRACEFULLY to built-in defaults when the Agent row or those keys are absent, so
@@ -281,11 +284,22 @@ class ReviewerSelector
   # on a specialist who's already heads-down elsewhere — UNLESS excluding them
   # would starve the pool below the light floor, in which case the least-bad busy
   # souls are KEPT back (see #excluded_busy), mirroring the builder keep rule.
-  def initialize(task, qa_owner: DEFAULT_QA_OWNER, builder: nil, busy: [], logger: nil, random: nil)
+  #
+  # `busy_asked:` says the caller ACTUALLY LOOKED. An empty `busy:` is ambiguous —
+  # it is both "nobody is occupied" and "nobody asked" — and the audit line printed
+  # a tidy `busy=-` for both, so a DISABLED exclusion was indistinguishable from an
+  # idle bench. That is the same defect `builder_log_token` was fixed for ("a
+  # DISABLED safety check has to read as disabled"), and it cost four hand overrides
+  # in one night. Callers that ran a busy query — or were handed an explicit --busy
+  # list — pass true; the default is false because a caller that says nothing did
+  # not ask.
+  def initialize(task, qa_owner: DEFAULT_QA_OWNER, builder: nil, busy: [], busy_asked: false,
+                 logger: nil, random: nil)
     @task = task
     @qa_owner = qa_owner.to_s
     @builder_override = builder.to_s.strip.presence
     @busy = Array(busy).map { |s| s.to_s.strip }.reject(&:empty?).uniq
+    @busy_asked = busy_asked ? true : false
     @logger = logger || Rails.logger
     # Default the tiebreak RNG to a STABLE per-task seed. The default LIGHT pick
     # must be reproducible across processes: bin/reviewer-select prints `.decision`
@@ -364,6 +378,9 @@ class ReviewerSelector
       # sound only while builder_known? was defined over the singular builder.
       "builder_asserted_none" => builder_asserted_none?,
       "busy" => busy,
+      # Whether anyone LOOKED. Without it a consumer reading `busy: []` cannot tell
+      # an idle bench from an exclusion nobody ran — see #busy_log_token.
+      "busy_asked" => busy_asked?,
       "excluded_busy" => excluded_busy,
       "kept_busy" => kept_busy,
       "candidates" => candidate_slugs,
@@ -375,6 +392,11 @@ class ReviewerSelector
   private
 
   attr_reader :task, :qa_owner, :busy, :logger, :random
+
+  # True when the caller ran a busy query (or handed one in). See #initialize.
+  def busy_asked?
+    @busy_asked
+  end
 
   # The full soul pool. A seam (returns POOL) so tests can shrink it to exercise
   # the too-few-candidates fallback without mutating the frozen constant.
@@ -931,9 +953,19 @@ class ReviewerSelector
 
   # The busy souls, annotated for the audit log: "-" when none were passed, else the
   # excluded ones, with any kept-back (starve-guard) souls flagged "(kept)".
+  # The busy set, annotated for the audit log. THREE outcomes, and the first two used
+  # to print the same bare "-":
+  #   "NOT-ASKED(no-exclusion)" — nobody ran a busy query; the exclusion is OFF, and
+  #                               this line must read as off rather than as tidy.
+  #   "none(asked)"             — somebody looked and the bench really is idle.
+  #   "<slug>,<slug>(kept)"     — who was dropped, and who was kept to avoid starving
+  #                               the pool.
+  # The last case can also print nothing dropped while `busy` is non-empty (every
+  # busy soul was outside the light pool), so it falls back to "none(asked)" rather
+  # than to "-": the caller DID ask, and that is the fact this token exists to carry.
   def busy_log_token
-    return "-" if busy.empty?
+    return "NOT-ASKED(no-exclusion)" unless busy_asked?
 
-    (excluded_busy + kept_busy.map { |s| "#{s}(kept)" }).join(",").presence || "-"
+    (excluded_busy + kept_busy.map { |s| "#{s}(kept)" }).join(",").presence || "none(asked)"
   end
 end

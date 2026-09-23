@@ -76,18 +76,21 @@
 # authors would read as KNOWN while the soul you meant to exclude never registered.
 # That refuses too (state 4), rather than honoring the half it understood.
 #
-# BUSY souls (agents mid-build / mid-review on
-# OTHER in-flight tasks) are excluded from the LIGHT seat via `--busy a,b,c` and/or
-# `--busy-auto` (which reads the board's stage=building tasks). NEITHER IS ON BY
-# DEFAULT, so a bare run carries an empty busy set and logs `busy=-` — "nobody
-# asked", not "the bench is idle". And `--busy-auto` covers only the mid-BUILD
-# half: a soul mid-REVIEW sits on a `submitted` task whose reviewer lives in
-# TaskReviewClaim.holder_agent. That holder IS readable — GET
-# /api/v1/tasks/<slug>/review_claim serves it — but one task at a time; the INDEX
-# serializer carries only the `review_in_progress` boolean, never WHO. Nothing here
-# asks for either, so that half is reachable only by hand-passing `--busy <slug>`.
-# Tracked as `busy-auto-misses-mid-review`. Both the author and
-# the busy drops YIELD rather than starve: if the exclusions would leave too few
+# BUSY souls (agents mid-build / mid-review on OTHER in-flight tasks) are excluded
+# from the LIGHT seat via `--busy a,b,c` and/or `--busy-auto`, and `--busy-auto` now
+# reads BOTH halves in one request each: the board's stage=building tasks (mid-build)
+# and its submitted tasks under a LIVE review claim (mid-review, from the index's
+# `review_holder` field). Each half fails OPEN to empty and NAMES itself on stderr,
+# so a partial answer never reads as an idle bench.
+#
+# NEITHER FLAG IS ON BY DEFAULT here, but the automated lane asks: `bin/pr-review`
+# passes `--busy-auto` on every select. A bare hand-run still carries an empty busy
+# set, and the audit line says so in as many words — `busy=NOT-ASKED(no-exclusion)`,
+# never a tidy `busy=-`, which is what let a DISABLED exclusion pass for an idle
+# bench through four hand overrides in one night (2026-09-22).
+#
+# Both the author and the busy drops YIELD rather than starve: if the exclusions
+# would leave too few
 # light candidates, the least-bad ones are KEPT back so ReviewerSelector always
 # returns a pair (flagged in the audit). The two kept cases are NOT equivalent here:
 # a kept BUSY soul is an inconvenience and prints as a note, while a kept AUTHOR is
@@ -103,7 +106,7 @@
 #   bin/reviewer-select <task-slug> --builder steffon,alex # a task with TWO authors
 #   bin/reviewer-select <task-slug> --builder none        # ASSERT no soul built it (lifts the refusal)
 #   bin/reviewer-select <task-slug> --busy a,b      # exclude busy souls (repeatable)
-#   bin/reviewer-select <task-slug> --busy-auto     # also exclude agents on stage=building tasks
+#   bin/reviewer-select <task-slug> --busy-auto     # also exclude agents mid-build or mid-review elsewhere
 #   bin/reviewer-select --file task.json            # evaluate a local task JSON (advisory — never records)
 #
 # Exit code: 0 = a pair was selected, 1 = task not found / usage error,
@@ -313,28 +316,97 @@ rescue Errno::ENOENT
   die!("file not found: #{file}")
 end
 
-# The souls currently mid-build on OTHER tasks — every agent attributed to a
-# stage=building task (its devops.built_by + agent_slug), minus the task we're
-# selecting for. Best-effort: a board read failure (incl. api's die! → SystemExit)
-# degrades to an empty set so --busy-auto can NEVER abort the pick — explicit
-# --busy still applies.
+# The souls currently heads-down on OTHER tasks — the whole busy set, in TWO
+# halves that fail independently: mid-BUILD (stage=building) and mid-REVIEW (a live
+# review claim on a submitted task). Best-effort throughout: a board read failure
+# (incl. api's die! → SystemExit) degrades that half to empty so --busy-auto can
+# NEVER abort the pick, and explicit --busy still applies.
 #
 # The fail-open is kept; its SILENCE is not. `Array(res["data"])` scored an
 # unreadable body as "nobody is mid-build", which is the answer that hands a
 # review to a soul already building elsewhere — and it did so with no signal at
 # all, so the degradation was indistinguishable from a genuinely idle bench.
-# `rows!` separates the two, and the rescue now SAYS which one happened before
-# it degrades. Read it on stderr, so `--json` on stdout stays machine-clean.
+# `rows!` separates the two, and each rescue now SAYS which half it lost before it
+# degrades. Read it on stderr, so `--json` on stdout stays machine-clean.
+#
+# The board pages; ask for the cap so the common case is one request per half, and
+# say so when even that truncates (`warn_if_truncated!`).
+BUSY_PAGE_SIZE = 100
+
 def in_flight_busy(exclude_slug)
-  res = api(:get, "/api/v1/tasks?stage=building")
+  (mid_build_busy(exclude_slug) + mid_review_busy(exclude_slug)).uniq
+end
+
+# HALF ONE — the souls mid-BUILD on OTHER tasks: every agent attributed to a
+# stage=building task (its devops.built_by + agent_slug), minus the task we're
+# selecting for.
+def mid_build_busy(exclude_slug)
+  res = api(:get, "/api/v1/tasks?stage=building&per_page=#{BUSY_PAGE_SIZE}")
+  warn_if_truncated!(res, "mid-build")
   TaskBoard.rows!(res).reject { |t| t["slug"].to_s == exclude_slug.to_s }.flat_map do |t|
     [t.dig("metadata", "devops", "built_by"), t["agent_slug"]]
   end.map(&:to_s).reject(&:empty?).uniq
 rescue SystemExit, StandardError => e
-  warn!("busy-auto: could not read who is mid-build (#{e.class}: #{e.message.to_s.lines.first.to_s.strip}) — " \
-        "proceeding with an EMPTY busy set. This is a DEGRADED pick, not an idle bench; " \
-        "pass --busy <slugs> if you know who is occupied.")
+  degraded_half!("mid-build", e)
   []
+end
+
+# HALF TWO — the souls mid-REVIEW. This half did not exist, and that is the card
+# (busy-auto-misses-mid-review). A soul reviewing something else is not on a
+# stage=building task at all: they are on a SUBMITTED task holding a live
+# TaskReviewClaim, so half one could never have seen them however well it worked.
+#
+# ONE READ, deliberately. The holder has always been reachable per task
+# (GET /api/v1/tasks/<slug>/review_claim), and wiring THAT here would pass every
+# test while costing a round trip per in-review task. `full=1` renders
+# `review_holder` on the index rows instead, so the whole set is one request.
+#
+# LIVE ONLY: a lapsed or released claim is not a busy soul, and `review_holder`
+# already answers nil for both. A live claim that names NO soul is a THIRD state —
+# somebody IS reviewing and we cannot say who — and it is reported rather than
+# scored as an idle seat, because an unnameable busy soul is exactly the one this
+# set cannot exclude.
+def mid_review_busy(exclude_slug)
+  res = api(:get, "/api/v1/tasks?stage=submitted&full=1&per_page=#{BUSY_PAGE_SIZE}")
+  warn_if_truncated!(res, "mid-review")
+  rows = TaskBoard.rows!(res).reject { |t| t["slug"].to_s == exclude_slug.to_s }
+  holders = rows.map { |t| t["review_holder"].to_s.strip }.reject(&:empty?).uniq
+  unnamed = rows.count { |t| t["review_claim_live"] && t["review_holder"].to_s.strip.empty? }
+  if unnamed.positive?
+    warn!("busy-auto: #{unnamed} task(s) are under a LIVE review claim that names no soul — " \
+          "they are mid-review and CANNOT be excluded by name. Pass --busy <slug> if you know " \
+          "who holds them.")
+  end
+  holders
+rescue SystemExit, StandardError => e
+  degraded_half!("mid-review", e)
+  []
+end
+
+# The board pages at 20 by default and caps at 100. A silently truncated page is a
+# busy set that misses whoever fell off the end, which is this card's failure mode
+# wearing a different hat — so the truncation is SAID, not swallowed.
+def warn_if_truncated!(res, half)
+  meta = res.is_a?(Hash) ? res["meta"] : nil
+  return unless meta.is_a?(Hash)
+  return unless meta["total"].to_i > meta["per_page"].to_i
+
+  warn!("busy-auto: the #{half} half returned page 1 of #{meta["total_pages"]} " \
+        "(#{meta["per_page"]} of #{meta["total"]} tasks) — souls past that page are NOT in the " \
+        "busy set. This is a PARTIAL half, not an idle bench.")
+end
+
+# A half that could not be read degrades to EMPTY so --busy-auto can never abort a
+# pick, but it SAYS which half it lost. The fail-open is kept; its silence is not:
+# `Array(res["data"])` once scored an unreadable body as "nobody is busy", the
+# answer that hands a review to an occupied soul, with no signal at all. Naming the
+# half matters because they fail independently — a pick missing only the mid-review
+# half is a different (and now likelier) partial answer than one missing both.
+def degraded_half!(half, error)
+  warn!("busy-auto: could not read who is #{half} (#{error.class}: " \
+        "#{error.message.to_s.lines.first.to_s.strip}) — that HALF of the busy set is EMPTY. " \
+        "This is a DEGRADED pick, not an idle bench; pass --busy <slugs> if you know who is " \
+        "occupied.")
 end
 
 # Captures ReviewerSelector's structured tiebreak log line so the CLI can echo
@@ -511,6 +583,13 @@ builder = nil if builder.empty?
 # agents on OTHER stage=building tasks. The selector excludes them from review but
 # never starves the pool below a PRIMARY+LIGHT pair (least-bad kept back).
 busy = options[:busy].map { |s| s.to_s.strip }.reject(&:empty?).uniq
+# DID ANYONE ASK? An empty busy set means two opposite things — an idle bench, or an
+# exclusion nobody ran — and the audit line printed a tidy `busy=-` for both. This
+# carries the difference through to the log. An explicit --busy list counts as asking;
+# so does a --busy-auto query that actually RAN. A --busy-auto that was SKIPPED (no
+# board in --file mode, or no slug) does NOT: it already warned, and scoring it as
+# "asked" would re-create exactly the tidy-empty-field lie.
+busy_asked = busy.any?
 if options[:busy_auto]
   if options[:file]
     warn!("--busy-auto needs the board (skipped in --file mode)")
@@ -518,11 +597,13 @@ if options[:busy_auto]
     warn!("--busy-auto needs a task slug")
   else
     busy = (busy + in_flight_busy(slug)).uniq
+    busy_asked = true
   end
 end
 
 log = CaptureLogger.new
-decision = ReviewerSelector.new(task, qa_owner: qa_owner, builder: builder, busy: busy, logger: log).decision
+decision = ReviewerSelector.new(task, qa_owner: qa_owner, builder: builder, busy: busy,
+                                busy_asked: busy_asked, logger: log).decision
 pr_url = devops["pr_url"].to_s.strip
 
 # FAIL CLOSED ON AN UNKNOWN BUILDER. Selection exists to keep a soul off the

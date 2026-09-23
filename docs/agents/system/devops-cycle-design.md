@@ -874,9 +874,10 @@ board):
    that arm names no holder and wants the author set reconciled instead. `alex` is the
    orchestrator who also holds the launchable Documentation review seat — one
    identity. (`--qa-owner SLUG` excludes a different soul; `--builder SLUG`
-   overrides the recorded built_by; **`--busy a,b,c`** and/or **`--busy-auto`** (a
-   board query of agents on `stage=building` tasks) drop agents mid-BUILD
-   elsewhere — the mid-REVIEW half needs `--busy <slug>` by hand — the pool is never starved below a pair, the least-bad are kept
+   overrides the recorded built_by; **`--busy a,b,c`** and/or **`--busy-auto`** (two
+   board reads: agents on `stage=building` tasks, and the holders of LIVE review
+   claims on `submitted` ones) drop agents mid-BUILD **and** mid-REVIEW elsewhere —
+   `bin/pr-review` passes `--busy-auto` on every select — the pool is never starved below a pair, the least-bad are kept
    back; `--json` for a machine-readable pick; recording is the **DEFAULT** —
    it writes the picked
    pair onto the task as a **review intent** so /deployments + the task timeline
