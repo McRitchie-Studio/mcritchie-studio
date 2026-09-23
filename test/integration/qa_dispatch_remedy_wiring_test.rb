@@ -100,6 +100,16 @@ class QaDispatchRemedyWiringTest < ActionDispatch::IntegrationTest
       "re-minting a token does not resolve a hostname — that remedy must not fire here")
   end
 
+  test "[integration] the headline names the failure the way it HAPPENED — both arms" do
+    # A failure WITH output answered, with an error. Printing "never answered"
+    # above a quoted `HTTP 401` is a message that argues with itself, which is the
+    # defect this path exists to retire rather than a cosmetic slip.
+    assert Release::GhFailure.silent?(""), "no output at all — the read never answered"
+    assert Release::GhFailure.silent?("  \n  "), "whitespace is not an answer"
+    assert_not Release::GhFailure.silent?("HTTP 401: Bad credentials"),
+      "gh ANSWERED with an error — the headline must not claim otherwise"
+  end
+
   # --- 3. the script seam (supplementary tripwire ONLY) --------------------
 
   test "[integration] dispatch_and_watch's snapshot rides the cause-split policy and carries the credential" do
@@ -116,6 +126,10 @@ class QaDispatchRemedyWiringTest < ActionDispatch::IntegrationTest
     assert_includes body, "Release::GhFailure.failure_message", "the refusal quotes gh"
     assert_no_match(/^  5\.times do$/, body,
       "the blind sleep-loop is gone — it cleared neither measured instance")
+    assert_includes body, "Release::GhFailure.silent?(snapshot.out)",
+      "the headline is chosen by whether gh said anything, not fixed at `never answered`"
+    assert_no_match(/`gh run list` never answered, so there is no baseline/, body,
+      "the fixed headline is gone — a 401 under it would contradict the quote below")
     assert_includes body, "return false # gh never answered — do not watch a stale run",
       "the REFUSAL ITSELF STAYS: without a baseline, dispatching would read a prior run's verdict"
   end

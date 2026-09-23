@@ -192,6 +192,16 @@ class Release
       [headline, *quoted_output(output)].join("\n")
     end
 
+    # DID GH SAY ANYTHING AT ALL? The two cases need DIFFERENT WORDS, and a caller
+    # that uses one sentence for both writes a message that contradicts itself. A
+    # failure WITH output ANSWERED — with an error — so a headline claiming the
+    # tool "never answered" sits three lines above gh's answer, which is this
+    # module's own thesis failing at the site that quotes it. Named here rather
+    # than re-derived at each caller, and pinned both ways by the tests.
+    def silent?(output)
+      output.to_s.strip.empty?
+    end
+
     # gh's own words, indented and labelled. An EMPTY capture is reported as such
     # rather than silently omitted: "gh printed nothing" is itself information. It
     # tells the operator there is no hidden detail to hunt for — and distinguishes

@@ -548,7 +548,7 @@ def dispatch_and_watch(workflow, inputs = {}, chdir: nil)
   # Carry the recovered credential to the REST of the lane — the dispatch and the
   # watch ride the same dead token otherwise (see $gh_lane_token).
   $gh_lane_token = snapshot.token if snapshot.token
-  say("  ↻ #{workflow}: the ambient GitHub credential was refused — re-minted and continued.") if snapshot.reminted?
+  say("  ↻ #{workflow}: the ambient GitHub credential was refused — re-minted and retried.") if snapshot.reminted?
   before_id = snapshot.ok? ? snapshot.out.strip.to_i : nil
   if before_id.nil?
     # SAY IT, don't just return, and SAY WHAT GH SAID. These snapshot reads are
@@ -564,8 +564,16 @@ def dispatch_and_watch(workflow, inputs = {}, chdir: nil)
     # handed gh's words and the remedy those words support (Release::GhFailure) —
     # "the read never answered" and "gh said HTTP 401: Bad credentials" select
     # completely different next moves, and only the second one is true.
+    # NAME THE FAILURE THE WAY IT HAPPENED. "never answered" was accurate while
+    # gh's output was discarded; now that the output is QUOTED directly below, a
+    # `HTTP 401: Bad credentials` under a headline saying nothing answered is a
+    # self-contradiction — and a message that argues with itself is the defect
+    # this whole path exists to retire, not a cosmetic slip. Both spellings keep
+    # the "NOTHING WAS DEPLOYED" phrase, which is the string the runbook's
+    # boot-failure row tells the reader to scroll up and look for.
+    lead = Release::GhFailure.silent?(snapshot.out) ? "never answered" : "FAILED"
     say(Release::GhFailure.failure_message(
-          headline: "  ⚠ #{workflow}: `gh run list` never answered, so there is no baseline to tell our run " \
+          headline: "  ⚠ #{workflow}: `gh run list` #{lead}, so there is no baseline to tell our run " \
                     "from a prior one — NOT dispatching. NOTHING WAS DEPLOYED; this is not a boot failure.",
           output: snapshot.out,
           fallback: "Re-run `bin/release prepare` — the sweep is idempotent and resumes over the " \
