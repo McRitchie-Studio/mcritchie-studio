@@ -28,6 +28,21 @@ humans; when the two disagree, fix both in the same pass.
 
 ## Known Items
 
+**WHERE DEADNESS IS RECORDED — a convention, because a guard reads it.**
+`test/lib/env_example_credential_pointers_test.rb` fails the build when
+`.env.example` points at an item this table marks dead, and it reads that mark
+from the **name cell** or the **vault cell** only — never from the purpose prose,
+because the live `higgsfield.studio.agents` row says "Supersedes
+`agent.higgesfield`" and a row-wide match would condemn the replacement along
+with the thing it replaced. Three spellings are in use, and all three are live in
+the table below: `RETIRED` in the name (`agent.higgesfield (RETIRED - use …)`),
+`DELETED` / `(deleted)` in the vault cell (`agent.github`), and **absent** in the
+vault cell (`x.api`). **So retire an item in its NAME or its VAULT cell.** A
+marker written only into the purpose sentence is invisible to that guard, and the
+guard passes — the silent-green failure the whole tripwire exists to stop. The
+same guard also requires every `.env.example` pointer to HAVE a row here,
+including a row that records an item is not filed at all.
+
 | Item | Vault | Purpose | Typical consumer |
 |------|-------|---------|------------------|
 | `heroku.studio.agents` | `studio-agents` | Heroku **agent lane** OAuth authorization (`dec169b0…`), scope `identity,read-protected,write-protected` — deploys, config vars, one-off dynos, logs, app creates; CANNOT transfer apps or manage authorization lanes (and could technically delete an app — SOP forbids). Item notes carry this permission matrix — the Heroku items follow `heroku.studio.<lane>` with the lane named after its vault. Staged as `HEROKU_STUDIO_AGENTS_API_KEY` in `~/.zprofile.admin`; at the account cutover it becomes `HEROKU_API_KEY` in `~/.zprofile`. Replaced `agent.heroku` (global-scope lane `b6697b95…`, revoked 2026-09-02). | `bin/ecosystem-build`, agent sessions (`heroku run`, ship git-pushes), Avi QA deploys, Steffon prod deploys |
@@ -57,6 +72,9 @@ humans; when the two disagree, fix both in the same pass.
 | `higgsfield.studio.agents` | `studio-agents` | Higgsfield media generation API (`api.higgsfield.ai`). Filed 2026-09-20 under the `<service>.<entity>.<lane>` convention, category `API Credential`. **One field, `api-key`, holding BOTH halves joined by a colon** — `<KEY_ID>:<KEY_SECRET>`. Split on the first colon: before → `HIGGSFIELD_API_KEY`, after → `HIGGSFIELD_API_SECRET`. ⚠ **The console shows no separate secret field, and that is correct, not a missing value** — Higgsfield hands the pair over pre-joined (the `higgsfield-js` SDK calls this form `HF_CREDENTIALS`). Measured 2026-09-20 by length and charset, never revealed: 101 chars = a 36-char UUID + `:` + a 64-char hex secret. The API takes them re-joined as `Authorization: Key <id>:<secret>`, which `app/services/higgsfield/client.rb` already sends from the two env vars, so **no code change is needed**; there is no Bearer or `api-key:` header mode. Supersedes `agent.higgesfield`. | McRitchie Studio content pipeline (`Content::AssetsAgent`, `Content::AssembleAgent`); local `.env` only — `mcritchie-studio` carried no `HIGGSFIELD_*` config on 2026-09-20 |
 | `agent.higgesfield (RETIRED - use higgsfield.studio.agents)` | `studio-agents` | **Retired 2026-09-20**, superseded by the row above. It was both the legacy inverted `agent.<service>` form and a misspelling; the `credential-filing` SOP grandfathers legacy names but says to rename one when you next touch it and fix every reference in the same pass — which is what that date was. Its value is kept as a fallback until the replacement key is proven to authenticate, then archive it. **Do not rotate it.** No `op://` lookup resolves it — swept across every repo on disk 2026-09-20, zero hits. The census is now COMPLETE: `.env.example` was repointed at `higgsfield.studio.agents` in the `studio-agents` vault on 2026-09-21 (`point-env-example-at-higgsfield`), and a tripwire (`test/lib/env_example_credential_pointers_test.rb`) now fails the build if any template pointer names a row whose NAME CELL is marked RETIRED or DELETED here. **That discharges the TEMPLATE reason to wait** — a fresh-machine rebuild can no longer read this name out of `.env.example`. **It does NOT discharge the other precondition, stated above: this value is the FALLBACK until the replacement is proven to AUTHENTICATE.** As of 2026-09-20 that verify could not pass — the account answered `not_enough_credits` on every media type (`system/secrets-rotation.md`, Higgsfield §Verify). Archive it once the replacement authenticates, not before. | Nothing at runtime; no reference on disk. Archive once the replacement authenticates — not yet proven |
 | `x.api` | `studio-agents` — **absent on 2026-08-29**; the X credentials present there are `agent.turf.x` | X/Twitter API credentials | McRitchie Studio news/content |
+| `agent.turf.x` | `studio-agents` | **The live X/Twitter credentials** — described here on 2026-09-22 because `.env.example` now points at it, which is the trigger the section below states. Category LOGIN; five concealed fields, read by label: **`Bearer Token`** → `X_BEARER_TOKEN` (read-only intake), **`Consumer Key`** → `X_API_KEY`, **`Consumer Key Secret`** → `X_API_SECRET`, **`Access Token`** → `X_ACCESS_TOKEN`, **`Access Token Secret`** → `X_ACCESS_TOKEN_SECRET`. Field labels measured 2026-09-22 (`op item get`, labels only, no values revealed); the read+write pair needs an X app with Read and Write permissions. Supersedes `x.api`, which the row above records absent. | McRitchie Studio news intake; Turf Monster Starter Post X workflow (`@turfmonstershow`) |
+| `anthropic` | — (not located) | **NOT PRESENT in the vault `.env.example` named.** Swept 2026-09-22 across every vault the agent service account can read — `studio-agents` (44 items), `industries-agents` (1), `family-agents` (0), `Commercial Welding` (3) — and this item is in none of them. `studio-agents-admin` and `studio-applications` are invisible to that token by design, so this records where it is NOT, not that it does not exist. The template used to say "in agents vault", a vault that has not existed since the 2026-08-28 rename; it now says the value comes from the provider console. **File a row with a real vault the day it is filed** — until then a rebuild gets `ANTHROPIC_API_KEY` from console.anthropic.com. | McRitchie Studio AI chat, News refine/conclude agents, Content metadata (`ANTHROPIC_API_KEY`) |
+| `🐊 TikTok` | — (not located) | **NOT PRESENT in the vault `.env.example` named** — same 2026-09-22 sweep and the same caveat as `anthropic` above. The template's "in agents vault" clause named a vault retired on 2026-08-28. The TikTok app was still in review when the template was written (submitted 2026-05-04, sandbox works for the app owner only), which is the likeliest reason it was never filed. | Turf Monster Starter Post TikTok workflow (`TIKTOK_CLIENT_KEY`, `TIKTOK_CLIENT_SECRET`) |
 
 ### Also present in `studio-agents` (listed 2026-08-29, not yet described)
 
@@ -65,7 +83,7 @@ service-account token install recipe), `agent.rails_master_key`,
 `agent.resend`, `agent.google`, `Google | McRitchie Studio`, `agent.gmail`,
 `agent.rubygems`, `agents.cloudflare`, `agent.ipinfo.io`, `agent.coinflow`,
 `agent.stripe`, `agent.stripe.sandbox`, `turf.stripe`, `Moonpay`,
-`agent.turf.x`, `turf.squad`, `turf_vault-mainnet-keypair` (document),
+`turf.squad`, `turf_vault-mainnet-keypair` (document),
 `discord.webhooks`, `dont.use.agent.aws` (decoy — ignore). Describe an item
 in the table above the first time a doc or script depends on it.
 

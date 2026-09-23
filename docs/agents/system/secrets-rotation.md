@@ -145,7 +145,7 @@ The 1Password account is `alex@mcritchie.studio` (account ID `MWOV5OT5BRHATI4EGM
 
 ## X (Twitter) API credentials
 
-**Store:** 1Password item `x.api` (5 fields: bearer, api_key, api_secret, access_token, access_token_secret) + Heroku config on `mcritchie-studio` + `.env` locally.
+**Store:** 1Password item `agent.turf.x` in `studio-agents` — five concealed fields, read by LABEL: `Bearer Token`, `Consumer Key`, `Consumer Key Secret`, `Access Token`, `Access Token Secret` (labels measured 2026-09-22; values never revealed). Plus `.env` locally. **NOT on Heroku:** re-measured 2026-09-22, `mcritchie-studio` carries none of the five `X_*` vars, so step 4 below is a SET, not a rotation. The older item `x.api` has been absent from the vault since 2026-08-29 — see `credential-inventory.md`.
 
 **Symptoms of rotation needed:** X suspends the app and reissues. Quarterly hygiene.
 
@@ -156,7 +156,7 @@ The 1Password account is `alex@mcritchie.studio` (account ID `MWOV5OT5BRHATI4EGM
 
 **Procedure:**
 1. https://developer.x.com/en/portal/projects → the `mcritchie-studio` project → app keys & tokens.
-2. For each of the 5 values, click "Regenerate" → copy → save to 1Password `x.api`.
+2. For each of the 5 values, click "Regenerate" → copy → save to 1Password `agent.turf.x`, into the field whose LABEL matches (the item has no `api_key`/`api_secret` fields; they are `Consumer Key` / `Consumer Key Secret`).
 3. The app MUST have "Read and Write" permission — verify on the User authentication settings page. If not, the post will silently 401.
 4. `heroku config:set X_BEARER_TOKEN=... X_API_KEY=... X_API_SECRET=... X_ACCESS_TOKEN=... X_ACCESS_TOKEN_SECRET=... --app mcritchie-studio`.
 5. Re-run `bin/ecosystem-build`.
