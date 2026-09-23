@@ -104,17 +104,22 @@ class ContentsController < ApplicationController
         # Supersede rather than delete: the old image stays as the record of
         # what was published before.
         #
-        # ONLY ON :reuse, and the condition is the whole point. A `:reuse` slot
-        # holds the SAME cast in the SAME look, so the new image genuinely
-        # replaces it. A `:reskin` slot holds a DIFFERENT asset — the same faces
-        # in another colorway, which is what `decide` falls back to — so
-        # retiring it here would destroy the white jersey in order to file the
-        # black one. Both lookups start from `live`, so the white artifact would
-        # go invisible and the next white game would fall through the exact
-        # match to `:reskin` — the library could hold at most one live artifact
-        # per cast, and every return to a previous jersey would cost a recolor
-        # of the recolor. That is exactly the reuse this screen exists to make
-        # possible.
+        # THE SLOT NAMES ITS OWN TARGET, and asking it is not the same as asking
+        # `slot.reuse?`. What must be retired is the artifact already carrying
+        # the reuse key this new image is about to take — leave it live and the
+        # library holds two artifacts in one cell, the lookups return whichever
+        # the database hands back first, and the operator's Replace shows the
+        # OLD picture.
+        #
+        # It is emphatically not "the artifact on the slot". A `:reskin` slot
+        # holds a DIFFERENT asset — the same faces in another colorway, which is
+        # what `decide` falls back to — so retiring that would destroy the white
+        # jersey in order to file the black one. Both lookups start from `live`,
+        # so the white artifact would go invisible and the next white game would
+        # fall through the exact match to `:reskin` — the library could hold at
+        # most one live artifact per cast, and every return to a previous jersey
+        # would cost a recolor of the recolor. That is exactly the reuse this
+        # screen exists to make possible.
         #
         # It does NOT fall through to `:generate`, and an earlier version of
         # this comment said it did. `:generate` (artifact_plan.rb) needs ZERO
@@ -124,7 +129,10 @@ class ContentsController < ApplicationController
         # and running the third pass: it prints [:reskin, :reskin, :reskin].
         # The distinction matters because a reader who greps for `:generate`,
         # finds nothing, and concludes the guard is dead would be wrong twice.
-        slot.artifact&.retire! if slot.reuse?
+        #
+        # `reuse?` used to stand in for this question and the two came apart the
+        # moment the reuse LABEL got stricter. See Content::ArtifactPlan::Slot.
+        slot.supersedes&.retire!
 
         artifact = Artifact.create!(kind: slot.kind, image_url: params[:image_url], source: "operator")
         slot.subjects.each_with_index do |row, i|

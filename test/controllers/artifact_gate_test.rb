@@ -34,6 +34,8 @@ class ArtifactGateTest < ActionDispatch::IntegrationTest
 
   def index_of(kind) = slots.index { |s| s.kind == kind }
 
+  def appearances_for(person, colorway) = Appearance.find_by!(person_slug: person.slug, colorway: colorway)
+
   def attach_all = slots.each_index { |i| attach(i) }
 
   # --- component tier ------------------------------------------------------
@@ -423,6 +425,71 @@ class ArtifactGateTest < ActionDispatch::IntegrationTest
 
     assert_equal [:reuse, :reuse, :reuse], slots.map(&:decision),
                  "a new look must not strand artifacts already filed for this cast"
+  end
+
+  # AND THE SUPERSEDE SURVIVES THE REFUSAL — the regression this section caused.
+  #
+  # `Slot#reuse?` gated TWO things: the badge on the card and the retire in
+  # ContentsController#attach_artifact. Moving the lookless + named-colorway
+  # population from :reuse to :reskin moved it out of BOTH, so the operator
+  # clicked Replace and the page kept rendering the old picture — two live
+  # artifacts in one reuse cell, and `decide`'s cast lookup returns whichever
+  # the database hands back first.
+  #
+  # That is worse than the defect above: a wrong LABEL over the right picture
+  # became the wrong PICTURE, which is the mitigation the label defect leaned
+  # on. Zero recorded appearances is every person until their first look is
+  # filed, so this is the common path.
+  test "[integration] replacing a lookless artifact under a named colorway still supersedes" do
+    bare = Person.create!(first_name: "Bare", last_name: "Look", athlete: true)
+    @content.update!(qb_player_slug: bare.slug, skill_player_slug: nil, colorway: "black")
+    i = index_of("character_sheet")
+
+    attach(i, "/first.png")
+    assert_equal 1, Artifact.live.count, "the control — the first attach filed exactly one artifact"
+
+    attach(i, "/second.png")
+
+    assert_equal 1, Artifact.live.where(kind: "character_sheet").count,
+                 "the new image takes the same reuse key as the old one, so leaving both live " \
+                 "puts two artifacts in one cell and the lookup returns an arbitrary winner"
+    assert_equal 1, Artifact.where(kind: "character_sheet").where.not(retired_at: nil).count,
+                 "supersede, not delete — the replaced image stays as the record of what was published"
+
+    get content_path(@content.slug)
+
+    assert_match "/second.png", response.body,
+                 "the operator clicked Replace; the gate must show the image they just attached"
+    assert_no_match(%r{/first\.png}, response.body,
+                    "the superseded image must be gone from the card, not merely outranked")
+  end
+
+  # AND THE GUARD ON THAT SUPERSEDE — why it cannot key off the refusal itself.
+  #
+  # Artifact#subject_key reads ArtifactSubject#effective_appearance, which FALLS
+  # BACK to the person's default. So "the request could not resolve a look" says
+  # nothing whatever about whether the artifact on file HAS one. Retire on the
+  # refusal — or on any comparison that reads the request's raw nil against a
+  # key that falls back — and a recorded white jersey dies in order to file a
+  # black picture, which is the asset this screen exists to preserve.
+  test "[integration] a recorded look is not superseded by a colorway it cannot satisfy" do
+    @content.update!(skill_player_slug: nil, colorway: "white")
+    i = index_of("character_sheet")
+    attach(i, "/white.png")
+    white = Artifact.live.sole
+    assert_equal appearances_for(@burrow, "white").slug, white.subjects.sole.appearance_slug,
+                 "the control — this artifact's look is RECORDED, not merely inferred"
+
+    post set_colorway_content_path(@content.slug), params: { colorway: "black" }
+    assert_not slots[index_of("character_sheet")].reuse?,
+               "the control — Burrow has no black look, so the refusal must be firing here"
+
+    attach(index_of("character_sheet"), "/black.png")
+
+    assert white.reload.retired_at.nil?,
+           "the request resolved to nothing; the artifact on file is a recorded white jersey. " \
+           "Superseding it here destroys the asset the next white game reuses"
+    assert_equal 2, Artifact.live.count
   end
 
   # --- the wiring blockers a review found ---------------------------------

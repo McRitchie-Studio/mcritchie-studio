@@ -7,7 +7,26 @@ class Content
   # face does not change, only what they are wearing does. So each slot answers:
   # reuse it, re-skin it, or make it.
   class ArtifactPlan
-    Slot = Struct.new(:kind, :label, :subjects, :decision, :artifact, keyword_init: true) do
+    Slot = Struct.new(:kind, :label, :subjects, :decision, :artifact, :supersedes, keyword_init: true) do
+      # `decision` and `supersedes` answer DIFFERENT QUESTIONS and must not share
+      # a predicate.
+      #
+      #   #reuse? — "may we use this artifact as it stands?" A LABEL, read by the
+      #   badge on the gate card.
+      #   #supersedes — "which live artifact would the image I am about to file
+      #   shadow?" A MUTATION, read by the retire in
+      #   ContentsController#attach_artifact.
+      #
+      # They came apart the moment a lookless artifact under a named colorway
+      # stopped counting as a reuse. The label became right and the RETIRE went
+      # with it, so Replace filed a second artifact carrying the SAME reuse key
+      # and the gate kept rendering the first one — a wrong label became a wrong
+      # picture. Gating a mutation on a lookup's predicate means every change to
+      # what the lookup MATCHES silently changes what the mutation DESTROYS.
+      #
+      # NOTE ALSO that on a re-skin `artifact` and `supersedes` are not the same
+      # row: `artifact` is the other-look asset we are recoloring FROM, which
+      # must stay live. Retiring by `decision` could only ever name `artifact`.
       def reuse?    = decision == :reuse
       def reskin?   = decision == :reskin
       def generate? = decision == :generate
@@ -114,32 +133,43 @@ class Content
       # without this argument the two nils compare equal and this line answers
       # REUSE over an artifact nobody has described. See Artifact.matching.
       exact = Artifact.matching(pairs, kind: kind, approved_only: false, colorway: colorway)
-      return [:reuse, exact] if exact
+      return [:reuse, exact, exact] if exact
+
+      # THE CELL OCCUPANT — the live artifact already carrying this exact reuse
+      # key, asked WITHOUT the refusal above. The refusal decides what we are
+      # willing to CALL a reuse; it cannot change which row a new artifact
+      # shadows, and two live artifacts sharing one key is a shadowed duplicate
+      # the lookups resolve by whichever the database hands back first.
+      #
+      # It is the same lookup, so it returns `exact` whenever `exact` is present
+      # — which is why it is asked only down here, after that early return. The
+      # reuse path pays no second query.
+      occupant = Artifact.matching(pairs, kind: kind, approved_only: false)
 
       # Same cast, ANY looks — the face work is done and only the wardrobe is
       # wrong, which is a recolor rather than a fresh generation.
       other = Artifact.live.where(kind: kind).includes(subjects: :appearance).find do |a|
         a.subjects.map(&:person_slug).sort == rows.map { |r| r[:slug] }.sort
       end
-      return [:reskin, other] if other
+      return [:reskin, other, occupant] if other
 
-      [:generate, nil]
+      [:generate, nil, occupant]
     end
 
     def pair_slot
       return nil if cast.length < 2
 
       rows = subject_rows(cast)
-      decision, artifact = decide(rows, "pair")
+      decision, artifact, supersedes = decide(rows, "pair")
       Slot.new(kind: "pair", label: "Both players", subjects: rows,
-               decision: decision, artifact: artifact)
+               decision: decision, artifact: artifact, supersedes: supersedes)
     end
 
     def sheet_slot(slug, role)
       rows = subject_rows([[slug, role]])
-      decision, artifact = decide(rows, "character_sheet")
+      decision, artifact, supersedes = decide(rows, "character_sheet")
       Slot.new(kind: "character_sheet", label: role == "qb" ? "Quarterback" : "Skill player",
-               subjects: rows, decision: decision, artifact: artifact)
+               subjects: rows, decision: decision, artifact: artifact, supersedes: supersedes)
     end
   end
 end
