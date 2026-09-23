@@ -87,8 +87,9 @@ class ParseErrorRedactionDocsTest < ActiveSupport::TestCase
   # "Only an `assert_operator` … is exempt" does; the conjunction is grammar, not
   # meaning. So the carve-out is withheld from any reason clause carrying this
   # vocabulary, which is the only vocabulary this doc's narrowings have ever used.
-  # Without it the narrowing would not be a superset of the rule it replaces, and
-  # dropping coverage silently is the exact failure recorded further down this file.
+  # Without it the narrowing releases the LAST case in SELF_CLOSING_GRANTS below
+  # (measured), and dropping coverage silently is the failure recorded further down
+  # this file. It does NOT make the narrowing a superset — see that table's header.
   SCOPING_TERM = /\bassert[a-z_]*\b|\bmethods?\b|\bassertions?\b/i
 
   # THE RULE, extracted so the controls below drive the REAL one rather than a copy.
@@ -287,13 +288,24 @@ class ParseErrorRedactionDocsTest < ActiveSupport::TestCase
 
   # SENTENCES THAT GENUINELY CLOSE THEIR OWN GRANT — every one must still red.
   #
-  # THIS TABLE IS HOW THE NARROWING STAYS A SUPERSET. The rule it replaces asked the
+  # THIS TABLE IS THE COVERAGE THE NARROWING KEEPS — NOT a proof that it is a
+  # superset; this comment claimed that until review measured otherwise (below).
+  # The rule it replaces asked the
   # closer question of the WHOLE sentence, and the honest objection to narrowing any
   # assertion is that a narrower one silently drops coverage. The old rule cannot be
   # kept alongside, because the old rule IS the false positive — so its coverage is
   # kept HERE instead, as cases, driven through the shipping predicate. Each one is
   # asserted to have been caught by the old rule too, so the table cannot drift into
   # testing something the old rule never reached.
+  #
+  # THE RESIDUAL HOLE, MEASURED at the G2 review 2026-09-22 and reproduced twice: a
+  # closer sitting in a comma-led reason clause that NAMES NO ASSERTION is released.
+  # Planted in the live doc, "…is exempt by construction, because only a length CHECK
+  # is" leaves this whole file GREEN, while the rule this one replaces reds on it.
+  # Swap "check" for "assertion" and SCOPING_TERM catches it again — so what stays
+  # covered turns on which synonym the writer reached for. Five cases cannot
+  # establish a property over prose. Closing it is its own card with its own
+  # false-positive budget, not a widened SCOPING_TERM here.
   #
   # Spelled as `doc_sentences` would hand them over: backticks stripped, whitespace
   # collapsed. The first is the round-1 wording review measured and bounced.
