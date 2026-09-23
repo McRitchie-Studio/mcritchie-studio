@@ -403,6 +403,96 @@ class FastCertTest < Minitest::Test
     assert_equal 40, decision[:worst_count]
   end
 
+  # --- [unit] the margin: the notice the cliff never gave -----------------------------
+  #
+  # THE WHOLE BAND IN ONE ASSERTION, deliberately. A loop of assertions aborts at the
+  # first failure, so a mutation that breaks the top of the band is invisible while the
+  # bottom is red — the "mutate every member of a guarded loop" trap. Collecting the
+  # rows and comparing the ARRAY means one diff shows every row at once, and a mutation
+  # to either edge of the band shows up as a changed row rather than a missing run.
+  def test_the_margin_warns_on_the_approach_and_at_the_cap_but_not_over_it
+    band = (11..16).map do |n|
+      decision = FastCert.cap_decision(Array.new(n) { |i| "test/lib/t#{i}_test.rb" }, {},
+                                       cap: 15, margin: 2)
+      [n, decision[:approaching], decision[:capped]]
+    end
+
+    assert_equal [[11, false, false], [12, false, false], [13, true, false],
+                  [14, true, false], [15, true, false], [16, false, true]], band,
+                 "the band is `cap - margin` .. `cap` inclusive, and :approaching turns OFF " \
+                 "the moment :capped turns on — a reader takes exactly one of the two"
+  end
+
+  # THE MARGIN IS REPORTED, not just applied. Four consumers read this hash (the lane
+  # runner, --list, the evidence line, the sweeps in fast_cert_subject_test.rb) and the
+  # narration states "N path(s) of margin left", which it can only do if the decision
+  # carries the number it decided with.
+  def test_the_decision_carries_the_margin_it_applied
+    decision = FastCert.cap_decision(Array.new(15) { |i| "test/lib/t#{i}_test.rb" }, {},
+                                     cap: 15, margin: 2)
+
+    assert_equal 2, decision[:margin]
+    assert_equal 15, decision[:cap]
+    assert_equal 15, decision[:count]
+  end
+
+  # THE DEFAULT MARGIN IS THE ONE THE SWEEPS PIN. fast_cert_subject_test.rb pins a
+  # band computed with no `margin:` argument, so a silent change to the default would
+  # move that pinned list without this file noticing.
+  def test_the_default_margin_is_what_an_unargued_decision_applies
+    decision = FastCert.cap_decision(["test/lib/t_test.rb"], {})
+
+    assert_equal FastCert::DEFAULT_MAPPED_MARGIN, decision[:margin]
+  end
+
+  # AN EMPTY MAPPED SET IS NOT APPROACHING ANYTHING, and the cap is builder-settable,
+  # so this is reachable rather than theoretical: FAST_CHECK_MAPPED_CAP=1 over a diff
+  # that maps to nothing puts `cap - count` inside the margin. Warning there would
+  # announce a cliff over a lane that is about to be skipped as EMPTY — a different
+  # rung, with its own sentence.
+  def test_a_mapped_set_of_zero_never_approaches_the_cap
+    decision = FastCert.cap_decision([], {}, cap: 1, margin: 2)
+
+    refute decision[:approaching],
+           "0 mapped paths is the 'no tests map from the diff' rung, not an approach"
+    refute decision[:capped]
+  end
+
+  # THE MARGIN'S EDGE IS READ FROM THE ARGUMENT, not from the constant — otherwise
+  # `margin:` is decoration and the sweeps could not pass a cap of their own.
+  def test_a_zero_margin_narrows_the_band_to_the_cap_itself
+    at_cap = FastCert.cap_decision(Array.new(15) { |i| "test/lib/t#{i}_test.rb" }, {},
+                                   cap: 15, margin: 0)
+    one_under = FastCert.cap_decision(Array.new(14) { |i| "test/lib/t#{i}_test.rb" }, {},
+                                      cap: 15, margin: 0)
+
+    assert at_cap[:approaching], "a zero margin still includes the cap itself"
+    refute one_under[:approaching], "…and nothing below it"
+  end
+
+  # WHICH SPELLING REACHED THE SUBJECT — the grep rung's working, which is what a cap
+  # trip owes the person whose unrelated diff reddened a sweep. Driven over a real
+  # temp tree because the breakdown is a function of the TEST TREE, not of the token
+  # rules alone.
+  def test_the_spelling_breakdown_attributes_each_match_to_its_token
+    Dir.mktmpdir do |dir|
+      FileUtils.mkdir_p(File.join(dir, "test/lib"))
+      FileUtils.mkdir_p(File.join(dir, "config"))
+      File.write(File.join(dir, "config/widget_registry.yml"), "a: 1\n")
+      File.write(File.join(dir, "test/lib/by_path_test.rb"), "see config/widget_registry.yml\n")
+      File.write(File.join(dir, "test/lib/by_quoted_name_test.rb"), %(load "widget_registry.yml"\n))
+      File.write(File.join(dir, "test/lib/unrelated_test.rb"), "nothing to see\n")
+
+      breakdown = FastCert.spelling_breakdown(dir, "config/widget_registry.yml").to_h
+
+      assert_equal ["test/lib/by_path_test.rb"], breakdown["config/widget_registry.yml"],
+                   "the PATH token matches only the file that spells the path"
+      assert_equal ["test/lib/by_quoted_name_test.rb"], breakdown[%("widget_registry.yml")],
+                   "the QUOTED BASENAME token is the second spelling, and it is separate — " \
+                   "naming them as one total is what left a cap trip unactionable"
+    end
+  end
+
   # THE CAP IS ABOUT EXTRA WORK, so it reads the set AFTER the spine dedupe. A
   # mapped test the spine already runs costs this lane nothing, and capping the
   # raw union would refuse diffs whose mapping is entirely redundant — punishing
