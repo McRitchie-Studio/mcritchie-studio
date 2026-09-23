@@ -833,12 +833,12 @@ mapped_res =
     warn "fast-check: MAPPED LANE CAPPED — #{cap[:count]} mapped test file(s) exceeds the cap of #{cap[:cap]}."
     if cap[:worst_path]
       # TWO RUNGS CAN MAP THIS WIDE, and naming only one of them misreads a third of
-      # the cap trips in this repo. RE-DERIVED 2026-09-08 over all 1952 tracked files,
-      # one at a time: 11 exceed the cap alone, and THREE of them never grep —
-      # bin/release and bin/release.rb reach 23 through the ORPHAN family, bin/dor-check
-      # 18 through its twin's family. Of the eight that do grep, two are named by a PATH
-      # plus a quoted name (config/test_health.yml, bin/rubocop) rather than by any
-      # camelized anything. "a word-boundary grep of its camelized name" therefore
+      # the cap trips in this repo. RE-DERIVED 2026-09-22 over all 2229 tracked files,
+      # one at a time (was 2026-09-08 / 1952): 12 exceed the cap alone, and THREE of
+      # them never grep — bin/release and bin/release.rb reach 30 through the ORPHAN
+      # family, bin/dor-check 19 through its twin's family. Of the NINE that do grep,
+      # two are named by a PATH plus a quoted name (config/test_health.yml,
+      # bin/rubocop) rather than by any camelized anything. "a word-boundary grep of its camelized name" therefore
       # described 6 of the 11 and was printed for all of them — and "word-boundary" was
       # wrong even for the path tokens it did cover (#token_regexp bounds a path by the
       # characters that CONTINUE a path, since \b matches inside bin/task-archive).

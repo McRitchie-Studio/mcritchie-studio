@@ -622,7 +622,7 @@ class FastCertSubjectTest < Minitest::Test
     lines << "  The file in YOUR diff is one of those. Take it back out by citing the " \
              "CONSTANT that names this path instead of spelling the path in prose, or " \
              "by naming the file without its directory. Do NOT raise " \
-             "FastCert::DEFAULT_MAPPED_CAP: that moves the cliff without removing it."
+             "FastCert::DEFAULT_MAPPED_CAP: that moves the cliff without removing it"
     lines.join("\n")
   end
 end

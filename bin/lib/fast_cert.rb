@@ -630,6 +630,21 @@ module FastCert
   #   sat exactly on. These are counts of the TREE, not of the rule, so they move
   #   whenever test files are added; re-derive rather than paste.
   #
+  #   RE-DERIVED 2026-09-22 over all 2229 tracked files (mapped-cap-lacks-margin), one
+  #   at a time, classified by the RUNG that reached the count rather than by the count
+  #   alone: the SHAPE above survives and every number in it has moved. TWELVE exceed
+  #   the cap alone; the same THREE never reach the grep — bin/release and
+  #   bin/release.rb at 30 through the ORPHAN family, bin/dor-check at 19 through its
+  #   twin's family. Of the NINE that do grep, two are still named by a PATH plus a
+  #   quoted name (config/test_health.yml, bin/rubocop) and seven by a constant.
+  #
+  #   WHAT THIS SWEEP ADDED, and what DEFAULT_MAPPED_MARGIN exists for: the count of
+  #   sources sitting AT the cap with no margin at all. TWO —
+  #   config/release_repos.yml and test/support/task_usage_sandbox.rb — plus two more
+  #   one under (bin/rake, config/feature_shapes.yml). The 2026-09-08 line above reads
+  #   the over-cap population as the whole story; the population one path BELOW it is
+  #   the same defect one run earlier, and nothing announced it until now.
+  #
   # So the family hop trips the cap only IN COMBINATION with a co-changed file — the
   # cliff above — while every single-file cap trip WAS a grep precision failure. That
   # is what makes the fallback a slope rather than a shorter cliff, provably: the
