@@ -78,6 +78,44 @@ class AgentWorktreeFixtureTest < ActiveSupport::TestCase
     assert_match(/\A[0-9a-f]{40}\z/, rev(@hub_dir, "HEAD"))
   end
 
+  # [control] THE SAME DEFECT, FOUR LINES UP. `head_branch` dropped its status too,
+  # and its silent case is an UNBORN HEAD rather than a missing ref: in a repo with
+  # no commits `git rev-parse --abbrev-ref HEAD` prints the literal "HEAD" on stdout
+  # and exits 128 (measured 2026-09-22, and reproduced by this test's own premise
+  # below). So the dropping form answered "this repo is on branch HEAD" for a repo
+  # that is on no branch at all.
+  #
+  # IT WAS HARMLESS BY LUCK, WHICH IS NOT A MECHANISM. Every asserting call site is
+  # an `assert_equal` against a named branch, so "HEAD" fails loudly at each of them
+  # — a property of those assertions, not of the helper. Revert it to
+  # `out, = Open3.capture3(...)` and this test goes red while all six stay green.
+  test "[control] head_branch RAISES on an unborn HEAD, rather than answering \"HEAD\"" do
+    unborn = File.join(@projects_dir, "unborn-repo")
+    FileUtils.mkdir_p(unborn)
+    _out, _err, status = Open3.capture3(SessionEnv.neutralized, "git", "init", "-q", chdir: unborn)
+    assert status.success?, "premise: the probe repo must actually be a git repo"
+
+    # THE PREMISE, MEASURED RATHER THAN ASSUMED: git really does print "HEAD" here
+    # and really does exit non-zero. Without this the control could pass because the
+    # probe failed some other way, and a repaired helper raising on the WRONG reason
+    # is indistinguishable from one raising on this one.
+    raw, _raw_err, raw_status = Open3.capture3(SessionEnv.neutralized, "git", "rev-parse",
+                                               "--abbrev-ref", "HEAD", chdir: unborn)
+    refute raw_status.success?, "premise: an unborn HEAD must exit non-zero"
+    assert_equal "HEAD", raw.strip,
+                 "premise: git prints the literal \"HEAD\" on stdout — this is what a dropped " \
+                 "status hands back as a branch name"
+
+    error = assert_raises(RuntimeError) { head_branch(unborn) }
+
+    assert_includes error.message, unborn, "the failure must name the directory it asked about"
+    assert_includes error.message, "128", "and the exit status, so a reader can tell it apart from a crash"
+
+    # The other half: a repo that DOES have a branch still comes back as its name, so
+    # the repair did not simply turn the helper into something that always raises.
+    assert_equal "main", head_branch(@hub_dir)
+  end
+
   test "[integration] the staged desk starts FRESH — abandon_desk! is what ages it" do
     marker = File.join(@worktree_dir, ".git")
 
