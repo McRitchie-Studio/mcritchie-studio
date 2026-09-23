@@ -213,7 +213,7 @@ class CleanArtifactsCliTest < Minitest::Test
   # release runner as `mise x ruby@<version> -- ruby bin/release.rb`, whose ONLY
   # environment change is prepending mise's Ruby bin dir to PATH. Each audited
   # app's `bin/rails` then resolved `ruby` through that PATH to an interpreter
-  # whose gem tree is not the app's, and the boot died at config/boot.rb:3.
+  # whose gem tree is not the app's, and the boot died in its own config/boot.rb.
   # Measured 2026-09-22 on this machine: moms-app and rolio read LOOSE from a
   # clean shell and UNKNOWN under `mise x`, hiding four genuinely loose apps
   # behind the one that stayed visible — and under a `bundle exec` parent an app

@@ -19,7 +19,7 @@
 #
 # Each audited app's `bin/rails` then resolved `ruby` through that PATH to
 # mise's install rather than the toolchain its own bundle was installed under,
-# and `require "bundler/setup"` failed at the app's config/boot.rb:3. On this
+# and `require "bundler/setup"` failed in that app's own config/boot.rb. On this
 # machine both interpreters even report the SAME version (3.3.11) — homebrew's
 # and mise's — so an app's .ruby-version cannot tell them apart. Only the gem
 # tree differs, which is why the fix has to be the environment and not a
