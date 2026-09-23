@@ -209,6 +209,16 @@ module ArtifactSweep
   # rather than saying "adopt studio-engine" to a repo that already has it.
   ENGINE_CAP_FLOOR = "0.33.0"
 
+  # Recorded in place of a version when a checkout depends on studio-engine
+  # NOWHERE — a distinct fact from "pinned too low", and the one the combined
+  # remedy sentence used to flatten.
+  ENGINE_PIN_ABSENT = "absent"
+
+  # The canonical local-cap recipe. Named rather than restated: the byte value
+  # lives in studio-engine and in this doc, and a third copy typed into a report
+  # string is exactly the hand-maintained number that rotted here before.
+  KICKOFF_DOC = "docs/agents/maintenance/kickoff-log-rotation.md"
+
   # Classify a `bin/clean-artifacts` summary hash (symbol keys, as
   # parse_summary returns). `nil` and a partial hash both answer :unreadable
   # rather than raising — a degraded summary is the case this guards.
@@ -245,18 +255,99 @@ module ArtifactSweep
        "checked. An empty result here is silence, not a clean machine."]
     else
       lines = []
-      if missing.any?
-        lines << "⚠ MISSING LOG ROTATION: #{missing.join(', ')} — these apps have not adopted " \
-                 "the studio-engine cap (needs >= #{ENGINE_CAP_FLOOR}); their local logs grow " \
-                 "to Rails' #{human_bytes(RAILS_DEFAULT_CAP)} default"
-      end
-      if unknown.any?
-        lines << "⚠ LOG CAP NOT PROVEN for: #{unknown.join(', ')} — the audit could not boot " \
-                 "these, so the cap is UNKNOWN. Never read it as a pass"
-      end
+      lines.concat(rotation_missing_lines(missing, summary[:engine_pins])) if missing.any?
+      lines.concat(rotation_unknown_lines(unknown, summary[:rotation_unknown_reasons])) if unknown.any?
       lines << "✓ every audited app caps its local logs (#{Array(summary[:audited_envs]).join(', ')})" if lines.empty?
       lines
     end
+  end
+
+  # THE REMEDY IS SPLIT BY POPULATION, because one sentence cannot be true of
+  # both. "these apps have not adopted the studio-engine cap (needs >= 0.33.0)"
+  # is accurate for an app whose pin sits BELOW the floor and actively misleading
+  # for one that has no studio-engine dependency at all: it reads as "bump the
+  # pin" to an owner who has no pin to bump, and sends them looking for a line
+  # that does not exist. Measured 2026-09-22: chain-ops and rolio carry ZERO
+  # studio-engine references in Gemfile AND Gemfile.lock, while moms-app
+  # (0.32.1), acquisition-studio (0.13.1) and mcritchie-studio-ai-builder-cache
+  # (0.6.0) carry it below the floor — two populations, opposite work.
+  def rotation_missing_lines(missing, pins)
+    pins = pins.to_h.transform_keys(&:to_s)
+    tail = "their local logs grow to Rails' #{human_bytes(RAILS_DEFAULT_CAP)} default"
+    grouped = missing.group_by { |app| engine_population(pins[app.to_s]) }
+    named = ->(apps) { apps.map { |app| "#{app} (#{pins[app.to_s]})" }.join(", ") }
+
+    # Nothing classified — an older summary, or repos whose locks could not be
+    # read. Say the one thing true of EVERY population rather than guess a
+    # remedy; guessing is the defect this method exists to end.
+    if grouped.keys == [:unclassified]
+      return ["⚠ MISSING LOG ROTATION: #{missing.join(', ')} — these apps do not cap their local " \
+              "logs (the studio-engine cap needs >= #{ENGINE_CAP_FLOOR}); #{tail}"]
+    end
+
+    lines = []
+    if (apps = grouped[:no_pin])
+      lines << "⚠ MISSING LOG ROTATION — no studio-engine dependency at all: #{apps.join(', ')}. " \
+               "There is NO PIN TO BUMP here: add gem \"studio-engine\", \">= #{ENGINE_CAP_FLOOR}\" " \
+               "and relock, or cap the logs locally in development.rb AND test.rb per " \
+               "#{KICKOFF_DOC}; #{tail}"
+    end
+    if (apps = grouped[:stale_pin])
+      lines << "⚠ MISSING LOG ROTATION — studio-engine pinned below #{ENGINE_CAP_FLOOR}: " \
+               "#{named[apps]}. Bump the pin and relock; #{tail}"
+    end
+    if (apps = grouped[:at_floor])
+      lines << "⚠ MISSING LOG ROTATION — studio-engine already at or above #{ENGINE_CAP_FLOOR} and " \
+               "the cap STILL did not take: #{named[apps]}. The pin is not the problem — check that " \
+               "`studio.logger` runs as a BOOTSTRAP initializer (#{KICKOFF_DOC}); #{tail}"
+    end
+    if (apps = grouped[:unclassified])
+      lines << "⚠ MISSING LOG ROTATION — studio-engine pin could not be read: #{apps.join(', ')}; #{tail}"
+    end
+    lines
+  end
+
+  # ONE LINE PER UNKNOWN, CARRYING ITS REASON. The seam used to say the cap was
+  # unknown and never say why — and that silence is what sent two people at a
+  # load hypothesis (AUDIT_CONCURRENCY crossing AUDIT_TIMEOUT) that the reasons
+  # would have falsified on sight: `timed out` appears zero times in an archive
+  # run, and every unknown was a Bundler definition error instead. A dormant
+  # 2015 checkout and an app the audit booted under the WRONG RUBY both read
+  # UNKNOWN; only the reason tells them apart.
+  def rotation_unknown_lines(unknown, reasons)
+    reasons = reasons.to_h.transform_keys(&:to_s)
+    unknown.map do |app|
+      reason = reasons[app.to_s].to_s.strip
+      why = reason.empty? ? "no reason was recorded" : reason
+      "⚠ LOG CAP NOT PROVEN for #{app} — the audit could not boot it: #{why}. " \
+        "Never read UNKNOWN as a pass"
+    end
+  end
+
+  # Which remedy an app needs, from its recorded studio-engine pin.
+  def engine_population(pin)
+    return :unclassified if pin.nil? || pin.to_s.empty?
+    return :no_pin if pin.to_s == ENGINE_PIN_ABSENT
+
+    Gem::Version.new(pin.to_s) >= Gem::Version.new(ENGINE_CAP_FLOOR) ? :at_floor : :stale_pin
+  rescue ArgumentError
+    :unclassified
+  end
+
+  # The studio-engine version a checkout actually RESOLVES, read from
+  # Gemfile.lock rather than Gemfile: a `~> 0.31` requirement and a locked
+  # 0.32.1 are different facts, and the lock is the one that boots.
+  # Returns the version string, ENGINE_PIN_ABSENT when the app does not depend
+  # on the engine at all, or nil when nothing could be read.
+  def engine_pin(repo)
+    return nil if repo.nil?
+
+    lock = File.join(repo, "Gemfile.lock")
+    return nil unless File.file?(lock)
+
+    File.read(lock)[/^\s+studio-engine \(([^)]+)\)/, 1] || ENGINE_PIN_ABSENT
+  rescue SystemCallError
+    nil
   end
 
   # ---- reporting ----------------------------------------------------------
