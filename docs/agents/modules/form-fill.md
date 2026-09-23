@@ -41,10 +41,17 @@ import pypdf,sys
 r=pypdf.PdfReader(sys.argv[1])
 for i,p in enumerate(r.pages):
   for a in p.get('/Annots') or []:
-    a=a.get_object(); par=a.get('/Parent'); t=a.get('/T') or (par and par.get_object().get('/T'))
-    print(i+1, t, a.get('/TU'), [round(x) for x in a['/Rect']])
+    a=a.get_object(); par=a.get('/Parent'); fld=par.get_object() if par is not None else a
+    t=a.get('/T') or fld.get('/T')
+    on=[k for k in (a.get('/AP',{}).get('/N') or {}) if k!='/Off']
+    print(i+1, t, fld.get('/FT'), on or '', a.get('/TU'), [round(x) for x in a['/Rect']])
 " <form.pdf>
 ```
+
+Each row is page, field name, type, **on-states**, tooltip, rectangle. Read the
+on-states column before writing any checkbox into the map: it is that field's
+own legal "on", and §5 depends on it. A `/Btn` row whose name came from a parent
+rather than from the widget is the parent/kid shape §5 handles.
 
 A form with no fields (a scan) gets a filled **answer sheet** instead: a list
 of every field with the value to write in. Don't try to draw text over a scan.
@@ -112,37 +119,111 @@ untouched original** and writes a new copy
 Preview re-saves an open PDF in a form that `pypdf` then misreads: after
 that re-save, one field read back empty and a checkbox showed unchecked.
 
+### A checkbox has no universal "on" value — read it, never assume it
+
+Three shapes turn up on real forms, and only the first survives a guess:
+
+| Shape | Where the name is | Turning it on |
+|---|---|---|
+| On-state `/Yes` | on the widget itself | `/V` and `/AS` both `/Yes` |
+| On-state `/On`, `/1`, `/X` … | on the widget itself | `/V` and `/AS` both **that** state |
+| Parent field + unnamed kid widget | on the **parent** | `/V` on the parent, `/AS` on the kid |
+
+Each field declares its own legal on-state in its `/AP /N` dictionary: it is the
+key that is not `/Off`. Writing `/Yes` into a field whose only on-state is `/On`
+stores a value outside that field's legal set. The third shape — the name on a
+parent, the appearance on a kid widget carrying no `/T` — is what most IRS and
+insurance forms use; set only the parent's `/V` and the box renders off whatever
+the value says. So the loop below reads the on-state off each widget.
+
 ```python
 import pypdf
 from pypdf.generic import NameObject
 src, dst = "<original.pdf>", "<Name>-FILLED.pdf"
 text   = {"<field>": "<value>"}           # text fields
 radios = {"<group>": "/<export value>"}   # radio groups
-checks = ["<checkbox field>"]             # single checkboxes
+checks = ["<checkbox field>"]             # checkboxes to turn ON
+
+def widgets(page):
+    """(name, widget, field) per widget. `field` is the parent when there is
+    one — that is where /V belongs. /AS always belongs on the widget."""
+    for x in page.get("/Annots") or []:
+        a = x.get_object()
+        par = a.get("/Parent")
+        fld = par.get_object() if par is not None else a
+        yield (a.get("/T") or fld.get("/T")), a, fld
+
+def on_states(widget):
+    """This widget's own legal on-states: the /AP /N keys that are not /Off."""
+    return [s for s in (widget.get("/AP", {}).get("/N") or {}) if s != "/Off"]
+
 w = pypdf.PdfWriter(clone_from=pypdf.PdfReader(src))
 for pg in w.pages:
     w.update_page_form_field_values(pg, text, auto_regenerate=False)
-    for x in pg.get("/Annots") or []:
-        a = x.get_object(); par = a.get("/Parent")
-        group = par.get_object() if par else None
-        if group is not None and group.get("/T") in radios:
-            on = radios[group["/T"]]
-            a[NameObject("/AS")] = NameObject(on if on in a["/AP"]["/N"] else "/Off")
-            group[NameObject("/V")] = NameObject(on)
-        if a.get("/T") in checks:
-            a[NameObject("/V")] = a[NameObject("/AS")] = NameObject("/Yes")
+    for name, a, fld in widgets(pg):
+        if name in radios:                      # one kid widget per export value
+            want = radios[name]
+            a[NameObject("/AS")] = NameObject(want if want in on_states(a) else "/Off")
+            fld[NameObject("/V")] = NameObject(want)
+        if name in checks:
+            legal = on_states(a)
+            if len(legal) != 1:
+                raise SystemExit(f"{name}: expected one on-state, found {legal}")
+            fld[NameObject("/V")] = NameObject(legal[0])   # value on the field
+            a[NameObject("/AS")] = NameObject(legal[0])    # appearance on the widget
 w.set_need_appearances_writer(True)
 w.write(dst)
-f = pypdf.PdfReader(dst).get_fields()
-print("mismatched:", [k for k, v in {**text, **radios}.items() if f[k].get("/V") != v])
 ```
 
-Setting a radio group's `/V` alone leaves the box **visibly unchecked**. Each
-widget's `/AS` must name the chosen export value, as the loop above does.
+Setting a radio group's or a checkbox's `/V` alone leaves the box **visibly
+unchecked**. The widget's `/AS` must name the same state, as the loop does.
 
-**Verify both halves.** The read-back must print `mismatched: []`. Then render
-the pages and look at them. A value can read back correctly and still fail to
-draw.
+### Verify — the read-back is the gate
+
+Append this to the same script. It reopens the written file and asserts against
+each field's **own** `/AP /N`, so it judges what landed on disk rather than what
+the fill loop meant to do. It names every wrong field and exits non-zero.
+
+```python
+r = pypdf.PdfReader(dst)
+f = r.get_fields()
+bad = [f"{k}: want {v!r}, got {f.get(k, {}).get('/V')!r}"
+       for k, v in {**text, **radios}.items() if f.get(k, {}).get("/V") != v]
+seen = set()
+for pg in r.pages:
+    for name, a, fld in widgets(pg):
+        if name not in checks:
+            continue
+        seen.add(name)
+        legal, v, drawn = on_states(a), fld.get("/V"), a.get("/AS")
+        if v not in legal:
+            bad.append(f"{name}: value {v!r} is not an on-state of this field {legal}")
+        elif drawn != v:
+            bad.append(f"{name}: value {v!r} but widget draws {drawn!r} - renders OFF")
+bad += [f"{n}: no widget carries this name - nothing was set" for n in checks if n not in seen]
+if bad:
+    raise SystemExit("FORM FILL FAILED:\n  " + "\n  ".join(bad))
+print(f"verified: {len(text)} text, {len(radios)} radio, {len(checks)} checkbox - all match")
+```
+
+It reds on four distinct faults, each measured against the fixture in the
+Background section below:
+
+- a text or radio value that did not land;
+- a checkbox value outside that field's legal on-states (`/Yes` written into an
+  `/On` field);
+- a checkbox whose value is legal but whose widget still draws something else,
+  so the box renders off;
+- a name in `checks` that matches no widget on the form — a typo, or the
+  parent/kid shape when a fill loop never reached it.
+
+**The read-back is the gate; the render is not.** Render the pages as well, but
+know what each check can see. Measured: a box wrongly set to `/Yes` when its
+only on-state was `/On` still rasterised as a **tick**, because `pdftoppm` falls
+back to redrawing from `/MK` instead of failing on the unresolvable state. The
+render caught one of the two corrupt boxes; the read-back caught both. Use the
+render for the fault it does catch — a value that reads back correctly and still
+fails to draw.
 
 ```bash
 pdftoppm -f <page> -l <page> -r 90 -png "<Name>-FILLED.pdf" scratchpad/form-fill-<slug>-p
@@ -185,3 +266,102 @@ text, not from the layout.
 
 The filled PDF itself is **not** filed by default. It is a draft until he signs.
 File the signed copy through `knowledge-capture` when he sends it.
+
+---
+
+## Background — not needed to execute
+
+### The checkbox fixture, and what it proved
+
+§5 reads each checkbox's on-state instead of assuming `/Yes` because assuming it
+was wrong on two of the three shapes. This rebuilds the three-shape form those
+claims were measured on, so any later change to §5 can be re-checked rather
+than trusted. Run it in a scratch directory; it writes `form-fill-fixture.pdf`.
+
+```python
+import pypdf
+from pypdf.generic import (ArrayObject, DecodedStreamObject, DictionaryObject,
+                           FloatObject, NameObject, NumberObject, TextStringObject)
+w = pypdf.PdfWriter(); page = w.add_blank_page(300, 200)
+
+def ap(on):                                    # a drawable on/off appearance
+    s = DecodedStreamObject(); s.set_data(b"q 0 0 0 rg 2 2 14 14 re f Q" if on else b"q Q")
+    s[NameObject("/Type")] = NameObject("/XObject"); s[NameObject("/Subtype")] = NameObject("/Form")
+    s[NameObject("/BBox")] = ArrayObject([NumberObject(0), NumberObject(0),
+                                          NumberObject(18), NumberObject(18)])
+    s[NameObject("/Resources")] = DictionaryObject(); return w._add_object(s)
+
+def box(y, on_state, named):
+    a = DictionaryObject()
+    a[NameObject("/Type")] = NameObject("/Annot"); a[NameObject("/Subtype")] = NameObject("/Widget")
+    a[NameObject("/Rect")] = ArrayObject([FloatObject(40), FloatObject(y),
+                                          FloatObject(58), FloatObject(y + 18)])
+    a[NameObject("/F")] = NumberObject(4); a[NameObject("/P")] = page.indirect_reference
+    a[NameObject("/AS")] = NameObject("/Off"); a[NameObject("/DA")] = TextStringObject("/ZaDb 0 Tf 0 g")
+    mk = DictionaryObject(); mk[NameObject("/CA")] = TextStringObject("4"); a[NameObject("/MK")] = mk
+    n = DictionaryObject(); n[NameObject(on_state)] = ap(True); n[NameObject("/Off")] = ap(False)
+    d = DictionaryObject(); d[NameObject("/N")] = n; a[NameObject("/AP")] = d
+    if named:                                  # shapes 1-2: field and widget are one object
+        a[NameObject("/FT")] = NameObject("/Btn"); a[NameObject("/T")] = TextStringObject(named)
+        a[NameObject("/V")] = NameObject("/Off")
+        r = w._add_object(a); return r, r
+    return None, a                             # shape 3: the caller supplies the parent
+
+fields, annots = [], []
+for y, st, nm in ((150, "/Yes", "box_yes"), (120, "/On", "box_on")):
+    f, _ = box(y, st, nm); fields.append(f); annots.append(f)
+
+parent = DictionaryObject()                    # shape 3: the name on the parent...
+parent[NameObject("/FT")] = NameObject("/Btn")
+parent[NameObject("/T")] = TextStringObject("box_kid")
+parent[NameObject("/V")] = NameObject("/Off"); pref = w._add_object(parent)
+_, kid = box(90, "/Yes", None)                 # ...the appearance on an unnamed kid
+kid[NameObject("/Parent")] = pref; kref = w._add_object(kid)
+parent[NameObject("/Kids")] = ArrayObject([kref]); fields.append(pref); annots.append(kref)
+
+page[NameObject("/Annots")] = ArrayObject(annots)
+fonts = DictionaryObject()
+for tag, base in (("/Helv", "/Helvetica"), ("/ZaDb", "/ZapfDingbats")):
+    fo = DictionaryObject(); fo[NameObject("/Type")] = NameObject("/Font")
+    fo[NameObject("/Subtype")] = NameObject("/Type1"); fo[NameObject("/BaseFont")] = NameObject(base)
+    fonts[NameObject(tag)] = w._add_object(fo)
+dr = DictionaryObject(); dr[NameObject("/Font")] = fonts
+acro = DictionaryObject(); acro[NameObject("/Fields")] = ArrayObject(fields)
+acro[NameObject("/DR")] = dr; acro[NameObject("/DA")] = TextStringObject("/Helv 10 Tf 0 g")
+w._root_object[NameObject("/AcroForm")] = w._add_object(acro)
+with open("form-fill-fixture.pdf", "wb") as fh:
+    w.write(fh)
+```
+
+Point §5's script at it with `checks = ["box_yes", "box_on", "box_kid"]` and
+empty `text` and `radios` maps. Measured on pypdf 6.14.2:
+
+| Field | On-state | Assuming `/Yes` | Reading `/AP /N` |
+|---|---|---|---|
+| `box_yes` | `/Yes` | `/V` `/AS` = `/Yes` — **correct** | `/V` `/AS` = `/Yes` — correct |
+| `box_on` | `/On` | `/V` `/AS` = `/Yes` — not a legal state | `/V` `/AS` = `/On` — correct |
+| `box_kid` | `/Yes` (on a kid) | never matched; stayed `/Off` | `/V` on parent, `/AS` on kid — correct |
+
+`box_yes` is the **control**: it fills correctly under both, which is what shows
+the fixture is sound and locates the fault in the assumption rather than in the
+form. A fixture where everything fails proves only that the fixture is broken.
+
+The old verification — comparing `{**text, **radios}` against `get_fields()` —
+printed `mismatched: []` on that corrupt file, because it never looked at a
+checkbox. §5's verification reds on it, naming both faults:
+
+```text
+FORM FILL FAILED:
+  box_on: value '/Yes' is not an on-state of this field ['/On']
+  box_kid: value '/Off' is not an on-state of this field ['/Yes']
+```
+
+Its other two branches were exercised the same way, by mutating a correct file:
+forcing a kid widget's `/AS` back to `/Off` reds with `value '/Yes' but widget
+draws '/Off' - renders OFF`, and adding an unknown name to `checks` reds with
+`no widget carries this name - nothing was set`.
+
+One trap worth keeping: `get_fields()` reports no `/_States_` for the parent/kid
+shape, so the legal on-states cannot be read from it. That is why both the fill
+loop and the verification walk `/Annots` and read `/AP /N` off the widget.
+
