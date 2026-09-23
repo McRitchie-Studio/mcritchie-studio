@@ -98,6 +98,44 @@ the wrong source tree (`test/docs/ship_docs_sync_docs_test.rb`). Three guards,
 three predicates: any mention in an **executed** doc, the wrong **source tree**
 anywhere, and an **unscoped command** anywhere.
 
+## What A Doc Guard Scans
+
+**A doc guard's population is decided once, in `test/support/stated_prose.rb`.** Do
+not give a new guard a glob of its own.
+
+Two guards shipped on 2026-09-22 each globbing a DIRECTORY, and both carried the same
+hole: a guard that scans `docs/**` structurally cannot see a site making its claim
+OUTSIDE `docs/`. Both holes were live. The preview guard missed a bare invocation
+sitting in the feature's own service; the turf-vault lane guard missed three stale
+lane counts in `config/release_repos.yml` — the file where that lane is DECLARED —
+and another in `bin/fast-check`, the script that runs it. The most authoritative
+place to state a claim is usually not a doc.
+
+`StatedProse.sources(Rails.root)` is that population: **markdown anywhere**, plus the
+**comment bodies** of `config/`, `app/`, `lib/` and `bin/`. In a non-markdown file it
+blanks every line that is not a comment, so code is never read as a claim and a cited
+line number still points where a reader can open it.
+
+**Why one population and not two wider globs.** A glob decides what every future
+author is measured against. Two builders answering that question separately produce
+two globs and two exemption conventions — which is how a repo ends up with two
+authorities disagreeing. `test/docs/guard_population_test.rb` fails if either guard
+stops reading the shared one.
+
+**The exemptions are load-bearing, not tidiness:** frozen records (an explicit
+`ARCHIVE-ONLY` banner, never the task stage word `archived`), `/archive/` and
+`/audits/` as path SEGMENTS rather than prefixes, vendored trees, `/.worktrees/`
+(every desk is a full checkout nested inside the primary, so a naive sweep reports
+other tasks' drafts), and `test/` (a guard cannot scan its own verbatim fixtures).
+
+**Widening owes a NEGATIVE control.** A guard that reds on correct text is worse than
+a guard with a blind spot, because it trains authors to route around it. Widening
+these two surfaced one immediately: `bin/fast-check` says a cert "died on
+`bin/rubocop` one lane later" — a time idiom, inside a turf-vault paragraph, correct
+as written, and read as a lane count by a pattern that accepted a bare singular. Both
+guards now carry accepted-prose fixtures beside their regression fixtures, and that
+sentence is one of them.
+
 ## Citing Code From Prose
 
 **Cite the SEAM, not the line.** A line number is true only at the SHA it was
