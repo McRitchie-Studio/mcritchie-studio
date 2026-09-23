@@ -1,4 +1,9 @@
 async function loginWithMagicLink(page, email) {
+  // The sign-in path ends on `/`, whose landing template loads a third-party
+  // widget script. `page.goto` below waits until "load", so that script — not
+  // this app — decides whether the navigation ever finishes. See
+  // `blockThirdPartyRequests`.
+  await blockThirdPartyRequests(page);
   await page.goto("/signin");
   await page.fill('input[name="email"]', email);
 
@@ -117,6 +122,104 @@ function httpOrigin(value) {
   } catch {
     return null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// A THIRD PARTY MAY NOT HOLD A NAVIGATION OPEN. Added for
+// /tasks/hub-magic-link-spec-flakes.
+//
+// WHAT WENT WRONG, NAMED. `devops_key_preservation.spec.js` went RED on a diff
+// with no app code in it, 46 other specs passing, and a re-run went green:
+//
+//   Error: page.goto: Test timeout of 30000ms exceeded.
+//     - navigating to "http://127.0.0.1:3000/l/RrKiskIlVrUylAmO",
+//       waiting until "load"
+//     at helpers.js:25
+//
+// Read the call log, not the file name. The hang is `waitUntil: "load"`, and
+// `load` does not fire until EVERY subresource of the final document settles.
+// The magic-link consume redirects to `/`, `/` is `landing#index`, and that
+// page carries `<script src="https://app.sprintful.com/widget/v1.js">`. So a
+// third party that is slow or unreachable FROM THE RUNNER holds the navigation
+// open, and `page.goto` — which inherits no timeout of its own — burns the
+// whole 30s test budget on it. Every spec that signs in walks that path, which
+// is why the red lands on an arbitrary one of them and never the same one
+// twice.
+//
+// MEASURED, on a booted stack, by stalling every non-app origin (accept the
+// connection, never answer) and changing nothing else:
+//
+//   third party as-is        0/3 red, sign-in in ~1.0s
+//   third party STALLS       3/3 red, and the failure is byte-identical to CI's
+//   third party REFUSED      0/3 red, sign-in in ~0.2s
+//
+// That is the whole diagnosis: not a page race, not a cold boot, and not
+// anything a retry or a bigger timeout would fix. Both of those would have
+// turned a 30s red into a 60s red, or into a green that still spends the
+// budget — a visible flake traded for a slower invisible one.
+//
+// WHY REFUSE RATHER THAN WAIT LONGER. This file already argues the principle
+// for the console collector: "The spec's verdict depended on whether a CDN
+// answered, which is a test that fails for reasons unrelated to the code under
+// test." That fix scoped the COLLECTOR by origin. It could not help here,
+// because this third party does not merely log — it holds the document open.
+// Same doctrine, the other surface.
+//
+// THE RECIPE, so the next `waiting until "load"` red is diagnosed rather than
+// re-run. It does not need CI and it does not need luck — stall every non-app
+// origin and the failure becomes deterministic:
+//
+//     await page.route(/^https?:\/\/(?!127\.0\.0\.1|localhost)/, async () => {
+//       await new Promise((r) => setTimeout(r, 120_000)); // accept, never answer
+//     });
+//
+// Register it BEFORE the helper (Playwright runs the most recently added route
+// first, so the helper's own route would otherwise win) and run the spec. If the
+// red is this one, it reproduces every time; if it does not, the third party is
+// not what is holding the document open and the call log names what is. Read the
+// CALL LOG rather than the file name — `page.goto` reports the line that STARTED
+// the navigation, not the resource that stalled it.
+//
+// TWO THINGS IT DELIBERATELY DOES NOT DO:
+//
+//   * IT NEVER ABORTS A NAVIGATION. `isNavigationRequest()` is continued
+//     unconditionally. Aborting one would break a redirect chain, and the
+//     document is never the thing that hangs — its subresources are.
+//   * IT COMPARES AGAINST THE DOCUMENT'S OWN ORIGIN, not a hard-coded
+//     loopback. The suite also runs against QA_BASE_URL/PW_BASE_URL, where
+//     loopback is the wrong answer, and the app serves its assets from its own
+//     origin (no `asset_host` is configured in any environment). Unknown
+//     origin on either side means CONTINUE, so an origin we cannot read is
+//     never refused on a guess.
+// WHY THIS IS SCOPED TO THE SIGN-IN HELPER AND NOT INSTALLED GLOBALLY. Two
+// reasons, and the first one is a hard constraint rather than caution.
+//
+//   1. e2e/page_error_collector.spec.js NEEDS the third party reachable. Its
+//      subject is which origin a console error belongs to, and its own header
+//      records this same widget as "the live incident vector" (2026-08-14). A
+//      global blocker would quietly rewrite the world that spec measures.
+//   2. e2e/qa_readonly.spec.js runs against a real QA_BASE_URL host, where
+//      "not our origin" is a claim about someone else's deployment rather than
+//      about this repo.
+//
+// So the remainder is NAMED rather than silently left: the specs that reach `/`
+// WITHOUT signing in — smoke, app_ladder_pin_bridge, qa_readonly and the
+// collector itself — still load that widget and can still take a 30s
+// `page.goto` on a runner that cannot reach it. If one of them reds with
+// `waiting until "load"`, this is the first thing to check, and the recipe
+// below settles it in one run. That is a bounded, stated hole, not an
+// oversight.
+async function blockThirdPartyRequests(page) {
+  await page.route(/^https?:\/\//, (route) => {
+    const request = route.request();
+    if (request.isNavigationRequest()) return route.continue();
+
+    const document = httpOrigin(page.url());
+    const target = httpOrigin(request.url());
+    if (document && target && target !== document) return route.abort();
+
+    return route.continue();
+  });
 }
 
 function watchPageErrors(page, { allowOrigins = [] } = {}) {
@@ -282,4 +385,4 @@ async function openDeploySidebar(page, panel) {
   return sidebar;
 }
 
-module.exports = { loginWithMagicLink, watchPageErrors, openDeploySidebar };
+module.exports = { loginWithMagicLink, watchPageErrors, openDeploySidebar, blockThirdPartyRequests };
