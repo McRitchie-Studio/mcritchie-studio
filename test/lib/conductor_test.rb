@@ -87,11 +87,29 @@ class ConductorTest < Minitest::Test
 
   def write_fakes
     # task: dispatch list/show against the fixtures dir.
+    # TASK_LIST_EXIT / TASK_SHOW_EXIT stand in for a board bin/task could not read:
+    # a 301 from the canonical-host middleware, an expired agent credential, an
+    # outage. bin/task dies on stderr and exits non-zero for all three, and this
+    # fake reproduces exactly that shape (a message on STDERR, nothing on stdout).
+    # TASK_SHOW_EXIT=4 is its EXIT_TASK_NOT_FOUND: the board ANSWERED, negatively.
     write_exec("task", <<~SH)
       #!/bin/bash
       FIX="#{@fix}"
-      if [ "$1" = "list" ]; then f="$FIX/list-$3.txt"; [ -f "$f" ] && cat "$f"; exit 0; fi
-      if [ "$1" = "show" ]; then f="$FIX/show-$2.json"; if [ -f "$f" ]; then cat "$f"; else echo '{}'; fi; exit 0; fi
+      if [ "$1" = "list" ]; then
+        if [ -n "$TASK_LIST_EXIT" ] && [ "$TASK_LIST_EXIT" != "0" ]; then
+          echo "task: GET /api/v1/tasks?stage=$3 -> 301: (redirected to https://mcritchie.studio/)" >&2
+          exit "$TASK_LIST_EXIT"
+        fi
+        f="$FIX/list-$3.txt"; [ -f "$f" ] && cat "$f"; exit 0
+      fi
+      if [ "$1" = "show" ]; then
+        if [ -n "$TASK_SHOW_EXIT" ] && [ "$TASK_SHOW_EXIT" != "0" ]; then
+          echo "task: GET /api/v1/tasks/$2 -> 401: (the board refused this credential)" >&2
+          exit "$TASK_SHOW_EXIT"
+        fi
+        if [ -n "$TASK_SHOW_GARBAGE" ]; then echo 'not json at all'; exit 0; fi
+        f="$FIX/show-$2.json"; if [ -f "$f" ]; then cat "$f"; else echo '{}'; fi; exit 0
+      fi
       exit 0
     SH
     # release: record every call so the tests can prove ship is never invoked.
@@ -121,8 +139,8 @@ class ConductorTest < Minitest::Test
     File.chmod(0o755, path)
   end
 
-  def run_conductor(*args)
-    out, err, status = Open3.capture3(@env, RbConfig.ruby, BIN, *args)
+  def run_conductor(*args, env: {})
+    out, err, status = Open3.capture3(@env.merge(env), RbConfig.ruby, BIN, *args)
     [out, err, status]
   end
 
@@ -276,5 +294,125 @@ class ConductorTest < Minitest::Test
     assert status.success?
     assert_includes out, "bin/release prepare"
     assert_empty release_log
+  end
+
+  # --- A FAILED READ IS NOT AN EMPTY ONE -----------------------------------
+  #
+  # THE DEFECT THESE PIN (filed 2026-09-20, verified at its lines 2026-09-22).
+  # Every read here was `out, ok = run_bin(...)` + `return [] unless ok`, and
+  # run_bin discarded the child's stderr. bin/task exits 1 on ANY non-2xx, so a
+  # 301, a 401 or an outage turned every stage into an empty array: the survey
+  # printed "(none)" under every stage, "Active release candidate: none" and
+  # "blocked (0)", EXITED 0, and never mentioned the board. This is the false
+  # all-clear bin/task's own archived-scan alarm exists to remove, rendered by
+  # the tool an operator opens Step 0 with.
+
+  def test_a_failed_stage_list_exits_non_zero
+    _out, _err, status = run_conductor("survey", "--no-health", env: { "TASK_LIST_EXIT" => "1" })
+
+    refute_predicate status, :success?,
+                     "a board read that FAILED must not render as a survey that exits 0"
+  end
+
+  def test_a_failed_stage_list_never_prints_an_empty_pipeline
+    out, _err, _status = run_conductor("survey", "--no-health", env: { "TASK_LIST_EXIT" => "1" })
+
+    refute_includes out, "(none)"
+    refute_includes out, "Active release candidate: none"
+  end
+
+  # The child already produced the diagnosis. Throwing it away is what sent an
+  # operator into 1Password for a 301 (the incident behind bin/lib/board_read.rb).
+  def test_a_failed_stage_list_carries_the_childs_diagnosis
+    _out, err, _status = run_conductor("survey", "--no-health", env: { "TASK_LIST_EXIT" => "1" })
+
+    assert_includes err, "the submitted stage list failed"
+    assert_includes err, "301"
+    assert_includes err, "redirected to"
+  end
+
+  # show_task double-swallowed: `ok ? (JSON.parse(out) rescue {}) : {}`. The {} it
+  # returned made task_blocked? false for EVERY task and non_pipeline? treat every
+  # task as a pipeline member.
+  def test_a_failed_task_show_exits_non_zero
+    _out, err, status = run_conductor("survey", "--no-health", env: { "TASK_SHOW_EXIT" => "1" })
+
+    refute_predicate status, :success?
+    assert_includes err, "401"
+  end
+
+  # The OTHER half of the same swallow: a read that succeeded and cannot be
+  # parsed is an unreadable answer, not an empty one.
+  def test_an_unparseable_task_show_exits_non_zero
+    _out, err, status = run_conductor("survey", "--no-health", env: { "TASK_SHOW_GARBAGE" => "1" })
+
+    refute_predicate status, :success?
+    assert_includes err, "unparseable"
+  end
+
+  # THE FALSE-ALARM DIRECTION, which matters just as much. bin/task exit 4 is
+  # EXIT_TASK_NOT_FOUND — the board POSITIVELY answered "there is no such task".
+  # A slug archived between the stage list and its show is a race, not an outage,
+  # and refusing it would wedge the survey on an ordinary board event.
+  def test_a_task_the_board_says_is_gone_does_not_kill_the_survey
+    out, err, status = run_conductor("survey", "--no-health", env: { "TASK_SHOW_EXIT" => "4" })
+
+    assert_predicate status, :success?
+    assert_includes out, "Build-and-Deploy survey"
+    assert_includes err, "has no task"
+  end
+
+  # A mis-resolved binary never runs at all (Errno::ENOENT). That used to warn and
+  # degrade to an empty stage; it is a failed read like any other.
+  def test_a_task_binary_that_cannot_launch_exits_non_zero
+    _out, err, status = run_conductor("survey", "--no-health",
+                                      env: { "TASK_BIN" => File.join(@dir, "no-such-binary") })
+
+    refute_predicate status, :success?
+    assert_includes err, "the command never ran"
+  end
+
+  # The fix reaches a SECOND and more dangerous path: `conductor merge` read the
+  # reviewed stage the same way and printed "no reviewed pipeline tasks to merge".
+  def test_a_failed_read_does_not_render_merge_as_nothing_to_do
+    out, _err, status = run_conductor("merge", env: { "TASK_LIST_EXIT" => "1" })
+
+    refute_predicate status, :success?
+    refute_includes out, "no reviewed pipeline tasks to merge"
+  end
+
+  # The exit code conductor calls "the board answered, negatively" must be
+  # bin/task's own. A drift turns an archived slug back into a survey-killing
+  # outage, and nothing else in the tree would notice.
+  def test_the_not_found_exit_code_matches_bin_task
+    conductor = File.read(BIN)[/^TASK_NOT_FOUND_EXIT = (\d+)/, 1]
+    task = File.read(File.expand_path("../../bin/task", __dir__))[/^EXIT_TASK_NOT_FOUND = (\d+)/, 1]
+
+    refute_nil conductor, "bin/conductor must pin the not-found exit code by name"
+    refute_nil task, "bin/task must still define EXIT_TASK_NOT_FOUND"
+    assert_equal task, conductor
+  end
+
+  # The reviewer preview is DELIBERATELY still advisory, and the difference is the
+  # distinction this file now draws: it removes a "picked:" line from under a
+  # command that prints regardless. Nothing is cleared, so nothing refuses.
+  # AND IT DOES NOT DEGRADE IN SILENCE. This caller reads `run_bin` directly
+  # rather than through `read_board`, so nothing else would surface the reason.
+  def test_a_failed_reviewer_preview_says_why_on_stderr
+    write_exec("reviewer-select", "#!/bin/bash\necho 'boom: no such task' >&2\nexit 1\n")
+    _out, err, status = run_conductor("plan", "--reviewers", "--no-health")
+
+    assert_predicate status, :success?
+    assert_match(/reviewer preview for feat-a unavailable/, err)
+    assert_match(/boom: no such task/, err, "the child diagnosed it; do not throw that away")
+  end
+
+  def test_a_failed_reviewer_preview_still_degrades
+    write_exec("reviewer-select", "#!/bin/bash\nexit 1\n")
+    out, _err, status = run_conductor("plan", "--reviewers", "--no-health")
+
+    assert_predicate status, :success?
+    assert_includes out, "bin/reviewer-select feat-a"
+    refute_includes out, "picked:"
   end
 end
