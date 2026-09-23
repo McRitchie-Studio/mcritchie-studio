@@ -8,7 +8,7 @@
 #
 #   guard                                  its glob                  the site it missed
 #   review_lane_docs_test (preview)        docs/agents/**/*.md       app/services/reviewer_selector.rb
-#   turf_vault_lane_figure_docs_test       docs/**/*.md              config/release_repos.yml
+#   turf_vault_lane_figure_docs_test       docs/**/*.md              the release-repo registry
 #
 # Both misses are the SAME defect, and both were found by different reviewers on
 # different PRs the same day. The properties those guards enforce are about PROSE —

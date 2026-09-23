@@ -40,7 +40,14 @@ class GuardPopulationTest < ActiveSupport::TestCase
   test "[unit] the population reaches beyond docs/ — comments in config, app, lib and bin" do
     rel = population.map { |path| StatedProse.rel(Rails.root, path) }
 
-    assert_includes rel, "config/release_repos.yml",
+    # THE SEAM, NOT THE SPELLING, and for two reasons. It follows the registry's own
+    # source of truth, so a rename cannot leave this assertion quietly passing against
+    # a path nobody reads; and a literal `config/<name>.yml` here would map this file
+    # onto that config in `FastCert.select_tests`, pushing it over DEFAULT_MAPPED_CAP
+    # and SKIPPING the mapped lane for every future diff that touches the registry —
+    # a guard that costs the cert more than it buys. `fast_cert_subject_test.rb`
+    # catches that, and its note explains the same trade.
+    assert_includes rel, StatedProse.rel(Rails.root, Release::Repos::CONFIG_PATH.to_s),
                     "the registry that DECLARES the lane is where a lane figure is most " \
                     "authoritative, and it is not markdown"
     assert_includes rel, "app/services/reviewer_selector.rb",

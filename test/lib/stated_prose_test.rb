@@ -136,14 +136,14 @@ class StatedProseTest < Minitest::Test
       FileUtils.mkdir_p([File.join(dir, "config"), File.join(dir, "app/services"),
                          File.join(dir, "bin"), File.join(dir, "test/docs")])
       File.write(File.join(dir, "README.md"), "root markdown\n")
-      File.write(File.join(dir, "config/release_repos.yml"), "# a registry claim\n")
+      File.write(File.join(dir, "config/registry.yml"), "# a registry claim\n")
       File.write(File.join(dir, "app/services/thing.rb"), "# a service claim\n")
       File.write(File.join(dir, "bin/fast-check"), "#!/usr/bin/env ruby\n# a script claim\n")
       File.write(File.join(dir, "test/docs/guard_test.rb"), "# a fixture\n")
 
       found = StatedProse.sources(dir).map { |p| StatedProse.rel(dir, p) }
 
-      assert_equal %w[README.md app/services/thing.rb bin/fast-check config/release_repos.yml],
+      assert_equal %w[README.md app/services/thing.rb bin/fast-check config/registry.yml],
                    found
     end
   end

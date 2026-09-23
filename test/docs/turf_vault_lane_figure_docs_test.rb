@@ -51,13 +51,14 @@ require_relative "../support/stated_prose"
 # ── WHAT THE POPULATION FIX CHANGED (guard-lane-figures-beyond-docs, 2026-09-22) ──
 #
 # THE GLOB WAS THE HOLE. This guard shipped scanning `docs/**/*.md`, so it could not
-# see `config/release_repos.yml` — the file where the lane is DECLARED, which carried
+# see the release-repo registry under `config/` — the file where the lane is DECLARED,
+# which carried
 # three of the four wrong figures and which the corrected claude.md routes readers
 # straight at. It now reads the shared `StatedProse` population (markdown anywhere
 # plus the comment bodies of config/app/lib/bin), the same population the preview
 # guard reads, so the decision about what this house measures its authors against is
 # made ONCE. Widening found three more live sites outside `docs/`: this file's own
-# registry row, `bin/fast-check`, and the count in `config/release_repos.yml`.
+# registry row, `bin/fast-check`, and the suite count on that same row.
 #
 # PROVENANCE IS PER PARAGRAPH, NOT PER FIGURE, and this comment says so because the
 # code does. One PROVENANCE match unlocks EVERY figure in the block, so a paragraph
@@ -333,11 +334,11 @@ class TurfVaultLaneFigureDocsTest < ActiveSupport::TestCase
       "to ask `gem_repo?`, which meant an `apps` row could never reach it however\n" \
       "completely it declared its lane — so turf-vault, an Anchor repo with four real CI\n" \
       "lanes, had no local cert at all and every reader was routed to a task to decide",
-    "config/release_repos.yml's key doc, verbatim — the REGISTRY outside docs/" =>
+    "the release-repo registry's key doc, verbatim — a REGISTRY outside docs/" =>
       "turf-vault declared its four CI lanes here as a chain for one day\n" \
       "(2026-09-14) before growing its own `bin/release-check`, and a\n" \
       "chain in this file is a COPY of another repo's CI that drifts",
-    "config/release_repos.yml's turf-vault row, verbatim" =>
+    "the release-repo registry's turf-vault row, verbatim" =>
       "THE VALUE IS A SCRIPT THE REPO OWNS, which is the whole point of the key and was\n" \
       "not true for its first day. Until 2026-09-14 this row spelled turf-vault's four\n" \
       "lanes out as a `&&` chain, because the repo shipped no bin/ directory to point at.",
