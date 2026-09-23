@@ -83,6 +83,18 @@ class EcosystemBuildImportVerdictTest < Minitest::Test
                  "under the old `2>&1` an athlete count was the single surviving signal")
   end
 
+  # THE CELL THE ROW ALONE GETS WRONG. `fresh_success?` cannot tell "this run
+  # succeeded" from "some run succeeded today", so a CRASHED seed reads green
+  # whenever an earlier run that day left a fresh row. Measured against
+  # origin/accepted: the old `&&` chain logged FAILED in exactly this cell.
+  def test_a_crashed_seed_is_not_excused_by_an_earlier_fresh_success
+    out = phase(fresh_success: true, seed_exit: 1)
+
+    refute_match(/athletes with espn_id/, out,
+                 "a seed that exited non-zero must not log the green count just " \
+                 "because an earlier run that day left a fresh ImportRun")
+  end
+
   private
 
   # Drive phase_nfl_headshots with a stubbed `bundle`.
@@ -91,7 +103,7 @@ class EcosystemBuildImportVerdictTest < Minitest::Test
   # the phase runs its commands in — a positional stub would have to be rewritten
   # by anyone who reorders the phase, and would pass for the wrong reason if they
   # forgot.
-  def phase(fresh_success:, refused: 0, seed_stderr: nil)
+  def phase(fresh_success:, refused: 0, seed_stderr: nil, seed_exit: 0)
     Dir.mktmpdir("ecosystem-build-6c") do |tmp|
       stub = File.join(tmp, "bin")
       FileUtils.mkdir_p(stub)
@@ -103,10 +115,11 @@ class EcosystemBuildImportVerdictTest < Minitest::Test
         args="$*"
         case "$args" in
           *nfl:players_seed*)
-            # THE POINT OF THE WHOLE TEST: the seed exits 0 in BOTH worlds.
+            # The outage worlds exit 0 in BOTH worlds — that is the original
+            # point. seed_exit drives the OTHER cell: a hard crash.
             #{seed_stderr ? %(echo "#{seed_stderr}" >&2) : ":"}
             echo "seed stdout that the phase discards"
-            exit 0 ;;
+            exit #{seed_exit} ;;
           *fresh_success*)   exit #{fresh_success ? 0 : 1} ;;
           *namesake_collisions_skipped*)
             printf '#{refused.positive? ? ", #{refused} namesake(s) REFUSED — see above" : ""}'
