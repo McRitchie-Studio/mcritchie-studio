@@ -20,6 +20,7 @@
 # collapsed them would still pass a naive "does it find the guard?" test.
 
 require "minitest/autorun"
+require "open3"
 require "tmpdir"
 require "fileutils"
 require_relative "../../bin/lib/base_movement_audit"
@@ -98,7 +99,55 @@ class BaseMovementAuditTest < Minitest::Test
                              changed_files: changed, ci_completed_at: clock, tested_base: tested_base)
   end
 
-  def rev(dir, ref) = IO.popen(["git", "-C", dir, "rev-parse", ref], &:read).to_s.strip
+  # RAISES on a ref that does not resolve — the fourth copy of the dropped-status
+  # helper repaired by /tasks/sweep-remaining-status-drops, and the one its card did
+  # not know about. The dropping form here was `IO.popen(...).to_s.strip`, which
+  # reads stdout and discards the status; `git rev-parse <missing-ref>` prints the
+  # REF NAME to stdout and exits 128 (measured 2026-09-22), so a fixture that had
+  # failed to build `accepted^` would hand the literal string "accepted^" on to
+  # `audit(tested_base:)`.
+  #
+  # THAT IS SELF-CERTIFYING RATHER THAN MERELY WRONG. BaseMovementAudit.assess
+  # ECHOES the value back (bin/lib/base_movement_audit.rb#assess returns
+  # `tested_base:` verbatim), so `assert_equal tested, a[:tested_base]` compares the
+  # bad string against itself and passes. The premise of every test below is WHICH
+  # COMMIT the merge ref was built on, so the helper that answers it may not be able
+  # to answer with a ref name.
+  def rev(dir, ref)
+    out, err, status = Open3.capture3("git", "-C", dir, "rev-parse", ref)
+    raise "git rev-parse #{ref.inspect} failed in #{dir} (exit #{status.exitstatus}): #{err.strip}" unless status.success?
+
+    out.strip
+  end
+
+  # [control] THE HELPER ABOVE, DRIVEN FROM THE OTHER SIDE — the only test in this
+  # file that can tell the repair from the defect. Every other `rev` call passes a
+  # ref that resolves, so reverting the helper to `IO.popen(...).to_s.strip` leaves
+  # them all green while handing a ref NAME to any caller whose ref does not.
+  #
+  # BOTH HALVES ARE MEASURED HERE, not assumed: that git prints the ref name on
+  # stdout with a failing status (the premise), and that the helper now refuses to
+  # pass it on (the repair). Without the premise this control could pass because the
+  # probe failed some other way.
+  def test_rev_raises_on_a_ref_that_does_not_resolve_rather_than_echoing_its_name
+    with_repo(base_change: "docs/unrelated.md", at: AFTER_RUN) do |dir|
+      raw, _err, status = Open3.capture3("git", "-C", dir, "rev-parse", "refs/heads/no-such-ref")
+      refute status.success?, "premise: a missing ref must exit non-zero"
+      assert_equal "refs/heads/no-such-ref", raw.strip,
+                   "premise: git echoes the ref NAME on stdout — that string is what a dropped " \
+                   "status hands on to audit(tested_base:), where assess echoes it back and " \
+                   "assert_equal compares it with itself"
+
+      error = assert_raises(RuntimeError) { rev(dir, "refs/heads/no-such-ref") }
+      assert_includes error.message, "no-such-ref", "the failure must name the ref that did not resolve"
+      assert_includes error.message, dir, "and the directory it asked in"
+      assert_includes error.message, "128", "and the exit status, so a reader can tell it apart from a crash"
+
+      # The other half: a ref that DOES resolve still comes back as a bare SHA, so the
+      # repair did not simply turn the helper into something that always raises.
+      assert_match(/\A[0-9a-f]{40}\z/, rev(dir, "accepted"))
+    end
+  end
 
   # ==== THE MID-RUN WINDOW (/tasks/stale-merge-ref-passes-freshness) =============
 
