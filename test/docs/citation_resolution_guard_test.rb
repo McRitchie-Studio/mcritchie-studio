@@ -502,7 +502,9 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
   # is only evidence while the lanes can still REACH the input, so D is followed by a PROBE
   # row — the same site with its range end pushed off the file — which must fire lane 1. The
   # two are read together or not at all: D says "the lanes are silent here", the probe says
-  # "and they were listening". Five rows, four defects and one probe.
+  # "and they were listening". SIX rows: four defects across five of them — defect A is
+  # pinned in two spellings, bare and anchored — and one probe. Re-derive rather than
+  # re-copy; the count that shipped here said five, and review counted six.
   MISPOINTED_CITATIONS = [
     { as_written: "bin/dor-check:1176-1180", homes: nil, lanes: [:substance],
       because: %(the range ENDS at line 1180 of bin/dor-check, a bare "end"),
