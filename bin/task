@@ -1218,6 +1218,16 @@ end
 
 # The per-(session, task) marker naming the renewer this session started for a task.
 # Slugs are validated kebab-case on the board; sanitised anyway, like every marker.
+#
+# NO LEADING DOT, UNLIKE EVERY SIBLING IN THIS STORE, and it must stay that way.
+# SessionMarkers.last_signal_at selects markers on the stem "<id>." to decide
+# whether an agent is still WORKING, so this family is invisible to it — which is
+# correct, because this marker is stamped by the CLAIMING process at claim time and
+# never rewritten. Under a dot it would let a build claim vouch for its own holder's
+# liveness. Adding one is therefore a liveness change, not a naming tidy, and it
+# would also orphan every live marker: `build_claim_renewer` READS this exact name
+# to find a running renewer. The full argument, and the guard, live beside
+# last_signal_at in bin/lib/session_markers.rb.
 def build_claim_renewer_marker(slug)
   "build-claim-renewer-#{slug.to_s.gsub(/[^A-Za-z0-9._-]/, "")}"
 end
