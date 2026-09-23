@@ -342,6 +342,16 @@ class PrReviewCommandTest < Minitest::Test
 
     reviewer_calls = json_lines(@reviewer_log)
     assert_equal ["older-resubmitted"], reviewer_calls.map(&:first)
+# THE TOKEN THAT ARMS THE BUSY EXCLUSION. `--busy-auto` is opt-in in
+# bin/reviewer-select, and bin/pr-review is the only caller that turns it on —
+# so deleting it there restores busy-auto-misses-mid-review IN FULL while every
+# other test in this suite stays green. Measured on this PR's head: with the
+# token gone, 35 runs / 462 assertions / 0F, byte-identical to the baseline.
+# The flag's own BEHAVIOUR is covered in test/lib/reviewer_select_test.rb; what
+# is pinned HERE is that the automated review lane actually PASSES it.
+assert_includes reviewer_calls.first, "--busy-auto",
+  "bin/pr-review must arm the busy exclusion, or the automated lane goes back " \
+  "to seating souls who are already mid-build or mid-review"
 
     moves = json_lines(@task_log).select { |args| args.first == "move" }
     assert_equal [["move", "older-resubmitted", "reviewed", "--actor", "avi"]], moves
