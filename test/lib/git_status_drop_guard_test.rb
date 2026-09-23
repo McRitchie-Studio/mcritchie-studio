@@ -67,6 +67,14 @@ class GitStatusDropGuardTest < ActiveSupport::TestCase
   # fixture would pass forever while the shipping rule rotted.
   def dropping_status?(body) = !body.match?(STATUS_CHECKED)
 
+  # THE CLOSER, SPELLED THE WAY RUBOCOP ALLOWS. `end # the sha` is not `  end`, so a raw
+  # compare walks PAST it to the NEXT method's `end` and takes that method's body as this
+  # one's — which carries a `raise` and clears the very defect this guard exists to catch.
+  # Measured at the G2 review on the real `head_branch` with one trailing comment added:
+  # the guard went GREEN on a tree carrying the dropped status. A closer that is never
+  # found now yields an EMPTY body, which matches nothing and so reds rather than clears.
+  def closes?(line, closer) = line.chomp.sub(/\s+#.*\z/, "").rstrip == closer
+
   # Every `def rev`/`def head_branch` in a file, with its body as one string. The body
   # runs to the matching `end` at the def's own indent; an endless def's body is the
   # remainder of its own line.
@@ -82,8 +90,8 @@ class GitStatusDropGuardTest < ActiveSupport::TestCase
         else
           closer = "#{m[:indent]}end"
           rest = lines[(i + 1)..] || []
-          stop = rest.index { |l| l.chomp == closer }
-          (stop ? rest[0...stop] : rest).join
+          stop = rest.index { |l| closes?(l, closer) }
+          stop ? rest[0...stop].join : ""
         end
 
       { path: path.relative_path_from(Rails.root).to_s, line: i + 1, name: m[:name], body: body }
@@ -166,5 +174,12 @@ class GitStatusDropGuardTest < ActiveSupport::TestCase
     assert found.all? { |h| h[:body].include?("Open3.capture3") },
            "each helper's body must be the real one — an empty body would satisfy nothing " \
            "and clear the rule above by accident"
+    refute found.any? { |h| h[:body].include?("def ") },
+           "a body that reaches the NEXT def has swallowed a method that is not its own"
+
+    assert closes?("  end # the sha\n", "  end"),
+           "`end # ...` is rubocop-legal; read as anything but the closer, the body runs on " \
+           "into the next method, whose `raise` clears the defect this guard is written for"
+    refute closes?("    out.strip\n", "  end"), "only the closer closes"
   end
 end
