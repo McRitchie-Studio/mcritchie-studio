@@ -68,12 +68,12 @@ the **first** question to ask.
    history. Read the row's **History & notes** before using the value. A
    conflict recorded there is a question for him, not a value to copy.
 2. **The knowledge layer.** `Studio::KnowledgeDoc` rows on the
-   `mcritchie-industries` app. Search the `source_note` and `body_text`:
+   `mcritchie-industries` app. Search the `title`, `source_note` and `tags`:
 
    ```bash
    cd /Users/alex/projects/mcritchie-industries
    heroku run -a mcritchie-industries --no-tty -- bin/rails runner \
-     'Studio::KnowledgeDoc.find_each { |d| t = [d.title, d.source_note].join(" "); puts "##{d.id} #{d.title}" if t =~ /PATTERN/i }'
+     'Studio::KnowledgeDoc.find_each { |d| t = [d.title, d.source_note, d.tags].join(" "); puts "##{d.id} #{d.title}" if t =~ /PATTERN/i }'
    ```
 
    Keep `$` out of runner strings. The shell expands it and silently mangles
