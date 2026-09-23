@@ -861,12 +861,25 @@ class FastCheckTest < Minitest::Test
   # FastCert.cap_decision; this is the end-to-end proof that the SCRIPT reads them that
   # way, because a run that printed both would leave the builder unable to tell whether
   # the lane ran.
+  #
+  # BOTH SURFACES, and the second one is the one that bites. Measured by mutation
+  # 2026-09-22: dropping `!capped` from cap_decision leaves the RUN unchanged, because
+  # the run reaches the warning down an `elsif` that a capped decision never enters —
+  # so a --print-only assertion here passes for a reason that has nothing to do with
+  # the exclusivity it claims to test. --list prints the margin narration BEFORE it
+  # branches on the cap, and is where the contradiction actually surfaces.
   def test_a_capped_run_does_not_also_claim_to_be_near_the_cap
     with_wide_mapping_repo do |dir, _|
-      out, = run_check(dir, merge_stderr: true)
+      run, = run_check(dir, merge_stderr: true)
 
-      assert_match(/MAPPED LANE CAPPED/, out)
-      refute_match(/NEAR THE CAP/, out)
+      assert_match(/MAPPED LANE CAPPED/, run)
+      refute_match(/NEAR THE CAP/, run)
+
+      preview, = run_check(dir, args: ["--list"], merge_stderr: true)
+
+      assert_match(/mapped cap 15 — EXCEEDED/, preview, "the preview agrees the cap tripped")
+      refute_match(/NEAR THE CAP/, preview,
+                   "a preview that says EXCEEDED and NEAR THE CAP at once tells the builder nothing")
     end
   end
 
