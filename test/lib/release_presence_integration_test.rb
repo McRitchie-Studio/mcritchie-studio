@@ -304,8 +304,10 @@ class ReleasePresenceIntegrationTest < Minitest::Test
   # `die_after_publish:` exist for these and for nothing else.
 
   # The card's control: SLOW THE SECOND PUBLISH and show the wait still reaches two live
-  # conductors. This is the one that reds on a harness that does not wait — the second
-  # conductor is then still booting when the assertions run, and headroom reads 2.75.
+  # conductors. On a harness that does not wait, this reds one assertion EARLIER than the
+  # arithmetic — at the marker count, 0 of 2 — because a spawn-and-return harness has put
+  # NEITHER conductor on disk yet. The headroom line below guards the other shape: one
+  # conductor counted of two, whatever stopped the other from grading live.
   def test_control_a_slow_second_publish_still_reaches_two_live_conductors
     with_store do |store, root|
       sweep = spawn_conductor(store, root, kind: "sweep", lane: "release:prepare")
@@ -314,9 +316,9 @@ class ReleasePresenceIntegrationTest < Minitest::Test
       assert_equal 2, claim_files(store).size,
                    "the wait must not return until the SLOW conductor's own marker landed"
       assert_in_delta CAPACITY - 0.5, headroom(store), 0.0001,
-                      "and both must still be subtracted. A harness that returned on spawn " \
-                      "would read 2.75 here — under-reporting, the expensive direction, and " \
-                      "the exact number the CI red carried"
+                      "and both must still be subtracted. One counted of two reads 2.75 — " \
+                      "under-reporting, the expensive direction, and the exact number the " \
+                      "CI red carried"
     ensure
       kill!(sweep)
       kill!(ship)
