@@ -363,6 +363,24 @@ apps:
       # VERIFIED against the script that deploys it — turf-monster/bin/deploy sets
       # HEROKU_APP="turf-monster-mainnet" and pushes to its heroku-mainnet remote.
       heroku_app: turf-monster-mainnet
+      # AND WITHOUT THIS, heroku_app ABOVE IS INERT. bin/release.rb#deploy_live_verdict
+      # gates EVERY strategy on `up_ok` (Release::ShipSequence#deploy_already_succeeded?
+      # opens with `return false unless up_ok == true`), and it sources that from
+      # #group_smoke_url — which answers "" for a NON-HUB app with no smoke_url, after
+      # which #prod_up_ok? returns false WITHOUT PROBING ANYTHING. So a turf-monster
+      # deploy could never be confirmed however healthy it was, and the refusal blamed
+      # a /up probe that was never made. Measured 2026-09-22: GET
+      # https://turfmonster.media/up → 200 (controls: www.mcritchie.industries/up → 200,
+      # mcritchie.studio/up → 200).
+      #
+      # THE VALUE IS NOT NEW — it is the one the hub already resolves for this app.
+      # Release::ProdSmoke.base_url_for tries this key FIRST and falls back to
+      # config/qa_environments.yml → qa_environments.turf-monster.production_url, which
+      # is the identical https://turfmonster.media. So declaring it changes ProdSmoke's
+      # answer not at all; it only stops #group_smoke_url returning blank. It also adds
+      # NO post-deploy smoke: that step (bin/release.rb, "smoke: GET …/up") lives in the
+      # `when :git_push_heroku` arm, and this row is repo_script.
+      smoke_url: https://turfmonster.media
   turf-vault:
     # THE ANCHOR PROGRAM. Registered 2026-08-31 after
     # Release::Conductor#validate_member_repos_known! aborted a live sweep

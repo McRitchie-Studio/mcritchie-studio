@@ -853,10 +853,10 @@ class Release
     # Ordered by what the caller checks first, so the phrase names the FIRST unmet
     # condition rather than the most interesting one.
     def deploy_gap_reason(strategy:, up_ok:, main_at_sha: false, run_success: nil,
-                          deployed_at_sha: nil, heroku_app: "", workflow: "")
+                          deployed_at_sha: nil, heroku_app: "", workflow: "", smoke_url: "")
       return "" if deploy_already_succeeded?(strategy: strategy, up_ok: up_ok, main_at_sha: main_at_sha,
                                              run_success: run_success, deployed_at_sha: deployed_at_sha)
-      return "prod /up did not answer 200" unless up_ok == true
+      return up_gap_reason(strategy, smoke_url) unless up_ok == true
 
       case strategy.to_s
       when "github_actions"
@@ -872,6 +872,33 @@ class Release
       else
         "unknown prod_deploy strategy #{strategy.to_s.inspect} — no deploy is ever confirmed for one"
       end
+    end
+
+    # TWO WAYS `up_ok` IS FALSE, AND ONLY ONE OF THEM IS A PROBE.
+    #
+    # bin/release.rb#prod_up_ok? opens with `return false if url.empty?`, so a blank
+    # smoke URL answers FALSE WITHOUT CURLING ANYTHING — and #group_smoke_url returns
+    # blank for any NON-HUB app whose adapter declares no `smoke_url`. Both paths
+    # arrive here as the same bare `false`.
+    #
+    # WHY THAT ONE SENTENCE MATTERS MORE THAN IT LOOKS. `deploy_already_succeeded?`
+    # opens with `return false unless up_ok == true`, for EVERY strategy — so an app
+    # in that state can never be confirmed, however healthy prod is. That is not
+    # fail-CLOSED, it is fail-DEAD: fail-closed means "no proof yet", and this state
+    # admits no proof at all. Printing "prod /up did not answer 200" about it sends
+    # the reader to a production incident that does not exist, and the remedy they
+    # reach for — re-deploy — is the long outcome this whole guard exists to avoid.
+    #
+    # Measured 2026-09-22 on turf-monster (repo_script, no smoke_url): finalize
+    # refused with that sentence while GET https://turfmonster.media/up returned 200.
+    # It outlives turf-monster — tax-studio is repo_script and lands here too — so the
+    # branch names the missing key, exactly as the heroku_app branch below does.
+    def up_gap_reason(strategy, smoke_url)
+      return "prod /up did not answer 200" unless smoke_url.to_s.strip.empty?
+
+      "its #{strategy} adapter declares no smoke_url, so NO /up probe was made and this " \
+        "repo can never be confirmed — add `prod_deploy.smoke_url:` to #{REGISTRY_FILE} " \
+        "(the hub's own row is exempt: it falls back to PROD_URL)"
     end
 
     def next_reason_for_workflow(main_at_sha, workflow)

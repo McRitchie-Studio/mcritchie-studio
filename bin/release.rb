@@ -6991,6 +6991,12 @@ end
 # finalize refusal needs when the answer is no. Splitting the two would mean a
 # second `/up` poll and a second Heroku read per refusing repo; asking both
 # questions of one set of reads costs nothing and cannot disagree with itself.
+# UNDER --dry-run THIS PREVIEWS A REFUSAL THE REAL RUN WOULD NOT GIVE, and the
+# asymmetry is deliberate rather than overlooked: `heroku_releases` short-circuits to
+# [] on DRY (it is a network read), while `prod_up_ok?` and `origin_main_sha` run
+# live. So a DRY finalize preview shows an inline app as unconfirmed — its
+# deployed_at_sha is false by construction — where the real run reads the release and
+# confirms it. Read a DRY refusal here as "not evaluated", never as the verdict.
 def deploy_live_verdict(group, frozen)
   frozen = frozen.to_s.strip
   return [false, "no frozen SHA recorded for this repo"] if frozen.empty?
@@ -7020,15 +7026,20 @@ def deploy_live_verdict(group, frozen)
       Release::ShipSequence.heroku_release_at_sha?(heroku_releases(heroku_app), frozen)
     end
 
+  # RESOLVED ONCE AND CARRIED, because `up_ok == false` has two causes and only the
+  # gap reason can tell them apart: a probe that answered non-200, or NO PROBE AT ALL
+  # (prod_up_ok? returns false on a blank URL, and group_smoke_url is blank for any
+  # non-hub app declaring no smoke_url). Passing the URL lets ShipSequence say which.
+  smoke_url = group_smoke_url(group)
   signals = {
     strategy: strategy,
-    up_ok: prod_up_ok?(group_smoke_url(group)),
+    up_ok: prod_up_ok?(smoke_url),
     main_at_sha: origin_main_sha(group["repo"]) == frozen,
     run_success: run_success,
     deployed_at_sha: deployed_at_sha
   }
   gap = Release::ShipSequence.deploy_gap_reason(
-    **signals, heroku_app: heroku_app, workflow: adapter["workflow"].to_s
+    **signals, heroku_app: heroku_app, workflow: adapter["workflow"].to_s, smoke_url: smoke_url
   )
   [gap.empty?, gap]
 end
