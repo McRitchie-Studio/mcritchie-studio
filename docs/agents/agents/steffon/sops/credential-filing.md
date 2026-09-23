@@ -34,6 +34,12 @@ scripts) in the same pass.
 ## 3. Create the item — logo and permission notes are MANDATORY
 
 ```bash
+# VALUE carries the secret, and this SOP must assign it before it expands it.
+# Read it silently: -s keeps it off the screen, -r keeps a backslash in the
+# token intact.
+read -rs VALUE
+[ -n "$VALUE" ] || { echo "VALUE is unset or empty — refusing to file an empty credential"; exit 1; }
+
 op item create --category "API Credential" --vault <vault> \
   --title "<service>.<entity>.<lane>" \
   --url "https://<the service's dashboard>" \
@@ -47,6 +53,23 @@ CANNOT: <the acts the scope refuses, one line>
 <any SOP-only prohibition the platform cannot enforce, stated as such>"
 ```
 
+- **`read -rs VALUE` is one way in, not the only one.** When the agent
+  generated the credential itself, assign `VALUE` from the command that
+  produced it and keep the refusal below it. When Mr. McRitchie holds the
+  secret, he runs section 5 in HIS terminal and the variable is `$T` — the
+  agent never holds that one at all.
+- **The refusal is not ceremony.** An unset `VALUE` does not abort the
+  command — the shell hands `op` the literal `credential[concealed]=`, a
+  well-formed assignment carrying zero bytes, so nothing downstream ever sees a
+  missing argument. Whether `op` then files the empty item or rejects it has
+  NOT been measured here, because measuring it means writing a throwaway item
+  into a real credential vault; the refusal removes the question rather than
+  betting on the answer. Guard on the variable being non-empty — `[ -n
+  "$VALUE" ]`, or `${VALUE:+set}`, which substitutes the word `set` and never
+  the value. Never reach for a DEFAULT: `${VALUE:-absent}` expands the secret
+  itself whenever the variable is set, which is every time it matters. Same
+  defect and same remedy as `$KEYFILE` in `workspace-provision.md`, fixed at
+  `ec8a814b`.
 - **`--url` is required.** It is what makes 1Password render the brand
   logo, and the logo is what makes a vault legible at a glance. No generic
   `</>` icons.

@@ -97,8 +97,10 @@ class Release
     end
 
     # The production-deploy adapter for an app (a hash with a `strategy` key —
-    # git_push_heroku or repo_script — plus its strategy-specific fields) or nil
-    # when the repo isn't a registered app.
+    # git_push_heroku, repo_script or github_actions — plus its strategy-specific
+    # fields: `remote`/`branch`, `command`/`args`, `workflow`, and the optional
+    # `heroku_app` that tells finalize which app's releases prove an INLINE deploy
+    # landed) or nil when the repo isn't a registered app.
     def prod_deploy(repo)
       app_meta(repo)&.fetch("prod_deploy", nil)
     end

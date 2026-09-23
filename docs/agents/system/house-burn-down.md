@@ -341,15 +341,19 @@ The Rails apps read `.env` via Rails' default dotenv (or the `dotenv-rails` gem)
 RAILS_MASTER_KEY=$(heroku config:get RAILS_MASTER_KEY --app mcritchie-studio)
 GOOGLE_CLIENT_ID=...                  # Google Cloud Console
 GOOGLE_CLIENT_SECRET=...
-ANTHROPIC_API_KEY=...                 # heroku config:get — studio-agents held no "anthropic" item on 2026-08-29
-X_BEARER_TOKEN=...                    # 1Password: "x.api" (read)
-X_API_KEY=...                         # 1Password: "x.api" (write — Read+Write app)
+ANTHROPIC_API_KEY=...                 # NOT FILED and NOT on prod — re-measured 2026-09-22: no "anthropic"
+                                      # item in any vault the agent token reads, and absent from the
+                                      # mcritchie-studio config (so heroku config:get returns nothing).
+                                      # Get it from console.anthropic.com. credential-inventory.md
+X_BEARER_TOKEN=...                    # 1Password: "agent.turf.x" (studio-agents), field "Bearer Token"
+X_API_KEY=...                         # the same item — "Consumer Key" (needs a Read+Write app)
 X_API_SECRET=...
 X_ACCESS_TOKEN=...
 X_ACCESS_TOKEN_SECRET=...
 HIGGSFIELD_API_KEY=...                # 1Password: "higgsfield.studio.agents" (studio-agents), field
 HIGGSFIELD_API_SECRET=...             #   "api-key" = <KEY_ID>:<KEY_SECRET>; split on the first colon
-TIKTOK_CLIENT_KEY=...                 # 1Password: "🐊 TikTok"
+TIKTOK_CLIENT_KEY=...                 # "🐊 TikTok" — NOT FILED in any readable vault (2026-09-22) and
+                                      # absent from prod config; get it from the TikTok developer console
 TIKTOK_CLIENT_SECRET=...
 TIKTOK_REFRESH_TOKEN=...
 TIKTOK_OPEN_ID=...

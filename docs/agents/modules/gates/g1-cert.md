@@ -247,6 +247,36 @@ impossible by construction rather than by every repo remembering to ignore `tmp/
      `bin/full-suite-check`; raise the cap deliberately with
      `FAST_CHECK_MAPPED_CAP=<n>`.
 
+     **THE MARGIN — the cap now says so BEFORE it trips.**
+     `FastCert::DEFAULT_MAPPED_MARGIN` (2) makes `cap_decision` report
+     `:approaching` for a
+     mapped set inside `cap - margin .. cap`, and `bin/fast-check` then prints
+     `MAPPED LANE NEAR THE CAP — N of 15, M path(s) of margin left` — naming the
+     widest mapping, whether the next path over would fall back to convention
+     twins or to **nothing**, and the remedy (cite the CONSTANT that names a path
+     rather than spelling the path in new test prose). The run is **unchanged**:
+     the whole mapped set still executes and the cert is still green. The clause
+     also rides the evidence line (`N mapped (NEAR THE CAP of 15: M path(s) of
+     margin …)`), which is the only channel that outlives the run.
+     `:approaching` and `:capped` are exclusive — a reader takes exactly one.
+
+     **A RUNTIME WARNING REACHES THE WRONG BUILDER, WHICH IS WHY THERE ARE TWO
+     TRIPWIRES.** The margin is computed over the diff's mapped set, so it warns
+     whoever has the at-cap subject in their diff. The person who actually trips
+     the cap usually does not: they add a test file that merely NAMES the subject.
+     Measured — a one-file diff adding a test that spells a config's path maps to
+     **1** path (its own) and never mentions the cap. What that builder sees is
+     `test/lib/fast_cert_subject_test.rb` going red on a file they did not touch.
+     So that file carries two pinned config sweeps — one for sources OVER the cap
+     and one for sources inside the MARGIN — and both now fail with the token that
+     reached the subject, every test file that answers to it, and the remedy
+     (`FastCert.spelling_breakdown`). The margin sweep is what reds one or two
+     spellings BEFORE a mapped lane goes quiet.
+
+     **Do NOT raise the cap to clear either sweep.** That moves the cliff without
+     removing it, and the cap exists to stop a broad diff dragging the whole suite
+     into the mapped lane. Take the spelling back out instead.
+
      **WHICH CAUSE ACTUALLY TRIPS THE CAP — measured, because the two want
      different answers.** Re-derived 2026-09-08 over all **1952** tracked
      files, one at a time (`FastCert.mapping(root, [path])`): **11 sources
@@ -260,6 +290,22 @@ impossible by construction rather than by every repo remembering to ignore `tmp/
      and `bin/dor-check` at 18 through its convention twin's family.
      These counts track the TREE, not the mapping rule — re-derive before
      editing this paragraph, do not paste it.
+
+     **RE-DERIVED 2026-09-22** over all **2229** tracked files, classified by the
+     RUNG that reached the count rather than by the count alone: the shape above
+     survives and every number in it has moved. **12** sources alone exceed the
+     cap; the same **three** never reach the grep (`bin/release` and
+     `bin/release.rb` at **30** through the orphan family, `bin/dor-check` at
+     **19** through its twin's family); of the **nine** that do grep, two are
+     still named by a path plus a quoted name (`config/test_health.yml` 28,
+     `bin/rubocop` 21) and seven by a constant.
+
+     **AND THE POPULATION THE OVER-CAP CENSUS CANNOT SEE.** The same sweep counts
+     the sources sitting AT the cap: **two**, `config/release_repos.yml` and
+     `test/support/task_usage_sandbox.rb` (15 of 15), plus two one under
+     (`bin/rake`, `config/feature_shapes.yml`). Those are the same defect one run
+     earlier, and until 2026-09-22 nothing announced them — see **the margin**
+     below.
 
      Two things follow. A single-file cap trip is **no longer always a grep
      precision failure**: it was when the fallback landed, and `bin/dor-check`

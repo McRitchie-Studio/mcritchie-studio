@@ -247,11 +247,50 @@ twins_only = twins_all - spine_twins
 # rather than to nothing.
 cap = FastCert.cap_decision(mapped_only, breakdown, twins: twins_only)
 
+# THE MARGIN'S NARRATION — one text, so --list and the run cannot disagree about a
+# cliff that has not happened yet. Built here rather than at each use for the reason
+# :fallback is computed once in FastCert.cap_decision: four readers of the capped
+# state already drifted apart once (PR #1239), and a warning that says something
+# different in the preview than in the run teaches the preview is decorative.
+#
+# WHAT THE LANE WOULD DO ONE PATH OVER IS ASKED, NOT RESTATED. The fallback rule —
+# twins, unless the twins are themselves over the cap — lives in cap_decision, so
+# this asks that function about a hypothetical set of cap+1 paths carrying THIS
+# diff's twins rather than re-deriving the same condition here. A second copy of the
+# rule is how a mutation to the first one survives.
+approaching_lines =
+  if cap[:approaching]
+    over = FastCert.cap_decision(Array.new(cap[:cap] + 1) { |i| "over-#{i}" }, breakdown,
+                                 cap: cap[:cap], twins: twins_only)
+    lines = ["fast-check: MAPPED LANE NEAR THE CAP — #{cap[:count]} of #{cap[:cap]}, " \
+             "#{cap[:cap] - cap[:count]} path(s) of margin left."]
+    if cap[:worst_path]
+      lines << "  widest mapping: #{cap[:worst_path]} → #{cap[:worst_count]} test file(s)."
+    end
+    lines << if over[:fallback].any?
+               "  over the cap this lane falls back to the #{over[:fallback].size} convention " \
+                 "twin(s) of this diff — a NARROWER cert, not no cert."
+             else
+               "  this diff has NO convention twin to fall back to, so one path over the cap " \
+                 "the mapped lane runs ZERO tests and the cert rests on the spine alone."
+             end
+    # NO REPO-SPECIFIC EXAMPLE HERE, deliberately: this script certifies turf-monster
+    # and rolio desks too, and a hub constant quoted at a satellite builder is advice
+    # they cannot follow. The worked example lives in the hub's own config sweep
+    # (test/lib/fast_cert_subject_test.rb), where it is true.
+    lines << "  what keeps it under: in new test prose cite the CONSTANT that names a path " \
+             "rather than spelling the path — a spelling joins this set, a constant does not."
+    lines
+  else
+    []
+  end
+
 if options[:list]
   warn "fast-check: #{changed.size} changed file(s) → #{mapped.size} mapped test path(s), " \
        "#{spine.size} spine entr#{spine.size == 1 ? 'y' : 'ies'}, #{lintable.size} lintable file(s)"
   warn "fast-check: mapped cap #{cap[:cap]} — #{cap[:capped] ? 'EXCEEDED' : 'not reached'} " \
        "(#{cap[:count]} after the spine dedupe)"
+  approaching_lines.each { |l| warn l }
   if cap[:capped]
     warn "fast-check: capped → falling back to the #{cap[:fallback].size} convention twin(s) " \
          "of #{cap[:fallback_considered]} considered"
@@ -794,12 +833,12 @@ mapped_res =
     warn "fast-check: MAPPED LANE CAPPED — #{cap[:count]} mapped test file(s) exceeds the cap of #{cap[:cap]}."
     if cap[:worst_path]
       # TWO RUNGS CAN MAP THIS WIDE, and naming only one of them misreads a third of
-      # the cap trips in this repo. RE-DERIVED 2026-09-08 over all 1952 tracked files,
-      # one at a time: 11 exceed the cap alone, and THREE of them never grep —
-      # bin/release and bin/release.rb reach 23 through the ORPHAN family, bin/dor-check
-      # 18 through its twin's family. Of the eight that do grep, two are named by a PATH
-      # plus a quoted name (config/test_health.yml, bin/rubocop) rather than by any
-      # camelized anything. "a word-boundary grep of its camelized name" therefore
+      # the cap trips in this repo. RE-DERIVED 2026-09-22 over all 2229 tracked files,
+      # one at a time (was 2026-09-08 / 1952): 12 exceed the cap alone, and THREE of
+      # them never grep — bin/release and bin/release.rb reach 30 through the ORPHAN
+      # family, bin/dor-check 19 through its twin's family. Of the NINE that do grep,
+      # two are named by a PATH plus a quoted name (config/test_health.yml,
+      # bin/rubocop) rather than by any camelized anything. "a word-boundary grep of its camelized name" therefore
       # described 6 of the 11 and was printed for all of them — and "word-boundary" was
       # wrong even for the path tokens it did cover (#token_regexp bounds a path by the
       # characters that CONTINUE a path, since \b matches inside bin/task-archive).
@@ -851,6 +890,17 @@ mapped_res =
                 gate_slug: gate_slug)
     end
   else
+    # THE CLIFF ANNOUNCES ITSELF ONE RUN EARLY. This lane is GREEN and runs its whole
+    # mapped set — nothing is wrong with this cert. What is worth saying is that the
+    # NEXT one may not be: at the cap, one more test file naming the same subject
+    # silences this lane, and (for a subject with no convention twin) silences it
+    # completely while still reporting green. Warning here and not on the capped rung
+    # is the whole point: the capped rung is the accident, this is the notice.
+    unless approaching_lines.empty?
+      warn ""
+      approaching_lines.each { |l| warn l }
+      warn ""
+    end
     run_lane("mapped-tests", "#{test_cmd} #{mapped_only.map(&:shellescape).join(' ')}", root, gate_slug: gate_slug)
   end
 
@@ -938,6 +988,14 @@ mapped_detail =
   elsif cap[:capped]
     "0 mapped (CAPPED: #{cap[:count]} mapped path(s) over the cap of #{cap[:cap]}; " \
       "spine only — bin/full-suite-check covers this diff)"
+  elsif cap[:approaching]
+    # THE MARGIN IS DURABLE TOO, and this is the only channel that outlives the run.
+    # The narration above is stderr in a ship log nobody re-reads; this line lands on
+    # the task's checks_run, where the reviewer and the next builder see it. It is
+    # still a GREEN cert and still counts what ran — the clause is appended, never
+    # substituted, so "N mapped" keeps its meaning.
+    "#{mapped_only.size} mapped (NEAR THE CAP of #{cap[:cap]}: #{cap[:cap] - mapped_only.size} " \
+      "path(s) of margin before this lane is skipped)"
   else
     "#{mapped_only.size} mapped"
   end

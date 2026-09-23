@@ -124,6 +124,25 @@ class AgentWorktreeRegistryScopeTest < ActiveSupport::TestCase
     assert_path_exists registry, "premise: the write really landed, in the pinned scratch file"
   end
 
+  # [control] THE COPY THIS FILE CARRIED. `rev` was a byte-identical copy of the
+  # status-dropping helper repaired in PR 1505, and `setup_hub` feeds it straight
+  # into `update-ref`. `git rev-parse <missing-ref>` prints the REF NAME on
+  # stdout and exits 128, so the dropping form returned a plausible string for a
+  # ref that is not there. Revert it to `out, = Open3.capture3(...)` and this test
+  # goes red; nothing else in this file can tell the difference, because every
+  # other call passes a ref that resolves.
+  test "[control] rev RAISES on a ref that does not resolve, rather than echoing its name" do
+    error = assert_raises(RuntimeError) { rev(@worktree_dir, "refs/heads/no-such-ref") }
+
+    assert_includes error.message, "no-such-ref", "the failure must name the ref that did not resolve"
+    assert_includes error.message, @worktree_dir, "and the directory it asked in"
+    assert_includes error.message, "128", "and the exit status, so a reader can tell it apart from a crash"
+
+    # The other half: a ref that DOES resolve still comes back as a bare SHA, so the
+    # repair did not simply turn the helper into something that always raises.
+    assert_match(/\A[0-9a-f]{40}\z/, rev(@worktree_dir, "HEAD"))
+  end
+
   private
 
   def worktree_paths(payload)
@@ -205,8 +224,19 @@ class AgentWorktreeRegistryScopeTest < ActiveSupport::TestCase
     assert status.success?, "git #{args.join(" ")} failed\n#{out}\n#{err}"
   end
 
+  # RAISES rather than dropping the status, and the call site above is why.
+  # `git rev-parse <missing-ref>` prints the REF NAME to stdout and exits 128, and
+  # `rev(@worktree_dir, "HEAD")` on a dropping helper returns the literal "HEAD" —
+  # which `update-ref` then RESOLVES, in the hub, to the hub's own head. Exit 0, no
+  # output, origin/main pointing at the wrong commit, and every base comparison
+  # after it quietly wrong. Measured 2026-09-22; see the note on
+  # test/support/agent_worktree_fixture.rb#rev, which this was a copy of.
   def rev(dir, ref)
-    out, = Open3.capture3(SessionEnv.neutralized, "git", "rev-parse", ref, chdir: dir)
+    out, err, status = Open3.capture3(SessionEnv.neutralized, "git", "rev-parse", ref, chdir: dir)
+    unless status.success?
+      raise "git rev-parse #{ref.inspect} failed in #{dir} (exit #{status.exitstatus}): #{err.strip}"
+    end
+
     out.strip
   end
 

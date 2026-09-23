@@ -1488,9 +1488,50 @@ class Task < ApplicationRecord
   # actually DRAWS the face, and it rebuilt the review lane straight from the open
   # intent — so the seat kept ticking for a dead reviewer even though the predicate
   # said otherwise. Both now ask this method; a third reader must ask it too.
+  # Reads the `review_claim` ASSOCIATION, not a fresh find_by. The two answer the
+  # same question, but only one of them can be PRELOADED — and this is called once
+  # per card on a column of submitted work, and once per row by the API's `full=1`
+  # index. The find_by fired there regardless of whether a claim existed, so the very
+  # endpoint that serves the busy set carried a claim query per row. Measured while
+  # adding `review_holder`: the N+1 this field exists to remove was already inside
+  # the read meant to replace it.
   def review_claim_alive?
-    claim = TaskReviewClaim.find_by(task_slug: slug)
+    claim = review_claim
     claim.nil? || claim.live?
+  end
+
+  # WHO is reviewing this task — the soul holding a LIVE review claim, or nil.
+  #
+  # `review_in_progress?` above is a BOOLEAN that names nobody, and that gap had a
+  # measured price. `bin/reviewer-select --busy-auto` excludes souls who are already
+  # heads-down, but it could only see the mid-BUILD half (stage=building tasks carry
+  # `devops.built_by` on the row itself); a soul mid-REVIEW is on a SUBMITTED task
+  # holding a TaskReviewClaim, and the index served no way to see them. On
+  # 2026-09-22 the conductor overrode the pick BY HAND four times because it named
+  # souls who were mid-review, and one override spent Avi's QA-owner exclusion on
+  # PR #1521.
+  #
+  # The holder was already reachable — GET /api/v1/tasks/<slug>/review_claim returns
+  # it — but at ONE ROUND TRIP PER IN-REVIEW TASK. This serves it from the INDEX, so
+  # a busy set costs one request instead of N. That is the whole point of the field:
+  # a caller that wires the N+1 against the per-task endpoint has not fixed anything.
+  #
+  # THREE STATES, and only the first two are commonly read together:
+  #   a live claim naming a soul  → that slug
+  #   no claim / a lapsed claim   → nil ("nobody is reviewing it", the free case)
+  #   a LIVE claim naming NO soul → nil, and NOT the same fact (see the caveat)
+  # The third is real: `claim_next_review` can take a claim without a reviewer slug,
+  # so `review_in_progress` can be true while this is nil. A caller that needs them
+  # apart must read `review_claim_live?` too — `bin/reviewer-select` does, and warns,
+  # because a mid-review soul it cannot NAME is one it cannot EXCLUDE.
+  #
+  # Reads the `review_claim` ASSOCIATION, never a fresh find_by, so the index can
+  # preload it and serve a page of tasks without a query per row.
+  def review_holder(now: Time.current)
+    claim = review_claim
+    return nil unless claim&.live?(now: now)
+
+    claim.holder_agent.to_s.strip.presence
   end
 
   # The two senior reviewers Avi assigned for the `submitted` review (the Deploy

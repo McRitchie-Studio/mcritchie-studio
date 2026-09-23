@@ -39,7 +39,9 @@
 # Same discipline with `rev` below: it RAISES on a ref that does not resolve, so assert the
 # SHA shape (`assert_match(/\A[0-9a-f]{40}\z/, rev(...))`) rather than `refute_empty` —
 # `git rev-parse <missing-ref>` prints the ref NAME and exits 128, so "not empty" is true
-# for a ref that is not there.
+# for a ref that is not there. `head_branch` RAISES for the same reason and was repaired
+# the same way: on an UNBORN HEAD `git rev-parse --abbrev-ref HEAD` prints the literal
+# "HEAD" and exits 128, so a dropped status hands back a branch name that is not one.
 #
 # `include` is the whole setup. The module owns `setup`/`teardown`; a host that needs
 # its own must call `super`, or call the two primitives
@@ -655,8 +657,23 @@ module AgentWorktreeFixture
     path
   end
 
+  # RAISES on a HEAD that does not resolve, for the reason `rev` does below.
+  #
+  # AN UNBORN HEAD IS THE SILENT CASE. In a repo with no commits `git rev-parse
+  # --abbrev-ref HEAD` writes the literal "HEAD" to stdout and exits 128 (measured
+  # 2026-09-22), so a helper that drops the status hands back a plausible branch name
+  # for a repo that has none. The six ASSERTING call sites all happen to be
+  # `assert_equal` against a named branch, which makes "HEAD" loud at each of them —
+  # but that loudness is a property of those six assertions, not of this helper, and
+  # the next caller to ask `head_branch(dir) == whatever` inherits the silence
+  # instead. The control below drives the helper itself.
   def head_branch(dir)
-    out, = Open3.capture3(SessionEnv.neutralized, "git", "rev-parse", "--abbrev-ref", "HEAD", chdir: dir)
+    out, err, status = Open3.capture3(SessionEnv.neutralized, "git", "rev-parse",
+                                      "--abbrev-ref", "HEAD", chdir: dir)
+    unless status.success?
+      raise "git rev-parse --abbrev-ref HEAD failed in #{dir} (exit #{status.exitstatus}): #{err.strip}"
+    end
+
     out.strip
   end
 
@@ -667,9 +684,27 @@ module AgentWorktreeFixture
   # is not there — never nil, never empty. `refute_empty rev(...)` could therefore
   # not fail, on exactly the case it was written to catch (measured 2026-09-21).
   #
-  # The other caller is worse than a vacuous test: `stage_agent_worktree_desk!`
-  # feeds this straight into `update-ref`, so a silent failure would point
-  # origin/main at a ref name and every base comparison after it would be wrong.
+  # THE CALLER THAT MADE IT DANGEROUS IS `mark_worktree_merged_to_origin_main`, and
+  # the danger is not the shape this note used to describe. It named
+  # `stage_agent_worktree_desk!`, which never calls `rev` at all, and it called the
+  # failure "a bare ref NAME reaching update-ref" — which is LOUD, and therefore the
+  # one shape that needed no guard: measured 2026-09-22, `update-ref
+  # refs/remotes/origin/main refs/heads/no-such` dies with `fatal:
+  # refs/heads/no-such: not a valid SHA1`.
+  #
+  # THE SILENT PATH IS THE ONE THE CODE TAKES. The call is `rev(@worktree_dir,
+  # "HEAD")`; a status-dropping helper returns the literal string "HEAD"; and
+  # `update-ref refs/remotes/origin/main HEAD` run in the HUB SUCCEEDS, because HEAD
+  # re-resolves there. Measured on a throwaway hub+worktree pair the same day:
+  # origin/main landed on the HUB head, not the worktree head, exit 0, no output. The
+  # ref is then wrong, and 39 tests in test/commands/agent_worktree_test.rb build
+  # their "clean and landed on base" premise on it (`grep -c
+  # mark_worktree_merged_to_origin_main test/commands/agent_worktree_test.rb`,
+  # 2026-09-22 — re-derive it rather than trusting this number).
+  #
+  # RAISING BEATS RETURNING NIL: nil reaches git as `update-ref ""` and surfaces as a
+  # `git!` assertion reading `fatal: : not a valid SHA1`, which names neither the ref
+  # nor the directory.
   def rev(dir, ref)
     out, err, status = Open3.capture3(SessionEnv.neutralized, "git", "rev-parse", ref, chdir: dir)
     unless status.success?

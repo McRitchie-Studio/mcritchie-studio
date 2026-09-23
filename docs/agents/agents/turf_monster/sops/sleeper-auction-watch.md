@@ -60,8 +60,8 @@ mechanics and does not transfer.
 mkdir -p "${CLAUDE_SCRATCHPAD:-/tmp}/ff"
 ```
 
-**EVERY BLOCK BELOW THAT USES A RELATIVE PATH RE-ENTERS THAT DIRECTORY, and
-the repetition is the point.**
+**EVERY BLOCK BELOW THAT USES A RELATIVE PATH CREATES THAT DIRECTORY AND THEN
+ENTERS IT, and the repetition is the point.**
 This SOP runs across several turns, and **no shell state survives a turn
 boundary** — measured 2026-09-21: a variable comes back empty, and the working
 directory is RESET after the call, including a `cd` inside the project tree. So
@@ -70,12 +70,40 @@ they would read and write `league.json` in whatever directory the turn started
 in, which is usually a git worktree. Consistent, still working, and scattering
 seventeen files through a tracked tree.
 
+**Why `mkdir -p … && cd …` and not a bare `cd`.** A failed `cd` does not stop a
+bash block — measured 2026-09-22: it writes one line to stderr, the rest of the
+block runs anyway, and **the block still exits 0**. Every later write then lands
+in the turn's starting directory, silently, which is the exact pollution this
+section exists to prevent. Three things reach that state: starting at Step 1
+without running the Preconditions block above (it is a separate block, so by
+this SOP's own thesis it is a separate turn), a swept scratch directory, or
+`CLAUDE_SCRATCHPAD` becoming set after that `mkdir` already ran. Creating the
+directory in the same clause removes all three, and it makes the Preconditions
+block a convenience rather than a hidden dependency. Do not "simplify" it to
+`cd … || exit 1`: that halts instead of lying, which is better, but it still
+leaves the reader with a dead block and no directory.
+
 `${CLAUDE_SCRATCHPAD:-/tmp}` is safe to repeat because it carries nothing — an
-environment lookup with a fallback, re-evaluated fresh in each turn. (Nothing
-sets it today, so it resolves to `/tmp`; the `ff/` subdirectory is what does
-the namespacing, and this keeps working the day something does set it.) The
-relative filenames inside the Node snippets then stay correct, because the
-`cd` at the top of their own block put them there.
+environment lookup with a fallback, re-evaluated fresh in each turn. Nothing
+sets it today, so it resolves to `/tmp`: verified 2026-09-22, no tracked file in
+this repo assigns it, and the repo's own scratch resolver
+(`bin/lib/scratch_backup.rb#resolve_root`) reads `SCRATCH_BACKUP_ROOT` and
+otherwise globs for the session directory — it never consults this name. Keep
+the `:-` spelling anyway: it is self-documenting, it costs nothing, and because
+each block now creates the directory before entering it, the spelling stays
+correct on the day something does set it. The relative filenames inside the Node
+snippets then stay correct, because the `cd` at the top of their own block put
+them there.
+
+**Do not delete those `cd` lines as redundant.** The reason recorded for them in
+an earlier review — that `require('./league.json')` forces relative names — names
+the one construct here that is already cwd-independent: inside a script FILE
+(`model.js`, `live.js`) `require('./x')` resolves from the script's own
+directory and works from any cwd. What actually needs the working directory is
+`curl -o` in Steps 1 and 2, the `proj_*.json` reads and `values.json` write
+inside `model.js`, the cursor file inside `live.js`, and any `require` run under
+`node -e`, which resolves against the cwd rather than a script directory. The
+per-block `cd` is right; the reason once written down for it was not.
 
 No auth is required. Sleeper's read API is public; the draft board, the picks,
 and the projections all come back unauthenticated.
@@ -83,7 +111,7 @@ and the projections all come back unauthenticated.
 ## Step 1 — Read the league and the draft
 
 ```bash
-cd "${CLAUDE_SCRATCHPAD:-/tmp}/ff"   # this block re-enters it; no turn carries a cwd
+mkdir -p "${CLAUDE_SCRATCHPAD:-/tmp}/ff" && cd "${CLAUDE_SCRATCHPAD:-/tmp}/ff"   # create, then enter
 L=<league_id>
 curl -s "https://api.sleeper.app/v1/league/$L" -o league.json
 curl -s "https://api.sleeper.app/v1/league/$L/drafts" -o drafts.json
@@ -113,7 +141,7 @@ all three below.
 ## Step 2 — Pull projections
 
 ```bash
-cd "${CLAUDE_SCRATCHPAD:-/tmp}/ff"   # this block re-enters it; no turn carries a cwd
+mkdir -p "${CLAUDE_SCRATCHPAD:-/tmp}/ff" && cd "${CLAUDE_SCRATCHPAD:-/tmp}/ff"   # create, then enter
 for P in QB RB WR TE K DEF DL LB DB; do
   curl -s "https://api.sleeper.com/projections/nfl/<season>?season_type=regular&position[]=$P&order_by=ppr" \
     -o "proj_$P.json" &
@@ -138,7 +166,7 @@ no special-casing.
 player onto one entry. Use `row.player_id`.
 
 ```bash
-cd "${CLAUDE_SCRATCHPAD:-/tmp}/ff"   # this block re-enters it; no turn carries a cwd
+mkdir -p "${CLAUDE_SCRATCHPAD:-/tmp}/ff" && cd "${CLAUDE_SCRATCHPAD:-/tmp}/ff"   # create, then enter
 cat > model.js <<'EOF'
 const fs = require('fs');
 const league = require('./league.json');
@@ -228,10 +256,13 @@ Three checks, every time. Each has caught a real bug:
 
 ## Step 4 — Watch the draft
 
-Poll picks and print the delta. Run this each time you check.
+Poll picks and print the delta. **This step is two blocks: write the watcher
+once, then re-run the short one on every check.**
+
+**Write it once.** This block creates `live.js` and does not poll.
 
 ```bash
-cd "${CLAUDE_SCRATCHPAD:-/tmp}/ff"   # this block re-enters it; no turn carries a cwd
+mkdir -p "${CLAUDE_SCRATCHPAD:-/tmp}/ff" && cd "${CLAUDE_SCRATCHPAD:-/tmp}/ff"   # create, then enter
 cat > live.js <<'EOF'
 const V = require('./values.json'), fs = require('fs');
 const DRAFT = process.env.DRAFT_ID, ME = +process.env.MY_ROSTER || null;
@@ -252,8 +283,13 @@ const val = new Map(V.players.map(p => [p.id, p]));
     log.push({rid:p.roster_id, amt, val:v?.val ?? 1,
       name:v?.name ?? `${p.metadata?.first_name} ${p.metadata?.last_name}`, pos:v?.pos ?? p.metadata?.position});
   }
-  let seen = 0; try { seen = JSON.parse(fs.readFileSync('seen.json')).n; } catch {}
-  fs.writeFileSync('seen.json', JSON.stringify({n: log.length}));
+  // Cursor is keyed to THIS draft. A stale cursor from a previous draft in the
+  // same directory makes log.slice(seen) EMPTY, so the first poll of a new draft
+  // prints no picks at all; the clamp also covers a re-draft of the same league.
+  const CUR = 'seen-' + DRAFT + '.json';
+  let seen = 0; try { seen = JSON.parse(fs.readFileSync(CUR)).n; } catch {}
+  if (!(seen >= 0) || seen > log.length) seen = 0;
+  fs.writeFileSync(CUR, JSON.stringify({n: log.length}));
   console.log(`PICKS ${picks.length}  (new since last check: ${log.length - seen})`);
   log.slice(seen).forEach(x => { const d = x.val - x.amt;
     console.log(`  $${String(x.amt).padStart(3)} (model $${String(x.val).padStart(3)}, ${d>0?'+':''}${d})  ` +
@@ -272,7 +308,15 @@ const val = new Map(V.players.map(p => [p.id, p]));
   });
 })();
 EOF
-DRAFT_ID=<draft_id> MY_ROSTER=<n> node live.js
+```
+
+**Then poll with this block, every time you check.** It carries its own
+directory, so it stands alone in a fresh turn — which is what you will actually
+re-run on the clock, rather than re-typing the heredoc above.
+
+```bash
+mkdir -p "${CLAUDE_SCRATCHPAD:-/tmp}/ff" && cd "${CLAUDE_SCRATCHPAD:-/tmp}/ff" \
+  && DRAFT_ID=<draft_id> MY_ROSTER=<n> node live.js
 ```
 
 **The API trails the room by a few seconds and occasionally by a pick.** For a

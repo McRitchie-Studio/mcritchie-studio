@@ -317,7 +317,17 @@ def supervisor_ci_check(task)
 end
 
 def select_reviewers(slug)
-  cmd = managed_command(REVIEWER_SELECT_BIN, slug, "--json")
+  # `--busy-auto` is what makes the pick avoid a soul who is already heads-down —
+  # mid-build on another task, or mid-REVIEW on one. It is opt-in in
+  # bin/reviewer-select and this lane never passed it, so the busy exclusion was OFF
+  # for every automated review: the other two exclusions (QA owner, author) drop out
+  # on their own, which is precisely why this one went unnoticed. Measured
+  # 2026-09-22 — the conductor overrode the pick BY HAND four times in one night
+  # because it named mid-review souls, and one override spent Avi's QA-owner
+  # exclusion on PR #1521. It can never abort a pick: each half of the set fails open
+  # to empty and says so on stderr, and the selector keeps busy souls eligible rather
+  # than starve the pool below a formable pair.
+  cmd = managed_command(REVIEWER_SELECT_BIN, slug, "--json", "--busy-auto")
   cmd << "--no-record" unless OPTIONS.fetch(:run)
   out, err, status = run_capture(cmd)
   # Exit 2 is reviewer-select REFUSING — the builder is unknown, so it cannot

@@ -477,15 +477,9 @@ class FastCertSubjectTest < Minitest::Test
   # the test passes having proved nothing. The floor below is what makes a green run
   # mean something.
   def test_no_config_source_in_this_repo_maps_over_the_cap
-    configs = `git -C #{REPO_ROOT} ls-files`.split("\n")
-                                            .grep(%r{\Aconfig/.+\.(?:ya?ml|rb)\z})
-
-    assert_operator configs.size, :>=, 40,
-                    "swept #{configs.size} config sources — too few to be the real tree"
-
-    over = configs.filter_map do |path|
+    over = config_sources.filter_map do |path|
       n = FastCert.select_tests(REPO_ROOT, [path]).size
-      "#{path} (#{n})" if n > FastCert::DEFAULT_MAPPED_CAP
+      [path, n] if n > FastCert::DEFAULT_MAPPED_CAP
     end
 
     # THE COUNT TRACKS THE TREE, so it moves whenever a test file is added whose
@@ -531,9 +525,104 @@ class FastCertSubjectTest < Minitest::Test
     # buys a reader nothing and costs this lane a file.
     # What the assertion is FOR is the LIST: this one known entry and no other. A
     # second path appearing is the regression; this number changing is bookkeeping.
-    assert_equal ["config/test_health.yml (28)"], over,
+    expected = ["config/test_health.yml (28)"]
+
+    # THE FAILURE NAMES THE SPELLING, not just the count — the half of this tripwire
+    # that was missing when it fired for real. Measured 2026-09-22: a new test file
+    # that spelled the release registry's path took that config 15 -> 16 and reddened
+    # THIS test, from a diff that touched neither the config nor the mapper. The old
+    # message named the config; it did not name what to change, and the builder's own
+    # file appears nowhere in it. #spelling_diagnosis lists every file that answers to
+    # each token, so the reader finds theirs, and states the remedy measured to work.
+    #
+    # BUILT ONLY FOR THE UNEXPECTED ENTRIES, so a passing run pays nothing: `over`
+    # equals `expected` on green and the map below walks an empty array.
+    assert_equal expected, over.map { |path, n| "#{path} (#{n})" },
                  "config/test_health.yml was already over the cap before this clause " \
                  "existed (its PATH matches 28 files); any OTHER entry here means the " \
-                 "config spelling re-opened a cap trip"
+                 "config spelling re-opened a cap trip" +
+                 over.reject { |path, n| expected.include?("#{path} (#{n})") }
+                     .map { |path, _| "\n\n#{spelling_diagnosis(path)}" }.join
+  end
+
+  # THE MARGIN, PINNED WHERE THE READER IS. The cap is a step function, and until
+  # 2026-09-22 nothing made the last step before it visible: the release registry
+  # sat at exactly 15 of 15, so the first test file to spell its path took the mapped
+  # lane from "runs 15" to "runs 0, still green". bin/fast-check now warns inside the
+  # margin — but only for a diff that CONTAINS the at-cap subject, and the builder who
+  # trips the cap is measurably not that person: a one-file diff adding a test that
+  # spells the path maps to 1 path (its own) and never mentions the cap at all.
+  #
+  # So the margin is pinned HERE too, because this sweep is what that builder's CI
+  # actually reddens. A config ENTERING the band reds this list one or two spellings
+  # BEFORE the lane goes quiet — the notice the cliff never gave.
+  #
+  # NAMED BY BASENAME, AND THAT IS NOT COSMETIC. Spelling a config's full path in this
+  # file would add this file to that config's mapped set — the exact mechanism under
+  # test. Writing the expectation as `<basename> (<n>)` evades BOTH tokens
+  # (#grep_tokens asks for the full path, and for the basename WRAPPED IN DOUBLE
+  # QUOTES; `"release_x.yml (15)"` is neither), so this tripwire does not trip itself.
+  # The over-cap sweep above keeps full paths deliberately: its one entry is already
+  # far over the cap and its pinned 28 COUNTS this file, so changing the spelling there
+  # would move a number for no gain.
+  #
+  # THE BAND RULE IS ASKED, NOT RESTATED. `n >= cap - margin && n <= cap` is
+  # FastCert.cap_decision's answer, and a second copy here is how a mutation to the
+  # first survives — the failure this module's comments cite twice (PR #1239). The cap
+  # is passed explicitly so an exported FAST_CHECK_MAPPED_CAP cannot move the pin.
+  def test_no_config_source_sits_inside_the_cap_margin_unannounced
+    near = config_sources.filter_map do |path|
+      tests = FastCert.select_tests(REPO_ROOT, [path])
+      [path, tests.size] if FastCert.cap_decision(tests, {}, cap: FastCert::DEFAULT_MAPPED_CAP)[:approaching]
+    end
+
+    expected = ["feature_shapes.yml (14)", "release_repos.yml (15)"]
+
+    # WHAT THE ASSERTION IS FOR is the LIST, exactly as the over-cap sweep above: a NEW
+    # entry is the thing to act on, a number moving on an entry already here is
+    # bookkeeping. Acting on it means taking the spelling back out — cite the constant
+    # — never raising the cap, which only moves the cliff.
+    assert_equal expected, near.map { |path, n| "#{File.basename(path)} (#{n})" },
+                 "these config sources are within #{FastCert::DEFAULT_MAPPED_MARGIN} mapped " \
+                 "path(s) of the cap of #{FastCert::DEFAULT_MAPPED_CAP}: one or two more test " \
+                 "files naming one of them and its mapped lane runs ZERO tests while still " \
+                 "reporting green" +
+                 near.reject { |path, n| expected.include?("#{File.basename(path)} (#{n})") }
+                     .map { |path, _| "\n\n#{spelling_diagnosis(path)}" }.join
+  end
+
+  private
+
+  # THE SWEEP'S POPULATION, shared by both cap sweeps so they cannot drift apart about
+  # what a config source is — and carrying the floor, because a source-scanning test is
+  # exit-blind: if the glob ever returns nothing, every assertion inside the loop is
+  # skipped and the test passes having proved nothing.
+  def config_sources
+    configs = `git -C #{REPO_ROOT} ls-files`.split("\n")
+                                            .grep(%r{\Aconfig/.+\.(?:ya?ml|rb)\z})
+
+    assert_operator configs.size, :>=, 40,
+                    "swept #{configs.size} config sources — too few to be the real tree"
+    configs
+  end
+
+  # WHAT A CAP TRIP OWES ITS FINDER: the token that reached the subject, every test
+  # file that answers to it, and the one edit that takes a file back out of the set.
+  #
+  # THE REMEDY IS MEASURED, not read off the mapper's source: test/docs/
+  # guard_population_test.rb names the release registry through
+  # Release::Repos::CONFIG_PATH and is NOT among the files that config maps to, while
+  # every file that spells the path is.
+  def spelling_diagnosis(path)
+    lines = ["#{path} — the spellings that reach it:"]
+    FastCert.spelling_breakdown(REPO_ROOT, path).each do |token, hits|
+      lines << "  #{token.inspect} -> #{hits.size} test file(s)"
+      hits.each { |hit| lines << "      #{hit}" }
+    end
+    lines << "  The file in YOUR diff is one of those. Take it back out by citing the " \
+             "CONSTANT that names this path instead of spelling the path in prose, or " \
+             "by naming the file without its directory. Do NOT raise " \
+             "FastCert::DEFAULT_MAPPED_CAP: that moves the cliff without removing it"
+    lines.join("\n")
   end
 end
