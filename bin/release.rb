@@ -6980,9 +6980,11 @@ def group_smoke_url(group)
 end
 
 # Decide — over live signals — whether `group`'s frozen SHA is genuinely deployed.
-# Fails closed on any unreadable signal. deployed_at_sha (the repo_script marker)
-# is left nil for now: turf's mainnet-release marker read is a future tightening,
-# so a repo_script re-run re-dispatches (safe — its bin/deploy self-gates).
+# Fails closed on any unreadable signal. deployed_at_sha IS now computed for the
+# inline strategies (see deploy_live_verdict below), so a repo_script deploy that
+# landed is confirmed rather than re-dispatched. This comment said the opposite
+# until 2026-09-22 — it described the strand the marker closed, sitting on top of
+# the function that closes it.
 def deploy_already_live?(group, frozen)
   deploy_live_verdict(group, frozen).first
 end

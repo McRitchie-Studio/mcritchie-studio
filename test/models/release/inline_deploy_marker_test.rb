@@ -184,7 +184,17 @@ class Release::InlineDeployMarkerTest < ActiveSupport::TestCase
     # config's fast-check mapped set — which pushed this registry over the mapped
     # cap and reddened test/lib/fast_cert_subject_test.rb on CI (measured, and the
     # only thing that caught it).
+    # NOT `assert_includes reason, S::REGISTRY_FILE` — the message is BUILT by
+    # interpolating that very constant, so the assertion restated its own input and
+    # could not fail; a REGISTRY_FILE pointing at a file that does not exist passed
+    # just as happily. Assert the property the remedy actually depends on: that the
+    # path it names is a real file. This keeps the builder's reason for using the
+    # constant (a test that SPELLS a config path joins that config's fast-check
+    # mapped set, which pushed the registry over the cap and reddened
+    # test/lib/fast_cert_subject_test.rb) while making the check bite.
     assert_includes reason, S::REGISTRY_FILE, "the remedy names the file to edit"
+    assert_path_exists Rails.root.join(S::REGISTRY_FILE).to_s,
+      "the remedy must name a file that exists — an interpolated constant cannot prove that"
   end
 
   test "[unit] a named app that did not confirm names the app and the likely causes" do
