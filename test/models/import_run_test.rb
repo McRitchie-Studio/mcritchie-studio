@@ -65,6 +65,87 @@ class ImportRunTest < ActiveSupport::TestCase
     assert ImportRun.fresh_success?(SOURCE, within: 7.days)
   end
 
+  # --- fresh_success?(since:) ----------------------------------------------
+
+  # THE CELL THE WINDOW CANNOT SEE, and the one that survived BOTH halves of the
+  # earlier fix. `within` asks "did some run succeed today"; a lane grading its
+  # own run has to ask "did THIS one". The two come apart on the second rebuild
+  # of a day, and that is not a hypothetical shape: measured end-to-end against
+  # the real importer, an `ok` row from two hours ago plus a feed outage now
+  # leaves the process exiting 0, its own run recorded `failed`, and this
+  # predicate answering true.
+  test "a success that finished before this run started does not vouch for it" do
+    run!(status: "ok", finished_at: 2.hours.ago)
+
+    assert ImportRun.fresh_success?(SOURCE),
+           "precondition: the day does hold a success, which is what makes the cell possible"
+    assert_not ImportRun.fresh_success?(SOURCE, since: 1.hour.ago),
+               "an earlier run's success cannot answer for a run that started after it"
+  end
+
+  # The half that keeps the predicate from being a constant. Differs from the
+  # case above by EXACTLY the order of the two timestamps; a boundary that
+  # refused everything would pass that one and fail this.
+  test "a success that finished after this run started does vouch for it" do
+    boundary = 1.hour.ago
+    run!(status: "ok", finished_at: 30.minutes.ago)
+
+    assert ImportRun.fresh_success?(SOURCE, since: boundary)
+  end
+
+  # `since` IS A FLOOR, NEVER A CEILING. Taking the later of the two bounds is
+  # what makes this change strictly narrower than the behaviour it replaces — a
+  # caller cannot hand in an old boundary and quietly turn a freshness check
+  # back into "has it ever worked".
+  test "since only narrows the window — it cannot widen it" do
+    run!(status: "ok", finished_at: 3.days.ago)
+
+    assert_not ImportRun.fresh_success?(SOURCE, since: 5.days.ago),
+               "a since older than `within` must not resurrect a success the window already rejected"
+  end
+
+  # The shape bin/ecosystem-build actually passes: `date -u +%Y-%m-%dT%H:%M:%SZ`
+  # through the environment. A model that only accepted a Time would leave the
+  # lane interpolating Ruby into a bash string to build one.
+  test "an ISO 8601 string is read as the boundary" do
+    run!(status: "ok", finished_at: 30.minutes.ago)
+
+    assert ImportRun.fresh_success?(SOURCE, since: 1.hour.ago.utc.iso8601)
+    assert_not ImportRun.fresh_success?(SOURCE, since: 10.minutes.ago.utc.iso8601),
+               "the string boundary has to bite in both directions, or it is decoration"
+  end
+
+  # A BOUNDARY NOBODY CAN READ IS REFUSED. Falling back to the wide window on an
+  # unparseable `since` would hand the caller back the exact false green it
+  # passed `since` to close, and would do it silently — which is the defect this
+  # whole model exists to end, not a tidy default.
+  # "last tuesday-ish" is not an arbitrary bit of garbage — it is the case that
+  # chose the reader. `Time.zone.parse` does not return nil for it; it returns
+  # TODAY AT MIDNIGHT, a boundary earlier than any run of the day, which quietly
+  # restores the whole-day window `since` was passed to escape. So the assertion
+  # is on a string a LENIENT reader would have accepted, not only on one that
+  # every reader rejects.
+  test "a boundary that cannot be read is refused, not dropped" do
+    run!(status: "ok", finished_at: 30.minutes.ago)
+
+    error = assert_raises(ArgumentError) { ImportRun.fresh_success?(SOURCE, since: "last tuesday-ish") }
+    assert_match(/refusing to fall back/, error.message)
+    assert_raises(ArgumentError) { ImportRun.fresh_success?(SOURCE, since: "") }
+    assert_raises(ArgumentError) { ImportRun.fresh_success?(SOURCE, since: "garbage") }
+  end
+
+  # Every caller that does not pass a boundary keeps the answer it had. The pair
+  # is load-bearing: a `since: nil` path that returned true for everything would
+  # satisfy the first assertion alone.
+  test "since: nil leaves the plain window answering exactly as before" do
+    run!(status: "ok", finished_at: 2.hours.ago)
+    assert ImportRun.fresh_success?(SOURCE, since: nil)
+
+    ImportRun.delete_all
+    run!(status: "ok", finished_at: 3.days.ago)
+    assert_not ImportRun.fresh_success?(SOURCE, since: nil)
+  end
+
   # --- last_success_for ----------------------------------------------------
 
   # MEASURED ON THIS SCHEMA, not reasoned from the docs. Postgres sorts NULLS

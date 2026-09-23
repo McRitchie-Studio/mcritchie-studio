@@ -62,6 +62,10 @@ For each item, in order:
    `knowledge/<entity>/<path>/…` + a `Studio::KnowledgeDoc` row; link the
    expectation it fulfills (`expectation_id`) when one exists. Keep the
    repo-side original in `business-data/` per its README, one INDEX row each.
+   A durable fact the item establishes (a code, a date, an address, an
+   advisor) also gets its row in the quick reference,
+   `business-data/FACTS.md` — cited back to this doc, with who asserted it;
+   see [`form-fill`](form-fill.md) §7.
 6. **Flag urgency:** a decision-changing fact (a moved date, a changed number)
    jumps the queue — surface it to Mr. McRitchie immediately rather than
    waiting for distillation.
