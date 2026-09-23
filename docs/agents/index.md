@@ -14,7 +14,7 @@ name as ordinary prose, generic GitHub triage, or a broad workflow request.
 McRitchie operating procedures are normal repo docs, not installed skills. When
 Mr. McRitchie names an SOP or heartbeat act such as `pr-review`, `qa-release`,
 `production-deploy`, `clean-up`, `process-backlog`, `work-backlog`, `slack-capture`,
-`gmail-capture`, `credential-issues`, or `full-cycle`, resolve that phrase through the SOP registry and directory
+`gmail-capture`, `credential-issues`, `form-fill`, or `full-cycle`, resolve that phrase through the SOP registry and directory
 convention here, read the mapped SOP, then execute it.
 
 SOP locations:
@@ -88,6 +88,7 @@ required execution path. Do not follow a Background reference to run an SOP.
 | `slack-capture` | Shared | `mcritchie-studio/docs/agents/modules/slack-capture.md` |
 | `gmail-capture` | Shared | `mcritchie-studio/docs/agents/modules/gmail-capture.md` |
 | `credential-issues` | Shared | `mcritchie-studio/docs/agents/modules/credential-issues.md` |
+| `form-fill` | Shared | `mcritchie-studio/docs/agents/modules/form-fill.md` |
 
 For `pr-review`, read Carl's `pr-review.md` and run the bounded review it
 describes. A review session (a Pokémon orchestrator) spins one Carl per PR;
@@ -769,6 +770,7 @@ Do not merge or deploy unless I explicitly assigned that lane.
 | Slack capture (connect, read, categorize a channel) | `mcritchie-studio/docs/agents/modules/slack-capture.md` |
 | Gmail capture (read-only mailbox pull into the desk queue) | `mcritchie-studio/docs/agents/modules/gmail-capture.md` |
 | Credential issues (log it privately, triage rotate-now vs weekly) | `mcritchie-studio/docs/agents/modules/credential-issues.md` |
+| Form fill (complete an application from records, ask only what they cannot answer) | `mcritchie-studio/docs/agents/modules/form-fill.md` |
 | Parallel DevOps and QA graduation | `mcritchie-studio/docs/agents/modules/parallel-agent-devops.md` |
 | Agent presence (who is working, machine headroom) | `mcritchie-studio/docs/agents/system/agent-presence.md` |
 | Modular PR review SOP | `mcritchie-studio/docs/agents/modules/pr-review-sop.md` |
@@ -898,6 +900,7 @@ depend on the heartbeat.
 | `slack-capture` | Shared | `mcritchie-studio/docs/agents/modules/slack-capture.md` |
 | `gmail-capture` | Shared | `mcritchie-studio/docs/agents/modules/gmail-capture.md` |
 | `credential-issues` | Shared | `mcritchie-studio/docs/agents/modules/credential-issues.md` |
+| `form-fill` | Shared | `mcritchie-studio/docs/agents/modules/form-fill.md` |
 
 ## Repos
 
