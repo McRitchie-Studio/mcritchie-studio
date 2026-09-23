@@ -65,6 +65,55 @@ class ArtifactGateTest < ActionDispatch::IntegrationTest
     assert_match "JaMarr Chase: Bengals white", response.body
   end
 
+  # THE SUBMIT LABEL IS A PROMISE ABOUT THE OPERATOR'S EXISTING ASSETS, and on a
+  # re-skin slot it promised the opposite of what happens. `slot.artifact` on a
+  # re-skin is the OTHER colorway, and its image_url IS present, so the label
+  # read "Replace" on every slot while the attach keeps that artifact and adds a
+  # second one beside it. That label was true while the attach retired its
+  # source; it became false the moment the retire was made conditional. Telling
+  # the operator an asset will be destroyed when it will be kept is the inverse
+  # of the bug that change fixed, on the one screen whose job is trust about
+  # assets.
+  test "[component] a re-skin slot offers Attach, never Replace" do
+    attach_all
+    post set_colorway_content_path(@content.slug), params: { colorway: "black" }
+    assert slots.all?(&:reskin?),
+           "the control — these must be re-skins, or this test proves nothing. " \
+           "Read #{slots.map(&:decision).inspect}"
+
+    get content_path(@content.slug)
+
+    assert_equal 3, response.body.scan(/value="Attach"/).length,
+                 "every re-skin slot must offer Attach — the white artifact is kept, not replaced"
+    assert_equal 0, response.body.scan(/value="Replace"/).length,
+                 "a re-skin replaces nothing; Replace here tells the operator his asset is about to be destroyed"
+  end
+
+  # The other half of the predicate, and the reason it is not simply "always
+  # Attach": a :reuse slot holds the SAME cast in the SAME look, the attach DOES
+  # retire it (contents_controller: `slot.artifact&.retire! if slot.reuse?`), and
+  # Replace is the honest word. A fix that flipped every label would break this.
+  test "[component] a reuse slot still offers Replace" do
+    attach_all
+    assert slots.all?(&:reuse?),
+           "the control — these must be reuses, or this test proves nothing. " \
+           "Read #{slots.map(&:decision).inspect}"
+
+    get content_path(@content.slug)
+
+    assert_equal 3, response.body.scan(/value="Replace"/).length,
+                 "a reuse attach retires the artifact it shows, so Replace is what happens"
+    assert_equal 0, response.body.scan(/value="Attach"/).length
+  end
+
+  # An empty slot has no artifact to speak of either way.
+  test "[component] a generate slot offers Attach" do
+    get content_path(@content.slug)
+
+    assert_equal 3, response.body.scan(/value="Attach"/).length
+    assert_equal 0, response.body.scan(/value="Replace"/).length
+  end
+
   test "[component] the gate disappears once approved" do
     @content.update!(artifacts_approved_at: Time.current)
     get content_path(@content.slug)
@@ -169,8 +218,13 @@ class ArtifactGateTest < ActionDispatch::IntegrationTest
   end
 
   # The third pass is the one that bites: white, black, then white again. With
-  # the unconditional retire the white artifacts are gone by now and the gate
-  # asks the operator to generate images it already has.
+  # the unconditional retire the white artifacts are gone by now, so the gate
+  # bills a RECOLOR for a jersey it already had on file — it reads `:reskin`
+  # off the black artifact instead of `:reuse` off the white one. It does not
+  # ask for a fresh generation: every attach files a replacement in the same
+  # transaction, so the cast never drops to zero live artifacts and `:generate`
+  # is unreachable here. Measured by reinstating the unconditional retire —
+  # this pass then prints [:reskin, :reskin, :reskin].
   test "a jersey the pair has worn before still reads reuse on the way back" do
     Appearance.create!(person_slug: @burrow.slug, descriptor: "Bengals black", colorway: "black")
     Appearance.create!(person_slug: @chase.slug,  descriptor: "Bengals black", colorway: "black")
