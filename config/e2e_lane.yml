@@ -225,7 +225,21 @@
 # the operator approving the gate). Coverage ADDED; `quarantined` untouched at 10.
 # MEASURED with the lister on THIS tree, never by arithmetic:
 #   npx playwright test --list => 158
-total_specs: 158
+# 158 -> 160 on 2026-09-22: e2e/third_party_blocked.spec.js, TWO specs
+# (/tasks/hub-magic-link-spec-flakes). They guard a one-line call inside the shared
+# sign-in helper that would read as removable: the helper now REFUSES cross-origin
+# subresources, because `/` is landing#index and that page loads
+# https://app.sprintful.com/widget/v1.js — and `page.goto` waits until "load", which
+# cannot fire until every subresource settles. A third party that is slow or
+# unreachable FROM THE RUNNER therefore held the navigation open and burned the whole
+# 30s test budget, which is the red devops_key_preservation.spec.js took with 46 other
+# specs passing and no app code in the diff. Both directions are asserted, for the
+# reason page_error_collector gives for its pair: a blanket blocker passes the
+# cross-origin half and kills the app's own stylesheet. Coverage ADDED; `quarantined`
+# untouched at 10.
+# MEASURED with the lister on THIS tree, never by arithmetic:
+#   npx playwright test --list => 160
+total_specs: 160
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
@@ -356,7 +370,12 @@ quarantined: 10
 # Re-derived on THIS tree with the lister, never by arithmetic:
 #   npx playwright test --list                           => 158
 #   npx playwright test --list --grep-invert @quarantine => 148
-executed: 148
+# 148 -> 150 on 2026-09-22: the two third_party_blocked specs. Coverage ADDED;
+# `quarantined` untouched at 10.
+# Re-derived on THIS tree with the lister, never by arithmetic:
+#   npx playwright test --list                           => 160
+#   npx playwright test --list --grep-invert @quarantine => 150
+executed: 150
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to
