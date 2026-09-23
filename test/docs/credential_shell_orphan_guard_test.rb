@@ -67,15 +67,15 @@ class CredentialShellOrphanGuardTest < ActiveSupport::TestCase
   # A SOP with a REAL orphan that this guard cannot fix from here, because the remedy
   # is a prose change to that SOP and it carries its own card.
   #
-  # THIS IS NOT AN ALLOWLIST. The entry is asserted to still be true below, so the day
+  # THIS IS NOT AN ALLOWLIST. Each entry is asserted to still be true below, so the day
   # the card lands this test FAILS and the file must move into the covered set. An
   # exemption nobody re-measures is how a guard goes quiet.
-  KNOWN_UNGUARDED = {
-    "steffon/sops/credential-filing.md" => {
-      orphans: ["VALUE"],
-      card: "guard-credential-filing-value"
-    }
-  }.freeze
+  #
+  # It is EMPTY today: credential-filing.md's $VALUE orphan was the only entry, and
+  # guard-credential-filing-value fixed it, so the file is now graded with every other
+  # SOP. The staleness test below keeps asserting on the empty case rather than going
+  # quiet — see the comment there.
+  KNOWN_UNGUARDED = {}.freeze
 
   # ── extraction ──────────────────────────────────────────────────────────────
 
@@ -93,7 +93,7 @@ class CredentialShellOrphanGuardTest < ActiveSupport::TestCase
     buf = nil
     text.each_line do |line|
       if buf
-        line.start_with?("```") ? (blocks << buf.join; buf = nil) : buf << line
+        line.strip.start_with?("```") ? (blocks << buf.join; buf = nil) : buf << line
       elsif line.strip.start_with?("```bash")
         buf = []
       end
@@ -240,5 +240,19 @@ class CredentialShellOrphanGuardTest < ActiveSupport::TestCase
                         "the file is graded with every other SOP."
       end
     end
+
+    # An EMPTY hash walks that loop ZERO times. Without the assertion below this test then
+    # proves nothing while reporting green, and minitest says so out loud ("Test is missing
+    # assertions") in a line nobody reads. Empty is itself a claim — that no SOP needs
+    # excusing — so assert THAT. This keeps the test biting on the case it is really for:
+    # a hash emptied to SILENCE a failure rather than to RECORD a fix.
+    return unless KNOWN_UNGUARDED.empty?
+
+    dirty = sops.select { |p| orphans_in(p).any? }.map { |p| rel(p) }
+    assert_empty dirty,
+                 "KNOWN_UNGUARDED is empty, which asserts that every SOP is clean, but " \
+                 "#{dirty.inspect} still expand a shell variable they never assign. Emptying this " \
+                 "hash is how a FIX is recorded, not how a FAILURE is silenced: restore the entry " \
+                 "with the card that will fix it, or fix the file."
   end
 end
