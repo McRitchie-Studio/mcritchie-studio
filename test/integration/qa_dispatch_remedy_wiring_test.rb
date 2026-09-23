@@ -18,8 +18,16 @@ class QaDispatchRemedyWiringTest < ActionDispatch::IntegrationTest
   # bin/qa-server's OWN sentence decides what a runnable remedy must carry. Read
   # from the script rather than restated here: move that gate to a different flag
   # and this test reds, instead of drifting past it exactly as the remedy did.
+  #
+  # ANCHORED TO THE DEPLOY GATE'S OWN SENTENCE. `Re-run with (--\S+) after
+  # reviewing` matches TWICE in bin/qa-server — the PROVISIONING gate (~:428) and
+  # the QA-deploy gate (~:584) — and String#[] takes the FIRST, so this method
+  # read the provisioning flag and only agreed with the deploy gate by coincidence
+  # of the two both saying --yes. Measured: moving the deploy gate's flag left this
+  # test GREEN (the drift it exists to catch) while moving the PROVISIONING gate
+  # redded it. Anchored, those invert.
   def confirmation_flag
-    QA_SERVER_SRC.read[/Re-run with (--\S+) after reviewing/, 1]
+    QA_SERVER_SRC.read[/QA deploy is an external write\. Re-run with (--\S+) after reviewing/, 1]
   end
 
   # --- 1. the remedy runs as printed ---------------------------------------
