@@ -138,6 +138,25 @@ class ToolchainEnvTest < Minitest::Test
                  "the BUNDLE_ namespace sweep consumed BUNDLER_ORIG_PATH before it could be read"
   end
 
+  # ...and the case the test above CANNOT reach. It probes with PATH, which is
+  # outside both namespaces, and step 1 reads the records out of the SOURCE hash
+  # before the sweep runs — so PATH is restored either way and that assertion
+  # passes on a widened regex as readily as on the real one. Measured in review
+  # 2026-09-22: widening BUNDLE_NAMESPACE by ONE character (/\ABUNDLE/, or
+  # /\ABUNDLER?_/) left all 14 cases green while silently dropping this restore.
+  # BUNDLER_VERSION is the probe because it is load-bearing TWICE — a real
+  # Bundler::EnvironmentPreserver::BUNDLER_KEYS member that a widened regex
+  # clears after step 1 restored it, AND a RESIDUAL_KEYS name, so it also reds
+  # if step 3's `unless overrides.key?` floor guard is dropped. Both guards are
+  # asserted here; neither had a test that could fail.
+  def test_a_bundler_prefixed_target_survives_the_sweep_and_the_floor
+    child = restored({ "BUNDLER_VERSION" => "2.6.9", "#{ORIG}BUNDLER_VERSION" => "2.5.23" })
+
+    assert_equal "2.5.23", child["BUNDLER_VERSION"],
+                 "a restored BUNDLER_ value was lost. Either the BUNDLE_ namespace sweep widened to " \
+                 "reach BUNDLER_, or step 3's residual floor clobbered a restore step 1 had made."
+  end
+
   # ── LAYERING ───────────────────────────────────────────────────────────────
 
   # `mise activate` runs in the login shell, outside any `bundle exec`, so its
