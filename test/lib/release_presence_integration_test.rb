@@ -67,40 +67,111 @@ class ReleasePresenceIntegrationTest < Minitest::Test
   # the runner, which by construction OUTLIVES the child we are about to kill. That is
   # exactly the harness shape (`/bin/zsh -c …` wrapper, measured at pid 61666 in pgid
   # 61388), reproduced with no artifice at all.
-  def spawn_conductor(store, root, kind:, lane:, weight: nil)
+  #
+  # AND IT HOLDS NO PIPE — /dev/null for stdout, a LOG FILE for stderr. That is a fix,
+  # not a tidy-up. The old stand-in wrote "claimed" down an `IO.pipe` whose READ END the
+  # parent closed the instant the marker appeared, and the child publishes its marker
+  # BEFORE it writes that line. So the parent could win that race, and when it did the
+  # child took SIGPIPE on the write and DIED: its marker still on disk — that survival is
+  # this module's whole design, proved two tests below — and a ZOMBIE in the process
+  # table. `CertOrphanGuard.live_process` excludes zombies, so the real reader graded
+  # that claim :dead and subtracted nothing for it. Headroom read 2.75 where 2.50 was
+  # asserted, which is the CI red this closes (shard rails (4), run 35796326365): the
+  # harness killed its own conductor and then measured the corpse.
+  #
+  # MEASURED, against this very test, with a delay induced between the marker write and
+  # the stdout write: 0/12 red idle, 7/12 at 20ms, 11/12 at 50ms, 8/12 at 80ms, 7/12 at
+  # 120ms, 0/12 at 200ms. The window is bounded at BOTH ends — the child has to die AFTER
+  # the parent closes the read end and BEFORE the headroom assertion reads the claim — so
+  # this flake is near-deterministic inside a band and invisible outside it, which is why
+  # 5/5 green locally was never evidence against a race. Under the harness below the same
+  # test is 0/12.
+  def spawn_conductor(store, root, kind:, lane:, weight: nil, boot_delay: nil,
+                      die_after_publish: false, timeout: BOOT_TIMEOUT)
     weight_arg = weight ? ", weight: #{weight.inspect}" : ""
     script = <<~RB
+      #{boot_delay ? "sleep #{boot_delay}" : ""}
       require #{LIB.inspect}
       ReleasePresence.open!(kind: #{kind.inspect}, root: #{root.inspect}, lane: #{lane.inspect},
                             projects_dir: #{store.inspect}, session_id: "conductor-#{kind}"#{weight_arg},
                             env: { "TASK_USAGE_SANDBOX" => "0" })
-      $stdout.puts("claimed")
-      $stdout.flush
-      sleep
+      #{die_after_publish ? "exit!(0)" : "sleep"}
     RB
-    # WAIT FOR THIS CONDUCTOR'S OWN FILE, not merely for "a file". Waiting on non-empty
-    # returns instantly when a PEER already published, so the second conductor in a
-    # two-conductor case was still booting when its assertions ran — the harness racing
-    # the property it exists to measure.
-    before = claim_files(store).size
-    reader, writer = IO.pipe
-    pid = Process.spawn(RbConfig.ruby, "-e", script, out: writer, err: File::NULL)
-    writer.close
-    wait_for_claim(reader, pid, store, before + 1)
+    log = conductor_log(store, kind)
+    pid = Process.spawn(RbConfig.ruby, "-e", script, out: File::NULL, err: [log, "w"])
+    await_live_claim(pid, store, kind: kind, timeout: timeout, log: log)
     pid
   end
 
-  def wait_for_claim(reader, pid, store, expected)
-    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + BOOT_TIMEOUT
-    while claim_files(store).size < expected
-      if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
-        kill!(pid)
-        flunk "the conductor stand-in never published claim ##{expected} within #{BOOT_TIMEOUT}s"
-      end
+  # A distinct stderr log per stand-in, so a boot failure is READABLE instead of
+  # discarded. It lives beside the store rather than inside `.agents/sessions/`, where
+  # the readers' glob would meet it.
+  def conductor_log(store, kind)
+    @spawned = (@spawned || 0) + 1
+    File.join(store, "conductor-#{kind}-#{@spawned}.err")
+  end
+
+  # THE POSTCONDITION IS THE CLAIM GRADING LIVE — NOT A FILE COUNT.
+  #
+  # Counting markers cannot express the property every caller here depends on, and the
+  # reason is this module's own central design: A CLAIM OUTLIVES ITS WRITER. The marker
+  # a SIGKILLed conductor leaves behind is the artefact two tests below exist to prove
+  # survives, so "a second file appeared" is satisfied just as well by a corpse as by a
+  # live conductor. The count was already bounded, already loud, and already waited for
+  # THIS conductor's own file — and it still returned a pid whose claim the real reader
+  # graded :dead, because none of those things is the question. Ask the question: does
+  # `AgentPresence.grade` — the shipped reader, the same one the assertions use — call
+  # this conductor LIVE yet?
+  #
+  # That closes the flake at its source, and the source was the harness killing its own
+  # conductor (see `spawn_conductor`). It also closes every FUTURE way to lose one,
+  # because the failure it now refuses to return is "published but not live" whatever
+  # caused it. Under-reporting is the expensive direction — the very asymmetry
+  # `test_two_live_conductors_are_both_published_and_both_counted` asserts on — so a
+  # harness that can under-report is a harness that silently SIMULATES the bug it
+  # guards. Every red here was therefore ambiguous, and the cheap response to an
+  # ambiguous red is a re-run, which is exactly what would dismiss a real regression.
+  def await_live_claim(pid, store, kind:, timeout:, log: nil)
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
+    suffix = ".presence-#{kind}-#{pid}"
+    loop do
+      mine = claim_files(store).find { |f| File.basename(f).end_with?(suffix) }
+      # A bare parse, for the reason `claim_files` states: the writer publishes through a
+      # dotfile sibling, so nothing this glob returns is ever mid-write.
+      return pid if mine && grade(JSON.parse(File.read(mine))) == :live
+      break if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+
       sleep 0.05
     end
-  ensure
-    reader.close
+    flunk_unpublished(pid, store, kind: kind, suffix: suffix, timeout: timeout, log: log)
+  end
+
+  # FAIL LOUDLY, AND NAME WHICH OF THE TWO THINGS WENT WRONG. "It never published" and
+  # "it published and then died" are different defects with different fixes, and a
+  # message that says only "timed out" sends the next reader to re-run instead of to the
+  # cause. So this prints every marker that DID land, this conductor's own grade, its
+  # `ps` row (a `Z` state is the tell — the stand-in died after publishing and something
+  # in this harness killed it), and whatever it wrote to stderr.
+  def flunk_unpublished(pid, store, kind:, suffix:, timeout:, log:)
+    landed = claim_files(store).map { |f| File.basename(f) }
+    mine = landed.find { |f| f.end_with?(suffix) }
+    row = CertOrphanGuard.process_table.find { |p| p[:pid] == pid }
+    stderr = log && File.exist?(log) ? File.read(log).strip : ""
+    # GRADE BEFORE THE KILL. This read used to sit inside the heredoc below, which `flunk`
+    # evaluates AFTER `kill!` has SIGKILLed and reaped the child — so it printed `dead` for
+    # every conductor whose marker had landed, including one alive the whole time that timed
+    # out for some other reason. Measured in review: a healthy stand-in read "graded dead"
+    # beside a ps row of "S", and the `Z` in that row was doing the whole diagnosis alone.
+    mine_grade = mine && grade(JSON.parse(File.read(File.join(store, ".agents", "sessions", mine))))
+    kill!(pid)
+    flunk <<~MSG.strip
+      conductor #{kind} (pid #{pid}) never published a claim the real reader grades :live, \
+      within #{timeout}s.
+        its own marker: #{mine ? "#{mine} — graded #{mine_grade}" : "NEVER LANDED"}
+        markers that landed (#{landed.size}): #{landed.inspect}
+        its ps row: #{row ? row.slice(:pid, :pgid, :state).inspect : "ABSENT from the process table"}
+        its stderr: #{stderr.empty? ? "(none)" : stderr}
+    MSG
   end
 
   def kill!(pid)
@@ -226,6 +297,87 @@ class ReleasePresenceIntegrationTest < Minitest::Test
     ensure
       kill!(sweep)
       kill!(ship)
+    end
+  end
+
+  # --- [control] the harness's own wait, proved to bite ---------------------------------
+  #
+  # THESE THREE EXIST BECAUSE A GREEN RUN PROVES NOTHING HERE. The flake they close was
+  # timing-dependent: it passed 5/5 locally at the failing head and 0/10 on this box with
+  # the child idle. A fix for a race that is only ever exercised by the race is a fix
+  # nobody can read a verdict from — so each of these MAKES the race happen and asserts
+  # the new postcondition answers it. `spawn_conductor`'s `boot_delay:` and
+  # `die_after_publish:` exist for these and for nothing else.
+
+  # The card's control: SLOW THE SECOND PUBLISH and show the wait still reaches two live
+  # conductors. On a harness that does not wait, this reds one assertion EARLIER than the
+  # arithmetic — at the marker count, 0 of 2 — because a spawn-and-return harness has put
+  # NEITHER conductor on disk yet. The headroom line below guards the other shape: one
+  # conductor counted of two, whatever stopped the other from grading live.
+  def test_control_a_slow_second_publish_still_reaches_two_live_conductors
+    with_store do |store, root|
+      sweep = spawn_conductor(store, root, kind: "sweep", lane: "release:prepare")
+      ship  = spawn_conductor(store, root, kind: "ship", lane: "release:ship", boot_delay: 0.75)
+
+      assert_equal 2, claim_files(store).size,
+                   "the wait must not return until the SLOW conductor's own marker landed"
+      assert_in_delta CAPACITY - 0.5, headroom(store), 0.0001,
+                      "and both must still be subtracted. One counted of two reads 2.75 — " \
+                      "under-reporting, the expensive direction, and the exact number the " \
+                      "CI red carried"
+    ensure
+      kill!(sweep)
+      kill!(ship)
+    end
+  end
+
+  # THE REGRESSION GUARD FOR THE DEFECT ITSELF. A conductor that publishes and then dies
+  # leaves exactly what a SIGKILLed one leaves — a marker on disk and a corpse — which is
+  # why a file-counting wait returned it happily and let the ambiguity surface three
+  # assertions later as a wrong number. The wait must refuse it HERE, and say which of
+  # the two things went wrong.
+  def test_control_a_conductor_that_dies_after_publishing_fails_the_wait_loudly
+    with_store do |store, root|
+      error = assert_raises(Minitest::Assertion) do
+        spawn_conductor(store, root, kind: "sweep", lane: "release:prepare",
+                        die_after_publish: true, timeout: 1.0)
+      end
+
+      assert_match(/never published a claim the real reader grades :live/, error.message)
+      assert_match(/its own marker: .*\.presence-sweep-\d+ — graded dead/, error.message,
+                   "the message must distinguish 'published and then died' from 'never " \
+                   "published' — they are different defects with different fixes, and a " \
+                   "bare 'timed out' sends the next reader to re-run instead of to the cause")
+      assert_match(/markers that landed \(1\)/, error.message)
+      # `"Z` unterminated on purpose: the state is stored RAW (`CertOrphanGuard.parse_ps_line`)
+      # and Linux renders a zombie `Z+`/`Zs`, which is why production asks `start_with?("Z")`.
+      assert_match(/its ps row: .*"Z/, error.message,
+                   "and the Z state is the tell the comment above promises. Without this the " \
+                   "grade carried the claim alone, and the grade is true of ANY published " \
+                   "marker once its writer has been killed")
+    end
+  end
+
+  # AND THE BOUND ITSELF, with the other half of the message proved: a PEER's marker does
+  # not satisfy this conductor's wait. That was the earlier bug in this helper (waiting on
+  # "a file" rather than on its own), and the count it prints is what names it.
+  def test_control_the_bounded_timeout_fails_with_the_markers_that_did_land
+    with_store do |store, root|
+      sweep = spawn_conductor(store, root, kind: "sweep", lane: "release:prepare")
+
+      error = assert_raises(Minitest::Assertion) do
+        # Publishes eventually, but not inside the bound — so the wait must expire rather
+        # than accept the sweep's marker sitting right beside it.
+        spawn_conductor(store, root, kind: "ship", lane: "release:ship",
+                        boot_delay: 30, timeout: 1.0)
+      end
+
+      assert_match(/its own marker: NEVER LANDED/, error.message)
+      assert_match(/markers that landed \(1\)/, error.message,
+                   "a peer's marker is named, never counted as this conductor's")
+      assert_match(/within 1\.0s/, error.message)
+    ensure
+      kill!(sweep)
     end
   end
 
