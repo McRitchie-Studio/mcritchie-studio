@@ -206,16 +206,18 @@ if bad:
 print(f"verified: {len(text)} text, {len(radios)} radio, {len(checks)} checkbox - all match")
 ```
 
-It reds on four distinct faults, each measured against the fixture in the
-Background section below:
+It reds on four distinct faults:
 
-- a text or radio value that did not land;
+- a text or radio value that did not land — the one check this step always had;
 - a checkbox value outside that field's legal on-states (`/Yes` written into an
   `/On` field);
 - a checkbox whose value is legal but whose widget still draws something else,
   so the box renders off;
 - a name in `checks` that matches no widget on the form — a typo, or the
   parent/kid shape when a fill loop never reached it.
+
+The three checkbox faults are the new ones, and the Background section below
+reproduces each on a fixture you can rebuild.
 
 **The read-back is the gate; the render is not.** Render the pages as well, but
 know what each check can see. Measured: a box wrongly set to `/Yes` when its
@@ -334,7 +336,9 @@ with open("form-fill-fixture.pdf", "wb") as fh:
 ```
 
 Point §5's script at it with `checks = ["box_yes", "box_on", "box_kid"]` and
-empty `text` and `radios` maps. Measured on pypdf 6.14.2:
+empty `text` and `radios` maps — the fixture carries checkboxes only, so it
+exercises the three checkbox faults and not the text/radio one. Measured on
+pypdf 6.14.2:
 
 | Field | On-state | Assuming `/Yes` | Reading `/AP /N` |
 |---|---|---|---|
