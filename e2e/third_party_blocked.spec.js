@@ -49,6 +49,15 @@ test("a cross-origin subresource is refused rather than waited on", async ({ pag
   // or this control is asserting about a page with no third party on it. If the
   // widget is ever removed from app/views/landing/index.html.erb, retire this
   // pair rather than letting it pass on an empty set.
+  //
+  // KNOW WHICH WAY THIS ONE BITES. `succeeded` goes non-empty only when the third
+  // party ANSWERS, so deleting the fix reds this the way it red in review — on a
+  // machine that reaches sprintful (measured: HTTP 200 in ~0.15s). On a runner
+  // whose egress fails FAST, nothing answers, `succeeded` stays empty, and this
+  // assertion passes with the fix gone. It is not blind there — the mode actually
+  // observed is a runner that STALLS, and that still reds, via the 30s test
+  // timeout inside loginWithMagicLink. Worth knowing when reading a green: this
+  // control is strongest on the machine where the bug does not happen.
   expect(attempted.join("\n")).toContain("sprintful.com");
   expect(succeeded, `cross-origin responses that got through:\n${succeeded.join("\n")}`).toEqual([]);
 });

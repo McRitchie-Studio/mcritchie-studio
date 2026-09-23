@@ -173,18 +173,38 @@ function httpOrigin(value) {
 //       await new Promise((r) => setTimeout(r, 120_000)); // accept, never answer
 //     });
 //
-// Register it BEFORE the helper (Playwright runs the most recently added route
-// first, so the helper's own route would otherwise win) and run the spec. If the
-// red is this one, it reproduces every time; if it does not, the third party is
-// not what is holding the document open and the call log names what is. Read the
-// CALL LOG rather than the file name — `page.goto` reports the line that STARTED
-// the navigation, not the resource that stalled it.
+// REGISTER IT SO IT WINS, and mind the direction — this instruction was backwards
+// in review and produced the exact false negative the recipe exists to prevent.
+// Playwright runs the MOST RECENTLY ADDED route first (`page.route` does
+// `_routes.unshift(...)`, and `_onRoute` walks the array front-to-back, stopping
+// at the first handler that continues or aborts — verified in
+// node_modules/playwright-core/lib/client/page.js). So:
+//
+//   * On a spec that SIGNS IN, `blockThirdPartyRequests` is installed at the top
+//     of `loginWithMagicLink` — i.e. AFTER anything the spec registered first, so
+//     the HELPER's route wins and your stall never runs. The spec goes green and
+//     you conclude "not the third party", wrongly. Drop the helper's call for the
+//     probe (or `await page.unroute(/^https?:\/\//)` before you register yours).
+//   * On a spec that does NOT sign in — the remainder named below — there is no
+//     competing route, so registering it before the first `goto` is enough.
+//
+// Then run the spec. If the red is this one, it reproduces every time; if it does
+// not, the third party is not what is holding the document open and the call log
+// names what is. Read the CALL LOG rather than the file name — `page.goto` reports
+// the line that STARTED the navigation, not the resource that stalled it.
 //
 // TWO THINGS IT DELIBERATELY DOES NOT DO:
 //
 //   * IT NEVER ABORTS A NAVIGATION. `isNavigationRequest()` is continued
-//     unconditionally. Aborting one would break a redirect chain, and the
-//     document is never the thing that hangs — its subresources are.
+//     unconditionally, so no hop of a redirect chain — same-origin or cross —
+//     can reach the abort. On THIS app's pages the document is not the thing
+//     that hangs; its subresources are. Stated exactly, because there is one
+//     case it does not cover: a cross-origin `<iframe>` written directly into
+//     markup is ALSO an `isNavigationRequest()`, so it is continued, and a
+//     pending subframe delays the parent's `load` too. Unreachable today — the
+//     only iframe in the view tree (app/views/broadcasts/edit.html.erb) is
+//     same-origin — and reachable the day a view embeds a third-party frame on
+//     a page a signed-in spec visits.
 //   * IT COMPARES AGAINST THE DOCUMENT'S OWN ORIGIN, not a hard-coded
 //     loopback. The suite also runs against QA_BASE_URL/PW_BASE_URL, where
 //     loopback is the wrong answer, and the app serves its assets from its own
@@ -207,7 +227,7 @@ function httpOrigin(value) {
 // collector itself — still load that widget and can still take a 30s
 // `page.goto` on a runner that cannot reach it. If one of them reds with
 // `waiting until "load"`, this is the first thing to check, and the recipe
-// below settles it in one run. That is a bounded, stated hole, not an
+// ABOVE settles it in one run. That is a bounded, stated hole, not an
 // oversight.
 async function blockThirdPartyRequests(page) {
   await page.route(/^https?:\/\//, (route) => {
@@ -216,7 +236,14 @@ async function blockThirdPartyRequests(page) {
 
     const document = httpOrigin(page.url());
     const target = httpOrigin(request.url());
-    if (document && target && target !== document) return route.abort();
+    // "blockedbyclient", not the default: watchPageErrors' `requestfailed` hook
+    // records every failure into `failures` WITHOUT origin scoping (only the
+    // console hook is scoped), and that list is what its report tells a reader to
+    // "READ THOSE FIRST". A bare abort lands there as `net::ERR_FAILED` —
+    // indistinguishable from a resource that genuinely died, in the one channel
+    // built to stop a reader chasing someone else's network. This spelling makes
+    // it read `net::ERR_BLOCKED_BY_CLIENT`: self-evidently us, not a symptom.
+    if (document && target && target !== document) return route.abort("blockedbyclient");
 
     return route.continue();
   });
