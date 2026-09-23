@@ -86,10 +86,84 @@ class AnchorHeartbeatTest < Minitest::Test
   end
 
   def test_unit_the_idle_bound_is_the_houses_derived_quiet_ceiling_not_a_new_number
-    # DERIVED, NOT CHOSEN. Re-measure ClaimLease's corpus and this moves with it; a
-    # literal here would be a second threshold to argue about, and the header's whole
-    # claim is that this reuses the one BuildClaimRenewer already reuses.
+    # BORROWED, NOT INVENTED. Re-measure ClaimLease's corpus and this moves with it;
+    # a literal here would be a second threshold to argue about. (The comment this
+    # replaced also claimed the two answer the SAME question. They do not — see
+    # test_unit_the_idle_bound_is_the_looser_of_two_borrowed_bounds. The assertion
+    # was right and is kept; only its reason was wrong.)
     assert_equal ClaimLease::PROGRESS_QUIET_SECONDS, AnchorHeartbeat::IDLE_AFTER_SECONDS
+  end
+
+  # --- the narration corpus, and what it says about the bound ---------------
+  #
+  # THE DEFECT THESE PIN was an ARGUMENT, not a number. IDLE_AFTER_SECONDS reused
+  # PROGRESS_QUIET_SECONDS on the claim that narration markers are "durable
+  # artifacts of exactly that kind". lib/claim_lease.rb ENUMERATES that kind — a
+  # TaskEvent or a GateRun — and Task#progress_evidence reads exactly those two
+  # associations. Narration writes agent_activity rows and marker files, so the
+  # 243 windows of BOARD silence behind that constant are a different population.
+  #
+  # The number survived the correction; the reasoning did not. These assert the
+  # reasoning that replaced it, so a future reader cannot restore the population
+  # match without reddening something.
+
+  def test_unit_the_narration_corpus_derives_the_bound_it_states
+    # "A number in prose cannot be checked. A number in a constant can."
+    # (lib/claim_lease.rb, about its own two corpora.)
+    corpus = AnchorHeartbeat::MEASURED_NARRATION_GAP_SECONDS
+
+    assert_equal (corpus[:working_max] * AnchorHeartbeat::NARRATION_IDLE_SAFETY_FACTOR).ceil,
+                 AnchorHeartbeat::NARRATION_QUIET_SECONDS
+    assert_equal 5_391, AnchorHeartbeat::NARRATION_QUIET_SECONDS
+  end
+
+  def test_unit_the_narration_corpus_bands_do_not_overlap
+    # The x1.5 derivation is only meaningful if the working band and the away band
+    # are actually separable — the same lemma MEASURED_DESK_GAP_SECONDS rests on.
+    # Narration's gutter is 70s against the desk corpus's 339s, which is why the
+    # header calls the split SOFT and declines to lean on it.
+    corpus = AnchorHeartbeat::MEASURED_NARRATION_GAP_SECONDS
+
+    assert_operator corpus[:abandoned_min], :>, corpus[:working_max],
+                    "a negative gutter would mean the bands overlap and the derivation is void"
+    assert_equal 70, corpus[:abandoned_min] - corpus[:working_max]
+  end
+
+  # THE GUARD THAT MATTERS. Two borrowed bounds were available and the LOOSER was
+  # taken deliberately, under the asymmetry that this file can only ever STOP a
+  # renewal and one of the lanes behind it is the production deploy path. A later
+  # "repair" that population-matches would TIGHTEN the bound by 2.09x and reads as
+  # a correction; it reddens here instead.
+  def test_unit_the_idle_bound_is_the_looser_of_two_borrowed_bounds
+    assert_operator AnchorHeartbeat::IDLE_AFTER_SECONDS, :>,
+                    AnchorHeartbeat::NARRATION_QUIET_SECONDS,
+                    "tightening to the population match trades a false STOP for a false HOLD — " \
+                    "restate the header's asymmetry argument before changing this"
+  end
+
+  def test_unit_the_bound_clears_every_measured_healthy_narration_gap
+    # The quietest WORKING session in a 3,112-gap corpus went 59.9 minutes. Whatever
+    # else is argued about the bound, it must not bite healthy narration.
+    assert_operator AnchorHeartbeat::MEASURED_NARRATION_GAP_SECONDS[:working_max], :<,
+                    AnchorHeartbeat::IDLE_AFTER_SECONDS
+  end
+
+  # THE HEADER'S HONESTY CLAIM, as arithmetic. The seam BOUNDS the 2026-09-22
+  # orphan; it does not catch it at the moment of observation. Measured from the
+  # live store: the incident session's newest counting marker sat at 20:22:09 MDT
+  # and the orphan was observed at 21:52:47 MDT, so signal_age was 5,438s.
+  #
+  # If a future change makes this red, the header is now wrong too — move both.
+  def test_unit_the_seam_bounds_the_measured_orphan_rather_than_catching_it
+    observed_signal_age = 5_438
+
+    assert_equal :working,
+                 AnchorHeartbeat.verdict(resident: true, signal_age: observed_signal_age),
+                 "at the moment of observation the renewer WOULD have renewed — say so in the header"
+    assert_equal :idle,
+                 AnchorHeartbeat.verdict(resident: true,
+                                         signal_age: AnchorHeartbeat::IDLE_AFTER_SECONDS + 1),
+                 "and it does eventually bite, ~97 minutes later"
   end
 
   # --- The lambda the lanes actually pass to ShiftRenewer -------------------

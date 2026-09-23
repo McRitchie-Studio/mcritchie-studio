@@ -520,6 +520,30 @@ module FastCert
     end
   end
 
+  # WHICH SPELLING PULLED THE MAPPING WIDE — the grep rung's working, shown.
+  # Returns [[token, [test paths]], ...] in #grep_tokens order, so a caller can say
+  # "16 files, all of them through the token `config/release_repos.yml`" instead of
+  # "16 files".
+  #
+  # WHY THIS EXISTS AT ALL. A cap trip is reported to the builder whose DIFF is broad,
+  # and that is the wrong builder for the commonest trip: a subject crosses the cap
+  # because somebody else's new test file NAMES it. That person never sees the cap —
+  # they see the config sweep in test/lib/fast_cert_subject_test.rb go red on a file
+  # they did not touch, naming a config they did not change. The count alone sends them
+  # reading the mapper; the TOKEN plus the matching files sends them to the one line in
+  # their own diff that spells it, and the remedy is to cite the constant that names
+  # the path (Release::Repos::CONFIG_PATH, say) instead of spelling the path — measured
+  # to work: test/docs/guard_population_test.rb cites exactly that and is NOT among the
+  # 15 files config/release_repos.yml maps to.
+  #
+  # STATED LIMIT — THE GREP RUNG ONLY. #mapping tries convention targets and the harness
+  # family FIRST, so for a source with either of those the union is wider than anything
+  # here accounts for and the breakdown explains only the part the tokens drove. It is
+  # exact for a .yml, which has neither rung, and a .yml is where the cliff sits.
+  def spelling_breakdown(root, path)
+    grep_tokens(root, path).map { |t| [t, grep_tests(root, [t])] }
+  end
+
   # PER CHANGED FILE, what it maps to: its EXISTING convention targets, else its
   # harness FAMILY when the twin is missing, else the grep fallback.
   # Returns { changed_path => [test paths] }.
@@ -606,6 +630,21 @@ module FastCert
   #   sat exactly on. These are counts of the TREE, not of the rule, so they move
   #   whenever test files are added; re-derive rather than paste.
   #
+  #   RE-DERIVED 2026-09-22 over all 2229 tracked files (mapped-cap-lacks-margin), one
+  #   at a time, classified by the RUNG that reached the count rather than by the count
+  #   alone: the SHAPE above survives and every number in it has moved. TWELVE exceed
+  #   the cap alone; the same THREE never reach the grep — bin/release and
+  #   bin/release.rb at 30 through the ORPHAN family, bin/dor-check at 19 through its
+  #   twin's family. Of the NINE that do grep, two are still named by a PATH plus a
+  #   quoted name (config/test_health.yml, bin/rubocop) and seven by a constant.
+  #
+  #   WHAT THIS SWEEP ADDED, and what DEFAULT_MAPPED_MARGIN exists for: the count of
+  #   sources sitting AT the cap with no margin at all. TWO —
+  #   config/release_repos.yml and test/support/task_usage_sandbox.rb — plus two more
+  #   one under (bin/rake, config/feature_shapes.yml). The 2026-09-08 line above reads
+  #   the over-cap population as the whole story; the population one path BELOW it is
+  #   the same defect one run earlier, and nothing announced it until now.
+  #
   # So the family hop trips the cap only IN COMBINATION with a co-changed file — the
   # cliff above — while every single-file cap trip WAS a grep precision failure. That
   # is what makes the fallback a slope rather than a shorter cliff, provably: the
@@ -660,6 +699,35 @@ module FastCert
   # this broad.
   DEFAULT_MAPPED_CAP = 15
 
+  # THE MARGIN — how close to the cap still says so, because 15 had none.
+  #
+  # WHAT A CAP WITHOUT A MARGIN IS. The cap is a step function: at 15 the lane runs
+  # its full mapped set and says nothing; at 16 it runs the twins, or — for a subject
+  # with no twin, which is every .yml — NOTHING. Measured in this repo 2026-09-22,
+  # sweeping all 2229 tracked files one at a time: TWO sources sit at exactly 15,
+  # config/release_repos.yml and test/support/task_usage_sandbox.rb, and two more at
+  # 14 (bin/rake, config/feature_shapes.yml). Twelve are already over. So the step is
+  # not hypothetical and it is not far away: for those two, the next test file that
+  # spells the subject is the one that silences the lane.
+  #
+  # 2, NOT 1. A margin of 1 warns only the builder who is ALREADY at the cap — the
+  # last one who can still do anything, and only if they happen to touch that subject.
+  # 2 gives the band a rung of depth (13..15 at the default cap) while costing nothing
+  # measurable: at 13 this repo has exactly one source (test/test_helper.rb) and zero
+  # config sources, so widening from 1 to 2 added no config entry to the pinned band in
+  # test/lib/fast_cert_subject_test.rb.
+  #
+  # WHAT THIS WARNING CANNOT DO, stated because it is the honest limit and it decided
+  # where the rest of this fix went. The margin is computed over the MAPPED SET OF THE
+  # DIFF, so it reaches the builder whose diff CONTAINS the at-cap subject. The builder
+  # who actually trips the cap usually does not: they add a test file that merely NAMES
+  # the subject. Measured — a one-file diff adding a test that spells
+  # config/release_repos.yml maps to 1 path (its own), and the cap is never mentioned.
+  # That reader is reached by the config sweep in test/lib/fast_cert_subject_test.rb,
+  # which is why the same margin is pinned THERE as well and why its failure now names
+  # the spellings rather than only the count.
+  DEFAULT_MAPPED_MARGIN = 2
+
   # THE DEFERRAL'S EXIT STATUS — the whole signal, and deliberately NOT 0.
   #
   # Every existing caller reaches bin/fast-check through `system(...)`, whose truthiness
@@ -707,7 +775,7 @@ module FastCert
   # exists to bound. The degradation therefore has three rungs, each governed by one
   # number: full mapped set → convention twins → spine only. A fallback that is itself
   # over the cap degrades again rather than buying itself an exemption.
-  def cap_decision(mapped_only, breakdown, cap: mapped_cap, twins: [])
+  def cap_decision(mapped_only, breakdown, cap: mapped_cap, twins: [], margin: DEFAULT_MAPPED_MARGIN)
     worst = Array(breakdown).max_by { |_path, tests| Array(tests).size }
     capped = mapped_only.size > cap
     fallback = capped ? Array(twins).uniq.sort : []
@@ -730,6 +798,17 @@ module FastCert
       capped: capped,
       cap: cap,
       count: mapped_only.size,
+      margin: margin,
+      # THE BAND BELOW THE CAP — `cap - margin` up to and including `cap`, and never
+      # true at the same time as :capped, so a caller reads exactly one of the two.
+      #
+      # `.positive?` IS LOAD-BEARING, not defensive noise. FAST_CHECK_MAPPED_CAP is a
+      # builder-set integer, so `FAST_CHECK_MAPPED_CAP=1` over a diff that maps to
+      # NOTHING gives `cap - count == 1`, inside the margin — and the lane would
+      # announce that it is approaching a cliff it is standing nowhere near, over a
+      # mapped lane that is about to be skipped as empty anyway. A mapped set of zero
+      # is the "no tests map from the diff" rung, which says its own thing.
+      approaching: !capped && mapped_only.size.positive? && (cap - mapped_only.size) <= margin,
       fallback: fallback,
       fallback_considered: considered,
       worst_path: worst && worst[0],

@@ -752,6 +752,137 @@ class FastCheckTest < Minitest::Test
   # module decision is half the fix: the other half is that the lane RUNS the twins, the
   # builder is told it narrowed, and the evidence line stops claiming zero.
 
+  # --- the margin: the run BEFORE the cliff -------------------------------------------
+  #
+  # AT the cap, not over it — the state the hub's release registry sat in on
+  # 2026-09-22 (15 mapped paths against a cap of 15, no convention twin, because a
+  # .yml has none). Everything here is GREEN: the lane runs its whole mapped set. What
+  # is worth saying is what the NEXT run does.
+  def with_at_cap_mapping_repo
+    with_repo do |dir, write|
+      (1..15).each { |i| write.call("test/lib/wide_#{i}_test.rb", "Gizmo.reset\n") }
+      assert system("git", "-C", dir, "add", "-A", out: File::NULL, err: File::NULL)
+      assert system("git", "-C", dir, "commit", "-qm", "at-cap", out: File::NULL, err: File::NULL)
+      # The branch diff: a model with NO convention target, so the grep rung maps it
+      # and there is nothing for a capped lane to fall back to.
+      write.call("app/models/gizmo.rb", "class Gizmo; end\n")
+      yield dir, write
+    end
+  end
+
+  # AT the cap WITH a twin — the other arm of the warning's conditional. Both arms get
+  # a fixture because the sentence they choose between is the actionable half: "one
+  # more path and this lane runs a NARROWER cert" and "one more path and this lane runs
+  # NOTHING" ask different things of the reader.
+  def with_at_cap_family_repo
+    with_repo do |dir, write|
+      write.call("bin/wide-tool", "#!/usr/bin/env ruby\n")
+      write.call("test/lib/wide_tool_test.rb", "twin\n")
+      14.times { |i| write.call("test/lib/wide_tool_aspect#{i}_test.rb", "sibling #{i}\n") }
+      assert system("git", "-C", dir, "add", "-A", out: File::NULL, err: File::NULL)
+      assert system("git", "-C", dir, "commit", "-qm", "at-cap-family", out: File::NULL, err: File::NULL)
+      write.call("bin/wide-tool", "#!/usr/bin/env ruby\n# edit\n")
+      yield dir, write
+    end
+  end
+
+  # THE HEADLINE: the cliff announces itself one run early, and announcing it changes
+  # nothing about the cert. A warning that also narrowed the lane would be a second
+  # cliff wearing a friendlier word.
+  def test_the_lane_warns_at_the_cap_and_still_runs_its_whole_mapped_set
+    with_at_cap_mapping_repo do |dir, _|
+      out, code, lines = run_check(dir, merge_stderr: true)
+
+      assert_equal 0, code, out
+      assert_match(/MAPPED LANE NEAR THE CAP — 15 of 15, 0 path\(s\) of margin left/, out)
+      tests = lane_calls(lines, "TEST")
+      assert_equal 2, tests.size, "mapped + spine both run: #{lines.inspect}"
+      assert_equal 15, tests[0].size, "the whole mapped set still runs — this is not a cap trip"
+      refute_match(/MAPPED LANE CAPPED/, out, "nothing was capped; the cap is where this is HEADED")
+    end
+  end
+
+  # WHAT THE NEXT RUN COSTS, which is the only reason to warn at all. With no twin the
+  # answer is ZERO mapped tests over a still-green cert — the silent-green failure this
+  # margin exists for — and the warning has to say that, not just "near the cap".
+  def test_the_near_cap_warning_says_the_next_path_would_leave_zero_mapped_tests
+    with_at_cap_mapping_repo do |dir, _|
+      out, = run_check(dir, merge_stderr: true)
+
+      assert_match(%r{widest mapping: app/models/gizmo\.rb → 15 test file\(s\)}, out,
+                   "the subject that is at the cap is named")
+      assert_match(/NO convention twin to fall back to.*runs ZERO tests/m, out)
+      assert_match(/cite the CONSTANT that names a path/, out, "and the remedy is stated")
+    end
+  end
+
+  # THE OTHER ARM. A diff WITH a twin degrades to a narrower cert rather than to
+  # nothing, and the warning must say so — overstating the cost is how a warning gets
+  # ignored, which is the same failure as understating it.
+  def test_the_near_cap_warning_names_the_twin_fallback_when_one_exists
+    with_at_cap_family_repo do |dir, _|
+      out, code, = run_check(dir, merge_stderr: true)
+
+      assert_equal 0, code, out
+      assert_match(/MAPPED LANE NEAR THE CAP — 15 of 15/, out)
+      assert_match(/falls back to the 1 convention twin\(s\) of this diff — a NARROWER cert/, out)
+      refute_match(/runs ZERO tests/, out, "this diff HAS a twin — saying otherwise overstates it")
+    end
+  end
+
+  # THE MARGIN IS DURABLE. The narration above is stderr in a ship log nobody re-reads;
+  # the evidence line lands on the task's checks_run, where the reviewer and the next
+  # builder see it. It stays a GREEN line counting what RAN — the clause is appended,
+  # not substituted.
+  def test_the_margin_is_recorded_on_the_evidence_line
+    with_at_cap_mapping_repo do |dir, _|
+      out, = run_check(dir, merge_stderr: true)
+
+      assert_match(/fast cert green: 15 mapped \(NEAR THE CAP of 15: 0 path\(s\) of margin/, out)
+      refute_match(/fast cert green: 15 mapped \+/, out,
+                   "the bare wording would record an at-cap run as an ordinary one")
+    end
+  end
+
+  # THE ORDINARY BUILD IS UNTOUCHED — the regression that matters for a warning. One
+  # that fires on a 1-path diff is noise, and noise is how the real one gets skipped.
+  def test_an_ordinary_diff_is_never_warned_about_the_cap
+    with_repo do |dir, _|
+      out, code, = run_check(dir, merge_stderr: true)
+
+      assert_equal 0, code, out
+      refute_match(/NEAR THE CAP/, out)
+      assert_match(/fast cert green: 1 mapped \+ 1 spine test path\(s\)/, out,
+                   "and the evidence line is byte-identical to what it always was")
+    end
+  end
+
+  # AND A CAPPED RUN IS NOT ALSO "NEAR". :approaching and :capped are exclusive in
+  # FastCert.cap_decision; this is the end-to-end proof that the SCRIPT reads them that
+  # way, because a run that printed both would leave the builder unable to tell whether
+  # the lane ran.
+  #
+  # BOTH SURFACES, and the second one is the one that bites. Measured by mutation
+  # 2026-09-22: dropping `!capped` from cap_decision leaves the RUN unchanged, because
+  # the run reaches the warning down an `elsif` that a capped decision never enters —
+  # so a --print-only assertion here passes for a reason that has nothing to do with
+  # the exclusivity it claims to test. --list prints the margin narration BEFORE it
+  # branches on the cap, and is where the contradiction actually surfaces.
+  def test_a_capped_run_does_not_also_claim_to_be_near_the_cap
+    with_wide_mapping_repo do |dir, _|
+      run, = run_check(dir, merge_stderr: true)
+
+      assert_match(/MAPPED LANE CAPPED/, run)
+      refute_match(/NEAR THE CAP/, run)
+
+      preview, = run_check(dir, args: ["--list"], merge_stderr: true)
+
+      assert_match(/mapped cap 15 — EXCEEDED/, preview, "the preview agrees the cap tripped")
+      refute_match(/NEAR THE CAP/, preview,
+                   "a preview that says EXCEEDED and NEAR THE CAP at once tells the builder nothing")
+    end
+  end
+
   # A family whose mapping exceeds the cap AND whose changed file HAS a twin — the
   # shape with_wide_mapping_repo cannot express (an initializer has no twin at all).
   def with_family_over_cap_repo

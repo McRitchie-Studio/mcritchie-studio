@@ -62,10 +62,30 @@ done — say so and stop.
 from ENV, then the repo `.env`, then 1Password. If it dies on auth, that is the
 `token-session` SOP, not this one.
 
-**2. You have a session.** `bin/content` writes one per desk to
-`tmp/content-session` and reuses it, so a claim and its release pair up across
-processes. Do not pass a fresh `--session` per command; that is how a release
-starts looking like a stranger's.
+**2. You have a PER-SOUL session — export one before you claim.**
+
+```bash
+export CONTENT_SESSION="content-<your-soul>-$$"
+```
+
+The session string is the WHOLE proof of a claim: the server refuses a write
+from anyone who is not the card's live holder, and it decides that by comparing
+this string. So two souls presenting the SAME string are ONE holder as far as
+that guard can tell, and the sequence the lease exists to prevent — A claims,
+A's lease lapses mid-inference, B legitimately reclaims, A writes — goes
+through. Every soul running this SOP starts from the hub primary above, so this
+is the normal case, not an exotic one.
+
+**Stable, not fresh.** Set it ONCE for the whole run and let every command
+inherit it. Passing a *fresh* `--session` per command is a different failure:
+a claim and its release are separate processes, so a new id each time makes your
+own release look like a stranger's.
+
+Without `CONTENT_SESSION`, `bin/content` derives an id and scopes it to the
+AGENT PROCESS (`tmp/content-sessions/<nonce>`). That separates two terminals,
+but NOT two subagents of one agent, and in a plain shell or CI it separates
+nobody at all. `bin/content claim` says which case you are in; if it warns, you
+are working without the guarantee this precondition buys.
 
 ## The loop — one card at a time
 

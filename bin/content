@@ -39,6 +39,7 @@ require "json"
 require "optparse"
 require "securerandom"
 require "fileutils"
+require_relative "lib/session_identity"
 require_relative "lib/task_board"
 
 BASE_URL = ENV.fetch("CONTENT_API_BASE", ENV.fetch("TASK_API_BASE", "https://mcritchie.studio"))
@@ -58,20 +59,86 @@ def usage!(status = 0)
   exit status
 end
 
-# ONE session id per desk, not per invocation — a claim and its release are
-# different processes, and a fresh uuid each time would make every release look
-# like a stranger's. CONTENT_SESSION overrides for an SOP that wants its own.
+# WHAT THE SESSION HAS TO BE, and the bug it used to have.
+#
+# It must be STABLE across invocations — a claim and its release are different
+# processes, and a fresh uuid each time would make every release look like a
+# stranger's. It must ALSO be distinct per SOUL, because the whole lease rests on
+# it: the server refuses a write from anyone whose session is not the live
+# holder's, so two souls presenting the SAME string are one holder as far as the
+# guard can tell.
+#
+# THE DEFECT (found at the review of PR 1498, verified 2026-09-22). This derived
+# the id from `tmp/content-session` — ONE FILE PER CHECKOUT — while
+# docs/agents/agents/turf_monster/sops/content-build.md sends every soul to the
+# hub primary. So two souls working the queue from that one checkout presented
+# the SAME session, and the exact sequence the lease exists to prevent was
+# PERMITTED: A claims, A's lease lapses mid-inference, B legitimately reclaims,
+# A writes — and the write lands, because `claim_session == given`. The server
+# was never wrong; it was answering about the wrong thing.
+#
+# THE FIX: scope the file to the AGENT PROCESS, not the checkout.
+# SessionIdentity.nonce is exactly the identity this needs and already exists for
+# the build/shift leases — a hash of the long-lived `claude`/`codex` process's
+# pid+start. It is stable across every short-lived bin/ call in one terminal and
+# DIFFERS between two terminals that share a CLAUDE_CODE_SESSION_ID, which is the
+# property `tmp/content-session` lacked.
+#
+# WHAT IT STILL DOES NOT SEPARATE, stated because a bound oversold is worse than
+# none: two SUBAGENTS of ONE agent process share an ancestor, so they share a
+# nonce and therefore a session. So does a plain shell or a CI run, where the
+# nonce is "" and every caller falls back to one shared file. CONTENT_SESSION is
+# the answer to both and is the SOP's precondition for exactly that reason —
+# which is why `claim` says so out loud whenever the id was derived.
+#
+# NO MIGRATION FROM THE OLD PATH, deliberately. Seeding the new per-process file
+# from the old shared one would hand the SAME string to every soul that had it —
+# re-creating the collision on the one run that matters. An in-flight derived
+# claim is retired instead: it lapses inside AGENT_CLAIM_LEASE (30 minutes) and
+# is re-claimable, which is the cheap direction for a tmp-file identity.
+SESSION_DIR = File.join(ROOT, "tmp", "content-sessions")
+
+# The agent process this invocation descends from, or nil when nothing names one.
+# nil is load-bearing: it is the case where the derived id separates nobody.
+def session_scope
+  return @session_scope if defined?(@session_scope)
+
+  @session_scope = SessionIdentity.nonce.to_s.strip.then { |n| n.empty? ? nil : n }
+rescue StandardError
+  @session_scope = nil
+end
+
+# True when this id came from the environment rather than from a file we derived.
+# Only a derived id needs the caveat `claim` prints.
+def session_given? = !ENV["CONTENT_SESSION"].to_s.strip.empty?
+
 def session
   @session ||= ENV["CONTENT_SESSION"].to_s.strip.then do |given|
     next given unless given.empty?
 
-    path = File.join(ROOT, "tmp", "content-session")
+    path = File.join(SESSION_DIR, session_scope || "shared")
     File.exist?(path) ? File.read(path).strip : begin
       FileUtils.mkdir_p(File.dirname(path))
       id = "content-#{SecureRandom.hex(8)}"
       File.write(path, id)
       id
     end
+  end
+end
+
+# Said at CLAIM time, because that is the moment a soul takes a lease it may not
+# actually hold alone. Two sentences, because the two cases are different
+# problems: no scope at all means the id separates NOBODY on this checkout.
+def warn_derived_session
+  return if session_given?
+
+  if session_scope
+    warn "content: session derived per AGENT PROCESS. Two SUBAGENTS of one agent " \
+         "share it — export CONTENT_SESSION per soul before a fan-out."
+  else
+    warn "content: WARNING — no agent process resolved, so this session identifies " \
+         "this CHECKOUT and separates NO souls working it. Export a per-soul " \
+         "CONTENT_SESSION before claiming: export CONTENT_SESSION=\"content-<soul>-$$\""
   end
 end
 
@@ -146,6 +213,14 @@ when "show"
 when "claim"
   body = { session: session, agent: opts[:agent], stage: opts[:stage], workflow: opts[:workflow] }.compact
   data = api(:post, "/api/v1/contents/claim_next", body)
+  # A SESSION-LESS CLAIM IS A CALLER ERROR, NOT AN EMPTY QUEUE, and the two used to
+  # be one line. The endpoint always answers 200 (an empty queue must not make a
+  # caller retry-storm), so the refusal rides in `reason` — and "nothing to claim
+  # (session_required)" reads exactly like "the queue is empty" while silently
+  # meaning "you sent nothing the lease can be proved with".
+  die!("the board refused this claim: no session was sent, so nothing could ever " \
+       "prove it holds the card. Set CONTENT_SESSION or pass --session.") if data["reason"] == "session_required"
+
   if data["claimed"].nil?
     # An empty queue is a NORMAL outcome. Exit 0 with nothing on stdout so a
     # caller doing `slug=$(bin/content claim)` simply idles instead of retrying.
@@ -154,6 +229,7 @@ when "claim"
   end
   print_content(data["claimed"], full: true)
   warn "content: claimed as session #{session}"
+  warn_derived_session
 
 when "write"
   slug = ARGV.shift or die!("write needs a slug")
