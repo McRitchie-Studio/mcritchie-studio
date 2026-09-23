@@ -314,8 +314,11 @@ names NO holder, so "someone else is reviewing it" is the wrong read: the author
 the board holds disagrees with the one the pick was rolled from, and the move is to
 reconcile it (`bin/task show <task> --verbose`, then `bin/task move <task> building
 --actor <the-real-builder>`), not to take the next task. `bin/pr-review` reads exit
-10 as a SKIP for both arms but hard-codes the held wording, so read the command's
-own stderr to tell them apart.
+10 as a SKIP for both arms and names WHICH one — it classifies the refusal through
+`ReviewerSelectSkip` (`bin/lib/reviewer_select_skip.rb`) off the lead phrase each arm
+prints, and says so plainly when it matches neither. It hard-coded the held wording
+for both arms until 2026-09-22, which sent every self-review refusal at a remedy that
+cannot clear it.
 
 This closed a real seam. Until 2026-09-22 selection recorded intent and touched
 the claim nowhere, while `Task.reviewable` keys only on a live claim row — so the

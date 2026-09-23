@@ -17,6 +17,9 @@ require "open3"
 require "rbconfig"
 require "fileutils"
 require_relative "../support/session_env"
+# bin/pr-review reads WHICH exit-10 refusal this was off the refusal's own lead phrase.
+# That coupling is asserted here, against the LIVE text — see the two arm tests below.
+require_relative "../../bin/lib/reviewer_select_skip"
 
 class ReviewerSelectCliTest < Minitest::Test
   BIN = File.expand_path("../../bin/reviewer-select", __dir__)
@@ -317,11 +320,16 @@ class ReviewerSelectCliTest < Minitest::Test
   # (GET /api/v1/tasks?stage=submitted&full=1) — the half that did not exist until
   # busy-auto-misses-mid-review. Like `busy_payload` it is a RAW string, so a test can
   # serve what an unreadable answer actually looks like.
-  def with_board(devops, busy_payload: nil, review_payload: nil)
+  #
+  # `self_review: true` makes the stub board answer EVERY review-claim POST with the
+  # no-self-review refusal (TaskReviewClaim.acquire's first line — it fires before the
+  # row lock, so no holder is ever taken). It is the SECOND arm of exit 10, and the one
+  # bin/pr-review used to mis-name; see the coupling tests below.
+  def with_board(devops, busy_payload: nil, review_payload: nil, self_review: false)
     server = TCPServer.new("127.0.0.1", 0)
     port = server.addr[1]
     requests = []
-    claim = {}
+    claim = self_review ? { self_review: true } : {}
     thread = Thread.new { serve(server, requests, devops, busy_payload, claim, review_payload) }
 
     # THE BOARD PATH SEEDS A PER-SESSION USAGE BASELINE (bin/reviewer-select's
@@ -430,6 +438,15 @@ class ReviewerSelectCliTest < Minitest::Test
       {}
     end
     who = [sent["session"].to_s, sent["nonce"].to_s]
+
+    # The self-review refusal is checked FIRST because the real one is: it returns
+    # before the row lock, so nothing is claimed and the holder block is the EMPTY row.
+    # A reader who expects a holder here is reading the wrong arm — that is the point.
+    if claim[:self_review]
+      return JSON.generate("data" => { "acquired" => false, "disposition" => "self_review",
+                                       "holder" => { "task_slug" => BOARD_SLUG, "session" => nil,
+                                                     "live" => false } })
+    end
 
     if claim.empty? || claim[:who] == who
       disposition = claim.empty? ? "unclaimed" : "same_instance"
@@ -551,6 +568,59 @@ class ReviewerSelectCliTest < Minitest::Test
       assert_match(/carl/, err, "and the soul in the seat")
       assert_match(/bin\/task claim-next-review/, err, "and where to go instead")
       assert_match(/bin\/task review-claim status/, err, "and how to check a stale lease")
+    end
+  end
+
+  # --- THE EXIT-10 ARMS, AS THE CALLER READS THEM (name-both-exit-10-arms) ---------
+  #
+  # Two refusals share exit 10 on purpose (ReviewClaimCli::SKIPPED uses the same number),
+  # so bin/pr-review cannot branch on the code — it reads the arm off the refusal's LEAD
+  # PHRASE, through ReviewerSelectSkip. That is a cross-file coupling with a quiet
+  # failure mode: reword a refusal here and the classifier stops recognising it.
+  #
+  # These two tests are the coupling's guard, and they are deliberately driven END TO
+  # END — the REAL bin/reviewer-select, refused by a stub board, classified from its
+  # ACTUAL stderr. A test that asserted the marker appears in this script's SOURCE could
+  # be satisfied by a comment; only the live refusal proves what a caller receives.
+
+  def test_the_held_refusal_classifies_as_the_held_arm
+    with_board({ "shape" => "backend", "built_by" => "shannon" }) do |run, _requests|
+      run.call("--json", session: SESSION_A)
+      _out, _status, err = run.call("--json", session: SESSION_B)
+
+      assert_equal :held, ReviewerSelectSkip.arm(err),
+                   "bin/pr-review reads this refusal's lead phrase (ReviewerSelectSkip::HELD_MARKER, " \
+                   "#{ReviewerSelectSkip::HELD_MARKER.inspect}) to name the arm. If refuse_held! was " \
+                   "reworded, move the constant in the SAME commit — a stale marker does not raise, " \
+                   "it downgrades the caller's message to the two-armed 'could not tell' text"
+      assert_includes ReviewerSelectSkip.message(BOARD_SLUG, err), "bin/task claim-next-review",
+                      "the held arm's remedy is to review ANOTHER task"
+    end
+  end
+
+  def test_the_self_review_refusal_classifies_as_the_self_review_arm
+    devops = { "shape" => "backend", "built_by" => "shannon" }
+    with_board(devops, self_review: true) do |run, requests|
+      out, status, err = run.call("--json", session: SESSION_A)
+
+      assert_equal 10, status.exitstatus,
+        "a self-review refusal SKIPS on the same exit code as a held one (that is the card):\n#{out}#{err}"
+      assert_equal 0, intent_posts(requests).size, "a refused selection records nothing"
+
+      assert_equal :self_review, ReviewerSelectSkip.arm(err),
+                   "bin/pr-review reads this refusal's lead phrase (ReviewerSelectSkip::SELF_REVIEW_MARKER, " \
+                   "#{ReviewerSelectSkip::SELF_REVIEW_MARKER.inspect}) to name the arm. If " \
+                   "refuse_self_review! was reworded, move the constant in the SAME commit. A stale " \
+                   "marker does not raise: it downgrades the caller's message to the two-armed " \
+                   "'could not tell' text, which is honest but stops naming THIS arm — and the " \
+                   "moment anyone 'simplifies' that unknown case back to a :held default, the " \
+                   "original bug is live again"
+
+      message = ReviewerSelectSkip.message(BOARD_SLUG, err)
+      assert_includes message, "--actor",
+                      "nobody holds this review — the remedy is to reconcile the AUTHOR SET"
+      refute_includes message, "bin/task claim-next-review",
+                      "and NOT to take the next task: the same refusal recurs on the next run"
     end
   end
 
