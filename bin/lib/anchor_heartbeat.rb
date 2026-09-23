@@ -33,6 +33,26 @@ require_relative "../../lib/claim_lease"
 # turf-monster/.worktrees/fix-inline-violet-text-contrast holding 124 UNCOMMITTED
 # lines across 3 files that nobody was coming back for.
 #
+# WHAT THE SEAM DOES TO THAT INCIDENT, measured rather than implied — because the
+# paragraph above reads as though this file catches it, and it does not.
+#
+# The incident session is 01a0c6e1-df50-7a60-afb6-77694fd40444. Its newest marker
+# visible to `SessionMarkers.last_signal_at` is `.open-activity`, mtime 20:22:09
+# MDT (its `.json` feature marker is older still, 20:12:00). The orphan was
+# OBSERVED at 03:52:47Z = 21:52:47 MDT, so `signal_age` was 5_438s against a bound
+# of 11_250s: `verdict` would have answered :working and the renewer WOULD HAVE
+# RENEWED. It bites at 23:29:39 MDT, 97 minutes later.
+#
+# So the honest claim is BOUNDING, not catching: this converts an unbounded wedge
+# into one that ends in about three hours. That is the whole improvement, and it is
+# a real one — the lease was previously immortal.
+#
+# The tighter bound would not have bought much, and the measurement is the reason
+# to stop arguing about it: NARRATION_QUIET_SECONDS (5_391s) bites at 21:52:00,
+# FORTY-SEVEN SECONDS before the observation. Catching an incident by 47 seconds is
+# noise, not detection — it is an artifact of when somebody happened to look. A
+# bound picked to win that margin would pay the false-stop risk for it.
+#
 # A HELD-BUT-ABANDONED DESK IS WORSE THAN A LAPSED ONE, which is why this is worth a
 # file. `bin/agent-worktree cleanup --reclaim` correctly withholds a claimed desk and
 # every other session correctly refuses to steal one, so the two safety rules compose
@@ -83,25 +103,96 @@ require_relative "../../lib/claim_lease"
 # Pure and injectable — `verdict` reads no clock, no process table and no disk, so
 # the decision is tested as arithmetic. The one IO method is a thin, rescued reader.
 module AnchorHeartbeat
+  # THE NARRATION-GAP CORPUS — as data rather than prose, so the guard test can
+  # READ it. lib/claim_lease.rb already keeps its two corpora this way, for the
+  # reason it states: "A number in prose cannot be checked. A number in a constant
+  # can." This file shipped its threshold argument in prose, and the prose was
+  # wrong (see the correction under IDLE_AFTER_SECONDS). So the corpus lands here.
+  #
+  # THE MEASUREMENT. Consecutive differences between a session's own narration
+  # writes, counted from Claude transcripts as verified `tool_use` Bash invocations
+  # of `agent-activity|atomic-event (start|next|end|close-open)` — i.e. the very
+  # writes `SessionMarkers.last_signal_at` reads the mtimes of. Bands split at a
+  # 1-hour separator, exactly as MEASURED_DESK_GAP_SECONDS splits its own.
+  #
+  #   n = 3_112 gaps across 125 sessions, 143 transcripts, to 2026-09-22.
+  #
+  # FIRST TAKEN at n=381/13 sessions (jasper, 2026-09-22) and INDEPENDENTLY
+  # RE-DERIVED here over the whole transcript store, 8x larger. Every band number
+  # below reproduced UNCHANGED between the two — `working_max` is 3_594s in both —
+  # which is the property that matters, because `working_max` is the only figure
+  # the threshold is derived from. The pooled percentiles did NOT reproduce
+  # (p90 12_939s → 7_082s), so they are recorded as the distribution they are and
+  # nothing is derived from them.
+  #
+  # THE SEPARATOR IS LESS STABLE HERE THAN IT IS FOR DESK EDITS, and that is the
+  # caveat this corpus carries. claim_lease can say its derivation barely moves
+  # when the 1-hour separator does (1h → 5_334s, 2h → 7_347s, a 38% move).
+  # Narration's moves nearly twice as far: 1h → 5_391s, 1.5h → 8_009s,
+  # 2h → 10_679s, a 98% move. The gutter is tighter too — 70s here against the
+  # desk corpus's 339s — because a narration gap has no natural floor the way an
+  # edit does. So the bound below is a REAL number with a SOFT band split, which
+  # is a further reason not to park a liveness decision on it.
+  MEASURED_NARRATION_GAP_SECONDS = {
+    working_p50: 268,       # 4.5m  — median gap between one session's narration writes
+    working_p90: 1_357,     # 23m
+    working_p95: 1_962,     # 33m
+    working_p99: 3_047,     # 51m
+    working_max: 3_594,     # 59.9m — the binding number: the quietest working session
+    abandoned_min: 3_664,   # 61m   — the busiest abandoned session (a 70s gutter)
+    abandoned_p50: 19_088   # 5.3h  — the typical walked-away session
+  }.freeze
+
+  NARRATION_IDLE_SAFETY_FACTOR = 1.5
+
+  # What a population match WOULD have produced. Derived by the same method as
+  # ClaimLease::DESK_IDLE_SECONDS, from the population that actually writes the
+  # markers this file reads. It is NOT the bound — see IDLE_AFTER_SECONDS — and it
+  # is here so the bound's looseness is a measured fact rather than an assertion.
+  NARRATION_QUIET_SECONDS =
+    (MEASURED_NARRATION_GAP_SECONDS[:working_max] * NARRATION_IDLE_SAFETY_FACTOR).ceil # 5_391s
+
   # HOW LONG AN ANCHOR MAY GO QUIET BEFORE IT STOPS COUNTING AS A HOLDER.
   #
-  # DERIVED, NOT CHOSEN, and deliberately NOT a new number. ClaimLease's
-  # PROGRESS_QUIET_SECONDS (11_250s = 3h07m30s) is this house's measured ceiling on
-  # how long HEALTHY work goes without producing a durable artifact — the quietest
-  # measured healthy window, cleared by half again. A session's narration markers are
-  # durable artifacts of exactly that kind, so the question they answer is the
-  # question that constant was derived for.
+  # A DELIBERATE CHOICE OF THE LOOSER BOUND — not a population match, and the
+  # earlier draft of this comment claimed otherwise. It argued that "a session's
+  # narration markers are durable artifacts of exactly that kind, so the question
+  # they answer is the question that constant was derived for". That is FALSE
+  # against ClaimLease's own definition: lib/claim_lease.rb defines `progress_age`
+  # as seconds since a task produced a durable artifact, and ENUMERATES them — a
+  # TaskEvent (stage move / intent / cert checkpoint) or a GateRun open/lane/close.
+  # `Task#progress_evidence` reads exactly those two associations. Narration writes
+  # `agent_activity` rows and marker files; neither is in that enumeration, and the
+  # 243 building windows PROGRESS_QUIET_SECONDS was derived from are windows of
+  # BOARD silence. Two reviewers reached this independently at PR 1523's review.
   #
-  # There is precedent for this exact reuse: BuildClaimRenewer::DESKLESS_LIFETIME_SECONDS
-  # is the same constant, bounding the same situation (a renewer that cannot see its
-  # holder) with the same argument — holding a claim we cannot observe for LONGER than
-  # healthy work is ever observed to go quiet asserts more than the evidence carries.
+  # So there were two borrowed bounds on offer, and the constant above measures
+  # which one the population actually supports:
   #
-  # NOT DESK_IDLE_SECONDS (1h29m), the abandonment gate's bound, though it is the
-  # nearer-looking number. That one was derived from a corpus of desk EDIT gaps, and
-  # narration gaps are a different population that has not been measured. Borrowing a
-  # threshold across populations is how a bound comes to assert something nobody
-  # measured; the conservative constant is the honest one until that corpus exists.
+  #   NARRATION_QUIET_SECONDS           5_391s (1h30m)  ← the population match
+  #   ClaimLease::PROGRESS_QUIET_SECONDS 11_250s (3h07m) ← what this uses
+  #
+  # THE NUMBER IS STILL RIGHT, AND THE REASON IS THE ASYMMETRY, NOT THE POPULATION.
+  # This file can only ever STOP a renewal, so a bound that is too TIGHT steals a
+  # live holder's lease — and one of the lanes behind it is the production deploy
+  # path. A bound that is too LOOSE leaves an already-orphaned claim held for
+  # longer, which is the state we were in anyway. When the two errors cost that
+  # differently, taking the looser of two borrowed bounds is the correct call, and
+  # it stays correct whichever population either was drawn from. The measurement
+  # above prices the choice rather than excusing it: the window is 2.09x the one
+  # narration's own corpus supports.
+  #
+  # It also clears healthy narration by a wide margin either way — the quietest
+  # working session in a 3_112-gap corpus went 59.9 minutes, against a bound of
+  # 187.5.
+  #
+  # There is precedent for this reuse, and it is looser than it reads:
+  # BuildClaimRenewer::DESKLESS_LIFETIME_SECONDS is literally this same constant,
+  # but `lifetime_for(desk:)` passes it as a max_lifetime — a TOTAL BUDGET from a
+  # fixed origin, which kills a healthy desk-less builder at 3h07m no matter how
+  # busy it is. IDLE_AFTER_SECONDS is a SLIDING WINDOW that resets on every
+  # narration write. Same argument, different mechanism, and this use is the more
+  # forgiving of the two — so the looseness errs toward HOLD.
   #
   # WHAT IT COSTS, stated plainly: an anchor whose session goes quiet for longer than
   # this while genuinely working loses its lease. The lease then lapses on the
@@ -117,7 +208,9 @@ module AnchorHeartbeat
   #                 is not evidence, and this file never frees a lease on silence
   #                 it cannot attribute.
   #   :idle       — resident, but its session has been quiet past IDLE_AFTER_SECONDS.
-  #                 The 2026-09-22 orphan. STOPS renewing.
+  #                 What eventually ends the 2026-09-22 orphan — 97 minutes after
+  #                 it was observed, not at the moment of it (see the header).
+  #                 STOPS renewing.
   #   :gone       — the process is not the one we anchored to (exited, or the pid was
   #                 reused). The pre-existing residency verdict. STOPS renewing.
   STOPS_RENEWING = %i[gone idle].freeze
