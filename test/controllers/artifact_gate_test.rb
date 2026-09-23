@@ -365,6 +365,30 @@ class ArtifactGateTest < ActionDispatch::IntegrationTest
                  "the list compacted to empty and the card read 'have  — recolor for this game'"
   end
 
+  # AND THE PARTIAL CAST, which the empty-list guard above does not reach. One
+  # look recorded and one not is the ordinary state while a person's looks are
+  # being filed, and compacting the nils away deleted the unknown person from
+  # the sentence — "have Bengals white" over an artifact whose second look
+  # nobody has described. Same defect as the empty list losing its object, one
+  # case short.
+  test "[component] the re-skin sentence counts the looks it does not know" do
+    unrecorded = Person.create!(first_name: "Unre", last_name: "Corded", athlete: true)
+    Appearance.create!(person_slug: @burrow.slug, descriptor: "Bengals black", colorway: "black")
+    @content.update!(skill_player_slug: unrecorded.slug, colorway: "black")
+    pair_artifact("/white-pair.png", appearances_for(@burrow, "white"), unrecorded)
+
+    slot = slots[index_of("pair")]
+
+    assert slot.reskin?, "the control — read #{slot.decision.inspect}"
+    assert_equal 1, slot.artifact.subjects.count { |sub| sub.effective_appearance.nil? },
+                 "the control — exactly one subject's look must be unrecorded, or this is not " \
+                 "the partial case"
+    assert_equal "have Bengals white, plus 1 look never recorded — recolor for this game",
+                 slot.detail,
+                 "compacting the nils away drops the unknown person from the sentence and " \
+                 "claims we know a look we have never been told"
+  end
+
   test "[integration] the gate page stops claiming an approved artifact is on file" do
     bare = Person.create!(first_name: "Bare", last_name: "Look", athlete: true)
     @content.update!(qb_player_slug: bare.slug, skill_player_slug: nil, colorway: "black")
@@ -578,7 +602,10 @@ class ArtifactGateTest < ActionDispatch::IntegrationTest
 
     post set_colorway_content_path(@content.slug), params: { colorway: "black" }
     assert_not slots[index_of("character_sheet")].reuse?,
-               "the control — Burrow has no black look, so the refusal must be firing here"
+               "the control — this must not be a reuse, or the retire below is never reached. " \
+               "NOT a proof that the refusal fired: Burrow's white look is RECORDED, so the keys " \
+               "differ (`burrow@` vs `burrow@<white>`) and this stays green with the refusal " \
+               "deleted. Measured. The assertion that bites here is the retired_at one below"
 
     attach(index_of("character_sheet"), "/black.png")
 

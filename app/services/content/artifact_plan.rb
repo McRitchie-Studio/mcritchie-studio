@@ -69,11 +69,23 @@ class Content
       # empty list and the sentence loses its object. That state is now REACHABLE
       # FROM THE COMMON PATH rather than exotic: a named colorway that resolves to
       # no look no longer counts as reuse, so it falls here instead.
+      # THE PARTIAL CAST IS THE THIRD CASE, and dropping the nils collapsed it into
+      # the first. A mixed cast carries a look per person, so one recorded and one
+      # not is the ordinary state while a person's looks are being filed — and
+      # `filter_map` deleted the unrecorded one from the sentence, leaving "have
+      # Bengals white" over a two-person artifact whose second look nobody knows.
+      # That is the same defect as the empty list losing its object, one case
+      # short: an ABSENT look reading as an absent PERSON rather than as a gap.
       def reskin_detail
-        have = artifact.subjects.ordered.filter_map { |s| s.effective_appearance&.descriptor }.uniq
+        looks = artifact.subjects.ordered.map { |s| s.effective_appearance&.descriptor }
+        have = looks.compact.uniq
         return "have an artifact for this cast with no look recorded — recolor for this game" if have.empty?
 
-        "have #{have.join(' / ')} — recolor for this game"
+        missing = looks.count(&:nil?)
+        return "have #{have.join(' / ')} — recolor for this game" if missing.zero?
+
+        "have #{have.join(' / ')}, plus #{missing} look#{'s' if missing > 1} never recorded " \
+          "— recolor for this game"
       end
 
       # Why this slot needs work, in the words the operator needs. A re-skin
