@@ -118,12 +118,38 @@ module AnchorHeartbeat
   #   n = 3_112 gaps across 125 sessions, 143 transcripts, to 2026-09-22.
   #
   # FIRST TAKEN at n=381/13 sessions (jasper, 2026-09-22) and INDEPENDENTLY
-  # RE-DERIVED here over the whole transcript store, 8x larger. Every band number
-  # below reproduced UNCHANGED between the two — `working_max` is 3_594s in both —
-  # which is the property that matters, because `working_max` is the only figure
-  # the threshold is derived from. The pooled percentiles did NOT reproduce
+  # RE-DERIVED here over the whole transcript store, 8x larger. The two figures the
+  # threshold rests on reproduced UNCHANGED — `working_max` 3_594s and
+  # `abandoned_min` 3_664s in both. The pooled percentiles did NOT reproduce
   # (p90 12_939s → 7_082s), so they are recorded as the distribution they are and
-  # nothing is derived from them.
+  # nothing is derived from them; an earlier draft of this sentence claimed EVERY
+  # band number reproduced, which the very next clause contradicts.
+  #
+  # AND `working_max` REPRODUCING IS WEAK EVIDENCE, stated because a control that
+  # cannot move proves nothing. `working_max` is BY DEFINITION the largest gap below
+  # the 1-hour separator, so it saturates against that cutoff: at n=3_112 it sits 6s
+  # under it, leaving six seconds of room to differ. It would have reproduced
+  # whatever the data did. What actually supports this corpus is that a reviewer
+  # re-derived it from scratch and got the same numbers (carl's light, 2026-09-23),
+  # not the stability of a saturated maximum. The same idiom pins
+  # ClaimLease::MEASURED_DESK_GAP_SECONDS, whose `working_max` is 44s under the
+  # same cutoff.
+  #
+  # RE-DERIVE, DO NOT RE-COPY — and NO COMMITTED SCRIPT DERIVES THIS YET, which is
+  # the honest remaining gap in the record. Re-deriving means re-implementing the
+  # measurement above, so read its population definition strictly: the gaps are
+  # between one session's NARRATION writes — the marker mtimes
+  # `SessionMarkers.last_signal_at` reads — NOT between all of a transcript's
+  # message timestamps. The two are not close: the same store answers n=3_112 over
+  # 125 sessions for the former and n≈992_000 over 3_143 sessions for the latter
+  # (measured 2026-09-23 while checking exactly this), and the second population
+  # lands `working_max` at 3_596s, 2s from this constant's 3_594s, so a wrong
+  # population reproduces the number closely enough to look like confirmation.
+  # Anyone committing a script for this should name it here and delete this note.
+  #
+  # The percentile ESTIMATOR is not recorded and the percentiles are not
+  # reproducible as written (ceil-index, floor-index and interpolated all differ).
+  # Since nothing derives from them, that is a gap in the record, not in the bound.
   #
   # THE SEPARATOR IS LESS STABLE HERE THAN IT IS FOR DESK EDITS, and that is the
   # caveat this corpus carries. claim_lease can say its derivation barely moves

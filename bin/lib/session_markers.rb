@@ -34,7 +34,8 @@ require_relative "../../lib/task_usage_sandbox"
 # bin/task#build_claim_renewer_marker returns "build-claim-renewer-<slug>" with no
 # leading dot, while every sibling carries one (".task-review-claim-<slug>",
 # ".devops-shift-renewer"). This file documented it WITH a dot until 2026-09-22.
-# Measured on the live store that day: 244 files match `<id>build-claim-renewer-*`
+# Measured on the live store 2026-09-22: 244 files match `<id>build-claim-renewer-*`
+# (254 on 2026-09-23 — it grows; re-derive rather than re-copy)
 # and ZERO match `<id>.build-claim-renewer-*`.
 #
 # THE CONSEQUENCE IS NOT COSMETIC. +last_signal_at+ selects on the stem "<id>."
@@ -53,7 +54,8 @@ require_relative "../../lib/task_usage_sandbox"
 # consistency, it owes a matching entry in the liveness exclusion below FIRST, and
 # it must migrate or orphan every live marker — bin/task READS this name to find a
 # running renewer, so renaming it mid-flight makes those renewers invisible to the
-# lane that owns them. test/lib/session_markers_liveness_test.rb pins both halves.
+# lane that owns them. test/lib/session_markers_test.rb pins both halves (this named a
+# session_markers_liveness_test.rb that has never existed on any branch).
 #
 # It began as the shared READS bin/atomic-event and bin/atomic-capture-hook each
 # carried a byte-for-byte copy of. It now owns the WRITES too, because the copies
