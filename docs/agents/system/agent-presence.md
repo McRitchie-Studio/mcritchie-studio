@@ -690,6 +690,17 @@ because it is arithmetic over what they publish.
     test refuses any lane that goes back to the bare probe. The statusline
     throttles (`.heartbeat` and friends) are deliberately excluded: they prove a
     terminal is open, which is the 2026-08-13 immortal lease.
+    That bound is **BORROWED, not population-matched** — narration writes
+    `agent_activity` rows and marker files, while `PROGRESS_QUIET_SECONDS` was
+    derived from 243 windows of BOARD silence (TaskEvents and GateRuns).
+    Narration's own corpus is now measured and recorded beside the constant
+    (`AnchorHeartbeat::MEASURED_NARRATION_GAP_SECONDS`, n=3,112 gaps over 125
+    sessions) and derives **5,391s**; the looser 11,250s is taken deliberately,
+    because this seam can only ever STOP a renewal and one of the lanes behind it
+    is the production deploy path. Read it as **bounding** the orphan, not
+    catching it: at the moment the 2026-09-22 orphan was observed its
+    `signal_age` was 5,438s and the renewer would have renewed — the lease breaks
+    ~97 minutes later.
   - **A THIRD face, which no session-level check can reach** — measured twice on
     2026-09-22, about four hours apart. A harness watchdog ("no progress for
     600s") killed reviewer subagents; each dead reviewer's claim immediately read
