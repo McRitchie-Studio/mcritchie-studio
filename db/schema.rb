@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_21_040000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_23_023058) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -867,6 +867,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_21_040000) do
     t.integer "rows_seen", default: 0
     t.string "source", null: false
     t.datetime "started_at", null: false
+    t.jsonb "stats", default: {}, null: false
     t.string "status", default: "running", null: false
     t.datetime "updated_at", null: false
     t.index ["source", "started_at"], name: "index_import_runs_on_source_and_started_at"
