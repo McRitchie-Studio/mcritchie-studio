@@ -244,6 +244,13 @@ end
 # could not read: :unknown. Reporting the gap honestly is the fix; wedging the lane
 # is not.
 def armed_states
+  # NOTE (carl, review 2026-09-23): this is RELATIVE, so it resolves against the
+  # cwd and cannot be read from a non-hub directory — the tool then warns
+  # forever, and the warning means "wrong directory" rather than "unreadable
+  # registry". Left relative deliberately: the CLI tests shim bin/review-autopilot
+  # through the cwd, so anchoring it to __dir__ bypasses the shim and reds two of
+  # them (measured). The real fix is BinHelpers.bin_for with an env override, as
+  # bin/conductor already does — a follow-up, not a zap.
   raw, status, err = sh_full("bin/review-autopilot", "list", "--all")
   refusal = BoardRead.shell_refusal(status, err, what: "the armed-action registry")
   if refusal
@@ -311,6 +318,16 @@ end
 # What this run could NOT read. Carried into both renderings, because a --json
 # consumer sees neither stderr nor the qualified sentence below.
 unread = arms_default == :unknown ? ["armed-action registry"] : []
+# AND THE gh EVIDENCE, by the same rule. Every finding at both seams needs a
+# POSITIVE pr_state, so a dead `gh` — an hourly-expiring token is the common case,
+# not the exotic one — empties the findings list and prints the all-clear. The
+# :unknown default is enough to stop a HEAL, which is what the `sh` comment above
+# claims for it; it is NOT enough to stop the reassuring sentence, because "no
+# anomalies found" and "no anomalies exist" differ exactly here. Naming it costs
+# nothing and is the same rule the board reads now follow.
+if evidence.any? { |_slug, e| e[:pr_state] == :unknown }
+  unread << "PR state and CI (gh could not be read for at least one task)"
+end
 
 if options[:json]
   puts JSON.pretty_generate(
