@@ -53,7 +53,10 @@ class CredentialShellOrphanGuardTest < ActiveSupport::TestCase
   EXTERNALLY_PROVIDED = {
     "HOME"   => "set by the OS for every login shell",
     "EDITOR" => "the operator's own editor preference, set in his shell profile",
-    "TMPDIR" => "set by the OS for every login shell",
+    # NOTE: no TMPDIR here, though B1 allows it. B1 also grades inline `code spans`,
+    # and TMPDIR is expanded only in credential-rotation.md's prose — never in a
+    # fenced block. Listing it here would be an allowance covering nothing, which the
+    # staleness assertion below correctly refuses.
     "OP_ADMIN_SERVICE_ACCOUNT_TOKEN" =>
       "1Password service-account token, exported into the session by the launcher " \
       "rather than assigned in any SOP — a SOP that assigned one would be printing it",
