@@ -20,19 +20,26 @@ require "time"
 class DevopsReconcileCliTest < Minitest::Test
   BIN = File.expand_path("../../bin/devops-reconcile", __dir__)
 
+  # The exact all-clear sentence. Matched whole, because the QUALIFIED line quotes
+  # the phrase inside it ("That is NOT \"nothing stranded\"") and a loose /nothing
+  # stranded/ therefore matches both states — a test that cannot tell them apart.
+  ALL_CLEAR = "\u2713 nothing stranded at this seam"
+
   # --- board stub -------------------------------------------------------------
 
-  def with_board(tasks_by_stage)
+  def with_board(tasks_by_stage, stage_body: nil)
     server = TCPServer.new("127.0.0.1", 0)
     port = server.addr[1]
-    thread = Thread.new { serve(server, tasks_by_stage) }
+    thread = Thread.new { serve(server, tasks_by_stage, stage_body) }
     yield port
   ensure
     server&.close
     thread&.kill
   end
 
-  def serve(server, tasks_by_stage)
+  # stage_body overrides the stage payload with a 200 the reader CANNOT read (an
+  # error payload, an HTML page, anything with no `data` array).
+  def serve(server, tasks_by_stage, stage_body = nil)
     loop do
       client = server.accept
       line = client.gets
@@ -44,6 +51,8 @@ class DevopsReconcileCliTest < Minitest::Test
       body =
         if path.start_with?("/api/v1/auth")
           { "token" => "stub-token" }
+        elsif stage_body
+          stage_body
         else
           stage = path[/stage=([a-z]+)/, 1]
           { "data" => tasks_by_stage.fetch(stage, []) }
@@ -63,13 +72,20 @@ class DevopsReconcileCliTest < Minitest::Test
   # `bin/task` by RELATIVE path) plus a PATH dir holding `gh`.
   # gh_by_pr: { "926" => json, ... } — the shim answers per PR number, which is
   # what a multi-repo task needs. gh_json stays the single-PR shorthand.
-  def with_shims(gh_json: nil, gh_by_pr: nil, autopilot: "", task_field: "accepted")
+  # autopilot_exit stands in for a registry read that FAILED — bin/review-autopilot
+  # dies on 1 ("could not run": no board, no secret, no session) after printing its
+  # own diagnosis on stderr, and this shim reproduces exactly that shape.
+  def with_shims(gh_json: nil, gh_by_pr: nil, autopilot: "", autopilot_exit: 0, task_field: "accepted")
     Dir.mktmpdir("reconcile-cli") do |root|
       FileUtils.mkdir_p(File.join(root, "bin"))
       calls = File.join(root, "calls.log")
 
       write_shim(File.join(root, "bin", "review-autopilot"), <<~SH)
         #!/bin/sh
+        if [ "#{autopilot_exit}" != "0" ]; then
+          echo "review-autopilot: list failed -> HTTP 301 (redirected to https://mcritchie.studio/)" >&2
+          exit #{autopilot_exit}
+        fi
         printf '%s' '#{autopilot}'
       SH
 
@@ -388,7 +404,7 @@ class DevopsReconcileCliTest < Minitest::Test
     tasks = { "submitted" => [task(slug: "unreadable", stage: "submitted")], "building" => [] }
     Dir.mktmpdir("reconcile-nogh") do |root|
       FileUtils.mkdir_p(File.join(root, "bin"))
-      write_shim(File.join(root, "bin", "review-autopilot"), "#!/bin/sh\nexit 1\n")
+      write_shim(File.join(root, "bin", "review-autopilot"), "#!/bin/sh\necho 'boom' >&2\nexit 1\n")
       write_shim(File.join(root, "bin", "task"), "#!/bin/sh\nexit 0\n")
       write_shim(File.join(root, "gh"), "#!/bin/sh\nexit 1\n") # gh fails
       with_board(tasks) do |port|
@@ -397,6 +413,90 @@ class DevopsReconcileCliTest < Minitest::Test
         payload = JSON.parse(out)
         assert_empty payload["findings"]
         assert_empty payload["healed"]
+        # ADDED, not swapped: "no findings" here is honest only alongside the
+        # statement that the armed-action registry was never read. The two
+        # assertions above still hold on their own terms.
+        assert_includes payload["unread"], "armed-action registry"
+      end
+    end
+  end
+
+  # --- a failed read is not an empty one -------------------------------------
+  #
+  # THE DEFECT (found 2026-09-20, verified 2026-09-22). `armed_states` ran
+  # `sh("bin/review-autopilot", "list", "--all")`, which discarded BOTH the exit
+  # code and the child's stderr, then answered `{}`. `{}` is not "I could not
+  # look" — the caller's `arms.fetch(slug, :none)` reads a missing key as a
+  # POSITIVE :none, so an unreadable registry removed every :verdict_stranded
+  # finding this seam can make and the run still printed the all-clear at exit 0.
+  #
+  # The sharp part: bin/review-autopilot's own `list` was hardened against this
+  # exact reading in PR 1481. The false clear survived, inside the consumer of the
+  # very read that was fixed.
+
+  def test_an_unreadable_armed_registry_is_not_nothing_stranded
+    with_shims(gh_json: GH_MERGED, autopilot_exit: 1) do |root, _calls|
+      with_board({ "reviewed" => [] }) do |port|
+        out, _err, status = run_cli(root, port, "--seam", "qa-release")
+
+        assert_equal 0, status.exitstatus, "NEVER BLOCK: an unread fact must not wedge an SOP"
+        # The all-clear SENTENCE, not the phrase: the qualified line quotes it.
+        refute_includes out, ALL_CLEAR
+        assert_match(/could not read/, out)
+      end
+    end
+  end
+
+  def test_an_unreadable_armed_registry_names_the_childs_diagnosis
+    with_shims(gh_json: GH_MERGED, autopilot_exit: 1) do |root, _calls|
+      with_board({ "reviewed" => [] }) do |port|
+        _out, err, _status = run_cli(root, port, "--seam", "qa-release")
+
+        assert_match(/armed-action registry failed/, err)
+        assert_match(/301/, err)
+        assert_match(/NOT "nothing armed"/, err)
+      end
+    end
+  end
+
+  # A --json consumer sees neither stderr nor the qualified sentence, so the gap
+  # has to ride the payload too.
+  def test_an_unreadable_armed_registry_rides_the_json_payload
+    with_shims(gh_json: GH_MERGED, autopilot_exit: 1) do |root, _calls|
+      with_board({ "reviewed" => [] }) do |port|
+        out, _err, _status = run_cli(root, port, "--seam", "qa-release", "--json")
+
+        assert_includes JSON.parse(out)["unread"], "armed-action registry"
+      end
+    end
+  end
+
+  # THE OLD BEHAVIOUR MUST SURVIVE: a registry we DID read still reports :none for
+  # a slug it does not list, and still says "nothing stranded". The refusal must
+  # not have been bought by making every clean run look uncertain.
+  def test_a_readable_empty_registry_still_says_nothing_stranded
+    with_shims(gh_json: GH_MERGED, autopilot: "nothing armed\n") do |root, _calls|
+      with_board({ "reviewed" => [] }) do |port|
+        out, _err, status = run_cli(root, port, "--seam", "qa-release")
+
+        assert_equal 0, status.exitstatus
+        assert_includes out, ALL_CLEAR
+        refute_match(/could not read/, out)
+      end
+    end
+  end
+
+  # A 200 carrying a body with no `data` array is an UNREADABLE answer, not an
+  # empty page — and `break if batch.size < per_page` ended the pagination on it,
+  # so the scan reported across zero tasks and printed the all-clear.
+  def test_a_two_hundred_with_an_unreadable_body_dies
+    with_shims(gh_json: GH_MERGED) do |root, _calls|
+      with_board({}, stage_body: { "error" => "something went wrong" }) do |port|
+        out, err, status = run_cli(root, port, "--seam", "qa-release")
+
+        assert_equal 1, status.exitstatus
+        refute_includes out, ALL_CLEAR
+        assert_match(/could not be read/, err)
       end
     end
   end

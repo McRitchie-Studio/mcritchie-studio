@@ -2,6 +2,8 @@
 
 require "minitest/autorun"
 require "net/http"
+require "rbconfig"
+require "English"
 require_relative "../../bin/lib/board_read"
 
 # [unit] The STATUS decision under every board read: may this response be treated
@@ -88,7 +90,112 @@ class BoardReadTest < Minitest::Test
     refute_match(/redirect/i, message)
   end
 
+  # ── the SUBPROCESS half: the same property, different evidence ─────────────
+  #
+  # These use REAL Process::Status objects, for the same reason the HTTP cases use
+  # real response classes: `shell_refusal` branches on `success?` and `exitstatus`,
+  # and a double answering both would pass every case here while the signalled
+  # child — whose exitstatus is genuinely nil — printed "exit " and read as a parse
+  # bug. `status_of` runs an actual process to get one.
+
+  def test_a_zero_exit_is_no_refusal
+    assert_nil BoardRead.shell_refusal(status_of(0), "", what: "the submitted stage list")
+  end
+
+  def test_a_failed_child_refuses_and_names_the_read
+    message = BoardRead.shell_refusal(status_of(1), "", what: "the submitted stage list")
+
+    refute_nil message
+    assert_includes message, "the submitted stage list failed"
+    assert_includes message, "exit 1"
+  end
+
+  # THE WHOLE REASON THIS EXISTS. bin/task already dies with a sentence naming the
+  # status, the host or the credential; bin/conductor captured it into `_err` and
+  # rendered an empty pipeline. The diagnosis must survive the subprocess boundary.
+  def test_the_childs_own_diagnosis_is_carried_through
+    message = BoardRead.shell_refusal(
+      status_of(1),
+      "task: GET /api/v1/tasks?stage=submitted -> 301: (redirected to https://mcritchie.studio/…)",
+      what: "the submitted stage list"
+    )
+
+    assert_includes message, "301"
+    assert_includes message, "redirected to"
+  end
+
+  # A tool that died without explaining is a DIFFERENT problem from one that
+  # explained, and the message has to be able to say which.
+  def test_a_silent_child_says_that_it_was_silent
+    message = BoardRead.shell_refusal(status_of(1), "   \n ", what: "the armed-action registry")
+
+    assert_includes message, "said nothing on stderr"
+  end
+
+  # nil status = the command never ran (Errno::ENOENT on a mis-resolved path, a
+  # fork failure). That is a FAILED READ, not an unknown: it is exactly the state
+  # a `rescue StandardError -> []` used to render as an empty pipeline.
+  def test_a_command_that_never_ran_refuses
+    message = BoardRead.shell_refusal(nil, "No such file or directory", what: "the armed-action registry")
+
+    refute_nil message
+    assert_includes message, "the command never ran"
+    assert_includes message, "No such file or directory"
+  end
+
+  # A signalled child has a nil exitstatus. It must still refuse, and must say kill
+  # rather than print a blank exit code.
+  def test_a_signalled_child_refuses_and_names_the_signal
+    message = BoardRead.shell_refusal(status_of_signal("TERM"), "", what: "the reviewed stage list")
+
+    refute_nil message
+    assert_includes message, "signal"
+    refute_includes message, "exit "
+  end
+
+  # ── answered, negatively: an ANSWER, not a failure ─────────────────────────
+  #
+  # bin/task exit 4 (EXIT_TASK_NOT_FOUND) means the board positively answered
+  # "there is no such task". Refusing it would turn an archived slug into an
+  # outage — a false ALARM, which is this module's other failure direction.
+  def test_an_answered_code_is_not_a_refusal
+    assert_nil BoardRead.shell_refusal(status_of(4), "task: not found", what: "task gone-slug",
+                                       answered: [4])
+  end
+
+  # ...and only the codes the caller named. Every other non-zero is still a read
+  # that failed, even on a caller that passed an answered list.
+  def test_an_unlisted_code_still_refuses_on_an_answering_caller
+    message = BoardRead.shell_refusal(status_of(1), "task: GET -> 401", what: "task probe-slug",
+                                      answered: [4])
+
+    refute_nil message
+    assert_includes message, "exit 1"
+  end
+
+  # A SIGNALLED child cannot be an "answered" code even when the caller names one:
+  # its exitstatus is nil, so there is no code to match, and a kill is never the
+  # board answering.
+  def test_a_signalled_child_is_never_an_answered_code
+    refute_nil BoardRead.shell_refusal(status_of_signal("KILL"), "", what: "task probe-slug",
+                                       answered: [4, 9])
+  end
+
   private
+
+  # A REAL Process::Status for +code+ — see the note above the subprocess cases.
+  def status_of(code)
+    system(RbConfig.ruby, "-e", "exit #{code}")
+    $CHILD_STATUS
+  end
+
+  # A REAL Process::Status for a child killed by +signal+ (exitstatus is nil).
+  def status_of_signal(signal)
+    pid = spawn(RbConfig.ruby, "-e", "sleep 30")
+    Process.kill(signal, pid)
+    Process.waitpid(pid)
+    $CHILD_STATUS
+  end
 
   # A real Net::HTTPResponse subclass, instantiated the way Net::HTTP does. Using the
   # genuine classes is load-bearing: `refusal` and `detail` branch on the MODULES
