@@ -864,7 +864,7 @@ class Release
       when "git_push_heroku", "repo_script"
         if heroku_app.to_s.strip.empty?
           "its #{strategy} adapter names no Heroku app — add `prod_deploy.heroku_app:` to " \
-            "config/release_repos.yml (a git_push_heroku `remote:` is read automatically)"
+            "#{REGISTRY_FILE} (a git_push_heroku `remote:` is read automatically)"
         else
           "#{heroku_app}'s CURRENT Heroku release is not a succeeded `Deploy <frozen sha>` " \
             "(a config-var change or a rollback on top of the deploy also reads this way)"
@@ -906,6 +906,12 @@ class Release
     # Returns "" when the adapter names no Heroku app — which keeps the caller's
     # behaviour exactly as it is today (no marker → false → re-deploy), rather than
     # guessing an app name and reading a stranger's release list.
+    # The deploy registry, named ONCE so the remedy below and the test that checks it
+    # agree by construction. Release::Repos::CONFIG_PATH is the Rails-side reader's
+    # Pathname; this model loads standalone inside bin/release, with no Rails and no
+    # Rails.root, so it carries the repo-relative spelling itself.
+    REGISTRY_FILE = "config/release_repos.yml".freeze
+
     HEROKU_GIT_REMOTE = %r{\Ahttps://git\.heroku\.com/([a-z0-9][a-z0-9-]*)\.git\z}i
 
     def heroku_app_for(adapter)

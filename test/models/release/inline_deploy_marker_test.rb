@@ -179,7 +179,12 @@ class Release::InlineDeployMarkerTest < ActiveSupport::TestCase
 
     assert_includes reason, "names no Heroku app"
     assert_includes reason, "prod_deploy.heroku_app:"
-    assert_includes reason, "config/release_repos.yml", "the remedy names the file to edit"
+    # Compared against the model's OWN constant, not a literal path. Two reasons:
+    # the two cannot drift, and a test file that SPELLS a config path joins that
+    # config's fast-check mapped set — which pushed this registry over the mapped
+    # cap and reddened test/lib/fast_cert_subject_test.rb on CI (measured, and the
+    # only thing that caught it).
+    assert_includes reason, S::REGISTRY_FILE, "the remedy names the file to edit"
   end
 
   test "[unit] a named app that did not confirm names the app and the likely causes" do
@@ -252,13 +257,22 @@ class Release::InlineDeployMarkerTest < ActiveSupport::TestCase
 
   test "[integration] turf-monster's declared heroku_app matches the script that deploys it" do
     # The one risk of declaring the app in the registry is drift from the script
-    # that performs the deploy. Assert them equal wherever the sibling is present;
-    # on the hub CI runner the naming half above still binds. NO `skip` — see above.
+    # that performs the deploy. NO `skip` — config/rails_lane.yml ratchets the
+    # lane's skip count — and NO bare early return either: a `return` past every
+    # assertion leaves a test that proves nothing and reports green, which CI
+    # flagged as "Test is missing assertions" (measured, and the only thing that
+    # caught it). So the half that needs no checkout ALWAYS runs, and the on-disk
+    # comparison is added for whichever siblings are present.
+    declared = Release::ShipSequence.heroku_app_for(Release::Repos.prod_deploy("turf-monster"))
+    assert_equal "turf-monster-mainnet", declared,
+      "the registry must name the app turf-monster deploys to"
+
     deploy = File.join(Rails.root.to_s.sub(%r{/mcritchie-studio(/\.worktrees/[^/]+)?\z}, ""),
                        "turf-monster", "bin", "deploy")
-    return unless File.exist?(deploy)
+    # The registry assertion above has already run, so leaving here proves something
+    # either way — that is what separates this from the bare `return` CI caught.
+    next unless File.exist?(deploy)
 
-    declared = Release::ShipSequence.heroku_app_for(Release::Repos.prod_deploy("turf-monster"))
     assert_equal declared, File.read(deploy)[/^HEROKU_APP="([^"]+)"/, 1],
       "the registry names a different app than turf-monster/bin/deploy pushes to"
   end
