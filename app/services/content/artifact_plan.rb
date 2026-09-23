@@ -31,6 +31,28 @@ class Content
       def reskin?   = decision == :reskin
       def generate? = decision == :generate
 
+      # IS THE PICTURE ON SCREEN THE ONE ABOUT TO BE RETIRED? The submit label's
+      # question, and a THIRD question again — neither the label `#reuse?` nor
+      # the bare mutation `#supersedes`.
+      #
+      # The card renders `artifact`; the attach retires `supersedes`. The button
+      # promises the operator what that click costs him, so it is true only where
+      # those two are the SAME ROW. On a re-skin they are routinely not: `artifact`
+      # is the other-colorway asset we recolor FROM and it stays live, while
+      # `supersedes` is whatever already holds the key the new image will take.
+      # Measured 2026-09-23 on a mixed cast — the gate shows the white pair, the
+      # click retires a black one, and the white image is still on the card
+      # afterwards.
+      #
+      # `supersedes&.image_url.present?` is the tempting shorter form and it is
+      # wrong in exactly that case: it says "Replace" over an image that survives.
+      # It passes every test that existed before this one, which is why the test
+      # below names it.
+      #
+      # It deliberately does NOT test `image_url`. The question is which ROW dies,
+      # and an artifact filed without an image is still destroyed by that click.
+      def replaces_shown_artifact? = supersedes.present? && supersedes.id == artifact&.id
+
       def status_label
         case decision
         when :reuse  then "Reuse"

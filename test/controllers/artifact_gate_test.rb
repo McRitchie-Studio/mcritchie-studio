@@ -38,6 +38,23 @@ class ArtifactGateTest < ActionDispatch::IntegrationTest
 
   def attach_all = slots.each_index { |i| attach(i) }
 
+  # The submit label for ONE slot's form. The page carries three, so scanning the
+  # whole body counts every one of them — which is right for the all-slots-agree
+  # tests above and useless for a single mixed slot.
+  def submit_label_for(kind)
+    css_select("form[data-test='attach-#{kind}'] input[type=submit]").first&.[]("value")
+  end
+
+  # A pair artifact with one recorded look and one that was never recorded.
+  def pair_artifact(url, qb_appearance, skill_person)
+    Artifact.create!(kind: "pair", image_url: url).tap do |a|
+      a.subjects.create!(person_slug: @burrow.slug, appearance_slug: qb_appearance.slug,
+                         role: "qb", ordinal: 1)
+      a.subjects.create!(person_slug: skill_person.slug, appearance_slug: nil,
+                         role: "skill", ordinal: 2)
+    end
+  end
+
   # --- component tier ------------------------------------------------------
 
   test "[component] the gate renders a slot per artifact with its decision" do
@@ -93,8 +110,9 @@ class ArtifactGateTest < ActionDispatch::IntegrationTest
 
   # The other half of the predicate, and the reason it is not simply "always
   # Attach": a :reuse slot holds the SAME cast in the SAME look, the attach DOES
-  # retire it (contents_controller: `slot.artifact&.retire! if slot.reuse?`), and
-  # Replace is the honest word. A fix that flipped every label would break this.
+  # retire it (contents_controller: `slot.supersedes&.retire!`, and on a :reuse
+  # slot `supersedes` IS `artifact`), and Replace is the honest word. A fix that
+  # flipped every label would break this.
   test "[component] a reuse slot still offers Replace" do
     attach_all
     assert slots.all?(&:reuse?),
@@ -114,6 +132,84 @@ class ArtifactGateTest < ActionDispatch::IntegrationTest
 
     assert_equal 3, response.body.scan(/value="Attach"/).length
     assert_equal 0, response.body.scan(/value="Replace"/).length
+  end
+
+  # THE LABEL AND THE RETIRE CAME APART A SECOND TIME, from the other side.
+  #
+  # `slot.reuse?` was the right question only while the retire was spelled
+  # `if slot.reuse?`. Once the retire began naming its own target
+  # (`slot.supersedes&.retire!`), a population moved out of :reuse while STILL
+  # being superseded — a lookless artifact under a named colorway reads :reskin
+  # — and the button went on asking the old question. It said "Attach", meaning
+  # "your picture is safe", and the click retired the picture on the card.
+  #
+  # That is the exact inverse of the defect the three tests above were written
+  # for, on the same button, and neither PR produced it alone: the retire split
+  # and the label predicate landed on separate branches and composed into it.
+  test "[component] a superseded lookless artifact still offers Replace" do
+    bare = Person.create!(first_name: "Bare", last_name: "Look", athlete: true)
+    @content.update!(qb_player_slug: bare.slug, skill_player_slug: nil, colorway: "black")
+    i = index_of("character_sheet")
+    attach(i, "/first.png")
+
+    slot = slots[i]
+    assert slot.reskin?,
+           "the control — the refusal must have moved this OUT of :reuse, or the old " \
+           "predicate would answer correctly by accident. Read #{slot.decision.inspect}"
+    assert_equal slot.artifact.id, slot.supersedes&.id,
+           "the control — the row on the card and the row about to be retired must be the " \
+           "SAME one, or this test is not about the lie the button told"
+
+    get content_path(@content.slug)
+
+    assert_equal "Replace", submit_label_for("character_sheet"),
+                 "the attach retires the very artifact on this card. Attach here promises " \
+                 "the operator his image survives the click, and it does not"
+  end
+
+  # AND THE REASON IT CANNOT BE `slot.supersedes&.image_url.present?`.
+  #
+  # That shorter form passes every other test in this file, including the one
+  # above — so nothing else in the suite distinguishes it from the real
+  # predicate. It is wrong wherever the retired row is not the row on screen,
+  # which a re-skin reaches on the ordinary path: the card shows the white pair
+  # we are recoloring FROM, the click retires a different black row that holds
+  # the key the new image will take, and the white image is still on the card
+  # afterwards. "Replace" there names a destruction that does not happen.
+  #
+  # The cast is mixed on purpose. A look nobody recorded for ONE member is what
+  # keeps the black row out of :reuse while leaving it the cell occupant — the
+  # only way `artifact` and `supersedes` come apart.
+  test "[component] a re-skin over a different row offers Attach, not Replace" do
+    unrecorded = Person.create!(first_name: "Unre", last_name: "Corded", athlete: true)
+    black = Appearance.create!(person_slug: @burrow.slug, descriptor: "Bengals black", colorway: "black")
+    @content.update!(skill_player_slug: unrecorded.slug, colorway: "black")
+    assert_equal 0, unrecorded.appearances.count,
+                 "the control — this person's look is never recorded, which is what keeps " \
+                 "the black artifact out of :reuse"
+
+    white_pair = pair_artifact("/white-pair.png", appearances_for(@burrow, "white"), unrecorded)
+    black_pair = pair_artifact("/black-pair.png", black, unrecorded)
+
+    slot = slots[index_of("pair")]
+    assert slot.reskin?, "the control — read #{slot.decision.inspect}"
+    assert_equal white_pair.id, slot.artifact&.id,
+                 "the control — the card must be showing the WHITE pair, the row we recolor from"
+    assert_equal black_pair.id, slot.supersedes&.id,
+                 "the control — the row about to be retired must be the BLACK one. If these " \
+                 "two ever name the same artifact this test proves nothing"
+
+    get content_path(@content.slug)
+
+    assert_equal "Attach", submit_label_for("pair"),
+                 "the image on this card survives the click — only a different row is retired. " \
+                 "`supersedes&.image_url.present?` says Replace here, and that is the bug"
+
+    attach(index_of("pair"), "/new-pair.png")
+
+    assert_nil white_pair.reload.retired_at,
+               "and the label was telling the truth: the shown artifact is still live"
+    assert_not_nil black_pair.reload.retired_at, "while the cell occupant was superseded"
   end
 
   test "[component] the gate disappears once approved" do

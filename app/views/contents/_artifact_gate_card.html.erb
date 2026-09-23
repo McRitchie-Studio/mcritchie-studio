@@ -92,13 +92,23 @@
             <%= f.text_field :image_url, placeholder: "paste the image URL",
                   class: "input-field text-xs w-72" %>
             <%# The label shares the CONTROLLER's own source of truth: the attach
-                retires the artifact on show only `if slot.reuse?`. On a :reskin
-                slot `slot.artifact` is the OTHER colorway and its image_url IS
-                present, so testing presence alone read "Replace" while the
-                attach was about to KEEP that artifact and file a second one
-                beside it. Ask the question the button actually answers — is the
-                thing on screen being superseded? %>
-            <%= f.submit slot.reuse? && slot.artifact&.image_url.present? ? "Replace" : "Attach",
+                retires `slot.supersedes`. On a :reskin slot `slot.artifact` is
+                the OTHER colorway and its image_url IS present, so testing
+                presence alone read "Replace" while the attach was about to KEEP
+                that artifact and file a second one beside it. Ask the question
+                the button actually answers — is the thing on screen being
+                superseded?
+
+                `slot.reuse?` ANSWERED THAT QUESTION ONLY WHILE THE RETIRE WAS
+                SPELLED `if slot.reuse?`. Once the retire began naming its own
+                target, the label went on asking the old question and inverted
+                itself again: a lookless artifact under a named colorway reads
+                :reskin, so the button said "Attach" while the click retired the
+                very image on the card. Measured 2026-09-23. It is the same
+                defect this comment was written about, arriving from the other
+                side — which is the argument for asking the slot directly rather
+                than for any predicate that merely correlates. %>
+            <%= f.submit slot.replaces_shown_artifact? ? "Replace" : "Attach",
                   class: "btn-secondary text-xs" %>
           <% end %>
         </div>
