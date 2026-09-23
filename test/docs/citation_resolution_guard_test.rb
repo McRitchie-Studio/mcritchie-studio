@@ -50,7 +50,9 @@ require "test_helper"
 # stop minting new ones everywhere else. Lanes 4 and 5 are the second record's (a) and
 # (b) — added 2026-09-22 after four citations rotted onto SUBSTANTIVE lines in one night
 # across three PRs, green on all three lanes, with nothing but a reviewer's eye between
-# them and the tree. They are pinned at MISPOINTED_CITATIONS, verbatim, all four.
+# them and the tree. They are pinned at MISPOINTED_CITATIONS, verbatim, all four — with a
+# fifth row that is not a defect but the PROBE for the one recorded miss, folded in
+# 2026-09-22 so the negative result and its proof travel together.
 #
 # A CONTINUATION ANCHOR IS A CITATION TOO, and until 2026-09-14 it was invisible to ALL
 # THREE LANES. `bin/release.rb:224 + :232`, `bin/task:631, :1139`, `bin/statusline:229,231`
@@ -475,24 +477,35 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
     MSG
   end
 
-  # THE FOUR DEFECTS THIS TASK WAS FILED FOR — restored verbatim and driven through the
-  # REAL rules against the REAL bin/dor-check, not through a copy of them. Each was live
-  # in this repo on 2026-09-22; three were repaired in the sweep that found them, and all
-  # four are pinned here because the repairs are exactly what stops the tree from proving
-  # the lanes bite. Every citation below resolves and lands on a SUBSTANTIVE line, which
-  # is why the shipped guard was green on all four.
+  # THE FOUR DEFECTS THIS TASK WAS FILED FOR, PLUS ONE PROBE — restored verbatim and
+  # driven through the REAL rules against the REAL bin/dor-check, not through a copy of
+  # them. Each defect was live in this repo on 2026-09-22; three were repaired in the
+  # sweep that found them, and all four are pinned here because the repairs are exactly
+  # what stops the tree from proving the lanes bite. Every citation below resolves and
+  # lands on a SUBSTANTIVE line, which is why the shipped guard was green on all four.
+  # The fifth row is not a citation anyone wrote — see the `lanes: []` note.
+  #
+  # `because:` PINS THE REASON where the row has one, and on the probe row `lanes:` alone
+  # is measurably not enough — see the probe's own note for the mutation that proves it.
+  # Three rows carry one today; a row without it is checked on its lanes exactly as before,
+  # so adding the key took no coverage away from any row that had none.
   #
   # `lanes:` IS THE FULL SET, not the first one to fire. The anchored spelling of defect A
   # trips BOTH lane 1 (its range ends on an `end`) and lane 4 (its span carries no such
   # phrase), and an earlier cut of this table recorded only the first — which would have
   # let lane 4 go silent on that row without a single assertion noticing.
   #
-  # `lanes: []` IS A RECORD, NOT A TODO. Defect D is the honest floor of a resolution-keyed
-  # guard, and pinning the miss is what makes closing it visible: a future lane that catches
-  # it reds HERE and asks for the row to be re-labelled, rather than quietly closing a hole
-  # nobody had recorded was open.
+  # `lanes: []` IS A RECORD, NOT A TODO — AND IT TRAVELS WITH ITS PROBE. Defect D is the
+  # honest floor of a resolution-keyed guard, and pinning the miss is what makes closing it
+  # visible: a future lane that catches it reds HERE and asks for the row to be re-labelled,
+  # rather than quietly closing a hole nobody had recorded was open. But a recorded silence
+  # is only evidence while the lanes can still REACH the input, so D is followed by a PROBE
+  # row — the same site with its range end pushed off the file — which must fire lane 1. The
+  # two are read together or not at all: D says "the lanes are silent here", the probe says
+  # "and they were listening". Five rows, four defects and one probe.
   MISPOINTED_CITATIONS = [
     { as_written: "bin/dor-check:1176-1180", homes: nil, lanes: [:substance],
+      because: %(the range ENDS at line 1180 of bin/dor-check, a bare "end"),
       claim: "reviewers run --gate-role review from the PRIMARY",
       seen_in: "test/docs/zap_cert_freshness_docs_test.rb and test/lib/dor_check_zap_seams_test.rb",
       note: "the range ends on the bare `end` closing default_diff_base, a method the " \
@@ -500,6 +513,7 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
             "task, and :1176 is a `def` — substantive, and green for eleven days." },
 
     { as_written: %(bin/dor-check:1176-1180#"reviewers run --gate-role review"), homes: [98],
+      because: %(the range ENDS at line 1180 of bin/dor-check, a bare "end"),
       lanes: %i[substance anchor], claim: "the same pair, spelled the way lane 5 now requires",
       seen_in: "the repair this task shipped",
       note: "the span is default_diff_base and carries no such phrase. This is the row " \
@@ -530,23 +544,59 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
             "citing sentence denied. Nothing here can see it. The range ends SUBSTANTIVE, " \
             "so lane 1 is silent; the anchor is inside the span, so lane 4 is silent. " \
             "Catching it needs the citing PROSE to be read against the cited paragraph, " \
-            "which is limit A's rejected heuristic — measured at roughly a third false." }
+            "which is limit A's rejected heuristic — measured at roughly a third false." },
+
+    # THE PROBE FOR THE ROW ABOVE. Not a citation anyone wrote — the SAME site with one
+    # thing changed, and the only row here that exists to guard another row.
+    { as_written: %(bin/dor-check:44-99999#"FAST route"), homes: nil, lanes: [:substance],
+      because: "is outside bin/dor-check",
+      claim: "THE PROBE, not a defect: the D site with its range end pushed off the file",
+      seen_in: "control 5b of PR 1533's review — recorded in the report, never shipped until now",
+      note: "DEFECT D IS A NEGATIVE RESULT, AND A NEGATIVE RESULT NEEDS A PROBE. `lanes: []` " \
+            "passes when the lanes are genuinely silent AND when the lane machinery never " \
+            "reached the input at all — an unrun test and a real miss are the same green. " \
+            "This row is the same path end to end (same grammar, same target, same anchor, " \
+            "same census_anchor row) with ONE difference: the range ends past the last line " \
+            "of the file, so lane 1 MUST fire. If it stops firing here, D's silence above is " \
+            "no longer evidence of anything, and this row says so before D can lie. Review " \
+            "measured 5b red at af52ad1c; it lived in the report rather than the suite, which " \
+            "is the one-level-up version of the failure this whole file exists to prevent.\n" \
+            "`because:` IS NOT DECORATION ON THIS ROW — it is what makes it a probe. Measured " \
+            "while building it: delete the `row[:last] > row[:size]` clause from " \
+            "substance_verdict, the clause this probe exists to guard, and lane 1 STILL FIRES " \
+            "— the blank-last_content branch below it catches an out-of-range end by accident, " \
+            "because `at.()` returns nil past the file and nil reads as BLANK. `fired` is " \
+            "[:substance] either way, so a probe pinned on lanes alone would have been GREEN on " \
+            "exactly the mutation it was written for. The REASON is what separates them: " \
+            "\"is outside bin/dor-check\" versus \"ENDS at line 99999 … which is BLANK\"." }
   ].freeze
 
-  def test_the_lanes_red_every_defect_this_task_was_filed_for
+  def test_the_lanes_red_every_defect_this_task_was_filed_for_and_still_reach_the_silent_one
     target = target_lines("bin/dor-check")
-    refute_nil target, "bin/dor-check is the subject of all four defects"
+    refute_nil target, "bin/dor-check is the subject of all four defects, and of the probe"
 
     wrong = MISPOINTED_CITATIONS.filter_map do |d|
       m = LINE_CITATION.match(d[:as_written])
       next "the grammar no longer reads #{d[:as_written]}" if m.nil?
 
       row = census_anchor("control", m[0], m[1], m[2], m[3], target, anchor_of(m))
+      verdict = substance_verdict(row)
       fired = []
-      fired << :substance if substance_verdict(row)
+      fired << :substance if verdict
       fired << :anchor if row[:anchor] && !anchor_in_span?(row)
 
       next "#{d[:as_written]} — expected #{d[:lanes].inspect}, fired #{fired.inspect}" if fired != d[:lanes]
+
+      # `because:` PINS THE REASON, not just the symbol. A lane that fires for a
+      # different reason than the one recorded is a rule that has changed under the row,
+      # and on the probe row it is the whole point: :substance firing because the range
+      # ran off the file is the reachability proof, while :substance firing because the
+      # range now ends on an `end` would prove nothing about reachability at all.
+      if d[:because] && !verdict.to_s.include?(d[:because])
+        next "#{d[:as_written]} — lane 1 fired, but not for the recorded reason: " \
+             "#{verdict.inspect} does not mention #{d[:because].inspect}"
+      end
+
       next unless d[:homes]
 
       sites = anchor_sites(target, row[:anchor], row[:last] - row[:first] + 1)
@@ -556,7 +606,7 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
     end
 
     assert_empty wrong, <<~MSG
-      #{wrong.size} of the defects this guard was built for no longer behave as recorded:
+      #{wrong.size} of the rows this guard was built from no longer behave as recorded:
 
       #{wrong.join("\n      ")}
 
@@ -565,6 +615,11 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
       rather than going quiet on the tree. If bin/dor-check has moved under a row, re-derive
       its `home` and its `note` — do not delete the row, and do not re-label a :nothing row
       as caught without saying which lane now catches it and why that lane is honest.
+
+      IF THE FAILING ROW IS THE PROBE (`:44-99999`), read it before anything else: it is
+      not a defect, it is the reachability proof for the `lanes: []` row above it. A probe
+      that stops firing means the row above has stopped being evidence — its green no
+      longer distinguishes "the lanes are silent here" from "the lanes never ran".
     MSG
   end
 
