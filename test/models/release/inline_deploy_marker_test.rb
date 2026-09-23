@@ -196,10 +196,54 @@ class Release::InlineDeployMarkerTest < ActiveSupport::TestCase
   end
 
   test "[unit] a down prod outranks every other gap — it is checked first" do
-    reason = S.deploy_gap_reason(strategy: "repo_script", up_ok: false, heroku_app: "")
+    # KEPT, with the input corrected: a DECLARED smoke_url is what makes
+    # "did not answer 200" a true sentence. The property under test is the
+    # PRECEDENCE, and it is unchanged.
+    reason = S.deploy_gap_reason(strategy: "repo_script", up_ok: false, heroku_app: "",
+                                 smoke_url: "https://turfmonster.media")
 
     assert_equal "prod /up did not answer 200", reason,
       "the FIRST unmet condition is the one to report; a registry gap is moot if prod is down"
+  end
+
+  # THE BLOCKER THIS PR WAS BOUNCED FOR. `up_ok == false` has two causes and the old
+  # wording asserted the wrong one for a whole class of apps: prod_up_ok? returns
+  # false WITHOUT CURLING when the URL is blank, and group_smoke_url is blank for any
+  # non-hub adapter with no smoke_url. Measured 2026-09-22 — turf-monster refused with
+  # "prod /up did not answer 200" while GET https://turfmonster.media/up returned 200.
+  test "[unit] an undeclared smoke_url says no probe was made, not that prod is down" do
+    reason = S.deploy_gap_reason(strategy: "repo_script", up_ok: false, heroku_app: "", smoke_url: "")
+
+    refute_equal "prod /up did not answer 200", reason,
+      "no /up probe was made at all — blaming prod sends the reader to an incident that does not exist"
+    assert_includes reason, "no smoke_url"
+    assert_includes reason, "NO /up probe was made"
+    assert_includes reason, "smoke_url", "the remedy must name the key to add"
+  end
+
+  # It is fail-DEAD, not fail-closed, and the message has to carry that: no deploy,
+  # however healthy, can satisfy a gate whose probe never runs.
+  test "[unit] the undeclared-smoke_url gap says the repo can NEVER be confirmed" do
+    reason = S.deploy_gap_reason(strategy: "repo_script", up_ok: false, smoke_url: "")
+
+    assert_includes reason, "never be confirmed"
+  end
+
+  # The new branch must keep the precedence the old one had: it still outranks the
+  # heroku_app gap, so a reader is never handed the second-most-relevant remedy.
+  test "[unit] the undeclared-smoke_url gap still outranks the registry gap" do
+    reason = S.deploy_gap_reason(strategy: "repo_script", up_ok: false, heroku_app: "", smoke_url: "")
+
+    refute_includes reason, "names no Heroku app"
+  end
+
+  # The hub reaches up_ok through PROD_URL rather than the key, so its row declaring
+  # none is not the defect above — the message must not send its reader to the YAML.
+  test "[unit] a declared smoke_url that answered non-200 never mentions the registry" do
+    reason = S.deploy_gap_reason(strategy: "github_actions", up_ok: false,
+                                 smoke_url: "https://mcritchie.studio")
+
+    assert_equal "prod /up did not answer 200", reason
   end
 
   test "[unit] the github_actions gaps stay distinguishable" do
@@ -250,9 +294,42 @@ class Release::InlineDeployMarkerTest < ActiveSupport::TestCase
     assert_includes body, "heroku_release_at_sha?", "the inline marker is computed"
     assert_includes body, "deployed_at_sha: deployed_at_sha", "and PASSED — the whole defect"
     assert_includes body, "Release::ShipSequence.heroku_app_for(adapter)"
+    # THE SAME DEFECT CLASS, ONE PARAMETER OVER. `smoke_url:` is fully specified and
+    # fully unit-tested above, and every one of those unit tests passes whether or not
+    # bin/release.rb actually hands it over — which is exactly how `deployed_at_sha:`
+    # came to exist with no production caller. Pin the hand-over, not just the shape.
+    assert_includes body, "smoke_url: smoke_url",
+      "the resolved smoke URL is PASSED — without it the gap reason cannot tell " \
+      "a non-200 probe from a probe that never ran"
+    assert_includes body, "smoke_url = group_smoke_url(group)",
+      "and resolved ONCE, so the probe and the diagnosis cannot disagree"
     assert_match(/Open3\.capture3\("heroku", "releases"/, Rails.root.join("bin", "release.rb").read,
       "the Heroku read keeps stderr OUT of the JSON — the CLI prints an update warning there")
     assert_no_match(/capture2e\("heroku"/, Rails.root.join("bin", "release.rb").read)
+  end
+
+  # THE KEY THAT MAKES heroku_app MEAN ANYTHING. Without it, deploy_already_succeeded?
+  # returns false for turf-monster on its opening `return false unless up_ok == true`,
+  # so the whole inline marker is inert for the one app it was written for.
+  test "[integration] turf-monster declares the smoke_url its confirmation depends on" do
+    adapter = Release::Repos.prod_deploy("turf-monster")
+
+    assert_equal "https://turfmonster.media", adapter["smoke_url"].to_s,
+      "without a smoke_url, group_smoke_url returns blank and prod_up_ok? answers false unprobed"
+  end
+
+  # AND IT MUST AGREE WITH THE OTHER SOURCE THAT ALREADY HELD IT.
+  # Release::ProdSmoke.base_url_for reads the registry FIRST and falls back to
+  # qa_environments.<app>.production_url, so the two spellings silently diverging
+  # would move ProdSmoke's answer without moving finalize's. Declaring the key was
+  # only safe BECAUSE they matched; this keeps that true.
+  test "[integration] the registry smoke_url matches qa_environments' production_url" do
+    registry = Release::Repos.prod_deploy("turf-monster")["smoke_url"].to_s
+    qa = YAML.load_file(Rails.root.join("config", "qa_environments.yml"))
+             .dig("qa_environments", "turf-monster", "production_url").to_s
+
+    assert_equal qa, registry,
+      "ProdSmoke falls back to qa_environments; a divergence makes the two disagree about prod"
   end
 
   test "[integration] turf-monster's declared heroku_app matches the script that deploys it" do
