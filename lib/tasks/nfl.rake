@@ -51,6 +51,37 @@ namespace :nfl do
     puts "skipped (already done): #{skipped_complete}"
     puts "skipped (no NFL team):  #{skipped_no_team}"
     puts "failed:                 #{failed}"
+
+    # THE PER-ATHLETE RESCUE ABOVE IS RIGHT; ENDING ON `puts` WAS NOT. One dead
+    # ESPN headshot URL must not cost the other thousand their upload, so each
+    # failure is counted and the loop continues — and then the task returned
+    # normally, so the process exited 0 no matter how many failed. MEASURED with
+    # three manufactured candidates and Studio::ImageCache.cache! raising the
+    # real Aws::Errors::MissingCredentialsError: `failed: 3`, `cached: 0`, exit
+    # 0. That is the credential failure the phase-6c log line has been telling
+    # operators to go and check, reported as a success.
+    #
+    # GRADED ON THE MAJORITY, not on `failed.positive?`. More failures than
+    # successes cannot be one bad URL — it is the uploader not working, which is
+    # what a credential failure looks like from here: every attempt fails, so
+    # `cached` is 0 and `failed` is everything.
+    #
+    # THE MAJORITY IS ONLY AS GOOD AS THE SAMPLE, and on a WARM machine the
+    # sample is tiny. `skipped_complete` and `skipped_no_team` both `next` above
+    # WITHOUT touching either counter, so `failed + cached` counts only the
+    # newly-discovered espn_ids — often one. One new athlete whose ESPN headshot
+    # 404s is then `failed: 1, cached: 0`, which clears this rule and aborts. So
+    # "a single 404 is a normal afternoon" holds for the COLD rebuild and not for
+    # the warm one. Narrowing to a meaningful sample changes behaviour and owes
+    # its own test; until then the abort names both causes rather than one.
+    if failed > cached
+      warn "nfl:upload_headshots: #{failed} of #{failed + cached} attempted uploads failed"
+      abort "nfl:upload_headshots failed #{failed} of #{failed + cached} attempted uploads " \
+            "(cached #{cached}) — read the [!] lines above, which name the cause per athlete. " \
+            "Across MANY attempts this is usually AWS credentials: check AWS_ACCESS_KEY_ID / " \
+            "AWS_SECRET_ACCESS_KEY / AWS_REGION in .env. Across one or two it is more often a " \
+            "dead ESPN source URL, since only newly-discovered espn_ids are attempted."
+    end
   end
 
   ESPN_TEAMS_INDEX_URL = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams"
@@ -387,6 +418,25 @@ namespace :nfl do
     TeamRanking.compute_all!(season_slug: season_slug, grades_season_slug: grades_slug)
     after = TeamRanking.where(season_slug: season_slug).count
     puts "TeamRankings for #{season_slug}: #{before} → #{after}#{grades_slug ? " (scored against #{grades_slug} grades)" : ""}"
+
+    # THE ROW COUNT IS NOT THE VERDICT HERE, and the rebuild lane logs the row
+    # count. MEASURED on a desk with AthleteGrade emptied inside a rolled-back
+    # transaction: compute_all! wrote 448 rows and exited 0, the identical count
+    # the healthy run writes. The two differ only in the SCORES — 448 distinct
+    # values spanning 49.6..5604.37 with grades, one distinct value of 0.0
+    # without — so a lane grading on the count cannot see the difference, and
+    # "448 rank rows populated" reads the same through a missing grade season.
+    #
+    # An all-zero ranking is not a ranking: every team ties at 0 and the 1..32
+    # order is whatever the sort happened to do. Refuse it and name the season
+    # that came back empty, since GRADES_FROM is the knob that fixes it.
+    scores = TeamRanking.where(season_slug: season_slug).pluck(:score).compact
+    if scores.any? && scores.all?(&:zero?)
+      abort "nfl:rankings_compute scored every team 0.0 across #{scores.size} rows — " \
+            "#{grades_slug || season_slug} has no AthleteGrade rows to score against. " \
+            "The ranks written are ties in sort order, not a ranking. Set GRADES_FROM to " \
+            "a season that has grades, or import them first."
+    end
   end
 
   desc "Snapshot current DepthChart → per-slate Roster+RosterSpot. SEASON=2026-nfl WEEK=N (default: current week)."
