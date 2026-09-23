@@ -83,7 +83,7 @@ class Nflverse::SeedPlayers
     "TEN" => "tennessee-titans",    "WAS" => "washington-commanders"
   }.freeze
 
-  attr_reader :stats
+  attr_reader :stats, :refusals
 
   def initialize(verbose: false, upload_headshots: true,
                  min_season: DEFAULT_MIN_SEASON, status_filter: nil,
@@ -99,6 +99,14 @@ class Nflverse::SeedPlayers
     @source_url = source_url
     @csv_body = csv_body
     @stats = Hash.new(0)
+    # WHO, not just how many. A bare counter is very nearly as silent as the
+    # merge this guard replaced: "namesake_collisions_skipped: 1" does not tell
+    # an operator which human the importer declined to write, and that is the
+    # only fact they can act on. Shape copied from Studio::SyncAthletes#build_for
+    # (person_slug / ours / theirs) and from turf-monster's port of this guard,
+    # rather than inventing a third vocabulary for the same event — an operator
+    # should meet one.
+    @refusals = []
   end
 
   def call
@@ -112,8 +120,13 @@ class Nflverse::SeedPlayers
     # later reader this refresh never happened. Swallowing it silently would be
     # worse than the abort it replaces.
     warn "nflverse seed: FEED UNAVAILABLE — data not refreshed (#{e.message})"
-    record_outage(e)
     @stats[:feed_unavailable] = 1
+    record_outage(e)
+    # Stamped here too, not only on the success path: `track` has already marked
+    # this run `failed` and the block never reached its own update!, so without
+    # this the row that a rebuild lane now reads would carry an empty tally and
+    # look indistinguishable from a run that read the feed and found nothing.
+    persist_stats!
     @stats
   end
 
@@ -138,8 +151,10 @@ class Nflverse::SeedPlayers
       end
 
       run.update!(rows_seen: rows.size,
-                  rows_changed: @stats[:athletes_created].to_i + @stats[:athletes_updated].to_i)
+                  rows_changed: @stats[:athletes_created].to_i + @stats[:athletes_updated].to_i,
+                  stats: stats_payload)
       puts "\nnflverse seed: #{@stats.inspect}"
+      report_refusals
       @stats
     end
   end
@@ -250,6 +265,9 @@ class Nflverse::SeedPlayers
     disambiguator = disambiguator_for(identifiers, first, last) if existing
     if existing && disambiguator.blank?
       @stats[:namesake_collisions_skipped] += 1
+      refuse!(person_slug: person.slug, name: "#{first} #{last}",
+              ours: held_identifier(existing), theirs: incoming_identifier(identifiers),
+              reason: "no league ID to derive a slug from")
       vputs "  [!] skipped unidentifiable namesake: #{first} #{last}"
       return nil
     end
@@ -286,11 +304,77 @@ class Nflverse::SeedPlayers
     # `disambiguator_for` already widens past a taken slug, so this is the
     # backstop for what it cannot see, not the primary defence.
     @stats[existing ? :namesake_collisions_skipped : :athletes_failed] += 1
+    if existing
+      refuse!(person_slug: person.slug, name: "#{first} #{last}",
+              ours: held_identifier(existing), theirs: incoming_identifier(identifiers),
+              reason: "could not derive a free slug (#{e.class})")
+    end
     vputs "  [!] skipped namesake we could not slug: #{first} #{last} (#{e.message})"
     nil
   end
 
   def transaction(&block) = ActiveRecord::Base.transaction(&block)
+
+  # Record one refused human, and keep the payload flat so it survives the trip
+  # through jsonb onto the run row unchanged.
+  def refuse!(person_slug:, name:, ours:, theirs:, reason:)
+    @refusals << { "person_slug" => person_slug, "name" => name,
+                   "ours" => ours, "theirs" => theirs, "reason" => reason }
+  end
+
+  # The first identifier this athlete already holds, and the first the incoming
+  # row offers — the two halves an operator compares to settle a namesake by
+  # hand. Priority order, so both sides are named in the same vocabulary.
+  def held_identifier(existing)
+    return nil unless existing
+
+    DISAMBIGUATOR_PRIORITY.filter_map { |c| existing.public_send(c).to_s.strip.presence }.first
+  end
+
+  def incoming_identifier(identifiers)
+    DISAMBIGUATOR_PRIORITY.filter_map { |c| identifiers[c].to_s.strip.presence }.first
+  end
+
+  # The tally as it goes onto the row. Symbol keys stringify through jsonb
+  # anyway; doing it here means a test reads the same shape back that the
+  # importer wrote, rather than discovering the conversion at the assertion.
+  def stats_payload
+    payload = @stats.transform_keys(&:to_s)
+    payload["namesake_refusals"] = @refusals if @refusals.any?
+    payload
+  end
+
+  # PRINTED UNCONDITIONALLY, from `call` rather than behind `vputs`. The skip is
+  # the deliberate floor of a guard whose whole purpose is refusing to guess at
+  # human identity, and its correctness rests on the count being READ. Behind the
+  # verbose flag the name never printed at all, which makes a guard that quietly
+  # declines to write a person indistinguishable from an importer that lost one.
+  # ON STDERR, beside the FEED UNAVAILABLE warning, and for the same reason. The
+  # callers that run this importer non-interactively discard its stdout —
+  # bin/ecosystem-build's phase 6c pipes it to /dev/null to keep the rebuild log
+  # readable — so a refusal written with `puts` would be unconditional in the
+  # source and invisible in exactly the run that matters. stderr is where this
+  # service already puts the things a human must see.
+  def report_refusals
+    return if @refusals.empty?
+
+    warn "[!] #{@refusals.size} namesake(s) REFUSED — resolve these by hand:"
+    @refusals.each do |r|
+      warn "    #{r["name"]}: #{r["person_slug"]} already holds " \
+           "#{r["ours"].inspect}, incoming #{r["theirs"].inspect} (#{r["reason"]})"
+    end
+  end
+
+  # Writes the tally onto the run this service is inside. Never raises into the
+  # caller: this is telemetry on a post_deploy_cmd, and a failure to RECORD the
+  # outage must not become a second, louder failure than the outage.
+  def persist_stats!
+    return unless @import_run
+
+    @import_run.update!(stats: stats_payload)
+  rescue StandardError => e
+    warn "nflverse seed: could not persist run stats: #{e.class}: #{e.message}"
+  end
 
   # Name matching can adopt a genuinely unidentified seed record. Once an
   # Athlete carries any cross-reference, though, a row that shares none of
@@ -333,7 +417,14 @@ class Nflverse::SeedPlayers
   # Two namesakes whose IDs end in the same four digits compute the same slug,
   # and `Person.create!` then raises RecordNotUnique. So four digits is a
   # PREFERENCE: when that slug already belongs to someone else, widen to the
-  # whole identifier, which is unique because the identifier is.
+  # whole identifier. That is unique for five of the six IDENTITY_COLUMNS, whose
+  # indexes carry `unique: true` — but NOT for espn_id, which sits in
+  # DISAMBIGUATOR_PRIORITY and whose index does not (db/schema.rb,
+  # index_athletes_on_espn_id). So when the widening falls through to espn_id the
+  # uniqueness rests on the FEED's semantics rather than on the database, and the
+  # thing that actually keeps that safe is the RecordNotUnique backstop in
+  # `resolve_athlete!` — not this index. Stated because "unique because the
+  # identifier is" read as a guarantee the schema does not make.
   #
   # Widening is deterministic only because `ordered` is — the namesakes arrive
   # in an order fixed by their identifiers, so the same one widens every run.

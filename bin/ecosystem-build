@@ -653,9 +653,29 @@ phase_nfl_headshots() {
     cd "$mcr_path" || exit 1
 
     log_act "nfl:players_seed (~5-10 min — nflverse master CSV + S3 headshot cache)"
-    bundle exec rails nfl:players_seed >/dev/null 2>&1 \
-      && log_ok "nfl:players_seed" "$(bundle exec rails runner 'puts Athlete.where.not(espn_id: nil).count' 2>/dev/null | tail -1) athletes with espn_id" \
-      || log_fail "nfl:players_seed failed (check AWS creds in .env)"
+    # THE EXIT CODE IS NOT THE VERDICT FOR THIS SERVICE, and has not been since
+    # Nflverse::SeedPlayers started rescuing a feed outage and RETURNING rather
+    # than raising (#1489). That rescue is deliberate — this importer is a
+    # declared post_deploy_cmd and a dead upstream must not abort a ship — but it
+    # means the command exits 0 whether it read the feed or never reached it. The
+    # `&&` chain that used to grade it therefore logged a GREEN "0 athletes with
+    # espn_id" through an outage, on a fresh-Mac rebuild, where it had previously
+    # logged FAILED. Ask the run row, which is the thing that still knows.
+    #
+    # STDERR IS NO LONGER DISCARDED. `2>&1` went with the old chain: the service
+    # writes "nflverse seed: FEED UNAVAILABLE" and its namesake refusals there,
+    # and throwing that away left an athlete COUNT as the only surviving signal —
+    # a number that looks the same whether the feed was empty or unreachable.
+    bundle exec rails nfl:players_seed >/dev/null
+    if bundle exec rails runner 'exit(ImportRun.fresh_success?("nflverse_players") ? 0 : 1)' 2>/dev/null; then
+      seeded="$(bundle exec rails runner 'puts Athlete.where.not(espn_id: nil).count' 2>/dev/null | tail -1)"
+      # Surfaced beside the count because a run that REFUSED humans is not the
+      # same event as a clean one, and the count alone cannot show the difference.
+      refused="$(bundle exec rails runner 'r = ImportRun.last_success_for("nflverse_players"); n = r ? r.stats.fetch("namesake_collisions_skipped", 0).to_i : 0; print(n.positive? ? ", #{n} namesake(s) REFUSED — see above" : "")' 2>/dev/null | tail -1)"
+      log_ok "nfl:players_seed" "${seeded} athletes with espn_id${refused}"
+    else
+      log_fail "nfl:players_seed recorded no successful ImportRun in the last day (feed outage? read the FEED UNAVAILABLE line above; otherwise check AWS creds in .env)"
+    fi
 
     log_act "nfl:upload_headshots (catches any newly-discovered espn_ids)"
     bundle exec rails nfl:upload_headshots >/dev/null 2>&1 \
