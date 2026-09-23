@@ -350,8 +350,8 @@ cert_repo = CertRootGuard.repo_of_checkout(root)
 registry_test_cmd = FullSuiteGate.release_check_cmd(cert_repo)
 # KEYED ON THE DECLARATION, NOT THE SECTION (changed 2026-09-14). This branch used
 # to ask `gem_repo?`, which meant an `apps` row could never reach it however
-# completely it declared its lane — so turf-vault, an Anchor repo with four real CI
-# lanes, had no local cert at all and every reader was routed to a task to decide
+# completely it declared its lane — so turf-vault, an Anchor repo with real CI lanes
+# of its own, had no local cert at all and every reader was routed to a task to decide
 # it. `registry_gated?` is the same rule stated over the DECLARED COMMAND, and it
 # is behaviour-identical for both gems (each declares one).
 registry_gate = FullSuiteGate.registry_gated?(cert_repo)
