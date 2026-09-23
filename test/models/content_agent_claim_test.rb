@@ -172,4 +172,107 @@ class ContentAgentClaimTest < ActiveSupport::TestCase
     assert_equal "CLAIM_REQUIRED", @a.claim_write_refusal(session: "sess-1")&.code
     assert_equal "CLAIM_REQUIRED", @a.claim_write_refusal(session: nil)&.code
   end
+
+  # --- THE SESSION MUST IDENTIFY A SOUL, NOT A CHECKOUT ---------------------
+  #
+  # THE DEFECT (found at PR 1498's review, verified 2026-09-22). `bin/content`
+  # derived its session from `tmp/content-session` — ONE FILE PER CHECKOUT — while
+  # the content-build SOP sends every soul to the hub primary. Two souls therefore
+  # presented the SAME string, and the guard is only ever as good as that string.
+  #
+  # The model was never wrong. These pin what it does at each side of the seam, so
+  # a future caller that reintroduces a shared id fails HERE and not in a video.
+
+  # The exact sequence the lease exists to prevent, driven end to end.
+  test "the lapsed-reclaim collision is refused when the two souls differ" do
+    @b.update!(stage: "script") # leave @a the only candidate
+    a = Content.claim_next_for_agent(session: "soul-a", agent: "turf-monster").content
+    assert_equal "soul-a", a.claim_session
+
+    # A's lease lapses mid-inference; B legitimately reclaims the freed card.
+    a.update!(claimed_at: 2.hours.ago)
+    b = Content.claim_next_for_agent(session: "soul-b", agent: "mason")
+    assert b.claimed?, "the lapsed card must be reclaimable — that half is correct"
+
+    # A, still mid-inference, writes. It must be refused.
+    refusal = b.content.reload.claim_write_refusal(session: "soul-a")
+
+    assert_not_nil refusal, "A wrote on top of B's claim"
+    assert_equal "CLAIM_HELD", refusal.code
+  end
+
+  # THE CONTROL, and the reason the case above is not vacuous: run the IDENTICAL
+  # sequence with ONE session string for both souls — which is exactly what one
+  # `tmp/content-session` per checkout produced — and the write is PERMITTED.
+  # The refusal above comes from the sessions differing, not from the sequence.
+  test "the same sequence under one shared session is permitted" do
+    @b.update!(stage: "script")
+    a = Content.claim_next_for_agent(session: "shared", agent: "turf-monster").content
+    a.update!(claimed_at: 2.hours.ago)
+    b = Content.claim_next_for_agent(session: "shared", agent: "mason")
+
+    assert b.claimed?
+    assert_nil b.content.reload.claim_write_refusal(session: "shared"),
+               "this IS the bug: one string, two souls, and the guard cannot see it"
+  end
+
+  # --- normalization runs on BOTH sides of the seam now ---------------------
+  #
+  # It used to run on the READ side only: the claim stored `claim_session` raw, so
+  # a padded session was compared against its own stripped self and CLAIM_HELD
+  # locked the holder out of write AND release for the full lease.
+
+  test "a padded session is stored stripped" do
+    result = Content.claim_next_for_agent(session: "  sess-1  ", agent: "turf-monster")
+
+    assert_equal "sess-1", result.content.claim_session
+  end
+
+  test "a padded session does not lock its own holder out of writing" do
+    held = Content.claim_next_for_agent(session: "  sess-1  ", agent: "turf-monster").content
+
+    assert_nil held.claim_write_refusal(session: "  sess-1  "),
+               "the holder was refused its own claim"
+    assert_nil held.claim_write_refusal(session: "sess-1"),
+               "and the same session unpadded is the same session"
+  end
+
+  test "a padded session does not lock its own holder out of releasing" do
+    held = Content.claim_next_for_agent(session: "  sess-1  ", agent: "turf-monster").content
+
+    assert_nothing_raised { held.release_claim!(session: "  sess-1  ") }
+    assert_nil held.reload.claim_session
+  end
+
+  # A stranger is still refused — the fix must not have been bought by loosening
+  # the comparison.
+  test "a padded claim still refuses a different session" do
+    held = Content.claim_next_for_agent(session: "  sess-1  ", agent: "turf-monster").content
+
+    assert_equal "CLAIM_HELD", held.claim_write_refusal(session: "sess-2").code
+  end
+
+  # --- a claim nobody can prove is not a claim ------------------------------
+  #
+  # A blank session used to be ACCEPTED: the row was stamped `claim_session: nil`
+  # and `claim_write_refusal` then answered CLAIM_REQUIRED to everyone — including
+  # the caller that had just taken it — for the full 30-minute lease. A blank
+  # session bought a denial of service against a card nobody could write.
+
+  test "a session-less claim is refused rather than taken" do
+
+    [nil, "", "   "].each do |blank|
+      result = Content.claim_next_for_agent(session: blank, agent: "turf-monster")
+
+      assert_not result.claimed?, "a claim nobody can prove was taken for #{blank.inspect}"
+      assert_equal "session_required", result.reason
+    end
+  end
+
+  test "a refused session-less claim leaves the queue untouched" do
+    Content.claim_next_for_agent(session: nil, agent: "turf-monster")
+
+    assert_equal 0, Content.where.not(claimed_at: nil).count,
+                 "the refusal must not park a card nobody can ever write"
+  end
 end
