@@ -34,6 +34,7 @@ require "open3"
 
 require_relative "../lib/seam_reconcile"
 require_relative "../lib/open_pr_guard"
+require_relative "lib/board_read"
 require_relative "lib/task_board"
 require_relative "lib/task_column_fields"
 
@@ -97,7 +98,18 @@ def fetch_stage(stage, token, per_page: 100, max_pages: 20)
     end
     die!("GET #{path} -> #{res.code}") unless res.code.to_i.between?(200, 299)
 
-    batch = TaskBoard.parse_body(res)["data"] || []
+    # rows!, NOT `parse_body(res)["data"] || []`. The status half above is already
+    # strict, but a 200 carrying an unreadable body — an HTML error page, an error
+    # payload, anything without a `data` array — scored an EMPTY PAGE, and
+    # `break if batch.size < per_page` then ended the pagination on it. The scan
+    # printed the all-clear off a body it never read. A read that succeeded ALWAYS
+    # carries a `data` array, even when empty, so its absence is an unreadable
+    # answer and not an empty one.
+    batch = begin
+      TaskBoard.rows!(res)
+    rescue TaskBoard::UnreadableResponse => e
+      die!("GET #{path} answered 200 but could not be read: #{e.message}")
+    end
     rows.concat(batch)
     break if batch.size < per_page
   end
@@ -114,11 +126,25 @@ SEAM_STAGES = {
 
 # --- evidence ----------------------------------------------------------------
 
+# Best-effort evidence capture: nil means "could not read". That degradation is
+# CORRECT for the `gh` calls below, because the classifier's safety rule turns an
+# unreadable fact into :unknown and an :unknown can never produce a heal.
+#
+# It is NOT correct wherever nil is then flattened into a POSITIVE claim — see
+# armed_states, which used this and answered "nothing armed".
 def sh(*cmd)
   out, _err, status = Open3.capture3(*cmd)
   status.success? ? out.strip : nil
 rescue StandardError
   nil
+end
+
+# The same capture, keeping the evidence a refusal needs.
+def sh_full(*cmd)
+  out, err, status = Open3.capture3(*cmd)
+  [out, status, err]
+rescue StandardError => e
+  ["", nil, "#{cmd.first}: #{e.class}: #{e.message}"]
 end
 
 # EVERY PR the task names, not just the primary. A multi-repo task records one
@@ -195,9 +221,36 @@ end
 
 # The autopilot ledger already records refused/expired/disarmed arms. NOTHING
 # reads it today — which is exactly how a merge-ready verdict strands.
+#
+# RETURNS nil WHEN THE READ FAILED, and that is the correction. It used to answer
+# `{}` — and `{}` is not "I could not look", it is "nothing is armed", because the
+# caller's `arms.fetch(slug, :none)` reads a missing key as a POSITIVE :none. So a
+# mis-resolved binary, a dead board or an expired credential removed every
+# :verdict_stranded finding this seam can make, and the run still printed the
+# all-clear and exited 0.
+#
+# The irony this closes: bin/review-autopilot's own `list` was hardened for exactly
+# this in PR 1481 — it now dies naming the redirect target and TASK_BOARD_URL
+# rather than printing "nothing armed" off an unreadable body. This consumer threw
+# both the exit code and that sentence away, so the false clear survived the fix
+# inside the caller of the read that was fixed.
+#
+# `list` has no legitimate non-zero: bin/review-autopilot's contract is 0 = listed,
+# 2 = refused (arm/run/disarm only), 1 = could not run. So `answered:` is empty —
+# there is no exit code here that means "the board answered, negatively".
+#
+# It does NOT die, unlike the board reads above. This tool's NEVER BLOCK policy is
+# load-bearing (it opens an SOP), and it already owns a vocabulary for a fact it
+# could not read: :unknown. Reporting the gap honestly is the fix; wedging the lane
+# is not.
 def armed_states
-  raw = sh("bin/review-autopilot", "list", "--all")
-  return {} unless raw
+  raw, status, err = sh_full("bin/review-autopilot", "list", "--all")
+  refusal = BoardRead.shell_refusal(status, err, what: "the armed-action registry")
+  if refusal
+    warn("devops-reconcile: #{refusal}")
+    warn("devops-reconcile: this is NOT \"nothing armed\" — a merge may be armed and unseen.")
+    return nil
+  end
 
   raw.lines.each_with_object({}) do |line, acc|
     slug, state = line.split(/\s+/, 3)
@@ -206,8 +259,6 @@ def armed_states
 
     acc[slug] = state.to_sym
   end
-rescue StandardError
-  {}
 end
 
 # Delegates to the pure decision so the SHAPE is pinned by a unit test against a
@@ -223,11 +274,17 @@ require "time"
 token = board_token
 tasks = fetch_tasks(SEAM_STAGES.fetch(seam), token)
 arms = armed_states
+# THE DEFAULT CARRIES THE READ'S OUTCOME. With a registry we read, a slug that is
+# not in it really is :none. With no registry, every slug is :unknown — the
+# classifier's own vocabulary for an unreadable fact, and the reason its evidence
+# defaults are :unknown rather than :none.
+arms_default = arms.nil? ? :unknown : :none
+arms ||= {}
 
 evidence = tasks.each_with_object({}) do |task, acc|
   slug = task["slug"].to_s
   acc[slug] = pr_evidence(task).merge(
-    armed: arms.fetch(slug, :none),
+    armed: arms.fetch(slug, arms_default),
     build_claim_live: build_claim_live(task),
     merged_state: TaskColumnFields.state(task, "merged"),
     merged_value: task["merged"]
@@ -251,11 +308,16 @@ end
 
 # --- report ------------------------------------------------------------------
 
+# What this run could NOT read. Carried into both renderings, because a --json
+# consumer sees neither stderr nor the qualified sentence below.
+unread = arms_default == :unknown ? ["armed-action registry"] : []
+
 if options[:json]
   puts JSON.pretty_generate(
     seam: seam,
     findings: findings.map(&:to_h),
-    healed: healed
+    healed: healed,
+    unread: unread
   )
   exit 0
 end
@@ -264,7 +326,15 @@ puts "seam #{seam} — #{findings.size} anomal#{findings.size == 1 ? "y" : "ies"
      "across #{tasks.size} task(s)"
 
 if findings.empty?
-  puts "  ✓ nothing stranded at this seam"
+  # "nothing stranded" is the most reassuring sentence this tool can print, so it
+  # must never come from evidence it could not read. Same rule, and deliberately
+  # the same wording, as bin/review-autopilot's own "nothing armed".
+  if unread.any?
+    puts "  ⚠ no anomalies FOUND, but this run could not read: #{unread.join(", ")}"
+    puts "    That is NOT \"nothing stranded\" — fix the read above and re-run."
+  else
+    puts "  ✓ nothing stranded at this seam"
+  end
   exit 0
 end
 

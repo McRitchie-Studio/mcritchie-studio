@@ -65,8 +65,15 @@ require "open3"
 require "time"
 require "yaml"
 require_relative "lib/bin_helpers"
+require_relative "lib/board_read"
 
 SCRIPT_DIR = __dir__
+
+# bin/task's "the board POSITIVELY answered: there is no such task" exit code (its
+# EXIT_TASK_NOT_FOUND). Pinned by name here, and asserted against bin/task's own
+# constant in test/lib/conductor_test.rb so the two cannot drift apart silently —
+# a drift would turn an archived slug back into a survey-killing "outage".
+TASK_NOT_FOUND_EXIT = 4
 
 TASK_BIN     = BinHelpers.bin_for("TASK_BIN", "task")
 RELEASE_BIN  = BinHelpers.bin_for("RELEASE_BIN", "release")
@@ -116,16 +123,51 @@ PROD_SMOKE_URL =
 
 # --- shelling out ----------------------------------------------------------
 
-# Run a helper binary, return [stdout, ok?]. stderr is captured separately so a
-# subprocess's bundler/rubygems warnings never corrupt a JSON parse. Best-effort:
-# a launch failure degrades to ["", false] with a warning rather than crashing the
-# survey — a board hiccup must not take the whole landscape down.
+# Run a helper binary, return [stdout, status, stderr]. stderr is captured
+# separately so a subprocess's bundler/rubygems warnings never corrupt a JSON
+# parse — but it is RETURNED, not discarded: it carries the child's own diagnosis
+# ("GET /api/v1/tasks -> 301 …"), which is the only sentence that tells an
+# operator whether to look at the host, the credential or the board.
+#
+# A launch failure yields a nil status, which BoardRead.shell_refusal reads as a
+# failed read rather than as an unknown. It used to degrade to ["", false] with a
+# warning, which is how a mis-resolved binary rendered as an empty pipeline.
 def run_bin(bin, *args)
-  out, _err, status = Open3.capture3(bin, *args)
-  [out, status.success?]
+  out, err, status = Open3.capture3(bin, *args)
+  [out, status, err]
 rescue StandardError => e
-  warn "conductor: #{File.basename(bin.to_s)} #{args.join(' ')} failed: #{e.message}"
-  ["", false]
+  ["", nil, "#{File.basename(bin.to_s)} #{args.join(" ")}: #{e.class}: #{e.message}"]
+end
+
+# THE SURVEY'S ONE RULE, and the reason this wrapper exists: A FAILED READ MUST
+# NEVER RENDER AS AN EMPTY ONE.
+#
+# THE MEASURED DEFECT (filed 2026-09-20, verified at its lines 2026-09-22). Every
+# board read here was `out, ok = run_bin(...)` followed by `return [] unless ok`.
+# bin/task exits 1 on ANY non-2xx, so a 301 from the canonical-host middleware, an
+# expired agent credential, or a board outage turned EVERY stage into an empty
+# array. The survey then printed "(none)" under every stage, "Active release
+# candidate: none" and "blocked (0)", EXITED 0, and said not one word about the
+# board — the false all-clear bin/task's own archived-scan alarm (bin/task:860)
+# exists to remove, rendered by the tool an operator opens Step 0 with.
+#
+# It dies rather than warns because the survey's whole output is a claim about the
+# pipeline. A warning above a landscape of "(none)" is read as a footnote to an
+# answer; there is no honest partial survey to print.
+#
+# Returns the child's stdout, or nil when the child reported that the BOARD
+# answered negatively (see `answered:` in BoardRead.shell_refusal) — which is an
+# answer, and the caller's to interpret.
+def read_board(bin, *args, what:, answered: [])
+  out, status, err = run_bin(bin, *args)
+  refusal = BoardRead.shell_refusal(status, err, what: what, answered: answered)
+  if refusal
+    warn "conductor: #{refusal}"
+    warn "conductor: refusing to print a pipeline survey from a board it could not read."
+    exit 1
+  end
+
+  status.success? ? out : nil
 end
 
 # Stream a helper binary's output straight to the terminal (drive subcommands).
@@ -141,8 +183,7 @@ end
 TASK_LINE = /\A(\S+)\s+\[([^\]]+)\]\s+(.*)\z/
 
 def list_stage(stage)
-  out, ok = run_bin(TASK_BIN, "list", "--stage", stage)
-  return [] unless ok
+  out = read_board(TASK_BIN, "list", "--stage", stage, what: "the #{stage} stage list")
 
   out.each_line.each_with_object([]) do |line, rows|
     m = TASK_LINE.match(line.strip)
@@ -157,8 +198,27 @@ end
 def show_task(slug)
   @show_cache ||= {}
   @show_cache[slug] ||= begin
-    out, ok = run_bin(TASK_BIN, "show", slug, "--json")
-    ok ? (JSON.parse(out) rescue {}) : {}
+    out = read_board(TASK_BIN, "show", slug, "--json",
+                     what: "task #{slug}", answered: [TASK_NOT_FOUND_EXIT])
+    if out.nil?
+      # The board POSITIVELY answered "no such task" — the slug came out of a list
+      # read moments ago, so this is a genuine race (archived mid-survey), not an
+      # outage. {} is honest here, and saying so is what keeps it distinguishable
+      # from the outage case above, which no longer reaches this line.
+      warn "conductor: the board has no task #{slug} (archived since the stage list?) — skipping it."
+      {}
+    else
+      begin
+        JSON.parse(out)
+      rescue JSON::ParserError => e
+        # A read that succeeded and cannot be parsed is an UNREADABLE answer, not
+        # an empty one. Left as `rescue {}`, it fed task_blocked? a false and
+        # non_pipeline? a "no repos, treat as pipeline" for every task at once.
+        warn "conductor: task #{slug} came back unparseable: #{e.message}"
+        warn "conductor: refusing to print a pipeline survey from a board it could not read."
+        exit 1
+      end
+    end
   end
 end
 
@@ -281,9 +341,14 @@ end
 # Preview the primary+light reviewer pair for a submitted task (plan --reviewers).
 # Advisory: --no-record so the preview never writes the intent. Degrades to nil on
 # any failure — the recommended command is printed regardless.
+# DELIBERATELY still degrades, unlike the board reads above, and the difference is
+# the whole distinction this file now draws. A missing preview removes a "picked:"
+# line from underneath a recommended command that prints REGARDLESS — nothing is
+# cleared, no stage is emptied, and the operator's next action is unchanged. The
+# board reads clear the pipeline itself, which is why only they refuse.
 def reviewer_preview(slug)
-  out, ok = run_bin(REVIEWER_BIN, slug, "--json", "--no-record")
-  return nil unless ok
+  out, status, = run_bin(REVIEWER_BIN, slug, "--json", "--no-record")
+  return nil unless status&.success?
 
   decision = JSON.parse(out) rescue nil
   pair = Array(decision && decision["reviewers"])

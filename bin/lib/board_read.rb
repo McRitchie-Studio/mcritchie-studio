@@ -38,6 +38,27 @@ require "net/http"
 # looks exactly like a 401. A bare status code is not a diagnosis. 3xx names the
 # redirect target and the env var that fixes it; 401/403 says the word the reader
 # is already reaching for, so they stop reaching for it on every other code.
+#
+# ═══ TWO EVIDENCE SHAPES, ONE PROPERTY (2026-09-22) ═══
+#
+# `refusal` below takes a Net::HTTPResponse, so it can only serve a caller that
+# made the request ITSELF. Half this house's board reads are taken through a CLI —
+# bin/conductor shells `bin/task list --stage X`, bin/devops-reconcile shells
+# `bin/review-autopilot list --all` — and those callers hold an exit status and a
+# stderr stream, never a response object. The card that filed this work prescribed
+# "route conductor's reads through BoardRead.refusal"; measured, that is not a
+# thing conductor can do, and neither can any other shell-out caller.
+#
+# The PROPERTY is identical, so it stays in one module: a read that FAILED never
+# renders as a read that found nothing. Only the evidence differs, so there are
+# two entry points and no duplication of the rule.
+#
+# `shell_refusal` also carries the one distinction its HTTP sibling does not need:
+# a child may exit non-zero to say the board ANSWERED, NEGATIVELY. `bin/task`
+# exit 4 (EXIT_TASK_NOT_FOUND) means "the board positively answered: there is no
+# such task" — that is an answer, and refusing it would turn an archived slug into
+# an outage. `answered:` names those codes. Everything else is a failed read.
+
 module BoardRead
   module_function
 
@@ -75,5 +96,49 @@ module BoardRead
     " (redirected#{where}). The board client does not follow redirects by design, " \
       "so this is a HOST problem and not a credential one: point TASK_BOARD_URL at " \
       "the canonical host."
+  end
+
+  # --- the subprocess half ---------------------------------------------------
+
+  # nil when the CHILD's outcome means the caller may READ its stdout; otherwise
+  # the line to die on. See the TWO EVIDENCE SHAPES note above.
+  #
+  # +status+ is a Process::Status, or nil when the command never ran at all
+  # (Errno::ENOENT on a mis-resolved path, a fork failure). nil is a FAILED READ,
+  # not an unknown: the caller asked the board a question and got nothing back,
+  # which is the exact state this module refuses to render as an empty answer.
+  #
+  # +answered+ lists the exit codes on which the child is reporting the BOARD's
+  # negative answer rather than its own failure (bin/task's 4 = task not found).
+  def shell_refusal(status, stderr, what:, answered: [])
+    return nil if status&.success?
+    return nil if status && status.exitstatus && Array(answered).include?(status.exitstatus)
+
+    "#{what} failed -> #{outcome(status)}#{child_detail(stderr)}"
+  end
+
+  # How the child ended, in the operator's vocabulary. A signalled child has a nil
+  # exitstatus, so a bare `exit #{status.exitstatus}` would print "exit " and read
+  # as a parse bug rather than as a kill.
+  def outcome(status)
+    return "the command never ran" if status.nil?
+    return "exit #{status.exitstatus}" if status.exitstatus
+
+    "killed by signal #{status.termsig}"
+  end
+
+  # THE CHILD'S OWN DIAGNOSIS, which is the whole reason this exists. Every board
+  # CLI already dies with a sentence naming the host, the status or the credential
+  # — bin/task's `api` die!s "GET /api/v1/tasks -> 301: …", bin/review-autopilot
+  # prints the UNREADABLE line. A caller that captured stderr into `_err` and then
+  # rendered an empty list threw away a finished diagnosis and substituted silence.
+  #
+  # An EMPTY stderr is itself a finding and is said out loud: a tool that died
+  # without explaining is a different problem from one that explained.
+  def child_detail(stderr)
+    text = stderr.to_s.strip
+    return " — and it said nothing on stderr, so the reason is not recoverable here" if text.empty?
+
+    "\n  #{text.gsub("\n", "\n  ")}"
   end
 end
