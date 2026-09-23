@@ -108,9 +108,19 @@ Measured 2026-09-23, each in a desk against the real code:
 | `nfl:rankings_compute` | wrote the SAME 448 rows a healthy run writes, every score `0.0`, exit 0 | refuses a ranking where every team scored zero, and names `GRADES_FROM` |
 | `nfl:players_seed` | exit 0 through a rescued feed outage | graded on the exit code AND an `ImportRun` success pinned to THIS run's start |
 
-`nfl:schedule_seed` and `nfl:rosters_snapshot` were measured too and left alone:
-the first raises on an empty feed, the second aborts on a missing season or
-slate, so their exit codes still discriminate.
+`nfl:schedule_seed` was measured too and left alone: it raises on an empty
+feed, so its exit code discriminates a dead feed.
+
+`nfl:rosters_snapshot` was measured and left alone for a NARROWER reason, and
+reading the two as one sentence is how a sixth lane gets certified by accident.
+It aborts on its own PRECONDITIONS — a missing season or slate — and then ends
+on `puts` over a tally `Rosters::SnapshotFromDepthChart` returns without ever
+raising, so a ZERO-WORK snapshot still exits 0. That is a fifth instance of the
+pattern above and this pass does NOT fix it. It is reachable as the direct
+downstream of the failure phase 6b logs one line earlier: `Espn::ScrapeDepthCharts`
+creates each `DepthChart` row BEFORE it fetches, so a total ESPN outage leaves 32
+EMPTY charts, the snapshot reports 32 teams and 0 spots, and the lane logs a green
+team-roster count underneath the ✗ it just printed. Known open, not measured clean.
 
 Three rules the next lane added here should copy.
 
