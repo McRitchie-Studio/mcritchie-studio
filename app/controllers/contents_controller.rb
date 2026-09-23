@@ -108,10 +108,21 @@ class ContentsController < ApplicationController
         # replaces it. A `:reskin` slot holds a DIFFERENT asset — the same faces
         # in another colorway, which is what `decide` falls back to — so
         # retiring it here would destroy the white jersey in order to file the
-        # black one. Both lookups start from `live`, so the white artifact then
-        # goes invisible and the NEXT white game reads `:generate`: the library
-        # could hold at most one live artifact per cast, which is exactly the
-        # reuse this screen exists to make possible.
+        # black one. Both lookups start from `live`, so the white artifact would
+        # go invisible and the next white game would fall through the exact
+        # match to `:reskin` — the library could hold at most one live artifact
+        # per cast, and every return to a previous jersey would cost a recolor
+        # of the recolor. That is exactly the reuse this screen exists to make
+        # possible.
+        #
+        # It does NOT fall through to `:generate`, and an earlier version of
+        # this comment said it did. `:generate` (artifact_plan.rb) needs ZERO
+        # live artifacts for the cast, and the attach below files a replacement
+        # in this same transaction — so a cast that has ever been attached
+        # always retains one. Measured by reinstating the unconditional retire
+        # and running the third pass: it prints [:reskin, :reskin, :reskin].
+        # The distinction matters because a reader who greps for `:generate`,
+        # finds nothing, and concludes the guard is dead would be wrong twice.
         slot.artifact&.retire! if slot.reuse?
 
         artifact = Artifact.create!(kind: slot.kind, image_url: params[:image_url], source: "operator")

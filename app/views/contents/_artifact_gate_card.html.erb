@@ -91,7 +91,14 @@
                 stores. %>
             <%= f.text_field :image_url, placeholder: "paste the image URL",
                   class: "input-field text-xs w-72" %>
-            <%= f.submit slot.artifact&.image_url.present? ? "Replace" : "Attach",
+            <%# The label shares the CONTROLLER's own source of truth: the attach
+                retires the artifact on show only `if slot.reuse?`. On a :reskin
+                slot `slot.artifact` is the OTHER colorway and its image_url IS
+                present, so testing presence alone read "Replace" while the
+                attach was about to KEEP that artifact and file a second one
+                beside it. Ask the question the button actually answers — is the
+                thing on screen being superseded? %>
+            <%= f.submit slot.reuse? && slot.artifact&.image_url.present? ? "Replace" : "Attach",
                   class: "btn-secondary text-xs" %>
           <% end %>
         </div>
