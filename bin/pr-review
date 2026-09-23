@@ -85,6 +85,7 @@ require_relative "lib/approval_request_notice"
 require_relative "lib/fast_lane"
 require_relative "lib/repo_checkout"
 require_relative "lib/upstream_misfile"
+require_relative "lib/reviewer_select_skip"
 
 ROOT = File.expand_path("..", __dir__)
 
@@ -327,16 +328,16 @@ def select_reviewers(slug)
     raise "reviewer-select REFUSED to pick reviewers for #{slug} (unknown builder — self-review not ruled out):\n" \
           "#{[err, out].join("\n").strip}"
   end
-  # Exit 10 is reviewer-select SKIPPING: a DIFFERENT live instance already holds this
-  # task's review claim. Seating a second pair here IS the two-primaries bug — two
-  # primaries reaching opposite verdicts on one PR, spending one bounce between them,
-  # one holding merge-ready against a tree the other already sent back. Name it as the
-  # skip it is; a generic "failed" reads as something to retry, and this is not — the
-  # move is another task. Its stderr names the holder.
+  # Exit 10 is reviewer-select SKIPPING — and TWO refusals share that number, with
+  # OPPOSITE remedies (held: a different live session has it, move on; self-review: the
+  # picked primary is in the AUTHOR SET, nobody has it, and moving on repeats it). This
+  # used to hard-code the HELD sentence for both, sending a self-review refusal at a fix
+  # that cannot work. ReviewerSelectSkip reads the arm off reviewer-select's own refusal
+  # and names it; DO NOT split exit 10 into a second code — ReviewClaimCli::SKIPPED
+  # shares it on purpose. Naming it a SKIP rather than a failure is deliberate too: a
+  # generic "failed" reads as something to retry, and neither arm is retryable.
   if status&.exitstatus == 10
-    raise "reviewer-select SKIPPED #{slug} — another live session already holds this review. " \
-          "Do NOT review it here; take the next reviewable task instead " \
-          "(bin/task claim-next-review):\n#{[err, out].join("\n").strip}"
+    raise ReviewerSelectSkip.message(slug, [err, out].join("\n"))
   end
   unless status&.success?
     raise "reviewer-select failed for #{slug}: #{[err, out].join(" ").strip}"
@@ -1001,18 +1002,28 @@ end
 # ONLY on a CONFIRMED claim — the whole point is no-double-review, so a claim we could
 # not confirm must NOT be treated as held. `acquire` returns:
 #   :ours        exit 0  — we hold the claim; review it.
-#   :held        exit 10 — a DIFFERENT live session holds it; skip to the next task.
+#   :skipped     exit 10 — the board did not give US the claim; do not review it here.
+#                          TWO refusals share exit 10 and this label spans both: a
+#                          DIFFERENT live session holds it, OR the claimer is in the
+#                          task's AUTHOR SET (the no-self-review backstop). It was
+#                          called `:held`, which named only the first and read as a
+#                          fact about the second. The two need different REMEDIES but
+#                          the same ACTION here — this session reviews nothing — so one
+#                          label is right, as long as it does not assert a holder.
 #   :unconfirmed else    — no session id / board unreachable / error. We do NOT know we
 #                          hold it, so we must NOT review (proceeding would risk the
 #                          double-review this gate exists to prevent); defer instead.
-# The CLI's own ✅/⏭️ line is echoed so the wave log names who holds the task.
+# The remedy is NOT hard-coded here: the CLI's own ✅/⏭️/⛔ line is echoed verbatim, and
+# ReviewClaimCli already branches on the disposition (report_skip → report_self_review_skip),
+# so the operator reads the arm's own text. Contrast select_reviewers, which had to
+# classify the arm itself because it raises its own sentence (ReviewerSelectSkip).
 def review_claim_acquire(slug)
   out, err, status = run_capture(managed_command(TASK_BIN, "review-claim", "acquire", slug))
   msg = [out, err].map(&:to_s).join.strip
   puts msg.gsub(/^/, "  ") unless msg.empty?
   case status&.exitstatus
   when 0  then :ours
-  when 10 then :held
+  when 10 then :skipped
   else :unconfirmed
   end
 rescue StandardError => e
@@ -1057,14 +1068,15 @@ def start_review(task, review_number)
 
   # Per-task review claim (the parallel-review gate) — take the task before spending
   # any CI or reviewer tokens on it. We review ONLY when we CONFIRMED we hold it:
-  # :held (a live session already has it) SKIPS to the next task; :unconfirmed (no
+  # :skipped (the board did not give us the claim — held by a peer, or a self-review
+  # refusal) SKIPS to the next task; :unconfirmed (no
   # session id / board unreachable) must NOT review — proceeding on a claim we cannot
   # confirm is the double-review this gate prevents, so DEFER it. A dry run spawns
   # nothing, so it never claims. Released after finish_review; a crash self-heals via
   # the lease TTL.
   if OPTIONS.fetch(:run)
     case review_claim_acquire(slug)
-    when :held        then return base.merge(skipped: true)
+    when :skipped     then return base.merge(skipped: true)
     when :unconfirmed then return base.merge(claim_unconfirmed: true)
     end
   end
@@ -1600,7 +1612,8 @@ loop do
 
   started.each do |review|
     # Not reviewed this wave, and not claimed by us, so nothing to resolve or release:
-    #   :skipped           — a live session already holds the claim (:held).
+    #   :skipped           — the board did not give us the claim (a peer holds it, or
+    #                        the claimer is in the author set).
     #   :claim_unconfirmed — we could NOT confirm we hold it (no session id / board
     #                        down); reviewing would risk the double-review the claim
     #                        prevents, so we declined — say so LOUDLY.
