@@ -617,9 +617,22 @@ phase_nfl_data() {
       || log_fail "nfl:schedule_seed failed"
 
     log_act "espn:scrape_depth_charts (~3-5 min — live ESPN JSON API)"
-    bundle exec rails espn:scrape_depth_charts >/dev/null 2>&1 \
+    # THE ENTRY COUNT IS A LEVEL, NOT A DELTA, and it is the only thing this
+    # line reports. Espn::ScrapeDepthCharts tolerates a dead team on purpose
+    # (one unreachable team must not cost the other 31 their refresh), so `call`
+    # returned a tally and never raised, and this `&&` printed yesterday's
+    # surviving entry count as today's green through a total ESPN outage —
+    # measured at 32 of 32 teams failing, exit 0. The task now grades itself on
+    # that tally; see lib/tasks/espn.rake.
+    #
+    # STDERR IS KEPT. The task's summary and refusal are written there and carry
+    # the per-bucket counts — how many failed, how many came back partial — which
+    # this phase cannot know in advance and a bare "failed" cannot convey. The
+    # per-team [!] lines stay on stdout and stay discarded; they are 32 lines of
+    # detail behind a one-line verdict.
+    bundle exec rails espn:scrape_depth_charts >/dev/null \
       && log_ok "espn:scrape_depth_charts" "$(bundle exec rails runner 'puts DepthChartEntry.where.not(formation_slot: nil).count' 2>/dev/null | tail -1) entries with ESPN formation_slot" \
-      || log_fail "espn:scrape_depth_charts failed"
+      || log_fail "espn:scrape_depth_charts applied no teams — depth charts are UNCHANGED (ESPN unreachable, or its JSON shape moved). Rosters snapshotted after this will be last week's. The summary line above has the per-bucket counts."
 
     log_act "nfl:rosters_snapshot SEASON=${NFL_YEAR:-2026}-nfl (snapshot → current-week rosters)"
     bundle exec rails nfl:rosters_snapshot SEASON="${NFL_YEAR:-2026}-nfl" >/dev/null 2>&1 \
@@ -631,9 +644,14 @@ phase_nfl_data() {
     # to score 2026 rankings against 2026 grades.
     local grades_from="${NFL_GRADES_FROM:-$((${NFL_YEAR:-2026} - 1))-nfl}"
     log_act "nfl:rankings_compute SEASON=${NFL_YEAR:-2026}-nfl GRADES_FROM=${grades_from} (preseason snapshot)"
-    bundle exec rails nfl:rankings_compute SEASON="${NFL_YEAR:-2026}-nfl" GRADES_FROM="${grades_from}" >/dev/null 2>&1 \
+    # THE ROW COUNT CANNOT SEE THE FAILURE THIS LANE HAS. Measured with
+    # AthleteGrade emptied: compute_all! wrote the SAME 448 rows and exited 0,
+    # scoring every team 0.0 — so "448 rank rows populated" is what this line
+    # prints whether the rankings mean anything or not. The task now refuses an
+    # all-zero ranking and names the grade season that came back empty.
+    bundle exec rails nfl:rankings_compute SEASON="${NFL_YEAR:-2026}-nfl" GRADES_FROM="${grades_from}" >/dev/null \
       && log_ok "nfl:rankings_compute" "$(bundle exec rails runner "puts TeamRanking.where(season_slug: \"${NFL_YEAR:-2026}-nfl\").count" 2>/dev/null | tail -1) rank rows populated" \
-      || log_fail "nfl:rankings_compute failed"
+      || log_fail "nfl:rankings_compute failed — either ${NFL_YEAR:-2026}-nfl/${grades_from} names a season that does not exist, or ${grades_from} has no AthleteGrade rows and every team scored 0.0. The line above says which."
   )
 }
 
@@ -669,21 +687,48 @@ phase_nfl_headshots() {
     # BOTH SIGNALS, ANDed. The row catches the rescued outage the exit code cannot
     # see; the exit code catches the crash the ROW cannot see, since a success from
     # earlier the same day still reads fresh. Row-alone swapped one false green for another.
+    #
+    # AND THE ROW IS PINNED TO THIS RUN. Both signals ANDed still left one cell
+    # green, and it is the SECOND rebuild of a day: the importer records its own
+    # run `failed` and RETURNS from the FeedUnavailable rescue, so the exit code
+    # is 0 and an `ok` row from this morning satisfies a bare 24-hour window.
+    # Measured end-to-end against the real service, not hand-made rows: ok@2h
+    # ago + a dead feed now => exit 0, rows "ok | failed", fresh_success? TRUE.
+    # `since` is the wall-clock taken just BEFORE the seed starts, so only a
+    # success belonging to THIS run can answer for it. `date` truncates to the
+    # second, i.e. rounds the boundary slightly EARLY — the permissive
+    # direction, which can never fail a run that really did succeed.
+    #
+    # Passed through the ENV rather than interpolated into the Ruby, so no
+    # quoting accident can turn the boundary into a silently different one; and
+    # the runner's stderr is no longer discarded, because an unreadable boundary
+    # is REFUSED (ImportRun.boundary_for) and a refusal nobody can read would be
+    # the very defect this line exists to close.
+    local seed_started_at
+    seed_started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     if bundle exec rails nfl:players_seed >/dev/null \
-       && bundle exec rails runner 'exit(ImportRun.fresh_success?("nflverse_players") ? 0 : 1)' 2>/dev/null; then
+       && SEED_STARTED_AT="$seed_started_at" bundle exec rails runner 'exit(ImportRun.fresh_success?("nflverse_players", since: ENV.fetch("SEED_STARTED_AT")) ? 0 : 1)'; then
       seeded="$(bundle exec rails runner 'puts Athlete.where.not(espn_id: nil).count' 2>/dev/null | tail -1)"
       # Surfaced beside the count because a run that REFUSED humans is not the
       # same event as a clean one, and the count alone cannot show the difference.
       refused="$(bundle exec rails runner 'r = ImportRun.last_success_for("nflverse_players"); n = r ? r.stats.fetch("namesake_collisions_skipped", 0).to_i : 0; print(n.positive? ? ", #{n} namesake(s) REFUSED — see above" : "")' 2>/dev/null | tail -1)"
       log_ok "nfl:players_seed" "${seeded} athletes with espn_id${refused}"
     else
-      log_fail "nfl:players_seed recorded no successful ImportRun (it crashed, or the feed was down — read the FEED UNAVAILABLE line above; otherwise check AWS creds in .env)"
+      log_fail "nfl:players_seed recorded no successful ImportRun FOR THIS RUN (it crashed, or the feed was down — read the FEED UNAVAILABLE line above; otherwise check AWS creds in .env). An earlier success today no longer counts."
     fi
 
     log_act "nfl:upload_headshots (catches any newly-discovered espn_ids)"
-    bundle exec rails nfl:upload_headshots >/dev/null 2>&1 \
+    # THE CACHED-VARIANT COUNT IS A LEVEL TOO. The task rescues per athlete so
+    # one dead headshot URL cannot cost the other thousand theirs, then ended on
+    # `puts` — so an AWS credential failure, which fails EVERY athlete, exited 0
+    # and this line printed the variants cached on some earlier day. Measured
+    # with Studio::ImageCache.cache! raising the real
+    # Aws::Errors::MissingCredentialsError: failed 3, cached 0, exit 0. This is
+    # the failure phase 6c's own players_seed message tells operators to check
+    # and that no phase could report. stderr kept, for the same reason as above.
+    bundle exec rails nfl:upload_headshots >/dev/null \
       && log_ok "nfl:upload_headshots" "$(bundle exec rails runner 'puts ImageCache.where(owner_type: "Athlete", purpose: "headshot").count' 2>/dev/null | tail -1) cached variants" \
-      || log_fail "nfl:upload_headshots failed"
+      || log_fail "nfl:upload_headshots failed more uploads than it cached — usually AWS creds in .env (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_REGION). The line above gives the failed/attempted split."
   )
 }
 
