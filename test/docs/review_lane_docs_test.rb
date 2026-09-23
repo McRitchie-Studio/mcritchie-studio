@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require_relative "../support/stated_prose"
 
 # Guard for the review-lane SOP (3-level supervisor hierarchy, 2026-07-06): the
 # session Pokémon → Avi the SUPERVISOR (a thin gate that NEVER reviews the code)
@@ -19,8 +20,12 @@ class ReviewLaneDocsTest < ActiveSupport::TestCase
   # Markdown-emphasis-insensitive read: drop * and ` so bold/italic/code emphasis
   # can't break a phrase match, and collapse whitespace so a line-wrapped sentence
   # still matches as one run.
+  def normalize(text)
+    text.gsub(/[*`]/, "").gsub(/\s+/, " ")
+  end
+
   def norm(rel)
-    File.read(AGENTS.join(rel)).gsub(/[*`]/, "").gsub(/\s+/, " ")
+    normalize(File.read(AGENTS.join(rel)))
   end
 
   test "[static] carl role.md frames Carl as the standing primary review OWNER — no Avi supervisor" do
@@ -225,27 +230,47 @@ class ReviewLaneDocsTest < ActiveSupport::TestCase
   # TTL. The lapse is the recoverable direction and was chosen deliberately, but a
   # reader following our own docs should not trip it at all.
 
-  # EVERY active agent doc, walked — not a fixed list. "Every preview invocation" is
-  # a universal claim, and a doc added tomorrow has to be covered the day it lands.
-  # Archives are frozen snapshots and stay as written.
-  def active_agent_docs
-    Dir.glob(AGENTS.join("**", "*.md")).reject { |p| p.include?("/archive/") }.sort
-  end
-
-  def doc_rel(path)
-    path.to_s.sub("#{AGENTS}/", "")
+  # EVERY source this repo states something in, walked — not a fixed list, and NOT
+  # `docs/agents/**` any more. "Every preview invocation" is a universal claim, and
+  # this glob could not honour it: the most authoritative preview instruction in the
+  # tree was the one in the FEATURE'S OWN SERVICE, app/services/reviewer_selector.rb,
+  # sitting outside `docs/` where nothing looked. The shared population (markdown
+  # anywhere plus the comment bodies of config/app/lib/bin) is the same one the
+  # turf-vault lane guard reads — decided once, in test/support/stated_prose.rb, so
+  # the two guards cannot grow two exemption conventions.
+  def guarded_sources
+    StatedProse.sources(Rails.root)
   end
 
   # Sentence-grained, because the check has to tell an INSTRUCTION ("previewing with
   # `bin/reviewer-select <task>`") from a STATEMENT ABOUT the default ("…but
   # `bin/reviewer-select <task>` records by default"). Splitting on a period followed
   # by whitespace leaves `Task.reviewable` and `TaskEvent.metadata` intact.
-  def doc_sentences(rel)
-    norm(rel).split(/(?<=\.)\s+/)
+  def sentences(text)
+    normalize(text).split(/(?<=\.)\s+/)
   end
 
-  # An invocation with the task placeholder and no opt-out flag on it.
-  BARE_SELECT = %r{bin/reviewer-select <task[^>]*>(?!\s*--(?:no-record|dry))}
+  # The invocation, plus the run of flags trailing it. Matching the FLAG RUN rather
+  # than the character right after the placeholder is what makes the opt-out
+  # order-insensitive.
+  #
+  # THE OLD FORM WAS `<task[^>]*>(?!\s*--(?:no-record|dry))`, a lookahead at the
+  # position immediately after the placeholder — so `bin/reviewer-select <task>
+  # --json --no-record` read as BARE. That is a safe, fully opted-out invocation, and
+  # reddening it is the failure mode this guard can least afford: a guard that cries
+  # wolf on correct text teaches authors to route around it. The run stops at the
+  # first non-flag word, so a `--no-record` mentioned later in the sentence as prose
+  # still cannot launder a bare command.
+  SELECT_INVOCATION = %r{bin/reviewer-select\s+<task[^>]*>((?:\s+\[?--[a-z][\w-]*\]?(?:[ =](?!--)[\w,./-]+)?)*)}
+  OPTED_OUT = /--(?:no-record|dry)\b/
+
+  # A sentence carrying at least one invocation whose own flag run opts out of nothing.
+  def bare_preview?(sentence)
+    return false unless sentence.match?(/preview/i)
+    return false if sentence.match?(STATES_RECORDING_DEFAULT)
+
+    sentence.to_enum(:scan, SELECT_INVOCATION).any? { !Regexp.last_match[1].match?(OPTED_OUT) }
+  end
   # The ONE sentence shape allowed to carry a bare invocation: one whose subject IS
   # the recording default (parallel-agent-devops.md's "records by default" paragraph,
   # which exists precisely to teach this). Measured, not assumed — as of 2026-09-22
@@ -255,13 +280,11 @@ class ReviewLaneDocsTest < ActiveSupport::TestCase
   # phrase onto it.
   STATES_RECORDING_DEFAULT = /records? by default|recording is the DEFAULT/i
 
-  test "[static] every active doc shows --no-record on a PREVIEW invocation of bin/reviewer-select" do
-    offenders = active_agent_docs.flat_map do |path|
-      rel = doc_rel(path)
-      doc_sentences(rel).filter_map do |sentence|
-        next unless sentence.match?(BARE_SELECT)
-        next unless sentence.match?(/preview/i)
-        next if sentence.match?(STATES_RECORDING_DEFAULT)
+  test "[static] every active source shows --no-record on a PREVIEW invocation of bin/reviewer-select" do
+    offenders = guarded_sources.flat_map do |path|
+      rel = StatedProse.rel(Rails.root, path)
+      sentences(StatedProse.prose(path)).filter_map do |sentence|
+        next unless bare_preview?(sentence)
 
         "#{rel}: #{sentence.strip[0, 150]}"
       end
@@ -269,6 +292,9 @@ class ReviewLaneDocsTest < ActiveSupport::TestCase
 
     assert_empty offenders,
       "Preview invocations must be written `bin/reviewer-select <task> --no-record`. " \
+      "This reads COMMENTS as well as markdown: the site that started this guard's " \
+      "second round was app/services/reviewer_selector.rb — the feature's own " \
+      "service, which no docs glob could ever reach. " \
       "Recording is the DEFAULT, and recording first ACQUIRES the task's review claim — " \
       "a ~3h25m lease (ClaimLease::REVIEW_TTL_SECONDS) with no renewer behind it, which " \
       "drops the task out of Task.reviewable and out of `bin/task claim-next-review` " \
@@ -319,10 +345,10 @@ class ReviewLaneDocsTest < ActiveSupport::TestCase
   REVIEWED_INTENT = %r{bin/task intent [^.]{0,80}--to reviewed}i
   PROHIBITS = /\bdo not\b|\bnever\b|\bdon't\b/i
 
-  test "[static] no active doc routes a reader to the claim-less bin/task intent --to reviewed" do
-    offenders = active_agent_docs.flat_map do |path|
-      rel = doc_rel(path)
-      doc_sentences(rel).filter_map do |sentence|
+  test "[static] no active source routes a reader to the claim-less bin/task intent --to reviewed" do
+    offenders = guarded_sources.flat_map do |path|
+      rel = StatedProse.rel(Rails.root, path)
+      sentences(StatedProse.prose(path)).filter_map do |sentence|
         next unless sentence.match?(REVIEWED_INTENT)
         # Naming it in order to FORBID it is the primitive's job, and passes.
         next if sentence.match?(PROHIBITS)
@@ -338,5 +364,56 @@ class ReviewLaneDocsTest < ActiveSupport::TestCase
       "land together. Name `bin/task intent --to reviewed` only to forbid it. (The DEPLOY " \
       "lane's --to assembled / --to shipped fallback is a different case and is not covered " \
       "by this guard.):\n  " + offenders.join("\n  ")
+  end
+
+  # ── The preview checker itself bites ──────────────────────────────────────
+  #
+  # This guard shipped with NO fixtures, which made its live criterion satisfiable by
+  # deleting the offending sentence: fix the instance, retire the guard, and nobody
+  # can tell the difference from a green run. The first entry is VERBATIM from
+  # app/services/reviewer_selector.rb as it stood before this task, so the text
+  # keeps biting whatever happens to the live comment.
+  BARE_PREVIEWS = {
+    "reviewer_selector.rb, verbatim — the service comment no docs glob could see" =>
+      "`bin/reviewer-select <task>` is the CLI wrapper a review session runs to preview\n" \
+      "the pair + the auditable tiebreak from `.explain`.",
+    "a plain preview instruction" =>
+      "Preview the pair with `bin/reviewer-select <task-slug>` before you spawn.",
+    "opted out of the WRONG thing" =>
+      "Preview the pair with `bin/reviewer-select <task> --json`.",
+    "a flag run that never reaches an opt-out" =>
+      "Preview it: `bin/reviewer-select <task> --json --qa-owner carl`."
+  }.freeze
+
+  def test_the_preview_checker_catches_a_bare_invocation
+    BARE_PREVIEWS.each do |label, prose|
+      assert(sentences(prose).any? { |s| bare_preview?(s) },
+             "#{label}: this is the defect the guard exists for and it read as clean")
+    end
+  end
+
+  # Correct prose must pass, and the second entry is the whole reason the matcher
+  # changed: a safe, fully opted-out invocation that the old position-anchored
+  # lookahead reddened because `--json` sat between the placeholder and the flag.
+  OPTED_OUT_PREVIEWS = {
+    "the canonical preview line" =>
+      "`bin/reviewer-select <task> --no-record` previews the pair (primary Carl\n" \
+      "plus one light).",
+    "the flag-ORDER false red the old lookahead produced" =>
+      "Preview the pair with `bin/reviewer-select <task> --json --no-record`.",
+    "the --dry alias, reached past another flag" =>
+      "Preview it with `bin/reviewer-select <task> --qa-owner carl --dry`.",
+    "a STATEMENT about the default, not an instruction to run one" =>
+      "You may want a preview, but `bin/reviewer-select <task>` records by default —\n" \
+      "it writes the pair and takes the claim.",
+    "prose that mentions no preview at all" =>
+      "`bin/reviewer-select <task>` is how the review session records the pair."
+  }.freeze
+
+  def test_the_preview_checker_passes_opted_out_and_descriptive_prose
+    OPTED_OUT_PREVIEWS.each do |label, prose|
+      refute(sentences(prose).any? { |s| bare_preview?(s) },
+             "#{label}: correct prose was flagged — a guard that cries wolf gets muted")
+    end
   end
 end

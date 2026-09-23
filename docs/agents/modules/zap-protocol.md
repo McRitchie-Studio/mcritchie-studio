@@ -151,10 +151,14 @@ preparing the DB gets you neither the stylesheet nor a warning about it.
 hand-authored styles and script under `public/assets/` and has no build step
 at all.
 `turf-vault`'s two Node lanes — `npm run check:doc-op-refs` and `npm run
-test:scripts`, the ones its `bin/release-check` runs first — passed **171 tests
-with `node_modules` absent** on a fresh detached worktree (measured 2026-09-22),
-because they use node builtins only; its Rust lanes rebuild `target/`
-themselves, slowly and greenly. So the RULE is general — a fresh checkout of any
+test:scripts`, the ones its `bin/release-check` runs first — ran green with
+`node_modules` absent on a fresh detached worktree (measured 2026-09-22 against
+`origin/accepted`): **`tests 171 / pass 168 / skipped 3`**. Most of that suite is
+node builtins only, but **three cases self-skip** on a runtime dep they cannot
+require (`@sqds/multisig`), and a self-skip prints as `ok <n> … # SKIP` — which is
+pass-SHAPED, so a scan for `not ok` sees nothing. Read a green run here as 168
+executed, never 171. Its Rust lanes rebuild `target/` themselves, slowly and
+greenly. So the RULE is general — a fresh checkout of any
 kind lacks every gitignored artifact — while the STEP is per-repo, and the
 baseline run in § The test rule is what tells you which you are looking at.
 

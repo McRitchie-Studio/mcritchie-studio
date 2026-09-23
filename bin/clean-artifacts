@@ -31,6 +31,7 @@ require "timeout"
 require_relative "lib/artifact_sweep"
 require_relative "lib/cli_arg_guard"
 require_relative "lib/projects_root"
+require_relative "lib/toolchain_env"
 
 USAGE = <<~TXT
   usage: bin/clean-artifacts [--root <path>] [--audit-envs <list>] [--dry-run] [--skip-audit] [--verbose] [--json]
@@ -91,16 +92,37 @@ end
 # a config file that sets the cap at the wrong point in the boot reads correct
 # and behaves broken, so nothing here reads a config file.
 #
-# The child gets a scrubbed environment — this script runs under the hub's
-# bundler, and leaking BUNDLE_GEMFILE/RUBYOPT into another app's boot makes it
-# load the wrong gems and fail in a way that looks like a missing cap.
+# The child gets the environment it would have had BEFORE any toolchain manager
+# touched it — see bin/lib/toolchain_env.rb for why that is a RESTORE and not a
+# longer list of banned variable names.
+#
 # Name WHY an app would not boot, so "inconclusive" is actionable rather than a
 # shrug. A dormant repo with uninstalled gems and a genuinely broken app must not
 # read the same, and neither may be mistaken for "no rotation".
+#
+# TWO WAYS THIS USED TO NAME NOTHING, both measured 2026-09-22 — and both matter
+# more now that the Exit Seam PRINTS the reason, because a reason that says
+# nothing makes the seam longer without making it more useful:
+#   * it took the FIRST line matching a loose /Error/i, so the hub's own helpful
+#     boot banner won and every unknown read "The original error follows." — a
+#     sentence that names no error at all.
+#   * it kept Ruby's "<file>:<line>:in 'method': " prefix, so the 110-character
+#     budget was spent on a gem path and the message itself was truncated away.
+STRONG_FAILURE_PATTERNS = [
+  /Could not find .+ in locally installed gems/i,
+  /\((?:\w+::)*\w*(?:Error|Exception|NotFound|Missing)\w*\)\s*\z/,
+  /Bundler::\w+/
+].freeze
+LOOSE_FAILURE_PATTERN = /Could not find|Bundler::|Error|cannot|No such file|not found/i
+# Ruby's own location prefix, e.g. `definition.rb:605:in 'materialize': `.
+RUBY_LOCATION_PREFIX = /\A\S+\.rb:\d+:in \S.*?: /
+
 def boot_failure_reason(output, status)
-  line = output.to_s.lines.find { |l| l.match?(/Could not find|Bundler::|Error|cannot|No such file|not found/i) }
-  line = output.to_s.lines.reverse.find { |l| !l.strip.empty? } if line.nil?
-  reason = line.to_s.strip.split(" (").first.to_s
+  lines = output.to_s.lines.map(&:strip).reject(&:empty?)
+  line = lines.find { |l| STRONG_FAILURE_PATTERNS.any? { |pattern| l.match?(pattern) } } ||
+         lines.find { |l| l.match?(LOOSE_FAILURE_PATTERN) } ||
+         lines.last
+  reason = line.to_s.sub(RUBY_LOCATION_PREFIX, "").split(" (").first.to_s.strip
   reason = reason[0, 110] + "…" if reason.length > 110
   reason.empty? ? "boot failed (exit #{status&.exitstatus})" : reason
 end
@@ -109,12 +131,10 @@ def audit_app(repo, env)
   rails = File.join(repo, "bin", "rails")
   return { verdict: :unknown, reason: "no bin/rails" } unless File.executable?(rails)
 
-  child_env = {
+  child_env = ToolchainEnv.child_overrides.merge(
     "RAILS_ENV" => env,
-    "BUNDLE_GEMFILE" => nil, "BUNDLE_PATH" => nil, "BUNDLE_APP_CONFIG" => nil,
-    "RUBYOPT" => nil, "RUBYLIB" => nil, "BUNDLER_VERSION" => nil,
     "DISABLE_SPRING" => "1"
-  }
+  )
 
   output = nil
   status = nil
@@ -177,6 +197,12 @@ unless SKIP_AUDIT
   say("==> Local logger audit (#{AUDIT_ENVS.join(', ')}) — is a real rotation cap installed?")
   say("    Behavioral: each app is BOOTED and its live logger read. A config file")
   say("    set at the wrong point in the boot reads correct and behaves broken.")
+  # PRINT THE INTERPRETER. Booting these apps under the RELEASE RUNNER's Ruby
+  # instead of their own is the bug this lane shipped for months, and it was
+  # invisible for exactly as long because nothing ever said which Ruby ran. An
+  # audit that reads UNKNOWN under a Ruby that is not the app's own is a fact
+  # about this process, not about the app.
+  say("    audit interpreter: #{ToolchainEnv.resolved_ruby || '(none on the restored PATH)'}")
 
   queue = plan[:repos].product(AUDIT_ENVS)
   mutex = Mutex.new
@@ -208,6 +234,22 @@ end
 
 missing = audits.select { |_k, v| %i[loose none].include?(v[:verdict]) }.keys.map(&:first).uniq.sort
 unknown = audits.select { |_k, v| v[:verdict] == :unknown }.keys.map(&:first).uniq.sort
+
+# CARRY THE REASON, NOT JUST THE NAME. The Exit Seam used to say the cap was
+# unknown and never say why, which is how two people spent a session on a load
+# hypothesis (AUDIT_CONCURRENCY crossing AUDIT_TIMEOUT) that the reasons would
+# have falsified on sight: `timed out` appears zero times in an archive run.
+# First reason per app — one env's failure is the app's failure to prove.
+unknown_reasons = audits.each_with_object({}) do |((app, _env), result), acc|
+  acc[app] ||= result[:reason].to_s if result[:verdict] == :unknown
+end
+
+# Classify each loose app by WHICH remedy it needs. The two populations look
+# identical in a combined list and need opposite work: an app with no
+# studio-engine dependency at all has no pin to bump, and telling its owner to
+# bump one sends them looking for a line that does not exist.
+repo_paths = plan[:repos].to_h { |repo| [File.basename(repo), repo] }
+engine_pins = missing.to_h { |app| [app, ArtifactSweep.engine_pin(repo_paths[app])] }
 
 # --- reported, not touched ---------------------------------------------------
 
@@ -261,6 +303,9 @@ summary = {
   worktrees: plan[:worktree_count],
   rotation_missing: missing,
   rotation_unknown: unknown,
+  rotation_unknown_reasons: unknown_reasons,
+  engine_pins: engine_pins,
+  audit_ruby: SKIP_AUDIT ? nil : ToolchainEnv.resolved_ruby,
   audited_envs: SKIP_AUDIT ? [] : AUDIT_ENVS
 }
 summary[:rotation_verdict] = ArtifactSweep.rotation_coverage(summary)

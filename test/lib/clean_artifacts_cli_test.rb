@@ -18,6 +18,7 @@ require "fileutils"
 require "json"
 require "open3"
 require_relative "../../bin/lib/artifact_sweep"
+require_relative "../../bin/lib/toolchain_env"
 
 class CleanArtifactsCliTest < Minitest::Test
   MB = 1024 * 1024
@@ -150,9 +151,10 @@ class CleanArtifactsCliTest < Minitest::Test
     end
   end
 
-  # The audit boots each app in a scrubbed environment. If the hub's bundler
-  # leaked through, every shim here reports the poisoned 100 MB cap and a
-  # perfectly healthy app would be named as missing rotation.
+  # The audit boots each app in a RESTORED environment — the one it would have
+  # had before any toolchain manager touched it. If the hub's bundler leaked
+  # through, every shim here reports the poisoned 100 MB cap and a perfectly
+  # healthy app would be named as missing rotation.
   def test_the_audit_does_not_leak_this_process_bundler_into_the_apps
     with_apps do |root|
       # A realistic parent environment: bin/release runs under the hub's bundler,
@@ -190,9 +192,91 @@ class CleanArtifactsCliTest < Minitest::Test
       assert_equal "uncapped", summary[:rotation_verdict],
                    "the verdict must be computed, not inferred from an empty list"
       assert_includes out, "MISSING LOG ROTATION: default-app, unrotated-app"
-      assert_includes out, "LOG CAP NOT PROVEN for: dormant-app"
+      assert_includes out, "LOG CAP NOT PROVEN for dormant-app",
+                      "the unprovable app must still reach the closing report as its OWN named category"
+      # AND IT MUST SAY WHY. The seam used to name the app and stop, which is how
+      # a contaminated audit — one that booted every app under the wrong Ruby and
+      # called the result UNKNOWN — was indistinguishable from a dormant checkout
+      # with uninstalled gems. Naming the app without the reason is the state this
+      # assertion exists to red.
+      assert_includes out, "could not boot it: simulated boot failure: Could not find rails-4.1.6",
+                      "the closing report names the unprovable app but not the REASON it could not boot"
       refute_includes out, "every audited app caps its local logs",
                       "a machine with two loose apps must never claim a clean audit"
+    end
+  end
+
+  # [integration] THE ABLATION: the audit's verdict must be a fact about the
+  # APPS, not about the parent that launched the sweep.
+  #
+  # This reproduces the production bug in miniature. bin/release execs the
+  # release runner as `mise x ruby@<version> -- ruby bin/release.rb`, whose ONLY
+  # environment change is prepending mise's Ruby bin dir to PATH. Each audited
+  # app's `bin/rails` then resolved `ruby` through that PATH to an interpreter
+  # whose gem tree is not the app's, and the boot died in its own config/boot.rb.
+  # Measured 2026-09-22 on this machine: moms-app and rolio read LOOSE from a
+  # clean shell and UNKNOWN under `mise x`, hiding four genuinely loose apps
+  # behind the one that stayed visible — and under a `bundle exec` parent an app
+  # measured healthy at a 16 MB cap read UNKNOWN too. A contaminated UNKNOWN says
+  # nothing in EITHER direction, which is what makes it worse than a wrong answer.
+  #
+  # BOTH ARMS RUN HERE, and the first is what makes the second mean anything: a
+  # green "the verdicts agree" proves nothing unless the contamination it claims
+  # to survive is shown to reach the verdict when it is NOT restored.
+  def test_the_audit_verdict_does_not_depend_on_the_parents_path
+    with_apps do |root|
+      _, clean = run_cli(root, "--dry-run")
+      assert_equal "uncapped", clean[:rotation_verdict], "the clean baseline moved; the arms below compare to it"
+
+      Dir.mktmpdir("decoy-bin") do |fake_bin|
+        decoy = File.join(fake_bin, "ruby")
+        File.write(decoy, "#!/bin/sh\nexit 1\n")
+        FileUtils.chmod(0o755, decoy)
+        poisoned = "#{fake_bin}#{File::PATH_SEPARATOR}#{ENV.fetch('PATH')}"
+
+        # BOTH ARMS RUN FROM A PARENT SHAPED LIKE THE RELEASE RUNNER'S: no bundler
+        # binding at all, exactly as `mise x ruby@<version> -- ruby bin/release.rb`
+        # leaves it (measured: RUBYOPT, GEM_HOME, GEM_PATH and BUNDLE_GEMFILE are
+        # all empty there). Two things forced this, and both are worth knowing:
+        #
+        #   * this suite runs under bundler, so BUNDLER_ORIG_PATH is inherited and
+        #     restores the decoy away on its own — arm 1 came back `uncapped`
+        #     until the records were cleared, which is the fix working through its
+        #     OTHER path and an ablation measuring nothing.
+        #   * clearing only the records is not enough. RUBYOPT=-rbundler/setup is
+        #     also inherited, so bundler loads inside the spawned CLI and RE-WRITES
+        #     BUNDLER_ORIG_* from the already-bundled environment it finds — the
+        #     restoration then faithfully restores a binding that came from the
+        #     grandparent. Leaving RUBYOPT set while deleting its record builds a
+        #     parent that cannot occur in life, and it reads as a leak.
+        mise_like = (%w[RUBYOPT RUBYLIB BUNDLER_SETUP BUNDLER_VERSION BUNDLE_GEMFILE BUNDLE_BIN_PATH] +
+                     ENV.keys.select { |key| key.start_with?(ToolchainEnv::BUNDLER_PREFIX) })
+                    .to_h { |key| [key, nil] }
+                    .merge(ToolchainEnv::MISE_ORIG_PATH => nil)
+
+        # ARM 1 — contaminated, with NO record to restore from. Each shim's
+        # `#!/usr/bin/env ruby` resolves the decoy, so no app boots. If this arm
+        # ever goes green, arm 2 is self-certifying and must not be believed.
+        _, unrestored = run_cli(root, "--dry-run", env: mise_like.merge("PATH" => poisoned))
+        assert_equal "unproven", unrestored[:rotation_verdict],
+                     "the decoy PATH never reached the audit child, so arm 2 proves nothing"
+        assert_empty Array(unrestored[:rotation_missing]),
+                     "THE HARM: a contaminated parent hides loose apps inside UNKNOWN rather than naming them"
+
+        # ARM 2 — the same contaminated PATH, plus mise's own record of what it
+        # replaced. The restoration must put every verdict back exactly where the
+        # clean parent had it.
+        _, restored = run_cli(root, "--dry-run",
+                              env: mise_like.merge("PATH" => poisoned,
+                                                    ToolchainEnv::MISE_ORIG_PATH => ENV.fetch("PATH")))
+
+        assert_equal clean[:rotation_verdict], restored[:rotation_verdict],
+                     "the restored run reached a different verdict than the clean parent"
+        assert_equal clean[:rotation_missing], restored[:rotation_missing],
+                     "the restored run did not name the same loose apps as the clean parent"
+        assert_equal clean[:rotation_unknown], restored[:rotation_unknown],
+                     "the restored run did not name the same unprovable apps as the clean parent"
+      end
     end
   end
 

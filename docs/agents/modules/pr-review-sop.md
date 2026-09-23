@@ -206,8 +206,11 @@ FRESH session — a look at who would review it — that strands the task.
 **Exit 10 is a SKIP, and it has TWO arms with opposite remedies.** Both print to
 stderr, select nothing and record nothing. `bin/pr-review` reads exit 10 as a skip
 rather than a failure (a generic "failed" reads as something to retry, and this is
-not), but its own message names only the first arm — so on a refusal, read
-`bin/reviewer-select`'s stderr for which one you actually hit:
+not), and it NAMES the arm: `ReviewerSelectSkip` (`bin/lib/reviewer_select_skip.rb`)
+reads the refusal's own lead phrase and raises that arm's remedy. A refusal matching
+neither phrase is reported as unclassified, naming BOTH arms rather than guessing one
+— so on any exit 10, `bin/reviewer-select`'s stderr is still the authority below the
+lead:
 
 | Arm | What it means | The move |
 |-----|---------------|----------|

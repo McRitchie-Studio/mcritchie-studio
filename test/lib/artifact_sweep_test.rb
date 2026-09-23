@@ -288,6 +288,163 @@ class ArtifactSweepTest < Minitest::Test
     end
   end
 
+  # --- the remedy is split by population ------------------------------------
+  #
+  # One sentence cannot be true of both populations. The report said "these apps
+  # have not adopted the studio-engine cap (needs >= 0.33.0)" to a combined list,
+  # which is accurate for an app pinned BELOW the floor and actively misleading
+  # for one with no studio-engine dependency at all: it reads as "bump the pin"
+  # to an owner who has no pin to bump. Measured 2026-09-22: chain-ops and rolio
+  # carry zero studio-engine references in Gemfile AND Gemfile.lock.
+
+  def test_an_app_with_no_engine_dependency_is_never_told_to_bump_a_pin
+    summary = { audited_envs: %w[development], rotation_missing: %w[chain-ops rolio],
+                engine_pins: { "chain-ops" => ArtifactSweep::ENGINE_PIN_ABSENT,
+                               "rolio" => ArtifactSweep::ENGINE_PIN_ABSENT } }
+
+    report = ArtifactSweep.rotation_report_lines(summary).join("\n")
+
+    assert_includes report, "chain-ops"
+    assert_includes report, "rolio"
+    assert_includes report, "NO PIN TO BUMP",
+                    "an app with no studio-engine dependency was handed the stale-pin remedy — it will " \
+                    "be read as 'bump the pin', and there is no pin in that repo to bump"
+    refute_match(/Bump the pin and relock/, report,
+                 "the bump remedy reached a population that has nothing to bump")
+    assert_includes report, ArtifactSweep::ENGINE_CAP_FLOOR,
+                    "the floor still has to appear: it is the version the new dependency must satisfy"
+  end
+
+  def test_an_app_pinned_below_the_floor_is_told_to_bump_and_its_version_is_named
+    summary = { audited_envs: %w[development], rotation_missing: %w[moms-app],
+                engine_pins: { "moms-app" => "0.32.1" } }
+
+    report = ArtifactSweep.rotation_report_lines(summary).join("\n")
+
+    assert_includes report, "0.32.1", "name the version the app actually resolves, not just the floor"
+    assert_includes report, "Bump the pin and relock"
+    refute_includes report, "NO PIN TO BUMP"
+  end
+
+  # Both populations in one run must produce BOTH remedies — the split is
+  # worthless if one swallows the other.
+  def test_the_two_populations_are_reported_apart_in_the_same_run
+    summary = { audited_envs: %w[development], rotation_missing: %w[chain-ops moms-app],
+                engine_pins: { "chain-ops" => ArtifactSweep::ENGINE_PIN_ABSENT, "moms-app" => "0.32.1" } }
+
+    report = ArtifactSweep.rotation_report_lines(summary)
+
+    assert_equal 2, report.size, "two populations, two remedies"
+    assert(report.any? { |line| line.include?("NO PIN TO BUMP") && line.include?("chain-ops") })
+    assert(report.any? { |line| line.include?("Bump the pin") && line.include?("moms-app") })
+  end
+
+  # An app already carrying the floor and STILL loose is a third diagnosis: the
+  # pin is fine and the initializer did not run early enough. Telling that owner
+  # to bump a pin sends them at the one thing that is already correct.
+  def test_an_app_at_the_floor_that_is_still_loose_is_not_told_to_bump
+    summary = { audited_envs: %w[development], rotation_missing: %w[some-app],
+                engine_pins: { "some-app" => "0.76.2" } }
+
+    report = ArtifactSweep.rotation_report_lines(summary).join("\n")
+
+    assert_includes report, "BOOTSTRAP initializer"
+    refute_includes report, "Bump the pin and relock"
+  end
+
+  # A summary from before this field existed, or a repo whose lock could not be
+  # read, must still get a line — and must not have a remedy GUESSED for it.
+  def test_an_unclassified_population_degrades_to_the_shared_claim
+    summary = { audited_envs: %w[development], rotation_missing: %w[rolio chain-ops] }
+
+    report = ArtifactSweep.rotation_report_lines(summary).join("\n")
+
+    assert_includes report, "rolio"
+    assert_includes report, ArtifactSweep::ENGINE_CAP_FLOOR
+    refute_includes report, "NO PIN TO BUMP", "no classification reached us; a remedy must not be invented"
+    refute_includes report, "Bump the pin and relock"
+  end
+
+  # THE JSON ROUND TRIP. bin/release archive reads this summary back through
+  # parse_summary, which symbolizes keys — so the per-app hashes arrive keyed by
+  # SYMBOL while the in-process ones are keyed by String. A lookup written for
+  # one shape silently finds nothing in the other and every app reads
+  # unclassified, which looks exactly like a machine with no data.
+  def test_the_report_survives_the_summary_round_trip_the_archive_lane_uses
+    summary = { audited_envs: %w[development], rotation_missing: %w[chain-ops moms-app],
+                rotation_unknown: %w[karen_mcritchie],
+                rotation_unknown_reasons: { "karen_mcritchie" => "Could not find rails-4.1.6" },
+                engine_pins: { "chain-ops" => ArtifactSweep::ENGINE_PIN_ABSENT, "moms-app" => "0.32.1" } }
+
+    round_tripped = ArtifactSweep.parse_summary(ArtifactSweep.summary_line(summary))
+    report = ArtifactSweep.rotation_report_lines(round_tripped).join("\n")
+
+    assert_includes report, "NO PIN TO BUMP", "the pin classification did not survive symbolized keys"
+    assert_includes report, "0.32.1"
+    assert_includes report, "Could not find rails-4.1.6", "the unknown's reason did not survive the round trip"
+  end
+
+  # --- every unknown carries its reason --------------------------------------
+
+  def test_each_unprovable_app_is_reported_with_the_reason_it_could_not_boot
+    summary = { audited_envs: %w[development], rotation_unknown: %w[karen_mcritchie mcritchie-studio],
+                rotation_unknown_reasons: { "karen_mcritchie" => "Could not find rails-4.1.6",
+                                            "mcritchie-studio" => "Could not find studio-engine-0.76.2" } }
+
+    report = ArtifactSweep.rotation_report_lines(summary)
+
+    assert_equal 2, report.size, "one line per unknown, so a long reason cannot crowd out another app"
+    assert(report.any? { |l| l.include?("karen_mcritchie") && l.include?("Could not find rails-4.1.6") })
+    assert(report.any? { |l| l.include?("mcritchie-studio") && l.include?("studio-engine-0.76.2") })
+    assert(report.all? { |l| l.include?("Never read UNKNOWN as a pass") })
+  end
+
+  def test_an_unknown_with_no_recorded_reason_says_so_rather_than_trailing_off
+    summary = { audited_envs: %w[development], rotation_unknown: %w[mystery-app] }
+
+    report = ArtifactSweep.rotation_report_lines(summary).join("\n")
+
+    assert_includes report, "mystery-app"
+    assert_includes report, "no reason was recorded",
+                    "a missing reason must be stated; an empty clause reads as a truncated message"
+  end
+
+  # --- reading the engine pin off a checkout ---------------------------------
+
+  def test_engine_pin_reads_the_resolved_version_from_the_lock
+    Dir.mktmpdir("pin") do |repo|
+      File.write(File.join(repo, "Gemfile.lock"), <<~LOCK)
+        GEM
+          specs:
+            rails (8.1.3.1)
+            studio-engine (0.32.1)
+      LOCK
+
+      assert_equal "0.32.1", ArtifactSweep.engine_pin(repo),
+                   "the LOCK is the fact that boots — a `~> 0.31` requirement and a locked 0.32.1 " \
+                   "are different numbers and only one of them runs"
+    end
+  end
+
+  def test_engine_pin_distinguishes_no_dependency_from_unreadable
+    Dir.mktmpdir("pin") do |repo|
+      File.write(File.join(repo, "Gemfile.lock"), "GEM\n  specs:\n    rails (8.1.3.1)\n")
+
+      assert_equal ArtifactSweep::ENGINE_PIN_ABSENT, ArtifactSweep.engine_pin(repo),
+                   "a lock without studio-engine is a POSITIVE fact — the app has no pin — not a gap"
+    end
+
+    Dir.mktmpdir("pin") do |repo|
+      assert_nil ArtifactSweep.engine_pin(repo), "no lock at all is unknown, and must not read as 'absent'"
+    end
+    assert_nil ArtifactSweep.engine_pin(nil)
+  end
+
+  def test_a_malformed_pin_is_unclassified_rather_than_raising
+    assert_equal :unclassified, ArtifactSweep.engine_population("not-a-version"),
+                 "a lock this parser cannot grade must degrade, never abort the closing report"
+  end
+
   # --- parsing -------------------------------------------------------------
 
   def test_parses_the_audit_payload_out_of_chatty_boot_output

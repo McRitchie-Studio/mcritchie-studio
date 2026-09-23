@@ -118,8 +118,14 @@
 # GRACEFULLY to built-in defaults when the Agent row or those keys are absent, so
 # selection works even before the reviewer souls are seeded.
 #
-# `bin/reviewer-select <task>` is the CLI wrapper a review session runs to preview
-# the pair + the auditable tiebreak from `.explain`.
+# `bin/reviewer-select <task> --no-record` is the CLI wrapper a review session runs
+# to preview the pair + the auditable tiebreak from `.explain`. THE FLAG IS NOT
+# OPTIONAL ON A PREVIEW: recording is the DEFAULT, and recording first ACQUIRES the
+# task's review claim — a ~3h25m lease (ClaimLease::REVIEW_TTL_SECONDS) with no
+# renewer behind it, which drops the task out of `Task.reviewable` and out of
+# `bin/task claim-next-review` until it lapses. This line said `<task>` bare until
+# 2026-09-22, and it is the feature's own service: the most authoritative preview
+# instruction in the tree was the one no docs-only guard could see.
 require "zlib"
 
 class ReviewerSelector
