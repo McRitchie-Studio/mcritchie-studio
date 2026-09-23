@@ -79,11 +79,66 @@ clipboard.
 | 5b. Agent runtime | Runs `bin/agent-runtime install`, which installs **both** entrypoints to `$PROJECTS_DIR`: `AGENTS.md` (from `docs/agents/index.md`, read natively by Codex) and `CLAUDE.md` (from `docs/agents/claude.md`, the Claude Code adapter that `@import`s AGENTS.md). It mirrors the shared user-global agent skills `docs/agents/skills/*` → `~/.claude/skills/*` + `~/.codex/skills/*`, configures Codex marker hooks, and keeps `bin/install-agent-docs` as the lower-level copy/drift implementation. |
 | 5c. Secrets replay | Re-runs Phase 4 now that sibling repos exist, so newly cloned satellites get their `.env` before DB setup |
 | 6. Bundles + DBs | `bundle install` (only when `bundle check` fails) + `db:migrate` (existing DB) or `db:create db:migrate db:seed` (first run) for each Rails app; bundle for `solana-studio` |
-| 6b. NFL data | Always runs: live schedule + ESPN depth-chart scrape + current-week roster snapshot + preseason rankings (~3-5 min, network only) |
-| 6c. NFL headshots | Opt-in via `WITH_NFL_HEADSHOTS=1`: nflverse master CSV + S3 headshot cache (~10-15 min, needs AWS creds) |
+| 6b. NFL data | Always runs: live schedule + ESPN depth-chart scrape + current-week roster snapshot + preseason rankings (~3-5 min, network only). Every task here can now report its own failure — see [How 6b and 6c decide they failed](#how-6b-and-6c-decide-they-failed) |
+| 6c. NFL headshots | Opt-in via `WITH_NFL_HEADSHOTS=1`: nflverse master CSV + S3 headshot cache (~10-15 min, needs AWS creds). A credential failure is reported, not logged green — see [How 6b and 6c decide they failed](#how-6b-and-6c-decide-they-failed) |
 | 7. Anchor + e2e | `yarn install` + `anchor build` for `turf-vault`; `npm install` + `npx playwright install chromium` for the Rails apps |
 | 8. Servers | **Always** kills + restarts each active Rails app on its registered port, then curls each to verify HTTP 2xx/3xx |
 | 9. Env snapshot | Writes `mcritchie-studio/tmp/env-snapshot-YYYY-MM-DD.json` (raw `.env` contents, gitignored, chmod 600) as a Heroku-independent secret-recovery fallback |
+
+## How 6b and 6c decide they failed
+
+**The short version: a lane is graded on a signal that CHANGES when the import
+breaks.** That reads like a tautology and is not — four of these lanes were
+graded on signals that could not change, at the same time, and each one logged a
+green line through a total outage.
+
+Every importer in these two phases rescues a per-item failure ON PURPOSE. One
+unreachable ESPN team must not cost the other 31 their refresh; one dead
+headshot URL must not cost the other thousand theirs; a dead nflverse feed must
+not abort a deploy, because the app is fine and only the data is stale. Those
+rescues are right. The cost is that the process exits 0 however much failed, and
+for a while nothing above them turned "all of it failed" into a verdict.
+
+Measured 2026-09-23, each in a desk against the real code:
+
+| Lane | What a total failure used to look like | What it looks like now |
+|------|----------------------------------------|------------------------|
+| `espn:scrape_depth_charts` | `{:teams_failed=>32}` printed, exit 0, green entry count logged | refuses a run that applied NO teams; a partial run stays green and reports its per-bucket tally on stderr |
+| `nfl:upload_headshots` | every candidate raised `Aws::Errors::MissingCredentialsError`, `failed: 3 cached: 0`, exit 0 | refuses a run where more uploads failed than succeeded, and names the AWS variables to check |
+| `nfl:rankings_compute` | wrote the SAME 448 rows a healthy run writes, every score `0.0`, exit 0 | refuses a ranking where every team scored zero, and names `GRADES_FROM` |
+| `nfl:players_seed` | exit 0 through a rescued feed outage | graded on the exit code AND an `ImportRun` success pinned to THIS run's start |
+
+`nfl:schedule_seed` and `nfl:rosters_snapshot` were measured too and left alone:
+the first raises on an empty feed, the second aborts on a missing season or
+slate, so their exit codes still discriminate.
+
+Three rules the next lane added here should copy.
+
+- **The verdict lives in the rake task, never in the service.** `lib/tasks/espn.rake`
+  grades the tally `Espn::ScrapeDepthCharts` already returns, rather than making
+  the service raise. The service has other callers that need its tolerance; only
+  the LANE needs an exit code. Same for `nfl:upload_headshots` and
+  `nfl:rankings_compute` in `lib/tasks/nfl.rake`.
+- **AND two signals; never swap one for the other.** Phase 6c grades
+  `nfl:players_seed` on the exit code AND the `ImportRun` row, because each
+  catches what the other cannot: the row sees a rescued outage the exit code
+  cannot, and the exit code sees a crash the row cannot. A PR that replaced the
+  exit code with the row traded one false green for another. Before replacing
+  signal A with signal B, write out every cell where they disagree — in BOTH
+  directions.
+- **A count is a LEVEL, not a delta.** "4321 entries with ESPN formation_slot",
+  "448 rank rows populated" and "1100 cached variants" all survive an outage
+  untouched, because they count what is in the database, not what this run put
+  there. None of them can be a verdict. Where a count is genuinely all there is,
+  pin it to the run — which is what `ImportRun.fresh_success?(since:)` does, and
+  why an unreadable boundary is refused rather than quietly widened.
+
+The phase wiring is driven end-to-end by
+`test/lib/ecosystem_build_nfl_data_verdict_test.rb` and
+`test/lib/ecosystem_build_import_verdict_test.rb`, which source the script and
+stub `bundle`; the tasks’ own verdicts are driven against the database by
+`test/lib/tasks/rebuild_lane_verdict_test.rb`. Both halves are needed, and
+either one alone reads as fixed.
 
 ## The Phase 4 vault guard
 
