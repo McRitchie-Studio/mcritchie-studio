@@ -370,11 +370,14 @@ module SessionMarkers
   # because that sentence is what makes the deny list complete. bin/statusline also
   # SHELLS `bin/task session-mascot`, which writes `<id>.json` — a marker this list
   # does not exclude. It errs toward HOLD and is left alone deliberately: the heal
-  # early-returns once a mascot exists (827 of 838 `<id>.json` markers already carry
-  # one), and across 296 sessions holding both markers, 163 showed the terminal
-  # still painting more than ten minutes after `<id>.json` last moved — the largest
-  # lag 516 hours of painting with no non-throttle marker advancing. A terminal that
-  # paints for weeks does not keep refreshing `<id>.json`, so the indirect write
+  # early-returns once a mascot exists, and the indirect write is empirically
+  # QUIESCENT. Measured on the live store 2026-09-22 (835 of 846 `<id>.json`
+  # markers already carry a mascot; of the 296 sessions holding BOTH `<id>.json`
+  # and `<id>.heartbeat`, 164 had the throttle more than ten minutes newer than
+  # the marker, the largest gap 516 hours of painting with no non-throttle marker
+  # advancing). Re-derive rather than re-copy — it is a live directory, and these
+  # figures moved between two counts a day apart. A terminal that paints for
+  # weeks does not keep refreshing `<id>.json`, so the indirect write
   # does not rebuild the immortal lease. Excluding `.json` outright WOULD, on the
   # other hand, blind this read to bin/task's own narration.
   #
