@@ -132,7 +132,7 @@ class ContentsController < ApplicationController
         #
         # `reuse?` used to stand in for this question and the two came apart the
         # moment the reuse LABEL got stricter. See Content::ArtifactPlan::Slot.
-        slot.supersedes&.retire!
+        slot.occupant&.retire!
 
         artifact = Artifact.create!(kind: slot.kind, image_url: params[:image_url], source: "operator")
         slot.subjects.each_with_index do |row, i|
@@ -169,7 +169,11 @@ class ContentsController < ApplicationController
   # which is what unlocks video generation.
   def approve_artifacts
     slots = Content::ArtifactPlan.new(@content).slots
-    missing = slots.reject { |s| s.artifact&.image_url.present? }
+    # ASK EACH CELL WHAT IT HOLDS. `slot.artifact` is the RECOLOR SOURCE on a
+    # :reskin — another colorway's asset, whose image_url is present — so
+    # rejecting on it let a slot with nothing on file for this game pass the
+    # gate, and the approve below then stamped that other-colorway row.
+    missing = slots.reject(&:filled?)
 
     if slots.empty? || missing.any?
       return redirect_to content_path(@content.slug),
@@ -178,7 +182,7 @@ class ContentsController < ApplicationController
 
     rescue_and_log(target: @content) do
       Content.transaction do
-        slots.each { |slot| slot.artifact.approve!(by: Current.user&.email) }
+        slots.each { |slot| slot.occupant.approve!(by: Current.user&.email) }
         @content.update!(artifacts_approved_at: Time.current)
       end
       redirect_to content_path(@content.slug), notice: "Artifacts approved — video generation unlocked."

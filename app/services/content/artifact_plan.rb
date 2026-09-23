@@ -7,51 +7,58 @@ class Content
   # face does not change, only what they are wearing does. So each slot answers:
   # reuse it, re-skin it, or make it.
   class ArtifactPlan
-    Slot = Struct.new(:kind, :label, :subjects, :decision, :artifact, :supersedes, keyword_init: true) do
-      # `decision` and `supersedes` answer DIFFERENT QUESTIONS and must not share
-      # a predicate.
-      #
-      #   #reuse? — "may we use this artifact as it stands?" A LABEL, read by the
-      #   badge on the gate card.
-      #   #supersedes — "which live artifact would the image I am about to file
-      #   shadow?" A MUTATION, read by the retire in
-      #   ContentsController#attach_artifact.
-      #
-      # They came apart the moment a lookless artifact under a named colorway
-      # stopped counting as a reuse. The label became right and the RETIRE went
-      # with it, so Replace filed a second artifact carrying the SAME reuse key
-      # and the gate kept rendering the first one — a wrong label became a wrong
-      # picture. Gating a mutation on a lookup's predicate means every change to
-      # what the lookup MATCHES silently changes what the mutation DESTROYS.
-      #
-      # NOTE ALSO that on a re-skin `artifact` and `supersedes` are not the same
-      # row: `artifact` is the other-look asset we are recoloring FROM, which
-      # must stay live. Retiring by `decision` could only ever name `artifact`.
+    # A cell in the gate, and the TWO ARTIFACTS it can hold. They are named for
+    # what they ARE, not for what any one reader wants from them:
+    #
+    #   `occupant` — THE ROW FILED IN THIS CELL: the live artifact already
+    #   carrying this slot's exact reuse key. What the card renders, what
+    #   #ready? counts, what the gate approves, and what the next attach
+    #   retires.
+    #   `artifact` — THE RECOLOR SOURCE: on a :reskin, the OTHER-colorway asset
+    #   we would recolor FROM. It belongs to a different game and must stay
+    #   live. On a :reuse the two are the same row; on a :reskin they routinely
+    #   are not, and a mixed cast keeps them apart indefinitely.
+    #
+    # EVERY DEFECT THIS CLASS HAS HAD WAS A CONSUMER READING THE OTHER ONE.
+    # First the retire was gated on `#reuse?`, so tightening what the LOOKUP
+    # matched silently changed what the mutation DESTROYED and Replace filed a
+    # second artifact under the same key. Then the submit label was gated on the
+    # same predicate and inverted from the other side. Then the card, #ready?
+    # and #approve_artifacts were found reading `artifact` — the recolor source
+    # — as though it were the row on file, so a freshly attached image was
+    # invisible and approval landed on the other colorway's artifact.
+    #
+    # THE RULE THE THREE SHARE: gate a mutation, a picture or a sign-off on the
+    # row it actually acts on, never on a predicate that merely correlates with
+    # it. `decision` is a LABEL and may gate nothing but words.
+    Slot = Struct.new(:kind, :label, :subjects, :decision, :artifact, :occupant, keyword_init: true) do
       def reuse?    = decision == :reuse
       def reskin?   = decision == :reskin
       def generate? = decision == :generate
 
-      # IS THE PICTURE ON SCREEN THE ONE ABOUT TO BE RETIRED? The submit label's
-      # question, and a THIRD question again — neither the label `#reuse?` nor
-      # the bare mutation `#supersedes`.
+      # IS ANYTHING FILED FOR THIS CELL? The gate's one question, and the only
+      # thing that may unlock approval. Asking it of `artifact` counted the
+      # recolor source: on a :reskin that row's image_url IS present, so a slot
+      # with nothing on file for this game read as ready and the gate closed
+      # over a jersey from another week. Measured 2026-09-23.
+      def filled? = occupant&.image_url.present?
+
+      # DOES THE NEXT ATTACH DESTROY A ROW? The submit label's promise about
+      # what the click costs, read by the Attach/Replace word on the card.
       #
-      # The card renders `artifact`; the attach retires `supersedes`. The button
-      # promises the operator what that click costs him, so it is true only where
-      # those two are the SAME ROW. On a re-skin they are routinely not: `artifact`
-      # is the other-colorway asset we recolor FROM and it stays live, while
-      # `supersedes` is whatever already holds the key the new image will take.
-      # Measured 2026-09-23 on a mixed cast — the gate shows the white pair, the
-      # click retires a black one, and the white image is still on the card
-      # afterwards.
+      # It deliberately does NOT test `image_url`. The question is which ROW
+      # dies, and an artifact filed without an image still occupies the cell and
+      # is still destroyed. `occupant&.image_url.present?` is the tempting
+      # shorter form and tells the operator that nothing is lost.
       #
-      # `supersedes&.image_url.present?` is the tempting shorter form and it is
-      # wrong in exactly that case: it says "Replace" over an image that survives.
-      # It passes every test that existed before this one, which is why the test
-      # below names it.
-      #
-      # It deliberately does NOT test `image_url`. The question is which ROW dies,
-      # and an artifact filed without an image is still destroyed by that click.
-      def replaces_shown_artifact? = supersedes.present? && supersedes.id == artifact&.id
+      # IT USED TO CARRY A SECOND CLAUSE — `occupant.id == artifact&.id`, the
+      # "is the picture on screen the one about to be retired?" test — because
+      # the card rendered `artifact` and the retire named `occupant`, so the two
+      # could disagree. The card now renders `occupant` itself, which makes that
+      # disagreement unreachable rather than merely untested; keeping the
+      # comparison would assert a row against itself. The case that still
+      # separates this from the shorter form is an occupant with no image.
+      def replaces_filed_artifact? = occupant.present?
 
       def status_label
         case decision
@@ -92,6 +99,9 @@ class Content
       # names the look we DO have, because that is the thing being changed.
       def detail
         case decision
+        # `artifact` IS the occupant on a :reuse — #decide returns the one row
+        # for both — so this sentence describes what is filed. It is the only
+        # branch where the two may be used interchangeably.
         when :reuse  then artifact&.approved? ? "approved artifact on file" : "attached, not yet approved"
         when :reskin then reskin_detail
         else              "nothing on file for this cast"
@@ -123,7 +133,10 @@ class Content
       [pair_slot, *cast.map { |slug, role| sheet_slot(slug, role) }].compact
     end
 
-    def ready? = slots.any? && slots.all? { |s| s.artifact&.image_url.present? }
+    # THE GATE OPENS ONLY ON WHAT IS FILED. Every slot must hold an image of
+    # its own; a :reskin slot pointing at another colorway's asset holds nothing
+    # for THIS game, however present that asset's image_url is.
+    def ready? = slots.any? && slots.all?(&:filled?)
 
     private
 
@@ -194,16 +207,16 @@ class Content
       return nil if cast.length < 2
 
       rows = subject_rows(cast)
-      decision, artifact, supersedes = decide(rows, "pair")
+      decision, artifact, occupant = decide(rows, "pair")
       Slot.new(kind: "pair", label: "Both players", subjects: rows,
-               decision: decision, artifact: artifact, supersedes: supersedes)
+               decision: decision, artifact: artifact, occupant: occupant)
     end
 
     def sheet_slot(slug, role)
       rows = subject_rows([[slug, role]])
-      decision, artifact, supersedes = decide(rows, "character_sheet")
+      decision, artifact, occupant = decide(rows, "character_sheet")
       Slot.new(kind: "character_sheet", label: role == "qb" ? "Quarterback" : "Skill player",
-               subjects: rows, decision: decision, artifact: artifact, supersedes: supersedes)
+               subjects: rows, decision: decision, artifact: artifact, occupant: occupant)
     end
   end
 end

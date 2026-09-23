@@ -110,8 +110,8 @@ class ArtifactGateTest < ActionDispatch::IntegrationTest
 
   # The other half of the predicate, and the reason it is not simply "always
   # Attach": a :reuse slot holds the SAME cast in the SAME look, the attach DOES
-  # retire it (contents_controller: `slot.supersedes&.retire!`, and on a :reuse
-  # slot `supersedes` IS `artifact`), and Replace is the honest word. A fix that
+  # retire it (contents_controller: `slot.occupant&.retire!`, and on a :reuse
+  # slot `occupant` IS `artifact`), and Replace is the honest word. A fix that
   # flipped every label would break this.
   test "[component] a reuse slot still offers Replace" do
     attach_all
@@ -138,7 +138,7 @@ class ArtifactGateTest < ActionDispatch::IntegrationTest
   #
   # `slot.reuse?` was the right question only while the retire was spelled
   # `if slot.reuse?`. Once the retire began naming its own target
-  # (`slot.supersedes&.retire!`), a population moved out of :reuse while STILL
+  # (`slot.occupant&.retire!`), a population moved out of :reuse while STILL
   # being superseded — a lookless artifact under a named colorway reads :reskin
   # — and the button went on asking the old question. It said "Attach", meaning
   # "your picture is safe", and the click retired the picture on the card.
@@ -156,9 +156,13 @@ class ArtifactGateTest < ActionDispatch::IntegrationTest
     assert slot.reskin?,
            "the control — the refusal must have moved this OUT of :reuse, or the old " \
            "predicate would answer correctly by accident. Read #{slot.decision.inspect}"
-    assert_equal slot.artifact.id, slot.supersedes&.id,
-           "the control — the row on the card and the row about to be retired must be the " \
-           "SAME one, or this test is not about the lie the button told"
+    assert_not_nil slot.occupant,
+           "the control — a row must occupy this cell, or nothing is retired and Attach " \
+           "would be the honest word"
+    assert_equal slot.artifact.id, slot.occupant.id,
+           "the control — on a SINGLE-member cast the recolor source and the occupant are the " \
+           "same row, so this test cannot tell the two apart. The mixed-cast test below is the " \
+           "one that separates them"
 
     get content_path(@content.slug)
 
@@ -167,20 +171,24 @@ class ArtifactGateTest < ActionDispatch::IntegrationTest
                  "the operator his image survives the click, and it does not"
   end
 
-  # AND THE REASON IT CANNOT BE `slot.supersedes&.image_url.present?`.
+  # THE TWO ROWS, PULLED APART. A look nobody recorded for ONE member keeps the
+  # black row out of :reuse while leaving it the cell occupant — the only way
+  # `artifact` and `occupant` come apart and stay apart.
   #
-  # That shorter form passes every other test in this file, including the one
-  # above — so nothing else in the suite distinguishes it from the real
-  # predicate. It is wrong wherever the retired row is not the row on screen,
-  # which a re-skin reaches on the ordinary path: the card shows the white pair
-  # we are recoloring FROM, the click retires a different black row that holds
-  # the key the new image will take, and the white image is still on the card
-  # afterwards. "Replace" there names a destruction that does not happen.
+  # THIS TEST USED TO ASSERT "Attach" HERE, and that was right while the card
+  # rendered the recolor source: the white pair was on screen, the click retired
+  # a different black row, and "Replace" would have named a destruction of the
+  # picture the operator was looking at. The card now renders the OCCUPANT, so
+  # the picture on screen is the black row and the click does destroy it —
+  # "Replace" became the honest word by the same reasoning that chose "Attach"
+  # before. The button's contract is unchanged; the row it describes moved.
   #
-  # The cast is mixed on purpose. A look nobody recorded for ONE member is what
-  # keeps the black row out of :reuse while leaving it the cell occupant — the
-  # only way `artifact` and `supersedes` come apart.
-  test "[component] a re-skin over a different row offers Attach, not Replace" do
+  # That also cost this test its old job. It was the sole discriminator against
+  # `occupant&.image_url.present?`, which worked because the retired row was not
+  # the row on screen — a state the card change makes unreachable. The
+  # discriminator now lives in "an occupant filed without an image still offers
+  # Replace", where the ROW and the PICTURE come apart instead.
+  test "[component] a re-skin over a different row shows and replaces the occupant" do
     unrecorded = Person.create!(first_name: "Unre", last_name: "Corded", athlete: true)
     black = Appearance.create!(person_slug: @burrow.slug, descriptor: "Bengals black", colorway: "black")
     @content.update!(skill_player_slug: unrecorded.slug, colorway: "black")
@@ -195,21 +203,186 @@ class ArtifactGateTest < ActionDispatch::IntegrationTest
     assert slot.reskin?, "the control — read #{slot.decision.inspect}"
     assert_equal white_pair.id, slot.artifact&.id,
                  "the control — the card must be showing the WHITE pair, the row we recolor from"
-    assert_equal black_pair.id, slot.supersedes&.id,
-                 "the control — the row about to be retired must be the BLACK one. If these " \
+    assert_equal black_pair.id, slot.occupant&.id,
+                 "the control — the row occupying this cell must be the BLACK one. If these " \
                  "two ever name the same artifact this test proves nothing"
 
     get content_path(@content.slug)
 
-    assert_equal "Attach", submit_label_for("pair"),
-                 "the image on this card survives the click — only a different row is retired. " \
-                 "`supersedes&.image_url.present?` says Replace here, and that is the bug"
+    assert_match "/black-pair.png", response.body,
+                 "the black row is what is filed for this cast in this jersey; the card shows " \
+                 "what is on file"
+    assert_no_match(%r{/white-pair\.png}, response.body,
+                    "the white pair is the row we would recolor FROM. Naming it in words is the " \
+                    "job of `slot.detail`; putting it in the image frame is the wrong-jersey lie")
+    assert_equal "Replace", submit_label_for("pair"),
+                 "the click retires the black row, which is the picture now on this card"
 
     attach(index_of("pair"), "/new-pair.png")
 
     assert_nil white_pair.reload.retired_at,
                "and the label was telling the truth: the shown artifact is still live"
     assert_not_nil black_pair.reload.retired_at, "while the cell occupant was superseded"
+  end
+
+  # --- the cell occupant, on every consumer -------------------------------
+  #
+  # THE REFUSAL HAS A SECOND LIMB. `Artifact.matching` refuses a named colorway
+  # over an unrecorded look, so on a MIXED CAST — one member's look recorded for
+  # this colorway, one member's never recorded — `exact` is nil FOREVER. No
+  # image the operator files can ever become one, because the refusal is about
+  # the unrecorded PERSON, not about the artifact. `decide` therefore parks on
+  # :reskin permanently, and `slot.artifact` on a :reskin is the OTHER-colorway
+  # row we recolor FROM.
+  #
+  # Four consumers read that row as though it were the one on file: the card's
+  # thumbnail, `#ready?`, and the gate's two reads in #approve_artifacts. The
+  # first pass separated the LABEL from the MUTATION and stopped there; these
+  # are the same separation, one population wider.
+  #
+  # Measured on this code 2026-09-23: after attaching /new-pair.png the card
+  # still rendered /white-pair.png and the page did not contain the new image
+  # at all. Reverting only the `colorway:` argument in #decide flips every cell
+  # back to :reuse — the defect rides the refusal, exactly as in the first pass.
+
+  test "[integration] the gate shows the image just attached, not the row it recolors from" do
+    unrecorded = Person.create!(first_name: "Unre", last_name: "Corded", athlete: true)
+    Appearance.create!(person_slug: @burrow.slug, descriptor: "Bengals black", colorway: "black")
+    @content.update!(skill_player_slug: unrecorded.slug, colorway: "black")
+    white_pair = pair_artifact("/white-pair.png", appearances_for(@burrow, "white"), unrecorded)
+
+    assert slots[index_of("pair")].reskin?,
+           "the control — the refusal must park this on :reskin, or `artifact` and the cell " \
+           "occupant never come apart. Read #{slots[index_of('pair')].decision.inspect}"
+
+    attach(index_of("pair"), "/new-pair.png")
+
+    slot = slots[index_of("pair")]
+    assert slot.reskin?,
+           "the control — attaching must NOT resolve the refusal; that is what makes the stale " \
+           "row survive on the card. Read #{slot.decision.inspect}"
+    assert_equal white_pair.id, slot.artifact&.id,
+           "the control — the recolor source must still be the white pair, or the two rows " \
+           "agree and this test proves nothing"
+
+    get content_path(@content.slug)
+
+    assert_match "/new-pair.png", response.body,
+                 "the operator just filed this image; a gate whose job is that a human looked " \
+                 "at the picture must show the picture"
+    assert_no_match(%r{/white-pair\.png}, response.body,
+                    "the white pair belongs to another game. Rendering it in the slot's image " \
+                    "position is the wrong-jersey confusion this screen exists to stop")
+  end
+
+  # AND THE GATE CLOSES OVER IT. The same stale row is what #ready? counts and
+  # what #approve_artifacts stamps, so the operator's image is not merely
+  # invisible — approval lands on the other colorway's artifact.
+  test "[integration] approving stamps the artifact on file, not the recolor source" do
+    unrecorded = Person.create!(first_name: "Unre", last_name: "Corded", athlete: true)
+    Appearance.create!(person_slug: @burrow.slug, descriptor: "Bengals black", colorway: "black")
+    @content.update!(skill_player_slug: unrecorded.slug, colorway: "black")
+    white_pair = pair_artifact("/white-pair.png", appearances_for(@burrow, "white"), unrecorded)
+
+    slots.each_with_index do |slot, i|
+      attach(i, slot.kind == "pair" ? "/new-pair.png" : "/sheet-#{i}.png")
+    end
+    new_pair = Artifact.find_by!(image_url: "/new-pair.png")
+    assert_equal white_pair.id, slots[index_of("pair")].artifact&.id,
+                 "the control — the pair slot must still be pointing at the white row, or the " \
+                 "approve below cannot land on the wrong artifact"
+
+    post approve_artifacts_content_path(@content.slug)
+
+    assert @content.reload.artifacts_approved?,
+           "the control — the gate must actually open, or nothing is stamped either way. " \
+           "Read #{flash[:alert].inspect}"
+    assert new_pair.reload.approved?,
+           "the image the operator filed for THIS game is the one the gate signs off"
+    assert_not white_pair.reload.approved?,
+           "approving the other colorway's artifact is the gate closing over the wrong jersey — " \
+           "the one outcome this screen exists to prevent"
+  end
+
+  # AND THE GATE'S OWN LOCK, which is the same read twice more: #ready? draws
+  # the Approve button enabled or disabled, and #approve_artifacts refuses on
+  # its own before stamping anything. Both asked `artifact&.image_url.present?`
+  # — the RECOLOR SOURCE on a :reskin — so a slot holding nothing for THIS game
+  # counted as ready, the button came up live, and the POST went through and
+  # stamped the other colorway's row.
+  #
+  # That is the gate failing in the one direction it must never fail: it
+  # records that a human approved an image which is not in play. Every other
+  # slot here is genuinely filled on purpose, so the refusal can only be coming
+  # from the pair.
+  test "[integration] the recolor source alone does not open the gate" do
+    unrecorded = Person.create!(first_name: "Unre", last_name: "Corded", athlete: true)
+    black = Appearance.create!(person_slug: @burrow.slug, descriptor: "Bengals black", colorway: "black")
+    @content.update!(skill_player_slug: unrecorded.slug, colorway: "black")
+
+    white_pair = pair_artifact("/white-pair.png", appearances_for(@burrow, "white"), unrecorded)
+    qb_sheet = Artifact.create!(kind: "character_sheet", image_url: "/qb-black.png")
+    qb_sheet.subjects.create!(person_slug: @burrow.slug, appearance_slug: black.slug, role: "qb", ordinal: 1)
+    skill_sheet = Artifact.create!(kind: "character_sheet", image_url: "/skill.png")
+    skill_sheet.subjects.create!(person_slug: unrecorded.slug, appearance_slug: nil, role: "skill", ordinal: 1)
+
+    plan = Content::ArtifactPlan.new(@content.reload)
+    pair = plan.slots[index_of("pair")]
+    assert_equal white_pair.id, pair.artifact&.id,
+                 "the control — the pair slot's only artifact must be the recolor source"
+    assert_nil pair.occupant,
+               "the control — nothing may be filed for this cast in this jersey, or the gate " \
+               "is entitled to open and this test proves nothing"
+    assert plan.slots.reject { |s| s.kind == "pair" }.all? { |s| s.occupant&.image_url.present? },
+           "the control — every OTHER slot must be genuinely filled, or the refusal below " \
+           "could be coming from one of them instead"
+
+    assert_not plan.ready?,
+               "a slot whose only artifact belongs to another game is not ready, however " \
+               "present that artifact's image_url is"
+
+    get content_path(@content.slug)
+    assert_match "every slot needs an image before this unlocks", response.body,
+                 "the operator must see the gate is shut; an enabled Approve here invites the " \
+                 "click that stamps the wrong jersey"
+
+    post approve_artifacts_content_path(@content.slug)
+
+    assert_not @content.reload.artifacts_approved?,
+               "the gate's own refusal is the last line — it must not depend on the button " \
+               "having been drawn disabled"
+    assert_not white_pair.reload.approved?,
+               "and the recolor source is emphatically not what a click here would sign off"
+  end
+
+  # AND THE BUTTON STILL DOES NOT TEST FOR A PICTURE. `#replaces_filed_artifact?`
+  # asks which ROW dies, never whether that row has an image: an artifact filed
+  # with a blank URL — the attach form submitted empty — still occupies the cell
+  # and is still destroyed by the next click. `occupant&.image_url.present?` is
+  # the tempting shorter form and says "Attach" here, promising the operator
+  # that nothing is lost.
+  #
+  # This is the discriminator that the mixed-cast test below used to carry. Once
+  # the card renders the occupant, "the row on screen is not the row retired"
+  # stops being reachable, so the shorter form has to be separated from the real
+  # predicate somewhere the ROW and the PICTURE come apart instead.
+  test "[component] an occupant filed without an image still offers Replace" do
+    bare = Person.create!(first_name: "Bare", last_name: "Look", athlete: true)
+    @content.update!(qb_player_slug: bare.slug, skill_player_slug: nil, colorway: "black")
+    attach(index_of("character_sheet"), "")
+
+    slot = slots[index_of("character_sheet")]
+    assert_not slot.occupant.nil?,
+               "the control — a row must occupy this cell, or there is nothing to replace"
+    assert_not slot.occupant.image_url.present?,
+               "the control — that row must carry NO image, or this is not the case where the " \
+               "row and the picture come apart. Read #{slot.occupant.image_url.inspect}"
+
+    get content_path(@content.slug)
+
+    assert_equal "Replace", submit_label_for("character_sheet"),
+                 "the next attach retires this row. Attach here promises the operator that " \
+                 "nothing on file is destroyed, and a row is"
   end
 
   test "[component] the gate disappears once approved" do
