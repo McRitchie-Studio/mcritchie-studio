@@ -61,17 +61,26 @@ namespace :nfl do
     # 0. That is the credential failure the phase-6c log line has been telling
     # operators to go and check, reported as a success.
     #
-    # GRADED ON THE MAJORITY, not on `failed.positive?`. A single 404 is a
-    # normal afternoon; reddening a whole rebuild for it trains an operator to
-    # stop reading the line. More failures than successes cannot be one bad URL
-    # — it is the uploader not working, which is what a credential failure looks
-    # like from here: every attempt fails, so `cached` is 0 and `failed` is
-    # everything.
+    # GRADED ON THE MAJORITY, not on `failed.positive?`. More failures than
+    # successes cannot be one bad URL — it is the uploader not working, which is
+    # what a credential failure looks like from here: every attempt fails, so
+    # `cached` is 0 and `failed` is everything.
+    #
+    # THE MAJORITY IS ONLY AS GOOD AS THE SAMPLE, and on a WARM machine the
+    # sample is tiny. `skipped_complete` and `skipped_no_team` both `next` above
+    # WITHOUT touching either counter, so `failed + cached` counts only the
+    # newly-discovered espn_ids — often one. One new athlete whose ESPN headshot
+    # 404s is then `failed: 1, cached: 0`, which clears this rule and aborts. So
+    # "a single 404 is a normal afternoon" holds for the COLD rebuild and not for
+    # the warm one. Narrowing to a meaningful sample changes behaviour and owes
+    # its own test; until then the abort names both causes rather than one.
     if failed > cached
       warn "nfl:upload_headshots: #{failed} of #{failed + cached} attempted uploads failed"
       abort "nfl:upload_headshots failed #{failed} of #{failed + cached} attempted uploads " \
-            "(cached #{cached}) — read the [!] lines above. A total failure is usually AWS " \
-            "credentials: check AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_REGION in .env."
+            "(cached #{cached}) — read the [!] lines above, which name the cause per athlete. " \
+            "Across MANY attempts this is usually AWS credentials: check AWS_ACCESS_KEY_ID / " \
+            "AWS_SECRET_ACCESS_KEY / AWS_REGION in .env. Across one or two it is more often a " \
+            "dead ESPN source URL, since only newly-discovered espn_ids are attempted."
     end
   end
 
