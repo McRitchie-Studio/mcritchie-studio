@@ -240,23 +240,33 @@ honest, and **none of them needs a manual flag in the common case**:
   read complete.
 - **Busy souls** — agents mid-build or mid-review on OTHER in-flight tasks
   shouldn't be handed a review. Name them with **`--busy a,b,c`** (repeatable),
-  and/or add **`--busy-auto`** to also exclude every agent on a `stage=building`
-  task (a board query; skipped in `--file` mode and degrades to a no-op if the
-  board read fails).
-  **This is the ONE exclusion that needs a flag, and `--busy-auto` covers only the
-  mid-BUILD half.** The other two drop out on their own, so a bare
-  `bin/reviewer-select <task>` carries an EMPTY busy set and logs `busy=-` —
-  which is what three runs on 2026-09-22 printed while the souls they named were
-  each holding a live review claim. `--busy-auto` would not have caught those
-  either: it queries `stage=building`, and a soul mid-REVIEW is on a `submitted`
-  task whose reviewer lives in `TaskReviewClaim.holder_agent`. That holder IS
-  readable — `GET /api/v1/tasks/<slug>/review_claim` returns it (`{"holder": {"agent":
-  "carl", "live": true, …}}`, measured against prod 2026-09-22) — but only ONE TASK
-  AT A TIME. The index serializer carries `review_in_progress`, a boolean saying
-  someone is reviewing and never WHO, so a busy set built this way costs a round
-  trip per in-review task. `--busy-auto` asks for none of it. So mid-review busy is
-  reachable today ONLY by hand-passing `--busy <slug>`. Read `busy=-` as "nobody
-  asked", never as "the bench is idle". Tracked: `busy-auto-misses-mid-review`.
+  and/or add **`--busy-auto`**, which reads BOTH halves — every agent on a
+  `stage=building` task (mid-build) **and** every soul holding a LIVE review claim
+  on a `submitted` one (mid-review). Skipped in `--file` mode; each half degrades
+  to empty on a failed read and SAYS which half it lost.
+  **`bin/pr-review` passes `--busy-auto` on every select**, so the automated review
+  lane always asks. A bare hand-run still does not, and the audit line says so:
+  `busy=NOT-ASKED(no-exclusion)` when nobody looked, `busy=none(asked)` when
+  somebody did and the bench was idle. Never read a blank as an idle bench.
+
+  **How the mid-review half works, and why it is ONE read.** A soul mid-REVIEW is
+  not on a building task at all — they are on a `submitted` task whose reviewer
+  lives in `TaskReviewClaim.holder_agent`. That holder has always been readable per
+  task (`GET /api/v1/tasks/<slug>/review_claim` → `{"holder": {"agent": "carl",
+  "live": true, …}}`), but ONE TASK AT A TIME. The index serializer now carries
+  **`review_holder`** (the soul) beside **`review_claim_live`** and the older
+  `review_in_progress` boolean, so `GET /api/v1/tasks?stage=submitted&full=1` serves
+  the whole set in one request. A busy set wired against the per-task endpoint
+  instead would exclude the right souls at one round trip each — it passes, and it
+  keeps the cost. `review_holder` is nil for a lapsed or released claim; nil with
+  `review_claim_live: true` means somebody IS reviewing under a claim that names no
+  soul, which `--busy-auto` reports rather than scoring as an idle seat.
+
+  Before 2026-09-22 `--busy-auto` covered only the mid-BUILD half, and a bare run
+  logged a tidy `busy=-`. Three observed runs printed it while the souls they named
+  were each holding a live review claim; the conductor overrode the pick by hand
+  four times in one night, and one of those overrides spent Avi's QA-owner
+  exclusion on PR #1521.
 
 **Reading a seat line — the two seats are filled by DIFFERENT mechanisms.** Each
 line ends with the basis that actually seated that soul, so the fit score beside it

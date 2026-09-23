@@ -31,8 +31,14 @@ module Api
         # already implies stage=submitted (Task.reviewable folds it in), so it works
         # with or without an explicit `stage=submitted`.
         tasks = tasks.merge(Task.reviewable) if ActiveModel::Type::Boolean.new.cast(params[:reviewable])
+        full = ActiveModel::Type::Boolean.new.cast(params[:full])
+        # `full=1` renders `review_holder`, which reads the review_claim association.
+        # Preloaded here so serving a page costs ONE claim query instead of one per
+        # row — the field exists to REPLACE an N+1, so adding one to serve it would
+        # move the cost rather than remove it.
+        tasks = tasks.includes(:review_claim) if full
         result = paginate(tasks)
-        records = if ActiveModel::Type::Boolean.new.cast(params[:full])
+        records = if full
                     result[:records].map { |task| task_json(task) }
                   else
                     result[:records]
@@ -140,6 +146,22 @@ module Api
           # `bin/task show --json` sees it without knowing to run `bin/task bounces`.
           "resubmission" => resubmission_json(task),
           "review_in_progress" => task.review_in_progress?,
+          # WHO, beside the boolean. `review_in_progress` says a review is happening
+          # and names nobody, so a caller building a busy set from the index had to
+          # spend one extra round trip PER in-review task on
+          # /api/v1/tasks/<slug>/review_claim — which is why bin/reviewer-select's
+          # --busy-auto never covered the mid-review half at all. nil means no LIVE
+          # claim, OR a live claim that names no soul: with `review_in_progress`
+          # beside it those two are tellable apart, and they need to be (see
+          # Task#review_holder). Preloaded in `index`, so a page costs no per-row query.
+          "review_holder" => task.review_holder,
+          # The LIVENESS fact under that name, from the same preloaded row. It is
+          # what makes a nil `review_holder` readable: with it, "no live claim" and
+          # "a live claim naming no soul" are two answers instead of one. It is NOT
+          # a synonym for `review_in_progress`, which also requires an open `reviewed`
+          # intent and reads TRUE for a claim-less hand-run review — so neither field
+          # can stand in for the other.
+          "review_claim_live" => task.review_claim_live?,
           # The progress fact, beside the liveness fact. The claim gate in bin/task
           # reads these to tell a second agent what the holder has actually DONE
           # ("last progress 28m ago · cert failed"), not merely that its terminal

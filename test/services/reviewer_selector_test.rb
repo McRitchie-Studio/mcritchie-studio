@@ -403,8 +403,76 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
 
   test "the audit log names the busy exclusions" do
     logger = CapturingLogger.new
-    ReviewerSelector.new(task_for(shape: "backend"), busy: ["jasper"], logger: logger).reviewers
+    ReviewerSelector.new(task_for(shape: "backend"), busy: ["jasper"], busy_asked: true,
+                         logger: logger).reviewers
     assert_match(/busy=jasper/, logger.lines.last, "the excluded busy souls are logged")
+  end
+
+  # --- AN EMPTY BUSY SET READS APART FROM AN IDLE BENCH -------------------------
+  #
+  # `busy=-` meant two opposite things: nobody is occupied, and nobody LOOKED. The
+  # busy exclusion is opt-in, so the second was the usual one — and it read as the
+  # first. Measured 2026-09-22: the selector logged `busy=-` on every observed run
+  # while the souls it named were each mid-review, and the conductor overrode the
+  # pick by hand four times. This is the same fix `builder_log_token` already
+  # carries: a DISABLED safety check has to read as disabled.
+
+  test "an unasked busy set logs the exclusion as OFF, not as an empty list" do
+    logger = CapturingLogger.new
+    ReviewerSelector.new(task_for(shape: "backend"), logger: logger).reviewers
+
+    assert_match(/busy=NOT-ASKED\(no-exclusion\)/, logger.lines.last,
+      "nobody ran a busy query, so the audit line must say the exclusion was OFF — a bare " \
+      "`-` reads as a bench that was checked and found idle")
+  end
+
+  test "an asked busy set that found nobody logs as asked" do
+    logger = CapturingLogger.new
+    ReviewerSelector.new(task_for(shape: "backend"), busy: [], busy_asked: true, logger: logger).reviewers
+
+    assert_match(/busy=none\(asked\)/, logger.lines.last,
+      "somebody looked and the bench really was idle — the opposite fact from NOT-ASKED, " \
+      "and the one a reader needs to trust the pick")
+  end
+
+  # Asking but finding only NON-CANDIDATES is still asking. This case used to fall
+  # through to the same bare `-` as an unasked run, because the token was built from
+  # what got DROPPED rather than from whether anyone looked.
+  test "asking and dropping nobody still logs as asked" do
+    logger = CapturingLogger.new
+    ReviewerSelector.new(task_for(shape: "backend"), busy: %w[mack avi], busy_asked: true,
+                         logger: logger).reviewers
+
+    assert_match(/busy=none\(asked\)/, logger.lines.last,
+      "mack and avi are not light candidates, so nothing was dropped — but the query RAN, " \
+      "and that is the fact this token carries")
+  end
+
+  test "the decision carries whether anyone asked" do
+    refute ReviewerSelector.new(task_for(shape: "backend")).decision["busy_asked"]
+    assert ReviewerSelector.new(task_for(shape: "backend"), busy: [], busy_asked: true)
+                           .decision["busy_asked"],
+      "a consumer reading `busy: []` cannot tell an idle bench from an unrun query without it"
+  end
+
+  # --- A WIDER BUSY SET MUST NOT STARVE THE POOL --------------------------------
+  #
+  # --busy-auto now feeds in the mid-REVIEW half as well as the mid-build one, so the
+  # set it hands the selector is strictly larger than it used to be. That makes
+  # starvation likelier, and the keep-rather-than-starve floor is the only thing
+  # standing between "a better pick" and "a review lane that cannot form a pair".
+  test "a busy set covering the WHOLE light pool still returns a formable pair" do
+    decision = TinyPoolSelector.new(task_for(shape: "backend"), qa_owner: "carl",
+                                    busy: %w[shannon jasper], busy_asked: true).decision
+
+    reviewers = decision["reviewers"].map { |r| r["slug"] }
+    assert_equal 2, reviewers.compact.size,
+      "both seats come from the light pool here, and EVERY light is busy — the filter must " \
+      "keep the least-bad busy souls eligible rather than return a pair it cannot fill"
+    assert_equal [], decision["excluded_busy"],
+      "with a floor of 2 and a pool of 2 there is no room to drop anyone"
+    assert_equal %w[jasper shannon], decision["kept_busy"].sort,
+      "and the kept souls are NAMED, so the audit says the pick was made over a busy bench"
   end
 
   # Integration: the real build flow (move-to-building auto-stamps built_by) feeding
