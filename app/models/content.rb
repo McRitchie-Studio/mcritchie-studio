@@ -102,6 +102,13 @@ class Content < ApplicationRecord
     def claimed? = reason == "claimed"
   end
 
+  # THE ONE definition of "what session did the caller send". Class-level because
+  # the CLAIM is a class method and the write/release guards are instance methods,
+  # and the bug this closes was exactly those two halves disagreeing.
+  def self.normalize_session(value)
+    value.to_s.strip.presence
+  end
+
   # The ATOMIC pop. The server picks WHICH content, exactly as
   # `Task.claim_next_review` does, so the decision cannot drift between callers.
   #
@@ -111,6 +118,20 @@ class Content < ApplicationRecord
   #
   # An empty pop is a NORMAL outcome, not an error — the caller idles.
   def self.claim_next_for_agent(session:, agent: nil, stage: "idea", workflow: nil, now: Time.current)
+    # A SESSION-LESS CLAIM IS REFUSED AT THE DOOR. It used to be accepted: the row
+    # was stamped `claim_session: nil`, and `claim_write_refusal` then answered
+    # CLAIM_REQUIRED to EVERYONE for the full AGENT_CLAIM_LEASE — including the
+    # caller that had just taken it. So a blank session bought a 30-minute denial
+    # of service against a card nobody could write, and the caller was told
+    # "nothing to claim". Refusing costs nothing and is the honest answer: a claim
+    # nobody can ever prove is not a claim.
+    #
+    # Reason-coded rather than raised, because this endpoint answers 200 by
+    # contract (an empty queue must never make an agent retry-storm) and the
+    # caller separates the two reasons.
+    given = normalize_session(session)
+    return ClaimResult.new(content: nil, reason: "session_required") if given.nil?
+
     scope = claimable_by_agent(now: now).by_stage(stage)
     scope = scope.where(workflow: workflow) if workflow.present?
 
@@ -122,7 +143,12 @@ class Content < ApplicationRecord
         content = claimable_by_agent(now: now).where(slug: slug).lock("FOR UPDATE SKIP LOCKED").first
         next nil unless content # a racer holds it, or it was claimed since the pluck
 
-        content.update!(claimed_by: agent.presence || session, claim_session: session, claimed_at: now)
+        # STORE THE NORMALIZED VALUE. Normalization used to run on the READ side
+        # only, so a padded session was stored raw and then compared against its
+        # own stripped self — `" s " != "s"` — and CLAIM_HELD locked the holder
+        # out of both write and release for the whole lease. One site normalises
+        # now, and both sides agree by construction rather than by luck.
+        content.update!(claimed_by: agent.presence || given, claim_session: given, claimed_at: now)
         ClaimResult.new(content: content, reason: "claimed")
       end
       return claimed if claimed
@@ -247,9 +273,10 @@ class Content < ApplicationRecord
   private
 
   # "", "   " and nil are all "no session". Normalising at one site is what
-  # keeps release and write agreeing on what a missing session means.
+  # keeps release, write AND THE CLAIM agreeing on what a missing session means —
+  # the claim was the site that did not, and stored its value raw.
   def normalize_session(value)
-    value.to_s.strip.presence
+    self.class.normalize_session(value)
   end
 
   def set_stage_timestamp

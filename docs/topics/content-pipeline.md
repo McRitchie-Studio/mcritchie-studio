@@ -172,9 +172,19 @@ The CLI a soul actually uses: `list`, `show`, `claim`, `write`, `release`.
 script carries newlines, quotes and `$`, and a shell argument eats all three.
 Use `--script -` (stdin) or `--script-file F`; same for `--caption`/`--scenes`.
 
-The session id is per-DESK (`tmp/content-session`), not per-invocation, because a
-claim and its release are different processes — a fresh id each time would make
-every release look like a stranger's. `CONTENT_SESSION` overrides.
+The session id is per-AGENT-PROCESS (`tmp/content-sessions/<nonce>`), not
+per-invocation and **not per-desk**, because a claim and its release are different
+processes — a fresh id each time would make every release look like a stranger's,
+while ONE id per checkout made two souls working from the hub primary present the
+SAME session, which is the collision the lease exists to prevent. The nonce comes
+from `SessionIdentity.nonce`, a hash of the long-lived `claude`/`codex` process.
+
+**`CONTENT_SESSION` is a PRECONDITION, not merely an override.** The derived id
+separates terminals, not souls: two subagents of one agent process share an
+ancestor and therefore a session, and a plain shell or a CI run derives no nonce
+at all and falls back to one shared file. Export `CONTENT_SESSION` whenever more
+than one soul works the queue — `claim` prints a warning whenever the id was
+derived rather than given, for exactly this reason.
 
 ## Game Recap Workflow
 
