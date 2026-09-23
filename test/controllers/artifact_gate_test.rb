@@ -239,6 +239,64 @@ class ArtifactGateTest < ActionDispatch::IntegrationTest
            "Read #{slots.map(&:decision).inspect}"
   end
 
+  # --- the colliding empty look -------------------------------------------
+  #
+  # Zero appearances is every person's state until their first look is filed, so
+  # this is the common path on a fresh person, not a corner. The gate card still
+  # renders the real image — a human looking at the screen sees the picture, which
+  # is the gate's whole job — but the DECISION LABEL said "Reuse" over an artifact
+  # whose jersey nobody had recorded, and the label is what an operator trusts
+  # when skimming.
+
+  test "[integration] a named colorway does not reuse an artifact whose look was never recorded" do
+    bare = Person.create!(first_name: "Bare", last_name: "Look", athlete: true)
+    @content.update!(qb_player_slug: bare.slug, skill_player_slug: nil, colorway: "black")
+
+    artifact = Artifact.create!(kind: "character_sheet", image_url: "/x.png", approved_at: Time.current)
+    artifact.subjects.create!(person_slug: bare.slug, appearance_slug: nil, ordinal: 1)
+
+    sheet = slots.find { |s| s.kind == "character_sheet" }
+
+    assert_not sheet.reuse?,
+               "the request named black and this person has no black look; an artifact whose look " \
+               "was never recorded cannot be known to satisfy it. Read #{sheet.decision.inspect}"
+    assert sheet.reskin?, "the face work is done and only the wardrobe is unknown — that is a recolor"
+    assert_equal "have an artifact for this cast with no look recorded — recolor for this game",
+                 sheet.detail,
+                 "the re-skin sentence used to lose its object here: every descriptor is nil, so " \
+                 "the list compacted to empty and the card read 'have  — recolor for this game'"
+  end
+
+  test "[integration] the gate page stops claiming an approved artifact is on file" do
+    bare = Person.create!(first_name: "Bare", last_name: "Look", athlete: true)
+    @content.update!(qb_player_slug: bare.slug, skill_player_slug: nil, colorway: "black")
+    artifact = Artifact.create!(kind: "character_sheet", image_url: "/x.png", approved_at: Time.current)
+    artifact.subjects.create!(person_slug: bare.slug, appearance_slug: nil, ordinal: 1)
+
+    get content_path(@content.slug)
+
+    assert_response :success
+    assert_no_match(/approved artifact on file/, response.body,
+                    "that sentence is the reuse detail, and reuse is exactly what this must not be")
+  end
+
+  # AND THE LEGITIMATE EMPTY MATCH SURVIVES. With no colorway to resolve — no
+  # confirmation and no game facts to guess from — there is nothing for the
+  # artifact to contradict, and refusing here would make the gate offer to
+  # regenerate an image it is already holding.
+  test "[integration] with no colorway at all a lookless artifact is still reused" do
+    bare = Person.create!(first_name: "Bare", last_name: "Look", athlete: true)
+    @content.update!(qb_player_slug: bare.slug, skill_player_slug: nil, colorway: nil, game_facts: {})
+    artifact = Artifact.create!(kind: "character_sheet", image_url: "/x.png", approved_at: Time.current)
+    artifact.subjects.create!(person_slug: bare.slug, appearance_slug: nil, ordinal: 1)
+
+    sheet = slots.find { |s| s.kind == "character_sheet" }
+
+    assert_nil Content::ArtifactPlan.new(@content.reload).colorway,
+               "the control — with no confirmation and no game facts there is no colorway to resolve"
+    assert sheet.reuse?, "nothing was asked for, so nothing is contradicted. Read #{sheet.decision.inspect}"
+  end
+
   # The supersede itself must still happen, or the fix above has simply turned
   # the retire off. Same cast, same look, a new image: that one IS a replacement.
   test "a reuse attach still retires the artifact it replaces" do

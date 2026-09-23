@@ -131,6 +131,18 @@ class ArtifactTest < ActiveSupport::TestCase
                                  kind: "pair", colorway: "black")
   end
 
+  # AN EMPTY SLUG IS THE SAME UNRESOLVED LOOK. `matching` is a public entry point
+  # and its `pairs` are strings; a caller that hands back "" instead of nil means
+  # the identical thing, and both render as "<person>@". Without this case the
+  # refusal could be narrowed from #blank? to #nil? and no test would notice —
+  # a guard nothing can kill is decoration.
+  test "a colorway request is refused when a look resolves to a blank slug" do
+    lookless = Person.create!(first_name: "Look", last_name: "Less", athlete: true)
+    artifact_for([[lookless, nil]], kind: "character_sheet")
+
+    assert_nil Artifact.matching([[lookless.slug, ""]], kind: "character_sheet", colorway: "black")
+  end
+
   # AND THE LEGITIMATE EMPTY MATCH SURVIVES. With NO colorway named there is
   # nothing to contradict: a request that resolves to no look and an artifact
   # with no look recorded are the same nothing, and refusing that would make the
