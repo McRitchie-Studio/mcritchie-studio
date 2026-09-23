@@ -148,8 +148,9 @@ end
 # expired agent credential, or a board outage turned EVERY stage into an empty
 # array. The survey then printed "(none)" under every stage, "Active release
 # candidate: none" and "blocked (0)", EXITED 0, and said not one word about the
-# board — the false all-clear bin/task's own archived-scan alarm (bin/task:860)
-# exists to remove, rendered by the tool an operator opens Step 0 with.
+# board — the false all-clear bin/task's own archived-scan alarm
+# (bin/task#fetch_archived_tasks) exists to remove, rendered by the tool an
+# operator opens Step 0 with.
 #
 # It dies rather than warns because the survey's whole output is a claim about the
 # pipeline. A warning above a landscape of "(none)" is read as a footnote to an
