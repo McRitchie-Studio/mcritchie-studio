@@ -173,9 +173,10 @@ class BoardReadTest < Minitest::Test
     assert_includes message, "exit 1"
   end
 
-  # A SIGNALLED child cannot be an "answered" code even when the caller names one:
-  # its exitstatus is nil, so there is no code to match, and a kill is never the
-  # board answering.
+  # A SIGNALLED child is never the board answering, even on a caller that names
+  # answered codes. There is no special branch for this — a nil exitstatus simply
+  # matches no code — so this pins the BEHAVIOUR against the plausible defect of
+  # folding "we do not know how it ended" into "the board said no".
   def test_a_signalled_child_is_never_an_answered_code
     refute_nil BoardRead.shell_refusal(status_of_signal("KILL"), "", what: "task probe-slug",
                                        answered: [4, 9])

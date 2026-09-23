@@ -112,7 +112,12 @@ module BoardRead
   # negative answer rather than its own failure (bin/task's 4 = task not found).
   def shell_refusal(status, stderr, what:, answered: [])
     return nil if status&.success?
-    return nil if status && status.exitstatus && Array(answered).include?(status.exitstatus)
+    # `include?(nil)` is already false for every list a caller sensibly passes, so
+    # a signalled child (exitstatus nil) cannot match an answered code by accident.
+    # Stated rather than guarded: an extra `status.exitstatus &&` conjunct here
+    # reads as load-bearing while changing no outcome, and a redundant guard is a
+    # test that can never fail.
+    return nil if status && Array(answered).include?(status.exitstatus)
 
     "#{what} failed -> #{outcome(status)}#{child_detail(stderr)}"
   end

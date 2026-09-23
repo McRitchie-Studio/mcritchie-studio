@@ -404,6 +404,20 @@ tasks separately. **`bin/conductor` never ships implicitly** — plain
 `bin/conductor ship --run`, which runs `bin/release ship --by conductor --yes`
 after the same release gates. It defaults to the PROD board (like `bin/release`).
 
+**A FAILED BOARD READ NOW REFUSES, it does not print an empty pipeline.** Until
+2026-09-22 every read here was `return [] unless ok` over a helper whose stderr
+was discarded, and `bin/task` exits 1 on any non-2xx — so a 301 from the
+canonical-host middleware, an expired agent credential or a board outage turned
+every stage into an empty array. The survey printed `(none)` under every stage,
+`Active release candidate: none`, `blocked (0)`, **exited 0**, and never
+mentioned the board. Conductor now dies exit 1 naming the read and carrying
+`bin/task`'s own diagnosis, because the survey's whole output is a claim about
+the pipeline and there is no honest partial one to print. Two deliberate
+exceptions: `bin/task`'s exit 4 (`EXIT_TASK_NOT_FOUND`) is the board ANSWERING
+that a slug is gone — a race with an archive, not an outage — and the
+`plan --reviewers` preview still degrades, because it only removes a `picked:`
+line from under a command that prints regardless.
+
 `bin/conductor` **complements `bin/qa-intake`**: conductor answers "what is in
 each Deploy stage and what is the next deterministic command"; `qa-intake`
 answers "what is the local PR/worktree + CI/mergeability state of a given PR".
