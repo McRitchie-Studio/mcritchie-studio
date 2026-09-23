@@ -157,11 +157,17 @@ class ReleasePresenceIntegrationTest < Minitest::Test
     mine = landed.find { |f| f.end_with?(suffix) }
     row = CertOrphanGuard.process_table.find { |p| p[:pid] == pid }
     stderr = log && File.exist?(log) ? File.read(log).strip : ""
+    # GRADE BEFORE THE KILL. This read used to sit inside the heredoc below, which `flunk`
+    # evaluates AFTER `kill!` has SIGKILLed and reaped the child — so it printed `dead` for
+    # every conductor whose marker had landed, including one alive the whole time that timed
+    # out for some other reason. Measured in review: a healthy stand-in read "graded dead"
+    # beside a ps row of "S", and the `Z` in that row was doing the whole diagnosis alone.
+    mine_grade = mine && grade(JSON.parse(File.read(File.join(store, ".agents", "sessions", mine))))
     kill!(pid)
     flunk <<~MSG.strip
       conductor #{kind} (pid #{pid}) never published a claim the real reader grades :live, \
       within #{timeout}s.
-        its own marker: #{mine ? "#{mine} — graded #{grade(JSON.parse(File.read(File.join(store, '.agents', 'sessions', mine))))}" : "NEVER LANDED"}
+        its own marker: #{mine ? "#{mine} — graded #{mine_grade}" : "NEVER LANDED"}
         markers that landed (#{landed.size}): #{landed.inspect}
         its ps row: #{row ? row.slice(:pid, :pgid, :state).inspect : "ABSENT from the process table"}
         its stderr: #{stderr.empty? ? "(none)" : stderr}
@@ -343,6 +349,12 @@ class ReleasePresenceIntegrationTest < Minitest::Test
                    "published' — they are different defects with different fixes, and a " \
                    "bare 'timed out' sends the next reader to re-run instead of to the cause")
       assert_match(/markers that landed \(1\)/, error.message)
+      # `"Z` unterminated on purpose: the state is stored RAW (`CertOrphanGuard.parse_ps_line`)
+      # and Linux renders a zombie `Z+`/`Zs`, which is why production asks `start_with?("Z")`.
+      assert_match(/its ps row: .*"Z/, error.message,
+                   "and the Z state is the tell the comment above promises. Without this the " \
+                   "grade carried the claim alone, and the grade is true of ANY published " \
+                   "marker once its writer has been killed")
     end
   end
 
