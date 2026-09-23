@@ -67,6 +67,40 @@ class ParseErrorRedactionDocsTest < ActiveSupport::TestCase
   # closer, and every structural test of the grant alone passes it.
   CLOSING_QUANTIFIER = /\b(?:only|no other|none other|nothing else|never|except|excluding)\b/i
 
+  # THE CLOSER IS READ FROM THE CLAUSE THAT GRANTS, NOT FROM THE WHOLE SENTENCE.
+  #
+  # Asked of the whole sentence, this reds correct prose. Measured at the review of
+  # PR 1518: "…any assertion whose haystack is an INTEGER is exempt by construction,
+  # since only the payload can hold the secret" is a CORRECT universal grant whose
+  # `only` lives in the JUSTIFICATION, not in the scope — and `except` does the same
+  # to a legitimate refinement. The guard failed CLOSED (it quotes the sentence, so a
+  # writer rewords), which is why it was filed as friction rather than a leak.
+  #
+  # So a REASON clause — one opening with `because`/`since`, leading or trailing — is
+  # dropped before the question is asked. What is left is the clause that actually
+  # grants, and that is where a self-closing grant does its closing.
+  REASON_LEAD = /\A\s*(?:because|since|given that|on the grounds that)\b[^,;]*[,;]\s*/i
+  REASON_TAIL = /[,;]\s*(?:because|since|given that|on the grounds that)\b.*\z/i
+
+  # …BUT A REASON THAT NAMES AN ASSERTION IS NOT MERELY EXPLAINING. "…is exempt,
+  # since only an `assert_operator` is safe" closes the grant exactly as surely as
+  # "Only an `assert_operator` … is exempt" does; the conjunction is grammar, not
+  # meaning. So the carve-out is withheld from any reason clause carrying this
+  # vocabulary, which is the only vocabulary this doc's narrowings have ever used.
+  # Without it the narrowing would not be a superset of the rule it replaces, and
+  # dropping coverage silently is the exact failure recorded further down this file.
+  SCOPING_TERM = /\bassert[a-z_]*\b|\bmethods?\b|\bassertions?\b/i
+
+  # THE RULE, extracted so the controls below drive the REAL one rather than a copy.
+  def granting_clause(sentence)
+    [REASON_LEAD, REASON_TAIL].reduce(sentence.to_s) do |text, pattern|
+      clause = text[pattern]
+      clause && !clause.match?(SCOPING_TERM) ? text.sub(pattern, " ") : text
+    end
+  end
+
+  def self_closing_grant?(sentence) = granting_clause(sentence).match?(CLOSING_QUANTIFIER)
+
   def doc_sentences
     @doc_sentences ||= DOC.read.split(/\n{2,}/)
                           .map { |para| para.gsub(/[*`]/, "").gsub(/\s+/, " ") }
@@ -235,9 +269,10 @@ class ParseErrorRedactionDocsTest < ActiveSupport::TestCase
       "condemns a length assertion — which cannot hold the secret and never could"
 
     granting_sentences.each do |grant|
-      refute grant.match?(CLOSING_QUANTIFIER),
+      refute self_closing_grant?(grant),
         "this sentence grants the exemption and then closes it again in the same breath, which " \
-        "narrows it to whatever it happened to name: #{grant}"
+        "narrows it to whatever it happened to name: #{granting_clause(grant).strip}\n" \
+        "(asked of the granting clause; the full sentence was: #{grant})"
 
       assert grant.match?(UNIVERSAL_GRANT),
         "the exemption must be granted over the ASSERTIONS it covers — any assertion whose " \
@@ -248,6 +283,114 @@ class ParseErrorRedactionDocsTest < ActiveSupport::TestCase
         "the grant must name the property that earns the exemption — an integer haystack — in " \
         "the sentence that grants it: #{grant}"
     end
+  end
+
+  # SENTENCES THAT GENUINELY CLOSE THEIR OWN GRANT — every one must still red.
+  #
+  # THIS TABLE IS HOW THE NARROWING STAYS A SUPERSET. The rule it replaces asked the
+  # closer question of the WHOLE sentence, and the honest objection to narrowing any
+  # assertion is that a narrower one silently drops coverage. The old rule cannot be
+  # kept alongside, because the old rule IS the false positive — so its coverage is
+  # kept HERE instead, as cases, driven through the shipping predicate. Each one is
+  # asserted to have been caught by the old rule too, so the table cannot drift into
+  # testing something the old rule never reached.
+  #
+  # Spelled as `doc_sentences` would hand them over: backticks stripped, whitespace
+  # collapsed. The first is the round-1 wording review measured and bounced.
+  SELF_CLOSING_GRANTS = [
+    "Only an assert_operator on a length is exempt; an assert_equal on one is not, " \
+      "whatever the haystack — even an integer.",
+    "Any assertion whose haystack is an integer is exempt, except an assert_equal.",
+    "Every assertion whose haystack is an integer is exempt and no other assertion is.",
+    "An assertion whose haystack is an integer is exempt; nothing else is.",
+    # THE CASE THE CARVE-OUT HAD TO BE WITHHELD FROM. The closer sits inside a `since`
+    # clause, which is exactly the shape dropped above — but it NAMES AN ASSERTION, so
+    # it is narrowing the scope rather than explaining it. Without SCOPING_TERM this
+    # one goes green and the narrowing stops being a superset.
+    "Any assertion whose haystack is an integer is exempt, since only an assert_operator is safe."
+  ].freeze
+
+  # CORRECT PROSE THE OLD RULE CONDEMNED — every one must now pass. The first is the
+  # example review measured on the day it filed this defect.
+  INNOCUOUS_GRANTS = [
+    "Any assertion whose haystack is an INTEGER is exempt by construction, since only " \
+      "the payload can hold the secret.",
+    "Any assertion whose haystack is an integer is exempt, because only the message can " \
+      "carry the key.",
+    "Because only the message can carry the key, any assertion whose haystack is an " \
+      "integer is exempt.",
+    "Any assertion whose haystack is an integer is exempt, since nothing else in the " \
+      "rescue is interpolated."
+  ].freeze
+
+  # COLLECTED, NOT ASSERTED IN THE LOOP. Minitest stops a test at its first failed
+  # assertion, so an in-loop `assert` proves the rule against member 1 and says nothing
+  # about the rest — and a mutation that releases only the LAST case would be invisible
+  # behind an earlier one. Collecting makes each member separately visible in one run.
+  test "[control] a genuine self-closing grant still reds after the narrowing" do
+    unreached = SELF_CLOSING_GRANTS.reject { |g| g.match?(GRANT) && g.match?(CLOSING_QUANTIFIER) }
+    assert_empty unreached,
+      "premise: every case here must be one GRANT selects AND the OLD whole-sentence rule " \
+      "caught. A case failing either is not preserved coverage, it is a new invention, and " \
+      "the real path would never reach it."
+
+    released = SELF_CLOSING_GRANTS.reject { |g| self_closing_grant?(g) }
+
+    assert_empty released.map { |g| "#{g}\n  → granting clause read as: #{granting_clause(g).strip}" },
+      "the narrowing RELEASED #{released.size} grant(s) that close themselves. The closer is " \
+      "read from the granting clause, and each of these closes IN that clause — a narrowing " \
+      "that drops one of them is not a superset of the rule it replaced."
+  end
+
+  test "[control] an innocuous only or except in the reason now stays green" do
+    unreached = INNOCUOUS_GRANTS.reject { |g| g.match?(GRANT) && g.match?(CLOSING_QUANTIFIER) }
+    assert_empty unreached,
+      "premise: every case here must be one GRANT selects AND the OLD whole-sentence rule " \
+      "RED. A case the old rule never flagged cannot show the fix fixed anything — this " \
+      "control would then pass in both states and separate nothing."
+
+    condemned = INNOCUOUS_GRANTS.select { |g| self_closing_grant?(g) }
+
+    assert_empty condemned.map { |g| "#{g}\n  → granting clause read as: #{granting_clause(g).strip}" },
+      "#{condemned.size} piece(s) of correct prose still red. The closer in each is in the " \
+      "REASON, not in the scope, and a guard that punishes correct prose is the failure " \
+      "recorded at the top of this file."
+  end
+
+  # [control] THE LIVE DOC, ASKED THE SAME WAY. The two tables above are fixtures; this
+  # pins that the sentence actually in backend-discipline.md today is one the narrowed
+  # rule clears, and that the carve-out ate a REASON rather than part of the grant.
+  #
+  # MEASURED WHILE WRITING THIS, because the first cut of it asserted the opposite: the
+  # live grant DOES carry a trailing reason clause ("…is exempt by construction, because
+  # an integer cannot hold the secret"), so the carve-out fires on the real doc rather
+  # than only on fixtures. That is the point worth pinning — a rule whose new branch
+  # never runs against the live corpus is a rule nobody has tested.
+  test "[control] the doc's own granting sentence survives the narrowed reading" do
+    assert_equal 1, granting_sentences.size,
+      "this control is written against ONE granting sentence; the doc now has " \
+      "#{granting_sentences.size}, so re-derive it rather than letting it pass on a " \
+      "sentence nobody looked at: #{granting_sentences.inspect}"
+
+    grant = granting_sentences.first
+    clause = granting_clause(grant)
+
+    refute self_closing_grant?(grant), "the live grant reads as self-closing: #{grant}"
+
+    refute_equal grant, clause,
+      "the carve-out no longer fires on the live doc, so its branch is exercised by " \
+      "fixtures alone. Either the doc's reason clause was reworded — re-derive this " \
+      "control against the new sentence — or the carve-out stopped matching: #{grant}"
+
+    removed = grant.delete_prefix(clause.rstrip)
+    assert removed.match?(/\A[,;]\s*(?:because|since|given that|on the grounds that)\b/i),
+      "the carve-out removed something that is not a reason clause, which means it is " \
+      "eating text the closer question needed: #{removed.inspect}"
+
+    assert clause.match?(GRANT),
+      "the carve-out ate the grant itself — what is left grants nothing: #{clause}"
+    assert clause.match?(/haystack/i) && clause.match?(/integer/i),
+      "the carve-out ate the property that earns the exemption: #{clause}"
   end
 
   # Every doc that hands an operator a credential-parsing one-liner has to teach
