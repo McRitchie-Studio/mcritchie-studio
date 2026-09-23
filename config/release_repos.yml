@@ -231,7 +231,7 @@
 #                  by the shell — a repo that ships no single gate script can still
 #                  declare its real lanes. NO ROW DOES TODAY, and the one that did
 #                  is why the capability is described rather than recommended:
-#                  turf-vault declared its four CI lanes here as a chain for one day
+#                  turf-vault declared its CI lanes here as a chain for one day
 #                  (2026-09-14) before growing its own `bin/release-check`, and a
 #                  chain in this file is a COPY of another repo's CI that drifts
 #                  from it. Prefer a script the repo owns; reach for the chain only
@@ -491,7 +491,9 @@ apps:
     # task. The gap is now closed here instead of re-pointed.
     #
     # WHAT MADE IT CLOSABLE. The blocker was never "this repo has no tests" — it has
-    # FIVE real CI lanes and a suite of 171 node:test cases behind one of them, plus
+    # FIVE real CI lanes and a suite of 171 node:test cases behind one of them — three
+    # of which self-skip when `node_modules` is absent, so a green run there reads
+    # `pass 168 / skipped 3` — plus
     # 60 Rust tests (re-derive, never re-copy: `bin/release-check --list` prints the
     # lane table, `npm run test:scripts` and `cargo test --workspace --locked` print
     # their own totals). This sentence said "four lanes / 61 cases" until 2026-09-22
@@ -503,7 +505,7 @@ apps:
     # entry plus that generalisation, not a new subsystem.
     #
     # THE VALUE IS A SCRIPT THE REPO OWNS, which is the whole point of the key and was
-    # not true for its first day. Until 2026-09-14 this row spelled turf-vault's four
+    # not true for its first day. Until 2026-09-14 this row spelled turf-vault's
     # lanes out as a `&&` chain, because the repo shipped no bin/ directory to point
     # at. That was a hub-side COPY of another repo's CI, and copies drift: if ci.yml
     # gained or renamed a lane, the string here did not follow, and the local cert
