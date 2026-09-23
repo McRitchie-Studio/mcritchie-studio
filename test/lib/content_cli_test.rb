@@ -23,20 +23,42 @@ require "json"
 require "socket"
 require "rbconfig"
 require "fileutils"
+require "digest"
 
 class ContentCliTest < Minitest::Test
   BIN  = File.expand_path("../../bin/content", __dir__)
   ROOT = File.expand_path("../..", __dir__)
 
-  # The per-agent-process session files this script derives. Namespaced so a run
+  # The per-agent-process session files this script derives, namespaced so a run
   # here can never collide with a real one sitting in the same checkout.
-  NONCE_A = "contentclitest-a"
-  NONCE_B = "contentclitest-b"
+  #
+  # UNIQUE PER (WORKER, TEST) — NOT a shared constant, and that is the whole point.
+  # These files live in the REPO's tmp/, which every parallel worker shares, while
+  # `teardown` deletes what its own test used. With ONE shared nonce across six
+  # tests, a sibling worker's teardown deleted the file mid-test and `bin/content`
+  # minted a fresh id, so the claim/release pairing assertion failed. Measured on CI
+  # (PR #1553, shard 4) and then reproduced deterministically here by deleting the
+  # shared path in a loop while the test ran. Rails' `parallelize` gives each worker
+  # its own DATABASE, never its own filesystem — any fixture written under the repo
+  # root has to carry the pid.
+  NONCE_PREFIX = "contentclitest"
 
+  def setup
+    @nonces = []
+  end
+
+  # A nonce nothing else in this suite can touch: this worker, this test, this tag.
+  def nonce(tag)
+    key = Digest::MD5.hexdigest("#{Process.pid}-#{name}-#{tag}")[0, 12]
+    "#{NONCE_PREFIX}-#{key}".tap { |n| @nonces << n }
+  end
+
+  # Only what THIS test created — a glob over the prefix would delete a concurrent
+  # worker's file and rebuild the very race this naming removes.
   def teardown
-    [NONCE_A, NONCE_B, "shared"].each do |name|
-      path = File.join(ROOT, "tmp", "content-sessions", name)
-      File.delete(path) if name != "shared" && File.file?(path)
+    Array(@nonces).uniq.each do |n|
+      path = File.join(ROOT, "tmp", "content-sessions", n)
+      File.delete(path) if File.file?(path)
     end
   end
 
@@ -101,8 +123,8 @@ class ContentCliTest < Minitest::Test
   def test_two_agent_processes_on_one_checkout_claim_with_different_sessions
     seen = []
     with_board(seen: seen) do |port|
-      run_claim(port, "TASK_CLAIM_NONCE" => NONCE_A)
-      run_claim(port, "TASK_CLAIM_NONCE" => NONCE_B)
+      run_claim(port, "TASK_CLAIM_NONCE" => nonce("a"))
+      run_claim(port, "TASK_CLAIM_NONCE" => nonce("b"))
     end
 
     assert_equal 2, seen.compact.size, "both claims must have reached the board"
@@ -117,8 +139,10 @@ class ContentCliTest < Minitest::Test
   def test_one_agent_process_claims_with_the_same_session_twice
     seen = []
     with_board(seen: seen) do |port|
-      run_claim(port, "TASK_CLAIM_NONCE" => NONCE_A)
-      run_claim(port, "TASK_CLAIM_NONCE" => NONCE_A)
+      # The SAME nonce twice — one agent process, two invocations.
+      stable = nonce("a")
+      run_claim(port, "TASK_CLAIM_NONCE" => stable)
+      run_claim(port, "TASK_CLAIM_NONCE" => stable)
     end
 
     assert_equal 2, seen.compact.size
@@ -130,7 +154,7 @@ class ContentCliTest < Minitest::Test
     err = status = nil
     with_board(seen: seen) do |port|
       _out, err, status = run_claim(port, "CONTENT_SESSION" => "content-turf-monster-42",
-                                    "TASK_CLAIM_NONCE" => NONCE_A)
+                                    "TASK_CLAIM_NONCE" => nonce("a"))
     end
 
     assert_predicate status, :success?
@@ -142,7 +166,7 @@ class ContentCliTest < Minitest::Test
   def test_a_derived_session_says_what_it_does_not_separate
     err = nil
     with_board do |port|
-      _out, err, = run_claim(port, "TASK_CLAIM_NONCE" => NONCE_A)
+      _out, err, = run_claim(port, "TASK_CLAIM_NONCE" => nonce("a"))
     end
 
     assert_match(/SUBAGENTS/, err)
@@ -157,7 +181,7 @@ class ContentCliTest < Minitest::Test
   def test_a_session_required_refusal_is_not_read_as_an_empty_queue
     out = err = status = nil
     with_board(reason: "session_required") do |port|
-      out, err, status = run_claim(port, "TASK_CLAIM_NONCE" => NONCE_A)
+      out, err, status = run_claim(port, "TASK_CLAIM_NONCE" => nonce("a"))
     end
 
     refute_predicate status, :success?
@@ -172,7 +196,7 @@ class ContentCliTest < Minitest::Test
   def test_an_empty_queue_is_still_a_normal_outcome
     err = status = nil
     with_board(reason: "none_claimable") do |port|
-      _out, err, status = run_claim(port, "TASK_CLAIM_NONCE" => NONCE_A)
+      _out, err, status = run_claim(port, "TASK_CLAIM_NONCE" => nonce("a"))
     end
 
     assert_predicate status, :success?
