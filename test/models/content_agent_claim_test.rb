@@ -260,7 +260,6 @@ class ContentAgentClaimTest < ActiveSupport::TestCase
   # session bought a denial of service against a card nobody could write.
 
   test "a session-less claim is refused rather than taken" do
-
     [nil, "", "   "].each do |blank|
       result = Content.claim_next_for_agent(session: blank, agent: "turf-monster")
 
