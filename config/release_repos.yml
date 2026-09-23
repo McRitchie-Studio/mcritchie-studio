@@ -355,6 +355,14 @@ apps:
       strategy: repo_script
       command: bin/deploy
       args: ["--yes"]
+      # WHAT PROVES THE DEPLOY LANDED. A repo_script adapter names only a command,
+      # so nothing here tells the hub where the deploy ends up — and without that,
+      # `bin/release ship --finalize-only` cannot confirm a killed ship's deploy and
+      # makes this app, whose deploy is the LONG one, re-run its whole suite. A
+      # git_push_heroku row needs no key: its `remote:` already names the app.
+      # VERIFIED against the script that deploys it — turf-monster/bin/deploy sets
+      # HEROKU_APP="turf-monster-mainnet" and pushes to its heroku-mainnet remote.
+      heroku_app: turf-monster-mainnet
   turf-vault:
     # THE ANCHOR PROGRAM. Registered 2026-08-31 after
     # Release::Conductor#validate_member_repos_known! aborted a live sweep

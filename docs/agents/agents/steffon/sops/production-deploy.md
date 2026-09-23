@@ -372,6 +372,46 @@ origin/main:refs/heads/accepted` chore. The advance is guarded (only where
 `origin/accepted` exists), fail-closed (no `--force`), and non-fatal — it never
 aborts a landing deploy.
 
+### If the ship is KILLED after the deploy landed — finalize, do not re-deploy
+
+A deploy and the record of it are separate steps, and the process that watches
+the first can die before the second. GitHub Actions, a Heroku push and a repo's
+own `bin/deploy` all run INDEPENDENTLY of `bin/release ship`; when the harness
+kills the watcher, prod is live and the board still says `assembled`.
+
+**Do not re-run the deploy to fix the record.** Run:
+
+```bash
+bin/release ship --finalize-only [<release-slug>]
+```
+
+It records only the steps the killed ship skipped, and it **proves the frozen SHA
+is live before recording anything** — it never deploys. The proof is per strategy:
+
+| Strategy | Apps | What proves it |
+|---|---|---|
+| `github_actions` | mcritchie-studio | `origin/main` at the frozen SHA, prod `/up` 200, and a `prod-deploy.yml` run whose `headSha` is that SHA concluded success |
+| `git_push_heroku` | mcritchie-industries, rolio | prod `/up` 200, and the app's **current** Heroku release is a succeeded `Deploy <frozen sha>`. The app name is read from the adapter's own `remote:` |
+| `repo_script` | turf-monster | the same Heroku proof, against the app named by `prod_deploy.heroku_app:` — a repo's script names no target, so the registry must |
+
+**A refusal names the condition it could not meet, per repo** — read it before
+acting, because the remedies diverge. `prod /up did not answer 200` wants a
+deploy; `<app>'s CURRENT Heroku release is not a succeeded Deploy …` usually
+means a config-var change or a rollback landed on top of yours (the guard reads
+only the CURRENT release, deliberately — a rollback is a later release too, and
+walking back past one to find your deploy is how a reverted release gets marked
+shipped); `names no Heroku app` is a one-line registry fix, not a prod problem.
+
+If the deploy genuinely did not land, `bin/release ship` deploys it — finalize
+never will.
+
+**Until 2026-09-22 this did not work for an inline deploy.** `deploy_already_live?`
+never computed the Heroku marker, so finalize refused for turf-monster and
+mcritchie-industries even with the frozen SHA live, and a killed ship had to
+re-deploy — re-running turf-monster's full suite. That was exactly backwards: the
+inline deploy is the long one, so it is where a watcher most often dies and where
+finalize is worth most.
+
 **A refused `main` push does NOT mean `main` diverged either.** Same rule, one
 rung earlier — and this is the fatal push, not the non-fatal one. The ship
 captures git's output and classifies it before advising:

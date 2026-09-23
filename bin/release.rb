@@ -6984,8 +6984,16 @@ end
 # is left nil for now: turf's mainnet-release marker read is a future tightening,
 # so a repo_script re-run re-dispatches (safe — its bin/deploy self-gates).
 def deploy_already_live?(group, frozen)
+  deploy_live_verdict(group, frozen).first
+end
+
+# [live?, gap] — the deploy-confirmation probes, run ONCE, plus the phrase the
+# finalize refusal needs when the answer is no. Splitting the two would mean a
+# second `/up` poll and a second Heroku read per refusing repo; asking both
+# questions of one set of reads costs nothing and cannot disagree with itself.
+def deploy_live_verdict(group, frozen)
   frozen = frozen.to_s.strip
-  return false if frozen.empty?
+  return [false, "no frozen SHA recorded for this repo"] if frozen.empty?
 
   adapter  = group["prod_deploy"] || {}
   strategy = adapter["strategy"].to_s
@@ -6996,12 +7004,55 @@ def deploy_already_live?(group, frozen)
       )
     end
 
-  Release::ShipSequence.deploy_already_succeeded?(
+  # THE INLINE STRATEGIES' MARKER. git_push_heroku and repo_script deploy AFTER
+  # main advances, so main_at_sha proves nothing about them and
+  # deploy_already_succeeded? requires a deployed-marker AT the SHA instead. This
+  # caller never computed one — it passed four arguments and let `deployed_at_sha`
+  # default to nil, so `nil == true` was false and the predicate could not return
+  # true for an inline-deploy app however live it was. Measured on
+  # rel-20260921-e59955: `--finalize-only` refused for turf-monster while
+  # `heroku releases` showed the frozen SHA as the CURRENT release, forcing a full
+  # re-deploy of the app whose deploy is the LONG one. Resolved per-adapter, and ""
+  # (no Heroku app named) keeps today's fail-closed behaviour exactly.
+  heroku_app = strategy == "github_actions" ? "" : Release::ShipSequence.heroku_app_for(adapter)
+  deployed_at_sha =
+    unless strategy == "github_actions"
+      Release::ShipSequence.heroku_release_at_sha?(heroku_releases(heroku_app), frozen)
+    end
+
+  signals = {
     strategy: strategy,
     up_ok: prod_up_ok?(group_smoke_url(group)),
     main_at_sha: origin_main_sha(group["repo"]) == frozen,
-    run_success: run_success
+    run_success: run_success,
+    deployed_at_sha: deployed_at_sha
+  }
+  gap = Release::ShipSequence.deploy_gap_reason(
+    **signals, heroku_app: heroku_app, workflow: adapter["workflow"].to_s
   )
+  [gap.empty?, gap]
+end
+
+# An app's Heroku releases, newest first, or [] when they cannot be read. READ-ONLY
+# and best-effort: [] fails the marker closed, which re-deploys — never the reverse.
+#
+# NOT `sh(capture: true)`, AND THE REASON IS MEASURED. That helper is
+# `Open3.capture2e`, which merges stderr into stdout — and the Heroku CLI writes
+# `Warning: heroku update available from 11.4.0 to 11.10.0` to stderr, so the
+# captured text is a warning line followed by JSON and `JSON.parse` raises on the
+# first character. The rescue would then swallow it as "unreadable" and this guard
+# would refuse every finalize on a machine with a stale CLI, for a reason nothing
+# printed. capture3 keeps the streams apart; stderr is deliberately discarded.
+def heroku_releases(app, limit: 5)
+  name = app.to_s.strip
+  return [] if DRY || name.empty?
+
+  out, _err, status = Open3.capture3("heroku", "releases", "--app", name, "--json", "-n", limit.to_s)
+  return [] unless status.success?
+
+  JSON.parse(out)
+rescue JSON::ParserError, StandardError
+  []
 end
 
 def deploy_app(group, frozen)
@@ -7764,9 +7815,16 @@ def finalize(slug = nil)
     #    unconfirmed signal (per strategy — see Release::ShipSequence).
     say("")
     step("finalize guard: prove every app's frozen SHA is already live on prod")
-    not_live = app_groups.reject { |g| deploy_already_live?(g, ship_sha[g["repo"]]) }
+    # NAME WHAT COULD NOT BE PROVEN, per repo. "NOT confirmed live: turf-monster @
+    # ba098b6" tells the reader that something is unproven and nothing about which
+    # thing — and the remedies diverge completely (deploy the app / add one line to
+    # the registry / wait for a run). deploy_live_verdict returns the phrase from
+    # the same probes the verdict came from.
+    verdicts = app_groups.to_h { |g| [g["repo"], deploy_live_verdict(g, ship_sha[g["repo"]])] }
+    not_live = app_groups.reject { |g| verdicts[g["repo"]].first }
     if not_live.any?
-      names = not_live.map { |g| "#{g['repo']} @ #{short(ship_sha[g['repo']])}" }.join(", ")
+      names = not_live.map { |g| "#{g['repo']} @ #{short(ship_sha[g['repo']])} — #{verdicts[g['repo']].last}" }
+                      .join("; ")
       # A DRY preview REPORTS the guard verdict but does not abort (so the plan still
       # prints); a real finalize REFUSES — it records an already-deployed release and
       # must never mark shipped a deploy that did not land.

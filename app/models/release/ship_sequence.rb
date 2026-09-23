@@ -838,6 +838,127 @@ class Release
       end
     end
 
+    # WHICH CONDITION WAS NOT MET — the phrase the finalize refusal prints beside a
+    # repo it could not confirm. "" when every condition held.
+    #
+    # WHY THE REFUSAL OWES ONE. `refusing to finalize — NOT confirmed live on prod:
+    # turf-monster @ ba098b6` names the repo and stops, so the reader learns that
+    # something is unproven and nothing about WHICH thing — and the remedies are
+    # opposite: a prod that is genuinely down wants a deploy, a registry row that
+    # names no Heroku app wants one line of YAML. That second failure is NEW with
+    # the marker above and is otherwise INVISIBLE: a repo_script app with no
+    # `heroku_app` refuses forever, silently, exactly as if its deploy had never
+    # landed. A guard that can create a state it cannot describe is not finished.
+    #
+    # Ordered by what the caller checks first, so the phrase names the FIRST unmet
+    # condition rather than the most interesting one.
+    def deploy_gap_reason(strategy:, up_ok:, main_at_sha: false, run_success: nil,
+                          deployed_at_sha: nil, heroku_app: "", workflow: "")
+      return "" if deploy_already_succeeded?(strategy: strategy, up_ok: up_ok, main_at_sha: main_at_sha,
+                                             run_success: run_success, deployed_at_sha: deployed_at_sha)
+      return "prod /up did not answer 200" unless up_ok == true
+
+      case strategy.to_s
+      when "github_actions"
+        next_reason_for_workflow(main_at_sha, workflow)
+      when "git_push_heroku", "repo_script"
+        if heroku_app.to_s.strip.empty?
+          "its #{strategy} adapter names no Heroku app — add `prod_deploy.heroku_app:` to " \
+            "config/release_repos.yml (a git_push_heroku `remote:` is read automatically)"
+        else
+          "#{heroku_app}'s CURRENT Heroku release is not a succeeded `Deploy <frozen sha>` " \
+            "(a config-var change or a rollback on top of the deploy also reads this way)"
+        end
+      else
+        "unknown prod_deploy strategy #{strategy.to_s.inspect} — no deploy is ever confirmed for one"
+      end
+    end
+
+    def next_reason_for_workflow(main_at_sha, workflow)
+      return "origin/main is not at the frozen SHA" unless main_at_sha == true
+
+      wf = workflow.to_s.strip
+      "no successful #{wf.empty? ? 'prod-deploy' : wf} run whose headSha is the frozen SHA"
+    end
+
+    # --- the INLINE strategies' deployed-marker (deployed_at_sha) --------------
+    #
+    # THE STRAND THIS CLOSES. deploy_already_succeeded? above requires
+    # `deployed_at_sha == true` for git_push_heroku and repo_script — correctly,
+    # since main_at_sha proves nothing for a deploy that runs AFTER main advances.
+    # But bin/release's caller never COMPUTED one: it passed strategy, up_ok,
+    # main_at_sha and run_success, so the argument defaulted to nil, `nil == true`
+    # was false, and the predicate could never return true for an inline-deploy app.
+    # Measured on rel-20260921-e59955: `bin/release ship --finalize-only` refused for
+    # turf-monster while `heroku releases` showed the frozen SHA as the CURRENT
+    # release, so a killed ship had to RE-DEPLOY — re-running turf-monster's full
+    # suite — instead of finalizing. Exactly backwards: an inline deploy is the LONG
+    # one, so it is where a killed watcher is most likely and finalize most valuable.
+    #
+    # WHERE THE APP NAME COMES FROM, and why it is not a new registry key everywhere.
+    # A git_push_heroku adapter ALREADY names its target — `remote:
+    # https://git.heroku.com/<app>.git` is the thing ship pushes to, so it cannot
+    # drift silently: a wrong value deploys to the wrong place, loudly. Deriving the
+    # app from it adds no second source of truth. A repo_script adapter names only a
+    # command, and the script may not deploy to Heroku at all, so there it must be
+    # DECLARED (`prod_deploy.heroku_app:`). Explicit wins where both exist.
+    #
+    # Returns "" when the adapter names no Heroku app — which keeps the caller's
+    # behaviour exactly as it is today (no marker → false → re-deploy), rather than
+    # guessing an app name and reading a stranger's release list.
+    HEROKU_GIT_REMOTE = %r{\Ahttps://git\.heroku\.com/([a-z0-9][a-z0-9-]*)\.git\z}i
+
+    def heroku_app_for(adapter)
+      record = adapter.is_a?(Hash) ? adapter : {}
+      declared = (record["heroku_app"] || record[:heroku_app]).to_s.strip
+      return declared unless declared.empty?
+
+      remote = (record["remote"] || record[:remote]).to_s.strip
+      remote[HEROKU_GIT_REMOTE, 1].to_s
+    end
+
+    # `Deploy <sha>` — how Heroku describes a release created by a git push.
+    # MEASURED 2026-09-22 against turf-monster-mainnet: v285 `Deploy 0988886c`,
+    # status `succeeded`, current true. The short form is 8 hex characters; the
+    # floor of 7 here rejects a truncated or garbled description rather than letting
+    # a 2-character prefix match half the repository.
+    DEPLOY_DESCRIPTION = /\ADeploy\s+([0-9a-f]{7,40})\b/i
+
+    # Is `sha` the build Heroku is SERVING? `releases` is `heroku releases --json`
+    # for the app. TRUE only when the CURRENT release is a SUCCEEDED deploy whose
+    # description names the SHA.
+    #
+    # IT DOES NOT WALK BACK TO AN OLDER `Deploy` ROW, and that restraint is the
+    # whole safety of this function. A later release can be harmless (a config-var
+    # change leaves the slug alone) or decisive (`Rollback to v283` replaces it),
+    # and telling those apart by parsing English descriptions is precisely the
+    # inference that manufactures a false green. So anything other than "the current
+    # release IS our deploy" reads as false, the caller re-deploys, and that costs a
+    # same-SHA push that Heroku answers "up-to-date" — the trade deploy_already_
+    # succeeded? already chose: a redundant re-verify beats a false green.
+    #
+    # FAILS CLOSED on everything else too: a blank sha, an empty or unreadable list,
+    # no release flagged current, a non-succeeded status, a description that is not
+    # a deploy, or a prefix that does not match.
+    def heroku_release_at_sha?(releases, sha)
+      target = sha.to_s.strip.downcase
+      return false if target.length < 7
+
+      current = Array(releases).find do |release|
+        record = release.is_a?(Hash) ? release : {}
+        (record["current"] || record[:current]) == true
+      end
+      return false unless current
+
+      return false unless (current["status"] || current[:status]).to_s == "succeeded"
+
+      match = DEPLOY_DESCRIPTION.match((current["description"] || current[:description]).to_s)
+      return false unless match
+
+      short = match[1].downcase
+      short.length <= target.length && target.start_with?(short)
+    end
+
     # Did a prod-deploy run FOR `sha` conclude success? `runs` is the `gh run list`
     # for the deploy workflow — an array of { "headSha", "status", "conclusion" }.
     # A `workflow_dispatch` run's headSha is the ref HEAD at dispatch, and
