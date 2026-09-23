@@ -73,4 +73,71 @@ class AppearanceTest < ActiveSupport::TestCase
 
     assert_match "Hawaiian shirt", look.generation_brief
   end
+
+  # --- the look an attach files ------------------------------------------
+  #
+  # An attach used to file `nil` whenever the content named a colorway the
+  # person had no look in, which put the row under "no look" while every read
+  # resolves nil to the person's DEFAULT. The row could then never be found by
+  # the lookup that created it.
+
+  test "a colorway with no look on file gets one filed for it" do
+    assert_nil @burrow.appearances.live.find_by(colorway: "primary"),
+               "the control — Burrow must have no primary look, or this proves nothing"
+
+    look = Appearance.file_for_colorway!(person_slug: @burrow.slug, colorway: "primary")
+
+    assert_equal "primary", look.colorway
+    assert_equal "Primary", look.descriptor
+    assert_equal [look.slug], @burrow.appearances.live.pluck(:slug)
+  end
+
+  # Every upload runs this. Filing a second look per attach would turn the model
+  # library into a pile.
+  test "filing the same colorway twice returns the look already on file" do
+    first  = Appearance.file_for_colorway!(person_slug: @burrow.slug, colorway: "primary")
+    second = Appearance.file_for_colorway!(person_slug: @burrow.slug, colorway: "primary")
+
+    assert_equal first.slug, second.slug
+    assert_equal 1, @burrow.appearances.count
+  end
+
+  test "an operator's own look in that colorway is used rather than a new one" do
+    mine = Appearance.create!(person_slug: @burrow.slug, descriptor: "Bengals black", colorway: "black")
+
+    assert_equal mine.slug, Appearance.file_for_colorway!(person_slug: @burrow.slug, colorway: "  BLACK ").slug
+    assert_equal 1, @burrow.appearances.count
+  end
+
+  # Nothing names a colorway, so there is nothing to file. nil then means "no
+  # look was named AND the person has none" — the one state in which the read's
+  # nil fallback agrees with the row.
+  test "no colorway named files nothing" do
+    assert_nil Appearance.file_for_colorway!(person_slug: @burrow.slug, colorway: nil)
+    assert_nil Appearance.file_for_colorway!(person_slug: @burrow.slug, colorway: "   ")
+    assert_equal 0, Appearance.count
+  end
+
+  # The live-descriptor index would otherwise raise RecordNotUnique mid-attach
+  # and fail the upload over a name collision.
+  test "a descriptor already taken does not fail the filing" do
+    Appearance.create!(person_slug: @burrow.slug, descriptor: "Primary", colorway: "black")
+
+    look = Appearance.file_for_colorway!(person_slug: @burrow.slug, colorway: "primary")
+
+    assert_equal "primary", look.colorway
+    assert_equal "Primary 2", look.descriptor
+    assert_equal 2, @burrow.appearances.live.count
+  end
+
+  # Retiring a look was a decision; filing reruns it rather than reviving it.
+  test "a retired look in that colorway is not revived" do
+    retired = Appearance.create!(person_slug: @burrow.slug, descriptor: "Primary", colorway: "primary")
+    retired.update!(retired_at: Time.current)
+
+    look = Appearance.file_for_colorway!(person_slug: @burrow.slug, colorway: "primary")
+
+    assert_not_equal retired.slug, look.slug
+    assert_equal "Primary", look.descriptor, "the retired name is free again — the index only binds live looks"
+  end
 end
