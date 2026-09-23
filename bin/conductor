@@ -348,8 +348,16 @@ end
 # cleared, no stage is emptied, and the operator's next action is unchanged. The
 # board reads clear the pipeline itself, which is why only they refuse.
 def reviewer_preview(slug)
-  out, status, = run_bin(REVIEWER_BIN, slug, "--json", "--no-record")
-  return nil unless status&.success?
+  out, status, err = run_bin(REVIEWER_BIN, slug, "--json", "--no-record")
+  unless status&.success?
+    # DEGRADING IS NOT THE SAME AS GOING SILENT. `run_bin` used to `warn` a launch
+    # failure itself and now RETURNS that text instead, so a caller that drops the
+    # third value prints nothing on EITHER stream. Still advisory, per the note
+    # above — it just no longer drops the `picked:` line without saying why.
+    warn "conductor: reviewer preview for #{slug} unavailable -> " \
+         "#{BoardRead.outcome(status)}#{BoardRead.child_detail(err)}"
+    return nil
+  end
 
   decision = JSON.parse(out) rescue nil
   pair = Array(decision && decision["reviewers"])

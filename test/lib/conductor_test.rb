@@ -396,6 +396,17 @@ class ConductorTest < Minitest::Test
   # The reviewer preview is DELIBERATELY still advisory, and the difference is the
   # distinction this file now draws: it removes a "picked:" line from under a
   # command that prints regardless. Nothing is cleared, so nothing refuses.
+  # AND IT DOES NOT DEGRADE IN SILENCE. This caller reads `run_bin` directly
+  # rather than through `read_board`, so nothing else would surface the reason.
+  def test_a_failed_reviewer_preview_says_why_on_stderr
+    write_exec("reviewer-select", "#!/bin/bash\necho 'boom: no such task' >&2\nexit 1\n")
+    _out, err, status = run_conductor("plan", "--reviewers", "--no-health")
+
+    assert_predicate status, :success?
+    assert_match(/reviewer preview for feat-a unavailable/, err)
+    assert_match(/boom: no such task/, err, "the child diagnosed it; do not throw that away")
+  end
+
   def test_a_failed_reviewer_preview_still_degrades
     write_exec("reviewer-select", "#!/bin/bash\nexit 1\n")
     out, _err, status = run_conductor("plan", "--reviewers", "--no-health")
