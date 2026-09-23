@@ -154,6 +154,19 @@ class Release
     #   output:   the captured combined stdout+stderr from `sh(..., capture: true)`.
     #   fallback: the remedy when the failure is NOT credential-shaped.
     def abort_message(headline:, output:, fallback:)
+      failure_message(headline: headline, output: output, fallback: fallback)
+    end
+
+    # The SAME three-part text, for a failure the caller REPORTS and returns from
+    # instead of aborting on. `dispatch_and_watch`'s pre-dispatch snapshot is that
+    # caller: it refuses to dispatch (correctly — without a baseline it cannot tell
+    # its own run from a prior one) and hands `false` back to a lane that carries
+    # on. That refusal used to print a fixed sentence and DISCARD gh's words, which
+    # is this module's thesis failing at one more site: the operator was told the
+    # read "never answered" and never told that gh had answered `HTTP 401: Bad
+    # credentials`, which selects a completely different remedy from the retry they
+    # were handed. Same composition as an abort; only the exit differs.
+    def failure_message(headline:, output:, fallback:)
       lines = [headline]
       lines.concat(quoted_output(output))
       lines << "  → #{credential_failure?(output) ? credential_remedy(output) : fallback}"

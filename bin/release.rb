@@ -170,6 +170,18 @@ require_relative "../app/models/release/cli"
 # dirty and builds the refusal + `full-cycle` offer. Rails-free → unit-tested.
 require_relative "../app/models/release/clean_check"
 require_relative "../app/models/release/gh_failure"
+# The retry POLICY for a cheap, idempotent `gh` READ: a credential-class failure
+# re-mints and retries at once, everything else keeps the bounded sleep-retry. It
+# reads GhFailure's classifier, so it loads after it. Rails-free → unit-tested.
+require_relative "../app/models/release/gh_read_retry"
+# ONE producer for the `bin/qa-server deploy` command line — printed both as the
+# step that runs it and as the remedy an operator re-runs, which is how the remedy
+# lost its `--yes`. Rails-free → unit-tested.
+require_relative "../app/models/release/qa_deploy_command"
+# The mint-once-and-retry recovery this lane's gh calls ride (bin/lib/ci_status.rb
+# already requires it for the CI reads; named here because dispatch_and_watch is
+# now a first-class caller and a transitive require is not a dependency).
+require_relative "lib/gh_auth_retry"
 # StaleTreeCheck is the pure verdict behind prepare's STALE-TREE GATE (step 3b):
 # AFTER the accepted→release promote it asserts that every three-rung repo in the
 # candidate's deploy plan has `release` carrying `accepted`, and builds the
@@ -522,26 +534,48 @@ end
 def dispatch_and_watch(workflow, inputs = {}, chdir: nil)
   return true if DRY
 
-  before_id = nil
-  5.times do
-    before_id = newest_run_id(workflow, chdir: chdir)
-    break unless before_id.nil?
-
-    sleep 3
+  # THE SNAPSHOT RETRIES BY CAUSE, not by clock (Release::GhReadRetry). This loop
+  # used to be five reads three seconds apart, each re-running the same command
+  # with the same environment — which cleared neither measured instance
+  # (rel-20260922-7210bd, rel-20260922-a299ae), because the cause was the one thing
+  # a sleep cannot fix: bin/release inherits GH_TOKEN from the shell that launched
+  # it, App installation tokens live ~1h BY DESIGN, and a sweep outlives one. A
+  # credential-class refusal now re-mints and retries AT ONCE; everything else
+  # keeps the bounded sleep-retry, which is the class a sleep can clear.
+  snapshot = Release::GhReadRetry.call(sleeper: ->(s) { sleep s }, minter: -> { GhAuthRetry.mint }) do |token|
+    run_list_read(workflow, chdir: chdir, token: token)
   end
+  # Carry the recovered credential to the REST of the lane — the dispatch and the
+  # watch ride the same dead token otherwise (see $gh_lane_token).
+  $gh_lane_token = snapshot.token if snapshot.token
+  say("  ↻ #{workflow}: the ambient GitHub credential was refused — re-minted and continued.") if snapshot.reminted?
+  before_id = snapshot.ok? ? snapshot.out.strip.to_i : nil
   if before_id.nil?
-    # SAY IT, don't just return. These snapshot reads are `capture: true`, so gh's own
-    # error is swallowed and the bare `return false` reached the operator only as
-    # prepare's "never returned /up 200" — a BOOT verdict about an app this method
-    # never dispatched to. The abort further down fixed that for one cause of a
-    # missing run; this line covers the cause that stays a return.
-    say("  ⚠ #{workflow}: `gh run list` never answered, so there is no baseline to tell our run " \
-        "from a prior one — NOT dispatching. NOTHING WAS DEPLOYED; this is not a boot failure.")
+    # SAY IT, don't just return, and SAY WHAT GH SAID. These snapshot reads are
+    # `capture: true`, so gh's own error is swallowed and the bare `return false`
+    # reached the operator only as prepare's "never returned /up 200" — a BOOT
+    # verdict about an app this method never dispatched to. The abort further down
+    # fixed that for one cause of a missing run; this line covers the cause that
+    # stays a return.
+    #
+    # The REFUSAL ITSELF IS CORRECT AND STAYS: without a baseline this method
+    # cannot tell its own dispatched run from a prior one, so dispatching anyway
+    # would read someone else's verdict. What changes is that the operator is now
+    # handed gh's words and the remedy those words support (Release::GhFailure) —
+    # "the read never answered" and "gh said HTTP 401: Bad credentials" select
+    # completely different next moves, and only the second one is true.
+    say(Release::GhFailure.failure_message(
+          headline: "  ⚠ #{workflow}: `gh run list` never answered, so there is no baseline to tell our run " \
+                    "from a prior one — NOT dispatching. NOTHING WAS DEPLOYED; this is not a boot failure.",
+          output: snapshot.out,
+          fallback: "Re-run `bin/release prepare` — the sweep is idempotent and resumes over the " \
+                    "already-merged PRs. The read is cheap and read-only, so a retry costs nothing."
+        ))
     return false # gh never answered — do not watch a stale run
   end
 
   args = Release::ShipSequence.dispatch_argv(workflow, inputs)
-  _, dispatched = sh(*args, chdir: chdir)
+  _, dispatched = gh_sh(*args, chdir: chdir)
   unless dispatched
     # Same reason as above: `gh`'s error IS printed here (this call is not captured),
     # but the return still lands downstream as a boot verdict, so name the fact.
@@ -647,7 +681,7 @@ def dispatch_and_watch(workflow, inputs = {}, chdir: nil)
              Release::ShipSequence.unreadable_run_list_abort(workflow, inputs))
   end
 
-  _, watched = sh("gh", "run", "watch", run_id.to_s, "--exit-status", chdir: chdir)
+  _, watched = gh_sh("gh", "run", "watch", run_id.to_s, "--exit-status", chdir: chdir)
   return true if watched
 
   # Don't trust the WATCH's exit alone. Seen LIVE (Phase 2 validation, run
@@ -705,8 +739,8 @@ def poll_until_concluded(run_id, chdir:, poll:, unreadable_limit:)
   unreadable = 0
   last_status = nil
   loop do
-    out, ok = sh("gh", "run", "view", run_id.to_s, "--json", "status,conclusion",
-                 "--jq", "[.status, .conclusion] | @tsv", chdir: chdir, capture: true)
+    out, ok = gh_sh("gh", "run", "view", run_id.to_s, "--json", "status,conclusion",
+                    "--jq", "[.status, .conclusion] | @tsv", chdir: chdir, capture: true)
     status, conclusion = ok ? out.strip.split("\t", 2) : [nil, nil]
 
     # A read we could not make (gh errored) OR that returned no status is an
@@ -748,12 +782,44 @@ end
 # dispatch_and_watch): a caller must not read a transient failure as "no runs".
 # jq `// empty` yields "" on an empty list, which `to_i` maps to the genuine 0.
 def newest_run_id(workflow, chdir: nil)
-  out, ok = sh("gh", "run", "list", "--workflow", workflow, "--limit", "1",
-               "--json", "databaseId", "--jq", ".[0].databaseId // empty",
-               chdir: chdir, capture: true)
+  out, ok = run_list_read(workflow, chdir: chdir, token: $gh_lane_token)
   return nil unless ok
 
   out.strip.to_i
+end
+
+# The raw `[out, ok]` of the newest-run-id read, WITHOUT the nil-folding above.
+# dispatch_and_watch's snapshot needs gh's words to classify the failure and to
+# print them; `newest_run_id` needs only the id. Same command, two questions.
+def run_list_read(workflow, chdir: nil, token: nil)
+  sh("gh", "run", "list", "--workflow", workflow, "--limit", "1",
+     "--json", "databaseId", "--jq", ".[0].databaseId // empty",
+     chdir: chdir, capture: true, env: gh_token_env(token))
+end
+
+# THE LANE'S RECOVERED CREDENTIAL, or nil. Set only when a `gh` call in the
+# workflow-dispatch lane was refused on credentials and a fresh App installation
+# token was minted to replace it (Release::GhReadRetry). Every later `gh` call in
+# that lane carries it.
+#
+# CARRYING IT IS NOT AN OPTIMISATION. bin/release inherits GH_TOKEN from the shell
+# that launched it and never refreshes it, so when that token expires mid-sweep it
+# is dead for the WHOLE lane, not for one read. Minting for the baseline snapshot
+# and then dispatching with the ambient credential would recover the read and fail
+# the very next call on the credential we had just proven dead — a partial
+# correction that leaves the operator with a stranger failure than the one it fixed.
+$gh_lane_token = nil
+
+# The env overlay that hands `gh` a specific credential, or {} for the ambient one.
+# `sh` merges a leading Hash into the child's environment without touching argv.
+def gh_token_env(token)
+  token.to_s.strip.empty? ? {} : { "GH_TOKEN" => token }
+end
+
+# A `gh` call in the workflow-dispatch lane: identical to `sh`, except it carries
+# whatever credential the lane recovered.
+def gh_sh(*cmd, capture: false, chdir: nil)
+  sh(*cmd, capture: capture, chdir: chdir, env: gh_token_env($gh_lane_token))
 end
 
 # The SHELL-SAFE `rails runner` payload for a conductor snippet. The snippet is
@@ -3583,8 +3649,9 @@ def prepare
       step("qa deploy: gh workflow run qa-deploy.yml -f sha=#{short(tip)} — GitHub Actions QA deploy of the release tip")
       qa_ok = dispatch_and_watch("qa-deploy.yml", { "sha" => tip }, chdir: path)
     else
-      step("qa deploy: bin/qa-server deploy #{qa_app} origin/#{RELEASE_BRANCH} --yes")
-      _, qa_ok = sh("bin/qa-server", "deploy", qa_app, "origin/#{RELEASE_BRANCH}", "--yes", capture: false)
+      step("qa deploy: #{Release::QaDeployCommand.for(qa_app: qa_app, branch: RELEASE_BRANCH)}")
+      _, qa_ok = sh("bin/qa-server", "deploy", qa_app, "origin/#{RELEASE_BRANCH}",
+                    Release::QaDeployCommand::CONFIRM_FLAG, capture: false)
     end
 
     # c2. wait for the dyno to actually BOOT before treating the deploy as done.
@@ -3721,7 +3788,12 @@ def prepare
     if d["ok"]
       say("  app #{d['repo']} → #{RELEASE_BRANCH} → QA #{loc}#{at}")
     else
-      say("  app #{d['repo']} → #{RELEASE_BRANCH} — QA deploy FAILED, retry `bin/qa-server deploy #{d['qa_app']} origin/#{RELEASE_BRANCH}`")
+      # The remedy is rendered by the SAME producer as the command this lane runs
+      # (Release::QaDeployCommand). It was hand-written here and drifted: it shipped
+      # WITHOUT `--yes`, so an operator who copied it hit bin/qa-server's
+      # external-write confirmation and got no deploy — measured twice on 2026-09-22.
+      say("  app #{d['repo']} → #{RELEASE_BRANCH} — QA deploy FAILED, retry " \
+          "`#{Release::QaDeployCommand.for(qa_app: d['qa_app'], branch: RELEASE_BRANCH)}`")
     end
   end
   say("  #{left_reviewed.join(', ')} left `reviewed` — no code on `#{ACCEPTED_BRANCH}` (re-review to heal), or `bin/task block` them.") if left_reviewed.any?
