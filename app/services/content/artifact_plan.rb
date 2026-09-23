@@ -22,12 +22,25 @@ class Content
 
       def cast_label = subjects.map { |s| s[:name] }.join(" + ")
 
+      # WHAT WE HAVE, or the honest admission that we do not know. A re-skin over
+      # an artifact whose looks were never recorded used to render
+      # "have  — recolor for this game" — the descriptors compact away to an
+      # empty list and the sentence loses its object. That state is now REACHABLE
+      # FROM THE COMMON PATH rather than exotic: a named colorway that resolves to
+      # no look no longer counts as reuse, so it falls here instead.
+      def reskin_detail
+        have = artifact.subjects.ordered.filter_map { |s| s.effective_appearance&.descriptor }.uniq
+        return "have an artifact for this cast with no look recorded — recolor for this game" if have.empty?
+
+        "have #{have.join(' / ')} — recolor for this game"
+      end
+
       # Why this slot needs work, in the words the operator needs. A re-skin
       # names the look we DO have, because that is the thing being changed.
       def detail
         case decision
         when :reuse  then artifact&.approved? ? "approved artifact on file" : "attached, not yet approved"
-        when :reskin then "have #{artifact.subjects.ordered.map { |s| s.effective_appearance&.descriptor }.compact.uniq.join(' / ')} — recolor for this game"
+        when :reskin then reskin_detail
         else              "nothing on file for this cast"
         end
       end
@@ -95,7 +108,12 @@ class Content
 
       # UNAPPROVED counts here. The gate is where approval HAPPENS, so an image
       # attached a moment ago must be visible to the slot that owns it.
-      exact = Artifact.matching(pairs, kind: kind, approved_only: false)
+      # THE COLORWAY GOES WITH THE PAIRS. #appearance_for returns nil for a named
+      # colorway the person has no look in, and Artifact#subject_key emits the
+      # same empty string for an artifact whose look was never recorded — so
+      # without this argument the two nils compare equal and this line answers
+      # REUSE over an artifact nobody has described. See Artifact.matching.
+      exact = Artifact.matching(pairs, kind: kind, approved_only: false, colorway: colorway)
       return [:reuse, exact] if exact
 
       # Same cast, ANY looks — the face work is done and only the wardrobe is
