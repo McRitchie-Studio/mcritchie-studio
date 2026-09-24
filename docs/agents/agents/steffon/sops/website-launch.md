@@ -90,8 +90,9 @@ before touching DNS. Then run step 3 and step 4, then the last step.
 
 ### 3. Point the domain at it — Mr. McRitchie
 
-Squarespace DNS has no ALIAS/ANAME record, so the bare domain cannot point at
-Heroku directly. `www` carries the site and the bare domain forwards to it.
+Squarespace DNS does offer an ALIAS record at `@`, but only with DNSSEC switched
+off (Squarespace Help, "DNS records for web hosting"). This SOP leaves DNSSEC
+alone instead: `www` carries the site and the bare domain forwards to it.
 
 ```not-pasteable
 🙋 YOUR TURN — point the domain at our app
