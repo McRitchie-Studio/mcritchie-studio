@@ -53,14 +53,15 @@ module TaskColumnFields
   # the same task. The server enforces the other half — Task::DEVOPS_COLUMN_KEYS
   # refuses a devops write to these names and sheds any stored shadow — which is
   # what makes LOCATOR's "ALWAYS null" a guarantee rather than an observation.
-  COLUMN_NAMES = %w[merged release_slug dependencies].freeze
+  COLUMN_NAMES = %w[merged release_slug dependencies epic_slug].freeze
 
   # What UNSET means, per field, in words. A field is listed here precisely
   # because "empty" has a meaning worth stating out loud.
   UNSET_READS = {
     "merged" => "not merged",
     "release_slug" => "not on a release",
-    "dependencies" => "no declared dependencies"
+    "dependencies" => "no declared dependencies",
+    "epic_slug" => "no epic"
   }.freeze
 
   # What UNREPORTED prints. Deliberately shouty and self-explaining: it is rare,
