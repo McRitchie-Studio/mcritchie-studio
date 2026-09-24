@@ -53,11 +53,17 @@ namespace :workspace do
     # revoked row would otherwise probe green and print "ACTIVE" for a mailbox
     # that stays shut. The model refuses the flip as well; these are two
     # independent halves of the same guarantee, and neither relies on the other.
-    revoked, checkable = accounts.order(:domain).to_a.partition { |account| account.status == "revoked" }
+    shut, checkable = accounts.order(:domain).to_a.partition(&:shut?)
 
-    revoked.each do |account|
-      puts "#{account.domain}: SKIPPED — revoked, so impersonation stays refused and delegation was not probed."
-      puts "  → bin/rails 'workspace:reinstate[#{account.domain}]' returns it to pending, where a check can prove it again."
+    shut.each do |account|
+      puts "#{account.domain}: SKIPPED — #{account.status}, so impersonation stays refused and delegation was not probed."
+      if account.status == "revoked"
+        puts "  → bin/rails 'workspace:reinstate[#{account.domain}]' returns it to pending, where a check can prove it again."
+      else
+        # A severed workspace is final. The one useful check left is proving the
+        # Google side is cut too, and that is workspace:check_severed.
+        puts "  → final. To prove the client removed our client id: bin/rails 'workspace:check_severed[#{account.domain}]'"
+      end
     end
 
     failed = checkable.map { |account|

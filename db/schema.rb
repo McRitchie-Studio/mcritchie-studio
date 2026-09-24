@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_23_023058) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_24_040000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -889,6 +889,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_23_023058) do
     t.index ["workspace_account_id"], name: "index_knowledge_sources_on_workspace_account_id"
   end
 
+  create_table "mailbox_drafts", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "drafted_by", null: false
+    t.string "gmail_draft_id", null: false
+    t.string "gmail_message_id"
+    t.string "gmail_thread_id"
+    t.string "mailbox_address", null: false
+    t.string "recipients"
+    t.string "subject"
+    t.datetime "updated_at", null: false
+    t.bigint "workspace_mailbox_id", null: false
+    t.index ["mailbox_address"], name: "index_mailbox_drafts_on_mailbox_address"
+    t.index ["workspace_mailbox_id"], name: "index_mailbox_drafts_on_workspace_mailbox_id"
+  end
+
   create_table "migration_lane_claims", force: :cascade do |t|
     t.datetime "acquired_at"
     t.datetime "claim_expires_at"
@@ -1755,6 +1770,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_23_023058) do
     t.index ["subject"], name: "index_workspace_accounts_on_subject", unique: true
   end
 
+  create_table "workspace_mailboxes", force: :cascade do |t|
+    t.string "address", null: false
+    t.datetime "created_at", null: false
+    t.string "last_check_error"
+    t.text "notes"
+    t.text "signature"
+    t.string "status", default: "pending", null: false
+    t.datetime "updated_at", null: false
+    t.datetime "verified_at"
+    t.bigint "workspace_account_id", null: false
+    t.index ["address"], name: "index_workspace_mailboxes_on_address", unique: true
+    t.index ["workspace_account_id"], name: "index_workspace_mailboxes_on_workspace_account_id"
+  end
+
   add_foreign_key "action_grades", "agent_actions"
   add_foreign_key "action_grades", "agent_activities", on_delete: :nullify
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
@@ -1766,6 +1795,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_23_023058) do
   add_foreign_key "github_builder_commit_range_caches", "github_commit_ranges"
   add_foreign_key "github_builder_commit_range_caches", "tracked_github_builders"
   add_foreign_key "knowledge_sources", "workspace_accounts"
+  add_foreign_key "mailbox_drafts", "workspace_mailboxes"
   add_foreign_key "roster_spots", "rosters"
   add_foreign_key "solid_queue_blocked_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
   add_foreign_key "solid_queue_claimed_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
@@ -1776,4 +1806,5 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_23_023058) do
   add_foreign_key "source_documents", "knowledge_sources"
   add_foreign_key "studio_email_deliveries", "users"
   add_foreign_key "tracked_github_builder_repos", "tracked_github_builders"
+  add_foreign_key "workspace_mailboxes", "workspace_accounts"
 end
