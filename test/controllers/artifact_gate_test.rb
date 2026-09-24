@@ -862,6 +862,29 @@ class ArtifactGateTest < ActionDispatch::IntegrationTest
     assert_equal 2, Artifact.live.count
   end
 
+  # REGRESSION, found by a light reviewer on PR 1566 and reproduced on both
+  # sides of that merge. The jersey field is FREE TEXT, so the operator can type
+  # anything; `Appearance.file_for_colorway!` built the descriptor as
+  # `colorway.titleize`, which is "" for all-punctuation input. That failed the
+  # descriptor presence validation, `create!` raised inside the attach
+  # transaction, and `rescue_and_log` re-raises — so the operator got an error
+  # page instead of an attach. Measured before the fix: HTTP 422, zero
+  # artifacts, one ErrorLog. On the tree before the look was filed at all, the
+  # same input succeeded, which is what makes this a regression.
+  test "an attach survives a colorway the operator typed as punctuation" do
+    post set_colorway_content_path(@content.slug), params: { colorway: "_" }
+    assert_equal "_", @content.reload.colorway,
+                 "the control — the jersey field must actually accept this, or the test proves nothing"
+
+    attach(index_of("pair"))
+
+    assert_response :redirect
+    assert_equal 1, Artifact.live.count, "the attach must file an artifact, not raise"
+    assert_equal 0, ErrorLog.count, "a typed jersey must not land in the error log"
+    assert Artifact.live.first.subjects.all? { |s| s.appearance_slug.present? },
+           "the filed look must still be recorded on the row"
+  end
+
   # --- the wiring blockers a review found ---------------------------------
 
   # The gate was unreachable in production: nothing wrote the cast, so
