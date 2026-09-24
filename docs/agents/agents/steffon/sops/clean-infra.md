@@ -22,7 +22,7 @@ gates it must respect are release gates.
   commit. This act touches no board row and no tracked file. `archive-shipped`
   runs this sweep as part of its own procedure; running this act alone never
   archives anything.
-- **It is not `clean-up`.** Alex's act drives the BOARD to zero and triages open
+- **It is not `clean-up`.** Xan's act drives the BOARD to zero and triages open
   tasks and orphaned PRs. It calls this act for the infra half.
 - **It never reviews, merges, promotes, or deploys.**
 
@@ -371,7 +371,7 @@ say it, so the silence is a finding rather than an omission.
 
 - [`archive-shipped.md`](archive-shipped.md) - Steffon's board closeout, which
   runs this sweep as part of its own procedure.
-- [`../../alex/sops/clean-up.md`](../../alex/sops/clean-up.md) - Alex's
+- [`../../xan/sops/clean-up.md`](../../xan/sops/clean-up.md) - Xan's
   board-to-zero act, which calls this one for the infra half.
 - [`../../../modules/worktrees.md`](../../../modules/worktrees.md) - the worktree
   launcher, the Redis band, and the lifecycle verbs.

@@ -1,12 +1,12 @@
 const { test, expect } = require("@playwright/test");
 
-// The Alex avenue (/alex/heartbeat) renders the agent-narrated EVENT trajectory from
+// The Xan avenue (/xan/heartbeat) renders the agent-narrated EVENT trajectory from
 // the seeded spans — each row an AgentActivity (category · reason -> outcome) that
 // drills down (Alpine) into the raw tool-calls attributed to it. The seed narrates a
 // couple of closed spans, a final OPEN span ("…in progress"), plus one pre-narration
 // action in the read-only "Unlabeled" group.
-test("alex heartbeat renders the narrated event spans as the primary rows", async ({ page }) => {
-  await page.goto("/alex/heartbeat?session_id=e2e-heartbeat-0001");
+test("xan heartbeat renders the narrated event spans as the primary rows", async ({ page }) => {
+  await page.goto("/xan/heartbeat?session_id=e2e-heartbeat-0001");
 
   const table = page.locator("[data-test='heartbeat-event-table']");
   await expect(table).toBeVisible();
@@ -28,7 +28,7 @@ test("alex heartbeat renders the narrated event spans as the primary rows", asyn
 // A span is collapsed by default; expanding it (Alpine) reveals the raw actions
 // attributed to it — kind + input — as read-only drill-down rows.
 test("expanding a span drills down into its attributed actions", async ({ page }) => {
-  await page.goto("/alex/heartbeat?session_id=e2e-heartbeat-0001");
+  await page.goto("/xan/heartbeat?session_id=e2e-heartbeat-0001");
 
   const span = page.locator("[data-test='heartbeat-event'][data-category='Explore']");
   const firstAction = span.locator("tr[data-test='heartbeat-event-action']").first();
@@ -46,7 +46,7 @@ test("expanding a span drills down into its attributed actions", async ({ page }
 // action a bash one + a goal summary — each renders as a copyable chip with a
 // leading language badge and a copy button (the operator's key-method ask).
 test("key methods render as copyable chips with language badges", async ({ page }) => {
-  await page.goto("/alex/heartbeat?session_id=e2e-heartbeat-0001");
+  await page.goto("/xan/heartbeat?session_id=e2e-heartbeat-0001");
 
   // The span-level chip sits under the narration lines.
   const spanChip = page.locator("[data-test='event-key-method'] [data-test='key-method-chip']").first();
@@ -67,7 +67,7 @@ test("key methods render as copyable chips with language badges", async ({ page 
 
 // Grading is preserved: clicking a drilled-down action opens the per-action drawer.
 test("clicking a drilled-down action opens its grading drawer", async ({ page }) => {
-  await page.goto("/alex/heartbeat?session_id=e2e-heartbeat-0001");
+  await page.goto("/xan/heartbeat?session_id=e2e-heartbeat-0001");
 
   const span = page.locator("[data-test='heartbeat-event'][data-category='Explore']");
   await span.locator("tr[data-test='heartbeat-event-row']").click();
@@ -79,7 +79,7 @@ test("clicking a drilled-down action opens its grading drawer", async ({ page })
 // The event row rolls its attributed actions up into the Pokémon / Model / Tokens /
 // Cost columns and a distinct open-vs-done status badge (the operator's screenshot ask).
 test("the span rows show the rolled-up mascot, model, tokens, cost, and status @quarantine", async ({ page }) => {
-  await page.goto("/alex/heartbeat?session_id=e2e-heartbeat-0001");
+  await page.goto("/xan/heartbeat?session_id=e2e-heartbeat-0001");
 
   const explore = page.locator("[data-test='heartbeat-event'][data-category='Explore']");
   // the mascot name rides on the avatar's title (the face itself is a sprite/initial)
@@ -103,7 +103,7 @@ test("the span rows show the rolled-up mascot, model, tokens, cost, and status @
 // action count (MIDDLE, floated right); a span whose task changed STAGE in-window
 // badges as that new stage using the shared board pill.
 test("the activity card carries the status badge and action count and badges a stage change", async ({ page }) => {
-  await page.goto("/alex/heartbeat?session_id=e2e-heartbeat-0001");
+  await page.goto("/xan/heartbeat?session_id=e2e-heartbeat-0001");
 
   const explore = page.locator("[data-test='heartbeat-event'][data-category='Explore']");
   const card = explore.locator("[data-test='activity-card']");
@@ -117,7 +117,7 @@ test("the activity card carries the status badge and action count and badges a s
 // completed_at (top) and created_at (middle); the open span counts UP with a live
 // elapsed timer and a spinner instead.
 test("activity + action timestamps render at second precision", async ({ page }) => {
-  await page.goto("/alex/heartbeat?session_id=e2e-heartbeat-0001");
+  await page.goto("/xan/heartbeat?session_id=e2e-heartbeat-0001");
 
   // A closed span's card shows completed_at (top) and created_at (middle), each with
   // a HH:MM:SS clock — a colon-delimited time, not the minute-only heartbeat stamp.
@@ -141,13 +141,13 @@ test("activity + action timestamps render at second precision", async ({ page })
   await expect(explore.locator("[data-test='action-span']").first()).toContainText("created at");
 });
 
-// The launcher's Alex avenue links straight to the heartbeat trajectory.
-test("the session launcher Alex avenue links to the heartbeat trajectory", async ({ page }) => {
+// The launcher's Xan avenue links straight to the heartbeat trajectory.
+test("the session launcher Xan avenue links to the heartbeat trajectory", async ({ page }) => {
   await page.goto("/launcher");
 
-  const alex = page.locator("a[data-avenue='alex']");
-  await expect(alex).toHaveAttribute("href", "/alex/heartbeat");
+  const xan = page.locator("a[data-avenue='xan']");
+  await expect(xan).toHaveAttribute("href", "/xan/heartbeat");
 
-  await alex.click();
+  await xan.click();
   await expect(page.locator("[data-test='heartbeat-event-table']")).toBeVisible();
 });

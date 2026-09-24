@@ -3564,8 +3564,8 @@ class Task < ApplicationRecord
     # builder already on record. Only an explicit soul actor (rule 1) ever re-points.
     return nil if devops["built_by"].presence || prior_devops["built_by"].presence
 
-    found = [devops["persona"].to_s, agent_slug.to_s].find { |slug| self.class.soul?(slug) }
-    found && self.class.canonical_soul(found)
+    [devops["persona"].to_s, agent_slug.to_s].find { |slug| self.class.soul?(slug) }
+                                            &.then { |slug| self.class.canonical_soul(slug) }
   end
 
   # `set_initial_position` (the `before_create` genesis seed above) now comes from

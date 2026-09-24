@@ -268,7 +268,7 @@ class ReleaseConductorClaimWiringTest < ActiveSupport::TestCase
     assert_includes DevopsShift::LANES, "avi", "clean-up still takes the avi shift, so the avi lane stays"
 
     shift_src = File.read(DEVOPS_SHIFT)
-    assert_match(/LANES = %w\[avi alex\]\.freeze/, shift_src, "bin/devops-shift drops steffon from its default set")
+    assert_match(/LANES = %w\[avi xan\]\.freeze/, shift_src, "bin/devops-shift drops steffon from its default set")
   end
 
   # --- the model/table stays (avi lane still uses it) --------------------------
