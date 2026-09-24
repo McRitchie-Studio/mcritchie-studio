@@ -91,10 +91,12 @@ class Appearance < ApplicationRecord
   # this method exists to close, reached through a different door.
   #
   # Returns nil when nothing names a colorway. Nothing is filed, and the nil
-  # write is still correct — not because the person has no looks (they may: the
-  # default pointer can dangle) but because with no colorway named the plan
-  # reads `person.default_appearance` and the row's fallback reads that same
-  # expression. The two agree by construction.
+  # write is still correct — not because the person has no looks (they may, and
+  # a pointer a RAW delete orphaned still reads as none until their next look
+  # resolves it; the destroy and merge routes now release it themselves) but
+  # because with no colorway named the plan reads `person.default_appearance`
+  # and the row's fallback reads that same expression. The two agree by
+  # construction.
   #
   # THAT AGREEMENT IS NOT PERMANENT, and reading this as "nil is always safe"
   # is how the second half of the defect survived. The two nils mean the same
