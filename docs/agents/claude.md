@@ -17,7 +17,7 @@ SOP or heartbeat act such as `pr-review`, `qa-release`, `production-deploy`,
 `workspace-provision`, `workspace-launch`, `domain-purchase`,
 `workspace-signup`, `domain-dns`,
 `clean-up`, `process-backlog`, `work-backlog`, `slack-capture`,
-`gmail-capture`, `credential-issues`, `form-fill`, or `full-cycle`, resolve that phrase
+`gmail-capture`, `credential-issues`, `form-fill`, `focus-session`, `arbitrate-block`, or `full-cycle`, resolve that phrase
 through the SOP registry, read the mapped SOP, then execute it. For example, `pr-review` means read
 `mcritchie-studio/docs/agents/agents/carl/sops/pr-review.md` first and run that
 review-only SOP; do not start with `bin/pr-review --help`, `bin/qa-intake`,

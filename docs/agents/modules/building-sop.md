@@ -1,6 +1,10 @@
 # Building SOP — the feature agent's build flow, task → submitted
 
-You are a **feature agent** (the per-task Pokémon). Your work produces a code
+You are a **feature agent** (the per-task Pokémon — the general builder, whose
+soul and build checklist live in [`../agents/pokemon/role.md`](../agents/pokemon/role.md)).
+When a session holds an epic it runs [`focus-session.md`](focus-session.md) and
+spawns you per task; it spawns your reviewer the moment your PR is green, so
+your report to it at `submitted` is what starts review. Your work produces a code
 diff, so you run the DevOps **Build** lane: `designed → building → submitted`.
 You own the task from the moment you claim it through the `submitted` seam, where
 you hand off to review. This module is the standing procedure for that half. It

@@ -32,6 +32,16 @@ they earn a line:
 - **Slug-based FKs** — associations key on slug where the model does; no id/slug mismatch
 - **Zeitwerk / eager-load** — prod eager-loads (dev/test do not); no constant load-order surprise that only bites in production
 
+## Blocks are learnable
+A block you raise is feedback the builder and the learning loop both read. Write
+every block in three parts:
+- **Regression** — what breaks, in one sentence.
+- **Trigger** — the input or path that reaches it, so a reader can reproduce it.
+- **What right looks like** — the behavior that would pass, or the test that proves it.
+Then classify: a zap-scale defect is fixed forward, a style or scope idea rides as
+a note, and only a reachable regression earns the block. The builder may contest
+with evidence; Avi rules on it (`arbitrate-block`).
+
 ## Contact
 - **Email**: `carl@mcritchie.studio` (forwards to shared `team@mcritchie.studio` inbox)
 - **Solana wallet**: Keypair stored in 1Password vault
