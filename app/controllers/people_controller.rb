@@ -247,9 +247,11 @@ class PeopleController < ApplicationController
     source.association(:artifact_subjects).reset
   end
 
-  # CAST FIRST, looks second — not interchangeable. The look pass re-points
-  # every subject that names a colliding look, so the cast rows have to be on
-  # the survivor by then or the ones left behind are destroyed anyway.
+  # ORDER IS NOT LOAD-BEARING between this and the look pass, and an earlier
+  # draft of this comment claimed it was. It does not matter because the look
+  # pass re-points subjects by APPEARANCE, not by person, so it reaches the
+  # source's cast rows whether or not they have moved yet. Measured: swapping
+  # the two calls changes no outcome in the suite.
   #
   # `index_artifact_subjects_on_artifact_slug_and_person_slug` is unique, so an
   # artifact casting BOTH people cannot take the source's row. After the merge

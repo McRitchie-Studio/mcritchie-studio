@@ -135,15 +135,47 @@ class ArtifactTest < ActiveSupport::TestCase
     assert_not a.retired?
   end
 
-  # The retire hook must not fire while the artifact ITSELF is being destroyed —
-  # its subjects go first, and the last one would otherwise try to update a row
-  # that is on its way out.
-  test "destroying an artifact outright still works" do
+  # The retire hook must not fire while the artifact ITSELF is being destroyed.
+  # Its subjects go first, so the last one finds an empty cast and would retire
+  # the very row on its way out. Nothing RAISES if it does — Rails will happily
+  # run that UPDATE inside the destroy — which is exactly why this has to be
+  # measured at the SQL rather than asserted at the outcome.
+  test "destroying an artifact issues no retire write on the way out" do
     a = artifact_for([[@burrow, @bw]], kind: "character_sheet")
     slug = a.slug
+    writes = []
+    sub = ActiveSupport::Notifications.subscribe("sql.active_record") do |*, payload|
+      writes << payload[:sql] if payload[:sql].to_s.match?(/\AUPDATE "artifacts"/i)
+    end
 
-    assert_nothing_raised { a.destroy! }
+    begin
+      assert_nothing_raised { a.destroy! }
+    ensure
+      ActiveSupport::Notifications.unsubscribe(sub)
+    end
+
+    assert_empty writes, "the artifact is going away; retiring it first is a wasted write on a doomed row"
     assert_nil Artifact.find_by(slug: slug)
     assert_equal 0, ArtifactSubject.where(artifact_slug: slug).count
+  end
+
+  # The control for the test above: the same subscriber DOES see a write when
+  # the artifact is meant to be retired, so an empty `writes` proves the guard
+  # rather than proving the subscriber never fires.
+  test "the retire write is visible to the same probe when it should happen" do
+    a = artifact_for([[@carrey, @ace]], kind: "character_sheet")
+    writes = []
+    sub = ActiveSupport::Notifications.subscribe("sql.active_record") do |*, payload|
+      writes << payload[:sql] if payload[:sql].to_s.match?(/\AUPDATE "artifacts"/i)
+    end
+
+    begin
+      @carrey.destroy!
+    ensure
+      ActiveSupport::Notifications.unsubscribe(sub)
+    end
+
+    assert_not_empty writes, "losing the last subject must retire the artifact"
+    assert a.reload.retired?
   end
 end
