@@ -52,7 +52,7 @@ packages:
 
   - key: pro
     name: Pro
-    tagline: Everything in Basic, plus an agent that knows your business.
+    tagline: An agent that knows your business, not just your inbox.
     includes: basic
     price:
     items:
