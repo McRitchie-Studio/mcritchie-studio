@@ -140,4 +140,22 @@ class AppearanceTest < ActiveSupport::TestCase
     assert_not_equal retired.slug, look.slug
     assert_equal "Primary", look.descriptor, "the retired name is free again — the index only binds live looks"
   end
+
+  # REGRESSION. `colorway` is free text — the jersey field at the inspection
+  # gate takes whatever the operator types — and the descriptor was built as
+  # `colorway.titleize`, which is "" for input that is all punctuation. That
+  # failed the descriptor presence validation, so `create!` raised mid-attach
+  # and the operator got an error page. Before the look was filed at all, the
+  # same input wrote a nil appearance and the attach simply succeeded, so this
+  # was a live regression, not a pre-existing wart.
+  test "a colorway whose titleize is empty still files a usable look" do
+    assert_equal "", "_".titleize,
+                 "the control — if titleize stops returning \"\" here, this test no longer reproduces anything"
+
+    look = Appearance.file_for_colorway!(person_slug: @burrow.slug, colorway: "_")
+
+    assert_predicate look, :persisted?
+    assert_equal "_", look.colorway
+    assert_predicate look.descriptor, :present?
+  end
 end

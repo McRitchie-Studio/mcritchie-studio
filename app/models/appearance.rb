@@ -63,21 +63,50 @@ class Appearance < ApplicationRecord
   # asked for `person@` and found `person@<default>`.
   #
   # IDEMPOTENT on the colorway, which is what lets the attach run on every
-  # upload without accumulating looks. A RETIRED look in that colorway is not
-  # revived — retiring it was a decision — so a fresh one is filed beside it.
+  # upload without accumulating looks. It rests on the find_by ALONE — there is
+  # no unique index on (person_slug, colorway), only the partial one on
+  # (person_slug, descriptor).
   #
-  # Returns nil when nothing names a colorway. There is then genuinely nothing
-  # to file, and nil is the honest record: it means "no look was named AND the
-  # person has none", which is exactly the state in which the read's nil
-  # fallback agrees with it.
+  # SETS THE DEFAULT when this is the person's first look, because
+  # `become_default_if_first` fires on the create. So an ATTACH can stamp a
+  # person's default, and every nil-appearance row already on file for them
+  # re-resolves to it. That is correct rather than incidental: with no colorway
+  # named, the plan reads `person.default_appearance` and a nil row's fallback
+  # reads the same expression, so the two move together. A read that NAMES a
+  # colorway does not move with them — and should not, because it correctly
+  # drops to :reskin rather than reusing a colorway-less artifact for a named
+  # jersey.
+  #
+  # A retired look in that colorway is not revived; a fresh one is filed beside
+  # it, and the partial index (`where retired_at IS NULL`) leaves the old name
+  # free. Nothing in the app retires a look yet — this is the behaviour that
+  # will be right when something does.
+  #
+  # Returns nil when nothing names a colorway. Nothing is filed, and the nil
+  # write is still correct — not because the person has no looks (they may: the
+  # default pointer can dangle) but because with no colorway named the plan
+  # reads `person.default_appearance` and the row's fallback reads that same
+  # expression. The two agree by construction.
   def self.file_for_colorway!(person_slug:, colorway:)
     colorway = colorway.to_s.strip.downcase.presence
     return nil if colorway.blank? || person_slug.blank?
 
     live.find_by(person_slug: person_slug, colorway: colorway) ||
       create!(person_slug: person_slug, colorway: colorway,
-              descriptor: available_descriptor(person_slug, colorway.titleize))
+              descriptor: available_descriptor(person_slug, descriptor_base(colorway)))
   end
+
+  # COLORWAY IS FREE TEXT — the jersey field at the inspection gate takes
+  # whatever the operator types — so `titleize` is not safe to use bare here.
+  # It returns "" for anything that is all punctuation ("_" and "-" both do),
+  # which fails the descriptor presence validation and raises RecordInvalid
+  # mid-attach; `rescue_and_log` re-raises, so the operator got an error page
+  # rather than their image. Fall back to the raw colorway, which is already
+  # known non-blank by the guard above.
+  def self.descriptor_base(colorway)
+    colorway.titleize.presence || colorway
+  end
+  private_class_method :descriptor_base
 
   # `index_appearances_live_per_person` is UNIQUE on (person_slug, descriptor)
   # among live looks, so a person who already has a hand-named "Primary" in some
