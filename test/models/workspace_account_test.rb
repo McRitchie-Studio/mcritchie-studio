@@ -207,10 +207,31 @@ class WorkspaceAccountTest < ActiveSupport::TestCase
     account = WorkspaceAccount.create!(domain: "mason.test")
     account.mark_verified!
     account.workspace_mailboxes.create!(address: "alex@mason.test").mark_verified!
-    assert WorkspaceAccount.impersonatable?("alex@mason.test")
+    assert WorkspaceAccount.impersonatable?("alex@mason.test", purpose: :mail)
 
     account.sever!("client left")
 
-    refute WorkspaceAccount.impersonatable?("alex@mason.test")
+    refute WorkspaceAccount.impersonatable?("alex@mason.test", purpose: :mail)
+  end
+
+  test "severed cannot be undone by ANY update, not only the guarded methods" do
+    account = WorkspaceAccount.create!(domain: "mason.test")
+    account.sever!("acquired")
+
+    refute account.update(status: "active"), "a plain update must not revive a severed workspace"
+    assert_match(/severed, which is final/, account.errors[:status].join)
+    assert_equal "severed", account.reload.status
+  end
+
+  test "impersonation purposes: the default is the workspace subject only" do
+    account = WorkspaceAccount.create!(domain: "mason.test")
+    account.mark_verified!
+    account.workspace_mailboxes.create!(address: "alex@mason.test").mark_verified!
+
+    assert WorkspaceAccount.impersonatable?("team@mason.test")
+    assert WorkspaceAccount.impersonatable?("team@mason.test", purpose: :mail)
+    refute WorkspaceAccount.impersonatable?("alex@mason.test"), "a mailbox row never opens Drive"
+    assert WorkspaceAccount.impersonatable?("alex@mason.test", purpose: :mail)
+    assert_raises(ArgumentError) { WorkspaceAccount.impersonatable?("team@mason.test", purpose: :drive_everything) }
   end
 end

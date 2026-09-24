@@ -32,7 +32,7 @@ class WorkspaceMailboxTest < ActiveSupport::TestCase
 
     mailbox.mark_verified!
     assert WorkspaceMailbox.impersonatable?(" Alex@Mason.test ")
-    assert WorkspaceAccount.impersonatable?("alex@mason.test"), "Credentials' one question sees it too"
+    assert WorkspaceAccount.impersonatable?("alex@mason.test", purpose: :mail), "Credentials' one question sees it too, for mail"
 
     account.revoke!("paused")
     refute WorkspaceMailbox.impersonatable?("alex@mason.test"),

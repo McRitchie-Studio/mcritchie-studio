@@ -120,12 +120,16 @@ module Workspace
       #   Omitting the assignment does not raise either: the credential then
       #   authenticates as the service account ITSELF, which owns no mail and an
       #   empty Drive — so every call succeeds and returns nothing.
-      def authorizer_for(subject)
+      #
+      # `purpose:` says what the authorizer is FOR (WorkspaceAccount::PURPOSES):
+      # Drive passes nothing and gets the workspace subject only; Gmail passes
+      # :mail, which also admits an allow-listed mailbox.
+      def authorizer_for(subject, purpose: :workspace)
         subject = normalize_subject(subject)
-        unless WorkspaceAccount.impersonatable?(subject)
+        unless WorkspaceAccount.impersonatable?(subject, purpose: purpose)
           raise UnregisteredSubject,
-                "refusing to impersonate #{subject}: it is not an ACTIVE workspace_account " \
-                "or an ACTIVE mailbox in one. " \
+                "refusing to impersonate #{subject} for #{purpose}: it is not an ACTIVE workspace_account" \
+                "#{' or an ACTIVE mailbox in one' if purpose == :mail}. " \
                 "Register the workspace, have its super-admin grant delegation, then run " \
                 "bin/rails 'workspace:check[<domain>]' to prove it."
         end

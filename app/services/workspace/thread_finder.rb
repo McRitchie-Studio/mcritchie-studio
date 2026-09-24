@@ -8,16 +8,19 @@ module Workspace
   # at — and refused WITHOUT opening any of them, so a loose query costs a retry,
   # never a read of mail nobody asked about.
   class ThreadFinder
-    # Enough to tell "one thread" from "several" without listing a mailbox.
-    PROBE_LIMIT = 10
+    # Ids per page, and the most pages walked. The walk stops the moment a
+    # SECOND thread appears, so an ambiguous query costs one page; only a query
+    # that really is one long thread walks further. Ids and thread ids only —
+    # no message is opened while deciding.
+    PAGE_SIZE = 100
+    MAX_PAGES = 10
 
     Error = Class.new(StandardError)
     NotFound = Class.new(Error)
 
     class Ambiguous < Error
-      def initialize(query, count)
-        super("#{query.inspect} matched #{count}#{'+' if count >= PROBE_LIMIT} threads — " \
-              "narrow it (from:, subject:, newer_than:) until it names one")
+      def initialize(query, detail)
+        super("#{query.inspect} #{detail} — narrow it (from:, subject:, newer_than:) until it names one")
       end
     end
 
@@ -28,12 +31,24 @@ module Workspace
       @client = client
     end
 
+    # EVERY matching message is considered, not just the first page: a long
+    # thread can fill the first page on its own and hide a second thread that
+    # also matches. Deciding from a sample would draft into the wrong thread.
     def thread_id_for(query)
-      messages = Array(@client.messages_list(query: query, limit: PROBE_LIMIT).messages)
-      raise NotFound, "no message matches #{query.inspect}" if messages.empty?
+      threads = []
+      cursor = nil
+      pages = 0
+      loop do
+        page = @client.messages_list(query: query, cursor: cursor, limit: PAGE_SIZE)
+        pages += 1
+        threads |= Array(page.messages).map(&:thread_id)
+        raise Ambiguous.new(query, "matched more than one thread") if threads.size > 1
 
-      threads = messages.map(&:thread_id).uniq
-      raise Ambiguous.new(query, threads.size) if threads.size > 1
+        cursor = page.next_page_token.presence
+        break if cursor.nil?
+        raise Ambiguous.new(query, "matched over #{PAGE_SIZE * MAX_PAGES} messages") if pages >= MAX_PAGES
+      end
+      raise NotFound, "no message matches #{query.inspect}" if threads.empty?
 
       threads.first
     end
