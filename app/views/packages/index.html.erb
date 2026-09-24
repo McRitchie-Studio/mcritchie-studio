@@ -16,8 +16,10 @@
     <% if discount.positive? %>
       <div class="flex justify-center mb-6" data-test="billing-toggle">
         <div class="inline-flex rounded-full border border-subtle bg-surface p-1 text-sm font-semibold">
-          <button type="button" class="rounded-full px-4 py-1.5" :class="annual ? 'text-muted' : 'bg-primary text-white'" @click="annual = false">Monthly</button>
-          <button type="button" class="rounded-full px-4 py-1.5" :class="annual ? 'bg-primary text-white' : 'text-muted'" @click="annual = true">
+          <button type="button" class="rounded-full px-4 py-1.5" :class="annual ? 'text-muted' : 'bg-primary text-white'" @click="annual = false"
+                  aria-pressed="true" :aria-pressed="annual ? 'false' : 'true'" data-test="billing-monthly">Monthly</button>
+          <button type="button" class="rounded-full px-4 py-1.5" :class="annual ? 'bg-primary text-white' : 'text-muted'" @click="annual = true"
+                  aria-pressed="false" :aria-pressed="annual ? 'true' : 'false'" data-test="billing-annual">
             Annual <span class="ml-1 text-xs" :class="annual ? 'text-white' : 'text-primary'">save <%= discount %>%</span>
           </button>
         </div>
@@ -68,8 +70,12 @@
                  data-test="feature-row" data-feature="<%= feature.name.parameterize %>"
                  data-included="<%= !value.nil? %>" data-status="<%= feature.status %>">
               <span class="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-alt text-lg"
-                    data-test="feature-icon" aria-hidden="<%= feature.logo? ? 'false' : 'true' %>">
-                <% if feature.logo? %>
+                    data-test="feature-icon" aria-hidden="<%= feature.logo? && value ? 'false' : 'true' %>">
+                <% if value.nil? %>
+                  <%# A brand logo appears only where the customer GETS that product, so a
+                      row this package does not include shows a plain mark instead. %>
+                  <span class="text-muted" data-test="not-included-mark">–</span>
+                <% elsif feature.logo? %>
                   <% size = feature.logos.size > 1 ? "h-4 w-4" : "h-5 w-5" %>
                   <span class="flex items-center gap-0.5">
                     <% feature.logos.each do |logo| %><%= render "packages/logos/#{logo}", size: size %><% end %>

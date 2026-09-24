@@ -47,11 +47,39 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
     assert_select "#{lane('pro')} [data-feature='team-drafting-access']", text: /Coming soon/
   end
 
+  test "a brand logo shows only where the package gets that product" do
+    get packages_path
+
+    assert_select "#{lane('basic')} [data-feature='social-media-outreach']" do
+      assert_select "svg[aria-label='TikTok']", count: 0
+      assert_select "svg[aria-label='Instagram']", count: 0
+      assert_select "[data-test='not-included-mark']"
+    end
+    assert_select "#{lane('pro')} [data-feature='social-media-outreach'] [data-test='not-included-mark']", count: 0
+  end
+
+  test "the TikTok logo sits on its own dark tile, so it shows on the light theme" do
+    get packages_path
+
+    assert_select "#{lane('pro')} svg[aria-label='TikTok'] rect[fill='#000000']"
+  end
+
+  test "the billing toggle tells assistive tech which option is selected" do
+    get packages_path
+
+    assert_select "[data-test='billing-monthly'][aria-pressed='true']"
+    assert_select "[data-test='billing-annual'][aria-pressed='false']"
+    assert_includes response.body, %q(:aria-pressed="annual ? 'true' : 'false'"),
+      "the pressed state must follow the toggle, not stay at its server-rendered value"
+  end
+
   test "the SOP map is hidden from customers" do
     get packages_path
 
     assert_select "[data-test='sop-map']", count: 0
-    assert_no_match(/domain-purchase/, response.body, "SOP slugs are internal — customers see only the offer")
+    %w[website-launch workspace-signup domain-dns].each do |sop|
+      assert_no_match(/#{sop}/, response.body, "SOP slugs are internal — customers see only the offer")
+    end
   end
 
   test "admins see every feature mapped to its SOP, with the master SOP linked" do
@@ -61,7 +89,7 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
     get packages_path
 
     assert_select "[data-test='sop-map-master'][href='/docs/agents/steffon/sops/workspace-launch']"
-    %w[domain-purchase workspace-signup domain-dns workspace-provision].each do |sop|
+    %w[website-launch workspace-signup domain-dns workspace-provision].each do |sop|
       assert_select "[data-test='sop-map-row'][data-sop='#{sop}'] a[href='/docs/agents/steffon/sops/#{sop}']"
     end
   end
