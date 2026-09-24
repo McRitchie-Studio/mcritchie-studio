@@ -33,9 +33,10 @@
   </div>
 
   <p class="text-secondary text-sm mb-6">
-    Merge one person into another. All contracts, roster spots, coaches, and athlete data from the
-    <strong class="text-heading">source</strong> will be moved to the <strong class="text-heading">target</strong>,
-    and the source will be deleted.
+    Merge one person into another. Contracts, roster spots, coaches, athlete data, looks, and images
+    from the <strong class="text-heading">source</strong> move to the <strong class="text-heading">target</strong>,
+    and the source is deleted. An image casting both people is retired, because after the merge it
+    would depict one person twice.
   </p>
 
   <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
@@ -128,6 +129,7 @@
           All associations from <strong class="text-heading" x-text="mergeSelected.full_name"></strong>
           will be moved to <strong class="text-heading" x-text="keepSelected.full_name"></strong>,
           and <span class="text-danger" x-text="mergeSelected.full_name"></span> will be permanently deleted.
+          Any image casting both people is retired.
         </p>
         <button type="submit" class="btn btn-danger btn-sm mt-4">Merge &amp; Delete Source</button>
       </div>
