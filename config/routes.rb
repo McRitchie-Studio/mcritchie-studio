@@ -8,6 +8,7 @@ Rails.application.routes.draw do
   root "landing#index"
   get "terms",   to: "landing#terms",   as: :terms
   get "privacy", to: "landing#privacy", as: :privacy
+  get "packages", to: "packages#index", as: :packages
 
   # Broadcast emails — table view + editor. `preview` renders the email itself
   # (in the email shell) for the editor's live iframe.

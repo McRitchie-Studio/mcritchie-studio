@@ -99,11 +99,22 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
 
     sections = sidebar_link_sections
 
-    assert_equal ["Apps"], sections.map { |section| section.fetch(:title) }
+    assert_equal ["Services", "Apps"], sections.map { |section| section.fetch(:title) }
     labels = sections.flat_map { |section| section.fetch(:links) }.map { |link| link[:label] }
     refute_includes labels, "Dashboard"
     refute_includes labels, "Agents"
     refute_includes labels, "Builders"
+  end
+
+  test "the packages page is linked for everyone, signed in or not" do
+    self.admin_enabled = false
+    [ false, true ].each do |signed_in|
+      self.logged_in_enabled = signed_in
+      services = sidebar_link_sections.find { |section| section.fetch(:title) == "Services" }
+
+      assert services, "customers must reach /packages without an account (signed_in=#{signed_in})"
+      assert_equal [ "/packages" ], services.fetch(:links).map { |link| link.fetch(:href) }
+    end
   end
 
   test "logged-in sidebar reveals Studio with Agents and Builders together" do
@@ -120,7 +131,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     assert_equal labels.index("Agents") + 1, labels.index("Builders"),
       "Builders should sit right after Agents"
     other_titles = sections.reject { |section| section.fetch(:title) == "Studio" }.map { |section| section.fetch(:title) }
-    assert_equal ["NFL", "Directory", "Apps"], other_titles
+    assert_equal ["NFL", "Directory", "Services", "Apps"], other_titles
   end
 
   private
@@ -146,6 +157,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   def teams_path = "/teams"
   def people_path = "/people"
   def docs_path = "/docs"
+  def packages_path = "/packages"
   def deployments_path = "/deployments"
   def admin_dashboard_path = "/admin"
   def admin_theme_path = "/admin/theme"

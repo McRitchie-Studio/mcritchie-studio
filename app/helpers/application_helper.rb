@@ -1123,7 +1123,7 @@ module ApplicationHelper
   # soul ("Carl Heartbeat" / "Avi Heartbeat" / "Steffon Heartbeat" / "Alex
   # Heartbeat" / "Turf Monster Heartbeat"); +actions+ are the launcher acts that
   # scope that heartbeat's work (Carl: pr-review + pr-review-slow; Avi: qa-release +
-  # deploy-with-task; Steffon: production-deploy + clean-infra; Alex: grade-events +
+  # deploy-with-task; Steffon: production-deploy + clean-infra + workspace-launch; Alex: grade-events +
   # share-insights + full-cycle; Turf Monster: live-score-watch +
   # contest-rehearsal).
   #
@@ -1159,7 +1159,7 @@ module ApplicationHelper
     [
       { agent_slug: "carl",    heartbeat: "Carl Heartbeat",    actions: ["pr-review", "pr-review-slow"],                   label: "Review",        title: "Carl — review submitted PRs, one Carl per PR (review-only)" },
       { agent_slug: "avi",     heartbeat: "Avi Heartbeat",     actions: ["qa-release", "deploy-with-task"],                label: "Assemble + QA", title: "Avi — sweep reviewed work onto release, then QA the candidate" },
-      { agent_slug: "steffon", heartbeat: "Steffon Heartbeat", actions: ["production-deploy", "clean-infra"],              label: "Ship + sweep",  title: "Steffon — ship a QA-green release (it archives on the way out), then sweep the machine" },
+      { agent_slug: "steffon", heartbeat: "Steffon Heartbeat", actions: ["production-deploy", "clean-infra", "workspace-launch"], label: "Ship + sweep", title: "Steffon — ship a QA-green release (it archives on the way out), then sweep the machine" },
       { agent_slug: "alex",    heartbeat: "Alex Heartbeat",    actions: ["grade-events", "share-insights", "full-cycle"], label: "Learn + ship",  title: "Alex — grade, share insights, + full DevOps cycle heartbeat" },
       { agent_slug: "turf-monster", heartbeat: "Turf Monster Heartbeat", actions: ["live-score-watch", "contest-rehearsal"], label: "Watch scores",  title: "Turf Monster — watch a live NFL slot, or rehearse a whole contest on QA" }
     ]
@@ -1176,6 +1176,7 @@ module ApplicationHelper
     "production-deploy" => "Ship a QA-ready release to production",
     "qa-release"        => "Prepare + deploy the QA release",
     "clean-infra"       => "Sweep this machine: desks, disk, Redis band",
+    "workspace-launch"  => "Launch a new company workspace, step by step",
     "live-score-watch"  => "Watch a live NFL slot and record every score",
     "contest-rehearsal" => "Rehearse a whole contest on QA, end to end",
     "grade-events"      => "Grade 10 recent events for quality",
@@ -1204,7 +1205,8 @@ module ApplicationHelper
   # acts get a 1→3 keycap so the buttons read as a sequence across the souls (Carl
   # pr-review 1 → Avi qa-release 2 → Steffon production-deploy 3); the off-sequence
   # acts get a themed glyph (🐢 slow review, 🧑🏻‍🏫 grading, 🌎 the whole cycle,
-  # ⚡ the single-task expedite, 🧹 the infra sweep, 🏈 the live score watch). The
+  # ⚡ the single-task expedite, 🧹 the infra sweep, 🏈 the live score watch, 🏢 the
+  # new-workspace launch). The
   # heartbeat row itself gets a ❤️ in the view.
   #
   # The sequence lost its 4️⃣ (archive-shipped) when production-deploy took over
@@ -1217,6 +1219,7 @@ module ApplicationHelper
     "qa-release"        => "2️⃣",
     "production-deploy" => "3️⃣",
     "clean-infra"       => "🧹",
+    "workspace-launch"  => "🏢",
     "live-score-watch"  => "🏈",
     "contest-rehearsal" => "🎬",
     "pr-review-slow"    => "🐢",

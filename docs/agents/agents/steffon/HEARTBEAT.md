@@ -3,7 +3,8 @@
 ## Status: Active
 
 This is Steffon's heartbeat launcher. It sets Steffon's session attribution and
-routes to three independent act SOPs:
+routes to three independent act SOPs (a fourth, `workspace-launch`, is invoked
+by name — see below):
 
 - [`production-deploy`](sops/production-deploy.md) - ship a QA-green release to
   production when one is ready. **Its final step runs `archive-shipped`**, so a
@@ -15,6 +16,15 @@ routes to three independent act SOPs:
   frozen docs, and **sweep for orphaned PRs**. Chained by `production-deploy`;
   still invocable on its own.
 
+**`workspace-launch` is Steffon's other job, and it is NOT part of the
+heartbeat.** It stands up a brand-new company workspace — domain, Google
+Workspace, DNS, agentic drafting access — and walks Mr. McRitchie through every
+step that needs him. It runs only when he names it (the `/deployments` Workflows
+card carries a chip for it). Master SOP: [`workspace-launch`](sops/workspace-launch.md);
+its steps are the sub-SOPs [`domain-purchase`](sops/domain-purchase.md),
+[`workspace-signup`](sops/workspace-signup.md), [`domain-dns`](sops/domain-dns.md)
+and [`workspace-provision`](sops/workspace-provision.md).
+
 Use this file when Mr. McRitchie invokes `Steffon Heartbeat`. When he invokes a
 single Steffon act directly, read that act's SOP file.
 
@@ -25,8 +35,9 @@ archive` archives through the MODEL path, which bypasses the CLI's open-PR gate
 by design, so the alarm rings on the same beat as the act that can create one.
 `clean-infra` is the DELIBERATE one — invoked when the machine is in the way,
 whatever the symptom looked like. The `/deployments` Workflows card
-carries `production-deploy` + `clean-infra`; `archive-shipped` is off it because
-the release already runs it, and it stays invocable by name.
+carries `production-deploy` + `clean-infra` (+ `workspace-launch`); `archive-shipped` is off it because
+the release already runs it, and it stays invocable by name. The card also
+carries `workspace-launch`, which is not a heartbeat act at all — see below.
 
 ## Scope
 
