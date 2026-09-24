@@ -85,7 +85,7 @@ class AgentActivityTest < ActiveSupport::TestCase
   # ---- [unit] agent attribution ---------------------------------------------
 
   test "[unit] SOULS is the McRitchie roster" do
-    assert_equal %w[avi carl shannon jasper steffon alex], AgentActivity::SOULS
+    assert_equal %w[avi carl shannon jasper steffon xan], AgentActivity::SOULS
   end
 
   test "[unit] a known acting soul is stored, down-cased" do
@@ -515,29 +515,29 @@ class AgentActivityTest < ActiveSupport::TestCase
     older.update!(closed_at: 2.days.ago)
     newer = resolved_span(session_id: "aw-2", reason: "newer resolved span")
 
-    ids = AgentActivity.awaiting_grade(grader: "alex").map(&:id)
+    ids = AgentActivity.awaiting_grade(grader: "xan").map(&:id)
 
     assert_equal [newer.id, older.id], ids, "resolved spans, newest-resolved first"
   end
 
-  test "[integration] awaiting_grade excludes an OPEN span and one Alex already graded" do
+  test "[integration] awaiting_grade excludes an OPEN span and one Xan already graded" do
     AgentActivity.open_event!(session_id: "aw-open", category: "Edit", reason_slug: "still open") # never closed
     graded = resolved_span(session_id: "aw-graded", reason: "already graded span")
-    ActionGrade.create!(agent_activity: graded, grader: "alex", slug: "seen this one", disposition: "good")
+    ActionGrade.create!(agent_activity: graded, grader: "xan", slug: "seen this one", disposition: "good")
     fresh = resolved_span(session_id: "aw-fresh", reason: "not yet graded span")
 
-    ids = AgentActivity.awaiting_grade(grader: "alex").map(&:id)
+    ids = AgentActivity.awaiting_grade(grader: "xan").map(&:id)
 
     assert_includes ids, fresh.id
-    refute_includes ids, graded.id, "a span Alex already graded is not awaiting"
+    refute_includes ids, graded.id, "a span Xan already graded is not awaiting"
     assert(ids.none? { |id| AgentActivity.find(id).open? }, "open spans are never awaiting")
   end
 
-  test "[integration] awaiting_grade is per-grader — an mcr grade doesn't satisfy alex" do
-    span = resolved_span(session_id: "aw-grader", reason: "mcr graded not alex")
+  test "[integration] awaiting_grade is per-grader — an mcr grade doesn't satisfy xan" do
+    span = resolved_span(session_id: "aw-grader", reason: "mcr graded not xan")
     ActionGrade.create!(agent_activity: span, grader: "mcr", slug: "mcr audited this", disposition: "good")
 
-    assert_includes AgentActivity.awaiting_grade(grader: "alex").map(&:id), span.id,
+    assert_includes AgentActivity.awaiting_grade(grader: "xan").map(&:id), span.id,
                     "an mcr grade leaves it awaiting an ALEX grade"
   end
 

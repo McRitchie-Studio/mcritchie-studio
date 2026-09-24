@@ -724,7 +724,7 @@ class DorCheckTest < Minitest::Test
   def test_docs_only_sop_chore_stays_exempt
     # PR #513's exact diff — the legitimate skip. It must still pass cleanly.
     files = %w[
-      docs/agents/agents/alex/sops/full-cycle.md
+      docs/agents/agents/xan/sops/full-cycle.md
       docs/agents/agents/carl/sops/pr-review.md
       docs/agents/agents/avi/sops/qa-release.md
       docs/agents/modules/heartbeats.md

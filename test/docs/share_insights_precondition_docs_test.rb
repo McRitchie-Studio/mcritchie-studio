@@ -8,10 +8,10 @@ require "test_helper"
 # THE DEFECT. Preconditions said to stop unless an insight had been "confirmed by
 # Mr. McRitchie (`grader: \"mcr\"`)". Insights::DocGenerator.banked_insights reads
 # ActionGrade.banked and applies NO grader filter, and all five live insights are
-# Alex-graded — so the SOP told its own agent "nothing to share" while the bank it
+# Xan-graded — so the SOP told its own agent "nothing to share" while the bank it
 # exists to publish was full. The prose was the wrong half: `grader` records WHO
-# WROTE THE ROW (the `mcr` row is McRitchie's audit OF Alex's grade, browser-only, never the agent CLI by
-# design — the agent API always grades as `alex`), while `#bank!` is the curation
+# WROTE THE ROW (the `mcr` row is McRitchie's audit OF Xan's grade, browser-only, never the agent CLI by
+# design — the agent API always grades as `xan`), while `#bank!` is the curation
 # act. Both other readers of the bank agree with the generator: ActionGrade
 # .insight_feed (the /api/v1/insights SessionStart feed) and HeartbeatController
 # #insights both read `banked` with no grader filter.
@@ -38,7 +38,7 @@ require "test_helper"
 # could only fail on every PR or pass vacuously. Every row read here is seeded by
 # the test.
 class ShareInsightsPreconditionDocsTest < ActiveSupport::TestCase
-  SOP = Rails.root.join("docs/agents/agents/alex/sops/share-insights.md")
+  SOP = Rails.root.join("docs/agents/agents/xan/sops/share-insights.md")
 
   # The stated gate lives in the ONE ```ruby fence inside `## Preconditions`.
   RUBY_FENCE = /^```ruby\s*\n(.*?)^```\s*$/m
@@ -121,14 +121,14 @@ class ShareInsightsPreconditionDocsTest < ActiveSupport::TestCase
   end
 
   # A bank shaped like the live one AND like the one the retired precondition
-  # assumed: Alex-graded rows (all five live insights are these), a McRitchie
+  # assumed: Xan-graded rows (all five live insights are these), a McRitchie
   # audit row, and an unbanked row of each grader. Both axes have to vary or the
   # equality below could pass without ever being at risk.
   def seed_bank
-    grade(slug: "alex banked lesson one",  grader: ActionGrade::ALEX, banked: true)
-    grade(slug: "alex banked lesson two",  grader: ActionGrade::ALEX, banked: true)
+    grade(slug: "xan banked lesson one",  grader: ActionGrade::XAN, banked: true)
+    grade(slug: "xan banked lesson two",  grader: ActionGrade::XAN, banked: true)
     grade(slug: "mcr audited lesson",      grader: ActionGrade::MCR,  banked: true)
-    grade(slug: "alex ungraded leftovers", grader: ActionGrade::ALEX, banked: false)
+    grade(slug: "xan ungraded leftovers", grader: ActionGrade::XAN, banked: false)
     grade(slug: "mcr ungraded leftovers",  grader: ActionGrade::MCR,  banked: false)
   end
 
@@ -159,8 +159,8 @@ class ShareInsightsPreconditionDocsTest < ActiveSupport::TestCase
                     "has narrowed the entry condition below what Insights::DocGenerator publishes — the " \
                     "defect this guard exists for — or the fixture no longer spans the bank, in which case " \
                     "the comparison below would prove nothing."
-    assert_equal 2, stated_relation.where(grader: ActionGrade::ALEX).count,
-                 "the seeded fixture must keep BOTH Alex-graded banked rows in the stated set — they are " \
+    assert_equal 2, stated_relation.where(grader: ActionGrade::XAN).count,
+                 "the seeded fixture must keep BOTH Xan-graded banked rows in the stated set — they are " \
                  "the shape of the live bank, and the rows the retired precondition excluded"
     assert_equal 1, stated_relation.where(grader: ActionGrade::MCR).count,
                  "the seeded fixture must keep the McRitchie audit row in the stated set too — the bank " \
@@ -213,7 +213,7 @@ class ShareInsightsPreconditionDocsTest < ActiveSupport::TestCase
     assert_match(/banked-ness is the gate; the grader is not/i, section,
                  "the Preconditions lost the sentence that settles which column gates publication. " \
                  "Without it, `grader: \"mcr\"` reads like a quality bar rather than what it is — the " \
-                 "browser-only, never the agent CLI audit OF Alex's grade — and gets re-added as an entry condition.")
+                 "browser-only, never the agent CLI audit OF Xan's grade — and gets re-added as an entry condition.")
     assert_match(/audit/i, section,
                  "the Preconditions no longer say that the `mcr` row is McRitchie's AUDIT of a grade")
     assert_match(/nothing to share/, section,
@@ -226,7 +226,7 @@ class ShareInsightsPreconditionDocsTest < ActiveSupport::TestCase
   # The SOP was never the only place stating this precondition. When it was found,
   # THREE other live docs carried the same grader gate — heartbeats.md (which
   # states the act's Precondition in full, and claimed the generator was "scoped to
-  # the confirmed set"), alex/HEARTBEAT.md, and devops-cycle-design.md. An agent
+  # the confirmed set"), xan/HEARTBEAT.md, and devops-cycle-design.md. An agent
   # reaches the act through the heartbeat launcher BEFORE it reaches the SOP, so
   # fixing only the SOP would have left the defect operative and the two authorities
   # contradicting each other. The sweep therefore covers every live doc that
@@ -256,9 +256,9 @@ class ShareInsightsPreconditionDocsTest < ActiveSupport::TestCase
   # if the sweep stops seeing these, it is reading the wrong corpus and its silence
   # means nothing.
   REQUIRED_IN_SWEEP = [
-    "docs/agents/agents/alex/sops/share-insights.md",
+    "docs/agents/agents/xan/sops/share-insights.md",
     "docs/agents/modules/heartbeats.md",
-    "docs/agents/agents/alex/HEARTBEAT.md",
+    "docs/agents/agents/xan/HEARTBEAT.md",
     "docs/agents/system/devops-cycle-design.md"
   ].freeze
 
@@ -292,7 +292,7 @@ class ShareInsightsPreconditionDocsTest < ActiveSupport::TestCase
     assert_empty offenders,
                  "these live docs gate the share act on McRitchie confirmation again. " \
                  "Insights::DocGenerator publishes ActionGrade.banked with NO grader filter, and the agent " \
-                 "write path always grades as `alex` (the `mcr` row is McRitchie's audit OF that grade, " \
+                 "write path always grades as `xan` (the `mcr` row is McRitchie's audit OF that grade, " \
                  "browser-only, never the agent CLI) — so this condition stands the act down over every lesson an agent can bank. " \
                  "It is also not enough to fix the SOP alone: an agent meets the precondition in the " \
                  "heartbeat launcher first (/tasks/sop-precondition-blocks-sharing)."

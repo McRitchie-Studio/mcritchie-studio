@@ -707,7 +707,7 @@ class TaskCliTest < Minitest::Test
   # overrides (and the state dir) for run_task.
   def with_session_transcript(turns)
     Dir.mktmpdir do |home|
-      proj = File.join(home, ".claude", "projects", "-Users-alex-projects")
+      proj = File.join(home, ".claude", "projects", "-Users-xan-projects")
       FileUtils.mkdir_p(proj)
       lines = turns.map do |u|
         JSON.generate("type" => "assistant", "message" => {
@@ -830,7 +830,7 @@ class TaskCliTest < Minitest::Test
   # the exact shape that once made sum_usage raise a TypeError on obj["type"].
   def with_raw_session_transcript(raw_lines)
     Dir.mktmpdir do |home|
-      proj = File.join(home, ".claude", "projects", "-Users-alex-projects")
+      proj = File.join(home, ".claude", "projects", "-Users-xan-projects")
       FileUtils.mkdir_p(proj)
       File.write(File.join(proj, "#{SESSION}.jsonl"), "#{raw_lines.join("\n")}\n")
       usage_dir = File.join(home, "usage-state")
@@ -878,7 +878,7 @@ class TaskCliTest < Minitest::Test
   # across the two invocations (same HOME + TASK_USAGE_DIR).
   def test_intent_seeds_baseline_so_first_review_move_records_a_delta
     Dir.mktmpdir do |home|
-      proj = File.join(home, ".claude", "projects", "-Users-alex-projects")
+      proj = File.join(home, ".claude", "projects", "-Users-xan-projects")
       FileUtils.mkdir_p(proj)
       transcript = File.join(proj, "#{SESSION}.jsonl")
       env = { "CLAUDE_CODE_SESSION_ID" => SESSION, "HOME" => home, "TASK_USAGE_DIR" => File.join(home, "usage-state") }
@@ -913,7 +913,7 @@ class TaskCliTest < Minitest::Test
   # model_only — that's the bug this closes for the build CLAIM move.
   def test_create_seeds_baseline_so_first_build_move_records_a_delta
     Dir.mktmpdir do |home|
-      proj = File.join(home, ".claude", "projects", "-Users-alex-projects")
+      proj = File.join(home, ".claude", "projects", "-Users-xan-projects")
       FileUtils.mkdir_p(proj)
       transcript = File.join(proj, "#{SESSION}.jsonl")
       env = { "CLAUDE_CODE_SESSION_ID" => SESSION, "HOME" => home, "TASK_USAGE_DIR" => File.join(home, "usage-state") }
@@ -1726,7 +1726,7 @@ class TaskCliTest < Minitest::Test
   def test_show_verbose_prints_the_author_sources_and_where_they_live
     _requests, out, _err, status = run_task(
       ["show", "demo-task", "--verbose"],
-      stub_devops: { "kind" => "bug", "built_by" => "alex", "builders" => %w[shannon alex] }
+      stub_devops: { "kind" => "bug", "built_by" => "xan", "builders" => %w[shannon xan] }
     )
     assert status.success?
     # Structural anchor: the two lines that FOLLOW the claim line, wherever the
@@ -1736,8 +1736,8 @@ class TaskCliTest < Minitest::Test
     claim_at = lines.index { |l| l.include?("claim: session") }
     refute_nil claim_at, "the verbose block must still print the claim line"
     sources, locator = lines[claim_at + 1], lines[claim_at + 2]
-    assert_match(/built_by: alex/, sources)
-    assert_match(/builders: shannon, alex/, sources)
+    assert_match(/built_by: xan/, sources)
+    assert_match(/builders: shannon, xan/, sources)
     assert_match(/unattributed: none/, sources)
     assert_match(/metadata\.devops\.builders/, locator)
     assert_match(/agent_slug/, locator)

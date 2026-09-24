@@ -9,7 +9,7 @@
 <%= link_to deployments_path, class: "hb-btn", data: { turbo: false, test: "hb-nav-deployments" } do %>
   &lsaquo; Deployments
 <% end %>
-<%= link_to alex_insights_path, class: "hb-btn hb-insightbtn", data: { turbo: false } do %>
+<%= link_to xan_insights_path, class: "hb-btn hb-insightbtn", data: { turbo: false } do %>
   &#128161; Insight Bank (<span id="hb-insight-count"><%= insights_count %></span>)
 <% end %>
 <%= link_to heartbeat_all_activities_path,
@@ -18,7 +18,7 @@
   &#128451; All Activities
 <% end %>
 <% if current == :all_activities %>
-  <%= link_to alex_heartbeat_path, class: "hb-btn", data: { turbo: false, test: "hb-nav-session" } do %>
+  <%= link_to xan_heartbeat_path, class: "hb-btn", data: { turbo: false, test: "hb-nav-session" } do %>
     &lsaquo; Per-session heartbeat
   <% end %>
 <% end %>

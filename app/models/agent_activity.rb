@@ -45,7 +45,7 @@ class AgentActivity < ApplicationRecord
   # override); the heartbeat can later STACK the acting soul over the stable base
   # mascot. An unknown slug is coerced to nil by #normalize_agent — non-fatal, so
   # a typo'd soul never fails a narration.
-  SOULS = %w[avi carl shannon jasper steffon alex].freeze
+  SOULS = %w[avi carl shannon jasper steffon xan].freeze
 
   # The playful genesis reason for a session's very FIRST span — a self-contained
   # opener that needs no derived preamble (sidestepping the first-turn "assistant
@@ -70,7 +70,7 @@ class AgentActivity < ApplicationRecord
   # closing/removing an activity never destroys the actions it framed.
   has_many :agent_actions, dependent: :nullify, inverse_of: :agent_activity
 
-  # The grades targeting this activity — Alex's grade and the McRitchie audit-of-Alex
+  # The grades targeting this activity — Xan's grade and the McRitchie audit-of-Xan
   # are two ActionGrade rows (distinguished by grader), the activity-level mirror of
   # AgentAction#action_grades. Nullify (not destroy), matching the FK's
   # on_delete: :nullify — removing an activity orphans its grades rather than deleting
@@ -101,17 +101,17 @@ class AgentActivity < ApplicationRecord
   scope :closed,       -> { where.not(closed_at: nil) }
   scope :chronological, -> { order(opened_at: :asc, seq: :asc, id: :asc) }
 
-  # Default batch size for the Alex heartbeat grade-events loop (the SOP's "10 most
+  # Default batch size for the Xan heartbeat grade-events loop (the SOP's "10 most
   # recent resolved activities"), and the hard cap.
   DEFAULT_GRADE_BATCH = 10
   MAX_GRADE_BATCH     = 100
 
   # The RESOLVED (closed) activities that carry NO grade by `grader` yet — the "activities
-  # awaiting grade" the Alex heartbeat works through, newest-resolved first, capped.
+  # awaiting grade" the Xan heartbeat works through, newest-resolved first, capped.
   # This is the READ half of the first-class agent grading flow (the WRITE is
   # ActionGrade.record_activity_grade); together they let grade-events run as a bearer
   # CLI SOP instead of scraping the HTML page.
-  def self.awaiting_grade(grader: ActionGrade::ALEX, limit: DEFAULT_GRADE_BATCH)
+  def self.awaiting_grade(grader: ActionGrade::XAN, limit: DEFAULT_GRADE_BATCH)
     capped = limit.to_i.clamp(1, MAX_GRADE_BATCH)
     graded = ActionGrade.by_grader(grader).where.not(agent_activity_id: nil).select(:agent_activity_id)
     closed.where.not(id: graded).order(closed_at: :desc, seq: :desc).limit(capped)
@@ -451,8 +451,11 @@ class AgentActivity < ApplicationRecord
   # else nil (the orchestrator's un-agented lane). Shared by #normalize_agent (the
   # record) and the per-lane close scopes (open_activity!/close_activity!) so a WHERE on
   # `agent` matches the SAME normalized value the record was stored under.
+  # A retired alias (Task::SOUL_ALIASES — `alex` → `xan` for one release) lands on
+  # its successor, so a session whose sticky heartbeat still says `alex` keeps
+  # attributing to the seat instead of silently dropping to the base mascot.
   def self.normalize_agent_value(value)
-    slug = value.to_s.strip.downcase
+    slug = Task.canonical_soul(value.to_s.strip.downcase)
     SOULS.include?(slug) ? slug : nil
   end
 

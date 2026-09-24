@@ -55,7 +55,7 @@ class TaskCardAppEmojisTest < ActionDispatch::IntegrationTest
     release = Release.open!(branch: "release/2026-emoji-test")
     release.add(member)
     release.assemble!
-    release.ship!(by: "alex")
+    release.ship!(by: "xan")
 
     get deployments_path
     assert_response :success

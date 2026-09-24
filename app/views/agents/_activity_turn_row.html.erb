@@ -7,19 +7,19 @@
     action-level grade cells. The wide input/output blobs never render here — the feed
     loads via AgentAction.for_activity_feed, which omits them (the full-input title
     tooltip this row once carried is what made the page weigh megabytes); the
-    /alex/heartbeat drawer remains the full-record surface. Locals: turn_row, activity,
+    /xan/heartbeat drawer remains the full-record surface. Locals: turn_row, activity,
     agents_by_slug, pokemon_by_slug, action_grades. %>
 <% primary = turn_row[:primary] %>
 <% outcome = heartbeat_outcome_meta(primary.outcome) %>
 <% turn_pokemon = pokemon_by_slug[primary.mascot] %>
 <% grades_for = action_grades[primary.id] || {} %>
-<% alex_g = grades_for[ActionGrade::ALEX] %>
+<% xan_g = grades_for[ActionGrade::XAN] %>
 <% mcr_g  = grades_for[ActionGrade::MCR] %>
 <tr class="aa-subrow" id="aa-turn-<%= turn_row[:key] %>" data-test="aa-turn"
     data-row-id="<%= primary.id %>" data-id-field="agent_action_id"
-    data-alex-disp="<%= alex_g&.disposition %>" data-alex-slug="<%= alex_g&.slug %>"
-    data-alex-long="<%= alex_g&.long_form %>" data-alex-graded="<%= alex_g.present? %>"
-    data-alex-banked="<%= !!alex_g&.banked %>"
+    data-xan-disp="<%= xan_g&.disposition %>" data-xan-slug="<%= xan_g&.slug %>"
+    data-xan-long="<%= xan_g&.long_form %>" data-xan-graded="<%= xan_g.present? %>"
+    data-xan-banked="<%= !!xan_g&.banked %>"
     data-mcr-disp="<%= mcr_g&.disposition %>" data-mcr-slug="<%= mcr_g&.slug %>"
     data-mcr-long="<%= mcr_g&.long_form %>" data-mcr-graded="<%= mcr_g.present? %>"
     data-mcr-banked="<%= !!mcr_g&.banked %>"
@@ -63,6 +63,6 @@
       </div>
     </div>
   </td>
-  <%= render "agents/activities_grade_cell", kind: :action, target: primary, grader: "alex", grade: alex_g %>
+  <%= render "agents/activities_grade_cell", kind: :action, target: primary, grader: "xan", grade: xan_g %>
   <%= render "agents/activities_grade_cell", kind: :action, target: primary, grader: "mcr", grade: mcr_g %>
 </tr>

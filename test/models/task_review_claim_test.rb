@@ -389,9 +389,9 @@ class TaskReviewClaimCrewSeatTest < ActiveSupport::TestCase
     # (built_by=steffon, every test on the diff written by ALEX).
     task = Task.create!(title: "Co Author Claim Probe", stage: "submitted",
                         metadata: { "devops" => { "built_by" => "steffon",
-                                                  "builders" => %w[steffon alex] } })
+                                                  "builders" => %w[steffon xan] } })
 
-    outcome = TaskReviewClaim.acquire(task_slug: task.slug, reviewer: "alex",
+    outcome = TaskReviewClaim.acquire(task_slug: task.slug, reviewer: "xan",
                                       session: "s1d0f2a3-4b5c-4d6e-8f90-a1b2c3d4e5f6", nonce: "inst-A")
 
     refute outcome.acquired, "a co-author must not take the review of their own diff"
@@ -401,7 +401,7 @@ class TaskReviewClaimCrewSeatTest < ActiveSupport::TestCase
   test "the current builder is still refused" do
     task = Task.create!(title: "Builder Claim Probe", stage: "submitted",
                         metadata: { "devops" => { "built_by" => "steffon",
-                                                  "builders" => %w[steffon alex] } })
+                                                  "builders" => %w[steffon xan] } })
 
     outcome = TaskReviewClaim.acquire(task_slug: task.slug, reviewer: "steffon",
                                       session: "s1d0f2a3-4b5c-4d6e-8f90-a1b2c3d4e5f6", nonce: "inst-A")
@@ -414,7 +414,7 @@ class TaskReviewClaimCrewSeatTest < ActiveSupport::TestCase
     # The guard must not refuse the ordinary case, or the review lane wedges.
     task = Task.create!(title: "Clean Reviewer Claim Probe", stage: "submitted",
                         metadata: { "devops" => { "built_by" => "steffon",
-                                                  "builders" => %w[steffon alex] } })
+                                                  "builders" => %w[steffon xan] } })
 
     outcome = TaskReviewClaim.acquire(task_slug: task.slug, reviewer: "jasper",
                                       session: "s1d0f2a3-4b5c-4d6e-8f90-a1b2c3d4e5f6", nonce: "inst-A")

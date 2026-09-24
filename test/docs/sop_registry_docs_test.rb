@@ -27,7 +27,7 @@ class SopRegistryDocsTest < ActiveSupport::TestCase
   CLAUDE      = DOCS_ROOT.join("claude.md")
   SOPS_GLOB   = DOCS_ROOT.join("agents/*/sops/*.md")
 
-  # Rows look like:  | `clean-up` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/clean-up.md` |
+  # Rows look like:  | `clean-up` | Xan | `mcritchie-studio/docs/agents/agents/xan/sops/clean-up.md` |
   # The invocation may carry a trailing note — `pr-review-primary` (role SOP),
   # `qa-deploy` (legacy alias) — so capture the backticked name, not the whole cell.
   #
@@ -149,7 +149,7 @@ class SopRegistryDocsTest < ActiveSupport::TestCase
     row = registry_rows.find { |r| r[:invocation] == "clean-up" }
 
     refute_nil row, "`clean-up` is not in the SOP registry"
-    assert_equal "Alex", row[:owner]
+    assert_equal "Xan", row[:owner]
     assert_path_exists Rails.root.join(row[:path])
 
     body = Rails.root.join(row[:path]).read

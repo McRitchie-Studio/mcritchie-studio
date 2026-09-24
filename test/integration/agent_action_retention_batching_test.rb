@@ -90,7 +90,7 @@ class AgentActionRetentionBatchingTest < ActiveSupport::TestCase
 
       graded = AgentAction.create!(session_id: "retention-graded", kind: "edit", task_slug: task.slug,
                                    occurred_at: anchor)
-      ActionGrade.create!(agent_action: graded, grader: ActionGrade::ALEX, slug: "a lesson worth keeping",
+      ActionGrade.create!(agent_action: graded, grader: ActionGrade::XAN, slug: "a lesson worth keeping",
                           disposition: ActionGrade::GOOD).bank!
 
       activity = AgentActivity.create!(session_id: "retention-backlog", category: "Edit",

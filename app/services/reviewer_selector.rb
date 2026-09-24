@@ -4,7 +4,7 @@
 # the Lead Architect, deep reviewer, and OWNER of every PR review. The selection
 # here only chooses the LIGHT (the focused second read): a domain-fit pick from
 # the specialist pool {Shannon=UI · Jasper=Web3 · Steffon=DevOps/Platform ·
-# Alex=Documentation}. Carl is no longer a pool pick — he sits above it as the
+# Xan=Documentation}. Carl is no longer a pool pick — he sits above it as the
 # fixed primary.
 #
 # The LIGHT is chosen by DOMAIN FIT (the task's shape + repositories + risk tags →
@@ -18,10 +18,10 @@
 # THE TWO SEATS ARE FILLED BY DIFFERENT MECHANISMS, and each seat now SAYS which
 # one filled it (#seat's "basis", SEAT_BASIS_* below). The primary is seated by
 # ROLE and is neither ranked nor rolled; the light is ranked on fit and rolled only
-# to break a tie. So a light out-fitting the primary — Alex at fit 2 beside Carl at
+# to break a tie. So a light out-fitting the primary — Xan at fit 2 beside Carl at
 # fit 0 on a docs PR — is the policy working, not an ordering defect. Fit reaches
 # the PRIMARY seat only when Carl yields, and then #pair draws both seats from the
-# one ranked list (measured 2026-09-22: Alex takes primary at fit 2 there).
+# one ranked list (measured 2026-09-22: Xan takes primary at fit 2 there).
 #
 # The tiebreak RNG is seeded per-task by default (see #seed_for), so the LIGHT
 # pick is REPRODUCIBLE across processes: `bin/reviewer-select` (.decision) and the
@@ -36,7 +36,7 @@
 # standing-primary policy.
 #
 # The specialist pool is {shannon=UI · jasper=Web3 · steffon=DevOps/Platform ·
-# alex=Documentation}. The QA owner (Avi by default — after the 2026-07-22 reslot he
+# xan=Documentation}. The QA owner (Avi by default — after the 2026-07-22 reslot he
 # owns qa-release: the accepted→release sweep + the QA deploy that flips members
 # `assembled`) is EXCLUDED as a LIGHT so one soul never both reviews AND QAs the same
 # change — "no self-gating". Avi isn't in the specialist pool, so his default
@@ -134,7 +134,9 @@ require "zlib"
 class ReviewerSelector
   # The full senior soul pool (slugs). Carl is the standing primary (removed from
   # the specialist draw below); the other four are the LIGHT specialists.
-  POOL = %w[shannon carl jasper steffon alex].freeze
+  # `xan` holds the Documentation seat (the orchestrator, slugged `alex` until
+  # 2026-09-24 — Task::SOUL_ALIASES still reads the old slug as this one).
+  POOL = %w[shannon carl jasper steffon xan].freeze
 
   # Carl — the Lead Architect. He owns EVERY PR review as the STANDING PRIMARY
   # (deep review + owner), so he is never a light-pool pick.
@@ -183,7 +185,7 @@ class ReviewerSelector
     "carl"    => %w[backend],
     "jasper"  => %w[web3 onchain],
     "steffon" => %w[devops platform],
-    "alex"    => %w[docs documentation]
+    "xan"     => %w[docs documentation]
   }.freeze
 
   # WHY A SOUL HOLDS A SEAT — the mechanism that actually put them there, carried
@@ -231,8 +233,8 @@ class ReviewerSelector
     "onchain"          => %w[web3 onchain],
     "onchain-vertical" => %w[web3 onchain ui backend],
     # A documentation-only change (SOP / runbook / operating-model / README) needs
-    # the pool's Documentation seat — Alex, whose seeded domains carry both `docs`
-    # and `documentation`. Both tokens map here so a doc-shaped task fits Alex
+    # the pool's Documentation seat — Xan, whose seeded domains carry both `docs`
+    # and `documentation`. Both tokens map here so a doc-shaped task fits Xan
     # (fit 2) and nobody else (fit 0), landing him the LIGHT seat. Read by BOTH the
     # CLI preview (.decision) and the recorder (.select), so they stay reproducible.
     "docs"             => %w[docs documentation],
@@ -304,7 +306,11 @@ class ReviewerSelector
     @task = task
     @qa_owner = qa_owner.to_s
     @builder_override = builder.to_s.strip.presence
-    @busy = Array(busy).map { |s| s.to_s.strip }.reject(&:empty?).uniq
+    # Every soul read here goes through Task.canonical_soul, so `--busy alex` or a
+    # `builders` set stamped under the retired slug still lands on `xan` in the
+    # pool it is compared against — an alias that did not reach the exclusion
+    # would be the fail-open this class exists to close.
+    @busy = Array(busy).map { |s| Task.canonical_soul(s) }.reject(&:empty?).uniq
     @busy_asked = busy_asked ? true : false
     @logger = logger || Rails.logger
     # Default the tiebreak RNG to a STABLE per-task seed. The default LIGHT pick
@@ -561,7 +567,7 @@ class ReviewerSelector
         # than silently falling through to the record it was meant to correct.
         override_builders.first
       else
-        [devops_built_by, building_event_actor].map { |s| s.to_s.strip }.find { |s| soul?(s) }
+        [devops_built_by, building_event_actor].map { |s| Task.canonical_soul(s) }.find { |s| soul?(s) }
       end
   end
 
@@ -596,7 +602,7 @@ class ReviewerSelector
         override_builders
       else
         ([devops_built_by] + task_devops_builders + building_event_actors + fix_forward)
-          .map { |s| s.to_s.strip }.select { |s| soul?(s) }.uniq
+          .map { |s| Task.canonical_soul(s) }.select { |s| soul?(s) }.uniq
       end
   end
 
@@ -610,7 +616,7 @@ class ReviewerSelector
     return [] if builder_asserted_none? || @builder_override
     return [] unless task.respond_to?(:devops_fix_forward)
 
-    Array(task.devops_fix_forward).map { |slug| slug.to_s.strip }.reject(&:empty?)
+    Array(task.devops_fix_forward).map { |slug| Task.canonical_soul(slug) }.reject(&:empty?)
   end
 
   # Fix-forward entries that resolve to NO soul — the marker bin/pr-review records
@@ -643,7 +649,7 @@ class ReviewerSelector
   end
 
   def override_entries
-    @override_entries ||= @builder_override.to_s.split(/[,\s]+/).map(&:strip).reject(&:empty?)
+    @override_entries ||= @builder_override.to_s.split(/[,\s]+/).map { |s| Task.canonical_soul(s) }.reject(&:empty?)
   end
 
   # The claiming session that named nobody while other authors were already on

@@ -6163,7 +6163,7 @@ class ReleaseCliTest < Minitest::Test
 
   # --- verdict tagging: the COMPLETED/FAILED emit is a GRADEABLE test_scope -----
   # A2: run_test_scope tags ONLY the verdict emit with the fields that make the run
-  # a first-class gradeable unit in /alex/pipeline — kind=test_scope, event_slug=the
+  # a first-class gradeable unit in /xan/pipeline — kind=test_scope, event_slug=the
   # scope key, result_slug=pass|fail, duration_ms — while the START emit stays plain
   # (so the pipeline's `kind:test_scope AND result_slug present` filter skips it).
 

@@ -5,12 +5,12 @@
     keyboard-operable (see .aa-rb input in the stylesheet), wrapped in an aria-labelled
     radiogroup that names the grader. Server-rendered from `grade` (tests + no-JS
     correct) and bound to the row's Alpine grades.<grader> for live updates.
-    Locals: kind (:activity | :action), target, grader ("alex"|"mcr"), grade
+    Locals: kind (:activity | :action), target, grader ("xan"|"mcr"), grade
     (ActionGrade|nil), test_pref (data-test namespace — "aa-activity"/"aa-action" for the
     canonical cell, "…-m" for the mobile copy so hooks never collide). %>
 <% endpoint = kind == :activity ? heartbeat_activity_grade_path(target) : heartbeat_grade_path(target) %>
 <% role     = grader == "mcr" ? "M" : "A" %>
-<% who      = grader == "mcr" ? "Mr. McRitchie" : "Alex" %>
+<% who      = grader == "mcr" ? "Mr. McRitchie" : "Xan" %>
 <div class="aa-gradebox">
   <form action="<%= endpoint %>" method="post" class="aa-graderow" data-grader="<%= grader %>"
         data-test="<%= test_pref %>-grade-form-<%= grader %>" aria-label="<%= who %> grade" @submit.prevent>

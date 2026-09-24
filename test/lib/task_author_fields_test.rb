@@ -57,17 +57,17 @@ class TaskAuthorFieldsTest < Minitest::Test
   # work, so `builders` accumulates past `built_by`. Both are authors and both
   # must show — naming only the first is what seated an author on his own PR.
   def test_unit_every_soul_in_the_author_set_is_named
-    task = record(built_by: "shannon", builders: %w[shannon alex])
+    task = record(built_by: "shannon", builders: %w[shannon xan])
 
-    assert_equal "shannon, alex", TaskAuthorFields.read(task)
+    assert_equal "shannon, xan", TaskAuthorFields.read(task)
   end
 
   # Order matches ReviewerSelector#builders (built_by leads), so the display and
   # the selector cannot describe one task two ways.
   def test_unit_built_by_leads_the_set_and_duplicates_collapse
-    task = record(built_by: "alex", builders: %w[shannon alex])
+    task = record(built_by: "xan", builders: %w[shannon xan])
 
-    assert_equal "alex, shannon", TaskAuthorFields.read(task)
+    assert_equal "xan, shannon", TaskAuthorFields.read(task)
   end
 
   # ── [unit] THE TWO EMPTIES, which must never read alike ─────────────────────
@@ -184,11 +184,11 @@ class TaskAuthorFieldsTest < Minitest::Test
 
   def test_unit_the_source_line_reports_each_field_from_its_own_key
     line = TaskAuthorFields.source_line(
-      record(built_by: "alex", builders: %w[shannon alex], builders_unattributed: "sess-9")
+      record(built_by: "xan", builders: %w[shannon xan], builders_unattributed: "sess-9")
     )
 
-    assert_includes line, "built_by: alex"
-    assert_includes line, "builders: shannon, alex"
+    assert_includes line, "built_by: xan"
+    assert_includes line, "builders: shannon, xan"
     assert_includes line, "unattributed: sess-9"
   end
 

@@ -1,4 +1,4 @@
-<%# One activity grade editor inside the activity drawer — Alex's grade, or the McRitchie audit
+<%# One activity grade editor inside the activity drawer — Xan's grade, or the McRitchie audit
     of it (same shape as the per-action _grade_editor). It POSTs to E2's grade_event
     endpoint via fetch (heartbeatActivityEditor.submit), which returns JSON — so this is a
     hand-written form (not form_with/turbo_stream): the fetch carries the Rails CSRF
@@ -6,7 +6,7 @@
     activity row listens for. The nested x-data holds the live word count `n`, the toggled
     disposition `disp`, the banked/discarded flags, and the save/error state. Locals:
     activity, grader, who, role_label, grade (ActionGrade | nil), save_label, allow_bank
-    (Alex only — banking curates Alex's grade into the Insight Bank). %>
+    (Xan only — banking curates Xan's grade into the Insight Bank). %>
 <% n0 = heartbeat_word_count(grade&.slug) %>
 <form action="<%= heartbeat_activity_grade_path(activity) %>" method="post" class="hb-fbblock hb-evtfbblock"
       data-test="span-grade-form" data-grader="<%= grader %>"

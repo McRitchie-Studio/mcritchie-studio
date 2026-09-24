@@ -22,16 +22,16 @@ module Insights
       md = DocGenerator.render(
         insights: [
           { slug: "write the failing test first", disposition: "good", long_form: "red before green",
-            grader: "alex", task_slug: "feat-x" },
-          { slug: "did not check siblings", disposition: "not", grader: "alex" }
+            grader: "xan", task_slug: "feat-x" },
+          { slug: "did not check siblings", disposition: "not", grader: "xan" }
         ],
         generated_at: AT
       )
 
       assert_includes md, "## ✓ Do — patterns that worked"
-      assert_includes md, "- **write the failing test first** — red before green  _(feat-x · Alex)_"
+      assert_includes md, "- **write the failing test first** — red before green  _(feat-x · Xan)_"
       assert_includes md, "## ✗ Avoid — patterns that hurt"
-      assert_includes md, "- **did not check siblings**  _(Alex)_"
+      assert_includes md, "- **did not check siblings**  _(Xan)_"
       assert_includes md, "from 2 banked insights"
     end
 
@@ -53,7 +53,7 @@ module Insights
     def banked(slug:, **overrides)
       a = AgentAction.capture(session_id: "gen-#{slug.object_id}", kind: "edit", outcome: "ok",
                                task_slug: overrides.delete(:task_slug))
-      g = ActionGrade.create!({ agent_action: a, grader: "alex", slug: slug, disposition: "good" }.merge(overrides))
+      g = ActionGrade.create!({ agent_action: a, grader: "xan", slug: slug, disposition: "good" }.merge(overrides))
       g.bank!
       g
     end
@@ -62,7 +62,7 @@ module Insights
       banked(slug: "bank this good lesson", task_slug: "feat-y")
       banked(slug: "avoid this bad pattern", disposition: "not")
       ActionGrade.create!(agent_action: AgentAction.capture(session_id: "gen-unbanked", kind: "read"),
-                          grader: "alex", slug: "not banked at all", disposition: "good") # unbanked → excluded
+                          grader: "xan", slug: "not banked at all", disposition: "good") # unbanked → excluded
 
       Dir.mktmpdir do |dir|
         path = File.join(dir, "insights.md")

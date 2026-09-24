@@ -109,8 +109,8 @@ test/integration/admin_style_page_test.rb: 0.96
 test/integration/agent_file_links_test.rb: 2.77
 test/integration/agent_heartbeat_section_test.rb: 4.27
 test/integration/agents_activities_test.rb: 6.31
-test/integration/alex_heartbeat_test.rb: 1.83
-test/integration/alex_pipeline_test.rb: 1.21
+test/integration/xan_heartbeat_test.rb: 1.83
+test/integration/xan_pipeline_test.rb: 1.21
 test/integration/app_ladder_row_test.rb: 1.03
 test/integration/at_time_gem_adoption_test.rb: 1.01
 test/integration/board_app_filter_test.rb: 0.44

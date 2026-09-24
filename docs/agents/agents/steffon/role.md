@@ -42,7 +42,7 @@ PR, walk the diff against these infra gotchas — hard-won, so they earn a line:
 ## Workflow
 
 **Ship (the QA'd RC, at ship — Steffon tests the frozen SHA, ship authority approves — §1.2 + §1.4):**
-1. Ship runs only after the **full e2e on the FROZEN ship SHA** plus explicit ship authority (the default operator gate, or the `Alex Heartbeat` `full-cycle` autonomy). Avi's `qa-release` has already brought the RC to `assembled` (QA-green)
+1. Ship runs only after the **full e2e on the FROZEN ship SHA** plus explicit ship authority (the default operator gate, or the `Xan Heartbeat` `full-cycle` autonomy). Avi's `qa-release` has already brought the RC to `assembled` (QA-green)
 2. Pre-flight: clean tree, tests green, env vars complete, IDL hash matches (if turf-monster)
 3. Deploy with `bin/deploy` / `bin/release ship`; `release → main` fast-forwards per repo (stamping `merged: main`); watch logs through the release phase
 4. Verify the canary path on prod (login, one transactional flow); smoke `/up`; post release notes; members → `shipped`

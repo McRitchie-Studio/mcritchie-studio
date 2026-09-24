@@ -76,7 +76,7 @@ class AgentActionRetentionJobTest < ActiveSupport::TestCase
       # re-applying the rules to each id, takes all three.
       expired_a = action_at(90.days.ago)
       graded    = action_at(95.days.ago, task_slug: "graded-probe")
-      ActionGrade.create!(agent_action: graded, grader: ActionGrade::ALEX,
+      ActionGrade.create!(agent_action: graded, grader: ActionGrade::XAN,
                           slug: "interleaved lesson", disposition: ActionGrade::GOOD)
       expired_b = action_at(88.days.ago)
       expired_c = action_at(87.days.ago)
@@ -117,7 +117,7 @@ class AgentActionRetentionJobTest < ActiveSupport::TestCase
   test "[unit] a graded action is kept with its banked grade; an activity grade does not stall the run" do
     travel_to(NOW) do
       graded = action_at(90.days.ago, task_slug: "graded-probe")
-      grade = ActionGrade.create!(agent_action: graded, grader: ActionGrade::ALEX,
+      grade = ActionGrade.create!(agent_action: graded, grader: ActionGrade::XAN,
                                   slug: "keep the lesson source", disposition: ActionGrade::GOOD)
       grade.bank!
 
@@ -126,7 +126,7 @@ class AgentActionRetentionJobTest < ActiveSupport::TestCase
       # would delete zero rows, forever, reporting success.
       activity = AgentActivity.create!(session_id: "retention-probe", category: "Explore",
                                        reason_slug: "probe", opened_at: 90.days.ago, seq: 0)
-      ActionGrade.create!(agent_activity: activity, grader: ActionGrade::ALEX,
+      ActionGrade.create!(agent_activity: activity, grader: ActionGrade::XAN,
                           slug: "an activity lesson", disposition: ActionGrade::GOOD)
       ungraded = action_at(90.days.ago)
 

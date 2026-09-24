@@ -146,7 +146,7 @@ class BuilderStampApiTest < ActionDispatch::IntegrationTest
   # builder mid-work and another soul finishes it. Rule 1 RE-POINTS built_by on the
   # second claim, so the first author vanished from the only field the reviewer pool
   # consulted — and on 2026-08-30 `bin/reviewer-select` seated ALEX as the light on a
-  # diff Alex had written every test on (PR #1081, built_by=steffon).
+  # diff Xan had written every test on (PR #1081, built_by=steffon).
 
   # A handoff is a claim by a DIFFERENT session — the payload `bin/task move <slug>
   # building --actor <soul>` sends when a killed builder's desk is picked up in a new
@@ -170,12 +170,12 @@ class BuilderStampApiTest < ActionDispatch::IntegrationTest
 
     handoff!(task, actor: "steffon", session: STEFFON_SESSION, nonce: "inst-A")
     assert_response :success
-    handoff!(task, actor: "alex", session: ALEX_SESSION, at: 1.minute.from_now)
+    handoff!(task, actor: "xan", session: ALEX_SESSION, at: 1.minute.from_now)
     assert_response :success
 
-    assert_equal "alex", task.reload.metadata.dig("devops", "built_by"),
+    assert_equal "xan", task.reload.metadata.dig("devops", "built_by"),
                  "built_by still names the CURRENT builder"
-    assert_equal %w[steffon alex], task.reload.metadata.dig("devops", "builders"),
+    assert_equal %w[steffon xan], task.reload.metadata.dig("devops", "builders"),
                  "and the server-owned set remembers the author it replaced"
   end
 
@@ -185,16 +185,16 @@ class BuilderStampApiTest < ActionDispatch::IntegrationTest
     task = Task.create!(title: "Handoff Selection Probe", stage: "designed",
                         metadata: { "devops" => { "shape" => "backend" } })
     handoff!(task, actor: "steffon", session: STEFFON_SESSION, nonce: "inst-A")
-    handoff!(task, actor: "alex", session: ALEX_SESSION, at: 1.minute.from_now)
+    handoff!(task, actor: "xan", session: ALEX_SESSION, at: 1.minute.from_now)
 
     decision = ReviewerSelector.explain(task.reload)
 
     assert_equal true, decision["builder_known"], "both claims named a soul"
     # Order is the drop order (worst-fit first), not the claim order — the set is
     # what matters here.
-    assert_equal %w[alex steffon], decision["excluded_builders"].sort
+    assert_equal %w[steffon xan], decision["excluded_builders"].sort
     seated = decision["reviewers"].map { |r| r["slug"] }
-    refute_includes seated, "alex", "the co-author must not review their own diff"
+    refute_includes seated, "xan", "the co-author must not review their own diff"
     refute_includes seated, "steffon"
   end
 
@@ -205,14 +205,14 @@ class BuilderStampApiTest < ActionDispatch::IntegrationTest
     task = Task.create!(title: "Author Set Forgery Probe", stage: "designed",
                         metadata: { "devops" => { "shape" => "backend" } })
     handoff!(task, actor: "steffon", session: STEFFON_SESSION, nonce: "inst-A")
-    handoff!(task, actor: "alex", session: ALEX_SESSION, at: 1.minute.from_now)
+    handoff!(task, actor: "xan", session: ALEX_SESSION, at: 1.minute.from_now)
 
     patch "/api/v1/tasks/#{task.slug}",
           params: { devops: { builders: ["shannon"], builders_unattributed: "" } },
           headers: { "Authorization" => "Bearer #{token}" }, as: :json
 
     assert_response :success
-    assert_equal %w[steffon alex], task.reload.metadata.dig("devops", "builders"),
+    assert_equal %w[steffon xan], task.reload.metadata.dig("devops", "builders"),
                  "the author set is server-owned — a client write is dropped, not honored"
   end
 
@@ -259,13 +259,13 @@ class BuilderStampApiTest < ActionDispatch::IntegrationTest
                         metadata: { "devops" => { "shape" => "backend" } })
     claim_with_lease!(task, actor: "shannon", session: "019f3b0c-3a8d-73b1-9e8b-f380e11fb91b")
 
-    submit!(task, actor: "alex")
+    submit!(task, actor: "xan")
 
     assert_response :success
     devops = task.reload.metadata["devops"]
-    assert_equal %w[shannon alex], devops["builders"]
+    assert_equal %w[shannon xan], devops["builders"]
     assert_nil devops["builders_unattributed"], "both authors are named — nothing is missing"
-    refute_includes ReviewerSelector.select(task.reload).map { |r| r["slug"] }, "alex",
+    refute_includes ReviewerSelector.select(task.reload).map { |r| r["slug"] }, "xan",
                     "and naming him actually keeps him off his own diff"
   end
 
