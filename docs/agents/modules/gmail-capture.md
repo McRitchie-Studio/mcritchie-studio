@@ -27,7 +27,7 @@ in an agent-readable vault.
 | It cannot | Because |
 |---|---|
 | Send, reply, or forward | The grant is one scope, `gmail.readonly`. Sending needs `gmail.send`, `gmail.compose`, `gmail.modify` or `mail.google.com` — none is requested, and `Gmail::Client::SCOPES` is a frozen one-entry array the suite asserts |
-| Create or edit drafts | Same. **There is no draft-only Gmail scope** — `gmail.compose` covers drafts AND send, so "can draft, can never send" could only ever be a property of our code. Mr. McRitchie declined that trade; drafts are rendered as `.eml` files he opens instead |
+| Create or edit drafts | Same. **There is no draft-only Gmail scope** — `gmail.compose` covers drafts AND send, so "can draft, can never send" could only ever be a property of our code. Mr. McRitchie declined that trade for this reader. Drafting lives in the separate Workspace service-account lane — see `workspace:draft` in [`workspace-provision`](../agents/steffon/sops/workspace-provision.md) |
 | Archive, label, star, or mark read | Needs `gmail.modify`, which also permits send. The ingest deliberately leaves the mailbox untouched and tracks its position in OUR database (`desk_capture_items.history_id`) |
 | Delete anything | Needs `gmail.modify` (trash) or `mail.google.com` (permanent). Neither is requested |
 | Read mail outside the configured query | `GMAIL_CAPTURE_QUERY` goes into `messages.list` as `q`, so a non-matching message is **never downloaded**. There is no post-filter to get wrong. A blank query REFUSES rather than defaulting to the whole mailbox |
@@ -265,12 +265,18 @@ ordinary domain-wide grant. **The experiment that settles it:** install with
 profile means it is DWD wearing a nicer hat; a `403 unauthorized_client` means
 it is genuinely narrowed and worth revisiting.
 
-**Drafts in Gmail — declined.** `gmail.compose` covers drafts and send, and no
+**Drafts in Gmail — declined for THIS lane; built in the Workspace lane
+(2026-09-23).** Mr. McRitchie later chose real Gmail drafts, and they were built
+on the separate service-account lane that already held `gmail.compose` — not by
+widening this reader. See **7. Drafting mailboxes** in
+[`workspace-provision`](../agents/steffon/sops/workspace-provision.md). This
+lane stays `gmail.readonly`, and the reasoning below still holds for it.
+`gmail.compose` covers drafts and send, and no
 draft-only scope exists, so a "never sends" guarantee could only be code-deep.
 This pipeline's whole job is to read attacker-influenced text from
 counterparties; pairing that corpus with an outbound channel in one app is the
-trade Mr. McRitchie declined. Drafts become `.eml` files he opens in his mail
-client — a separate task, no Gmail scope, no credential.
+trade Mr. McRitchie declined for this lane. The `.eml`-file alternative first
+proposed here was never built; the Workspace lane replaced it.
 
 **Pub/Sub push — rejected for now.** `users.watch` must be re-called at least
 every 7 days (Google recommends daily) or notifications stop, and it needs a

@@ -7,7 +7,7 @@
 # than in a caller's argument: Workspace::Credentials will not build an
 # authorizer for a subject that is not an ACTIVE row in this table.
 #
-# The lifecycle is deliberately three states, because "we have not been granted
+# The lifecycle is deliberately four states, because "we have not been granted
 # access yet" and "our access was taken away" need different responses:
 #
 #   pending  — registered; the domain's super-admin has not granted delegation,
@@ -17,8 +17,15 @@
 #              A TERMINAL state as far as any automatic path is concerned:
 #              nothing reactivates it, and #reinstate! returns it only to
 #              `pending`, which still has to prove delegation again.
+#   severed  — the relationship is OVER (an acquisition, a client leaving).
+#              Final: nothing reinstates it, not even #reinstate!. A severed
+#              workspace comes back only as a new registration after the row is
+#              purged, so "we cut them off" can never be undone by a typo.
 class WorkspaceAccount < ApplicationRecord
-  STATUSES = %w[pending active revoked].freeze
+  STATUSES = %w[pending active revoked severed].freeze
+
+  # The two states in which nothing may be probed, flipped, or impersonated.
+  SHUT = %w[revoked severed].freeze
 
   # Raised when something tries to ACTIVATE a revoked row. Never rescued into a
   # verdict — a caller reaching this has a bug, and a quiet no-op it ignores is
@@ -30,6 +37,7 @@ class WorkspaceAccount < ApplicationRecord
   DEFAULT_LOCAL_PART = "team".freeze
 
   has_many :knowledge_sources, dependent: :nullify
+  has_many :workspace_mailboxes, dependent: :restrict_with_exception
 
   # A domain is dot-separated labels, each starting and ending alphanumeric.
   # This rejects the two shapes that validated before and should not have:
@@ -49,10 +57,22 @@ class WorkspaceAccount < ApplicationRecord
 
   def self.default_subject_for(domain) = "#{DEFAULT_LOCAL_PART}@#{domain.to_s.strip.downcase}"
 
-  # The one question Credentials asks before impersonating anyone.
-  def self.impersonatable?(subject) = active.exists?(subject: subject.to_s.strip.downcase)
+  # The one question Credentials asks before impersonating anyone: the
+  # workspace's own subject, or a named mailbox inside an active workspace.
+  def self.impersonatable?(subject)
+    active.exists?(subject: subject.to_s.strip.downcase) || WorkspaceMailbox.impersonatable?(subject)
+  end
+
+  # Registered at all — the gate #probe applies, so a check can prove a pending
+  # address without ever sweeping a domain for reachable users.
+  def self.registered_address?(address)
+    exists?(subject: address.to_s.strip.downcase) ||
+      WorkspaceMailbox.exists?(address: WorkspaceMailbox.normalize_address(address))
+  end
 
   def active? = status == "active"
+
+  def shut? = SHUT.include?(status)
 
   # Proven: a token was issued for this subject, so the grant exists in the
   # right Workspace. Clears any earlier refusal.
@@ -66,6 +86,9 @@ class WorkspaceAccount < ApplicationRecord
   # mailbox. A caller that has not thought about revoked rows finds out here
   # rather than in an access log.
   def mark_verified!(at: Time.current)
+    if status == "severed"
+      raise Revoked, "#{domain} is severed — the relationship is over and impersonation stays refused for good."
+    end
     if status == "revoked"
       raise Revoked, "#{domain} is revoked — impersonation stays refused. " \
                      "bin/rails 'workspace:reinstate[#{domain}]' puts it back to pending, " \
@@ -82,6 +105,8 @@ class WorkspaceAccount < ApplicationRecord
   # This is the LOCAL half only: it does not withdraw the Google-side grant.
   # Ending that takes the domain's own super-admin removing our client id.
   def revoke!(reason = nil)
+    raise Revoked, "#{domain} is severed — already past revoked, and it stays that way." if status == "severed"
+
     self.notes = [ notes.presence, "#{Date.current.iso8601} revoked: #{reason}" ].compact.join("\n") if reason.present?
     update!(status: "revoked")
   end
@@ -92,9 +117,25 @@ class WorkspaceAccount < ApplicationRecord
   # takes a human naming the domain AND a live grant: two deliberate acts,
   # neither of which any sweep can perform on its own.
   def reinstate!
+    raise ArgumentError, "#{domain} is severed — final, so it cannot be reinstated" if status == "severed"
     raise ArgumentError, "#{domain} is #{status}, not revoked — nothing to reinstate" unless status == "revoked"
 
     update!(status: "pending", delegation_verified_at: nil, last_check_error: nil)
+  end
+
+  # The end of the relationship. Any status -> severed, final. Every mailbox in
+  # the workspace is shut with it, because WorkspaceMailbox.impersonatable?
+  # requires an ACTIVE workspace.
+  #
+  # Like revoke!, this is the LOCAL half. The acquisition handoff runs in order:
+  # export the rows, the client deletes our client id from their delegation page,
+  # workspace:check must then FAIL, and only then is the row severed — so the
+  # record says "cut" only after Google agrees.
+  def sever!(reason)
+    raise ArgumentError, "severing needs a reason — it is final and the notes are the record" if reason.blank?
+
+    self.notes = [ notes.presence, "#{Date.current.iso8601} severed: #{reason}" ].compact.join("\n")
+    update!(status: "severed")
   end
 
   # NOT an error state on its own. `unauthorized_client` is what a brand-new
@@ -102,7 +143,7 @@ class WorkspaceAccount < ApplicationRecord
   # WRONG Workspace looks like forever, which is why the reason is recorded
   # rather than reduced to a boolean.
   def mark_unverified!(reason)
-    update!(status: (status == "revoked" ? "revoked" : "pending"),
+    update!(status: (shut? ? status : "pending"),
             last_check_error: reason.to_s[0, 250])
   end
 
