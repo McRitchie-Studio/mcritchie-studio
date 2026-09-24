@@ -702,7 +702,7 @@ module CiStatus
             end
     "#{UNREADABLE_REMEDY_HEADER} #{fix} " \
       "Until the check read works, no suite evidence can be credited on this repo (the only evidence is a " \
-      "GREEN CI this gate can actually read) — #{route}"
+      "GREEN CI it can actually read) — #{route}"
   end
 
   def self.gate_evidence(verdict, repo: nil)

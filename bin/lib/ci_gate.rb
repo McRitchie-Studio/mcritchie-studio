@@ -204,8 +204,8 @@ module CiGate
                            end
         "GitHub CI has produced no verdict yet (#{ci[:state]}) — the review gate-zero IS the authoritative CI " \
           "verdict, so it must not advance on a CI it has not read. Defer this review until checks appear " \
-          "and settle (the supervisor's defer machinery re-queries; a red finish bounces the task back). " \
-          "No local cert stands in for it: #{ONLY_EVIDENCE}. #{no_verdict_close}"
+          "and settle (the supervisor's defer machinery re-queries; a red finish bounces the task back) — " \
+          "no local cert stands in for it: #{ONLY_EVIDENCE}. #{no_verdict_close}"
       elsif ci[:state] == :none
         # THE BUILDER'S HALF OF :none — the seconds after `gh pr ready`, or a workflow
         # that never fired. Waiting is the remedy when the run is coming; a stale base
@@ -213,7 +213,7 @@ module CiGate
         base = ci[:base].to_s.strip
         rebase = base.empty? ? "merge the PR's base in" : "rebase onto origin/#{base}"
         "GitHub CI has produced no verdict yet (none) — the PR reports no checks, and #{ONLY_EVIDENCE}, so " \
-          "there is nothing to advance on. Confirm the workflow triggered (a stale base branch runs " \
+          "there is nothing to advance on and no local cert stands in. Confirm the workflow triggered (a stale base branch runs " \
           "nothing: #{rebase}), then re-run this verdict once it reports — bin/ship waits for exactly this " \
           "at step 6/8 and resumes here."
       else
@@ -222,7 +222,7 @@ module CiGate
         "GitHub CI could not be read (#{ci[:reason].to_s.empty? ? 'gh failed' : ci[:reason]}) — status " \
           "UNVERIFIED. This is NOT a credential refusal (no `gh`, a 404, a transport error), so there is " \
           "nothing to refresh: check `gh pr checks` by hand and re-run this verdict once `gh` answers. " \
-          "#{ONLY_EVIDENCE.sub(/\Aa /, 'A ')}, so an unread one cannot advance it."
+          "#{ONLY_EVIDENCE.sub(/\Aa /, 'A ')} — no local cert stands in, and an unread one cannot advance it."
       end
     when :no_pr
       # NOT the no-verdict family: the missing thing is not the evidence, it is the

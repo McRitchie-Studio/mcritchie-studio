@@ -191,7 +191,7 @@ class DorCheckRootGuardTest < Minitest::Test
   # equal the stamp's. The guard's re-root is what keeps that lane honest, and this
   # is the test that would have gone red on 2026-07-14.
 
-  def test_only_task(fingerprint)
+  def control_task(fingerprint)
     task = task_json(checks: ["[control@#{fingerprint}] #{ControlReplay::NECESSARY} — replayed " \
                               "test/models/widget_test.rb against current production code"])
     task["metadata"]["devops"].merge!(
@@ -230,7 +230,7 @@ class DorCheckRootGuardTest < Minitest::Test
       refute_equal stamp_fp, FullSuiteGate.fingerprint(primary),
                    "the two checkouts must hash differently, or this test proves nothing"
 
-      verdict, code = control_check(test_only_task(stamp_fp), primary, projects)
+      verdict, code = control_check(control_task(stamp_fp), primary, projects)
 
       assert_equal 0, code, "a control stamped in the task's tree must grade FRESH from the primary: " \
                             "#{verdict['errors']}"
@@ -245,7 +245,7 @@ class DorCheckRootGuardTest < Minitest::Test
       stamp_fp = FullSuiteGate.fingerprint(tree)
       write(tree, "test/models/widget_test.rb", "assert true # edited after the control ran\n")
 
-      verdict, code = control_check(test_only_task(stamp_fp), primary, projects)
+      verdict, code = control_check(control_task(stamp_fp), primary, projects)
 
       assert_equal 1, code, "an edited tree is REALLY stale — re-rooting must not excuse it"
       assert_match(/recorded control is STALE/, verdict["errors"].join(" "))

@@ -456,13 +456,16 @@ class FullSuiteCheckTest < Minitest::Test
     end
   end
 
-  def test_recorded_fingerprint_matches_dor_check_view
-    # The two halves must agree on the fingerprint, or evidence would never validate.
+  def test_recorded_fingerprint_matches_the_shared_modules_recompute
+    # The writer and the reader share ONE fingerprint definition (FullSuiteGate), so
+    # the recorded hash must equal what the module recomputes for the same tree.
+    # (bin/dor-check no longer reads this receipt — /tasks/dor-reads-settled-ci-verdict
+    # — and its `--suite-fingerprint` seam went with it; the control-stamp lane it
+    # still grades recomputes through this same module.)
     with_repo do |dir|
       out, = run_check(dir, test_cmd: "true", rubocop_cmd: "true")
       runner_fp = out[/@([0-9a-f]{7,64})[:\]]/, 1]
-      dor_fp = IO.popen(child_env("DOR_CHECK_DIFF_ROOT" => dir), "#{DOR} --suite-fingerprint 2>/dev/null", &:read).strip
-      assert_equal dor_fp, runner_fp
+      assert_equal FullSuiteGate.fingerprint(dir), runner_fp
     end
   end
 

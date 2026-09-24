@@ -629,8 +629,11 @@ class CiStatusTest < Minitest::Test
   # [integration] The SAME fix must land in BOTH callers — neither bin/pr-review nor
   # bin/dor-check may hardcode the conflict cure's branch; both route through
   # CiStatus.conflicted_remedy so one PR cannot collect three cures (the ci_less lesson).
+  # bin/dor-check speaks through bin/lib/ci_gate.rb since /tasks/dor-reads-settled-
+  # ci-verdict, so the composer is the file that must name the remedy; the script is
+  # still swept for the hardcoded branch.
   def test_pr_review_and_dor_check_do_not_hardcode_the_conflict_branch
-    %w[pr-review dor-check].each do |bin|
+    %w[pr-review dor-check lib/ci_gate.rb].each do |bin|
       src = File.read(File.expand_path("../../bin/#{bin}", __dir__))
       # Catch the CLASS, not one spelling: `git merge origin/release`, `merge
       # release into the branch`, `rebase on release`, `rebase onto release` — all
@@ -640,6 +643,8 @@ class CiStatusTest < Minitest::Test
       # (the sweep promotion) is NOT a rebase/merge onto release, so it's safe.
       refute_match(%r{(?:rebase|merge)\s+(?:on\s+|onto\s+|origin/)?release\b}, src,
                    "bin/#{bin} must not tell a builder to rebase/merge RELEASE for a conflict — the base is the PR's own")
+      next if bin == "dor-check" # its cure is composed in lib/ci_gate.rb, swept above
+
       assert_includes src, "conflicted_remedy",
                        "bin/#{bin} must route the :conflicted cure through CiStatus.conflicted_remedy"
     end

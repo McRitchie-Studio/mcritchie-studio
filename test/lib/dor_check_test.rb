@@ -67,8 +67,9 @@ class DorCheckTest < Minitest::Test
   # green so the EXISTING shape/tier/post-deploy tests stay focused on THEIR subject;
   # CiStatus.evaluate honours an injected token before it looks for a pr_url, so the
   # fixtures need none. A test that exercises the CI gate itself sets
-  # DOR_CHECK_CI_STATUS — to a state token, or to nil for the REAL (gh-free) :no_pr
-  # path — and then this default steps aside (the key is already present on entry).
+  # DOR_CHECK_CI_STATUS — to a state token, or to "" for the REAL (gh-free) path,
+  # which is :no_pr on a fixture with no pr_url — and then this default steps aside
+  # (the key is present on entry; nil would DELETE it and re-arm the default).
   def with_default_ci_verdict
     had = ENV.key?("DOR_CHECK_CI_STATUS")
     ENV["DOR_CHECK_CI_STATUS"] = "green" unless had
@@ -214,11 +215,15 @@ class DorCheckTest < Minitest::Test
   def test_integration_the_gh_seal_answers_the_ci_read
     OutboundSeams.reset!
 
-    check("shape" => "backend", "repositories" => ["mcritchie-studio"], "risk_tags" => ["ci"],
-          "acceptance" => ["The gate reads CI from a sealed binary"],
-          "test_plan" => ["unit"], "post_deploy_cmd" => "none",
-          "pr_url" => "https://github.com/o/r/pull/1",
-          "checks_run" => ["[unit] bin/rails test test/lib/dor_check_test.rb"])
+    # "" takes the REAL CI path (the green default would inject the verdict and the
+    # sealed stub would never be asked — the whole point of this receipt).
+    with_env("DOR_CHECK_CI_STATUS" => "") do
+      check("shape" => "backend", "repositories" => ["mcritchie-studio"], "risk_tags" => ["ci"],
+            "acceptance" => ["The gate reads CI from a sealed binary"],
+            "test_plan" => ["unit"], "post_deploy_cmd" => "none",
+            "pr_url" => "https://github.com/o/r/pull/1",
+            "checks_run" => ["[unit] bin/rails test test/lib/dor_check_test.rb"])
+    end
 
     reads = OutboundSeams.calls_to("gh")
     refute_empty reads,
@@ -1352,7 +1357,7 @@ class DorCheckTest < Minitest::Test
   # REAL gh-free :no_pr path).
   def check_ci(devops, ci, *args)
     with_changed_files("app/models/agent.rb") do
-      with_env("DOR_CHECK_CI_STATUS" => ci) { check(devops, *args) }
+      with_env("DOR_CHECK_CI_STATUS" => ci.nil? ? "" : ci) { check(devops, *args) }
     end
   end
 
@@ -1529,16 +1534,18 @@ class DorCheckTest < Minitest::Test
   def test_an_exempt_doc_only_chore_still_needs_the_green_ci
     # An exempt DOC-ONLY chore skips the TIER gate, never the CI verdict: this repo's
     # CI grades prose. Green passes, pending waits, red refuses.
-    out, code = with_changed_files("docs/agents/note.md") { check_ci({ "kind" => "chore" }, "green") }
+    exempt = ->(ci) { with_changed_files("docs/agents/note.md") { with_env("DOR_CHECK_CI_STATUS" => ci) { check({ "kind" => "chore" }) } } }
+
+    out, code = exempt.call("green")
     assert_equal 0, code, out
     assert_match(/DoR n\/a/, out)
     assert_match(/GitHub CI: GREEN/, out)
 
-    out, code = with_changed_files("docs/agents/note.md") { check_ci({ "kind" => "chore" }, "pending") }
+    out, code = exempt.call("pending")
     assert_equal 1, code, out
     assert_match(/WAITING on CI/, out)
 
-    out, code = with_changed_files("docs/agents/note.md") { check_ci({ "kind" => "chore" }, "red") }
+    out, code = exempt.call("red")
     assert_equal 1, code, out
     assert_match(/GitHub CI is RED/, out)
   end
@@ -1649,9 +1656,11 @@ class DorCheckTest < Minitest::Test
   # injects the verdict so these never shell out to gh.
   CI_PR = BACKEND_CONTRACT.merge("pr_url" => "https://github.com/McRitchie-Studio/mcritchie-studio/pull/1").freeze
 
+  # nil → "" so a caller asking for the REAL (gh-free) path gets it rather than the
+  # green default with_default_ci_verdict would otherwise re-arm on a deleted key.
   def ci_check(state, devops = CI_PR, *args)
     with_changed_files("app/models/agent.rb") do
-      with_env("DOR_CHECK_CI_STATUS" => state) { check(devops, *args) }
+      with_env("DOR_CHECK_CI_STATUS" => state.nil? ? "" : state) { check(devops, *args) }
     end
   end
 
@@ -1993,7 +2002,7 @@ class DorCheckTest < Minitest::Test
     # is the PR's CI verdict, so with no PR there is none: not ready, with "open the PR"
     # as the move (bin/ship does that before it runs this verdict).
     out, code = with_changed_files("app/models/agent.rb") do
-      with_env("DOR_CHECK_CI_STATUS" => nil) { check(BACKEND_CONTRACT) }
+      with_env("DOR_CHECK_CI_STATUS" => "") { check(BACKEND_CONTRACT) }
     end
     assert_equal 1, code, out
     assert_match(/pr_url is BLANK/, out)

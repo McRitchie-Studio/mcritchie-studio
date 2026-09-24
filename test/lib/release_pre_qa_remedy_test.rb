@@ -148,14 +148,15 @@ class ReleasePreQaRemedyTest < Minitest::Test
                     "no G3 branch may offer a certification — the route is retired for the whole gate"
   end
 
-  # ── the route is a THIRD one, not a reuse ───────────────────────────────────
+  # ── the route is a SECOND one, not a reuse ──────────────────────────────────
   #
-  # `false` also denies, so a reader may reasonably ask why G3 did not simply pass it.
-  # Because its denial rests on "the shape/test-tier gate is already waived" — true of
-  # a doc-only diff, FALSE of a release SHA nobody exempted. Reusing it would print a
-  # true verdict on a false premise, which is the same species of defect as the offer
-  # it replaces. This is the assertion that fails if someone collapses the two.
-  def test_the_retired_route_denies_for_its_own_reason_not_the_exempt_one
+  # The task-grain routes (`true`, `false`, `nil`) all deny too — since
+  # /tasks/dor-reads-settled-ci-verdict they print ONE denial, resting on "a settled
+  # green CI for the PR's head is the only suite evidence the gate credits". That
+  # premise is about a TASK's PR; a release SHA has no PR and nobody exempted it, so
+  # G3 keeps its own sentence rather than borrowing that one. This is the assertion
+  # that fails if someone collapses the two.
+  def test_the_retired_route_denies_for_its_own_reason_not_the_task_grain_one
     retired = CiStatus.unreadable_remedy("McRitchie-Studio/mcritchie-studio", cause: :permissions,
                                                                              cert_route: :retired)
     exempt  = CiStatus.unreadable_remedy("McRitchie-Studio/mcritchie-studio", cause: :permissions,
@@ -164,16 +165,16 @@ class ReleasePreQaRemedyTest < Minitest::Test
                                                                              cert_route: true)
 
     assert_includes retired, DENIES_CERT
-    refute_includes retired, "doc-only",
-                    "a release SHA is not a doc-only diff — borrowing the exempt sentence would state a " \
+    refute_includes retired, "the PR's current head",
+                    "a release SHA has no PR — borrowing the task-grain sentence would state a " \
                     "false premise:\n#{retired}"
     refute_includes retired, "already waived",
                     "nothing was waived at G3; the route was RETIRED, which is a different fact"
     assert_includes retired, "RELEASE-grain", "the denial must say WHY it denies, not merely that it does"
 
-    assert_includes exempt, "doc-only", "the exempt route keeps its own premise, unchanged by this task"
-    assert_includes gated, OFFERS_CERT, "the gated route still offers the cert that genuinely clears it"
-    refute_includes gated, DENIES_CERT
+    assert_equal exempt, gated, "true and false are one task-grain denial now — neither offers a cert"
+    assert_includes gated, DENIES_CERT
+    refute_includes gated, OFFERS_CERT, "the old gated offer is retired with the receipts it named"
 
     refute_equal retired, exempt, "two routes that print the same string are one route with two names"
   end
