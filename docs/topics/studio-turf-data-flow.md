@@ -270,9 +270,13 @@ untouched so the page still showed the right name.
 **The refusal has now fired in production.** The first real run wrote 242 of the
 244 rows the replica was missing and declined 2. The two still hub-only afterwards
 are `00-0028946` and `00-0038602` — the hub side of both incidents above. No
-durable record names them as refusals, because none exists (gap (d)); the
-attribution is the arithmetic plus the fact that `#build_for`'s only other
-`nil` return needs a blank `person_slug`, which the provider never sends.
+durable record names them as refusals, because none exists (gap (d)), so this is
+an inference. What carries it past the arithmetic is the refusal's precondition:
+`#build_for` declines exactly when the replica already holds that `person_slug`
+under a different league id, which is the state both incidents describe — and for
+`chris-smith` the other half is measured above, `00-0038661`, still
+turf-monster-only. The cursor reading `ok` rules out every alternative that
+raises, because any of those would have recorded `failed` instead.
 
 The replica cannot fix this itself. It cannot overwrite (that is the bug), it
 cannot make a twin (`person_slug` is unique on athletes), and it must not invent a
