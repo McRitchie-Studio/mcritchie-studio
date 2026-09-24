@@ -389,44 +389,32 @@ shapes:
       (2) THE CERT GATE STILL APPLIES (`full_suite_gate: true`, unlike `docs`).
       Test code IS code: it runs, it can be broken, and a test-only diff is the
       change most able to break the suite silently. So this shape is NOT EXEMPT
-      from the suite gate, and owes the same fingerprint-bound evidence a
-      feature owes — satisfied the same TWO ways, not one: a full
-      `[full-suite@<fp>]` + `[rubocop@<fp>]` cert, OR a fresh `[fast-cert@<fp>]`
-      ALONGSIDE A SETTLED GREEN GitHub CI, which is what carries the full suite
-      in that route. That is this shape's EXECUTED evidence, and it is the
-      reason the empty tier list costs nothing.
+      from the suite gate — and since 2026-09-24 (`dor-reads-settled-ci-verdict`)
+      the suite gate has ONE form of evidence for every shape: the PR's SETTLED
+      GREEN GitHub CI for its current head, read by `bin/lib/ci_gate.rb#verdict`.
+      The cert gate is satisfied by that settled GREEN CI here exactly as for a
+      feature, and `bin/fast-check` is the builder's optional pre-flight, not
+      evidence the gate reads. That is this shape's EXECUTED evidence, and it is
+      the reason the empty tier list costs nothing.
 
       READ THE CONDITION, NOT JUST THE PERMISSION. `full_suite_gate: true`
       means NOT EXEMPT; it has never meant "run the full suite locally", and
-      `bin/dor-check`'s route ladder has no `test-only` branch at all — the fast
-      route it takes here is the same one a feature takes, and on a SETTLED
-      GREEN the review lane accepts it exactly as submit does
-      (`bin/dor-check:44-47`, and the refusal at :2055 states the green-CI
-      conjunct from the other side).
+      `bin/dor-check` has no `test-only` branch at all — the CI verdict it reads
+      here is the one a feature is read by, in both roles.
 
-      THE CONDITION THAT DIFFERS IS THE ROLE, NOT THE GREEN, and reading it the
-      other way costs a suite run. Both branches are worded for you in
-      `bin/dor-check#suite_evidence_error`: review's gate-zero takes only the
-      settled green, while the BUILDER's submit-side run ALSO credits a fresh
-      fast cert PROVISIONALLY while CI is pending or has not reported yet, once
-      an OPEN PR exists. The ladder's `fast-provisional` route is the one branch
-      testing `!review_role`, which is why the two lanes agree on green and
-      diverge on pending. So at submit, on a pending CI, the fast cert you
-      already hold IS the answer and a local full run buys nothing. Cite
-      :44-47 for the green conjunct and stop there — the CI-seam paragraph
-      immediately below it grants this credit, so a citation that reaches it
-      points at its own counterexample.
-
-      THE LOCAL FULL SUITE IS THE CI-INDEPENDENT EVIDENCE, and the cell it is
-      FOR is an UNREADABLE verdict — the one state where it is both necessary
-      and sufficient. It does NOT unblock a RED CI in either role: red is fixed
-      by fixing CI, pushing and re-running, not by certifying locally. Every
-      wording here has cost real time when misread: on 2026-09-21 a builder
-      briefed off the older, over-strict wording ran 11,004 tests for a one-file
-      docs tripwire the gate never asked for, then a second 30-minute run before
-      it was killed; and the first correction of that wording erred the other
-      way, offering a local run for a CI state that already had its answer —
-      the same waste, one cell over (review, PR 1522, 2026-09-22).
+      THE CONDITION THAT DIFFERS IS THE ROLE, NOT THE GREEN. Both roles are
+      worded in `bin/lib/ci_gate.rb#verdict`: review's gate-zero refuses a
+      pending CI outright, while the BUILDER's submit-side run reports it as
+      WAITING — not ready, not failed — and `bin/ship` holds at step 6/8 for it.
+      Nothing is credited provisionally, and no local run stands in: an
+      UNREADABLE verdict is a credential to refresh, and a RED CI is fixed by
+      fixing CI, pushing and re-running. Every wording here has cost real time
+      when misread: on 2026-09-21 a builder briefed off an older, over-strict
+      wording ran 11,004 tests for a one-file docs tripwire the gate never asked
+      for, then a second 30-minute run before it was killed; and the first
+      correction of that wording erred the other way, offering a local run for a
+      CI state that already had its answer — the same waste, one cell over
+      (review, PR 1522, 2026-09-22).
 
       (3) A CONTROL. `required_evidence: [control]` — record ONE
       `[control] ...` line in checks_run that answers the question a tier list

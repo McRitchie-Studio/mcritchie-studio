@@ -292,14 +292,12 @@ class ZapControlLaneDocsTest < Minitest::Test
       end
 
       refute_empty qualifying,
-                   "#{rel}: grants the fast route for this gate without naming its CONDITION in the " \
-                   "same sentence. A fast cert satisfies the cert gate ALONGSIDE A SETTLED GREEN CI " \
-                   "(bin/dor-check:44-47; the refusal at :2055 states the same conjunct from the other " \
-                   "side). Say the green — but do NOT say it is the whole rule: the condition that " \
-                   "differs between the lanes is the ROLE. Review's gate-zero takes only the settled " \
-                   "green; the BUILDER also gets that fast cert credited PROVISIONALLY while CI " \
-                   "is pending or unreported on an OPEN PR. Both branches are worded in " \
-                   "bin/dor-check#suite_evidence_error, and `fast-provisional` is the one route testing !review_role"
+                   "#{rel}: names the fast route for this gate without naming its CONDITION in the " \
+                   "same sentence. Since /tasks/dor-reads-settled-ci-verdict the cert gate is satisfied " \
+                   "by a SETTLED GREEN CI for the PR's head and by nothing else (bin/lib/ci_gate.rb#verdict); " \
+                   "bin/fast-check is an optional pre-flight, not evidence the gate reads. Say the green " \
+                   "beside the fast route, and say which condition differs between the lanes: the ROLE — " \
+                   "review's gate-zero refuses a pending CI, the BUILDER reads it as a WAIT (CiGate.waiting?)"
     end
   end
 
