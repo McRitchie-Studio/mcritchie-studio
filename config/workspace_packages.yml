@@ -1,0 +1,75 @@
+# What each McRitchie Studio workspace package includes — and which SOP delivers
+# each item. This is the ONE place package contents live: the public /packages
+# page renders it, and Steffon's workspace-launch SOP runs a package's items in
+# order. Move an item between packages by moving its block; nothing else changes.
+#
+# Package contents are still being decided (2026-09-24). Prices are left blank on
+# purpose — the page says "Pricing coming soon" until a `price` is set.
+#
+# Item keys:
+#   name      customer-facing label
+#   blurb     one customer-facing sentence: what they get, not how
+#   sop       registered SOP invocation that delivers it (docs/agents/agents/*/sops/<sop>.md)
+#   section   optional — the part of that SOP that applies
+#   you_do    what the CUSTOMER / operator does themselves (blank = nothing)
+#   status    live (delivered today) or planned (on the roadmap, no SOP yet)
+packages:
+  - key: basic
+    name: Basic
+    tagline: Your company on its own domain, with an agent that drafts your email.
+    price:
+    items:
+      - name: Your own domain
+        blurb: We find and register the domain, and confirm it is yours.
+        sop: domain-purchase
+        you_do: Approve the purchase
+        status: live
+      - name: Google Workspace
+        blurb: Company email and calendar, with your own address and a shared team@ inbox.
+        sop: workspace-signup
+        you_do: Sign up and create the team@ user
+        status: live
+      - name: Email that lands in the inbox
+        blurb: Verification, SPF, DKIM and DMARC set up so your mail is trusted, not spammed.
+        sop: domain-dns
+        you_do: Paste the records we give you
+        status: live
+      - name: Agentic email drafting
+        blurb: Your agent writes replies and new emails straight into your Drafts. You read, you send.
+        sop: workspace-provision
+        section: "7. Drafting mailboxes"
+        you_do: Approve our key once
+        status: live
+      - name: Password vault
+        blurb: Every new login filed in 1Password, never pasted in chat.
+        sop: credential-filing
+        you_do: Paste each password once
+        status: live
+      - name: Dedicated browser profile
+        blurb: A Chrome profile for the new company, so accounts never mix.
+        sop: chrome-profiles
+        status: live
+
+  - key: pro
+    name: Pro
+    tagline: Everything in Basic, plus an agent that knows your business.
+    includes: basic
+    price:
+    items:
+      - name: Knowledge base from your Drive
+        blurb: Your agent indexes the Drive folders you choose, so drafts use your real documents.
+        sop: workspace-provision
+        section: "4. Attach the folders"
+        you_do: Name the folders
+        status: live
+      - name: File storage
+        blurb: A private storage bucket for your app's uploads and exports.
+        sop: bucket-provision
+        status: live
+      - name: Credential rotation
+        blurb: Any leaked or aging secret rotated everywhere it is used, in one pass.
+        sop: credential-rotation
+        status: live
+      - name: Team drafting access
+        blurb: Your admins can draft as the mailboxes you grant them, with every draft logged.
+        status: planned
