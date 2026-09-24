@@ -10,7 +10,7 @@ require_relative "../../bin/lib/bounce_ledger"
 # every branch is reachable without HTTP.
 class ReviewVerdictGateTest < Minitest::Test
   OWNER_SOUL = "carl"
-  LIGHT_SOUL = "alex"
+  LIGHT_SOUL = "xan"
 
   def live(agent: OWNER_SOUL)
     { "task_slug" => "t", "session" => "s", "agent" => agent, "live" => true }

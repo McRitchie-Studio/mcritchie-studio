@@ -3,7 +3,7 @@
 `bin/atomic-capture-hook` is the **Phase B live-capture** producer: a Claude Code
 or Codex `PostToolUse` hook that streams every tool call into the
 atomic-capture endpoint, so a fresh agent session populates the per-action
-trajectory at `/alex/heartbeat` **live** - one `AgentAction` row per tool call.
+trajectory at `/xan/heartbeat` **live** - one `AgentAction` row per tool call.
 
 It is the half-2 producer for the consumer half (the `/api/v1/agent_actions`
 endpoint and `AgentAction` model). The hook only writes; the endpoint persists.
@@ -62,7 +62,7 @@ can't know them; the model fills its defaults and derives `seq` per session.
 ### Secret redaction (never ship a secret off the box)
 
 `input`/`output` are the **only** source of the captured tool I/O, and they render
-on the **public** `/alex/heartbeat` surface — so the hook redacts **at the source**,
+on the **public** `/xan/heartbeat` surface — so the hook redacts **at the source**,
 before the POST, so a secret never leaves the machine. Two layers:
 
 - **Whole-field suppression** when the call touches secret **material** — a Bash

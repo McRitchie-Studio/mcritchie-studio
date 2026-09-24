@@ -84,7 +84,7 @@ class AgentsSeedTest < ActiveSupport::TestCase
       "shannon" => "ui",
       "jasper"  => "web3",
       "steffon" => "devops",
-      "alex"    => "documentation"
+      "xan"    => "documentation"
     }.each do |slug, domain|
       agent = Agent.find_by!(slug: slug)
       assert agent.metadata["reviewer"], "#{slug} must be a light-pool specialist"
@@ -97,15 +97,15 @@ class AgentsSeedTest < ActiveSupport::TestCase
     end
   end
 
-  test "Alex is the single identity holding the documentation review seat" do
+  test "Xan is the single identity holding the documentation review seat" do
     run_seed
     docs = Agent.active.detect do |a|
       a.metadata["reviewer"] && Array(a.metadata["domains"]).include?("documentation")
     end
     assert docs, "a documentation-domain reviewer must resolve from the seed"
-    assert_equal "alex", docs.slug, "Alex holds the documentation seat (no separate persona)"
+    assert_equal "xan", docs.slug, "Xan holds the documentation seat (no separate persona)"
     assert_equal "Lead Orchestrator", docs.title, "still the orchestrator identity"
-    refute Agent.exists?(slug: "alex-docs"), "the separate alex-docs persona is retired (folded into alex)"
+    refute Agent.exists?(slug: "xan-docs"), "the separate xan-docs persona is retired (folded into xan)"
   end
 
   test "every soul has an avatar path" do
@@ -120,7 +120,7 @@ class AgentsSeedTest < ActiveSupport::TestCase
   # persona_identity). The seed owns each soul's emoji + an explicit color.
   test "each senior soul carries a status-line emoji and an explicit color" do
     run_seed
-    %w[alex avi carl shannon jasper steffon].each do |slug|
+    %w[xan avi carl shannon jasper steffon].each do |slug|
       agent = Agent.find_by!(slug: slug)
       assert agent.emoji.present?, "#{slug} must have a status-line emoji"
       assert_match(/\A#\h{6}\z/, agent.status_color, "#{slug} must carry an explicit hex color")

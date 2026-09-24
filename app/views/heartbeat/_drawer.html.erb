@@ -1,7 +1,7 @@
 <%# The per-action grading drawer body, lazy-loaded into the shared turbo-frame on
     row click (and re-rendered by #grade's turbo_stream after a write). Wrapped in the
     matching <turbo-frame id="hb-drawer"> so the frame navigation swaps it in place.
-    Locals: action, alex (ActionGrade | nil), mcr (ActionGrade | nil). %>
+    Locals: action, xan (ActionGrade | nil), mcr (ActionGrade | nil). %>
 <%= turbo_frame_tag "hb-drawer" do %>
   <% stage_meta = heartbeat_stage_meta(action.stage) %>
   <div class="hb-dh">
@@ -42,12 +42,12 @@
       </div>
     </div>
 
-    <%= render "heartbeat/grade_editor", action: action, grader: ActionGrade::ALEX,
-          who: "Alex", role_label: "grades this action", grade: alex,
-          save_label: "Save Alex grade", allow_bank: true %>
+    <%= render "heartbeat/grade_editor", action: action, grader: ActionGrade::XAN,
+          who: "Xan", role_label: "grades this action", grade: xan,
+          save_label: "Save Xan grade", allow_bank: true %>
 
     <%= render "heartbeat/grade_editor", action: action, grader: ActionGrade::MCR,
-          who: "Mr. McRitchie → Alex", role_label: "audits Alex's grade", grade: mcr,
+          who: "Mr. McRitchie → Xan", role_label: "audits Xan's grade", grade: mcr,
           save_label: "Save audit", allow_bank: false %>
   </div>
 <% end %>

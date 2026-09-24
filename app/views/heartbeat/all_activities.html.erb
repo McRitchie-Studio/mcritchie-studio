@@ -1,7 +1,7 @@
-<% content_for(:title, "Alex · All Activities") %>
+<% content_for(:title, "Xan · All Activities") %>
 <% content_for(:full_width, true) %>
 
-<%# Alex learning heartbeat — the cross-session activity table. Every AgentActivity
+<%# Xan learning heartbeat — the cross-session activity table. Every AgentActivity
     across all sessions, newest-first, paginated 100 per page. It reuses the exact
     per-session chrome (styles, scripts, the activity table partial, the grading drawer)
     so an activity reads identically here and on the per-session heartbeat; only the header
@@ -11,11 +11,11 @@
 
 <%= render "heartbeat/scripts" %>
 
-<section id="alex-heartbeat" data-test="heartbeat-all-activities" x-data="heartbeatDrawer()" @keydown.escape.window="closeDrawer()">
+<section id="xan-heartbeat" data-test="heartbeat-all-activities" x-data="heartbeatDrawer()" @keydown.escape.window="closeDrawer()">
   <div class="hb-head">
     <header class="hb-topbar">
       <div class="hb-title">
-        <h1>All Activities &middot; Alex Heartbeat</h1>
+        <h1>All Activities &middot; Xan Heartbeat</h1>
         <p>
           Every narrated activity across all sessions, newest &rarr; oldest.
           Expand an activity to drill into the raw actions it framed; grade it inline or open one to grade the McRitchie audit.
@@ -71,7 +71,7 @@
     <div class="hb-empty" data-test="heartbeat-empty">
       <b>No activities captured yet</b>
       <p>Capture is forward-only — activities land here as sessions run. Seed demo activity locally with <code class="hb-mono">rake atomic:demo_seed</code>.</p>
-      <p><%= link_to "&lsaquo; back to the per-session heartbeat".html_safe, alex_heartbeat_path %></p>
+      <p><%= link_to "&lsaquo; back to the per-session heartbeat".html_safe, xan_heartbeat_path %></p>
     </div>
   <% end %>
 

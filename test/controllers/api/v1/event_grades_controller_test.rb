@@ -2,9 +2,9 @@ require "test_helper"
 
 module Api
   module V1
-    # [integration] the bearer AGENT grading path for the Alex heartbeat grade-events
-    # loop: awaiting_grade lists resolved ungraded spans; grade upserts Alex's grade.
-    # The grader is FORCED to alex — the mcr audit stays admin-browser-only.
+    # [integration] the bearer AGENT grading path for the Xan heartbeat grade-events
+    # loop: awaiting_grade lists resolved ungraded spans; grade upserts Xan's grade.
+    # The grader is FORCED to xan — the mcr audit stays admin-browser-only.
     class EventGradesControllerTest < ActionDispatch::IntegrationTest
       setup do
         @headers = {
@@ -40,7 +40,7 @@ module Api
 
       # ---- grade ----------------------------------------------------------------
 
-      test "[integration] grade upserts Alex's grade of a span and returns it" do
+      test "[integration] grade upserts Xan's grade of a span and returns it" do
         span = resolved_span(session_id: "ctl-grade")
 
         assert_difference -> { ActionGrade.count }, 1 do
@@ -51,13 +51,13 @@ module Api
 
         assert_response :created
         data = response.parsed_body["data"]
-        assert_equal "alex", data["grader"]
+        assert_equal "xan", data["grader"]
         assert_equal "good", data["disposition"]
         assert_equal "clean sharp outcome", data["slug"]
         assert_equal true, data["banked"]
       end
 
-      test "[integration] grade FORCES the grader to alex — a client-supplied mcr is ignored" do
+      test "[integration] grade FORCES the grader to xan — a client-supplied mcr is ignored" do
         span = resolved_span(session_id: "ctl-force")
 
         post api_v1_grade_agent_activity_path(span.id),
@@ -65,7 +65,7 @@ module Api
              headers: @headers, as: :json
 
         assert_response :created
-        assert_equal "alex", response.parsed_body.dig("data", "grader"),
+        assert_equal "xan", response.parsed_body.dig("data", "grader"),
                      "the agent path never writes an mcr audit grade"
         assert_nil ActionGrade.for_event(span).by_grader("mcr").first, "no mcr row is created"
       end

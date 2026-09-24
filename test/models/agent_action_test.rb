@@ -8,7 +8,7 @@ require "test_helper"
 # an uncapped drill-down (one activity: 1339 actions) put the page at 1.8-5.4 MB.
 # These tests lock in the query SHAPE: the scope drops both blobs, the drilldown
 # caps each activity at its FEED_ACTIONS_PER_ACTIVITY newest rows, and the
-# /alex/heartbeat drawer's full-record path stays intact.
+# /xan/heartbeat drawer's full-record path stays intact.
 class AgentActionTest < ActiveSupport::TestCase
   def build_activity(session: "sess-feed", seq: 0)
     AgentActivity.create!(session_id: session, category: "Explore",

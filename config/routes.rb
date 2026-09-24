@@ -88,36 +88,48 @@ Rails.application.routes.draw do
   get "links", to: "links#index", as: :links
 
   # Session entry launcher — terminal-styled chooser for the avenue you enter a
-  # session as (Session agent · Avi · Alex). Selecting Alex routes to the learning
-  # heartbeat at /alex/heartbeat, the per-action atomic trajectory table
-  # (HeartbeatController#show). The named route (alex_heartbeat_path) is stable, so
+  # session as (Session agent · Avi · Xan). Selecting Xan routes to the learning
+  # heartbeat at /xan/heartbeat, the per-action atomic trajectory table
+  # (HeartbeatController#show). The named route (xan_heartbeat_path) is stable, so
   # the launcher anchor follows it; it was repointed off LauncherController's
   # placeholder once the real view (T2) landed.
   get "launcher", to: "launcher#index", as: :launcher
-  get "alex/heartbeat", to: "heartbeat#show", as: :alex_heartbeat
+  get "xan/heartbeat", to: "heartbeat#show", as: :xan_heartbeat
   # Feedback layer over the read-only trajectory (T5): a per-action grading drawer
   # (GET, lazy-loaded into a turbo-frame), the upsert/bank/discard write, and the
   # curated Insight Bank page. Like the view itself, this is an open meta surface.
-  get  "alex/heartbeat/actions/:id/feedback", to: "heartbeat#feedback", as: :heartbeat_feedback
-  post "alex/heartbeat/actions/:id/grade",    to: "heartbeat#grade",    as: :heartbeat_grade
+  get  "xan/heartbeat/actions/:id/feedback", to: "heartbeat#feedback", as: :heartbeat_feedback
+  post "xan/heartbeat/actions/:id/grade",    to: "heartbeat#grade",    as: :heartbeat_grade
   # Activity-level grade: upsert one grade for a narrated AgentActivity. JSON only
   # by design so it stays view-free from the drawer/turbo stream path.
-  post "alex/heartbeat/activities/:id/grade", to: "heartbeat#grade_activity", as: :heartbeat_activity_grade
+  post "xan/heartbeat/activities/:id/grade", to: "heartbeat#grade_activity", as: :heartbeat_activity_grade
   # The per-activity grading drawer body, lazy-loaded into the shared turbo-frame
   # on an activity's grade click. Old /events paths stay as compatibility aliases.
-  get  "alex/heartbeat/activities/:id/feedback", to: "heartbeat#feedback_activity", as: :heartbeat_activity_feedback
-  post "alex/heartbeat/events/:id/grade", to: "heartbeat#grade_activity", as: :heartbeat_event_grade
-  get  "alex/heartbeat/events/:id/feedback", to: "heartbeat#feedback_activity", as: :heartbeat_event_feedback
+  get  "xan/heartbeat/activities/:id/feedback", to: "heartbeat#feedback_activity", as: :heartbeat_activity_feedback
+  post "xan/heartbeat/events/:id/grade", to: "heartbeat#grade_activity", as: :heartbeat_event_grade
+  get  "xan/heartbeat/events/:id/feedback", to: "heartbeat#feedback_activity", as: :heartbeat_event_feedback
   # Every AgentActivity across ALL sessions, newest-first, paginated 100/page —
   # the cross-session analogue of the per-session heartbeat.
-  get  "alex/heartbeat/activities", to: "heartbeat#all_activities", as: :heartbeat_all_activities
-  get  "alex/heartbeat/spans", to: "heartbeat#all_activities", as: :heartbeat_all_spans
-  get  "alex/insights", to: "heartbeat#insights", as: :alex_insights
-  # The OPSD distillation pipeline, left→right: Activities → Insights (Alex's
+  get  "xan/heartbeat/activities", to: "heartbeat#all_activities", as: :heartbeat_all_activities
+  get  "xan/heartbeat/spans", to: "heartbeat#all_activities", as: :heartbeat_all_spans
+  get  "xan/insights", to: "heartbeat#insights", as: :xan_insights
+  # The OPSD distillation pipeline, left→right: Activities → Insights (Xan's
   # grades) → Confirmations (McRitchie's mcr grades). `confirm` records the McRitchie
   # (mcr) confirmation of an insight and redirects back (a no-JS form action).
-  get  "alex/pipeline", to: "heartbeat#pipeline", as: :alex_pipeline
-  post "alex/pipeline/confirm/:id", to: "heartbeat#confirm", as: :alex_pipeline_confirm
+  get  "xan/pipeline", to: "heartbeat#pipeline", as: :xan_pipeline
+  post "xan/pipeline/confirm/:id", to: "heartbeat#confirm", as: :xan_pipeline_confirm
+
+  # LEGACY /alex/* — the seat's slug until 2026-09-24 (the human operator is Alex
+  # now; the orchestrator is Xan). Every GET under it 301s to the same path under
+  # /xan, QUERY STRING INCLUDED, so a bookmarked `?session_id=…` deep link or a
+  # printed handoff still lands on the page it named. The POST endpoints (grade,
+  # confirm) are form actions the pages themselves render, never a public URL, so
+  # they moved without a shim. Retire alongside Task::SOUL_ALIASES, one release on.
+  legacy_seat = redirect { |_params, request| request.fullpath.sub(%r{\A/alex/}, "/xan/") }
+  get "alex/heartbeat",       to: legacy_seat
+  get "alex/heartbeat/*rest", to: legacy_seat, format: false
+  get "alex/insights",        to: legacy_seat
+  get "alex/pipeline",        to: legacy_seat
 
   get "toast_test", to: "toast_test#index"
   post "toast_test/flash", to: "toast_test#trigger_flash"
@@ -482,7 +494,7 @@ Rails.application.routes.draw do
         end
       end
       # DevOps SHIFT lease (devops-shift-lease) — at most one live conductor per role
-      # lane (avi/steffon/alex), so two same-role sessions can't collide. `acquire` is
+      # lane (avi/steffon/xan), so two same-role sessions can't collide. `acquire` is
       # the atomic take-or-stand-down, `renew` the heartbeat, `release` the clean
       # session-end drop; `index` is the "who's on shift" read.
       resources :devops_shifts, only: [:index] do
@@ -492,10 +504,10 @@ Rails.application.routes.draw do
           post :release
         end
       end
-      # Learning-loop grading — the bearer AGENT path for the Alex heartbeat
+      # Learning-loop grading — the bearer AGENT path for the Xan heartbeat
       # grade-events loop. `awaiting` lists resolved activities still ungraded by
-      # Alex; `grade` upserts Alex's grade of one activity. The grader is FORCED to alex here
-      # (the mcr audit-of-Alex stays admin-browser-only), so the shared agent token
+      # Xan; `grade` upserts Xan's grade of one activity. The grader is FORCED to xan here
+      # (the mcr audit-of-Xan stays admin-browser-only), so the shared agent token
       # can never forge McRitchie's audit.
       get  "agent_activities/awaiting_grade", to: "activity_grades#awaiting", as: :awaiting_grade_agent_activities
       post "agent_activities/:id/grade",      to: "activity_grades#create",   as: :grade_agent_activity

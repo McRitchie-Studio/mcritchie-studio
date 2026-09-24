@@ -9,7 +9,7 @@ class Release::RetroTest < ActiveSupport::TestCase
   # A shipped release with member tasks carrying controlled TaskEvent spines, so
   # gather reads real timing/rework/reviewers off the append-only log.
   def shipped_release(slug: "rel-retro-test")
-    Release.create!(slug: slug, state: "shipped", branch: "release", confirmed_by: "alex")
+    Release.create!(slug: slug, state: "shipped", branch: "release", confirmed_by: "xan")
   end
 
   # Build a member task + an explicit event spine with controlled timestamps.
@@ -48,7 +48,7 @@ class Release::RetroTest < ActiveSupport::TestCase
 
     assert_equal "rel-retro-test", data["slug"]
     assert_equal "shipped", data["state"]
-    assert_equal "alex", data["confirmed_by"]
+    assert_equal "xan", data["confirmed_by"]
     assert_equal 1, data["members"].size
 
     m = data["members"].first

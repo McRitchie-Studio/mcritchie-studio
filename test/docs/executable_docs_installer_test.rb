@@ -38,7 +38,7 @@ require "test_helper"
 # Measured over docs/agents on 2026-09-09: ~20 live installer mentions, of which ~14 are
 # correct description — modules/docs-maintenance.md stating the rule, modules/heartbeats.md
 # and system/devops-cycle-design.md describing the owned ship step, system/house-burn-down.md
-# and system/ecosystem-build.md documenting Phase 5b bringup, agents/alex/role.md's review
+# and system/ecosystem-build.md documenting Phase 5b bringup, agents/xan/role.md's review
 # checklist, shared/insights.md's generated header. Widening this any-mention predicate to
 # all of docs/agents would need ~12 exemptions covering exactly the files where a future
 # directive could hide, which is a guard that looks tree-wide and holds an allowlist of
@@ -148,12 +148,12 @@ class ExecutableDocsInstallerTest < ActiveSupport::TestCase
     # 2026-09-08: narrowing the name class to /[a-z0-9-]+/ — the exact break the message
     # above names — drops the five `<Soul> Heartbeat` rows and leaves 24, which clears a
     # floor of 20 while the sweep has gone BLIND to the launchers. A real
-    # `bin/install-agent-docs` added to alex/HEARTBEAT.md then passes. So pin the class this
+    # `bin/install-agent-docs` added to xan/HEARTBEAT.md then passes. So pin the class this
     # file calls highest-risk by NAME, not by count.
     heartbeats = files.map(&:first).grep(%r{/HEARTBEAT\.md\z})
     assert_operator heartbeats.length, :>=, 5,
                     "the sweep matched only #{heartbeats.length} HEARTBEAT.md row(s) — the registry has " \
-                    "one per soul (carl, avi, turf_monster, steffon, alex). The ROW name class has stopped " \
+                    "one per soul (carl, avi, turf_monster, steffon, xan). The ROW name class has stopped " \
                     "admitting SPACES and CAPITALS, so the `<Soul> Heartbeat` rows dropped out while the " \
                     "count floor above still passed. A heartbeat is exactly the launcher that would " \
                     "re-acquire an install step. Fix the scan; do not lower this."
@@ -234,7 +234,7 @@ class ExecutableDocsInstallerTest < ActiveSupport::TestCase
   # is both the SOP standard (one hop to a registered primitive) and what keeps it out of
   # the exemption list above.
   test "share-insights prescribes no install step and says why" do
-    body = AGENTS.join("agents/alex/sops/share-insights.md").read
+    body = AGENTS.join("agents/xan/sops/share-insights.md").read
 
     refute prescribes_installer?(body),
            "the share-insights SOP names the docs installer again. Its output is the tracked doc " \

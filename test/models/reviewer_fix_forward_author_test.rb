@@ -13,7 +13,7 @@ require "test_helper"
 # commits.
 #
 # MEASURED TWICE IN ONE NIGHT, on MERGED PRs (2026-09-09):
-#   · #1321 — builder alex; steffon zapped be5579a5 while holding the light seat;
+#   · #1321 — builder xan; steffon zapped be5579a5 while holding the light seat;
 #     reviewer-select then seated STEFFON on a PR containing steffon's own commit.
 #     A human caught it only because the orchestrator happened to mention the zap.
 #   · #1322 — builder avi; the reviewer pushed 7113af85 to resolve a conflict, then

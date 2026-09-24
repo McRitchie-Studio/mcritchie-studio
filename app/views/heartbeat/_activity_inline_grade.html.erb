@@ -1,12 +1,12 @@
 <%# Inline quick-grade for an activity — the good/not disposition radios for ONE grader
-    (Alex, or the McRitchie audit of Alex). The activity analogue of the per-action
+    (Xan, or the McRitchie audit of Xan). The activity analogue of the per-action
     _feedback_cell radios: they POST grader + disposition to the JSON activity grade
     endpoint via the activity row's `quickGrade` fetch (@change), which dispatches
     hb:activity-graded so the row's live markers update in place. The fuller "grade ▸"
     drawer stays the home for the slug / long-form / bank detail — these are the fast
     lane. The checked state is server-rendered (Nokogiri-visible, no-JS correct) and
     bound to the row's Alpine `grades.<grader>` so a drawer/quick save syncs it live.
-    Locals: activity, grader ("alex" | "mcr"), grade (ActionGrade | nil). %>
+    Locals: activity, grader ("xan" | "mcr"), grade (ActionGrade | nil). %>
 <form action="<%= heartbeat_activity_grade_path(activity) %>" method="post"
       class="hb-radioform hb-evtquick-form" data-test="event-inline-grade"
       data-grader="<%= grader %>" @submit.prevent>
@@ -31,7 +31,7 @@
   </span>
   <button type="button" class="hb-gradeclear <%= "is-visible" if grade.present? %>"
           data-test="event-grade-clear" title="Clear feedback"
-          aria-label="Clear <%= grader == "mcr" ? "McRitchie" : "Alex" %> feedback"
+          aria-label="Clear <%= grader == "mcr" ? "McRitchie" : "Xan" %> feedback"
           :class="{ 'is-visible': !!grades.<%= grader %> }"
           :disabled="!grades.<%= grader %>"
           @click.stop="clearGrade($event)">&times;</button>

@@ -242,10 +242,10 @@ class DevopsShiftFlagsTest < Minitest::Test
   # The optional --label must still ARRIVE. A too-eager guard reads "Mew" as a stray
   # positional and refuses the documented line.
   def test_a_valid_acquire_carries_its_label_through
-    requests, _out, _err, _status = run_cli(["acquire", "alex", "--label", "Mew"])
+    requests, _out, _err, _status = run_cli(["acquire", "xan", "--label", "Mew"])
 
     body = JSON.parse(acquires(requests).first[:body])
-    assert_equal "alex", body["lane"], "the LANE is the target, not the label"
+    assert_equal "xan", body["lane"], "the LANE is the target, not the label"
     assert_equal "Mew", body["label"], "--label's VALUE arrived, not refused as a positional"
   end
 

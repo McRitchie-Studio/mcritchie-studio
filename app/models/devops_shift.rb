@@ -29,7 +29,9 @@ class DevopsShift < ApplicationRecord
   # still takes the avi shift for its board-sweep. The shift model/table are KEPT (the
   # avi lane is live); only steffon left the default set. An old row for a retired lane
   # is harmless: nothing acquires it, and it simply lapses.
-  LANES = %w[avi alex].freeze
+  # `alex` was renamed `xan` with the seat (2026-09-24); a lane named by the old
+  # slug resolves through Task::SOUL_ALIASES in .lane_row for one release.
+  LANES = %w[avi xan].freeze
 
   # The acquire verdict: whether THIS instance now holds the lane, the ClaimLease
   # disposition it was in, and the (updated) row for the holder message.
@@ -37,7 +39,7 @@ class DevopsShift < ApplicationRecord
 
   validates :lane, presence: true, uniqueness: true
 
-  before_validation { self.lane = lane.to_s.strip.downcase.presence }
+  before_validation { self.lane = Task.canonical_soul(lane.to_s.strip.downcase).presence }
 
   # Try to take (or renew) the lane for this live instance. Unclaimed / expired /
   # same-instance → acquired; a DIFFERENT live instance holds it → not acquired.
@@ -108,7 +110,7 @@ class DevopsShift < ApplicationRecord
   # winner's row. RaceTolerantCreate covers BOTH halves of that window (the
   # validator's RecordInvalid as well as the index's RecordNotUnique).
   def self.lane_row(lane)
-    find_or_create_tolerating_race!(lane: lane.to_s.strip.downcase)
+    find_or_create_tolerating_race!(lane: Task.canonical_soul(lane.to_s.strip.downcase))
   end
 
   # The ClaimLease-shaped view of this row (string keys, ISO8601 expiry) so the pure

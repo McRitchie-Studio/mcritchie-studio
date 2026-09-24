@@ -765,12 +765,12 @@ class Release::ConductorTest < ActiveSupport::TestCase
     t = reviewed_task
     rel = Release::Conductor.prepare!(task_slugs: [t.slug])
 
-    Release::Conductor.ship!(release: rel, deployed_sha: "abc1234", by: "alex", production_url: "https://example.test")
+    Release::Conductor.ship!(release: rel, deployed_sha: "abc1234", by: "xan", production_url: "https://example.test")
 
     assert_equal "shipped", rel.reload.state
     assert_equal "abc1234", rel.deployed_sha
     assert_equal "https://example.test", rel.production_url
-    assert_equal "alex", rel.confirmed_by
+    assert_equal "xan", rel.confirmed_by
     assert_equal "shipped", t.reload.stage
     assert_equal %w[started completed], rel.release_events.for_step("deploy_prod").chronological.pluck(:status)
   end
@@ -1120,7 +1120,7 @@ class Release::ConductorTest < ActiveSupport::TestCase
 
   def shipped_release
     rel = Release::Conductor.prepare!(task_slugs: [reviewed_task.slug])
-    Release::Conductor.ship!(release: rel, deployed_sha: "abc1234", by: "alex", production_url: "https://example.test")
+    Release::Conductor.ship!(release: rel, deployed_sha: "abc1234", by: "xan", production_url: "https://example.test")
     rel
   end
 

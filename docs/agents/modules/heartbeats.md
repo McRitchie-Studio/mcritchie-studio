@@ -13,14 +13,14 @@ each carrying a leading icon (a ❤️ on the heartbeat row; a `1️⃣`–`3️
 three ordered release actions, a themed glyph on the rest):
 
 - **Row 1 — the prompt-like soul heartbeat** (❤️): `Carl Heartbeat` · `Avi
-  Heartbeat` · `Steffon Heartbeat` · `Alex Heartbeat` · `Turf Monster Heartbeat`.
+  Heartbeat` · `Steffon Heartbeat` · `Xan Heartbeat` · `Turf Monster Heartbeat`.
   One per soul.
 - **The action rows** — one copyable row each, ordered along the pipeline (the
   number icons read across the souls: review → assemble → ship):
   - **Carl** → `1️⃣ pr-review` · `🐢 pr-review-slow`
   - **Avi** → `2️⃣ qa-release` · `⚡ deploy-with-task`
   - **Steffon** → `3️⃣ production-deploy` · `🧹 clean-infra`
-  - **Alex** → `🧑🏻‍🏫 grade-events` · `📡 share-insights` · `🌎 full-cycle`
+  - **Xan** → `🧑🏻‍🏫 grade-events` · `📡 share-insights` · `🌎 full-cycle`
   - **Turf Monster** → `🏈 live-score-watch` · `🎬 contest-rehearsal`
 
   `archive-shipped` is deliberately NOT a chip: `production-deploy` runs it as its
@@ -63,7 +63,7 @@ and **any of them**, pasted into a fresh agent session run from
 launchers** — listed in the generated root `AGENTS.md` SOP Invocation Standard
 registry and in
 [`devops-cycle-design.md` §1.4](../system/devops-cycle-design.md). Each act wraps
-a single release **atom** (see §1.4's atom table), except `alex` /
+a single release **atom** (see §1.4's atom table), except `xan` /
 `grade-events`, which is the learning loop and lives outside the release
 pipeline.
 
@@ -71,7 +71,7 @@ Each soul's action-level procedure lives with that soul:
 [`Carl`](../agents/carl/HEARTBEAT.md),
 [`Avi`](../agents/avi/HEARTBEAT.md),
 [`Steffon`](../agents/steffon/HEARTBEAT.md),
-[`Alex`](../agents/alex/HEARTBEAT.md), and
+[`Xan`](../agents/xan/HEARTBEAT.md), and
 [`Turf Monster`](../agents/turf_monster/HEARTBEAT.md). This page is the
 cross-soul map.
 
@@ -80,7 +80,7 @@ cross-soul map.
 | **Carl** (`carl`) | `Carl Heartbeat` | `pr-review`, `pr-review-slow` | submitted PRs waiting for review | each PR `reviewed` (merged into `accepted`) or `blocked` |
 | **Avi** (`avi`) | `Avi Heartbeat` | `qa-release`, `deploy-with-task` (direct-invoke only), `arbitrate-block` (registered, not a chip — a builder contests a review block and the session that spawned it invokes Avi) | `reviewed` work + `assembled` stragglers to sweep | the RC swept, **live on QA, members `assembled` on QA-green** |
 | **Steffon** (`steffon`) | `Steffon Heartbeat` | `production-deploy`, `clean-infra`, `archive-shipped` (registered, not a chip — production-deploy runs it) | a QA-green (`assembled`) release ready to ship / a machine carrying finished work | the ready release `shipped` (archived on the way out, or no-op); the machine swept |
-| **Alex** (`alex`) | `Alex Heartbeat` | `grade-events`, `share-insights`, `full-cycle` | activities to grade / a non-empty insight bank to share / a full pipeline to run | 10 graded + banked; the bank shared out; or the whole release `shipped` |
+| **Xan** (`xan`) | `Xan Heartbeat` | `grade-events`, `share-insights`, `full-cycle` | activities to grade / a non-empty insight bank to share / a full pipeline to run | 10 graded + banked; the bank shared out; or the whole release `shipped` |
 | **Turf Monster** (`turf-monster`) | `Turf Monster Heartbeat` | `live-score-watch`, `contest-rehearsal`, `sleeper-auction-watch` (registered, not a chip — the slug clips the card), `entry-forfeit` (registered, not a chip — on-demand incident SOP), `market-refresh` (registered, not a chip — weekly, but the moment is read off the schedule), `content-build` (registered, not a chip — queue-shaped; it runs when games finalise) | a live NFL slot with the poller deployed, QA reachable on devnet, or a Sleeper auction about to start | the slot final or the window elapsed; the rehearsal contest settled and closed; or the draft board full |
 
 > **Direct-drive the mutating acts.** `qa-release`, `production-deploy`, and
@@ -117,20 +117,20 @@ Codex) run from `/Users/alex/projects`. This is the whole boot sequence — a ne
 session needs nothing else:
 
 1. **Say a launcher row.** Paste the row-1 prompt (`Carl Heartbeat` · `Avi
-   Heartbeat` · `Steffon Heartbeat` · `Alex Heartbeat`) or any single act row from
+   Heartbeat` · `Steffon Heartbeat` · `Xan Heartbeat`) or any single act row from
    the /deployments Workflows card. The generated root `AGENTS.md` maps those
    launcher phrases directly to this module, the owning soul's `HEARTBEAT.md`, and
    the relevant SOP file. No installed skill is required.
 2. **Stamp attribution FIRST** — before any other tool call:
    `cd /Users/alex/projects/mcritchie-studio && bin/agent-activity heartbeat
-   <carl|avi|steffon|alex>`.
+   <carl|avi|steffon|xan>`.
 3. **Run the soul's acts** from the mcritchie-studio primary
    checkout (the board is **prod** by default; pass `--yes` on the release verbs
    the act owns). The full per-soul heartbeat launchers are
    [`Carl`](../agents/carl/HEARTBEAT.md),
    [`Avi`](../agents/avi/HEARTBEAT.md),
    [`Steffon`](../agents/steffon/HEARTBEAT.md), and
-   [`Alex`](../agents/alex/HEARTBEAT.md); the numbered sections below summarize
+   [`Xan`](../agents/xan/HEARTBEAT.md); the numbered sections below summarize
    them.
 
 The per-soul cheat sheet — say the row-1 prompt, then drive these commands:
@@ -140,7 +140,7 @@ The per-soul cheat sheet — say the row-1 prompt, then drive these commands:
 | **Carl** | `pr-review` → `pr-review-slow` | per `submitted` PR (waves ≤5): `bin/task claim-next-review` → spin one Carl → the [review-one primitive](pr-review-sop.md) → on a merge-ready verdict `gh pr merge` into `accepted` + `bin/task move <task> reviewed` |
 | **Avi** | `qa-release` | `bin/release prepare --yes` → smoke `https://qa.mcritchie.studio/up` (stages 1–3, members `assembled` on QA-green) |
 | **Steffon** | `production-deploy` → `archive-shipped` | `bin/release status` → **if** QA-green: `bin/release ship --yes` (stages 4–5); then `bin/release archive --yes` (preview `--dry-run`) |
-| **Alex** | `grade-events` · `share-insights` · `full-cycle` | `bin/agent-activity awaiting --limit 10` → `bin/agent-activity grade <id> …` → `--bank`/`--discard`; `bin/rails insights:doc`; `full-cycle` = `pr-review` → `qa-release` → `production-deploy` (ship authority) |
+| **Xan** | `grade-events` · `share-insights` · `full-cycle` | `bin/agent-activity awaiting --limit 10` → `bin/agent-activity grade <id> …` → `--bank`/`--discard`; `bin/rails insights:doc`; `full-cycle` = `pr-review` → `qa-release` → `production-deploy` (ship authority) |
 
 > **Script-assisted review.** `bin/pr-review` is a codex-based review loop that
 > composes `bin/devops-cycle`, `bin/reviewer-select`, and codex reviewer
@@ -392,27 +392,27 @@ Canonical SOP:
 Archive shipped work and reclaim completed worktrees. `archive-completed` is the
 legacy alias.
 
-## 4. Alex Heartbeat — `Alex Heartbeat` / `grade-events` / `share-insights` / `full-cycle`
+## 4. Xan Heartbeat — `Xan Heartbeat` / `grade-events` / `share-insights` / `full-cycle`
 
 Canonical heartbeat launcher:
-[`../agents/alex/HEARTBEAT.md`](../agents/alex/HEARTBEAT.md). The summary below
-keeps the cross-soul page readable; Alex's standalone act SOPs win for Alex
+[`../agents/xan/HEARTBEAT.md`](../agents/xan/HEARTBEAT.md). The summary below
+keeps the cross-soul page readable; Xan's standalone act SOPs win for Xan
 mechanics:
-[`grade-events`](../agents/alex/sops/grade-events.md),
-[`share-insights`](../agents/alex/sops/share-insights.md), and
-[`full-cycle`](../agents/alex/sops/full-cycle.md).
+[`grade-events`](../agents/xan/sops/grade-events.md),
+[`share-insights`](../agents/xan/sops/share-insights.md), and
+[`full-cycle`](../agents/xan/sops/full-cycle.md).
 
-**Enter as Alex** (the Lead Orchestrator). Three acts: grade recent trajectory
+**Enter as Xan** (the Lead Orchestrator). Three acts: grade recent trajectory
 activities for the learning layer, share the BANKED insights out to every agent, and
 — with ship authority — run the whole DevOps cycle end to end. The distillation
-pipeline at [`/alex/pipeline`](https://mcritchie.studio/alex/pipeline) is the
-operator view of the first two: Activities → Insights (Alex grades) →
+pipeline at [`/xan/pipeline`](https://mcritchie.studio/xan/pipeline) is the
+operator view of the first two: Activities → Insights (Xan grades) →
 Confirmations (McRitchie's `mcr` grades).
 
 ### Act 1 — `grade-events`
 
 Canonical SOP:
-[`../agents/alex/sops/grade-events.md`](../agents/alex/sops/grade-events.md).
+[`../agents/xan/sops/grade-events.md`](../agents/xan/sops/grade-events.md).
 
 Grade a batch of recent trajectory activities for quality so the learning layer keeps
 only what makes the next agent smarter.
@@ -420,24 +420,24 @@ only what makes the next agent smarter.
 - **Precondition:** resolved activities awaiting a grade (there usually are). None
   ungraded → report "nothing to grade" and stop (idempotent no-op).
 - **Steps (first-class CLI path — bearer-gated, no HTML scraping):**
-  1. `bin/agent-activity awaiting [--limit 10]` — the resolved activities Alex hasn't
+  1. `bin/agent-activity awaiting [--limit 10]` — the resolved activities Xan hasn't
      graded yet (id + category · reason → outcome + task), oldest → newest.
   2. Grade each: `bin/agent-activity grade <activity-id> --disposition good|not
      --slug "<4–7 words>" [--long-form "<anchor>"]`.
   3. **Bank** the ones that make the next agent smarter (`--bank`); **discard** the
      rest (`--discard`). Banked insights feed forward via `bin/session-insights`.
-  4. The browser drawer at `/alex/heartbeat` is the equivalent **admin** path
-     (same writes; it also owns the **`mcr` audit-of-Alex** lane, which the agent
-     CLI cannot write — the bearer `grade` endpoint always grades as `alex`).
+  4. The browser drawer at `/xan/heartbeat` is the equivalent **admin** path
+     (same writes; it also owns the **`mcr` audit-of-Xan** lane, which the agent
+     CLI cannot write — the bearer `grade` endpoint always grades as `xan`).
 - **Exit seam:** ~10 activities graded, useful insights banked. (Mr. McRitchie audits a
   shrinking sample as the signal proves out — he does so on the
-  [`/alex/pipeline`](https://mcritchie.studio/alex/pipeline) page, where **Confirm**
+  [`/xan/pipeline`](https://mcritchie.studio/xan/pipeline) page, where **Confirm**
   promotes an insight into column 3 as an `mcr` grade.)
 
 ### Act 2 — `share-insights`
 
 Canonical SOP:
-[`../agents/alex/sops/share-insights.md`](../agents/alex/sops/share-insights.md).
+[`../agents/xan/sops/share-insights.md`](../agents/xan/sops/share-insights.md).
 
 Take the **Insight Bank** — `ActionGrade.banked`, whichever grader recorded each
 row — and share it out through the platform's docs, so every next agent starts with
@@ -446,7 +446,7 @@ audience — the next agents — not the doc-write mechanics.)
 
 - **Precondition:** the bank is non-empty (at least one banked `ActionGrade`).
   Empty bank → report "nothing to share" and stop (idempotent no-op). **Banking is
-  the gate, not the grader:** `mcr` marks Mr. McRitchie's audit *of* an Alex grade,
+  the gate, not the grader:** `mcr` marks Mr. McRitchie's audit *of* an Xan grade,
   a lane the agent CLI cannot even write, so gating on it stands the act down over
   every lesson an agent banks — see the SOP's Preconditions.
 - **Steps:**
@@ -465,7 +465,7 @@ audience — the next agents — not the doc-write mechanics.)
 ### Act 3 — `full-cycle`
 
 Canonical SOP:
-[`../agents/alex/sops/full-cycle.md`](../agents/alex/sops/full-cycle.md).
+[`../agents/xan/sops/full-cycle.md`](../agents/xan/sops/full-cycle.md).
 
 Run the **whole DevOps cycle** end to end — the launcher that replaced the retired
 `Merge, Assemble, Deploy` chip. Named `full-cycle` to avoid colliding with the
@@ -485,7 +485,7 @@ read-only `bin/devops-cycle` snapshot tool.
   SHA + release slug.
 
 > ⚠️ **Full ship authority.** `full-cycle` crosses the production gate autonomously
-> — run it only when the operator launched it (the `Alex Heartbeat` / `full-cycle`
+> — run it only when the operator launched it (the `Xan Heartbeat` / `full-cycle`
 > phrase) or otherwise granted ship authority in-session. It uses the SAME
 > deterministic gates as `production-deploy`; `--yes` answers only the human
 > confirm. For expediting ONE task on a clean ladder, use Avi's

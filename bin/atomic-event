@@ -75,6 +75,13 @@ class AgentActivityCli
   # else keeps the honest default (`--kind <k>`, else `bash` for a deploy step).
   FINDING_KIND = "finding"
 
+  # Retired soul slugs that still resolve — a mirror of Task::SOUL_ALIASES, because
+  # this CLI runs without Rails. `heartbeat alex` attributes to `xan` (the
+  # orchestrator seat, renamed 2026-09-24), and a sticky marker written under the
+  # old slug by a session that predates the rename reads as the new one. One
+  # release, then retire both halves together.
+  SOUL_ALIASES = { "alex" => "xan" }.freeze
+
   OPEN_TIMEOUT = 2
   READ_TIMEOUT = 5
 
@@ -552,15 +559,17 @@ class AgentActivityCli
     soul = positional if soul.empty?
     return warn_note("atomic-event: heartbeat needs a soul (e.g. `heartbeat avi`) or `heartbeat --clear`") if soul.empty?
 
-    write_acting_agent(sid, soul)
-    @out.puts("atomic-event: heartbeat set — every activity attributes to #{soul} " \
+    canonical = SOUL_ALIASES.fetch(soul, soul)
+    @out.puts("atomic-event: `#{soul}` is that seat's retired slug — attributing to `#{canonical}`") if canonical != soul
+    write_acting_agent(sid, canonical)
+    @out.puts("atomic-event: heartbeat set — every activity attributes to #{canonical} " \
               "(stacked over the base mascot) until `heartbeat --clear` or session end")
   end
 
   # `grade <activity-id> --disposition good|not [--slug …] [--long-form …] [--bank|--discard]`
-  # — the bearer AGENT grade of a resolved activity (the CLI half of the Alex heartbeat
+  # — the bearer AGENT grade of a resolved activity (the CLI half of the Xan heartbeat
   # grade-events loop; the browser drawer is the other half). The activity id is the
-  # LEADING positional. This endpoint FORCES the grader to alex, so no --grader flag
+  # LEADING positional. This endpoint FORCES the grader to xan, so no --grader flag
   # exists — that is PROVENANCE, not an authenticated boundary: the heartbeat drawer
   # skips authentication (build-first, 2026-07-03), so an `mcr` audit row is writable
   # anonymously. Reports what landed, but ALWAYS exits 0.
@@ -783,7 +792,7 @@ class AgentActivityCli
 
   def read_acting_agent(session_id)
     value = SessionMarkers.read(session_id, projects_dir, ACTING_AGENT).to_s.strip
-    present?(value) ? value : nil
+    present?(value) ? SOUL_ALIASES.fetch(value, value) : nil
   end
 
   def write_acting_agent(session_id, soul)

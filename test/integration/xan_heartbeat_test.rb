@@ -1,6 +1,6 @@
 require "test_helper"
 
-# [integration] GET /alex/heartbeat — the Alex avenue now renders agent-narrated
+# [integration] GET /xan/heartbeat — the Xan avenue now renders agent-narrated
 # EVENT SPANS as the primary rows, read from AgentActivity.for_session(...).chronological
 # (oldest -> newest). The raw AgentActions attributed to each span (agent_activity_id)
 # roll up underneath as a read-only drill-down; actions with a null agent_activity_id
@@ -17,9 +17,9 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
                            agent_activity_id: event&.id }.merge(attrs))
   end
 
-  test "alex_heartbeat_path routes to the trajectory view, repointed off the launcher placeholder" do
-    assert_equal "/alex/heartbeat", alex_heartbeat_path
-    assert_routing "/alex/heartbeat", controller: "heartbeat", action: "show"
+  test "xan_heartbeat_path routes to the trajectory view, repointed off the launcher placeholder" do
+    assert_equal "/xan/heartbeat", xan_heartbeat_path
+    assert_routing "/xan/heartbeat", controller: "heartbeat", action: "show"
   end
 
   test "renders event spans, rolling attributed actions under each, without auth" do
@@ -31,7 +31,7 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
                    outcome_slug: "green", closed_at: 30.seconds.ago, at: 90.seconds.ago)
     action(event: verify, seq: 1, at: 90.seconds.ago, kind: "bash", event_slug: "Run the tests")
 
-    get alex_heartbeat_path
+    get xan_heartbeat_path
 
     assert_response :success
     assert_select "[data-test=heartbeat]"
@@ -52,7 +52,7 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
                outcome_slug: "green", at: started, closed_at: Time.zone.local(2026, 7, 6, 19, 28, 22))
     action(event: ev, seq: 0, at: started, duration_ms: 251_000, kind: "bash", event_slug: "Run the tests")
 
-    get alex_heartbeat_path(session_id: "sess-A")
+    get xan_heartbeat_path(session_id: "sess-A")
 
     assert_response :success
     # activity card: completed_at + created_at down to the second
@@ -77,7 +77,7 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
     event(seq: 0, category: "Workflow", reason_slug: "certify and open the PR",
           outcome_slug: nil, closed_at: nil)
 
-    get alex_heartbeat_path(session_id: "sess-A")
+    get xan_heartbeat_path(session_id: "sess-A")
 
     assert_response :success
     assert_select "[data-test=event-in-progress]"
@@ -87,7 +87,7 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
   test "actions with a null agent_activity_id render in the Unlabeled group" do
     action(event: nil, seq: 0, kind: "boot", event_slug: "Unnarrated boot step")
 
-    get alex_heartbeat_path(session_id: "sess-A")
+    get xan_heartbeat_path(session_id: "sess-A")
 
     assert_response :success
     assert_select "tbody[data-test=heartbeat-unlabeled]"
@@ -101,7 +101,7 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
     event(seq: 0, reason_slug: "first span opened", at: 3.minutes.ago, closed_at: 2.minutes.ago)
     event(seq: 1, reason_slug: "second span opened", at: 2.minutes.ago, closed_at: 90.seconds.ago)
 
-    get alex_heartbeat_path
+    get xan_heartbeat_path
 
     assert_response :success
     body = response.body
@@ -115,7 +115,7 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
     b = event(session: "sess-B", reason_slug: "session B span")
     action(event: b, session: "sess-B")
 
-    get alex_heartbeat_path(session_id: "sess-A")
+    get xan_heartbeat_path(session_id: "sess-A")
 
     assert_response :success
     assert_match "session A span", response.body
@@ -126,11 +126,11 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
     e = event(seq: 0, closed_at: 1.minute.ago, outcome_slug: "done")
     action(event: e, seq: 0)
 
-    get alex_heartbeat_path(session_id: "sess-A")
+    get xan_heartbeat_path(session_id: "sess-A")
 
     assert_response :success
     assert_select "aside[data-test=heartbeat-drawer]"
-    assert_select "a[href=?]", alex_insights_path, text: /Insight Bank/
+    assert_select "a[href=?]", xan_insights_path, text: /Insight Bank/
     # the heartbeat navbar links across to the cross-session All Spans page
     assert_select "a[href=?][data-test=hb-nav-all-spans]", heartbeat_all_activities_path
     # ...and back out to the Deployments board
@@ -138,7 +138,7 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
   end
 
   test "renders a friendly empty state when nothing has been captured" do
-    get alex_heartbeat_path
+    get xan_heartbeat_path
 
     assert_response :success
     assert_select "[data-test=heartbeat-empty]"
@@ -156,7 +156,7 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
     action(seq: 0, at: 2.minutes.ago, session: a, event_slug: "A")
     action(seq: 0, at: 1.minute.ago,  session: b, event_slug: "B")
 
-    get alex_heartbeat_path
+    get xan_heartbeat_path
 
     assert_response :success
     assert_select "select.hb-sel option[value=?]", a, text: "Bulbasaur · e2f6eb27"
@@ -173,7 +173,7 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
     action(seq: 0, at: 2.minutes.ago, session: a, event_slug: "A")
     action(seq: 0, at: 1.minute.ago,  session: b, event_slug: "B")
 
-    get alex_heartbeat_path
+    get xan_heartbeat_path
 
     assert_response :success
     assert_select "select.hb-sel option[value=?]", a, text: "Bulbasaur · e2f6eb27"
@@ -187,7 +187,7 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
     action(event: ev, seq: 0, at: 3.minutes.ago, model: "claude-opus-4-8", tokens_in: 9400, tokens_out: 360, cost: 0.05)
     action(event: ev, seq: 1, at: 2.minutes.ago, model: "claude-opus-4-8", tokens_in: 6800, tokens_out: 2400, cost: 0.09)
 
-    get alex_heartbeat_path(session_id: "sess-A")
+    get xan_heartbeat_path(session_id: "sess-A")
 
     assert_response :success
     assert_select "[data-test=event-tokens]", text: "9.5k/610"
@@ -211,7 +211,7 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
     action(event: ev, seq: 1, at: 2.minutes.ago, source_turn_uuid: "turn-A",
            tokens_in: 9400, tokens_out: 360, cost: 0.05)
 
-    get alex_heartbeat_path(session_id: "sess-A")
+    get xan_heartbeat_path(session_id: "sess-A")
 
     assert_response :success
     assert_select "tr[data-seq='0'] td.hb-turn-shared", false
@@ -226,7 +226,7 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
   test "each span row expands raw actions on row click" do
     ev = event(seq: 0, closed_at: 1.minute.ago, outcome_slug: "done")
 
-    get alex_heartbeat_path(session_id: "sess-A")
+    get xan_heartbeat_path(session_id: "sess-A")
 
     assert_response :success
     # the whole event row is the clickable affordance into its raw action drill-down
@@ -256,7 +256,7 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
     TaskEvent.create!(task_slug: "ship-it", from_stage: "building", to_stage: "submitted",
                       kind: "transition", occurred_at: 2.minutes.ago, metadata: { "backfilled" => true })
 
-    get alex_heartbeat_path(session_id: "sess-S")
+    get xan_heartbeat_path(session_id: "sess-S")
 
     assert_response :success
     assert_select "[data-test=event-status][data-stage=submitted] .badge", text: "Submitted"
@@ -271,7 +271,7 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
     TaskEvent.create!(task_slug: "review-it", to_stage: "reviewed", kind: "intent",
                       occurred_at: 2.minutes.ago, metadata: { "backfilled" => true })
 
-    get alex_heartbeat_path(session_id: "sess-I")
+    get xan_heartbeat_path(session_id: "sess-I")
 
     assert_response :success
     assert_select "[data-test=event-status]", text: "done"
@@ -295,7 +295,7 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
       selects << sql if sql =~ /SELECT/i && sql =~ /FROM ["'`]?task_events/i && sql !~ /SCHEMA/i
     end
     ActiveSupport::Notifications.subscribed(counter, "sql.active_record") do
-      get alex_heartbeat_path(session_id: "sess-N")
+      get xan_heartbeat_path(session_id: "sess-N")
     end
 
     assert_response :success
@@ -312,13 +312,13 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
     # write, so authenticate first (grade WRITES are gated; see HeartbeatGradeAuthTest)
     log_in_as(users(:alex))
     post heartbeat_activity_grade_path(ev),
-         params: { grader: "alex", disposition: "good", slug: "clean span with a sharp outcome" }
+         params: { grader: "xan", disposition: "good", slug: "clean span with a sharp outcome" }
     assert_response :success
 
-    get alex_heartbeat_path(session_id: "sess-A")
+    get xan_heartbeat_path(session_id: "sess-A")
 
     assert_response :success
-    assert_select "tbody[data-test=heartbeat-event][data-alex-graded=true]"
+    assert_select "tbody[data-test=heartbeat-event][data-xan-graded=true]"
     assert_match "clean span with a sharp outcome", response.body
   end
 end

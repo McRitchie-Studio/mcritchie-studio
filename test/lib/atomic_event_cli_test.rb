@@ -573,6 +573,30 @@ class AgentActivityCliTest < Minitest::Test
     end
   end
 
+  # [integration] `heartbeat alex` is the seat's RETIRED spelling (renamed `xan`
+  # 2026-09-24): the sticky is written canonical, the CLI says so, and a marker a
+  # pre-rename session already holds under `alex` is read as `xan` on the way out.
+  def test_integration_heartbeat_alex_attributes_to_xan_through_the_alias
+    Dir.mktmpdir do |proj|
+      write_session_marker(proj, SESSION, "mascot" => "shellder")
+      out, _err, status = capture_cli(%W[heartbeat alex --session #{SESSION}], proj: proj)
+      assert_equal 0, status.exitstatus
+      assert_match(/`alex` is that seat's retired slug — attributing to `xan`/, out)
+      assert_equal "xan\n", File.read(File.join(proj, ".agents", "sessions", "#{SESSION}.acting-agent")),
+                   "the marker is written canonical, never the retired slug"
+
+      requests = run_cli(%W[start --session #{SESSION} --category Explore --reason orient], proj: proj)
+      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/agent_activities" }
+      assert_equal "xan", JSON.parse(open[:body])["agent"], "a bare start under the alias attributes to xan"
+
+      # A marker left behind by a session that predates the rename.
+      File.write(File.join(proj, ".agents", "sessions", "#{SESSION}.acting-agent"), "alex\n")
+      requests = run_cli(%W[start --session #{SESSION} --category Explore --reason again], proj: proj)
+      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/agent_activities" }
+      assert_equal "xan", JSON.parse(open[:body])["agent"], "a stale alex marker still reaches the seat"
+    end
+  end
+
   def test_integration_explicit_agent_overrides_the_sticky
     Dir.mktmpdir do |proj|
       write_session_marker(proj, SESSION, "mascot" => "shellder")

@@ -1,11 +1,11 @@
-<%# One grade editor inside the drawer — Alex's grade, or the McRitchie audit of it
+<%# One grade editor inside the drawer — Xan's grade, or the McRitchie audit of it
     (same shape). Posts to #grade (grader + surface=drawer); the response turbo_stream
     updates the inline table cell, the stat tallies, and re-renders this drawer. The
     nested x-data holds the live word count `n` and the toggled disposition `disp`;
     wordCount() resolves up to the section's heartbeatDrawer() root. The Alpine-bound
     fields are raw inputs (precise control over @input / :value); form_with supplies
     the CSRF token. Locals: action, grader, who, role_label, grade (ActionGrade | nil),
-    save_label, allow_bank (Alex only — banking curates Alex's grade into the Bank). %>
+    save_label, allow_bank (Xan only — banking curates Xan's grade into the Bank). %>
 <% n0 = heartbeat_word_count(grade&.slug) %>
 <%= form_with url: heartbeat_grade_path(action), method: :post, class: "hb-fbblock",
       data: { turbo: true, turbo_frame: "_top" } do %>

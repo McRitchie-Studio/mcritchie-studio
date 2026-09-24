@@ -366,7 +366,7 @@ Report in the house two layers, then the in-flight roster:
   pivot target.
 - [`work-backlog.md`](work-backlog.md) — the casual sibling: your own tasks only,
   two-to-three wide, no mandatory groom.
-- [`../agents/alex/sops/clean-up.md`](../agents/alex/sops/clean-up.md) — when the
+- [`../agents/xan/sops/clean-up.md`](../agents/xan/sops/clean-up.md) — when the
   goal is a board at ZERO rather than throughput (ship-authority gated).
 - [`zap-protocol.md`](zap-protocol.md) — a fix too small to earn a task.
 - [`worktrees.md`](worktrees.md) — desks, ports, and the shared-scratchpad rule.

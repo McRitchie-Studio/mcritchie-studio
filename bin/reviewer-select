@@ -26,7 +26,7 @@
 #
 # It loads the Rails app and calls `ReviewerSelector` for the task. The PRIMARY is
 # always Carl; the LIGHT is a domain-fit pick from the specialist pool {shannon=UI
-# · jasper=Web3 · steffon=DevOps/Platform · alex=Documentation}, scored by the
+# · jasper=Web3 · steffon=DevOps/Platform · xan=Documentation}, scored by the
 # task's shape + repositories + risk tags vs each soul's Agent.metadata["domains"]
 # with a LOGGED, SEEDED-PER-TASK tiebreak (reproducible — not process-random). The
 # QA owner (avi by default — after the 2026-07-22 reslot he runs qa-release + the QA
@@ -72,7 +72,7 @@
 # An UNRECOGNISED soul cannot lift any of that. Every slug is checked against the
 # roster (Task.soul?), not merely a lowercase-word shape: `--builder stefon` names
 # nobody, where it once passed as a known builder who excluded no one. A PARTIAL
-# typo is the sharp case — `--builder steffon,alexx` yields a non-empty set, so the
+# typo is the sharp case — `--builder steffon,xanx` yields a non-empty set, so the
 # authors would read as KNOWN while the soul you meant to exclude never registered.
 # That refuses too (state 4), rather than honoring the half it understood.
 #
@@ -103,7 +103,7 @@
 #   bin/reviewer-select <task-slug> --json          # machine-readable decision
 #   bin/reviewer-select <task-slug> --qa-owner carl # exclude a different QA owner
 #   bin/reviewer-select <task-slug> --builder carl        # override the recorded author set
-#   bin/reviewer-select <task-slug> --builder steffon,alex # a task with TWO authors
+#   bin/reviewer-select <task-slug> --builder steffon,xan # a task with TWO authors
 #   bin/reviewer-select <task-slug> --builder none        # ASSERT no soul built it (lifts the refusal)
 #   bin/reviewer-select <task-slug> --busy a,b      # exclude busy souls (repeatable)
 #   bin/reviewer-select <task-slug> --busy-auto     # also exclude agents mid-build or mid-review elsewhere

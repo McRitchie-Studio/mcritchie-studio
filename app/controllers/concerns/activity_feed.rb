@@ -2,7 +2,7 @@
 # that turn a page of AgentActivity / AgentAction rows into the name / mascot / grade
 # maps the tables render, each as ONE query so the views never N+1. Extracted from
 # HeartbeatController so the reimagined /agents/activities page (AgentsController#activities)
-# reuses the exact same feed queries the /alex/heartbeat surface built, instead of
+# reuses the exact same feed queries the /xan/heartbeat surface built, instead of
 # forking a second copy. Pure reads — nothing here mutates a record.
 module ActivityFeed
   extend ActiveSupport::Concern

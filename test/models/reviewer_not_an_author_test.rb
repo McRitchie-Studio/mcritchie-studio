@@ -287,7 +287,7 @@ class ReviewerNotAnAuthorTest < ActiveSupport::TestCase
     block_for_rework!(task)
     heartbeat_lease!(task, session: REVIEWER_SESSION)
 
-    Current.task_event_actor = "alex"
+    Current.task_event_actor = "xan"
     devops = task.reload.devops
     task.update!(stage: "building",
                  metadata: task.metadata.merge(
@@ -296,7 +296,7 @@ class ReviewerNotAnAuthorTest < ActiveSupport::TestCase
                  ))
     Current.reset
 
-    assert_equal %w[shannon alex], authors(task).sort_by { |s| %w[shannon alex].index(s) },
+    assert_equal %w[shannon xan], authors(task).sort_by { |s| %w[shannon xan].index(s) },
                  "the soul who finished the rework joins the set"
     assert_nil unattributed(task)
   end
