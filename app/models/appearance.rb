@@ -80,7 +80,13 @@ class Appearance < ApplicationRecord
   # A retired look in that colorway is not revived; a fresh one is filed beside
   # it, and the partial index (`where retired_at IS NULL`) leaves the old name
   # free. Nothing in the app retires a look yet — this is the behaviour that
-  # will be right when something does.
+  # will be right when something does. Whoever builds that inherits one more
+  # thing, so do not read the sentence above as "the ground has been checked":
+  # retiring a look does NOT release the artifacts filed under it, because
+  # ArtifactSubject#effective_appearance reads the association rather than
+  # `live`. The row keeps naming the retired look while the plan moves on to a
+  # surviving one, and the artifact goes unfindable — the same write/read skew
+  # this method exists to close, reached through a different door.
   #
   # Returns nil when nothing names a colorway. Nothing is filed, and the nil
   # write is still correct — not because the person has no looks (they may: the
