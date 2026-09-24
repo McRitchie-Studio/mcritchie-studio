@@ -1155,9 +1155,9 @@ def review_branch(devops, slug)
 end
 
 # The tree hash the REVIEW gate-zero grades the `[control@<fp>]` stamp against —
-# the TASK's tree, not the reviewer's cwd working tree. Reviewers run --gate-role
-# review from the PRIMARY checkout (on release/main by SOP), so fingerprinting the
-# working tree there reads a totally different tree and the stamp false-reads STALE
+# the TASK's tree, not the reviewer's cwd: reviewers run --gate-role review from
+# the PRIMARY checkout (on release/main by SOP), so fingerprinting the working tree
+# there reads a totally different tree and the stamp false-reads STALE
 # (the bug the cert lane hit first, from both sides, before the cert lane retired).
 # A git tree hash is content-addressed, so the branch's committed ^{tree} equals the
 # working-tree fingerprint the builder stamped before pushing. Prefer

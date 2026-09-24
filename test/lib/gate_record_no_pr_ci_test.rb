@@ -46,7 +46,7 @@
 # (bin/dor-check#ci_gate_result and bin/dor-check#exempt_ci_result), so a nil persists `"result":null`, and `nil.to_s` is
 # "" — which falls to the gates card's ✓ DEFAULT, i.e. the omission route's failure mode
 # IS the inversion trap; (2) an absent ci row already MEANS something else — `--gate
-# build` writes none (bin/dor-check:3185#"CI-status gate (merge gate only)"); (3) omitting
+# build` writes none (bin/dor-check:2568#"CI-status gate (merge gate only)"); (3) omitting
 # would make the fleet's most common gate run indistinguishable from a build gate and from
 # a run that aborted early.
 #

@@ -616,10 +616,16 @@ class DorCheckExemptCiTest < Minitest::Test
 
         certified, cert_code = refusal(path, ci: state, pr_files: pr_files, receipts: FULL_CERT_RECEIPTS)
         assert_equal 1, cert_code, "#{label}: a recorded full cert must NOT advance it:\n#{certified}"
-        assert_equal refused, certified,
+        # Byte-identical MINUS the suggestions: the base-movement audit names the per-run
+        # tmpdir it could not read a ref in, so two runs differ there by construction.
+        assert_equal verdict_lines(refused), verdict_lines(certified),
                      "#{label} says a cert does not stand in — so adding one must change NOTHING, byte for byte"
       end
     end
+  end
+
+  def verdict_lines(out)
+    out.lines.reject { |l| l.include?("ⓘ suggestion:") }.join
   end
 
   # THE CONTROL FOR THE VARIANT ABOVE: prove the unreadable-PR input actually reaches
