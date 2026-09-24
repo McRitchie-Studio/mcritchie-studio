@@ -35,7 +35,12 @@ class PeopleController < ApplicationController
   end
 
   # Creating a person's FIRST look also makes it their default — the model does
-  # that itself, so a person can never end up with looks and no default.
+  # that itself (Appearance#become_default_if_first), so this action never has
+  # to think about it. It is NOT the only writer: attaching an image at a
+  # content's inspection gate files a look too, and stamps the default the same
+  # way. A look that goes away releases the slot and a merge re-resolves it on
+  # the survivor, so "looks but no default" is an invariant the model holds
+  # rather than a state these two paths merely happen to avoid.
   def create_appearance
     appearance = @person.appearances.new(appearance_params)
     rescue_and_log(target: @person) do
@@ -205,8 +210,98 @@ class PeopleController < ApplicationController
     keep.update!(athlete: true) if source.athlete? && !keep.athlete?
     keep.update!(coach: true) if source.coach? && !keep.coach?
 
-    # 7. Delete merged person
+    # 7. Move the source's LOOKS and ARTIFACT CAST to the survivor
+    relocate_looks_and_cast!(keep, source)
+
+    # 8. Delete merged person
     source.destroy!
+  end
+
+  # MERGING TWO PEOPLE MERGES THEIR PICTURES TOO.
+  #
+  # Without this, the destroy above cascades through
+  # `Person has_many :appearances, dependent: :destroy` and
+  # `has_many :artifact_subjects, dependent: :destroy`, and the source's looks
+  # and cast rows are DELETED rather than inherited. Measured on a throwaway
+  # transaction: a pair artifact went from two subjects to one, a character
+  # sheet was left with an empty cast label, and the pair's reuse key collapsed
+  # to a ONE-PERSON key — so it would match solo lookups it should never match
+  # and never again match the pair it actually depicts. Both silent.
+  #
+  # Both relocations can COLLIDE, and neither collision is a style question:
+  # each is a unique index that raises and takes the whole merge down with it.
+  def relocate_looks_and_cast!(keep, source)
+    relocate_cast!(keep, source)
+    relocate_looks!(keep, source)
+
+    # The survivor may have just inherited their FIRST look. Relocation is an
+    # UPDATE and Appearance#become_default_if_first is an after_CREATE, so
+    # nothing on this path stamps the pointer — measured before the fix: a
+    # survivor holding one live look and a nil default, which is precisely the
+    # state every read then has to special-case.
+    keep.reload.resolve_default_appearance!
+
+    # Drop the cached collections so the destroy that follows cannot cascade
+    # into a look or a subject we just handed to the survivor.
+    source.association(:appearances).reset
+    source.association(:artifact_subjects).reset
+  end
+
+  # ORDER IS NOT LOAD-BEARING between this and the look pass, and an earlier
+  # draft of this comment claimed it was. It does not matter because the look
+  # pass re-points subjects by APPEARANCE, not by person, so it reaches the
+  # source's cast rows whether or not they have moved yet. Measured: swapping
+  # the two calls changes no outcome in the suite.
+  #
+  # `index_artifact_subjects_on_artifact_slug_and_person_slug` is unique, so an
+  # artifact casting BOTH people cannot take the source's row. After the merge
+  # that image depicts one person twice — a cast that never existed — so retire
+  # it rather than quietly halving it: left live, the row stays APPROVED while
+  # describing a cast its own image does not show.
+  #
+  # RETIRE IT BECAUSE IT IS WRONG, NOT BECAUSE IT IS REACHABLE. An earlier draft
+  # of this comment claimed a halved `pair` artifact MATCHES a one-person pair
+  # lookup. Measured in review: it does not, by two independent guards.
+  # `Content::ArtifactPlan#pair_slot` opens `return nil if cast.length < 2`, so
+  # a one-person pair lookup is never built — and it is the only caller that
+  # names `kind: "pair"`. `Artifact.matching` then filters on `kind`, so a solo
+  # character-sheet lookup cannot reach a `pair` row either. The halved row is
+  # INERT. Do not weaken this retire on the strength of that; the reason above
+  # stands on its own.
+  def relocate_cast!(keep, source)
+    source.artifact_subjects.to_a.each do |subject|
+      if ArtifactSubject.exists?(artifact_slug: subject.artifact_slug, person_slug: keep.slug)
+        artifact = Artifact.find_by(slug: subject.artifact_slug)
+        subject.destroy!
+        artifact.retire! if artifact && !artifact.retired?
+      else
+        subject.update!(person_slug: keep.slug)
+      end
+    end
+  end
+
+  # `index_appearances_live_per_person` is unique on (person_slug, descriptor)
+  # among LIVE looks, so a look whose descriptor the survivor already uses
+  # cannot simply move — it raises RecordNotUnique and kills the merge.
+  #
+  # Re-point its subjects at the survivor's twin and drop it. Measured against
+  # the alternatives on one probe across three trees: retiring-and-moving it,
+  # or moving it under a suffixed name, both leave the artifact keyed to a look
+  # no lookup will ever ask for again, so an approved image of the right person
+  # in the right outfit goes permanently invisible to Artifact.matching.
+  # Re-pointing is the only one of the three where the survivor's own look
+  # finds the image — and it is what a merge MEANS: after it, "Joseph in a
+  # jersey" simply is "Joe in a jersey".
+  def relocate_looks!(keep, source)
+    source.appearances.to_a.each do |look|
+      twin = look.retired? ? nil : keep.appearances.live.find_by(descriptor: look.descriptor)
+      if twin
+        ArtifactSubject.where(appearance_slug: look.slug).update_all(appearance_slug: twin.slug)
+        look.destroy!
+      else
+        look.update!(person_slug: keep.slug)
+      end
+    end
   end
 
   def find_duplicate_groups

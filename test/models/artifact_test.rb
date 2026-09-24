@@ -94,11 +94,157 @@ class ArtifactTest < ActiveSupport::TestCase
     end
   end
 
+  # --- the reuse key's two meanings of nil ------------------------------------
+  #
+  # `nil` MEANS TWO DIFFERENT THINGS ON THE TWO SIDES OF THIS COMPARISON, and
+  # both render as the same empty string after the `@`.
+  #
+  #   On the ARTIFACT side, `ArtifactSubject#effective_appearance` is nil when no
+  #   look was ever recorded for that subject — we do not know what they are
+  #   wearing in the picture.
+  #   On the REQUEST side, `Content::ArtifactPlan#appearance_for` is nil for a
+  #   NAMED colorway when the person has no live look in it — nothing can
+  #   satisfy this request yet.
+  #
+  # "we do not know" and "nothing satisfies it" are not the same claim, and
+  # comparing them as equal makes the gate say REUSE over an artifact whose
+  # jersey nobody has recorded. Reachable now, not in theory: zero appearances
+  # is every person's state until their first look is filed.
+  test "a colorway request never matches a subject whose look was never recorded" do
+    lookless = Person.create!(first_name: "Look", last_name: "Less", athlete: true)
+    artifact_for([[lookless, nil]], kind: "character_sheet")
+
+    assert_nil Artifact.matching([[lookless.slug, nil]], kind: "character_sheet", colorway: "black"),
+               "the request named a colorway and resolved to no look; an artifact whose look was " \
+               "never recorded cannot be known to satisfy it, and calling it a match is how a " \
+               "wrong-jersey video ships"
+  end
+
+  # ONE UNRESOLVED SUBJECT IS ENOUGH. A pair where the request resolves one
+  # person's black jersey and not the other's is still a request nothing on file
+  # is known to satisfy.
+  test "a colorway request is refused when any one subject's look is unresolved" do
+    lookless = Person.create!(first_name: "Look", last_name: "Less", athlete: true)
+    artifact_for([[@chase, @cb], [lookless, nil]], kind: "pair")
+
+    assert_nil Artifact.matching([[@chase.slug, @cb.slug], [lookless.slug, nil]],
+                                 kind: "pair", colorway: "black")
+  end
+
+  # AN EMPTY SLUG IS THE SAME UNRESOLVED LOOK. `matching` is a public entry point
+  # and its `pairs` are strings; a caller that hands back "" instead of nil means
+  # the identical thing, and both render as "<person>@". Without this case the
+  # refusal could be narrowed from #blank? to #nil? and no test would notice —
+  # a guard nothing can kill is decoration.
+  test "a colorway request is refused when a look resolves to a blank slug" do
+    lookless = Person.create!(first_name: "Look", last_name: "Less", athlete: true)
+    artifact_for([[lookless, nil]], kind: "character_sheet")
+
+    assert_nil Artifact.matching([[lookless.slug, ""]], kind: "character_sheet", colorway: "black")
+  end
+
+  # AND THE LEGITIMATE EMPTY MATCH SURVIVES. With NO colorway named there is
+  # nothing to contradict: a request that resolves to no look and an artifact
+  # with no look recorded are the same nothing, and refusing that would make the
+  # gate offer to regenerate an image it is already holding.
+  test "with no colorway named a lookless request still matches a lookless artifact" do
+    lookless = Person.create!(first_name: "Look", last_name: "Less", athlete: true)
+    artifact_for([[lookless, nil]], kind: "character_sheet")
+
+    assert Artifact.matching([[lookless.slug, nil]], kind: "character_sheet"),
+           "no colorway was asked for, so there is nothing for the artifact to contradict"
+  end
+
+  # A RESOLVED COLORWAY REQUEST IS UNTOUCHED — the regression that matters. A
+  # refusal that also blocked real reuse would cost a regeneration every week.
+  test "a colorway request still matches when every look resolves" do
+    artifact_for([[@chase, @cb]], kind: "character_sheet")
+
+    assert Artifact.matching([[@chase.slug, @cb.slug]], kind: "character_sheet", colorway: "black")
+  end
+
   test "a person reads back every artifact they appear in, shared ones included" do
     artifact_for([[@burrow, @bw]], kind: "character_sheet")
     artifact_for([[@burrow, @bw], [@chase, @cb]], kind: "pair")
 
     count = Artifact.joins(:subjects).where(artifact_subjects: { person_slug: @burrow.slug }).distinct.count
     assert_equal 2, count
+  end
+
+  # --- an artifact whose cast goes away -----------------------------------
+  #
+  # `Person has_many :artifact_subjects, dependent: :destroy`, so destroying a
+  # person takes their cast rows with them and a solo character sheet outlives
+  # the only person in it. It stays `live`, its cast label renders empty, and
+  # its reuse key is the empty string — an image of NOBODY, still on offer.
+
+  test "an artifact that loses its last subject is retired" do
+    a = artifact_for([[@carrey, @ace]], kind: "character_sheet")
+    assert_not a.retired?, "the control — it must be live before the cast goes"
+    assert_equal 1, a.subjects.count, "the control"
+
+    @carrey.destroy!
+
+    a.reload
+    assert_equal 0, a.subjects.count
+    assert a.retired?, "an artifact depicting nobody must not stay on offer"
+    assert_nil Artifact.live.find_by(slug: a.slug)
+  end
+
+  # Losing ONE of several is not losing the cast. Retiring there would throw
+  # away a real image over a partial change.
+  test "an artifact that keeps a subject is left live" do
+    a = artifact_for([[@burrow, @bw], [@chase, @cb]], kind: "pair")
+    assert_not a.retired?, "the control"
+
+    @chase.destroy!
+
+    a.reload
+    assert_equal 1, a.subjects.count
+    assert_not a.retired?
+  end
+
+  # The retire hook must not fire while the artifact ITSELF is being destroyed.
+  # Its subjects go first, so the last one finds an empty cast and would retire
+  # the very row on its way out. Nothing RAISES if it does — Rails will happily
+  # run that UPDATE inside the destroy — which is exactly why this has to be
+  # measured at the SQL rather than asserted at the outcome.
+  test "destroying an artifact issues no retire write on the way out" do
+    a = artifact_for([[@burrow, @bw]], kind: "character_sheet")
+    slug = a.slug
+    writes = []
+    sub = ActiveSupport::Notifications.subscribe("sql.active_record") do |*, payload|
+      writes << payload[:sql] if payload[:sql].to_s.match?(/\AUPDATE "artifacts"/i)
+    end
+
+    begin
+      assert_nothing_raised { a.destroy! }
+    ensure
+      ActiveSupport::Notifications.unsubscribe(sub)
+    end
+
+    assert_empty writes, "the artifact is going away; retiring it first is a wasted write on a doomed row"
+    assert_nil Artifact.find_by(slug: slug)
+    assert_equal 0, ArtifactSubject.where(artifact_slug: slug).count
+  end
+
+  # The control for the test above: the same subscriber DOES see a write when
+  # the artifact is meant to be retired, so an empty `writes` proves the guard
+  # rather than proving the subscriber never fires.
+  test "the retire write is visible to the same probe when it should happen" do
+    a = artifact_for([[@carrey, @ace]], kind: "character_sheet")
+    writes = []
+    sub = ActiveSupport::Notifications.subscribe("sql.active_record") do |*, payload|
+      writes << payload[:sql] if payload[:sql].to_s.match?(/\AUPDATE "artifacts"/i)
+    end
+
+    begin
+      @carrey.destroy!
+    ensure
+      ActiveSupport::Notifications.unsubscribe(sub)
+    end
+
+    assert_not_empty writes, "losing the last subject must retire the artifact"
+    assert a.reload.retired?
   end
 end
