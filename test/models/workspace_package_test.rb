@@ -32,6 +32,7 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     assert_match(/1 domain/, hosted.value_for(:basic))
     assert_match(/1 domain/, hosted.value_for(:pro))
     assert_match(/database/, hosted.value_for(:pro))
+    assert_equal "website-launch", hosted.sop, "hosting is delivered by website-launch, not just the domain purchase"
   end
 
   test "an omitted package value means not included" do

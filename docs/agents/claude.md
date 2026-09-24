@@ -15,7 +15,7 @@ SOP or heartbeat act such as `pr-review`, `qa-release`, `production-deploy`,
 `content-build`,
 `chrome-profiles`, `credential-filing`, `credential-rotation`,
 `workspace-provision`, `workspace-launch`, `domain-purchase`,
-`workspace-signup`, `domain-dns`,
+`workspace-signup`, `domain-dns`, `website-launch`,
 `clean-up`, `process-backlog`, `work-backlog`, `slack-capture`,
 `gmail-capture`, `credential-issues`, `form-fill`, `focus-session`, `arbitrate-block`, or `full-cycle`, resolve that phrase
 through the SOP registry, read the mapped SOP, then execute it. For example, `pr-review` means read

@@ -22,8 +22,8 @@ Workspace, DNS, agentic drafting access — and walks Mr. McRitchie through ever
 step that needs him. It runs only when he names it (the `/deployments` Workflows
 card carries a chip for it). Master SOP: [`workspace-launch`](sops/workspace-launch.md);
 its steps are the sub-SOPs [`domain-purchase`](sops/domain-purchase.md),
-[`workspace-signup`](sops/workspace-signup.md), [`domain-dns`](sops/domain-dns.md)
-and [`workspace-provision`](sops/workspace-provision.md).
+[`workspace-signup`](sops/workspace-signup.md), [`domain-dns`](sops/domain-dns.md),
+[`website-launch`](sops/website-launch.md) and [`workspace-provision`](sops/workspace-provision.md).
 
 Use this file when Mr. McRitchie invokes `Steffon Heartbeat`. When he invokes a
 single Steffon act directly, read that act's SOP file.
