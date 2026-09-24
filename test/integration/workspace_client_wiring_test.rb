@@ -148,6 +148,39 @@ class WorkspaceClientWiringTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "a threaded reply draft crosses the real gem: bold link, threadId, no send path" do
+    account = WorkspaceAccount.create!(domain: "mason.test")
+    account.mark_verified!
+    account.workspace_mailboxes.create!(address: "alex@mason.test").mark_verified!
+
+    headers = [ [ "From", "Billing <billing@vendor.test>" ], [ "Subject", "Payment failed" ],
+                [ "Message-ID", "<m2@vendor.test>" ] ].map { |n, v| { "name" => n, "value" => v } }
+    transport = Transport.new
+      .reply("/gmail/v1/users/me/messages", { "messages" => [ { "id" => "m2", "threadId" => "t-7" } ] })
+      .reply("/gmail/v1/users/me/threads/t-7",
+             { "id" => "t-7", "messages" => [ { "id" => "m2", "threadId" => "t-7", "payload" => { "headers" => headers } } ] })
+      .reply("/gmail/v1/users/me/drafts", { "id" => "r-5", "message" => { "id" => "msg-5", "threadId" => "t-7" } })
+
+    result = Workspace::Drafter.new(mailbox: "alex@mason.test", drafted_by: "alex", client: gmail(transport))
+                               .call(markdown: "Retrying with **[Claude](https://claude.ai)** now.",
+                                     reply_query: "from:vendor.test subject:payment")
+
+    thread_query = transport.query_for("/threads/t-7")
+    assert_equal "metadata", thread_query["format"], "a reply reads headers only, not bodies"
+
+    post = transport.requests.find { |r| r[:method] == :post }
+    assert_equal "/gmail/v1/users/me/drafts", post[:path]
+    wire = JSON.parse(post[:body].to_s)
+    assert_equal "t-7", wire.dig("message", "threadId"), "the draft must land INSIDE the named thread"
+    mail = Mail.new(Base64.urlsafe_decode64(wire.dig("message", "raw")))
+    assert_equal "Re: Payment failed", mail.subject
+    assert_includes mail.html_part.decoded, '<strong><a href="https://claude.ai">Claude</a></strong>'
+
+    assert_equal "msg-5", result.log.gmail_message_id
+    transport.requests.each { |r| refute_match %r{/send\z}, r[:path] }
+    assert_equal [ :get, :post ], transport.requests.map { |r| r[:method] }.uniq.sort
+  end
+
   test "files_export asks for the export endpoint with the target type" do
     transport = Transport.new.reply("/drive/v3/files/doc1/export", "PDF-BYTES")
 
