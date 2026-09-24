@@ -11,7 +11,10 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='package-card'][data-package='pro']" do
       assert_select "p", text: /Everything in Basic, plus:/
     end
-    assert_select "[data-test='package-price']", text: /Pricing coming soon/, count: 2
+    assert_select "[data-test='package-card'][data-package='basic'] [data-test='price-monthly']", text: %r{\$100\s*/month}
+    assert_select "[data-test='package-card'][data-package='pro'] [data-test='price-monthly']", text: %r{\$500\s*/month}
+    assert_select "[data-test='package-card'][data-package='pro'] [data-test='price-annual']", text: /\$450.*\$5,400 billed annually/m
+    assert_select "[data-test='billing-toggle']", text: /save 10%/
     assert_select "[data-test='package-item'][data-status='planned']", text: /Coming soon/
     # Branding: Google Workspace carries Google's logo and its seat count.
     assert_select "[data-test='package-item']", text: /Google Workspace/ do
@@ -19,6 +22,11 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
       assert_select "[data-test='package-item-detail']", text: "2 users"
     end
     assert_select "[data-test='package-item-detail']", text: "1 site"
+    assert_select "[data-test='package-card'][data-package='pro'] [data-test='package-item-detail']", text: "10 users"
+    assert_select "[data-test='package-item']", text: /Social media outreach/ do
+      assert_select "svg[aria-label='TikTok']"
+      assert_select "svg[aria-label='Instagram']"
+    end
   end
 
   test "the SOP map is hidden from customers" do

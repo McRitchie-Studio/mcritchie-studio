@@ -10,6 +10,19 @@
     </p>
   </header>
 
+  <% discount = WorkspacePackage.annual_discount_percent %>
+  <div x-data="{ annual: false }">
+  <% if discount.positive? %>
+    <div class="flex justify-center mb-6" data-test="billing-toggle">
+      <div class="inline-flex rounded-full border border-subtle bg-surface p-1 text-sm font-semibold">
+        <button type="button" class="rounded-full px-4 py-1.5" :class="annual ? 'text-muted' : 'bg-primary text-white'" @click="annual = false">Monthly</button>
+        <button type="button" class="rounded-full px-4 py-1.5" :class="annual ? 'bg-primary text-white' : 'text-muted'" @click="annual = true">
+          Annual <span class="ml-1 text-xs" :class="annual ? 'text-white' : 'text-primary'">save <%= discount %>%</span>
+        </button>
+      </div>
+    </div>
+  <% end %>
+
   <div class="grid gap-6 md:grid-cols-2">
     <% @packages.each do |package| %>
       <% featured = package.includes.present? %>
@@ -22,9 +35,24 @@
           <% end %>
         </div>
         <p class="text-body mb-4"><%= package.tagline %></p>
-        <p class="text-lg font-semibold text-heading mb-6" data-test="package-price">
-          <%= package.price || "Pricing coming soon" %>
-        </p>
+        <div class="mb-6" data-test="package-price">
+          <% if package.priced? %>
+            <div x-show="!annual" data-test="price-monthly">
+              <span class="text-4xl font-bold text-heading"><%= number_to_currency(package.price_monthly, precision: 0) %></span>
+              <span class="text-muted">/month</span>
+              <% if discount.positive? %>
+                <p class="text-xs text-muted mt-1">or <%= number_to_currency(package.annual_price, precision: 0) %>/year billed annually — save <%= discount %>%</p>
+              <% end %>
+            </div>
+            <div x-show="annual" style="display: none" data-test="price-annual">
+              <span class="text-4xl font-bold text-heading"><%= number_to_currency(package.annual_monthly_equivalent, precision: 0) %></span>
+              <span class="text-muted">/month</span>
+              <p class="text-xs text-muted mt-1"><%= number_to_currency(package.annual_price, precision: 0) %> billed annually</p>
+            </div>
+          <% else %>
+            <p class="text-lg font-semibold text-heading">Pricing coming soon</p>
+          <% end %>
+        </div>
 
         <% if package.included_package %>
           <p class="text-sm font-semibold text-heading mb-3">Everything in <%= package.included_package.name %>, plus:</p>
@@ -36,7 +64,10 @@
               <span class="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-alt text-lg <%= 'opacity-60' unless item.live? %>"
                     data-test="package-item-icon" aria-hidden="<%= item.logo? ? 'false' : 'true' %>">
                 <% if item.logo? %>
-                  <%= render "packages/logos/#{item.icon}" %>
+                  <% size = item.logos.size > 1 ? "h-4 w-4" : "h-5 w-5" %>
+                  <span class="flex items-center gap-0.5">
+                    <% item.logos.each do |logo| %><%= render "packages/logos/#{logo}", size: size %><% end %>
+                  </span>
                 <% else %>
                   <%= item.icon.presence || "✓" %>
                 <% end %>
@@ -58,6 +89,7 @@
         </ul>
       </article>
     <% end %>
+  </div>
   </div>
 
   <section class="mt-12" aria-labelledby="how-it-works">

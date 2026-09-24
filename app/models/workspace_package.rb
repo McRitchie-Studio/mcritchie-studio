@@ -11,11 +11,13 @@ class WorkspacePackage
 
   # Brand logos with a partial in app/views/packages/logos/. Any other `icon`
   # value is an emoji rendered as text.
-  LOGOS = %w[google].freeze
+  LOGOS = %w[google tiktok instagram].freeze
 
   Item = Struct.new(:name, :blurb, :sop, :section, :you_do, :status, :icon, :detail, :package_key,
                     keyword_init: true) do
-    def logo? = LOGOS.include?(icon)
+    # One logo key, or a list of them shown side by side.
+    def logos = Array(icon).select { |key| LOGOS.include?(key) }
+    def logo? = logos.any? && logos.size == Array(icon).size
 
     def live? = status == "live"
 
@@ -28,13 +30,14 @@ class WorkspacePackage
     end
   end
 
-  attr_reader :key, :name, :tagline, :price, :includes
+  attr_reader :key, :name, :tagline, :price_monthly, :includes
 
-  def initialize(attrs)
+  def initialize(attrs, annual_discount_percent: 0)
     @key = attrs.fetch("key")
     @name = attrs.fetch("name")
     @tagline = attrs["tagline"]
-    @price = attrs["price"].presence
+    @price_monthly = attrs["price_monthly"].presence
+    @annual_discount_percent = annual_discount_percent.to_i
     @includes = attrs["includes"].presence
     @own_items = Array(attrs["items"]).map do |item|
       Item.new(**item.slice(*Item.members.map(&:to_s)).symbolize_keys, package_key: @key)
@@ -42,8 +45,26 @@ class WorkspacePackage
   end
 
   def self.all
-    YAML.safe_load_file(CONFIG).fetch("packages").map { |attrs| new(attrs) }
+    config = YAML.safe_load_file(CONFIG)
+    discount = config.dig("billing", "annual_discount_percent")
+    config.fetch("packages").map { |attrs| new(attrs, annual_discount_percent: discount) }
   end
+
+  def self.annual_discount_percent
+    YAML.safe_load_file(CONFIG).dig("billing", "annual_discount_percent").to_i
+  end
+
+  def priced? = price_monthly.present?
+
+  # Billed annually: the discount applies to the whole year.
+  # $100/mo at 10% off is $1,080/yr, which reads as $90/mo.
+  def annual_price
+    return nil unless priced?
+
+    (price_monthly * 12 * (100 - @annual_discount_percent) / 100.0).round
+  end
+
+  def annual_monthly_equivalent = priced? ? (annual_price / 12.0).round(2) : nil
 
   def self.find(key) = all.find { |package| package.key == key.to_s }
 
@@ -59,10 +80,14 @@ class WorkspacePackage
   # Items this package adds on top of the one it includes.
   def own_items = @own_items
 
-  # Everything the package delivers, the included package's items first.
+  # Everything the package delivers, the included package's items first. An own
+  # item with the same name as an included one REPLACES it in place (an upgrade),
+  # so Pro lists Google Workspace once, at 10 users.
   def items
     base = includes ? self.class.find(includes)&.items.to_a : []
-    base + own_items
+    upgrades = own_items.index_by(&:name)
+    merged = base.map { |item| upgrades.delete(item.name) || item }
+    merged + own_items.select { |item| upgrades.key?(item.name) }
   end
 
   def included_package = includes && self.class.find(includes)

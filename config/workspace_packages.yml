@@ -3,8 +3,9 @@
 # page renders it, and Steffon's workspace-launch SOP runs a package's items in
 # order. Move an item between packages by moving its block; nothing else changes.
 #
-# Package contents are still being decided (2026-09-24). Prices are left blank on
-# purpose — the page says "Pricing coming soon" until a `price` is set.
+# Package contents are still being decided (2026-09-24). Prices set by
+# Mr. McRitchie 2026-09-24: Basic $100/mo, Pro $500/mo, 10% off billed annually.
+# A blank `price_monthly` renders "Pricing coming soon".
 #
 # Item keys:
 #   name      customer-facing label
@@ -16,11 +17,18 @@
 #   icon      an emoji, OR a brand logo key rendered from app/views/packages/logos/
 #             (google) — use a logo only where the customer gets that brand's product
 #   detail    optional quantity chip beside the name: "2 users", "1 site"
+#
+# An item in a package that `includes` another REPLACES the included item of the
+# same name (Pro's "Google Workspace · 10 users" replaces Basic's 2 users).
+#   icon may also be a LIST of logo keys, shown side by side (tiktok + instagram).
+billing:
+  annual_discount_percent: 10
+
 packages:
   - key: basic
     name: Basic
     tagline: Your company on its own domain, with an agent that drafts your email.
-    price:
+    price_monthly: 100
     items:
       - name: Your own domain
         icon: "🌐"
@@ -70,8 +78,15 @@ packages:
     name: Pro
     tagline: An agent that knows your business, not just your inbox.
     includes: basic
-    price:
+    price_monthly: 500
     items:
+      - name: Google Workspace
+        icon: google
+        detail: 10 users
+        blurb: Room for your whole team, up from 2 users in Basic.
+        sop: workspace-signup
+        you_do: Create the extra users
+        status: live
       - name: Knowledge base from your Drive
         icon: "📚"
         blurb: Your agent indexes the Drive folders you choose, so drafts use your real documents.
@@ -88,6 +103,12 @@ packages:
         icon: "🔄"
         blurb: Any leaked or aging secret rotated everywhere it is used, in one pass.
         sop: credential-rotation
+        status: live
+      - name: Social media outreach
+        icon: [tiktok, instagram]
+        blurb: Weekly TikTok and Instagram content, tested at volume and measured, not just posted.
+        sop: content-sprint
+        you_do: Approve the weekly plan
         status: live
       - name: Team drafting access
         icon: "👥"

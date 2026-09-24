@@ -11,7 +11,8 @@ class WorkspacePackageTest < ActiveSupport::TestCase
 
     assert_equal %w[basic pro], WorkspacePackage.all.map(&:key)
     assert_equal "basic", pro.includes
-    assert_equal basic.items.map(&:name), pro.items.first(basic.items.size).map(&:name)
+    assert_equal basic.items.map(&:name), pro.items.first(basic.items.size).map(&:name),
+      "Pro lists Basic's items first, in Basic's order"
     assert_operator pro.items.size, :>, basic.items.size
   end
 
@@ -47,9 +48,35 @@ class WorkspacePackageTest < ActiveSupport::TestCase
   test "every item has an icon, and a logo key has a partial to render" do
     WorkspacePackage.all.flat_map(&:own_items).each do |item|
       assert item.icon.present?, "#{item.name} has no icon"
-      next unless item.logo?
-
-      assert Rails.root.join("app/views/packages/logos/_#{item.icon}.html.erb").exist?, "no logo partial for #{item.icon}"
+      item.logos.each do |logo|
+        assert Rails.root.join("app/views/packages/logos/_#{logo}.html.erb").exist?, "no logo partial for #{logo}"
+      end
     end
+  end
+
+  test "an own item with an included item's name replaces it: Pro has ONE Google Workspace, at 10 users" do
+    pro_workspace = WorkspacePackage.find(:pro).items.select { |item| item.name == "Google Workspace" }
+    basic_workspace = WorkspacePackage.find(:basic).items.find { |item| item.name == "Google Workspace" }
+
+    assert_equal 1, pro_workspace.size
+    assert_equal "10 users", pro_workspace.first.detail
+    assert_equal "2 users", basic_workspace.detail
+  end
+
+  test "prices: $100 and $500 a month, 10% off billed annually" do
+    basic = WorkspacePackage.find(:basic)
+    pro = WorkspacePackage.find(:pro)
+
+    assert_equal 10, WorkspacePackage.annual_discount_percent
+    assert_equal [ 100, 1080, 90 ], [ basic.price_monthly, basic.annual_price, basic.annual_monthly_equivalent ]
+    assert_equal [ 500, 5400, 450 ], [ pro.price_monthly, pro.annual_price, pro.annual_monthly_equivalent ]
+  end
+
+  test "social media outreach shows both the TikTok and Instagram logos" do
+    social = WorkspacePackage.find(:pro).own_items.find { |item| item.name == "Social media outreach" }
+
+    assert_equal %w[tiktok instagram], social.logos
+    assert social.logo?
+    assert_equal "content-sprint", social.sop
   end
 end
