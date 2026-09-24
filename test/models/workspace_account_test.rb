@@ -178,4 +178,39 @@ class WorkspaceAccountTest < ActiveSupport::TestCase
     assert_equal "Google::Apis::ServerError: HTTP 503", account.last_check_error
     assert WorkspaceAccount.impersonatable?("team@mason.test")
   end
+
+  test "severed is FINAL: no check, reinstate or revoke can move it" do
+    account = WorkspaceAccount.create!(domain: "mason.test")
+    account.mark_verified!
+    account.sever!("acquired by another company")
+
+    assert_equal "severed", account.reload.status
+    assert account.shut?
+    refute WorkspaceAccount.impersonatable?("team@mason.test")
+    assert_raises(WorkspaceAccount::Revoked) { account.mark_verified! }
+    assert_raises(ArgumentError) { account.reinstate! }
+    assert_raises(WorkspaceAccount::Revoked) { account.revoke!("again") }
+
+    account.mark_unverified!("unauthorized_client")
+    assert_equal "severed", account.reload.status, "a failed check never downgrades severed to pending"
+    assert_match(/severed: acquired by another company/, account.notes)
+  end
+
+  test "severing needs a reason, because the notes are the only record" do
+    account = WorkspaceAccount.create!(domain: "mason.test")
+
+    assert_raises(ArgumentError) { account.sever!(" ") }
+    assert_equal "pending", account.reload.status
+  end
+
+  test "severing a workspace shuts every mailbox in it" do
+    account = WorkspaceAccount.create!(domain: "mason.test")
+    account.mark_verified!
+    account.workspace_mailboxes.create!(address: "alex@mason.test").mark_verified!
+    assert WorkspaceAccount.impersonatable?("alex@mason.test")
+
+    account.sever!("client left")
+
+    refute WorkspaceAccount.impersonatable?("alex@mason.test")
+  end
 end

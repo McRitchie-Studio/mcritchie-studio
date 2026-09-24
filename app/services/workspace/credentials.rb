@@ -124,7 +124,8 @@ module Workspace
         subject = normalize_subject(subject)
         unless WorkspaceAccount.impersonatable?(subject)
           raise UnregisteredSubject,
-                "refusing to impersonate #{subject}: it is not an ACTIVE workspace_account. " \
+                "refusing to impersonate #{subject}: it is not an ACTIVE workspace_account " \
+                "or an ACTIVE mailbox in one. " \
                 "Register the workspace, have its super-admin grant delegation, then run " \
                 "bin/rails 'workspace:check[<domain>]' to prove it."
         end
@@ -144,8 +145,8 @@ module Workspace
       # Returns [ok, error_slug_or_nil].
       def probe(subject)
         subject = normalize_subject(subject)
-        raise UnregisteredSubject, "#{subject} is not a registered workspace_account" unless
-          WorkspaceAccount.exists?(subject: subject)
+        raise UnregisteredSubject, "#{subject} is not a registered workspace_account or mailbox" unless
+          WorkspaceAccount.registered_address?(subject)
 
         # The rescue wraps ONLY the token fetch. Wrapping the whole method
         # swallowed the guard above and turned a refusal into a return value —

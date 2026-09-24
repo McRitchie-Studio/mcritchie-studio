@@ -94,8 +94,12 @@ module Workspace
     # The operator-facing link for a draft. The deliverable of every pipeline
     # that ends here is this URL and nothing else — a human opens it, reads it,
     # and decides.
-    def self.draft_url(draft_id)
-      "https://mail.google.com/mail/u/0/#drafts?compose=#{draft_id}"
+    #
+    # Pass `mailbox:` whenever it is known. `/u/0/` is whichever account the
+    # browser signed in FIRST, so with several mailboxes open it lands in the
+    # wrong one; `/u/<address>/` selects the mailbox the draft was written as.
+    def self.draft_url(id, mailbox: nil)
+      "https://mail.google.com/mail/u/#{mailbox.presence || 0}/#drafts?compose=#{id}"
     end
 
     private

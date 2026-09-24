@@ -32,8 +32,9 @@ remove.
   [`./credential-filing.md`](./credential-filing.md).
 - **It never impersonates a subject that is not on the allow-list.** Delegation
   cannot be narrowed at the grant — it authorizes *any* user in the domain and
-  the caller picks — so the boundary is the `workspace_accounts` table, not the
-  grant.
+  the caller picks — so the boundary is the `workspace_accounts` table (one
+  `team@` subject per domain) plus `workspace_mailboxes` (each further address
+  we may draft as), not the grant.
 - **It does not put client specifics in this repo.** `mcritchie-studio` is
   PUBLIC. Counterparty names, domains, and folder ids are database rows.
 
@@ -220,6 +221,49 @@ tombstones the half it did not reach.
 - If a credential changed hands, file it per
   [`./credential-filing.md`](./credential-filing.md).
 
+## 7. Drafting mailboxes — optional
+
+Drafting is how an agent writes an email *as* someone in the workspace — a
+reply or a first message — and leaves it in that person's Gmail **Drafts** for
+them to read and send. Nothing in this lane sends.
+
+Each address we may draft as is its own allow-list row, proven with its own
+token. The workspace's `team@` subject is not enough to draft as `alex@`.
+
+```bash
+bin/rails 'workspace:add_mailbox[<address>]'           # SIGNATURE='markdown' optional
+bin/rails 'workspace:check_mailbox[<address>]'         # proves it; flips a pending workspace active too
+bin/rails workspace:mailboxes                          # who is draftable, with draft counts
+bin/rails 'workspace:revoke_mailbox[<address>,<why>]'  # stop drafting as one address
+```
+
+`check_mailbox` succeeding also proves the workspace's grant (delegation is
+domain-wide), so a domain whose `team@` does not exist can still be brought
+active through the mailbox it is really for.
+
+Drafting itself, run from the operator's chat session:
+
+```bash
+# Read the ONE thread being answered. A query matching several threads is
+# refused before any of them is opened — narrow it and retry.
+MAILBOX=alex@<domain> QUERY='from:vendor.example subject:"payment failed" newer_than:14d' \
+  bin/rails workspace:thread
+
+# Write the draft. BODY is a markdown file: **[text](url)** is a bold link.
+MAILBOX=alex@<domain> BY=<who asked> BODY=draft.md \
+  REPLY_QUERY='<the same query>' bin/rails workspace:draft          # a reply, threaded
+MAILBOX=alex@<domain> BY=<who asked> BODY=draft.md \
+  TO=a@x.example SUBJECT='…' bin/rails workspace:draft              # a new message
+```
+
+It prints `Open: https://mail.google.com/mail/u/<mailbox>/#drafts?compose=…`.
+Every draft is logged in `mailbox_drafts` — who asked, which mailbox, which
+thread — but the body is never stored; it lives only in Gmail.
+
+These run where the key is: on production (`heroku run`), or on a desk that can
+read the 1Password item. A mailbox must be proven on the SAME database the
+draft runs against.
+
 ## Switching a workspace off — and back on
 
 ```bash
@@ -236,6 +280,27 @@ then a real token through `workspace:check`.
 not theirs. Ending the grant itself is the client's super-admin removing our
 Client ID from their delegation page — ask for it explicitly when a relationship
 ends, and record the date you asked.
+
+## Severing — ending a relationship for good
+
+`severed` is the acquisition / departure state, and unlike `revoked` it is
+**final**: nothing reinstates it. Because it cannot be taken back, the record
+says `severed` only after Google agrees the grant is gone. The order:
+
+1. **Revoke now** if drafting must stop before the client acts:
+   `bin/rails 'workspace:revoke[<domain>,<why>]'`.
+2. **Hand over their records** (Phase 4 adds `workspace:export`; until then,
+   export their `workspace_mailboxes` and `mailbox_drafts` rows by address).
+3. **The client's super-admin deletes our Client ID** from their delegation page.
+4. **Prove the cut:** `bin/rails 'workspace:check_severed[<domain>]'` must print
+   `CUT`. Only `unauthorized_client` counts; any other failure is
+   `INCONCLUSIVE`, because it says nothing about their console.
+5. **Sever:** `bin/rails 'workspace:sever[<domain>,<why>]'`. It re-runs the same
+   probe and refuses unless Google refuses us. Every mailbox in the workspace
+   is shut with it.
+
+Our service-account key is **not** rotated for a severance: the client never
+held it, so their deleting our Client ID is the whole revocation.
 
 ## Handling the credential — the rule that leaked a key
 
