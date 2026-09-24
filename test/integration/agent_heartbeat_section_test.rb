@@ -107,13 +107,16 @@ class AgentHeartbeatSectionTest < ActionDispatch::IntegrationTest
                  "down over a full bank (/tasks/sop-precondition-blocks-sharing).")
   end
 
-  test "Steffon's heartbeat soul renders the ship + sweep acts" do
+  test "Steffon's heartbeat soul renders the ship + sweep acts, plus the workspace launch" do
     get agent_path("steffon")
     assert_response :success
 
     assert_select "[data-test='agent-heartbeat-section'][data-agent='steffon']", count: 1
     assert_select "[data-test='heartbeat-name'][data-clip='Steffon Heartbeat']"
-    assert_select "[data-test='action']", count: 2
+    # workspace-launch is not a heartbeat act, but it rides Steffon's launcher so the
+    # operator can copy it; the heartbeat itself still runs only the first two.
+    assert_select "[data-test='action']", count: 3
+    assert_select "[data-test='action'][data-action='workspace-launch'][data-clip='workspace-launch']"
     assert_select "[data-test='action'][data-action='production-deploy'][data-clip='production-deploy']"
     assert_select "[data-test='action'][data-action='clean-infra'][data-clip='clean-infra']"
     assert_match "Ship a QA-ready release to production", response.body
