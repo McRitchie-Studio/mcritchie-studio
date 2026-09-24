@@ -10,7 +10,8 @@
 #   -> 1 changed file(s) -> 1 mapped test path(s)
 #   -> mapped  test/lib/dor_check_test.rb
 #
-# There are fifteen test/lib/dor_check_*_test.rb files. Fourteen were unreachable
+# There were fifteen test/lib/dor_check_*_test.rb files (fourteen since
+# /tasks/dor-reads-settled-ci-verdict retired five and added one). Fourteen were unreachable
 # from a diff touching only bin/dor-check, because the convention hop stopped at
 # the twin and the grep fallback fires only when the twin is ABSENT. Among the
 # fourteen is dor_check_exempt_ci_test.rb, which holds a self-checking registry
@@ -244,7 +245,9 @@ class FastCertFamilyTest < Minitest::Test
 
   # THE FALLBACK IS THE PRE-WIDENING SET — one twin per changed file, and the
   # co-changed file that pushed it over the cap gets its twin too. This is the shape
-  # measured live on this repo: bin/dor-check (15) + one more file = 16 = capped.
+  # measured live on this repo (2026-09-07): bin/dor-check (15) + one more file = 16 = capped.
+  # (Re-measured 2026-09-24: the family is 14, so it takes TWO co-changed files — see the
+  # real-repo test below, which pins this task's own diff.)
   def test_the_co_changed_file_that_tripped_the_cap_still_gets_its_twin
     files = {
       "bin/wide-tool" => "#!/usr/bin/env ruby\n",
@@ -398,14 +401,22 @@ class FastCertFamilyTest < Minitest::Test
   # Measured on this desk 2026-09-07:
   #   bin/dor-check alone                    → 15 mapped, at the cap  → ran 15
   #   bin/dor-check + bin/lib/ci_status.rb   → 16 mapped, over it     → ran 0 (PR #1236's shape)
+  # Re-measured 2026-09-24 (/tasks/dor-reads-settled-ci-verdict retired five of the
+  # family's tests and added one):
+  #   bin/dor-check alone                    → 14 mapped, inside the margin
+  #   + bin/lib/ci_status.rb                 → 15 mapped, AT the cap  → runs 15
+  #   + bin/lib/ci_status.rb + ci_gate.rb    → 24 mapped, over it     → runs its 2 twins
+  # The third file is that task's own diff — the gate, its verdict module and the
+  # status reader change together — so the live shape pinned here is a real one.
   def test_real_repo_a_capped_multi_file_diff_still_runs_the_dor_check_twin
-    changed = ["bin/dor-check", "bin/lib/ci_status.rb"]
+    changed = ["bin/dor-check", "bin/lib/ci_status.rb", "bin/lib/ci_gate.rb"]
     mapped = FastCert.select_tests(REPO_ROOT, changed)
     decision = FastCert.cap_decision(mapped, FastCert.mapping(REPO_ROOT, changed),
                                      twins: FastCert.convention_twins(REPO_ROOT, changed))
 
     assert decision[:capped],
-           "bin/dor-check maps to the cap exactly, so any co-changed mapped file exceeds it"
+           "bin/dor-check's family plus its two co-changed libs must exceed the cap of " \
+           "#{FastCert::DEFAULT_MAPPED_CAP} (mapped #{mapped.size}) — re-measure before editing this"
     executed = FastCert.executed_test_paths(mapped, [], decision)
     assert_includes executed, "test/lib/dor_check_test.rb",
                     "the file the whole gate depends on must keep a local mapped lane"

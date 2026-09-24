@@ -212,7 +212,11 @@ impossible by construction rather than by every repo remembering to ignore `tmp/
      **CAPPED at 15 files** after the spine dedupe — and `bin/dor-check`'s family
      was fifteen, which was the cap EXACTLY. (A family grows with its tool: the
      same family measures **18** at 2026-09-08, so `bin/dor-check` now exceeds
-     the cap on its own. Re-derive the number rather than reading it here.) Read
+     the cap on its own. Re-measured 2026-09-24, after `dor-reads-settled-ci-verdict`
+     retired five of the family's tests: **14** alone and **15** with
+     `bin/lib/ci_status.rb` — at the cap, not over it; that PR's own three-file diff,
+     adding `bin/lib/ci_gate.rb`, is 24. Re-derive the number rather than reading it
+     here.) Read
      those two numbers together —
      this doc printed them six lines apart without drawing the conclusion (the cap
      landed `96dcae17`, 2026-08-18; the family count `2b310c08`, 2026-09-06):
