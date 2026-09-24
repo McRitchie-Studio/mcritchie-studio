@@ -1,32 +1,50 @@
 require "test_helper"
 
-# [component] /packages — the public Basic vs Pro comparison, and the admin-only
-# SOP map beneath it.
+# [component] /packages — Basic and Pro as two swim lanes on one row grid, the
+# difference visible in the row, and the admin-only SOP map beneath.
 class PackagesControllerTest < ActionDispatch::IntegrationTest
-  test "anyone can see both packages without signing in" do
+  def lane(key) = "[data-test='package-card'][data-package='#{key}']"
+
+  test "anyone sees both lanes with prices, without signing in" do
     get packages_path
 
     assert_response :success
-    assert_select "[data-test='package-card'][data-package='basic']"
-    assert_select "[data-test='package-card'][data-package='pro']" do
-      assert_select "p", text: /Everything in Basic, plus:/
-    end
-    assert_select "[data-test='package-card'][data-package='basic'] [data-test='price-monthly']", text: %r{\$100\s*/month}
-    assert_select "[data-test='package-card'][data-package='pro'] [data-test='price-monthly']", text: %r{\$500\s*/month}
-    assert_select "[data-test='package-card'][data-package='pro'] [data-test='price-annual']", text: /\$450.*\$5,400 billed annually/m
+    assert_select "#{lane('basic')} [data-test='price-monthly']", text: %r{\$100\s*/month}
+    assert_select "#{lane('pro')} [data-test='price-monthly']", text: %r{\$500\s*/month}
+    assert_select "#{lane('pro')} [data-test='price-annual']", text: /\$450.*\$5,400 billed annually/m
     assert_select "[data-test='billing-toggle']", text: /save 10%/
-    assert_select "[data-test='package-item'][data-status='planned']", text: /Coming soon/
-    # Branding: Google Workspace carries Google's logo and its seat count.
-    assert_select "[data-test='package-item']", text: /Google Workspace/ do
-      assert_select "svg[aria-label='Google']"
-      assert_select "[data-test='package-item-detail']", text: "2 users"
+    assert_no_match(/Everything in Basic, plus/, response.body, "the lanes compare row by row instead")
+  end
+
+  test "both lanes carry the SAME rows in the same order, so they line up" do
+    get packages_path
+
+    rows = %w[basic pro].map do |key|
+      css_select("#{lane(key)} [data-test='feature-row']").map { |row| row["data-feature"] }
     end
-    assert_select "[data-test='package-item-detail']", text: "1 site"
-    assert_select "[data-test='package-card'][data-package='pro'] [data-test='package-item-detail']", text: "10 users"
-    assert_select "[data-test='package-item']", text: /Social media outreach/ do
+    assert_equal rows.first, rows.last
+    assert_equal WorkspacePackage.features.size, rows.first.size
+  end
+
+  test "the difference is in the row: 2 users vs 10 users, Google logo in both" do
+    get packages_path
+
+    assert_select "#{lane('basic')} [data-feature='google-workspace']", text: /2 users/ do
+      assert_select "svg[aria-label='Google']"
+    end
+    assert_select "#{lane('pro')} [data-feature='google-workspace']", text: /10 users/
+    assert_select "#{lane('pro')} [data-feature='hosted-domain'] [data-test='feature-value']", text: /more power \+ database space/
+  end
+
+  test "a Pro-only feature reads 'Not included' in the Basic lane" do
+    get packages_path
+
+    assert_select "#{lane('basic')} [data-feature='social-media-outreach'][data-included='false']", text: /Not included/
+    assert_select "#{lane('pro')} [data-feature='social-media-outreach'][data-included='true']" do
       assert_select "svg[aria-label='TikTok']"
       assert_select "svg[aria-label='Instagram']"
     end
+    assert_select "#{lane('pro')} [data-feature='team-drafting-access']", text: /Coming soon/
   end
 
   test "the SOP map is hidden from customers" do
@@ -36,13 +54,12 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
     assert_no_match(/domain-purchase/, response.body, "SOP slugs are internal — customers see only the offer")
   end
 
-  test "admins see every item mapped to its SOP, with the master SOP linked" do
+  test "admins see every feature mapped to its SOP, with the master SOP linked" do
     admin = User.find_by(role: "admin") || User.create!(email: "packages-admin@example.com", name: "Packages Admin", role: "admin")
     log_in_as(admin)
 
     get packages_path
 
-    assert_select "[data-test='sop-map']"
     assert_select "[data-test='sop-map-master'][href='/docs/agents/steffon/sops/workspace-launch']"
     %w[domain-purchase workspace-signup domain-dns workspace-provision].each do |sop|
       assert_select "[data-test='sop-map-row'][data-sop='#{sop}'] a[href='/docs/agents/steffon/sops/#{sop}']"

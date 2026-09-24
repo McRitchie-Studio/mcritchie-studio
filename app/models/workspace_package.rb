@@ -1,9 +1,12 @@
-# A McRitchie Studio workspace package (Basic, Pro) read from
-# config/workspace_packages.yml — the one place package contents live.
+# A McRitchie Studio workspace package (Basic, Pro) and the features it
+# includes, read from config/workspace_packages.yml — the one place package
+# contents live.
 #
-# Not a database table on purpose: contents are still being decided, and a
-# config file is an edit anyone can review in a PR, with the SOP each item names
-# checked by the suite against the files on disk.
+# The config is shaped as FEATURE ROWS, each carrying every package's value,
+# because the page compares packages in two lanes on the same row ("2 users"
+# vs "10 users"). Not a database table on purpose: contents are still being
+# decided, and a config file is an edit anyone can review in a PR, with the SOP
+# each feature names checked by the suite against the files on disk.
 class WorkspacePackage
   CONFIG = Rails.root.join("config/workspace_packages.yml")
   SOPS_GLOB = Rails.root.join("docs/agents/agents/*/sops/*.md")
@@ -13,16 +16,27 @@ class WorkspacePackage
   # value is an emoji rendered as text.
   LOGOS = %w[google tiktok instagram].freeze
 
-  Item = Struct.new(:name, :blurb, :sop, :section, :you_do, :status, :icon, :detail, :package_key,
-                    keyword_init: true) do
+  Feature = Struct.new(:name, :icon, :blurb, :values, :sop, :section, :you_do, :status, keyword_init: true) do
+    def live? = status == "live"
+
     # One logo key, or a list of them shown side by side.
     def logos = Array(icon).select { |key| LOGOS.include?(key) }
     def logo? = logos.any? && logos.size == Array(icon).size
 
-    def live? = status == "live"
+    # The package's value for this row: a string ("2 users"), true (included,
+    # nothing to quantify), or nil (not included).
+    def value_for(package_key)
+      value = values[package_key.to_s]
+      value == false ? nil : value
+    end
 
-    # "agents/steffon/sops/domain-dns" — the docs route's path for this item's
-    # SOP, or nil when the item names none (a planned item) or the file is gone.
+    def included_in?(package_key) = !value_for(package_key).nil?
+
+    # A row whose value changes between packages — the lanes highlight it.
+    def varies? = values.values.uniq.size > 1
+
+    # "agents/steffon/sops/domain-dns" — the docs route's path for this row's
+    # SOP, or nil when it names none (a planned feature) or the file is gone.
     def doc_path
       return nil if sop.blank?
 
@@ -30,7 +44,7 @@ class WorkspacePackage
     end
   end
 
-  attr_reader :key, :name, :tagline, :price_monthly, :includes
+  attr_reader :key, :name, :tagline, :price_monthly
 
   def initialize(attrs, annual_discount_percent: 0)
     @key = attrs.fetch("key")
@@ -38,21 +52,37 @@ class WorkspacePackage
     @tagline = attrs["tagline"]
     @price_monthly = attrs["price_monthly"].presence
     @annual_discount_percent = annual_discount_percent.to_i
-    @includes = attrs["includes"].presence
-    @own_items = Array(attrs["items"]).map do |item|
-      Item.new(**item.slice(*Item.members.map(&:to_s)).symbolize_keys, package_key: @key)
-    end
   end
 
+  def self.config = YAML.safe_load_file(CONFIG)
+
   def self.all
-    config = YAML.safe_load_file(CONFIG)
-    discount = config.dig("billing", "annual_discount_percent")
+    discount = annual_discount_percent
     config.fetch("packages").map { |attrs| new(attrs, annual_discount_percent: discount) }
   end
 
-  def self.annual_discount_percent
-    YAML.safe_load_file(CONFIG).dig("billing", "annual_discount_percent").to_i
+  def self.find(key) = all.find { |package| package.key == key.to_s }
+
+  def self.annual_discount_percent = config.dig("billing", "annual_discount_percent").to_i
+
+  def self.features
+    package_keys = config.fetch("packages").map { |attrs| attrs.fetch("key") }
+    config.fetch("features").map do |attrs|
+      Feature.new(**attrs.except(*package_keys).symbolize_keys, values: attrs.slice(*package_keys))
+    end
   end
+
+  # sop invocation => docs path, built from the files on disk so a renamed or
+  # deleted SOP reads as missing rather than as a broken link.
+  def self.sop_paths
+    Dir.glob(SOPS_GLOB).to_h do |file|
+      relative = Pathname.new(file).relative_path_from(Rails.root.join("docs/agents")).to_s.delete_suffix(".md")
+      [ File.basename(file, ".md"), relative ]
+    end
+  end
+
+  # The features this package includes, in row order.
+  def features = self.class.features.select { |feature| feature.included_in?(key) }
 
   def priced? = price_monthly.present?
 
@@ -65,30 +95,4 @@ class WorkspacePackage
   end
 
   def annual_monthly_equivalent = priced? ? (annual_price / 12.0).round(2) : nil
-
-  def self.find(key) = all.find { |package| package.key == key.to_s }
-
-  # sop invocation => docs path, built from the files on disk so a renamed or
-  # deleted SOP reads as missing rather than as a broken link.
-  def self.sop_paths
-    Dir.glob(SOPS_GLOB).to_h do |file|
-      relative = Pathname.new(file).relative_path_from(Rails.root.join("docs/agents")).to_s.delete_suffix(".md")
-      [ File.basename(file, ".md"), relative ]
-    end
-  end
-
-  # Items this package adds on top of the one it includes.
-  def own_items = @own_items
-
-  # Everything the package delivers, the included package's items first. An own
-  # item with the same name as an included one REPLACES it in place (an upgrade),
-  # so Pro lists Google Workspace once, at 10 users.
-  def items
-    base = includes ? self.class.find(includes)&.items.to_a : []
-    upgrades = own_items.index_by(&:name)
-    merged = base.map { |item| upgrades.delete(item.name) || item }
-    merged + own_items.select { |item| upgrades.key?(item.name) }
-  end
-
-  def included_package = includes && self.class.find(includes)
 end
