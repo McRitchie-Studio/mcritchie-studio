@@ -94,6 +94,75 @@ class ArtifactTest < ActiveSupport::TestCase
     end
   end
 
+  # --- the reuse key's two meanings of nil ------------------------------------
+  #
+  # `nil` MEANS TWO DIFFERENT THINGS ON THE TWO SIDES OF THIS COMPARISON, and
+  # both render as the same empty string after the `@`.
+  #
+  #   On the ARTIFACT side, `ArtifactSubject#effective_appearance` is nil when no
+  #   look was ever recorded for that subject — we do not know what they are
+  #   wearing in the picture.
+  #   On the REQUEST side, `Content::ArtifactPlan#appearance_for` is nil for a
+  #   NAMED colorway when the person has no live look in it — nothing can
+  #   satisfy this request yet.
+  #
+  # "we do not know" and "nothing satisfies it" are not the same claim, and
+  # comparing them as equal makes the gate say REUSE over an artifact whose
+  # jersey nobody has recorded. Reachable now, not in theory: zero appearances
+  # is every person's state until their first look is filed.
+  test "a colorway request never matches a subject whose look was never recorded" do
+    lookless = Person.create!(first_name: "Look", last_name: "Less", athlete: true)
+    artifact_for([[lookless, nil]], kind: "character_sheet")
+
+    assert_nil Artifact.matching([[lookless.slug, nil]], kind: "character_sheet", colorway: "black"),
+               "the request named a colorway and resolved to no look; an artifact whose look was " \
+               "never recorded cannot be known to satisfy it, and calling it a match is how a " \
+               "wrong-jersey video ships"
+  end
+
+  # ONE UNRESOLVED SUBJECT IS ENOUGH. A pair where the request resolves one
+  # person's black jersey and not the other's is still a request nothing on file
+  # is known to satisfy.
+  test "a colorway request is refused when any one subject's look is unresolved" do
+    lookless = Person.create!(first_name: "Look", last_name: "Less", athlete: true)
+    artifact_for([[@chase, @cb], [lookless, nil]], kind: "pair")
+
+    assert_nil Artifact.matching([[@chase.slug, @cb.slug], [lookless.slug, nil]],
+                                 kind: "pair", colorway: "black")
+  end
+
+  # AN EMPTY SLUG IS THE SAME UNRESOLVED LOOK. `matching` is a public entry point
+  # and its `pairs` are strings; a caller that hands back "" instead of nil means
+  # the identical thing, and both render as "<person>@". Without this case the
+  # refusal could be narrowed from #blank? to #nil? and no test would notice —
+  # a guard nothing can kill is decoration.
+  test "a colorway request is refused when a look resolves to a blank slug" do
+    lookless = Person.create!(first_name: "Look", last_name: "Less", athlete: true)
+    artifact_for([[lookless, nil]], kind: "character_sheet")
+
+    assert_nil Artifact.matching([[lookless.slug, ""]], kind: "character_sheet", colorway: "black")
+  end
+
+  # AND THE LEGITIMATE EMPTY MATCH SURVIVES. With NO colorway named there is
+  # nothing to contradict: a request that resolves to no look and an artifact
+  # with no look recorded are the same nothing, and refusing that would make the
+  # gate offer to regenerate an image it is already holding.
+  test "with no colorway named a lookless request still matches a lookless artifact" do
+    lookless = Person.create!(first_name: "Look", last_name: "Less", athlete: true)
+    artifact_for([[lookless, nil]], kind: "character_sheet")
+
+    assert Artifact.matching([[lookless.slug, nil]], kind: "character_sheet"),
+           "no colorway was asked for, so there is nothing for the artifact to contradict"
+  end
+
+  # A RESOLVED COLORWAY REQUEST IS UNTOUCHED — the regression that matters. A
+  # refusal that also blocked real reuse would cost a regeneration every week.
+  test "a colorway request still matches when every look resolves" do
+    artifact_for([[@chase, @cb]], kind: "character_sheet")
+
+    assert Artifact.matching([[@chase.slug, @cb.slug]], kind: "character_sheet", colorway: "black")
+  end
+
   test "a person reads back every artifact they appear in, shared ones included" do
     artifact_for([[@burrow, @bw]], kind: "character_sheet")
     artifact_for([[@burrow, @bw], [@chase, @cb]], kind: "pair")
