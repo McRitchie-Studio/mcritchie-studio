@@ -12,9 +12,11 @@ require "test_helper"
 # spelling, and the column-not-devops rule that stops a shadow store from
 # diverging the way release_slug's once did.
 #
-# Its own file, like task_dependencies_test.rb: config/test_health.yml freezes
-# task_test.rb as an APPEND hotspot, so a cohesive new block goes somewhere with
-# its own bottom.
+# Its own file, like task_dependencies_test.rb: the suite's hotspot ceilings
+# freeze task_test.rb as an APPEND hotspot, so a cohesive new block goes
+# somewhere with its own bottom. (The registry's path is deliberately not spelled
+# here — the fast-cert mapper follows a spelled config path, and this file would
+# otherwise join that config's mapped set; see test/lib/fast_cert_subject_test.rb.)
 class TaskEpicSlugTest < ActiveSupport::TestCase
   test "[unit] epic_slug is normalized to a lowercase, stripped slug" do
     task = Task.create!(title: "Epic Normalized Task", epic_slug: "  DevOps-V3 ")

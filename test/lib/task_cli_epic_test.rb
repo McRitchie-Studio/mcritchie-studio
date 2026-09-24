@@ -11,8 +11,11 @@
 # --epic`) resolve the COLUMN.
 #
 # Its own file with its own SMALL stub board: test/lib/task_cli_test.rb sits at
-# its config/test_health.yml ceiling, and these cases need only a server that
-# records requests and echoes a record — not that file's 261-line harness.
+# its hotspot ceiling, and these cases need only a server that records requests
+# and echoes a record — not that file's 261-line harness. (The ceiling registry's
+# path is deliberately not spelled here — the fast-cert mapper follows a spelled
+# config path, and this file would otherwise join that config's mapped set; see
+# test/lib/fast_cert_subject_test.rb.)
 #
 #   ruby -Itest test/lib/task_cli_epic_test.rb
 
