@@ -192,6 +192,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] button[data-row='action'][data-clip='qa-release']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] button[data-row='action'][data-clip='production-deploy']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] button[data-row='action'][data-clip='clean-infra']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] button[data-row='action'][data-clip='workspace-launch']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='xan'] button[data-row='action'][data-clip='grade-events']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='xan'] button[data-row='action'][data-clip='full-cycle']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='turf-monster'] button[data-row='heartbeat'][data-clip='Turf Monster Heartbeat']"

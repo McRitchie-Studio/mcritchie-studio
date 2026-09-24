@@ -8,6 +8,7 @@ Rails.application.routes.draw do
   root "landing#index"
   get "terms",   to: "landing#terms",   as: :terms
   get "privacy", to: "landing#privacy", as: :privacy
+  get "packages", to: "packages#index", as: :packages
 
   # Broadcast emails — table view + editor. `preview` renders the email itself
   # (in the email shell) for the editor's live iframe.
@@ -493,7 +494,7 @@ Rails.application.routes.draw do
         end
       end
       # DevOps SHIFT lease (devops-shift-lease) — at most one live conductor per role
-      # lane (avi/steffon/alex), so two same-role sessions can't collide. `acquire` is
+      # lane (avi/steffon/xan), so two same-role sessions can't collide. `acquire` is
       # the atomic take-or-stand-down, `renew` the heartbeat, `release` the clean
       # session-end drop; `index` is the "who's on shift" read.
       resources :devops_shifts, only: [:index] do
@@ -503,10 +504,10 @@ Rails.application.routes.draw do
           post :release
         end
       end
-      # Learning-loop grading — the bearer AGENT path for the Alex heartbeat
+      # Learning-loop grading — the bearer AGENT path for the Xan heartbeat
       # grade-events loop. `awaiting` lists resolved activities still ungraded by
-      # Alex; `grade` upserts Alex's grade of one activity. The grader is FORCED to alex here
-      # (the mcr audit-of-Alex stays admin-browser-only), so the shared agent token
+      # Xan; `grade` upserts Xan's grade of one activity. The grader is FORCED to xan here
+      # (the mcr audit-of-Xan stays admin-browser-only), so the shared agent token
       # can never forge McRitchie's audit.
       get  "agent_activities/awaiting_grade", to: "activity_grades#awaiting", as: :awaiting_grade_agent_activities
       post "agent_activities/:id/grade",      to: "activity_grades#create",   as: :grade_agent_activity
