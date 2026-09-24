@@ -91,14 +91,17 @@ A task is startable when every input it needs is on `accepted`, or is being
 built in the same batch and can be stubbed. Nothing else earns a card.
 
 ```bash
-bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> \
+bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> --agent mack \
   --shape <shape> --risk <tag> --accept "criterion" --test "[unit] ..." \
   --agent-context "epic: <epic-slug> · piece <n> · <what the builder must know>"
 ```
 
-- **No `--agent`.** The builder is the Pokémon; the task's mascot is its crew
-  member. (Until the `--epic` flag lands with the board's `epic_slug`, the first
-  words of `--agent-context` carry the epic.)
+- **`--agent mack`, for now.** The builder is the Pokémon and the task's mascot is
+  its crew member. The soul stamp exists only so today's reviewer selector has an
+  author to exclude, and `mack` keeps every specialist eligible to review; it goes
+  away when authors are derived from git (v3 phase 4). Until the `--epic` flag
+  lands with the board's `epic_slug`, the first words of `--agent-context` carry
+  the epic.
 - **Title 3 to 5 words; acceptance bullets 5 to 12 words.** Everything longer
   goes in `--agent-context`, including the piece number and the plan path.
 - Record the task slug in the plan's Pieces table the moment `begin` returns.
