@@ -63,6 +63,14 @@ class Artifact < ApplicationRecord
   # image, so a human looking at the screen sees the picture; the DECISION LABEL
   # was wrong, and the label is what an operator trusts when skimming.
   #
+  # WHERE AN UNATTRIBUTED ROW COMES FROM, since the attach no longer writes one
+  # under a named colorway (Appearance.file_for_colorway!, accepted 2026-09-23):
+  # a content with no confirmed jersey and no winner in its game facts has NO
+  # colorway to file a look for, so attaching there records nil — and that is
+  # every content between `idea` and the feed filling the game in. Confirming
+  # the jersey afterwards is what turns that honest nil into a collision.
+  # Measured 2026-09-23. The refusal below is what the two moves run into.
+  #
   # THE TWO READERS DISAGREE ON PURPOSE and this does not make them agree.
   # #effective_appearance falls back to the person's default; #appearance_for
   # deliberately does not when a colorway is named, because falling back there

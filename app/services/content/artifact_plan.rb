@@ -195,7 +195,18 @@ class Content
 
       # Same cast, ANY looks — the face work is done and only the wardrobe is
       # wrong, which is a recolor rather than a fresh generation.
-      other = Artifact.live.where(kind: kind).includes(subjects: :appearance).find do |a|
+      #
+      # ORDERED, because a cast routinely has SEVERAL live artifacts — one per
+      # jersey is the whole point of the library — and `find` takes the first
+      # row the query hands back. Unordered that is the heap's business, so the
+      # recolor source changed between runs of the same data: a review measured
+      # this reddening roughly one seed in fourteen. Which row is picked is not
+      # arbitrary in its effects — `artifact` is what the re-skin sentence
+      # describes and what a reader compares against `occupant` — so the choice
+      # has to be STABLE, whichever it is. Oldest-first: any live artifact for
+      # the cast is an equally good thing to recolor from, and the oldest is the
+      # one already on file longest.
+      other = Artifact.live.where(kind: kind).order(:id).includes(subjects: :appearance).find do |a|
         a.subjects.map(&:person_slug).sort == rows.map { |r| r[:slug] }.sort
       end
       return [:reskin, other, occupant] if other

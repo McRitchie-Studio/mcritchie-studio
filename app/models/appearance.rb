@@ -70,6 +70,16 @@ class Appearance < ApplicationRecord
   # to file, and nil is the honest record: it means "no look was named AND the
   # person has none", which is exactly the state in which the read's nil
   # fallback agrees with it.
+  #
+  # THAT AGREEMENT IS NOT PERMANENT, and reading this as "nil is always safe"
+  # is how the second half of the defect survived. The two nils mean the same
+  # thing only while nothing names a colorway. Confirm the jersey afterwards —
+  # ContentsController#set_colorway, one click — and the request's nil starts
+  # meaning "nothing on file satisfies this" while the row's still means
+  # "nobody recorded it", and both render `person@`. This IS the only route
+  # left to an unattributed row, so it is where Artifact.matching's colorway
+  # refusal earns its place; a reader who concludes that refusal is now dead
+  # code would be wrong.
   def self.file_for_colorway!(person_slug:, colorway:)
     colorway = colorway.to_s.strip.downcase.presence
     return nil if colorway.blank? || person_slug.blank?
