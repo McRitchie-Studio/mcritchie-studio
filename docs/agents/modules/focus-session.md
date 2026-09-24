@@ -131,11 +131,11 @@ Spawn each builder as a `pokemon` subagent with this brief, filled in:
 ```text
 Build task <slug>: https://mcritchie.studio/tasks/<slug>
 Epic plan: /Users/alex/projects/.agents/epics/<epic-slug>.md (read it first; you are piece <n>)
-Desk: /Users/alex/projects/mcritchie-studio/.worktrees/<slug> (already created; do not run bin/task begin again)
+Desk: <the path bin/task begin printed> (already created; do not run bin/task begin again)
 
 Read docs/agents/agents/pokemon/role.md, then docs/agents/modules/building-sop.md, and follow it.
 Write the test tiers your shape requires. Commit in the desk early and often.
-Hand off from the desk in the background: bin/ship-wait <slug> --launch -m "<message>" (about 12 minutes).
+Hand off from the desk, in the background, with the hub's script: /Users/alex/projects/mcritchie-studio/bin/ship-wait <slug> --launch -m "<message>" (about 12 minutes; a satellite desk carries no copy of it).
 STOP at submitted. Do not merge, deploy, or touch release/main.
 Narrate with bin/agent-activity. Report back: the PR URL, the cert verdict, the CI state, anything undone.
 ```
@@ -160,7 +160,7 @@ Pick the tier from what the diff actually changed, plus the task's risk tags:
 
 | Tier | The change | Spawn |
 |---|---|---|
-| A | only prose: markdown, inert media, docs-guard tests | one `alex` (Xan) reviewer on [`../agents/carl/sops/pr-review-light.md`](../agents/carl/sops/pr-review-light.md) as a single read; it merges on merge-ready |
+| A | only prose: markdown, inert media, docs-guard tests | one `alex` (Xan, the documentation seat) on [`../agents/carl/sops/pr-review-primary.md`](../agents/carl/sops/pr-review-primary.md) as the PRIMARY: a single read, no light summoned; it claims as `--agent alex` and merges on merge-ready |
 | B | code, under 400 insertions, one repo, no risk tag | one `carl` on [`../agents/carl/sops/pr-review-primary.md`](../agents/carl/sops/pr-review-primary.md); a light at his discretion |
 | C | any of `payment` `solana` `auth` `migration`, or over 400 insertions, or two repos, or a schema change | `carl` on the primary SOP with the domain light mandatory, strongest model |
 
@@ -171,9 +171,10 @@ Spawn the reviewer with this brief, filled in:
 
 ```text
 Review PR <url> for task <slug> (https://mcritchie.studio/tasks/<slug>), base accepted.
-Run docs/agents/agents/carl/sops/pr-review-primary.md end to end. Claim by slug:
-  bin/task review-claim acquire <slug> --agent carl
-Recorded head: <sha>. Tier <A|B|C>: <light mandatory | at your discretion | none>.
+Run docs/agents/agents/carl/sops/pr-review-primary.md end to end, as the soul named here.
+Claim by slug, naming that soul:
+  bin/task review-claim acquire <slug> --agent <alex for tier A | carl for tiers B and C>
+Recorded head: <sha>. Tier <A|B|C>: <A: single read, summon no light | B: light at your discretion | C: light mandatory>.
 The builder is the task's Pokémon, so no specialist is an author.
 Acceptance is in the task AND in the epic plan at /Users/alex/projects/.agents/epics/<epic-slug>.md, piece <n>; read both.
 On merge-ready, merge in the SOP's exact sequence and move the task reviewed. On request-changes, block with
@@ -207,6 +208,8 @@ Decide, in one sentence, which of two things it is:
   bin/task note <slug> --clarification "CONTEST: <the reviewer's claim> — <the evidence it is wrong: the test, the measurement, the prior art>" --agent <mascot>
   ```
 
+  Paste the contest text into Avi's brief as well: the task's show JSON carries
+  only the latest note, so the brief is what guarantees he reads the evidence.
   Avi accepts, overrules, or splits the block and records the ruling. Only a
   policy question he cannot settle goes to Alex, with a 20-minute window.
 

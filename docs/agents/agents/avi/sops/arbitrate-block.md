@@ -45,13 +45,20 @@ Use the production board. Do not pass `--local`.
    Hold it in one sentence: the reviewer says the diff does X, and X is wrong
    because Y.
 
-2. **Read the contest.** The builder's `CONTEST:` clarification, latest first:
+2. **Read the contest.** It arrives in your brief from the session that spawned
+   you. Confirm it also landed on the task, because the ruling must cite a
+   recorded note:
 
    ```bash
-   bin/task show <slug> --json | jq -r '.activities[]? | select(.activity_type=="clarification") | .description' | tail -20
+   bin/task show <slug> --json | jq '.latest_activity | {type: .activity_type, by: .agent_slug, text: .description}'
    ```
 
-   Hold it in one sentence too: the builder says Y does not hold because Z.
+   That shows the contest when it is the newest note. When a later note has
+   covered it, read the full thread on the task page,
+   `https://mcritchie.studio/tasks/<slug>`, the operator-friendly source of truth
+   for the conversation. A contest that is in neither your brief nor the thread
+   is declined (Preconditions). Hold it in one sentence too: the builder says Y
+   does not hold because Z.
 
 3. **Read what they are arguing about.** The task's acceptance and
    `agent_context`, the epic plan if the context names one, and the diff:
