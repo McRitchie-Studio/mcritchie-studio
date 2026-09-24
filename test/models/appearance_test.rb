@@ -140,4 +140,76 @@ class AppearanceTest < ActiveSupport::TestCase
     assert_not_equal retired.slug, look.slug
     assert_equal "Primary", look.descriptor, "the retired name is free again — the index only binds live looks"
   end
+
+  # --- the lifecycle of the DEFAULT pointer -------------------------------
+  #
+  # `people.default_appearance_slug` is a plain string column with no foreign
+  # key, and exactly ONE callback writes it. That callback is an after_CREATE,
+  # so every transition that is not a create — a look destroyed, a look handed
+  # to another person by a merge — used to leave the pointer describing a world
+  # that is no longer there.
+  #
+  # This is not a hypothetical. A test in PR 1566 passed on a BROKEN tree
+  # because `Appearance.delete_all` in its setup left the pointer aimed at a
+  # deleted row, so the "first look becomes the default" guarantee — which only
+  # fires on a BLANK pointer — never fired and the read never re-pointed. Each
+  # test below therefore asserts its CONTROL first: the pointer resolves before
+  # the act, so a red is the defect rather than the setup.
+
+  test "destroying the default look re-points it at a remaining live look" do
+    first  = Appearance.create!(person_slug: @burrow.slug, descriptor: "Bengals white")
+    second = Appearance.create!(person_slug: @burrow.slug, descriptor: "Navy suit")
+
+    assert_equal first.slug, @burrow.reload.default_appearance_slug,
+                 "the control — the default must point at the first look before we destroy it"
+    assert_not_nil @burrow.default_appearance, "the control — and it must RESOLVE before we destroy it"
+
+    first.destroy!
+
+    @burrow.reload
+    assert_equal second.slug, @burrow.default_appearance_slug,
+                 "the surviving look should have taken the slot"
+    assert_not_nil @burrow.default_appearance
+  end
+
+  test "destroying a person's only look frees the slot for the next one" do
+    only = Appearance.create!(person_slug: @burrow.slug, descriptor: "Bengals white")
+    assert_equal only.slug, @burrow.reload.default_appearance_slug, "the control"
+
+    only.destroy!
+
+    assert_nil @burrow.reload.default_appearance_slug,
+               "a pointer left aimed at the deleted row is what freezes the person forever"
+
+    replacement = Appearance.create!(person_slug: @burrow.slug, descriptor: "Navy suit")
+    assert_equal replacement.slug, @burrow.reload.default_appearance_slug,
+                 "become_default_if_first guards on a BLANK pointer, so this only works once the slot is free"
+  end
+
+  # The invariant the app claims in prose, stated as a test. Before this the
+  # state below was permanent and had nothing to grep for.
+  test "a person with live looks always resolves a default" do
+    first  = Appearance.create!(person_slug: @burrow.slug, descriptor: "Bengals white")
+    second = Appearance.create!(person_slug: @burrow.slug, descriptor: "Navy suit")
+    assert_not_nil @burrow.reload.default_appearance, "the control"
+
+    first.destroy!
+    Appearance.create!(person_slug: @burrow.slug, descriptor: "Practice jersey")
+
+    @burrow.reload
+    assert_operator @burrow.appearances.live.count, :>, 0
+    assert_not_nil @burrow.default_appearance,
+                   "live looks and no resolvable default is the state every read has to special-case"
+  end
+
+  # Destroying someone ELSE's look must not disturb this person's pointer.
+  test "destroying another person's look leaves this one's default alone" do
+    mine   = Appearance.create!(person_slug: @burrow.slug, descriptor: "Bengals white")
+    theirs = Appearance.create!(person_slug: @chase.slug, descriptor: "Bengals black")
+    assert_equal mine.slug, @burrow.reload.default_appearance_slug, "the control"
+
+    theirs.destroy!
+
+    assert_equal mine.slug, @burrow.reload.default_appearance_slug
+  end
 end

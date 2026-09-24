@@ -5,8 +5,14 @@ class Person < ApplicationRecord
   has_many :appearances, foreign_key: :person_slug, primary_key: :slug, inverse_of: :person, dependent: :destroy
   has_many :artifact_subjects, class_name: "ArtifactSubject", foreign_key: :person_slug, primary_key: :slug, dependent: :destroy
   has_many :artifacts, through: :artifact_subjects
-  # The look stamped when this person's first model was created. Most flows
-  # never name an appearance at all and simply get this one.
+  # The look every read falls back to when nothing names one. Most flows never
+  # name an appearance at all and simply get this one.
+  #
+  # Stamped by whichever write files this person's FIRST look — a model created
+  # by hand, or an image attached at a content's inspection gate, which files
+  # the look it was uploaded for (Appearance.file_for_colorway!). A later look
+  # does not take the slot while the current one still stands; a look that goes
+  # away RELEASES it (see #resolve_default_appearance!).
   belongs_to :default_appearance, class_name: "Appearance", foreign_key: :default_appearance_slug,
              primary_key: :slug, optional: true
   has_many :builders, dependent: :restrict_with_exception
@@ -16,6 +22,34 @@ class Person < ApplicationRecord
   has_many :coaches, foreign_key: :person_slug, primary_key: :slug
 
   validates :first_name, :last_name, presence: true
+
+  # RE-RESOLVE THE DEFAULT POINTER AGAINST REALITY.
+  #
+  # `default_appearance_slug` is a plain string column with NO foreign key, and
+  # for a long time exactly one callback wrote it — an after_CREATE. So every
+  # transition that is not a create left it describing a world that had moved:
+  # destroy the look it names and the column still names it, so
+  # #default_appearance returns nil while the person plainly has looks, and
+  # because Appearance#become_default_if_first only ever fired on a BLANK
+  # pointer, nothing could refill it. "Has looks, resolves no default" was
+  # permanent, and had nothing to grep for.
+  #
+  # Keeps a pointer that still names a LIVE look, otherwise takes the oldest
+  # live look, otherwise blanks the column. Returns the slug it settled on.
+  #
+  # Writes with update_columns deliberately: this is pointer hygiene run from
+  # inside other people's callbacks (a look being destroyed, a merge handing
+  # looks to a survivor), and it must not re-enter validation or bump
+  # updated_at on a person nobody edited.
+  def resolve_default_appearance!
+    current = default_appearance_slug
+    return current if current.present? && appearances.live.exists?(slug: current)
+
+    settled = appearances.live.order(:created_at, :id).first&.slug
+    update_columns(default_appearance_slug: settled) if persisted? && !destroyed?
+    self.default_appearance_slug = settled
+    settled
+  end
 
   # Multi-strategy name lookup: exact slug → normalized slug → alias match
   def self.find_by_name(first_name, last_name)

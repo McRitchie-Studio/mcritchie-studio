@@ -5,9 +5,10 @@
 # and George Bush, and what differs between them is not who they are but how
 # they are presented.
 #
-# Every person gets a DEFAULT, stamped when their first model is created, so
-# the common path never thinks about appearance at all. A variant — Burrow in a
-# suit rather than a jersey — is an explicit later choice.
+# Every person gets a DEFAULT, stamped by whichever write files their first
+# look, so the common path never thinks about appearance at all. A variant —
+# Burrow in a suit rather than a jersey — is an explicit later choice, and a
+# look that is destroyed hands the default back rather than stranding it.
 class Appearance < ApplicationRecord
   belongs_to :person, foreign_key: :person_slug, primary_key: :slug, inverse_of: :appearances, optional: true
   belongs_to :team, foreign_key: :team_slug, primary_key: :slug, optional: true
@@ -19,6 +20,7 @@ class Appearance < ApplicationRecord
   before_validation :generate_slug, on: :create
   before_validation :normalize_colorway
   after_create :become_default_if_first
+  after_destroy :release_default_pointer
 
   scope :live, -> { where(retired_at: nil) }
 
@@ -99,8 +101,26 @@ class Appearance < ApplicationRecord
   # The FIRST look a person gets becomes their default. Doing it here rather
   # than at a call site means a person can never end up with looks and no
   # default, which is the state every lookup would have to special-case.
+  #
+  # RESOLVING rather than testing for a blank pointer keeps that promise on one
+  # more path: a person whose default was left aimed at a look that is gone is
+  # healed by their next look instead of staying stuck, because the old guard
+  # read a dangling pointer as "already has one".
   def become_default_if_first
-    person&.update!(default_appearance_slug: slug) if person && person.default_appearance_slug.blank?
+    person&.resolve_default_appearance!
+  end
+
+  # A LOOK THAT GOES AWAY MUST RELEASE THE SLOT IT HELD.
+  #
+  # Nothing else clears `people.default_appearance_slug` — there is no foreign
+  # key on it and no dependent: on this side of the association — so without
+  # this the pointer outlives the row and freezes the person in "has looks,
+  # resolves no default" for good. Scoped by the COLUMN rather than through
+  # #person because the column is a plain string that anyone could hold.
+  def release_default_pointer
+    Person.where(default_appearance_slug: slug).find_each do |holder|
+      holder.resolve_default_appearance!
+    end
   end
 
   def normalize_colorway

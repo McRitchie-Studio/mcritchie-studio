@@ -101,4 +101,49 @@ class ArtifactTest < ActiveSupport::TestCase
     count = Artifact.joins(:subjects).where(artifact_subjects: { person_slug: @burrow.slug }).distinct.count
     assert_equal 2, count
   end
+
+  # --- an artifact whose cast goes away -----------------------------------
+  #
+  # `Person has_many :artifact_subjects, dependent: :destroy`, so destroying a
+  # person takes their cast rows with them and a solo character sheet outlives
+  # the only person in it. It stays `live`, its cast label renders empty, and
+  # its reuse key is the empty string — an image of NOBODY, still on offer.
+
+  test "an artifact that loses its last subject is retired" do
+    a = artifact_for([[@carrey, @ace]], kind: "character_sheet")
+    assert_not a.retired?, "the control — it must be live before the cast goes"
+    assert_equal 1, a.subjects.count, "the control"
+
+    @carrey.destroy!
+
+    a.reload
+    assert_equal 0, a.subjects.count
+    assert a.retired?, "an artifact depicting nobody must not stay on offer"
+    assert_nil Artifact.live.find_by(slug: a.slug)
+  end
+
+  # Losing ONE of several is not losing the cast. Retiring there would throw
+  # away a real image over a partial change.
+  test "an artifact that keeps a subject is left live" do
+    a = artifact_for([[@burrow, @bw], [@chase, @cb]], kind: "pair")
+    assert_not a.retired?, "the control"
+
+    @chase.destroy!
+
+    a.reload
+    assert_equal 1, a.subjects.count
+    assert_not a.retired?
+  end
+
+  # The retire hook must not fire while the artifact ITSELF is being destroyed —
+  # its subjects go first, and the last one would otherwise try to update a row
+  # that is on its way out.
+  test "destroying an artifact outright still works" do
+    a = artifact_for([[@burrow, @bw]], kind: "character_sheet")
+    slug = a.slug
+
+    assert_nothing_raised { a.destroy! }
+    assert_nil Artifact.find_by(slug: slug)
+    assert_equal 0, ArtifactSubject.where(artifact_slug: slug).count
+  end
 end
