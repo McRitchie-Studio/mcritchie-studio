@@ -17,8 +17,9 @@ reads the other's database.**
 | **McRitchie Studio** (hub) | `Person`, `Athlete`, `Team` | finished games, as `Content` | receives the recap push |
 | **Turf Monster** | `Game`, `Goal`, `Contest`, `Entry` | `Person` / `Athlete`, as a read replica | pulls the athlete projection |
 
-The two flows are independent. Flow 1 is a **pull on a cadence**; flow 2 is a
-**push from a job**. Neither runs inside a web request on either side.
+The two flows are independent. Flow 1 is a **pull designed for a cadence** —
+the cadence itself is unbuilt, see gap (b); flow 2 is a **push from a job**.
+Neither runs inside a web request on either side.
 
 ---
 
@@ -68,11 +69,30 @@ limit anyone expects to reach.** Progress is durable in one row per source on
 `turf-monster/app/models/sync_cursor.rb`, so a partial run resumes instead of
 restarting.
 
-**An environment condition is a skip, not a raise.** No `AGENT_API_SECRET`, or an
-unreachable hub, records itself on the cursor and returns — because this runs from
-a cadence, and a raise on a cadence is noise somebody eventually learns to ignore.
-The rake task exits non-zero **only** on `failed`, so a stack that does not sync
-cannot redden a deploy.
+### Two different failures, and only one of them is a skip
+
+**A missing secret is a skip. An unreachable hub is a failure.** The service's own
+header comment calls both of them skips — it is wrong (see "Known stale pointers"
+below), and a reader who believes it schedules a job that can redden a deploy. So
+the two paths are spelled out here:
+
+| Condition | Cursor status | Rake exit |
+|---|---|---|
+| No `AGENT_API_SECRET` | `skipped` | **0** |
+| Hub unreachable, 5xx, bad token, unparseable body | `failed` | **non-zero** |
+
+`Studio::SyncAthletes#call` reaches `#skip` on **one** path only — the
+`configured?` guard on its first line. Everything else travels the error path:
+`SocketError`, `Errno::ECONNREFUSED`, `Errno::EHOSTUNREACH`, a timeout and an
+`OpenSSL::SSL::SSLError` are all re-raised as `Studio::SyncAthletes::Error` by
+`#request`, caught by `#call`, and recorded with `SyncCursor#record_failure!`.
+`turf-monster/lib/tasks/studio_sync.rake` then **aborts** on exactly that status.
+
+The skip exists so that a stack which is *not meant* to sync cannot redden a
+deploy. A stack that **tried and could not reach the hub** will.
+
+**Read this before building the cadence (gap (b)).** Whatever you schedule
+inherits the abort: an hour of hub downtime reddens it.
 
 ### Auth
 
@@ -105,9 +125,16 @@ The hub receives it at
 error — the poll cycle is deliberately safe to re-run and a Sidekiq retry can
 deliver the same final twice, so neither end has to deduplicate in memory.
 
-The payload shape, the shared team-slug convention, and the idempotency index are
-documented under **"Game Recap Workflow → The cross-repo seam"** in
-`docs/topics/content-pipeline.md`; this doc does not repeat them.
+The payload shape and the shared team-slug convention are documented under
+**"Game Recap Workflow → The cross-repo seam"** in
+[`content-pipeline.md`](content-pipeline.md); the partial unique index that makes
+the duplicate safe is one subsection further on, under **"Idempotency is
+structural, not incidental"**. This doc does not repeat either.
+
+**Measured 2026-09-24: this flow has delivered nothing.** The hub holds **zero**
+`Content` rows of any workflow, so zero game recaps. Every part of the seam is
+implemented and the endpoint answers, but no push has ever landed in production.
+Read flow 2 as built-and-unexercised, not as the working half of the pair.
 
 ---
 
@@ -166,7 +193,8 @@ monster's *correctness*, not merely its freshness.
 
 **A stale player name is survivable. A 500 on a contest page is not.**
 
-This is why flow 1 is a cadenced rake task writing to a local replica, and why
+This is why flow 1 is a rake task written for a cadence, writing to a local
+replica, and why
 flow 2 is a background job rather than an inline call. It is also why the hub
 never reads turf-monster's database: the crossing is two endpoints, and that is
 the whole of it.
@@ -181,6 +209,12 @@ itself sets `syncing` to write legitimately.
 
 **A replica that is only conventionally read-only becomes a second master by
 accident**, so the refusal is enforced rather than documented.
+
+**The guard started biting on 2026-09-24.** Before that day's first production
+sync, `Athlete.synced.count` on turf-monster was **0** and the guard could not
+fire on anything. It now covers **2,049 rows**. Assigning `position`,
+`team_slug`, or any other `STUDIO_MASTERED` column on a synced athlete raises
+`ActiveRecord::ReadOnlyRecord` today.
 
 ### The subtlety: the axis is the COLUMN, not the ROW
 
@@ -199,10 +233,19 @@ than ancestors. The write died rather than degrading.
 
 So the guard refuses only the thirteen columns in
 `Athlete::STUDIO_MASTERED` (`turf-monster/app/models/athlete.rb`) and leaves everything else
-locally writable. That list is asserted against the projection's own key set in
-the sync's test (`turf-monster/test/services/studio/sync_athletes_test.rb`), so
-**the serializer and the guard cannot drift apart silently** — add a field to the
-projection without adding it to `STUDIO_MASTERED` and the test reds.
+locally writable. That list is asserted against the key set of
+`Studio::SyncAthletes#attributes_from` — the consumer's own reader — in
+`turf-monster/test/services/studio/sync_athletes_test.rb`, so **what the sync
+writes and what the guard refuses cannot drift apart silently.** Widen
+`attributes_from` without widening `STUDIO_MASTERED` and the test reds.
+
+**That invariant is intra-repo, and it stops at the repo boundary.** Both sides
+of the assertion live in turf-monster; `STUDIO_MASTERED` appears **zero** times
+in the hub (measured 2026-09-24). Nothing checks either list against the hub's
+`#serialize`. Add a field there and no test anywhere reds — `attributes_from`
+names its keys explicitly, so the new field is simply ignored by the replica
+until someone adds it on this side too. The cross-repo half is convention, not a
+guard.
 
 ---
 
@@ -223,6 +266,13 @@ That last claim still holds today. Comparing the two `gsis_id` sets on 2026-09-2
 master has no row for him now either. Nothing raised at the time: there are zero unique collisions across
 the two tables, so the bad write simply succeeded, and the `Person` row was
 untouched so the page still showed the right name.
+
+**The refusal has now fired in production.** The first real run wrote 242 of the
+244 rows the replica was missing and declined 2. The two still hub-only afterwards
+are `00-0028946` and `00-0038602` — the hub side of both incidents above. No
+durable record names them as refusals, because none exists (gap (d)); the
+attribution is the arithmetic plus the fact that `#build_for`'s only other
+`nil` return needs a blank `person_slug`, which the provider never sends.
 
 The replica cannot fix this itself. It cannot overwrite (that is the bug), it
 cannot make a twin (`person_slug` is unique on athletes), and it must not invent a
@@ -246,21 +296,38 @@ a namesake is detected, and the difference is the *lane*, not taste:
 
 **These are point-in-time measurements. Re-derive them; do not re-copy them.**
 
-| | hub (`mcritchie-studio`) | turf-monster (`turf-monster-mainnet`) |
-|---|---|---|
-| `Person` | 2,088 | 2,896 |
-| `Athlete` | 2,051 | 2,896 |
-| `Athlete` with a `gsis_id` | 2,051 | 2,896 |
-| `Athlete` by sport | football 2,051 | football 2,896 |
-| `Team` | **0** | — |
-| `Athlete.synced` (came from the hub) | — | **0** |
-| `SyncCursor` for `studio_athletes` | — | **never run** |
-| `Player` (legacy table) | — | 85 |
-| `Goal` | — | 389 |
-| `Goal` with a `player_slug` | — | 25 |
+**This page straddles an event, so every turf-monster figure carries a side.**
+The first production run of `studio:sync_athletes` finished at
+**2026-09-24T05:37:07Z**. "Before" was measured shortly before it; "after" at
+**2026-09-24T13:42Z**. A turf-monster number quoted without a side means nothing.
 
-Hub's last successful `nflverse_players` import finished **2026-09-21T05:38:54Z**,
-status `ok`.
+| | hub (`mcritchie-studio`) | turf-monster before | turf-monster after |
+|---|---|---|---|
+| `Person` | 2,088 | 2,896 | **3,138** |
+| `Athlete` | 2,051 | 2,896 | **3,138** |
+| `Athlete` with a `gsis_id` | 2,051 | 2,896 | **3,138** |
+| `Athlete` by sport | football 2,051 | football 2,896 | football 3,138 |
+| `Team` | **0** | — | — |
+| `Content` (any workflow) | **0** | — | — |
+| `Content` with `workflow: "game_recap"` | **0** | — | — |
+| `Athlete.synced` (came from the hub) | — | **0** | **2,049** |
+| `SyncCursor` for `studio_athletes` | — | **never run** | `ok` · 2,051 seen · 626 written |
+| `Player` (legacy table) | — | 85 | 85 |
+| `Goal` | — | 389 | 389 |
+| `Goal` with a `player_slug` | — | 25 | 25 |
+
+The hub side did not move across the event — `Person`, `Athlete`, `Team` and
+`Content` read identically at both times. Its last successful `nflverse_players`
+import finished **2026-09-21T05:38:54Z**, status `ok`.
+
+**That cursor reading `ok` is gap (d) happening, not a clean run.** The run
+refused two rows. The cursor has no way to say so, and `studio:sync_status`
+reports it as clean.
+
+**Only one of the two flows has ever moved data in production.** Flow 1 populated
+the replica on 2026-09-24. Flow 2 has delivered **zero** recaps — the hub holds
+zero `Content` rows of any kind — so the hub has received nothing from
+turf-monster, ever.
 
 Both endpoints are live and auth-gated — `GET /api/v1/athletes` and
 `POST /api/v1/game_recaps` each answer **401 `Missing token`** unauthenticated.
@@ -271,7 +338,7 @@ Re-derive with:
 
 ```bash
 heroku run -x -a mcritchie-studio -- bin/rails runner \
-  'puts [Person.count, Athlete.count, Team.count].inspect'
+  'puts [Person.count, Athlete.count, Team.count, Content.count].inspect'
 heroku run -x -a turf-monster-mainnet -- bin/rails studio:sync_status
 ```
 
@@ -296,45 +363,56 @@ absence.
 Measured 2026-09-24: it appears in **no** `config/schedule.yml` entry, in **no**
 `Procfile` line, and `turf-monster-mainnet` carries **no Heroku Scheduler addon**
 (its only addons are Postgres and Redis). The service's own comment says "this
-runs from a cadence" — **that cadence does not exist.** Today the sync runs only
-when a human or an agent runs the rake task by hand.
+runs from a cadence" — **that cadence does not exist.** The sync runs only when a
+human or an agent runs the rake task by hand, and as of this writing it has done
+so in production exactly **once**, on 2026-09-24 (gap (c) below).
 
-This is consistent with gap (c) below: the sync has **never run in production.**
+**Whoever builds the cadence inherits the abort.** A hub the task cannot reach
+records `failed` and exits non-zero — see "Two different failures" under flow 1.
+The schedule has to tolerate that, or run somewhere a red exit costs nothing.
 
-### c) The replica has never been populated — and the "845-row gap" is a net figure
+### c) The replica was empty until 2026-09-24 — and the "845-row gap" was a net figure
 
-The two athlete counts differ by 845 (2,896 − 2,051). **That difference is not
-replica drift, because there is no replica yet**: `SyncCursor` for
-`studio_athletes` has **no row** and `Athlete.synced.count` is **0**. Every one of
-turf-monster's 2,896 athletes came from its own local nflverse importer.
+**Read the timestamps here.** This section describes a boundary the system
+crossed on the day it was written: the replica was empty, and then it was not.
 
-The earlier guess that turf-monster carries soccer athletes the hub never sees is
-**falsified**: measured by sport, **all 2,896 turf-monster athletes are
-`football`**, and so are all 2,051 on the hub.
+**Before 2026-09-24T05:37:07Z:** `SyncCursor` for `studio_athletes` had **no
+row** and `Athlete.synced.count` was **0**. All 2,896 of turf-monster's athletes
+came from its own local nflverse importer, so the 845-row difference against the
+hub's 2,051 was not replica drift — there was no replica.
 
-Comparing the two `gsis_id` sets directly (2026-09-24) shows 845 is a **net**
-figure masking a two-sided difference:
+The guess that turf-monster carries soccer athletes the hub never sees is
+**falsified on both sides of the event**: measured by sport, every turf-monster
+athlete is `football` (2,896 then, 3,138 now), and so are all 2,051 on the hub.
 
-| | count |
-|---|---|
-| ids in **both** | 1,807 |
-| **hub only** — the replica lacks them | 244 |
-| **turf-monster only** — the master holds no row | 1,089 |
+Comparing the two `gsis_id` sets directly shows 845 was a **net** figure masking
+a two-sided difference, and shows what the run did to each side:
 
-1,089 − 244 = 845. So the honest statement is: **the replica is 244 rows short of
-the master AND carries 1,089 rows the master does not hold.** Both repos ship the
-same `Nflverse::SeedPlayers` importer with **different defaults** — the hub's are
-`min_season 2024` with no status filter, turf-monster's are `min_season 2026` with
-`status: "ACT"` — and both rake tasks let the environment override them, so the
-two populations are the product of two independent runs with independently chosen
-filters. **Which parameters each run actually used is not recorded anywhere I
-could read, so the split between the two sets is not attributed here.**
+| | before the sync | after it (13:42Z) |
+|---|---|---|
+| ids in **both** | 1,807 | **2,049** |
+| **hub only** — the replica lacks them | 244 | **2** |
+| **turf-monster only** — the master holds no row | 1,089 | 1,089 |
+
+The run closed the hub-only side and left the other untouched, which is what a
+one-way pull should do. The arithmetic closes exactly: 244 hub-only − 2 refused
+namesakes = **242 creates**; 2,896 + 242 = 3,138; 1,807 + 242 = **2,049 synced**.
+The 2 still hub-only are the pair the namesake section above names.
+
+**The 1,089 turf-monster-only rows are not a sync problem and no run will shrink
+them.** Both repos ship the same `Nflverse::SeedPlayers` importer with
+**different defaults** — the hub's are `min_season 2024` with no status filter,
+turf-monster's are `min_season 2026` with `status: "ACT"` — and both rake tasks
+let the environment override them, so the two populations are the product of two
+independent runs with independently chosen filters. **Which parameters each run
+actually used is not recorded anywhere I could read, so the split between the two
+sets is not attributed here.**
 
 Seven turf-monster rows carry a value in `gsis_id` that is not in nflverse's
 `00-nnnnnnn` shape (`BOB309160`, `DEA063889`, `HEN626514`, `KIN587489`,
-`LAU726757`, `TEC426541`, `THO210380` — all football, all on NFL teams, all
-unsynced). Since the sync keys on `gsis_id`, **those seven can never match a hub
-row.**
+`LAU726757`, `TEC426541`, `THO210380` — all football, all on NFL teams). Since
+the sync keys on `gsis_id`, **those seven can never match a hub row** — and the
+first production run bears that out: all seven are still **unsynced** after it.
 
 Re-derive the set comparison by plucking `Athlete.where.not(gsis_id: nil).pluck(:gsis_id)`
 from each app and diffing the sorted lists.
@@ -343,11 +421,24 @@ from each app and diffing the sorted lists.
 
 `turf-monster/app/services/studio/sync_athletes.rb` writes **no `ErrorLog`**. A
 refused namesake is carried on the `Result` and printed to stderr by the rake
-task — and nowhere else. The cursor cannot hold it either:
-`SyncCursor#advance!` (`turf-monster/app/models/sync_cursor.rb`) hard-codes
-`last_status: "ok"`,
-so the `ok_with_collisions` status the service returns **never reaches the
-cursor**, and `studio:sync_status` reports a collided run as a clean one.
+task — and nowhere else.
+
+**The cursor cannot hold it, and the reason is structural rather than an
+oversight.** Three independent things would each have to change:
+
+- `SyncCursor::STATUSES` (`turf-monster/app/models/sync_cursor.rb`) is
+  `%w[ok failed skipped]`, so the `ok_with_collisions` status the service returns
+  is **unrepresentable** on the cursor — not merely unpassed.
+- `SyncCursor#advance!` hard-codes `last_status: "ok"` and **takes no status
+  parameter**, so there is nowhere to pass one.
+- `Studio::SyncAthletes#call` calls `advance!` **inside** the page loop, while
+  the collision list is only resolved **after** the loop ends. The cursor is
+  written before the run knows whether it collided.
+
+**This is not hypothetical.** The first production run, 2026-09-24T05:37:07Z,
+refused two rows, and the cursor it left behind reads `status "ok", seen 2,051,
+written 626`. The refusals appear nowhere in it, and `studio:sync_status` reports
+that run as clean.
 
 **If nobody reads the run's output, the refusals are lost.** Each one is a human
 the master and the replica disagree about, and only the master can resolve it.
@@ -366,7 +457,21 @@ not 389**, so the remaining work is far smaller than the original framing.
 
 ---
 
-## Known stale pointer
+## Known stale pointers
+
+### The service's own header comment is wrong about skips
+
+`Studio::SyncAthletes`' class comment says `#call` "NEVER raises for an
+environment condition — an unconfigured stack **or an unreachable provider** is a
+skip, recorded on the cursor." **The second half is false**, and the code three
+methods below it is the authority: `#request` raises `Error` on every transport
+failure, every non-2xx response and an unparseable body, and `#call` records
+`failed`. A wrong comment propagates — a reader reaching for the code reaches the
+comment first, and this doc asserted the same wrong thing until it was traced.
+Correcting the comment is a turf-monster code change and belongs to a
+turf-monster task, not here.
+
+### The roster-sync SOP is still marked PENDING
 
 `docs/agents/agents/turf_monster/sops/roster-sync.md` opens with
 `Status: PENDING` on the premise that `studio:sync_athletes` and
