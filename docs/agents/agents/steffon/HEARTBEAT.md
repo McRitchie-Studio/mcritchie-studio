@@ -35,8 +35,9 @@ archive` archives through the MODEL path, which bypasses the CLI's open-PR gate
 by design, so the alarm rings on the same beat as the act that can create one.
 `clean-infra` is the DELIBERATE one — invoked when the machine is in the way,
 whatever the symptom looked like. The `/deployments` Workflows card
-carries `production-deploy` + `clean-infra`; `archive-shipped` is off it because
-the release already runs it, and it stays invocable by name.
+carries `production-deploy` + `clean-infra` (+ `workspace-launch`); `archive-shipped` is off it because
+the release already runs it, and it stays invocable by name. The card also
+carries `workspace-launch`, which is not a heartbeat act at all — see below.
 
 ## Scope
 

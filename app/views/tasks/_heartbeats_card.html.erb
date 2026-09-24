@@ -43,7 +43,7 @@
      card_actions = case launcher[:agent_slug]
                     when "carl" then ["pr-review", "pr-review-slow"]
                     when "avi" then ["qa-release", "deploy-with-task"]
-                    when "steffon" then ["production-deploy", "clean-infra"]
+                    when "steffon" then ["production-deploy", "clean-infra", "workspace-launch"]
                     else launcher[:actions]
                     end
      { launcher: launcher, soul: souls[launcher[:agent_slug]], actions: card_actions }

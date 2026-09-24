@@ -639,7 +639,9 @@ class ApplicationHelperTest < ActionView::TestCase
     # deploy-with-task trails Avi's list — direct-invoke only, never composed.
     assert_equal ["pr-review", "pr-review-slow"], launchers[0][:actions]
     assert_equal ["qa-release", "deploy-with-task"], launchers[1][:actions]
-    assert_equal ["production-deploy", "clean-infra"], launchers[2][:actions]
+    # workspace-launch rides Steffon's card too: it is not a heartbeat act, but the
+    # operator launches it by name and wanted it one copy away.
+    assert_equal ["production-deploy", "clean-infra", "workspace-launch"], launchers[2][:actions]
     assert_equal ["grade-events", "share-insights", "full-cycle"], launchers[3][:actions]
     # Turf Monster gained the rehearsal launcher after the first watched QA run —
     # an operator asked to be able to kick the whole contest cycle off from the
@@ -731,6 +733,7 @@ class ApplicationHelperTest < ActionView::TestCase
     # Steffon's column swapped archive-shipped for clean-infra; the archive now
     # rides production-deploy, so it must not render as a copyable chip.
     assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] button[data-clip='clean-infra']", count: 1
+    assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] button[data-clip='workspace-launch']", count: 1
     assert_select "[data-test='heartbeats-card'] button[data-clip='archive-shipped']", count: 0
     # The tracker does NOT live here — it stays in the Current Release card.
     assert_select "[data-test='heartbeats-card'] [data-test='release-tracker-steps']", count: 0

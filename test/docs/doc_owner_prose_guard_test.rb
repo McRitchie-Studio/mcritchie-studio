@@ -78,6 +78,7 @@ class DocOwnerProseGuardTest < ActiveSupport::TestCase
     "production-deploy" => "Steffon",
     "archive-shipped" => "Steffon",
     "clean-infra" => "Steffon",
+    "workspace-launch" => "Steffon",  # registered 2026-09-24 with its sub-SOPs; on Steffon's card but not a heartbeat act
     "ship gate" => "Steffon",
     "pr-review" => "Carl"           # Carl reowned review at the 2026-07-22 reslot
   }.freeze
