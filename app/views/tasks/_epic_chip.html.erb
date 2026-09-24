@@ -1,0 +1,27 @@
+<%# locals: (epic_slug:) %>
+<%#
+  The EPIC CHIP — the one piece of connective tissue between an epic and its
+  tasks on the board (devops-v3-design.md section 3). Rendered beside the
+  task-slug chip on every card whose task carries `tasks.epic_slug`; renders
+  NOTHING when the task belongs to no epic, so a card never carries an empty
+  slot. Clicking it filters the board to that epic (/tasks?epic=<slug>), which
+  the deployments board honours too.
+
+  Its own partial, deliberately small: the card partial is shared with an
+  in-flight operator-windows change that will seat a countdown BESIDE this
+  chip, and two chips in one row are easier to merge than one row rewritten
+  twice. Keep the chip's markup here; keep the row it sits in over there.
+
+  Colour is the house violet pair, one class per theme (dark: variants, the
+  card's own tone idiom), so the chip reads as a different KIND of handle from
+  the mono task slug next to it and clears contrast on both surfaces.
+  Server-rendered conditionally, so no Alpine display gating is needed.
+%>
+<% epic_slug = local_assigns.fetch(:epic_slug).to_s %>
+<% if epic_slug.present? %>
+  <a href="<%= tasks_path(epic: epic_slug) %>"
+     data-test="task-epic-chip"
+     data-epic="<%= epic_slug %>"
+     title="Epic <%= epic_slug %> — show only this epic's tasks"
+     class="inline-flex items-center shrink-0 max-w-[9rem] px-1.5 py-0.5 rounded text-[10px] font-semibold leading-none truncate border transition bg-violet-100 text-violet-700 border-violet-200 hover:bg-violet-200 hover:border-violet-300 dark:bg-violet-900/40 dark:text-violet-300 dark:border-violet-700/60 dark:hover:bg-violet-900/70 dark:hover:border-violet-500/70"><%= epic_slug %></a>
+<% end %>

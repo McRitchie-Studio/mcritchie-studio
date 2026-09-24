@@ -317,6 +317,21 @@ cleared_block_task = Task.create!(
   metadata: { "devops" => { "kind" => "bug", "repositories" => ["mcritchie-studio"] } }
 )
 
+# Epic chip demo: a task that belongs to an epic (tasks.epic_slug) wears the violet
+# epic chip beside its slug, and clicking the chip filters the board to that epic
+# (/tasks?epic=devops-v3). Read-only against this fixture; every other seeded card
+# belongs to no epic, which is what makes the filtered board provably NARROWER.
+Task.create!(
+  title: "Epic chip demo",
+  slug: "e2e-epic-chip-demo",
+  description: "A task stamped with an epic, so the board card carries the epic chip.",
+  stage: "building",
+  priority: 1,
+  agent_slug: "mack",
+  epic_slug: "devops-v3",
+  metadata: { "devops" => { "kind" => "feature", "repositories" => ["mcritchie-studio"] } }
+)
+
 # --- Per-application RELEASE INCLUSION markers (Avi's qa-release disposition) ----
 # Two REVIEWED cards on the Deploy board: the default ships and carries NO marker
 # (shipping every reviewed task is the default), while an app Avi held back for
