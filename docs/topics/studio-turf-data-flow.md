@@ -71,8 +71,8 @@ restarting.
 
 ### Two different failures, and only one of them is a skip
 
-**A missing secret is a skip. An unreachable hub is a failure.** The service's own
-header comment calls both of them skips — it is wrong (see "Known stale pointers"
+**A missing secret is a skip. An unreachable hub is a failure.** The comment on
+`#call` calls both of them skips — it is wrong (see "Known stale pointers"
 below), and a reader who believes it schedules a job that can redden a deploy. So
 the two paths are spelled out here:
 
@@ -459,17 +459,18 @@ not 389**, so the remaining work is far smaller than the original framing.
 
 ## Known stale pointers
 
-### The service's own header comment is wrong about skips
+### `Studio::SyncAthletes#call`'s own comment is wrong about skips
 
-`Studio::SyncAthletes`' class comment says `#call` "NEVER raises for an
-environment condition — an unconfigured stack **or an unreachable provider** is a
-skip, recorded on the cursor." **The second half is false**, and the code three
-methods below it is the authority: `#request` raises `Error` on every transport
-failure, every non-2xx response and an unparseable body, and `#call` records
-`failed`. A wrong comment propagates — a reader reaching for the code reaches the
-comment first, and this doc asserted the same wrong thing until it was traced.
-Correcting the comment is a turf-monster code change and belongs to a
-turf-monster task, not here.
+The comment sits directly above `def call` — **not** the class header above
+`class SyncAthletes`, which says nothing about skips — and it reads "NEVER
+raises for an environment condition — an unconfigured stack **or an unreachable
+provider** is a skip, recorded on the cursor." **The second half is false**, and
+`#request`, the last method in the class, is the authority: it raises `Error` on
+every transport failure it rescues, on every non-2xx response and on an
+unparseable body, and `#call` records `failed`. A wrong comment propagates — a
+reader reaching for the code reaches the comment first, and this doc asserted the
+same wrong thing until it was traced. Correcting the comment is a turf-monster
+code change and belongs to a turf-monster task, not here.
 
 ### The roster-sync SOP is still marked PENDING
 
