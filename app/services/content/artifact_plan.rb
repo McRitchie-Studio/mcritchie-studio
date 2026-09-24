@@ -28,6 +28,23 @@ class Content
     # — as though it were the row on file, so a freshly attached image was
     # invisible and approval landed on the other colorway's artifact.
     #
+    # AND THE THIRD OF THOSE IS THIS CHANGE'S OWN DOING, which is the honest way
+    # to read it. Measured 2026-09-23 on a mixed cast — one member's look
+    # recorded for the jersey, one member's never recorded — walking the
+    # commits:
+    #
+    #   without the refusal   label :reuse (WRONG), image right, approve right
+    #   refusal alone         label :reskin, IMAGE GONE, another game's jersey
+    #                         on the card, button says "Attach" while the click
+    #                         retires, and the gate STAMPS THE WRONG JERSEY
+    #   refusal + this Struct label :reskin, image right, approve right
+    #
+    # So `occupant` is not tidying up a pre-existing bug: before the refusal,
+    # `exact` matched and `artifact` WAS the row on file, so every consumer was
+    # right by accident. Tightening the lookup is what pulled the two rows
+    # apart, and a lookup that pulls rows apart owes its consumers the right
+    # one. Ship the refusal without this and the gate gets worse, not better.
+    #
     # THE RULE THE THREE SHARE: gate a mutation, a picture or a sign-off on the
     # row it actually acts on, never on a predicate that merely correlates with
     # it. `decision` is a LABEL and may gate nothing but words.
