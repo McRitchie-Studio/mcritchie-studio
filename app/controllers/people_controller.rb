@@ -256,9 +256,18 @@ class PeopleController < ApplicationController
   # `index_artifact_subjects_on_artifact_slug_and_person_slug` is unique, so an
   # artifact casting BOTH people cannot take the source's row. After the merge
   # that image depicts one person twice — a cast that never existed — so retire
-  # it rather than quietly halving it. Left live with one subject, a `pair`
-  # artifact MATCHES a one-person pair lookup, which is the same false match
-  # this whole fix exists to prevent.
+  # it rather than quietly halving it: left live, the row stays APPROVED while
+  # describing a cast its own image does not show.
+  #
+  # RETIRE IT BECAUSE IT IS WRONG, NOT BECAUSE IT IS REACHABLE. An earlier draft
+  # of this comment claimed a halved `pair` artifact MATCHES a one-person pair
+  # lookup. Measured in review: it does not, by two independent guards.
+  # `Content::ArtifactPlan#pair_slot` opens `return nil if cast.length < 2`, so
+  # a one-person pair lookup is never built — and it is the only caller that
+  # names `kind: "pair"`. `Artifact.matching` then filters on `kind`, so a solo
+  # character-sheet lookup cannot reach a `pair` row either. The halved row is
+  # INERT. Do not weaken this retire on the strength of that; the reason above
+  # stands on its own.
   def relocate_cast!(keep, source)
     source.artifact_subjects.to_a.each do |subject|
       if ArtifactSubject.exists?(artifact_slug: subject.artifact_slug, person_slug: keep.slug)

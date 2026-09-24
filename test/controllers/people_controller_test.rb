@@ -219,8 +219,14 @@ class PeopleControllerTest < ActionDispatch::IntegrationTest
   # An image casting BOTH people depicts, after the merge, one person twice —
   # a cast that never existed. `index_artifact_subjects_on_artifact_slug_and_person_slug`
   # forbids the duplicate row, and leaving it live with one subject is worse
-  # than retiring it: a `pair` artifact with a single subject MATCHES a
-  # one-person pair lookup, which is the false-match this work exists to stop.
+  # than retiring it: the row stays APPROVED while describing a cast its own
+  # image does not show.
+  #
+  # The `matching` assertion below calls the lookup BY HAND. No production path
+  # builds it: `Content::ArtifactPlan#pair_slot` returns nil for a cast under
+  # two, and it is the only caller naming `kind: "pair"`. The assertion still
+  # discriminates — skip the retire and it finds the halved row — so it pins the
+  # retire rather than a reachable false match.
   test "an artifact casting both people is retired rather than quietly halved" do
     log_in_as(@admin)
     keep   = Person.create!(first_name: "Sebastian", last_name: "Bothmerge")
