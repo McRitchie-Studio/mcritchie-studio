@@ -212,6 +212,12 @@ Auth is the standard agent bearer token (`Api::V1::BaseController`, shared
 side and the payload carries slugs rather than the `BUF`-style abbreviations
 turf-monster's `Change` struct reports.
 
+**This is one of two crossings, and the only one that pushes.** The other runs the
+other way — turf-monster PULLS the person/athlete projection from the hub — and
+the pair, with the design decisions behind them, is described in
+[`studio-turf-data-flow.md`](studio-turf-data-flow.md). Read that before adding a
+third crossing or changing which app masters a column.
+
 ### Idempotency is structural, not incidental
 `Nfl::LiveScores::PollCycle` is deliberately safe to re-run — every scoring event
 is keyed on ESPN's own play id — so the same final is EXPECTED to arrive here
