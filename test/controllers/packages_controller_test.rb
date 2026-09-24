@@ -13,6 +13,12 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
     end
     assert_select "[data-test='package-price']", text: /Pricing coming soon/, count: 2
     assert_select "[data-test='package-item'][data-status='planned']", text: /Coming soon/
+    # Branding: Google Workspace carries Google's logo and its seat count.
+    assert_select "[data-test='package-item']", text: /Google Workspace/ do
+      assert_select "svg[aria-label='Google']"
+      assert_select "[data-test='package-item-detail']", text: "2 users"
+    end
+    assert_select "[data-test='package-item-detail']", text: "1 site"
   end
 
   test "the SOP map is hidden from customers" do

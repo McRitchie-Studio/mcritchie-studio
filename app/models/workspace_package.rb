@@ -9,7 +9,14 @@ class WorkspacePackage
   SOPS_GLOB = Rails.root.join("docs/agents/agents/*/sops/*.md")
   STATUSES = %w[live planned].freeze
 
-  Item = Struct.new(:name, :blurb, :sop, :section, :you_do, :status, :package_key, keyword_init: true) do
+  # Brand logos with a partial in app/views/packages/logos/. Any other `icon`
+  # value is an emoji rendered as text.
+  LOGOS = %w[google].freeze
+
+  Item = Struct.new(:name, :blurb, :sop, :section, :you_do, :status, :icon, :detail, :package_key,
+                    keyword_init: true) do
+    def logo? = LOGOS.include?(icon)
+
     def live? = status == "live"
 
     # "agents/steffon/sops/domain-dns" — the docs route's path for this item's

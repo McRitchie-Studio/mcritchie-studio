@@ -39,8 +39,17 @@ class WorkspacePackageTest < ActiveSupport::TestCase
 
   test "the Basic steps are exactly the ones workspace-launch walks" do
     launch = Rails.root.join("docs/agents/#{WorkspacePackage.sop_paths.fetch('workspace-launch')}.md").read
-    WorkspacePackage.find(:basic).own_items.each do |item|
+    WorkspacePackage.find(:basic).own_items.select(&:live?).each do |item|
       assert_includes launch, "`#{item.sop}`", "workspace-launch does not walk #{item.sop}"
+    end
+  end
+
+  test "every item has an icon, and a logo key has a partial to render" do
+    WorkspacePackage.all.flat_map(&:own_items).each do |item|
+      assert item.icon.present?, "#{item.name} has no icon"
+      next unless item.logo?
+
+      assert Rails.root.join("app/views/packages/logos/_#{item.icon}.html.erb").exist?, "no logo partial for #{item.icon}"
     end
   end
 end

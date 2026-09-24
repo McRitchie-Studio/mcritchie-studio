@@ -13,6 +13,9 @@
 #   section   optional — the part of that SOP that applies
 #   you_do    what the CUSTOMER / operator does themselves (blank = nothing)
 #   status    live (delivered today) or planned (on the roadmap, no SOP yet)
+#   icon      an emoji, OR a brand logo key rendered from app/views/packages/logos/
+#             (google) — use a logo only where the customer gets that brand's product
+#   detail    optional quantity chip beside the name: "2 users", "1 site"
 packages:
   - key: basic
     name: Basic
@@ -20,32 +23,45 @@ packages:
     price:
     items:
       - name: Your own domain
+        icon: "🌐"
+        detail: 1 domain
         blurb: We find and register the domain, and confirm it is yours.
         sop: domain-purchase
         you_do: Approve the purchase
         status: live
       - name: Google Workspace
-        blurb: Company email and calendar, with your own address and a shared team@ inbox.
+        icon: google
+        detail: 2 users
+        blurb: Business Gmail, Calendar and Drive for you, plus a shared team@ inbox.
         sop: workspace-signup
         you_do: Sign up and create the team@ user
         status: live
+      - name: Hosted website
+        icon: "🖥️"
+        detail: 1 site
+        blurb: A website on your domain, hosted and kept online for you.
+        status: planned
       - name: Email that lands in the inbox
+        icon: "📬"
         blurb: Verification, SPF, DKIM and DMARC set up so your mail is trusted, not spammed.
         sop: domain-dns
         you_do: Paste the records we give you
         status: live
       - name: Agentic email drafting
+        icon: "✍️"
         blurb: Your agent writes replies and new emails straight into your Drafts. You read, you send.
         sop: workspace-provision
         section: "7. Drafting mailboxes"
         you_do: Approve our key once
         status: live
       - name: Password vault
+        icon: "🔐"
         blurb: Every new login filed in 1Password, never pasted in chat.
         sop: credential-filing
         you_do: Paste each password once
         status: live
       - name: Dedicated browser profile
+        icon: "🧭"
         blurb: A Chrome profile for the new company, so accounts never mix.
         sop: chrome-profiles
         status: live
@@ -57,19 +73,23 @@ packages:
     price:
     items:
       - name: Knowledge base from your Drive
+        icon: "📚"
         blurb: Your agent indexes the Drive folders you choose, so drafts use your real documents.
         sop: workspace-provision
         section: "4. Attach the folders"
         you_do: Name the folders
         status: live
       - name: File storage
+        icon: "🗄️"
         blurb: A private storage bucket for your app's uploads and exports.
         sop: bucket-provision
         status: live
       - name: Credential rotation
+        icon: "🔄"
         blurb: Any leaked or aging secret rotated everywhere it is used, in one pass.
         sop: credential-rotation
         status: live
       - name: Team drafting access
+        icon: "👥"
         blurb: Your admins can draft as the mailboxes you grant them, with every draft logged.
         status: planned
