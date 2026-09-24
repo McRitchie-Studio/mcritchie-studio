@@ -53,6 +53,47 @@ class Appearance < ApplicationRecord
     [descriptor, (default? ? "(default)" : nil)].compact.join(" ")
   end
 
+  # THE LOOK AN ATTACH FILES.
+  #
+  # Uploading an image for a named colorway is a STATEMENT about how this person
+  # looks in it, so the attach files that look rather than leaving the row
+  # unattributed. Filing nil instead is what made an attached artifact
+  # unfindable: the row went in under "no look" while every read resolves nil to
+  # the person's DEFAULT (ArtifactSubject#effective_appearance), so the reuse key
+  # asked for `person@` and found `person@<default>`.
+  #
+  # IDEMPOTENT on the colorway, which is what lets the attach run on every
+  # upload without accumulating looks. A RETIRED look in that colorway is not
+  # revived — retiring it was a decision — so a fresh one is filed beside it.
+  #
+  # Returns nil when nothing names a colorway. There is then genuinely nothing
+  # to file, and nil is the honest record: it means "no look was named AND the
+  # person has none", which is exactly the state in which the read's nil
+  # fallback agrees with it.
+  def self.file_for_colorway!(person_slug:, colorway:)
+    colorway = colorway.to_s.strip.downcase.presence
+    return nil if colorway.blank? || person_slug.blank?
+
+    live.find_by(person_slug: person_slug, colorway: colorway) ||
+      create!(person_slug: person_slug, colorway: colorway,
+              descriptor: available_descriptor(person_slug, colorway.titleize))
+  end
+
+  # `index_appearances_live_per_person` is UNIQUE on (person_slug, descriptor)
+  # among live looks, so a person who already has a hand-named "Primary" in some
+  # other colorway would make the create above raise RecordNotUnique rather than
+  # file anything. Step past the taken names instead of failing the attach.
+  def self.available_descriptor(person_slug, base)
+    candidate = base
+    suffix = 2
+    while live.exists?(person_slug: person_slug, descriptor: candidate)
+      candidate = "#{base} #{suffix}"
+      suffix += 1
+    end
+    candidate
+  end
+  private_class_method :available_descriptor
+
   private
 
   # The FIRST look a person gets becomes their default. Doing it here rather

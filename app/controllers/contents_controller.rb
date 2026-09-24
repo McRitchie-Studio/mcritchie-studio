@@ -95,7 +95,8 @@ class ContentsController < ApplicationController
     # is not an identifier: two character-sheet slots differ only by who is in
     # them, so a name mismatch silently attached to the WRONG slot rather than
     # failing — which reads as "the attach did nothing".
-    slot = Content::ArtifactPlan.new(@content).slots[params[:slot_index].to_i]
+    plan = Content::ArtifactPlan.new(@content)
+    slot = plan.slots[params[:slot_index].to_i]
     return redirect_to(content_path(@content.slug), alert: "No such slot on this content.") unless slot
 
     rescue_and_log(target: @content) do
@@ -127,7 +128,28 @@ class ContentsController < ApplicationController
 
         artifact = Artifact.create!(kind: slot.kind, image_url: params[:image_url], source: "operator")
         slot.subjects.each_with_index do |row, i|
-          artifact.subjects.create!(person_slug: row[:slug], appearance_slug: row[:appearance]&.slug,
+          # FILE THE LOOK THE IMAGE IS BEING UPLOADED FOR.
+          #
+          # `row[:appearance]` is nil whenever the content names a colorway this
+          # person has no look in — ArtifactPlan#appearance_for refuses to
+          # substitute their default there, and it is right to. But writing that
+          # nil STRAIGHT THROUGH filed the row under "no look" while every read
+          # resolves nil to the default (ArtifactSubject#effective_appearance),
+          # so `Artifact.matching` asked for `person@` and the row answered
+          # `person@<default>`. The slot could never find the artifact it had
+          # just created: it read :reskin forever, so the attach never retired
+          # what it replaced, the library doubled on every re-attach, and the
+          # page kept showing the FIRST image while the operator pasted new ones.
+          # Measured on a home-winner game with a single white look on file —
+          # the app's own fixture — which is half of all games.
+          #
+          # So the attach files the look. An uploaded image IS the statement
+          # that this is the person in that colorway; the alternative shape —
+          # refusing the attach — was measured too, and it refuses three of the
+          # five reachable cases while still leaving a nil write behind.
+          look = row[:appearance] ||
+                 Appearance.file_for_colorway!(person_slug: row[:slug], colorway: plan.colorway)
+          artifact.subjects.create!(person_slug: row[:slug], appearance_slug: look&.slug,
                                     role: row[:role], ordinal: i + 1)
         end
       end

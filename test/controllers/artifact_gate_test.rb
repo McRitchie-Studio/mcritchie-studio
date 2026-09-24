@@ -252,6 +252,121 @@ class ArtifactGateTest < ActionDispatch::IntegrationTest
     assert_equal 1, Artifact.where(kind: "pair").where.not(retired_at: nil).count
   end
 
+  # --- the look an attach files -------------------------------------------
+  #
+  # THE WRITE, not a reader. The attach filed `appearance_slug: nil` whenever
+  # the content named a colorway the person had no look in, while every read
+  # resolves nil to the person's DEFAULT — so the row went in under
+  # `person@<default>` and the lookup asked for `person@`. Three consumer
+  # censuses could not see it, because every consumer was correct.
+  #
+  # It is reachable on the ordinary path, not on unusual operator input: this
+  # cast's only filed look is Bengals white, and a HOME win guesses "primary",
+  # which is half of all games.
+
+  # Put the Bengals at home so `guessed_colorway` answers "primary" — a colorway
+  # neither player has a look in.
+  def home_win!
+    @content.update!(game_facts: { "winner_slug" => "cincinnati-bengals",
+                                   "away_team_slug" => "jacksonville-jaguars",
+                                   "home_team_slug" => "cincinnati-bengals" })
+  end
+
+  def assert_unfiled_colorway
+    assert_equal "primary", Content::ArtifactPlan.new(@content.reload).colorway,
+                 "the control — the guess must be primary, or this test proves nothing"
+    assert_equal [], Appearance.live.where(colorway: "primary").pluck(:person_slug),
+                 "the control — nobody may have a primary look yet, or this test proves nothing"
+  end
+
+  test "an attach for an unfiled colorway records the look it was uploaded for" do
+    home_win!
+    assert_unfiled_colorway
+
+    attach(index_of("pair"))
+
+    filed = Artifact.find_by(kind: "pair").subjects.map(&:appearance_slug)
+    assert_equal 2, filed.compact.length, "both subjects must carry a look, not a null"
+    assert_equal ["primary", "primary"],
+                 Appearance.where(slug: filed).pluck(:colorway),
+                 "the look filed must be the colorway the image was uploaded FOR"
+  end
+
+  # ACCEPTANCE 2: a filed artifact is found by its own lookup. Before the write
+  # recorded the look this read :reskin forever — the slot that created the
+  # artifact could not see it.
+  test "the slot finds the artifact it just created" do
+    home_win!
+    assert_unfiled_colorway
+
+    attach_all
+
+    assert_equal [:reuse, :reuse, :reuse], slots.map(&:decision),
+                 "every slot must find its own artifact; :reskin means the lookup missed it"
+  end
+
+  # THE OPERATOR-VISIBLE FAILURE. A miss on the exact match leaves the slot on
+  # :reskin, so the attach never retires what it replaces: the library doubles
+  # and the page keeps rendering the FIRST image while the operator pastes new
+  # ones. Measured before the fix: 6 live artifacts and /first.png still on the
+  # page.
+  test "replacing an image on an unfiled colorway actually replaces it" do
+    home_win!
+    assert_unfiled_colorway
+    attach_all
+    assert_equal 3, Artifact.live.count, "the control — one live artifact per slot before the replace"
+
+    slots.each_index { |i| attach(i, "/second-#{i}.png") }
+
+    assert_equal 3, Artifact.live.count,
+                 "the replacement must supersede, not pile up beside what it replaces"
+    get content_path(@content.slug)
+    assert_match "/second-0.png", response.body,
+                 "the image the operator just attached must be the one on the page"
+    assert_no_match(/\/x\.png/, response.body,
+                    "the superseded image must be gone from the page")
+  end
+
+  # The page told the operator "no look" for a person whose look it had just
+  # filed — on the one screen whose job is trust about assets.
+  test "[component] the slot names the look rather than claiming there is none" do
+    home_win!
+    assert_unfiled_colorway
+    attach_all
+
+    get content_path(@content.slug)
+
+    assert_no_match(/no look/, response.body)
+    assert_match "Joe Burrow: Primary", response.body
+  end
+
+  # THE LATENT HALF, and the reason nil is not merely cosmetic. A null row is
+  # findable only while the person has NO default. Giving them their first look
+  # later re-points every read and strands every artifact already on file for
+  # them — silently, with no error and nothing to grep for.
+  test "a look created later does not strand the artifacts already filed" do
+    Appearance.delete_all
+    # `Appearance.delete_all` leaves the person pointing at the row it deleted,
+    # and `become_default_if_first` only fires on a BLANK pointer — so without
+    # this the new look below never becomes the default, the read never
+    # re-points, and the test passes on the broken tree for the wrong reason.
+    Person.where(slug: [@burrow.slug, @chase.slug]).update_all(default_appearance_slug: nil)
+    home_win!
+    assert_nil Person.find_by(slug: @burrow.slug).default_appearance_slug,
+               "the control — the cast must start with no looks and no default pointer"
+
+    attach_all
+    assert_equal [:reuse, :reuse, :reuse], slots.map(&:decision), "the control — filed and findable"
+
+    Appearance.create!(person_slug: @burrow.slug, descriptor: "Bengals white", colorway: "white")
+    Appearance.create!(person_slug: @chase.slug,  descriptor: "Bengals white", colorway: "white")
+    assert Person.find_by(slug: @burrow.slug).default_appearance,
+           "the control — the new look must have become the default, or the read never re-points"
+
+    assert_equal [:reuse, :reuse, :reuse], slots.map(&:decision),
+                 "a new look must not strand artifacts already filed for this cast"
+  end
+
   # --- the wiring blockers a review found ---------------------------------
 
   # The gate was unreachable in production: nothing wrote the cast, so
