@@ -141,6 +141,164 @@ class AppearanceTest < ActiveSupport::TestCase
     assert_equal "Primary", look.descriptor, "the retired name is free again — the index only binds live looks"
   end
 
+  # --- the lifecycle of the DEFAULT pointer -------------------------------
+  #
+  # `people.default_appearance_slug` is a plain string column with no foreign
+  # key, and exactly ONE callback writes it. That callback is an after_CREATE,
+  # so every transition that is not a create — a look destroyed, a look handed
+  # to another person by a merge — used to leave the pointer describing a world
+  # that is no longer there.
+  #
+  # This is not a hypothetical. A test in PR 1566 passed on a BROKEN tree
+  # because `Appearance.delete_all` in its setup left the pointer aimed at a
+  # deleted row, so the "first look becomes the default" guarantee — which only
+  # fires on a BLANK pointer — never fired and the read never re-pointed. Each
+  # test below therefore asserts its CONTROL first: the pointer resolves before
+  # the act, so a red is the defect rather than the setup.
+
+  test "destroying the default look re-points it at a remaining live look" do
+    first  = Appearance.create!(person_slug: @burrow.slug, descriptor: "Bengals white")
+    second = Appearance.create!(person_slug: @burrow.slug, descriptor: "Navy suit")
+
+    assert_equal first.slug, @burrow.reload.default_appearance_slug,
+                 "the control — the default must point at the first look before we destroy it"
+    assert_not_nil @burrow.default_appearance, "the control — and it must RESOLVE before we destroy it"
+
+    first.destroy!
+
+    @burrow.reload
+    assert_equal second.slug, @burrow.default_appearance_slug,
+                 "the surviving look should have taken the slot"
+    assert_not_nil @burrow.default_appearance
+  end
+
+  test "destroying a person's only look frees the slot for the next one" do
+    only = Appearance.create!(person_slug: @burrow.slug, descriptor: "Bengals white")
+    assert_equal only.slug, @burrow.reload.default_appearance_slug, "the control"
+
+    only.destroy!
+
+    assert_nil @burrow.reload.default_appearance_slug,
+               "a pointer left aimed at the deleted row is what freezes the person forever"
+
+    replacement = Appearance.create!(person_slug: @burrow.slug, descriptor: "Navy suit")
+    assert_equal replacement.slug, @burrow.reload.default_appearance_slug,
+                 "become_default_if_first guards on a BLANK pointer, so this only works once the slot is free"
+  end
+
+  # The invariant the app claims in prose, stated as a test. Before this the
+  # state below was permanent and had nothing to grep for.
+  test "a person with live looks always resolves a default" do
+    first  = Appearance.create!(person_slug: @burrow.slug, descriptor: "Bengals white")
+    second = Appearance.create!(person_slug: @burrow.slug, descriptor: "Navy suit")
+    assert_not_nil @burrow.reload.default_appearance, "the control"
+
+    first.destroy!
+    Appearance.create!(person_slug: @burrow.slug, descriptor: "Practice jersey")
+
+    @burrow.reload
+    assert_operator @burrow.appearances.live.count, :>, 0
+    assert_not_nil @burrow.default_appearance,
+                   "live looks and no resolvable default is the state every read has to special-case"
+  end
+
+  # Destroying someone ELSE's look must not disturb this person's pointer.
+  test "destroying another person's look leaves this one's default alone" do
+    mine   = Appearance.create!(person_slug: @burrow.slug, descriptor: "Bengals white")
+    theirs = Appearance.create!(person_slug: @chase.slug, descriptor: "Bengals black")
+    assert_equal mine.slug, @burrow.reload.default_appearance_slug, "the control"
+
+    theirs.destroy!
+
+    assert_equal mine.slug, @burrow.reload.default_appearance_slug
+  end
+
+  # --- what the pointer must NOT do ---------------------------------------
+  #
+  # Each of these was written because a mutation survived: the behaviour was
+  # real and load-bearing, and nothing in the suite would have noticed it going.
+
+  # Resolving must not overrule a deliberate choice. Without the keep-a-valid-
+  # pointer branch, the next look created or destroyed drags the default back to
+  # the oldest and silently undoes "Make default".
+  test "a deliberately moved default survives the next look" do
+    Appearance.create!(person_slug: @burrow.slug, descriptor: "Bengals white")
+    suit = Appearance.create!(person_slug: @burrow.slug, descriptor: "Navy suit")
+    suit.make_default!
+    assert_equal suit.slug, @burrow.reload.default_appearance_slug, "the control"
+
+    Appearance.create!(person_slug: @burrow.slug, descriptor: "Practice jersey")
+
+    assert_equal suit.slug, @burrow.reload.default_appearance_slug,
+                 "resolving must keep a valid pointer, not re-pick the oldest look"
+  end
+
+  # A pointer at a RETIRED look resolves through belongs_to perfectly well, so
+  # nothing raises — Content::ArtifactPlan#appearance_for just hands the
+  # pipeline a look that was deliberately taken out of service.
+  test "a retired look does not keep the default slot" do
+    first  = Appearance.create!(person_slug: @burrow.slug, descriptor: "Bengals white")
+    second = Appearance.create!(person_slug: @burrow.slug, descriptor: "Navy suit")
+    assert_equal first.slug, @burrow.reload.default_appearance_slug, "the control"
+
+    first.update!(retired_at: Time.current)
+    Appearance.create!(person_slug: @burrow.slug, descriptor: "Practice jersey")
+
+    assert_equal second.slug, @burrow.reload.default_appearance_slug,
+                 "the default must name a LIVE look"
+    assert_includes @burrow.appearances.live.pluck(:slug), @burrow.default_appearance_slug
+  end
+
+  # Re-pointing takes the OLDEST survivor, which is the same rule
+  # become_default_if_first encodes — the person's earliest look keeps priority
+  # rather than whichever one happened to be added last.
+  test "re-pointing takes the oldest surviving look" do
+    first  = Appearance.create!(person_slug: @burrow.slug, descriptor: "Bengals white")
+    second = Appearance.create!(person_slug: @burrow.slug, descriptor: "Navy suit")
+    third  = Appearance.create!(person_slug: @burrow.slug, descriptor: "Practice jersey")
+    assert_equal first.slug, @burrow.reload.default_appearance_slug, "the control"
+
+    first.destroy!
+
+    assert_equal second.slug, @burrow.reload.default_appearance_slug,
+                 "the oldest survivor takes the slot, not the newest look"
+    assert_not_equal third.slug, @burrow.reload.default_appearance_slug
+  end
+
+  # The pointer is a bare string column with no foreign key, so "the owner holds
+  # it" is a convention rather than a guarantee. Releasing by COLUMN rather than
+  # through #person is what makes the release complete.
+  test "a destroyed look releases every pointer aimed at it" do
+    look = Appearance.create!(person_slug: @burrow.slug, descriptor: "Bengals white")
+    @chase.update_columns(default_appearance_slug: look.slug)
+    assert_equal look.slug, @chase.reload.default_appearance_slug, "the control"
+
+    look.destroy!
+
+    assert_nil @chase.reload.default_appearance_slug,
+               "a pointer held by someone else dangles just as badly"
+  end
+
+  # THE VACUITY TRAP THIS SEAM PRODUCES, pinned as a test.
+  #
+  # A test in PR 1566 passed on a broken tree because `Appearance.delete_all` in
+  # its setup left the pointer aimed at a deleted row: the old guard read a
+  # DANGLING pointer as "already has a default" and never stamped the later
+  # look, so the read never re-pointed and the assertion passed for the wrong
+  # reason. Resolving rather than testing for blank heals that on the next
+  # create, whatever removed the row.
+  test "a look created after a raw delete takes the orphaned slot" do
+    Appearance.create!(person_slug: @burrow.slug, descriptor: "Bengals white")
+    Appearance.delete_all # no callbacks — exactly what the vacuous setup did
+    assert @burrow.reload.default_appearance_slug.present?, "the control — the pointer is dangling"
+    assert_nil @burrow.default_appearance, "the control — and it resolves to nothing"
+
+    replacement = Appearance.create!(person_slug: @burrow.slug, descriptor: "Navy suit")
+
+    assert_equal replacement.slug, @burrow.reload.default_appearance_slug
+    assert_not_nil @burrow.default_appearance
+  end
+
   # REGRESSION. `colorway` is free text — the jersey field at the inspection
   # gate takes whatever the operator types — and the descriptor was built as
   # `colorway.titleize`, which is "" for input that is all punctuation. That

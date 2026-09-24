@@ -170,4 +170,81 @@ class ArtifactTest < ActiveSupport::TestCase
     count = Artifact.joins(:subjects).where(artifact_subjects: { person_slug: @burrow.slug }).distinct.count
     assert_equal 2, count
   end
+
+  # --- an artifact whose cast goes away -----------------------------------
+  #
+  # `Person has_many :artifact_subjects, dependent: :destroy`, so destroying a
+  # person takes their cast rows with them and a solo character sheet outlives
+  # the only person in it. It stays `live`, its cast label renders empty, and
+  # its reuse key is the empty string — an image of NOBODY, still on offer.
+
+  test "an artifact that loses its last subject is retired" do
+    a = artifact_for([[@carrey, @ace]], kind: "character_sheet")
+    assert_not a.retired?, "the control — it must be live before the cast goes"
+    assert_equal 1, a.subjects.count, "the control"
+
+    @carrey.destroy!
+
+    a.reload
+    assert_equal 0, a.subjects.count
+    assert a.retired?, "an artifact depicting nobody must not stay on offer"
+    assert_nil Artifact.live.find_by(slug: a.slug)
+  end
+
+  # Losing ONE of several is not losing the cast. Retiring there would throw
+  # away a real image over a partial change.
+  test "an artifact that keeps a subject is left live" do
+    a = artifact_for([[@burrow, @bw], [@chase, @cb]], kind: "pair")
+    assert_not a.retired?, "the control"
+
+    @chase.destroy!
+
+    a.reload
+    assert_equal 1, a.subjects.count
+    assert_not a.retired?
+  end
+
+  # The retire hook must not fire while the artifact ITSELF is being destroyed.
+  # Its subjects go first, so the last one finds an empty cast and would retire
+  # the very row on its way out. Nothing RAISES if it does — Rails will happily
+  # run that UPDATE inside the destroy — which is exactly why this has to be
+  # measured at the SQL rather than asserted at the outcome.
+  test "destroying an artifact issues no retire write on the way out" do
+    a = artifact_for([[@burrow, @bw]], kind: "character_sheet")
+    slug = a.slug
+    writes = []
+    sub = ActiveSupport::Notifications.subscribe("sql.active_record") do |*, payload|
+      writes << payload[:sql] if payload[:sql].to_s.match?(/\AUPDATE "artifacts"/i)
+    end
+
+    begin
+      assert_nothing_raised { a.destroy! }
+    ensure
+      ActiveSupport::Notifications.unsubscribe(sub)
+    end
+
+    assert_empty writes, "the artifact is going away; retiring it first is a wasted write on a doomed row"
+    assert_nil Artifact.find_by(slug: slug)
+    assert_equal 0, ArtifactSubject.where(artifact_slug: slug).count
+  end
+
+  # The control for the test above: the same subscriber DOES see a write when
+  # the artifact is meant to be retired, so an empty `writes` proves the guard
+  # rather than proving the subscriber never fires.
+  test "the retire write is visible to the same probe when it should happen" do
+    a = artifact_for([[@carrey, @ace]], kind: "character_sheet")
+    writes = []
+    sub = ActiveSupport::Notifications.subscribe("sql.active_record") do |*, payload|
+      writes << payload[:sql] if payload[:sql].to_s.match?(/\AUPDATE "artifacts"/i)
+    end
+
+    begin
+      @carrey.destroy!
+    ensure
+      ActiveSupport::Notifications.unsubscribe(sub)
+    end
+
+    assert_not_empty writes, "losing the last subject must retire the artifact"
+    assert a.reload.retired?
+  end
 end
