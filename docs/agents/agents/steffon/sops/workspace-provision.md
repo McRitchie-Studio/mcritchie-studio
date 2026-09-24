@@ -231,10 +231,10 @@ Each address we may draft as is its own allow-list row, proven with its own
 token. The workspace's `team@` subject is not enough to draft as `alex@`.
 
 ```bash
-bin/rails 'workspace:add_mailbox[alex@<domain>]'          # SIGNATURE='markdown' optional
-bin/rails 'workspace:check_mailbox[alex@<domain>]'        # proves it; flips a pending workspace active too
-bin/rails workspace:mailboxes                             # who is draftable, with draft counts
-bin/rails 'workspace:revoke_mailbox[alex@<domain>,<why>]' # stop drafting as one address
+bin/rails 'workspace:add_mailbox[<address>]'           # SIGNATURE='markdown' optional
+bin/rails 'workspace:check_mailbox[<address>]'         # proves it; flips a pending workspace active too
+bin/rails workspace:mailboxes                          # who is draftable, with draft counts
+bin/rails 'workspace:revoke_mailbox[<address>,<why>]'  # stop drafting as one address
 ```
 
 `check_mailbox` succeeding also proves the workspace's grant (delegation is
