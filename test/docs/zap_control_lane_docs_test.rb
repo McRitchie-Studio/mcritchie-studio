@@ -33,6 +33,7 @@
 
 require "minitest/autorun"
 require "yaml"
+require_relative "../../bin/lib/ci_gate"
 
 class ZapControlLaneDocsTest < Minitest::Test
   ROOT = File.expand_path("../..", __dir__)
@@ -179,43 +180,37 @@ class ZapControlLaneDocsTest < Minitest::Test
 
   # --- (2) THE RE-CERT LANE ---------------------------------------------------
 
-  # The ruling, read off the ladder rather than off either document. The FAST route is
-  # role-independent; the PROVISIONAL route is builder-only. That asymmetry is the
-  # whole reason a reviewer may clear a stale cert with bin/fast-check.
-  def test_the_fast_route_is_role_independent_and_the_provisional_route_is_not
-    lines = source("bin/dor-check").lines
-    guard_for = lambda do |route|
-      idx = lines.index { |l| l =~ /^\s*suite_route = "#{Regexp.escape(route)}"\s*$/ }
-      refute_nil idx, "bin/dor-check no longer assigns suite_route = #{route.inspect} — re-point this guard"
-      back = (0...idx).reverse_each.find { |i| lines[i] =~ /^\s*(?:els)?if / }
-      refute_nil back, "no condition found above the #{route.inspect} assignment"
-      lines[back]
-    end
+  # The ruling, read off the gate rather than off either document. Since
+  # /tasks/dor-reads-settled-ci-verdict there is no route ladder: the suite evidence is
+  # the PR's settled GREEN CI in BOTH roles, and the one role split left is that a
+  # pending CI is a WAIT for the builder and a refusal for review. The docs that told
+  # a reviewer "bin/fast-check plus a green CI clears a stale cert" now describe a
+  # receipt nothing reads — the recovery recipe below is kept for the CONTROL lane,
+  # which is still fingerprint-graded.
+  def test_the_suite_evidence_is_the_settled_green_ci_in_both_roles
+    body = source("bin/dor-check")
 
-    fast = guard_for.call("fast")
-    provisional = guard_for.call("fast-provisional")
-
-    refute_match(/review_role/, fast,
-                 "the FAST route now carries a review_role condition. Three agent docs (claude.md, index.md, " \
-                 "devops-cycle-design.md) and zap-protocol.md all tell a REVIEWER that bin/fast-check plus a " \
-                 "green CI clears a stale cert — if that is no longer true they are all wrong at once")
-    assert_match(/review_role/, provisional,
-                 "the PROVISIONAL route lost its review_role condition. It is the builder-only half of this " \
-                 "pair, and the docs contrast the two explicitly — a fast cert credited against a PENDING CI " \
-                 "is exactly what review's gate-zero is strict about")
-    assert_match(/green/, fast, "the FAST route no longer requires a green CI — the docs say it does")
+    refute_match(/suite_route = "fast/, body,
+                 "bin/dor-check has grown a fast/provisional route again — the docs say the receipts are inert")
+    refute_match(/FullSuiteGate\.evaluate\(/, body,
+                 "bin/dor-check grades a cert receipt again; the CI verdict is the whole suite gate")
+    assert_includes CiGate::ONLY_EVIDENCE, "settled GREEN GitHub CI",
+                    "the one-evidence sentence must name the settled green"
+    assert CiGate.waiting?({ state: :pending }, review_role: false), "a builder-side pending CI is a WAIT"
+    refute CiGate.waiting?({ state: :pending }, review_role: true), "review's gate-zero refuses a pending CI"
+    refute CiGate.waiting?({ state: :green }, review_role: false)
   end
 
-  # The shape gate has no test-only branch: `full_suite_gate: true` means NOT EXEMPT,
-  # and the route ladder it opens is the ordinary one.
-  def test_the_suite_gate_opens_on_the_shapes_own_declaration_not_on_a_named_shape
-    body = source("bin/dor-check")
-    opener = body[/^if gate != "build" && shape_def && shape_def\.fetch\("full_suite_gate", true\)$/]
-
-    refute_nil opener,
-               "the suite gate no longer opens on the shape's own `full_suite_gate` declaration. The corrected " \
-               "docs say test-only owes the ORDINARY cert gate because the gate keys on that flag and on " \
-               "nothing about the shape's name"
+  # The shape gate has no test-only branch: `full_suite_gate: true` means NOT EXEMPT.
+  # bin/dor-check no longer branches on the flag at all — the CI verdict is asked of
+  # every shape — while bin/fast-check's ShapeContract still reads it to waive the
+  # optional pre-flight on a prose diff. The yml contrast the docs lean on stays.
+  def test_the_shape_flag_is_read_by_the_preflight_not_by_the_verdict
+    refute_match(/shape_def\.fetch\("full_suite_gate"/, source("bin/dor-check"),
+                 "bin/dor-check branches on full_suite_gate again — the CI verdict applies to every shape, " \
+                 "and a flag that waives it re-opens the docs-shape hole")
+    assert_match(/fetch\("full_suite_gate", true\)/, source("bin/lib/shape_contract.rb"),
+                 "ShapeContract no longer reads the flag; the pre-flight waiver rests on it")
 
     shapes = YAML.load_file(File.join(ROOT, "config/feature_shapes.yml"))
     shapes = shapes["shapes"] || shapes

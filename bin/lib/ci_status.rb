@@ -70,12 +70,6 @@ require_relative "fast_lane"
 # release tip belongs to no PR). Both fold into the states above. See the
 # SHA-addressed section below.
 module CiStatus
-  # THE ABSOLUTE `bin/full-suite-check` THE UNREADABLE-CI REMEDY OFFERS. The gated route
-  # hands the reader a command to TYPE, and the bare form types only from a hub desk;
-  # this offer is read by a builder who is already blocked, which is the worst moment to
-  # hand back `No such file or directory`. Resolved from bin/ (this file's parent) once
-  # at load. Policy: FastLane.remedy_command; pinned by
-  # test/lib/remedy_hint_guard_test.rb on the FILESYSTEM, not on the text.
   # The credential fix these refusals prescribe. It is the most-pasted command in the
   # house and was the last bare one left in the swept set — the operand is a FLAG
   # (`--export`) rather than a slug, which is the shape the guard's original operand
@@ -599,10 +593,10 @@ module CiStatus
   # misspelled VALUE still counts as a caller that states its route, and the suite
   # stays green.
   #
-  # SHARED WITH bin/lib/ci_gate.rb, not copied. `unread_ci_refusal` forwards this same
-  # parameter and branches on it for a state that never reaches this method
-  # (`:none`/`:unverified`), so a fence living only here would leave that branch open.
-  # One list, one raise, both entry points.
+  # ONE ENTRY POINT. bin/lib/ci_gate.rb used to forward this parameter and branch on it
+  # for a state that never reaches this method; since /tasks/dor-reads-settled-ci-verdict
+  # it takes no route at all (every task-grain refusal prints the same denial), so this
+  # list and this raise are the whole fence.
   CERT_ROUTES = [true, false, nil, :retired].freeze
 
   # FAIL CLOSED ON AN UNKNOWN ROUTE. An unclassified route is not evidence that the
@@ -669,47 +663,47 @@ module CiStatus
               "answer — App tokens are forbidden from it by design), reproduce the exact check read, and use " \
               "GitHub's response to choose the credential or permission fix."
           end
-  route = case cert_route
-          when :retired
-            # THE RETIRED ROUTE — a gate that never had a cert to substitute. It names
-            # the command the operator actually re-runs, spelled as bin/release.rb's
-            # sibling abort branches spell it, and NO `<task>` placeholder: at G3 there
-            # is no task to substitute at all — the subject is a release SHA carrying
-            # many tasks. "no local cert stands in" is the CONTRACT CLAUSE, spelled
-            # identically in every denying place (here, the task-grain branch below, and
-            # bin/lib/ci_gate.rb), because test/lib/dor_check_exempt_ci_test.rb reads
-            # the printed refusal to decide what the gate PROMISED and then executes
-            # that promise.
-            "and no local cert stands in for it at the G3 pre-QA gate either: that gate is RELEASE-grain " \
-              "and SHA-addressed — it certifies origin/release's tip on GitHub's verdict alone, so there is " \
-              "no task-grain suite whose result could be substituted. Fixing the credential is the only " \
-              "route — this gate advances on a GREEN CI for that SHA and nothing else; re-run " \
-              "`bin/release prepare` once the read works."
-          else
-            # THE TASK-GRAIN DENIAL — true, false and nil alike (see the header). NO
-            # ROUTE IS NAMED because none exists: a settled green CI is the whole of the
-            # suite evidence, so a local suite run certifies nothing this gate reads.
-            # THE CLOSING CLAUSE IS DERIVED, NOT ASSERTED — see `also_refused:` in the
-            # header. "Fixing the credential" stays the route to a CI VERDICT; what the
-            # co-fire wording withdraws is the SUFFICIENCY, and it NAMES the other
-            # refusal so the reader is not sent to fix a token and then met by a
-            # refusal the gate had told them could not happen.
-            closing = if also_refused.empty?
-                        "Fixing the credential is the only route — this gate advances on a GREEN CI and " \
-                          "nothing else."
-                      else
-                        "Fixing the credential is the only route to a CI VERDICT, but a GREEN CI is " \
-                          "NECESSARY AND NOT SUFFICIENT here: this verdict is ALSO refused by " \
-                          "#{also_refused.join(' AND ')}, and no CI result clears that."
-                      end
-            "and no local cert stands in for it: a settled GREEN GitHub CI for the PR's current head is " \
-              "the ONLY suite evidence this gate credits, so a local suite run would leave this refusal " \
-              "unchanged. #{closing}"
-          end
-  "#{UNREADABLE_REMEDY_HEADER} #{fix} " \
-    "Until the check read works, no suite evidence can be credited on this repo (the only evidence is a " \
-    "GREEN CI this gate can actually read) — #{route}"
-end
+    route = case cert_route
+            when :retired
+              # THE RETIRED ROUTE — a gate that never had a cert to substitute. It names
+              # the command the operator actually re-runs, spelled as bin/release.rb's
+              # sibling abort branches spell it, and NO `<task>` placeholder: at G3 there
+              # is no task to substitute at all — the subject is a release SHA carrying
+              # many tasks. "no local cert stands in" is the CONTRACT CLAUSE, spelled
+              # identically in every denying place (here, the task-grain branch below, and
+              # bin/lib/ci_gate.rb), because test/lib/dor_check_exempt_ci_test.rb reads
+              # the printed refusal to decide what the gate PROMISED and then executes
+              # that promise.
+              "and no local cert stands in for it at the G3 pre-QA gate either: that gate is RELEASE-grain " \
+                "and SHA-addressed — it certifies origin/release's tip on GitHub's verdict alone, so there is " \
+                "no task-grain suite whose result could be substituted. Fixing the credential is the only " \
+                "route — this gate advances on a GREEN CI for that SHA and nothing else; re-run " \
+                "`bin/release prepare` once the read works."
+            else
+              # THE TASK-GRAIN DENIAL — true, false and nil alike (see the header). NO
+              # ROUTE IS NAMED because none exists: a settled green CI is the whole of the
+              # suite evidence, so a local suite run certifies nothing this gate reads.
+              # THE CLOSING CLAUSE IS DERIVED, NOT ASSERTED — see `also_refused:` in the
+              # header. "Fixing the credential" stays the route to a CI VERDICT; what the
+              # co-fire wording withdraws is the SUFFICIENCY, and it NAMES the other
+              # refusal so the reader is not sent to fix a token and then met by a
+              # refusal the gate had told them could not happen.
+              closing = if also_refused.empty?
+                          "Fixing the credential is the only route — this gate advances on a GREEN CI and " \
+                            "nothing else."
+                        else
+                          "Fixing the credential is the only route to a CI VERDICT, but a GREEN CI is " \
+                            "NECESSARY AND NOT SUFFICIENT here: this verdict is ALSO refused by " \
+                            "#{also_refused.join(' AND ')}, and no CI result clears that."
+                        end
+              "and no local cert stands in for it: a settled GREEN GitHub CI for the PR's current head is " \
+                "the ONLY suite evidence this gate credits, so a local suite run would leave this refusal " \
+                "unchanged. #{closing}"
+            end
+    "#{UNREADABLE_REMEDY_HEADER} #{fix} " \
+      "Until the check read works, no suite evidence can be credited on this repo (the only evidence is a " \
+      "GREEN CI this gate can actually read) — #{route}"
+  end
 
   def self.gate_evidence(verdict, repo: nil)
     return {} unless verdict && verdict[:state] == :unreadable

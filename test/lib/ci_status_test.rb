@@ -1104,38 +1104,33 @@ class CiStatusTest < Minitest::Test
     end
   end
 
-  # AND THE GATED ROUTE NAMES THE SLUG IT WAS GIVEN. The half above would pass on a
-  # method that simply deleted the offer — which would be the worse failure, since a
-  # cert genuinely DOES stand in on this route. Both halves, or neither is evidence.
-  def test_the_gated_route_names_the_task_it_was_handed
-    text = CiStatus.unreadable_remedy("McRitchie-Studio/rolio", cause: :credentials,
-                                      cert_route: true, task: "builder-reads-remedy-twice")
+  # AND NO ROUTE NAMES A CERT AT ALL — since /tasks/dor-reads-settled-ci-verdict the
+  # gated route's offer is gone with the receipts it pointed at, so the slug it used to
+  # interpolate lands in no sentence. Every route denies, and says so in the CONTRACT
+  # CLAUSE test/lib/dor_check_exempt_ci_test.rb reads the printed refusal for.
+  def test_every_route_denies_a_cert_and_names_no_command_to_run_one
+    [true, false, nil, :retired].each do |route|
+      text = CiStatus.unreadable_remedy("McRitchie-Studio/rolio", cause: :credentials,
+                                        cert_route: route, task: "builder-reads-remedy-twice")
 
-    # KEYED ON THE FILESYSTEM, not the spelling. remedy-hints-second-wave routed this
-    # offer through FastLane.remedy_command, so it now names an ABSOLUTE
-    # bin/full-suite-check; and because an absolute path CONTAINS the bare form, a
-    # substring assertion would pass on either and prove neither.
-    offer = text[/certify in full instead: (\S+) builder-reads-remedy-twice\./, 1]
-
-    refute_nil offer, "the gated route must offer the cert, and offer it as a command that can be typed"
-    assert_equal File.expand_path(offer), offer,
-                 "the offer must be ABSOLUTE — the bare form runs only from a hub desk: #{text}"
-    assert File.executable?(offer), "the offer names #{offer.inspect}, not an executable on this disk"
-    assert_equal "full-suite-check", File.basename(offer)
+      refute_includes text, "certify in full instead", "#{route.inspect}: the retired offer is back"
+      refute_includes text, "full-suite-check", "#{route.inspect}: no route may name the retired runner"
+      assert_includes text, "no local cert stands in", "#{route.inspect}: the denial must carry the contract clause"
+    end
   end
 
-  # WITHOUT A SLUG IT DEGRADES TO A SENTENCE, NEVER TO A BARE COMMAND. `bin/full-suite-
-  # check` with no argument runs the suite and records NOTHING on any task, so the gate
-  # that reads the recorded evidence would refuse identically afterwards — a remedy this
-  # gate cannot honour, which is exactly what `cert_route: false` exists to prevent.
-  def test_the_gated_route_without_a_slug_offers_no_unhonourable_bare_command
-    text = CiStatus.unreadable_remedy("McRitchie-Studio/rolio", cause: :credentials, cert_route: true)
+  # The task-grain routes are ONE sentence now: true (the old gated offer) and false
+  # (the old doc-only denial) print the same thing, and only :retired — release grain —
+  # differs, by naming `bin/release prepare` as what the operator re-runs.
+  def test_the_task_grain_routes_print_one_denial_and_the_release_route_its_own
+    plain = [true, false, nil].map { |route| CiStatus.unreadable_remedy("McRitchie-Studio/rolio", cause: :credentials, cert_route: route) }
 
-    refute_includes text, "<task>"
-    assert_includes text, "run with this task's slug",
-                    "it must say what the command needs rather than invent a token or imply the bare form works"
-    refute_match(/bin\/full-suite-check\.\s*\z/, text,
-                 "a bare `bin/full-suite-check.` records no evidence this gate can read")
+    assert_equal 1, plain.uniq.size, "true/false/nil must print the same task-grain denial:\n#{plain.uniq.join("\n---\n")}"
+    assert_includes plain.first, "the ONLY suite evidence this gate credits"
+
+    retired = CiStatus.unreadable_remedy("McRitchie-Studio/rolio", cause: :credentials, cert_route: :retired)
+    assert_includes retired, "bin/release prepare"
+    refute_includes retired, "the ONLY suite evidence this gate credits"
   end
 
   # The specific shape that failed: no remedy may tell a blocked agent to pipe a

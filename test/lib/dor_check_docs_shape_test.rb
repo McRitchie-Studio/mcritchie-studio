@@ -56,7 +56,7 @@ class DorCheckDocsShapeTest < Minitest::Test
       File.write(path, JSON.generate(
         "slug" => "task-test", "title" => "T", "metadata" => { "devops" => devops }
       ))
-      with_default_suite_evidence do
+      with_default_ci_verdict do
         with_neutralized_pr_read do
           out = IO.popen(dor_env, "#{BIN} --file #{path} #{args.join(' ')} 2>/dev/null", &:read)
           [out, $?.exitstatus]
@@ -65,14 +65,14 @@ class DorCheckDocsShapeTest < Minitest::Test
     end
   end
 
-  # The merge gate demands fingerprint-bound full-suite evidence for a shaped feature.
-  # Default it fresh-green so these tests stay about the CLAIM guard, not the cert.
-  def with_default_suite_evidence
-    had = ENV.key?("DOR_CHECK_SUITE_EVIDENCE")
-    ENV["DOR_CHECK_SUITE_EVIDENCE"] = "ok" unless had
+  # The merge gate demands a settled GREEN CI for a shaped feature. Default it green
+  # so these tests stay about the CLAIM guard, not the CI verdict.
+  def with_default_ci_verdict
+    had = ENV.key?("DOR_CHECK_CI_STATUS")
+    ENV["DOR_CHECK_CI_STATUS"] = "green" unless had
     yield
   ensure
-    ENV.delete("DOR_CHECK_SUITE_EVIDENCE") unless had
+    ENV.delete("DOR_CHECK_CI_STATUS") unless had
   end
 
   # "" is the seam's "the PR listed no files" — so the LOCAL diff path is what these

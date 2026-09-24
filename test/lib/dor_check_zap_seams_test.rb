@@ -131,7 +131,6 @@ class DorCheckZapSeamsTest < Minitest::Test
         "DOR_CHECK_DIFF_ROOT" => root,
         "DOR_CHECK_DIFF_BASE" => "accepted",
         "DOR_CHECK_CHANGED_FILES" => changed,
-        "DOR_CHECK_SUITE_EVIDENCE" => "ok",
         "DOR_CHECK_PR_FILES" => "",
         "DOR_CHECK_CI_STATUS" => "green",
         "DOR_CHECK_PR_HEAD" => pr_head,

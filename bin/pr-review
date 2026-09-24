@@ -41,8 +41,8 @@
 #   :none    → same defer (an open PR whose checks haven't reported yet);
 #   green    → proceed to spawn the pair.
 #   unreadable / unverified → proceed, but say what the gate-zero will do: it
-#              REFUSES an unread CI verdict unless the task carries a FULL local
-#              cert (bin/full-suite-check runs ci.yml's own command), and there is
+#              REFUSES an unread CI verdict outright (a settled green CI is the only
+#              suite evidence it credits; no local cert stands in), and there is
 #              no deferring past a credential fault. A refusal there is a
 #              conductor-review, never a request-changes — the builder does not own
 #              the token. See "the reviewer's first command" note at the CI gate.
@@ -1193,13 +1193,14 @@ def start_review(task, review_number)
                                         cause: ci[:cause], cert_route: !maybe_exempt, task: task["slug"])}"
     puts "  proceeding to review WITHOUT a CI verdict — review this PR as if CI were unchecked, because it is"
     # And say what their FIRST command will do, because it is no longer "proceed".
-    # The gate-zero clears an unread verdict on a FULL cert and refuses on anything
-    # less; when it refuses, none of merge-ready / wait-for-ci / request-changes is
-    # honest — waiting is futile, and the builder does not own the token. Name the
-    # one that is, or the reviewer picks a wrong outcome under pressure.
-    puts "  their gate-zero (dor-check --gate-role review) CLEARS this only if the task carries a FULL cert " \
-         "(bin/full-suite-check runs ci.yml's own command); with a fast cert it REFUSES#{cert_caveat}"
-    puts "  if it refuses: record conductor-review — NOT request-changes (a credential is not the builder's to " \
+    # The gate-zero REFUSES an unread verdict — no local cert stands in since
+    # /tasks/dor-reads-settled-ci-verdict — and none of merge-ready / wait-for-ci /
+    # request-changes is honest then: waiting is futile, and the builder does not own
+    # the token. Name the one that is, or the reviewer picks a wrong outcome under
+    # pressure.
+    puts "  their gate-zero (dor-check --gate-role review) REFUSES this outright: a settled GREEN CI is the " \
+         "only suite evidence it credits, and no local cert stands in#{cert_caveat}"
+    puts "  so record conductor-review — NOT request-changes (a credential is not the builder's to " \
          "fix) and NOT wait-for-ci (CI already reported; we cannot read it)"
   when :green
     puts "  ci=green#{ci[:count] ? " (#{ci[:count]} checks)" : ""}"
@@ -1217,11 +1218,11 @@ def start_review(task, review_number)
     # here by default rather than by classification, which is why the wording stays
     # generic — but that is a fail-safe, not a second member of the branch.
     # Proceed — a flaky read must not stall a wave — but do not promise the
-    # gate-zero will agree: it allow-lists, so it clears an unread verdict only on a
-    # FULL cert and refuses a state it does not classify at all.
+    # gate-zero will agree: it allow-lists, so it refuses an unread verdict (no local
+    # cert stands in) and a state it does not classify at all.
     puts "  ci=#{ci[:state]}#{ci[:reason] ? " (#{ci[:reason]})" : ""} — proceeding; the primary's gate-zero holds " \
-         "the verdict and REFUSES anything but green (a FULL cert clears an unread one; conductor-review if " \
-         "not)#{cert_caveat}"
+         "the verdict and REFUSES anything but green (no local cert stands in for an unread one; " \
+         "conductor-review then)#{cert_caveat}"
   end
 
   # Gate-zero (dor_review) opens as the supervisor proceeds past CI — the primary

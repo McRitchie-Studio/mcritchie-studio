@@ -186,7 +186,6 @@ class DorCheckReviewDiffRootingTest < Minitest::Test
         "DOR_CHECK_DIFF_BASE" => nil, # exercise the real release-aware base resolver
         "DOR_CHECK_PR_FILES" => pr_files,
         "DOR_CHECK_CI_STATUS" => "green",
-        "DOR_CHECK_SUITE_EVIDENCE" => "ok",
         "DOR_CHECK_PROJECTS_DIR" => projects
       )
       out = IO.popen(env, "#{BIN} #{task['slug']} --file #{path} --json #{args.join(' ')} 2>#{err}",
