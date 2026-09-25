@@ -36,6 +36,23 @@ module ReleaseNotes
       assert_equal [{ "title" => "Card" }], body["embeds"]
     end
 
+    # REGRESSION (rel-20260925-3b1f5c): 27 tasks fell back to the plain-text layout,
+    # a 2790-character `content` against Discord's 2000 cap — Discord answered 400
+    # and the notes never landed. Every message must fit, split on line boundaries.
+    test "[unit] content over the 2000 cap is split on line boundaries across messages" do
+      lines = (1..40).map { |i| "• [Task number #{i}](https://mcritchie.studio/tasks/task-number-#{i}-slug)" }
+      content = "🚀 Production deployed: McRitchie Studio rel-x (abc1234)\n\n#{lines.join("\n")}"
+      assert_operator DiscordClient.discord_length(content), :>, DiscordClient::CONTENT_LIMIT
+
+      bodies = capture_delivery_bodies { |client| client.deliver(content: content) }
+
+      assert_operator bodies.size, :>, 1
+      bodies.each do |body|
+        assert_operator DiscordClient.discord_length(body["content"]), :<=, DiscordClient::CONTENT_LIMIT
+      end
+      assert_equal content, bodies.map { |b| b["content"] }.join("\n"), "no line may be lost or reordered"
+    end
+
     private
 
     # Run a single delivery against a stubbed transport and return the parsed JSON
@@ -58,6 +75,25 @@ module ReleaseNotes
       end
 
       JSON.parse(captured)
+    end
+
+    # Every body POSTed in one delivery, in order.
+    def capture_delivery_bodies
+      client = DiscordClient.new("https://discord.test/webhook")
+      captured = []
+      http = Object.new
+      http.define_singleton_method(:request) do |request|
+        captured << JSON.parse(request.body)
+        ok = Net::HTTPOK.new("1.1", "200", "OK")
+        ok.instance_variable_set(:@body, "ok")
+        ok.instance_variable_set(:@read, true)
+        ok
+      end
+
+      Net::HTTP.stub(:start, ->(*_args, **_kwargs, &blk) { blk.call(http) }) do
+        yield client
+      end
+      captured
     end
   end
 end
