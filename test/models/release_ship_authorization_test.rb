@@ -59,6 +59,54 @@ class ReleaseShipAuthorizationTest < ActiveSupport::TestCase
     assert @rel.stage_reached?("confirmed"), "the grant stamps the tracker's confirmed stage like ship's own completion does"
   end
 
+  # The conductor's timed-lapse completion, exactly as bin/release records it:
+  # `ship_authorized completed` flagged lapsed, keyed by the window it closed.
+  def lapse!(ends_at)
+    @rel.record_event!(step: "ship_authorized", status: "completed", source: "conductor", actor: "steffon",
+                       idempotency_key: "#{@rel.slug}:ship_authorized:completed:lapsed:#{ends_at.utc.iso8601}",
+                       metadata: { "mode" => "timed", "lapsed" => true, "granted_via" => "window-lapse",
+                                   "window_ends_at" => ends_at.utc.iso8601 })
+  end
+
+  test "[unit] regression: an earlier run's lapse is not a grant for a re-run's fresh request" do
+    first_end = 5.minutes.ago.change(usec: 0)
+    request!(ends_at: first_end, at: 35.minutes.ago)
+    lapse!(first_end)
+    refute @rel.reload.ship_authorization_granted?, "a lapse is recorded, but it is not an operator grant"
+    assert_equal true, @rel.ship_authorization_state["lapsed"]
+
+    # The re-run posts a fresh window; the old lapse must not answer it.
+    second_end = 30.minutes.from_now.change(usec: 0)
+    request!(ends_at: second_end)
+    @rel.reload
+    refute @rel.ship_authorization_granted?, "the earlier lapse must not read as a grant for the fresh request"
+    state = @rel.ship_authorization_state
+    assert_equal false, state["granted"]
+    assert_equal false, state["lapsed"]
+    assert_equal second_end, @rel.ship_authorization_window&.ends_at, "the fresh window stays open"
+  end
+
+  test "[unit] a grant counts only for the latest request, and a fresh grant lands for a re-run" do
+    first_end = 5.minutes.ago.change(usec: 0)
+    request!(ends_at: first_end, at: 35.minutes.ago)
+    old_grant = @rel.grant_ship_authorization!(actor: "alex@example.com")
+    assert @rel.reload.ship_authorization_granted?
+
+    request!(ends_at: 30.minutes.from_now)
+    refute @rel.reload.ship_authorization_granted?, "the previous run's grant does not authorize the new request"
+
+    fresh = @rel.grant_ship_authorization!(actor: "alex@example.com")
+    refute_equal old_grant.id, fresh.id, "the re-run's grant is its own row, not the old one returned by key"
+    assert @rel.reload.ship_authorization_granted?
+    assert_equal fresh.id, @rel.ship_authorization_grant.id
+  end
+
+  test "[unit] a grant recorded before any request authorizes nothing" do
+    @rel.grant_ship_authorization!(actor: "alex@example.com")
+    request!
+    refute @rel.reload.ship_authorization_granted?
+  end
+
   test "[unit] lapse blockers name a missing or red G3 and an open escalation on a member" do
     blockers = @rel.ship_window_lapse_blockers
     assert_equal 1, blockers.size
