@@ -254,6 +254,12 @@ production. Details: [`../../../modules/gates/g4-ship.md`](../../../modules/gate
 "retried once after 30s boot-window wait"** is healthy; **Red** persisted through the
 retry. The seal never auto-rolls-back: the rollback commands print and you decide.
 
+**The seal runs the shipped tree's specs** (the hub's ship workspace at the frozen SHA,
+never the primary). **⚪ unsealed** means those specs could not run, and says why; it
+is not a red seal and prints no rollback. Fix the cause, then re-seal:
+`bin/release reseal <release-slug>` (it overwrites the recorded seal and deploys
+nothing). Use the same command to correct a seal recorded wrongly.
+
 `ship` records the **G4 Ship gate** (a red seal never flips its success) and moves
 members to `shipped` itself: never hand-run a bulk `bin/task move`.
 
