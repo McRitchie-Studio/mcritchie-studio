@@ -207,6 +207,9 @@ require_relative "../app/models/release/seal_retry"
 # SealRun composes that retry with SmokeSeal into the recorded verdict (+ the
 # summary's retry note), so step 5c's behavior is testable on real objects.
 require_relative "../app/models/release/seal_run"
+# SealTree decides WHERE the seal runs (the ship workspace at the frozen SHA, never
+# the primary) and when it is UNSEALED rather than red (rel-20260925-3b1f5c).
+require_relative "../app/models/release/seal_tree"
 # GateRuby pins the SHIP WORKSPACE's own commands (bundle check/install, the DB
 # probe, db:test:prepare, and a repo_script deploy's pre-prod suite) to CI's ruby
 # (mise 3.3.11) so a host whose shell `ruby` is brew's ruby@3.3 doesn't diverge
@@ -7385,12 +7388,22 @@ end
 # WRITE is best-effort: a prod-board blip on the seal record warns + continues —
 # the red alert still prints from the LOCAL verdict, independent of the write.
 #
-# Returns the seal status ("passed"/"failed"), or nil when there was nothing to
-# seal — the G4 gate close records it as metadata.seal (the seal is G4's
-# NON-blocking closing beat: a red seal rides in sops + metadata but never
-# flips the gate's success, exactly as it never aborts the ship).
-def production_smoke_seal(app_groups, ship_sha, rel_slug)
-  step("production smoke seal: bin/prod-smoke #{APP} (@qa-readonly vs prod) — post-ship SEAL, non-blocking")
+# Returns the seal status ("green"/"red"), Release::SealTree::UNSEALED when the
+# shipped specs could not run, or nil when there was nothing to seal — the G4 gate
+# close records it as metadata.seal (the seal is G4's NON-blocking closing beat: a
+# red seal rides in sops + metadata but never flips the gate's success, exactly as
+# it never aborts the ship).
+#
+# THE SHIPPED TREE'S SPECS (rel-20260925-3b1f5c): the seal ran bin/prod-smoke from
+# the hub PRIMARY, which still held the PRE-ship tree (step 7 restores it only
+# after this), so it smoked the OLD specs against the NEW prod and sealed a false
+# red. The seal now runs from the ship workspace pinned at ship_sha[APP], under the
+# ship-workspace lock so no concurrent conductor can reset the tree mid-smoke, and
+# never from the primary. When it cannot run those specs it records UNSEALED, not
+# red — see Release::SealTree. `reseal: true` is `bin/release reseal`: the same run
+# against an already-shipped release, overwriting its recorded seal.
+def production_smoke_seal(app_groups, ship_sha, rel_slug, reseal: false)
+  step("production smoke seal: bin/prod-smoke #{APP} (@qa-readonly vs prod) from the shipped tree — post-ship SEAL, non-blocking")
 
   # Seal what we DEPLOYED: only when the hub (mcritchie-studio, whose @qa-readonly
   # spec this is) was actually part of this ship. A gem-only / satellite-only ship
@@ -7404,26 +7417,77 @@ def production_smoke_seal(app_groups, ship_sha, rel_slug)
     return nil
   end
   if DRY
-    say("  [dry-run] bin/prod-smoke #{APP} → record 🟢/🔴 seal on #{rel_slug} (non-blocking)")
+    say("  [dry-run] pin the #{APP} ship workspace at #{short(ship_sha[APP])}, run its bin/prod-smoke → " \
+        "record 🟢/🔴 seal on #{rel_slug} (non-blocking; unsealed if the shipped specs cannot run)")
     return nil
   end
 
-  record_release_event(rel_slug, "prod_smoke", "started")
-  # ANCHOR the script to the hub checkout: bin/prod-smoke is cwd-relative, and a
-  # ship run from outside the hub (rel-20260705-8fe04b ran from the projects
-  # root) made Open3 raise Errno::ENOENT — aborting AFTER the prod deploy but
-  # BEFORE step 6's Conductor.ship!, stranding the board at `assembled`. Every
-  # other repo-scoped command resolves via repo_path; so does the seal now.
-  # And because the seal is non-blocking BY CONTRACT (see above), an
-  # unresolvable/missing script DEGRADES to a red seal instead of raising —
-  # Open3 raises SystemCallError on a bad path, it never returns ok=false.
+  record_release_event(rel_slug, "prod_smoke", "started") unless reseal
+  # The workspace lock is held across pin → smoke, so a concurrent `bin/release`
+  # cannot reset the tree under the running specs.
+  with_ship_workspace(APP) do
+    tree = resolve_seal_tree(ship_sha[APP])
+    return record_unsealed_seal(rel_slug, tree.reason) unless tree.runnable?
+
+    say("  running the shipped specs from #{tree.root} @ #{short(ship_sha[APP])}")
+    run_seal_smoke(tree.root, ship_sha, rel_slug, reseal: reseal)
+  end
+end
+
+# Pin the ship workspace at the frozen hub SHA and judge whether the seal can run
+# there. NEVER raises and NEVER falls back to the primary: a failed pin (ship_workspace!
+# abort!s on an env failure) or a git error becomes a refusal Verdict, because the
+# seal is non-blocking by contract. Called holding the ship-workspace lock.
+def resolve_seal_tree(frozen)
+  frozen = frozen.to_s.strip
+  return Release::SealTree.refuse("no frozen ship SHA was recorded for the hub") if frozen.empty?
+
+  path = ship_workspace!(APP, frozen)
+  ensure_seal_playwright!(path)
+  head, = git_capture("-C", path, "rev-parse", "HEAD")
+  Release::SealTree.resolve(workspace: path, frozen_sha: frozen, head_sha: head)
+rescue SystemExit, StandardError => e
+  Release::SealTree.refuse("could not pin the ship workspace at #{short(frozen)} (#{e.message.to_s.sub(/\A✗ /, '')})")
+end
+
+# The ship workspace is a bare checkout: node_modules is gitignored, so a virgin
+# workspace has no playwright. Install the SHIPPED lockfile's deps there (npm ci
+# is lockfile-exact; the workspace's `git clean -fd` keeps the result warm across
+# ships). Best-effort: a failure leaves playwright absent and SealTree refuses.
+def ensure_seal_playwright!(path)
+  return if File.executable?(File.join(path, Release::SealTree::PLAYWRIGHT))
+
+  say("  installing the shipped tree's node deps in the ship workspace (npm ci)")
+  out, ok = sh("npm", "ci", "--no-audit", "--no-fund", capture: true, chdir: path)
+  say("  ⚠ npm ci failed in #{path}:\n#{out}") unless ok
+end
+
+# Record UNSEALED: the release event names why, and NO seal is written — an absent
+# seal is what the board, the notes, and finalize already read as unsealed. A
+# prior seal (a reseal that could not run) is left as it was. No rollback guidance:
+# nothing says prod is broken.
+def record_unsealed_seal(rel_slug, reason)
+  summary = Release::SealTree.summary(reason)
+  record_release_event(rel_slug, "prod_smoke", "failed",
+                       message: summary, idempotency_key: "#{rel_slug}:prod_smoke:unsealed")
+  say("")
+  say("⚪ PRODUCTION SMOKE SEAL NOT RECORDED — #{summary}")
+  say("   This is NOT a red seal: the shipped specs never ran, so nothing was judged.")
+  say("   Re-seal once the cause is fixed: bin/release reseal #{rel_slug}")
+  say("")
+  Release::SealTree::UNSEALED
+end
+
+# Run the shipped tree's bin/prod-smoke through the boot-window retry and record
+# the 🟢/🔴 verdict. A script that could not be EXECUTED on the final attempt
+# (Open3 raises SystemCallError — it never returns ok=false) is UNSEALED, not red.
+def run_seal_smoke(root, ship_sha, rel_slug, reseal: false)
   # BOOT-WINDOW RETRY (rel-20260720-c06235): this seal runs seconds after the
   # Actions deploy, and a smoke landing inside the dyno boot/restart window can
   # fail against a HEALTHY prod (GET /tasks non-OK; 5/5 green on re-run). So on
   # a first failure Release::SealRetry waits ~30s and retries ONCE — only a
   # PERSISTING failure seals red, and a first-attempt pass never sleeps. The
-  # retry is CALLER-SIDE so bin/prod-smoke stays an honest single-shot tool;
-  # the seal's contract is unchanged — non-blocking, never auto-rolls-back.
+  # retry is CALLER-SIDE so bin/prod-smoke stays an honest single-shot tool.
   # The VERDICT composition (retry + seal + summary) lives in Release::SealRun so
   # it is testable on real objects; this script keeps the IO — chdir, capture,
   # telemetry, and the ship-log narration.
@@ -7433,24 +7497,25 @@ def production_smoke_seal(app_groups, ship_sha, rel_slug)
     error: -> { smoke_error },
     on_retry: ->(delay) { say("  🔁 first smoke attempt failed — waiting #{delay}s for the dyno boot window, retrying once") }
   ) do |_attempt|
-    smoke_error = nil # the FINAL attempt's error is the one the summary reports
+    smoke_error = nil # the FINAL attempt's error is the one that decides
     begin
       # Routed through the telemetry wrapper WITHOUT changing the seal's semantics:
-      # same chdir + capture, and run_test_scope RE-RAISES a raised SystemCallError
-      # (bad/missing script path) after emitting its FAILED action, so the rescue
-      # below still degrades it to a red seal (never ok=false from Open3 raising).
-      out, ok = run_test_scope("prod_smoke_seal", "bin/prod-smoke", APP,
-                               capture: true, chdir: repo_path(APP), repo: APP)
+      # run_test_scope RE-RAISES a raised SystemCallError after emitting its FAILED
+      # action, so the rescue below still catches it.
+      out, ok = run_test_scope("prod_smoke_seal", Release::SealTree::SCRIPT, APP,
+                               capture: true, chdir: root, repo: APP)
     rescue SystemCallError => e
       out, ok, smoke_error = "", false, e.message
     end
     print out unless out.to_s.empty? # each attempt's output prints as it lands
     [out, ok]
   end
+  return record_unsealed_seal(rel_slug, "#{Release::SealTree::SCRIPT} could not execute (#{smoke_error})") if smoke_error
+
   ok      = result.ok
   seal    = result.seal
   summary = seal.summary
-  host    = PROD_URL
+  summary = "#{summary} (re-sealed from the shipped tree)" if reseal
   smoke_status = ok ? "completed" : "failed"
 
   # Record the seal on prod (best-effort). conductor() abort!s on a heroku-run
@@ -7473,10 +7538,8 @@ def production_smoke_seal(app_groups, ship_sha, rel_slug)
   return seal.status if ok
 
   # RED SEAL — alert + the EXACT rollback. NON-BLOCKING: no abort, no auto-rollback.
-  # Release.current is still `assembled` here (step 6 ships it next), so
-  # Release#abandon! is still valid.
   say("")
-  say("🔴 PRODUCTION SMOKE SEAL FAILED — #{host}")
+  say("🔴 PRODUCTION SMOKE SEAL FAILED — #{PROD_URL}")
   say("   The deploy already landed; this is a post-ship SEAL, so the ship is NOT aborted.")
   say("   Roll back ONLY if you decide to (the seal never auto-rolls-back):")
   seal.rollback_commands(repo: APP, heroku_app: APP, deployed_sha: ship_sha[APP]).each { |c| say("     #{c}") }
