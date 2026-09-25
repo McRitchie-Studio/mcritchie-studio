@@ -903,8 +903,7 @@ board):
    promotes `accepted → release` and flips the member `assembled` on QA-green. Carl
    blocks → **`bin/task block <task> --kind rework --feedback "…" --agent carl`**
    (one complete send-back — any reviewer may RAISE a blocking finding, but only
-   the review claim's holder may SPEND the bounce; a `--kind rework` block by any
-   other soul is refused with exit 11). That command runs the **two-bounce
+   the review claim's holder may SPEND the bounce). That command runs the **two-bounce
    circuit breaker** first
    (`bin/task bounces <task>` reads it standalone: exit 0 CLEAR · 10 TRIPPED ·
    any other non-zero UNKNOWN, which is never to be read as zero) and **refuses**

@@ -123,10 +123,7 @@ note it as a finding — do not guess.
 
 **Never run `bin/task block` on the task you are reviewing.** The two-bounce
 circuit breaker is a scarce, task-scoped resource that belongs to the reviewer who
-OWNS the verdict — the Carl who summoned you. It is now ENFORCED, not merely asked:
-during a live review claim a `--kind rework` block by any soul other than the claim
-holder is REFUSED with **exit 11** and writes nothing (the rules and the whole
-argument live in `lib/review_verdict_gate.rb`).
+OWNS the verdict — the Carl who summoned you.
 
 This rule was written from an incident, not from theory. On 2026-09-07 a light on
 turf-monster PR 594 ran `bin/task block --kind rework` on its own initiative and

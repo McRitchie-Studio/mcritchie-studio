@@ -24,12 +24,8 @@ require_relative "../support/session_env"
 # against a stub board:
 #
 #   RECIPE                                  PASTED BY THE REVIEWER IT WAS PRINTED FOR
-#   --kind rework … --breaker-ack   exit 11, ZERO writes. The block resolves to "avi",
-#                                   which grades FOREIGN against carl's own live claim.
-#                                   The breaker hands the verdict owner a command the
-#                                   verdict-owner gate then refuses him.
 #   --kind rework … --breaker-ack   exit 0, and it WRITES
-#     (no live review claim)        {"event":{"actor":"avi"},"by":"avi"} — a bounce
+#                                   {"event":{"actor":"avi"},"by":"avi"} — a bounce
 #                                   recorded against a soul that did nothing.
 #   --kind dependency               exit 0, and it WRITES {"event":{"source":"cli"}} —
 #     (the escalation)              no `actor`, no `by`. THE UNATTRIBUTED BLOCK: a
@@ -73,7 +69,7 @@ class BreakerRemedyNamesItsSoulTest < Minitest::Test
   SLUG = "probe-breaker-remedy"
 
   # The reviewer who OWNS the verdict — the only soul the breaker's recipes are ever
-  # printed to, because the verdict-owner gate fires first and refuses everyone else.
+  # printed to.
   OWNER = "carl"
   OWNER_SESSION = "019f3b0c-3a8d-73b1-9e8b-f380e11fb91b"
   OWNER_NONCE = "holder01"
@@ -162,12 +158,9 @@ class BreakerRemedyNamesItsSoulTest < Minitest::Test
   # that did nothing.
   #
   # WHY THIS RUN LOOKS DIFFERENT FROM THE ONE ABOVE. It needs all three sources of a
-  # soul silent at once, which means NO `--agent` — and dropping `--agent` also drops
-  # the verdict-owner gate's only way to admit the caller. It gets through because
-  # `claim: nil` publishes NO live review: the gate grades NO_REVIEW (an allowed
-  # verdict — there is no owner to usurp) instead of the exit-11 FOREIGN it returns
-  # under the live claim the other tests use. That is the real-world shape too: a
-  # breaker tripped from a session whose review lease has lapsed.
+  # soul silent at once, which means NO `--agent`, and `claim: nil` publishes no live
+  # review. That is the real-world shape too: a breaker tripped from a session whose
+  # review lease has lapsed.
   #
   # THE ASSERTION IS ON THE PARSED TOKEN, not on a substring. `assert_includes recipe,
   # "--agent"` cannot tell the visible blank from a soul rendered as nothing at all:
@@ -212,9 +205,8 @@ class BreakerRemedyNamesItsSoulTest < Minitest::Test
   # ── phase 1: make the breaker print ─────────────────────────────────────────
 
   # Runs the block a caller would run, against a ledger holding one prior send-back,
-  # and returns everything the refusal printed. `--agent OWNER` is the default because
-  # the verdict-owner gate fires BEFORE the breaker: under a live claim, an un-agented
-  # run is refused as a non-owner (exit 11) and the recipes are never printed at all.
+  # and returns everything the refusal printed. `--agent OWNER` is the default: the
+  # reviewer who owns the verdict is who the recipes are printed to.
   def trip_the_breaker(agent: OWNER, claim: live_claim)
     args = ["block", SLUG, "--kind", "rework", "--summary", "Probe send back now",
             "--feedback", "probe feedback"]
@@ -296,9 +288,8 @@ class BreakerRemedyNamesItsSoulTest < Minitest::Test
   # marker at this fixture slug.
   #
   # `claim` is the review-claim descriptor the stub board publishes, and `nil` means
-  # NO LIVE REVIEW — the state in which the verdict-owner gate grades NO_REVIEW and
-  # waves an un-agented caller through to the breaker. It is a parameter rather than a
-  # constant because the two states print DIFFERENT recipes from the same refusal.
+  # NO LIVE REVIEW. It is a parameter rather than a constant so both states stay
+  # exercised.
   def run_task(args, bounces: 1, claim: live_claim)
     Dir.mktmpdir do |dir|
       writes = []
@@ -324,8 +315,7 @@ class BreakerRemedyNamesItsSoulTest < Minitest::Test
     writes
   end
 
-  # A live review claim held by OWNER, so the verdict-owner gate admits OWNER and
-  # refuses the literal "avi" the bare recipes resolve to.
+  # A live review claim held by OWNER.
   def live_claim
     { "task_slug" => SLUG, "session" => OWNER_SESSION, "agent" => OWNER, "label" => "carl",
       "expires_at" => (Time.now + 90).utc.iso8601, "heartbeat_age" => 3, "live" => true }

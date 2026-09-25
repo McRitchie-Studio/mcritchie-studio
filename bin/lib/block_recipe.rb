@@ -14,10 +14,6 @@ require_relative "fast_lane"
 # NIL for every other kind. Measured 2026-09-08 by executing both recipes verbatim:
 #
 #   the breaker-ack re-run, pasted by the reviewer it was printed for
-#     → exit 11, ZERO writes. It resolves to "avi", which grades FOREIGN against the
-#       reviewer's own live claim. The breaker hands the verdict owner a command the
-#       verdict-owner gate then refuses him.
-#   the same re-run with no live review claim
 #     → exit 0, and it WRITES `by: "avi"` — a bounce recorded against a soul that did
 #       nothing.
 #   the escalation (`--kind dependency`)
