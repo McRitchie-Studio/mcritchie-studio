@@ -249,8 +249,10 @@
     <%= render "tasks/epic_chip", epic_slug: task.epic_slug %>
     <%# The operator-window countdown sits beside the epic chip (its own partial,
         tasks/_window_chip): the live clock on a waiting approval or an escalation,
-        escalation first when both are open. Nothing renders when no window is open. %>
-    <%= render "tasks/window_chip", window: task.operator_windows(unresolved: unresolved_feedback).first %>
+        escalation first when both are open. Nothing renders when no window is open.
+        Read straight off the PRELOADED block activity (both card render paths hand it
+        in), never Task#operator_windows' own lookup — a card must not query per row. %>
+    <%= render "tasks/window_chip", window: Devops::Windows.for_task(task, unresolved: unresolved_feedback).first %>
     <%= app_emoji_badge(task.devops_repositories, css: "shrink-0 text-xs leading-none") %>
   </div>
 
