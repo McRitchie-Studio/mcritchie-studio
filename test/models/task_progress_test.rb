@@ -23,7 +23,7 @@ class TaskProgressTest < ActiveSupport::TestCase
   setup do
     @now = Time.current
     @task = tasks(:in_progress_task) # stage: building
-    @task.update!(metadata: { "devops" => ClaimLease.renewed(session: "sess-1", nonce: "inst-A", now: @now) })
+    @task.update_columns(metadata: { "devops" => ClaimLease.renewed(session: "sess-1", nonce: "inst-A", now: @now) })
     TaskEvent.where(task_slug: @task.slug).delete_all
   end
 
@@ -155,7 +155,7 @@ class TaskProgressTest < ActiveSupport::TestCase
   end
 
   test "quiet is only ever said about a live claim" do
-    @task.update!(metadata: { "devops" => ClaimLease.renewed(session: "sess-1", nonce: "inst-A", now: @now - 3.hours) })
+    @task.update_columns(metadata: { "devops" => ClaimLease.renewed(session: "sess-1", nonce: "inst-A", now: @now - 3.hours) })
     checkpoint!(name: "cert", status: "started", at: @now - QUIET_SILENCE)
 
     refute @task.claim_live?(now: @now), "precondition: the lease has lapsed"

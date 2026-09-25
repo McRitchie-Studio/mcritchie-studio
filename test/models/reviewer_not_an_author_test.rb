@@ -45,12 +45,7 @@ class ReviewerNotAnAuthorTest < ActiveSupport::TestCase
   def submitted_task(builder: "shannon")
     task = Task.create!(title: "Reviewer Author Seam Task", stage: "designed",
                         metadata: { "devops" => { "shape" => "backend" } })
-    Current.task_event_actor = builder
-    task.update!(stage: "building",
-                 metadata: { "devops" => task.devops.merge(
-                   ClaimLease.renewed(session: BUILDER_SESSION, nonce: "inst-B")
-                 ) })
-    Current.reset
+    claim_as!(task, session: BUILDER_SESSION, actor: builder)
     Current.task_event_actor = BUILDER_SESSION
     task.update!(stage: "submitted")
     task
@@ -66,14 +61,23 @@ class ReviewerNotAnAuthorTest < ActiveSupport::TestCase
     Current.reset
   end
 
-  # What `bin/task heartbeat` PATCHes: the devops hash with a fresh lease for the
-  # heartbeating session, and NO event actor (a heartbeat names nobody).
-  def heartbeat_lease!(task, session:, nonce: "inst-R")
-    devops = task.reload.devops
-    task.update!(metadata: task.metadata.merge(
-      "devops" => devops.merge(ClaimLease.renewed(session: session, nonce: nonce, prior: devops))
-    ))
+  # A build claim as the API delivers it: `stage: building` with the claiming
+  # session on the event, and an actor only when the mover passed --actor.
+  def claim_as!(task, session:, actor: nil)
     task.reload
+    Current.task_event_actor = actor
+    Current.task_build_claim = true
+    Current.task_event_session = session
+    task.update!(stage: "building")
+    task.reload
+  ensure
+    Current.reset
+  end
+
+  # An UNNAMED claim (`bin/task move <slug> building`, no --actor) — the shape the
+  # retired status-line heartbeat used to send.
+  def heartbeat_lease!(task, session:, **)
+    claim_as!(task, session: session)
   end
 
   def reviewing!(task, session: REVIEWER_SESSION, nonce: "inst-R", reviewer: "carl")
@@ -150,12 +154,7 @@ class ReviewerNotAnAuthorTest < ActiveSupport::TestCase
     reviewing!(task)
     block_for_rework!(task)
 
-    devops = task.reload.devops
-    Current.task_event_actor = "carl"
-    task.update!(metadata: task.metadata.merge(
-      "devops" => devops.merge(ClaimLease.renewed(session: REVIEWER_SESSION, nonce: "inst-R", prior: devops))
-    ))
-    Current.reset
+    claim_as!(task, session: REVIEWER_SESSION, actor: "carl")
 
     assert_equal "shannon", task.reload.devops["built_by"],
                  "the reviewer named himself, and that never re-points the builder"
@@ -266,10 +265,7 @@ class ReviewerNotAnAuthorTest < ActiveSupport::TestCase
     # whether an empty set counts as known.
     task = Task.create!(title: "Never Stamped Author Task", stage: "designed",
                         metadata: { "devops" => { "shape" => "backend" } })
-    task.update!(stage: "building",
-                 metadata: { "devops" => task.devops.merge(
-                   ClaimLease.renewed(session: BUILDER_SESSION, nonce: "inst-B")
-                 ) })
+    claim_as!(task, session: BUILDER_SESSION)
     task.update!(stage: "submitted")
 
     assert_equal false, ReviewerSelector.explain(task.reload)["builder_known"],
@@ -287,14 +283,7 @@ class ReviewerNotAnAuthorTest < ActiveSupport::TestCase
     block_for_rework!(task)
     heartbeat_lease!(task, session: REVIEWER_SESSION)
 
-    Current.task_event_actor = "xan"
-    devops = task.reload.devops
-    task.update!(stage: "building",
-                 metadata: task.metadata.merge(
-                   "devops" => devops.merge(ClaimLease.renewed(session: STRANGER_SESSION, nonce: "inst-S",
-                                                               prior: devops))
-                 ))
-    Current.reset
+    claim_as!(task, session: STRANGER_SESSION, actor: "xan")
 
     assert_equal %w[shannon xan], authors(task).sort_by { |s| %w[shannon xan].index(s) },
                  "the soul who finished the rework joins the set"

@@ -23,16 +23,13 @@ class TaskBuilderRollCallTest < ActiveSupport::TestCase
   STEFFON_SESSION = "s1d0f2a3-4b5c-4d6e-8f90-a1b2c3d4e5f6"
   ALEX_SESSION    = "s2e1f3b4-5c6d-4e7f-9a01-b2c3d4e5f6a7"
 
-  # Each claim advances a per-test clock. Two claims minted inside the same second
-  # produce a BYTE-IDENTICAL lease, which #claim_lease_rewritten? correctly reads as
-  # "no claim happened" — so without the clock a re-claim silently tests nothing.
-  def claim!(task, actor: nil, session: STEFFON_SESSION, nonce: "inst-A", devops: {})
-    @clock = (@clock || Time.current) + 30.seconds
+  # A build claim as the API delivers it: `stage: building` with the claiming
+  # session on the event (Current.task_build_claim + task_event_session).
+  def claim!(task, actor: nil, session: STEFFON_SESSION, devops: {})
     Current.task_event_actor = actor
-    task.update!(stage: "building",
-                 metadata: { "devops" => task.devops.merge(devops).merge(
-                   ClaimLease.renewed(session: session, nonce: nonce, now: @clock)
-                 ) })
+    Current.task_build_claim = true
+    Current.task_event_session = session
+    task.update!(stage: "building", metadata: { "devops" => task.devops.merge(devops) })
   ensure
     Current.reset
   end
@@ -62,7 +59,7 @@ class TaskBuilderRollCallTest < ActiveSupport::TestCase
     claim!(task, actor: "steffon", session: STEFFON_SESSION)
     assert_equal %w[steffon], authors(task)
 
-    claim!(task, actor: "xan", session: ALEX_SESSION, nonce: "inst-B")
+    claim!(task, actor: "xan", session: ALEX_SESSION)
 
     assert_equal "xan", task.reload.devops["built_by"], "built_by still names the CURRENT builder"
     assert_equal %w[steffon xan], authors(task), "and the set remembers the one it replaced"
@@ -84,7 +81,7 @@ class TaskBuilderRollCallTest < ActiveSupport::TestCase
     # record could be laundered clean between the handoff and the review.
     task = new_task
     claim!(task, actor: "steffon", session: STEFFON_SESSION)
-    claim!(task, actor: "xan", session: ALEX_SESSION, nonce: "inst-B")
+    claim!(task, actor: "xan", session: ALEX_SESSION)
 
     task.update!(metadata: { "devops" => { "checks_run" => ["[unit] something"] } })
 
@@ -94,7 +91,7 @@ class TaskBuilderRollCallTest < ActiveSupport::TestCase
   test "a re-claim by an author already on record adds nobody twice" do
     task = new_task
     claim!(task, actor: "steffon", session: STEFFON_SESSION)
-    claim!(task, actor: "steffon", session: STEFFON_SESSION, nonce: "inst-B")
+    claim!(task, actor: "steffon", session: STEFFON_SESSION)
 
     assert_equal %w[steffon], authors(task)
   end
@@ -105,7 +102,7 @@ class TaskBuilderRollCallTest < ActiveSupport::TestCase
     task = new_task
     claim!(task, actor: "steffon", session: STEFFON_SESSION)
 
-    claim!(task, actor: nil, session: ALEX_SESSION, nonce: "inst-B")
+    claim!(task, actor: nil, session: ALEX_SESSION)
 
     assert_equal %w[steffon], authors(task), "steffon is still the only name we have"
     assert_equal ALEX_SESSION, unattributed(task),
@@ -119,7 +116,7 @@ class TaskBuilderRollCallTest < ActiveSupport::TestCase
     task = new_task
     claim!(task, actor: "steffon", session: STEFFON_SESSION)
 
-    5.times { claim!(task, actor: nil, session: STEFFON_SESSION, nonce: "inst-A") }
+    5.times { claim!(task, actor: nil, session: STEFFON_SESSION) }
 
     assert_nil unattributed(task), "the same party heartbeating is not a change of hands"
     assert_equal %w[steffon], authors(task)
@@ -128,9 +125,9 @@ class TaskBuilderRollCallTest < ActiveSupport::TestCase
   test "a second PROCESS of the same session is not a handoff either" do
     # `claude --resume <id>` in a second terminal: same party, new nonce.
     task = new_task
-    claim!(task, actor: "steffon", session: STEFFON_SESSION, nonce: "inst-A")
+    claim!(task, actor: "steffon", session: STEFFON_SESSION)
 
-    claim!(task, actor: nil, session: STEFFON_SESSION, nonce: "inst-B")
+    claim!(task, actor: nil, session: STEFFON_SESSION)
 
     assert_nil unattributed(task), "the nonce distinguishes processes, not parties"
   end
@@ -138,10 +135,10 @@ class TaskBuilderRollCallTest < ActiveSupport::TestCase
   test "the unnamed session clears the gap by naming itself" do
     task = new_task
     claim!(task, actor: "steffon", session: STEFFON_SESSION)
-    claim!(task, actor: nil, session: ALEX_SESSION, nonce: "inst-B")
+    claim!(task, actor: nil, session: ALEX_SESSION)
     assert_equal ALEX_SESSION, unattributed(task)
 
-    claim!(task, actor: "xan", session: ALEX_SESSION, nonce: "inst-B")
+    claim!(task, actor: "xan", session: ALEX_SESSION)
 
     assert_nil unattributed(task), "the session we could not name has named itself"
     assert_equal %w[steffon xan], authors(task)
@@ -152,9 +149,9 @@ class TaskBuilderRollCallTest < ActiveSupport::TestCase
     # saying who HE is says nothing about who the unnamed session was.
     task = new_task
     claim!(task, actor: "steffon", session: STEFFON_SESSION)
-    claim!(task, actor: nil, session: ALEX_SESSION, nonce: "inst-B")
+    claim!(task, actor: nil, session: ALEX_SESSION)
 
-    claim!(task, actor: "jasper", session: "s3f2a4c5-6d7e-4f80-9b12-c3d4e5f6a7b8", nonce: "inst-C")
+    claim!(task, actor: "jasper", session: "s3f2a4c5-6d7e-4f80-9b12-c3d4e5f6a7b8")
 
     assert_equal ALEX_SESSION, unattributed(task), "the gap is still open"
     assert_equal %w[steffon jasper], authors(task)
@@ -219,7 +216,7 @@ class TaskBuilderRollCallTest < ActiveSupport::TestCase
     task = new_task
     task.update!(metadata: { "devops" => task.devops.merge("shape" => "backend") })
     claim!(task, actor: "steffon", session: STEFFON_SESSION)
-    claim!(task, actor: "xan", session: ALEX_SESSION, nonce: "inst-B")
+    claim!(task, actor: "xan", session: ALEX_SESSION)
 
     seated = ReviewerSelector.select(task.reload).map { |r| r["slug"] }
 
@@ -232,7 +229,7 @@ class TaskBuilderRollCallTest < ActiveSupport::TestCase
     task = new_task
     task.update!(metadata: { "devops" => task.devops.merge("shape" => "backend") })
     claim!(task, actor: "steffon", session: STEFFON_SESSION)
-    claim!(task, actor: nil, session: ALEX_SESSION, nonce: "inst-B")
+    claim!(task, actor: nil, session: ALEX_SESSION)
 
     decision = ReviewerSelector.explain(task.reload)
 

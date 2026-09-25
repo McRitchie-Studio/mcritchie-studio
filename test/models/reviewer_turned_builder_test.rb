@@ -45,10 +45,9 @@ class ReviewerTurnedBuilderTest < ActiveSupport::TestCase
     task = Task.create!(title: "Reviewer Turned Builder Task", stage: "designed",
                         metadata: { "devops" => { "shape" => "backend" } })
     Current.task_event_actor = builder || BUILDER_SESSION
-    task.update!(stage: "building",
-                 metadata: { "devops" => task.devops.merge(
-                   ClaimLease.renewed(session: BUILDER_SESSION, nonce: "inst-B")
-                 ) })
+    Current.task_build_claim = true
+    Current.task_event_session = BUILDER_SESSION
+    task.update!(stage: "building")
     Current.reset
     Current.task_event_actor = BUILDER_SESSION
     task.update!(stage: "submitted")
@@ -71,26 +70,29 @@ class ReviewerTurnedBuilderTest < ActiveSupport::TestCase
     Current.reset
   end
 
-  # `bin/task move <slug> building --actor <soul>` — a deliberate build claim: a fresh
-  # lease for the calling session, and an event actor that NAMES somebody.
+  # `bin/task move <slug> building --actor <soul>` — a deliberate build claim: a
+  # `stage: building` PATCH carrying the calling session, and an event actor that
+  # NAMES somebody.
   def claim_build!(task, actor:, session:)
-    devops = task.reload.devops
+    task.reload
     Current.task_event_actor = actor
-    task.update!(stage: "building", metadata: task.metadata.merge(
-      "devops" => devops.merge(ClaimLease.renewed(session: session, nonce: "inst-R", prior: devops))
-    ))
+    Current.task_build_claim = true
+    Current.task_event_session = session
+    task.update!(stage: "building")
     task.reload
   ensure
     Current.reset
   end
 
-  # `bin/task heartbeat <slug>` — the same lease write with NO actor at all.
+  # An UNNAMED claim — `bin/task move <slug> building` with no --actor.
   def heartbeat!(task, session:)
-    devops = task.reload.devops
-    task.update!(metadata: task.metadata.merge(
-      "devops" => devops.merge(ClaimLease.renewed(session: session, nonce: "inst-R", prior: devops))
-    ))
     task.reload
+    Current.task_build_claim = true
+    Current.task_event_session = session
+    task.update!(stage: "building")
+    task.reload
+  ensure
+    Current.reset
   end
 
   # The loud half of "recorded or refused loudly" is a log line, so one test has to

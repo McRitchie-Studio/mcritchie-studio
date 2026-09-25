@@ -17,12 +17,11 @@ class BuilderStampApiTest < ActionDispatch::IntegrationTest
   end
 
   # The claim as `bin/task move <slug> building` actually sends it — the event actor
-  # AND the lease, which is what records WHICH SESSION holds the desk. The plain
-  # claim! above omits the lease, so a handoff cannot be detected over it at all.
-  def claim_with_lease!(task, actor:, session:, nonce: "inst-A")
+  # AND the claiming session, which is what records WHICH SESSION claimed. The plain
+  # claim! above omits the session, so a handoff cannot be detected over it at all.
+  def claim_with_lease!(task, actor:, session:)
     patch "/api/v1/tasks/#{task.slug}",
-          params: { stage: "building", event: { actor: actor },
-                    devops: ClaimLease.renewed(session: session, nonce: nonce) },
+          params: { stage: "building", event: { actor: actor, session: session } },
           headers: { "Authorization" => "Bearer #{token}" }, as: :json
   end
 
@@ -122,22 +121,37 @@ class BuilderStampApiTest < ActionDispatch::IntegrationTest
                  "that can identify the builder — and reviewer-select refuses without one"
   end
 
-  # THE CLAIM MUST BE A CLAIM. A resume of an ALREADY-building task renews the
-  # lease rather than changing stage, and begin patches devops directly on that
-  # branch instead of shelling out to `move`. Task#build_claim_save? treats a
-  # rewritten lease as a claim precisely so the stamp still runs there — without
-  # this, resuming your own in-flight task would silently leave built_by blank.
-  test "renewing a claim on an already-building task still records the builder" do
+  # THE CLAIM MUST BE A CLAIM. A resume of an ALREADY-building task does not change
+  # stage, and begin patches directly on that branch instead of shelling out to
+  # `move`. The PATCH names `stage: building`, and Task#build_claim_save? treats that
+  # as a claim so the stamp still runs there — without it, resuming your own
+  # in-flight task would silently leave built_by blank.
+  test "re-claiming an already-building task still records the builder" do
     task = Task.create!(title: "Renewed Claim Builder Probe", stage: "building",
-                        metadata: { "devops" => { "claimed_session" => "old-session" } })
+                        metadata: { "devops" => { "kind" => "feature" } })
+
+    patch "/api/v1/tasks/#{task.slug}",
+          params: { stage: "building", event: { actor: "jasper", session: "new-session" } },
+          headers: { "Authorization" => "Bearer #{token}" }, as: :json
+
+    assert_response :success
+    assert_equal "jasper", task.reload.metadata.dig("devops", "built_by"),
+                 "a stage=building PATCH IS a build claim, so the stamp must run on it too"
+    assert_equal "new-session", task.metadata.dig("devops", "claimed_session")
+  end
+
+  # And a devops-only write is NOT a claim: posting a session changes nothing.
+  test "a devops write that names a session is not a build claim" do
+    task = Task.create!(title: "Devops Only Write Probe", stage: "building",
+                        metadata: { "devops" => { "kind" => "feature" } })
 
     patch "/api/v1/tasks/#{task.slug}",
           params: { devops: { "claimed_session" => "new-session" }, event: { actor: "jasper" } },
           headers: { "Authorization" => "Bearer #{token}" }, as: :json
 
     assert_response :success
-    assert_equal "jasper", task.reload.metadata.dig("devops", "built_by"),
-                 "a lease rewrite IS a build claim, so the stamp must run on it too"
+    assert_nil task.reload.metadata.dig("devops", "built_by"), "no claim, no builder stamp"
+    assert_nil task.metadata.dig("devops", "claimed_session"), "only a claim records who claimed"
   end
 
 
@@ -150,14 +164,12 @@ class BuilderStampApiTest < ActionDispatch::IntegrationTest
 
   # A handoff is a claim by a DIFFERENT session — the payload `bin/task move <slug>
   # building --actor <soul>` sends when a killed builder's desk is picked up in a new
-  # terminal (bin/task#1919 merges ClaimLease.renewed into the devops write). The
-  # LEASE is what makes a second claim a claim at all: the stage is already
-  # `building`, so #build_claim_save? has only the rewritten lease to go on, and a
-  # payload without it is correctly no claim.
-  def handoff!(task, actor:, session:, nonce: "inst-B", at: Time.current)
+  # terminal. The stage is already `building`, so what makes it a claim is that the
+  # PATCH names `stage: building` (Current.task_build_claim), and the event session
+  # says who is claiming.
+  def handoff!(task, actor:, session:, **)
     patch "/api/v1/tasks/#{task.slug}",
-          params: { stage: "building", event: { actor: actor },
-                    devops: ClaimLease.renewed(session: session, nonce: nonce, now: at) },
+          params: { stage: "building", event: { actor: actor, session: session } },
           headers: { "Authorization" => "Bearer #{token}" }, as: :json
   end
 
