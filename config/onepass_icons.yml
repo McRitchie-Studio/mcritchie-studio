@@ -16,6 +16,10 @@ logo: lib/onepass_icons/1password.png
 workspaces:
   studio:
     name: McRitchie Studio
+    # The treasure chest — the same art public/studio-logo.svg embeds, in the
+    # violet Alex supplied on 2026-09-25.
+    badge: lib/onepass_icons/badges/studio.png
+    accent: "#8E83FC"
     vaults: [studio-agents, studio-agents-admin, studio-applications]
   industries:
     name: McRitchie Industries
@@ -26,8 +30,3 @@ workspaces:
   commercial-welding:
     name: Commercial Welding
     vaults: [Commercial Welding]
-  treasure:
-    name: Treasure (reference badge)
-    badge: lib/onepass_icons/badges/treasure-chest.png
-    accent: "#8E83FC"
-    vaults: []

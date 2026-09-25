@@ -5,7 +5,7 @@
 # 1Password lock with the workspace's logo badged in the lower-right corner, on
 # a transparent background.
 #
-#   bin/onepass-icon --workspace treasure
+#   bin/onepass-icon --workspace studio
 #   bin/onepass-icon --workspace industries --badge ~/Downloads/industries.png
 #   bin/onepass-icon --badge logo.png --accent "#8E83FC" --out ~/Desktop/icon.png
 #   bin/onepass-icon --list
@@ -28,7 +28,7 @@ parser = OptionParser.new do |o|
   o.on("--logo PATH", "the main icon (default: the 1Password icon)") { |v| options[:logo] = v }
   o.on("--accent HEX", "ring colour, #rrggbb (default: the scope's, else the badge's average)") { |v| options[:accent] = v }
   o.on("--size N", Integer, "square edge in px (default #{OnepassIcon::DEFAULT_SIZE})") { |v| options[:size] = v }
-  o.on("--out PATH", "where to write the PNG (default tmp/onepass-icons/<scope>.png)") { |v| options[:out] = v }
+  o.on("--out PATH", "where to write the PNG (default app/assets/images/onepass_icons/<scope>.png; tmp/onepass-icons/ without --workspace)") { |v| options[:out] = v }
   o.on("--list", "print the workspace scopes and exit") { options[:list] = true }
   o.on("-h", "--help", "show this help") do
     puts o
@@ -68,7 +68,10 @@ begin
   end
 
   scope = options[:workspace] || File.basename(badge, ".*")
-  out = options[:out] || File.join(OnepassIcon::ROOT, "tmp/onepass-icons/#{scope}.png")
+  # A named scope renders into the asset the /credentials page shows; an ad-hoc
+  # --badge render goes to tmp/ so it can never overwrite a scope's icon.
+  default_dir = options[:workspace] ? "app/assets/images/onepass_icons" : "tmp/onepass-icons"
+  out = options[:out] || File.join(OnepassIcon::ROOT, default_dir, "#{scope}.png")
   FileUtils.mkdir_p(File.dirname(out)) unless options[:out]
 
   result = OnepassIcon.render!(logo: options[:logo] || OnepassIcon.default_logo,
