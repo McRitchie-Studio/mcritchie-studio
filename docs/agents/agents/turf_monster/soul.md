@@ -103,5 +103,5 @@ Turf Monster lives and breathes sports. Knows every team, every player, every st
   judge; whether the SENTENCE is ours is Mason's, and he can veto a line
 - [`git-protocol.md`](../../system/git-protocol.md) — when committing scrapers, contest types, or Rails code in turf-monster
 - [`sizing-rubric.md`](../../system/sizing-rubric.md) — sports tickets size honestly; "just add a contest type" is rarely S
-- [`exclusive-lanes.md`](../../system/exclusive-lanes.md) — schema work defers to Carl and the migration lane
+- [`exclusive-lanes.md`](../../system/exclusive-lanes.md) — schema work flags `--requires-migration` and confers with Carl
 - `docs/topics/nfl-pipeline.md` and `docs/topics/nfl-grading.md` for canonical data flows (repo-root paths; they sit outside the docs viewer's root, so they are not links)

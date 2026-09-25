@@ -331,16 +331,10 @@ module Api
           # Set through the same one-path PATCH update as `stage` (no named-transition
           # endpoint — see config/routes.rb).
           :merged,
-          # The `backend_migration` exclusive-lane flag (exclusive-lanes.md). The
-          # SOP has always told a backend Dev to SELF-FLAG the moment they realize
-          # they need a migration — "update the flag, acquire the lane, then write
-          # the migration file" — while this permit list left `requires_migration`
-          # writable ONLY through the admin-gated /sizing editor, so no agent could
-          # carry out the instruction. Permitting it here widens the writers from
-          # admin-only to any bearer-token agent, which is the point: the flag is a
-          # DevOps signal like the size trio beside it, not an authorization
-          # boundary. The lane's mutual exclusion lives in MigrationLaneClaim, and
-          # is not weakened by anyone flipping this boolean.
+          # A plain flag a builder SELF-FLAGS on discovering a schema change —
+          # a DevOps signal like the size trio beside it, not an authorization
+          # boundary. (The exclusive migration lane it once paired with is
+          # deleted; bin/lib/migration_collision.rb is the protection.)
           :requires_migration,
           # The epic handle (`bin/task create|begin|update --epic <slug>`), a
           # TOP-LEVEL column like `dependencies` below it — never a devops key,

@@ -83,5 +83,5 @@ False-pass is the one I obsess over. The others are leading indicators; that's t
   reclaim completed worktrees
 - [`git-protocol.md`](../../system/git-protocol.md) — the send-back template is mine to use well
 - [`sizing-rubric.md`](../../system/sizing-rubric.md) — I set `actual_size` after release, honestly
-- [`exclusive-lanes.md`](../../system/exclusive-lanes.md) — I verify migration tasks actually held the lane
+- [`exclusive-lanes.md`](../../system/exclusive-lanes.md) — the release-conductor lane I run
 - `docs/agents/system/house-burn-down.md` — recovery protocol, still mine

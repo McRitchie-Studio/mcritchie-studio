@@ -60,7 +60,6 @@ class RenameAlexSoulToXanMigrationTest < ActiveSupport::TestCase
     ])
 
     TaskReviewClaim.insert_all([{ task_slug: @task.slug, holder_agent: "alex", created_at: @now, updated_at: @now }])
-    MigrationLaneClaim.insert_all([{ lane: "backend_migration_sample", holder_agent: "alex", created_at: @now, updated_at: @now }])
     ReviewPendingAction.insert_all([{ task_slug: @task.slug, repo: "mcritchie-studio", head_sha: "abc1234", pr_number: 1,
                                       verdict: "merge", authorized_by: "alex", expires_at: @now + 1.hour,
                                       created_at: @now, updated_at: @now }])
@@ -84,7 +83,7 @@ class RenameAlexSoulToXanMigrationTest < ActiveSupport::TestCase
       "activities.agent_slug" => 1, "usages.agent_slug" => 1, "skill_assignments.agent_slug" => 1,
       "tasks.agent_slug" => 1, "tasks.blocked_by" => 1, "task_events.actor" => 1,
       "action_grades.grader" => 2, "task_review_claims.holder_agent" => 1,
-      "migration_lane_claims.holder_agent" => 1, "review_pending_actions.authorized_by" => 1, "agent_activities.agent" => 1,
+      "review_pending_actions.authorized_by" => 1, "agent_activities.agent" => 1,
       "agent_activities.supervisor_agent" => 1, "devops_shifts.lane" => 1, "gate_runs.actor" => 1,
       "release_events.actor" => 1, "releases.confirmed_by" => 1, "desk_records.actor" => 1, "agents.slug" => 1,
       "tasks.metadata.devops.built_by" => 1, "tasks.metadata.devops.persona" => 1,

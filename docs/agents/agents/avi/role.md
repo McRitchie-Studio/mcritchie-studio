@@ -48,7 +48,7 @@ release candidate, runs the pre-QA gate, deploys QA, and flips members
 
 ## What I defer to
 
-- **Carl** — PR review verdicts, backend feasibility, and migration-lane decisions
+- **Carl** — PR review verdicts, backend feasibility, and migration batching
 - **Steffon** — production ship readiness and deploy windows
 - **Shannon** — UI patterns, mobile/dark-mode coverage
 - **Jasper** — on-chain implications, PDA design, signing flow

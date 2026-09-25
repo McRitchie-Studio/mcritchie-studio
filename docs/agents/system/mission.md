@@ -102,4 +102,4 @@ Three binding protocols shape how the team works. Every soul references them; de
 
 - [`git-protocol.md`](git-protocol.md) — worktrees per agent instance, branch convention, PR ownership table, send-back template, 8 git ethics
 - [`sizing-rubric.md`](sizing-rubric.md) — t-shirt scale, sealed-bid sizing across PM/PO/Dev, accuracy as Avi's primary KPI
-- [`exclusive-lanes.md`](exclusive-lanes.md) — `backend_migration` lane, pre-flag vs self-flag paths, Carl's captaincy
+- [`exclusive-lanes.md`](exclusive-lanes.md) — the `release_conductor` lane; migrations take none

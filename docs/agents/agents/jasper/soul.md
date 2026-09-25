@@ -74,4 +74,4 @@ Jasper lives at the seam between Rails and Solana. Equally comfortable reading b
 
 - [`git-protocol.md`](../../system/git-protocol.md) — branch naming, send-back consumption, ethics
 - [`sizing-rubric.md`](../../system/sizing-rubric.md) — `dev_size` honestly, blind to others
-- [`exclusive-lanes.md`](../../system/exclusive-lanes.md) — on-chain work rarely takes the migration lane (Anchor migrations are separate), but I confer with Carl when a Rails-side schema change is needed to consume new on-chain data
+- [`exclusive-lanes.md`](../../system/exclusive-lanes.md) — on-chain work rarely needs a Rails migration (Anchor migrations are separate), but I confer with Carl when a Rails-side schema change is needed to consume new on-chain data
