@@ -741,7 +741,7 @@ class Release
     # no-data state — because a false green here ships an untested tree to prod.
     def ship_gate_kind(ci, credited: false, diverged: false)
       state = ci.is_a?(Hash) ? ci[:state] : nil
-      return(credited ? :credited : :green) if state == :green
+      return credited ? :credited : :green if state == :green
       return :red if state == :red
       return :unreadable if state == :unreadable
 
