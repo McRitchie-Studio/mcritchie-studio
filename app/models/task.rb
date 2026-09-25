@@ -1227,13 +1227,12 @@ class Task < ApplicationRecord
     format(RESUME_COMMANDS.fetch(provider, RESUME_COMMANDS["claude"]), "…#{id[-4..]}")
   end
 
-  # --- Build claim lease fields (legacy readers) -----------------------------
-  # The session id PLUS a per-process nonce, under a TTL (claim_expires_at). The
-  # build claim itself is now the DESK bound to the task (bin/lib/desk_claim.rb):
-  # no lease, no TTL, no renewer — nothing renews these fields for a build, and
-  # bin/statusline renews only the DevOps shift lease. These readers remain for
-  # records that still carry the fields. The lease math lives in ClaimLease
-  # (shared verbatim with the standalone bin/task CLI).
+  # --- Build claim lease (V2: the enforcement gate) -------------------------
+  # The LIVE INSTANCE that owns this task while it's building — the session id
+  # PLUS a per-process nonce, under a TTL lease (claim_expires_at) renewed by the
+  # heartbeat (bin/statusline). `bin/task move <task> building` refuses to claim a
+  # task already held by a different, non-expired instance. The lease math lives
+  # in ClaimLease (shared verbatim with the standalone bin/task CLI).
   def devops_claim
     ClaimLease.from_devops(devops)
   end
