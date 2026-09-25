@@ -11,9 +11,9 @@ require_relative "ci_test_command"
 # to the code —
 #   * at the release gate (bin/release.rb): eject/revert guidance for a perfectly
 #     good PR, at the last gate before an irreversible prod deploy;
-#   * at the builder's cert (bin/full-suite-check): a builder sent hunting a
-#     phantom bug in their own diff.
-# Both callers therefore assert the browser UP FRONT and abort in the ENV class,
+#   * (until DevOps v3 phase 2b) at the builder's local cert: a builder sent hunting
+#     a phantom bug in their own diff.
+# Callers therefore assert the browser UP FRONT and abort in the ENV class,
 # with wording that names it as such. This module is the detection they share; the
 # ABORT WORDING stays with each caller (their consequences differ).
 #

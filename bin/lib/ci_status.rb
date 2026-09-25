@@ -9,8 +9,8 @@ require_relative "fast_lane"
 
 # The REAL GitHub CI state of a PR, reduced to one verdict so bin/dor-check's merge
 # gate can refuse to hand a red PR to review — the #1 blocker class (a PR green
-# LOCALLY but red on CI, because bin/full-suite-check certifies `bin/rails test` and
-# NOT the browser `test:system` lane GitHub also runs). Reads
+# LOCALLY but red on CI, because a local `bin/rails test` skips the browser
+# `test:system` lane GitHub also runs). Reads
 # `gh pr checks <pr> --json name,state,bucket` and folds gh's normalized `bucket`
 # (pass/fail/pending/skipping/cancel) into one state:
 #   :red            — a check failed/cancelled          → BLOCK the gate
@@ -57,13 +57,14 @@ require_relative "fast_lane"
 # branch and open the PR" for a PR that is already open and already GREEN, and
 # learns to ignore the gate. That is how a gate stops being read at all — and an
 # ignored gate is exactly how a genuinely RED CI ships. Honesty, not leniency:
-# :unreadable is NOT easier to pass than :unverified. It unlocks nothing (notably
-# not the fast-cert credit); it only tells the truth about why it cannot see.
+# :unreadable is NOT easier to pass than :unverified. It unlocks nothing; it only
+# tells the truth about why it cannot see.
 #
 # `injected` is dor-check's DOR_CHECK_CI_STATUS seam: a bare token
 # (green/red/pending/none/unreadable/unverified/no_pr), "state:<name>" for a state
 # that does not exist (see INJECTED_STATE_PREFIX), OR the raw `gh pr checks --json`
-# array — so the tests never shell out to gh (mirrors DOR_CHECK_SUITE_EVIDENCE).
+# array — so the tests never shell out to gh (the same seam shape as
+# DOR_CHECK_CONTROL_EVIDENCE).
 #
 # TWO SUBJECTS, ONE VOCABULARY. `evaluate` asks about a PR (the merge gate's
 # subject); `for_sha` asks about a COMMIT (the G3 release-gate's subject — the
@@ -527,10 +528,10 @@ module CiStatus
   # `cert_route:` PICKS THE LAST SENTENCE, and nothing else — and since
   # /tasks/dor-reads-settled-ci-verdict EVERY ROUTE DENIES. There is no local cert
   # that stands in for an unread CI verdict any more: bin/dor-check credits ONE form
-  # of suite evidence, a settled GREEN GitHub CI for the PR's current head, and it no
-  # longer reads the fingerprint receipts bin/fast-check and bin/full-suite-check
-  # record. So the offer this string used to end with on the gated path — "certify
-  # in full instead: bin/full-suite-check <slug>" — is gone from every route; what a
+  # of suite evidence, a settled GREEN GitHub CI for the PR's current head; the
+  # fingerprint receipts the local certs recorded are gone with the certs. So the
+  # offer this string used to end with on the gated path — "certify in full
+  # instead: bin/full-suite-check <slug>" — is gone from every route; what a
   # route still picks is WHY nothing stands in, which differs by GRAIN:
   #
   #   cert_route: true / false / nil
@@ -728,8 +729,8 @@ module CiStatus
   # a SEPARATE store from bin/gh-token's cache with nothing refreshing it — so a gate
   # that read CI fine at 10:00 reports a CREDENTIAL fault at 11:05 on the same PR.
   #
-  # That degradation is not cosmetic. :unreadable withholds the fast-cert credit from
-  # the builder, and — worse — it is the REVIEW gate's AUTHORITATIVE CI verdict going
+  # That degradation is not cosmetic. :unreadable blinds the builder's own verdict,
+  # and — worse — it is the REVIEW gate's AUTHORITATIVE CI verdict going
   # blind in the one place nobody re-reads. On 2026-08-13 it hit both review Carls in
   # a single wave and every dor-check run that day.
   #

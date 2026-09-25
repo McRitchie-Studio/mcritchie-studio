@@ -60,10 +60,10 @@ require "shellwords"
 require_relative "lib/cli_arg_guard"
 require_relative "lib/repo_root"
 require_relative "lib/fast_cert"
-require_relative "lib/full_suite_gate"
+require_relative "lib/tree_fingerprint"
 require_relative "lib/control_replay"
-require_relative "lib/cert_emission"
-require_relative "lib/cert_root_guard"
+require_relative "lib/board_checks"
+require_relative "lib/task_tree"
 
 ROOT = File.expand_path("..", __dir__)
 TASK_BIN = ENV.fetch("CONTROL_CHECK_TASK_BIN", File.expand_path("task", __dir__))
@@ -172,7 +172,7 @@ if replay.empty?
 end
 
 # --- 3. fingerprint BEFORE the harness touches anything -----------------------
-fingerprint_before = FullSuiteGate.fingerprint(root)
+fingerprint_before = TreeFingerprint.working_tree(root)
 die "cannot fingerprint #{root} (no git identity?) — the stamp must be bound to this exact code" if
   fingerprint_before.nil?
 
@@ -262,7 +262,7 @@ end
 
 # --- 8. PROVE the restore-back landed ----------------------------------------
 after_dirty = git(root, "status", "--porcelain").split("\n").map(&:strip).reject(&:empty?)
-fingerprint_after = FullSuiteGate.fingerprint(root)
+fingerprint_after = TreeFingerprint.working_tree(root)
 unless after_dirty.empty? && fingerprint_after == fingerprint_before
   die "the harness did NOT fully restore the tree (dirty: #{after_dirty.size}, fingerprint " \
       "#{fingerprint_before.to_s[0, 12]} → #{fingerprint_after.to_s[0, 12]}). Your working tree may still " \
@@ -276,18 +276,17 @@ verdict = ControlReplay.verdict(old_failed: !old_ok, head_failed: !head_ok)
 detail = ControlReplay.detail(verdict: verdict, replay: replay, deferred: deferred, added: added,
                               old_failed: !old_ok, head_failed: !head_ok)
 detail = "#{detail} [old: #{old_summary}] [head: #{head_summary}]"
-line = FullSuiteGate.evidence_line(ControlReplay::LANE, fingerprint_before, detail,
-                                   repo: CertRootGuard.repo_of_checkout(root))
+line = CertEvidence.evidence_line(ControlReplay::LANE, fingerprint_before, detail,
+                                  repo: TaskTree.repo_of_checkout(root))
 
 puts
 note "VERDICT: #{verdict}"
 note ControlReplay.explanation(verdict)
 
 # Send ONLY the line this runner owns and let the write funnel merge it against
-# the board's current state (lib/cert_evidence.rb) — the certs do not merge, for
-# the reason documented there: a stale snapshot resent wholesale is what wiped
-# newer tier lines.
-if CertEmission.fetch_checks(TASK_BIN, slug).nil?
+# the board's current state (lib/cert_evidence.rb): a stale snapshot resent
+# wholesale is what wiped newer tier lines.
+if BoardChecks.fetch(TASK_BIN, slug).nil?
   warn "control-check: ran, but couldn't read #{slug.inspect}'s checks_run (bin/task show), so the write " \
        "cannot be verified. Not writing. Re-run, or record by hand: bin/task update #{slug} " \
        "--checks #{Shellwords.escape(line)}"
@@ -300,7 +299,7 @@ unless system(TASK_BIN, "update", slug, "--checks", line, out: File::NULL, err: 
   exit 1
 end
 
-missing = CertEmission.missing_after_write(TASK_BIN, slug, [line])
+missing = BoardChecks.missing_after_write(TASK_BIN, slug, [line])
 if missing && !missing.empty?
   warn "control-check: bin/task update returned success but the control line is NOT on #{slug.inspect}. " \
        "Verify: bin/task show #{slug} -v, then record by hand: bin/task update #{slug} " \

@@ -28,7 +28,7 @@ require "tmpdir"
 require "fileutils"
 require "shellwords"
 require_relative "../../bin/lib/release_presence"
-require_relative "../../bin/lib/cert_orphan_guard"
+require_relative "../../bin/lib/process_table"
 require_relative "../../bin/lib/agent_presence"
 
 class ReleasePresenceIntegrationTest < Minitest::Test
@@ -74,7 +74,7 @@ class ReleasePresenceIntegrationTest < Minitest::Test
   # BEFORE it writes that line. So the parent could win that race, and when it did the
   # child took SIGPIPE on the write and DIED: its marker still on disk — that survival is
   # this module's whole design, proved two tests below — and a ZOMBIE in the process
-  # table. `CertOrphanGuard.live_process` excludes zombies, so the real reader graded
+  # table. `ProcessTable.live_process` excludes zombies, so the real reader graded
   # that claim :dead and subtracted nothing for it. Headroom read 2.75 where 2.50 was
   # asserted, which is the CI red this closes (shard rails (4), run 35796326365): the
   # harness killed its own conductor and then measured the corpse.
@@ -155,7 +155,7 @@ class ReleasePresenceIntegrationTest < Minitest::Test
   def flunk_unpublished(pid, store, kind:, suffix:, timeout:, log:)
     landed = claim_files(store).map { |f| File.basename(f) }
     mine = landed.find { |f| f.end_with?(suffix) }
-    row = CertOrphanGuard.process_table.find { |p| p[:pid] == pid }
+    row = ProcessTable.process_table.find { |p| p[:pid] == pid }
     stderr = log && File.exist?(log) ? File.read(log).strip : ""
     # GRADE BEFORE THE KILL. This read used to sit inside the heredoc below, which `flunk`
     # evaluates AFTER `kill!` has SIGKILLed and reaped the child — so it printed `dead` for
@@ -205,7 +205,7 @@ class ReleasePresenceIntegrationTest < Minitest::Test
   # two-subject bug, and this tier exists to catch precisely that. So call the shipped
   # reader and let it disagree with us.
   def grade(claim)
-    AgentPresence.grade(lock: claim, table: CertOrphanGuard.process_table).first
+    AgentPresence.grade(lock: claim, table: ProcessTable.process_table).first
   end
 
   # What the reader does with that grade — `:unverifiable` counts against capacity too,
@@ -349,7 +349,7 @@ class ReleasePresenceIntegrationTest < Minitest::Test
                    "published' — they are different defects with different fixes, and a " \
                    "bare 'timed out' sends the next reader to re-run instead of to the cause")
       assert_match(/markers that landed \(1\)/, error.message)
-      # `"Z` unterminated on purpose: the state is stored RAW (`CertOrphanGuard.parse_ps_line`)
+      # `"Z` unterminated on purpose: the state is stored RAW (`ProcessTable.parse_ps_line`)
       # and Linux renders a zombie `Z+`/`Zs`, which is why production asks `start_with?("Z")`.
       assert_match(/its ps row: .*"Z/, error.message,
                    "and the Z state is the tell the comment above promises. Without this the " \
@@ -426,29 +426,17 @@ class ReleasePresenceIntegrationTest < Minitest::Test
     end
   end
 
-  # THE REAPER CANNOT REACH THIS CLAIM, and that is now structural rather than argued.
-  #
-  # `CertOrphanGuard.preflight` reads ONE path — `<root>/.git/cert-run.json` — and SIGKILLs
-  # the group whatever it finds there names. The earlier revision of this module wrote its
-  # claim into exactly that path and defended it by rooting at a primary checkout, on the
-  # theory that no cert ever preflights a primary. That theory was FALSE: `CertRootGuard`
-  # is gated on a slug while the orphan preflight is unconditional, so the slug-less
-  # `bin/full-suite-check --print` that `--install-hook` writes into `.git/hooks/pre-push`
-  # preflights a primary happily.
-  #
-  # So the defence is the namespace, and this test states it as the reader's own comment
-  # does: read here, reaped nowhere.
-  def test_the_claim_is_invisible_to_the_reaper_that_reads_runlocks
+  # THE CLAIM LIVES OUTSIDE THE RETIRED RUNLOCK SLOT. The cert orphan guard that once
+  # SIGKILLed the group `<root>/.git/cert-run.json` named retired with the local certs
+  # (DevOps v3 phase 2b); the namespace stays because one file per PROCESS has no
+  # shared slot to contend for, and this pins that nothing writes the old slot.
+  def test_the_claim_lives_outside_the_retired_runlock_slot
     with_store do |store, root|
       pid = spawn_conductor(store, root, kind: "sweep", lane: "release:prepare")
       begin
         refute_empty claim_files(store), "the claim is published…"
-        assert_nil CertOrphanGuard.read_lock(root),
-                   "…and there is NOTHING in the runlock slot for a cert's preflight to find. " \
-                   "This is the whole safety argument: preflight reads cert-run.json and only " \
-                   "cert-run.json, so a claim outside it can never be graded :orphan and can " \
-                   "never have reap_group pointed at the process group it names"
-        refute_path_exists CertOrphanGuard.lock_path(root)
+        refute_path_exists File.join(root, ".git", "cert-run.json"),
+                           "…and NOTHING lands in the retired runlock slot"
       ensure
         kill!(pid)
       end

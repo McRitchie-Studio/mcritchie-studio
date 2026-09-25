@@ -46,7 +46,7 @@ require "tmpdir"
 require "fileutils"
 require_relative "../support/session_env"
 
-load File.expand_path("../../bin/lib/cert_root_guard.rb", __dir__)
+load File.expand_path("../../bin/lib/task_tree.rb", __dir__)
 
 class DorCheckReviewDiffRootingTest < Minitest::Test
   BIN = File.expand_path("../../bin/dor-check", __dir__)
@@ -99,7 +99,7 @@ class DorCheckReviewDiffRootingTest < Minitest::Test
 
   # …/<app> and …/<app>/.worktrees/<slug> both belong to <app>.
   def origin_url_for(dir)
-    app = File.basename(File.dirname(dir)) == ".worktrees" ? CertRootGuard.app_of(dir) : File.basename(dir)
+    app = File.basename(File.dirname(dir)) == ".worktrees" ? TaskTree.app_of(dir) : File.basename(dir)
     "https://github.com/McRitchie-Studio/#{app}.git"
   end
 
@@ -227,17 +227,17 @@ class DorCheckReviewDiffRootingTest < Minitest::Test
 
   def test_unit_worktree_candidates_lists_every_repos_worktree
     with_two_repo_worktrees do |projects, a, b|
-      assert_equal [a, b].sort, CertRootGuard.worktree_candidates(SLUG, projects),
+      assert_equal [a, b].sort, TaskTree.worktree_candidates(SLUG, projects),
                    "a multi-repo task has one worktree per repo; the set is the fact, the pick is a guess"
-      assert_empty CertRootGuard.worktree_candidates("never-created", projects)
+      assert_empty TaskTree.worktree_candidates("never-created", projects)
     end
   end
 
   def test_unit_worktree_hint_prefers_the_repo_the_work_belongs_to
     with_two_repo_worktrees do |projects, a, b|
-      assert_equal b, CertRootGuard.worktree_hint(SLUG, projects, prefer_repo: "zzz-app"),
+      assert_equal b, TaskTree.worktree_hint(SLUG, projects, prefer_repo: "zzz-app"),
                    "the preference must beat glob order, or the tie is decided alphabetically"
-      assert_equal a, CertRootGuard.worktree_hint(SLUG, projects, prefer_repo: "aaa-app")
+      assert_equal a, TaskTree.worktree_hint(SLUG, projects, prefer_repo: "aaa-app")
     end
   end
 
@@ -245,19 +245,19 @@ class DorCheckReviewDiffRootingTest < Minitest::Test
     # The cert writers call this positionally for a `cd` hint and must keep their
     # existing behavior: first candidate, nil when there is none.
     with_two_repo_worktrees do |projects, a, _b|
-      assert_equal a, CertRootGuard.worktree_hint(SLUG, projects)
-      assert_equal a, CertRootGuard.worktree_hint(SLUG, projects, prefer_repo: "no-such-app")
-      assert_nil CertRootGuard.worktree_hint("never-created", projects)
+      assert_equal a, TaskTree.worktree_hint(SLUG, projects)
+      assert_equal a, TaskTree.worktree_hint(SLUG, projects, prefer_repo: "no-such-app")
+      assert_nil TaskTree.worktree_hint("never-created", projects)
     end
   end
 
   def test_unit_app_of_names_the_repo_for_a_desk_and_for_a_primary
-    assert_equal "turf-monster", CertRootGuard.app_of("/p/turf-monster/.worktrees/task-x")
+    assert_equal "turf-monster", TaskTree.app_of("/p/turf-monster/.worktrees/task-x")
     # A PRIMARY checkout is the other shape the guard is handed. The old
     # unconditional two-level climb returned "p" here — the projects directory, which
     # is nobody's repo — so the directory fallback silently compared garbage.
-    assert_equal "turf-monster", CertRootGuard.app_of("/p/turf-monster")
-    assert_equal "turf-monster", CertRootGuard.app_of("/p/turf-monster/")
+    assert_equal "turf-monster", TaskTree.app_of("/p/turf-monster")
+    assert_equal "turf-monster", TaskTree.app_of("/p/turf-monster/")
   end
 
   # ── [unit] the DESTINATION axes ────────────────────────────────────────────
@@ -277,14 +277,14 @@ class DorCheckReviewDiffRootingTest < Minitest::Test
 
   def test_unit_a_matching_worktree_has_no_mismatch
     with_candidate do |_projects, path|
-      assert_nil CertRootGuard.worktree_mismatch(path, expected_branch: "feat/#{SLUG}", prefer_repo: "myapp")
+      assert_nil TaskTree.worktree_mismatch(path, expected_branch: "feat/#{SLUG}", prefer_repo: "myapp")
     end
   end
 
   def test_unit_the_branch_axis_rejects_a_desk_that_never_carried_the_branch
     # B2 at unit grain.
     with_candidate(branch: "release") do |_projects, path|
-      why = CertRootGuard.worktree_mismatch(path, expected_branch: "feat/#{SLUG}", prefer_repo: "myapp")
+      why = TaskTree.worktree_mismatch(path, expected_branch: "feat/#{SLUG}", prefer_repo: "myapp")
       assert_includes why.to_s, "release"
       assert_includes why.to_s, "feat/#{SLUG}", "a reason that doesn't name the expectation isn't actionable"
     end
@@ -294,7 +294,7 @@ class DorCheckReviewDiffRootingTest < Minitest::Test
     # B1 at unit grain — and note the branch is RIGHT here, which is why the branch
     # axis alone cannot catch it.
     with_candidate(app: "otherapp") do |_projects, path|
-      why = CertRootGuard.worktree_mismatch(path, expected_branch: "feat/#{SLUG}", prefer_repo: "myapp")
+      why = TaskTree.worktree_mismatch(path, expected_branch: "feat/#{SLUG}", prefer_repo: "myapp")
       assert_includes why.to_s, "otherapp"
       assert_includes why.to_s, "myapp"
     end
@@ -306,8 +306,8 @@ class DorCheckReviewDiffRootingTest < Minitest::Test
     # refusing it would turn a working review into a dead end. `origin` is the
     # authoritative answer, so it wins over the folder.
     with_candidate(app: "locally-renamed", remote: "https://github.com/McRitchie-Studio/myapp.git") do |_p, path|
-      assert_equal "McRitchie-Studio/myapp", CertRootGuard.remote_slug(path)
-      assert_nil CertRootGuard.worktree_mismatch(path, expected_branch: "feat/#{SLUG}",
+      assert_equal "McRitchie-Studio/myapp", TaskTree.remote_slug(path)
+      assert_nil TaskTree.worktree_mismatch(path, expected_branch: "feat/#{SLUG}",
                                                  prefer_repo: "McRitchie-Studio/myapp")
     end
   end
@@ -317,7 +317,7 @@ class DorCheckReviewDiffRootingTest < Minitest::Test
     # positive contradiction rather than a match — a bare-name comparison would have
     # accepted a fork's checkout as the tree behind this PR.
     with_candidate(app: "myapp", remote: "https://github.com/someone-else/myapp.git") do |_p, path|
-      why = CertRootGuard.repo_mismatch(path, "McRitchie-Studio/myapp")
+      why = TaskTree.repo_mismatch(path, "McRitchie-Studio/myapp")
       assert_includes why.to_s, "someone-else/myapp"
       assert_includes why.to_s, "McRitchie-Studio/myapp"
     end
@@ -325,19 +325,19 @@ class DorCheckReviewDiffRootingTest < Minitest::Test
 
   def test_unit_remote_slug_parses_https_and_ssh_with_the_owner
     assert_equal "McRitchie-Studio/turf-monster",
-                 CertRootGuard.remote_slug_from("git@github.com:McRitchie-Studio/turf-monster.git")
+                 TaskTree.remote_slug_from("git@github.com:McRitchie-Studio/turf-monster.git")
     assert_equal "McRitchie-Studio/mcritchie-studio",
-                 CertRootGuard.remote_slug_from("https://github.com/McRitchie-Studio/mcritchie-studio.git")
-    assert_equal "McRitchie-Studio/rolio", CertRootGuard.remote_slug_from("https://github.com/McRitchie-Studio/rolio")
-    assert_nil CertRootGuard.remote_slug_from("")
+                 TaskTree.remote_slug_from("https://github.com/McRitchie-Studio/mcritchie-studio.git")
+    assert_equal "McRitchie-Studio/rolio", TaskTree.remote_slug_from("https://github.com/McRitchie-Studio/rolio")
+    assert_nil TaskTree.remote_slug_from("")
   end
 
   def test_unit_slugs_match_compares_owners_only_when_both_have_one
     # A directory name cannot vouch for an owner. Comparing it AS an owner would
     # either refuse everything or wave forks through, depending which way we guessed.
-    assert CertRootGuard.slugs_match?("McRitchie-Studio/myapp", "mcritchie-studio/MYAPP"), "GitHub is case-insensitive"
-    refute CertRootGuard.slugs_match?("someone-else/myapp", "McRitchie-Studio/myapp")
-    assert CertRootGuard.slugs_match?("myapp", "McRitchie-Studio/myapp"), "bare name falls back to the repo half"
+    assert TaskTree.slugs_match?("McRitchie-Studio/myapp", "mcritchie-studio/MYAPP"), "GitHub is case-insensitive"
+    refute TaskTree.slugs_match?("someone-else/myapp", "McRitchie-Studio/myapp")
+    assert TaskTree.slugs_match?("myapp", "McRitchie-Studio/myapp"), "bare name falls back to the repo half"
   end
 
   def test_unit_no_repo_preference_leaves_the_branch_axis_in_charge
@@ -345,8 +345,8 @@ class DorCheckReviewDiffRootingTest < Minitest::Test
     # Each axis is enforced when it is DETERMINABLE; an absent one must not become a
     # blanket refusal, or every legitimate pre-PR re-root dies.
     with_candidate(app: "otherapp") do |_projects, path|
-      assert_nil CertRootGuard.worktree_mismatch(path, expected_branch: "feat/#{SLUG}", prefer_repo: "")
-      refute_nil CertRootGuard.worktree_mismatch(path, expected_branch: "release", prefer_repo: "")
+      assert_nil TaskTree.worktree_mismatch(path, expected_branch: "feat/#{SLUG}", prefer_repo: "")
+      refute_nil TaskTree.worktree_mismatch(path, expected_branch: "release", prefer_repo: "")
     end
   end
 
@@ -568,7 +568,7 @@ class DorCheckReviewDiffRootingTest < Minitest::Test
   # ── [integration] the DESTINATION is validated too, on BOTH axes ──────────
   #
   # Found in review of this very fix (2026-08-09). The first cut asked two questions
-  # of the checkout you were STANDING in (`CertRootGuard.assess`: is its branch the
+  # of the checkout you were STANDING in (`TaskTree.assess`: is its branch the
   # task's? is it the task's worktree dir?) and ZERO questions of the checkout it
   # JUMPED TO — while announcing "Re-rooted at the task's worktree: <path>" as fact.
   # A destination was trusted for having the right DIRECTORY NAME.
@@ -842,10 +842,10 @@ class DorCheckReviewDiffRootingTest < Minitest::Test
       File.write(stub, "#!/bin/sh\necho '{}'\n")
       FileUtils.chmod(0o755, stub)
 
-      assert_nil CertRootGuard.refusal(task_bin: stub, slug: SLUG, root: desk),
+      assert_nil TaskTree.refusal(task_bin: stub, slug: SLUG, root: desk),
                  "the WRITER still certifies from the task's own desk"
 
-      found = CertRootGuard.assess(task_bin: stub, slug: SLUG, root: desk)
+      found = TaskTree.assess(task_bin: stub, slug: SLUG, root: desk)
       refute_nil found, "the READER must still receive the assessment, not a silent nil"
       assert found[:standing_in_task_desk], "reported as a FACT the reader can decline"
       assert_includes found[:standing_mismatch].to_s, "feat/#{SLUG}"
@@ -865,7 +865,7 @@ class DorCheckReviewDiffRootingTest < Minitest::Test
       a = build_task_tree(File.join(projects, "aaa-app", ".worktrees", SLUG), files: ["docs/a.md"])
       b = build_task_tree(File.join(projects, "zzz-app", ".worktrees", SLUG), files: ["docs/b.md"])
 
-      message = CertRootGuard.refusal_message(SLUG, "/somewhere/else", "release", "feat/#{SLUG}", SLUG,
+      message = TaskTree.refusal_message(SLUG, "/somewhere/else", "release", "feat/#{SLUG}", SLUG,
                                               projects, prefer_repo: "zzz-app")
       assert_includes message, b, "the hint must point at the repo under gate"
       refute_includes message, a, "alphabetical order is not an answer to which repo"

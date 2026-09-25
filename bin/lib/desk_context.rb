@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
-require_relative "cert_orphan_guard"
+require_relative "process_table"
 
 # DeskContext — the SESSION half of the desk context marker, and the reverse
 # lookup it makes possible: *which live session holds task X, and what is it
@@ -283,7 +283,7 @@ module DeskContext
   # somebody's live work.
   def grade(context:, table:)
     session = compact(context["session_id"])
-    pid = CertOrphanGuard.coerce_pid(context["anchor_pid"])
+    pid = ProcessTable.coerce_pid(context["anchor_pid"])
     recorded = compact(context["anchor_started_at"])
 
     schema = context["schema_version"].to_i
@@ -295,7 +295,7 @@ module DeskContext
       # "nobody is here" vs "this marker could never have said". The row renders
       # differently for each, and the second one has a remedy: refresh the desk.
       stale_schema: schema < SESSION_AWARE_SCHEMA,
-      # NO PROCESS TABLE, NO VERDICT. CertOrphanGuard.process_table returns [] when
+      # NO PROCESS TABLE, NO VERDICT. ProcessTable.process_table returns [] when
       # `ps` fails — a non-zero exit, ENOENT, or a fork failure on a loaded box, which
       # is exactly when somebody is hunting for desks to reclaim. Without this every
       # claim would find no process and grade `dead`, flipping EVERY live desk to
@@ -310,10 +310,10 @@ module DeskContext
     # It is still a claim, and an ungradeable claim is held, never buried.
     return [:unverifiable, detail] if pid.nil? || table.empty?
 
-    process = CertOrphanGuard.live_process(table, pid)
+    process = ProcessTable.live_process(table, pid)
     detail = detail.merge(found: process)
 
-    case CertOrphanGuard.identity_of(process, recorded)
+    case ProcessTable.identity_of(process, recorded)
     when :ours then [:live, detail]
     when :not_ours then [:recycled, detail]
     else process.nil? ? [:dead, detail] : [:unverifiable, detail]

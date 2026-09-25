@@ -365,29 +365,25 @@ class FastCertFamilyTest < Minitest::Test
   end
 
   # THE FENCE (PR #1226): a run executing ZERO tests must not report green. The
-  # fallback moves the INPUT to that guard, never its KEYING — so a capped run with
-  # twins now certifies (it ran tests), and a capped run WITHOUT twins still defers
-  # (it ran none). Both halves, from one shape.
-  def test_the_zero_evidence_guard_still_keys_on_zero_not_on_the_cap
+  # fallback moves the INPUT to that question, never its KEYING — so a capped run
+  # with twins runs them, and a capped run WITHOUT twins runs no test lane and says
+  # so. Both halves, from one shape.
+  def test_what_will_run_keys_on_zero_not_on_the_cap
     files = { "bin/wide-tool" => "#!/usr/bin/env ruby\n", "test/lib/wide_tool_test.rb" => "class A; end\n" }
     20.times { |i| files["test/lib/wide_tool_aspect#{i}_test.rb"] = "class B#{i}; end\n" }
 
     with_tree(files) do |dir|
       mapped = FastCert.select_tests(dir, ["bin/wide-tool"])
 
-      # WITH a twin, over an EMPTY spine (the satellite shape): real tests run, so
-      # there is nothing to defer. This is the rung that changed.
+      # WITH a twin, over an EMPTY spine (the satellite shape): real tests run.
       with_twin = FastCert.cap_decision(mapped, { "bin/wide-tool" => mapped }, cap: 15,
                                         twins: FastCert.convention_twins(dir, ["bin/wide-tool"]))
-      assert_nil FastCert.zero_test_outcome(mapped, [], with_twin, slug: "t"),
-                 "a capped run that RUNS its twin executes tests — it must not defer"
+      assert_equal ["test/lib/wide_tool_test.rb"], FastCert.executed_test_paths(mapped, [], with_twin),
+                   "a capped run RUNS its twin — that is what the pre-flight executes"
 
-      # WITHOUT one, same cap, same empty spine: unchanged, still a deferral.
+      # WITHOUT one, same cap, same empty spine: nothing runs, and bin/fast-check says so.
       no_twin = FastCert.cap_decision(mapped, { "bin/wide-tool" => mapped }, cap: 15, twins: [])
-      outcome = FastCert.zero_test_outcome(mapped, [], no_twin, slug: "t")
-      assert_equal :defer, outcome[:kind], "no twin, no spine, nothing ran — still deferred"
-      assert_match(/convention-twin fallback was empty too/, outcome[:detail],
-                   "and the receipt says WHY the fallback did not save it")
+      assert_empty FastCert.executed_test_paths(mapped, [], no_twin), "no twin, no spine — no test lane"
     end
   end
 

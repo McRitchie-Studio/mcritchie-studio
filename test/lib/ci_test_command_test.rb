@@ -3,7 +3,7 @@
 # [unit] tests for bin/lib/ci_test_command.rb — "what does CI actually run?",
 # resolved from the repo's OWN .github/workflows/ci.yml so a cert lane cannot
 # silently test less than CI. Pure parsing; no processes are spawned. The
-# ORCHESTRATION (which lane uses it) is covered by test/lib/full_suite_check_test.rb.
+# ORCHESTRATION (which lane uses it) is covered by bin/release.rb's gate tests.
 # Run directly:
 #   ruby -Itest test/lib/ci_test_command_test.rb
 # Also picked up by the normal `bin/rails test` sweep.
@@ -259,7 +259,7 @@ class CiTestCommandTest < Minitest::Test
   # The lane then certified on `bin/rails test`: GREEN, with test/system NEVER RUN.
   # That is precisely the bug this whole task exists to kill, respelled. Only the hub
   # is pinned by test_the_fallback_default_matches_the_hubs_own_ci_command; turf-monster
-  # and rolio have no such guard, and full-suite-check is rolio's ONLY cert route.
+  # and rolio have no such guard, and the (since retired) local cert was rolio's ONLY cert route.
   #
   # The invariant is now positive and singular: CI runs its tests in EXACTLY ONE
   # step, and that step is ONE line. Everything else refuses.

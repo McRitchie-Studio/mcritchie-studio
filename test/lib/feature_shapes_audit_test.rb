@@ -284,7 +284,7 @@ class FeatureShapesAuditTest < ActiveSupport::TestCase
   # the ci_test_command SEAM — the route feature_shapes.yml names, and the only one that must
   # read a repo's raw ci.yml. A per-repo check built on a DECLARED key instead
   # (config/release_repos.yml already carries `lint_lane: none` for exactly this purpose, and
-  # bin/lib/full_suite_gate.rb:352 already reads that file) would close the blind spot and
+  # bin/lib/release_registry.rb already reads that file) would close the blind spot and
   # leave this green. It is a NET, not an invariant — the same standing this file gives rule 2
   # above — and saying so is the difference between a tripwire and another promise.
   #

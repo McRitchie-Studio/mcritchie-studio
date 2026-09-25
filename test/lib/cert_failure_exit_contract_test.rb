@@ -39,39 +39,30 @@ class CertFailureExitContractTest < Minitest::Test
 
   # ------------------------------------------------------------- bin/ship ----
 
-  def test_ship_exits_nonzero_when_the_cert_is_red
+  # THE PRE-FLIGHT IS NOT A GATE (DevOps v3 phase 2b). A red bin/fast-check at 2/8 is
+  # reported loudly and the ship carries on to the push; in THIS harness the push then
+  # dies (no origin), which is the step that must own the non-zero exit — never the
+  # pre-flight, and never a silent 0.
+  def test_ship_reports_a_red_pre_flight_and_continues_to_the_push
     out, code = ship(cert_exit: 1)
 
-    assert_equal 1, code,
-                 "ship stopped at 2/8 with a RED cert. Exiting 0 here tells every caller the task " \
-                 "reached `submitted` when it is still [building] with nothing pushed."
-    # PINNED ON THE DIE LINE, not on the word "failed". bin/fast-check now has TWO
-    # non-zero verdicts — a RED lane, and a REFUSAL to certify a diff that would
-    # execute no test (capped-cert-reports-green) — so ship's message names the step
-    # and the verdict rather than asserting a red lane it cannot know about. Matching
-    # a bare /bin\/fast-check/ would be satisfied by the "2/8 cert — running
-    # bin/fast-check" line even if ship had actually died downstream, which is the
-    # exact confusion the sibling case below was written to catch.
-    assert_match(/bin\/fast-check did NOT certify/, out, "and it must say which step died")
+    assert_equal 1, code, "the push failed in this harness — a failed step must never yield exit 0"
+    assert_match(/2\/8 pre-flight — RED/, out, "the red pre-flight is named")
+    assert_match(/3\/8 push/, out, "and the run went PAST it — a pre-flight does not stop the line")
+    refute_match(/did NOT certify/, out, "the retired cert refusal never prints")
   end
 
-  # The OTHER shape of the same failure, and the one that reads as success most
-  # easily: `system` returns nil (not false) when the command cannot be spawned at
-  # all, and `nil` is falsey only if the caller tests it rather than rescuing.
-  def test_ship_exits_nonzero_when_the_cert_runner_does_not_exist
+  # The OTHER shape: `system` returns nil when the runner cannot be spawned. That is
+  # a red pre-flight like any other, reported and then walked past.
+  def test_ship_reports_a_missing_pre_flight_runner_and_continues
     out, code = ship(cert_exit: :missing)
 
-    assert_equal 1, code,
-                 "a cert binary that cannot even be spawned certified nothing — that is a failure, " \
-                 "not a skipped step"
-    # NAMES THE STEP, not merely nonzero. Without this the case passes against a
-    # ship that ignored the cert entirely and died later at the push instead —
-    # measured: that mutation survived here while the sibling case caught it.
-    assert_match(/bin\/fast-check did NOT certify/, out,
-                 "the cert step must be what stopped the run, not something downstream of it")
+    assert_equal 1, code, "the push failed in this harness"
+    assert_match(/2\/8 pre-flight — RED/, out, "an unlaunchable runner is a red pre-flight")
+    assert_match(/3\/8 push/, out)
   end
 
-  # THE CONTROL. Without it, both assertions above are satisfied by a `bin/ship`
+  # THE CONTROL. Without it, the assertions above are satisfied by a `bin/ship`
   # that exits 1 unconditionally. This drives a real exit-0 path through the same
   # binary: a task already past the seam is a no-op handoff, and a no-op is a
   # success.
@@ -89,7 +80,7 @@ class CertFailureExitContractTest < Minitest::Test
   def test_fast_check_exits_nonzero_when_the_prepare_runner_is_absent
     out, code = fast_check("FAST_CHECK_TEST_PREPARE_CMD" => "bin/rails db:test:prepare")
 
-    assert_equal 1, code, "nothing was certified, so the cert must not report success"
+    assert_equal 1, code, "nothing ran, so the pre-flight must not report success"
     assert_match(/COULD NOT RUN/, out)
   end
 
@@ -122,12 +113,12 @@ class CertFailureExitContractTest < Minitest::Test
                  "message cannot know that it was. Name the mechanism instead.")
   end
 
-  # Refusing, not skipping — the distinction the whole task turns on. A cert that
-  # SKIPPED the lane would exit 0 and certify a repo whose tests never ran.
+  # Refusing, not skipping — the distinction the whole task turns on. A pre-flight
+  # that SKIPPED the lane would exit 0 and read green over a repo whose tests never ran.
   def test_fast_check_refuses_rather_than_skipping_the_absent_lane
     out, = fast_check("FAST_CHECK_TEST_PREPARE_CMD" => "bin/rails db:test:prepare")
 
-    refute_match(/fast cert green/, out, "a repo it could not prepare must never come back certified")
+    refute_match(/pre-flight green/, out, "a repo it could not prepare must never come back green")
   end
 
   # THE LANE SUMMARY, which is a SECOND place the same misdiagnosis lives and
@@ -138,7 +129,7 @@ class CertFailureExitContractTest < Minitest::Test
     out, code = fast_check("FAST_CHECK_SKIP_TEST_PREPARE" => "1",
                            "FAST_CHECK_TEST_CMD" => "bin/rails test")
 
-    assert_equal 1, code, "nothing ran, so nothing is certified"
+    assert_equal 1, code, "nothing ran, so nothing is green"
     assert_match(/COULD NOT RUN/, out)
     refute_match(/lane\(s\) RED/, out,
                  "a missing command is not a failing test — sending the reader to fix a regression " \
@@ -152,8 +143,8 @@ class CertFailureExitContractTest < Minitest::Test
   def test_fast_check_exits_zero_when_every_lane_can_run
     out, code = fast_check("FAST_CHECK_SKIP_TEST_PREPARE" => "1")
 
-    assert_equal 0, code, "with every lane runnable and green, the cert must succeed: #{out}"
-    assert_match(/fast cert green/, out)
+    assert_equal 0, code, "with every lane runnable and green, the pre-flight must succeed: #{out}"
+    assert_match(/pre-flight green/, out)
   end
 
   private
@@ -201,8 +192,8 @@ class CertFailureExitContractTest < Minitest::Test
     end
   end
 
-  # Drive the REAL bin/fast-check standalone (`--print`, no task slug) so it runs
-  # its lanes and writes NOTHING to the board.
+  # Drive the REAL bin/fast-check standalone (no task slug) so it runs its lanes;
+  # it writes nothing to the board either way.
   def fast_check(env)
     with_repo do |tmp, repo, _bin|
       base = { "FAST_CHECK_ROOT" => repo,
@@ -210,12 +201,12 @@ class CertFailureExitContractTest < Minitest::Test
                "FAST_CHECK_TEST_CMD" => "/usr/bin/true",
                "FAST_CHECK_RUBOCOP_CMD" => "/usr/bin/true",
                "FAST_CHECK_SPINE" => write_spine(tmp) }
-      capture(base.merge(env), [FAST_CHECK, "--print"], chdir: tmp)
+      capture(base.merge(env), [FAST_CHECK], chdir: tmp)
     end
   end
 
   # A real git repo with one commit — `bin/ship` commits, and `bin/fast-check`
-  # fingerprints a git tree.
+  # diffs a git tree.
   def with_repo
     Dir.mktmpdir("exit-contract") do |tmp|
       repo = File.join(tmp, "repo")
@@ -262,18 +253,16 @@ class CertFailureExitContractTest < Minitest::Test
   # HERMETIC, and this cost a red cert to learn. `Open3.capture2e` MERGES its env
   # onto the parent's, and when this file runs as one lane of a real
   # `bin/fast-check` the parent is a `bin/rails test` holding the desk's test
-  # database with `DATABASE_URL` exported. The child cert inherited it, resolved
-  # the DESK rather than the throwaway repo this test built, and was refused by
-  # the orphan guard — "the test DB ... is held by 1 other session(s): pid 44073
-  # (bin/rails)", which is this test's own parent. Every fast-check case failed
+  # database with `DATABASE_URL` exported. The child inherited it and resolved the
+  # DESK rather than the throwaway repo this test built (the retired orphan guard
+  # then refused it for its own parent's connection). Every fast-check case failed
   # for a reason that had nothing to do with what they assert, and they passed
   # standalone, which is the worst combination: green on the desk, red in the
   # suite. So the child starts from a SCRUBBED env — every FAST_CHECK_*/SHIP_*
   # and the database/Rails vars removed — and receives only what the case sets.
   INHERITED_PREFIXES = %w[FAST_CHECK_ SHIP_].freeze
-  # TEST_DATABASE_URL is the one that actually did it: CertOrphanGuard.test_db_url
-  # reads it FIRST, so an inherited value points the child cert's orphan check at
-  # the DESK's test database — which this test's own parent is holding.
+  # TEST_DATABASE_URL is the one that actually did it: an inherited value points the
+  # child's desk guard at the DESK's test database, which this test's parent holds.
   INHERITED_NAMES = %w[TEST_DATABASE_URL DATABASE_URL RAILS_ENV MCRITCHIE_SESSION_KEY].freeze
 
   def capture(env, argv, chdir:)

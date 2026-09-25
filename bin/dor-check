@@ -37,11 +37,11 @@
 # Since /tasks/dor-reads-settled-ci-verdict that evidence has ONE form: a SETTLED
 # GREEN GitHub CI verdict for the PR's current head, read through
 # bin/lib/ci_status.rb and decided in bin/lib/ci_gate.rb (the allow-list — "THE
-# GATE IS AN ALLOW-LIST, IN BOTH ROLES" there). The fingerprint receipts
-# bin/fast-check and bin/full-suite-check record — "[fast-cert@<fp>]",
-# "[full-suite@<fp>]", "[rubocop@<fp>]", "[cert-deferred@<fp>]" — and the
-# "[full-suite-bypass]" hatch are NOT read here any more: they are inert until
-# phase 2b of DevOps v3 removes them (docs/agents/system/devops-v3-design.md).
+# GATE IS AN ALLOW-LIST, IN BOTH ROLES" there). The fingerprint receipts the
+# local certs used to record (the fast-cert, full-suite, rubocop and cert-deferred
+# lanes) and the full-suite-bypass hatch are gone with the certs
+# (/tasks/retire-local-cert-evidence, DevOps v3 phase 2b); a leftover line in an
+# old task's checks_run is author prose to this gate.
 # The role table:
 #   green                                  → advances, both roles (review still
 #                                            refuses a green that predates a base
@@ -69,7 +69,7 @@
 # primary's ONE unrelated dirty .md and printed "✓ DoR-to-Merge n/a … doc-only diff
 # … → ready to advance" over a multi-file code PR. A FALSE PASS in the gate whose
 # entire job is refusing under-tested work, and the dirtier the checkout the more
-# confidently it lies. So the task-root guard (bin/lib/cert_root_guard.rb) runs in
+# confidently it lies. So the task-root guard (bin/lib/task_tree.rb) runs in
 # BOTH gate roles and re-roots the DIFF; where it cannot, the local working tree is
 # refused as a diff source outright (untrusted_root?) and the gate falls back to
 # the task BRANCH's committed diff, else to :indeterminate → fail closed.
@@ -127,7 +127,7 @@ require "json"
 require "uri"
 require "yaml"
 require "optparse"
-require_relative "lib/full_suite_gate"
+require_relative "lib/tree_fingerprint"
 require_relative "lib/fast_lane"
 require_relative "lib/repo_root"
 require_relative "lib/ci_status"
@@ -138,7 +138,7 @@ require_relative "lib/test_only_diff"
 require_relative "lib/client_surface_diff"
 require_relative "lib/control_replay"
 require_relative "lib/task_board"
-require_relative "lib/cert_root_guard"
+require_relative "lib/task_tree"
 require_relative "lib/review_tree_guard"
 require_relative "lib/base_movement_audit"
 require_relative "lib/merge_ref_base"
@@ -161,9 +161,9 @@ CONFIG_PATH = File.join(ROOT, "config", "feature_shapes.yml")
 # it printed back at them. Resolved from __dir__ — the very dor-check that is
 # speaking, and its siblings beside it. Deliberately NOT TASK_BIN below: that is
 # the ENV-redirected EXEC seam, while a remedy names the real script the reader is
-# sent to. Policy: FastLane.remedy_command. (bin/fast-check and bin/full-suite-check
-# used to be named here too; no refusal offers either since the receipts they
-# record stopped being evidence.)
+# sent to. Policy: FastLane.remedy_command. (No refusal offers a local cert route:
+# the receipts the certs recorded stopped being evidence, and then the certs
+# retired.)
 TASK_CMD = FastLane.remedy_command("task", __dir__)
 GH_AUTH_REFRESH_CMD = FastLane.remedy_command("gh-auth-refresh", __dir__)
 # The board CLI the task-root guard reads devops.branch/worktree_slug through when
@@ -207,8 +207,8 @@ BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
 # task's DoR gate — `dor` (builder) or `dor_review` (review gate-zero) — see the
 # emit at the bottom; fire-and-forget.
 #
-# DOR_CHECK_GATE_BIN redirects that CLI — the same seam bin/fast-check and
-# bin/full-suite-check already carry (FAST_CHECK_GATE_BIN / FULL_SUITE_GATE_BIN).
+# DOR_CHECK_GATE_BIN redirects that CLI — the tests point it at a stub, the same
+# seam shape DOR_CHECK_CONTROL_EVIDENCE has for the control lane.
 # It exists because "was an attempt RECORDED?" is otherwise unobservable: --json
 # and --file both skip the board write by design, so a verdict that records
 # NOTHING — which is exactly what an exempt run did until this task — reads
@@ -380,8 +380,8 @@ end
 # (the reviewer's checkout is never the task's tree), the working tree otherwise —
 # and a nil fingerprint is :missing, never a synthesised :fresh. Until
 # /tasks/dor-reads-settled-ci-verdict this read the suite verdict's fingerprint and
-# had to defend against FullSuiteGate#verdict's "every lane :fresh" default on a
-# recorded `[full-suite-bypass]`; that verdict is no longer computed, so the only
+# had to defend against the retired suite verdict's "every lane :fresh" default on a
+# recorded bypass hatch; that verdict is no longer computed, so the only
 # way to a :fresh here is a stamp whose hash equals the tree's.
 #
 # DOR_CHECK_CONTROL_EVIDENCE is this lane's OWN injection seam (fresh:<VERDICT> |
@@ -398,8 +398,8 @@ def control_evidence_status(checks, fingerprint)
 
   return [:missing, nil] if fingerprint.nil?
 
-  lane = FullSuiteGate.lane_status(checks, ControlReplay::LANE, fingerprint)
-  stamp = checks.find { |line| FullSuiteGate.extract_fingerprint(line, ControlReplay::LANE) == fingerprint }
+  lane = CertEvidence.lane_status(checks, ControlReplay::LANE, fingerprint)
+  stamp = checks.find { |line| CertEvidence.extract_fingerprint(line, ControlReplay::LANE) == fingerprint }
   [lane, stamp && ControlReplay.verdict_of(stamp)]
 end
 
@@ -1171,7 +1171,7 @@ end
 def review_fingerprint(root, branch)
   return nil if branch.to_s.strip.empty?
 
-  FullSuiteGate.fingerprint_of_first_ref(root, "origin/#{branch}", branch)
+  TreeFingerprint.of_first_ref(root, "origin/#{branch}", branch)
 end
 
 # The tree hash the `[control@<fp>]` stamp is graded against — resolved ONCE, from
@@ -1192,7 +1192,7 @@ def control_fingerprint
       override = review_fingerprint(diff_root, branch)
     end
     override ||= @task_tree_override
-    override ? override[:fingerprint] : FullSuiteGate.fingerprint(diff_root)
+    override ? override[:fingerprint] : TreeFingerprint.working_tree(diff_root)
   end
 end
 
@@ -1203,7 +1203,7 @@ end
 # builder's pre-PR run) or the URL isn't a GitHub PR; the caller then refuses to pick
 # rather than inventing one.
 #
-# The OWNER rides along deliberately: CertRootGuard compares it against a checkout's
+# The OWNER rides along deliberately: TaskTree compares it against a checkout's
 # `origin`, and a bare repo name would let a FORK — someone else's account, same repo
 # name — validate as this PR's tree. Where only a directory name is available the guard
 # degrades to the bare name on its own; that choice belongs to the guard, not here.
@@ -1645,7 +1645,7 @@ end
 
 # --- DoR gate-run emit (durable GateRun markers) ----------------------------
 # A REAL merge-gate verdict is the Definition-of-Ready gate — its OWN gate now,
-# distinct from G1 Cert (cert self-closes in full-suite-check). The builder's run
+# distinct from the retired G1 cert. The builder's run
 # opens+closes the `dor` gate; the primary reviewer's gate-zero (--gate-role
 # review) opens+closes `dor_review` (was: a sop appended to G2a — the review
 # supervisor still owns the G2a/G2b review-lane closes). Both carry the verdict
@@ -1749,7 +1749,7 @@ review_role = options[:gate_role] == "review"
 # ...and the devops hash itself, for the control stamp's branch resolution.
 @devops = devops
 
-# --- task-root guard (bin/lib/cert_root_guard.rb) -----------------------------
+# --- task-root guard (bin/lib/task_tree.rb) ------------------------------------
 #
 # EVERY check below describes SOME tree. diff_root decides which one, so diff_root
 # MUST BE the task's tree. It wasn't, and nothing checked. THE FIRST HALF (2026-07-14)
@@ -1789,7 +1789,7 @@ review_role = options[:gate_role] == "review"
 # operator's real edits sat untested where they ran from. dor-check WRITES NO
 # EVIDENCE — it reads a diff and a CI verdict — so re-rooting can forge nothing.
 # It can only make the gate judge the RIGHT code. So dor-check RESOLVES. But
-# cert_root_guard.rb is explicit that a SILENT chdir is its own hazard, and it is
+# task_tree.rb is explicit that a SILENT chdir is its own hazard, and it is
 # right: a gate that quietly judges a different tree than the one you are looking at
 # is how you end up arguing with a verdict instead of reading it. Every re-root
 # below therefore ANNOUNCES itself on stderr, naming both roots.
@@ -1831,7 +1831,7 @@ task_tree_override = nil
 if gate != "build" && !slug.to_s.strip.empty? &&
    ENV["DOR_CHECK_DIFF_ROOT"].to_s.strip.empty? &&
    (options[:file].nil? || !PROJECTS_DIR.to_s.strip.empty?)
-  foreign_root = CertRootGuard.assess(
+  foreign_root = TaskTree.assess(
     task_bin: TASK_BIN, slug: task["slug"] || slug, root: diff_root, devops: devops,
     projects_dir: PROJECTS_DIR, prefer_repo: pr_repo_name(@pr_url)
   )
@@ -2385,7 +2385,7 @@ missing_tiers = dor_tiers.reject { |tier| tier_satisfied?(checks, tier) }
 # THIS EXACT QUESTION, AND ALREADY REFUSES. A `kind: docs` task shipping
 # app/models/task.rb loses its exemption up there (gated_code_files is non-empty)
 # and falls through to the shape contract — which was `shape: docs`: zero tiers,
-# full_suite_gate false, "✓ DoR-to-Merge met". The kind gate's own FALL-THROUGH was
+# no suite gate, "✓ DoR-to-Merge met". The kind gate's own FALL-THROUGH was
 # the hole: one observation, asked twice, answered two opposite ways.
 #
 # MEASURED on PR #1172 (shape docs, carrying test/integration/

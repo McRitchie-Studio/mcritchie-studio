@@ -2491,15 +2491,16 @@ class TaskCliTest < Minitest::Test
     assert_equal "http://localhost:3001/demo", devops["local_url"]
   end
 
-  # --- cert evidence is machine-owned (regression) ---
+  # --- the control stamp is machine-owned (regression) ---
   # `--checks` REPLACES the author's checks_run lines. It must NOT be able to
-  # replace the fingerprint-bound cert lines bin/fast-check / bin/full-suite-check
-  # stamp: recording a test plan after certifying used to wipe the cert, and
-  # bin/dor-check then called freshly certified code "full-suite: MISSING". The
-  # CLI already GETs the task before the PATCH, so it carries the evidence forward
-  # itself — the board enforces the same rule for every other writer.
-  FULL_EVIDENCE = "[full-suite@1512171634558ef1234567890abcdef123456789] bin/rails test (782 runs, 0 failures)"
-  RUBOCOP_EVIDENCE = "[rubocop@1512171634558ef1234567890abcdef123456789] bin/rubocop (clean)"
+  # replace the fingerprint-bound `[control@<fp>]` stamp bin/control-check records
+  # (the same rule once protected the local cert receipts, retired in DevOps v3
+  # phase 2b): recording a test plan after the control ran used to wipe it, and
+  # bin/dor-check then called freshly replayed code MISSING. The CLI already GETs
+  # the task before the PATCH, so it carries the evidence forward itself — the
+  # board enforces the same rule for every other writer.
+  FULL_EVIDENCE = "[control@1512171634558ef1234567890abcdef123456789:mcritchie-studio] NECESSARY — replayed test/models/a_test.rb"
+  RUBOCOP_EVIDENCE = "[control@1512171634558ef1234567890abcdef123456789:turf-monster] NECESSARY — replayed test/models/b_test.rb"
 
   def test_update_checks_preserves_machine_written_cert_evidence
     requests, = run_task(
@@ -2510,8 +2511,8 @@ class TaskCliTest < Minitest::Test
     patch = requests.find { |r| r[:method] == "PATCH" }
     refute_nil patch
     checks = JSON.parse(patch[:body]).dig("devops", "checks_run")
-    assert_includes checks, FULL_EVIDENCE, "--checks wiped the full-suite cert evidence"
-    assert_includes checks, RUBOCOP_EVIDENCE, "--checks wiped the rubocop cert evidence"
+    assert_includes checks, FULL_EVIDENCE, "--checks wiped the hub's control stamp"
+    assert_includes checks, RUBOCOP_EVIDENCE, "--checks wiped turf's control stamp"
     assert_includes checks, "[unit] bin/rails test test/models"
     assert_includes checks, "[integration] bin/rails test test/controllers"
   end
@@ -2528,10 +2529,10 @@ class TaskCliTest < Minitest::Test
     assert_equal ["[unit] fresh plan", FULL_EVIDENCE], JSON.parse(patch[:body]).dig("devops", "checks_run")
   end
 
-  # A cert writer supersedes the lanes it SUPPLIES (that is how bin/fast-check and
-  # bin/full-suite-check re-stamp their own lane) — the rest is carried over.
+  # A stamp writer supersedes the namespace it SUPPLIES (that is how bin/control-check
+  # re-stamps its own lane per repo) — the rest is carried over.
   def test_update_checks_supersedes_a_lane_it_supplies
-    stale_full = "[full-suite@0000000000000000000000000000000000000000] bin/rails test (781 runs, 0 failures)"
+    stale_full = "[control@0000000000000000000000000000000000000000:mcritchie-studio] NO-SIGNAL — replayed test/models/a_test.rb"
     requests, = run_task(
       ["update", "demo-task", "--checks", "[unit] plan", "--checks", FULL_EVIDENCE],
       stub_devops: { "kind" => "bug", "checks_run" => ["[unit] plan", stale_full, RUBOCOP_EVIDENCE] }
@@ -2540,17 +2541,16 @@ class TaskCliTest < Minitest::Test
     refute_nil patch
     checks = JSON.parse(patch[:body]).dig("devops", "checks_run")
     assert_equal ["[unit] plan", FULL_EVIDENCE, RUBOCOP_EVIDENCE], checks
-    refute_includes checks, stale_full, "a re-cert must replace its own stale lane"
+    refute_includes checks, stale_full, "a re-run must replace its own stale stamp"
   end
 
-  # The reverse regression (2026-07-20, fast-check-preserves-checks): a cert
-  # writer whose OWN read of checks_run came back stale/empty sends a
-  # PURE-EVIDENCE --checks update. The CLI's read-merge (build_devops) reads the
-  # board's CURRENT list right before the PATCH, so it must carry the tier tags
-  # the writer's stale read missed — a write that supplies no author line may not
+  # The reverse regression (2026-07-20, fast-check-preserves-checks): a stamp
+  # writer sends a PURE-EVIDENCE --checks update. The CLI's read-merge
+  # (build_devops) reads the board's CURRENT list right before the PATCH, so it
+  # must carry the tier tags — a write that supplies no author line may not
   # supersede the author namespace.
   def test_pure_evidence_update_carries_the_boards_tier_tags
-    fast = "[fast-cert@1512171634558ef1234567890abcdef123456789] fast cert green: 4 mapped"
+    fast = "[control@1512171634558ef1234567890abcdef123456789] NECESSARY — replayed test/models/a_test.rb"
     requests, = run_task(
       ["update", "demo-task", "--checks", fast],
       stub_devops: { "kind" => "bug",
@@ -2561,7 +2561,7 @@ class TaskCliTest < Minitest::Test
     refute_nil patch
     checks = JSON.parse(patch[:body]).dig("devops", "checks_run")
     assert_includes checks, "[unit] bin/rails test test/models",
-                    "a pure-evidence cert write wiped the builder's tier tags"
+                    "a pure-evidence stamp write wiped the builder's tier tags"
     assert_includes checks, "[integration] bin/rails test test/controllers"
     assert_includes checks, fast
   end

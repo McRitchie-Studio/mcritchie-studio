@@ -1155,7 +1155,7 @@ def start_review(task, review_number)
                     "doc-only the gate takes its EXEMPT path, where NO cert stands in and a GREEN CI is " \
                     "NECESSARY AND NOT SUFFICIENT: that path refuses on an unread PR file list too, and one " \
                     "fault hides both reads — a refused token, or a `gh`/network failure; do not send the " \
-                    "builder to bin/full-suite-check on that refusal"
+                    "builder to a local cert on that refusal — there is none"
                 else
                   ""
                 end

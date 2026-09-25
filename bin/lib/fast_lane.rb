@@ -1,15 +1,14 @@
 # frozen_string_literal: true
 
 require "json"
-require_relative "full_suite_gate"
 
 # FastLane — the pure decisions behind the two fast-lane ORCHESTRATION wrappers,
 # `bin/task begin` (create → worktree → bind → claim → preflight) and `bin/ship`
-# (commit → cert → push → PR → record → submit).
+# (commit → pre-flight → push → PR → record → submit).
 #
 # The wrappers collapse the standing DevOps cycle into one command each WITHOUT
-# changing any gate semantics: every gate still runs (bin/fast-check,
-# bin/dor-check, the claim gate, the read-back verify), the wrappers only
+# changing any gate semantics: every gate still runs (bin/dor-check, the claim
+# gate, the read-back verify), the wrappers only
 # sequence them and skip a step whose OUTCOME is already durably recorded — that
 # is what makes a rerun after a partial failure CONTINUE instead of duplicate.
 # The skip decisions live here, pure and unit-tested; the I/O stays in the
@@ -52,24 +51,10 @@ module FastLane
     "#{lines.join("\n")}\n"
   end
 
-  # Is the task already certified for EXACTLY this working tree? True when the
-  # recorded checks_run carries a FRESH fast-cert — or a fresh FULL cert (both
-  # full lanes) — bound to `fingerprint`. Ship skips its bin/fast-check step on
-  # true: the gate's outcome for this tree is already durably recorded, so a
-  # rerun resumes instead of re-paying the cert. ANY edit changes the tree hash
-  # and re-arms the step — this can never skip a cert the code hasn't earned.
-  def cert_fresh?(checks_run, fingerprint)
-    checks = Array(checks_run)
-    return false if fingerprint.to_s.strip.empty?
-    return true if FullSuiteGate.lane_status(checks, FullSuiteGate::FAST_LANE, fingerprint) == :fresh
-
-    FullSuiteGate::LANES.all? { |lane| FullSuiteGate.lane_status(checks, lane, fingerprint) == :fresh }
-  end
-
   # THE HANDOFF LINE `bin/task begin` PRINTS LAST — the final instruction a builder
   # reads before working, and until 2026-09-09 the wrong one. It printed `bin/ship
   # <slug>`, the BARE form, which resolves ONLY from a hub desk: every fast-lane
-  # script (ship, fast-check, full-suite-check, dor-check, task) lives in
+  # script (ship, fast-check, dor-check, task) lives in
   # mcritchie-studio/bin alone, so a builder on a turf-monster or rolio desk who
   # followed the tool's own hint got `nohup: bin/ship: No such file or directory`.
   # PR #1334 corrected that sentence in the entry docs (docs/agents/claude.md and
@@ -84,12 +69,12 @@ module FastLane
   # chdir'd to the resolved desk; it dies ONLY when no desk resolves on disk. So the cwd
   # is still half the instruction, for two reasons that are not a refusal by ship: (1) a
   # re-root is a correction the reader has to notice and trust, not the tree they chose;
-  # (2) the cert WRITERS the builder runs by hand afterwards refuse ANY foreign root
+  # (2) the pre-flight the builder runs by hand afterwards refuses ANY foreign root
   # outright — "this run roots at …/mcritchie-studio (branch main), which is not <slug>'s
-  # tree — refusing to certify it". That string is CertRootGuard#refusal_message, and ship
+  # tree — refusing to run against it". That string is TaskTree#refusal_message, and ship
   # dies with the SAME string when no desk resolves (bin/ship: `die!(assessment[:message])
   # unless resolved`); what ship never does is refuse a root it CAN re-root from. A hint
-  # that fixes only the path leaves the builder one by-hand cert from that refusal.
+  # that fixes only the path leaves the builder one by-hand run from that refusal.
   # This line names BOTH and is copy-pasteable verbatim: `cd <desk> && <ship> <slug>`.
   #
   # WHY THE FORM IS UNCONDITIONALLY ABSOLUTE — never a bare `bin/ship`, not even for
@@ -132,7 +117,7 @@ module FastLane
   # A REMEDY IS AN INSTRUCTION, AND AN INSTRUCTION MUST RESOLVE. When a fast-lane
   # script refuses, it hands the reader a command to run — "Re-run bin/fast-check
   # <slug>", "re-run bin/ship <slug>". Every one of those scripts (ship, fast-check,
-  # full-suite-check, dor-check, task) lives in mcritchie-studio/bin ALONE, so the
+  # dor-check, task) lives in mcritchie-studio/bin ALONE, so the
   # bare form resolves only from a hub desk. A builder standing on a turf-monster,
   # rolio, or gem desk — who reached the script through its ABSOLUTE path, because
   # that is the only way they could have reached it — follows the tool's own hint
@@ -179,12 +164,12 @@ module FastLane
   #
   # ── WHY A RE-RUN REMEDY CARRIES NO `cd` ──────────────────────────────────────
   #
-  # The path picks the SCRIPT; the cwd picks the TREE it acts on, and CertRootGuard
-  # refuses a cert rooted anywhere but the task's desk — so a handoff that fixes only
+  # The path picks the SCRIPT; the cwd picks the TREE it acts on, and TaskTree
+  # refuses a pre-flight rooted anywhere but the task's desk — so a handoff that fixes only
   # the path fails in the mirror direction, which is why FastLane.handoff_command
   # leads with `cd <desk> &&`. A re-run remedy is the opposite case: the reader is
-  # standing in the tree already (they just ran the script from it, and for the cert
-  # writers the root guard proved it), so a `cd` would restate where they are. The
+  # standing in the tree already (they just ran the script from it, and for the
+  # pre-flight the tree check proved it), so a `cd` would restate where they are. The
   # one seam that speaks BEFORE rooting — bin/ship's claim refusal — is safe for the
   # same reason from the other side: ship RE-ROOTS to the task's desk rather than
   # refusing, and says so.

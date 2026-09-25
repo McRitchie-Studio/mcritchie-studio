@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # Tests for bin/lib/repo_root.rb — the CODE-root resolver both merge gates
-# (bin/full-suite-check, bin/dor-check) default to, so a task in a SATELLITE
+# (bin/fast-check, bin/dor-check) default to, so a task in a SATELLITE
 # worktree certifies the satellite, not the hub the gate script lives in.
 #   ruby -Itest test/lib/repo_root_test.rb
 # Also picked up by the normal `bin/rails test` sweep.

@@ -1041,7 +1041,7 @@ class AgentActivityCliTest < Minitest::Test
   # StandardError and the script always exits 0, so a probe that mutated reported
   # NOTHING and returned success. And bin/agent-activity — an 8-line shim that
   # `load`s this file and calls the same `run` — is shelled by the SessionEnd hook
-  # and by bin/task, bin/ship, bin/release, bin/full-suite-check and
+  # and by bin/task, bin/ship, bin/release and
   # bin/ci-scope-capture, which makes this the highest-frequency member of the class.
   #
   # WHY A RECEIPT AND NOT AN ABSENCE. An empty request log also describes a spy that
@@ -1127,7 +1127,7 @@ class AgentActivityCliTest < Minitest::Test
   # 0 IS DELIBERATE HERE, and it is the opposite of the sibling guards' choice
   # (bin/release, bin/qa-server and bin/agent-worktree all exit 1, because a caller
   # reads THEIR 0 as a verdict). Traced through every caller of this CLI: bin/task,
-  # bin/ship, bin/release.rb, bin/full-suite-check and bin/ci-scope-capture ALL
+  # bin/ship, bin/release.rb and bin/ci-scope-capture ALL
   # invoke it as `system(..., out: File::NULL, err: File::NULL)` with the return
   # value DISCARDED inside `rescue StandardError; nil`, and three of them carry a
   # comment asserting "the verb always exits 0". Nothing reads it. See the rationale
@@ -1140,7 +1140,7 @@ class AgentActivityCliTest < Minitest::Test
   # whole argument for classifying the shim :delegates instead of giving it a second
   # guard, and an argument is not a test — so this runs the REAL shim binary. It is
   # also the higher-frequency of the two names: the SessionEnd hook, bin/task,
-  # bin/ship, bin/release, bin/full-suite-check and bin/ci-scope-capture all shell
+  # bin/ship, bin/release and bin/ci-scope-capture all shell
   # `bin/agent-activity`, never `bin/atomic-event`.
   def test_integration_the_agent_activity_shim_inherits_the_same_guard
     shim = File.expand_path("../../bin/agent-activity", __dir__)
@@ -1228,7 +1228,7 @@ class AgentActivityCliTest < Minitest::Test
     %w[next --outcome done --category Edit --reason go --key-method x --key-lang ruby],
     %w[start --category Verify --reason review --agent carl --supervisor avi],
     %w[action --summary step --key-method git --kind test_scope --event-slug s --result-slug pass
-       --duration-ms 12],                                              # bin/full-suite-check
+       --duration-ms 12],                                                              # the retired local cert's shape
     %w[action --summary step --kind test_scope --event-slug s --result-slug pass --duration-ms 12
        --idempotency-key k --started-at t1 --completed-at t2],         # bin/ci-scope-capture
     %w[action --summary conclusion --finding],

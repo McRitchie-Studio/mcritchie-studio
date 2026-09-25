@@ -179,7 +179,7 @@ class FastCertSubjectTest < Minitest::Test
   # rename anything that already had none.
   def test_a_top_level_app_class_keeps_its_plain_constant
     assert_equal ["GateRun"], FastCert.grep_tokens(REPO_ROOT, "app/models/gate_run.rb")
-    assert_equal ["FullSuiteGate"], FastCert.grep_tokens(REPO_ROOT, "bin/lib/full_suite_gate.rb")
+    assert_equal ["TreeFingerprint"], FastCert.grep_tokens(REPO_ROOT, "bin/lib/tree_fingerprint.rb")
   end
 
   # A config file is named by its PATH — and by the QUOTED BASENAME the path is
@@ -578,7 +578,9 @@ class FastCertSubjectTest < Minitest::Test
 
     # release_repos.yml went 15 → 13 on 2026-09-24: two cert-route test files that
     # spelled its path retired with the routes (/tasks/dor-reads-settled-ci-verdict).
-    expected = ["feature_shapes.yml (14)", "release_repos.yml (13)"]
+    # Both left the band the same day when the local cert evidence system retired
+    # (/tasks/retire-local-cert-evidence) and took the tests that spelled them.
+    expected = []
 
     # WHAT THE ASSERTION IS FOR is the LIST, exactly as the over-cap sweep above: a NEW
     # entry is the thing to act on, a number moving on an entry already here is

@@ -1,14 +1,14 @@
 # frozen_string_literal: true
 
-# Unit tests for bin/lib/cert_root_guard.rb — the task-root guard both G1 cert
-# runners (bin/fast-check, bin/full-suite-check) consult before certifying an
-# IMPLICITLY-resolved root. A root is the task's tree when its checked-out
-# branch is the task's branch (board devops.branch, else the feat/<slug>
-# convention) or it is the task's .worktrees/<worktree_slug> dir; anything else
-# refuses — the 2026-07-12 fail-GREEN certified the hub primary's main for an
-# unrelated task. The shelled end-to-end refusals live in
-# test/lib/fast_check_test.rb and test/lib/full_suite_check_test.rb.
-#   ruby -Itest test/lib/cert_root_guard_test.rb
+# Unit tests for bin/lib/task_tree.rb — the task-tree check bin/fast-check
+# consults before running against an IMPLICITLY-resolved root, and the desk
+# resolver bin/ship and bin/dor-check re-root through. A root is the task's tree
+# when its checked-out branch is the task's branch (board devops.branch, else the
+# feat/<slug> convention) or it is the task's .worktrees/<worktree_slug> dir;
+# anything else refuses — the 2026-07-12 fail-GREEN certified the hub primary's
+# main for an unrelated task. The shelled end-to-end refusal lives in
+# test/lib/fast_check_test.rb.
+#   ruby -Itest test/lib/task_tree_test.rb
 # Also picked up by the normal `bin/rails test` sweep.
 
 require "minitest/autorun"
@@ -17,9 +17,9 @@ require "fileutils"
 require "rbconfig"
 require "json"
 
-require_relative "../../bin/lib/cert_root_guard"
+require_relative "../../bin/lib/task_tree"
 
-class CertRootGuardTest < Minitest::Test
+class TaskTreeTest < Minitest::Test
   # A throwaway git repo with one commit, optionally checked out to `branch`,
   # yielded as its realpath'd toplevel.
   def with_git_repo(branch: nil, dir: nil)
@@ -56,25 +56,25 @@ class CertRootGuardTest < Minitest::Test
   # ── [unit] acceptance: branch match, worktree dir, blank slug ───────────────
 
   def test_blank_slug_never_refuses
-    assert_nil CertRootGuard.refusal(task_bin: "/nonexistent", slug: nil, root: "/anywhere")
-    assert_nil CertRootGuard.refusal(task_bin: "/nonexistent", slug: "  ", root: "/anywhere")
+    assert_nil TaskTree.refusal(task_bin: "/nonexistent", slug: nil, root: "/anywhere")
+    assert_nil TaskTree.refusal(task_bin: "/nonexistent", slug: "  ", root: "/anywhere")
   end
 
   def test_conventional_feat_branch_is_accepted_when_the_board_is_unreachable
     stub = write_task_stub(nil) # board read fails → feat/<slug> convention
     with_git_repo(branch: "feat/task-x") do |repo|
-      assert_nil CertRootGuard.refusal(task_bin: stub, slug: "task-x", root: repo)
+      assert_nil TaskTree.refusal(task_bin: stub, slug: "task-x", root: repo)
     end
   end
 
   def test_board_branch_is_authoritative_over_the_convention
     stub = write_task_stub(devops_json("branch" => "fix/custom-branch"))
     with_git_repo(branch: "fix/custom-branch") do |repo|
-      assert_nil CertRootGuard.refusal(task_bin: stub, slug: "task-x", root: repo),
+      assert_nil TaskTree.refusal(task_bin: stub, slug: "task-x", root: repo),
                  "a board-recorded non-feat branch is the task's tree"
     end
     with_git_repo(branch: "feat/task-x") do |repo|
-      refute_nil CertRootGuard.refusal(task_bin: stub, slug: "task-x", root: repo),
+      refute_nil TaskTree.refusal(task_bin: stub, slug: "task-x", root: repo),
                  "when the board names the branch, the convention no longer vouches"
     end
   end
@@ -85,7 +85,7 @@ class CertRootGuardTest < Minitest::Test
     Dir.mktmpdir do |parent|
       wt = File.join(parent, ".worktrees", "task-x")
       with_git_repo(dir: wt) do |repo| # default branch ≠ feat/task-x
-        assert_nil CertRootGuard.refusal(task_bin: write_task_stub(nil), slug: "task-x", root: repo)
+        assert_nil TaskTree.refusal(task_bin: write_task_stub(nil), slug: "task-x", root: repo)
       end
     end
   end
@@ -95,7 +95,7 @@ class CertRootGuardTest < Minitest::Test
   def test_wrong_branch_refuses_with_the_expected_branch_named
     stub = write_task_stub(nil)
     with_git_repo do |repo| # default branch (main/master) ≠ feat/task-x
-      message = CertRootGuard.refusal(task_bin: stub, slug: "task-x", root: repo)
+      message = TaskTree.refusal(task_bin: stub, slug: "task-x", root: repo)
       refute_nil message, "the hub-primary-on-main case must refuse even offline"
       assert_includes message, "not task-x's tree"
       assert_includes message, "feat/task-x"
@@ -106,19 +106,19 @@ class CertRootGuardTest < Minitest::Test
   def test_refusal_names_the_boards_worktree_slug_when_it_differs
     stub = write_task_stub(devops_json("branch" => "feat/task-x", "worktree_slug" => "custom-worktree"))
     with_git_repo do |repo|
-      message = CertRootGuard.refusal(task_bin: stub, slug: "task-x", root: repo)
+      message = TaskTree.refusal(task_bin: stub, slug: "task-x", root: repo)
       assert_includes message, ".worktrees/custom-worktree"
     end
   end
 
   # ── [unit] assess: the RESOLVE half (bin/dor-check's remedy) ─────────────────
-  # The cert writers refuse a foreign root; the READER re-roots at it. #assess is
+  # bin/fast-check refuses a foreign root; ship and dor-check re-root at it. #assess is
   # what tells it where — and it must never claim a worktree that isn't there.
 
   def test_assess_returns_nil_when_the_root_is_the_tasks_tree
     stub = write_task_stub(nil)
     with_git_repo(branch: "feat/task-x") do |repo|
-      assert_nil CertRootGuard.assess(task_bin: stub, slug: "task-x", root: repo),
+      assert_nil TaskTree.assess(task_bin: stub, slug: "task-x", root: repo),
                  "nil is the whole contract for 'this IS the task's tree — proceed'"
     end
   end
@@ -128,13 +128,13 @@ class CertRootGuardTest < Minitest::Test
     # <app>/.worktrees/<slug>. assess must hand the reader that path to re-root at.
     with_projects_dir do |projects, worktree|
       with_git_repo do |primary| # NOT the task's branch — the wrong-root case
-        found = CertRootGuard.assess(task_bin: write_task_stub(nil), slug: "task-x",
+        found = TaskTree.assess(task_bin: write_task_stub(nil), slug: "task-x",
                                      root: primary, projects_dir: projects)
         refute_nil found, "a primary checkout is not the task's tree"
         assert_equal worktree, found[:resolved_root]
         assert_equal "feat/task-x", found[:expected_branch]
         assert_equal "task-x", found[:worktree_slug]
-        refute_nil found[:message], "the refusal text is still available to the cert writers"
+        refute_nil found[:message], "the refusal text is still available to bin/fast-check"
       end
     end
   end
@@ -144,14 +144,14 @@ class CertRootGuardTest < Minitest::Test
     # to the branch tree, or refuses. Inventing a path here would be the fail-GREEN.
     Dir.mktmpdir do |empty_projects|
       with_git_repo do |primary|
-        found = CertRootGuard.assess(task_bin: write_task_stub(nil), slug: "task-x",
+        found = TaskTree.assess(task_bin: write_task_stub(nil), slug: "task-x",
                                      root: primary, projects_dir: empty_projects)
         refute_nil found
         assert_nil found[:resolved_root]
         # This :message is what bin/ship die!s with when resolved_root is nil — so ship
         # DOES emit the refusal text, on exactly this path (task
         # handoff-narration-overclaims-four: a comment once said it never did).
-        assert_includes found[:message], "refusing to certify it"
+        assert_includes found[:message], "refusing to run against it"
       end
     end
   end
@@ -159,7 +159,7 @@ class CertRootGuardTest < Minitest::Test
   def test_assess_reports_the_branch_the_caller_is_actually_standing_on
     stub = write_task_stub(nil)
     with_git_repo(branch: "release") do |repo|
-      found = CertRootGuard.assess(task_bin: stub, slug: "task-x", root: repo)
+      found = TaskTree.assess(task_bin: stub, slug: "task-x", root: repo)
       assert_equal "release", found[:actual_branch], "the loud re-root banner names where you WERE"
     end
   end
@@ -170,7 +170,7 @@ class CertRootGuardTest < Minitest::Test
     # proves it never runs.
     exploding = "/nonexistent/task-bin-that-must-never-run"
     with_git_repo(branch: "fix/custom") do |repo|
-      assert_nil CertRootGuard.assess(task_bin: exploding, slug: "task-x", root: repo,
+      assert_nil TaskTree.assess(task_bin: exploding, slug: "task-x", root: repo,
                                       devops: { "branch" => "fix/custom" }),
                  "the prefetched branch is authoritative and the board is never called"
     end
@@ -181,12 +181,12 @@ class CertRootGuardTest < Minitest::Test
     # and abort on a truthy String. #assess must not have changed that contract.
     stub = write_task_stub(nil)
     with_git_repo(branch: "feat/task-x") do |repo|
-      assert_nil CertRootGuard.refusal(task_bin: stub, slug: "task-x", root: repo)
+      assert_nil TaskTree.refusal(task_bin: stub, slug: "task-x", root: repo)
     end
     with_git_repo do |repo|
-      message = CertRootGuard.refusal(task_bin: stub, slug: "task-x", root: repo)
+      message = TaskTree.refusal(task_bin: stub, slug: "task-x", root: repo)
       assert_kind_of String, message
-      assert_includes message, "refusing to certify it"
+      assert_includes message, "refusing to run against it"
     end
   end
 
@@ -208,17 +208,17 @@ class CertRootGuardTest < Minitest::Test
     # The glob spans every app because a SATELLITE task's worktree lives under the
     # satellite, not under the hub whose gate scripts are running.
     with_projects_dir do |projects, worktree|
-      assert_equal worktree, CertRootGuard.worktree_hint("task-x", projects)
-      assert_nil CertRootGuard.worktree_hint("task-never-created", projects)
+      assert_equal worktree, TaskTree.worktree_hint("task-x", projects)
+      assert_nil TaskTree.worktree_hint("task-never-created", projects)
     end
   end
 
 
   def test_current_branch_reads_the_checkout_and_nil_outside_git
     with_git_repo(branch: "feat/task-x") do |repo|
-      assert_equal "feat/task-x", CertRootGuard.current_branch(repo)
+      assert_equal "feat/task-x", TaskTree.current_branch(repo)
     end
-    Dir.mktmpdir { |dir| assert_nil CertRootGuard.current_branch(dir) }
+    Dir.mktmpdir { |dir| assert_nil TaskTree.current_branch(dir) }
   end
 
   # ── [unit] BOTH desk layouts ─────────────────────────────────────────────────
@@ -248,24 +248,24 @@ class CertRootGuardTest < Minitest::Test
 
   def test_worktree_candidates_finds_a_desk_in_the_sibling_tree
     with_sibling_desk do |projects, desk|
-      assert_equal [desk], CertRootGuard.worktree_candidates("task-x", projects),
+      assert_equal [desk], TaskTree.worktree_candidates("task-x", projects),
                    "a desk in the sibling tree is ON DISK; the glob simply could not see it"
     end
   end
 
   def test_app_of_names_the_repo_for_a_sibling_tree_desk
-    assert_equal "studio-engine", CertRootGuard.app_of("/p/studio-engine.worktrees/task-x")
-    assert_equal "studio-engine", CertRootGuard.app_of("/p/studio-engine.worktrees/task-x/")
+    assert_equal "studio-engine", TaskTree.app_of("/p/studio-engine.worktrees/task-x")
+    assert_equal "studio-engine", TaskTree.app_of("/p/studio-engine.worktrees/task-x/")
     # The pre-fix answer was "task-x". Not a miss — an unrecognised desk takes the
     # PRIMARY-checkout branch, whose answer is the last path segment — so it returned
     # the task SLUG as a repo name, confidently, to two callers that compare it.
-    refute_equal "task-x", CertRootGuard.app_of("/p/studio-engine.worktrees/task-x")
+    refute_equal "task-x", TaskTree.app_of("/p/studio-engine.worktrees/task-x")
     # The layouts it already knew must not have moved.
-    assert_equal "turf-monster", CertRootGuard.app_of("/p/turf-monster/.worktrees/task-x")
-    assert_equal "turf-monster", CertRootGuard.app_of("/p/turf-monster")
+    assert_equal "turf-monster", TaskTree.app_of("/p/turf-monster/.worktrees/task-x")
+    assert_equal "turf-monster", TaskTree.app_of("/p/turf-monster")
   end
 
-  def test_the_writer_certifies_from_a_sibling_tree_desk_whatever_its_branch
+  def test_the_preflight_runs_from_a_sibling_tree_desk_whatever_its_branch
     # The WRITER's physical vouch, sibling-tree twin of
     # test_the_tasks_worktree_dir_is_accepted_regardless_of_branch_state. Pre-fix a
     # builder mid-rebase in an engine desk was refused for the one reason that could
@@ -273,7 +273,7 @@ class CertRootGuardTest < Minitest::Test
     Dir.mktmpdir do |parent|
       desk = File.join(parent, "studio-engine.worktrees", "task-x")
       with_git_repo(dir: desk) do |real| # default branch, NOT feat/task-x
-        assert_nil CertRootGuard.refusal(task_bin: write_task_stub(nil), slug: "task-x", root: real)
+        assert_nil TaskTree.refusal(task_bin: write_task_stub(nil), slug: "task-x", root: real)
       end
     end
   end
@@ -281,7 +281,7 @@ class CertRootGuardTest < Minitest::Test
   def test_assess_resolves_a_sibling_tree_desk_for_the_reader
     with_sibling_desk do |projects, desk|
       with_git_repo do |primary| # not the task's branch — the wrong-root case
-        found = CertRootGuard.assess(task_bin: write_task_stub(nil), slug: "task-x",
+        found = TaskTree.assess(task_bin: write_task_stub(nil), slug: "task-x",
                                      root: primary, projects_dir: projects)
         refute_nil found, "a primary checkout is still not the task's tree"
         assert_equal desk, found[:resolved_root],
@@ -306,10 +306,10 @@ class CertRootGuardTest < Minitest::Test
       sibling = File.join(projects, "studio-engine.worktrees", "task-x")
       with_git_repo(branch: "feat/task-x", dir: managed) do |m|
         with_git_repo(branch: "feat/task-x", dir: sibling) do |s|
-          assert_equal [m, s].sort, CertRootGuard.worktree_candidates("task-x", projects).sort,
+          assert_equal [m, s].sort, TaskTree.worktree_candidates("task-x", projects).sort,
                        "both layouts are candidates; the set is the fact, the pick would be a guess"
           with_git_repo do |primary|
-            found = CertRootGuard.assess(task_bin: write_task_stub(nil), slug: "task-x",
+            found = TaskTree.assess(task_bin: write_task_stub(nil), slug: "task-x",
                                          root: primary, projects_dir: projects)
             assert_equal [m, s].sort, found[:eligible_roots].sort, "both pass every axis"
             assert_nil found[:resolved_root],
@@ -366,7 +366,7 @@ class CertRootGuardTest < Minitest::Test
         NO_DESK_ROOT_SHAPES.each do |name|
           empty = File.join(parent, name)
           FileUtils.mkdir_p(empty)
-          found = CertRootGuard.assess(task_bin: stub, slug: "task-x",
+          found = TaskTree.assess(task_bin: stub, slug: "task-x",
                                        root: primary, projects_dir: empty)
           refute_nil found, "no desk anywhere is still not-the-task's-tree (#{name})"
           assert_nil found[:resolved_root], "inventing a path here would be the fail-GREEN (#{name})"
@@ -388,13 +388,13 @@ class CertRootGuardTest < Minitest::Test
     # root, the other bans an invented destination, and both survive. Driven through
     # the REAL guidance builders so the control tracks the production wording.
     root = "/tmp/d20260906-5403-f4hecd" # the mktmpdir shape that red-sealed 0.69.5
-    benign = CertRootGuard.no_desk_advice("task-x", root)
+    benign = TaskTree.no_desk_advice("task-x", root)
 
     assert_includes benign, "cd ", "premise: naming this root puts 'cd ' in the text for free"
     assert_equal benign.gsub(root, "<interpolated>"), refute_cd_instruction(benign, root),
                  "the redaction must take the interpolated root and nothing else"
 
-    invented = "#{benign} #{CertRootGuard.cd_advice(root)}"
+    invented = "#{benign} #{TaskTree.cd_advice(root)}"
     assert_raises(Minitest::Assertion, "a real cd suggestion must still fail the case") do
       refute_cd_instruction(invented, root)
     end
@@ -409,14 +409,14 @@ class CertRootGuardTest < Minitest::Test
     # went looking for a missing directory and found it.
     missing = Dir.mktmpdir do |empty|
       with_git_repo do |primary|
-        CertRootGuard.assess(task_bin: write_task_stub(nil), slug: "task-x",
+        TaskTree.assess(task_bin: write_task_stub(nil), slug: "task-x",
                              root: primary, projects_dir: empty)[:message]
       end
     end
 
     with_sibling_desk do |projects, desk|
       with_git_repo do |primary|
-        mis_rooted = CertRootGuard.assess(task_bin: write_task_stub(nil), slug: "task-x",
+        mis_rooted = TaskTree.assess(task_bin: write_task_stub(nil), slug: "task-x",
                                           root: primary, projects_dir: projects)[:message]
         assert_includes mis_rooted, "cd #{desk}", "a desk that exists gets a destination"
         refute_includes mis_rooted, "No desk for", "it must not claim a desk that is right there"
@@ -435,7 +435,7 @@ class CertRootGuardTest < Minitest::Test
       stale = File.join(projects, "studio-engine.worktrees", "task-x")
       with_git_repo(branch: "release", dir: stale) do |real|
         with_git_repo do |primary|
-          found = CertRootGuard.assess(task_bin: write_task_stub(nil), slug: "task-x",
+          found = TaskTree.assess(task_bin: write_task_stub(nil), slug: "task-x",
                                        root: primary, projects_dir: projects)
           assert_equal [real], found[:candidate_roots], "it IS on disk — the guard must say so"
           assert_nil found[:resolved_root], "fail closed: a stale desk is not the task's tree"
@@ -448,11 +448,11 @@ class CertRootGuardTest < Minitest::Test
   end
 
   def test_task_devops_is_empty_on_unreachable_board_or_bad_json
-    assert_equal({}, CertRootGuard.task_devops(write_task_stub(nil), "task-x"))
+    assert_equal({}, TaskTree.task_devops(write_task_stub(nil), "task-x"))
     garbled = Dir.mktmpdir
     stub = File.join(garbled, "task-stub")
     File.write(stub, "#!#{RbConfig.ruby}\nputs 'not json'\n")
     FileUtils.chmod("+x", stub)
-    assert_equal({}, CertRootGuard.task_devops(stub, "task-x"))
+    assert_equal({}, TaskTree.task_devops(stub, "task-x"))
   end
 end

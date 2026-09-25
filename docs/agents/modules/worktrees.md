@@ -1021,8 +1021,9 @@ A reviewer zap is a legitimate non-writer commit. Three things make it safe:
    (`git log --format='%s' -500 | grep -c '^zap'` → 60 on `accepted`,
    2026-08-31). The 2026-08-30 conductor write carried no prefix, no body, and
    no trailer, which is why it read as unexplained.
-3. **The writer re-derives its cert.** A foreign commit invalidates the
-   fingerprint by construction; the cert must be retaken, not re-credited.
+3. **CI re-runs on the new head.** A foreign commit moves the tree, and the
+   PR's settled green CI — the one verdict — is re-derived for it by GitHub; a
+   `test-only` PR's `[control@<fp>]` stamp must be retaken, not re-credited.
 
 ### What already enforces this, and what does not
 
@@ -1030,28 +1031,27 @@ Prefer these over trust. All were verified by execution.
 
 | Check | Where | Catches |
 |---|---|---|
-| Cert tree fingerprint | `bin/dor-check <task> --suite-fingerprint` | Any foreign change to the desk's working tree |
-| Dirty-tree cert refusal | `bin/lib/cert_tree_guard.rb`, every cert | Certifying over uncommitted (possibly foreign) state |
-| Shared-test-DB refusal | `bin/lib/desk_guard.rb`, every cert lane | A desk **or throwaway under `.worktrees/`** on the shared test DB |
+| Control stamp fingerprint (`test-only` PRs) | `bin/dor-check <task>` grades `[control@<fp>]` against the tree | Any foreign change to the desk's working tree after the control ran |
+| Shared-test-DB refusal | `bin/lib/desk_guard.rb`, the pre-flight | A desk **or throwaway under `.worktrees/`** on the shared test DB |
 | Desk occupancy | `DeskActivity.touched_since?`, `bin/agent-worktree list` | Someone working in a desk right now |
 | Reclaim withhold | `desk_hold` + `stage_hold`, `bin/agent-worktree cleanup --reclaim` | Destroying a desk younger than 1h29m, touched, mid-gate, or bound to a task the board does not put at `shipped`/`archived` |
 
 The fingerprint is a git tree hash of `git add -A` + `write-tree`
-(`bin/lib/full_suite_gate.rb:104`), so it covers tracked edits **and**
-untracked-not-ignored files. Verified: dropping one
+(`TreeFingerprint.working_tree`, `bin/lib/tree_fingerprint.rb`), so it covers
+tracked edits **and** untracked-not-ignored files. Verified: dropping one
 untracked file into a desk moved it `b584e196…` → `49db0fb3…`, and removing the
-file restored it exactly.
+file restored it exactly. Until 2026-09-24 every local cert was bound to it; since
+the certs retired (DevOps v3 phase 2b) only the `test-only` control stamp is.
 
 **Its four limits, stated plainly, because it is a backstop and not a
 convention:**
 
-- It fires only at **cert and ship time**. A foreign write between ships is
-  invisible to it. It caught the 2026-08-30 conductor write only because a ship
-  happened to be in flight.
-- It is **state-based, not event-based**. A write reverted before the next cert
+- It fires only at **verdict time**, and only on a `test-only` PR. A foreign
+  write between ships is invisible to it.
+- It is **state-based, not event-based**. A write reverted before the next run
   leaves the fingerprint identical, so a mutation pass that cleans up after
   itself is undetectable — which is exactly what incidents 2 and 3 were.
-- It reports **"stale cert"**, not "someone else wrote here". The reader still
+- It reports **"stale control"**, not "someone else wrote here". The reader still
   has to work out why.
 - It serves only the **writer**. No reader is warned about anything.
 
@@ -1369,7 +1369,7 @@ Do **not** `source .env.agent-stack` before running tests. You do not need the d
 
 ### The desk guard
 
-`bin/fast-check` and `bin/full-suite-check` **refuse to run in a desk whose test database is the repo's shared one** (`bin/lib/desk_guard.rb`). The cert would otherwise run against the same database the primary checkout and the release gate workspaces use, and `full-suite-check`'s first lane (`db:test:purge`) would *destroy* it mid-suite.
+`bin/fast-check` **refuses to run in a desk whose test database is the repo's shared one** (`bin/lib/desk_guard.rb`). The pre-flight would otherwise run against the same database the primary checkout and the release gate workspaces use, and its prepare lane would *reset* it mid-suite.
 
 It **resolves** the property rather than trusting a declaration: it boots the app in the desk at `RAILS_ENV=test`, reads back the database it actually connects to, and compares that against the repo's shared test database (read from `config/database.yml` with the **ERB stripped**, so no env var can rewrite the comparison). Postgres desks qualify by having a different database *name*; SQLite desks (rolio) qualify by their test-DB *file* being inside the desk. It **fails closed** for a Rails desk — an app that will not boot, or a config it cannot read, is a refusal, not a pass — while a repo that is not a Rails app at all has no test DB to protect and is admitted without booting.
 

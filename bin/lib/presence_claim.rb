@@ -3,7 +3,7 @@
 require "json"
 require "time"
 require_relative "session_markers"
-require_relative "cert_orphan_guard"
+require_relative "process_table"
 require_relative "projects_root"
 
 # PresenceClaim — the WRITER half of the agent-presence surface
@@ -44,7 +44,7 @@ require_relative "projects_root"
 #   identity, and the READER decides.
 #
 # `started_at` is `ps -o lstart=`'s rendering of the process start time, compared
-# as an OPAQUE STRING and never as a parsed clock — CertOrphanGuard's rule,
+# as an OPAQUE STRING and never as a parsed clock — ProcessTable's rule,
 # reused rather than re-invented. A pid is a recyclable integer, so liveness is
 # not identity; the start time is what makes (pid, started_at) name a PROCESS
 # instead of merely addressing a slot.
@@ -102,25 +102,22 @@ class PresenceClaim
   # both identity proofs: a process's start time cannot change, so re-reading it at
   # every phase boundary would spend a `ps` to learn the same fact.
   #
-  # TWO SUBJECTS, for the reason CertOrphanGuard's runlock names two. The supervisor
+  # TWO SUBJECTS, for the reason the retired cert runlock named two. The supervisor
   # can be killed while the work it spawned SURVIVES — reparented to launchd, still
   # burning the machine and still holding a test DB — and a claim naming only the
   # supervisor reports that worst case as `dead`, which is the one direction this
   # design may never fail in. `bin/ship` spawns bin/fast-check with `system` and no
   # `pgroup:`, so the child runs in the SHIP'S OWN group: the group is exactly the
-  # right second subject, and it is what makes a SIGKILLed ship whose cert lives on
-  # still grade live.
+  # right second subject, and it is what makes a SIGKILLed ship whose pre-flight
+  # lives on still grade live.
   #
-  # Publishing a pgid here carries NO reaping hazard, and that is a property of WHERE
-  # this claim lives rather than of luck. CertOrphanGuard.preflight REAPS — it SIGKILLs
-  # the group a lock names — and it reads `<root>/.git/cert-run.json`, only ever that.
-  # A claim in the session-marker namespace is invisible to it by construction, so the
-  # reaper can never be pointed at a process no cert spawned. A non-cert claim written
-  # into a desk's runlock SLOT would not have that property.
+  # Publishing a pgid here carries NO reaping hazard: nothing reaps on a claim any
+  # more (the cert orphan guard retired with the local certs), and this namespace is
+  # one file per PROCESS, so there is no shared slot to contend for.
   #
   # `session_id` nil is a first-class state, not a failure — see `unbound_key`.
   def self.open(kind:, root:, projects_dir: nil, session_id: nil, task_slug: nil,
-                pid: Process.pid, pgid: nil, env: ENV, ps: CertOrphanGuard.ps_bin, now: Time.now)
+                pid: Process.pid, pgid: nil, env: ENV, ps: ProcessTable.ps_bin, now: Time.now)
     pgid ||= begin
       Process.getpgid(pid)
     rescue SystemCallError
@@ -128,8 +125,8 @@ class PresenceClaim
     end
     new(kind: kind, root: root, projects_dir: projects_dir || projects_dir_from(env), session_id: session_id,
         task_slug: task_slug, pid: pid, pgid: pgid, env: env,
-        pid_started_at: CertOrphanGuard.process_started_at(pid, ps: ps),
-        pgid_started_at: pgid && CertOrphanGuard.process_started_at(pgid, ps: ps), began_at: now)
+        pid_started_at: ProcessTable.process_started_at(pid, ps: ps),
+        pgid_started_at: pgid && ProcessTable.process_started_at(pgid, ps: ps), began_at: now)
   end
 
   # The session-marker store's OWN pin, resolved exactly as bin/lib/agent_api.rb

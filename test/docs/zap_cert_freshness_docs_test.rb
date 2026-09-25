@@ -1,7 +1,13 @@
 # frozen_string_literal: true
 
-# [docs] WHEN DOES A ZAP INVALIDATE THE BUILDER'S CERT? — the zap protocol's
-# cert-freshness claim, pinned against the behaviour it describes.
+# [docs] WHEN DOES A ZAP INVALIDATE THE `[control@<fp>]` STAMP? — the zap protocol's
+# freshness claim, pinned against the behaviour it describes.
+#
+# The claim was first pinned for the builder's local CERT; that lane retired in
+# DevOps v3 phase 2b (/tasks/retire-local-cert-evidence) and the `test-only`
+# shape's control stamp — the one fingerprint-bound line bin/dor-check still grades —
+# moves under a zap by exactly the same mechanism, so the geometry below is
+# unchanged and the lane under test is now the control.
 #
 #   ruby -Itest test/docs/zap_cert_freshness_docs_test.rb
 # Also picked up by the normal `bin/rails test` sweep.
@@ -18,14 +24,14 @@
 # reviewer mid-verdict deciding whether to trust the doc or the gate.
 #
 # WHY THIS IS A BEHAVIOUR TEST AND NOT A GREP FOR THE SENTENCE. The claim is about
-# what git and FullSuiteGate DO, so a prose check could only certify that the new
+# what git and the fingerprint DO, so a prose check could only certify that the new
 # wording exists — it would pass just as happily over a differently-worded lie, and
 # it would not notice if the gate changed underneath the doc. So the load-bearing
 # tests below run REAL repositories in the real house geometry (one primary, two
 # worktrees of it, and one independent clone) and grade with the SAME functions
-# bin/dor-check's review gate-zero uses: FullSuiteGate.fingerprint_of_ref for the
-# hash and FullSuiteGate.lane_status for the FRESH/STALE verdict. Mock git here and
-# the mock IS the subject.
+# bin/dor-check's review gate-zero uses: TreeFingerprint.of_ref for the hash and
+# CertEvidence.lane_status for the FRESH/STALE verdict. Mock git here and the mock
+# IS the subject.
 #
 # THE LIMIT, STATED PLAINLY. No runnable assertion can prove that a paragraph of
 # English describes these measurements correctly — an arbitrarily reworded false
@@ -49,14 +55,14 @@ require "minitest/autorun"
 require "tmpdir"
 require "fileutils"
 require_relative "../../lib/cert_evidence"
-require_relative "../../bin/lib/full_suite_gate"
+require_relative "../../bin/lib/tree_fingerprint"
 require_relative "../../bin/lib/review_tree_guard"
 
 class ZapCertFreshnessDocsTest < Minitest::Test
   ROOT = File.expand_path("../..", __dir__)
   DOC = File.join(ROOT, "docs/agents/modules/zap-protocol.md")
   BRANCH = "feat/x"
-  LANE = CertEvidence::TEST_LANE
+  LANE = CertEvidence::CONTROL_LANE
 
   # THE HOUSE GEOMETRY, built for real:
   #
@@ -131,15 +137,15 @@ class ZapCertFreshnessDocsTest < Minitest::Test
     git!(from, "push -q origin HEAD:refs/heads/#{BRANCH}")
   end
 
-  # The builder's recorded cert, as bin/full-suite-check writes it.
+  # The builder's recorded control stamp, as bin/control-check writes it.
   def cert_for(fingerprint)
-    [FullSuiteGate.evidence_line(LANE, fingerprint, "1234 runs, 0 failures")]
+    [CertEvidence.evidence_line(LANE, fingerprint, "NECESSARY — replayed test/feature_test.rb")]
   end
 
   # What the review gate-zero reads: bin/dor-check's review_fingerprint hashes
   # origin/<branch> in the desk it re-rooted to.
   def cert_tree_seen_from(desk)
-    FullSuiteGate.fingerprint_of_ref(desk, "origin/#{BRANCH}")
+    TreeFingerprint.of_ref(desk, "origin/#{BRANCH}")
   end
 
   # --- the mechanism the doc names ------------------------------------------
@@ -154,7 +160,7 @@ class ZapCertFreshnessDocsTest < Minitest::Test
                    "the cert is fingerprinted against the TREE, not the commit — a doc that says " \
                    "otherwise would send a reviewer comparing the wrong two hashes"
       assert_equal capture(h[:builder], "rev-parse origin/#{BRANCH}^{tree}"), tree
-      assert_equal FullSuiteGate.fingerprint(h[:builder]), tree,
+      assert_equal TreeFingerprint.working_tree(h[:builder]), tree,
                    "a clean desk's WORKING-tree fingerprint must equal the committed ref's tree hash — " \
                    "that content-addressed equality is what lets a cert taken before the commit still " \
                    "grade after the push"
@@ -184,7 +190,7 @@ class ZapCertFreshnessDocsTest < Minitest::Test
     with_house do |h|
       certified = cert_tree_seen_from(h[:builder])
       checks = cert_for(certified)
-      assert_equal :fresh, FullSuiteGate.lane_status(checks, LANE, certified)
+      assert_equal :fresh, CertEvidence.lane_status(checks, LANE, certified)
 
       zap!(h[:zapdesk], "2\n")
 
@@ -192,7 +198,7 @@ class ZapCertFreshnessDocsTest < Minitest::Test
       refute_equal certified, after,
                    "a push from a SIBLING WORKTREE moves the shared origin/#{BRANCH} the gate hashes, " \
                    "with no fetch in the builder's desk"
-      assert_equal :stale, FullSuiteGate.lane_status(checks, LANE, after),
+      assert_equal :stale, CertEvidence.lane_status(checks, LANE, after),
                    "the cert MUST read STALE here — this is the house case (worktrees are the house desk) " \
                    "and the refusal is the guard working, not a bug in the gate"
       assert_equal capture(h[:remote], "rev-parse #{BRANCH}^{tree}"), after,
@@ -210,14 +216,14 @@ class ZapCertFreshnessDocsTest < Minitest::Test
       after = cert_tree_seen_from(h[:builder])
       assert_equal certified, after,
                    "a separate clone's refs are independent, so the desk's origin/#{BRANCH} stays pre-zap"
-      assert_equal :fresh, FullSuiteGate.lane_status(checks, LANE, after)
+      assert_equal :fresh, CertEvidence.lane_status(checks, LANE, after)
       refute_equal capture(h[:remote], "rev-parse #{BRANCH}^{tree}"), after,
                    "and THAT is why FRESH is the dangerous reading, not the safe one: the cert is green " \
                    "over a tree that is no longer the PR head"
 
       # The read never fetches on its own — the same property bin/dor-check relies on.
       git!(h[:builder], "fetch -q origin #{BRANCH}")
-      assert_equal :stale, FullSuiteGate.lane_status(checks, LANE, cert_tree_seen_from(h[:builder])),
+      assert_equal :stale, CertEvidence.lane_status(checks, LANE, cert_tree_seen_from(h[:builder])),
                    "only an explicit fetch corrects it, which is why the head check — not the cert — is " \
                    "what catches a clone-side push"
     end
@@ -231,7 +237,7 @@ class ZapCertFreshnessDocsTest < Minitest::Test
 
     refute_nil body, "bin/dor-check no longer defines review_fingerprint(root, branch) — the doc's " \
                      "description of WHAT the gate hashes must be re-verified before this guard is edited"
-    assert_match(/fingerprint_of_first_ref\(root, "origin\/#\{branch\}", branch\)/, body,
+    assert_match(/of_first_ref\(root, "origin\/#\{branch\}", branch\)/, body,
                  "the doc says the gate hashes origin/<branch> in the desk (falling back to the local " \
                  "branch). If that preference changes, the cert paragraph is wrong again.")
   end
@@ -259,7 +265,7 @@ class ZapCertFreshnessDocsTest < Minitest::Test
       pr_head = capture(h[:remote], "rev-parse #{BRANCH}")
       head = ReviewTreeGuard.head_assessment(root: h[:builder], branch: BRANCH, pr_head: pr_head)
 
-      assert_equal :stale, FullSuiteGate.lane_status(checks, LANE, cert_tree_seen_from(h[:builder])),
+      assert_equal :stale, CertEvidence.lane_status(checks, LANE, cert_tree_seen_from(h[:builder])),
                    "the shared ref moved, so the CERT is what catches a sibling-worktree zap"
       assert_equal :match, head[:state],
                    "the head check MUST stay quiet here — the desk's ref followed the push. Any comment " \
@@ -280,7 +286,7 @@ class ZapCertFreshnessDocsTest < Minitest::Test
       pr_head = capture(h[:remote], "rev-parse #{BRANCH}")
       head = ReviewTreeGuard.head_assessment(root: h[:builder], branch: BRANCH, pr_head: pr_head)
 
-      assert_equal :fresh, FullSuiteGate.lane_status(checks, LANE, cert_tree_seen_from(h[:builder])),
+      assert_equal :fresh, CertEvidence.lane_status(checks, LANE, cert_tree_seen_from(h[:builder])),
                    "independent refs, so the cert cannot see the push — it reads FRESH over a tree that " \
                    "is no longer the PR head. That is the HAZARDOUS reading, not the reassuring one."
       assert_equal :mismatch, head[:state],
@@ -295,9 +301,9 @@ class ZapCertFreshnessDocsTest < Minitest::Test
   # --- the narrow prose backstop (see THE LIMIT in the header) ---------------
 
   def test_the_doc_tells_the_worktree_and_clone_cases_apart
-    paragraph = File.read(DOC)[/\*\*Expect the cert to go STALE.*?(?=\n\*\*A base that moves)/m]
+    paragraph = File.read(DOC)[/\*\*Expect the control stamp to go STALE.*?(?=\n\*\*A base that moves)/m]
 
-    refute_nil paragraph, "the cert-freshness paragraph is gone or renamed — re-point this guard rather " \
+    refute_nil paragraph, "the control-freshness paragraph is gone or renamed — re-point this guard rather " \
                           "than deleting it; the claim it covers is still live"
     assert_match(/worktree/i, paragraph)
     assert_match(/clone/i, paragraph)
@@ -391,7 +397,7 @@ class ZapCertFreshnessDocsTest < Minitest::Test
       zap!(h[push_from], "9\n")
       head = ReviewTreeGuard.head_assessment(root: h[:builder], branch: BRANCH,
                                              pr_head: capture(h[:remote], "rev-parse #{BRANCH}"))
-      [FullSuiteGate.lane_status(checks, LANE, cert_tree_seen_from(h[:builder])), head[:state]]
+      [CertEvidence.lane_status(checks, LANE, cert_tree_seen_from(h[:builder])), head[:state]]
     end
   end
 
@@ -412,7 +418,7 @@ class ZapCertFreshnessDocsTest < Minitest::Test
       zap!(h[:otherclone], "3\n")
       head = ReviewTreeGuard.head_assessment(root: h[:builder], branch: BRANCH,
                                              pr_head: capture(h[:remote], "rev-parse #{BRANCH}"))
-      [FullSuiteGate.lane_status(checks, LANE, cert_tree_seen_from(h[:builder])), head[:state]]
+      [CertEvidence.lane_status(checks, LANE, cert_tree_seen_from(h[:builder])), head[:state]]
     end
 
     assert_equal [%i[fresh mismatch], %i[stale mismatch]], [clone_only, compound],
@@ -503,11 +509,10 @@ class ZapCertFreshnessDocsTest < Minitest::Test
   #   after fetch + re-certify      lane=stale  head=match      ...and LOOPS
   #   after fetch + MOVE + re-cert  lane=fresh  head=match      cleared
   #
-  # The loop is not a gate bug. bin/full-suite-check fingerprints the WORKING tree
-  # (its own dirty-tree guard says so at bin/full-suite-check:221) while
-  # review_fingerprint hashes origin/<branch>, and a bare fetch moves the second and
-  # not the first. So a remedy that steps straight from `git fetch` to
-  # `bin/full-suite-check` hands the operator back the verdict they started with.
+  # The loop is not a gate bug. bin/control-check fingerprints the WORKING tree
+  # while review_fingerprint hashes origin/<branch>, and a bare fetch moves the
+  # second and not the first. So a remedy that steps straight from `git fetch` to
+  # `bin/control-check` hands the operator back the verdict they started with.
   #
   # This pins the COMMANDS and their ORDER, never the sentences around them. Reword the
   # remedy however you like; drop the step that moves this checkout onto the fetched
@@ -515,12 +520,12 @@ class ZapCertFreshnessDocsTest < Minitest::Test
   def test_the_printed_remedy_clears_the_state_it_is_printed_into
     fetch_only, fetch_then_recert, fetch_move_recert = with_house do |h|
       desk = h[:builder]
-      # What bin/full-suite-check actually stamps: the WORKING tree, not a ref.
-      cert = cert_for(FullSuiteGate.fingerprint(desk))
+      # What bin/control-check actually stamps: the WORKING tree, not a ref.
+      cert = cert_for(TreeFingerprint.working_tree(desk))
       zap!(h[:otherclone], "3\n")
 
       grade = lambda do |checks|
-        [FullSuiteGate.lane_status(checks, LANE, cert_tree_seen_from(desk)),
+        [CertEvidence.lane_status(checks, LANE, cert_tree_seen_from(desk)),
          ReviewTreeGuard.head_assessment(root: desk, branch: BRANCH,
                                          pr_head: capture(h[:remote], "rev-parse #{BRANCH}"))[:state]]
       end
@@ -531,9 +536,9 @@ class ZapCertFreshnessDocsTest < Minitest::Test
       git!(desk, "fetch -q origin #{BRANCH}")
       after_fetch = grade.call(cert)
       # Re-certify RIGHT HERE, which is what the remedy used to say to do.
-      after_recert = grade.call(cert_for(FullSuiteGate.fingerprint(desk)))
+      after_recert = grade.call(cert_for(TreeFingerprint.working_tree(desk)))
       git!(desk, "merge --ff-only origin/#{BRANCH}")
-      after_move = grade.call(cert_for(FullSuiteGate.fingerprint(desk)))
+      after_move = grade.call(cert_for(TreeFingerprint.working_tree(desk)))
 
       [after_fetch, after_recert, after_move]
     end
@@ -608,31 +613,31 @@ class ZapCertFreshnessDocsTest < Minitest::Test
     refute_nil move,
                "the remedy names no DIRECTORY-SCOPED command that MOVES the graded checkout onto the fetched " \
                "head. Measured directly " \
-               "above: fetch-then-re-certify leaves the lane STALE, because bin/full-suite-check hashes the " \
+               "above: fetch-then-re-stamp leaves the lane STALE, because bin/control-check hashes the " \
                "WORKING tree and a fetch does not move it. A remedy that loops is the same defect as a " \
                "diagnosis that lies — the operator trusts it once and then stops trusting the gate."
-    # EITHER SPELLING. The re-cert used to be the literal `bin/full-suite-check <slug>`;
+    # EITHER SPELLING. The re-run used to be the literal `bin/full-suite-check <slug>`;
     # remedy-hints-print-bare-paths made it an ABSOLUTE, desk-first path computed at
     # runtime (a reviewer at a satellite primary cannot run the bare form), so the source
     # now carries `#{recert_command}` where the literal used to be. Indexing on the
     # literal alone silently found the PROSE mention earlier in the paragraph instead —
     # green in the wrong place, then red for the wrong reason. What this guard is ABOUT
     # is the ORDER, so it matches whichever spelling names the command.
-    recert = remedy.rindex(/bin\/full-suite-check \S|recert_command/)
+    recert = remedy.rindex(/bin\/control-check \S|recert_command/)
     assert recert.nil? || move < recert,
-           "the remedy's LAST word on bin/full-suite-check comes BEFORE the command that moves this checkout. " \
+           "the remedy's LAST word on bin/control-check comes BEFORE the command that moves this checkout. " \
            "Measured above, a cert taken in that order stamps the tree the operator already had."
 
     # AND THE DOC'S COPY OF THE SAME REMEDY, both bullets. Correcting the gate and not
     # the protocol leaves two authorities disagreeing about one measured fact, and an
     # operator who reads the doc first never sees the correction. That split is how this
     # claim survived its first pass; it does not get to be how the remedy survives.
-    paragraph = File.read(DOC)[/\*\*Expect the cert to go STALE.*?(?=\n\*\*A base that moves)/m]
-    refute_nil paragraph, "the cert-freshness paragraph is gone or renamed — re-point this guard; the remedy " \
+    paragraph = File.read(DOC)[/\*\*Expect the control stamp to go STALE.*?(?=\n\*\*A base that moves)/m]
+    refute_nil paragraph, "the control-freshness paragraph is gone or renamed — re-point this guard; the remedy " \
                           "it carries is measured directly above and is still live"
 
-    bullets = paragraph.split(/^- /).drop(1).select { |b| b.include?("bin/full-suite-check") }
-    refute_empty bullets, "neither case's bullet tells the reader how to re-certify any more — re-point this pin"
+    bullets = paragraph.split(/^- /).drop(1).select { |b| b.include?("bin/control-check") }
+    refute_empty bullets, "neither case's bullet tells the reader how to re-stamp any more — re-point this pin"
     bullets.each do |bullet|
       lead = bullet[/\A\*\*(.+?)\*\*/m, 1].to_s.gsub(/\s+/, " ")[0, 60]
       # Flattened for the same reason head_refusal_text is: markdown re-wraps, and a
@@ -645,9 +650,9 @@ class ZapCertFreshnessDocsTest < Minitest::Test
                    "PRIMARY. The gate and this doc are the two authorities on one remedy — correcting only " \
                    "one is how the false claim in this same passage survived its first pass."
       moved = flat.index(/git -C <\w+> (?:merge --ff-only|pull|reset --hard|checkout)/)
-      certified = flat.rindex("bin/full-suite-check")
+      certified = flat.rindex("bin/control-check")
       refute_nil moved,
-                 "zap-protocol.md, bullet «#{lead}»: sends the reader to bin/full-suite-check with no command " \
+                 "zap-protocol.md, bullet «#{lead}»: sends the reader to bin/control-check with no command " \
                  "that moves their checkout onto the pushed head. Measured above, in BOTH cases, that cert " \
                  "re-stamps the tree already there and the lane stays STALE — the doc would be walking them " \
                  "into the loop bin/dor-check's refusal now steers them out of."
@@ -726,8 +731,8 @@ class ZapCertFreshnessDocsTest < Minitest::Test
 
     # The doc's copy of the same two claims. Two authorities, one remedy — and this
     # passage is where a correction applied to only one of them last time.
-    paragraph = File.read(DOC)[/\*\*Expect the cert to go STALE.*?(?=\n\*\*A base that moves)/m]
-    refute_nil paragraph, "the cert-freshness paragraph is gone or renamed — re-point this guard"
+    paragraph = File.read(DOC)[/\*\*Expect the control stamp to go STALE.*?(?=\n\*\*A base that moves)/m]
+    refute_nil paragraph, "the control-freshness paragraph is gone or renamed — re-point this guard"
     flat = paragraph.gsub(/\s+/, " ")
     refute_match(/git (?:-C <\w+> )?merge --no-ff/, flat,
                  "zap-protocol.md prints the --no-ff hint as a command to run — measured above, it lands the " \

@@ -28,7 +28,7 @@ require "json"
 require "fileutils"
 require "tmpdir"
 require_relative "../../bin/lib/agent_presence"
-require_relative "../../bin/lib/cert_orphan_guard"
+require_relative "../../bin/lib/process_table"
 require_relative "../../bin/lib/presence_claim"
 
 class AgentPresenceIntegrationTest < Minitest::Test
@@ -75,18 +75,18 @@ class AgentPresenceIntegrationTest < Minitest::Test
 
   def test_a_killed_writers_claim_grades_dead_on_the_very_next_read_with_no_waiting
     pid = spawn_idle
-    started_at = CertOrphanGuard.process_started_at(pid)
+    started_at = ProcessTable.process_started_at(pid)
     refute_nil started_at, "ps must give us the OS's start time for a process we just spawned"
     lock = runlock_for(pid, started_at)
 
     # Alive first — otherwise "dead" afterwards would prove nothing about the kill.
-    assert_equal :live, AgentPresence.grade(lock: lock, table: CertOrphanGuard.process_table)[0]
+    assert_equal :live, AgentPresence.grade(lock: lock, table: ProcessTable.process_table)[0]
 
     kill_and_reap(pid)
 
     # No sleep, no retry, no TTL. The next read is the whole test.
     began = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-    verdict, = AgentPresence.grade(lock: lock, table: CertOrphanGuard.process_table)
+    verdict, = AgentPresence.grade(lock: lock, table: ProcessTable.process_table)
     elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - began
 
     assert_equal :dead, verdict, "a killed writer's claim must be a corpse immediately"
@@ -99,14 +99,14 @@ class AgentPresenceIntegrationTest < Minitest::Test
   # live orphan. This grades the unreaped corpse — dead, with the child still unwaited.
   def test_a_killed_but_unreaped_child_is_a_corpse_not_a_live_claim
     pid = spawn_idle
-    lock = runlock_for(pid, CertOrphanGuard.process_started_at(pid))
+    lock = runlock_for(pid, ProcessTable.process_started_at(pid))
     Process.kill("KILL", pid)
 
     # Bounded poll for the OS to tear the process down. This is kernel latency, NOT a
     # lease expiring: it is milliseconds and it does not scale with any configured value.
     verdict = nil
     40.times do
-      verdict, = AgentPresence.grade(lock: lock, table: CertOrphanGuard.process_table)
+      verdict, = AgentPresence.grade(lock: lock, table: ProcessTable.process_table)
       break if verdict == :dead
 
       sleep 0.05
@@ -119,9 +119,9 @@ class AgentPresenceIntegrationTest < Minitest::Test
 
   def test_an_idle_live_process_reads_as_live_because_idle_is_not_dead
     pid = spawn_idle
-    lock = runlock_for(pid, CertOrphanGuard.process_started_at(pid))
+    lock = runlock_for(pid, ProcessTable.process_started_at(pid))
 
-    table = CertOrphanGuard.process_table
+    table = ProcessTable.process_table
     row = table.find { |p| p[:pid] == pid }
     refute_nil row, "a GONE process leaves no row — this test needs a process that exists"
     # This precondition means "the process is ALIVE" — present in the table and not a
@@ -147,10 +147,10 @@ class AgentPresenceIntegrationTest < Minitest::Test
 
   def test_a_live_process_stays_live_across_repeated_reads
     pid = spawn_idle
-    lock = runlock_for(pid, CertOrphanGuard.process_started_at(pid))
+    lock = runlock_for(pid, ProcessTable.process_started_at(pid))
 
     3.times do
-      assert_equal :live, AgentPresence.grade(lock: lock, table: CertOrphanGuard.process_table)[0]
+      assert_equal :live, AgentPresence.grade(lock: lock, table: ProcessTable.process_table)[0]
     end
   end
 
@@ -164,7 +164,7 @@ class AgentPresenceIntegrationTest < Minitest::Test
     pid = spawn_idle
     lock = runlock_for(pid, "Tue Jul  7 03:00:00 2026")
 
-    verdict, detail = AgentPresence.grade(lock: lock, table: CertOrphanGuard.process_table)
+    verdict, detail = AgentPresence.grade(lock: lock, table: ProcessTable.process_table)
 
     assert_equal :recycled, verdict
     assert_equal pid, detail[:found][:pid], "the stranger is named, never guessed at"
@@ -175,15 +175,15 @@ class AgentPresenceIntegrationTest < Minitest::Test
   def test_claims_are_found_by_glob_in_both_the_primary_and_worktree_git_dirs
     live = spawn_idle
     dead = spawn_idle
-    live_lock = runlock_for(live, CertOrphanGuard.process_started_at(live))
-    dead_lock = runlock_for(dead, CertOrphanGuard.process_started_at(dead))
+    live_lock = runlock_for(live, ProcessTable.process_started_at(live))
+    dead_lock = runlock_for(dead, ProcessTable.process_started_at(dead))
     kill_and_reap(dead)
 
     Dir.mktmpdir("presence") do |root|
       write_lock(File.join(root, "turf-monster/.git/cert-run.json"), live_lock)
       write_lock(File.join(root, "mcritchie-studio/.git/worktrees/some-desk/cert-run.json"), dead_lock)
 
-      found = AgentPresence.claims(root: root, table: CertOrphanGuard.process_table)
+      found = AgentPresence.claims(root: root, table: ProcessTable.process_table)
 
       assert_equal 2, found.size
       primary = found.find { |c| c[:repo] == "turf-monster" }
@@ -215,7 +215,7 @@ class AgentPresenceIntegrationTest < Minitest::Test
     pid = spawn_idle
     Dir.mktmpdir("presence") do |root|
       write_lock(File.join(root, "rolio/.git/cert-run.json"),
-                 runlock_for(pid, CertOrphanGuard.process_started_at(pid)))
+                 runlock_for(pid, ProcessTable.process_started_at(pid)))
 
       snapshot = AgentPresence.snapshot(root: root, load: nil)
 
@@ -233,7 +233,7 @@ class AgentPresenceIntegrationTest < Minitest::Test
     pid = spawn_idle
     Dir.mktmpdir("presence") do |root|
       path = File.join(root, "rolio/.git/cert-run.json")
-      write_lock(path, runlock_for(pid, CertOrphanGuard.process_started_at(pid)))
+      write_lock(path, runlock_for(pid, ProcessTable.process_started_at(pid)))
       stale = File.join(root, "chain-ops/.git/cert-run.json")
       write_lock(stale, runlock_for(999_999, "Tue Jul  7 03:00:00 2026")) # a proven corpse
 
@@ -264,7 +264,7 @@ class AgentPresenceIntegrationTest < Minitest::Test
     pid = spawn_idle
     Dir.mktmpdir("presence") do |root|
       write_lock(File.join(root, "rolio/.git/cert-run.json"),
-                 runlock_for(pid, CertOrphanGuard.process_started_at(pid)))
+                 runlock_for(pid, ProcessTable.process_started_at(pid)))
 
       out = IO.popen(
         { "AGENT_PRESENCE_SUITE_CAPACITY" => "1" },

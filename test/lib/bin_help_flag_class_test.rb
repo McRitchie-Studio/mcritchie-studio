@@ -277,7 +277,6 @@ class BinHelpFlagClassTest < Minitest::Test
     # watched a path they named be ignored.
     "hormozi-prep"           => :optparse,
     "hormozi-bundle"         => :optparse,
-    "full-suite-check"       => :optparse,
     "pr-review"              => :optparse,
     "session-preflight"      => :optparse,
     "reviewer-select"        => :optparse,

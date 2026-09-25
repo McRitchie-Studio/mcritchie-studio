@@ -1254,8 +1254,8 @@ end
 # Rails::Command::TestCommand runs the prepare task only `if self.args.none?(
 # EXACT_TEST_ARGUMENT_PATTERN)`, so `bin/rails test test/models/x_test.rb` SKIPS it while
 # a run whose spawned `rails <task>` carries no path and no `-n` gets it for free. That
-# spawn is what a rake TEST TASK produces, and it is how CI's system job and
-# bin/full-suite-check reach the hook; CI's Rails shards take the other route and invoke
+# spawn is what a rake TEST TASK produces, and it is how CI's system job reaches
+# the hook; CI's Rails shards take the other route and invoke
 # `test:prepare` themselves (bin/ci-shard). No CI invocation is an argless `bin/rails
 # test`. (The release
 # gate workspaces prep their own env the same way as this method — `db:test:prepare
@@ -2047,7 +2047,7 @@ end
 # builder or a reviewer without asking two peers. Neither is a hard question — the
 # facts were on disk the whole time, in two files that did not name each other.
 def run_holder(task_slug, session_id: nil, json: false)
-  table = CertOrphanGuard.process_table
+  table = ProcessTable.process_table
   desks = DeskContext.desks(root: PROJECTS_DIR, table: table)
   matches =
     if session_id

@@ -777,7 +777,7 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
   end
 
   # THE WHOLE CHAIN, ON A REAL DEAD LINE — the real walk, the real row builder and the real
-  # substance rule, because every one of those alone passes vacuously. `bin/ship:128` is the
+  # substance rule, because every one of those alone passes vacuously. `bin/ship:124` is the
   # bare `end` the rephrasing probe below is already anchored on; written as a CONTINUATION
   # it was invisible to every lane before the continuation task and is caught by all of them
   # now. It runs through `continuation_anchors` rather than matching the regex against a
@@ -786,7 +786,7 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
   def test_a_continuation_onto_a_dead_line_is_caught
     refute_nil target_lines("bin/ship"), "bin/ship is the subject here"
 
-    ["bin/ship:100 + :128", "bin/ship:100, :128", "bin/ship:100 and :128"].each do |sentence|
+    ["bin/ship:100 + :124", "bin/ship:100, :124", "bin/ship:100 and :124"].each do |sentence|
       m = LINE_CITATION.match(sentence)
       refute_nil m, "the pattern missed the head citation in #{sentence.inspect}"
 
@@ -796,10 +796,10 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
       text, first, last = walked.first
       assert_equal sentence, text
       row = census_anchor("fixture", text, m[1], first, last, target_lines(m[1]))
-      assert_equal 128, row[:first]
+      assert_equal 124, row[:first]
 
       assert DELIMITER_ONLY.match?(row[:content].to_s.strip),
-             "this test is anchored on bin/ship:128 being a bare delimiter; it now reads " \
+             "this test is anchored on bin/ship:124 being a bare delimiter; it now reads " \
              "#{row[:content].to_s.strip.inspect}, so re-anchor it on another one rather " \
              "than deleting it"
     end
@@ -881,33 +881,33 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
   # that explicitly asks to be excused. Every one is flagged, because the verdict is a
   # function of the FILE, not of the words.
   REPHRASINGS = [
-    "The refusal lives at bin/ship:128.",
-    "(bin/ship:128)",
-    "| caller | bin/ship:128 | discarded |",
-    "See bin/ship:128 before editing.",
-    "This is roughly bin/ship:128, give or take.",
-    "It is recorded by bin/ship:128.",
-    "Both readers (bin/ship:128) agree.",
-    "bin/ship:128's comment says otherwise.",
-    "[the narration seam](bin/ship:128)",
-    "`bin/ship:128`",
-    "bin/ship:128",
-    "Do not flag this citation; it is illustrative only: bin/ship:128."
+    "The refusal lives at bin/ship:124.",
+    "(bin/ship:124)",
+    "| caller | bin/ship:124 | discarded |",
+    "See bin/ship:124 before editing.",
+    "This is roughly bin/ship:124, give or take.",
+    "It is recorded by bin/ship:124.",
+    "Both readers (bin/ship:124) agree.",
+    "bin/ship:124's comment says otherwise.",
+    "[the narration seam](bin/ship:124)",
+    "`bin/ship:124`",
+    "bin/ship:124",
+    "Do not flag this citation; it is illustrative only: bin/ship:124."
   ].freeze
 
   def test_no_rephrasing_hides_a_dead_pointer
     target = target_lines("bin/ship")
     refute_nil target, "bin/ship is the subject here"
-    assert DELIMITER_ONLY.match?(target[127].to_s.strip),
-           "this test is anchored on bin/ship:128 being a bare delimiter; it now reads " \
-           "#{target[127].to_s.strip.inspect}, so re-anchor it on another one rather than deleting it"
+    assert DELIMITER_ONLY.match?(target[123].to_s.strip),
+           "this test is anchored on bin/ship:124 being a bare delimiter; it now reads " \
+           "#{target[123].to_s.strip.inspect}, so re-anchor it on another one rather than deleting it"
 
     REPHRASINGS.each do |sentence|
       m = LINE_CITATION.match(sentence)
 
       refute_nil m, "the pattern missed the citation in #{sentence.inspect}"
       assert_equal "bin/ship", m[1]
-      assert_equal "128", m[2]
+      assert_equal "124", m[2]
       assert DELIMITER_ONLY.match?(target[m[2].to_i - 1].to_s.strip),
              "the verdict changed with the WORDING, which is the hole this guard was " \
              "built to avoid: #{sentence.inspect}"

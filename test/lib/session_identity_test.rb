@@ -2,7 +2,7 @@
 
 # Tests for bin/lib/session_identity.rb — the Claude-then-Codex session-id
 # chain shared by bin/task, bin/reviewer-select, bin/release.rb,
-# bin/full-suite-check, bin/ci-scope-capture and bin/atomic-event. The chain is
+# bin/ci-scope-capture and bin/atomic-event. The chain is
 # shared; the missing-session fallback stays per-caller, so identity returns
 # [nil, nil] and callers map it.
 #   ruby -Itest test/lib/session_identity_test.rb

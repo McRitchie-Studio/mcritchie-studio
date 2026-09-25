@@ -245,7 +245,7 @@ unchanged and still fires — for a repo that genuinely has no lane, which is al
 it ever meant. It now offers the engine as the worked example of CLOSING that
 hole rather than as an instance of it.
 
-**The escape hatch is a record**, like `[full-suite-bypass]`:
+**The escape hatch is a record**, the shape the retired full-suite bypass had:
 `bin/task update <task> --checks "[browser-bypass] <reason>"` is honored and flagged
 loudly, so the gate is routed around on purpose, in front of a reviewer.
 
@@ -421,7 +421,6 @@ checkout starts with no built CSS. Put those two facts together:
 | Runner | Invocation | `test:prepare` runs? | Virgin tree |
 |---|---|---|---|
 | GitHub CI | **sharded**: `bin/ci-shard --shard=i/4` × 4 (`rails`) + `bin/rails db:test:prepare test:system` (`system`), audited by `bin/rails-executed-set-check` (`rails_executed_set`) | yes | green |
-| `bin/full-suite-check` | the single command whose scope is CI's Ruby suite — today `bin/rails db:test:prepare test test:system` (rake-routed; resolved by `bin/lib/ci_test_command.rb`, which tolerates the sharded split because the shards ∪ `system` are a subset of it) | yes | green |
 | Ship workspace — **`repo_script` satellites** (turf-monster's own `bin/deploy` suite; the G3/G4 gates themselves READ CI's verdict and run nothing here) | `bin/rails test` as the repo's deploy runs it, in `<repo>/.worktrees/_ship` | **no** | green — the ship preps the env itself (PR #522) |
 | **`bin/fast-check`** | `bin/rails test <mapped/spine paths>` | **no** | **was red** |
 | **Playwright `webServer`** — the `e2e` lane | `bin/rails db:test:prepare && … && bin/rails server -e test` (`playwright.config.js`) | **no** | **was red** — green since PR #543 added an explicit `bin/rails tailwindcss:build` to the chain |
@@ -546,12 +545,12 @@ it is on `accepted` and rides the next release sweep into the app.
 load against every other source of reflow, and one font is not the only thing that
 can move a box.
 
-### A desk that does not own its test DB may not run a CERT lane
+### A desk that does not own its test DB may not run the pre-flight
 
-`bin/fast-check` / `bin/full-suite-check` **refuse** in a desk whose test database is
-the repo's **shared** one — `bin/lib/desk_guard.rb`. The cert would otherwise run
-against the database the primary checkout and the release gate workspaces use, and
-`full-suite-check`'s first lane (`db:test:purge`) would **destroy** it mid-suite.
+`bin/fast-check` **refuses** in a desk whose test database is the repo's **shared**
+one — `bin/lib/desk_guard.rb`. The pre-flight would otherwise run against the
+database the primary checkout and the release gate workspaces use, and its prepare
+lane would **reset** it mid-suite.
 
 **It PROVES the property, it does not trust a declaration.** The guard boots the app in
 the desk at `RAILS_ENV=test` and reads back the database it *actually* connects to
@@ -981,50 +980,22 @@ Tasks: TOP => db:test:load_schema => db:test:purge
 …and the cert reported that as *"USUALLY an ENV gap … NOT a regression in your
 diff"*, never **naming** the orphan. So the agent retried into the same wall: three
 attempts, 35 minutes, zero board progress (live, 2026-07-13) — while its ClaimLease
-heartbeat kept the task looking healthy on the board. Both cert lanes now defend
-against this (`bin/lib/cert_process.rb`, `bin/lib/cert_orphan_guard.rb`):
+heartbeat kept the task looking healthy on the board.
 
-- **Prevent** — each lane runs in its **own process group**, and the cert reaps that
-  GROUP on any signal it can catch (TERM/INT/HUP) or on an exception. The suite can
-  no longer outlive the cert that spawned it.
-- **Detect** — a SIGKILL runs no handler, so prevention can never be complete. Each
-  lane writes a runlock naming its process group **and the OS's start time for it** —
-  in the repo's **git dir** (`<git-dir>/cert-run.json`; per-worktree, and invisible to
-  `git status` in every repo, because a lock that must survive a SIGKILL would otherwise
-  be untracked dirt and the cert refuses a dirty tree). The **next** cert reads it and,
-  before any lane runs:
-  - cert pid **alive and provably ours** → a real concurrent cert in this tree →
-    **refuse** (never kill a live sibling; two suites on one worktree test DB corrupt
-    each other's fixtures and SIGSEGV Ruby),
-  - cert pid dead, group leader **alive and provably ours** → our own orphan →
-    **reap the group, loudly**,
-  - something alive under that pgid that is **provably NOT ours** → the OS recycled
-    the number → **never kill it**; the lock is a corpse, so discard it and carry on,
-  - something alive whose ownership we **cannot prove** (a lock predating this guard) →
-    **refuse and name it**, and let a human decide,
-  - any **other** session holding the test DB (a pre-fix orphan, a stray manual run,
-    a `bin/release` gate suite) → **refuse and name it**, with the
-    `pg_terminate_backend` command that clears it.
-
-**A pgid is a recyclable integer — liveness is never identity.** The first cut of this
-guard reaped on the predicate *"some process with this pgid is alive"*, and the runlock
-is repo-relative (it outlives reboots), so a nine-day-old lock whose pgid the OS had
-since handed to an unrelated process made the guard **kill an innocent bystander** and
-report "ORPHAN REAPED" (caught in review, 2026-07-14). Identity is therefore the OS's
-own start-time record (`ps -o lstart=`) for the pid — recorded at spawn, re-read and
-matched exactly before any signal. The rule is: **kill only what you can prove is
-yours; if you cannot prove it, refuse and say so.** A reaper that guesses is worse than
-no reaper — it turns a stalled cert into a corrupted machine. (And a signal is never
-aimed at pgid 0, 1, or the cert's own group: `kill(sig, -1)` means *every process you
-own*, not "group 1".)
-
-Every one of those messages says **"NOT a regression in your diff"**, because that is
-what an ENV-class failure is. A cert that refuses and names the orphan is a good cert;
-a cert that blames "an ENV gap" and lets you retry into a wall is the bug; a cert that
-kills a process it cannot name is worse than either.
-
-Skip the guard only in harness tests: `FAST_CHECK_SKIP_ORPHAN_GUARD=1` /
-`FULL_SUITE_SKIP_ORPHAN_GUARD=1`.
+**What holds today (DevOps v3 phase 2b, 2026-09-24).** The local certs retired, and
+with them the runlock, the orphan preflight and its reaper — a guard that once
+killed an innocent bystander on a recycled pgid (review, 2026-07-14) is not worth
+keeping for a pre-flight that records nothing. What the pre-flight keeps is the
+**prevention** half: each lane runs in its **own process group**
+(`bin/lib/lane_runner.rb`), a signal the pre-flight can catch (TERM/INT/HUP) reaps
+that group, and a lane that outruns its ceiling (`FAST_CHECK_LANE_TIMEOUT`, 900s)
+is killed and reported as a **hung runner**, never as a red suite. A SIGKILL still
+runs no handler; if a retry then dies in test-prepare on `PG::ObjectInUse`, the
+holder is a stranded `bin/rails test` from the killed run — `ps -Ao pid,pgid,command
+| grep 'rails test'` finds it, and the process-table identity rule the reaper used
+(`ps -o lstart=`, compared as an opaque string) lives on in
+`bin/lib/process_table.rb` for the presence readers. Never signal pgid 0, 1, or your
+own group: `kill(sig, -1)` means *every process you own*.
 
 ## Turf Monster
 

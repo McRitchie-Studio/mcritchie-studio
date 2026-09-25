@@ -190,8 +190,8 @@ class ControlReplayTest < Minitest::Test
     # stamp (lib/cert_evidence.rb's write rule) — and a wiped stamp sends the
     # builder back to re-run, which is how people learn to hand-write evidence.
     assert_includes CertEvidence::EVIDENCE_LANES, ControlReplay::LANE
-    refute_includes CertEvidence::LANES, ControlReplay::LANE,
-                    "the control must NOT be a full-cert lane — that would demand a control of every shape, " \
-                    "including the ones with no test-only diff to replay"
+    # The full-cert lanes retired in DevOps v3 phase 2b; the control is now the
+    # whole machine-owned namespace.
+    assert_equal [ControlReplay::LANE], CertEvidence::EVIDENCE_LANES
   end
 end

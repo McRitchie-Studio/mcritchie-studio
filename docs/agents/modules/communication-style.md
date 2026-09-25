@@ -156,10 +156,9 @@ Use these for the `firm` rows rather than guessing:
 
 | Work | Typical | Note |
 |------|---------|------|
-| `bin/fast-check <task>` | ~1 min | the builder default cert |
+| `bin/fast-check <task>` | ~1 min | the builder's optional pre-flight |
 | `bin/ship <task>` (cold) | ~12 min | includes the CI wait; ~3 min with `SHIP_CI_WAIT=off` |
-| CI full suite on a PR | ~9 min | the authoritative lane |
-| `bin/full-suite-check <task>` | ~31 min | local, CI-independent — measured against CI's ~9 |
+| CI full suite on a PR | ~9 min | the one verdict per tree |
 
 Everything else — a review agent, an exploration sweep, a research fan-out — is
 `rough`. Estimate from the work's shape, and let the elapsed column carry the

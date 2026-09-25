@@ -202,10 +202,10 @@
 #   release_check — THE REPO'S OWN DECLARED GATE COMMAND, and the one key whose
 #                  readers are deliberately scoped two different ways. Read the
 #                  split before adding one to an `apps` row:
-#                    * THE CERT READER IS SECTION-BLIND. FullSuiteGate.release_check_cmd
+#                    * THE PRE-FLIGHT READER IS SECTION-BLIND. ReleaseRegistry.release_check_cmd
 #                      flattens `apps` + `gems`, so ANY row that declares one gets a
-#                      LOCAL CERT LANE: bin/fast-check runs that command as the whole
-#                      mapped lane and skips the Rails test-prepare it implies (see
+#                      LOCAL PRE-FLIGHT LANE: bin/fast-check runs that command as the
+#                      whole mapped lane and skips the Rails test-prepare it implies (see
 #                      turf-vault below, which is an `apps` row using exactly this).
 #                    * THE PUBLISH READERS ARE GEMS-ONLY. bin/release.rb's
 #                      `bin/release.rb#gem_meta_for` / `bin/release.rb#self_gated_gem?`
@@ -226,14 +226,11 @@
 #                  to unblock a repo that cannot take one yet.
 #                  DECLARED, NEVER INFERRED, the same rule
 #                  lint_lane states below: nothing probes a tree for a test runner.
-#   lint_lane    — optional. `none` DECLARES that this repo ships no rubocop, so
-#                  the cert reader (FullSuiteGate.required_lanes) stops asking it
-#                  for a `[rubocop@<fp>]` line and it owes only `[full-suite@<fp>]`.
-#                  DECLARED, NEVER INFERRED: the gate does not probe for a rubocop
-#                  binary, because a waiver inferred from a missing install turns
-#                  every broken rubocop into a silently skipped lane. Omitted (the
-#                  default) = the repo owes BOTH lanes, and every unrecognised slug
-#                  or unreadable registry owes both too — this fails CLOSED.
+#   lint_lane    — optional. `none` DECLARES that this repo ships no rubocop.
+#                  Since the local full-suite cert retired (2026-09-24) no script
+#                  reads it: bin/fast-check omits the rubocop lane for every
+#                  registry-gated repo by construction. The declaration stays as
+#                  the reviewable statement of that fact. DECLARED, NEVER INFERRED.
 #
 # The gem repos are checked out as SIBLINGS of this app (the projects root):
 #   /Users/alex/projects/<repo>. `bin/release` resolves them relative to the
@@ -252,18 +249,14 @@ gems:
     # static gate is `ruby -c` over the tree, run inside bin/release-check, which
     # the `release_check` key above already names.
     #
-    # DECLARED, NEVER INFERRED. bin/lib/full_suite_gate.rb reads this key; it does
-    # NOT probe for a rubocop binary. Inferring the waiver from a missing binary
-    # would turn every broken rubocop install into a silently skipped lane — the
-    # self-declaration disease config/e2e_lane.yml exists to prevent. A repo opting
+    # DECLARED, NEVER INFERRED. Nothing probes for a rubocop binary. A repo opting
     # out of a lint lane must be a visible, reviewable diff line, which is what
     # this is.
     #
-    # WHY IT WAS NEEDED (2026-08-24): dor-check demands a full-suite AND a rubocop
-    # cert per NAMED repo. A task naming studio-engine could therefore never be
-    # certified, and the only way through was pointing FULL_SUITE_RUBOCOP_CMD at a
-    # no-op — recording a rubocop pass for a lint that never ran. That was refused;
-    # this is the honest fix. If the engine ever GAINS rubocop, delete this line.
+    # WHY IT WAS NEEDED (2026-08-24): the (since retired) local cert demanded a
+    # full-suite AND a rubocop line per NAMED repo, so a task naming studio-engine
+    # could never be certified. The cert retired on 2026-09-24; the line stays as
+    # the statement of fact. If the engine ever GAINS rubocop, delete it.
     lint_lane: none
   solana-studio:
     ladder: three-rung
@@ -291,22 +284,11 @@ gems:
     # runs here.
     #
     # WHY IT WAS NEEDED (found 2026-08-31 by carl, reviewing solana-studio #9):
-    # bin/full-suite-check ran `bin/rubocop` anyway, got COULD NOT RUN, and then
-    # DISCARDED THE GREEN SUITE LANE WITH IT ("no evidence recorded for the red
-    # lane(s)" — the writer exits before recording when any lane is red). So the
-    # full cert could never go green in this repo. That is not a cosmetic gap:
-    # docs/agents/agents/carl/sops/pr-review-primary.md names bin/full-suite-check
-    # as THE escape when a PR's CI verdict is red, pending or unreadable, so a
-    # reviewer following the SOP here had no path and would stall or merge on
-    # weaker evidence than the SOP intends.
-    #
-    # DECLARED, NEVER INFERRED — and now also AUDITED. bin/lib/full_suite_gate.rb
-    # reads this key and never probes for a binary (a waiver inferred from a missing
-    # install turns every BROKEN rubocop into a silently skipped lane). The other
-    # half is bin/lib/lint_waiver_guard.rb: if this repo ever GAINS a lint toolchain,
-    # the cert REFUSES rather than honouring a claim that has stopped being true, and
-    # tells you to delete this line. So you do not have to remember to — but delete
-    # it when that day comes.
+    # the (since retired) local full-suite cert ran `bin/rubocop` anyway, got
+    # COULD NOT RUN, and discarded the green suite lane with it, so the full cert
+    # could never go green in this repo. The cert retired on 2026-09-24; the line
+    # stays as the statement of fact. If this repo ever GAINS a lint toolchain,
+    # delete it.
     lint_lane: none
 
 apps:
@@ -513,7 +495,7 @@ apps:
     # blocker was that the whole-gate branch in bin/fast-check keyed on SECTION
     # MEMBERSHIP (gem_repo?) rather than on a declared command, so an `apps` row could
     # not reach it. That is now keyed on the DECLARATION
-    # (FullSuiteGate.registry_gated?), which is what this key supplies. One registry
+    # (ReleaseRegistry.registry_gated?), which is what this key supplies. One registry
     # entry plus that generalisation, not a new subsystem.
     #
     # THE VALUE IS A SCRIPT THE REPO OWNS, which is the whole point of the key and was
@@ -548,11 +530,10 @@ apps:
     # is enforced somewhere it no longer is.
     release_check: bin/release-check
     #
-    # AND THE LINT LANE IS DECLARED ABSENT, which `release_check` alone does not cover.
-    # bin/fast-check omits rubocop on this branch by construction, but bin/full-suite-check
-    # runs a lint lane for EVERY repo and consults this key first — so without this line
-    # the declared gate went GREEN (`full-suite: PASS`) and the cert still died one lane
-    # later on `bin/rubocop: No such file or directory`. Measured 2026-09-14.
+    # AND THE LINT LANE IS DECLARED ABSENT. bin/fast-check omits rubocop on this
+    # branch by construction; the (since retired) local full-suite cert ran a lint
+    # lane for EVERY repo and consulted this key first, which is why the line was
+    # needed (measured 2026-09-14). It stays as the statement of fact.
     #
     # VERIFIED, NOT ASSUMED, because the script's own message warns against using this to
     # dodge a rubocop that merely fails: turf-vault ships NO Ruby at all — no .rubocop.yml,
@@ -570,17 +551,16 @@ apps:
     # through a `dig("gems", repo)` helper rather than the flattened view
     # (`gem_meta_for` / `self_gated_gem?` in bin/release.rb, `Release::Repos.gem_meta`
     # and its `self_gated_gem?` in app/models/release/repos.rb). On this `apps` row the
-    # key is read by exactly one consumer, FullSuiteGate.release_check_cmd, and it
+    # key is read by exactly one consumer, ReleaseRegistry.release_check_cmd, and it
     # CANNOT make turf-vault self-gated, cannot publish it to RubyGems, and does not
     # touch the `test_cmd` / `qa_test_cmd` gate workspace refused above — those still
     # run `bin/rails` first and must stay unset. See the `cert fields` note at the top.
     #
-    # NOT A BYPASS — a different door, and still a live one. `[full-suite-bypass]`
-    # (FullSuiteGate::BYPASS_TAG) is an AUTHOR record: a human's reasoned
-    # `[full-suite-bypass] <why>` checks_run line that bin/dor-check honours and
-    # flags loudly. Neither cert script emits it. Do not use it to describe this
-    # path — this entry did until 2026-09-08, which named the wrong receipt AND the
-    # wrong mechanism. Guarded by test/docs/cert_label_vocabulary_test.rb.
+    # NOT A BYPASS. The full-suite bypass hatch — an author's reasoned checks_run
+    # line that bin/dor-check once honoured — retired with the local certs on
+    # 2026-09-24, and this entry must not describe the declared lane as one: it did
+    # until 2026-09-08, naming the wrong receipt AND the wrong mechanism. Guarded
+    # by test/docs/cert_label_vocabulary_test.rb.
   rolio:
     # DORMANT — parked 2026-07 (satellites.yml carries status: reserved) and its
     # GitHub remote no longer resolves for the agent identity, so a sweep that

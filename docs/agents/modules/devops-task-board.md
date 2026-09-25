@@ -664,7 +664,7 @@ cd <desk>                            # the worktree begin printed
 
 **Both halves of that are load-bearing, and `begin` now prints them for you.**
 The PATH picks the script: every fast-lane script — `bin/task`, `bin/ship`,
-`bin/fast-check`, `bin/full-suite-check`, `bin/dor-check` — lives in
+`bin/fast-check`, `bin/dor-check` — lives in
 mcritchie-studio/bin ALONE, so a bare `bin/ship` on a turf-monster or rolio desk
 dies as `nohup: bin/ship: No such file or directory`. The CWD picks the TREE the
 script acts on — and `bin/ship` does **not refuse** a foreign root. It roots at the
@@ -673,9 +673,9 @@ the task worktree … (you ran from …)`, `bin/ship`'s `--- rooting ---` block)
 running every gate `chdir`'d there; it dies only when no desk resolves on disk.
 Stand in the desk anyway, for the two reasons that are NOT a refusal by ship: a
 re-root is a correction you have to notice and trust rather than the tree you
-chose, and the cert **writers** you run by hand afterwards — `bin/fast-check`,
-`bin/full-suite-check` — refuse ANY foreign root outright (`this run roots at …
-which is not <slug>'s tree — refusing to certify it`). `bin/ship` dies with that
+chose, and the pre-flight you run by hand afterwards — `bin/fast-check` —
+refuses ANY foreign root outright (`this run roots at … which is not <slug>'s
+tree — refusing to run against it`). `bin/ship` dies with that
 same text when no desk resolves; it never refuses a root it can re-root from.
 `bin/task begin` closes by printing the resolved `cd <desk> && <absolute
 bin/ship> <task-slug>` line, ready to paste — a hub desk ships its own `bin/`, so
@@ -716,9 +716,9 @@ the wrappers don't cover (multi-repo tasks, bespoke PR bodies).
 
 **The CI settle wait (step 6/8, `gate-submit-on-green-ci`).** With the PR open and
 `pr_url` recorded, ship HOLDS until the PR's CI reaches a real state, then runs
-the DoR verdict — so `submitted` normally carries a **green** CI instead of a fast
-cert credited provisionally against a pending one, and a red CI arrives while the
-builder's worktree is still warm rather than bouncing into a cold session.
+the DoR verdict — so `submitted` carries a settled **green** CI, and a red CI
+arrives while the builder's worktree is still warm rather than bouncing into a
+cold session.
 
 Three properties keep it from becoming a gate of its own, and all three are the
 point:
@@ -1224,7 +1224,7 @@ A durable artifact records **who** made it — the session, stamped in
 `metadata["session"]` by `bin/task checkpoint` and `bin/gate`, or already carried
 in `task_events.actor` on a CLI stage move. Unattributed progress used to be
 credited to whoever held the claim, which let a lease manufacture its own
-evidence: on 2026-08-13 a challenger ran `bin/full-suite-check`, the cert landed a
+evidence: on 2026-08-13 a challenger ran the local cert (since retired), which landed a
 `g1_cert` row on a task it did **not** hold, and the claim gate refused that same
 challenger with *"last durable progress ~2m ago (g1_cert passed)"* — the
 challenger's own work, quoted back as proof the holder was alive.
@@ -1251,7 +1251,7 @@ It renews only when it cannot show the holder has gone; it declines when
 
 **The two board channels are holder-scoped**, and that is the difference between
 fixing this and half-fixing it. Both once read the *task-wide* fact, so a queued
-challenger running `bin/full-suite-check` on a held slug landed a checkpoint and
+challenger running the local cert (since retired) on a held slug landed a checkpoint and
 opened a `g1_cert` on someone else's task — and the abandoned holder renewed for
 another 1h29m on the strength of the challenger's own work. The heartbeat reads
 `holder_liveness_seconds_ago` and `holder_gate_in_flight` instead. The gate
@@ -1411,7 +1411,7 @@ bump from the task's `kind`.
 ## Remedy hints name a command you can actually run
 
 **Every command a fast-lane script tells you to run is an absolute path.** When
-`bin/ship`, `bin/fast-check`, `bin/full-suite-check` or `bin/dor-check` refuses
+`bin/ship`, `bin/fast-check` or `bin/dor-check` refuses
 and hands you a next move, the line it prints is pasteable from wherever you are
 standing — `/Users/…/mcritchie-studio/bin/ship <slug>`, never a bare
 `bin/ship <slug>`.

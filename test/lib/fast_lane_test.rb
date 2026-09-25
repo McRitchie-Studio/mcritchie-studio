@@ -13,7 +13,6 @@ require "json"
 require "tmpdir"
 require "fileutils"
 require_relative "../../bin/lib/fast_lane"
-require_relative "../../bin/lib/full_suite_gate"
 
 class FastLaneTest < Minitest::Test
   # --- derive_slug: the client-side mirror of Task#generate_slug ---------------
@@ -65,27 +64,6 @@ class FastLaneTest < Minitest::Test
                  FastLane.pr_body("https://mcritchie.studio/tasks/demo", [])
   end
 
-  # --- cert_fresh?: ship's only skippable gate, fingerprint-bound --------------
-
-  def test_cert_fresh_with_a_fresh_fast_cert
-    assert FastLane.cert_fresh?(["[fast-cert@abc1234] green"], "abc1234")
-  end
-
-  def test_cert_fresh_with_a_fresh_full_pair
-    checks = ["[full-suite@abc1234] tests green", "[rubocop@abc1234] lint clean"]
-    assert FastLane.cert_fresh?(checks, "abc1234")
-  end
-
-  def test_cert_not_fresh_when_the_tree_moved_on
-    refute FastLane.cert_fresh?(["[fast-cert@aaa1111] green"], "bbb2222"),
-           "any edit changes the tree hash — a stale cert must re-arm the fast-check step"
-  end
-
-  def test_cert_not_fresh_on_a_half_full_pair
-    refute FastLane.cert_fresh?(["[full-suite@abc1234] tests green"], "abc1234"),
-           "the full route needs BOTH full lanes; one alone must not skip the cert"
-  end
-
   # [unit] The push-retry decision for ship-handles-rebased-branch: a
   # non-fast-forward rejection (a rebased branch) earns a --force-with-lease
   # retry; every OTHER failure must NOT (never force over auth/network/foreign).
@@ -101,13 +79,6 @@ class FastLaneTest < Minitest::Test
            "a network failure is NOT a rebase"
     refute FastLane.push_rejected_non_fast_forward?("")
     refute FastLane.push_rejected_non_fast_forward?(nil)
-  end
-
-  def test_cert_not_fresh_without_evidence_or_fingerprint
-    refute FastLane.cert_fresh?([], "abc1234")
-    refute FastLane.cert_fresh?(["[unit] bin/rails test test/foo_test.rb"], "abc1234")
-    refute FastLane.cert_fresh?(["[fast-cert@abc1234] green"], nil),
-           "no fingerprint (unfingerprintable root) must never skip the cert"
   end
 
   # --- handoff_command: the line `bin/task begin` prints last -------------------

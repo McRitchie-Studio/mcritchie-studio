@@ -1,187 +1,105 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# bin/fast-check — the G1 FAST cert: run the tests the branch diff maps to plus
-# the curated core spine, and rubocop on the CHANGED files only, then record
-# fingerprint-bound "[fast-cert@<tree-hash>]" evidence on the task.
+# bin/fast-check — the OPTIONAL local pre-flight: run the tests the branch diff
+# maps to plus the curated core spine, and rubocop on the CHANGED files only, then
+# print the result.
 #
-# Why (the 90/10 rethink): GitHub CI already runs the FULL suite + test:system on
-# every PR push — so a ~6-minute local `bin/full-suite-check` before handoff
-# bought EARLINESS, not coverage. This is the earliness at ~1/6 the cost: catch
-# the obvious break in about a minute and let CI be the full net. bin/dor-check
-# accepts FRESH fast-cert evidence as the suite gate alongside a green GitHub CI
-# — and, submit-side, PROVISIONALLY while the open PR's CI is still pending (no
-# CI wait at submit; review's gate-zero enforces the settled green). Full-suite
-# evidence and the "[full-suite-bypass] <reason>" hatch keep working unchanged.
-# bin/full-suite-check itself is UNTOUCHED — it remains release verification and
-# the heavyweight cert.
+# IT WRITES NOTHING. No receipt lands on the task, no gate attempt opens, no
+# checkpoint fires. Since /tasks/dor-reads-settled-ci-verdict the one verdict per
+# tree is the PR's settled green GitHub CI, which bin/dor-check reads at the
+# submit seam and review's gate-zero reads again. This script buys EARLINESS —
+# catch the obvious break in about a minute, before the push and the ~10-minute
+# CI round-trip — and nothing else. A red pre-flight is information for the
+# builder, never a gate: bin/ship runs it at step 2, prints its verdict loudly,
+# and carries on to the PR whatever it said.
+#
+# Until DevOps v3 phase 2b (/tasks/retire-local-cert-evidence) this was the G1
+# fast CERT: it fingerprinted the tree, stamped a fast-cert receipt on
+# the task, opened and closed a g1_cert GateRun, and refused a wrong, dirty or
+# orphan-holding tree so the receipt could be trusted. The receipts were inert to
+# every reader by then (439 builder-side and 337 review-side DoR refusals came
+# from stale ones), so the machinery that produced them is gone with them.
 #
 # Test selection (bin/lib/fast_cert.rb, unit-tested there):
 #   mapped : each changed file → its test by path convention (app/models/x.rb →
 #            test/models/x_test.rb, views → their controller test, bin/tool →
-#            test/lib/tool_test.rb, a changed *_test.rb runs itself); a file with
-#            no existing convention target falls back to a grep across
-#            test/**/*_test.rb for the SUBJECT'S IDENTITY — a script's path and
-#            quoted command name, a config's path and quoted basename, an app
-#            class's full constant, any other .rb's camelized stem (not the bare
-#            basename as an English word; see FastCert#grep_tokens). A tool whose twin
-#            lives in test/lib/ also pulls its test FAMILY — the suffixed
-#            test/lib/<stem>_<aspect>_test.rb siblings that are nobody else's
-#            twin — because a tool's tests are a family, not a twin: bin/dor-check
-#            has fifteen, and until 2026-09-06 a diff touching it mapped to ONE.
-#            PAST THE CAP this lane does not vanish: it falls back to the
-#            CONVENTION TWINS (the pre-family set, 1-2 paths per changed file,
-#            no grep), so crossing the cap is a slope rather than a cliff. See
-#            FastCert#convention_twins.
-#   spine  : config/fast_cert_spine.yml — the always-run critical core (~10-20s),
-#            so a diff that maps to nothing still exercises the money paths.
-#            Mapped files already covered by a spine entry run only once.
-#            The list is anchored in the HUB and filtered to paths that exist
-#            under the code root, so a SATELLITE checkout (turf-monster, rolio)
-#            resolves NONE of it — there, the mapped lane is the only lane that
-#            can run a test, which is why the zero-evidence guard exists.
+#            test/lib/tool_test.rb, a changed *_test.rb runs itself), a tool's test
+#            FAMILY, and a grep for the subject's identity when nothing else maps.
+#            Past the CAP (FastCert.cap_decision) the lane falls back to the
+#            convention TWINS — 1-2 paths per changed file — or, when there are
+#            none, to the spine alone: crossing the cap is a slope, not a cliff.
+#   spine  : config/fast_cert_spine.yml — the always-run critical core (~10-20s).
+#            Anchored in the HUB and filtered to paths that exist under the code
+#            root, so a SATELLITE checkout (turf-monster, rolio, the gems) resolves
+#            none of it and the mapped lane is the only lane that can run a test.
 #   rubocop: the changed files rubocop can lint (never the whole repo).
 #
 # Lanes run from the repo root (the agent's worktree via RepoRoot, so a satellite
-# task certifies the satellite). When a task slug is given and the root resolved
-# implicitly from the cwd, the task-root guard (bin/lib/cert_root_guard.rb) first
-# verifies that root IS the task's tree — its branch or its .worktrees dir — and
-# REFUSES otherwise, so a run from the wrong checkout can't green-certify an
-# unrelated tree. An explicit FAST_CHECK_ROOT bypasses the guard (deliberate root):
-#   test-prepare    : bin/rails db:test:prepare test:prepare  (abort on red — no
-#                     polluted cert). BOTH tasks, in one boot: the test DB, and Rails'
-#                     test:prepare hook, which is what builds the gitignored
-#                     app/assets/builds/tailwind.css. The lanes below pass explicit test
-#                     PATHS, and Rails skips its own test:prepare whenever an argument
-#                     looks like a path — so on a virgin worktree nothing would ever
-#                     build the CSS and every view-rendering test would error with `The
-#                     asset "tailwind.css" is not present in the asset pipeline`. (A run
-#                     that INVOKES `test:prepare`, or that names a rake TEST TASK whose
-#                     spawned `rails <task>` carries no path and no `-n`, gets the hook for
-#                     free — those are the two routes CI and bin/full-suite-check take, and
-#                     neither is an argless `bin/rails test`. THIS lane was the first to
-#                     break because it takes neither. The release
-#                     gate workspaces were the other path-arg victim; fixed by
-#                     gate-workspace-skips-test-prepare (PR #522): prepare_gate_workspace!
-#                     now runs db:test:prepare test:prepare itself, whatever shape the
-#                     registered command takes. See docs/agents/modules/testing.md.)
-#   mapped-tests    : bin/rails test <mapped files>      (skipped when none map;
-#                     runs the CONVENTION TWINS instead when the cap tripped, and is
-#                     skipped only when there are no twins either)
+# task pre-flights the satellite). Given a task slug and an implicit root, the
+# tree check (bin/lib/task_tree.rb) first verifies that root IS the task's tree
+# and aborts otherwise — a pre-flight of an unrelated tree tells the builder
+# nothing about their diff, and reads as green. FAST_CHECK_ROOT bypasses it.
+#   test-prepare    : bin/rails db:test:prepare test:prepare (abort on red). BOTH
+#                     tasks, in one boot: the test DB and Rails' test:prepare hook,
+#                     which builds the gitignored app/assets/builds/tailwind.css.
+#                     The lanes below pass explicit test PATHS, and Rails skips its
+#                     own test:prepare whenever an argument looks like a path.
+#   mapped-tests    : bin/rails test <mapped files>   (skipped when none map)
 #   spine           : bin/rails test <spine entries>
 #   rubocop-changed : bin/rubocop <changed lintable files> (skipped when none)
-# All lanes green → ONE evidence line is recorded on the task's checks_run:
-#   [fast-cert@<fp>] <summary of what ran>
-# The write is PURE EVIDENCE — this cert sends ONLY the line it owns, never a
-# snapshot of the author's lines. The write funnel (bin/task's build_devops +
-# Task#preserve_cert_evidence, rule in lib/cert_evidence.rb) merges it against
-# the board's CURRENT checks_run at write time: tier tags, bypass records, and
-# the other lanes' evidence are carried forward, and only a PRIOR fast-cert line
-# is superseded. This cert USED to resend a read-then-merged list instead, which
-# let a snapshot read before the lanes ran overwrite a tier line the builder had
-# recorded during the run — see the write block near the end of this file.
-# After the write the board is READ BACK and BOTH the recorded [fast-cert@<fp>]
-# evidence line AND every pre-existing line are checked present — so "recorded"
-# and "preserved" are verified claims, not declarations. A read-back that finds
-# the evidence line gone fails the cert (re-run it); a lost pre-existing line
-# fails it too (re-record).
-# A red lane records nothing and exits non-zero.
-#
-# G1 gate-run markers mirror bin/full-suite-check's: OPEN the task's g1_cert
-# attempt at start, append one executed-SOP entry per lane, CLOSE it --success on
-# the green path and --failed the moment the cert goes red. Cert OWNS the whole
-# g1_cert window now — dor-check no longer touches g1_cert (its DoR verdict is the
-# separate dor/dor_review gates). All emits are fire-and-forget (a board blip
-# never breaks a cert) and are SKIPPED under --print (a dry run must not write to
-# the durable record).
+# A REGISTRY-GATED repo (a gem, or an `apps` row declaring `release_check:` in
+# config/release_repos.yml — turf-vault) runs that declared command as its whole
+# lane instead: there is no diff-mapped subset of a gem's suite.
 #
 # Usage:
-#   bin/fast-check <task-slug>            # run all lanes; record evidence on the task
-#   bin/fast-check <task-slug> --print    # run + print the evidence line, don't record
-#   bin/fast-check --print                # standalone (no task), just print
-#   bin/fast-check [<task-slug>] --list   # print the selected test files and exit (no run)
+#   bin/fast-check <task-slug>            # run all lanes from the task's desk
+#   bin/fast-check                        # standalone, no task (no tree check)
+#   bin/fast-check [<task-slug>] --list   # print the selected test files, run nothing
 #
 # Test/CI seams (so the orchestration is exercisable without a real Rails run):
 #   FAST_CHECK_CHANGED_FILES       inject the changed-file list (newline/comma
 #                                  separated; empty string = no diff)
 #   FAST_CHECK_DIFF_BASE           committed-diff base (default: origin/release
 #                                  when present, else origin/main)
-#   FAST_CHECK_ROOT                repo dir to run + fingerprint in (default: the
-#                                  cwd's git toplevel, else this repo)
+#   FAST_CHECK_ROOT                repo dir to run in (default: the cwd's git
+#                                  toplevel, else this repo)
 #   FAST_CHECK_SPINE               spine config path (default: config/fast_cert_spine.yml)
-#   FAST_CHECK_SHAPES              shape taxonomy path (default: config/feature_shapes.yml)
 #   FAST_CHECK_MAPPED_CAP          max mapped test files before the lane falls back to
 #                                  the convention twins (default: 15, counted AFTER the
 #                                  spine dedupe; it caps the fallback too)
-#   FAST_CHECK_TEST_PREPARE_CMD    override the test-prepare lane — test DB + bundled
-#                                  assets (default: bin/rails db:test:prepare test:prepare)
+#   FAST_CHECK_TEST_PREPARE_CMD    override the test-prepare lane
 #   FAST_CHECK_SKIP_TEST_PREPARE   set to 1 only for non-Rails harness tests
 #   FAST_CHECK_TEST_CMD            test runner prefix (default: bin/rails test)
 #   FAST_CHECK_RUBOCOP_CMD         rubocop prefix (default: bin/rubocop)
 #   FAST_CHECK_LANE_TIMEOUT        per-lane ceiling in seconds (default: 900). Past it the
 #                                  lane is reported as a HUNG RUNNER, never as a red suite.
-#   FAST_CHECK_TASK_BIN            board CLI (default: bin/task; tests stub it)
-#   FAST_CHECK_GATE_BIN            gate CLI (default: bin/gate; tests stub it)
+#   FAST_CHECK_TASK_BIN            board CLI, read only for the tree check (default: bin/task)
 #
-# Exit code: 0 = all lanes green (evidence recorded/printed) OR no cert was owed
-# (the no-suite-owed waiver below: a `full_suite_gate: false` shape over a diff
-# OBSERVED to ship no behaviour — nothing runs and nothing is recorded), 1 = a lane failed,
-# no fingerprint, the evidence couldn't be recorded, or the diff maps to NO test
-# file with NO spine declared to fall back on (the zero-evidence guard below),
-# 2 = DEFERRED to GitHub CI, which now has TWO causes and one meaning — "no LOCAL
-# lane could certify this tree":
-#   * the mapped lane was CAPPED with no twin fallback to take, over an empty spine; or
-#   * this CHECKOUT resolves NONE of the spine entries the config declares — the
-#     satellite case. config/fast_cert_spine.yml is hub-anchored: measured 2026-09-07,
-#     the hub resolves 5/5 and turf-monster, rolio, turf-vault, studio-engine and
-#     solana-studio each resolve 0/5, so a docs-only diff that certifies green in the
-#     hub used to be REFUSED on a satellite for standing somewhere else.
-# Either way a fingerprint-bound receipt is recorded instead. 2 is NOT a
-# certification: it is falsy to every `system(...)` caller, and only bin/ship
-# reads it as "carry on to the PR" (bin/dor-check then requires a GREEN CI).
+# Exit code: 0 = every lane that ran is green (a diff that maps to nothing and a
+# checkout with no spine run no test lane, say so, and still exit 0 — CI is the
+# net); 1 = a lane failed, hung, or could not launch, or the run was refused
+# (wrong tree, a desk with no isolated test DB, a failed test-prepare).
 
 require "optparse"
-require "json"
 require "shellwords"
-require_relative "lib/full_suite_gate"
 require_relative "lib/fast_lane"
 require_relative "lib/repo_root"
 require_relative "lib/fast_cert"
-require_relative "lib/cert_emission"
-require_relative "lib/cert_root_guard"
+require_relative "lib/task_tree"
 require_relative "lib/desk_guard"
-require_relative "lib/cert_tree_guard"
-require_relative "lib/cert_orphan_guard"
-require_relative "lib/cert_process"
-require_relative "lib/shape_contract"
+require_relative "lib/release_registry"
+require_relative "lib/lane_runner"
 
-# ROOT = this script's OWN repo (the hub): CONFIG (the spine) and the board CLIs
-# anchor here. The CODE we run + fingerprint roots at the agent's worktree.
+# ROOT = this script's OWN repo (the hub): CONFIG (the spine) anchors here. The
+# CODE we run roots at the agent's worktree.
 ROOT = File.expand_path("..", __dir__)
 TASK_BIN = ENV.fetch("FAST_CHECK_TASK_BIN", File.expand_path("task", __dir__))
-# ── remedy forms of the scripts this cert NAMES in a refusal ──────────────────
-# Absolute and resolvable. bin/fast-check, bin/full-suite-check and bin/task all
-# live in mcritchie-studio/bin ALONE, so a builder on a turf-monster, rolio, or gem
-# desk reached THIS script through its absolute path and cannot resolve a bare
-# `bin/fast-check` — following the tool's own re-run hint died as `No such file or
-# directory`. Resolved from __dir__: the very fast-check that is speaking, and its
-# siblings beside it. Deliberately NOT TASK_BIN above — that is the EXEC seam and
-# is redirected to a stub under test, while a remedy names the real script the
-# reader is sent to. Policy: FastLane.remedy_command.
-SELF_CMD = FastLane.remedy_command("fast-check", __dir__)
-TASK_CMD = FastLane.remedy_command("task", __dir__)
-FULL_SUITE_CMD = FastLane.remedy_command("full-suite-check", __dir__)
-GATE_BIN = ENV.fetch("FAST_CHECK_GATE_BIN", File.expand_path("gate", __dir__))
 SPINE_CONFIG = ENV.fetch("FAST_CHECK_SPINE", File.join(ROOT, "config", "fast_cert_spine.yml"))
-# The shape taxonomy, anchored in the HUB exactly as the spine is — it is studio-owned
-# config, not a property of whatever checkout is being certified, which is the same rule
-# bin/dor-check states at its own CONFIG_PATH ("the shape taxonomy is studio-owned").
-SHAPES_CONFIG = ENV.fetch("FAST_CHECK_SHAPES", File.join(ROOT, "config", "feature_shapes.yml"))
 
-options = { print: false, list: false }
+options = { list: false }
 OptionParser.new do |o|
-  o.banner = "Usage: #{$PROGRAM_NAME} <task-slug> [--print] [--list]"
-  o.on("--print", "Print the evidence line instead of recording it on the task") { options[:print] = true }
+  o.banner = "Usage: #{$PROGRAM_NAME} [<task-slug>] [--list]"
   o.on("--list", "Print the selected test files (mapped + spine) and exit without running") { options[:list] = true }
   o.on("-h", "--help", "Show this help") do
     puts o
@@ -204,60 +122,31 @@ changed =
     FastCert.changed_files(root, diff_base)
   end
 
-# THE SAME DIFF, SEEN THE OTHER WAY — every path a CLASSIFIER must judge, which for a
-# rename is BOTH sides. `changed` above is the SELECTION view and is right to carry only
-# the destination (the old path has no test to run); the no-suite-owed waiver below asks
-# whether the diff ships behaviour, and there the deleted `bin/deploy.sh` half of
-# `R100 bin/deploy.sh docs/notes.md` IS the change. See FastCert.classifiable_paths and
-# the "BOTH SIDES OF A RENAME" block in bin/lib/code_diff.rb.
-#
-# An INJECTED file list (FAST_CHECK_CHANGED_FILES, the test/CI seam) carries no rename
-# information to recover, so it is its own classification view — the injector declared
-# the paths, and there is no second side to miss.
-classifiable = injected_changed ? changed : FastCert.classifiable_paths(root, diff_base)
-
 breakdown = FastCert.mapping(root, changed)
 mapped = breakdown.values.flatten.uniq.sort
 spine = FastCert.spine(root, SPINE_CONFIG)
-# WHAT THE CONFIG ASKED FOR, kept beside what the checkout RESOLVED. The gap between the
-# two is the only thing that can tell "this diff maps to nothing" (a fact about the code)
-# apart from "this checkout is not the hub" (a fact about where the builder is standing).
-# MEASURED 2026-09-07: the hub resolves 5/5 of these, every satellite 0/5.
+# WHAT THE CONFIG ASKED FOR, kept beside what the checkout RESOLVED: the gap is what
+# tells "this diff maps to nothing" (a fact about the code) apart from "this checkout
+# is not the hub" (a fact about where the builder is standing).
 declared_spine = FastCert.declared_spine(SPINE_CONFIG)
 mapped_only = mapped.reject { |t| FastCert.covered_by_spine?(t, spine) }
 lintable = FastCert.lintable_files(root, changed)
 
-# THE CAP'S FALLBACK, spine-deduped for the same reason the mapped set is: a twin the
-# spine already runs is not extra work, so it should neither be re-run nor counted
-# against the cap. Computed unconditionally (it is a cheap File.file? per changed
-# path) so --list and the run agree even when the cap does not trip.
-#
-# BOTH SIDES OF THE DEDUPE ARE KEPT, because the narration below has to tell apart two
-# empties that the deduped set alone cannot: "no changed file HAS a twin" is a fact
-# about the DIFF, while "every twin is already a spine entry" is a fact about the SPINE
-# — and the second was being reported to operators as the first. The decision itself is
-# asked once, of the module (FastCert.empty_fallback_cause).
+# THE CAP'S FALLBACK, spine-deduped for the same reason the mapped set is. Both sides
+# of the dedupe are kept so the narration can tell "no changed file HAS a twin" (a
+# fact about the diff) from "every twin is already a spine entry" (a fact about the
+# spine) — see FastCert.empty_fallback_cause.
 twins_all = FastCert.convention_twins(root, changed)
 spine_twins = twins_all.select { |t| FastCert.covered_by_spine?(t, spine) }
 twins_only = twins_all - spine_twins
 
 # THE CAP, decided before anything runs so --list reports the same lane the run
-# would execute. See FastCert.cap_decision for why it sits after the spine dedupe,
-# why the default is as low as it is, and why a capped lane falls back to the twins
-# rather than to nothing.
+# would execute. See FastCert.cap_decision.
 cap = FastCert.cap_decision(mapped_only, breakdown, twins: twins_only)
 
 # THE MARGIN'S NARRATION — one text, so --list and the run cannot disagree about a
-# cliff that has not happened yet. Built here rather than at each use for the reason
-# :fallback is computed once in FastCert.cap_decision: four readers of the capped
-# state already drifted apart once (PR #1239), and a warning that says something
-# different in the preview than in the run teaches the preview is decorative.
-#
-# WHAT THE LANE WOULD DO ONE PATH OVER IS ASKED, NOT RESTATED. The fallback rule —
-# twins, unless the twins are themselves over the cap — lives in cap_decision, so
-# this asks that function about a hypothetical set of cap+1 paths carrying THIS
-# diff's twins rather than re-deriving the same condition here. A second copy of the
-# rule is how a mutation to the first one survives.
+# cliff that has not happened yet. The fallback rule lives in cap_decision, so this
+# asks that function about a hypothetical cap+1 set rather than restating the rule.
 approaching_lines =
   if cap[:approaching]
     over = FastCert.cap_decision(Array.new(cap[:cap] + 1) { |i| "over-#{i}" }, breakdown,
@@ -269,15 +158,11 @@ approaching_lines =
     end
     lines << if over[:fallback].any?
                "  over the cap this lane falls back to the #{over[:fallback].size} convention " \
-                 "twin(s) of this diff — a NARROWER cert, not no cert."
+                 "twin(s) of this diff — a NARROWER pre-flight, not none."
              else
                "  this diff has NO convention twin to fall back to, so one path over the cap " \
-                 "the mapped lane runs ZERO tests and the cert rests on the spine alone."
+                 "the mapped lane runs ZERO tests and the pre-flight rests on the spine alone."
              end
-    # NO REPO-SPECIFIC EXAMPLE HERE, deliberately: this script certifies turf-monster
-    # and rolio desks too, and a hub constant quoted at a satellite builder is advice
-    # they cannot follow. The worked example lives in the hub's own config sweep
-    # (test/lib/fast_cert_subject_test.rb), where it is true.
     lines << "  what keeps it under: in new test prose cite the CONSTANT that names a path " \
              "rather than spelling the path — a spelling joins this set, a constant does not."
     lines
@@ -294,19 +179,15 @@ if options[:list]
   if cap[:capped]
     warn "fast-check: capped → falling back to the #{cap[:fallback].size} convention twin(s) " \
          "of #{cap[:fallback_considered]} considered"
-    # "0 considered" READS AS "no twin exists", and for a spine-covered diff that is
-    # false — the preview and the run have to agree about WHICH empty this is, or the
-    # preview quietly teaches the thing the run was just fixed for saying out loud.
     if cap[:fallback].empty? &&
        FastCert.empty_fallback_cause(cap, spine_covered_twins: spine_twins) == :spine_covered
       warn "fast-check: (#{spine_twins.size} twin(s) DO exist — the spine already runs them, " \
            "so they are listed below as spine, not missing)"
     end
   end
-  # ONE LINE PER PATH, labelled by what will actually happen to it. Listing the
-  # fallback separately printed every twin TWICE — once as `capped`, once as `twin`
-  # — which reads as "skipped, and also run". A preview that needs explaining is not
-  # a preview.
+  # ONE LINE PER PATH, labelled by what will actually happen to it. The fallback is
+  # always a subset of mapped_only (pinned in test/lib/fast_cert_family_test.rb), so
+  # this loop prints every twin exactly once.
   mapped_only.each do |t|
     label = if !cap[:capped] then "mapped"
             elsif cap[:fallback].include?(t) then "twin  "
@@ -314,29 +195,18 @@ if options[:list]
             end
     puts "#{label}  #{t}"
   end
-  # NO SECOND TWIN PASS. The loop above already prints every twin exactly once, because
-  # the fallback is always a SUBSET of mapped_only: FastCert#convention_twins is the
-  # union of exactly the `existing` sets #mapping unions into its own values, and both
-  # sides take the identical spine dedupe. A `(cap[:fallback] - mapped_only)` walk stood
-  # here and could only ever print nothing; the case its comment cited — a changed TEST
-  # file leaving its twin outside mapped_only — cannot occur, since a changed test
-  # file's convention candidate IS itself (#convention_candidates). Dead code is safe to
-  # delete only when something notices it stopping being dead, so the invariant is
-  # PINNED (test/lib/fast_cert_family_test.rb) rather than restated as an empty loop.
   spine.each { |t| puts "spine   #{t}" }
   lintable.each { |f| puts "lint    #{f}" }
   exit 0
 end
 
-# --- task-root guard -----------------------------------------------------------
-# The evidence stamps `root`'s fingerprint against the TASK — so when a slug is
-# given and the root was resolved IMPLICITLY (cwd, no FAST_CHECK_ROOT), the root
-# must BE the task's tree (its branch, or its .worktrees/<worktree_slug> dir).
-# Run from the wrong checkout — the hub primary on main, say — this used to
-# green-certify a tree the task never touched (fail-GREEN, live 2026-07-12).
-# Refuse BEFORE any lane runs or gate/checkpoint write. bin/lib/cert_root_guard.rb.
+# --- tree check ----------------------------------------------------------------
+# Given a slug and an IMPLICIT root (cwd, no FAST_CHECK_ROOT), the root must BE the
+# task's tree (its branch, or its .worktrees/<worktree_slug> desk). Run from the
+# wrong checkout — the hub primary on main, say — this would report on a tree the
+# task never touched, and a green over the wrong tree reads exactly like a green.
 if slug && ENV["FAST_CHECK_ROOT"].to_s.strip.empty?
-  wrong_root = CertRootGuard.refusal(task_bin: TASK_BIN, slug: slug, root: root)
+  wrong_root = TaskTree.refusal(task_bin: TASK_BIN, slug: slug, root: root)
   abort "fast-check: #{wrong_root}" if wrong_root
 end
 
@@ -344,783 +214,241 @@ end
 # Right root, but is it a WHOLE desk? A worktree with no isolated test DB runs its
 # suite against the SHARED base test database (config/database.yml falls back there
 # when TEST_DATABASE_URL is blank) — so it would pollute, and be polluted by, every
-# concurrent suite, and certify against a database that is not its own. Refuse before
-# any lane or gate write, and name it as the ENV issue it is. bin/lib/desk_guard.rb.
+# concurrent suite. Refuse before any lane, and name it as the ENV issue it is.
 half_built = DeskGuard.refusal(root)
 abort "fast-check: #{half_built}" if half_built
 
-# --- dirty-tree guard ----------------------------------------------------------
-# Same family as the root guard above, same fail-GREEN shape: the root guard stops
-# a cert of the wrong TREE, this one stops a cert of an UNCOMMITTED tree. The
-# fingerprint hashes the WORKING tree (git add -A + write-tree), so certifying with
-# edits still uncommitted stamps GREEN evidence over code the PR never receives —
-# live on 2026-07-14, when a worktree's 146 lines of certified work never reached
-# PR #537. Certify AFTER the final commit; this makes that a rule, not a memory.
-# Same gating as the root guard: only with a slug (no slug → --print/hook, nothing
-# is recorded, nothing to protect) and only on an IMPLICIT root (an explicit
-# FAST_CHECK_ROOT is the deliberate CI/test seam). The index is refreshed before it
-# is read, so a stat-stale tree cannot false-refuse. bin/lib/cert_tree_guard.rb.
-if slug && ENV["FAST_CHECK_ROOT"].to_s.strip.empty?
-  dirty = CertTreeGuard.refusal(command: "bin/fast-check", root: root)
-  abort "fast-check: #{dirty}" if dirty
-end
+# --- lane plumbing -------------------------------------------------------------
 
-# --- lane plumbing (mirrors bin/full-suite-check) ------------------------------
+# WHICH REPO THIS CHECKOUT IS, resolved from the tree itself. Every lane decision
+# below depends on it: which test command to run, whether a test DB exists to
+# prepare, and whether a lint lane is owed at all.
+repo = TaskTree.repo_of_checkout(root)
 
-# WHICH REPO THIS CHECKOUT IS. Resolved from `root` — the tree itself — and hoisted
-# here because every lane decision below depends on it: which test command to run,
-# whether a test DB exists to prepare, and whether a lint lane is owed at all. It was
-# already resolved at the bottom of this script for the evidence line; a gem repo
-# proved that was far too late.
-cert_repo = CertRootGuard.repo_of_checkout(root)
-
-# A GEM REPO HAS NO bin/rails AND NO bin/rubocop. studio-engine is the case: the
-# defaults below are Rails-app assumptions, and against a gem all three lanes died on
-# an unrescued Errno::ENOENT before this script reached a single test. That is why
-# `bin/full-suite-check` learned to read the registry (release_check + the gems
-# section); this is the same fix on the path builders ACTUALLY run.
-#
-# THERE IS NO DIFF-MAPPED SHORTCUT FOR A GEM, and pretending otherwise would be the
-# dishonest version of this fix. fast-check's speed comes from mapping a diff onto a
-# subset of a Rails suite; a gem's registry command is its whole gate. So a gem repo
-# runs that gate, and the narration SAYS it is running the full thing rather than
-# implying a subset was chosen. It is fast enough to be the builder default:
-# studio-engine's bin/release-check covers 100 files / 1456 runs.
-registry_test_cmd = FullSuiteGate.release_check_cmd(cert_repo)
-# KEYED ON THE DECLARATION, NOT THE SECTION (changed 2026-09-14). This branch used
-# to ask `gem_repo?`, which meant an `apps` row could never reach it however
-# completely it declared its lane — so turf-vault, an Anchor repo with real CI lanes
-# of its own, had no local cert at all and every reader was routed to a task to decide
-# it. `registry_gated?` is the same rule stated over the DECLARED COMMAND, and it
-# is behaviour-identical for both gems (each declares one).
-registry_gate = FullSuiteGate.registry_gated?(cert_repo)
-
-# NO LINT-WAIVER BRANCH HERE, deliberately. bin/full-suite-check needs one because it
-# runs a rubocop lane for every repo; this script does not reach that question for
-# any repo that declares `lint_lane: none` — studio-engine, solana-studio (added
-# 2026-08-31) and turf-vault (2026-09-14). All three take the registry-gate branch
-# below, which omits the rubocop lane before a waiver could be consulted, so a waiver
-# check on THIS path would be code no repo can currently execute. The two facts are
-# independent even so, and turf-vault is why: bin/full-suite-check runs a lint lane
-# for every repo and reads the declaration, so without `lint_lane: none` its declared
-# gate went green and the cert still died on `bin/rubocop` one lane later.
-#
-# It was written, and removed after a mutation proved the point: flipping
-# FullSuiteGate.lint_waived? to false changed nothing observable, because the gem
-# branch had already decided. If a NON-gem repo ever declares lint_lane: none, add the
-# branch then, with a test that can actually redden. (The set of declaring repos is
-# asserted in test/lib/cert_lint_lane_waiver_test.rb, so growing it past the gems
-# section reddens there rather than silently invalidating this paragraph.)
+# A GEM REPO HAS NO bin/rails AND NO bin/rubocop; turf-vault is Anchor/Rust. Their
+# registry rows declare the command that IS their suite, and this script runs that
+# as the whole lane — narrated as the whole thing, never as a chosen subset.
+registry_test_cmd = ReleaseRegistry.release_check_cmd(repo)
+registry_gate = ReleaseRegistry.registry_gated?(repo)
 
 test_cmd = ENV.fetch("FAST_CHECK_TEST_CMD") { registry_test_cmd || "bin/rails test" }
 rubocop_cmd = ENV.fetch("FAST_CHECK_RUBOCOP_CMD", "bin/rubocop")
-# The prepare lane is db:test:prepare AND test:prepare, in one boot. test:prepare is
-# Rails' standard pre-test hook, which tailwindcss-rails enhances with tailwindcss:build
-# (cssbundling/jsbundling enhance it the same way) — it is what BUILDS the gitignored
-# app/assets/builds/tailwind.css. TWO routes reach that task, and CI and
-# bin/full-suite-check are green on a virgin tree because they take them: a caller either
-# INVOKES `test:prepare` itself (CI's Rails shards, inside bin/ci-shard; the release gate
-# workspaces since gate-workspace-skips-test-prepare, PR #522), or it names a rake TEST
-# TASK whose spawned `rails <task>` carries no path and no `-n` (CI's system job;
-# bin/full-suite-check's rake-routed line). No CI invocation is an argless `bin/rails
-# test` — see docs/agents/modules/testing.md — but THIS cert's lanes pass explicit test paths, and
-# Rails::Command::TestCommand
-# runs the hook only `if self.args.none?(EXACT_TEST_ARGUMENT_PATTERN)`, so a path argument
-# SKIPS it. db:test:prepare alone does not build the CSS either (tailwindcss enhances it
-# only as a fallback, when test:prepare is undefined — it never is). Without this, every
-# view-rendering test in a fresh worktree errored `The asset "tailwind.css" is not present
-# in the asset pipeline`: a RED G1 cert on a docs-only or ci.yml-only diff. A cert that
-# reports an ENV GAP as a test regression is lying — so the cert closes the gap itself.
 test_prepare_cmd = ENV.fetch("FAST_CHECK_TEST_PREPARE_CMD", "bin/rails db:test:prepare test:prepare")
-# A REPO THAT DECLARES ITS OWN GATE HAS NO RAILS TEST DATABASE TO PREPARE, so this
-# lane does not APPLY to it — it is not "skipped" in the opt-out sense. True of a
-# gem (no bin/rails at all) and equally of turf-vault (Anchor/Rust). Declared from
-# the registry, never inferred from whether bin/rails happens to exist: a skip
-# inferred from a missing binary turns every broken install into a silent pass.
+# A repo that declares its own gate has no Rails test database to prepare, so the
+# lane does not APPLY to it. Declared from the registry, never inferred from whether
+# bin/rails happens to exist: a skip inferred from a missing binary turns every
+# broken install into a silent pass.
 skip_test_prepare = ENV.fetch("FAST_CHECK_SKIP_TEST_PREPARE", "") == "1" || registry_gate
 
-# --- the zero-evidence guard ---------------------------------------------------
-# A CERT THAT EXECUTES NO TESTS MUST NOT REPORT GREEN. The cap can skip the mapped
-# lane and the spine can resolve to nothing in the same run — on turf-monster PR
-# #549 it did, and this script printed "fast cert green" over a run whose only
-# executed lane was rubocop. That still never certifies.
-#
-# WHAT CHANGED IS WHERE THE EVIDENCE COMES FROM, not whether it is demanded. The
-# guard has two verdicts (FastCert.zero_test_outcome) and the DEFERRAL now has two
-# doors. A diff that maps to NO test with NO spine declared REFUSES exactly as
-# before — nothing is configured to run and nothing mapped, which is worth stopping
-# for. A CAPPED diff (it mapped to MORE tests than the cap, every one of which runs
-# on CI) DEFERS, and so does a diff whose checkout resolves NONE of the spine
-# entries the config DECLARES — the satellite case, where the reason nothing runs is
-# the checkout rather than the code, and where CI runs that repo's whole suite on
-# this exact tree. Both record a fingerprint-bound "[cert-deferred@<fp>]" receipt
-# and exit 2, so ship can push
-# and open the PR and bin/dor-check can demand the GREEN CI at step 7. The refusal
-# moved from step 2 of 8 (no PR, no CI, ~30 minutes of local suite as the only
-# remedy) to step 7 (the PR open, CI settled, the verdict on real evidence).
-#
-# DECIDED HERE, BEFORE ANY LANE, because it is a precondition on the SELECTION —
-# the same shape as the root, desk, and dirty-tree guards above, which all abort
-# before the g1_cert attempt is opened. Nothing is recorded and no attempt is
-# stamped: a G1 attempt that ran no lane would report a testing window measuring
-# nothing. Deciding it first also costs the builder ~0s instead of a
-# db:test:prepare they are going to have to redo under another command anyway.
-#
-# NOT FOR A REGISTRY-GATED REPO. Its declared command IS its suite and runs as the
-# mapped lane, so it never has an empty mapped lane to refuse — reading `mapped_only`
-# for one would refuse the repo that runs the MOST. This is also the guard that used
-# to DEFER every turf-vault run before any lane could execute: a satellite checkout
-# resolves none of the hub-anchored spine, so a diff mapping to no test exited here
-# with a `[cert-deferred]` receipt. With a lane declared there is a suite to run, so
-# turf-vault now certifies instead of deferring.
-unless registry_gate
-  # THE REMEDY IS RESOLVED ONCE, HERE, and handed to whichever verdict fires — because the
-  # builder reading either one asks the same question, and a remedy stated twice is a remedy
-  # that drifts. bin/full-suite-check lives ONLY in the hub (measured 2026-09-07: absent from
-  # turf-monster, rolio, turf-vault, studio-engine and solana-studio), so a satellite is given
-  # the hub's ABSOLUTE path rather than a relative one its checkout cannot resolve.
-  cert_remedy = FastCert.remedy(slug || "<task>", root: root, hub_root: ROOT)
-  zero = FastCert.zero_test_outcome(mapped_only, spine, cap, slug: slug,
-                                    declared_spine: declared_spine,
-                                    remedy: cert_remedy)
-
-  # --- was a suite OWED at all? (bin/lib/shape_contract.rb) ----------------------
-  # A PRIOR QUESTION, not a softer answer. Everything the guard above says is still
-  # true and still enforced for every diff that ships behaviour: a run that executes
-  # zero tests certifies nothing, and rubocop is not evidence. What it never asked is
-  # whether this task's SHAPE owed a suite in the first place — and for `docs` the
-  # config answers "no" in its own words (`dor_tiers: []`, `full_suite_gate: false`,
-  # "a doc change certifies by REVIEW, not a test lane"). bin/dor-check has honoured
-  # that declaration for months (it gates its whole suite-evidence block on
-  # `full_suite_gate`); this script did not, so a ONE-FILE MARKDOWN diff in a
-  # satellite checkout — where the hub-anchored spine resolves nothing — was refused
-  # here and sent to bin/full-suite-check, buying a ~31-minute suite run over 316
-  # lines of prose that cannot reach a test (/tasks/fast-check-ignores-docs-shape,
-  # measured 2026-09-07 on /tasks/wallet-transport-architecture-doc).
-  #
-  # THE WAIVER NEEDS BOTH HALVES — the shape's DECLARATION and an OBSERVATION of the
-  # diff — and the observation is what keeps it from being the third instance of this
-  # repo's oldest bug (a `kind` label, then a `docs/` directory, then a `docs` SHAPE,
-  # each a claim ABOUT a change standing in for evidence OF it). Read the module for
-  # the case split; the short version is that a diff carrying one .rb never reaches
-  # the waiver, whatever it is shaped.
-  #
-  # IT INTERCEPTS BOTH VERDICTS, refuse and defer. A capped mapped lane over a
-  # doc-only diff should not be reachable (prose maps to nothing, so the cap cannot
-  # trip), but if the selection ever produced one, "no suite was owed" is the true
-  # answer to it too — deferring to CI for evidence nobody will ask for would just be
-  # the old detour with a receipt attached.
-  #
-  # THE BOARD READ IS LAZY, and deliberately inside this branch: the shape only
-  # matters when the guard is about to fire, so the ordinary green cert pays no extra
-  # `bin/task show` round-trip. It is best-effort in the fail-closed direction — an
-  # unreachable board, an unknown shape, or an unreadable config all leave
-  # ShapeContract#suite_owed? at TRUE and the refusal below stands.
-  if zero
-    waived_shape = slug ? CertRootGuard.task_devops(TASK_BIN, slug)["shape"] : nil
-    waiver = ShapeContract.cert_waiver(
-      shape: waived_shape,
-      shape_def: ShapeContract.definition(SHAPES_CONFIG, waived_shape),
-      changed: classifiable
-    )
-    if waiver
-      # NOTHING IS RECORDED, and that is the honest shape of this outcome rather than an
-      # omission. The deferral below writes a receipt because bin/dor-check REQUIRES one
-      # — it is the thing that says CI is now the only evidence. This waiver has no such
-      # consumer: dor-check reaches the same conclusion from the same config key at the
-      # verdict, freshly, so a receipt would be a line nothing grades. It would also cost
-      # more than it looks: a new evidence lane is unknown to the DEPLOYED board's
-      # CertEvidence.lane_of, which keys the machine-owned namespace on lane MEMBERSHIP —
-      # so until the board shipped, a pure-evidence write on an unrecognized lane would
-      # classify as an AUTHOR write and replace the author namespace with just that line
-      # (the footgun documented in lib/cert_evidence.rb#preserve). No G1 attempt is
-      # stamped either, for the same reason the refusal stamps none: a testing window
-      # that measured nothing should not be drawn on the board as one that did.
-      warn "fast-check: #{waiver[:message]}"
-      exit 0
-    end
-  end
-
-  abort "fast-check: #{zero[:message]}" if zero && zero[:kind] == :refuse
-
-  if zero && zero[:kind] == :defer
-    # THE DEFERRAL, and the reason it is decided HERE rather than in bin/ship: this is the
-    # only place that knows WHY no lane will run, and the receipt has to be bound to the
-    # tree that fact is true of. Ship owns the POLICY (carry on to the PR); this owns the
-    # DETECTION and the RECORD. See FastCert.zero_test_outcome for the case split.
-    warn "fast-check: #{zero[:message]}"
-
-    defer_fp = FullSuiteGate.fingerprint(root)
-    if defer_fp.nil?
-      # No fingerprint, no receipt — and a receipt is the ONLY thing that makes a deferral
-      # different from a shrug. Refuse rather than defer into nothing.
-      abort "fast-check: could not fingerprint the code at #{root} (no git repo / identity?), so the " \
-            "deferral cannot be recorded and dor-check would refuse it. Certify locally instead: " \
-            "#{cert_remedy}"
-    end
-
-    defer_line = FullSuiteGate.evidence_line(FullSuiteGate::DEFER_LANE, defer_fp, zero[:detail],
-                                             repo: cert_repo)
-    puts defer_line
-
-    if options[:print] || slug.nil?
-      warn "fast-check: DEFERRED at #{defer_fp[0, 12]}." \
-           "#{slug.nil? ? ' (no task slug — receipt printed, not recorded)' : ' (--print: not recorded)'}"
-      exit FastCert::DEFERRED_EXIT
-    end
-
-    # RECORD IT OR REFUSE. An unrecorded deferral is strictly worse than a refusal: ship
-    # would push, open the PR, wait out the CI, and dor-check would then refuse for want of
-    # the receipt — the same 30 minutes back, spent later and less legibly. Same
-    # baseline-then-read-back discipline the green path uses, for the same reason: a write
-    # this gate cannot VERIFY is a write it must not rely on.
-    defer_existing = CertEmission.fetch_checks(TASK_BIN, slug)
-    if defer_existing.nil?
-      abort "fast-check: DEFERRED, but #{slug.inspect}'s checks_run could not be read (bin/task show), so " \
-            "the receipt cannot be written or verified. Re-run #{SELF_CMD} #{slug}."
-    end
-    unless system(TASK_BIN, "update", slug, "--checks", defer_line)
-      abort "fast-check: DEFERRED, but FAILED to record the receipt on #{slug.inspect} (bin/task update). " \
-            "Re-run #{SELF_CMD} #{slug}."
-    end
-    defer_kept = defer_existing.reject { |prior| prior.match?(FullSuiteGate.evidence_re([FullSuiteGate::DEFER_LANE])) }
-    defer_missing = CertEmission.missing_after_write(TASK_BIN, slug, [defer_line] + defer_kept)
-    if defer_missing.nil?
-      # The write returned 200; only the confirming READ failed. Say so — the deferral IS
-      # recorded as far as anything here can tell, and dor-check reads the board itself.
-      warn "fast-check: DEFERRED at #{defer_fp[0, 12]} — receipt written to #{slug}, but the read-back " \
-           "FAILED (UNVERIFIED). Check with #{TASK_CMD} show #{slug} -v; if it is absent, re-run #{SELF_CMD} #{slug}."
-    elsif defer_missing.any?
-      abort "fast-check: DEFERRED, but the read-back is MISSING #{defer_missing.size} checks line(s) — the " \
-            "receipt did not land, and dor-check will refuse without it:\n  #{defer_missing.join("\n  ")}\n" \
-            "Re-run #{SELF_CMD} #{slug}."
-    else
-      warn "fast-check: DEFERRED at #{defer_fp[0, 12]} — receipt recorded on #{slug} (read-back confirms). " \
-           "GitHub CI is now the ONLY evidence for this diff, and dor-check requires it GREEN."
-    end
-    exit FastCert::DEFERRED_EXIT
-  end
-end
-
 # --- the lane ceiling -----------------------------------------------------------
-# NO LANE MAY RUN FOREVER. Measured 2026-08-21: a turf-monster mapped-tests lane sat
-# 41 minutes at 0.0% CPU (its forked test workers had SIGSEGVed at the fork and the
-# runner was parked on the DRb channel waiting for them), and this cert then printed
-# "lane(s) RED: mapped-tests". That verdict is a LIE about the cause — no test ever
-# ran — and every agent who read it retried into the same wall, burning a whole
-# harness budget per attempt. The ceiling is the fix; naming the RUNNER instead of
-# the tests is the point of it.
-#
-# CALIBRATED ON THE SLOW SIDE, deliberately, because this box is not the CI box.
-# MEASURED normal case for a fast-check lane: the cert's own header budgets ~1 MINUTE
-# for ALL lanes together; the widest single lane observed is the spine at ~10-20s, and
-# a full turf-monster suite — far more than any fast lane runs — takes 93s serially
-# (2423 runs, measured 2026-08-22 on this hardware). 900s is therefore ~10x the
-# slowest legitimate lane and ~15x the whole cert: a lane that reaches it is not slow,
-# it is stuck. Retune with the measurement in hand, and update this paragraph when you
-# do — a ceiling with no recorded normal case is a number nobody can safely change.
+# NO LANE MAY RUN FOREVER. Measured 2026-08-21: a mapped-tests lane sat 41 minutes at
+# 0.0% CPU (its forked workers had SIGSEGVed at the fork and the runner was parked on
+# the DRb channel), and the verdict then printed "lane(s) RED". Naming the RUNNER
+# instead of the tests is the point of the ceiling. 900s is ~10x the slowest
+# legitimate lane on this hardware (a full turf-monster suite is 93s serially).
 LANE_TIMEOUT = Integer(ENV.fetch("FAST_CHECK_LANE_TIMEOUT", "900"), exception: false) || 900
 
-# Best-effort G1 gate-run markers + cert checkpoint + checks_run read: shared
-# with bin/full-suite-check (CertEmission), parameterized on this script's
-# TASK_BIN/GATE_BIN seams. Skipped when there's no task slug (--print).
-def emit_gate(slug, *args)
-  CertEmission.emit_gate(GATE_BIN, slug, *args)
-end
-
-def emit_cert_checkpoint(slug, status)
-  CertEmission.emit_cert_checkpoint(TASK_BIN, slug, status)
-end
-
-# The lane runs in its OWN process group (CertProcess), so a signal aimed at this
-# cert reaps the SUITE too. A bare `system` left `bin/rails test` running with PPID
-# 1 when the harness's 120s timeout killed the cert — holding the worktree test DB
-# and failing every retry with PG::ObjectInUse. See bin/lib/cert_process.rb.
-# Returns a CertProcess::Result, not a bare boolean, so a TIMEOUT can be told apart
-# from a red suite downstream. `.ok` is false either way — a hung lane can never
-# certify, whatever the caller forgets to check.
-def run_lane(label, cmd, root, env: {}, gate_slug: nil, timeout: LANE_TIMEOUT)
+# The lane runs in its OWN process group (LaneRunner), so a signal aimed at this
+# pre-flight reaps the SUITE too. Returns a LaneRunner::Result, not a bare boolean,
+# so a TIMEOUT and an UNLAUNCHABLE command can be told apart from a red suite.
+def run_lane(label, cmd, root, env: {}, timeout: LANE_TIMEOUT)
   warn "== #{label}: #{cmd} =="
   started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-  # Announce the lane BEFORE it runs, then beat while it runs, so the board can
-  # name what a building task is inside and tell a live cert from a killed one.
-  # The beat is stopped in the ensure below, ORDERED against the terminal row: a
-  # leaked beat would keep a dead cert looking alive, and a beat still in flight
-  # when the verdict lands would repaint `running` OVER it.
-  CertEmission.emit_gate_sop_running(GATE_BIN, gate_slug, label, cmd) if gate_slug
-  beat = (CertEmission.heartbeat_thread(GATE_BIN, gate_slug, label, cmd) if gate_slug)
-  # What a CATCHABLE death owes the board. CertProcess reaps the suite and then
-  # `exit!`s — which skips every ensure below, this cert's gate close included —
-  # so the closure IS the close on that path. It runs inside a trap handler:
-  # stop_now, never stop, because Mutex#synchronize raises in trap context.
-  on_signal = (lambda do |sig|
-    beat&.stop_now
-    CertEmission.emit_interrupt_close(
-      GATE_BIN, gate_slug, label, cmd, sig,
-      ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
-    )
-  end if gate_slug)
-  begin
-    result = CertProcess.run_bounded(env, cmd, chdir: root, root: root, lane: label,
-                                     timeout: timeout, on_signal: on_signal)
-  ensure
-    CertEmission.stop_heartbeat(beat)
-  end
-  duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
-  elapsed = format("%.1fs", duration_ms / 1000.0)
+  result = LaneRunner.run(env, cmd, chdir: root, timeout: timeout)
+  elapsed = format("%.1fs", Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
   if result.timeout?
     warn "   #{label}: TIMED OUT after #{elapsed} — the RUNNER never produced a verdict"
   elsif result.unlaunchable?
-    # NOT a verdict on the diff: nothing ran. bin/full-suite-check already words this
-    # correctly and this script did not — so the path builders ACTUALLY run reported a
-    # missing command as "FAIL", sending them to hunt a bug in code that never
-    # executed. Reachable for real now that a registry row can name a gate command a
-    # given checkout does not carry.
     warn "   #{label}: COULD NOT RUN — #{result.detail}"
-    warn "   Nothing was certified by this lane. The command is the problem, not your diff."
+    warn "   Nothing ran in this lane. The command is the problem, not your diff."
   else
     warn(result.ok ? "   #{label}: PASS (#{elapsed})" : "   #{label}: FAIL")
   end
-  CertEmission.emit_gate_sop(GATE_BIN, gate_slug, label, cmd, result.ok, duration_ms) if gate_slug
   result
 end
 
-# A lane with nothing to run passes vacuously — recorded on G1 as a pass with a
-# "nothing to run" cmd so the attempt shows the lane was CONSIDERED, not lost.
-def skip_lane(label, why, gate_slug: nil)
+def skip_lane(label, why)
   warn "== #{label}: skipped (#{why}) =="
-  CertEmission.emit_gate_sop(GATE_BIN, gate_slug, label, "skipped: #{why}", true, 0) if gate_slug
-  CertProcess::Result.new(ok: true, outcome: :skipped)
-end
-
-
-# --- orphan guard ----------------------------------------------------------------
-# A cert that outran its harness timeout leaves a `bin/rails test` orphan holding the
-# worktree test DB; the retry then dies in test-prepare with PG::ObjectInUse and
-# blames "an ENV gap", so the agent retries into the same wall (live 2026-07-13:
-# three attempts, 35 minutes, zero progress). Prevention (the process-group reap
-# above) cannot cover a SIGKILL, so before ANY lane runs we read the runlock a
-# previous cert left: reap what is provably our own orphan, REFUSE a live concurrent
-# cert or a test DB somebody else is holding, and NAME whatever we find. Fail closed
-# and loud beats a blind retry. bin/lib/cert_orphan_guard.rb.
-unless ENV["FAST_CHECK_SKIP_ORPHAN_GUARD"] == "1"
-  verdict, payload = CertOrphanGuard.preflight(root: root)
-  abort "fast-check: #{payload}" if verdict == :refuse
-
-  Array(payload).each { |notice| warn "fast-check: #{notice}" }
+  LaneRunner::Result.new(ok: true, outcome: :skipped)
 end
 
 # --- run ------------------------------------------------------------------------
 
 overall_started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-gate_slug = options[:print] ? nil : slug
-emit_cert_checkpoint(slug, "started") unless options[:print]
-emit_gate(gate_slug, "open", "task", gate_slug.to_s, "g1_cert") if gate_slug
-
-# THE ATTEMPT MUST NOT SURVIVE THIS PROCESS. Every deliberate exit below closes the
-# g1_cert attempt; an UNRESCUED exception closed nothing and left it OPEN.
-#
-# WHAT THAT ACTUALLY COSTS — the first version of this comment overstated it, claiming
-# no later run cleans the attempt up. GateRun.open! (app/models/gate_run.rb:96-105)
-# RETURNS an existing in-flight attempt rather than creating a second, so the next
-# cert adopts and closes it. The real damage is subtler: stamp_g1_testing_window fires
-# on CREATE only, so the adopted attempt keeps its original started_at and reports an
-# inflated duration — and until that next cert runs, the card reads STALLED.
-#
-# THE FLAG IS SET BEFORE EACH CLOSE, NOT AFTER, and the ordering is load-bearing.
-# emit_gate shells out to bin/gate, and the tail of a cert is exactly when an operator
-# reaches for Ctrl-C. With the flag set afterwards, a SIGINT arriving while that
-# subprocess ran raised Interrupt with the flag still false, so this block fired a
-# SECOND close — and that close is NOT idempotent: GateRun.close! finds no in-flight
-# attempt, calls open!, creates attempt n+1, and latest_by_key takes the last. A
-# spurious --failed row then becomes the G1 verdict over a cert that PASSED. The
-# window is the whole duration of the closing subprocess, and it sits outside every
-# lane, so CertProcess installs no trap across it.
-#
-# Nothing is lost by setting the flag first: emit_gate is already fire-and-forget and
-# rescues StandardError, so if the gate CLI were down, the at_exit retry would only
-# reach the same down CLI.
-#
-# KNOWN LIMIT, stated rather than papered over: CertProcess reaps a runaway suite with
-# `exit!`, which skips at_exit entirely. That path is covered by run_lane's on_signal
-# handler instead, and this backstop cannot help there.
-g1_settled = false
-at_exit do
-  next if g1_settled || gate_slug.nil?
-
-  emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed")
-  warn "fast-check: closed an unsettled g1_cert attempt on the way out " \
-       "(the run died before reaching a verdict)"
-end
 
 unless skip_test_prepare
-  prepare_res = run_lane("test-prepare", test_prepare_cmd, root, env: { "RAILS_ENV" => "test" },
-                         gate_slug: gate_slug)
+  prepare_res = run_lane("test-prepare", test_prepare_cmd, root, env: { "RAILS_ENV" => "test" })
   if prepare_res.timeout?
-    # A wedged db:test:prepare is the same disease one lane earlier, and the stock
-    # message below would misfile it as "an ENV gap you can fix" — it is a hung runner.
-    CertProcess.timeout_report({ "test-prepare" => prepare_res }, ceiling: LANE_TIMEOUT,
-                               tool: "fast-check", env_var: "FAST_CHECK_LANE_TIMEOUT").each { |l| warn l }
-      g1_settled = true
-  emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
+    LaneRunner.timeout_report({ "test-prepare" => prepare_res }, ceiling: LANE_TIMEOUT,
+                              tool: "fast-check", env_var: "FAST_CHECK_LANE_TIMEOUT").each { |l| warn l }
     exit 1
   end
   unless prepare_res.ok
     if prepare_res.unlaunchable?
-      # A COMMAND THAT IS NOT THERE IS NOT AN ENV GAP, and the sentence below is
-      # the wrong errand for it. Measured 2026-08-29 shipping a turf-vault task:
-      # the repo is Anchor/Rust and has no bin/rails, so this lane could not
-      # launch, and the reader was told to go fix a test database that this repo
-      # will never have. "Fix it and re-run" is advice with no fix behind it.
-      #
-      # REFUSING, NOT SKIPPING, and that is the deliberate half. Skipping the
-      # prepare lane for any repo that happens to lack bin/rails would hand back
-      # a GREEN cert for a repo whose tests never ran — silently certifying the
-      # untested, which is worse than refusing to certify at all. A repo whose
-      # cert lane is not Rails has to DECLARE one: a `release_check:` on its row
-      # in config/release_repos.yml, which FullSuiteGate.registry_gated? reads to
-      # run that command as the whole lane and skip this one.
-      #
-      # THE REMEDY IS NAMED, NOT DELEGATED (2026-09-14). This sentence used to end
-      # by routing the reader to a task slug and calling that task the holder of
-      # the decision. That task had shipped turf-vault's first CI WORKFLOW and been
-      # ARCHIVED, so the one moment this pointer was load-bearing — a builder
-      # stopped mid-cert, reading this line on screen — sent them to a terminal
-      # task nobody held. Never route a live refusal at a task slug: a task's state
-      # is board data that this string cannot track. Name the mechanism instead,
-      # which is a file in the reader's own checkout and is always current.
-      # Guarded by test/docs/archived_task_ownership_guard_test.rb.
+      # A COMMAND THAT IS NOT THERE IS NOT AN ENV GAP. This checkout has no such
+      # runner, so there was never a test database to prepare. A repo whose lane is
+      # not Rails DECLARES one: a `release_check:` on its row in
+      # config/release_repos.yml (turf-vault's row is the worked example). Refusing
+      # rather than skipping: a skipped prepare lane reports green on a repo whose
+      # tests never ran.
       warn "fast-check: the test-env prepare command COULD NOT RUN — #{prepare_res.detail}. " \
-           "NOTHING was certified, and this is NOT a diff problem and NOT an env gap you can fix: " \
-           "this checkout (#{root}) has no such runner, so there was never a test database to prepare. " \
-           "If this repo's cert lane is not Rails, DECLARE one: add a `release_check:` to its row in " \
-           "config/release_repos.yml naming the command that IS its suite (`&&`-chain it if the repo " \
-           "ships no single gate script), and this script will run that as the whole lane instead. " \
-           "config/release_repos.yml's turf-vault row is a worked example. " \
-           "Refusing rather than skipping: a skipped prepare lane certifies a repo whose tests never ran."
+           "NOTHING ran, and this is NOT a diff problem: this checkout (#{root}) has no such runner. " \
+           "If this repo's test lane is not Rails, DECLARE one: add a `release_check:` to its row in " \
+           "config/release_repos.yml naming the command that IS its suite, and this script will run " \
+           "that as the whole lane instead."
     else
       warn "fast-check: test-env prepare failed — see the output above. USUALLY an ENV gap (the test " \
            "DB, or the bundled-asset build), NOT a regression in your diff; but a broken stylesheet " \
            "IN your diff (a bad @apply, an unknown utility, a malformed @theme) fails this lane too. " \
-           "Nothing certified; fix it and re-run."
+           "Nothing ran; fix it and re-run."
     end
-      g1_settled = true
-  emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
     exit 1
   end
 end
 
-# A REGISTRY-GATED REPO RUNS ITS WHOLE GATE AS THE "MAPPED" LANE. There is no
-# diff-mapped subset to choose — the declared command IS the suite — so the lane
-# label stays honest by naming the command, and the spine lane below is left to skip
-# itself (neither a gem nor an Anchor repo has hub spine entries). Anything else
-# would report a subset that was never selected.
+# A REGISTRY-GATED REPO RUNS ITS WHOLE GATE AS THE "MAPPED" LANE — the declared
+# command IS the suite — and the spine lane skips itself (no satellite has hub
+# spine entries). No rubocop lane either: every declaring repo ships no rubocop.
 if registry_gate
-  mapped_res = run_lane("registry-gate", test_cmd, root, gate_slug: gate_slug)
-  spine_res  = skip_lane("spine", "registry-gated repo — its declared gate above is the whole suite",
-                         gate_slug: gate_slug)
+  mapped_res = run_lane("registry-gate", test_cmd, root)
+  spine_res  = skip_lane("spine", "registry-gated repo — its declared gate above is the whole suite")
   rubocop_res = nil
 else
-mapped_res =
-  if mapped_only.empty?
-    skip_lane("mapped-tests", mapped.empty? ? "no tests map from the diff" : "all mapped tests covered by the spine",
-              gate_slug: gate_slug)
-  elsif cap[:capped]
-    # LOUD, because a silently-skipped lane is how a cert stops meaning anything.
-    # The builder is told the cap, what tripped it, WHAT RUNS INSTEAD, and the one
-    # command that DOES cover a diff this broad.
-    warn ""
-    warn "fast-check: MAPPED LANE CAPPED — #{cap[:count]} mapped test file(s) exceeds the cap of #{cap[:cap]}."
-    if cap[:worst_path]
-      # TWO RUNGS CAN MAP THIS WIDE, and naming only one of them misreads a third of
-      # the cap trips in this repo. RE-DERIVED 2026-09-22 over all 2229 tracked files,
-      # one at a time (was 2026-09-08 / 1952): 12 exceed the cap alone, and THREE of
-      # them never grep — bin/release and bin/release.rb reach 30 through the ORPHAN
-      # family, bin/dor-check 19 through its twin's family. Of the NINE that do grep,
-      # two are named by a PATH plus a quoted name (config/test_health.yml,
-      # bin/rubocop) rather than by any camelized anything. "a word-boundary grep of its camelized name" therefore
-      # described 6 of the 11 and was printed for all of them — and "word-boundary" was
-      # wrong even for the path tokens it did cover (#token_regexp bounds a path by the
-      # characters that CONTINUE a path, since \b matches inside bin/task-archive).
-      warn "  widest mapping: #{cap[:worst_path]} → #{cap[:worst_count]} test file(s)"
-      warn "  Two rungs map this wide. A file WITH a harness twin also pulls that twin's test"
-      warn "  FAMILY; a file with none greps for the subject's identity — a script's path and"
-      warn "  quoted command name, a config's path and quoted basename, an app class's full"
-      warn "  constant, any other .rb's camelized stem. Either way, this many matches tells"
-      warn "  you the selection is broad, not which tests are relevant."
-    end
-    if cap[:fallback].any?
-      warn "  falling back to the CONVENTION TWINS — #{cap[:fallback].size} test file(s), one per changed"
-      warn "  file, the set this lane ran before the family hop widened it:"
-      cap[:fallback].each { |t| warn "    #{t}" }
-      warn "  this is a NARROWER cert, not no cert. For the full mapped set:"
-    else
-      # WHICH EMPTY THIS IS — asked ONCE, of the module. Two of these were one sentence,
-      # and for the spine-covered population that sentence was FALSE: the twin existed
-      # and the spine was already running it.
-      case FastCert.empty_fallback_cause(cap, spine_covered_twins: spine_twins)
-      when :over_cap
-        warn "  the twin fallback is ITSELF over the cap (#{cap[:fallback_considered]} twins), so it degraded"
-        warn "  again: running the SPINE ONLY. For a diff this broad the right cert is:"
-      when :spine_covered
-        warn "  every existing test twin in this diff (#{spine_twins.size}) is ALREADY A SPINE ENTRY, so"
-        warn "  the fallback has nothing to ADD — the spine below RUNS them. Nothing is missing"
-        warn "  here; for the FULL mapped set the right cert is:"
+  # NOTHING TO RUN is a fact worth stating, not a refusal. A diff that maps to no
+  # test on a checkout that resolves none of the spine executes no test lane; the
+  # PR's CI runs the whole suite on this exact tree, and that is the verdict.
+  if FastCert.executed_test_paths(mapped_only, spine, cap).empty?
+    because =
+      if cap[:capped]
+        "the mapped lane was CAPPED (#{cap[:count]} mapped path(s) over the cap of #{cap[:cap]}) " \
+          "with no convention twin to fall back to"
       else
-        warn "  no changed file has an existing test twin, so there is no fallback to take."
-        warn "  running the SPINE ONLY. For a diff this broad the right cert is:"
+        "the diff maps to no test file"
       end
-    end
-    warn "    #{FULL_SUITE_CMD} #{gate_slug || '<task>'}"
-    warn "  (override deliberately with FAST_CHECK_MAPPED_CAP=<n>.)"
-    warn ""
-    if cap[:fallback].any?
-      # THE LANE KEEPS ITS NAME. dor-check, the board and every reader key on
-      # "mapped-tests"; renaming it for the narrower set would make a capped run
-      # look like a lane that did not run at all, which is the reporting bug this
-      # whole family keeps producing. What NARROWED is said in the reason and on
-      # the evidence line, not in the identifier.
-      run_lane("mapped-tests", "#{test_cmd} #{cap[:fallback].map(&:shellescape).join(' ')}",
-               root, gate_slug: gate_slug)
+    where =
+      if declared_spine.any? && spine.empty?
+        "this checkout resolves NONE of the #{declared_spine.size} spine entries config/fast_cert_spine.yml " \
+          "declares (the spine is anchored in the hub; a satellite resolves none of it)"
+      else
+        "no spine is declared for this run to fall back on"
+      end
+    warn "fast-check: NO TEST LANE TO RUN — #{because}, and #{where}. Nothing here is a verdict on the " \
+         "diff; GitHub CI runs the full suite on the PR, and bin/dor-check reads that."
+  end
+
+  mapped_res =
+    if mapped_only.empty?
+      skip_lane("mapped-tests", mapped.empty? ? "no tests map from the diff" : "all mapped tests covered by the spine")
+    elsif cap[:capped]
+      # LOUD, because a silently-skipped lane is how a pre-flight stops meaning anything.
+      warn ""
+      warn "fast-check: MAPPED LANE CAPPED — #{cap[:count]} mapped test file(s) exceeds the cap of #{cap[:cap]}."
+      if cap[:worst_path]
+        warn "  widest mapping: #{cap[:worst_path]} → #{cap[:worst_count]} test file(s)"
+        warn "  Two rungs map this wide. A file WITH a harness twin also pulls that twin's test"
+        warn "  FAMILY; a file with none greps for the subject's identity. Either way, this many"
+        warn "  matches tells you the selection is broad, not which tests are relevant."
+      end
+      if cap[:fallback].any?
+        warn "  falling back to the CONVENTION TWINS — #{cap[:fallback].size} test file(s), one per changed"
+        warn "  file, the set this lane ran before the family hop widened it:"
+        cap[:fallback].each { |t| warn "    #{t}" }
+        warn "  this is a NARROWER pre-flight, not none. CI runs the full mapped set on the PR."
+      else
+        case FastCert.empty_fallback_cause(cap, spine_covered_twins: spine_twins)
+        when :over_cap
+          warn "  the twin fallback is ITSELF over the cap (#{cap[:fallback_considered]} twins), so it degraded"
+          warn "  again: running the SPINE ONLY. CI runs the full mapped set on the PR."
+        when :spine_covered
+          warn "  every existing test twin in this diff (#{spine_twins.size}) is ALREADY A SPINE ENTRY, so"
+          warn "  the fallback has nothing to ADD — the spine below RUNS them. Nothing is missing."
+        else
+          warn "  no changed file has an existing test twin, so there is no fallback to take."
+          warn "  running the SPINE ONLY. CI runs the full mapped set on the PR."
+        end
+      end
+      warn "  (override deliberately with FAST_CHECK_MAPPED_CAP=<n>.)"
+      warn ""
+      if cap[:fallback].any?
+        # THE LANE KEEPS ITS NAME: what narrowed is said in the reason, not the label.
+        run_lane("mapped-tests", "#{test_cmd} #{cap[:fallback].map(&:shellescape).join(' ')}", root)
+      else
+        skip_lane("mapped-tests",
+                  "#{cap[:count]} mapped file(s) over the cap of #{cap[:cap]}" \
+                  "#{cap[:worst_path] ? " (widest: #{cap[:worst_path]} → #{cap[:worst_count]})" : ''}" \
+                  " — spine only; CI runs the full set")
+      end
     else
-      skip_lane("mapped-tests",
-                "#{cap[:count]} mapped file(s) over the cap of #{cap[:cap]}" \
-                "#{cap[:worst_path] ? " (widest: #{cap[:worst_path]} → #{cap[:worst_count]})" : ''}" \
-                " — spine only; use bin/full-suite-check for this diff",
-                gate_slug: gate_slug)
+      # THE CLIFF ANNOUNCES ITSELF ONE RUN EARLY: this lane is green and runs its whole
+      # mapped set; the NEXT one may not.
+      unless approaching_lines.empty?
+        warn ""
+        approaching_lines.each { |l| warn l }
+        warn ""
+      end
+      run_lane("mapped-tests", "#{test_cmd} #{mapped_only.map(&:shellescape).join(' ')}", root)
     end
-  else
-    # THE CLIFF ANNOUNCES ITSELF ONE RUN EARLY. This lane is GREEN and runs its whole
-    # mapped set — nothing is wrong with this cert. What is worth saying is that the
-    # NEXT one may not be: at the cap, one more test file naming the same subject
-    # silences this lane, and (for a subject with no convention twin) silences it
-    # completely while still reporting green. Warning here and not on the capped rung
-    # is the whole point: the capped rung is the accident, this is the notice.
-    unless approaching_lines.empty?
-      warn ""
-      approaching_lines.each { |l| warn l }
-      warn ""
+
+  spine_res =
+    if spine.empty?
+      skip_lane("spine", "no spine entries exist in this checkout")
+    else
+      run_lane("spine", "#{test_cmd} #{spine.map(&:shellescape).join(' ')}", root)
     end
-    run_lane("mapped-tests", "#{test_cmd} #{mapped_only.map(&:shellescape).join(' ')}", root, gate_slug: gate_slug)
-  end
 
-spine_res =
-  if spine.empty?
-    skip_lane("spine", "no spine entries exist in this checkout", gate_slug: gate_slug)
-  else
-    run_lane("spine", "#{test_cmd} #{spine.map(&:shellescape).join(' ')}", root, gate_slug: gate_slug)
-  end
-
-rubocop_res =
-  if lintable.empty?
-    skip_lane("rubocop-changed", "no lintable files in the diff", gate_slug: gate_slug)
-  else
-    run_lane("rubocop-changed", "#{rubocop_cmd} #{lintable.map(&:shellescape).join(' ')}", root, gate_slug: gate_slug)
-  end
+  rubocop_res =
+    if lintable.empty?
+      skip_lane("rubocop-changed", "no lintable files in the diff")
+    else
+      run_lane("rubocop-changed", "#{rubocop_cmd} #{lintable.map(&:shellescape).join(' ')}", root)
+    end
 end
-
-emit_cert_checkpoint(slug, "completed") unless options[:print]
 
 total = Process.clock_gettime(Process::CLOCK_MONOTONIC) - overall_started
 
 lanes = { (registry_gate ? "registry-gate" : "mapped-tests") => mapped_res, "spine" => spine_res }
 lanes["rubocop-changed"] = rubocop_res if rubocop_res
 unless lanes.each_value.all?(&:ok)
-  # A HUNG lane and a RED lane are DIFFERENT VERDICTS and must never share a sentence.
-  # "lane(s) RED" tells the reader their tests failed; when the runner deadlocked, no
-  # test ran and that sentence sends them straight back into the wall. Split them here,
-  # report the hang FIRST (it is the one that needs a different action), and only call
-  # the genuinely-red lanes red.
+  # THREE VERDICTS, NOT ONE. A hung lane and an unlaunchable command are not red
+  # lanes: no test ran, so "lane(s) RED" would send the reader to hunt a regression
+  # in code that never executed. The hang is reported FIRST because it needs a
+  # different action.
   hung = lanes.select { |_, result| result.timeout? }
-  # THREE VERDICTS, NOT TWO. A lane whose COMMAND is absent is not a red lane any
-  # more than a hung one is: no test ran, so "lane(s) RED" sends the reader to
-  # hunt a regression in code that never executed. run_lane already words the
-  # per-lane line correctly; this summary was the line that undid it.
   unlaunchable = lanes.select { |_, result| result.unlaunchable? }
   red = lanes.reject { |_, result| result.ok || result.timeout? || result.unlaunchable? }.keys
 
   if hung.any?
-    CertProcess.timeout_report(hung, ceiling: LANE_TIMEOUT, tool: "fast-check",
-                               env_var: "FAST_CHECK_LANE_TIMEOUT").each { |l| warn l }
+    LaneRunner.timeout_report(hung, ceiling: LANE_TIMEOUT, tool: "fast-check",
+                              env_var: "FAST_CHECK_LANE_TIMEOUT").each { |l| warn l }
   end
-  if unlaunchable.any?
-    unlaunchable.each do |label, result|
-      warn "fast-check: lane(s) COULD NOT RUN: #{label} — #{result.detail}. The COMMAND is missing from " \
-           "this checkout; your tests neither passed nor failed. Nothing certified."
-    end
+  unlaunchable.each do |label, result|
+    warn "fast-check: lane(s) COULD NOT RUN: #{label} — #{result.detail}. The COMMAND is missing from " \
+         "this checkout; your tests neither passed nor failed."
   end
   if red.any?
-    warn "fast-check: lane(s) RED: #{red.join(', ')}. Fix, then re-run — nothing certified. " \
-         "(#{format('%.1fs', total)})"
+    warn "fast-check: lane(s) RED: #{red.join(', ')}. Fix, then re-run. (#{format('%.1fs', total)})"
   end
-    g1_settled = true
-  emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
   exit 1
 end
 
-# All lanes green. The g1_cert attempt is NOT closed --success here (dor-check no
-# longer owns G1's close either): a green cert still has to RECORD and then VERIFY
-# its evidence, and closing success before that would leave the gate reading
-# success on a write/read-back failure that exits 1. The success close now lives
-# at the very end, after the read-back confirms; every failure path below closes
-# --failed on its way out.
-fingerprint = FullSuiteGate.fingerprint(root)
-if fingerprint.nil?
-  warn "fast-check: could not fingerprint the code at #{root} (no git repo / identity?) — nothing certified."
-    g1_settled = true
-  emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
-  exit 1
-end
-
-# The mapped count is what RAN, not what mapped: a capped lane does not run its whole
-# mapped set, so mapped_only.size would record "41 mapped" for a lane that ran two
-# twins — or, before the fallback existed, for one that ran nothing at all.
-#
-# THREE WORDINGS FOR THREE RUNGS, and the capped-with-no-fallback one is BYTE-IDENTICAL
-# to what it has always emitted. That is deliberate: every existing reader of a capped
-# evidence line — dor-check's own tests, the reviewer eyeballing checks_run, the PR
-# #1226 regression assertions — is reading about a run that executed no mapped test,
-# and that run has not changed. Only the rung that now runs something says something new.
-mapped_detail =
-  if cap[:capped] && cap[:fallback].any?
-    "#{cap[:fallback].size} twin(s) (CAPPED: #{cap[:count]} mapped path(s) over the cap of " \
-      "#{cap[:cap]}; fell back to the convention twins — bin/full-suite-check covers the full set)"
-  elsif cap[:capped]
-    "0 mapped (CAPPED: #{cap[:count]} mapped path(s) over the cap of #{cap[:cap]}; " \
-      "spine only — bin/full-suite-check covers this diff)"
-  elsif cap[:approaching]
-    # THE MARGIN IS DURABLE TOO, and this is the only channel that outlives the run.
-    # The narration above is stderr in a ship log nobody re-reads; this line lands on
-    # the task's checks_run, where the reviewer and the next builder see it. It is
-    # still a GREEN cert and still counts what ran — the clause is appended, never
-    # substituted, so "N mapped" keeps its meaning.
-    "#{mapped_only.size} mapped (NEAR THE CAP of #{cap[:cap]}: #{cap[:cap] - mapped_only.size} " \
-      "path(s) of margin before this lane is skipped)"
-  else
-    "#{mapped_only.size} mapped"
-  end
-
-# THE EVIDENCE MUST DESCRIBE WHAT ACTUALLY RAN. The app wording counts diff-mapped
-# paths, which for a registry-gated repo are all zero — so the first draft of this fix
-# emitted "0 mapped + 0 spine test path(s), rubocop on 0 changed file(s)" after running
-# the repo's ENTIRE gate. Every number was true and the sentence was false: it reads as
-# a cert that tested nothing. A reader deciding whether to trust this line is exactly
-# who that would mislead.
-detail =
+ran = lanes.reject { |_, result| result.skipped? }.keys
+summary =
   if registry_gate
-    "fast cert green: #{test_cmd} — the repo's whole registry gate, no diff-mapped " \
-      "subset exists for it (#{format('%.1fs', total)}; the same command runs on CI)"
+    "pre-flight green: #{test_cmd} — the repo's whole registry gate (#{format('%.1fs', total)}; " \
+      "the same command runs on CI)"
+  elsif ran.empty?
+    "pre-flight ran no lane (#{format('%.1fs', total)}); CI is the verdict"
   else
-    "fast cert green: #{mapped_detail} + #{spine.size} spine test path(s), " \
-      "rubocop on #{lintable.size} changed file(s) " \
-      "(#{format('%.1fs', total)}; full suite runs on CI)"
+    mapped_detail =
+      if cap[:capped] && cap[:fallback].any?
+        "#{cap[:fallback].size} twin(s) (CAPPED: #{cap[:count]} mapped path(s) over the cap of #{cap[:cap]})"
+      elsif cap[:capped]
+        "0 mapped (CAPPED: #{cap[:count]} mapped path(s) over the cap of #{cap[:cap]}; spine only)"
+      else
+        "#{mapped_only.size} mapped"
+      end
+    "pre-flight green: #{mapped_detail} + #{spine.size} spine test path(s), rubocop on " \
+      "#{lintable.size} changed file(s) (#{format('%.1fs', total)}; the full suite runs on CI)"
   end
-line = FullSuiteGate.evidence_line(FullSuiteGate::FAST_LANE, fingerprint, detail,
-                                   repo: cert_repo)
-
-# Print the evidence line on stdout (parseable; the narration is on stderr).
-puts line
-
-if options[:print] || slug.nil?
-  warn "fast-check: all lanes green at #{fingerprint[0, 12]} in #{format('%.1fs', total)}." \
-       "#{slug.nil? ? " (no task slug — evidence printed, not recorded)" : " (--print: not recorded)"}"
-  exit 0
-end
-
-# Read the current checks_run — the BASELINE the read-back below verifies against.
-# If it can't be read, ABORT rather than certify blind: an unverifiable write is
-# exactly the failure this gate exists to catch.
-existing = CertEmission.fetch_checks(TASK_BIN, slug)
-if existing.nil?
-  warn "fast-check: ran green but couldn't read #{slug.inspect}'s checks_run (bin/task show), so the write " \
-       "cannot be verified. Not writing. Re-run, or record by hand: #{TASK_CMD} update #{slug} " \
-       "--checks #{Shellwords.escape(line)}"
-    g1_settled = true
-  emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
-  exit 1
-end
-
-# Record the evidence as a PURE-EVIDENCE write: ONLY the line this cert owns.
-# The cert must NOT resend its snapshot of the author's lines — that is an author
-# write, and it replaces the author namespace with content read BEFORE the lanes
-# ran, silently clobbering any tier line the board gained since (a builder
-# recording checks during a multi-minute cert, a concurrent writer). Sending just
-# the evidence lets the write funnel (bin/task's build_devops + Task#preserve_
-# cert_evidence, lib/cert_evidence.rb) merge against the board's CURRENT state at
-# write time: the author namespace is carried forward, and this lane's prior line
-# is superseded. No snapshot, no stale window.
-record_args = ["--checks", line]
-unless system(TASK_BIN, "update", slug, *record_args)
-  warn "fast-check: ran green but FAILED to record evidence on #{slug.inspect} (bin/task update). Re-run."
-    g1_settled = true
-  emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
-  exit 1
-end
-
-# ── read-back: VERIFY the write. This block is kept BYTE-IDENTICAL with its twin
-# in the sibling cert (bin/fast-check ⇄ bin/full-suite-check) down to the comments;
-# only the script name, the recorded-evidence set, and the re-run command differ.
-# "Recorded" and "preserved" are VERIFIED, never declared. Read the board back and
-# check that BOTH the evidence line(s) this cert OWNS and every pre-existing line
-# it must not disturb are present. Verifying only the pre-existing lines and
-# trusting bin/task's 200 for the line(s) the cert is responsible for is the exact
-# missing-signal-read-as-success defect this gate exists to catch, turned on the
-# cert's own output. `kept` is every prior line except this cert's own lane(s),
-# whose fresh evidence supersedes the old by design.
-kept = existing.reject { |prior| prior.match?(FullSuiteGate.evidence_re([FullSuiteGate::FAST_LANE])) }
-recorded = [line]
-summary = "fast-check: all lanes green at #{fingerprint[0, 12]} in #{format('%.1fs', total)} — evidence " \
-          "recorded on #{slug}"
-# The GATE still accepts a pending CI provisionally — that is unchanged. But
-# bin/ship now WAITS for CI before calling it (gate-submit-on-green-ci), so the
-# ordinary handoff is credited against a settled green and the provisional path is
-# the fallback, not the norm. Saying "no CI wait at submit" here sent the reader to
-# the opposite expectation of what ship actually does.
-followup = "dor-check accepts it provisionally on a pending CI, but bin/ship waits for CI to settle first " \
-           "(SHIP_CI_WAIT=off disarms), so the usual handoff is credited green; review's " \
-           "gate-zero enforces the settled CI green either way."
-
-missing = CertEmission.missing_after_write(TASK_BIN, slug, recorded + kept)
-if missing.nil?
-  # The write returned 200 (bin/task update exited 0); only the confirming READ
-  # did not complete. The certification happened — close success, exit 0.
-  warn "#{summary}, but the read-back FAILED — UNVERIFIED that the recorded evidence" \
-       "#{kept.empty? ? '' : " and the #{kept.size} pre-existing checks line(s)"} landed. " \
-       "Verify: #{TASK_CMD} show #{slug} -v. #{followup}"
-    g1_settled = true
-  emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--success") if gate_slug
-  exit 0
-end
-
-lost_evidence = missing & recorded
-lost_kept = missing - recorded
-if lost_evidence.any? || lost_kept.any?
-  warn "fast-check: green cert, but the read-back is MISSING #{missing.size} recorded checks line(s):"
-  missing.each { |lost| warn "  #{lost}" }
-  if lost_evidence.any?
-    # The cert's OWN evidence line(s) did not land — re-running regenerates them.
-    # Never hand-write a "[<lane>@<fp>]" line: that forges the certification.
-    warn "fast-check: the evidence line did NOT land — re-run the cert: #{SELF_CMD} #{slug}"
-  end
-  if lost_kept.any?
-    # Re-record the UNION — survivors AND lost. `--checks` REPLACES the author
-    # namespace, so a lost-lines-only command would itself drop the survivors
-    # (round-2 catch). SHELL-quoted (Shellwords), not String#inspect: this command
-    # is PASTED, and a Ruby literal leaves $(…)/backticks live in double quotes
-    # (round-3 catch).
-    warn "fast-check: re-record the full pre-existing set (survivors AND lost — resending only the lost " \
-         "lines would drop the survivors): #{TASK_CMD} update #{slug} " \
-         "#{kept.map { |line_kept| "--checks #{Shellwords.escape(line_kept)}" }.join(' ')}"
-  end
-    g1_settled = true
-  emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
-  exit 1
-end
-
-  # Write CONFIRMED on the board — only NOW self-close the G1 attempt success.
-  g1_settled = true
-  emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--success") if gate_slug
-warn "#{summary} (read-back confirms the evidence line landed" \
-     "#{kept.empty? ? '; no pre-existing checks lines to preserve' : " and all #{kept.size} pre-existing checks line(s) kept"}). " \
-     "#{followup}"
+warn "fast-check: #{summary}. Nothing is recorded on the task — the PR's settled green CI is the verdict."
 exit 0

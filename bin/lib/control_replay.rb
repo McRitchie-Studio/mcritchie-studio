@@ -102,8 +102,8 @@ module ControlReplay
 
   # Verdict tokens, embedded in the evidence line. ONE definition, written by
   # bin/control-check and read back by bin/dor-check, so the writer and the grader
-  # cannot drift apart — the same reason FullSuiteGate delegates its line format to
-  # CertEvidence rather than re-spelling it.
+  # cannot drift apart — the same reason the line format lives once, in
+  # CertEvidence, rather than being re-spelled here.
   NECESSARY = "NECESSARY"
   NO_SIGNAL = "NO-SIGNAL"
   HEAD_RED = "HEAD-RED"
